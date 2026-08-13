@@ -21,30 +21,38 @@ No document-per-day figure exists in the source-of-truth pair, so it is built fr
 | Input | Value | Source |
 |---|---|---|
 | Pilot size | 10 practices / businesses | SoT §19.3 (W12–14) |
-| Client businesses per practice | 🔶 ~30 | not stated — typical UK small practice |
-| Documents per client per month | 🔶 ~50 | not stated |
-| → Documents per practice per month | 🔶 ~1,500 | |
-| → **Pilot total per month** | 🔶 **~15,000** | |
-| → **Average per day** | 🔶 **~500** | |
+| Client businesses per practice | **50** | Shakib, 13 Aug |
+| Documents per client per month | **50** | Shakib, 13 Aug |
+| → Documents per practice per month | 2,500 | |
+| → **Pilot total per month** | **25,000** | |
+| → Average per calendar day | ~830 | |
+| → Average per *working* day (22) | ~1,140 | |
 
-Peak, not average, is what a TPS quota has to survive:
+### Why 10 TPS, argued from the SLO rather than from headroom
 
-- Month-end is the real load. Governance §15.6 sizes the k6 profile as an **ingestion soak at 10× expected volume**, and runbook §6.1 names the month-end publish burst as the design case.
-- A single accountant bulk-uploading a 200-document batch through auto-split is a realistic minute-scale spike on its own.
-- 10× the daily average concentrated into a working hour ≈ **1.4 TPS sustained, with short bursts above that**.
+Average throughput is a weak argument — 830 documents spread over 24 hours is 0.01 TPS and would justify nothing. The quota exists for the burst, and the burst is bounded by a published commitment:
 
-Runbook Step 4 says to *"request raises where headroom < 3× peak"*. **10 TPS gives roughly 7× headroom over the modelled peak**, which is the ask already filed — so the requested number is right and only needs justifying.
+**Governance §13.3 sets extraction p95 < 5 minutes for digital PDFs**, and SoT §4 Stage 2 repeats it as a product promise. That is the number the quota has to satisfy.
+
+- Neoting auto-splits multi-document PDFs as standard (SoT Stage 1). One accountant uploading a month-end batch scan produces **30–100 extraction calls in seconds**, from a single user action.
+- Month-end is when this happens, across firms at once. Governance §15.6 sizes the load test as an **ingestion soak at 10× expected volume**.
+- A realistic month-end concentration — one practice clearing ~1,000 documents — takes **~17 minutes at the default 1 TPS**, which breaches the 5-minute p95 by more than 3×. At **10 TPS it clears in ~100 seconds**, inside the SLO with room for the other nine firms.
+
+So 10 TPS is not padding: 1 TPS makes the product's own latency commitment unmeetable at pilot scale, and the request is sized to the SLO rather than to the average.
 
 ### Cross-check against the approved envelope
 
-The estimate above was built bottom-up from practice size. It can be checked top-down against Appendix B, which was written independently, and the two agree closely enough to be worth recording:
+Worth running the number back through Appendix B, because it does not come out free.
 
-- Appendix B.1 budgets **~$1,300–1,500/month** for Dec–Feb, "pilot running, real document volume, Bedrock/Textract/SMS meters live".
+- Appendix B.1 budgets **~$1,300–1,500/month** for Dec–Feb, "pilot running, real document volume, Bedrock/Textract/SMS meters live", and leaves **~$1,700 (21%) headroom** on the $8,000 pot.
 - Prod infrastructure at that stage (Multi-AZ RDS, a real NAT, interface endpoints, more Fargate) is roughly $700–900/month, leaving of the order of **$400–600/month for the metered services**.
-- D28's guardrail is **< £0.02 blended AI cost per document**, and SoT §16 itemises it as Textract ~£0.008/page plus the model tiers.
-- £0.02/document against ~£315/month (≈ $400) implies **~15,750 documents/month**.
+- D28's guardrail is **< £0.02 blended AI cost per document**. At 25,000 documents/month that is **£500/month ≈ $640** — **at or slightly above the top of that band.**
 
-That is within a few percent of the ~15,000/month built from the other direction. Two independent routes landing on the same number is not proof, but it does mean the figure quoted to AWS is the same one the budget was approved against — so if it turns out wrong, the quota request and the envelope are wrong together, which is the coherent failure rather than the embarrassing one.
+**⚠ This is worth knowing before pilot, not after the first invoice.** At 50 clients × 50 documents, metered spend runs roughly $140/month over the modelled figure, which across Dec–Feb eats about **$420 of the $1,700 headroom — a quarter of it** — and that is *if* the £0.02 guardrail holds. It is not a reason to quote AWS a smaller number; it is a reason the guardrail stops being an abstraction. Appendix B says so in its own words: at pilot volume £0.02/document "is the difference between the pot lasting six months and four".
+
+Two consequences, neither of which blocks these replies:
+1. The Step 10 cost dashboards need wiring **before** the meters turn on. That is already the runbook's instruction and is now load-bearing.
+2. Textract alone is ~25,000 pages/month ≈ **$250/month** at $0.01/page, which matches Appendix B.4 calling it "the dominant per-document cost". The W2 decision on whether the Sonnet-vision middle rung earns its place is worth real money at this volume.
 
 Pages per document is **1** for `AnalyzeExpense` (synchronous, and AWS's own question 3 says so). Bank statements go through `StartExpenseAnalysis`/`StartDocumentAnalysis` asynchronously at up to 300 pages (SoT §4 Stage 2), which is why both quotas were raised together.
 
@@ -62,10 +70,14 @@ per-item status while it runs, so latency matters, but the call itself is queue-
 issued directly from a user request.
 
 Question 2. What is the forecasted number of documents you expect to process each day (24 hours)?
-Answer 2: Approximately 500 per day on average during our initial 10-customer pilot, rising with
-month-end concentration. We expect roughly 15,000 documents per month across the pilot. Volume is
-heavily skewed toward the last and first working days of each month, when accounting practices
-process their clients' month-end paperwork.
+Answer 2: Approximately 830 per 24 hours on average across our initial 10-customer pilot (about
+25,000 documents per month; roughly 1,140 per working day). Each customer is an accounting practice
+handling around 50 client businesses, each submitting around 50 documents a month.
+
+Volume is heavily concentrated rather than steady. It peaks on the last and first working days of
+each month, when practices process their clients' month-end paperwork, and it arrives in bursts
+because our product auto-splits multi-document PDFs: one accountant uploading a batch scan can
+produce 30-100 extraction calls within seconds.
 
 Question 3. What is the estimated or average number of pages per document sent to Textract?
 Answer 3: 1. AnalyzeExpense is used synchronously for single-page invoices and receipts. Multi-page
@@ -83,9 +95,13 @@ Question 5. How long do you need the new service limit value?
 Answer 5: (f) Indefinite. This is a production platform, not a migration or backfill.
 
 Question 6. Have you experienced throttling? (Yes / No)
-Answer 6: No. We are requesting ahead of launch rather than in response to an incident. At the
-default 1 TPS, our modelled month-end peak would throttle, and a throttled extraction surfaces to an
-accountant as a document stuck in processing.
+Answer 6: No — we are requesting ahead of launch rather than in response to an incident.
+
+Our own service level for extraction is a p95 under 5 minutes for digital PDFs, which is a published
+commitment to our customers. At the default 1 TPS, a single practice clearing a ~1,000-document
+month-end batch would take about 17 minutes, breaching that by more than threefold, and a throttled
+extraction surfaces to an accountant as a document stuck in processing with no explanation. At 10 TPS
+the same batch clears in under two minutes, leaving capacity for the other nine customers.
 
 I ACKNOWLEDGE THAT I AM REQUESTING A QUOTA INCREASE AND THAT THE INFORMATION PROVIDED ABOVE IS ACCURATE.
 ```
@@ -135,8 +151,11 @@ All transactional, no marketing of any kind:
  - Processing and publish-failure notifications to the accountant who owns the item
  - Team invitations and security notifications (sign-in, permission change)
 
-Frequency is driven entirely by customer activity, concentrated around month-end. Expected initial
-volume is under 1,000 messages per day across a 10-customer pilot.
+Frequency is driven entirely by customer activity and concentrated around month-end. For scale: the
+10-customer pilot processes roughly 25,000 financial documents a month, and only a small fraction of
+those generate an email — a failure to notify about, or a supplier who needs chasing for a missing
+invoice. Expected volume is comfortably under 1,000 messages per day, and we would rather be held to
+that ceiling than to an optimistic one.
 
 Worth stating explicitly: our client-chasing feature is SMS-only by design, not email. That is the
 highest-volume messaging path in the product and it does not touch SES.
