@@ -1,0 +1,29 @@
+# Enforced by branch protection (Team Guideline G4/G5).
+#
+# Reserves (G9) are listed so branch protection accepts their review when the
+# default reviewer is away — G9 governs WHEN they may use it, not this file.
+# LAW paths stay Shakib-only and freeze under G9 unless he pre-delegated in
+# writing.
+
+# Default: anything not matched below
+*                             @shakib
+
+/apps/web/                    @shamim @mubashir @shadman
+/packages/ui/                 @shamim @mubashir @shadman
+
+/apps/api/                    @shakib @mubashir
+/services/extraction/         @shakib @mubashir
+
+# --- LAW (G7): contract-change issue approved by Shakib BEFORE the PR opens ---
+/prisma/                      @shakib
+/packages/contracts/          @shakib
+/packages/component-grammar/  @shakib @shamim
+/packages/tokens/             @shakib @shamim
+/packages/validators/         @shakib
+
+/infra/                       @shakib
+/.github/                     @shakib
+
+# The source-of-truth pair is versioned, not casually edited (Governance §19)
+/docs/Source_Of_Truth.md          @shakib
+/docs/Engineering_Governance.md   @shakib

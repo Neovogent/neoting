@@ -1,0 +1,26 @@
+# Normalise line endings. Without this, a Windows and a macOS developer produce
+# whole-file diffs of the same file and every review drowns in noise.
+* text=auto eol=lf
+
+# Shell scripts must keep LF or they will not execute in containers or CI.
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Generated — mark so GitHub collapses them in diffs and reviewers stop reading
+# lockfile churn line by line.
+pnpm-lock.yaml linguist-generated=true -diff
+packages/contracts/generated/** linguist-generated=true -diff
+
+# Binaries
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.zip binary

@@ -1,0 +1,54 @@
+# The thin CI (Team Guideline G3 / §8.7) — this is ALL the CI we run until
+# Infra Week. The full nine-stage pipeline (Governance §14), e2e-in-CI,
+# evals-in-CI, security scans and deploys activate at G8.
+#
+# Draft PRs skip this by design: §3 says draft-from-first-push, and running the
+# suite on every WIP push would burn the Actions free tier for nothing. Run
+# `pnpm typecheck && pnpm lint && pnpm test` locally while drafting; the full
+# check fires the moment you mark ready.
+
+name: check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # commitlint needs history to see the range
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The PR title becomes the squash commit (G4), so it is the thing that
+      # must be a valid conventional commit — not the individual commits.
+      - name: commitlint (PR title)
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: echo "$PR_TITLE" | pnpm exec commitlint
+
+      - run: pnpm typecheck
+
+      - run: pnpm lint
+
+      - run: pnpm test
