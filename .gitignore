@@ -12,6 +12,12 @@ out/
 # Turborepo
 .turbo/
 
+# Generated from the OpenAPI contract (Governance §1.4: never commit generated
+# output). Produced by `pnpm --filter @neoting/contracts generate`, which the
+# build graph runs for you. The contract is openapi.yaml; this tree is its
+# shadow, and a hand-patched type here is R3.
+packages/contracts/src/generated/
+
 # Environment — .env.example is the only one that ships (Guideline R2)
 .env
 .env.*

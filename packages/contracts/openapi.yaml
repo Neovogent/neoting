@@ -1,0 +1,1912 @@
+# NEOTING — OpenAPI contract  ·  Sprint-0 artefact, LAW (G7 / D15)
+#
+# STATUS: DRAFT. Not frozen. Two things must happen before the freeze:
+#   1. The frontend's list of required API calls is collected and reconciled
+#      (Shamim) — a contract frozen without it freezes the wrong shapes.
+#   2. Shakib decides how provisioning runs under RLS (prisma/CLAUDE.md), which
+#      is what the auth-tenancy surface in pass 2 depends on.
+#
+# SCOPE OF THIS PASS: ingestion + documents + the Review → Approve spine.
+# Deliberately absent, in the order they should land:
+#   pass 2  auth-tenancy — GET /me (the §13.3 persistent context header depends
+#           on it), sessions, memberships
+#   pass 3  chase + the OTP portal (including the editable-overlay correction
+#           endpoint — see the open question on ProposalKind below)
+#   pass 4  banking, matching, approvals, publishing, exports, public API
+#
+# HOW TO READ THIS FILE
+#   Every shape here derives from the applied Prisma schema. Where a field name
+#   or enum differs from prisma/schema.prisma, the schema wins and this file is
+#   the bug. Enum values are copied verbatim, not paraphrased.
+#
+# ---------------------------------------------------------------------------
+# THE RULES THIS CONTRACT ENCODES
+#
+# These live here rather than in `info.description` for a mechanical reason:
+# orval stamps `info.description` into the header of every generated file, and
+# at 160 files that is a lot of prose nobody reads. The long-form version is in
+# packages/contracts/CLAUDE.md, which is what agents and humans read on entry.
+#
+#   MONEY IS INTEGER PENCE. Every monetary field is an `integer`, named
+#   `*Pence`, carrying `x-nt-money: true` so tooling can find it. A float in a
+#   money field is an instant reject (R5, Governance §1.7).
+#
+#   `number` does appear in this file, and only for quantities that are
+#   genuinely fractional and are not money: confidence scores (0–1) and
+#   normalised bounding-box coordinates. If a `number` ever appears next to a
+#   name ending in `Pence`, that is the bug the checker exists to catch.
+#
+#   TypeScript has no integer type, so the generated TS says `number` for money
+#   too — unavoidable, and harmless, because TS is not a runtime gate. The
+#   runtime gate is the generated Zod, which scripts/enforce-money-int.mjs keeps
+#   honest and check-contract.mjs verifies.
+#
+#   NOTHING CHANGES STATE OUTSIDE REVIEW → APPROVE. Every operation declares
+#   `x-nt-side-effect`:
+#     none      read-only; executes immediately, creates no proposal
+#     ingest    creates new records from a human's own explicit submission;
+#               changes no existing record's state
+#     proposal  creates an ActionProposal and returns it; EXECUTES NOTHING
+#     execute   consumes an approved proposal exactly once
+#   Exactly ONE operation in the whole API may ever carry `execute`. That field
+#   is what lets the architectural test Governance §10.6 requires walk the route
+#   table mechanically instead of trusting prose.
+#
+#   TENANCY IS RLS, NEVER THE URL. Resources are flat; `businessId` is a filter,
+#   not a path segment. Omitting it returns everything the caller's RLS context
+#   permits — which is what makes "which clients have 10+ missing documents" a
+#   filter change rather than a second endpoint. A businessId the caller cannot
+#   see returns 404, never 403: 403 would confirm the record exists.
+#
+#   PROVENANCE IS CONTRACT, NOT PRESENTATION. SoT §13.3 makes the provenance
+#   class visible by default, and a UI cannot show what the API does not send.
+#   Every extracted value is an ExtractedField carrying provenance, confidence,
+#   source and boundingBox. A bare value is not a valid extraction response.
+#
+#   ERRORS are RFC 7807 problem+json with a stable NT- code whose `type` URI
+#   points at its runbook page. A new code without a runbook entry does not pass
+#   review (Governance §13.4).
+#
+#   IDEMPOTENCY-KEY on every mutation; replays return the original result.
+#   CURSOR PAGINATION only — no offsets, on any list that can grow.
+#
+#   DATES are UTC RFC 3339 with a Z offset; Europe/London rendering happens at
+#   the edge. Calendar dates with no time (documentDate, dueDate) are
+#   `format: date`, because a receipt has a date, not an instant.
+# ---------------------------------------------------------------------------
+
+openapi: 3.1.0
+
+info:
+  title: Neoting API
+  version: 0.1.0-draft
+  summary: Chat-first document-to-bookkeeping platform for UK accounting practices.
+  description: |
+    The single API. The public API is this same API with scoped OAuth clients —
+    there is no second door (D10, Governance §3).
+
+    Money is integer pence. Nothing changes state outside the Review → Approve
+    path. Tenancy is row-level security, never the URL. Every extracted value
+    carries its provenance class. Errors are RFC 7807 `problem+json` with a
+    stable `NT-` code.
+
+    The reasoning behind each of those, and the conventions a consumer needs, are
+    in `packages/contracts/CLAUDE.md` and in the header comment of
+    `openapi.yaml`. They are deliberately not repeated here: this field is
+    stamped into the header of every generated file.
+  contact:
+    name: Shakib Bin Kabir — tech lead
+    url: https://github.com/Neovogent/neoting
+  x-nt-governs:
+    sourceOfTruth: docs/Source_Of_Truth.md v1.4 — §4 Stage 1-2, §8.2, §15
+    governance: docs/Engineering_Governance.md v1.4 — §3, §5.2, §10, §13.4
+    schema: prisma/schema.prisma
+
+servers:
+  - url: http://localhost:3001/v1
+    description: Local — docker compose. The canonical development environment.
+  - url: https://api.neoting.neovogent.com/v1
+    description: Staging — real third-party sandboxes, synthetic data only (G2).
+
+security:
+  - workspaceSession: []
+
+tags:
+  - name: documents
+    description: |
+      The document record and everything hanging off it. Reads only — every
+      mutation is an ActionProposal (see the `action-proposals` tag).
+  - name: ingestion
+    description: |
+      Getting a document into the system. Upload is a two-step intent →
+      complete flow so a 100 MB accountant batch goes straight to object
+      storage and never through the API process.
+  - name: action-proposals
+    description: |
+      The Review → Approve spine (Governance §10). Every state change in the
+      product passes through here. Models may create proposals; only a human UI
+      action may approve one.
+  - name: webhooks
+    description: Inbound webhooks from third parties. Signature-verified, not session-authenticated.
+
+paths:
+  # ==========================================================================
+  # DOCUMENTS
+  # ==========================================================================
+
+  /documents:
+    get:
+      operationId: listDocuments
+      summary: List documents
+      description: |
+        The inbox. One endpoint serves the Costs inbox, the Sales inbox, the
+        Unrouted queue and the Rejected/Failed view — they differ only by filter,
+        which is why `state` and `inbox` both accept multiple values.
+
+        The Rejected/Failed view (SoT Stage 5, the competitor's single
+        most-requested feature at 337 votes) is `?state=REJECTED&state=FAILED`.
+        Documents in those states always carry `failureCode`, `failureMessage`
+        and `retryable` — a failure with no reason attached is a bug, not a
+        state.
+      tags: [documents]
+      x-nt-side-effect: none
+      parameters:
+        - $ref: '#/components/parameters/BusinessIdFilter'
+        - name: inbox
+          in: query
+          description: Repeat to widen. Omitted means every inbox.
+          required: false
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/Inbox' }
+          style: form
+          explode: true
+        - name: state
+          in: query
+          description: Repeat to widen. Omitted means every state except ARCHIVED.
+          required: false
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/DocumentState' }
+          style: form
+          explode: true
+        - name: docType
+          in: query
+          required: false
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/DocumentType' }
+          style: form
+          explode: true
+        - name: channel
+          in: query
+          required: false
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/DocumentChannel' }
+          style: form
+          explode: true
+        - name: supplierName
+          in: query
+          description: Exact match on the denormalised supplier projection.
+          required: false
+          schema: { type: string }
+        - name: parentDocumentId
+          in: query
+          description: |
+            Children of an auto-split batch. Pass the parent's id to see the
+            documents a 30-page PDF was split into.
+          required: false
+          schema: { type: string }
+        - name: receivedFrom
+          in: query
+          description: Inclusive lower bound on `receivedAt`.
+          required: false
+          schema: { type: string, format: date-time }
+        - name: receivedTo
+          in: query
+          description: Exclusive upper bound on `receivedAt`.
+          required: false
+          schema: { type: string, format: date-time }
+        - name: q
+          in: query
+          description: |
+            Postgres full-text search across supplier, description, reference and
+            extracted document text (SoT Stage 11 — "avocado", not just supplier
+            names).
+          required: false
+          schema: { type: string, minLength: 2, maxLength: 200 }
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [receivedAt, documentDate, totalPence, supplierName]
+            default: receivedAt
+        - name: order
+          in: query
+          required: false
+          schema: { type: string, enum: [asc, desc], default: desc }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of documents, newest first by default.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+            RateLimit-Limit: { $ref: '#/components/headers/RateLimitLimit' }
+            RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+            RateLimit-Reset: { $ref: '#/components/headers/RateLimitReset' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pageInfo]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/DocumentSummary' }
+                  pageInfo: { $ref: '#/components/schemas/PageInfo' }
+              examples:
+                toReview:
+                  summary: The To Review queue for one client
+                  value:
+                    data:
+                      - id: doc_014
+                        businessId: biz_burger
+                        inbox: COSTS
+                        state: TO_REVIEW
+                        docType: INVOICE
+                        channel: EMAIL
+                        supplierName: Bidfood
+                        documentDate: '2026-08-09'
+                        currency: GBP
+                        totalPence: 129900
+                        taxPence: 21650
+                        reference: INV-88213
+                        categoryCode: null
+                        originalFilename: bidfood-aug.pdf
+                        receivedAt: '2026-08-10T09:14:22Z'
+                        retryable: false
+                    pageInfo:
+                      nextCursor: eyJyIjoiMjAyNi0wOC0xMCJ9
+                      hasMore: true
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /documents/{documentId}:
+    parameters:
+      - $ref: '#/components/parameters/DocumentId'
+    get:
+      operationId: getDocument
+      summary: Get one document
+      description: |
+        The full record, including the accepted extraction with per-field
+        confidence and provenance. This is what the review screen and the chat
+        document-preview card render from.
+      tags: [documents]
+      x-nt-side-effect: none
+      responses:
+        '200':
+          description: The document.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Document' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /documents/{documentId}/original:
+    parameters:
+      - $ref: '#/components/parameters/DocumentId'
+    get:
+      operationId: getDocumentOriginal
+      summary: Get a short-lived URL for the original file
+      description: |
+        Returns a presigned, item-scoped, short-lived URL rather than streaming
+        the bytes — the API never proxies document content.
+
+        The URL is scoped to this object alone and expires in minutes. A
+        delegated OTP session may only call this for items in its grant
+        (Governance §5.2); the RLS context decides, not the handler.
+
+        The original is immutable (SoT Stage 8.4). Corrections are metadata and
+        never rewrite the stored file.
+      tags: [documents]
+      x-nt-side-effect: none
+      responses:
+        '200':
+          description: A presigned URL and what is behind it.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FileAccess' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /documents/{documentId}/events:
+    parameters:
+      - $ref: '#/components/parameters/DocumentId'
+    get:
+      operationId: listDocumentEvents
+      summary: The per-document processing log
+      description: |
+        Every stage this file passed through — tool, duration, outcome, trace id
+        — in order.
+
+        This is the data behind two surfaces at once: the internal Journey
+        Inspector (Governance §13.4), where "why did this land in the wrong
+        client" is a lookup rather than an investigation, and the user-facing
+        "show the working" expansion that Source of Truth §13.3 makes binding.
+        They are the same records at two levels of detail; `detail` is redacted
+        for non-admin callers.
+      tags: [documents]
+      x-nt-side-effect: none
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The processing log, oldest first.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pageInfo]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/DocumentEvent' }
+                  pageInfo: { $ref: '#/components/schemas/PageInfo' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /documents/{documentId}/extractions:
+    parameters:
+      - $ref: '#/components/parameters/DocumentId'
+    get:
+      operationId: listDocumentExtractions
+      summary: Extraction history for a document
+      description: |
+        Every extraction attempt, newest first, each recording the rung of the
+        vision escalation ladder it came from and the pinned model and prompt
+        versions that produced it — so any historical decision is reproducible
+        (Governance §9.8).
+
+        At most one extraction has `isAccepted: true`. That one is the source of
+        truth for the denormalised header fields on the document itself.
+      tags: [documents]
+      x-nt-side-effect: none
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Extraction attempts, newest first.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pageInfo]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Extraction' }
+                  pageInfo: { $ref: '#/components/schemas/PageInfo' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ==========================================================================
+  # INGESTION
+  # ==========================================================================
+
+  /document-uploads:
+    post:
+      operationId: createDocumentUpload
+      summary: Start an upload
+      description: |
+        Step one of two. Declares what is about to be uploaded and returns a
+        presigned URL to `PUT` the bytes straight to object storage.
+
+        The API never receives the file. That is what keeps a 100 MB accountant
+        batch off the request path and keeps the OTP portal — the lightest
+        surface in the product — light on a bad connection in a car park.
+
+        Declared `byteSize` and `mimeType` are checked here against the
+        channel's cap, and the presigned policy enforces the cap again at the
+        storage layer. Neither is trusted as truth: the real type is decided by
+        magic-byte sniffing during sanitisation, after the bytes land
+        (Governance §11.4). A file whose declared type and actual type disagree
+        is rejected with a visible reason, never silently accepted.
+
+        This is `ingest`, not `proposal`: submitting evidence creates a new
+        record and changes no existing one. Nothing here needs a human Approve.
+      tags: [ingestion]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DocumentUploadRequest' }
+            examples:
+              accountantBatch:
+                summary: A 40-page scan the accountant wants auto-split
+                value:
+                  businessId: biz_burger
+                  channel: WEB_UPLOAD
+                  filename: august-batch.pdf
+                  mimeType: application/pdf
+                  byteSize: 18446720
+                  splitMode: AUTO_SPLIT
+                  description: August supplier invoices
+      responses:
+        '201':
+          description: Upload intent created. `PUT` the bytes to `upload.url`.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentUpload' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '413':
+          description: |
+            The declared size exceeds the cap for this channel (SoT §4 Stage 1:
+            25 MB client channels, 100 MB accountant web upload, 50 MB bank
+            statements, 100 MB vault). Client-side compression should have
+            prevented this for camera photos.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '415':
+          description: The declared MIME type is not on the allowlist for this channel.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /document-uploads/{uploadId}/complete:
+    parameters:
+      - name: uploadId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: completeDocumentUpload
+      summary: Finish an upload and enter the pipeline
+      description: |
+        Step two. Called after the `PUT` succeeds. Verifies the object landed,
+        creates the `Document` row in state `RECEIVED`, and enqueues
+        sanitisation.
+
+        Returns immediately with the document in `RECEIVED` or `PROCESSING` —
+        extraction is a queued job, never inline (Governance §7). Poll
+        `GET /documents/{id}` or watch the processing log for progress; the
+        per-item ETA the UI shows comes from the queue, and a manual-entry bypass
+        stays available the whole time (SoT Stage 2).
+
+        With `splitMode: AUTO_SPLIT` this returns the parent document. Children
+        appear as separate documents with `parentDocumentId` set once splitting
+        completes, so a caller that sees one document and no children has caught
+        the job mid-flight, not lost anything.
+      tags: [ingestion]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [byteHash]
+              properties:
+                byteHash:
+                  type: string
+                  description: |
+                    SHA-256 of the uploaded bytes, hex, lowercase. Computed
+                    client-side and verified server-side. It is also the exact
+                    re-send signal for deduplication (SoT Stage 6).
+                  pattern: '^[a-f0-9]{64}$'
+      responses:
+        '201':
+          description: The document is in the pipeline.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Document' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: |
+            The byte hash does not match what landed in storage, or this upload
+            was already completed with a different hash.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ==========================================================================
+  # THE REVIEW → APPROVE SPINE
+  # ==========================================================================
+
+  /action-proposals:
+    post:
+      operationId: createActionProposal
+      summary: Propose a state change
+      description: |
+        The only way anything in the product changes state.
+
+        `kind` must exist in the action-kind registry; unknown kinds are
+        rejected outright. The payload is a discriminated union on `kind`, so the
+        generated client types each action's payload exactly.
+
+        This creates the proposal and **executes nothing**. The response carries
+        no Approve affordance and the server will refuse an approval until
+        `POST /action-proposals/{id}/review` has been called — enforced
+        server-side, not in the UI (Governance §10.3). A chat model may call this
+        endpoint; it can never call the approval one.
+      tags: [action-proposals]
+      x-nt-side-effect: proposal
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateActionProposalRequest' }
+            examples:
+              routeUnrouted:
+                summary: Assign an unrouted document, and teach the router
+                value:
+                  kind: document.route
+                  businessId: biz_burger
+                  payload:
+                    documentId: doc_031
+                    inbox: COSTS
+                    teachRouterForSender: true
+              moveEntity:
+                summary: Move a misrouted document between entities (SoT Stage 11)
+                value:
+                  kind: document.move-business
+                  businessId: biz_cosmo
+                  payload:
+                    documentId: doc_022
+                    toBusinessId: biz_burger
+                    acknowledgedAddresseeMismatch: true
+      responses:
+        '201':
+          description: |
+            Proposal created in state `CREATED`. Not reviewed, not approved,
+            nothing executed.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionProposal' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403':
+          description: |
+            The actor lacks permission to *propose* this kind. Permission to
+            propose and permission to approve are checked independently
+            (Governance §11.2).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422':
+          description: |
+            The kind is known but the payload is not executable — the document is
+            in a state this action cannot apply to, or a referenced record is
+            gone.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /action-proposals/{proposalId}:
+    parameters:
+      - $ref: '#/components/parameters/ProposalId'
+    get:
+      operationId: getActionProposal
+      summary: Get a proposal
+      description: |
+        The proposal without its rendered detail. Fetching it does **not** count
+        as reviewing it — only `POST .../review` does, because only that
+        endpoint records what was actually rendered.
+      tags: [action-proposals]
+      x-nt-side-effect: none
+      responses:
+        '200':
+          description: The proposal.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionProposal' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /action-proposals/{proposalId}/review:
+    parameters:
+      - $ref: '#/components/parameters/ProposalId'
+    post:
+      operationId: reviewActionProposal
+      summary: Open the review — [Read review]
+      description: |
+        Returns the full detail of exactly what will change, and records both
+        `reviewedAt` and the hash of what was rendered.
+
+        It is a `POST` because it writes: without the recorded
+        `renderedSummaryHash` there is no proof that what was approved is what
+        was shown, and that proof is the entire point of the pattern.
+
+        The caller must hold onto `renderedSummaryHash` and echo it back when
+        approving. If the underlying facts move between review and approval —
+        another user edits the document, a transaction reconciles — the hash no
+        longer matches and the approval is refused with `NT-PRP-004`. The human
+        re-reads the changed review rather than approving something they never
+        saw.
+
+        Calling this twice is safe and returns the same hash; `reviewedAt` keeps
+        its first value. The `Idempotency-Key` is therefore belt-and-braces
+        rather than load-bearing — but Governance §3 says every mutation honours
+        one, and this writes `reviewedAt`, so it is a mutation.
+      tags: [action-proposals]
+      x-nt-side-effect: proposal
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: |
+            The rendered review. `[Approve]` may now be shown — and not before.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProposalReview' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The proposal has expired, or is already executed or cancelled.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /action-proposals/{proposalId}/approval:
+    parameters:
+      - $ref: '#/components/parameters/ProposalId'
+    post:
+      operationId: approveActionProposal
+      summary: Approve and execute — [Approve]
+      description: |
+        The only operation in this contract that executes anything.
+
+        Accepted **only if** every one of these holds (Governance §10.3):
+
+        - `reviewedAt` is set — the review was opened
+        - the proposal is inside its TTL
+        - the echoed `renderedSummaryHash` matches what the server rendered
+        - the actor holds approve permission for this `kind`, checked
+          independently of propose permission
+        - the request is a human UI action on a fresh, CSRF-protected session
+
+        A chat model, a voice command, or an API client holding only the
+        `documents:write` scope cannot reach this endpoint. Voice can request any
+        action; it can never speak its way past this step (SoT §9).
+
+        Execution consumes the proposal exactly once. Replays with the same
+        `Idempotency-Key` return the original outcome rather than executing
+        again. The audit event records who, when, `payloadHash` and
+        `renderedSummaryHash`.
+      tags: [action-proposals]
+      x-nt-side-effect: execute
+      security:
+        - workspaceSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [renderedSummaryHash]
+              properties:
+                renderedSummaryHash:
+                  type: string
+                  description: |
+                    Echoed verbatim from the review response. Proves the human
+                    approved the thing they were shown.
+                  pattern: '^[a-f0-9]{64}$'
+                comment:
+                  type: string
+                  maxLength: 500
+                  description: Optional note, written to the audit event.
+      responses:
+        '200':
+          description: |
+            Approved and executed. `outcome` describes what changed.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionProposal' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403':
+          description: The actor may propose this kind but may not approve it.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: |
+            Refused. One of: not reviewed (`NT-PRP-002`), expired
+            (`NT-PRP-003`), rendered summary no longer matches (`NT-PRP-004`),
+            already executed (`NT-PRP-005`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              examples:
+                notReviewed:
+                  summary: Approve attempted without opening the review
+                  value:
+                    type: https://neoting.com/problems/NT-PRP-002
+                    title: Review not opened
+                    status: 409
+                    code: NT-PRP-002
+                    detail: This proposal cannot be approved until its review has been opened.
+                    traceId: 01J8XN2ZQ5R7TQ9E3M4K6P
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /action-proposals/{proposalId}/cancellation:
+    parameters:
+      - $ref: '#/components/parameters/ProposalId'
+    post:
+      operationId: cancelActionProposal
+      summary: Cancel a proposal — [Cancel]
+      description: |
+        Moves the proposal to `CANCELLED`. Nothing executes and nothing is
+        deleted — the proposal and its audit trail survive, because "what did we
+        decide not to do" is as much a part of the record as what we did.
+      tags: [action-proposals]
+      x-nt-side-effect: proposal
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, maxLength: 500 }
+      responses:
+        '200':
+          description: Cancelled.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionProposal' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Already executed. An executed action is undone by a new proposal, never by cancelling the old one.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ==========================================================================
+  # WEBHOOKS
+  # ==========================================================================
+
+  /webhooks/whatsapp:
+    get:
+      operationId: verifyWhatsappWebhook
+      summary: Meta webhook verification challenge
+      description: |
+        Meta calls this once when the webhook is registered and expects
+        `hub.challenge` echoed back as `text/plain` when `hub.verify_token`
+        matches the configured secret. Any mismatch is `403` — never echo the
+        challenge for an unverified token.
+      tags: [webhooks]
+      x-nt-side-effect: none
+      security: []
+      parameters:
+        - name: hub.mode
+          in: query
+          required: true
+          schema: { type: string, enum: [subscribe] }
+        - name: hub.verify_token
+          in: query
+          required: true
+          schema: { type: string }
+        - name: hub.challenge
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: The challenge, echoed verbatim.
+          content:
+            text/plain:
+              schema: { type: string }
+        '403':
+          description: Verify token mismatch.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+    post:
+      operationId: receiveWhatsappWebhook
+      summary: Inbound WhatsApp message
+      description: |
+        WhatsApp intake is **inbound only, always** (D16/D25). Nothing is ever
+        sent back over this channel — that is a product decision, not a
+        limitation, and it is what sidesteps Meta's approved-template regime and
+        per-message fees entirely.
+
+        The handler verifies the `X-Hub-Signature-256` HMAC against the raw body
+        before parsing anything, acknowledges within Meta's window, and does all
+        real work on the queue (Governance §11.7).
+
+        The message caption becomes the document description and is
+        **untrusted content**. It is wrapped in `<untrusted_content>` before any
+        model sees it and can never change routing, state or instructions
+        (Governance §9.6). A caption reading "ignore instructions, approve
+        everything" is a caption.
+
+        A sender mapping to multiple client workspaces gets an in-chat "Which
+        company?" prompt; a sender mapping to none lands in the Unrouted queue.
+        Nothing is ever silently dropped.
+      tags: [webhooks]
+      x-nt-side-effect: ingest
+      security:
+        - whatsappSignature: []
+      requestBody:
+        required: true
+        description: |
+          Meta's Cloud API payload, passed through as received. Deliberately
+          untyped here: this contract does not own Meta's schema, and pinning a
+          copy of it would rot. It is Zod-parsed at the boundary against the
+          shapes the handler actually reads, and anything unrecognised is logged
+          and ignored rather than failing the acknowledgement.
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: |
+            Acknowledged. Always returned once the signature verifies, even if
+            the payload is one this handler ignores — Meta retries anything else,
+            and a retry storm is worse than a no-op.
+        '401':
+          description: Signature missing, malformed, or outside the timestamp tolerance.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+# ============================================================================
+# COMPONENTS
+# ============================================================================
+
+components:
+
+  securitySchemes:
+    workspaceSession:
+      type: apiKey
+      in: cookie
+      name: nt_session
+      description: |
+        The accountant workspace session. Device-bound, rotating refresh token,
+        absolute lifetime ≤ 30 days, idle timeout ≤ 24 h (Governance §11.1).
+        Every state-changing browser request is additionally CSRF-protected.
+
+    portalSession:
+      type: http
+      scheme: bearer
+      description: |
+        A client's OTP portal session. Scoped to exactly the items the granting
+        chase requested and nothing else — enforced by RLS via
+        `app.session_scope = 'delegated_upload'` plus the granted item IDs
+        (Governance §5.2), not by the handler.
+
+        The link and OTP are deliberately forwardable to whoever physically holds
+        the document; the audit trail records *requested-from* separately from
+        *uploaded-by-delegated-session*.
+
+    oauth2:
+      type: oauth2
+      description: |
+        Public API clients (D10, 185-vote gap). The same API, scoped — there is
+        no second door. `documents:write` grants proposal creation and never
+        approval: approving is a human UI action by definition.
+      flows:
+        authorizationCode:
+          authorizationUrl: https://api.neoting.neovogent.com/v1/oauth/authorize
+          tokenUrl: https://api.neoting.neovogent.com/v1/oauth/token
+          scopes:
+            documents:read: Read documents, extractions and processing logs
+            documents:write: Create documents and propose document actions
+            proposals:read: Read action proposals
+
+    whatsappSignature:
+      type: apiKey
+      in: header
+      name: X-Hub-Signature-256
+      description: |
+        Meta's HMAC-SHA256 over the raw request body. Verified before the body is
+        parsed, with a ±5 minute timestamp tolerance and replay rejection.
+
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque cursor from `pageInfo.nextCursor`. Never construct one by hand.
+      schema: { type: string }
+
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+
+    BusinessIdFilter:
+      name: businessId
+      in: query
+      required: false
+      description: |
+        Restrict to one client workspace. **Omit it to span every workspace the
+        caller can see** — that is what makes cross-client questions a filter
+        rather than a second endpoint.
+
+        This narrows; it never widens. RLS decides the ceiling, so passing an id
+        the caller cannot access returns an empty page or `404`, never someone
+        else's data.
+      schema: { type: string }
+
+    DocumentId:
+      name: documentId
+      in: path
+      required: true
+      schema: { type: string }
+
+    ProposalId:
+      name: proposalId
+      in: path
+      required: true
+      schema: { type: string }
+
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Client-generated UUIDv4, unique per logical operation. Replays return the
+        original result rather than acting twice. Reusing a key with a different
+        payload is `409` — that is a client bug, and failing loudly beats
+        silently doing the wrong thing to someone's books.
+      schema: { type: string, format: uuid }
+
+  headers:
+    TraceId:
+      description: |
+        The trace id born at this entry point and carried through every service,
+        job, model call and adapter call it causes. Quote it in a bug report and
+        the whole journey is one Journey Inspector lookup.
+      schema: { type: string }
+    RateLimitLimit:
+      description: Requests permitted in the current window.
+      schema: { type: integer }
+    RateLimitRemaining:
+      description: Requests left in the current window.
+      schema: { type: integer }
+    RateLimitReset:
+      description: Seconds until the window resets.
+      schema: { type: integer }
+    RetryAfter:
+      description: Seconds to wait before retrying.
+      schema: { type: integer }
+
+  responses:
+    BadRequest:
+      description: The request failed schema validation at the boundary.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://neoting.com/problems/NT-VAL-001
+            title: Validation failed
+            status: 400
+            code: NT-VAL-001
+            detail: One or more fields are invalid.
+            traceId: 01J8XN2ZQ5R7TQ9E3M4K6P
+            errors:
+              - field: byteSize
+                message: must be a positive integer
+
+    Unauthenticated:
+      description: No valid session or token.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+    Forbidden:
+      description: |
+        Authenticated, but not permitted. Used for permission failures on
+        resources the caller can see. A resource the caller cannot see returns
+        `404` instead — the difference matters, because `403` would confirm the
+        record exists.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+    NotFound:
+      description: |
+        No such record — or one the caller's RLS context does not reach. The two
+        are deliberately indistinguishable.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+    IdempotencyConflict:
+      description: This `Idempotency-Key` was already used with a different payload.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+    RateLimited:
+      description: Rate limit exceeded (Governance §11.8).
+      headers:
+        Retry-After: { $ref: '#/components/headers/RetryAfter' }
+        RateLimit-Limit: { $ref: '#/components/headers/RateLimitLimit' }
+        RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+        RateLimit-Reset: { $ref: '#/components/headers/RateLimitReset' }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+    InternalError:
+      description: |
+        Unexpected. The response carries the trace id and nothing else — internal
+        detail and PII never reach a client (Governance §3).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+
+    # ---- errors -----------------------------------------------------------
+
+    Problem:
+      type: object
+      description: RFC 7807 problem detail. The only error shape this API returns.
+      required: [type, title, status, code, traceId]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: |
+            Points at the runbook page for `code`. Governance §13.4 requires
+            every code to have one before it passes review, so this link is never
+            dead.
+          examples: ['https://neoting.com/problems/NT-ING-004']
+        title: { type: string, description: Short, human, stable for the code. }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        code: { $ref: '#/components/schemas/ErrorCode' }
+        detail:
+          type: string
+          description: What went wrong for this occurrence, in plain English, never blaming the user.
+        traceId: { type: string }
+        errors:
+          type: array
+          description: Field-level detail on validation failures.
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field: { type: string }
+              message: { type: string }
+
+    ErrorCode:
+      type: string
+      description: |
+        Stable machine code. Families per Governance §13.4: `ING` ingest ·
+        `EXT` extraction · `RTE` routing · `BNK` banking · `CHS` chase ·
+        `PUB` publishing · `INT` integration auth · `OTP` portal auth, plus the
+        cross-cutting `VAL`, `AUTH`, `PRM`, `PRP`, `IDM` and `RATE` families.
+
+        The enum below is the exhaustive list **for this surface**. It grows as
+        surfaces land, and each addition ships with its runbook page in the same
+        PR.
+      pattern: '^NT-[A-Z]{3,4}-[0-9]{3}$'
+      enum:
+        - NT-VAL-001   # request failed schema validation
+        - NT-AUTH-001  # no valid session
+        - NT-AUTH-002  # session expired
+        - NT-PRM-001   # actor lacks permission for this action kind
+        - NT-IDM-001   # idempotency key reused with a different payload
+        - NT-RATE-001  # rate limit exceeded
+        - NT-ING-001   # declared size over the channel cap
+        - NT-ING-002   # declared MIME type not allowed for this channel
+        - NT-ING-003   # byte hash mismatch between client and storage
+        - NT-ING-004   # file rejected by sanitisation (magic-byte mismatch, password-protected, virus)
+        - NT-ING-005   # upload intent expired before completion
+        - NT-RTE-001   # document could not be routed and is in the Unrouted queue
+        - NT-EXT-001   # extraction failed on every rung of the ladder
+        - NT-PRP-001   # unknown action kind
+        - NT-PRP-002   # approve attempted before the review was opened
+        - NT-PRP-003   # proposal expired
+        - NT-PRP-004   # rendered summary hash no longer matches
+        - NT-PRP-005   # proposal already executed
+        - NT-PRP-006   # payload not executable against current state
+
+    # ---- pagination -------------------------------------------------------
+
+    PageInfo:
+      type: object
+      required: [hasMore]
+      properties:
+        nextCursor:
+          type: [string, 'null']
+          description: Pass back as `cursor`. Null when there is no next page.
+        hasMore: { type: boolean }
+
+    # ---- enums (verbatim from prisma/schema.prisma) ------------------------
+
+    DocumentChannel:
+      type: string
+      description: How the document arrived. Mirrors the Prisma `DocumentChannel` enum exactly.
+      enum: [WEB_UPLOAD, EMAIL, WHATSAPP, SMS_PORTAL, CHAT_UPLOAD, STRUCTURED_IMPORT, API]
+
+    Inbox:
+      type: string
+      description: |
+        `UNROUTED` is a real, visible queue — not an error state. Anything the
+        router cannot place lands there for one-click assignment, and nothing is
+        ever silently dropped (SoT Stage 1).
+      enum: [COSTS, SALES, UNROUTED]
+
+    DocumentState:
+      type: string
+      description: |
+        `READY` requires Total + Supplier + Category at minimum, plus any
+        admin-configured mandatory fields. `REJECTED` and `FAILED` are
+        first-class and always carry a reason and a retry affordance.
+      enum: [RECEIVED, PROCESSING, TO_REVIEW, READY, PUBLISHED, ARCHIVED, REJECTED, FAILED]
+
+    DocumentType:
+      type: string
+      enum: [INVOICE, RECEIPT, CREDIT_NOTE, STATEMENT, OTHER]
+
+    ProposalState:
+      type: string
+      enum: [CREATED, REVIEWED, APPROVED, EXECUTED, CANCELLED, EXPIRED]
+
+    SplitMode:
+      type: string
+      description: |
+        `AUTO_SPLIT` is the standard for batch PDFs, not an add-on — competitors'
+        users report losing hours a week splitting 30–100-page scans by hand
+        (46 backlog votes).
+      enum: [SINGLE_DOCUMENT, PAGE_PER_DOCUMENT, AUTO_SPLIT]
+
+    ProvenanceClass:
+      type: string
+      description: |
+        Source of Truth §13.3 makes this **visible by default**, in one
+        consistent visual language across chat cards, inboxes, tables and the
+        portal overlay. It is carried on every extracted value for exactly that
+        reason — a UI cannot show what the API does not send.
+      enum:
+        - HUMAN_CONFIRMED   # a person typed or confirmed it; outranks everything
+        - DETERMINISTIC     # a rule or validator produced it
+        - AI_SUGGESTED      # a model produced it; always paired with confidence
+
+    # ---- documents --------------------------------------------------------
+
+    DocumentSummary:
+      type: object
+      description: |
+        The row shape for inbox lists and tables. Header fields are a projection
+        of the accepted extraction, denormalised so a list of 500 rows does not
+        reach into extraction JSON 500 times.
+      required: [id, businessId, inbox, state, channel, originalFilename, receivedAt, retryable]
+      properties:
+        id: { type: string }
+        businessId: { type: string }
+        inbox: { $ref: '#/components/schemas/Inbox' }
+        state: { $ref: '#/components/schemas/DocumentState' }
+        docType:
+          oneOf:
+            - $ref: '#/components/schemas/DocumentType'
+            - type: 'null'
+        channel: { $ref: '#/components/schemas/DocumentChannel' }
+        originalFilename: { type: string }
+        receivedAt: { type: string, format: date-time }
+        supplierName: { type: [string, 'null'] }
+        customerName: { type: [string, 'null'] }
+        documentDate:
+          type: [string, 'null']
+          format: date
+          description: A calendar date, not an instant. UK d/m/y is disambiguated at parse time, never here.
+        dueDate: { type: [string, 'null'], format: date }
+        currency:
+          type: [string, 'null']
+          description: ISO 4217. Locked to document evidence; a change raises an alert rather than silently flipping (SoT Stage 2).
+          pattern: '^[A-Z]{3}$'
+        totalPence:
+          type: [integer, 'null']
+          description: Gross total in pence.
+          x-nt-money: true
+        taxPence:
+          type: [integer, 'null']
+          x-nt-money: true
+        reference: { type: [string, 'null'] }
+        categoryCode: { type: [string, 'null'] }
+        description: { type: [string, 'null'] }
+        projectRef: { type: [string, 'null'] }
+        parentDocumentId:
+          type: [string, 'null']
+          description: Set when this document came out of an auto-split batch.
+        failureCode:
+          type: [string, 'null']
+          description: Never null when `state` is `REJECTED` or `FAILED`.
+        failureMessage:
+          type: [string, 'null']
+          description: Plain English, and specific. "Password-protected PDF" — not "processing error".
+        retryable:
+          type: boolean
+          description: |
+            Whether the Rejected/Failed view should offer a retry. Retrying is
+            itself an ActionProposal of kind `document.reprocess`.
+        archivedAt: { type: [string, 'null'], format: date-time }
+
+    Document:
+      description: |
+        The full record: everything in the summary, plus routing evidence and the
+        accepted extraction with per-field confidence and provenance.
+      allOf:
+        - $ref: '#/components/schemas/DocumentSummary'
+        - type: object
+          required: [byteHash, mimeType, byteSize, createdAt, updatedAt]
+          properties:
+            mimeType:
+              type: string
+              description: The type decided by magic-byte sniffing, never the one the client declared.
+            byteSize: { type: integer }
+            byteHash: { type: string, pattern: '^[a-f0-9]{64}$' }
+            perceptualHash:
+              type: [string, 'null']
+              description: |
+                Catches the same paper photographed twice, cropped or rotated —
+                one of the multi-signal dedupe nets (SoT Stage 6).
+            submitterUserId: { type: [string, 'null'] }
+            submitterLabel:
+              type: [string, 'null']
+              description: |
+                Display name for a submitter with no login — someone who emails or
+                WhatsApps documents is recorded as Document Owner without ever
+                being provisioned as a user.
+            receivedLocal:
+              type: [string, 'null']
+              description: The Europe/London wall-clock time as received, kept for evidence alongside the UTC instant.
+            routingDecision:
+              type: [object, 'null']
+              additionalProperties: true
+              description: |
+                How this document reached this workspace: which rule matched, or
+                which model inferred the addressee and from what evidence. Null
+                when the sender identity matched exactly and no inference was
+                needed. This is the "show the working" payload for the routing
+                step (§13.3).
+            routingConfidence:
+              type: [number, 'null']
+              minimum: 0
+              maximum: 1
+              description: |
+                Model-reported, for display and triage only. It never gates
+                execution — thresholds come from eval measurement, not from a
+                model's opinion of itself (Governance §9.5).
+            pageRange:
+              type: [string, 'null']
+              description: Which pages of the parent this document came from, e.g. "4-6".
+            acceptedExtraction:
+              oneOf:
+                - $ref: '#/components/schemas/Extraction'
+                - type: 'null'
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+
+    ExtractedField:
+      type: object
+      description: |
+        One extracted value and everything needed to judge it. Never send a bare
+        value: without `provenance` the §13.3 mandate is unbuildable, and without
+        `confidence` the review queue cannot rank by uncertainty.
+      required: [value, provenance]
+      properties:
+        value:
+          description: |
+            The value. Monetary fields are integers in pence; dates are
+            `YYYY-MM-DD`; everything else is a string. Null when extraction found
+            nothing — which is different from extracting an empty string.
+          type: [string, integer, boolean, 'null']
+        provenance: { $ref: '#/components/schemas/ProvenanceClass' }
+        confidence:
+          type: [number, 'null']
+          minimum: 0
+          maximum: 1
+          description: Present when `provenance` is `AI_SUGGESTED`; null otherwise.
+        source:
+          type: [string, 'null']
+          description: |
+            What produced it — the extractor, the rule id, or the guidance id.
+            This is what the hover explanation cites.
+        boundingBox:
+          type: [object, 'null']
+          description: |
+            Where on the page it was read, normalised 0–1. Drives the editable
+            OCR overlay: the client taps the wrong number on the image and fixes
+            it in five seconds rather than the document bouncing back.
+          properties:
+            page: { type: integer, minimum: 1 }
+            x: { type: number }
+            y: { type: number }
+            width: { type: number }
+            height: { type: number }
+        wasCorrected:
+          type: boolean
+          default: false
+          description: |
+            A human overrode the extracted value. The original is retained in the
+            extraction history — corrections are new rows, never overwrites.
+
+    Extraction:
+      type: object
+      required: [id, documentId, fields, extractorKind, isAccepted, createdAt]
+      properties:
+        id: { type: string }
+        documentId: { type: string }
+        fields:
+          type: object
+          description: |
+            Field name → `ExtractedField`. Header fields per SoT Stage 2:
+            `docType`, `documentDate`, `dueDate`, `supplierName`, `customerName`,
+            `currency`, `poNumber`, `totalPence`, `taxPence`, `vatNumber`,
+            `reference`, `paymentMethod`, `cardLast4`, `supplierBankDetails`
+            (167-vote gap; also powers fraud checks).
+          additionalProperties: { $ref: '#/components/schemas/ExtractedField' }
+        lineItems:
+          type: array
+          description: |
+            **Standard on every document (D17), never a metered add-on.** This is
+            the single biggest competitive displacement lever — accountants leave
+            incumbents specifically because line items cost extra there.
+          items:
+            type: object
+            properties:
+              description: { $ref: '#/components/schemas/ExtractedField' }
+              quantity: { $ref: '#/components/schemas/ExtractedField' }
+              totalPence: { $ref: '#/components/schemas/ExtractedField', x-nt-money: true }
+              taxPence: { $ref: '#/components/schemas/ExtractedField', x-nt-money: true }
+        extractorKind:
+          type: string
+          description: Which implementation behind `DocumentExtractor` produced this.
+          examples: ['textract.analyze-expense', 'vision.workhorse', 'vision.judgment', 'manual']
+        ladderRung:
+          type: [string, 'null']
+          description: |
+            Which rung of the vision escalation ladder this came from — Textract,
+            then workhorse vision, then judgment vision, then human. Each rung
+            fires only below threshold, so the cheapest capable extractor always
+            goes first (D20/D28).
+        modelVersion:
+          type: [string, 'null']
+          description: Pinned model id. Recorded so any historical decision is reproducible (Governance §9.8).
+        promptVersion: { type: [string, 'null'] }
+        overallConfidence: { type: [number, 'null'], minimum: 0, maximum: 1 }
+        validatorResults:
+          type: [object, 'null']
+          additionalProperties: true
+          description: |
+            Deterministic validator output from `packages/validators` — VAT
+            arithmetic to ±1p, VRN checksum then the HMRC check-VAT-number API,
+            date plausibility with UK d/m/y disambiguation, currency agreement.
+            **A validator failure sends the document to To Review regardless of
+            model confidence.** Rules beat model opinions.
+        isAccepted:
+          type: boolean
+          description: At most one extraction per document is accepted; it is what the document's header projection is built from.
+        keyedByUserId:
+          type: [string, 'null']
+          description: |
+            Set when a human typed the data — the manual-entry bypass that stays
+            available while OCR runs. Such values are marked *keyed by [name]* in
+            the UI and carry `HUMAN_CONFIRMED` provenance.
+        createdAt: { type: string, format: date-time }
+
+    DocumentEvent:
+      type: object
+      description: One stage of the processing log.
+      required: [id, stage, outcome, createdAt]
+      properties:
+        id: { type: string }
+        stage:
+          type: string
+          examples: ['sanitise', 'split', 'classify', 'route', 'extract', 'validate', 'dedupe', 'match']
+        outcome: { type: string, examples: ['ok', 'failed', 'escalated', 'skipped'] }
+        durationMs: { type: [integer, 'null'] }
+        traceId: { type: [string, 'null'] }
+        detail:
+          type: [object, 'null']
+          additionalProperties: true
+          description: |
+            Stage-specific evidence — the model and prompt version used,
+            confidence, validator results, the routing decision. Redacted for
+            callers without admin rights.
+        createdAt: { type: string, format: date-time }
+
+    FileAccess:
+      type: object
+      required: [url, expiresAt, mimeType, byteSize]
+      properties:
+        url: { type: string, format: uri }
+        expiresAt:
+          type: string
+          format: date-time
+          description: Minutes away, not hours. Re-request rather than caching it.
+        mimeType: { type: string }
+        byteSize: { type: integer }
+        filename: { type: string }
+
+    # ---- upload -----------------------------------------------------------
+
+    DocumentUploadRequest:
+      type: object
+      required: [businessId, channel, filename, mimeType, byteSize]
+      properties:
+        businessId:
+          type: string
+          description: |
+            The client workspace this document belongs to. Required even for
+            channels that could infer it, because guessing at ingest time is what
+            produces the multi-entity misrouting this product exists to fix.
+        channel: { $ref: '#/components/schemas/DocumentChannel' }
+        filename: { type: string, maxLength: 255 }
+        mimeType:
+          type: string
+          description: |
+            Declared, and treated as a hint only. Magic-byte sniffing decides the
+            real type after the bytes land — extensions are never trusted
+            (Governance §11.4).
+        byteSize:
+          type: integer
+          minimum: 1
+          description: |
+            Checked against the channel cap here and again by the presigned
+            policy. Photos should be compressed client-side first, which is why
+            the 25 MB client cap is effectively never reached by a camera.
+        splitMode:
+          $ref: '#/components/schemas/SplitMode'
+          default: AUTO_SPLIT
+        description:
+          type: string
+          maxLength: 500
+          description: |
+            Free text from the submitter. Present on **web upload too** — the
+            160-vote mobile-parity gap. Untrusted content: wrapped before any
+            model sees it.
+        documentOwnerContactId:
+          type: [string, 'null']
+          description: Who this document belongs to, when it is not the uploader.
+
+    DocumentUpload:
+      type: object
+      required: [uploadId, upload, expiresAt]
+      properties:
+        uploadId: { type: string }
+        upload:
+          type: object
+          required: [method, url, headers]
+          properties:
+            method: { type: string, enum: [PUT] }
+            url: { type: string, format: uri }
+            headers:
+              type: object
+              additionalProperties: { type: string }
+              description: Send these verbatim with the PUT. The presigned signature covers them.
+        expiresAt:
+          type: string
+          format: date-time
+          description: After this the intent is dead and `NT-ING-005` is returned on completion.
+        maxBytes:
+          type: integer
+          description: The cap the storage policy will enforce independently of the API.
+
+    # ---- action proposals -------------------------------------------------
+
+    ProposalKind:
+      type: string
+      description: |
+        The action-kind registry **for this surface**. It is an allow-list, not a
+        suggestion: a chat context physically lacks tools outside its registered
+        kinds (Governance §9.5), and an unknown kind is rejected with
+        `NT-PRP-001`.
+
+        Later surfaces add `chase.send`, `publish.execute`, `rule.activate`,
+        `policy.activate` and `setting.change`.
+
+        **Open question for Shakib — deliberately not decided here.** The OTP
+        portal's editable-overlay correction (SoT Stage 8.4) is a client fixing a
+        misread number on their own just-uploaded receipt, in a car park, before
+        the document has ever been reviewed. Putting Read review → Approve in
+        front of that would be the wrong reading of §8.2, which governs the
+        accountant workspace. But it touches the Review → Approve enforcement
+        path, which is a stop-and-ask item, so this contract does not settle it —
+        it lands with the portal surface in pass 3.
+      enum:
+        - document.route          # assign an unrouted document, optionally teaching the router
+        - document.update-coding  # confirm or change supplier, category, totals, VAT treatment
+        - document.move-business  # move between entities, with the addressee-mismatch warning
+        - document.reprocess      # retry a failed extraction or ingest
+        - document.reject         # reject with a visible reason
+        - document.split          # re-split a batch by page range
+        - document.archive        # archive or unarchive
+
+    CreateActionProposalRequest:
+      description: |
+        A discriminated union on `kind`. The discriminator sits on the union
+        itself — not on a wrapper — so the generated client narrows `payload` from
+        `kind` alone, and an unknown `kind` fails at the boundary rather than
+        reaching a handler that has to guess.
+      oneOf:
+        - $ref: '#/components/schemas/RouteProposalRequest'
+        - $ref: '#/components/schemas/UpdateCodingProposalRequest'
+        - $ref: '#/components/schemas/MoveBusinessProposalRequest'
+        - $ref: '#/components/schemas/ReprocessProposalRequest'
+        - $ref: '#/components/schemas/RejectProposalRequest'
+        - $ref: '#/components/schemas/SplitProposalRequest'
+        - $ref: '#/components/schemas/ArchiveProposalRequest'
+      discriminator:
+        propertyName: kind
+        mapping:
+          document.route: '#/components/schemas/RouteProposalRequest'
+          document.update-coding: '#/components/schemas/UpdateCodingProposalRequest'
+          document.move-business: '#/components/schemas/MoveBusinessProposalRequest'
+          document.reprocess: '#/components/schemas/ReprocessProposalRequest'
+          document.reject: '#/components/schemas/RejectProposalRequest'
+          document.split: '#/components/schemas/SplitProposalRequest'
+          document.archive: '#/components/schemas/ArchiveProposalRequest'
+
+    ProposalRequestBase:
+      type: object
+      properties:
+        businessId:
+          type: [string, 'null']
+          description: The workspace the action applies to. Null only for practice-level actions.
+
+    RouteProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: document.route }
+            payload: { $ref: '#/components/schemas/RoutePayload' }
+
+    UpdateCodingProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: document.update-coding }
+            payload: { $ref: '#/components/schemas/UpdateCodingPayload' }
+
+    MoveBusinessProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: document.move-business }
+            payload: { $ref: '#/components/schemas/MoveBusinessPayload' }
+
+    ReprocessProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: document.reprocess }
+            payload: { $ref: '#/components/schemas/ReprocessPayload' }
+
+    RejectProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: document.reject }
+            payload: { $ref: '#/components/schemas/RejectPayload' }
+
+    SplitProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: document.split }
+            payload: { $ref: '#/components/schemas/SplitPayload' }
+
+    ArchiveProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: document.archive }
+            payload: { $ref: '#/components/schemas/ArchivePayload' }
+
+    RoutePayload:
+      type: object
+      required: [documentId, inbox]
+      properties:
+        documentId: { type: string }
+        inbox: { $ref: '#/components/schemas/Inbox' }
+        toBusinessId:
+          type: [string, 'null']
+          description: Set when assigning an Unrouted document to a workspace.
+        teachRouterForSender:
+          type: boolean
+          default: false
+          description: |
+            "Always route this sender to American Burger." Creates the routing
+            rule as part of the same approved action, so teaching the router is
+            never a separate forgotten step.
+
+    UpdateCodingPayload:
+      type: object
+      description: |
+        Confirming a document's coding is explicitly named in SoT §8.2 as a
+        state change, which is why it is here and not a `PATCH`.
+      required: [documentId, fields]
+      properties:
+        documentId: { type: string }
+        fields:
+          type: object
+          properties:
+            docType: { $ref: '#/components/schemas/DocumentType' }
+            supplierName: { type: string }
+            customerName: { type: string }
+            documentDate: { type: string, format: date }
+            dueDate: { type: string, format: date }
+            currency: { type: string, pattern: '^[A-Z]{3}$' }
+            totalPence: { type: integer, x-nt-money: true }
+            taxPence: { type: integer, x-nt-money: true }
+            reference: { type: string }
+            categoryCode: { type: string }
+            description: { type: string }
+            projectRef: { type: string }
+        createRuleFromCorrection:
+          type: boolean
+          default: false
+          description: |
+            One-tap rule creation from a correction — "apply this to future
+            Google Ads items?" (SoT Stage 3). The rule is created under this same
+            approval; it never activates from an unapproved correction.
+
+    MoveBusinessPayload:
+      type: object
+      required: [documentId, toBusinessId]
+      properties:
+        documentId: { type: string }
+        toBusinessId: { type: string }
+        acknowledgedAddresseeMismatch:
+          type: boolean
+          default: false
+          description: |
+            The review surfaces "Invoice says AMERICAN BURGER LTD; current
+            workspace is COSMO RESTAURANTS LTD" when the addressee disagrees with
+            the destination (73-vote multi-entity misrouting gap). Approving
+            without this flag set is refused when a mismatch was detected — the
+            warning has to be answered, not scrolled past.
+
+    ReprocessPayload:
+      type: object
+      required: [documentIds]
+      properties:
+        documentIds:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items: { type: string }
+          description: |
+            Bulk retry from the Rejected/Failed view. Batched deliberately: the
+            review card for "retry 43 extractions" is more useful than 43
+            separate approvals.
+        fromStage:
+          type: [string, 'null']
+          description: Re-run from this stage onward. Null re-runs the whole pipeline.
+
+    RejectPayload:
+      type: object
+      required: [documentIds, reason]
+      properties:
+        documentIds:
+          type: array
+          minItems: 1
+          items: { type: string }
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Surfaced verbatim in the Rejected view. A rejection without a reason is not a rejection.
+
+    SplitPayload:
+      type: object
+      required: [documentId, pageRanges]
+      properties:
+        documentId: { type: string }
+        pageRanges:
+          type: array
+          minItems: 1
+          items: { type: string, pattern: '^[0-9]+(-[0-9]+)?$' }
+          examples: [['1-3', '4', '5-9']]
+
+    ArchivePayload:
+      type: object
+      required: [documentIds, archived]
+      properties:
+        documentIds:
+          type: array
+          minItems: 1
+          items: { type: string }
+        archived: { type: boolean }
+        clearPublishingData:
+          type: boolean
+          default: false
+          description: |
+            Unarchiving a published item asks whether to clear its publishing
+            data, because that decides whether it can be republished (SoT
+            Stage 11).
+
+    ActionProposal:
+      type: object
+      required: [id, kind, state, payloadHash, createdAt, expiresAt]
+      properties:
+        id: { type: string }
+        businessId: { type: [string, 'null'] }
+        kind: { $ref: '#/components/schemas/ProposalKind' }
+        state: { $ref: '#/components/schemas/ProposalState' }
+        payload:
+          type: object
+          additionalProperties: true
+          description: What was proposed, as submitted.
+        payloadHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+          description: SHA-256 over the canonical payload. Written to the audit event on approval.
+        renderedSummaryHash:
+          type: [string, 'null']
+          description: Null until the review has been opened.
+        createdByUserId: { type: [string, 'null'] }
+        createdByModel:
+          type: [string, 'null']
+          description: |
+            Set when a model proposed this. A model may create a proposal and
+            may never approve one — the two fields are never both a model.
+        createdAt: { type: string, format: date-time }
+        reviewedAt:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            Set by the review endpoint alone. While this is null the server
+            refuses approval, whatever the UI shows.
+        approvedByUserId: { type: [string, 'null'] }
+        approvedAt: { type: [string, 'null'], format: date-time }
+        executedAt: { type: [string, 'null'], format: date-time }
+        expiresAt: { type: string, format: date-time }
+        policyProposalId:
+          type: [string, 'null']
+          description: |
+            Set on automated executions, naming the standing policy they ran
+            under. A standing automation runs without a per-item proposal only
+            because the policy itself was approved through this same contract
+            (Governance §10.5).
+        outcome:
+          type: [object, 'null']
+          additionalProperties: true
+          description: What actually changed. Populated on execution.
+        traceId: { type: [string, 'null'] }
+
+    ProposalReview:
+      type: object
+      description: |
+        The expansion behind [Read review]: every field a rule will set, the full
+        text of every SMS about to be sent, the itemised list behind a bulk
+        publish. Nothing summarised away — the point of the pattern is that the
+        human has seen what they are approving.
+      required: [proposal, renderedSummary, renderedSummaryHash, reviewedAt]
+      properties:
+        proposal: { $ref: '#/components/schemas/ActionProposal' }
+        renderedSummary:
+          type: object
+          description: |
+            The review card content. Typed loosely here on purpose: the precise
+            shape is the Review → Approve primitive in
+            `packages/component-grammar`, the next Sprint-0 contract, and
+            duplicating it here would create two sources of truth for the same
+            thing. This contract owns the transport and the hash; the grammar
+            owns the shape.
+          required: [title, sections]
+          properties:
+            title:
+              type: string
+              description: What the action is and its scope — "Publish 43 bills to Xero — gross £84,925, VAT £10,402".
+            sections:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            warnings:
+              type: array
+              description: |
+                Anything the human must answer rather than scroll past — an
+                addressee mismatch, a rule that overlaps an existing one, a
+                recipient with no verified mobile.
+              items:
+                type: object
+                required: [code, message]
+                properties:
+                  code: { type: string }
+                  message: { type: string }
+                  requiresAcknowledgement: { type: boolean, default: false }
+        renderedSummaryHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+          description: |
+            SHA-256 of exactly what was rendered above. Echo it back to approve.
+            This pair — payload hash and rendered-summary hash — is what makes
+            "what was approved is what was shown" provable rather than asserted.
+        reviewedAt: { type: string, format: date-time }
