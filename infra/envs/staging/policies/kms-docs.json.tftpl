@@ -1,0 +1,55 @@
+{
+  "Version": "2012-10-17",
+  "Id": "nt-staging-key-policy",
+  "Statement": [
+    {
+      "Sid": "AllowKeyAdministration",
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::${account_id}:root" },
+      "Action": [
+        "kms:Create*", "kms:Describe*", "kms:Enable*", "kms:List*", "kms:Put*",
+        "kms:Update*", "kms:Revoke*", "kms:Disable*", "kms:Get*", "kms:Delete*",
+        "kms:TagResource", "kms:UntagResource", "kms:ScheduleKeyDeletion",
+        "kms:CancelKeyDeletion", "kms:CreateGrant", "kms:RetireGrant"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowNeotingPrincipalsToUseKey",
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::${account_id}:root" },
+      "Action": [
+        "kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*",
+        "kms:GenerateDataKey*", "kms:DescribeKey"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::${account_id}:role/nt-*",
+            "arn:aws:iam::${account_id}:user/Mubashir"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "DenyCryptoUseByEveryoneElse",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": [
+        "kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::${account_id}:role/nt-*",
+            "arn:aws:iam::${account_id}:user/Mubashir",
+            "arn:aws:iam::${account_id}:root"
+          ]
+        },
+        "BoolIfExists": { "aws:PrincipalIsAWSService": "false" }
+      }
+    }
+  ]
+}

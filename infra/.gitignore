@@ -1,0 +1,20 @@
+# Terraform working directories and plugin cache
+.terraform/
+.terraform.tfstate.lock.info
+
+# State must never be committed — it lives in S3 and can contain secrets
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Local variable files that may carry credentials or environment specifics
+*.tfvars
+*.tfvars.json
+!example.tfvars
+
+# Plan output is a binary artefact, not source
+*.tfplan
+
+# The dependency lock file IS committed on purpose — do not ignore it:
+# .terraform.lock.hcl
