@@ -1,10 +1,11 @@
 # NEOTING — Engineering Governance
 
-**Version 1.2 · 11 August 2026 · Confidential**
+**Version 1.3 · 13 August 2026 · Confidential**
 *Changelog v1.0 → v1.1: model config rewritten Opus-led with task→effort map (D21); Bedrock/Transcribe/Textract routes (D20/D22); infra concretised — ECS Fargate, ElastiCache, CloudFront + WAF, Managed Grafana/Prometheus, Sentry EU (D23/D24); cost guardrail £0.02 → £0.05/document; explicit no-fine-tuning clause (D19).*
 *Changelog v1.1 → v1.2: three-tier model config with task→(model, effort) map and degradation chain (D28); pipeline guardrail restored to £0.02/document; per-class tier flags.*
+*Changelog v1.2 → v1.3: kickoff-review feedback (11–12 Aug) folded in — §12.1 UK-first residency made explicit with the named-fallback rule (D30) and no-ticket offboarding incl. trial end (D32); new §13.5 cost & usage telemetry for every metered vendor (D33); §13.2 alert list and §13.3 SLA linkage extended accordingly.*
 
-Companion to **NEOTING-Source-of-Truth-v1.2.md**. Together these two files are the **only source of truth**. This file governs *how the product is built and operated*: architecture rules, security enforcement, AI runtime rules, compliance operations, testing, and process — for every engineer and every AI coding agent working in the repository.
+Companion to **NEOTING-Source-of-Truth-v1.3.md**. Together these two files are the **only source of truth**. This file governs *how the product is built and operated*: architecture rules, security enforcement, AI runtime rules, compliance operations, testing, and process — for every engineer and every AI coding agent working in the repository.
 
 **Conflict rule:** the Source of Truth wins on product scope and requirements; this file wins on engineering rules, security enforcement, and process. Where a rule here can be enforced by ESLint, CI, or a pre-commit hook, it lives there too — the tooling is the rule's teeth, this file is its record.
 
@@ -271,6 +272,7 @@ export const TASKS = {
 - Per-firm daily token budgets in Redis (`nt:{practiceId}:_:ai:budget:{date}`): warn at 80%, hard-stop at 100% with a clear user-facing message.
 - Every model call logs: `traceId`, workspace, use case, model ID, input/output tokens, computed cost, latency, cache-hit status. Dashboards aggregate cost per firm/feature/day; alerts fire at > 3× the 7-day baseline. Blended **pipeline** target **< £0.02 per document** (three-tier config, D28), alerted; **chat-workspace spend is governed by the per-firm daily budgets above, not the per-document target**; prompt caching on stable prefixes is mandatory, and per-supplier deterministic rules must run before any model call.
 - Prompt caching wherever prompts share stable prefixes; hit-rate is a tracked metric.
+- AI is one lane of the platform-wide third-party cost telemetry (§13.5, D33) — the same budget-and-alert discipline covers every metered vendor.
 
 ### 9.8 Prompts, versioning & evals
 
@@ -361,8 +363,8 @@ TLS 1.3 in transit; AES-256 at rest (DB, backups, S3, Redis where supported). Se
 - **ICO registration and a DPIA before any real customer data** (bulk financial documents are high-risk processing). DPIA is a living document.
 - Published **subprocessor register** including every model provider; DPAs in place before traffic; **customer data is never used for model training** — contractual with providers and stated in our own terms; zero-retention options enabled where offered.
 - **Data-subject rights tooling in v1:** self-serve machine-readable export (≤ 30 days) and erasure. Erasure cascades: relational data deleted, caches invalidated, pseudonym key destroyed (audit trail goes anonymous), backups age out on schedule — with a **legal-hold override** for statutory financial records.
-- Breach runbook with the **ICO 72-hour notification path pre-written**. UK data residency end to end: all storage and processing in eu-west-2 (Textract, Bedrock, Transcribe, RDS, S3); the sole permitted exception is SES inbound receiving in eu-west-1 if eu-west-2 receiving is unavailable at W0 verification — EU, within the UK/EU rule, with the receipt bucket in eu-west-2.
-- **Whole-firm export** (all documents + data, zipped, with an index manifest) available on demand — offboarding is never hostage-taking.
+- Breach runbook with the **ICO 72-hour notification path pre-written**. **UK-first data residency end to end (D30):** all storage and processing in eu-west-2, London (Textract, Bedrock, Transcribe, RDS, S3). The UK is not the EU and is regulated in its own right (UK GDPR / ICO) — EU regions are acceptable fallbacks, never defaults, and only where no UK option exists. The two named exceptions: SES inbound receiving in eu-west-1 if eu-west-2 receiving is unavailable at W0 verification (receipt bucket stays eu-west-2), and the §17 cross-region backup target (the UK has a single AWS region, so the DR second region is EU by necessity). Adding any other non-UK processing location is a versioned amendment to this file, not a config change.
+- **Whole-firm export** (all documents + data, zipped, with an index manifest) available on demand — **self-serve and in-product, never gated on a support ticket (D32)**. The same export + erasure path is surfaced at trial end and throughout the 90-day post-termination window (§12.2) before purge; offboarding is never hostage-taking.
 
 ### 12.2 Retention schedule (enforced by scheduled jobs, not policy documents)
 
@@ -410,11 +412,13 @@ TLS 1.3 in transit; AES-256 at rest (DB, backups, S3, Redis where supported). Se
 
 ### 13.2 Alerts (page on-call, not a dead channel)
 
-Error rate > 2% over 5 min · p95 > 1 s over 10 min (non-LLM) · extraction p95 > 5 min over 30 min · queue age > 5 min · DLQ non-empty > 4 h · firm token-spend anomaly (> 3× baseline) · SMS delivery failure spike · integration token expiring unhandled · failed backup.
+Error rate > 2% over 5 min · p95 > 1 s over 10 min (non-LLM) · extraction p95 > 5 min over 30 min · queue age > 5 min · DLQ non-empty > 4 h · firm token-spend anomaly (> 3× baseline) · any metered vendor's usage/spend anomaly (> 3× 7-day baseline) or budget threshold crossed (§13.5) · SMS delivery failure spike · integration token expiring unhandled · failed backup.
 
 ### 13.3 SLOs (error budgets gate risk: budget exhausted → feature freeze, reliability work only)
 
 Availability 99.9% monthly · API p95 < 500 ms (non-LLM) · chat first-token < 2 s p95 · **extraction p95 < 5 min for digital PDFs** · job start latency < 30 s p95.
+
+The customer-facing SLA (Source of Truth §18, D31) is always set at or below these internal SLOs — nothing is promised externally that isn't alerted on internally; pilot response targets and the GA availability commitment derive from this table and never exceed it.
 
 ### 13.4 Error taxonomy & debugging
 
@@ -423,6 +427,16 @@ Availability 99.9% monthly · API p95 < 500 ms (non-LLM) · chat first-token < 2
 - `pnpm repro --trace <id>` pulls the sanitised event chain into local fixtures; seeded time (`TZ=Europe/London`, frozen-clock helper) makes date-boundary bugs reproducible.
 - Third-party health page per integration (last success, error rates, token-expiry countdowns); **nightly sandbox-parity tests** catch provider API drift before customers do; outbound calls logged sanitised for 30 days.
 - Escalation: L1 resolves by error code + runbook; L2 uses Journey Inspector + Grafana; L3 reproduces under a debugger. Every incident ends by adding a test, a runbook line, or both.
+
+### 13.5 Cost & usage telemetry — every metered vendor (D33)
+
+A surprising bill is an alerting failure, not a billing surprise. §9.7 governs AI spend; this section generalises the same discipline to **every** metered third party:
+
+- **One surface:** per-service Grafana dashboards (usage + computed spend, daily and month-to-date) for Bedrock, Textract, Transcribe, Twilio (SMS + Verify), SES, TrueLayer, and the AWS accounts themselves — attributed per firm wherever the meter allows (AI tokens and SMS already are).
+- **Budgets everywhere:** AWS Budgets at organisation and per-account level (dev / staging / prod), alerting at 50 / 80 / 100%; a per-service monthly budget envelope in config for each external vendor — warn at 80%, page at 100%. Envelope values are reviewed with pilot data.
+- **Anomaly alerts:** usage > 3× the 7-day baseline pages for any metered dimension — SMS count, Textract pages, Transcribe minutes, SES sends, TrueLayer calls — the same rule as AI token spend (§9.7).
+- **Go-live gate:** no paid service is enabled without its budget line, usage metric, and alert wired — checked in the go-live review alongside the DPA (§12.1). Provider-side spend triggers (e.g. Twilio's) are enabled as belt-and-braces wherever offered.
+- **Bootstrap corollary (Guideline G1):** the same principle at zero cost — free-tier meters (GitHub Actions minutes, Vercel build minutes, Neon/Upstash quotas) get a named owner and a weekly glance at the Friday demo until Infra Week replaces them with the real dashboards.
 
 ---
 
@@ -489,4 +503,4 @@ PostgreSQL: PITR (35 days) + nightly logical backups to a second EU region, encr
 - The source-of-truth pair, module `CLAUDE.md` files, and runbooks are **living documents**: any PR that changes a convention updates the doc in the same PR. Significant design decisions get a one-page ADR in `docs/adr/`.
 - Amendments to either source-of-truth file are versioned (v1.0 → v1.1 …) with a dated changelog entry; the decision log in the Source of Truth records every locked decision and its date.
 
-*— End of Engineering Governance v1.0 —*
+*— End of Engineering Governance v1.3 —*

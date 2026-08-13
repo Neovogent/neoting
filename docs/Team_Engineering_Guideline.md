@@ -1,13 +1,14 @@
 # NEOTING — Team Engineering Guideline
 
-**Version 1.0 · 11 August 2026 · Confidential**
-The working handbook for the four of us. It sits **under** the Engineering Governance (v1.2) — governance is the law of the codebase, this is the law of the team and of the **bootstrap phase**. Where governance describes the funded target state (ECS, Terraform, full CI), this document says what we do *right now*, with free and disposable tools, so nothing blocks while approvals and spend are pending. Every rule here is written so that **app code runs unchanged when the real infrastructure arrives** — that is the test of whether we did bootstrap right.
+**Version 1.1 · 13 August 2026 · Confidential**
+*Changelog v1.0 → v1.1: kickoff-review feedback (11–12 Aug) folded in — G9 reserve review & merge authority (Mubashir, Shadman) with CODEOWNERS updated; G10 preview protection mandatory (§7.2, new R16); thin CI skips draft PRs (§8.7); companion references bumped (Governance v1.3, SoT v1.3).*
+The working handbook for the four of us — plus two named G9 reserves. It sits **under** the Engineering Governance (v1.3) — governance is the law of the codebase, this is the law of the team and of the **bootstrap phase**. Where governance describes the funded target state (ECS, Terraform, full CI), this document says what we do *right now*, with free and disposable tools, so nothing blocks while approvals and spend are pending. Every rule here is written so that **app code runs unchanged when the real infrastructure arrives** — that is the test of whether we did bootstrap right.
 
-This file lives at `docs/NEOTING-Team-Engineering-Guideline-v1.0.md`. Changing it is a PR reviewed by Shakib. New joiner? Read this first, then Governance §1.
+This file lives at `docs/NEOTING-Team-Engineering-Guideline-v1.1.md`. Changing it is a PR reviewed by Shakib. New joiner? Read this first, then Governance §1.
 
 ---
 
-## 0. Bootstrap-phase decisions (G-log — folded into the Source-of-Truth decision log at its next bump)
+## 0. Bootstrap-phase decisions (G-log — ratified into the Source-of-Truth decision log by reference: SoT v1.3, D29)
 
 | # | Decision |
 |---|---|
@@ -19,6 +20,8 @@ This file lives at `docs/NEOTING-Team-Engineering-Guideline-v1.0.md`. Changing i
 | G6 | **Vercel is a viewing tool, not hosting.** Preview deployments per PR + one standing dev URL from `main`. Production hosting remains D23 (ECS, eu-west-2) — unchanged. Vercel gets deleted or demoted the day the real target is live, and nobody will miss it. |
 | G7 | **Contracts are law even in bootstrap.** `packages/contracts`, `component-grammar`, `tokens`, `validators`, and `prisma/` change only via a contract-change issue approved by Shakib before the PR is opened. |
 | G8 | **Infra Week trigger:** legal entity + AWS spend approved → Shakib executes Governance §14 + Terraform within one week. The deferral list in §8.5 flips off. App code must not change — if it has to, we broke G1. |
+| G9 | **Reserve review & merge authority (no single point of failure).** If a default reviewer (G5) is unavailable > 24 working hours — OOO, sick, unreachable — finals fall to the named reserves: **frontend → Mubashir, then Shadman; backend → Mubashir, with the Claude review bot on the PR as assist**. The bot's review is *evidence, never the approval*: merge requires all checks green + a clean Claude review + the reserve's explicit human approval, and the approver owns every line merged (§1 rule, unchanged). **G7 LAW paths (contracts, grammar, tokens, validators, prisma, infra) freeze until Shakib returns**, unless he pre-delegated in writing. Shakib retro-reviews everything merged under G9 within 48 h of return. Reserves are listed in CODEOWNERS so branch protection enforces this, and they hold standing GitHub + Vercel access from day one — access granted during an emergency is not an emergency plan. |
+| G10 | **Preview deployments are protected, always.** Vercel Deployment Protection (Vercel Authentication) is enabled before the first preview ships; every preview URL requires login. "Unguessable" is not protection — a leaked preview URL stays publicly reachable and indexable. An unprotected preview is treated like a leaked credential (take it down immediately) and is an instant reject (R16). If a plan tier ever puts protection behind a paywall: pay, or the surface dies — never run open. |
 
 ---
 
@@ -30,15 +33,20 @@ This file lives at `docs/NEOTING-Team-Engineering-Guideline-v1.0.md`. Changing i
 | **Abdullah** | Backend engineer | Assigned `apps/api` modules **end-to-end** (code + tests + the module's `CLAUDE.md`); assignments live on the project board | Shakib |
 | **Shamim** | Frontend lead — owns `apps/web` architecture, splits work to Moyen | `apps/web` · `packages/ui` · component-grammar **render side** · tokens consumption | Moyen (code) / Shakib (contracts, architecture) |
 | **Moyen** | Frontend engineer | Tasks assigned by Shamim inside `apps/web` + `packages/ui` | Shamim |
+| **Mubashir** | Reserve reviewer (G9) — first reserve, frontend and backend finals | — (activates only under G9) | — |
+| **Shadman** | Reserve reviewer (G9) — second reserve, frontend | — (activates only under G9) | — |
 
 `.github/CODEOWNERS` (enforced by branch protection):
 
 ```
-/apps/web/                 @shamim
-/packages/ui/              @shamim
-/apps/api/                 @shakib
+# Reserves (G9): listed so branch protection accepts their review when the
+# default reviewer is away; G9 governs when they may use it. LAW paths stay
+# Shakib-only — they freeze under G9.
+/apps/web/                 @shamim @mubashir @shadman
+/packages/ui/              @shamim @mubashir @shadman
+/apps/api/                 @shakib @mubashir
 /prisma/                   @shakib
-/services/extraction/      @shakib
+/services/extraction/      @shakib @mubashir
 /packages/contracts/       @shakib
 /packages/component-grammar/ @shakib @shamim
 /packages/tokens/          @shakib @shamim
@@ -117,7 +125,7 @@ One logical change per commit. Review-feedback commits can be scrappy (`fix revi
 5. All checks green **before** requesting review. Red checks = the PR doesn't exist yet.
 6. **UI PRs:** Vercel preview link (auto-commented) + phone screenshots, light **and** dark, all four states (empty / loading / error / success) where the change touches them.
 7. **API PRs:** test evidence — the new/changed tests, and for endpoints a request/response sample.
-8. Mark ready → request your chain reviewer (§1). **Review SLA: 24 working hours.** Blocked longer → tag Shakib.
+8. Mark ready → request your chain reviewer (§1). **Review SLA: 24 working hours.** Blocked longer → tag Shakib (or the G9 reserve when Shakib is the one away).
 9. Address comments with new commits, re-request. Approved → **author squash-merges**, deletes the branch.
 
 `.github/pull_request_template.md`:
@@ -169,6 +177,7 @@ This is the shared review standard. Shamim applies it to Moyen, Shakib applies i
 | R13 | New dependency without the justification block (purpose, license, maintenance, size) | Governance §19. |
 | R14 | UI PR without preview link + screenshots | "Trust me it looks fine" is not evidence. |
 | R15 | Changed logic without changed tests | Untested logic is unowned logic. |
+| R16 | Preview deployment without Deployment Protection enabled | G10. An open preview URL is a leak, not a demo. |
 
 **Will approve when** (the DoD, per side — details in §7.6 / §8.6): checks green · tests present · contracts respected · evidence attached · size sane · module `CLAUDE.md` / i18n obligations met · description honest about anything unfinished (an honest `# BOOTSTRAP` shim with an issue link is fine; a hidden one is an R-condition next time it's found).
 
@@ -186,7 +195,7 @@ One-time setup (Shamim, ~20 minutes):
 1. Vercel account (Hobby, free) → **Import** the GitHub repo → **Root Directory: `apps/web`** → framework auto-detects Next.js, pnpm auto-detects from the lockfile.
 2. **Ignored Build Step:** `npx turbo-ignore` — previews only rebuild when `apps/web` or its dependencies actually changed. Saves the free-tier build minutes.
 3. Environment variables (Preview + Development): `NEXT_PUBLIC_API_MODE=mock`. **Nothing secret ever goes into Vercel** — the frontend needs no secrets, and that's by design.
-4. Enable **Deployment Protection (Vercel Authentication)** so preview URLs require a Vercel login; add the four of us. If the plan tier blocks it: URLs stay unguessable and everything on them is synthetic anyway (G2) — acceptable for bootstrap, revisit at upgrade.
+4. Enable **Deployment Protection (Vercel Authentication)** so every preview URL requires a Vercel login — **mandatory before the first preview ships (G10, R16)**; add the four of us plus the G9 reserves. "Unguessable" is not protection: a leaked preview URL stays publicly reachable and indexable. If any plan change ever puts protection behind a paywall, we pay for the tier or the surface dies — an unprotected preview never ships.
 5. Done. Every PR now auto-comments its preview URL; `main` maintains one standing dev URL for Friday demos.
 
 Rules of the surface: it renders **synthetic data only** (G2); it is **not** the product and never gets a real domain — production hosting is D23 (ECS) and does not change; reviewers open previews **on a real phone** (the Moto-G-class device from kickoff 5.1 lives on Shamim's desk). Honest ToS note: Vercel's Hobby tier is for non-commercial use — fine for private throwaway previews now; the moment anything customer-facing or demo-to-prospects happens on it, we either pay for Pro or it's already Infra Week and the point is moot. Shamim flags it, Shakib decides.
@@ -246,10 +255,13 @@ Checks green · Zod on every new boundary · queries through `scopedDb` · money
 
 ```yaml
 name: check
-on: pull_request
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 concurrency: { group: ${{ github.ref }}, cancel-in-progress: true }
 jobs:
   check:
+    if: ${{ !github.event.pull_request.draft }}   # drafts don't burn free-tier minutes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -261,6 +273,8 @@ jobs:
       - run: pnpm lint        # includes commitlint on the PR title
       - run: pnpm test        # unit only during bootstrap
 ```
+
+Draft PRs skip CI by design — §3 says draft-from-first-push, and running the suite on every WIP push would burn the Actions free tier for nothing. Run `pnpm typecheck && pnpm lint && pnpm test` locally while drafting; the full check fires automatically the moment you mark ready (`ready_for_review`), and concurrency-cancel means rapid pushes to a ready PR only ever run the latest.
 
 Branch protection on `main`: require the `check` status · require one code-owner review · no direct pushes · no force pushes · linear history (squash only).
 
@@ -283,12 +297,13 @@ COMMIT   type(scope): imperative ≤72     feat(chase): group SMS per client
 PR       draft early · <400 lines · self-review · checks green · evidence attached
 TITLE    must be a valid conventional commit (squash takes it)
 REVIEW   Moyen→Shamim · Abdullah→Shakib · Shamim→Moyen/Shakib · Shakib→Abdullah
+         away >24h → G9 reserves: Mubashir (FE+BE) · Shadman (FE) · LAW paths freeze
 MERGE    author squash-merges after approval · delete branch
 NEVER    push to main · force-push after review · float money · unscoped query ·
          secrets in diff · hex colours · hardcoded strings · bypass ActionProposal ·
-         real data on anything disposable
+         real data on anything disposable · unprotected preview
 ALWAYS   issue first · synthetic data · sandbox keys · tokens · Zod · pence ·
          # BOOTSTRAP tag + issue on any shim
 ```
 
-*— End of Team Engineering Guideline v1.0 —*
+*— End of Team Engineering Guideline v1.1 —*

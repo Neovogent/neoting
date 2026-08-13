@@ -1,9 +1,10 @@
 # NEOTING — Sprint 1 Execution Plan (7 Days)
 
-**Version 1.0 · 11 August 2026 · Confidential**
+**Version 1.1 · 13 August 2026 · Confidential**
+*Changelog v1.0 → v1.1: aligned to the 13 Aug doc bump (SoT v1.3 · Governance v1.3 · Guideline v1.1 · Kickoff v1.2). Kickoff-date fold recorded as D29; §13.3 mandates wired in — provenance-class language + context header into the S0 contracts pre-freeze, context header into F0, next-actions queue as T2 in F9, provenance check in QA charter 8; AWS Budgets added to S3 (D33); §2 reflects R16, the draft-CI skip, and G9 reserves on the sprint clock; the D1 gate asserts a protected preview. No dates, tiers, or owners change.*
 **Start: Thursday 13 August 2026, morning (BD time) · Sign-off: Wednesday 19 August 2026, 19:00 — sharp.**
 
-Subordinate to the source-of-truth pair (v1.2) and the Team Guideline (v1.0); it changes no locked decision. It **resolves SoT open decision #1** — kickoff = 13 Aug 2026 — to be folded into the decision log at the next version bump. The 14-week map to pilot still governs everything after Day 7; this sprint executes its front half at Claude-Code speed.
+Subordinate to the source-of-truth pair (v1.3) and the Team Guideline (v1.1); it changes no locked decision. It **resolved SoT open decision #1** — kickoff = 13 Aug 2026 — now folded into the decision log as **D29** (SoT v1.3). The 14-week map to pilot still governs everything after Day 7; this sprint executes its front half at Claude-Code speed.
 
 ## 0. The honest frame
 
@@ -16,7 +17,7 @@ Subordinate to the source-of-truth pair (v1.2) and the Team Guideline (v1.0); it
 
 ## 1. D0 — Wednesday 12 August (tomorrow): prerequisites or Day 1 slips
 
-| # | Item (from Kickoff Requirements v1.1) | Owner |
+| # | Item (from Kickoff Requirements v1.2) | Owner |
 |---|---|---|
 | P1 | Spend + accounts approved: AWS org (eu-west-2) created, **Bedrock model-access requests fired** (Opus 4.8 / Sonnet 4.6 / Haiku 4.5 — verification 8.1) | Shakib |
 | P2 | GitHub Team org + repo + branch protection + thin CI secrets | Shakib |
@@ -31,10 +32,10 @@ Subordinate to the source-of-truth pair (v1.2) and the Team Guideline (v1.0); it
 
 ## 2. Operating model for the week
 
-- **Claude Code + human, lanes model:** each human directs **2–3 agent lanes max**, one git worktree per module. The module `CLAUDE.md` is updated at **every** lane hand-off — it is how agents resume overnight and how humans stay oriented. Agents may run overnight **only** on lanes whose gates are green, and overnight output lands as **draft PRs** for morning review. You own every line you merge (Guideline §1).
-- **Sprint review SLA: 4 working hours** (not the normal 24). Two pair-review windows daily: 11:00 and 17:00.
+- **Claude Code + human, lanes model:** each human directs **2–3 agent lanes max**, one git worktree per module. The module `CLAUDE.md` is updated at **every** lane hand-off — it is how agents resume overnight and how humans stay oriented. Agents may run overnight **only** on lanes whose gates are green, and overnight output lands as **draft PRs** for morning review — drafts don't trigger CI by design (Guideline §8.7): agents run the suite locally, and the full check fires the moment a PR is marked ready. You own every line you merge (Guideline §1).
+- **Sprint review SLA: 4 working hours** (not the normal 24). Two pair-review windows daily: 11:00 and 17:00. If a chain reviewer is sick or unreachable for a full sprint day, the G9 reserves (Mubashir · Shadman) activate on this same 4-hour SLA; G7 LAW paths still freeze for Shakib.
 - **Two syncs, 15 minutes each:** 10:00 standup (done/doing/blocked) · **18:00 checkpoint** — the day's gate demos or the drop rule fires.
-- All Guideline rules hold (branches, commits, PR template, R1–R15). Speed changes the SLA, never the bar — R5–R7 (pence, `scopedDb`, ActionProposal) are precisely the things a 7-day sprint is tempted to skip and must not.
+- All Guideline rules hold (branches, commits, PR template, R1–R16). Speed changes the SLA, never the bar — R5–R7 (pence, `scopedDb`, ActionProposal) are precisely the things a 7-day sprint is tempted to skip and must not, and R16 means no preview ever ships unprotected.
 - **Freezes:** FE code-freeze on mocks — Day 5, 18:00 · feature freeze everywhere — Day 6, 18:00 · after that, fixes only.
 
 ## 3. Module inventory & tiers
@@ -43,10 +44,10 @@ Subordinate to the source-of-truth pair (v1.2) and the Team Guideline (v1.0); it
 
 | ID | Track | Contents | Tier | Days |
 |---|---|---|---|---|
-| S0 | **Base setup** | Repo scaffold (monorepo per Governance §1.2) · the four contracts (OpenAPI, schema+RLS, tokens, component grammar) + validator config · Docker Compose · seed dataset · thin CI + commitlint · **mock generation** (typed client + MSW from OpenAPI) · module skeletons for every NestJS module · PR/CODEOWNERS templates. **Contracts frozen 14:00.** | T1 | D1 |
+| S0 | **Base setup** | Repo scaffold (monorepo per Governance §1.2) · the four contracts (OpenAPI, schema+RLS, tokens, component grammar) + validator config · Docker Compose · seed dataset · thin CI + commitlint · **mock generation** (typed client + MSW from OpenAPI) · module skeletons for every NestJS module · PR/CODEOWNERS templates · **§13.3 into the contracts before the freeze:** tokens + component grammar carry the provenance-class language (human-confirmed · rule/validator · AI-suggested + confidence — visible by default) and the card trace-expansion affordance; the shell spec carries the persistent context header (user · role · client scope) — retrofitting these after 14:00 is a batched contract change, so they land now. **Contracts frozen 14:00.** | T1 | D1 |
 | S1 | **Auth-tenancy + the constitution** | Argon2 + sessions + TOTP scaffold · SMS-OTP sessions (Twilio Verify test) · RLS policies + `scopedDb` + GUC pattern · **ActionProposal engine (Review→Approve, Governance §10)** · audit service (hash-chained). Everything depends on this — it lands before anything integrates. | T1 | D1–2 |
 | S2 | **AI & prompting** | `models.ts` (three tiers + effort map, D28) · Bedrock client + Anthropic contingency switch · `DocumentExtractor`: Textract + **fixture mode** (lanes stay green if Bedrock access lags) + vision ladder rungs · prompts per task class (coding suggestion, addressee routing, rule parsing, chase composition, chase validation, chat) · grammar-emission service (model → schema-validated cards) · **mini eval harness + injection mini-corpus wired as a CI gate** · Transcribe glue (T2). | T1 (voice T2) | D2–5 |
-| S3 | **Infra & CI/CD** | Terraform: **one staging environment** — RDS, ElastiCache, ECS (api + workers), S3/KMS, SES, CloudFront + basic WAF, secrets · CI deploy job to staging · domain/TLS wiring. Production is a post-sprint re-apply of the same modules. | T1 | D2–4 |
+| S3 | **Infra & CI/CD** | Terraform: **one staging environment** — RDS, ElastiCache, ECS (api + workers), S3/KMS, SES, CloudFront + basic WAF, secrets · **AWS Budgets** (org + per-account, 50/80/100% alerts — D33; the full §13.5 per-vendor telemetry is Infra Week) · CI deploy job to staging · domain/TLS wiring. Production is a post-sprint re-apply of the same modules. | T1 | D2–4 |
 | S4 | **Integration** | D3 **canary**: wire ONE flow (upload → inbox) web↔staging to catch contract drift early · D5–6: auth wiring into web, `NEXT_PUBLIC_API_MODE` flip, screen-by-screen wiring checklist, env config, drift fixes. | T1 | D3 (canary), D5–6 |
 
 ### 3.2 Abdullah — backend logic & API exposing (the B-modules)
@@ -67,7 +68,7 @@ Subordinate to the source-of-truth pair (v1.2) and the Team Guideline (v1.0); it
 
 | ID | Module | Owner | Tier | Days |
 |---|---|---|---|---|
-| F0 | Shell: scaffold, tokens wiring, workspace layout (sidebar + chat frame), **Vercel import** (Guideline §7.2) | Shamim | T1 | D1 |
+| F0 | Shell: scaffold, tokens wiring, workspace layout (sidebar + chat frame + **persistent context header — §13.3**), **Vercel import with Deployment Protection on before the first preview** (Guideline §7.2, G10) | Shamim | T1 | D1 |
 | F1 | **Grammar renderer + Review→Approve card mechanics** ([Approve] unreachable pre-review — the product's heart) | Shamim | T1 | D1–2 |
 | F2 | Auth screens: workspace login + TOTP · portal OTP entry | Moyen | T1 | D2 |
 | F3 | Inboxes: Costs/Sales, three states, **Rejected/Failed view**, document preview + **editable extraction overlay** | Moyen (+Shamim on overlay) | T1 | D2–3 |
@@ -76,7 +77,7 @@ Subordinate to the source-of-truth pair (v1.2) and the Team Guideline (v1.0); it
 | F6 | Chase surfaces: composer review card, chases tab, dashboard counts · **OTP portal**: camera/file, client-side compression, editable overlay, mismatch feedback — lightest surface in the product | Shamim (portal) / Moyen (dashboard) | T1 | D3–4 |
 | F7 | Bank: transactions, match cards, statement-import wizard | Moyen | T1 | D4 |
 | F8 | Approvals UI · publish-preview cards · integration health | Moyen | T1/T2 | D4–5 |
-| F9 | Archive/search, vault, analytics, settings screens | Both | T2 | D5 |
+| F9 | Archive/search, vault, analytics, settings screens · workspace-home **next-actions queue** (§13.3) | Both | T2 | D5 |
 | F10 | Polish pass: states ×4 audit, a11y sweep (axe), motion numbers, i18n key sweep, budget check | Both | T1 | D5 |
 
 ---
@@ -87,7 +88,7 @@ Each day ends at the **18:00 checkpoint** — the gate demos, or the drop rule f
 
 | Day | Date | Shakib | Abdullah | Shamim | Moyen | 18:00 gate |
 |---|---|---|---|---|---|---|
-| **D1** | Thu 14:00 **contracts freeze** | S0 base (morning) → S1 auth/ActionProposal | B1 ingestion lanes | F0 shell + Vercel · F1 grammar | F1 support → F2 prep | Clone-to-running ≤10 min for all four · mocks generated · first grammar card renders on a Vercel preview |
+| **D1** | Thu 14:00 **contracts freeze** | S0 base (morning) → S1 auth/ActionProposal | B1 ingestion lanes | F0 shell + Vercel · F1 grammar | F1 support → F2 prep | Clone-to-running ≤10 min for all four · mocks generated · first grammar card renders on a **protected** Vercel preview (G10) |
 | **D2** | Fri | S1 finish · S3 Terraform starts · S2 prompts begin | B1 finish · B2 · B3 · B8 intake | F1 finish · F4 chat | F2 auth · F3 inboxes | **Local demo: upload → extract (fixture) → coded → inbox states**, incl. Rejected/Failed |
 | **D3** | Sat | S3 staging pieces · S2 Textract live (or fixture) · **S4 canary: upload→inbox wired web↔staging** | B4 banking · B5 chase starts | F4 · F6 portal | F3 finish · F5 clients | **Canary green on staging** · statement import → match locally · corpus ≥100 docs labelled |
 | **D4** | Sun | S3 done: **CI deploys to staging green** · S2 eval gate wired | B5 chase done · B6 · B7 Xero | F6 portal done | F5 · F7 bank · F8 | **Flagship local: detect → compose → R→A → SMS(test) → OTP portal upload → auto-close** · **Scope gate #1: red T2 parked** |
@@ -112,13 +113,13 @@ Each day ends at the **18:00 checkpoint** — the gate demos, or the drop rule f
 5. **Flagship:** chase composed → [Read review] shows every SMS verbatim → Approve → test SMS → OTP portal (wrong OTP ×5 lockout, forwarded-link delegated session) → upload → mismatch feedback → correct doc → **auto-close**.
 6. Approvals + publish: linear workflow → lock-on-approve → R→A publish preview totals → lands in Xero demo with attachment → per-item history says who/how.
 7. Adversarial: injection corpus documents through the full pipeline (100% inert) · tenancy probes (cross-practice, cross-client, portal-session overreach) all fail · Approve unreachable before Read-review (asserted in UI and API).
-8. Truth surfaces: Rejected/Failed shows every failure with reason + retry · exports match on-screen totals · audit trail names every actor for everything done in charters 1–7.
+8. Truth surfaces: Rejected/Failed shows every failure with reason + retry · exports match on-screen totals · audit trail names every actor for everything done in charters 1–7 · every AI-suggested value wears its provenance class + confidence by default (§13.3).
 
 **Severity bar:** Sev-A (breaks a T1 flow, tenancy, or Review→Approve) = fix before sign-off, no exceptions. Sev-B = logged with owner, post-sprint. **Sign-off = all eight charters pass + zero open Sev-A + the demo script runs clean twice.**
 
 ## 7. Parked at Day 7 (owners + clocks — the 14-week map resumes here)
 
-Live WhatsApp (Meta verification — Shakib watching) · real SMS sender (Twilio registration — auto-swaps from test creds) · TrueLayer sandbox-if-slipped + production (Abdullah) · QBO adapter (Abdullah, next) · voice full wiring if T2-parked (Shakib) · full analytics/vault/team-tasks if T2-parked · pHash/cross-type dedupe if parked · load tests, pen test (booked per kickoff 5.2), Cyber Essentials, pilot onboarding · production Terraform re-apply (Shakib). Nothing on this list is forgotten — it's all already in the Kickoff Requirements with owners.
+Live WhatsApp (Meta verification — Shakib watching) · real SMS sender (Twilio registration — auto-swaps from test creds) · TrueLayer sandbox-if-slipped + production (Abdullah) · QBO adapter (Abdullah, next) · voice full wiring if T2-parked (Shakib) · full analytics/vault/team-tasks if T2-parked · pHash/cross-type dedupe if parked · load tests, pen test (booked per kickoff 5.2), Cyber Essentials, pilot onboarding · production Terraform re-apply (Shakib) · full D33 cost/usage telemetry — per-vendor dashboards + budget envelopes (Shakib, Infra Week, governance §13.5) · next-actions queue if T2-parked (Shamim). Nothing on this list is forgotten — it's all already in the Kickoff Requirements with owners.
 
 ## 8. The five sprint-killers, and the kill-switch for each
 
@@ -136,4 +137,4 @@ One take, no cuts: create a client (CH pre-fill) → onboard them by OTP on a re
 
 That is what "sharp 7 days" buys. Sleep on Day 7 night; the clocks in §7 keep running without us.
 
-*— End of Sprint 1 Execution Plan v1.0 —*
+*— End of Sprint 1 Execution Plan v1.1 —*

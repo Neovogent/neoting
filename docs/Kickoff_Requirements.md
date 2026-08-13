@@ -1,8 +1,9 @@
 # NEOTING — Kickoff Requirements & Procurement Checklist
 
-**Version 1.1 · 11 August 2026 · Confidential**
+**Version 1.2 · 13 August 2026 · Confidential**
 *Changelog v1.0 → v1.1: model list expanded to three tiers (D28); Bedrock verification 8.1 covers Opus 4.8 + Sonnet 4.6 + Haiku 4.5 and per-model effort support; guardrail reference restored to £0.02/doc.*
-Companion to the source-of-truth pair (v1.2). This is the complete, actionable list of everything that must **exist before W0 ends** — accounts, purchases, API access, legal prerequisites, verification items, and build inputs — so all lanes can start in W1 with nothing blocked. Every row has an owner column to fill at kickoff; suggested owners use the roles CEO / Eng lead / Integrations lead / Ops.
+*Changelog v1.1 → v1.2: kickoff-review feedback (11–12 Aug) folded in — 1.5 gains SLA/support and self-serve-offboarding terms (D31/D32); new 3.10 central cost & usage monitoring build item (D33); 5.4 expanded to the pilot support commitments; new build input 6.7 (support & status-page copy); new verification 8.8 (Vercel Deployment Protection).*
+Companion to the source-of-truth pair (v1.3). This is the complete, actionable list of everything that must **exist before W0 ends** — accounts, purchases, API access, legal prerequisites, verification items, and build inputs — so all lanes can start in W1 with nothing blocked. Every row has an owner column to fill at kickoff; suggested owners use the roles CEO / Eng lead / Integrations lead / Ops.
 
 **How to use it:** work top to bottom — sections are ordered by critical path. An item marked ⛔ blocks a named milestone; start its clock first. Costs marked are order-of-magnitude signals for spend approval, not quotes.
 
@@ -16,7 +17,7 @@ Companion to the source-of-truth pair (v1.2). This is the complete, actionable l
 | 1.2 | ⛔ **ICO registration** (data-protection fee) — before any real customer data | CEO/Ops | Days | £40–£60/yr tier-dependent | Pilot onboarding (W12–14) |
 | 1.3 | **DPIA started** as a living document (bulk financial documents = high-risk processing) | Eng lead | Start W0, living | — | Pilot; pen-test scoping |
 | 1.4 | **DPA/terms inventory:** AWS DPA (covers Textract, Bedrock, Transcribe, SES, RDS, S3 — one umbrella, D20/D22/D23), TrueLayer, Twilio, Meta/WhatsApp, Sentry EU, Anthropic (contingency route only, D22). Confirm **no-training terms** on each AI-touching service (D19) | Ops | Days | — | Traffic to each service |
-| 1.5 | **Privacy notice + terms of service draft** incl. AI disclosure, subprocessor register page, SMS/WhatsApp consent language, 6-year document retention statement | CEO/Ops | 1–2 weeks | Legal review fees | Pilot onboarding |
+| 1.5 | **Privacy notice + terms of service draft** incl. AI disclosure, subprocessor register page, SMS/WhatsApp consent language, 6-year document retention statement, **pilot support & response-target terms (contractual SLA at GA — D31)**, and **self-serve export/erasure at offboarding and trial end — explicitly no-ticket (D32)** | CEO/Ops | 1–2 weeks | Legal review fees | Pilot onboarding |
 | 1.6 | **PI insurance conversation** opened (needed before GA, not pilot) | CEO | Weeks | Premium TBD | GA only |
 | 1.7 | **Cyber Essentials Plus** — book assessment (needed before GA, not pilot) | Ops | Weeks | ~£1.5–2.5k | GA only |
 
@@ -43,6 +44,7 @@ Companion to the source-of-truth pair (v1.2). This is the complete, actionable l
 | 3.7 | **Observability:** Managed Prometheus + Managed Grafana workspaces, CloudWatch log groups + retention (30d), OTel collector on ECS | Eng lead | Hours | Modest | W1 onward |
 | 3.8 | **ClamAV scanning** path (container/Lambda on S3 upload events) — build item, no external account | Eng lead | W1 build item | Compute only | Ingest (W3) |
 | 3.9 | **Self-hosted Unleash** on ECS (D23) | Eng lead | W0–W1 build item | Compute only | All flagged work |
+| 3.10 | **Central usage & cost monitoring (D33)** — AWS Budgets at org + per-account (50/80/100% alerts); per-service usage/spend dashboards in Grafana + monthly budget envelopes (Twilio, Textract, Transcribe, SES, TrueLayer, Bedrock); anomaly alert > 3× 7-day baseline; go-live gate: no paid service without budget line + metric + alert (governance §13.5) | Eng lead | W0–W1 build item | — | Every metered vendor; pilot |
 
 ## 4. Third-party accounts & API access
 
@@ -69,7 +71,7 @@ Companion to the source-of-truth pair (v1.2). This is the complete, actionable l
 | 5.1 | **Test devices:** one Moto G-class Android + one mid-range iPhone (real-browser motion + portal QA on 4G) | Ops | Days | ~£350 total | Design QA gate (from W3) |
 | 5.2 | ⛔ **Penetration test vendor** — scope + book by **W8** for a W12–13 test window | Ops | Booking lead: weeks | ~£5–15k | Pilot go/no-go (W14) |
 | 5.3 | Team password manager (humans; app secrets stay in Secrets Manager) | Ops | Instant | ~£3–6/user/mo | — |
-| 5.4 | Status page + support inbox (`support@neoting…`) — lightweight for pilot | Ops | Hours | Free–low | Pilot |
+| 5.4 | Status page + support inbox (`support@neoting…`) — carries the **pilot support commitments (D31)**: severity response targets, UK-working-hours cover with SEV1 watched out-of-hours, incident comms via the status page | Ops | Hours | Free–low | Pilot |
 
 ## 6. Build inputs (work items due by end of W1 — no accounts, but the build starves without them)
 
@@ -81,6 +83,7 @@ Companion to the source-of-truth pair (v1.2). This is the complete, actionable l
 | 6.4 | **VAT-treatment mapping reference** per ledger (our 20/5/0/exempt/reverse-charge → Xero TaxType / QBO TaxCode) | Integrations lead | W1 | Accountant partner sanity-checks (SoT §22.5) |
 | 6.5 | **SMS + email template copy** (en-GB): onboarding invite, OTP, chase, reminders, escalation — through Review → Approve wording rules | CEO + Eng lead | W1 | Twilio sender approval may want sample content |
 | 6.6 | **Brand asset export** → `packages/tokens` (colours, type, spacing, motion per SoT §14) + logo set for portal/onboarding | Eng lead | W1 | Tokens are a Sprint-0 contract |
+| 6.7 | **Support & status-page copy** (en-GB): severity definitions, response targets, support hours, escalation contacts — mirrors D31, feeds 1.5 and 5.4 | CEO + Ops | W1 | Working defaults in SoT §18; CEO confirms before pilot agreements sign |
 
 ## 7. Environment bootstrap — definition of "W0 done"
 
@@ -102,9 +105,10 @@ Companion to the source-of-truth pair (v1.2). This is the complete, actionable l
 | 8.5 | **Transcribe streaming en-GB** quality sanity on 10 real utterances | Acceptable floor or re-open STT vendor (interface makes it a config swap) |
 | 8.6 | **Xero connection-tier terms current** (they changed March 2026) | Feed into pricing; no build impact (we publish bills, not journals) |
 | 8.7 | **Meta business verification status** by end of W1 | Escalate; WhatsApp slips to W4 without moving other W3 channels; Twilio-hosted WhatsApp contingency assessed (D25) |
+| 8.8 | **Vercel Deployment Protection (Vercel Authentication) available on the plan in use** — every preview must require login (Guideline G10) | Pay for the tier that has it, or previews don't ship; an unprotected preview is an instant reject (R16) |
 
 ## 9. Critical path, in one paragraph
 
 Night one: name the **legal entity (1.1)** and approve this list's spend — then immediately start the four longest clocks: **Meta business verification (4.2)**, **Twilio UK sender registration (4.1)**, **TrueLayer production review (4.3)**, and **ICO (1.2)**. In parallel the same evening: AWS org + Bedrock access requests (3.1/3.3), SES production access (3.5), GitHub + Anthropic build-fleet accounts (4.10/4.11), and DNS delegation (2.1). Everything else is hours of work inside W0. Book the pen test (5.2) no later than W8. If 8.1 verifies clean and W1's contracts hold, no external dependency blocks the W14 pilot.
 
-*— End of Kickoff Requirements v1.0 —*
+*— End of Kickoff Requirements v1.2 —*

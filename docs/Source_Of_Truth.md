@@ -1,15 +1,16 @@
 # NEOTING — Product & Technical Source of Truth
 
-**Version 1.2 · 11 August 2026 · Confidential**
+**Version 1.3 · 13 August 2026 · Confidential**
 *Changelog v1.0 → v1.1: locked the AI vendor layer (D19–D22: Textract, Opus-led with effort map, Bedrock route, Transcribe), infrastructure hosting (D23), observability (D24), WhatsApp route (D25), billing deferral (D26), SMS allowance working default (D27); cost guardrail revised £0.02 → £0.05/document; W2 milestone changed from bake-off to calibration.*
 *Changelog v1.1 → v1.2: D28 supersedes D21 — three-tier model strategy (Haiku mechanical · Sonnet workhorse · Opus judgment) with dynamic effort per task class; extraction vision escalation ladder; per-class tier flags; cost guardrail restored to £0.02/document (pipeline), chat under per-firm budgets.*
+*Changelog v1.2 → v1.3: kickoff-review feedback (11–12 Aug) folded in — D29 locks kickoff = 13 Aug 2026 and ratifies the bootstrap G-log by reference; D30 UK-first data residency made explicit; D31 support & SLA framework; D32 self-serve offboarding incl. trial end; D33 central third-party cost & usage monitoring; new §13.3 orientation/transparency design mandates; §21 gains the surprise-bill risk row; §22 open decision #1 marked decided.*
 Product: **Neoting**, by Neovogent. Pre-launch domain `neoting.neovogent.com`; production domain `neoting.com` at publish.
 
 ---
 
 ## 0. Document authority
 
-This document and its companion, **NEOTING-Engineering-Governance-v1.2.md**, are together the **only source of truth** for the product. They are self-contained: nothing outside this pair is required to build, review, or accept the product.
+This document and its companion, **NEOTING-Engineering-Governance-v1.3.md**, are together the **only source of truth** for the product. They are self-contained: nothing outside this pair is required to build, review, or accept the product.
 
 **Superseded documents** (retained for history only; where they conflict with this pair, this pair wins):
 - *AI Accounting Operations Platform PRD v2 — Document Workflow Edition* (11 Aug 2026) — absorbed here as the product definition.
@@ -52,6 +53,11 @@ This document and its companion, **NEOTING-Engineering-Governance-v1.2.md**, are
 | D26 | SaaS billing is **deferred**: the pilot is free/manually invoiced; Stripe (or equivalent) is evaluated when pricing lands. Nothing in v1 blocks on a billing system. |
 | D27 | SMS allowance working default: **200 SMS/firm/month included, warn at 80%**, overage metered — a placeholder the pricing owner (CEO) confirms. |
 | D28 | **Three-tier model strategy + dynamic effort (supersedes D21).** **Haiku 4.5** = mechanical tier: doc-type triage, addressee shortlisting, dedupe text-assist. **Sonnet 4.6** = volume workhorse: per-document coding suggestions (the cost lever), chase composition + validation, addressee escalation, vault summaries, first vision rung. **Opus 4.8** = judgment tier: the chat workspace (always — one model, one voice), NL rule parsing + conflict resolution, cross-client analysis, final vision rung. Effort/thinking budget set per task class where the model supports it; full task→(model, effort) map pinned in `models.ts`. **Extraction vision escalation ladder:** Textract → Sonnet-vision → Opus-vision → human, each rung firing only below threshold; the middle rung is kept only if W2 calibration proves it earns its cost. **Per-class tier flags** (up or down, blocked unless evals pass for that class-model pair) replace the single demotion flag; **judgment surfaces are exempt from cost-driven demotion**. Availability degradation walks one tier down and bottoms out in deterministic behaviour + human queues — never a worse guess. **Cost guardrail restored to < £0.02 blended per document (pipeline);** chat-workspace spend is governed by per-firm daily budgets, not the per-document figure. |
+| D29 | **Kickoff = Thursday 13 August 2026** (resolves §22 open decision #1; folded from the Sprint 1 Execution Plan v1.0). All W0–W14 milestones restate from this date. The bootstrap **G-log (Team Engineering Guideline §0, G1–G10)** is ratified into this log by reference — bootstrap-phase rules that expire at Infra Week per G8. |
+| D30 | **UK-first data residency.** All storage and processing in eu-west-2 (London). The UK is not the EU and is regulated in its own right (UK GDPR / ICO); EU regions are permitted only as **named fallbacks where no UK option exists** — currently two: SES inbound receiving in eu-west-1, only if W0 verification 8.2 requires it (receipt bucket stays eu-west-2), and the cross-region DR backup target (the UK has a single AWS region, so the second region is EU by necessity). Any further non-UK location is a versioned amendment, never a config change. |
+| D31 | **Support & SLA framework.** Pilot: published severity response targets, UK-working-hours cover with SEV1 monitored out-of-hours, status page + `support@` inbox — all stated in the pilot agreement (working defaults in §18; CEO confirms before pilot agreements sign). GA: contractual SLA — 99.9% monthly availability with service credits, published maintenance windows, support tiers in the ToS — always set at or below the internal SLOs (governance §13.3). |
+| D32 | **Self-serve offboarding, no tickets.** Whole-firm export (documents + data + index manifest) and erasure are in-product, self-serve actions — at any time, at trial end, and throughout the 90-day post-termination window — never gated on a support ticket. Extends D26: when billing/trials land, the trial-expiry screen leads with export/delete, not a paywall. |
+| D33 | **Central third-party usage & cost monitoring.** Every metered service — Bedrock, Textract, Transcribe, Twilio, SES, TrueLayer, and the AWS accounts themselves — reports usage and computed spend to one telemetry surface with per-service budgets and alerts (enforcement: governance §13.5). No paid service goes live without a budget line, a usage metric, and an alert. |
 
 ---
 
@@ -353,6 +359,8 @@ All components come from the **certified component grammar** (Sprint-0 contract,
 
 **Calm by default, depth on demand** (the surviving Morphic principle): the workspace stays quiet; visual emphasis is earned only at the moment of a decision; amber = needs you; red is reserved for irreversibility; motion per §14.
 
+**Oriented by default, transparent on demand (§13.3):** the workspace always answers "where am I" — a persistent context header shows the signed-in user, the role they are acting under, and the client(s) in scope — and "what now": the home surface leads with a prioritised next-actions queue built from the same pipeline data as §11. Every displayed value wears its provenance class (human-confirmed · rule/validator · AI-suggested + confidence) by default, and any AI result expands to its working.
+
 ### 8.2 The universal Review → Approve pattern (applies to every state-changing action)
 
 **Before the AI changes anything, it asks for review.** Every action that changes state — activating a rule, confirming a document's coding, sending a chase, approving items, publishing to accounting software, moving items between entities, changing a setting — follows the same two-step chat component:
@@ -459,6 +467,17 @@ Every settings mutation passes Review → Approve (§8.2) and is audit-logged.
 | 45 | Notify accountant when a client uploads | ✅ v1 — configurable, default on |
 | — | Full-text keyword search | ✅ v1 — archive + Vault search |
 | — | PO details pulled through with the match | ◻ v1.x |
+
+### 13.3 Kickoff-review design mandates (11–12 Aug — each binding, enforced at the design QA gate)
+
+The product is already agentic in shape — chat is the single entry point (§8.1), every state change is human-in-the-loop (§8.2), every field carries confidence and provenance (Stage 2/4). These four mandates make the remaining review asks explicit and testable:
+
+| Mandate | Requirement |
+|---|---|
+| **Orientation is persistent** | Every workspace screen carries a context header: the signed-in user, the role they are acting under, and the client/workspace in scope (in chat: the attached clients). Nobody ever wonders "where am I, what am I allowed to do here." |
+| **Next-best-action surface** | The workspace home answers "what should I do now": a prioritised queue — documents to review, chases awaiting approval, publishes waiting, failures to retry, upcoming deadlines — drawn from the same pipeline data as §11, every entry one tap from its action. |
+| **Verified vs unverified, always visible** | Every value displays its provenance class at a glance — **human-confirmed · deterministic (rule/validator) · AI-suggested with confidence** — in one consistent visual language across chat cards, inboxes, tables, and the portal overlay. This promotes the Stage 2/4 confidence model and the governance §12.4 labelling from available-on-hover to visible-by-default. |
+| **Show the working** | Any AI-produced result expands to its trace: inputs considered, the rule/guidance that applied, model + confidence, and record references — the user-facing sibling of the internal Journey Inspector (governance §13.4). The wow factor is earned by showing the work, not by decoration. |
 
 ---
 
@@ -614,15 +633,16 @@ Removed from the old plan's week 0 (out of scope now): HMRC MTD production appro
 
 ---
 
-## 18. Security & data protection (summary — enforcement detail lives in the governance file)
+## 18. Security, data protection & service commitments (summary — enforcement detail lives in the governance file)
 
 - **Tenancy:** practice → client RLS below the application layer; workspace-prefixed S3 with per-workspace KMS context; delegated OTP sessions scoped to requested items only; the CI tenancy suite attempts real cross-tenant and session-overreach access with real tokens and **must fail**.
 - **Secure links & OTP:** signed short-lived URLs; 6-digit OTP to the registered mobile; rate limiting per number and per IP; session logging; upload-only scope; forwardability is a feature with *requested-from vs uploaded-by* recorded.
-- **Data:** UK/EU processing regions only; AES-256 at rest, TLS 1.3 in transit; AWS Secrets Manager (no secrets in env files or repo); per-integration tokens encrypted in a dedicated vault table with rotation jobs.
+- **Data:** **UK-first residency (D30)** — all storage and processing in eu-west-2 (London); EU only as the two named fallbacks (SES inbound receiving per verification 8.2; the cross-region DR backup target, since the UK has a single AWS region). AES-256 at rest, TLS 1.3 in transit; AWS Secrets Manager (no secrets in env files or repo); per-integration tokens encrypted in a dedicated vault table with rotation jobs.
 - **Backups/DR:** RDS point-in-time recovery (35 days) + nightly logical backups to a second EU region; S3 versioning + replication; **RPO ≤ 15 min, RTO ≤ 4 h**; quarterly restore drills — an untested backup is a hope, not a plan.
 - **AI:** no-training DPAs; PII minimisation in prompts; pinned versions per extraction; document text is data, full stop; injection corpus 100% blocked in CI.
-- **UK GDPR (D12):** ICO registration + DPIA (bulk financial documents are high-risk processing) before real data; published subprocessor register; data-subject-request tooling (export + erasure with legal-hold override) built in v1; retention clocks (client financial documents 6 years, deletion only on audited instruction); breach runbook with the ICO 72-hour path pre-written; **whole-firm export exists so offboarding is never hostage-taking**.
+- **UK GDPR (D12):** ICO registration + DPIA (bulk financial documents are high-risk processing) before real data; published subprocessor register; data-subject-request tooling (export + erasure with legal-hold override) built in v1; retention clocks (client financial documents 6 years, deletion only on audited instruction); breach runbook with the ICO 72-hour path pre-written; **whole-firm export exists so offboarding is never hostage-taking — self-serve and in-product, never gated on a support ticket, offered again at trial end and through the 90-day post-termination window (D32)**.
 - **Application:** Argon2 + mandatory TOTP for privileged roles; offboarding revokes tokens within 60 seconds; append-only hash-chained audit log; **human sign-off on every state change via Review → Approve, enforced server-side**. Penetration test before launch; Cyber Essentials Plus before GA; SOC 2 on the enterprise roadmap.
+- **Support & SLA (D31):** pilot commitments, stated in the pilot agreement — `support@neoting…` inbox + status page; severity response targets (working defaults, CEO confirms: SEV1 acknowledged < 1 business hour and worked continuously, SEV2 < 4 business hours, SEV3 < 1 business day); support hours 09:00–18:00 UK working days with SEV1 monitored out-of-hours; incident comms via the status page, SEV1 customer notice within 4 hours. GA adds the contractual SLA: 99.9% monthly availability with service credits and published maintenance windows — always set at or below the internal SLOs (governance §13.3), so nothing is promised externally that isn't alerted on internally.
 
 ---
 
@@ -675,7 +695,7 @@ Removed from the old plan's week 0 (out of scope now): HMRC MTD production appro
 - **Speed:** extraction p95 < 5 min (digital PDFs) · median document received → Ready · chase-to-upload median response time · time-to-publish.
 - **The flagship:** missing-document count per client trending down · chase close rate · % chases closed without accountant intervention.
 - **Adoption:** clients onboarded via OTP without support contact · weekly submitting clients · channel mix · % suppliers on auto-publish per client.
-- **Business:** practices/businesses live, client-workspace expansion, logo churn, support tickets per 100 active users (the incumbents' loudest weakness), **AI cost per document < £0.02**.
+- **Business:** practices/businesses live, client-workspace expansion, logo churn, support tickets per 100 active users (the incumbents' loudest weakness) and support response-target attainment (D31), **AI cost per document < £0.02**, per-vendor third-party spend within budget (D33).
 
 ---
 
@@ -693,6 +713,7 @@ Removed from the old plan's week 0 (out of scope now): HMRC MTD production appro
 | WhatsApp platform dependency | Med | Inbound-only design avoids template approval and business-initiated fees; Meta verification starts week 0; email + web remain full-fidelity intake channels if WhatsApp degrades. |
 | TrueLayer sole-provider dependency (D4) | Med | Provider-agnostic interface retained as hedge; statement upload (PDF/CSV/XLSX) is a full fallback so books never stall; consent module isolated from UK payments-law rewrites; revisit the single-provider decision only on SLA evidence. |
 | Xero platform economics (March-2026 tiers) | Med | Write-heavy usage sits in the favourable lanes; tier fees are a pricing input (CEO); QBO + public API + exports act as pressure valves; Journals gating is irrelevant to a bills-publisher. |
+| Surprise third-party bills (Twilio, Textract, TrueLayer, AWS…) | Med | Central usage & cost telemetry (D33, governance §13.5): per-service dashboards + monthly budget envelopes, AWS Budgets at 50/80/100%, anomaly alerts at > 3× the 7-day baseline, per-firm SMS/AI budgets already enforced; a surprising bill is treated as an alerting failure, not a billing surprise. |
 | Duplicate / fraud abuse | Med | Multi-signal dedupe with cross-type and cross-uploader coverage; supplier-bank-detail extraction powers fraud checks; approval tiers; immutable audit trail names every actor. |
 | p95 < 5 min latency target missed under load | Med | Queue-first architecture with per-stage timing in the processing log; manual-entry bypass keeps humans unblocked; k6 ingestion soak at 10× expected volume in W12. |
 | Domain cutover breaks email intake | Low | Both `doc@` addresses live and routed identically through cutover (D5); DKIM/SPF/DMARC on both; cutover is a config change, rehearsed in staging. |
@@ -701,7 +722,7 @@ Removed from the old plan's week 0 (out of scope now): HMRC MTD production appro
 
 ## 22. Open decisions (for the room — with owners)
 
-1. **Kickoff date** — commit, and restate the W0–W14 milestones from it (D13).
+1. ~~Kickoff date~~ — **decided (D29): Thursday 13 August 2026**; W0–W14 restated from this date.
 2. **Approve week-0 signups and spend** (§17.3) so the lead-time clocks start.
 3. **Pricing** — flat per-firm bands remain the working position (the market resents per-user creep); exact points, annual discount, and any documents/month fair-use ceiling are the **CEO's call with pilot data**. Xero tier fees are an input.
 4. **Legal entity** — which entity signs ICO, TrueLayer, Meta/WhatsApp, Twilio; UK sales likely require a UK entity or UK representative for UK GDPR. Needs a named owner.
@@ -717,4 +738,4 @@ Removed from the old plan's week 0 (out of scope now): HMRC MTD production appro
 
 Compiled 11 August 2026 from: the Document Workflow Edition PRD v2 (11 Aug 2026, competitor facts verified against official documentation and six review platforms on that date), the Neovogent technical implementation plan (10 Aug 2026), and provider documentation (developer.xero.com, developer.intuit.com, developer.sage.com, dev.freeagent.com, docs.truelayer.com, HMRC developer hub, Companies House developer hub, Twilio, Meta WhatsApp Business Platform). A product and planning document, not legal or tax advice. API terms, rate limits, and platform pricing change — re-verify against primary sources during build; the decision log (§0.1) records what was true and decided on this date.
 
-*— End of Source of Truth v1.0 —*
+*— End of Source of Truth v1.3 —*
