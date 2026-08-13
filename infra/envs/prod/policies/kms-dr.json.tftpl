@@ -1,6 +1,6 @@
 {
   "Version": "2012-10-17",
-  "Id": "nt-staging-key-policy",
+  "Id": "nt-${env}-dr-key-policy",
   "Statement": [
     {
       "Sid": "AllowKeyAdministration",
@@ -33,14 +33,6 @@
       }
     },
     {
-      "Sid": "AllowSESToEncryptInboundMail",
-      "Effect": "Allow",
-      "Principal": { "Service": "ses.amazonaws.com" },
-      "Action": ["kms:Encrypt", "kms:GenerateDataKey*", "kms:DescribeKey"],
-      "Resource": "*",
-      "Condition": { "StringEquals": { "aws:SourceAccount": "${account_id}" } }
-    },
-    {
       "Sid": "DenyCryptoUseByEveryoneElse",
       "Effect": "Deny",
       "Principal": "*",
@@ -56,8 +48,7 @@
             "arn:aws:iam::${account_id}:root"
           ]
         },
-        "BoolIfExists": { "aws:PrincipalIsAWSService": "false" },
-        "StringNotEquals": { "aws:PrincipalServiceName": "ses.amazonaws.com" }
+        "BoolIfExists": { "aws:PrincipalIsAWSService": "false" }
       }
     }
   ]

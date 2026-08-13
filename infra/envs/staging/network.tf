@@ -1,235 +1,41 @@
 # --------------------------------------------------------------------------
-# Network (Kickoff 3.6)
+# Network (Kickoff 3.6) — infra/modules/network.
 #
 # COST DECISION (runbook Appendix B.3): staging runs with NO NAT gateway
 # (~$36/mo + data). Fargate tasks sit in public subnets with a public IP and
 # security groups that permit no inbound traffic; data subnets have no route
 # off the VPC at all. Defensible only because staging is synthetic-data-only
-# (G2). Prod gets a real NAT and interface endpoints.
+# (G2). Prod sets enable_nat_gateway = true, which turns on the private tier
+# and gives tasks a stable egress address, and adds interface endpoints.
+#
+# ⚠ THE PRIVATE TIER IS OFF HERE, SO module.network EMITS NO PRIVATE SUBNETS.
+# Anything reading module.network.private_subnet_ids in this root gets an empty
+# list, on purpose. Workloads place themselves in public_subnet_ids until the
+# NAT exists.
+#
+# Security-group rules for bolted-on workloads (Unleash, ClamAV) live with
+# those workloads and attach to these groups by ID — see unleash.tf and
+# clamav.tf. The module owns only the alb → app → data chain.
 # --------------------------------------------------------------------------
 
-resource "aws_vpc" "main" {
-  cidr_block           = local.vpc_cidr
-  enable_dns_support   = true
-  enable_dns_hostnames = true
+module "network" {
+  source = "../../modules/network"
 
-  tags = { Name = "nt-${local.env}" }
-}
+  env        = local.env
+  account_id = local.account_id
+  region     = local.region
+  vpc_cidr   = local.vpc_cidr
+  azs        = local.azs
 
-resource "aws_internet_gateway" "main" {
-  vpc_id = aws_vpc.main.id
-  tags   = { Name = "nt-${local.env}" }
-}
+  # Staging: no NAT, therefore no private tier. Both stay false together.
+  enable_nat_gateway     = false
+  enable_private_subnets = false
 
-# App tier: /20 per AZ.
-resource "aws_subnet" "public" {
-  count = length(local.azs)
+  flow_log_traffic_type   = "REJECT" # accepts are noise at this scale and cost money
+  flow_log_retention_days = 30       # Governance §12.2: application logs / traces
 
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = cidrsubnet(local.vpc_cidr, 4, count.index)
-  availability_zone       = local.azs[count.index]
-  map_public_ip_on_launch = false # tasks opt in explicitly via assign_public_ip
-
-  tags = {
-    Name = "nt-${local.env}-public-${local.azs[count.index]}"
-    Tier = "public"
-  }
-}
-
-# Data tier: /24 per AZ, no route to the internet in either direction.
-resource "aws_subnet" "data" {
-  count = length(local.azs)
-
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = cidrsubnet(local.vpc_cidr, 8, 48 + count.index)
-  availability_zone = local.azs[count.index]
-
-  tags = {
-    Name = "nt-${local.env}-data-${local.azs[count.index]}"
-    Tier = "data"
-  }
-}
-
-resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.main.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.main.id
-  }
-
-  tags = { Name = "nt-${local.env}-public" }
-}
-
-resource "aws_route_table_association" "public" {
-  count          = length(local.azs)
-  subnet_id      = aws_subnet.public[count.index].id
-  route_table_id = aws_route_table.public.id
-}
-
-# Deliberately no 0.0.0.0/0 route: the database tier cannot reach the internet
-# and the internet cannot reach it.
-resource "aws_route_table" "data" {
-  vpc_id = aws_vpc.main.id
-  tags   = { Name = "nt-${local.env}-data" }
-}
-
-resource "aws_route_table_association" "data" {
-  count          = length(local.azs)
-  subnet_id      = aws_subnet.data[count.index].id
-  route_table_id = aws_route_table.data.id
-}
-
-# Gateway endpoint: free, and keeps document traffic off the public internet.
-resource "aws_vpc_endpoint" "s3" {
-  vpc_id            = aws_vpc.main.id
-  service_name      = "com.amazonaws.${local.region}.s3"
-  vpc_endpoint_type = "Gateway"
-  route_table_ids   = [aws_route_table.public.id, aws_route_table.data.id]
-
-  tags = { Name = "nt-${local.env}-s3" }
-}
-
-resource "aws_flow_log" "main" {
-  vpc_id               = aws_vpc.main.id
-  traffic_type         = "REJECT" # rejects only — accepts are noise at this scale and cost money
-  log_destination_type = "cloud-watch-logs"
-  log_destination      = aws_cloudwatch_log_group.flow_logs.arn
-  iam_role_arn         = aws_iam_role.flow_logs.arn
-}
-
-resource "aws_cloudwatch_log_group" "flow_logs" {
-  name              = "/nt/${local.env}/vpc-flow-logs"
-  retention_in_days = 30 # Governance §12.2: application logs / traces
-}
-
-resource "aws_iam_role" "flow_logs" {
-  name = "nt-${local.env}-flow-logs"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect    = "Allow"
-      Principal = { Service = "vpc-flow-logs.amazonaws.com" }
-      Action    = "sts:AssumeRole"
-      Condition = { StringEquals = { "aws:SourceAccount" = local.account_id } }
-    }]
-  })
-}
-
-resource "aws_iam_role_policy" "flow_logs" {
-  name = "write-logs"
-  role = aws_iam_role.flow_logs.name
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = ["logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogGroups", "logs:DescribeLogStreams"]
-      Resource = "${aws_cloudwatch_log_group.flow_logs.arn}:*"
-    }]
-  })
-}
-
-# --------------------------------------------------------------------------
-# Security groups — referenced by ID, never by CIDR, so the chain is explicit:
-# internet → alb → app → data. Nothing skips a link.
-# --------------------------------------------------------------------------
-
-resource "aws_security_group" "alb" {
-  name        = "nt-${local.env}-alb"
-  description = "Public load balancer"
-  vpc_id      = aws_vpc.main.id
-
-  tags = { Name = "nt-${local.env}-alb" }
-}
-
-# Runbook §6.5: the origin is internet-facing but reachable ONLY from
-# CloudFront's edge, because "public origins that bypass CloudFront also
-# bypass WAF" — and the WAF ACL is where the portal rate limits that back
-# Gov §11.8 actually live. AWS owns the contents of this list, so edge IP
-# ranges are never tracked by hand.
-#
-# This is half of the lock. The prefix list is shared by every CloudFront
-# customer, so anyone could point their OWN distribution at our origin and
-# arrive from an allowed address; the secret origin header that the ALB
-# listener rule demands (alb.tf) is the other half. Neither is sufficient
-# alone.
-#
-# ⚠ QUOTA: a managed prefix list consumes its max_entries — 55 for
-# cloudfront/origin-facing — against the default 60 rules per security group,
-# not one. This SG therefore has room for almost nothing else. New rules go on
-# a different security group, or the quota gets raised first.
-#
-# To smoke-test the ALB directly before CloudFront exists, add a temporary
-# ingress rule for your own /32 in a PR (runbook §2.2 — never a console click)
-# and delete it in the same day's work.
-resource "aws_vpc_security_group_ingress_rule" "alb_https" {
-  security_group_id = aws_security_group.alb.id
-  description       = "HTTPS from CloudFront edge locations only (runbook §6.5)"
-  prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront_origin_facing.id
-  from_port         = 443
-  to_port           = 443
-  ip_protocol       = "tcp"
-}
-
-resource "aws_vpc_security_group_egress_rule" "alb_to_app" {
-  security_group_id            = aws_security_group.alb.id
-  description                  = "To application tasks"
-  referenced_security_group_id = aws_security_group.app.id
-  from_port                    = 3000
-  to_port                      = 3000
-  ip_protocol                  = "tcp"
-}
-
-resource "aws_security_group" "app" {
-  name        = "nt-${local.env}-app"
-  description = "ECS tasks (api, workers). No inbound except from the ALB."
-  vpc_id      = aws_vpc.main.id
-
-  tags = { Name = "nt-${local.env}-app" }
-}
-
-resource "aws_vpc_security_group_ingress_rule" "app_from_alb" {
-  security_group_id            = aws_security_group.app.id
-  description                  = "From the load balancer only"
-  referenced_security_group_id = aws_security_group.alb.id
-  from_port                    = 3000
-  to_port                      = 3000
-  ip_protocol                  = "tcp"
-}
-
-# Outbound to AWS APIs (Bedrock, Textract, SES, ECR) over the public IP,
-# since there is no NAT in staging.
-resource "aws_vpc_security_group_egress_rule" "app_all" {
-  security_group_id = aws_security_group.app.id
-  description       = "Outbound to AWS service endpoints"
-  cidr_ipv4         = "0.0.0.0/0"
-  ip_protocol       = "-1"
-}
-
-resource "aws_security_group" "data" {
-  name        = "nt-${local.env}-data"
-  description = "RDS and ElastiCache. Reachable only from application tasks."
-  vpc_id      = aws_vpc.main.id
-
-  tags = { Name = "nt-${local.env}-data" }
-}
-
-resource "aws_vpc_security_group_ingress_rule" "postgres_from_app" {
-  security_group_id            = aws_security_group.data.id
-  description                  = "PostgreSQL from application tasks"
-  referenced_security_group_id = aws_security_group.app.id
-  from_port                    = 5432
-  to_port                      = 5432
-  ip_protocol                  = "tcp"
-}
-
-resource "aws_vpc_security_group_ingress_rule" "redis_from_app" {
-  security_group_id            = aws_security_group.data.id
-  description                  = "Redis from application tasks"
-  referenced_security_group_id = aws_security_group.app.id
-  from_port                    = 6379
-  to_port                      = 6379
-  ip_protocol                  = "tcp"
+  # The CloudFront managed prefix list, read once in alb.tf and passed here so
+  # the edge and the origin lock cannot drift apart.
+  alb_ingress_prefix_list_id = data.aws_ec2_managed_prefix_list.cloudfront_origin_facing.id
+  app_port                   = local.app_port
 }

@@ -66,9 +66,9 @@ resource "aws_secretsmanager_secret_version" "db_app_role" {
   secret_string = jsonencode({
     username = "nt_app"
     password = random_password.db_app_role.result
-    host     = aws_db_instance.main.address
-    port     = aws_db_instance.main.port
-    dbname   = aws_db_instance.main.db_name
+    host     = module.data.db_address
+    port     = module.data.db_port
+    dbname   = module.data.db_name
   })
 
   # The password lands in Terraform state, which is why the state bucket needs

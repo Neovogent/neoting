@@ -19,7 +19,7 @@ resource "aws_ecr_repository" "this" {
 
   encryption_configuration {
     encryption_type = "KMS"
-    kms_key         = aws_kms_key.docs.arn
+    kms_key         = module.storage.kms_key_arn
   }
 }
 
@@ -97,13 +97,13 @@ resource "aws_iam_role_policy" "ecs_execution_secrets" {
         Sid      = "ReadServiceSecrets"
         Effect   = "Allow"
         Action   = ["secretsmanager:GetSecretValue"]
-        Resource = [aws_secretsmanager_secret.redis.arn, aws_db_instance.main.master_user_secret[0].secret_arn]
+        Resource = [module.data.redis_secret_arn, module.data.db_master_user_secret_arn]
       },
       {
         Sid      = "DecryptForImagePullAndSecrets"
         Effect   = "Allow"
         Action   = ["kms:Decrypt"]
-        Resource = aws_kms_key.docs.arn
+        Resource = module.storage.kms_key_arn
       }
     ]
   })
@@ -169,7 +169,7 @@ resource "aws_iam_role_policy" "app_runtime" {
         Sid      = "EnvelopeEncryption"
         Effect   = "Allow"
         Action   = ["kms:Encrypt", "kms:Decrypt", "kms:GenerateDataKey*", "kms:DescribeKey"]
-        Resource = aws_kms_key.docs.arn
+        Resource = module.storage.kms_key_arn
       },
       {
         # D30 enforced at the IAM layer, not by convention.
@@ -232,7 +232,7 @@ resource "aws_iam_role_policy" "app_runtime" {
         Sid      = "RuntimeSecrets"
         Effect   = "Allow"
         Action   = ["secretsmanager:GetSecretValue"]
-        Resource = [aws_secretsmanager_secret.redis.arn, aws_db_instance.main.master_user_secret[0].secret_arn]
+        Resource = [module.data.redis_secret_arn, module.data.db_master_user_secret_arn]
       }
     ]
   })
@@ -240,5 +240,5 @@ resource "aws_iam_role_policy" "app_runtime" {
 
 output "ecr_repository_urls" { value = { for k, v in aws_ecr_repository.this : k => v.repository_url } }
 output "ecs_cluster_name" { value = aws_ecs_cluster.main.name }
-output "vpc_id" { value = aws_vpc.main.id }
-output "public_subnet_ids" { value = aws_subnet.public[*].id }
+output "vpc_id" { value = module.network.vpc_id }
+output "public_subnet_ids" { value = module.network.public_subnet_ids }

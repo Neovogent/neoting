@@ -235,12 +235,21 @@ resource "aws_ses_receipt_rule" "doc" {
     object_key_prefix = "inbound/"
   }
 
-  # SES validates bucket writability at rule-creation time, so the policy and
-  # the key grant must exist first.
-  depends_on = [
-    aws_s3_bucket_policy.this,
-    aws_kms_key.docs,
-  ]
+  # SES validates bucket writability at rule-creation time, so the bucket, its
+  # policy and the key grant must all exist first.
+  #
+  # ⚠ THIS `depends_on` IS NOT DECORATIVE, AND IT CANNOT BE NARROWED. The
+  # s3_action above names the bucket by STRING (local.bucket_names, which the
+  # module derives from its inputs, not from the aws_s3_bucket resources), so
+  # Terraform infers no ordering edge from it whatsoever. Without this line the
+  # rule is created concurrently with the bucket policy and fails validation on
+  # a cold apply — intermittently, which is the worst way to find out.
+  #
+  # It names the whole module rather than the policy resource because
+  # depends_on takes static addresses only and a module's internals are not
+  # addressable from here. Coarser than it was when the buckets were flat; the
+  # trade is one unnecessary ordering edge against a real correctness bug.
+  depends_on = [module.storage]
 }
 
 resource "aws_route53_record" "inbound_mx" {

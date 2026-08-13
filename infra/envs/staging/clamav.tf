@@ -173,7 +173,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "quarantine" {
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm     = "aws:kms"
-      kms_master_key_id = aws_kms_key.docs.key_id
+      kms_master_key_id = module.storage.kms_key_id
     }
     # Same reasoning as main.tf: cuts KMS request charges by up to ~99%. The
     # volume here is tiny, so this is consistency rather than saving.
@@ -184,7 +184,9 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "quarantine" {
 # --------------------------------------------------------------------------
 # Bucket policy — the shared explicit-Deny shape, plus ONE statement.
 #
-# The first two statements are policies/bucket.json.tftpl decoded verbatim, so
+# The first two statements are the shared bucket template (now
+# ../../modules/storage/policies/bucket.json.tftpl — see
+# local.shared_bucket_policy_template in main.tf) decoded verbatim, so
 # this bucket inherits any future hardening of the shared shape instead of
 # quietly drifting from it. That is why this is a jsondecode-and-append rather
 # than a copied-out policy.
@@ -202,7 +204,7 @@ resource "aws_s3_bucket_policy" "quarantine" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = concat(
-      jsondecode(templatefile("${path.module}/policies/bucket.json.tftpl", {
+      jsondecode(templatefile(local.shared_bucket_policy_template, {
         bucket     = local.quarantine_bucket
         account_id = local.account_id
       })).Statement,
@@ -365,7 +367,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "avdefs" {
 resource "aws_s3_bucket_policy" "avdefs" {
   bucket = aws_s3_bucket.avdefs.id
 
-  policy = templatefile("${path.module}/policies/bucket.json.tftpl", {
+  policy = templatefile(local.shared_bucket_policy_template, {
     bucket     = local.avdefs_bucket
     account_id = local.account_id
   })
@@ -411,10 +413,14 @@ resource "aws_s3_bucket_lifecycle_configuration" "avdefs" {
 # configuration; a second resource for the same bucket does not merge, it
 # overwrites, and the two fight on every apply.
 #
-# CHECKED 13 Aug 2026: no aws_s3_bucket_notification exists anywhere in
-# infra/envs/staging/ — not in main.tf, not in email.tf (SES delivers to the
+# CHECKED 13 Aug 2026, RE-CHECKED at the module extraction: no
+# aws_s3_bucket_notification exists anywhere in infra/envs/staging/ OR in
+# infra/modules/storage/ — not in main.tf, not in email.tf (SES delivers to the
 # receipts bucket through a receipt rule, which is not a bucket notification),
-# not in lifecycle.tf. These three resources are the only ones. If you need an
+# not in lifecycle.tf. These three resources are the only ones. Note that the
+# buckets themselves now live in module.storage, so a future notification added
+# INSIDE that module would collide with these from outside the file you are
+# reading. If you need an
 # additional S3 event consumer, ADD IT TO THE RULE BELOW or add a second
 # EventBridge rule — never a second notification resource.
 #
@@ -428,7 +434,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "avdefs" {
 resource "aws_s3_bucket_notification" "av_scanned" {
   for_each = local.av_scanned_buckets
 
-  bucket      = aws_s3_bucket.this[each.key].id
+  bucket      = module.storage.bucket_ids[each.key]
   eventbridge = true
 }
 
@@ -493,7 +499,8 @@ resource "aws_sqs_queue" "av_scan" {
   # is an S3 event — bucket, key, size, etag. It is metadata about a customer
   # document, not the document, and observability.tf's key already grants
   # events.amazonaws.com the GenerateDataKey*/Decrypt it needs to deliver into
-  # an encrypted queue. Pointing this at aws_kms_key.docs would mean adding
+  # an encrypted queue. Pointing this at the documents CMK (module.storage)
+  # would mean adding
   # EventBridge to the customer-document key's policy purely to encrypt a
   # filename.
   #
@@ -658,7 +665,7 @@ resource "aws_ecr_repository" "clamav" {
 
   encryption_configuration {
     encryption_type = "KMS"
-    kms_key         = aws_kms_key.docs.arn
+    kms_key         = module.storage.kms_key_arn
   }
 
   tags = { Component = "clamav" }
@@ -698,7 +705,7 @@ resource "aws_cloudwatch_log_group" "clamav" {
   tags = { Component = "clamav" }
 }
 
-# A dedicated security group rather than reusing aws_security_group.app.
+# A dedicated security group rather than reusing module.network's app group.
 #
 # The app SG carries an ingress rule from the ALB on 3000. The scanner listens
 # on nothing and must never be addressable — putting it in the app SG would
@@ -708,7 +715,7 @@ resource "aws_cloudwatch_log_group" "clamav" {
 resource "aws_security_group" "clamav" {
   name        = "nt-${local.env}-clamav"
   description = "ClamAV scanner and freshclam publisher. Egress only - nothing ever connects in."
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = module.network.vpc_id
 
   tags = { Name = "nt-${local.env}-clamav" }
 }
@@ -867,7 +874,7 @@ resource "aws_iam_role_policy" "clamav_runtime" {
         Sid      = "DocumentEnvelopeEncryption"
         Effect   = "Allow"
         Action   = ["kms:Decrypt", "kms:GenerateDataKey*", "kms:DescribeKey"]
-        Resource = aws_kms_key.docs.arn
+        Resource = module.storage.kms_key_arn
       },
       {
         # Decrypt SQS message bodies. Decrypt only — the scanner never
@@ -938,7 +945,7 @@ resource "aws_ecs_task_definition" "clamav" {
         # against the public mirrors itself. See the signature bucket banner.
         { name = "AV_SIGNATURE_REFRESH_SECONDS", value = "3600" },
 
-        { name = "KMS_KEY_ARN", value = aws_kms_key.docs.arn },
+        { name = "KMS_KEY_ARN", value = module.storage.kms_key_arn },
       ]
 
       # No `secrets` block: the scanner holds no credentials. It reads S3,
@@ -1047,7 +1054,7 @@ resource "aws_ecs_service" "clamav" {
   health_check_grace_period_seconds = 300
 
   network_configuration {
-    subnets         = aws_subnet.public[*].id
+    subnets         = module.network.public_subnet_ids
     security_groups = [aws_security_group.clamav.id]
 
     # No NAT in staging (network.tf, Appendix B.3). The public IP is how the
@@ -1337,7 +1344,7 @@ resource "aws_scheduler_schedule" "clamav_freshclam" {
       propagate_tags          = "TASK_DEFINITION"
 
       network_configuration {
-        subnets          = aws_subnet.public[*].id
+        subnets          = module.network.public_subnet_ids
         security_groups  = [aws_security_group.clamav.id]
         assign_public_ip = true # freshclam must reach database.clamav.net; no NAT in staging
       }

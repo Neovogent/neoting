@@ -1,24 +1,25 @@
-# --------------------------------------------------------------------------
+# ==========================================================================
 # S3 lifecycle (runbook §6.2, Governance §12.2 retention schedule).
 #
-# Before this file, all three buckets had versioning Enabled and no lifecycle
-# rule at all — so every object, every noncurrent version and every abandoned
-# multipart upload accumulated forever. At document volume that is a cost leak
-# that compounds, and abandoned multiparts are the version of it nobody ever
-# looks at because they are invisible in the console object list.
+# Without these rules every object, every noncurrent version and every
+# abandoned multipart upload accumulates forever. At production document volume
+# that is a cost leak that compounds, and abandoned multiparts are the version
+# of it nobody ever looks at because they are invisible in the console object
+# list.
 #
 # Retention differs per bucket because the DATA differs, not because of cost:
 #
 #   docs      Client financial documents. Governance §12.2 says SIX YEARS,
 #             "deletion only on explicit, audited client instruction". So there
-#             is deliberately NO expiration rule here — a lifecycle rule that
+#             is deliberately NO expiration rule — a lifecycle rule that
 #             quietly deleted a client's evidence would be a compliance
-#             incident, not a saving. Retention is enforced by the application's
-#             scheduled jobs, which can honour a legal hold; S3 cannot.
-#   receipts  Raw inbound email. Transient — once ingested, the Document row and
-#             the docs bucket hold the evidence. Runbook §6.2: 30-day expiry.
+#             incident, not a saving. Retention is enforced by the
+#             application's scheduled jobs, which can honour a legal hold; S3
+#             cannot.
+#   receipts  Raw inbound email. Transient — once ingested, the Document row
+#             and the docs bucket hold the evidence. 30-day expiry.
 #   exports   Generated ZIPs and CSVs. Fully regenerable from docs. 30 days.
-# --------------------------------------------------------------------------
+# ==========================================================================
 
 resource "aws_s3_bucket_lifecycle_configuration" "docs" {
   bucket = module.storage.bucket_ids["docs"]
@@ -38,13 +39,24 @@ resource "aws_s3_bucket_lifecycle_configuration" "docs" {
 
   # Cold storage for evidence nobody is actively reviewing. Documents are
   # written once and read rarely after the month they are published, which is
-  # exactly the Standard-IA access pattern.
+  # exactly the Standard-IA access pattern. Over a six-year retention this is
+  # the single largest storage saving available — roughly 45% off the per-GB
+  # rate for the 95%+ of the corpus older than 90 days.
   #
-  # CAVEAT worth knowing before reading the savings optimistically: objects
-  # under 128 KB are billed at 128 KB in Standard-IA, so tiny receipts save
-  # nothing and can cost slightly more. Client-side compression targets ~3 MB
-  # photos (SoT §4 Stage 1), so the bulk of the corpus is comfortably above the
-  # threshold — but re-measure against a real bill before assuming the win.
+  # ⚠ TWO CAVEATS BEFORE READING THAT OPTIMISTICALLY.
+  #   1. Objects under 128 KB are billed at 128 KB in Standard-IA, so tiny
+  #      receipts save nothing and can cost slightly more. Client-side
+  #      compression targets ~3 MB photos (SoT §4 Stage 1), so the bulk of the
+  #      corpus is comfortably above the threshold — but re-measure against a
+  #      real bill before assuming the win.
+  #   2. Standard-IA charges a per-GB RETRIEVAL fee. A six-year archive that
+  #      someone bulk-exports (D32 makes whole-firm export a self-serve
+  #      offboarding right) pays that fee on every byte. It is still the right
+  #      default; it is not free.
+  #
+  # ⚠ AND ONE INTERACTION WITH replication.tf: a transition to Standard-IA on
+  # the SOURCE does not change what the destination stores. The DR bucket has
+  # its own lifecycle rule — deliberately different, see that file.
   rule {
     id     = "documents-to-infrequent-access"
     status = "Enabled"
@@ -84,6 +96,12 @@ resource "aws_s3_bucket_lifecycle_configuration" "receipts" {
   # target (SoT §4 Stage 2): it leaves a month to replay a failed ingest from
   # the raw message before the source disappears. If ingest is broken for
   # longer than a month, the missing raw email is not the biggest problem.
+  #
+  # ⚠ IT IS ALSO A SECURITY DEADLINE, not just a cost one. Objects in this
+  # bucket are AES256, not our CMK (see main.tf for the SES reason), so they
+  # sit outside the `role/nt-*` KMS deny for as long as they exist. 30 days is
+  # how long that window stays open for any given message. Lengthening this
+  # rule lengthens that exposure — do not do it without re-reading ADR 0002.
   rule {
     id     = "expire-raw-inbound-mail"
     status = "Enabled"

@@ -140,7 +140,7 @@ locals {
 resource "aws_security_group" "unleash" {
   name        = "nt-${local.env}-unleash"
   description = "Unleash feature-flag server. No inbound at all in staging."
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = module.network.vpc_id
 
   tags = {
     Name      = "nt-${local.env}-unleash"
@@ -184,19 +184,20 @@ resource "aws_vpc_security_group_egress_rule" "unleash_dns_tcp" {
 resource "aws_vpc_security_group_egress_rule" "unleash_to_data" {
   security_group_id            = aws_security_group.unleash.id
   description                  = "PostgreSQL to the data tier"
-  referenced_security_group_id = aws_security_group.data.id
+  referenced_security_group_id = module.network.data_security_group_id
   from_port                    = 5432
   to_port                      = 5432
   ip_protocol                  = "tcp"
 }
 
 # The matching half, written the same way as
-# aws_vpc_security_group_ingress_rule.postgres_from_app (network.tf): a
-# reference to a security group ID, never a CIDR, so the chain stays explicit.
-# This rule attaches to the EXISTING data security group but is created here —
-# network.tf is not edited, and deleting this file removes the grant with it.
+# module.network's postgres_from_app rule: a reference to a security group ID,
+# never a CIDR, so the chain stays explicit. This rule attaches to the EXISTING
+# data security group but is created here — the shared network module is NOT
+# edited to add a workload, and deleting this file removes the grant with it.
+# That is the whole reason module.network exports data_security_group_id.
 resource "aws_vpc_security_group_ingress_rule" "postgres_from_unleash" {
-  security_group_id            = aws_security_group.data.id
+  security_group_id            = module.network.data_security_group_id
   description                  = "PostgreSQL from the Unleash service"
   referenced_security_group_id = aws_security_group.unleash.id
   from_port                    = 5432
@@ -342,8 +343,8 @@ resource "aws_secretsmanager_secret_version" "unleash_database" {
   secret_string = jsonencode({
     username = local.unleash_db_role
     password = random_password.unleash_db.result
-    host     = aws_db_instance.main.address
-    port     = aws_db_instance.main.port
+    host     = module.data.db_address
+    port     = module.data.db_port
     dbname   = local.unleash_db_name
 
     # ⚠ sslmode=require, not verify-full, and the gap is deliberate rather than
@@ -355,7 +356,7 @@ resource "aws_secretsmanager_secret_version" "unleash_database" {
     # Week work. Inside a VPC where the only route to 5432 is a
     # security-group-gated private subnet this is a defensible staging trade;
     # it is NOT a defensible prod one, and prod must not inherit this line.
-    database_url = "postgres://${local.unleash_db_role}:${urlencode(random_password.unleash_db.result)}@${aws_db_instance.main.address}:${aws_db_instance.main.port}/${local.unleash_db_name}?sslmode=require"
+    database_url = "postgres://${local.unleash_db_role}:${urlencode(random_password.unleash_db.result)}@${module.data.db_address}:${module.data.db_port}/${local.unleash_db_name}?sslmode=require"
   })
 
   # The password reaches Terraform state, which is why the state bucket carries
@@ -769,7 +770,7 @@ resource "aws_ecs_service" "unleash" {
   deployment_maximum_percent         = 100
 
   network_configuration {
-    subnets         = aws_subnet.public[*].id
+    subnets         = module.network.public_subnet_ids
     security_groups = [aws_security_group.unleash.id]
 
     # There is NO NAT gateway in staging by design (network.tf, Appendix B.3):

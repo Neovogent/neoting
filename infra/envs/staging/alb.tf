@@ -105,8 +105,8 @@ resource "aws_lb" "main" {
   name               = "nt-${local.env}-alb"
   load_balancer_type = "application"
   internal           = false
-  subnets            = aws_subnet.public[*].id
-  security_groups    = [aws_security_group.alb.id]
+  subnets            = module.network.public_subnet_ids
+  security_groups    = [module.network.alb_security_group_id]
   ip_address_type    = "ipv4"
 
   # Staging is disposable by design (G1) and holds synthetic data only (G2),
@@ -158,7 +158,7 @@ resource "aws_lb_target_group" "api" {
   port        = local.app_port
   protocol    = "HTTP"
   target_type = "ip"
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = module.network.vpc_id
 
   # Requests are wildly uneven here — a document-detail read is milliseconds,
   # an ingestion trigger is not. Round-robin queues fast requests behind slow
@@ -280,8 +280,10 @@ resource "aws_secretsmanager_secret_version" "alb_origin_verify" {
   })
 }
 
-# The CloudFront managed prefix list, consumed by the ALB security group rule
-# in network.tf. AWS maintains the ranges; we never track edge IPs by hand.
+# The CloudFront managed prefix list. Read once here and passed into
+# module.network (see network.tf) as alb_ingress_prefix_list_id, so the edge
+# and the origin lock read the same list rather than each holding their own
+# data source. AWS maintains the ranges; we never track edge IPs by hand.
 data "aws_ec2_managed_prefix_list" "cloudfront_origin_facing" {
   name = "com.amazonaws.global.cloudfront.origin-facing"
 }

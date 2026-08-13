@@ -673,7 +673,8 @@ resource "aws_wafv2_web_acl" "edge" {
 # ⚠ PROD/D30: WAF log records carry request URIs and client IPs. Keeping them in
 # us-east-1 is a residency question that needs an ADR before prod carries real
 # data. It is a non-question today only because staging is synthetic-only (G2).
-# No CMK on the group either — aws_kms_key.docs is eu-west-2 and KMS keys are
+# No CMK on the group either — the documents CMK (module.storage) is
+# eu-west-2 and KMS keys are
 # regional, so this is AWS-managed encryption. Same ADR.
 # --------------------------------------------------------------------------
 resource "aws_cloudwatch_log_group" "waf" {

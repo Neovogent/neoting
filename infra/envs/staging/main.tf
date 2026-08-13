@@ -51,117 +51,81 @@ locals {
   azs         = ["eu-west-2a", "eu-west-2b", "eu-west-2c"]
   vpc_cidr    = "10.20.0.0/16" # staging; prod takes 10.30.0.0/16 — never overlap
 
-  # DataClass drives retention jobs (Governance §12.2) and cost attribution (§13.5).
+  # Convenience alias so the twenty-odd references across compute.tf,
+  # services.tf, clamav.tf and email.tf did not all have to change shape when
+  # the buckets moved into a module. Names are still built by exactly one piece
+  # of code — the module — and this is a read of its output, not a second copy
+  # of the convention.
+  bucket_names = module.storage.bucket_names
+
+  # The deny-guard bucket policy template moved into modules/storage along with
+  # the buckets it was written for — but it is not storage-module-private.
+  # clamav.tf builds the quarantine and AV-definitions bucket policies on top of
+  # the same shape (TLS-only + nothing outside role/nt-*), one of them by
+  # jsondecode-ing it and appending a statement.
   #
-  # sse: the receipts bucket is AES256 by default, NOT aws:kms. SES validates a
-  # receipt rule by test-writing to the bucket, and that write fails against a
-  # customer-managed-key default ("InvalidS3Configuration: Kms key is not
-  # available") no matter how the key policy is written — verified empirically
-  # 13 Aug 2026.
-  #
-  # ⚠ CORRECTION. This comment used to continue: "Inbound mail is still
-  # encrypted with our CMK: the key is named on the SES action itself
-  # (email.tf), which SES accepts. Objects land SSE-KMS under
-  # alias/nt-staging-docs exactly as intended." That was WRONG, and it was the
-  # sentence a future reader would have trusted.
-  #
-  # Naming a key on an SES s3_action makes SES encrypt CLIENT-side with the S3
-  # encryption client — not SSE-KMS — producing envelope ciphertext that only
-  # the Java and Ruby SDKs can decrypt. This repo is TypeScript. The key is
-  # therefore NOT named (see email.tf for the full reasoning), and objects in
-  # `inbound/` land under the bucket's AES256 default. They are transient:
-  # lifecycle.tf expires them at 30 days, and the extracted document lands in
-  # the docs bucket under the CMK. ADR 0002 records the trade.
+  # Referenced by path rather than copied back into this directory on purpose:
+  # two copies of a `role/nt-*` deny guard is precisely the drift that silently
+  # opens a bucket, and it would be invisible in review because both files would
+  # look correct on their own. One file, one edit, every bucket in the
+  # environment moves together.
+  shared_bucket_policy_template = "${path.module}/../../modules/storage/policies/bucket.json.tftpl"
+}
+
+# --------------------------------------------------------------------------
+# Documents CMK + the three document buckets — infra/modules/storage.
+#
+# The KMS policy, the bucket policies and the templates that render them live
+# in the module. Only the bucket MAP is an environment decision, which is what
+# lets prod add a bucket without anyone editing shared code.
+#
+# The ops CMK (observability.tf) and the secrets CMK (secrets.tf) are
+# deliberately NOT in here: they protect different data classes under
+# deliberately different key policies, and folding three keys into one module
+# would mean one variable per policy difference and no clarity gained.
+#
+# DataClass drives retention jobs (Governance §12.2) and cost attribution
+# (§13.5).
+#
+# sse: the receipts bucket is AES256 by default, NOT aws:kms. SES validates a
+# receipt rule by test-writing to the bucket, and that write fails against a
+# customer-managed-key default ("InvalidS3Configuration: Kms key is not
+# available") no matter how the key policy is written — verified empirically
+# 13 Aug 2026.
+#
+# ⚠ CORRECTION. This comment used to continue: "Inbound mail is still
+# encrypted with our CMK: the key is named on the SES action itself
+# (email.tf), which SES accepts. Objects land SSE-KMS under
+# alias/nt-staging-docs exactly as intended." That was WRONG, and it was the
+# sentence a future reader would have trusted.
+#
+# Naming a key on an SES s3_action makes SES encrypt CLIENT-side with the S3
+# encryption client — not SSE-KMS — producing envelope ciphertext that only
+# the Java and Ruby SDKs can decrypt. This repo is TypeScript. The key is
+# therefore NOT named (see email.tf for the full reasoning), and objects in
+# `inbound/` land under the bucket's AES256 default. They are transient:
+# lifecycle.tf expires them at 30 days, and the extracted document lands in
+# the docs bucket under the CMK. ADR 0002 records the trade.
+#
+# receipts is also the one bucket whose policy is not the default: SES needs an
+# explicit Allow to deliver into inbound/, so it names the module's
+# bucket-receipts template.
+# --------------------------------------------------------------------------
+module "storage" {
+  source = "../../modules/storage"
+
+  env        = local.env
+  account_id = local.account_id
+  region     = local.region
+
   buckets = {
     docs     = { data_class = "customer-document", sse = "aws:kms" }
-    receipts = { data_class = "customer-document", sse = "AES256" }
+    receipts = { data_class = "customer-document", sse = "AES256", policy_template = "bucket-receipts.json.tftpl" }
     exports  = { data_class = "customer-document", sse = "aws:kms" }
   }
 
-  bucket_names = { for k, v in local.buckets : k => "nt-${local.env}-${k}-${local.account_id}" }
-}
-
-# --------------------------------------------------------------------------
-# KMS — one CMK per environment.
-#
-# NOTE: SoT §15 / Governance §5.2 describe a per-workspace KMS encryption
-# context. S3 SSE-KMS cannot carry an arbitrary encryption context (S3 sets it
-# from the object ARN), and client-side encryption would break Textract's
-# async S3 path. Workspace isolation is therefore enforced by workspace-prefixed
-# object keys + IAM/session scoping + RLS. See runbook Step 6.2 and ADR 0008.
-# --------------------------------------------------------------------------
-resource "aws_kms_key" "docs" {
-  description              = "Neoting staging - documents, receipts, exports (D30 eu-west-2)"
-  key_usage                = "ENCRYPT_DECRYPT"
-  customer_master_key_spec = "SYMMETRIC_DEFAULT"
-  enable_key_rotation      = true
-  deletion_window_in_days  = 30
-
-  policy = templatefile("${path.module}/policies/kms-docs.json.tftpl", {
-    account_id = local.account_id
-  })
-}
-
-resource "aws_kms_alias" "docs" {
-  name          = "alias/nt-${local.env}-docs"
-  target_key_id = aws_kms_key.docs.key_id
-}
-
-# --------------------------------------------------------------------------
-# S3 — originals are immutable (versioned); isolation by explicit deny.
-# --------------------------------------------------------------------------
-resource "aws_s3_bucket" "this" {
-  for_each = local.buckets
-  bucket   = local.bucket_names[each.key]
-
-  tags = { DataClass = each.value.data_class }
-}
-
-resource "aws_s3_bucket_versioning" "this" {
-  for_each = local.buckets
-  bucket   = aws_s3_bucket.this[each.key].id
-
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
-
-resource "aws_s3_bucket_public_access_block" "this" {
-  for_each                = local.buckets
-  bucket                  = aws_s3_bucket.this[each.key].id
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
-}
-
-resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
-  for_each = local.buckets
-  bucket   = aws_s3_bucket.this[each.key].id
-
-  rule {
-    apply_server_side_encryption_by_default {
-      sse_algorithm     = each.value.sse
-      kms_master_key_id = each.value.sse == "aws:kms" ? aws_kms_key.docs.key_id : null
-    }
-    # Cuts KMS request charges by up to ~99% on a read-heavy document store.
-    bucket_key_enabled = each.value.sse == "aws:kms"
-  }
-}
-
-resource "aws_s3_bucket_policy" "this" {
-  for_each = local.buckets
-  bucket   = aws_s3_bucket.this[each.key].id
-
-  # The receipts bucket additionally grants SES the right to deliver inbound
-  # mail into inbound/ — a service principal, so it needs an explicit Allow.
-  policy = templatefile(
-    each.key == "receipts" ? "${path.module}/policies/bucket-receipts.json.tftpl" : "${path.module}/policies/bucket.json.tftpl",
-    {
-      bucket     = local.bucket_names[each.key]
-      account_id = local.account_id
-    }
-  )
+  kms_deletion_window_in_days = 30
+  kms_enable_key_rotation     = true
 }
 
 # --------------------------------------------------------------------------
@@ -353,7 +317,7 @@ resource "aws_iam_role_policy_attachment" "ci_plan_guardrail" {
 }
 
 # --------------------------------------------------------------------------
-output "kms_key_arn" { value = aws_kms_key.docs.arn }
+output "kms_key_arn" { value = module.storage.kms_key_arn }
 output "bucket_names" { value = local.bucket_names }
 output "ci_deploy_role_arn" { value = aws_iam_role.ci_deploy.arn }
 output "ci_plan_role_arn" { value = aws_iam_role.ci_plan.arn }

@@ -64,7 +64,7 @@ locals {
   # purpose (BullMQ + cluster mode disabled). If someone scales it, this fails
   # at plan time and forces a revisit, instead of silently alarming on one node
   # out of three and calling that monitoring.
-  redis_node = one(aws_elasticache_replication_group.main.member_clusters)
+  redis_node = one(module.data.redis_member_clusters)
 }
 
 # --------------------------------------------------------------------------
@@ -351,7 +351,7 @@ resource "aws_cloudwatch_metric_alarm" "rds" {
   datapoints_to_alarm = each.value.datapoints
   unit                = each.value.unit
 
-  dimensions = { DBInstanceIdentifier = aws_db_instance.main.identifier }
+  dimensions = { DBInstanceIdentifier = module.data.db_instance_identifier }
 
   treat_missing_data = "missing"
 
@@ -858,7 +858,7 @@ resource "aws_cloudwatch_metric_alarm" "log_errors" {
 # That is a real signal with real data today.
 resource "aws_cloudwatch_log_metric_filter" "data_tier_rejects" {
   name           = "nt-${local.env}-data-tier-rejects"
-  log_group_name = aws_cloudwatch_log_group.flow_logs.name
+  log_group_name = module.network.flow_log_group_name
 
   # Default flow-log format, positionally matched. The action = "REJECT" clause
   # is redundant while traffic_type is REJECT and is kept so the filter stays
@@ -911,7 +911,7 @@ resource "aws_cloudwatch_metric_alarm" "data_tier_rejects" {
 # --------------------------------------------------------------------------
 resource "aws_cloudwatch_log_metric_filter" "postgres_slow_queries" {
   name           = "nt-${local.env}-postgres-slow-queries"
-  log_group_name = "/aws/rds/instance/${aws_db_instance.main.identifier}/postgresql"
+  log_group_name = "/aws/rds/instance/${module.data.db_instance_identifier}/postgresql"
 
   # Postgres only logs "duration:" for statements exceeding the 100 ms threshold
   # (log_duration is off), so a match is by definition a slow query.
@@ -925,7 +925,7 @@ resource "aws_cloudwatch_log_metric_filter" "postgres_slow_queries" {
     unit          = "Count"
   }
 
-  depends_on = [aws_db_instance.main]
+  depends_on = [module.data]
 }
 
 # Deliberately a nudge, not a page: 50 slow queries in 15 minutes on a staging
@@ -1531,8 +1531,8 @@ resource "aws_cloudwatch_dashboard" "main" {
           view   = "timeSeries"
           period = 300
           metrics = [
-            ["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", aws_db_instance.main.identifier, { stat = "Average", label = "CPU %" }],
-            ["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", aws_db_instance.main.identifier, { stat = "Maximum", label = "Connections", yAxis = "right" }],
+            ["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", module.data.db_instance_identifier, { stat = "Average", label = "CPU %" }],
+            ["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", module.data.db_instance_identifier, { stat = "Maximum", label = "Connections", yAxis = "right" }],
           ]
           yAxis       = { left = { min = 0, max = 100, label = "%", showUnits = false }, right = { min = 0, label = "conns", showUnits = false } }
           annotations = { horizontal = [{ label = "alarm: 80%", value = 80 }] }
@@ -1551,8 +1551,8 @@ resource "aws_cloudwatch_dashboard" "main" {
           view   = "timeSeries"
           period = 300
           metrics = [
-            ["AWS/RDS", "FreeStorageSpace", "DBInstanceIdentifier", aws_db_instance.main.identifier, { stat = "Average", label = "Free storage" }],
-            ["AWS/RDS", "FreeableMemory", "DBInstanceIdentifier", aws_db_instance.main.identifier, { stat = "Average", label = "Freeable memory", yAxis = "right" }],
+            ["AWS/RDS", "FreeStorageSpace", "DBInstanceIdentifier", module.data.db_instance_identifier, { stat = "Average", label = "Free storage" }],
+            ["AWS/RDS", "FreeableMemory", "DBInstanceIdentifier", module.data.db_instance_identifier, { stat = "Average", label = "Freeable memory", yAxis = "right" }],
           ]
           yAxis = { left = { min = 0 }, right = { min = 0 } }
         }
@@ -1572,8 +1572,8 @@ resource "aws_cloudwatch_dashboard" "main" {
           view   = "timeSeries"
           period = 300
           metrics = [
-            ["AWS/RDS", "CPUCreditBalance", "DBInstanceIdentifier", aws_db_instance.main.identifier, { stat = "Average", label = "Credit balance" }],
-            ["AWS/RDS", "CPUSurplusCreditsCharged", "DBInstanceIdentifier", aws_db_instance.main.identifier, { stat = "Sum", label = "Surplus credits CHARGED", yAxis = "right" }],
+            ["AWS/RDS", "CPUCreditBalance", "DBInstanceIdentifier", module.data.db_instance_identifier, { stat = "Average", label = "Credit balance" }],
+            ["AWS/RDS", "CPUSurplusCreditsCharged", "DBInstanceIdentifier", module.data.db_instance_identifier, { stat = "Sum", label = "Surplus credits CHARGED", yAxis = "right" }],
           ]
           yAxis       = { left = { min = 0 }, right = { min = 0 } }
           annotations = { horizontal = [{ label = "alarm: 60 credits", value = 60 }] }
