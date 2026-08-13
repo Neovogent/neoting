@@ -140,6 +140,12 @@ resource "aws_elasticache_replication_group" "main" {
 resource "aws_secretsmanager_secret" "redis" {
   name        = "/neoting/${local.env}/redis/connection"
   description = "Redis auth token and endpoint for BullMQ + cache"
+
+  # Encrypted under the Neoting CMK rather than the AWS-managed
+  # `aws/secretsmanager` default, so it sits inside the same `role/nt-*`
+  # explicit-Deny boundary as every other Neoting secret (D36). Predates the
+  # secrets CMK, which is why it was on the default until now.
+  kms_key_id = aws_kms_key.secrets.arn
 }
 
 resource "aws_secretsmanager_secret_version" "redis" {

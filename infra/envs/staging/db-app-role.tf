@@ -46,6 +46,15 @@ resource "aws_secretsmanager_secret" "db_app_role" {
   name        = "/neoting/${local.env}/db/app-role"
   description = "Non-owning Postgres role the application connects as (RLS depends on it)"
 
+  # Without this, Secrets Manager silently uses the AWS-managed
+  # `aws/secretsmanager` key — whose policy cannot be edited and therefore
+  # carries none of the `role/nt-*` explicit Deny that D36's compensating
+  # controls rest on. In an account shared with three other products and seven
+  # IAM users, that puts the credential the whole tenancy guarantee depends on
+  # outside the boundary protecting everything else. The default is the trap:
+  # the secret is encrypted either way, so nothing looks wrong.
+  kms_key_id = aws_kms_key.secrets.arn
+
   # Staging is disposable (G1) and holds synthetic data only (G2). A long
   # recovery window here just makes it awkward to recreate the environment.
   recovery_window_in_days = 7

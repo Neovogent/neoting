@@ -233,6 +233,13 @@ resource "aws_secretsmanager_secret" "alb_origin_verify" {
   name        = "/neoting/${local.env}/edge/alb-origin-header"
   description = "Shared secret CloudFront must present to the ALB (runbook §6.5)"
 
+  # The CMK, not the AWS-managed default, whose policy cannot carry the
+  # `role/nt-*` explicit Deny (D36). This value is the ONLY thing standing
+  # between a stranger's CloudFront distribution and our origin — the managed
+  # prefix list on the ALB ingress rule admits every CloudFront distribution in
+  # the world, so anyone who reads this header walks straight past the WAF.
+  kms_key_id = aws_kms_key.secrets.arn
+
   # Secrets Manager bills ~$0.40/secret/month, so this is a deliberate
   # $0.40 — it exists so an on-call engineer can verify what the edge is
   # sending without reading Terraform state.

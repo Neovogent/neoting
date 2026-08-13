@@ -46,6 +46,9 @@ on:
     paths:
       - "infra/**"
       - ".github/workflows/terraform.yml"
+  # Lets someone apply deliberately from the Actions tab while auto-apply is
+  # still switched off. See the apply job's condition.
+  workflow_dispatch:
 
 # Scoped to the STATE FILE, not to the branch. Two runs against
 # staging/core.tfstate must never overlap, whichever ref they came from.
@@ -173,9 +176,41 @@ jobs:
   # A bare `apply -auto-approve` re-plans at apply time and can therefore act
   # on a state of the world nobody looked at.
   # =========================================================================
+  # --------------------------------------------------------------------------
+  # AUTO-APPLY IS OFF UNTIL SOMEONE TURNS IT ON. Read this before changing it.
+  #
+  # Governance §14.9 does want staging to apply automatically on merge, and
+  # that design is intact — it is gated, not removed.
+  #
+  # The reason it is gated: this branch adds ~180 resources costing roughly
+  # $50/month to an environment with no application code, no image in ECR and
+  # every service at desired_count 0. With a plain push trigger, MERGING THE PR
+  # WOULD BE THE SPEND DECISION, taken by whoever clicks Squash — which
+  # directly contradicts ADR 0005's "Slice C is authored now and applied
+  # selectively; applying it is a separate, reversible decision per component".
+  # An adversarial review caught the contradiction between the ADR and this
+  # file in the same commit.
+  #
+  # TO ENABLE: set repository variable TERRAFORM_AUTO_APPLY to "true"
+  # (Settings → Secrets and variables → Actions → Variables). One switch, no
+  # code change, and the act of flipping it is a decision someone made rather
+  # than a side effect of a merge.
+  #
+  # Until then: run this workflow manually from the Actions tab, which applies
+  # exactly when a human asks it to.
+  #
+  # `environment: staging` below is a second, independent gate — add required
+  # reviewers to that GitHub Environment and even a manual run needs approval.
+  # §14.9's "one-click promote" for production is that same mechanism, and
+  # production should have it from its first day.
+  # --------------------------------------------------------------------------
   apply:
     name: terraform apply (staging)
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch'
+          || (github.event_name == 'push'
+              && github.ref == 'refs/heads/main'
+              && vars.TERRAFORM_AUTO_APPLY == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
