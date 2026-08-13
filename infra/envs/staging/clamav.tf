@@ -105,6 +105,19 @@ locals {
   # 6 times a day: ~$0.08/month.
   freshclam_task_size = { cpu = 256, memory = 1024 }
 
+  # ⚠ THE QUEUE NAME IS A LOCAL BECAUSE OF A TERRAFORM CYCLE, not for tidiness.
+  # The scan queue's redrive_policy names the DLQ, and the DLQ's
+  # redrive_allow_policy names the scan queue: referencing both as resource
+  # attributes is a dependency cycle Terraform refuses to plan
+  # ("Cycle: aws_sqs_queue.av_scan_dlq, aws_sqs_queue.av_scan"). One side has
+  # to be a constructed ARN, and the DLQ is the right side to construct
+  # because it is the one whose grant is a guard rather than a wiring.
+  #
+  # The cost of that: renaming the scan queue means changing it in TWO places.
+  # Both are here.
+  av_scan_queue_name = "nt-${local.env}-av-scan"
+  av_scan_queue_arn  = "arn:aws:sqs:${local.region}:${local.account_id}:nt-${local.env}-av-scan"
+
   # The two buckets whose PutObjects must be scanned. exports is deliberately
   # absent: nothing external writes to it — the application generates its
   # contents from already-scanned documents (runbook §6.2 asks for exports to
@@ -447,16 +460,19 @@ resource "aws_sqs_queue" "av_scan_dlq" {
   # Only the scan queue may redrive into this one. Without this, any queue in
   # this SHARED account could name it as its DLQ and the alarm below would
   # start reporting another product's failures as ours.
+  #
+  # A constructed ARN rather than aws_sqs_queue.av_scan.arn — see the cycle
+  # note on local.av_scan_queue_arn.
   redrive_allow_policy = jsonencode({
     redrivePermission = "byQueue"
-    sourceQueueArns   = [aws_sqs_queue.av_scan.arn]
+    sourceQueueArns   = [local.av_scan_queue_arn]
   })
 
   tags = { Component = "clamav" }
 }
 
 resource "aws_sqs_queue" "av_scan" {
-  name = "nt-${local.env}-av-scan"
+  name = local.av_scan_queue_name
 
   visibility_timeout_seconds = local.av_visibility_timeout
 
