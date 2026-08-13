@@ -1,0 +1,25 @@
+{
+  "name": "@neoting/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "prisma": {
+    "schema": "../../prisma/schema.prisma",
+    "seed": "tsx ../../prisma/seed.ts"
+  },
+  "scripts": {
+    "typecheck": "echo \"typecheck: no sources yet (S0 scaffold)\"",
+    "lint": "echo \"lint: not configured yet (S0)\"",
+    "test": "echo \"test: no tests yet (S0)\"",
+    "prisma:validate": "prisma validate",
+    "prisma:format": "prisma format",
+    "prisma:generate": "prisma generate"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.20.0"
+  },
+  "devDependencies": {
+    "prisma": "^5.22.0",
+    "tsx": "^4.19.0"
+  }
+}
