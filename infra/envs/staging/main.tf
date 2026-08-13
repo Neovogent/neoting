@@ -6,6 +6,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.60"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
 
   # Credentials come from the environment: AWS_PROFILE=nt locally, OIDC in CI.
@@ -43,12 +47,23 @@ locals {
   env         = "staging"
   region      = "eu-west-2"
   github_repo = "neovogent/neoting"
+  domain      = "neoting.neovogent.com" # pre-launch domain (D5); neoting.com at cutover
+  azs         = ["eu-west-2a", "eu-west-2b", "eu-west-2c"]
+  vpc_cidr    = "10.20.0.0/16" # staging; prod takes 10.30.0.0/16 — never overlap
 
   # DataClass drives retention jobs (Governance §12.2) and cost attribution (§13.5).
+  #
+  # sse: the receipts bucket is AES256 by default, NOT aws:kms. SES validates a
+  # receipt rule by test-writing to the bucket, and that write fails against a
+  # customer-managed-key default ("InvalidS3Configuration: Kms key is not
+  # available") no matter how the key policy is written — verified empirically
+  # 13 Aug 2026. Inbound mail is still encrypted with our CMK: the key is named
+  # on the SES action itself (email.tf), which SES accepts. Objects land
+  # SSE-KMS under alias/nt-staging-docs exactly as intended.
   buckets = {
-    docs     = { data_class = "customer-document" }
-    receipts = { data_class = "customer-document" }
-    exports  = { data_class = "customer-document" }
+    docs     = { data_class = "customer-document", sse = "aws:kms" }
+    receipts = { data_class = "customer-document", sse = "AES256" }
+    exports  = { data_class = "customer-document", sse = "aws:kms" }
   }
 
   bucket_names = { for k, v in local.buckets : k => "nt-${local.env}-${k}-${local.account_id}" }
@@ -64,11 +79,11 @@ locals {
 # object keys + IAM/session scoping + RLS. See runbook Step 6.2 and ADR 0008.
 # --------------------------------------------------------------------------
 resource "aws_kms_key" "docs" {
-  description             = "Neoting staging - documents, receipts, exports (D30 eu-west-2)"
-  key_usage               = "ENCRYPT_DECRYPT"
+  description              = "Neoting staging - documents, receipts, exports (D30 eu-west-2)"
+  key_usage                = "ENCRYPT_DECRYPT"
   customer_master_key_spec = "SYMMETRIC_DEFAULT"
-  enable_key_rotation     = true
-  deletion_window_in_days = 30
+  enable_key_rotation      = true
+  deletion_window_in_days  = 30
 
   policy = templatefile("${path.module}/policies/kms-docs.json.tftpl", {
     account_id = local.account_id
@@ -114,11 +129,11 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm     = "aws:kms"
-      kms_master_key_id = aws_kms_key.docs.key_id
+      sse_algorithm     = each.value.sse
+      kms_master_key_id = each.value.sse == "aws:kms" ? aws_kms_key.docs.key_id : null
     }
     # Cuts KMS request charges by up to ~99% on a read-heavy document store.
-    bucket_key_enabled = true
+    bucket_key_enabled = each.value.sse == "aws:kms"
   }
 }
 
@@ -126,10 +141,15 @@ resource "aws_s3_bucket_policy" "this" {
   for_each = local.buckets
   bucket   = aws_s3_bucket.this[each.key].id
 
-  policy = templatefile("${path.module}/policies/bucket.json.tftpl", {
-    bucket     = local.bucket_names[each.key]
-    account_id = local.account_id
-  })
+  # The receipts bucket additionally grants SES the right to deliver inbound
+  # mail into inbound/ — a service principal, so it needs an explicit Allow.
+  policy = templatefile(
+    each.key == "receipts" ? "${path.module}/policies/bucket-receipts.json.tftpl" : "${path.module}/policies/bucket.json.tftpl",
+    {
+      bucket     = local.bucket_names[each.key]
+      account_id = local.account_id
+    }
+  )
 }
 
 # --------------------------------------------------------------------------
