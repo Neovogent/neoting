@@ -50,7 +50,9 @@ So objects land encrypted with our CMK exactly as intended. What changed is whic
 
 4. **Email bodies and attachments arriving here are untrusted content.** They reach a model only inside `<untrusted_content>` (Governance §9.6). This channel is the single most likely prompt-injection vector in the product, because anyone in the world can send to `doc@`. The adversarial corpus must include realistic email-borne payloads, not only document-borne ones.
 
-5. **Production access is a separate clock.** The SES sandbox restricts *outbound* only; inbound receiving works regardless, so ingest is unblocked today. Outbound — onboarding invites, supplier statement-gap chases, notifications — waits on the sandbox-exit ticket submitted 13 Aug. Status at time of writing: pending, ~1–2 days quoted.
+5. **Production access is a separate clock, and it is waiting on us.** The SES sandbox restricts *outbound* only; inbound receiving works regardless, so ingest is unblocked today. Outbound — onboarding invites, supplier statement-gap chases, notifications — waits on case **178662887400793**, submitted 13 Aug.
+
+   Read the API status carefully. `sesv2 get-account` reports `ReviewDetails.Status = "DENIED"`, which looks final and is not: the support case is **"Pending customer action"**, because AWS replied within the hour asking for more detail on sending processes, bounce and complaint handling, and how recipient lists are maintained. SES marks access denied while it waits for the answer. Anyone reading only the API would conclude the request was refused and that there is nothing to do; the truth is the opposite — there is exactly one thing to do, and no clock runs down on its own until it is done.
 
 6. **Both `doc@` domains must route identically through the D5 cutover.** Today only `neoting.neovogent.com` exists. When `neoting.com` is acquired, it needs its own identity, DKIM, MAIL FROM, DMARC and MX, plus a receipt rule matching `doc@neoting.com` in the same rule set — a rule set can hold both. Rehearse in staging; a cutover that drops inbound mail loses customer documents, and the sender gets a bounce for a document they will assume arrived.
 

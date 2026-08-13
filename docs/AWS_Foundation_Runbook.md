@@ -488,7 +488,7 @@ Cross-region replication of `docs` → the DR region (D30's second named fallbac
 
 ### 6.7 Done when
 - [ ] `terraform apply` in `envs/staging` from zero produces a reachable, TLS-terminated, WAF-fronted staging stack.
-- [ ] A task can read a document from S3 only with the workspace encryption context, and fails without it (test it deliberately).
+- [ ] A task can read document objects **only under the `w/` prefix**, and an unprefixed `ListBucket` is denied (test both deliberately). *Corrected: this row previously demanded a per-workspace encryption context, which §6.2 above proves S3 cannot provide — the two rows contradicted each other. ADR 0008 records the replacement design and the honest limit: the IAM layer bounds the namespace, not the tenant.*
 - [ ] The app DB role cannot bypass RLS (assert in the tenancy suite).
 - [ ] Kickoff §7.3 satisfied: staging deployed by CI with real sandboxes wired.
 
@@ -553,7 +553,7 @@ These are not optional extras; they are what makes the pilot legal and the pen t
 - [ ] Zero IAM users; zero static access keys; OIDC for CI (Step 2.4).
 - [ ] SCPs enforcing region and protecting the security baseline (Step 1.5).
 - [ ] All S3 public access blocked at account level; TLS-only bucket policies.
-- [ ] KMS CMKs with rotation; workspace encryption context enforced by key policy.
+- [ ] KMS CMKs with rotation on, and an **explicit `Deny` for any principal outside `role/nt-*`** in every key policy (D36's compensating control). *Corrected: "workspace encryption context enforced by key policy" was not achievable — see §6.2 and ADR 0008.*
 - [ ] Secrets Manager only; **no secrets in the repo, in env files, or in Vercel** (Guideline §7.2 — the frontend needs none by design).
 - [ ] RDS not publicly accessible, `force_ssl`, app role cannot bypass RLS.
 - [ ] WAF in front of every public surface, tightest on the portal.
@@ -576,15 +576,16 @@ These are not optional extras; they are what makes the pilot legal and the pen t
 ### 12.2 ADR register to write in W0 (`docs/adr/`)
 Each one line to a page, per Kickoff §8's "each gets a one-line ADR":
 
-| ADR | Subject | Source |
-|---|---|---|
-| 0001 | Bedrock eu-west-2: model availability, invocation route (in-region vs inference profile), effort parameters, measured pricing vs the £0.02 guardrail | 8.1 / 8.3 |
-| 0002 | SES inbound receiving region + receipt-bucket topology | 8.2 |
-| 0003 | Textract `AnalyzeExpense` quotas + per-page pricing at pilot volume | 8.4 |
-| 0004 | Transcribe streaming en-GB quality floor (10 utterances) | 8.5 |
-| 0005 | AWS account topology, SCP set, and the Slice A/B/C sequencing (§0.1 of this runbook) | 3.1 / G1 / G8 |
-| 0006 | Terraform state layout + OIDC role scoping | 3.2 / 4.10 |
-| 0007 | DR region choice for the cross-region backup target (D30's second named fallback) | Gov §17 |
+| ADR | Subject | Source | Status |
+|---|---|---|---|
+| 0001 | Bedrock eu-west-2: model availability, invocation route (in-region vs inference profile), effort parameters, measured pricing vs the £0.02 guardrail | 8.1 / 8.3 | ✅ Accepted |
+| 0002 | SES inbound receiving region + receipt-bucket topology | 8.2 | ✅ Accepted |
+| 0003 | Textract `AnalyzeExpense` quotas + per-page pricing at pilot volume | 8.4 | ⏳ **Blocked** — verification 8.4 is not closed. The quota-increase requests are still `CASE_OPENED` (raised 13 Aug), so there are no measured quotas to write down. Writing it now would be fiction. |
+| 0004 | Transcribe streaming en-GB quality floor (10 utterances) | 8.5 | ⏳ **Blocked** — verification 8.5 not run. |
+| 0005 | AWS account topology, SCP set, and the Slice A/B/C sequencing (§0.1 of this runbook) | 3.1 / G1 / G8 | ✅ Accepted — also records that the G8 trigger fired on 13 Aug (D34 + D35) |
+| 0006 | Terraform state layout + OIDC role scoping | 3.2 / 4.10 | ✅ Accepted |
+| 0007 | DR region choice for the cross-region backup target (D30's last named fallback) | Gov §17 | 🟡 **Proposed** — needs Shakib's ratification; it fixes the wording of a residency exception |
+| 0008 | S3 encryption topology: request-time gating, not per-workspace keys | §6.2 / Gov §5.2 / SoT §15 | ✅ Accepted — cited by both governing documents, which is why it could not stay unwritten |
 
 ### 12.3 Escalations this runbook expects to generate
 1. **Bedrock cross-region inference profiles vs D30** (Step 3.2) — CEO/legal, same day, versioned amendment or contingency route.

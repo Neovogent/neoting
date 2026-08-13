@@ -7,11 +7,17 @@
 #
 # ⚠ Production access (sandbox exit) is a support-ticket flow, not Terraform.
 #
-# STATUS: **DENIED**, not pending. `aws sesv2 get-account --region eu-west-2`
-# returns ProductionAccessEnabled=false with ReviewDetails.Status="DENIED",
-# case 178662887400793 (verified 13 Aug 2026). An earlier comment here said
-# PENDING; that was wrong and the difference matters, because a denial does not
-# resolve itself by waiting.
+# STATUS: **case open, pending OUR reply** — case 178662887400793.
+#
+# Read the API status carefully, because it is misleading on its own:
+# `aws sesv2 get-account --region eu-west-2` reports
+# ProductionAccessEnabled=false with ReviewDetails.Status="DENIED", but the
+# support case itself is "Pending customer action" — AWS replied within the
+# hour asking for more detail on sending processes, bounce handling and
+# recipient-list management. SES marks access as denied while it waits.
+#
+# So this is NOT a refusal and NOT a timer running down on its own. It is a
+# question waiting for an answer, and nothing moves until someone answers it.
 #
 # What this blocks: every OUTBOUND path. Client onboarding invites (SoT §6),
 # supplier statement-gap chases (D16), publish-failure and upload notifications.
