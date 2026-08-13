@@ -12,47 +12,74 @@ Everything here is written so that **moving to a dedicated account is a variable
 
 | Constraint | Compensation in this config |
 |---|---|
-| Org is `CONSOLIDATED_BILLING` → **SCPs are unavailable** | `nt-region-guardrail` IAM policy attached to every Neoting principal. Weaker than an SCP (an account admin can detach it) but it constrains everything we run. D30. |
+| Org is `CONSOLIDATED_BILLING` → **SCPs are unavailable** | `nt-region-guardrail` IAM policy attached to every Neoting principal. Weaker than an SCP (an account admin can detach it) but it constrains everything we run. D30. Verified: `AvailablePolicyTypes` is `[]`, so this is a property of the org type, not a permissions problem we can escalate. |
 | Six other IAM principals hold admin in this account | KMS key policy and bucket policies carry an **explicit Deny** for any principal not matching `role/nt-*`. Explicit deny beats any IAM allow, so casual/accidental access is blocked. A determined admin can still rewrite those policies — but that act is now recorded by CloudTrail, which did not exist in this account before 13 Aug 2026. |
 | Other workloads sit in eu-west-1 / us-east-2 | Everything Neoting is eu-west-2 only, enforced by the guardrail policy above. |
 
-**This is a mitigation, not isolation.** The DPIA must describe the account as shared until the dedicated accounts land.
+**This is a mitigation, not isolation.** The DPIA must describe the account as shared until the dedicated accounts land. Full reasoning: `docs/adr/0005-aws-account-topology-and-slice-sequencing.md`.
+
+### ⚠ The `role/nt-*` naming contract is load-bearing
+
+Every deny guard in the bucket and KMS policies keys off `arn:aws:iam::252959251643:role/nt-*`. **Any new role that must touch Neoting S3 or KMS must be named `nt-*`, or it is denied.** The failure looks like a permissions bug and is actually a naming bug, which is why it belongs in a heading rather than a footnote.
 
 ## Layout
 
 ```
 infra/
   envs/
-    staging/      this environment (shared account, eu-west-2)
-    prod/         Infra Week (G8)
-  modules/        network, data, compute, edge, storage, observability, email
+    account/      CloudTrail, GuardDuty, Budgets — account-scoped, own state key
+    staging/      the one live environment (shared account, eu-west-2)
+  README.md
 ```
 
-## Bootstrap resources — deliberately NOT in Terraform state
+**There is no `modules/` directory, and `envs/prod/` does not exist yet.** Earlier revisions of this file described both as though they did. They are the same follow-up: extracting the flat staging config into reusable modules is what stops `prod` being a copy-paste, and it has to be done with `moved` blocks whose entire deliverable is a `terraform plan` reporting *0 to add, 0 to change, 0 to destroy*. That is a focused, reviewable PR of its own, and mixing it into a change that also adds resources would make both unreviewable.
+
+## State
+
+| Key | Contents | Why separate |
+|---|---|---|
+| `staging/core.tfstate` | one environment | disposable by design (G1) |
+| `account/core.tfstate` | CloudTrail, GuardDuty, Budgets | outlives every environment — a `destroy` on staging must not take the audit trail with it |
+
+Split by **lifetime**, not by team or service. Locking is S3-native (`use_lockfile = true`, Terraform ≥ 1.11); distinct keys mean distinct lockfiles, so account and staging applies never block each other. Full reasoning: `docs/adr/0006-terraform-state-layout-and-oidc-role-scoping.md`.
+
+### Bootstrap resources — deliberately NOT in Terraform state
 
 - S3 `nt-tfstate-staging-252959251643` (versioned, encrypted, PAB on)
 
 Chicken-and-egg: the backend cannot manage itself, and a `terraform destroy` that eats the state bucket is a bad afternoon. Created by CLI, documented here, left alone.
 
-State locking is **S3-native** (`use_lockfile = true`, Terraform ≥ 1.11). The DynamoDB table `nt-tflock` created during bootstrap is **unused** — `dynamodb_table` is deprecated in the S3 backend. Safe to delete:
-`aws dynamodb delete-table --table-name nt-tflock --region eu-west-2`
-
-## Account-level resources (created 13 Aug 2026, Terraform TODO)
-
-CloudTrail `neoting-audit` (multi-region, log-file validation), GuardDuty (eu-west-2 + eu-west-1), AWS Budgets `neoting-monthly-1300` and `neoting-pot-8000`, SES production-access request, Textract quota increases. These belong in `envs/account/` — not yet written.
+**Known gap:** the state bucket has **no bucket policy**, so it lacks the explicit `Deny` for principals outside `role/nt-*` that every other Neoting bucket carries. In a shared account with seven IAM users, state is a high-value target — it holds resource configuration and, for some resource types, secret material. A policy can be added without adopting the bucket into state.
 
 ## Usage
 
 ```bash
-cd infra/envs/staging
-set AWS_PROFILE=nt          # cmd     (PowerShell: $env:AWS_PROFILE="nt")
+cd infra/envs/staging          # or infra/envs/account
+export AWS_PROFILE=nt          # PowerShell: $env:AWS_PROFILE="nt"
 terraform init
-terraform plan              # first run adopts existing resources via imports.tf
+terraform plan
 terraform apply
 ```
 
 Credentials are never in the config: locally via `AWS_PROFILE`, in CI via the `nt-staging-ci-*` OIDC roles. If `init` says *"No valid credential sources found"*, the profile isn't exported.
 
-The first plan should show **zero creates and zero destroys** for everything in `imports.tf`. If it wants to create something that already exists, the import ID is wrong — fix the import, never let it create a duplicate.
+**Each directory is its own root module.** There is no `terraform apply` at `infra/` and one should not be invented — run them separately, account first when a change touches both.
 
-Once adopted, delete `imports.tf` (import blocks are one-shot by design).
+### Adopting `envs/account/`
+
+That directory ships with `imports.tf`, containing declarative `import` blocks for resources that already exist in AWS. The first plan **adopts** rather than creates.
+
+Expect **zero creates and zero destroys**. Do *not* expect a completely empty diff: the imported resources currently carry no tags at all, and the provider's `default_tags` will add `Project`/`Env`/`Owner`/`ManagedBy` to each. Those are in-place tag updates and they are wanted — `Project=neoting` is load-bearing for every cost figure we quote while the account is shared (D36). If the plan wants to *create* something that already exists, the import ID is wrong: fix the import, never let it create a duplicate.
+
+Delete `imports.tf` once adoption has applied. Import blocks are one-shot by design.
+
+## Still outstanding
+
+- **`modules/` extraction and `envs/prod/`** — the follow-up described under Layout.
+- **Route 53 hosted zone `Z08402112LR2AWM4XBVST`** is created outside Terraform and consumed by `envs/staging/email.tf` as a `data` source. A plan fails outright if it is ever absent or renamed. Adopting it into `envs/account/` would close that.
+- **Budget notifications go to one personal inbox.** Runbook §10.1 wants an SNS topic plus a role address. One human inbox is a single point of failure for the alert that tells us the pot is emptying.
+- **IAM Access Analyzer is not enabled** (`list-analyzers` returns `[]`). In a shared account with seven users it is the cheapest way to find unintended cross-principal access. Security Hub is also absent — probably Infra Week, but it should be a decision rather than an omission.
+- **SES production access was DENIED**, not pending — case `178662887400793`. Outbound email is blocked until that is appealed; inbound is unaffected. See `docs/adr/0002-*` and `envs/staging/email.tf`.
+- **Textract quota increases are still open** (`CASE_OPENED`, raised 13 Aug).
+
+Historic note: the DynamoDB lock table `nt-tflock` from bootstrap **no longer exists** — `dynamodb list-tables` returns `[]`. Earlier revisions of this file told you to delete it; that work is done.

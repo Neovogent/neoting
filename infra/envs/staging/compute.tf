@@ -121,15 +121,49 @@ resource "aws_iam_role_policy" "app_runtime" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "DocumentStorage"
+        # ADR 0008 — the IAM layer bounds the NAMESPACE, not the tenant.
+        #
+        # One task role serves every workspace, so IAM cannot scope to a single
+        # businessId; that scoping is the application's job (RLS decides which
+        # S3 key a caller may name at all) plus item-scoped presigned URLs.
+        # What IAM can do, and from here does, is confine the role to the
+        # workspace-prefixed namespace `w/<businessId>/…`. A bug that builds a
+        # key outside `w/` now reads nothing, and a compromised task cannot
+        # reach bootstrap objects, backups, or anything a future writer puts
+        # outside that prefix.
+        #
+        # This statement exists because Governance §5.2 and SoT §15 both promise
+        # "IAM prefix conditions on the task role" — and until it was written,
+        # both documents described a control that was not built. The previous
+        # version granted every action on `<bucket>/*` with no condition.
+        Sid    = "DocumentObjectsWorkspacePrefixOnly"
         Effect = "Allow"
-        Action = ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"]
-        Resource = flatten([
-          for name in values(local.bucket_names) : [
-            "arn:aws:s3:::${name}",
-            "arn:aws:s3:::${name}/*",
-          ]
-        ])
+        Action = ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject", "s3:DeleteObject"]
+        Resource = [
+          "arn:aws:s3:::${local.bucket_names["docs"]}/w/*",
+          "arn:aws:s3:::${local.bucket_names["exports"]}/w/*",
+        ]
+      },
+      {
+        # SES writes inbound mail; the application reads it and tidies up after
+        # ingest. No PutObject — nothing in the app should be able to forge an
+        # inbound message into the receipts bucket.
+        Sid      = "InboundMailObjects"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:GetObjectVersion", "s3:DeleteObject"]
+        Resource = ["arn:aws:s3:::${local.bucket_names["receipts"]}/inbound/*"]
+      },
+      {
+        # A listing with no prefix is denied outright: `s3:prefix` must be
+        # present and must sit inside a namespace we recognise. That is what
+        # stops "list the whole bucket" being one SDK default away.
+        Sid      = "ListWithinKnownPrefixesOnly"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = [for name in values(local.bucket_names) : "arn:aws:s3:::${name}"]
+        Condition = {
+          StringLike = { "s3:prefix" = ["w/*", "inbound/*"] }
+        }
       },
       {
         Sid      = "EnvelopeEncryption"

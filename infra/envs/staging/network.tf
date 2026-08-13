@@ -144,10 +144,30 @@ resource "aws_security_group" "alb" {
   tags = { Name = "nt-${local.env}-alb" }
 }
 
+# Runbook §6.5: the origin is internet-facing but reachable ONLY from
+# CloudFront's edge, because "public origins that bypass CloudFront also
+# bypass WAF" — and the WAF ACL is where the portal rate limits that back
+# Gov §11.8 actually live. AWS owns the contents of this list, so edge IP
+# ranges are never tracked by hand.
+#
+# This is half of the lock. The prefix list is shared by every CloudFront
+# customer, so anyone could point their OWN distribution at our origin and
+# arrive from an allowed address; the secret origin header that the ALB
+# listener rule demands (alb.tf) is the other half. Neither is sufficient
+# alone.
+#
+# ⚠ QUOTA: a managed prefix list consumes its max_entries — 55 for
+# cloudfront/origin-facing — against the default 60 rules per security group,
+# not one. This SG therefore has room for almost nothing else. New rules go on
+# a different security group, or the quota gets raised first.
+#
+# To smoke-test the ALB directly before CloudFront exists, add a temporary
+# ingress rule for your own /32 in a PR (runbook §2.2 — never a console click)
+# and delete it in the same day's work.
 resource "aws_vpc_security_group_ingress_rule" "alb_https" {
   security_group_id = aws_security_group.alb.id
-  description       = "HTTPS from the internet (tighten to the CloudFront prefix list when the distribution lands)"
-  cidr_ipv4         = "0.0.0.0/0"
+  description       = "HTTPS from CloudFront edge locations only (runbook §6.5)"
+  prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront_origin_facing.id
   from_port         = 443
   to_port           = 443
   ip_protocol       = "tcp"

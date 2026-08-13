@@ -206,6 +206,19 @@ resource "aws_iam_role" "ci_deploy" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+        }
+        # IgnoreCase, deliberately. IAM string conditions are case-SENSITIVE and
+        # GitHub emits the repository in the `sub` claim with its canonical
+        # casing — which is `Neovogent/neoting`, while this config carries
+        # `neovogent/neoting`. A plain StringEquals would therefore deny every
+        # deploy, and because no workflow had ever assumed this role, the first
+        # symptom would have been an unexplained AssumeRoleWithWebIdentity
+        # failure on the first real deploy.
+        #
+        # This costs nothing in strength: GitHub does not allow two
+        # organisations whose names differ only by case, so case-insensitive
+        # matching cannot widen who this trusts.
+        StringEqualsIgnoreCase = {
           "token.actions.githubusercontent.com:sub" = "repo:${local.github_repo}:ref:refs/heads/main"
         }
       }
@@ -243,7 +256,14 @@ resource "aws_iam_role" "ci_plan" {
       Action    = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = { "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com" }
-        StringLike   = { "token.actions.githubusercontent.com:sub" = "repo:${local.github_repo}:*" }
+        # Matches the `repository` claim rather than wildcarding `sub`. Two
+        # reasons: it says what it means ("any ref in this repo, which is what a
+        # plan role is for") instead of relying on a trailing `*`, and it can
+        # use IgnoreCase — StringLike has no case-insensitive variant, so a
+        # wildcard on `sub` would carry the same casing trap the deploy role had.
+        StringEqualsIgnoreCase = {
+          "token.actions.githubusercontent.com:repository" = local.github_repo
+        }
       }
     }]
   })

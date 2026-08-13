@@ -1,0 +1,254 @@
+# NEOTING — Terraform plan on PRs, apply on main.
+#
+# Authentication is GitHub OIDC into two roles that already exist in
+# infra/envs/staging/main.tf and have never been used:
+#
+#   nt-staging-ci-plan     ReadOnlyAccess + the region guardrail. Trusted for
+#                          ANY ref of neovogent/neoting (StringLike sub
+#                          "repo:neovogent/neoting:*") — safe, because it can
+#                          only read.
+#   nt-staging-ci-deploy   PowerUserAccess + a scoped IAM inline policy +
+#                          the region guardrail. Trusted for exactly ONE
+#                          subject: "repo:neovogent/neoting:ref:refs/heads/main".
+#                          A PR branch cannot assume it. That trust condition
+#                          is the security boundary of this whole workflow —
+#                          not the `if:` on the apply job, which is only a
+#                          convenience. Widening it to StringLike is how you
+#                          would accidentally let any branch deploy.
+#
+# There are NO static AWS keys anywhere in this repository and none may be
+# added. The account (252959251643) is shared with unrelated products (D36),
+# so the role name is the only thing keeping us in our own lane; it is not a
+# secret, and hardcoding it here beats an indirection nobody can audit.
+#
+# Both roles carry nt-region-guardrail, which denies every request outside
+# eu-west-2 except the global/us-east-1 services CloudFront, WAF and ACM (D30).
+# A stray provider block in another region therefore fails at apply with an
+# explicit AccessDenied rather than quietly putting UK client data in Ohio.
+#
+# NOT A REQUIRED STATUS CHECK, deliberately. Branch protection requires the
+# check named `check` and nothing else. A path-filtered workflow that is set as
+# required never reports on PRs that do not touch its paths, and the PR then
+# sits "Expected — waiting for status" forever. If this ever becomes required,
+# it needs a companion no-op job on the inverse path filter — read that
+# sentence twice before adding it to apply-branch-protection.sh.
+
+name: terraform
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform.yml"
+
+# Scoped to the STATE FILE, not to the branch. Two runs against
+# staging/core.tfstate must never overlap, whichever ref they came from.
+# cancel-in-progress is false on purpose: cancelling terraform mid-apply leaves
+# a stale S3 lock and, worse, state that no longer describes the account.
+concurrency:
+  group: terraform-staging-core
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # OIDC. Nothing else — no pull-requests: write, see below.
+
+env:
+  AWS_REGION: eu-west-2
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  # Minor version pinned, patches float. 1.11 is the floor because main.tf's
+  # backend uses S3-native state locking (use_lockfile), which replaced the
+  # DynamoDB lock table. An applying pipeline must not float its toolchain
+  # across minors — bump this in a PR, with the plan diff as evidence.
+  TF_VERSION: "<1.12.0"
+
+jobs:
+  # =========================================================================
+  # PLAN — every infra PR. Read-only credentials, so this cannot change the
+  # account even if the .tf files ask it to.
+  # =========================================================================
+  plan:
+    name: terraform plan (staging)
+    # Fork PRs get no OIDC token and must never get one: the plan role can read
+    # every secret ARN, log group and bucket listing in a shared account.
+    # The repo is private with no forks today; this line is what keeps that
+    # true if it ever goes public.
+    if: >-
+      ${{ github.event_name == 'pull_request'
+          && !github.event.pull_request.draft
+          && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: infra/envs/staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          # The wrapper rewrites stdout and swallows exit codes, which breaks
+          # the -detailed-exitcode handling below.
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::252959251643:role/nt-staging-ci-plan
+          role-session-name: gha-plan-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Formatting is checked across the whole tree, not just this env, so a
+      # new module cannot land unformatted.
+      - name: fmt
+        working-directory: infra
+        run: terraform fmt -check -recursive
+
+      # -lockfile=readonly: .terraform.lock.hcl is committed, and a plan that
+      # silently upgrades a provider is a plan of something other than what
+      # main will apply.
+      - name: init
+        run: terraform init -input=false -lockfile=readonly
+
+      - name: validate
+        run: terraform validate -no-color
+
+      # -lock=false is REQUIRED here, not an optimisation. The plan role holds
+      # ReadOnlyAccess; S3-native locking writes a .tflock object to the state
+      # bucket, and that PutObject is denied. A plan mutates nothing, so there
+      # is nothing for the lock to protect. (The apply job below DOES lock.)
+      #
+      # If this step fails with AccessDenied on
+      # aws_secretsmanager_secret_version.redis, that is ReadOnlyAccess
+      # declining GetSecretValue during refresh — fix it with a scoped grant on
+      # /neoting/staging/* attached to nt-staging-ci-plan, never by widening the
+      # managed policy.
+      - name: plan
+        id: plan
+        run: |
+          set +e
+          terraform plan -no-color -input=false -lock=false \
+            -detailed-exitcode -out=tfplan
+          code=$?
+          set -e
+          case "$code" in
+            0) echo "changes=none" >> "$GITHUB_OUTPUT" ;;
+            2) echo "changes=pending" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$code" ;;
+          esac
+
+      # The plan goes to the job summary, not to a PR comment. A PR comment
+      # would need `pull-requests: write` on a workflow that already holds an
+      # AWS credential, and the plan text names every bucket, subnet, secret ARN
+      # and role in a shared account. Read it from the checks tab.
+      #
+      # Terraform redacts values marked sensitive (random_password.redis_auth
+      # among them) as "(sensitive value)" — but truncate anyway: the summary
+      # has a 1 MB cap and a truncated plan is better than a dropped one.
+      - name: summary
+        if: ${{ always() && steps.plan.outcome != 'skipped' }}
+        run: |
+          {
+            echo "### terraform plan — staging/core.tfstate"
+            echo
+            echo "Changes pending: \`${{ steps.plan.outputs.changes }}\`"
+            echo
+            echo '```terraform'
+            terraform show -no-color tfplan 2>/dev/null | head -c 200000 || echo "(no plan file — the plan step failed before writing one)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # =========================================================================
+  # APPLY — main only. What gets applied is the plan computed in THIS run, in
+  # this job, from this commit: `terraform apply tfplan`, never a bare apply.
+  # A bare `apply -auto-approve` re-plans at apply time and can therefore act
+  # on a state of the world nobody looked at.
+  # =========================================================================
+  apply:
+    name: terraform apply (staging)
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    # Add required reviewers to the `staging` environment and this becomes a
+    # gated deploy with zero change to this file. `production` will need that
+    # from day one — §14.9 one-click promote is a GitHub Environment approval,
+    # not a bespoke mechanism.
+    environment: staging
+
+    defaults:
+      run:
+        working-directory: infra/envs/staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::252959251643:role/nt-staging-ci-deploy
+          role-session-name: gha-apply-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: fmt
+        working-directory: infra
+        run: terraform fmt -check -recursive
+
+      - name: init
+        run: terraform init -input=false -lockfile=readonly
+
+      - name: validate
+        run: terraform validate -no-color
+
+      # -lock-timeout: queue behind another writer for five minutes instead of
+      # failing instantly. Concurrency above already serialises this workflow;
+      # the timeout covers a human running terraform from a laptop.
+      - name: plan
+        run: terraform plan -no-color -input=false -lock-timeout=5m -out=tfplan
+
+      - name: apply
+        run: terraform apply -no-color -input=false -lock-timeout=5m -auto-approve tfplan
+
+      - name: summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "### terraform apply — staging/core.tfstate"
+            echo
+            echo "Commit: \`${{ github.sha }}\`"
+            echo
+            echo '```terraform'
+            terraform show -no-color tfplan 2>/dev/null | head -c 200000 || echo "(no plan file)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+# ---------------------------------------------------------------------------
+# ADDING THE NEXT ENVIRONMENT
+#
+# This workflow is deliberately single-env: infra/envs/staging is the only
+# state file that exists. When envs/account and envs/prod land, convert plan
+# and apply to a matrix over { dir, plan_role, apply_role, environment } — and
+# note that each new env needs its OWN pair of OIDC roles in its own state.
+# Do not point prod at nt-staging-ci-deploy because it happens to have
+# PowerUserAccess; the whole point of a per-env role is that a staging pipeline
+# cannot touch production.
+#
+# prod's apply job must also carry `environment: production` with required
+# reviewers — that is the one-click promote of Governance §14.9. And the
+# concurrency group must become per-state-file
+# (terraform-${{ matrix.env }}-core), or a prod apply will queue behind a
+# staging one for no reason.
+# ---------------------------------------------------------------------------
