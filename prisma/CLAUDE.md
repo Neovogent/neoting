@@ -36,4 +36,23 @@ Never drop or rename a column in one step. Indexes ship in the **same migration*
 
 ## Current state
 
-Skeleton. Schema + RLS policies land in S0 before the contract freeze.
+**Draft for review — not yet frozen.**
+
+- `schema.prisma` — all 8 entity groups from SoT §15, ~35 models. `prisma validate` passes.
+- `sql/rls.sql` — helper functions, the single `app_can_access_business()` predicate, policies for every tenant table, delegated-OTP scoping, the append-only audit trigger, and the ActionProposal guard trigger.
+
+**No migration has been generated yet** — that needs a running database:
+
+```bash
+docker compose up -d
+pnpm --filter @neoting/api exec prisma migrate dev --create-only --name init
+cat prisma/sql/rls.sql >> prisma/migrations/*_init/migration.sql
+pnpm --filter @neoting/api exec prisma migrate dev
+```
+
+### Open questions for the freeze
+
+1. **Money width.** Every monetary column is `Int` pence, ceiling £21,474,836.47 per column. Comfortable for SME documents; confirm no pilot client needs more before this is law.
+2. **Extraction fields as `Json`.** Per-field value + confidence + provenance in one column. Flexible and matches the "fields jsonb" of §15 — but it cannot be indexed per field, so any future "find every document where the VAT number came from a low-confidence read" query needs a GIN index or promoted columns. Fine for v1; worth knowing.
+3. **`documents` carries denormalised header fields** (supplier, total, date) alongside `extractions`. Deliberate: inbox lists and search would otherwise reach into JSON on every row. The accepted extraction is the source of truth and these are a projection — they must be written by one code path only.
+4. **`audit_events.seq`** is `BigInt` per business for the hash chain. Allocation needs a per-business sequence or advisory lock; decide before the audit service is written.
