@@ -1,11 +1,12 @@
 # NEOTING — Engineering Governance
 
-**Version 1.3 · 13 August 2026 · Confidential**
+**Version 1.4 · 13 August 2026 · Confidential**
 *Changelog v1.0 → v1.1: model config rewritten Opus-led with task→effort map (D21); Bedrock/Transcribe/Textract routes (D20/D22); infra concretised — ECS Fargate, ElastiCache, CloudFront + WAF, Managed Grafana/Prometheus, Sentry EU (D23/D24); cost guardrail £0.02 → £0.05/document; explicit no-fine-tuning clause (D19).*
 *Changelog v1.1 → v1.2: three-tier model config with task→(model, effort) map and degradation chain (D28); pipeline guardrail restored to £0.02/document; per-class tier flags.*
 *Changelog v1.2 → v1.3: kickoff-review feedback (11–12 Aug) folded in — §12.1 UK-first residency made explicit with the named-fallback rule (D30) and no-ticket offboarding incl. trial end (D32); new §13.5 cost & usage telemetry for every metered vendor (D33); §13.2 alert list and §13.3 SLA linkage extended accordingly.*
+*Changelog v1.3 → v1.4: brought level with Source of Truth v1.4 after W0 measurement — §9.1 `MODELS` repinned to the in-region tiers (D28 as amended) with the access-route bullet updated now verification 8.1 is closed; **"temperature 0" reworded to be model-family-aware** (Opus 4.8 rejects the parameter outright, so a flat rule was unenforceable); §5.2 per-workspace KMS encryption context corrected to the request-time gating that S3 can actually enforce (ADR 0008); §1.1 stack line updated; §12.1 residency exceptions reduced from two to one after verification 8.2; §13.5 records the controls now live and the shared-account caveat (D36); §9.1 "week-2 bake-off" corrected to calibration per D20.*
 
-Companion to **NEOTING-Source-of-Truth-v1.3.md**. Together these two files are the **only source of truth**. This file governs *how the product is built and operated*: architecture rules, security enforcement, AI runtime rules, compliance operations, testing, and process — for every engineer and every AI coding agent working in the repository.
+Companion to **NEOTING-Source-of-Truth-v1.4.md**. Together these two files are the **only source of truth**. This file governs *how the product is built and operated*: architecture rules, security enforcement, AI runtime rules, compliance operations, testing, and process — for every engineer and every AI coding agent working in the repository.
 
 **Conflict rule:** the Source of Truth wins on product scope and requirements; this file wins on engineering rules, security enforcement, and process. Where a rule here can be enforced by ESLint, CI, or a pre-commit hook, it lives there too — the tooling is the rule's teeth, this file is its record.
 
@@ -15,7 +16,7 @@ Companion to **NEOTING-Source-of-Truth-v1.3.md**. Together these two files are t
 
 ### 1.1 Stack
 
-Next.js (App Router) · React · TypeScript (strict) · Node 22+ · **NestJS modular monolith** · Prisma + PostgreSQL 16 (RDS, RLS) · **ElastiCache Redis + BullMQ** · S3 (KMS) · **ECS Fargate behind CloudFront + AWS WAF** (D23) · **Amazon Bedrock (Claude Opus 4.8 / Sonnet 4.6 / Haiku 4.5)** · **Amazon Textract** · **Amazon Transcribe** · next-intl · Zod · Unleash (self-hosted) · Terraform · GitHub Actions · OTel → Managed Prometheus/Grafana + Sentry EU (D24). All eu-west-2.
+Next.js (App Router) · React · TypeScript (strict) · Node 22+ · **NestJS modular monolith** · Prisma + PostgreSQL 16 (RDS, RLS) · **ElastiCache Redis + BullMQ** · S3 (KMS) · **ECS Fargate behind CloudFront + AWS WAF** (D23) · **Amazon Bedrock (Claude Opus 4.6 / Claude Sonnet 4.6 / Amazon Nova Lite)** · **Amazon Textract** · **Amazon Transcribe** · next-intl · Zod · Unleash (self-hosted) · Terraform · GitHub Actions · OTel → Managed Prometheus/Grafana + Sentry EU (D24). All eu-west-2.
 
 **Package manager: `pnpm` only. Never `npm` or `yarn`.**
 
@@ -152,7 +153,7 @@ Every tenant-owned row carries `practice_id` (nullable for standalone businesses
 - The **only sanctioned accessor is the `scopedDb(ctx)` helper**, which opens that transaction and exposes the Prisma client inside it. An unscoped query is a code-review reject and a CI-grep failure.
 - **Practice-wide reads** (cross-client dashboards, "which clients have 10+ missing documents") are an explicit policy: practice staff read rows of businesses linked to their practice, filtered by their client assignments.
 - **Delegated OTP sessions** set `app.session_scope = 'delegated_upload'` plus the granted item IDs; policies restrict such sessions to exactly the requested items — upload and read of those items, nothing else.
-- S3 object keys are workspace-prefixed; each workspace has its own KMS encryption context. Vault, Redis keys, and audit partitions all carry the workspace identity.
+- S3 object keys are workspace-prefixed (`w/<businessId>/…`) under a **per-environment CMK**, and every object access is gated at request time: IAM prefix conditions on the task role, item-scoped presigned URLs, and the same RLS-scoped services that decide which key a caller may name at all. Vault, Redis keys, and audit partitions all carry the workspace identity. **Not a per-workspace KMS encryption context** — S3 SSE-KMS sets the encryption context from the object ARN and will not accept an arbitrary one; a key per workspace does not scale; client-side encryption would break Textract's async S3 path (ADR 0008). Request-time gating is the stronger control regardless, because it denies before decryption is ever attempted — but do not describe it to a customer, an auditor, or a DPIA as key-level separation, because it is not.
 - **The CI tenancy suite (§15.4) attempts real cross-practice, cross-client, and delegated-session-overreach access with real tokens — all must fail.** Isolation is structural and tested, never assumed.
 
 ### 5.3 Migrations — expand-contract only
@@ -202,10 +203,15 @@ These rules govern the **product's** model usage at runtime. (Rules for the codi
 One source of truth: `apps/api/src/modules/chat-framework/models.ts` (plus the `DocumentExtractor` binding in `services/extraction`). Model IDs are pinned there and imported everywhere — never hardcoded in prompts, services, or docs.
 
 ```ts
+// Bedrock model IDs, eu-west-2, all ON_DEMAND in-region (D28 as amended 13 Aug 2026,
+// ADR 0001). Opus 4.8 and Haiku 4.5 are reachable only via `eu.*` cross-region
+// inference profiles, which process outside the UK — excluded by D30.
+// NEVER add an `eu.*` or `global.*` profile ID here: the task role is not granted
+// inference-profile ARNs, so such a call fails closed, and that is deliberate.
 export const MODELS = {
-  judgment:   'claude-opus-4-8',             // chat, rules, cross-client analysis, final vision rung (D28)
-  workhorse:  'claude-sonnet-4-6',           // per-document volume intelligence — the cost lever
-  mechanical: 'claude-haiku-4-5-20251001',   // triage, shortlists, text-assist
+  judgment:   'anthropic.claude-opus-4-6-v1', // chat, rules, cross-client analysis, final vision rung
+  workhorse:  'anthropic.claude-sonnet-4-6',  // per-document volume intelligence — the cost lever
+  mechanical: 'amazon.nova-lite-v1:0',        // triage, shortlists, text-assist (multimodal)
 } as const;
 
 // Task → (model, effort) map (D28). Per-model effort/thinking-budget support verified at W0 (8.3);
@@ -228,12 +234,12 @@ export const TASKS = {
 } as const;
 ```
 
-- **Access route (D22):** Amazon Bedrock, eu-west-2 (IAM, in-region) for all three models. If W0 verification finds any model or the effort parameter unavailable in-region, the contingency is the Anthropic API under EU processing terms — an ADR-logged decision, not a silent swap. Extraction is Amazon Textract behind `DocumentExtractor`, feeding the vision escalation ladder (D20/D28).
+- **Access route (D22) — verification 8.1 closed 13 Aug 2026.** Amazon Bedrock, eu-west-2 (IAM, in-region) for all three tiers, each confirmed by live invocation. The Anthropic-API contingency was **not** triggered; the model IDs moved instead (D28 as amended). Enforcement is in IAM, not convention: the task role holds **region-pinned foundation-model ARNs only, with no inference-profile ARN**, so a cross-region call returns AccessDenied rather than quietly processing UK client documents in another country. Extraction is Amazon Textract behind `DocumentExtractor`, feeding the vision escalation ladder (D20/D28).
 - **Per-class tier flags (D28):** `ai.tier.<taskClass>` moves a class up or down a tier without deploy — **blocked unless evals pass for that (class, model) pair**. The judgment surfaces (`chatWorkspace`, `ruleParsing`, `ruleConflictResolution`, `crossClientAnalysis`) are **exempt from cost-driven demotion**.
 
-- Pipeline tasks run **temperature 0 with JSON-schema-enforced outputs**.
+- Pipeline tasks run **deterministic decoding with JSON-schema-enforced outputs**: `temperature: 0` on every model family that accepts the parameter, and the family's nearest equivalent where it does not. This is not pedantry — **Opus 4.8 rejects `temperature` outright** (`ValidationException: temperature is deprecated for this model`, measured 13 Aug 2026), so a flat "always send temperature 0" rule would fail closed on some models and silently mislead on others. The determinism obligation is unchanged; only the assumption of one API shape is dropped. The per-family parameter mapping lives in the same config as `MODELS`, so a new family is a config change with an eval run, never a scattering of conditionals at call sites.
 - Model upgrades are a PR that changes this file **and** passes the full eval suite — never a silent swap.
-- `max_tokens`, temperature, and timeout budgets are declared per use case in the same config. The extraction vendor (Textract / Azure DI / vision-LLM) is bound behind `DocumentExtractor` per the week-2 bake-off; changing it is a PR + eval run.
+- `max_tokens`, decoding parameters, and timeout budgets are declared per use case in the same config. The extraction vendor is bound behind `DocumentExtractor` — Textract is the committed primary (D20), and week 2 is **threshold calibration on the labelled corpus, not a vendor bake-off**; changing the vendor is a PR + eval run.
 
 ### 9.2 Structured outputs
 
@@ -363,7 +369,7 @@ TLS 1.3 in transit; AES-256 at rest (DB, backups, S3, Redis where supported). Se
 - **ICO registration and a DPIA before any real customer data** (bulk financial documents are high-risk processing). DPIA is a living document.
 - Published **subprocessor register** including every model provider; DPAs in place before traffic; **customer data is never used for model training** — contractual with providers and stated in our own terms; zero-retention options enabled where offered.
 - **Data-subject rights tooling in v1:** self-serve machine-readable export (≤ 30 days) and erasure. Erasure cascades: relational data deleted, caches invalidated, pseudonym key destroyed (audit trail goes anonymous), backups age out on schedule — with a **legal-hold override** for statutory financial records.
-- Breach runbook with the **ICO 72-hour notification path pre-written**. **UK-first data residency end to end (D30):** all storage and processing in eu-west-2, London (Textract, Bedrock, Transcribe, RDS, S3). The UK is not the EU and is regulated in its own right (UK GDPR / ICO) — EU regions are acceptable fallbacks, never defaults, and only where no UK option exists. The two named exceptions: SES inbound receiving in eu-west-1 if eu-west-2 receiving is unavailable at W0 verification (receipt bucket stays eu-west-2), and the §17 cross-region backup target (the UK has a single AWS region, so the DR second region is EU by necessity). Adding any other non-UK processing location is a versioned amendment to this file, not a config change.
+- Breach runbook with the **ICO 72-hour notification path pre-written**. **UK-first data residency end to end (D30):** all storage and processing in eu-west-2, London (Textract, Bedrock, Transcribe, RDS, S3). The UK is not the EU and is regulated in its own right (UK GDPR / ICO) — EU regions are acceptable fallbacks, never defaults, and only where no UK option exists. **One named exception remains: the §17 cross-region backup target** (the UK has a single AWS region, so the DR second region is EU by necessity). The SES inbound-receiving fallback to eu-west-1 was **retired unused on 13 Aug 2026** — verification 8.2 found receiving available in eu-west-2, so the entire email path is in London. Adding any other non-UK processing location is a versioned amendment to this file, not a config change.
 - **Whole-firm export** (all documents + data, zipped, with an index manifest) available on demand — **self-serve and in-product, never gated on a support ticket (D32)**. The same export + erasure path is surfaced at trial end and throughout the 90-day post-termination window (§12.2) before purge; offboarding is never hostage-taking.
 
 ### 12.2 Retention schedule (enforced by scheduled jobs, not policy documents)
@@ -436,6 +442,8 @@ A surprising bill is an alerting failure, not a billing surprise. §9.7 governs 
 - **Budgets everywhere:** AWS Budgets at organisation and per-account level (dev / staging / prod), alerting at 50 / 80 / 100%; a per-service monthly budget envelope in config for each external vendor — warn at 80%, page at 100%. Envelope values are reviewed with pilot data.
 - **Anomaly alerts:** usage > 3× the 7-day baseline pages for any metered dimension — SMS count, Textract pages, Transcribe minutes, SES sends, TrueLayer calls — the same rule as AI token spend (§9.7).
 - **Go-live gate:** no paid service is enabled without its budget line, usage metric, and alert wired — checked in the go-live review alongside the DPA (§12.1). Provider-side spend triggers (e.g. Twilio's) are enabled as belt-and-braces wherever offered.
+- **Live as of 13 Aug 2026:** AWS Budgets at account level (monthly envelope + a cumulative tracker for the approved pot, D35) with **credits excluded from the tracked figure** — a credit-funded account whose budget nets to zero reports nothing until the pot is empty; Cost Anomaly Detection; and an organisation CloudTrail plus GuardDuty that **did not previously exist in this account**. Still outstanding: per-service Grafana dashboards and the per-vendor envelopes for Twilio, TrueLayer and Meta (Infra Week).
+- **Shared-account caveat (D36):** cost attribution in this account is per-tag, not per-account, because Neoting shares `252959251643` with unrelated products. `Project=neoting` is therefore load-bearing for every spend figure we quote — an untagged resource is an invisible one. Per-account attribution returns when the dedicated member accounts do.
 - **Bootstrap corollary (Guideline G1):** the same principle at zero cost — free-tier meters (GitHub Actions minutes, Vercel build minutes, Neon/Upstash quotas) get a named owner and a weekly glance at the Friday demo until Infra Week replaces them with the real dashboards.
 
 ---
@@ -503,4 +511,4 @@ PostgreSQL: PITR (35 days) + nightly logical backups to a second EU region, encr
 - The source-of-truth pair, module `CLAUDE.md` files, and runbooks are **living documents**: any PR that changes a convention updates the doc in the same PR. Significant design decisions get a one-page ADR in `docs/adr/`.
 - Amendments to either source-of-truth file are versioned (v1.0 → v1.1 …) with a dated changelog entry; the decision log in the Source of Truth records every locked decision and its date.
 
-*— End of Engineering Governance v1.3 —*
+*— End of Engineering Governance v1.4 —*
