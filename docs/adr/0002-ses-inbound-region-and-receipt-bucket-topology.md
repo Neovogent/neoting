@@ -31,14 +31,24 @@ This looks like a contradiction and is not, so the mechanism is recorded here ra
 
 SES validates a receipt rule at *creation* time by test-writing to the destination bucket. When the bucket's default encryption is a customer-managed KMS key, that validation write fails with `InvalidS3Configuration: Kms key is not available` — **regardless of how the key policy is written**. Verified empirically on 13 Aug 2026 against a key policy that explicitly granted `ses.amazonaws.com` the necessary `kms:GenerateDataKey` and `kms:Encrypt` with the correct `aws:SourceAccount` condition. The failure is in SES's validation path, not in our permissions.
 
-The resolution keeps the encryption and drops only the *default*:
+The obvious resolution — keep the CMK but name it on the *action* instead of the bucket — **does not work, and the reason is worth knowing before someone tries it again.**
+
+AWS, on the Deliver-to-S3 action: *"Your mail is encrypted by SES using the S3 encryption client before the mail is submitted to S3 for storage. It is not encrypted using S3 server-side encryption... you must use the S3 encryption client to decrypt the email after retrieving it from S3... available in the AWS SDK for Java and the AWS SDK for Ruby."*
+
+Naming a key there produces **client-side envelope ciphertext**, not an SSE-KMS object. AWS ships no S3 encryption client for JavaScript or TypeScript, which is the only runtime in this product. The ingestion worker would `GetObject`, get a 200 and a body of binary, and either throw in the MIME parser or — worse — succeed on garbage and file a document with an empty extraction. Nothing downstream would signal an encryption problem; it would look like malformed email.
+
+So the receipt rule names **no key**, and the topology is:
 
 | Layer | Setting | Effect |
 |---|---|---|
-| Bucket default encryption | `AES256` | SES rule validation succeeds |
-| `s3_action.kms_key_arn` on the receipt rule | `aws_kms_key.docs.arn` | Every inbound object is written **SSE-KMS under `alias/nt-staging-docs`** |
+| Bucket default encryption | `AES256` (SSE-S3) | SES rule validation succeeds |
+| `s3_action` on the receipt rule | **no `kms_key_arn`** | Inbound objects land under the bucket default — server-side, readable by a normal `GetObject` |
+| Lifecycle on `inbound/` | 30-day expiry | The ciphertext-vs-plaintext question has a 30-day blast radius |
+| The extracted **document** | docs bucket, `alias/nt-staging-docs` | This is the artefact with the six-year retention and the customer-document data class |
 
-So objects land encrypted with our CMK exactly as intended. What changed is which layer names the key: the action, not the bucket.
+**The trade, accepted knowingly:** raw inbound MIME sits under an AWS-managed key rather than our CMK, and is therefore outside D36's explicit-Deny boundary for its 30-day life. It buys an email intake path that works. D30 residency is untouched either way — eu-west-2, encrypted at rest, never leaves London.
+
+*(An earlier revision of this ADR, and of `main.tf`, asserted that objects "land SSE-KMS under alias/nt-staging-docs exactly as intended". That was wrong. It is corrected here rather than quietly edited away, because it is exactly the kind of confident sentence a DPIA author would have lifted verbatim.)*
 
 ## Consequences
 

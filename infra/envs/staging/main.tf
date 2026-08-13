@@ -57,9 +57,21 @@ locals {
   # receipt rule by test-writing to the bucket, and that write fails against a
   # customer-managed-key default ("InvalidS3Configuration: Kms key is not
   # available") no matter how the key policy is written — verified empirically
-  # 13 Aug 2026. Inbound mail is still encrypted with our CMK: the key is named
-  # on the SES action itself (email.tf), which SES accepts. Objects land
-  # SSE-KMS under alias/nt-staging-docs exactly as intended.
+  # 13 Aug 2026.
+  #
+  # ⚠ CORRECTION. This comment used to continue: "Inbound mail is still
+  # encrypted with our CMK: the key is named on the SES action itself
+  # (email.tf), which SES accepts. Objects land SSE-KMS under
+  # alias/nt-staging-docs exactly as intended." That was WRONG, and it was the
+  # sentence a future reader would have trusted.
+  #
+  # Naming a key on an SES s3_action makes SES encrypt CLIENT-side with the S3
+  # encryption client — not SSE-KMS — producing envelope ciphertext that only
+  # the Java and Ruby SDKs can decrypt. This repo is TypeScript. The key is
+  # therefore NOT named (see email.tf for the full reasoning), and objects in
+  # `inbound/` land under the bucket's AES256 default. They are transient:
+  # lifecycle.tf expires them at 30 days, and the extracted document lands in
+  # the docs bucket under the CMK. ADR 0002 records the trade.
   buckets = {
     docs     = { data_class = "customer-document", sse = "aws:kms" }
     receipts = { data_class = "customer-document", sse = "AES256" }
@@ -285,6 +297,54 @@ resource "aws_iam_role" "ci_plan" {
 resource "aws_iam_role_policy_attachment" "ci_plan_readonly" {
   role       = aws_iam_role.ci_plan.name
   policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
+}
+
+# --------------------------------------------------------------------------
+# What ReadOnlyAccess does NOT give a plan role, and why plan breaks without it.
+#
+# Measured against ReadOnlyAccess v188, not assumed: the only Secrets Manager
+# action it grants is `secretsmanager:GetResourcePolicy`. It grants neither
+# GetSecretValue nor kms:Decrypt.
+#
+# `terraform plan` refreshes every `aws_secretsmanager_secret_version` in state
+# by calling GetSecretValue, so once those resources exist, EVERY PR plan fails
+# with AccessDenied — a permanent break that appears on the first PR after the
+# first apply, long after anyone associates it with this file.
+#
+# ⚠ THE TRADE-OFF, STATED RATHER THAN BURIED. `nt-staging-ci-plan` is trusted
+# for ANY ref in the repository (that is what makes plan-on-PR work), so this
+# grant means a pull request can run Terraform with credentials that can read
+# staging secrets, before any human reviews the PR. That is acceptable HERE and
+# only here, for one reason: staging holds sandbox credentials exclusively
+# (Guideline §8.4, G2) — a leaked staging Twilio token is a sandbox token.
+#
+# PROD MUST NOT COPY THIS. A production plan role needs either a deploy-time
+# apply-only credential, or secret versions kept out of Terraform entirely.
+# Granting this against real customer credentials would turn "open a PR" into
+# "read production secrets".
+# --------------------------------------------------------------------------
+resource "aws_iam_role_policy" "ci_plan_refresh_secrets" {
+  name = "refresh-secret-versions"
+  role = aws_iam_role.ci_plan.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "ReadNeotingSecretsForRefreshOnly"
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:/neoting/${local.env}/*"
+      },
+      {
+        # Reading a CMK-encrypted secret needs the key as well as the secret.
+        Sid      = "DecryptThoseSecrets"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = aws_kms_key.secrets.arn
+      }
+    ]
+  })
 }
 
 resource "aws_iam_role_policy_attachment" "ci_plan_guardrail" {

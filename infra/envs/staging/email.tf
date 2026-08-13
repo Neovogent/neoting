@@ -200,11 +200,39 @@ resource "aws_ses_receipt_rule" "doc" {
   scan_enabled  = true # spam + virus verdicts before we touch the payload
   tls_policy    = "Require"
 
+  # ⚠ NO kms_key_arn HERE, AND THAT IS DELIBERATE. Read before "fixing" it.
+  #
+  # Naming a KMS key on an SES s3_action does NOT produce an SSE-KMS object.
+  # AWS: "Your mail is encrypted by SES using the S3 encryption client before
+  # the mail is submitted to S3 for storage. It is not encrypted using S3
+  # server-side encryption... you must use the S3 encryption client to decrypt
+  # the email after retrieving it from S3... This encryption client is
+  # available in the AWS SDK for Java and the AWS SDK for Ruby."
+  #
+  # So the object would be AWS-Encryption-SDK envelope ciphertext, and the only
+  # runtime in this repository is TypeScript — for which AWS ships no S3
+  # encryption client. The ingestion worker would GetObject, receive a 200 and
+  # a body of binary, and either throw in the MIME parser or, worse, succeed on
+  # garbage and file a document with an empty extraction. Nothing downstream
+  # would signal an encryption problem; it would present as malformed email.
+  # That is SoT Stage 1's email intake — the one intake path that works today,
+  # since inbound receiving is unaffected by the SES sandbox.
+  #
+  # Omitting the key means the object lands under the bucket's default, which
+  # for `receipts` is AES256 (SSE-S3) for the separate SES-validation reason in
+  # main.tf. The trade, accepted knowingly: raw inbound MIME sits under an
+  # AWS-managed key rather than our CMK, so it is outside D36's explicit-Deny
+  # boundary. It is acceptable because that object is transient — lifecycle.tf
+  # expires `inbound/` at 30 days — and the DOCUMENT extracted from it lands in
+  # the docs bucket under alias/nt-staging-docs, which is the artefact with the
+  # six-year retention and the customer-document data class. D30 residency is
+  # untouched either way: eu-west-2, encrypted at rest, never leaves London.
+  #
+  # Recorded in ADR 0002, which owns the receipt-bucket topology.
   s3_action {
     position          = 1
     bucket_name       = local.bucket_names["receipts"]
     object_key_prefix = "inbound/"
-    kms_key_arn       = aws_kms_key.docs.arn
   }
 
   # SES validates bucket writability at rule-creation time, so the policy and

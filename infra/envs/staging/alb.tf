@@ -234,10 +234,26 @@ resource "aws_secretsmanager_secret" "alb_origin_verify" {
   description = "Shared secret CloudFront must present to the ALB (runbook §6.5)"
 
   # The CMK, not the AWS-managed default, whose policy cannot carry the
-  # `role/nt-*` explicit Deny (D36). This value is the ONLY thing standing
-  # between a stranger's CloudFront distribution and our origin — the managed
-  # prefix list on the ALB ingress rule admits every CloudFront distribution in
-  # the world, so anyone who reads this header walks straight past the WAF.
+  # `role/nt-*` explicit Deny (D36).
+  #
+  # ⚠ BUT DO NOT MISTAKE THIS FOR PROTECTING THE VALUE. The same string is a
+  # plaintext condition value on `aws_lb_listener_rule.api_origin_verified`
+  # below, and `elasticloadbalancing:DescribeRules` returns listener-rule
+  # conditions verbatim — an action the AWS-managed ReadOnlyAccess policy does
+  # grant. Terraform itself proves this: it diffs that attribute on every plan,
+  # which it could not do if the value were write-only.
+  #
+  # So anyone in this shared account with ELB read access can read the header,
+  # and encrypting the Secrets Manager copy does not change that. What this key
+  # buys is consistency — one boundary for every Neoting secret — not secrecy
+  # for this particular one.
+  #
+  # The honest security position: the origin header is defence in depth over
+  # the CloudFront prefix list, and neither is a strong control on its own.
+  # The prefix list admits every CloudFront distribution in the world, and the
+  # header is readable by an account insider. Against an outsider the pair
+  # works; against an insider in a shared account (D36) it does not, and the
+  # answer to that is the dedicated accounts, not a cleverer header.
   kms_key_id = aws_kms_key.secrets.arn
 
   # Secrets Manager bills ~$0.40/secret/month, so this is a deliberate

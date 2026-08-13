@@ -182,14 +182,20 @@ jobs:
   # Governance §14.9 does want staging to apply automatically on merge, and
   # that design is intact — it is gated, not removed.
   #
-  # The reason it is gated: this branch adds ~180 resources costing roughly
-  # $50/month to an environment with no application code, no image in ECR and
-  # every service at desired_count 0. With a plain push trigger, MERGING THE PR
-  # WOULD BE THE SPEND DECISION, taken by whoever clicks Squash — which
-  # directly contradicts ADR 0005's "Slice C is authored now and applied
-  # selectively; applying it is a separate, reversible decision per component".
-  # An adversarial review caught the contradiction between the ADR and this
-  # file in the same commit.
+  # The reason it is gated — stated precisely, because a first draft of this
+  # comment got it wrong and a review caught it:
+  #
+  # It is NOT that applying staging contradicts ADR 0005. It does not. The ALB,
+  # WAF and CloudFront are Slice B, which that ADR schedules for exactly now,
+  # and runbook Appendix B budgets them line by line at ~$150/month. Applying
+  # `infra/envs/staging` is Slice B executing on schedule.
+  #
+  # It is that this root now ALSO holds Slice C resources — AMP, Unleash, the
+  # ClamAV path — which ADR 0005 does say are "authored now and applied
+  # selectively", and that a first apply of ~180 resources into a shared
+  # production account deserves one human decision rather than arriving as a
+  # side effect of a squash-merge. After that first apply, auto-apply on merge
+  # is the governed steady state and should be switched on.
   #
   # TO ENABLE: set repository variable TERRAFORM_AUTO_APPLY to "true"
   # (Settings → Secrets and variables → Actions → Variables). One switch, no
