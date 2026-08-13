@@ -1,0 +1,19 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    // `build` here means "generate from the contract". The generated tree is
+    // gitignored (Governance §1.4), so everything that reads it has to depend on
+    // this task rather than assume the files are on disk.
+    "build": {
+      "inputs": ["openapi.yaml", "orval.config.ts", "scripts/**"],
+      "outputs": ["src/generated/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build", "build"]
+    },
+    "dev": {
+      "dependsOn": ["build"]
+    }
+  }
+}

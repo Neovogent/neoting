@@ -1,29 +1,32 @@
 # Enforced by branch protection (Team Guideline G4/G5).
 #
-# Reserves (G9) are listed so branch protection accepts their review when the
-# default reviewer is away — G9 governs WHEN they may use it, not this file.
-# LAW paths stay Shakib-only and freeze under G9 unless he pre-delegated in
-# writing.
+# NOTE: this file does NOTHING on its own. It only has force when branch
+# protection on `main` has "Require review from Code Owners" enabled — see
+# .github/scripts/apply-branch-protection.sh. Until that is applied, any
+# collaborator's approval carries exactly as much weight as any other's.
+#
+# Approval authority is deliberately held by two people. Everyone else may
+# review and comment; their approval does not satisfy the requirement.
+#
+# Handles here MUST be real GitHub logins in the Neovogent org. GitHub silently
+# ignores an owner it cannot resolve, which turns a protected path into an
+# unprotected one. Verify with:
+#   gh api repos/Neovogent/neoting/codeowners/errors
 
 # Default: anything not matched below
-*                             @shakib
-
-/apps/web/                    @shamim @mubashir @shadman
-/packages/ui/                 @shamim @mubashir @shadman
-
-/apps/api/                    @shakib @mubashir
-/services/extraction/         @shakib @mubashir
+*                             @shakibbinkabir @MubasshirrKan
 
 # --- LAW (G7): contract-change issue approved by Shakib BEFORE the PR opens ---
-/prisma/                      @shakib
-/packages/contracts/          @shakib
-/packages/component-grammar/  @shakib @shamim
-/packages/tokens/             @shakib @shamim
-/packages/validators/         @shakib
+# These paths are Shakib-only. Do not widen without a governance change.
+/prisma/                      @shakibbinkabir
+/packages/contracts/          @shakibbinkabir
+/packages/component-grammar/  @shakibbinkabir
+/packages/tokens/             @shakibbinkabir
+/packages/validators/         @shakibbinkabir
 
-/infra/                       @shakib
-/.github/                     @shakib
+/infra/                       @shakibbinkabir
+/.github/                     @shakibbinkabir
 
 # The source-of-truth pair is versioned, not casually edited (Governance §19)
-/docs/Source_Of_Truth.md          @shakib
-/docs/Engineering_Governance.md   @shakib
+/docs/Source_Of_Truth.md          @shakibbinkabir
+/docs/Engineering_Governance.md   @shakibbinkabir

@@ -1,0 +1,33 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // DOM is needed here and only here: this package's http client and the
+    // generated MSW handlers use fetch, Headers and Response, and apps/web
+    // consumes them in a browser. apps/api imports only ./zod and ./model,
+    // which pull none of it in.
+    "lib": ["ES2023", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+
+    // The generated tree is orval's output, not ours. It is typechecked as a
+    // consumer would see it, but its internal style is not our lint surface.
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+
+    // RELAXED HERE, AND ONLY HERE. orval's MSW fixture generator emits
+    // `{ min: undefined, max: undefined }` and assigns `T | undefined` into
+    // required-but-nullable properties, neither of which satisfies
+    // exactOptionalPropertyTypes. The base config turns it on deliberately, so
+    // this is a real loss — confined to a package whose hand-written surface is
+    // http-client.ts and index.ts, about 150 lines, reviewed accordingly.
+    //
+    // apps/web will meet the same wall when it imports the generated handlers as
+    // workspace source. Decide it there rather than inheriting this silently:
+    // either match this setting, or exclude **/*.msw.ts from its typecheck and
+    // keep the flag on for its own code.
+    "exactOptionalPropertyTypes": false
+  },
+  "include": ["src/**/*.ts", "orval.config.ts"],
+  "exclude": ["node_modules", "dist", ".turbo"]
+}
