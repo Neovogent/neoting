@@ -123,7 +123,7 @@ Delete `imports.tf` once adoption has applied. Import blocks are one-shot by des
 - **Route 53 hosted zone `Z08402112LR2AWM4XBVST`** is created outside Terraform and consumed by `envs/staging/email.tf` as a `data` source. A plan fails outright if it is ever absent or renamed. Adopting it into `envs/account/` would close that.
 - **Budget notifications go to one personal inbox.** Runbook §10.1 wants an SNS topic plus a role address. One human inbox is a single point of failure for the alert that tells us the pot is emptying.
 - **IAM Access Analyzer is not enabled** (`list-analyzers` returns `[]`). In a shared account with seven users it is the cheapest way to find unintended cross-principal access. Security Hub is also absent — probably Infra Week, but it should be a decision rather than an omission.
-- **SES production access was DENIED**, not pending — case `178662887400793`. Outbound email is blocked until that is appealed; inbound is unaffected. See `docs/adr/0002-*` and `envs/staging/email.tf`.
-- **Textract quota increases are still open** (`CASE_OPENED`, raised 13 Aug).
+- **SES production access** — replied 14 Aug 2026, awaiting AWS (case `178662887400793`). Outbound email stays blocked until granted; inbound is unaffected. `sesv2 get-account` will keep reporting DENIED until it is actually granted — check the case, not the API. See `docs/runbooks/aws-support-cases.md`.
+- **Textract quota increases** — replied 14 Aug 2026, awaiting AWS. Verification 8.4 and ADR 0003 unblock when they are granted.
 
 Historic note: the DynamoDB lock table `nt-tflock` from bootstrap **no longer exists** — `dynamodb list-tables` returns `[]`. Earlier revisions of this file told you to delete it; that work is done.
