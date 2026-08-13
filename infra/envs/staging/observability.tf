@@ -754,8 +754,18 @@ resource "aws_cloudwatch_metric_alarm" "ses_complaint_rate" {
 # endpoint returning 500, a bounced email address) because SNS still accepts the
 # publish and records the delivery failure. It CANNOT catch a broken topic — if
 # the KMS grant is wrong and every publish is rejected, this alarm's own
-# notification is rejected too. That case is caught by the quarterly alert-path
-# drill (Governance §13.2), not by software.
+# notification is rejected too.
+#
+# ⚠ AND NOTHING CURRENTLY CATCHES THAT CASE. An earlier revision claimed a
+# "quarterly alert-path drill (Governance §13.2)" covered it. No such drill
+# exists: §13.2 is the alert list, and the only drill Governance contains is
+# the quarterly RESTORE drill in §17, which proves backups and says nothing
+# about whether an alarm can reach a human.
+#
+# So this is an open gap, not a covered one. The cheapest closure is a
+# scheduled EventBridge rule publishing a heartbeat to this topic and an alarm
+# on its absence — an alert path that is never exercised is indistinguishable
+# from one that is broken, and both look like silence.
 # --------------------------------------------------------------------------
 resource "aws_cloudwatch_metric_alarm" "sns_delivery_failures" {
   alarm_name          = "nt-${local.env}-alerts-delivery-failed"
@@ -1687,10 +1697,27 @@ resource "aws_cloudwatch_dashboard" "main" {
         }
       },
 
+      # Tier 2. This widget was missing: `deploy_alarm_arns` was computed and
+      # then referenced nowhere, so the group the banner above calls the
+      # important tier — the ALB and ECS alarms that carry §13.2's error-rate
+      # and p95 without waiting for OTel — appeared on no dashboard at all.
+      # The dashboard promised three groups and drew two.
+      {
+        type   = "alarm"
+        x      = 0
+        y      = 42
+        width  = 12
+        height = 6
+        properties = {
+          title  = "Alarms — live on first deploy (ALB + ECS, no app code needed)"
+          alarms = local.deploy_alarm_arns
+        }
+      },
+
       {
         type   = "alarm"
         x      = 12
-        y      = 36
+        y      = 42
         width  = 12
         height = 6
         properties = {
@@ -1706,15 +1733,20 @@ resource "aws_cloudwatch_dashboard" "main" {
 # COST (runbook Step 7.2 promised "a few dollars a month" — this is the sum):
 #
 #   KMS ops CMK                     $1.00   + a few cents of requests
-#   Alarms, 25 live + pending       $2.50   $0.10 per alarm-metric; the metric-
-#                                           math error-rate alarm counts as 2
+#   Alarms, 35 live + pending       $3.50   $0.10 per alarm-metric; the metric-
+#                                           math error-rate alarm counts as 2.
+#                                           COUNTED FROM THE PLAN, not by eye:
+#                                           24 resource blocks, six of which
+#                                           use for_each/count, expand to 35
+#                                           instances. An earlier revision said
+#                                           25 because it counted blocks.
 #   Custom metrics from log filters $1.50   5 metrics at $0.30 (3 services,
 #                                           flow-log rejects, slow queries)
 #   Dashboard                       $0.00   first 3 are free
 #   SNS + EventBridge               $0.00   inside the free tier; AWS-source
 #                                           events on the default bus are free
 #   ----------------------------------------
-#   Total                          ~$5.00/month
+#   Total                          ~$6.00/month
 #
 # Appendix B.2 budgets $15–25/month for "CloudWatch logs + dashboards + alarms"
 # in staging, so this sits inside the line with room for log ingestion — which
@@ -1722,9 +1754,12 @@ resource "aws_cloudwatch_dashboard" "main" {
 # JSON at debug level on every request can quietly out-cost RDS.
 #
 # WHAT IS DELIBERATELY NOT HERE:
-#   * ECS alarms. containerInsights is on (compute.tf) but no service is
-#     deployed, so AWS/ECS and ECS/ContainerInsights publish nothing at all —
-#     not "zero", nothing. Alarms land with the task definitions in S4.
+#   * (ECS alarms USED to be listed here as absent. They are not — see
+#     aws_cloudwatch_metric_alarm.ecs_task_shortfall and .ecs_memory_high in
+#     this file. They are Tier 2: AWS emits them itself, so they need a pushed
+#     image and a non-zero desired_count, not application code, and
+#     treat_missing_data keeps them correct and silent at zero scale. The stale
+#     sentence survived the tier being built.)
 #   * AWS Budgets and Cost Anomaly Detection (§13.2 "metered-vendor spend
 #     anomaly or budget threshold crossed"). Account-scoped, already live per
 #     Gov §13.5, and owned by envs/account/. The only staging-side dependency is

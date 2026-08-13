@@ -3,10 +3,17 @@
 # Authentication is GitHub OIDC into two roles that already exist in
 # infra/envs/staging/main.tf and have never been used:
 #
-#   nt-staging-ci-plan     ReadOnlyAccess + the region guardrail. Trusted for
-#                          ANY ref of neovogent/neoting (StringLike sub
-#                          "repo:neovogent/neoting:*") — safe, because it can
-#                          only read.
+#   nt-staging-ci-plan     ReadOnlyAccess + the region guardrail + a scoped
+#                          grant to read /neoting/staging/* secrets. Trusted
+#                          for ANY ref of the repo (StringLike on sub, both
+#                          casings — see main.tf for why the casing matters).
+#                          It can only READ, but "read" now includes staging
+#                          secret values, because terraform plan refreshes
+#                          aws_secretsmanager_secret_version and ReadOnlyAccess
+#                          grants neither GetSecretValue nor kms:Decrypt.
+#                          That is acceptable ONLY because staging holds
+#                          sandbox credentials exclusively (Guideline §8.4).
+#                          A production plan role must not be built this way.
 #   nt-staging-ci-deploy   PowerUserAccess + a scoped IAM inline policy +
 #                          the region guardrail. Trusted for exactly ONE
 #                          subject: "repo:neovogent/neoting:ref:refs/heads/main".
@@ -39,12 +46,18 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
-      - "infra/**"
+      # Scoped to the STAGING root, not all of infra/**. This workflow only
+      # ever plans and applies infra/envs/staging, so a trigger on infra/**
+      # meant an envs/account change got a green check from a run that
+      # planned something else entirely — the most convincing kind of false
+      # assurance, because a human did look and did see green.
+      # envs/account needs its own job before its path is added back.
+      - "infra/envs/staging/**"
       - ".github/workflows/terraform.yml"
   push:
     branches: [main]
     paths:
-      - "infra/**"
+      - "infra/envs/staging/**"
       - ".github/workflows/terraform.yml"
   # Lets someone apply deliberately from the Actions tab while auto-apply is
   # still switched off. See the apply job's condition.
