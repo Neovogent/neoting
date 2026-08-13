@@ -1,0 +1,48 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "TerraformState",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket", "s3:GetBucketVersioning"],
+      "Resource": "arn:aws:s3:::nt-tfstate-staging-${account_id}"
+    },
+    {
+      "Sid": "TerraformStateObjectsAndLockfileForProdOnly",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::nt-tfstate-staging-${account_id}/${state_key}*"
+    },
+    {
+      "Sid": "ScopedIamForNeotingResourcesOnly",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole", "iam:DeleteRole", "iam:GetRole", "iam:UpdateRole",
+        "iam:UpdateAssumeRolePolicy", "iam:AttachRolePolicy", "iam:DetachRolePolicy",
+        "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:GetRolePolicy",
+        "iam:ListRolePolicies", "iam:ListAttachedRolePolicies", "iam:TagRole",
+        "iam:UntagRole", "iam:PassRole", "iam:CreatePolicy", "iam:DeletePolicy",
+        "iam:GetPolicy", "iam:GetPolicyVersion", "iam:CreatePolicyVersion",
+        "iam:DeletePolicyVersion", "iam:ListPolicyVersions",
+        "iam:CreateInstanceProfile", "iam:DeleteInstanceProfile"
+      ],
+      "Resource": [
+        "arn:aws:iam::${account_id}:role/nt-*",
+        "arn:aws:iam::${account_id}:policy/nt-*",
+        "arn:aws:iam::${account_id}:instance-profile/nt-*"
+      ]
+    },
+    {
+      "Sid": "ReadTheSharedOidcProvider",
+      "Effect": "Allow",
+      "Action": ["iam:GetOpenIDConnectProvider"],
+      "Resource": "arn:aws:iam::${account_id}:oidc-provider/token.actions.githubusercontent.com"
+    },
+    {
+      "Sid": "ServiceLinkedRoles",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "arn:aws:iam::${account_id}:role/aws-service-role/*"
+    }
+  ]
+}

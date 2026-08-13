@@ -1,35 +1,297 @@
-# The thin CI (Team Guideline G3 / §8.7) — this is ALL the CI we run until
-# Infra Week. The full nine-stage pipeline (Governance §14), e2e-in-CI,
-# evals-in-CI, security scans and deploys activate at G8.
+# NEOTING — the nine-stage CI pipeline (Governance §14; order matters, every
+# stage blocks). This REPLACES the bootstrap thin CI (Team Guideline §8.7)
+# wholesale: same file, same required status check, entirely new contents.
 #
-# Draft PRs skip this by design: §3 says draft-from-first-push, and running the
-# suite on every WIP push would burn the Actions free tier for nothing. Run
-# `pnpm typecheck && pnpm lint && pnpm test` locally while drafting; the full
-# check fires the moment you mark ready.
+# The filename and the final job name are load-bearing. `.github/scripts/
+# apply-branch-protection.sh` pins the required status check to the literal
+# name `check` and its comment points at this file. Rename either one without
+# updating that script in the same PR and the merge gate silently stops
+# applying — the PR still shows ticks, they just no longer gate anything.
+#
+# ===========================================================================
+# THE HONESTY CONTRACT — read this before you touch a guard
+# ===========================================================================
+# Most of the suites §14 requires do not exist yet. Every workspace package
+# still ships S0 placeholders — `"test": "echo \"test: no tests yet (S0)\""` —
+# and `turbo run test:e2e` exits 0 with "No tasks were executed" when NO
+# package implements the task at all. Wire a stage straight onto those and it
+# reports a green tick for having run nothing, on every PR, for months. A green
+# tick is believed. That is not a weak test, it is a false statement about the
+# state of the product, and it is the failure mode this file exists to prevent.
+#
+# Two rules, deliberately pulling against each other:
+#
+#   1. A stage with no suite behind it NEVER claims to have passed. It is
+#      skipped, its job or step name says NOT IMPLEMENTED, and every run prints
+#      a debt table naming the stage, its governance clause and the exact
+#      condition that turns it on. It does not fail the build: a gate that
+#      blocks all work on the absence of code nobody has written yet gets
+#      commented out within a week, and then we have neither the gate nor the
+#      honesty.
+#   2. A stage that IS implemented can never silently do nothing. Turbo's
+#      "No tasks were executed" line is treated as a failure, not a pass
+#      (see the stage runner in `verify`).
+#
+# The flip is automatic and does NOT require editing this file. Readiness is
+# PROBED from the repository: a script counts as real when a workspace package
+# defines it and its command is not `echo`. Delete the echo, write the suite,
+# and the stage turns itself on — that is the whole guard. Stage 9 is the one
+# exception, because it needs infrastructure that does not exist yet; it has a
+# single DEPLOY_READY line to flip, with the preconditions listed at the job.
+#
+# ---------------------------------------------------------------------------
+# Kept from the thin CI, and why
+# ---------------------------------------------------------------------------
+#   · draft-PR skip — §3 says draft-from-first-push. Running nine stages on
+#     every WIP push burns the free tier for nothing. Still fires on
+#     `ready_for_review`, which is the moment it matters.
+#   · concurrency cancel-in-progress — but ONLY for pull_request. A cancelled
+#     PR run costs a re-run; a cancelled `main` run can leave a half-applied
+#     migration or a half-rolled deploy. Pushes to main queue, never cancel.
+#   · commitlint on the PR title — the squash commit takes the title (G4), so
+#     the title is the thing that must be a valid conventional commit.
+#   · fetch-depth: 0 — commitlint needs history, and stages 7 and 8 need the
+#     diff range against the base commit.
 
 name: check
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
 
 concurrency:
-  group: ${{ github.ref }}
-  cancel-in-progress: true
+  group: check-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
+env:
+  # Same connection string as .env.example, character for character. CI has no
+  # native Postgres competing for 5432, so 5433 is not forced here — it is
+  # chosen, so that the string you debug locally is the string that ran in CI.
+  # One fewer difference between the environment that failed and the one you
+  # are looking at.
+  DATABASE_URL: postgresql://neoting:neoting@localhost:5433/neoting?schema=public
+  REDIS_URL: redis://localhost:6379
+  TZ: Europe/London
+
 jobs:
-  check:
-    if: ${{ !github.event.pull_request.draft }}
+  # =========================================================================
+  # 0 · readiness — the probe that keeps the rest of this file honest.
+  #
+  # Runs in ~15 seconds on the preinstalled toolchain (no node setup, no
+  # install). Everything downstream reads its outputs.
+  # =========================================================================
+  readiness:
+    name: 0 · readiness probe
+    if: ${{ github.event_name == 'push' || !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
+
+    outputs:
+      typecheck: ${{ steps.probe.outputs.typecheck }}
+      lint: ${{ steps.probe.outputs.lint }}
+      lint_rules: ${{ steps.probe.outputs.lint_rules }}
+      test: ${{ steps.probe.outputs.test }}
+      build: ${{ steps.probe.outputs.build }}
+      e2e: ${{ steps.probe.outputs.e2e }}
+      eval: ${{ steps.probe.outputs.eval }}
+      eval_required: ${{ steps.probe.outputs.eval_required }}
+      deploy: ${{ steps.probe.outputs.deploy }}
 
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # commitlint needs history to see the range
+          fetch-depth: 0
+
+      - name: Probe which suites actually exist
+        id: probe
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+
+          # The probe must fail LOUD, never fail quiet. A broken probe answers
+          # "nothing is implemented", which would silently switch off a suite
+          # that does exist — the same class of lie in the other direction.
+          command -v jq >/dev/null 2>&1 || {
+            echo "::error title=Readiness probe broken::jq is not available on this runner. The probe cannot classify workspace scripts and refuses to guess."
+            exit 1
+          }
+
+          # Workspace packages only. The ROOT package.json is excluded on
+          # purpose: its scripts are `turbo run <task>` delegators. A delegator
+          # is not evidence that a suite exists — it is the exact thing that
+          # makes an empty pipeline look green.
+          pkgs=$(git ls-files '*/package.json' | grep -v node_modules || true)
+          [ -n "$pkgs" ] || {
+            echo "::error title=Readiness probe broken::No workspace package.json files found. Either the checkout is empty or the workspace layout moved."
+            exit 1
+          }
+
+          # A script counts as REAL when a package defines it and its command
+          # is not `echo`. That is the whole rule, and it matches the S0
+          # convention already in the repo ("test: no tests yet (S0)").
+          # Consequence: writing a real suite flips CI on with no edit here.
+          count_real() {
+            local task="$1" n=0 body
+            for p in $pkgs; do
+              body=$(jq -r --arg t "$task" '.scripts[$t] // empty' "$p") || exit 1
+              [ -n "$body" ] || continue
+              case "$body" in
+                echo*) continue ;;
+              esac
+              n=$((n + 1))
+            done
+            printf '%s' "$n"
+          }
+
+          yn() { [ "$1" -gt 0 ] && echo yes || echo no; }
+
+          n_typecheck=$(count_real typecheck)
+          n_lint=$(count_real lint)
+          n_test=$(count_real test)
+          n_build=$(count_real build)
+          n_e2e=$(count_real test:e2e)
+          n_eval=$(count_real test:eval)
+
+          # §14.3 names five rule families that `pnpm lint` must enforce:
+          # a11y, i18n-literal, money-type, module-boundary, unscoped-query.
+          # None of them can exist without an ESLint config, so the absence of
+          # one is a sufficient (and unfakeable) answer. When the config lands,
+          # tighten this to grep for the five rule ids individually.
+          if git ls-files | grep -qE '(^|/)(eslint\.config\.[cm]?[jt]s|\.eslintrc(\..+)?)$'; then
+            lint_rules=yes
+          else
+            lint_rules=no
+          fi
+
+          # ------------------------------------------------------------------
+          # Stage 9 is the ONE hand-set guard: no probe can detect "the deploy
+          # target exists". Flip this to true when ALL of the following are
+          # true, and not one of them before:
+          #   · Dockerfiles exist for api / web / workers (none in the repo today)
+          #   · ECS services + task definitions exist (compute.tf ships the
+          #     cluster, ECR repos and log groups only — services land in S4)
+          #   · an ALB + ACM cert front the cluster (not yet written)
+          #   · `prisma migrate deploy` has a route to RDS. It does NOT from a
+          #     GitHub runner: the database sits in the data subnets with no
+          #     internet route (network.tf) and its SG admits only the app SG.
+          #     The migration must run as a one-off `aws ecs run-task` inside
+          #     the VPC. Do not "fix" this by making RDS publicly accessible.
+          # ------------------------------------------------------------------
+          deploy=no
+
+          # Evals are REQUIRED when extraction, prompts, models, routing,
+          # thresholds or packages/component-grammar changed (§14.7). Widen the
+          # pattern as those modules land — a path that should have demanded
+          # evals and did not is a governance miss, not a CI convenience.
+          eval_required=no
+          if [ -n "${BASE_SHA:-}" ] && [ "${BASE_SHA}" != "0000000000000000000000000000000000000000" ]; then
+            changed=$(git diff --name-only "$BASE_SHA" "${{ github.sha }}" || true)
+          else
+            changed=""
+          fi
+          if printf '%s\n' "$changed" | grep -qE \
+            '^(services/extraction/|packages/component-grammar/|evals/|apps/api/src/modules/(extraction|ingestion-routing|rules-suggestions)/)|(^|/)(prompts?|models?|routing|thresholds)/'; then
+            eval_required=yes
+          fi
+
+          {
+            echo "typecheck=$(yn "$n_typecheck")"
+            echo "lint=$(yn "$n_lint")"
+            echo "lint_rules=$lint_rules"
+            echo "test=$(yn "$n_test")"
+            echo "build=$(yn "$n_build")"
+            echo "e2e=$(yn "$n_e2e")"
+            echo "eval=$(yn "$n_eval")"
+            echo "eval_required=$eval_required"
+            echo "deploy=$deploy"
+          } >> "$GITHUB_OUTPUT"
+
+          # ------------------------------------------------------------------
+          # The debt table. Printed on EVERY run, green or not, so that "we
+          # have CI" is never mistaken for "we have coverage".
+          # ------------------------------------------------------------------
+          {
+            echo "### CI stage readiness (Governance §14)"
+            echo
+            echo "| # | Stage | Real implementations | State |"
+            echo "|---|-------|----------------------|-------|"
+            echo "| 1 | install --frozen-lockfile | n/a | **runs** |"
+            echo "| 2 | typecheck | $n_typecheck package(s) | $([ "$n_typecheck" -gt 0 ] && echo '**runs**' || echo '**NOT IMPLEMENTED**') |"
+            echo "| 3 | lint | $n_lint package(s), rule set present: $lint_rules | $([ "$lint_rules" = yes ] && echo '**runs**' || echo '**runs, but enforces none of the five §14.3 rule families**') |"
+            echo "| 4 | test (unit + integration) | $n_test package(s) | $([ "$n_test" -gt 0 ] && echo '**runs**' || echo '**NOT IMPLEMENTED** — only the SQL tenancy check is real today') |"
+            echo "| 5 | build | $n_build package(s) | $([ "$n_build" -gt 0 ] && echo '**runs**' || echo '**NOT IMPLEMENTED**') |"
+            echo "| 6 | test:e2e (+ axe, tenancy suite) | $n_e2e package(s) | $([ "$n_e2e" -gt 0 ] && echo '**runs**' || echo '**NOT IMPLEMENTED — SKIPPED**') |"
+            echo "| 7 | test:eval | $n_eval package(s) | $([ "$n_eval" -gt 0 ] && echo '**runs**' || echo '**NOT IMPLEMENTED — SKIPPED**') (required by this diff: $eval_required) |"
+            echo "| 8 | security (audit + secret scan) | n/a | **runs** |"
+            echo "| 9 | deploy | n/a | $([ "$deploy" = yes ] && echo '**runs**' || echo '**NOT IMPLEMENTED — SKIPPED**') |"
+            echo
+            echo "A stage marked NOT IMPLEMENTED did **not** run and proves nothing."
+            echo "It turns itself on the moment a workspace package defines the script"
+            echo "with a command that is not \`echo\` — no change to this workflow."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Annotations, so the debt is visible on the run header and not only
+          # for whoever scrolls to the summary.
+          [ "$n_test" -gt 0 ]  || echo "::warning title=Stage 4 not implemented::No workspace package defines a real \`test\` script — §14.4 (unit + integration) is not being enforced."
+          [ "$n_e2e" -gt 0 ]   || echo "::warning title=Stage 6 not implemented::No \`test:e2e\` script exists — the blocking tenancy suite and axe checks (§14.6, §15.3, §15.4) are not running in CI."
+          [ "$n_eval" -gt 0 ]  || echo "::warning title=Stage 7 not implemented::No \`test:eval\` script exists — extraction thresholds and the adversarial injection corpus (§15.5) are not gating merges."
+          [ "$lint_rules" = yes ] || echo "::warning title=Stage 3 incomplete::No ESLint config in the repo — a11y, i18n-literal, money-type, module-boundary and unscoped-query (§14.3) are unenforced."
+          [ "$deploy" = yes ]  || echo "::warning title=Stage 9 not implemented::No deploy path exists yet (no Dockerfiles, no ECS services, no route from a runner to RDS). See the DEPLOY_READY block in check.yml."
+
+  # =========================================================================
+  # 1-5 · install → typecheck → lint → test → build.
+  #
+  # One job, because these five are strictly sequential over the same working
+  # tree and splitting them would re-run `pnpm install` five times on a free
+  # tier we are still counting minutes on. The stage boundaries are preserved
+  # as named steps, and every one of them blocks the next.
+  # =========================================================================
+  verify:
+    name: 1-5 · install, typecheck, lint, test, build
+    needs: readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    # Isolated data services per run (§14.4). A container that is created and
+    # destroyed with the job IS the isolation — no shared staging database, no
+    # leftover rows from the run before, nothing to clean up on failure.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: neoting
+          POSTGRES_PASSWORD: neoting
+          POSTGRES_DB: neoting
+          # Collation parity with docker-compose.yml and the staging parameter
+          # group, so ORDER BY behaves identically in all three.
+          POSTGRES_INITDB_ARGS: "--locale=C.UTF-8 --encoding=UTF8"
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U neoting -d neoting"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
 
@@ -38,17 +300,448 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      # ---- Stage runner ---------------------------------------------------
+      # THE ANTI-NO-OP GUARD. Measured on this repo with turbo 2.1.3 on
+      # 13 Aug 2026, because the obvious implementations are both wrong:
+      #
+      #   `turbo run test:eval`  → "Tasks: 0 successful, 0 total", exit 0, and
+      #                            NO "no tasks" message anywhere in the output.
+      #                            Grepping the log for a warning finds nothing
+      #                            to grep.
+      #   `turbo run test:e2e`   → "Tasks: 1 successful, 1 total", exit 0 —
+      #                            and that one task is `build`, pulled in by
+      #                            dependsOn. A green stage 6 that compiled the
+      #                            contract package and ran zero tests.
+      #
+      # So the guard asks turbo directly, before running anything: `--dry=json`
+      # lists every (package, task) pair with the command it would execute, and
+      # reports "<NONEXISTENT>" where a package does not implement the task.
+      # A stage may only run if at least one package implements THAT task with
+      # a command that is not an S0 `echo` placeholder.
+      - name: Install the stage runner (anti-no-op guard)
+        run: |
+          cat > "$RUNNER_TEMP/stage.sh" <<'SH'
+          #!/usr/bin/env bash
+          # Usage: stage.sh <task>
+          #
+          # ONE argument, and it is both the pnpm script and the turbo task —
+          # they are the same string for every stage (typecheck, lint, test,
+          # build), because `pnpm <x>` here is `turbo run <x>`.
+          #
+          # This took two parameters until an adversarial review caught that
+          # all four callers pass one. Under `set -u` the unset "$2" aborted
+          # the script before it ran anything, so stages 2, 3, 4 and 5 failed
+          # on every run and the required `check` gate could never go green.
+          # The irony was total: an anti-no-op guard that no-opped.
+          set -euo pipefail
+          task="$1"
+          script="$task"
+
+          real=$(pnpm exec turbo run "$task" --dry=json 2>/dev/null \
+            | jq --arg t "$task" '[
+                .tasks[]
+                | select(.task == $t)
+                | select(.command != "<NONEXISTENT>")
+                | select(.command | startswith("echo") | not)
+              ] | length')
+
+          if [ "$real" -eq 0 ]; then
+            echo "::error title=Stage would run nothing::No workspace package implements \`$task\` with a real command, yet the stage was enabled. Readiness and turbo disagree — that usually means turbo.json and the workspace have drifted. A stage that runs nothing must never report success."
+            exit 1
+          fi
+
+          echo "$task: $real package(s) implement it"
+          pnpm "$script"
+          SH
+
+      # ---- 1 · install ----------------------------------------------------
+      - name: 1 · pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       # The PR title becomes the squash commit (G4), so it is the thing that
       # must be a valid conventional commit — not the individual commits.
-      - name: commitlint (PR title)
+      - name: 1b · commitlint (PR title)
+        if: ${{ github.event_name == 'pull_request' }}
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: echo "$PR_TITLE" | pnpm exec commitlint
 
-      - run: pnpm typecheck
+      # ---- 2 · typecheck --------------------------------------------------
+      - name: 2 · pnpm typecheck
+        if: ${{ needs.readiness.outputs.typecheck == 'yes' }}
+        run: bash "$RUNNER_TEMP/stage.sh" typecheck
 
-      - run: pnpm lint
+      - name: 2 · typecheck — NOT IMPLEMENTED (no package has a real typecheck script)
+        if: ${{ needs.readiness.outputs.typecheck != 'yes' }}
+        run: echo "::warning title=Stage 2 skipped::Every typecheck script is an S0 placeholder. Nothing was type-checked."
 
-      - run: pnpm test
+      # ---- 3 · lint -------------------------------------------------------
+      - name: 3 · pnpm lint
+        if: ${{ needs.readiness.outputs.lint == 'yes' }}
+        run: bash "$RUNNER_TEMP/stage.sh" lint
+
+      - name: 3 · lint — NOT IMPLEMENTED (no package has a real lint script)
+        if: ${{ needs.readiness.outputs.lint != 'yes' }}
+        run: echo "::warning title=Stage 3 skipped::Every lint script is an S0 placeholder. Nothing was linted."
+
+      # A green stage 3 today means "the contract checker ran", NOT "the five
+      # rule families of §14.3 are enforced". Saying so out loud, every run,
+      # is the difference between a gap and a false sense of one being covered.
+      - name: 3b · required lint rules — NOT IMPLEMENTED
+        if: ${{ needs.readiness.outputs.lint_rules != 'yes' }}
+        run: |
+          echo "::warning title=Stage 3 incomplete::No ESLint config exists, so none of a11y / i18n-literal / money-type / module-boundary / unscoped-query (§14.3) is enforced. The unscoped-query rule is the one that backs the tenancy guarantee (§5.2) — until it exists, scopedDb discipline is review-only."
+
+      # ---- 4 · test (unit + integration) ----------------------------------
+      - name: 4 · pnpm test
+        if: ${{ needs.readiness.outputs.test == 'yes' }}
+        run: bash "$RUNNER_TEMP/stage.sh" test
+
+      - name: 4 · test — NOT IMPLEMENTED (no package has a real test script)
+        if: ${{ needs.readiness.outputs.test != 'yes' }}
+        run: echo "::warning title=Stage 4 skipped::Every test script is an S0 placeholder. No unit or integration test ran. The only real assertion in this stage today is the SQL tenancy check below."
+
+      # These three ARE real, today, and they block. `migrate deploy` is the
+      # only migration command allowed off a laptop (§5.3); the seed is what
+      # keeps a fresh clone honest (§8.6), so a broken seed must break CI, not
+      # the next person to clone; and tenancy-check.sql is the miniature of the
+      # blocking suite §15.4 requires — 18 assertions that nt_app cannot escape
+      # its business, run against a database whose RLS came from the real
+      # migration.
+      - name: 4a · prisma migrate deploy (isolated DB)
+        run: |
+          pnpm --filter @neoting/api exec prisma generate
+          pnpm --filter @neoting/api exec prisma migrate deploy
+
+      - name: 4b · seed
+        run: pnpm --filter @neoting/api exec prisma db seed
+
+      # Executed inside the service container rather than via a runner-side
+      # psql: same invocation as `pnpm db:tenancy-check`, and it does not
+      # depend on which psql version the runner image happens to ship.
+      - name: 4c · tenancy check (§15.4, blocking)
+        run: |
+          docker exec -i ${{ job.services.postgres.id }} \
+            psql -U neoting -d neoting -v ON_ERROR_STOP=1 -q < prisma/sql/tenancy-check.sql
+
+      # ---- 5 · build ------------------------------------------------------
+      - name: 5 · pnpm build
+        if: ${{ needs.readiness.outputs.build == 'yes' }}
+        run: bash "$RUNNER_TEMP/stage.sh" build
+
+      - name: 5 · build — NOT IMPLEMENTED (no package has a real build script)
+        if: ${{ needs.readiness.outputs.build != 'yes' }}
+        run: echo "::warning title=Stage 5 skipped::No package defines a build. Nothing was built, so stage 6 has nothing to run against."
+
+      # The build must not mutate anything tracked. packages/contracts is
+      # generated from openapi.yaml and its output is gitignored (§1.4), so a
+      # tracked file changing here means the generator wrote outside its output
+      # directory or someone committed generated code by hand — both of which
+      # break the "spec is the source" contract (G7) quietly.
+      - name: 5b · the build changed no tracked file
+        if: ${{ needs.readiness.outputs.build == 'yes' }}
+        run: |
+          if ! git diff --quiet; then
+            echo "::error title=Build mutated the working tree::pnpm build changed tracked files. Generated output belongs in an ignored directory; the spec is the source (G7)."
+            git --no-pager diff --stat
+            exit 1
+          fi
+
+  # =========================================================================
+  # 6 · e2e against the built app — includes axe checks and the blocking
+  # tenancy suite (§14.6, §15.3, §15.4).
+  #
+  # The job NAME carries the truth, because the checks list is what people
+  # actually read. Turn it on by giving `e2e` a real `test:e2e` script; this
+  # file needs no edit.
+  # =========================================================================
+  e2e:
+    name: ${{ needs.readiness.outputs.e2e == 'yes' && '6 · test:e2e' || '6 · test:e2e — NOT IMPLEMENTED (skipped)' }}
+    needs: [readiness, verify]
+    if: ${{ needs.readiness.outputs.e2e == 'yes' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: neoting
+          POSTGRES_PASSWORD: neoting
+          POSTGRES_DB: neoting
+          POSTGRES_INITDB_ARGS: "--locale=C.UTF-8 --encoding=UTF8"
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U neoting -d neoting"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Prepare the database
+        run: |
+          pnpm --filter @neoting/api exec prisma generate
+          pnpm --filter @neoting/api exec prisma migrate deploy
+          pnpm --filter @neoting/api exec prisma db seed
+
+      # Browsers are ~400 MB and the download dominates the job. Cached by the
+      # lockfile hash, because the Playwright version moves with it.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @neoting/e2e exec playwright install --with-deps chromium
+
+      # §14.6 says "against the built app", so this builds first rather than
+      # running a dev server — a dev-server e2e proves the dev server works.
+      - name: 6 · pnpm test:e2e
+        env:
+          # Twilio TEST credentials only (Guideline §8.4). If these are unset
+          # the OTP flows fail loudly, which is correct: a silently skipped
+          # onboarding test is the same lie this pipeline exists to avoid.
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_TEST_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_TEST_AUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          pnpm build
+          pnpm test:e2e 2>&1 | tee "$RUNNER_TEMP/e2e.log"
+          if grep -qE 'No tasks (were executed|to execute)' "$RUNNER_TEMP/e2e.log"; then
+            echo "::error title=e2e ran nothing::turbo matched no test:e2e task. The stage reported success without executing a single test."
+            exit 1
+          fi
+
+      - name: Upload the Playwright report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # =========================================================================
+  # 7 · evals — REQUIRED when extraction, prompts, models, routing, thresholds
+  # or packages/component-grammar changed (§14.7). Thresholds fail the build;
+  # the adversarial injection corpus stays at 100% blocked (§15.5).
+  #
+  # When the suite does not exist and the diff demanded it, this job prints
+  # exactly which paths demanded it and does not pretend otherwise. That is
+  # deliberately not a hard failure YET: making it one today would block the
+  # very PRs that create the extraction module, and a gate that blocks the work
+  # it is meant to protect gets removed. It becomes a hard failure the moment
+  # evals/ has a real `test:eval` script — from then on a relevant diff cannot
+  # merge without passing thresholds.
+  # =========================================================================
+  eval:
+    name: ${{ needs.readiness.outputs.eval == 'yes' && '7 · test:eval' || '7 · test:eval — NOT IMPLEMENTED (skipped)' }}
+    needs: [readiness, verify]
+    if: ${{ needs.readiness.outputs.eval == 'yes' && needs.readiness.outputs.eval_required == 'yes' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: 7 · pnpm test:eval
+        env:
+          # fixture replays the recorded corpus — evals must be deterministic
+          # and must not spend Bedrock tokens per PR (§9.7, §13.5). Flip to
+          # bedrock only for the scheduled calibration run, never for the merge
+          # gate.
+          AI_MODE: fixture
+          EXTRACTION_MODE: fixture
+        run: |
+          set -euo pipefail
+          pnpm test:eval 2>&1 | tee "$RUNNER_TEMP/eval.log"
+          if grep -qE 'No tasks (were executed|to execute)' "$RUNNER_TEMP/eval.log"; then
+            echo "::error title=evals ran nothing::turbo matched no test:eval task."
+            exit 1
+          fi
+
+  # This exists so that "evals were required and did not run" is a visible line
+  # in the checks list rather than an absence. Delete this job the day evals
+  # become real — the `eval` job above covers it from then on.
+  eval-debt:
+    name: 7 · evals REQUIRED by this diff but NOT IMPLEMENTED
+    needs: readiness
+    if: ${{ needs.readiness.outputs.eval != 'yes' && needs.readiness.outputs.eval_required == 'yes' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: |
+          echo "::warning title=Eval debt::This diff touches extraction / prompts / models / routing / thresholds / component-grammar. Governance §14.7 requires pnpm test:eval to pass before it merges. No eval suite exists, so nothing was measured — extraction accuracy, addressee routing and the adversarial injection corpus are all unverified for this change."
+          {
+            echo "### Stage 7 — eval debt"
+            echo
+            echo "This change is in eval-governed territory (§14.7) and **no evals ran**."
+            echo "Merging it is a judgement call a human is making, not a check that passed."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # =========================================================================
+  # 8 · security — `pnpm audit` (fail high/critical) + a secret scan of the
+  # diff (§14.8). Both are real today and both block.
+  #
+  # Runs in parallel with 6 and 7 rather than after them. §14's ordering is
+  # about what gates a merge, not about wall-clock sequence: nothing downstream
+  # consumes the security result except the merge decision and stage 9, and
+  # stage 9 `needs` this job explicitly. Learning about a critical advisory
+  # twelve minutes earlier is worth more than a literal reading of the list.
+  # =========================================================================
+  security:
+    name: 8 · security (audit + secret scan)
+    needs: [readiness, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # An advisory with no fix available will block merges. That is the point,
+      # and the escape hatch is deliberately not in this file: add the GHSA to
+      # `pnpm.auditConfig.ignoreGhsas` in package.json with a comment naming
+      # the issue and the review date, so the exception is reviewed like code
+      # instead of being buried in a workflow flag (§19).
+      - name: 8a · pnpm audit (high + critical block)
+        run: pnpm audit --audit-level high
+
+      # gitleaks runs as a pinned container, not as gitleaks-action: the action
+      # requires a paid licence key for organisation-owned repos, and a scanner
+      # that fails open on a missing licence is worse than no scanner.
+      #
+      # --redact matters more than it looks: without it a hit prints the secret
+      # into the run log, which turns "we found a leaked key" into "we leaked it
+      # again, to a second place, with a permalink".
+      - name: 8b · secret scan on the diff
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BASE_SHA:-}" ] || [ "${BASE_SHA}" = "0000000000000000000000000000000000000000" ]; then
+            range="HEAD~1..HEAD"
+          else
+            range="${BASE_SHA}..${{ github.sha }}"
+          fi
+          echo "scanning $range"
+          docker run --rm -v "$PWD:/repo" -w /repo \
+            ghcr.io/gitleaks/gitleaks:v8.18.4 \
+            detect --source=/repo --log-opts="$range" \
+                   --redact --no-banner --exit-code 1
+
+  # =========================================================================
+  # 9 · deploy (§14.9, §16).
+  #
+  # WHAT ALREADY WORKS AND IS NOT HERE: web previews. Vercel's own Git
+  # integration builds a protected preview per PR (Guideline §7.2, R16) and
+  # comments the URL. It is not a GitHub Actions job and duplicating it here
+  # would give us two deploy paths to keep in step.
+  #
+  # WHAT IS MISSING, precisely — this is the flip list for DEPLOY_READY in the
+  # readiness job:
+  #   1. Dockerfiles for api / web / workers. None exist in the repo.
+  #   2. ECS task definitions + services. compute.tf ships the cluster, the
+  #      three ECR repos and the log groups; services land with the app (S4).
+  #   3. An ALB + ACM certificate. Not written yet — the alb security group in
+  #      network.tf is waiting for one.
+  #   4. A route from the migration runner to RDS. A GitHub runner has none and
+  #      must not be given one: RDS sits in data subnets with no internet route
+  #      and an SG that admits only the app SG. `prisma migrate deploy` runs as
+  #      a one-off `aws ecs run-task` inside the VPC, using the nt-staging-app
+  #      task role. Never by opening the database to the internet.
+  #   5. A health signal to roll back ON. §16 wants auto-rollback on health
+  #      regression; with no ALB target group and no alarms there is nothing to
+  #      watch, and "deploy then hope" is not a pipeline.
+  #
+  # Production promote (§14.9 "one-click promote") is a GitHub Environment with
+  # required reviewers — adding a reviewer to the `production` environment
+  # converts an automatic deploy into a one-click one with no change to this
+  # file. Auto-rollback re-points the service at the previous task definition,
+  # which is why rollback is code-only (§16) and never a reversed migration.
+  # =========================================================================
+  deploy:
+    name: ${{ needs.readiness.outputs.deploy == 'yes' && '9 · deploy' || '9 · deploy — NOT IMPLEMENTED (skipped)' }}
+    needs: [readiness, verify, e2e, security]
+    if: ${{ needs.readiness.outputs.deploy == 'yes' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Named here so the environment's protection rules (required reviewers,
+    # deployment branch policy) become the gate the moment someone sets them.
+    environment: staging
+
+    permissions:
+      contents: read
+      id-token: write # OIDC only. There are no static AWS keys in this repo.
+
+    steps:
+      - run: |
+          echo "::error title=Deploy stage enabled with nothing behind it::DEPLOY_READY was flipped but the deploy steps have not been written. See the flip list in the stage 9 comment block."
+          exit 1
+
+  # =========================================================================
+  # THE GATE. Branch protection requires the status check named `check` and
+  # nothing else, so this job is the merge contract: it fails if any stage
+  # failed or was cancelled, and it repeats the debt so that the last thing on
+  # the run page is what did NOT run.
+  #
+  # `always()` is required — without it, a skipped dependency skips this job
+  # too, and a required check that never reports blocks the PR forever.
+  # =========================================================================
+  check:
+    needs: [readiness, verify, e2e, eval, eval-debt, security, deploy]
+    if: ${{ always() && (github.event_name == 'push' || !github.event.pull_request.draft) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Aggregate the stage results
+        env:
+          RESULTS: ${{ join(needs.*.result, ',') }}
+        run: |
+          set -euo pipefail
+          echo "stage results: $RESULTS"
+          case ",$RESULTS," in
+            *,failure,*|*,cancelled,*)
+              echo "::error title=Pipeline failed::At least one stage failed or was cancelled. main must stay deployable — a broken main is a stop-the-line event (§14)."
+              exit 1
+              ;;
+          esac
+          echo "All stages that ran, passed. Stages that did not run are listed in the readiness summary above — they passed nothing."

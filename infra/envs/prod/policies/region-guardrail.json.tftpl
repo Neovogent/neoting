@@ -1,0 +1,51 @@
+{
+  "Version": "2012-10-17",
+  "Id": "nt-prod-region-guardrail",
+  "Statement": [
+    {
+      "Sid": "DenyOutsideApprovedRegions",
+      "Effect": "Deny",
+      "NotAction": [
+        "iam:*", "organizations:*", "sts:*", "route53:*", "route53domains:*",
+        "cloudfront:*", "waf:*", "wafv2:*", "shield:*", "globalaccelerator:*",
+        "support:*", "trustedadvisor:*", "health:*", "account:*", "artifact:*",
+        "budgets:*", "ce:*", "cur:*", "aws-portal:*", "billing:*", "tax:*",
+        "notifications:*", "s3:ListAllMyBuckets", "s3:GetBucketLocation"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestedRegion": ["eu-west-2", "us-east-1", "${dr_region}"]
+        }
+      }
+    },
+    {
+      "Sid": "NoDataServicesInUsEast1",
+      "Effect": "Deny",
+      "Action": [
+        "rds:*", "ec2:RunInstances", "ecs:*", "ecr:*", "elasticache:*",
+        "s3:CreateBucket", "dynamodb:*", "secretsmanager:*", "bedrock:*",
+        "textract:*", "transcribe:*", "ses:*", "sqs:*", "aps:*", "grafana:*"
+      ],
+      "Resource": "*",
+      "Condition": { "StringEquals": { "aws:RequestedRegion": "us-east-1" } }
+    },
+    {
+      "Sid": "NothingProcessesInTheDrRegion",
+      "Effect": "Deny",
+      "NotAction": ["s3:*", "kms:*", "sts:*"],
+      "Resource": "*",
+      "Condition": { "StringEquals": { "aws:RequestedRegion": "${dr_region}" } }
+    },
+    {
+      "Sid": "DrRegionS3IsTheBackupBucketsOnly",
+      "Effect": "Deny",
+      "Action": "s3:*",
+      "NotResource": [
+        "arn:aws:s3:::${dr_bucket}",
+        "arn:aws:s3:::${dr_bucket}/*"
+      ],
+      "Condition": { "StringEquals": { "aws:RequestedRegion": "${dr_region}" } }
+    }
+  ]
+}
