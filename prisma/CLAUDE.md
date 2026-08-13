@@ -41,14 +41,25 @@ Never drop or rename a column in one step. Indexes ship in the **same migration*
 - `schema.prisma` — all 8 entity groups from SoT §15, ~35 models. `prisma validate` passes.
 - `sql/rls.sql` — helper functions, the single `app_can_access_business()` predicate, policies for every tenant table, delegated-OTP scoping, the append-only audit trigger, and the ActionProposal guard trigger.
 
-**No migration has been generated yet** — that needs a running database:
+- `migrations/*_init` — generated, applied, and **verified against a live database**.
+- `sql/tenancy-check.sql` — 18 assertions, all passing. Run it with `pnpm db:tenancy-check` after any policy change; it is the miniature of the CI suite that Governance §15.4 requires.
+
+### Regenerating from scratch
+
+The RLS must be appended **before** the migration is applied — otherwise the tables exist without policies and the first seed writes unprotected rows.
 
 ```bash
 docker compose up -d
+pnpm --filter @neoting/api exec prisma migrate reset --force --skip-seed
 pnpm --filter @neoting/api exec prisma migrate dev --create-only --name init
 cat prisma/sql/rls.sql >> prisma/migrations/*_init/migration.sql
-pnpm --filter @neoting/api exec prisma migrate dev
+pnpm --filter @neoting/api exec prisma migrate deploy   # deploy, not dev — dev prompts
+pnpm db:tenancy-check
 ```
+
+### ⚠ Provisioning cannot run under these policies
+
+`app_can_access_business()` requires a membership row — which does not exist until provisioning has finished creating it. Signup, practice creation and client intake therefore cannot run as `nt_app` through normal policies. Decide the route in S1 before auth-tenancy is written; the options are a narrow `SECURITY DEFINER` provisioning function, or a separate privileged connection used **only** by that path and nothing else. Do not solve it by loosening a policy.
 
 ### Open questions for the freeze
 

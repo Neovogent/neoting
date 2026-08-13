@@ -16,7 +16,11 @@ services:
       # Match production collation so ORDER BY behaves the same locally.
       POSTGRES_INITDB_ARGS: "--locale=C.UTF-8 --encoding=UTF8"
     ports:
-      - "5432:5432"
+      # Host 5433, not 5432. A locally installed Postgres is common enough that
+      # binding the default port silently sends the app to the wrong database —
+      # it fails as an authentication error, which sends you hunting for the
+      # wrong bug. Container-internal port is unchanged.
+      - "5433:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:

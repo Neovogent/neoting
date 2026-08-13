@@ -167,10 +167,53 @@ BEGIN
 END $$;
 
 -- --- businesses: the row is its own tenant -------------------------------
+--
+-- This policy is deliberately written out rather than calling
+-- app_can_access_business(). That function reads `businesses` to find a row's
+-- practice, so using it here would make the businesses policy call a function
+-- that queries businesses, which re-enters the policy — Postgres recurses until
+-- `stack depth limit exceeded`. Written this way it touches only the row's own
+-- columns and `memberships`, which carries no RLS, so the cycle cannot form.
+--
+-- Everything else may safely use the function: their policies do not call it.
 DROP POLICY IF EXISTS businesses_tenant ON businesses;
 CREATE POLICY businesses_tenant ON businesses
-  USING (app_can_access_business(id))
-  WITH CHECK (app_can_access_business(id));
+  USING (
+    app_session_scope() = 'user'
+    AND app_actor_id() IS NOT NULL
+    AND (
+      id = app_business_id()
+      OR EXISTS (
+        SELECT 1 FROM memberships m
+        WHERE m.user_id = app_actor_id() AND m.business_id = businesses.id
+      )
+      OR (
+        practice_id IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM memberships m
+          WHERE m.user_id = app_actor_id() AND m.practice_id = businesses.practice_id
+        )
+      )
+    )
+  )
+  WITH CHECK (
+    app_session_scope() = 'user'
+    AND app_actor_id() IS NOT NULL
+    AND (
+      id = app_business_id()
+      OR EXISTS (
+        SELECT 1 FROM memberships m
+        WHERE m.user_id = app_actor_id() AND m.business_id = businesses.id
+      )
+      OR (
+        practice_id IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM memberships m
+          WHERE m.user_id = app_actor_id() AND m.practice_id = businesses.practice_id
+        )
+      )
+    )
+  );
 
 -- --- child tables: reached through their parent ---------------------------
 DROP POLICY IF EXISTS extractions_tenant ON extractions;
@@ -321,8 +364,12 @@ CREATE OR REPLACE FUNCTION action_proposals_guard() RETURNS trigger
   LANGUAGE plpgsql AS
 $$
 BEGIN
-  IF OLD.executed_at IS NOT NULL AND NEW.executed_at IS DISTINCT FROM OLD.executed_at THEN
-    RAISE EXCEPTION 'action proposal % already executed (Governance §10.4)', OLD.id;
+  -- Execution consumes the proposal exactly once, so an executed proposal is
+  -- terminal — no further UPDATE of any kind. Comparing timestamps is not
+  -- enough: now() is stable within a transaction, so a repeated execution
+  -- writes an identical value and slips past an IS DISTINCT FROM check.
+  IF OLD.executed_at IS NOT NULL THEN
+    RAISE EXCEPTION 'action proposal % already executed and is immutable (Governance §10.4)', OLD.id;
   END IF;
 
   IF NEW.approved_at IS NOT NULL AND NEW.reviewed_at IS NULL THEN

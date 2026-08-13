@@ -32,17 +32,17 @@ datasource db {
 model Practice {
   id                String   @id @default(cuid())
   name              String
-  logoS3Key         String?
-  countryCode       String   @default("GB")
-  baseCurrency      String   @default("GBP")
+  logoS3Key         String?  @map("logo_s3_key")
+  countryCode       String   @default("GB") @map("country_code")
+  baseCurrency      String   @default("GBP") @map("base_currency")
   language          String   @default("en-GB")
-  registeredAddress Json?
-  vatNumber         String?
-  vatRegistered     Boolean  @default(false)
-  yearEndMonth      Int?
-  yearEndDay        Int?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  registeredAddress Json?    @map("registered_address")
+  vatNumber         String?  @map("vat_number")
+  vatRegistered     Boolean  @default(false) @map("vat_registered")
+  yearEndMonth      Int?     @map("year_end_month")
+  yearEndDay        Int?     @map("year_end_day")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
 
   businesses  Business[]
   memberships Membership[]
@@ -56,66 +56,66 @@ model Practice {
 /// pipeline, without the practice layer above them (SoT §3.2).
 model Business {
   id         String  @id @default(cuid())
-  practiceId String?
+  practiceId String? @map("practice_id")
 
-  name          String
-  tradingName   String?
-  logoS3Key     String?
-  companyNumber String?
-  legalStructure String?
-  industry      String?
-  website       String?
-  registeredAddress Json?
-  tradingAddress    Json?
-  countryCode   String  @default("GB")
-  baseCurrency  String  @default("GBP")
+  name              String
+  tradingName       String? @map("trading_name")
+  logoS3Key         String? @map("logo_s3_key")
+  companyNumber     String? @map("company_number")
+  legalStructure    String? @map("legal_structure")
+  industry          String?
+  website           String?
+  registeredAddress Json?   @map("registered_address")
+  tradingAddress    Json?   @map("trading_address")
+  countryCode       String  @default("GB") @map("country_code")
+  baseCurrency      String  @default("GBP") @map("base_currency")
 
-  vatRegistered    Boolean   @default(false)
-  vatNumber        String?
-  vatScheme        String?
-  vatFrequency     String?
-  vatPeriodStart   DateTime?
-  yearEndMonth     Int?
-  yearEndDay       Int?
+  vatRegistered  Boolean   @default(false) @map("vat_registered")
+  vatNumber      String?   @map("vat_number")
+  vatScheme      String?   @map("vat_scheme")
+  vatFrequency   String?   @map("vat_frequency")
+  vatPeriodStart DateTime? @map("vat_period_start")
+  yearEndMonth   Int?      @map("year_end_month")
+  yearEndDay     Int?      @map("year_end_day")
 
   /// Business-context questionnaire — feeds AI grounding and cold-start
   /// category inference (SoT §5.1, Stage 4).
-  contextQuestionnaire Json?
+  contextQuestionnaire Json? @map("context_questionnaire")
 
-  bookkeepingManagedBy String?
-  bookkeepingFrequency String?
-  nextDeadline         DateTime?
-  practiceCode         String?
+  bookkeepingManagedBy String?   @map("bookkeeping_managed_by")
+  bookkeepingFrequency String?   @map("bookkeeping_frequency")
+  nextDeadline         DateTime? @map("next_deadline")
+  practiceCode         String?   @map("practice_code")
 
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   practice Practice? @relation(fields: [practiceId], references: [id], onDelete: Restrict)
 
-  memberships       Membership[]
-  contacts          Contact[]
-  invites           Invite[]
-  documents         Document[]
-  rules             Rule[]
-  guidance          Guidance[]
-  bankConnections   BankConnection[]
-  bankAccounts      BankAccount[]
-  bankTransactions  BankTransaction[]
-  statements        Statement[]
+  memberships        Membership[]
+  contacts           Contact[]
+  invites            Invite[]
+  documents          Document[]
+  rules              Rule[]
+  guidance           Guidance[]
+  bankConnections    BankConnection[]
+  bankAccounts       BankAccount[]
+  bankTransactions   BankTransaction[]
+  statements         Statement[]
   supplierStatements SupplierStatement[]
-  chases            Chase[]
-  approvalWorkflows ApprovalWorkflow[]
-  actionProposals   ActionProposal[]
-  integrations      Integration[]
-  publishes         Publish[]
-  vaultItems        VaultItem[]
-  tasks             Task[]
-  notifications     Notification[]
-  smsLogs           SmsLog[]
-  exports           Export[]
-  imports           Import[]
-  auditEvents       AuditEvent[]
+  chases             Chase[]
+  approvalWorkflows  ApprovalWorkflow[]
+  actionProposals    ActionProposal[]
+  integrations       Integration[]
+  publishes          Publish[]
+  vaultItems         VaultItem[]
+  tasks              Task[]
+  notifications      Notification[]
+  smsLogs            SmsLog[]
+  exports            Export[]
+  imports            Import[]
+  auditEvents        AuditEvent[]
 
   @@index([practiceId])
   @@index([practiceId, isActive])
@@ -126,28 +126,28 @@ model Business {
 /// references — phone numbers change and get recycled, so they are a factor,
 /// never an identity (SoT §3.3).
 model User {
-  id           String    @id @default(cuid())
-  email        String?   @unique
-  emailVerified Boolean  @default(false)
-  passwordHash String?
-  firstName    String?
-  lastName     String?
+  id            String  @id @default(cuid())
+  email         String? @unique
+  emailVerified Boolean @default(false) @map("email_verified")
+  passwordHash  String? @map("password_hash")
+  firstName     String? @map("first_name")
+  lastName      String? @map("last_name")
 
-  totpSecretRef String?
-  totpEnabledAt DateTime?
+  totpSecretRef String?   @map("totp_secret_ref")
+  totpEnabledAt DateTime? @map("totp_enabled_at")
 
-  lastLoginAt   DateTime?
-  deactivatedAt DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime? @map("last_login_at")
+  deactivatedAt DateTime? @map("deactivated_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
-  memberships     Membership[]
-  sessions        Session[]
-  otpSessions     OtpSession[]
-  approvals       Approval[]
-  actionProposals ActionProposal[] @relation("ProposalCreatedBy")
+  memberships       Membership[]
+  sessions          Session[]
+  otpSessions       OtpSession[]
+  approvals         Approval[]
+  actionProposals   ActionProposal[] @relation("ProposalCreatedBy")
   approvedProposals ActionProposal[] @relation("ProposalApprovedBy")
-  ownedDocuments  Document[]       @relation("DocumentOwner")
+  ownedDocuments    Document[]       @relation("DocumentOwner")
 
   @@map("users")
 }
@@ -165,19 +165,19 @@ enum WorkspaceRole {
 /// checked at call sites, never roles — assertCan(actor, action, resource).
 model Membership {
   id         String  @id @default(cuid())
-  userId     String
-  practiceId String?
-  businessId String?
+  userId     String  @map("user_id")
+  practiceId String? @map("practice_id")
+  businessId String? @map("business_id")
 
   role        WorkspaceRole
   permissions String[]      @default([])
 
   /// Non-finance submitters see their submission, not the coding (SoT §3.3).
-  hideFinancialFields Boolean @default(false)
-  isOwner             Boolean @default(false)
+  hideFinancialFields Boolean @default(false) @map("hide_financial_fields")
+  isOwner             Boolean @default(false) @map("is_owner")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   practice Practice? @relation(fields: [practiceId], references: [id], onDelete: Cascade)
@@ -194,25 +194,25 @@ model Membership {
 /// provisioned as users (SoT §3.3).
 model Contact {
   id         String @id @default(cuid())
-  businessId String
+  businessId String @map("business_id")
 
-  userId       String?
-  firstName    String?
-  lastName     String?
-  role         String?
-  mobileE164   String?
-  mobileVerifiedAt DateTime?
-  email        String?
-  isPrimary    Boolean @default(false)
-  receivesChases Boolean @default(true)
-  whatsappOptIn  Boolean @default(false)
+  userId           String?   @map("user_id")
+  firstName        String?   @map("first_name")
+  lastName         String?   @map("last_name")
+  role             String?
+  mobileE164       String?   @map("mobile_e164")
+  mobileVerifiedAt DateTime? @map("mobile_verified_at")
+  email            String?
+  isPrimary        Boolean   @default(false) @map("is_primary")
+  receivesChases   Boolean   @default(true) @map("receives_chases")
+  whatsappOptIn    Boolean   @default(false) @map("whatsapp_opt_in")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  business Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business    Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
   otpSessions OtpSession[]
-  chases    Chase[]
+  chases      Chase[]
 
   @@index([businessId])
   @@index([mobileE164])
@@ -221,16 +221,16 @@ model Contact {
 
 model Invite {
   id         String  @id @default(cuid())
-  practiceId String?
-  businessId String?
+  practiceId String? @map("practice_id")
+  businessId String? @map("business_id")
 
-  email       String?
-  mobileE164  String?
-  role        WorkspaceRole
-  tokenHash   String        @unique
-  expiresAt   DateTime
-  acceptedAt  DateTime?
-  createdAt   DateTime      @default(now())
+  email      String?
+  mobileE164 String?       @map("mobile_e164")
+  role       WorkspaceRole
+  tokenHash  String        @unique @map("token_hash")
+  expiresAt  DateTime      @map("expires_at")
+  acceptedAt DateTime?     @map("accepted_at")
+  createdAt  DateTime      @default(now()) @map("created_at")
 
   practice Practice? @relation(fields: [practiceId], references: [id], onDelete: Cascade)
   business Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
@@ -240,16 +240,16 @@ model Invite {
 }
 
 model Session {
-  id             String   @id @default(cuid())
-  userId         String
-  refreshTokenHash String  @unique
-  deviceLabel    String?
-  ipHash         String?
-  userAgentHash  String?
-  createdAt      DateTime @default(now())
-  lastUsedAt     DateTime @default(now())
-  expiresAt      DateTime
-  revokedAt      DateTime?
+  id               String    @id @default(cuid())
+  userId           String    @map("user_id")
+  refreshTokenHash String    @unique @map("refresh_token_hash")
+  deviceLabel      String?   @map("device_label")
+  ipHash           String?   @map("ip_hash")
+  userAgentHash    String?   @map("user_agent_hash")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  lastUsedAt       DateTime  @default(now()) @map("last_used_at")
+  expiresAt        DateTime  @map("expires_at")
+  revokedAt        DateTime? @map("revoked_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -269,25 +269,25 @@ enum OtpSessionScope {
 /// records requested-from separately from uploaded-by (SoT Stage 8.3).
 model OtpSession {
   id         String @id @default(cuid())
-  businessId String
+  businessId String @map("business_id")
 
-  contactId     String?
-  userId        String?
-  scope         OtpSessionScope
-  grantedItemIds String[]       @default([])
-  chaseId       String?
+  contactId      String?         @map("contact_id")
+  userId         String?         @map("user_id")
+  scope          OtpSessionScope
+  grantedItemIds String[]        @default([]) @map("granted_item_ids")
+  chaseId        String?         @map("chase_id")
 
-  requestedFromContactId String?
+  requestedFromContactId String? @map("requested_from_contact_id")
 
-  otpHash       String?
-  otpExpiresAt  DateTime?
-  attempts      Int       @default(0)
-  lockedUntil   DateTime?
-  verifiedAt    DateTime?
+  otpHash      String?   @map("otp_hash")
+  otpExpiresAt DateTime? @map("otp_expires_at")
+  attempts     Int       @default(0)
+  lockedUntil  DateTime? @map("locked_until")
+  verifiedAt   DateTime? @map("verified_at")
 
-  linkTokenHash String   @unique
-  expiresAt     DateTime
-  createdAt     DateTime @default(now())
+  linkTokenHash String   @unique @map("link_token_hash")
+  expiresAt     DateTime @map("expires_at")
+  createdAt     DateTime @default(now()) @map("created_at")
 
   contact Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
   user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
@@ -339,70 +339,70 @@ enum DocumentType {
 
 model Document {
   id         String @id @default(cuid())
-  businessId String
+  businessId String @map("business_id")
 
-  s3Key            String
-  originalFilename String
-  mimeType         String
-  byteSize         Int
-  byteHash         String
-  perceptualHash   String?
+  s3Key            String  @map("s3_key")
+  originalFilename String  @map("original_filename")
+  mimeType         String  @map("mime_type")
+  byteSize         Int     @map("byte_size")
+  byteHash         String  @map("byte_hash")
+  perceptualHash   String? @map("perceptual_hash")
 
-  channel        DocumentChannel
-  submitterUserId String?
-  submitterLabel  String?
-  receivedAt      DateTime        @default(now())
-  receivedLocal   String?
+  channel         DocumentChannel
+  submitterUserId String?         @map("submitter_user_id")
+  submitterLabel  String?         @map("submitter_label")
+  receivedAt      DateTime        @default(now()) @map("received_at")
+  receivedLocal   String?         @map("received_local")
 
   /// Which rule or model routed this here, and how sure it was. Null when the
   /// sender identity matched exactly and no inference was needed.
-  routingDecision   Json?
-  routingConfidence Float?
+  routingDecision   Json?  @map("routing_decision")
+  routingConfidence Float? @map("routing_confidence")
 
-  inbox    Inbox         @default(UNROUTED)
-  state    DocumentState @default(RECEIVED)
-  docType  DocumentType?
+  inbox   Inbox         @default(UNROUTED)
+  state   DocumentState @default(RECEIVED)
+  docType DocumentType? @map("doc_type")
 
   /// Populated from the accepted extraction so lists and search do not have to
   /// reach into extraction JSON. Money is pence.
-  supplierName    String?
-  customerName    String?
-  documentDate    DateTime?
-  dueDate         DateTime?
-  currency        String?
-  totalPence      Int?
-  taxPence        Int?
-  reference       String?
-  categoryCode    String?
-  description     String?
-  projectRef      String?
+  supplierName String?   @map("supplier_name")
+  customerName String?   @map("customer_name")
+  documentDate DateTime? @map("document_date")
+  dueDate      DateTime? @map("due_date")
+  currency     String?
+  totalPence   Int?      @map("total_pence")
+  taxPence     Int?      @map("tax_pence")
+  reference    String?
+  categoryCode String?   @map("category_code")
+  description  String?
+  projectRef   String?   @map("project_ref")
 
   /// Why it was rejected or failed — never null when state is REJECTED/FAILED.
   /// The Rejected/Failed view is a first-class surface (SoT Stage 5).
-  failureCode    String?
-  failureMessage String?
+  failureCode    String? @map("failure_code")
+  failureMessage String? @map("failure_message")
 
-  parentDocumentId String?
-  pageRange        String?
+  parentDocumentId String? @map("parent_document_id")
+  pageRange        String? @map("page_range")
 
-  archivedAt DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
 
-  business  Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
-  owner     User?    @relation("DocumentOwner", fields: [submitterUserId], references: [id], onDelete: SetNull)
-  parent    Document?  @relation("DocumentSplit", fields: [parentDocumentId], references: [id], onDelete: SetNull)
-  children  Document[] @relation("DocumentSplit")
+  business Business   @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  owner    User?      @relation("DocumentOwner", fields: [submitterUserId], references: [id], onDelete: SetNull)
+  parent   Document?  @relation("DocumentSplit", fields: [parentDocumentId], references: [id], onDelete: SetNull)
+  children Document[] @relation("DocumentSplit")
 
-  extractions    Extraction[]
-  events         DocumentEvent[]
-  suggestions    Suggestion[]
-  duplicatesAsA  Duplicate[]     @relation("DuplicateA")
-  duplicatesAsB  Duplicate[]     @relation("DuplicateB")
-  matches        Match[]
-  publishes      Publish[]
-  itemThreads    ItemThread[]
-  approvals      Approval[]
+  extractions   Extraction[]
+  events        DocumentEvent[]
+  suggestions   Suggestion[]
+  duplicatesAsA Duplicate[]     @relation("DuplicateA")
+  duplicatesAsB Duplicate[]     @relation("DuplicateB")
+  matches       Match[]
+  publishes     Publish[]
+  itemThreads   ItemThread[]
+  approvals     Approval[]
 
   @@index([businessId, inbox, state])
   @@index([businessId, receivedAt])
@@ -416,24 +416,24 @@ model Document {
 /// any historical decision is reproducible (Governance §9.8).
 model Extraction {
   id         String @id @default(cuid())
-  documentId String
+  documentId String @map("document_id")
 
   /// Per-field: value, confidence, provenance (which pixels / rule / model).
   fields Json
 
-  extractorKind  String
-  modelVersion   String?
-  promptVersion  String?
-  ladderRung     String?
-  overallConfidence Float?
+  extractorKind     String  @map("extractor_kind")
+  modelVersion      String? @map("model_version")
+  promptVersion     String? @map("prompt_version")
+  ladderRung        String? @map("ladder_rung")
+  overallConfidence Float?  @map("overall_confidence")
 
   /// Deterministic validator results (packages/validators). Failures push the
   /// document to To Review regardless of model confidence.
-  validatorResults Json?
+  validatorResults Json? @map("validator_results")
 
-  isAccepted Boolean  @default(false)
-  keyedByUserId String?
-  createdAt  DateTime @default(now())
+  isAccepted    Boolean  @default(false) @map("is_accepted")
+  keyedByUserId String?  @map("keyed_by_user_id")
+  createdAt     DateTime @default(now()) @map("created_at")
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
@@ -445,14 +445,14 @@ model Extraction {
 /// so any file's journey can be replayed end to end (Governance §13.4).
 model DocumentEvent {
   id         String @id @default(cuid())
-  documentId String
+  documentId String @map("document_id")
 
   stage      String
   outcome    String
-  durationMs Int?
-  traceId    String?
+  durationMs Int?     @map("duration_ms")
+  traceId    String?  @map("trace_id")
   detail     Json?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime @default(now()) @map("created_at")
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
@@ -470,19 +470,19 @@ enum DuplicateVerdict {
 
 model Duplicate {
   id         String @id @default(cuid())
-  businessId String
+  businessId String @map("business_id")
 
-  documentAId String
-  documentBId String
+  documentAId String @map("document_aid")
+  documentBId String @map("document_bid")
 
   /// Which nets fired: byteHash, pHash, ocrSimilarity, fieldRule, crossType.
   signals Json
   score   Float
 
-  verdict          DuplicateVerdict @default(PENDING)
-  decidedByUserId  String?
-  decidedAt        DateTime?
-  createdAt        DateTime         @default(now())
+  verdict         DuplicateVerdict @default(PENDING)
+  decidedByUserId String?          @map("decided_by_user_id")
+  decidedAt       DateTime?        @map("decided_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
 
   documentA Document @relation("DuplicateA", fields: [documentAId], references: [id], onDelete: Cascade)
   documentB Document @relation("DuplicateB", fields: [documentBId], references: [id], onDelete: Cascade)
@@ -507,23 +507,23 @@ enum RuleTier {
 
 model Rule {
   id         String @id @default(cuid())
-  businessId String
+  businessId String @map("business_id")
 
   tier       RuleTier
-  scopeKey   String?
+  scopeKey   String?  @map("scope_key")
   /// Amount, line-item keywords, document type, uploader, project.
   conditions Json?
   /// The fields this rule sets when it wins.
   sets       Json
 
-  isActive   Boolean  @default(true)
-  createdVia String?
-  createdByUserId String?
+  isActive         Boolean @default(true) @map("is_active")
+  createdVia       String? @map("created_via")
+  createdByUserId  String? @map("created_by_user_id")
   /// The proposal that activated it — no rule exists without one (Governance §10).
-  actionProposalId String?
+  actionProposalId String? @map("action_proposal_id")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -545,17 +545,17 @@ enum GuidanceMode {
 
 model Guidance {
   id         String  @id @default(cuid())
-  practiceId String?
-  businessId String?
+  practiceId String? @map("practice_id")
+  businessId String? @map("business_id")
 
   level GuidanceLevel
   mode  GuidanceMode  @default(MANUAL_REVIEW)
   text  String
 
-  isActive        Boolean  @default(true)
-  createdByUserId String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  isActive        Boolean  @default(true) @map("is_active")
+  createdByUserId String?  @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
   practice Practice? @relation(fields: [practiceId], references: [id], onDelete: Cascade)
   business Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
@@ -570,20 +570,20 @@ model Guidance {
 /// gates execution — thresholds come from eval measurement (Governance §9.5).
 model Suggestion {
   id         String @id @default(cuid())
-  documentId String
+  documentId String @map("document_id")
 
-  field      String
-  value      Json
-  confidence Float
-  reasoning  String?
-  sourceRuleId     String?
-  sourceGuidanceId String?
-  modelVersion     String?
+  field            String
+  value            Json
+  confidence       Float
+  reasoning        String?
+  sourceRuleId     String? @map("source_rule_id")
+  sourceGuidanceId String? @map("source_guidance_id")
+  modelVersion     String? @map("model_version")
 
-  acceptedAt      DateTime?
-  dismissedAt     DateTime?
-  decidedByUserId String?
-  createdAt       DateTime @default(now())
+  acceptedAt      DateTime? @map("accepted_at")
+  dismissedAt     DateTime? @map("dismissed_at")
+  decidedByUserId String?   @map("decided_by_user_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
@@ -605,19 +605,19 @@ enum ConsentState {
 
 model BankConnection {
   id         String @id @default(cuid())
-  businessId String
+  businessId String @map("business_id")
 
-  provider     String   @default("truelayer")
-  providerRef  String?
-  institutionName String?
-  consentState ConsentState @default(PENDING)
-  consentedAt  DateTime?
-  reconfirmDue DateTime?
-  lapsedAt     DateTime?
-  tokenRef     String?
+  provider        String       @default("truelayer")
+  providerRef     String?      @map("provider_ref")
+  institutionName String?      @map("institution_name")
+  consentState    ConsentState @default(PENDING) @map("consent_state")
+  consentedAt     DateTime?    @map("consented_at")
+  reconfirmDue    DateTime?    @map("reconfirm_due")
+  lapsedAt        DateTime?    @map("lapsed_at")
+  tokenRef        String?      @map("token_ref")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   business Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
   accounts BankAccount[]
@@ -627,24 +627,24 @@ model BankConnection {
 }
 
 model BankAccount {
-  id           String @id @default(cuid())
-  businessId   String
-  connectionId String?
+  id           String  @id @default(cuid())
+  businessId   String  @map("business_id")
+  connectionId String? @map("connection_id")
 
-  providerAccountId String?
-  displayName       String
-  accountType       String?
-  currency          String  @default("GBP")
-  sortCode          String?
-  accountLast4      String?
-  balancePence      Int?
-  balanceAt         DateTime?
+  providerAccountId String?   @map("provider_account_id")
+  displayName       String    @map("display_name")
+  accountType       String?   @map("account_type")
+  currency          String    @default("GBP")
+  sortCode          String?   @map("sort_code")
+  accountLast4      String?   @map("account_last4")
+  balancePence      Int?      @map("balance_pence")
+  balanceAt         DateTime? @map("balance_at")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  business     Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  connection   BankConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  business     Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  connection   BankConnection?   @relation(fields: [connectionId], references: [id], onDelete: SetNull)
   transactions BankTransaction[]
   statements   Statement[]
 
@@ -663,58 +663,58 @@ enum MatchState {
 /// retained encrypted for reprocessing.
 model BankTransaction {
   id         String @id @default(cuid())
-  businessId String
-  accountId  String
+  businessId String @map("business_id")
+  accountId  String @map("account_id")
 
-  providerTransactionId String?
-  bookedAt      DateTime
-  pendingAt     DateTime?
+  providerTransactionId String?   @map("provider_transaction_id")
+  bookedAt              DateTime  @map("booked_at")
+  pendingAt             DateTime? @map("pending_at")
   /// Signed pence. Negative is money out.
-  amountPence   Int
-  currency      String   @default("GBP")
-  descriptionRaw String
-  merchantName  String?
-  classification String?
-  balanceAfterPence Int?
-  counterparty  Json?
-  standingOrderRef String?
-  importBatchId String?
-  rawPayloadRef String?
+  amountPence           Int       @map("amount_pence")
+  currency              String    @default("GBP")
+  descriptionRaw        String    @map("description_raw")
+  merchantName          String?   @map("merchant_name")
+  classification        String?
+  balanceAfterPence     Int?      @map("balance_after_pence")
+  counterparty          Json?
+  standingOrderRef      String?   @map("standing_order_ref")
+  importBatchId         String?   @map("import_batch_id")
+  rawPayloadRef         String?   @map("raw_payload_ref")
 
-  matchState    MatchState @default(UNMATCHED)
+  matchState      MatchState @default(UNMATCHED) @map("match_state")
   /// Bank-originated lines with no paperwork to chase (SoT Stage 7).
-  chaseSuppressed Boolean  @default(false)
+  chaseSuppressed Boolean    @default(false) @map("chase_suppressed")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   business Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
   account  BankAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
   matches  Match[]
   chases   Chase[]
 
+  @@unique([accountId, providerTransactionId])
   @@index([businessId, matchState])
   @@index([businessId, bookedAt])
   @@index([accountId, bookedAt])
-  @@unique([accountId, providerTransactionId])
   @@map("bank_transactions")
 }
 
 model Statement {
-  id         String @id @default(cuid())
-  businessId String
-  accountId  String?
+  id         String  @id @default(cuid())
+  businessId String  @map("business_id")
+  accountId  String? @map("account_id")
 
-  documentId    String?
-  periodStart   DateTime?
-  periodEnd     DateTime?
-  openingBalancePence Int?
-  closingBalancePence Int?
+  documentId          String?   @map("document_id")
+  periodStart         DateTime? @map("period_start")
+  periodEnd           DateTime? @map("period_end")
+  openingBalancePence Int?      @map("opening_balance_pence")
+  closingBalancePence Int?      @map("closing_balance_pence")
   /// Gap analysis: date continuity and balance reconciliation (SoT Stage 2).
-  gapAnalysis   Json?
-  rowCount      Int?
+  gapAnalysis         Json?     @map("gap_analysis")
+  rowCount            Int?      @map("row_count")
 
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
 
   business Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
   account  BankAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
@@ -733,13 +733,13 @@ enum SupplierStatementLineStatus {
 
 model SupplierStatement {
   id         String @id @default(cuid())
-  businessId String
+  businessId String @map("business_id")
 
-  documentId       String?
-  supplierName     String
-  statementEndDate DateTime?
-  outstandingBalancePence Int?
-  createdAt        DateTime @default(now())
+  documentId              String?   @map("document_id")
+  supplierName            String    @map("supplier_name")
+  statementEndDate        DateTime? @map("statement_end_date")
+  outstandingBalancePence Int?      @map("outstanding_balance_pence")
+  createdAt               DateTime  @default(now()) @map("created_at")
 
   business Business                @relation(fields: [businessId], references: [id], onDelete: Cascade)
   lines    SupplierStatementLine[]
@@ -750,13 +750,13 @@ model SupplierStatement {
 
 model SupplierStatementLine {
   id                  String @id @default(cuid())
-  supplierStatementId String
+  supplierStatementId String @map("supplier_statement_id")
 
-  reference   String?
-  lineDate    DateTime?
-  amountPence Int?
-  status      SupplierStatementLineStatus @default(MISSING)
-  matchedDocumentId String?
+  reference         String?
+  lineDate          DateTime?                   @map("line_date")
+  amountPence       Int?                        @map("amount_pence")
+  status            SupplierStatementLineStatus @default(MISSING)
+  matchedDocumentId String?                     @map("matched_document_id")
 
   statement SupplierStatement @relation(fields: [supplierStatementId], references: [id], onDelete: Cascade)
 
@@ -776,19 +776,19 @@ enum MatchKind {
 /// transactions (SoT Stage 7).
 model Match {
   id         String @id @default(cuid())
-  businessId String
+  businessId String @map("business_id")
 
-  documentId    String
-  transactionId String
+  documentId    String @map("document_id")
+  transactionId String @map("transaction_id")
 
   kind       MatchKind
   confidence Float?
   state      MatchState @default(SUGGESTED)
 
-  matchedByUserId String?
-  matchedBy       String?
-  createdAt       DateTime @default(now())
-  unmatchedAt     DateTime?
+  matchedByUserId String?   @map("matched_by_user_id")
+  matchedBy       String?   @map("matched_by")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  unmatchedAt     DateTime? @map("unmatched_at")
 
   document    Document        @relation(fields: [documentId], references: [id], onDelete: Cascade)
   transaction BankTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
@@ -826,28 +826,28 @@ enum ChaseState {
 
 model Chase {
   id         String @id @default(cuid())
-  businessId String
+  businessId String @map("business_id")
 
-  detectionEngine ChaseDetectionEngine
-  transactionId   String?
+  detectionEngine    ChaseDetectionEngine @map("detection_engine")
+  transactionId      String?              @map("transaction_id")
   /// Everything this chase covers — grouped per client, not one text per
   /// receipt (SoT Stage 8.2).
-  itemRefs        Json
-  recipientContactId String?
+  itemRefs           Json                 @map("item_refs")
+  recipientContactId String?              @map("recipient_contact_id")
 
-  state       ChaseState @default(DETECTED)
-  schedule    Json?
-  firstSentAt DateTime?
-  lastSentAt  DateTime?
-  escalatedAt DateTime?
-  closedAt    DateTime?
-  closedReason String?
-  closedByDocumentId String?
+  state              ChaseState @default(DETECTED)
+  schedule           Json?
+  firstSentAt        DateTime?  @map("first_sent_at")
+  lastSentAt         DateTime?  @map("last_sent_at")
+  escalatedAt        DateTime?  @map("escalated_at")
+  closedAt           DateTime?  @map("closed_at")
+  closedReason       String?    @map("closed_reason")
+  closedByDocumentId String?    @map("closed_by_document_id")
 
-  actionProposalId String?
+  actionProposalId String? @map("action_proposal_id")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   business    Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
   transaction BankTransaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
@@ -862,17 +862,17 @@ model Chase {
 
 model ChaseMessage {
   id      String @id @default(cuid())
-  chaseId String
+  chaseId String @map("chase_id")
 
-  channel     String   @default("sms")
+  channel           String    @default("sms")
   /// The exact text shown in review and the exact text sent. If these ever
   /// differ, the Review → Approve guarantee is broken.
-  body        String
-  recipientE164 String?
-  providerMessageId String?
-  deliveryState String?
-  sentAt      DateTime?
-  createdAt   DateTime @default(now())
+  body              String
+  recipientE164     String?   @map("recipient_e164")
+  providerMessageId String?   @map("provider_message_id")
+  deliveryState     String?   @map("delivery_state")
+  sentAt            DateTime? @map("sent_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
 
   chase Chase @relation(fields: [chaseId], references: [id], onDelete: Cascade)
 
@@ -884,14 +884,14 @@ model ChaseMessage {
 /// and stay attached to the item (SoT Stage 8.7).
 model ItemThread {
   id         String @id @default(cuid())
-  documentId String
+  documentId String @map("document_id")
 
-  question   String
-  answer     String?
-  askedByUserId String?
-  answeredVia   String?
-  askedAt    DateTime  @default(now())
-  answeredAt DateTime?
+  question      String
+  answer        String?
+  askedByUserId String?   @map("asked_by_user_id")
+  answeredVia   String?   @map("answered_via")
+  askedAt       DateTime  @default(now()) @map("asked_at")
+  answeredAt    DateTime? @map("answered_at")
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
@@ -905,16 +905,16 @@ model ItemThread {
 
 model ApprovalWorkflow {
   id         String @id @default(cuid())
-  businessId String
+  businessId String @map("business_id")
 
   name        String
   /// Stages including conditional branches (SoT Stage 9).
   stages      Json
-  appliesTo   Json?
+  appliesTo   Json?    @map("applies_to")
   specificity Int      @default(0)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   business  Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
   approvals Approval[]
@@ -924,15 +924,15 @@ model ApprovalWorkflow {
 }
 
 model Approval {
-  id         String @id @default(cuid())
-  workflowId String?
-  documentId String
+  id         String  @id @default(cuid())
+  workflowId String? @map("workflow_id")
+  documentId String  @map("document_id")
 
-  stageIndex Int
-  actorUserId String
-  decision   String
-  comment    String?
-  decidedAt  DateTime @default(now())
+  stageIndex  Int      @map("stage_index")
+  actorUserId String   @map("actor_user_id")
+  decision    String
+  comment     String?
+  decidedAt   DateTime @default(now()) @map("decided_at")
 
   workflow ApprovalWorkflow? @relation(fields: [workflowId], references: [id], onDelete: SetNull)
   document Document          @relation(fields: [documentId], references: [id], onDelete: Cascade)
@@ -963,31 +963,31 @@ enum ProposalState {
 /// what was shown.
 model ActionProposal {
   id         String  @id @default(cuid())
-  businessId String?
+  businessId String? @map("business_id")
 
   kind                String
   payload             Json
-  payloadHash         String
-  renderedSummary     Json?
-  renderedSummaryHash String?
+  payloadHash         String  @map("payload_hash")
+  renderedSummary     Json?   @map("rendered_summary")
+  renderedSummaryHash String? @map("rendered_summary_hash")
 
-  state       ProposalState @default(CREATED)
-  createdByUserId String?
-  createdByModel  String?
-  createdAt   DateTime      @default(now())
-  reviewedAt  DateTime?
-  approvedByUserId String?
-  approvedAt  DateTime?
-  executedAt  DateTime?
-  expiresAt   DateTime
+  state            ProposalState @default(CREATED)
+  createdByUserId  String?       @map("created_by_user_id")
+  createdByModel   String?       @map("created_by_model")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  reviewedAt       DateTime?     @map("reviewed_at")
+  approvedByUserId String?       @map("approved_by_user_id")
+  approvedAt       DateTime?     @map("approved_at")
+  executedAt       DateTime?     @map("executed_at")
+  expiresAt        DateTime      @map("expires_at")
 
   /// Standing automations execute without a per-item proposal only under a
   /// policy that was itself approved through this contract. Executions record
   /// which policy they ran under.
-  policyProposalId String?
+  policyProposalId String? @map("policy_proposal_id")
 
   outcome Json?
-  traceId String?
+  traceId String? @map("trace_id")
 
   business   Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
   createdBy  User?     @relation("ProposalCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
@@ -1012,20 +1012,20 @@ enum IntegrationKind {
 
 model Integration {
   id         String @id @default(cuid())
-  businessId String
+  businessId String @map("business_id")
 
-  kind        IntegrationKind
-  orgRef      String?
-  tokenRef    String?
-  tokenExpiresAt DateTime?
-  health      String?
-  lastSyncAt  DateTime?
-  lastErrorAt DateTime?
-  lastErrorMessage String?
-  isActive    Boolean  @default(true)
+  kind             IntegrationKind
+  orgRef           String?         @map("org_ref")
+  tokenRef         String?         @map("token_ref")
+  tokenExpiresAt   DateTime?       @map("token_expires_at")
+  health           String?
+  lastSyncAt       DateTime?       @map("last_sync_at")
+  lastErrorAt      DateTime?       @map("last_error_at")
+  lastErrorMessage String?         @map("last_error_message")
+  isActive         Boolean         @default(true) @map("is_active")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   business       Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
   referenceSyncs ReferenceSync[]
@@ -1040,11 +1040,11 @@ model Integration {
 /// client's real chart of accounts (SoT Stage 10).
 model ReferenceSync {
   id            String @id @default(cuid())
-  integrationId String
+  integrationId String @map("integration_id")
 
-  listKind  String
-  payload   Json
-  syncedAt  DateTime @default(now())
+  listKind String   @map("list_kind")
+  payload  Json
+  syncedAt DateTime @default(now()) @map("synced_at")
 
   integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
 
@@ -1066,26 +1066,26 @@ enum PublishState {
 
 model Publish {
   id         String @id @default(cuid())
-  businessId String
+  businessId String @map("business_id")
 
-  documentId    String
-  integrationId String?
+  documentId    String  @map("document_id")
+  integrationId String? @map("integration_id")
 
   mode           PublishMode
   state          PublishState @default(QUEUED)
-  externalRef    String?
+  externalRef    String?      @map("external_ref")
   /// Mandatory. Republishing must never create a duplicate vendor or
   /// double-post a bill (SoT §17.1).
-  idempotencyKey String
-  attachmentSent Boolean      @default(false)
+  idempotencyKey String       @map("idempotency_key")
+  attachmentSent Boolean      @default(false) @map("attachment_sent")
 
-  actionProposalId String?
-  failureCode      String?
-  failureMessage   String?
-  publishedByUserId String?
+  actionProposalId  String? @map("action_proposal_id")
+  failureCode       String? @map("failure_code")
+  failureMessage    String? @map("failure_message")
+  publishedByUserId String? @map("published_by_user_id")
 
-  createdAt DateTime  @default(now())
-  completedAt DateTime?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  completedAt DateTime? @map("completed_at")
 
   business    Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
   document    Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
@@ -1103,23 +1103,23 @@ model Publish {
 
 model VaultItem {
   id         String @id @default(cuid())
-  businessId String
+  businessId String @map("business_id")
 
-  s3Key       String
-  filename    String
-  mimeType    String
-  byteSize    Int
-  title       String?
-  summary     String?
-  category    String?
-  tags        String[]  @default([])
-  folderPath  String?
-  keyDates    Json?
-  expiresAt   DateTime?
-  uploadedByUserId String?
+  s3Key            String    @map("s3_key")
+  filename         String
+  mimeType         String    @map("mime_type")
+  byteSize         Int       @map("byte_size")
+  title            String?
+  summary          String?
+  category         String?
+  tags             String[]  @default([])
+  folderPath       String?   @map("folder_path")
+  keyDates         Json?     @map("key_dates")
+  expiresAt        DateTime? @map("expires_at")
+  uploadedByUserId String?   @map("uploaded_by_user_id")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -1130,21 +1130,21 @@ model VaultItem {
 
 model Task {
   id         String @id @default(cuid())
-  businessId String
+  businessId String @map("business_id")
 
-  title       String
-  description String?
-  ownerUserId String?
-  dueAt       DateTime?
-  status      String    @default("open")
-  cadence     String?
-  dependsOnTaskId String?
+  title           String
+  description     String?
+  ownerUserId     String?   @map("owner_user_id")
+  dueAt           DateTime? @map("due_at")
+  status          String    @default("open")
+  cadence         String?
+  dependsOnTaskId String?   @map("depends_on_task_id")
   /// The AI marks a task done when the underlying engine has actually run
   /// (SoT §7) — never on its own say-so.
-  aiPrefilledAt DateTime?
+  aiPrefilledAt   DateTime? @map("ai_prefilled_at")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -1154,15 +1154,15 @@ model Task {
 
 model Notification {
   id         String @id @default(cuid())
-  businessId String
+  businessId String @map("business_id")
 
-  event       String
-  recipientUserId String?
-  channels    String[] @default([])
-  payload     Json?
-  readAt      DateTime?
-  sentAt      DateTime?
-  createdAt   DateTime @default(now())
+  event           String
+  recipientUserId String?   @map("recipient_user_id")
+  channels        String[]  @default([])
+  payload         Json?
+  readAt          DateTime? @map("read_at")
+  sentAt          DateTime? @map("sent_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -1172,15 +1172,15 @@ model Notification {
 
 model SmsLog {
   id         String @id @default(cuid())
-  businessId String
+  businessId String @map("business_id")
 
-  toE164       String
-  body         String
-  providerMessageId String?
-  deliveryState String?
-  costPence    Int?
-  chaseId      String?
-  sentAt       DateTime @default(now())
+  toE164            String   @map("to_e164")
+  body              String
+  providerMessageId String?  @map("provider_message_id")
+  deliveryState     String?  @map("delivery_state")
+  costPence         Int?     @map("cost_pence")
+  chaseId           String?  @map("chase_id")
+  sentAt            DateTime @default(now()) @map("sent_at")
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -1190,17 +1190,17 @@ model SmsLog {
 
 model Import {
   id         String @id @default(cuid())
-  businessId String
+  businessId String @map("business_id")
 
-  kind        String
-  filename    String?
-  mappingRef  String?
-  rowCount    Int?
-  state       String   @default("queued")
-  failureMessage String?
-  createdByUserId String?
-  createdAt   DateTime @default(now())
-  completedAt DateTime?
+  kind            String
+  filename        String?
+  mappingRef      String?   @map("mapping_ref")
+  rowCount        Int?      @map("row_count")
+  state           String    @default("queued")
+  failureMessage  String?   @map("failure_message")
+  createdByUserId String?   @map("created_by_user_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  completedAt     DateTime? @map("completed_at")
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -1210,18 +1210,18 @@ model Import {
 
 model Export {
   id         String @id @default(cuid())
-  businessId String
+  businessId String @map("business_id")
 
-  kind        String
-  format      String
-  filters     Json?
-  s3Key       String?
-  state       String   @default("queued")
-  virusScanned Boolean @default(false)
-  createdByUserId String?
-  createdAt   DateTime @default(now())
-  completedAt DateTime?
-  expiresAt   DateTime?
+  kind            String
+  format          String
+  filters         Json?
+  s3Key           String?   @map("s3_key")
+  state           String    @default("queued")
+  virusScanned    Boolean   @default(false) @map("virus_scanned")
+  createdByUserId String?   @map("created_by_user_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  completedAt     DateTime? @map("completed_at")
+  expiresAt       DateTime? @map("expires_at")
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -1236,29 +1236,29 @@ model Export {
 /// shredding, the documented erasure mechanism for immutable logs).
 model AuditEvent {
   id         String  @id @default(cuid())
-  businessId String?
+  businessId String? @map("business_id")
 
-  seq            BigInt
-  previousHash   String?
-  hash           String
+  seq          BigInt
+  previousHash String? @map("previous_hash")
+  hash         String
 
-  traceId        String?
-  correlationId  String?
-  actorPseudonym String?
-  event          String
-  inputHash      String?
-  inputPointer   String?
-  modelId        String?
-  promptVersion  String?
-  proposalId     String?
-  payloadHash    String?
-  renderedSummaryHash String?
-  outcome        Json?
-  latencyMs      Int?
-  tokensIn       Int?
-  tokensOut      Int?
+  traceId             String? @map("trace_id")
+  correlationId       String? @map("correlation_id")
+  actorPseudonym      String? @map("actor_pseudonym")
+  event               String
+  inputHash           String? @map("input_hash")
+  inputPointer        String? @map("input_pointer")
+  modelId             String? @map("model_id")
+  promptVersion       String? @map("prompt_version")
+  proposalId          String? @map("proposal_id")
+  payloadHash         String? @map("payload_hash")
+  renderedSummaryHash String? @map("rendered_summary_hash")
+  outcome             Json?
+  latencyMs           Int?    @map("latency_ms")
+  tokensIn            Int?    @map("tokens_in")
+  tokensOut           Int?    @map("tokens_out")
 
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
 
   business Business? @relation(fields: [businessId], references: [id], onDelete: Restrict)
 
@@ -1272,13 +1272,13 @@ model AuditEvent {
 /// (Guideline §8.5). Flipping to the real server at Infra Week must be config,
 /// not code.
 model FeatureFlag {
-  id          String   @id @default(cuid())
-  key         String   @unique
-  isEnabled   Boolean  @default(false)
+  id          String    @id @default(cuid())
+  key         String    @unique
+  isEnabled   Boolean   @default(false) @map("is_enabled")
   description String?
   owner       String?
-  removeBy    DateTime?
-  updatedAt   DateTime @updatedAt
+  removeBy    DateTime? @map("remove_by")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
   @@map("feature_flags")
 }

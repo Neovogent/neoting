@@ -20,6 +20,7 @@
     "db:migrate": "pnpm --filter @neoting/api exec prisma migrate dev",
     "db:seed": "pnpm --filter @neoting/api exec prisma db seed",
     "db:reset": "pnpm --filter @neoting/api exec prisma migrate reset --force",
+    "db:tenancy-check": "docker exec -i nt-postgres psql -U neoting -d neoting -v ON_ERROR_STOP=1 -q < prisma/sql/tenancy-check.sql",
     "prepare": "husky"
   },
   "devDependencies": {
