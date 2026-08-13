@@ -57,6 +57,10 @@ function accepted(bytes: Buffer, detectedType: AcceptedDocument['detectedType'])
     ok: true,
     document: {
       detectedType,
+      // The sanitised bytes travel WITH their hash. Hashing bytes the caller
+      // cannot obtain is how documents.byte_hash ends up describing a file
+      // that was never stored — see the note on AcceptedDocument.bytes.
+      bytes,
       byteLength: bytes.length,
       sha256: createHash('sha256').update(bytes).digest('hex'),
     },
