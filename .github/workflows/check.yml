@@ -322,10 +322,20 @@ jobs:
         run: |
           cat > "$RUNNER_TEMP/stage.sh" <<'SH'
           #!/usr/bin/env bash
-          # Usage: stage.sh <pnpm-script> <turbo-task>
+          # Usage: stage.sh <task>
+          #
+          # ONE argument, and it is both the pnpm script and the turbo task —
+          # they are the same string for every stage (typecheck, lint, test,
+          # build), because `pnpm <x>` here is `turbo run <x>`.
+          #
+          # This took two parameters until an adversarial review caught that
+          # all four callers pass one. Under `set -u` the unset "$2" aborted
+          # the script before it ran anything, so stages 2, 3, 4 and 5 failed
+          # on every run and the required `check` gate could never go green.
+          # The irony was total: an anti-no-op guard that no-opped.
           set -euo pipefail
-          script="$1"
-          task="$2"
+          task="$1"
+          script="$task"
 
           real=$(pnpm exec turbo run "$task" --dry=json 2>/dev/null \
             | jq --arg t "$task" '[

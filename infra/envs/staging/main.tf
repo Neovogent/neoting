@@ -256,13 +256,26 @@ resource "aws_iam_role" "ci_plan" {
       Action    = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = { "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com" }
-        # Matches the `repository` claim rather than wildcarding `sub`. Two
-        # reasons: it says what it means ("any ref in this repo, which is what a
-        # plan role is for") instead of relying on a trailing `*`, and it can
-        # use IgnoreCase — StringLike has no case-insensitive variant, so a
-        # wildcard on `sub` would carry the same casing trap the deploy role had.
-        StringEqualsIgnoreCase = {
-          "token.actions.githubusercontent.com:repository" = local.github_repo
+
+        # The condition MUST be on `sub`. An earlier revision of this file
+        # matched the `repository` claim instead, because that claim can use
+        # StringEqualsIgnoreCase and `sub` cannot — StringLike has no
+        # case-insensitive variant. That was wrong: IAM enforces a guardrail
+        # requiring a `sub` condition on any role trusting the GitHub OIDC
+        # provider, precisely to stop the aud-only policy that trusts every
+        # repository on GitHub. Dropping `sub` fails at apply, not at plan, so
+        # nothing above catches it.
+        #
+        # Both casings are listed because IAM ORs the values of a condition and
+        # `sub` is case-sensitive, while the canonical casing of the GitHub
+        # organisation is not something this file should have to be right about.
+        # It costs nothing: GitHub does not allow two organisations whose names
+        # differ only by case, so no third party can occupy the other spelling.
+        StringLike = {
+          "token.actions.githubusercontent.com:sub" = [
+            "repo:Neovogent/neoting:*",
+            "repo:neovogent/neoting:*",
+          ]
         }
       }
     }]

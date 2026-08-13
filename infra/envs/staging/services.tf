@@ -91,17 +91,99 @@ locals {
   # ------------------------------------------------------------------------
   injected_secrets = [
     { name = "REDIS_AUTH_TOKEN", valueFrom = "${aws_secretsmanager_secret.redis.arn}:auth_token::" },
+  ]
 
-    # ⚠ These are the RDS MASTER credentials (nt_migrator), which OWN the
-    # schema — and a table owner BYPASSES row-level security. They are named
-    # MIGRATOR, not DATABASE_*, so no application code can pick them up by
-    # accident and quietly disable every tenancy policy in prisma/ (data.tf's
-    # RLS note, Gov §5.2). They are here for the one-off
-    # `prisma migrate deploy` task; the app's own DSN uses the non-owning
-    # nt_app role and arrives with secrets.tf.
+  # ⚠ THE RDS MASTER CREDENTIAL GOES TO THE MIGRATION TASK AND NOWHERE ELSE.
+  #
+  # An earlier revision put these in `injected_secrets` — the list injected
+  # into BOTH long-running services — defended by the comment that naming them
+  # MIGRATOR rather than DATABASE_* stopped application code picking them up by
+  # accident. That defence is a naming convention, and a naming convention is
+  # not a control.
+  #
+  # The master user owns the schema and holds `rds_superuser`. A table owner is
+  # subject to FORCE ROW LEVEL SECURITY, but a superuser is NOT — so this
+  # credential bypasses every tenancy policy in prisma/ outright (Gov §5.2).
+  # Sitting in the environment of a service that runs for weeks, it is
+  # available to anything that achieves code execution in that container, to
+  # any dependency that dumps env on start, and to any crash handler that
+  # serialises the process environment. "No code reads it" is not the property
+  # that matters; "no code CAN read it" is, and only the second one survives a
+  # dependency you did not write.
+  #
+  # `prisma migrate deploy` is a one-off task in the deploy pipeline (runbook
+  # §6.4), so the credential belongs on a task definition with no service
+  # attached — it exists only for the seconds a migration runs.
+  migration_secrets = [
     { name = "DB_MIGRATOR_USER", valueFrom = "${aws_db_instance.main.master_user_secret[0].secret_arn}:username::" },
     { name = "DB_MIGRATOR_PASSWORD", valueFrom = "${aws_db_instance.main.master_user_secret[0].secret_arn}:password::" },
+
+    # The non-owning role the application itself connects as. The migration
+    # needs it to CREATE ROLE / ALTER ROLE with the right password — see
+    # db-app-role.tf, which owns the credential and documents the SQL half.
+    { name = "DB_APP_ROLE_PASSWORD", valueFrom = "${aws_secretsmanager_secret.db_app_role.arn}:password::" },
   ]
+}
+
+# --------------------------------------------------------------------------
+# Migration task — `pnpm prisma migrate deploy`, run once per deploy.
+#
+# No aws_ecs_service: this is a task definition the pipeline invokes with
+# `ecs run-task` and waits on. That is the whole point — it is the only place
+# the master credential exists, and it exists for the duration of a migration
+# rather than the duration of an environment.
+#
+# Governance §1.3: `migrate deploy` is the ONLY migration command that runs
+# anywhere except a developer laptop. `migrate dev` must never appear here.
+# --------------------------------------------------------------------------
+resource "aws_ecs_task_definition" "migrate" {
+  family                   = "nt-${local.env}-migrate"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = 512
+  memory                   = 1024
+  execution_role_arn       = aws_iam_role.ecs_execution.arn
+  task_role_arn            = aws_iam_role.app.arn
+
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "ARM64"
+  }
+
+  container_definitions = jsonencode([
+    {
+      name      = "migrate"
+      image     = "${aws_ecr_repository.this["api"].repository_url}:${local.image_tag}"
+      essential = true
+
+      # Overridden by the pipeline if a different entrypoint is wanted; stated
+      # here so the task is runnable by hand during an incident without anyone
+      # having to remember the command.
+      command = ["pnpm", "prisma", "migrate", "deploy"]
+
+      environment = concat(local.common_environment, [
+        { name = "SERVICE_NAME", value = "migrate" },
+      ])
+
+      secrets = local.migration_secrets
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.migrate.name
+          "awslogs-region"        = local.region
+          "awslogs-stream-prefix" = "migrate"
+        }
+      }
+    }
+  ])
+}
+
+resource "aws_cloudwatch_log_group" "migrate" {
+  name              = "/nt/${local.env}/migrate"
+  retention_in_days = 30 # Governance §12.2
+
+  tags = { Component = "migrate" }
 }
 
 # --------------------------------------------------------------------------
