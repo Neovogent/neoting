@@ -37,11 +37,16 @@ resource "aws_security_group" "alb" {
 # and delete it in the same day's work.
 resource "aws_vpc_security_group_ingress_rule" "alb_https" {
   security_group_id = aws_security_group.alb.id
-  description       = "HTTPS from CloudFront edge locations only (runbook §6.5)"
-  prefix_list_id    = var.alb_ingress_prefix_list_id
-  from_port         = 443
-  to_port           = 443
-  ip_protocol       = "tcp"
+  # ASCII ONLY. EC2 rejects a security-group rule description outside
+  # [a-zA-Z0-9. _-:/()#,@[]+=&;{}!$*] with InvalidParameterValue, and the "§"
+  # this used to carry (runbook §6.5) is not in that set. It failed at APPLY,
+  # not at plan — terraform validate cannot see an API-side character class.
+  # Cite sections in comments, never in a field AWS validates.
+  description    = "HTTPS from CloudFront edge locations only (runbook 6.5)"
+  prefix_list_id = var.alb_ingress_prefix_list_id
+  from_port      = 443
+  to_port        = 443
+  ip_protocol    = "tcp"
 }
 
 resource "aws_vpc_security_group_egress_rule" "alb_to_app" {

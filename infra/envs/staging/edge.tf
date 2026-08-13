@@ -293,8 +293,14 @@ resource "aws_cloudfront_cache_policy" "reference" {
 resource "aws_wafv2_web_acl" "edge" {
   provider = aws.us_east_1
 
-  name        = "nt-${local.env}-edge"
-  description = "Neoting ${local.env} shared edge ACL (runbook §6.5 basic ruleset)"
+  name = "nt-${local.env}-edge"
+  # ASCII, and NO PARENTHESES. WAFv2 validates this against
+  # ^[\w+=:#@/\-,\.][\w+=:#@/\-,\.\s]+[\w+=:#@/\-,\.]$ — which admits neither
+  # the "§" nor the "( )" this used to carry. It failed at apply, and because
+  # the CloudFront distribution below takes this ACL's ARN, the whole edge
+  # failed with it. Note the character class is STRICTER here than for security
+  # groups, which do allow parentheses — so "it works elsewhere" proves nothing.
+  description = "Neoting ${local.env} shared edge ACL - runbook 6.5 basic ruleset"
   scope       = "CLOUDFRONT"
 
   # Allow by default and block what we recognise. A default-deny edge in front
