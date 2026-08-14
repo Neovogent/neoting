@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Bundler resolution (not NodeNext) here on purpose: apps/api consumes
+    // @neoting/contracts as workspace .ts SOURCE via its exports map, and that
+    // generated tree uses extensionless relative imports (orval output, checked
+    // under Bundler in its own package). NodeNext would reject those. The app
+    // runs under tsx/vitest (esbuild), which is bundler-resolution too, so
+    // typecheck, test and run all agree. experimentalDecorators +
+    // emitDecoratorMetadata are inherited from the base for NestJS.
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "outDir": "dist",
+    "rootDir": "src",
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", ".turbo"]
+}

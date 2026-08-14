@@ -35,9 +35,42 @@ pnpm --filter @neoting/api test -- ingestion-routing
 
 ## Current state
 
-**Sanitisation pipeline (pure library) in progress** — `lib/sanitisation/`.
+### WhatsApp inbound webhook + NestJS bootstrap (issue #9 — this branch)
+
+`webhooks/whatsapp/` plus the app skeleton that had to exist first (there was no
+NestJS app before this): `src/main.ts` (port 3000, `rawBody: true`),
+`src/app.module.ts`, `config/env.ts` (Zod, fail-fast, the only `process.env`
+reader), `common/problem/` (RFC 7807 filter using `@neoting/contracts/model`
+codes), `common/untrusted-content.ts`, `modules/health/` (`/healthz` + `/readyz`).
+
+- **GET** `/webhooks/whatsapp` — Meta's unsigned challenge; echoes `hub.challenge`
+  as `text/plain` only when `hub.verify_token` matches, else 403.
+- **POST** `/webhooks/whatsapp` — `WhatsAppSignatureGuard` verifies
+  `X-Hub-Signature-256` HMAC over the **raw body** before any parsing (401
+  `NT-INT-001` on fail); then Zod-parses the envelope, dedupes on `wamid` via
+  `ReplayStore`, wraps the caption in `<untrusted_content>`, and hands off to the
+  `IngestQueue`. 200 no-body ack. **Freshness is a triage flag, not a gate**: a
+  correctly-signed message outside the ±5-min window is enqueued with
+  `stale: true`, never 401'd — age must not turn our downtime into document loss.
+- **Error codes** (issue #11): signature → `NT-INT-001`, verify-token → 403
+  `NT-INT-002`, unexpected 500 → `NT-SRV-001` (global `ProblemFilter`).
+- **Fixtures, not infra** (issue #9): `IngestQueue`/`ReplayStore`/`Clock` are
+  interfaces with in-memory fixtures (same pattern as the sanitisation
+  `VirusScanner`). No BullMQ, no Redis, no Prisma, no auth.
+- **Toolchain stood up**: real `typecheck` (tsc), `lint` (eslint, `no-any`),
+  `test` (Vitest — the 24 sanitisation tests were ported here; 57 tests total).
+  `apps/api/tsconfig.json` uses **Bundler** resolution so the generated
+  `@neoting/contracts` `.ts` source resolves. Runs under tsx/vitest, so DI uses
+  explicit `@Inject` tokens (no reliance on emitted decorator metadata).
+- **Pending Meta sandbox creds** (Shakib holds them): signature path proven
+  against a locally-set secret in unit tests; real end-to-end handshake is a
+  separate step once `META_APP_SECRET`/`META_VERIFY_TOKEN` are issued.
+
+### Sanitisation pipeline (merged, PR #3)
+
+**Pure library** — `lib/sanitisation/`.
 Governance §11.4 order, no controller / Prisma / API surface (those wait for the
-frozen contracts). Branch `feat/api-ingest-sanitisation`.
+frozen contracts).
 
 Implemented and unit-tested (24 tests green):
 - `sniff` magic-byte type detection for all accepted formats incl. HEIC ftyp
@@ -56,19 +89,17 @@ BOOTSTRAP shims (need a dependency — awaiting Shakib, see issue):
 - PDF/Office guard — only the dep-free encrypted-PDF (`/Encrypt`) check is live;
   JS-flatten, embedded-file detach, encrypted-Office detection are dep-gated.
 
-Toolchain note: `apps/api` still has placeholder `typecheck`/`lint`/`test`
-scripts. Tests currently run via `tsx --test` (zero new deps). The real gate
-(Vitest + ESLint no-any + Zod at the boundary + `@types/node`) is pending the
-dependency decision.
+Toolchain: **stood up in issue #9** — real `typecheck` (tsc, Bundler
+resolution), `lint` (eslint, `no-explicit-any`), `test` (Vitest). The 24
+sanitisation tests were ported from `tsx --test` to Vitest and run in the suite.
 
 ## TODO
 
-- [ ] Shakib: approve deps for the toolchain (zod, vitest, eslint, @types/node)
-      and the format libs (sharp/libvips, a PDF toolkit) — dependency issue filed
-- [ ] Swap `tsx --test` → Vitest; wire real `typecheck`/`lint`/`test` scripts
-- [ ] Add a Zod schema at the pipeline's public input boundary
-- [ ] Replace the two BOOTSTRAP guards with the real dep-backed implementations
+- [ ] Shakib (#7): `sharp` (prove on ARM64 first) + a named PDF toolkit, then
+      replace the two BOOTSTRAP guards with real dep-backed implementations
 - [ ] Enforce the bank-statement 300-page cap in the PDF-safety step
-- [ ] Await the frozen OpenAPI contract; map `Rejection` → NT-ING wire error at
-      the controller boundary (NT-ING-001/002/004 already mirrored in `reasons.ts`)
+- [ ] Await the frozen ingestion endpoints; map `Rejection` → NT-ING wire error
+      at the controller boundary (NT-ING-001/002/004 mirrored in `reasons.ts`)
+- [ ] #12: wire BullMQ behind `IngestQueue` + the worker (DLQ, idempotency,
+      traceId) — `whatsapp.controller.ts` must not change
 - [ ] Update this file on exit — it is how the next session picks up
