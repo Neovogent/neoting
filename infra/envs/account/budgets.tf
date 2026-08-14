@@ -114,18 +114,26 @@ resource "aws_budgets_budget" "pot" {
 
   limit_amount = "8000.0"
 
-  # ⚠ ADOPTED VALUE, AND IT IS WRONG. Runbook Step 10.1 specifies the annual
-  # period should start Aug 2026, when the pot was approved. The live budget
-  # starts 2025-08-01 — a full year early — so the cumulative figure it reports
-  # covers a window that begins twelve months before Neoting existed. Combined
-  # with the missing cost filter below, that is why this budget reads ~$897
-  # against a monthly budget showing ~$115.
+  # CORRECTED 14 Aug 2026 (README.md gap 2). Was `2025-08-01_00:00`, adopted
+  # from the live budget so the adoption PR could plan 0-create/0-destroy; the
+  # correction was deliberately left to its own diff because it changes a number
+  # the CEO reads.
   #
-  # NOT corrected in this file on purpose: this PR adopts what is live so the
-  # plan is reviewable. Fixing it is a one-line follow-up (see README.md),
-  # and it must be a separate, visible diff because it changes a number the
-  # CEO reads.
-  time_period_start = "2025-08-01_00:00"
+  # The pot was approved 13 Aug 2026 (D35) and covers six months from then. An
+  # ANNUALLY budget starting 2025-08-01 opens its window twelve months before
+  # Neoting existed, so "how much of the pot is gone" was answered against the
+  # wrong period. Note the shape of the bug: because AWS recurs an annual budget
+  # from its start month, the CURRENT period happened to run 2026-08-01 →
+  # 2027-07-31 anyway — the reported figure was not wrong by a year, it was
+  # right by accident, and would have stayed right until someone changed the
+  # start. Fixing it makes the file state the intent instead of relying on the
+  # coincidence.
+  #
+  # This does NOT fix the number. Gap 1 (no cost filter — this budget still
+  # measures the whole shared account, Cedofinance and needz included) is what
+  # makes the ~$908 reading meaningless, and it is blocked on the payer
+  # activating the `Project` cost allocation tag. See README.md.
+  time_period_start = "2026-08-01_00:00"
   time_period_end   = "2087-06-15_00:00"
 
   cost_types {
