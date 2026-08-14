@@ -304,6 +304,24 @@ resource "aws_ses_receipt_rule" "dmarc_reports" {
   # No kms_key_arn, for the reason documented at length on the `doc` rule above:
   # SES's key argument produces AWS-Encryption-SDK envelope ciphertext, not an
   # SSE-KMS object, and there is no TypeScript client that can decrypt it.
+  #
+  # ⚠ THIS PREFIX IS COUPLED TO THE BUCKET POLICY, AND THE FAILURE IS UGLY.
+  # `modules/storage/policies/bucket-receipts.json.tftpl` grants
+  # `ses.amazonaws.com` PutObject on an EXPLICIT LIST of prefixes. A rule
+  # writing anywhere else is rejected at CREATE time with
+  #
+  #   InvalidS3ConfigurationException: Could not write to bucket: <bucket>
+  #
+  # because SES test-writes to the destination before it will accept the rule.
+  # The AWS provider treats that as retryable (it usually IS bucket-policy
+  # propagation lag), so terraform does not fail — it retries every ~10 seconds
+  # indefinitely with no output. Measured on 15 Aug 2026: the apply looked
+  # hung, and the real error was only visible in CloudTrail, because the
+  # `lookup-events` summary reports ErrorCode as None and the actual code lives
+  # in the raw `CloudTrailEvent` JSON.
+  #
+  # So: adding a prefix here means adding it to that template in the SAME
+  # change, or the apply spins forever and tells you nothing.
   s3_action {
     position          = 1
     bucket_name       = local.bucket_names["receipts"]
