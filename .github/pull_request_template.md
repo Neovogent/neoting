@@ -1,3 +1,23 @@
+<!--
+TITLE: the squash commit takes it (G4), so it must be a valid conventional
+commit — and the subject must be entirely LOWER-CASE, identifiers included.
+
+Check it before you open the PR, in one second:
+
+    pnpm pr:title "feat(api): the thing you did"
+
+These four all failed CI on that one rule, and all four were an identifier that
+is correctly capitalised everywhere else in the codebase:
+
+    feat(contracts): add NT-SRV-001 error code            ✗
+    feat(api): wire IngestQueue and DLQ                   ✗
+    feat(api): add scopedDb and anchor unrouted documents ✗
+    feat(ingest): object storage … (S3/MinIO)             ✗
+
+Identifiers, error codes and product names belong in the body, where their real
+casing survives. The title is prose.
+-->
+
 ## What
 One sentence. Closes #___
 
