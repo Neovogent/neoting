@@ -14,7 +14,25 @@
   // the suite skips when no database is CONFIGURED, and inside turbo none was.
   // Declaring them here is what makes the tests CI actually runs match the
   // tests CI appears to run.
-  "globalEnv": ["DATABASE_URL", "DIRECT_URL", "REDIS_URL", "TZ", "NODE_ENV", "CI"],
+  // RUN_S3_INTEGRATION and the S3_* pair are here for the same reason as the
+  // database URLs: the MinIO round-trip skips itself when unconfigured, so an
+  // undeclared variable turns `RUN_S3_INTEGRATION=1 pnpm test` into a green run
+  // that quietly tested nothing.
+  "globalEnv": [
+    "DATABASE_URL",
+    "DIRECT_URL",
+    "REDIS_URL",
+    "TZ",
+    "NODE_ENV",
+    "CI",
+    "RUN_S3_INTEGRATION",
+    "S3_ENDPOINT",
+    "S3_REGION",
+    "S3_ACCESS_KEY_ID",
+    "S3_SECRET_ACCESS_KEY",
+    "S3_FORCE_PATH_STYLE",
+    "S3_BUCKET_DOCUMENTS"
+  ],
 
   "tasks": {
     "build": {

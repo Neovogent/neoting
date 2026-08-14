@@ -14,8 +14,8 @@ exists nowhere. This stores the sanitised bytes; the job carries the key.
 
 ## The key layout — and WHY (this is the part that matters)
 
-`w/<workspace>/documents/<sha256>`, where `<workspace>` is the routed business id,
-or `_unrouted` when there is no workspace yet.
+`w/<businessId>/documents/<sha256>` once routed, and
+`w/_unrouted/<practiceId>/documents/<sha256>` until then.
 
 **Every key MUST start `w/`. This is an IAM constraint, not a style choice.** The
 staging task role is granted `<bucket>/w/*` (and `receipts/inbound/*`) and
