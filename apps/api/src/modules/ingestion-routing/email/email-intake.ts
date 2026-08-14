@@ -159,6 +159,9 @@ export async function processEmail(email: ParsedEmail, deps: EmailIntakeDeps): P
       filename,
       sha256: result.document.sha256,
       storageKey: stored.key,
+      practiceId: deps.practiceId,
+      mimeType: mimeForFormat(result.document.detectedType),
+      byteSize: result.document.byteLength,
     };
     await deps.queue.enqueue(job);
   }

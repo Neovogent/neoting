@@ -48,8 +48,10 @@ export default [
   },
   {
     // The wrapper itself, and the tests that prove it, must construct the real
-    // client — that is their job. Narrow by path so the exemption cannot spread.
-    files: ['src/common/db/**/*.ts'],
+    // client — that is their job. Integration tests do too: they set fixtures up
+    // as the owner and read them back as the app to prove RLS. Narrow by path so
+    // the exemption cannot spread to ordinary code.
+    files: ['src/common/db/**/*.ts', 'src/**/*.integration.test.ts'],
     rules: { 'no-restricted-imports': 'off' },
   },
   { ignores: ['dist/**', 'node_modules/**', '*.config.ts', 'eslint.config.js'] },

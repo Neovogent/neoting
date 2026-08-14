@@ -3,8 +3,10 @@ import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+import { getPrismaClient } from '../common/db/prisma.js';
 import { loadEnv } from '../config/env.js';
 import { BullmqDeadLetterQueue } from '../modules/ingestion-routing/queue/dead-letter.js';
+import { PrismaDocumentSink } from '../modules/ingestion-routing/queue/document-sink.js';
 import { processIngestJob } from '../modules/ingestion-routing/queue/ingest-processor.js';
 import { InMemoryProcessedStore } from '../modules/ingestion-routing/queue/processed-store.js';
 import { INGEST_QUEUE_NAME } from '../modules/ingestion-routing/queue/queue-names.js';
@@ -22,6 +24,7 @@ function bootstrap(): void {
   const connection = createRedisConnection(env.REDIS_URL);
   const processed = new InMemoryProcessedStore();
   const deadLetters = new BullmqDeadLetterQueue(connection);
+  const sink = new PrismaDocumentSink(getPrismaClient());
 
   const worker = new Worker(
     INGEST_QUEUE_NAME,
@@ -29,6 +32,7 @@ function bootstrap(): void {
       processIngestJob(job.data, {
         processed,
         logger: { log: (message) => logger.log(message), warn: (message) => logger.warn(message) },
+        sink,
       }),
     { connection, concurrency: 8 },
   );

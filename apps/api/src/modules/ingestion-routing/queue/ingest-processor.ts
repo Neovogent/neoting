@@ -1,3 +1,4 @@
+import type { DocumentSink } from './document-sink.js';
 import { IngestJobPayloadSchema } from './job-payload.js';
 import type { ProcessedStore } from './processed-store.js';
 
@@ -10,6 +11,8 @@ export interface JobLogger {
 export interface ProcessorDeps {
   readonly processed: ProcessedStore;
   readonly logger: JobLogger;
+  /** Persists the sanitised document (#20); the durable idempotency lives here. */
+  readonly sink: DocumentSink;
 }
 
 /**
@@ -36,6 +39,37 @@ export async function processIngestJob(raw: unknown, deps: ProcessorDeps): Promi
   deps.logger.log(
     `ingest ${payload.idempotencyKey} from ${payload.from} (${payload.messageType}, ${payload.routing.kind})${staleTag} trace=${payload.traceId}`,
   );
-  // TODO(scopedDb): persist the document + routing decision here once the data
-  // layer exists. Out of scope for #12 (no DB writes).
+
+  // Persist (#20) only when the document is actually in hand — email carries the
+  // stored bytes, their sanitised MIME/size, and the practice anchor. WhatsApp
+  // jobs do not yet (their media is a Meta id needing a Graph fetch — a separate
+  // task), so they are logged and left unpersisted rather than written as an
+  // orphan with no bytes behind it.
+  if (
+    payload.practiceId !== undefined &&
+    payload.storageKey !== undefined &&
+    payload.sha256 !== undefined &&
+    payload.mimeType !== undefined &&
+    payload.byteSize !== undefined &&
+    payload.filename !== undefined
+  ) {
+    const { documentId, created } = await deps.sink.persist({
+      idempotencyKey: payload.idempotencyKey,
+      practiceId: payload.practiceId,
+      businessId: payload.routing.businessId ?? null,
+      s3Key: payload.storageKey,
+      byteHash: payload.sha256,
+      mimeType: payload.mimeType,
+      byteSize: payload.byteSize,
+      channel: payload.source === 'email' ? 'EMAIL' : 'WHATSAPP',
+      originalFilename: payload.filename,
+      submitterLabel: payload.from,
+      routing: payload.routing,
+      traceId: payload.traceId,
+    });
+    deps.logger.log(`persisted document ${documentId} (created=${created}) trace=${payload.traceId}`);
+    return;
+  }
+
+  deps.logger.log(`no document to persist for ${payload.idempotencyKey} (source=${payload.source}) — bytes not in hand yet`);
 }

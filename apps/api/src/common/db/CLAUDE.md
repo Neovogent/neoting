@@ -45,8 +45,28 @@ pnpm db:tenancy-check      # the SQL-level suite, 24 assertions
 
 The suite reports as **skipped** when no database is configured, and **fails** when one is configured but unreachable. It never passes without running: a tenancy suite that quietly reports green is worse than none, because it is trusted.
 
+## The SYSTEM actor (issue #20)
+
+A worker has no logged-in user, but every write still needs an actor for the
+audit trail and the GUCs. `resolveSystemActor(prisma, practiceId)` finds the
+practice's `UserKind.SYSTEM` membership and returns its userId, which then feeds
+`systemContext(practiceId, systemUserId)`.
+
+That lookup is the **one** legitimately unscoped query in the codebase — it runs
+`prisma.membership.findFirst` directly, not through `scopedDb`, because it is the
+bootstrap that *produces* the context every other query needs, and there is no
+actor to scope by yet. It is safe only because `users` and `memberships` carry no
+RLS (verified empirically). It **fails loudly** (throws) when a practice has no
+SYSTEM actor, rather than writing a document with a dangling actor — a missing
+system user is a seed bug, not a runtime branch to paper over.
+
 ## TODO
 
-- [ ] Wire `scopedDb` into the ingest worker so documents actually persist (currently `TODO(scopedDb)` in `queue/ingest-processor.ts`).
 - [ ] Request-scoped context from the session, once auth lands — today every caller builds its own.
-- [ ] Look up the SYSTEM user per practice rather than passing its id in.
+- [x] #20: `scopedDb` wired into the ingest worker via `queue/PrismaDocumentSink`
+      — documents + their first `DocumentEvent` persist in one transaction under
+      the practice's `systemContext`. Proven by `queue/document-sink.integration.test.ts`
+      against a real database (unrouted doc visible to its own practice, invisible
+      to another).
+- [x] #20: SYSTEM user looked up per practice (`resolveSystemActor`) rather than
+      passing its id in.
