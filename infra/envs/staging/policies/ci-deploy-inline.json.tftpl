@@ -33,6 +33,12 @@
       ]
     },
     {
+      "Sid": "ReadTheSharedOidcProvider",
+      "Effect": "Allow",
+      "Action": ["iam:GetOpenIDConnectProvider"],
+      "Resource": "arn:aws:iam::${account_id}:oidc-provider/token.actions.githubusercontent.com"
+    },
+    {
       "Sid": "ServiceLinkedRoles",
       "Effect": "Allow",
       "Action": "iam:CreateServiceLinkedRole",
