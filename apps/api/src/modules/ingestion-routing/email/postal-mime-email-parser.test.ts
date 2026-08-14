@@ -45,7 +45,7 @@ test('parses raw MIME and runs it through the intake end to end (offline, real p
   expect(parsed.attachments[0]?.contentType).toContain('image/png');
 
   const queue = new FixtureIngestQueue();
-  const result = await processEmail(parsed, { queue });
+  const result = await processEmail(parsed, { queue, practiceId: 'prac_test' });
   expect(result.accepted).toHaveLength(1);
   expect(result.accepted[0]?.detectedType).toBe('png');
   expect(result.routing.kind).toBe('unrouted');

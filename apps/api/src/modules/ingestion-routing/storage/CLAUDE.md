@@ -8,7 +8,7 @@ Object storage for sanitised documents. `processEmail` sanitises an attachment
 and would otherwise drop the bytes — the job then describes a document that
 exists nowhere. This stores the sanitised bytes; the job carries the key.
 
-`DocumentStore.put({ bytes, sha256, contentType, workspaceId }) → StoredDocument{ key }`
+`DocumentStore.put({ bytes, sha256, contentType, workspaceId, practiceId }) → StoredDocument{ key }`
 · `get(key) → Buffer`. Interface + fixture, the same shape as `VirusScanner` /
 `IngestQueue` / `EmailParser`, so unit tests stay offline.
 
@@ -28,9 +28,20 @@ never by inspection.
 - **Content-addressed** on the sha256: an identical file stored twice is one
   object, and the key is stable for identical content — what lets an SES
   redelivery collapse rather than duplicate.
-- **`_unrouted`**: Unrouted mail has no workspace, but the object must still live
-  under `w/`. `_unrouted` sits under the prefix (so IAM grants it) and its
-  leading underscore cannot collide with a real business id (cuid/uuid). When
+- **`_unrouted` is partitioned BY PRACTICE**: `w/_unrouted/<practiceId>/documents/<sha256>`.
+  Unrouted mail has no workspace, but the object must still live under `w/` and
+  must still belong to somebody. A single shared `w/_unrouted/` prefix would mean
+  that two practices receiving the *same* file — a common supplier's invoice
+  template, a standard statement PDF — content-address to **one object**. Then
+  "erase everything belonging to practice X" (UK GDPR, D12) has no answer: the
+  key does not say whose it is, and deleting it destroys the other practice's
+  document. Mail from an unrecognised sender is the common case, so that would be
+  most of the estate. It also defeats ADR 0008's per-prefix narrowing precisely
+  where it matters most.
+- **A key needs a workspace or a practice, and `documentKey` throws without one** —
+  deliberately mirroring the `documents_tenant_anchor` CHECK constraint in the
+  database. An object owned by neither is unreachable and unerasable.
+- The leading underscore cannot collide with a real business id (cuid/uuid). When
   routing later assigns a workspace the object is re-keyed; nothing here deletes.
 
 ## S3 / MinIO
@@ -58,7 +69,7 @@ RUN_S3_INTEGRATION=1 pnpm --filter @neoting/api test    # + MinIO round-trip (ne
 
 ## TODO
 
-- [ ] Run the MinIO integration test once Docker is installed here — Shakib runs
-      it for now (no Docker on my machine).
+- [x] MinIO integration test — run by Shakib 14 Aug 2026, object confirmed in the
+      bucket at `w/_unrouted/prac_int/documents/<sha256>`.
 - [ ] When the S3 trigger + `scopedDb` land, the worker fetches bytes via
       `get(storageKey)` and the object record is persisted.

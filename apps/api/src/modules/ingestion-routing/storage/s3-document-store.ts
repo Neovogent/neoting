@@ -39,7 +39,7 @@ export class S3DocumentStore implements DocumentStore {
   ) {}
 
   async put(input: DocumentStorePutInput): Promise<StoredDocument> {
-    const key = documentKey(input.workspaceId, input.sha256);
+    const key = documentKey(input);
     await this.client.send(
       new PutObjectCommand({
         Bucket: this.bucket,

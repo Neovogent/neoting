@@ -31,6 +31,19 @@ export interface EmailIntakeResult {
 
 export interface EmailIntakeDeps {
   readonly queue: IngestQueue;
+  /**
+   * The practice this email arrived for — REQUIRED, and not derivable here.
+   *
+   * An unrouted document has no business, so the practice is the only tenancy
+   * anchor it has: it is what the `documents_tenant_anchor` CHECK accepts, what
+   * the RLS practice branch matches on, and what partitions the object key. A
+   * document with neither is one nobody can read and nobody can erase.
+   *
+   * It comes from the RECIPIENT address, which must identify a practice
+   * (`doc+<practice>@…`) rather than being a single shared `doc@` — issue #17.
+   * Until the SES receipt rules encode that, the caller supplies it.
+   */
+  readonly practiceId: string;
   /** Sender→workspace map. None exists yet (no DB) — pass empty → everything Unrouted. */
   readonly senderMap?: ReadonlyMap<string, readonly string[]>;
   /** Injected for the sanitisation virus-scan step; defaults to the fixture. */
@@ -110,6 +123,7 @@ export async function processEmail(email: ParsedEmail, deps: EmailIntakeDeps): P
       sha256: result.document.sha256,
       contentType: mimeForFormat(result.document.detectedType),
       workspaceId,
+      practiceId: deps.practiceId,
     });
 
     const job: IngestJob = {

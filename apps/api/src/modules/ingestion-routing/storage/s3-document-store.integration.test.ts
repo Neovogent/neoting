@@ -25,9 +25,9 @@ test.skipIf(!enabled)('S3DocumentStore round-trips against MinIO and the key lan
 
   const bytes = Buffer.from('object-storage-integration-bytes');
   const sha256 = 'b'.repeat(64);
-  const stored = await store.put({ bytes, sha256, contentType: 'application/octet-stream', workspaceId: null });
+  const stored = await store.put({ bytes, sha256, contentType: 'application/octet-stream', workspaceId: null, practiceId: 'prac_int' });
 
-  expect(stored.key).toBe(documentKey(null, sha256));
+  expect(stored.key).toBe(documentKey({ workspaceId: null, practiceId: 'prac_int', sha256 }));
   expect(stored.key.startsWith('w/')).toBe(true);
   expect((await store.get(stored.key)).equals(bytes)).toBe(true);
 });
