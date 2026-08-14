@@ -868,10 +868,20 @@ paths:
             text/plain:
               schema: { type: string }
         '403':
-          description: Verify token mismatch.
+          description: |
+            Verify token mismatch — `NT-INT-002`. The challenge is never echoed
+            on this path; echoing it for an unverified token is how a webhook
+            endpoint gets registered by someone else.
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
+              example:
+                type: https://neoting.com/problems/NT-INT-002
+                title: Forbidden
+                status: 403
+                code: NT-INT-002
+                detail: Webhook verify token mismatch.
+                traceId: 01J8XN2ZQ5R7TQ9E3M4K6P
 
     post:
       operationId: receiveWhatsappWebhook
@@ -895,6 +905,31 @@ paths:
         A sender mapping to multiple client workspaces gets an in-chat "Which
         company?" prompt; a sender mapping to none lands in the Unrouted queue.
         Nothing is ever silently dropped.
+
+        ## Freshness is a triage signal, not an auth decision
+
+        **A correctly-signed message must never be rejected for being old.**
+
+        Meta retries a delivery we failed, with backoff, over a long window. So
+        the sequence that matters is: our service is down or erroring for six
+        minutes; Meta retries the messages that arrived during it; each retry
+        now carries a timestamp outside any short freshness window; we reject
+        them; Meta eventually stops trying. **Our own downtime becomes permanent
+        customer-document loss, wearing the costume of a security rejection.**
+        That breaks the invariant this module is built on — nothing is ever
+        silently dropped — and it breaks it precisely when someone is already
+        busy with an incident.
+
+        The ±5 minute tolerance in Governance §11.7 is a replay defence, and
+        here it is redundant: the HMAC already makes forgery impossible, and the
+        per-`wamid` replay store already makes reprocessing impossible. A
+        timestamp window adds no third guarantee — only a new way to lose data.
+
+        So: verify the signature (401 on failure), consult the replay store
+        (duplicate is an idempotent no-op), and **enqueue regardless of age**,
+        marking anything beyond the window as stale so it can be triaged rather
+        than trusted as timely. The message timestamp is inside the signed body,
+        so it is integrity-protected and safe to carry forward as metadata.
       tags: [webhooks]
       x-nt-side-effect: ingest
       security:
@@ -919,10 +954,26 @@ paths:
             the payload is one this handler ignores — Meta retries anything else,
             and a retry storm is worse than a no-op.
         '401':
-          description: Signature missing, malformed, or outside the timestamp tolerance.
+          description: |
+            Signature missing, malformed, or failing verification — `NT-INT-001`.
+
+            **One code for every signature failure, deliberately.** Telling an
+            unauthenticated caller whether their signature was absent, the wrong
+            length, or simply wrong hands them an oracle for free. The
+            distinction is logged, not returned.
+
+            Note what this status does NOT cover: a correctly-signed message
+            that is merely old. See the freshness note on this operation.
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
+              example:
+                type: https://neoting.com/problems/NT-INT-001
+                title: Unauthenticated
+                status: 401
+                code: NT-INT-001
+                detail: Webhook signature missing or invalid.
+                traceId: 01J8XN2ZQ5R7TQ9E3M4K6P
 
 # ============================================================================
 # COMPONENTS
@@ -1166,6 +1217,18 @@ components:
         - NT-PRM-001   # actor lacks permission for this action kind
         - NT-IDM-001   # idempotency key reused with a different payload
         - NT-RATE-001  # rate limit exceeded
+        # The generic 500. Governance §3 requires an unknown error to log with
+        # its traceId and return a generic body — but `Problem.code` is
+        # required, so without this there was no legal code for the one
+        # response every service eventually returns. Found by Abdullah in #10.
+        - NT-SRV-001   # unexpected internal error
+        # Inbound webhook auth. NOT NT-AUTH-001, which means "no valid session":
+        # a webhook has no session, and reusing the session code would make an
+        # NT-AUTH-001 alert ambiguous between "a user's login broke" and "Meta's
+        # signature failed" — two incidents with nothing in common. Governance
+        # §13.4 already reserves the INT family for integration auth.
+        - NT-INT-001   # inbound webhook signature verification failed
+        - NT-INT-002   # inbound webhook verify-token mismatch (Meta GET handshake)
         - NT-ING-001   # declared size over the channel cap
         - NT-ING-002   # declared MIME type not allowed for this channel
         - NT-ING-003   # byte hash mismatch between client and storage
