@@ -172,12 +172,34 @@ resource "aws_route53_record" "mail_from_spf" {
 # p=none while we watch alignment. Tighten to p=quarantine before the pilot —
 # and add rua= once support@ exists (a report address that bounces is worse
 # than none).
+# ⚠ `p=none` WITHOUT `rua=` COLLECTS NOTHING. That was the state until now, and
+# it is worth naming because it looks finished: a DMARC record existed, DKIM and
+# SPF aligned, and every checker reported "DMARC configured".
+#
+# `p=none` is monitor mode — its entire purpose is to gather aggregate reports
+# BEFORE tightening. With no `rua=`, no receiver has anywhere to send them, so
+# the policy did the one thing DMARC can do without reports: nothing. The
+# runbook (§5.3) says to tighten to `p=quarantine` "once reports are clean";
+# there was no path to ever knowing.
+#
+# WHY THE REPORT ADDRESS IS ON OUR OWN DOMAIN, and why a personal mailbox is not
+# an option: RFC 7489 §7.1 requires cross-domain reporting to be AUTHORISED by
+# the receiving domain, which publishes
+#   <our-domain>._report._dmarc.<their-domain>  TXT  "v=DMARC1"
+# Pointing `rua` at, say, a Gmail address means gmail.com would have to publish
+# that record for us. It will not. Conforming reporters check, find no
+# authorisation, and silently drop the report — so the obvious "one-line fix"
+# produces exactly the same nothing, with the appearance of a fix.
+#
+# `fo=1` asks for a failure report when ANY mechanism fails, rather than the
+# default (only when everything fails) — the useful setting while a sending
+# domain is still being shaken out.
 resource "aws_route53_record" "dmarc" {
   zone_id = data.aws_route53_zone.primary.zone_id
   name    = "_dmarc"
   type    = "TXT"
   ttl     = 600
-  records = ["v=DMARC1; p=none;"]
+  records = ["v=DMARC1; p=none; rua=mailto:dmarc@${local.domain}; fo=1;"]
 }
 
 # --------------------------------------------------------------------------
@@ -249,6 +271,45 @@ resource "aws_ses_receipt_rule" "doc" {
   # depends_on takes static addresses only and a module's internals are not
   # addressable from here. Coarser than it was when the buckets were flat; the
   # trade is one unnecessary ordering edge against a real correctness bug.
+  depends_on = [module.storage]
+}
+
+# The other half of the `rua=` above. Naming a report address the MX does not
+# accept would bounce every report — a receiver that cannot deliver simply stops
+# trying, and we would be back to collecting nothing while believing otherwise.
+#
+# Reports are gzipped XML, one per reporting domain per day, a few KB each: the
+# volume is negligible and nothing consumes them automatically yet. Reading them
+# is a human step before the `p=quarantine` decision (runbook §5.3), which is
+# what they exist for.
+#
+# NOT customer data despite sharing the receipts bucket: an aggregate report
+# contains sending IPs, message counts and pass/fail verdicts for OUR domain.
+# The `dmarc/` prefix keeps it out of `inbound/`, which is what the ingestion
+# pipeline and the AV scanner read.
+resource "aws_ses_receipt_rule" "dmarc_reports" {
+  name          = "dmarc-reports-to-s3"
+  rule_set_name = aws_ses_receipt_rule_set.inbound.rule_set_name
+  recipients    = ["dmarc@${local.domain}"]
+  enabled       = true
+  scan_enabled  = true
+  tls_policy    = "Require"
+
+  # Ordering is explicit rather than incidental. The rules match disjoint
+  # recipients so evaluation order cannot change behaviour today — but SES
+  # positions are global to the rule set, and a future catch-all rule would make
+  # order load-bearing overnight.
+  after = aws_ses_receipt_rule.doc.name
+
+  # No kms_key_arn, for the reason documented at length on the `doc` rule above:
+  # SES's key argument produces AWS-Encryption-SDK envelope ciphertext, not an
+  # SSE-KMS object, and there is no TypeScript client that can decrypt it.
+  s3_action {
+    position          = 1
+    bucket_name       = local.bucket_names["receipts"]
+    object_key_prefix = "dmarc/"
+  }
+
   depends_on = [module.storage]
 }
 
