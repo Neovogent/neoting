@@ -53,6 +53,16 @@ export interface EmailIntakeDeps {
  * Pure library — no S3, no network, no database (persistence is blocked on
  * scopedDb). The S3-event trigger is Terraform (Shakib's).
  */
+/**
+ * Reduce an attacker-controlled attachment filename to a bare basename — never a
+ * path. `../../etc/passwd` → `passwd`, `C:\evil\x.pdf` → `x.pdf`. Kept for
+ * display / metadata only; it is never trusted for the file's type.
+ */
+function safeBasename(name: string): string {
+  const base = name.replace(/^.*[\\/]/, '').trim();
+  return base === '' || base === '.' || base === '..' ? 'attachment' : base;
+}
+
 export async function processEmail(email: ParsedEmail, deps: EmailIntakeDeps): Promise<EmailIntakeResult> {
   const routing = decideRouting(email.from, deps.senderMap ?? new Map<string, readonly string[]>());
   const untrustedBody = wrapUntrusted(`${email.subject}\n\n${email.text}`);
@@ -61,24 +71,24 @@ export async function processEmail(email: ParsedEmail, deps: EmailIntakeDeps): P
   const accepted: AcceptedEmailDocument[] = [];
   const rejected: EmailRejection[] = [];
 
-  let index = 0;
-  for (const attachment of email.attachments) {
+  for (const [index, attachment] of email.attachments.entries()) {
+    // The declared filename is attacker-controlled: reduce it to a basename (never
+    // a path), and pass NO name to sanitise so the declared extension cannot sway
+    // the type decision. Magic-byte sniffing is the sole authority on what the
+    // file is (Shakib's condition) — a part labelled image/jpeg that carries a PDF
+    // is accepted as a PDF, not rejected for the mismatch.
+    const filename = safeBasename(attachment.filename);
     const result = await sanitise(
-      { bytes: attachment.bytes, filename: attachment.filename, channel: EMAIL_CHANNEL },
+      { bytes: attachment.bytes, filename: '', channel: EMAIL_CHANNEL },
       deps.scanner ? { scanner: deps.scanner } : {},
     );
 
     if (!result.ok) {
-      rejected.push({ filename: attachment.filename, reason: result.rejection.message, code: result.rejection.code });
-      index += 1;
+      rejected.push({ filename, reason: result.rejection.message, code: result.rejection.code });
       continue;
     }
 
-    accepted.push({
-      filename: attachment.filename,
-      detectedType: result.document.detectedType,
-      sha256: result.document.sha256,
-    });
+    accepted.push({ filename, detectedType: result.document.detectedType, sha256: result.document.sha256 });
 
     const job: IngestJob = {
       source: 'email',
@@ -89,11 +99,10 @@ export async function processEmail(email: ParsedEmail, deps: EmailIntakeDeps): P
       caption: untrustedBody,
       routing,
       stale: false,
-      filename: attachment.filename,
+      filename,
       sha256: result.document.sha256,
     };
     await deps.queue.enqueue(job);
-    index += 1;
   }
 
   return { routing, accepted, rejected };

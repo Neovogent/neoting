@@ -93,3 +93,20 @@ test('accepted documents enqueue with source email, filename and sha256', async 
   expect(job?.filename).toBe('receipt.png');
   expect(job?.sha256).toMatch(/^[0-9a-f]{64}$/);
 });
+
+test('a mislabelled attachment is accepted by its magic bytes, not rejected for the declared type', async () => {
+  // A real PDF the email declares as image/jpeg with a .jpg name — normal inbound
+  // traffic (Shakib): magic bytes are the authority, so it is accepted as a PDF.
+  const queue = new FixtureIngestQueue();
+  const result = await processEmail(email([attach('invoice.jpg', 'image/jpeg', cleanPdf())]), { queue });
+  expect(result.rejected).toHaveLength(0);
+  expect(result.accepted).toHaveLength(1);
+  expect(result.accepted[0]?.detectedType).toBe('pdf');
+});
+
+test('an attacker-controlled path in the filename is reduced to a basename, never a path', async () => {
+  const queue = new FixtureIngestQueue();
+  const result = await processEmail(email([attach('../../etc/passwd', 'image/png', png())]), { queue });
+  expect(result.accepted[0]?.filename).toBe('passwd');
+  expect(queue.enqueued[0]?.filename).toBe('passwd');
+});
