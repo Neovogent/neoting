@@ -8,8 +8,19 @@
 
 # Generated — mark so GitHub collapses them in diffs and reviewers stop reading
 # lockfile churn line by line.
+#
+# ⚠ THE PATH MUST BE THE REAL ONE, AND A WRONG PATTERN FAILS SILENTLY.
+# This said `packages/contracts/generated/**` — a directory that does not exist.
+# orval writes to `packages/contracts/SRC/generated/`. A .gitattributes pattern
+# that matches nothing is not an error and produces no warning: the rule simply
+# never applies, so ~380 KB of generated orval output was being counted by
+# GitHub Linguist as hand-written TypeScript and expanded in full in every diff.
+#
+# Verify a pattern rather than trusting it — this is the check that caught it:
+#   git check-attr linguist-generated -- packages/contracts/src/generated/model/document.ts
+# `unspecified` means the rule missed; `set` means it applies.
 pnpm-lock.yaml linguist-generated=true -diff
-packages/contracts/generated/** linguist-generated=true -diff
+packages/contracts/src/generated/** linguist-generated=true -diff
 
 # Binaries
 *.png binary
