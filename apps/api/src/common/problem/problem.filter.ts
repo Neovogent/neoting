@@ -60,11 +60,9 @@ export class ProblemFilter implements ExceptionFilter {
 
     // Unknown: a bug. Log it server-side with the trace; tell the client nothing.
     this.logger.error(`Unhandled exception [${traceId}]`, exception instanceof Error ? exception.stack : String(exception));
-    // NOTE: this surface's ErrorCode enum has no internal-server code yet; using
-    // NT-VAL-001 as a placeholder. Flagged for a contract-change (add NT-SRV-001).
     this.send(res, HttpStatus.INTERNAL_SERVER_ERROR, buildProblem({
       status: HttpStatus.INTERNAL_SERVER_ERROR,
-      code: 'NT-VAL-001',
+      code: 'NT-SRV-001',
       title: 'Internal Server Error',
       traceId,
     }));

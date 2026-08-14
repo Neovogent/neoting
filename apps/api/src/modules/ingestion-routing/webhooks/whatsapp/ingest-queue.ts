@@ -14,6 +14,12 @@ export interface IngestJob {
   readonly messageType: string;
   readonly caption: string | null;
   readonly routing: RoutingDecision;
+  /**
+   * Triage flag, not a gate: the message was correctly signed but its timestamp
+   * is outside the ±5-minute window (or unparseable). It is still enqueued —
+   * age is never a reason to drop a signed document — and marked for review.
+   */
+  readonly stale: boolean;
 }
 
 /**

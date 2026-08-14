@@ -40,5 +40,5 @@ test('rejects a bad signature with a 401 problem+json — the test that matters 
   }
   expect(thrown).toBeInstanceOf(AppException);
   expect((thrown as AppException).getStatus()).toBe(HttpStatus.UNAUTHORIZED);
-  expect((thrown as AppException).code).toBe('NT-AUTH-001');
+  expect((thrown as AppException).code).toBe('NT-INT-001');
 });

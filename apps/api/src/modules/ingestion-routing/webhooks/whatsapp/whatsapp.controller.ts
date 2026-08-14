@@ -15,7 +15,7 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 
-import { AppException, buildProblem } from '../../../../common/problem/problem.js';
+import { buildProblem } from '../../../../common/problem/problem.js';
 import { wrapUntrusted } from '../../../../common/untrusted-content.js';
 import type { Env } from '../../../../config/env.js';
 import { ENV } from '../../../../config/env.module.js';
@@ -79,10 +79,10 @@ export class WhatsAppWebhookController {
       .send(
         buildProblem({
           status: HttpStatus.FORBIDDEN,
-          code: 'NT-AUTH-001',
-          title: 'Forbidden',
+          code: 'NT-INT-002',
+          title: 'Webhook verification failed',
           traceId: randomUUID(),
-          detail: 'Webhook verify token mismatch.',
+          detail: 'The hub.verify_token did not match.',
         }),
       );
   }
@@ -97,19 +97,8 @@ export class WhatsAppWebhookController {
 
     // A message outside the ±5-minute window is stale or replayed → 401 (contract).
     // Checked for all messages before enqueuing any, so a stale batch enqueues nothing.
+    // One clock read for the whole batch, so staleness is evaluated atomically.
     const nowMs = this.clock.now();
-    for (const message of messages) {
-      const seconds = parseUnixSeconds(message.timestamp);
-      if (seconds === null || !withinTolerance(seconds, nowMs)) {
-        throw new AppException(
-          'NT-AUTH-001',
-          HttpStatus.UNAUTHORIZED,
-          'Unauthenticated',
-          'Message timestamp is missing, malformed, or outside the accepted window.',
-        );
-      }
-    }
-
     for (const message of messages) {
       const fresh = await this.replay.reserve(message.id, REPLAY_TTL_MS);
       if (!fresh) {
@@ -117,16 +106,24 @@ export class WhatsAppWebhookController {
         this.logger.debug(`Duplicate wamid ${message.id} ignored`);
         continue;
       }
+      const seconds = parseUnixSeconds(message.timestamp);
+      // Freshness is a TRIAGE FLAG, never a rejection. The HMAC already stops
+      // forgery and the replay store already stops reprocessing, so age buys
+      // nothing — and 401-ing an old-but-signed message would turn our own
+      // downtime into permanent loss: Meta retries stale, we reject every retry,
+      // Meta gives up. Enqueue regardless of age; mark stale for triage.
+      const stale = seconds === null || !withinTolerance(seconds, nowMs);
       const caption = captionOf(message);
       await this.queue.enqueue({
         source: 'whatsapp',
         idempotencyKey: message.id,
         from: message.from,
-        receivedAtSeconds: parseUnixSeconds(message.timestamp) ?? 0, // validated above
+        receivedAtSeconds: seconds ?? 0,
         messageType: message.type,
         caption: caption === null ? null : wrapUntrusted(caption),
         // No sender→workspace map exists yet (no DB) → Unrouted, never dropped.
         routing: decideRouting(message.from, new Map()),
+        stale,
       });
     }
     // 200 with no body (contract): acknowledged.

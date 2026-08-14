@@ -46,10 +46,14 @@ codes), `common/untrusted-content.ts`, `modules/health/` (`/healthz` + `/readyz`
 - **GET** `/webhooks/whatsapp` — Meta's unsigned challenge; echoes `hub.challenge`
   as `text/plain` only when `hub.verify_token` matches, else 403.
 - **POST** `/webhooks/whatsapp` — `WhatsAppSignatureGuard` verifies
-  `X-Hub-Signature-256` HMAC over the **raw body** before any parsing (401 on
-  fail); then Zod-parses the envelope, enforces the ±5-min timestamp window,
-  dedupes on `wamid` via `ReplayStore`, wraps the caption in
-  `<untrusted_content>`, and hands off to the `IngestQueue`. 200 no-body ack.
+  `X-Hub-Signature-256` HMAC over the **raw body** before any parsing (401
+  `NT-INT-001` on fail); then Zod-parses the envelope, dedupes on `wamid` via
+  `ReplayStore`, wraps the caption in `<untrusted_content>`, and hands off to the
+  `IngestQueue`. 200 no-body ack. **Freshness is a triage flag, not a gate**: a
+  correctly-signed message outside the ±5-min window is enqueued with
+  `stale: true`, never 401'd — age must not turn our downtime into document loss.
+- **Error codes** (issue #11): signature → `NT-INT-001`, verify-token → 403
+  `NT-INT-002`, unexpected 500 → `NT-SRV-001` (global `ProblemFilter`).
 - **Fixtures, not infra** (issue #9): `IngestQueue`/`ReplayStore`/`Clock` are
   interfaces with in-memory fixtures (same pattern as the sanitisation
   `VirusScanner`). No BullMQ, no Redis, no Prisma, no auth.
@@ -96,7 +100,6 @@ sanitisation tests were ported from `tsx --test` to Vitest and run in the suite.
 - [ ] Enforce the bank-statement 300-page cap in the PDF-safety step
 - [ ] Await the frozen ingestion endpoints; map `Rejection` → NT-ING wire error
       at the controller boundary (NT-ING-001/002/004 mirrored in `reasons.ts`)
-- [ ] Contract gaps flagged in #9 (need Shakib, G7): no internal-server
-      `NT-SRV-*` code (500 filter uses `NT-VAL-001` placeholder) and no
-      webhook-verification code (GET 403 / POST 401 reuse `NT-AUTH-001`)
+- [ ] #12: wire BullMQ behind `IngestQueue` + the worker (DLQ, idempotency,
+      traceId) — `whatsapp.controller.ts` must not change
 - [ ] Update this file on exit — it is how the next session picks up

@@ -31,11 +31,13 @@ export class WhatsAppSignatureGuard implements CanActivate {
       this.env.META_APP_SECRET,
     );
     if (!ok) {
+      // NT-INT-001: integration-auth failure (Meta signature), not a user
+      // session failure — distinct family per Governance §13.4.
       throw new AppException(
-        'NT-AUTH-001',
+        'NT-INT-001',
         HttpStatus.UNAUTHORIZED,
-        'Unauthenticated',
-        'Webhook signature missing or invalid.',
+        'Webhook signature verification failed',
+        'The X-Hub-Signature-256 was missing or did not verify.',
       );
     }
     return true;
