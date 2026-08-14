@@ -23,6 +23,13 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+
+  // Migrations and seeding run as the OWNER; the application runs as `nt_app`,
+  // which is subject to RLS. Without this split the app connects as a superuser
+  // and every policy in sql/rls.sql is inert (issue #17) — with it, `prisma
+  // migrate` still works, because migrations legitimately need to cross every
+  // tenant boundary and are the only thing that should.
+  directUrl = env("DIRECT_URL")
 }
 
 // ===========================================================================
@@ -48,6 +55,7 @@ model Practice {
   memberships Membership[]
   invites     Invite[]
   guidance    Guidance[]
+  documents   Document[]
 
   @@map("practices")
 }
@@ -122,16 +130,35 @@ model Business {
   @@map("businesses")
 }
 
-/// Durable identity. The internal id is immutable and is the thing everything
-/// references — phone numbers change and get recycled, so they are a factor,
-/// never an identity (SoT §3.3).
+/// HUMAN signs in; SYSTEM never does.
+///
+/// A queue worker has no human behind it, but every RLS policy requires
+/// `app_actor_id() IS NOT NULL` — so machine writes need an actor or they
+/// cannot happen at all. The alternative was a third `session_scope` with its
+/// own policy branch on every tenant table, which is policy surface that has to
+/// be remembered forever, on a LAW file, by everyone who ever adds a table.
+///
+/// A SYSTEM user with a practice-level membership goes through the *existing*
+/// predicate instead: rls.sql does not change, and `audit_events.actor_id`
+/// names a real row rather than a magic string, so "who did this" has one
+/// answer shape whether a person or a worker did it. Contract change: #17.
+///
+/// SYSTEM users must be excluded from team lists, seat counts and invites. They
+/// have no password, no email and no sessions, so they cannot sign in even if
+/// one leaks into a UI.
+enum UserKind {
+  HUMAN
+  SYSTEM
+}
+
 model User {
-  id            String  @id @default(cuid())
-  email         String? @unique
-  emailVerified Boolean @default(false) @map("email_verified")
-  passwordHash  String? @map("password_hash")
-  firstName     String? @map("first_name")
-  lastName      String? @map("last_name")
+  id            String   @id @default(cuid())
+  kind          UserKind @default(HUMAN)
+  email         String?  @unique
+  emailVerified Boolean  @default(false) @map("email_verified")
+  passwordHash  String?  @map("password_hash")
+  firstName     String?  @map("first_name")
+  lastName      String?  @map("last_name")
 
   totpSecretRef String?   @map("totp_secret_ref")
   totpEnabledAt DateTime? @map("totp_enabled_at")
@@ -186,6 +213,17 @@ model Membership {
   @@unique([userId, businessId])
   @@index([businessId])
   @@index([practiceId])
+  /// These two exist because `app_can_access_business()` runs an EXISTS against
+  /// memberships FOR EVERY ROW of every policed query — they are what make it an
+  /// index probe instead of a scan (rls.sql §7).
+  ///
+  /// They are declared here, with `map:` pinning the names rls.sql uses, because
+  /// otherwise Prisma does not know they exist: `migrate diff` sees two indexes
+  /// in the database and none in the schema, and helpfully emits DROP INDEX for
+  /// both. That drop is silent, reversible only by noticing, and its symptom is
+  /// the whole product getting slower under load rather than anything failing.
+  @@index([userId, businessId], map: "memberships_user_business_idx")
+  @@index([userId, practiceId], map: "memberships_user_practice_idx")
   @@map("memberships")
 }
 
@@ -338,8 +376,33 @@ enum DocumentType {
 }
 
 model Document {
-  id         String @id @default(cuid())
-  businessId String @map("business_id")
+  id String @id @default(cuid())
+
+  /// Tenancy anchor. EXACTLY ONE of these is guaranteed present, enforced by a
+  /// CHECK constraint (`documents_tenant_anchor`) rather than by convention.
+  ///
+  /// `inbox` defaults to UNROUTED, which is the honest statement that we do not
+  /// yet know whose document this is — a receipt forwarded to doc@ by a sender
+  /// we do not recognise has no business until routing says so. A NOT NULL
+  /// `business_id` would make that state unwritable, so ingestion would have to
+  /// invent a placeholder tenant or drop the document, and this module's first
+  /// invariant is that nothing is ever silently dropped.
+  ///
+  /// So an unrouted document is anchored one level up, on the practice that
+  /// received it (the inbound address identifies which). `business_id` is
+  /// filled in when routing resolves, and never cleared afterwards.
+  ///
+  /// `practice_id` is nullable rather than NOT NULL because a standalone
+  /// business has no practice above it (see `Business.practiceId`). Such a
+  /// business receives at its own address, so `business_id` is known from the
+  /// first byte and the practice branch is never needed — but a NOT NULL
+  /// `practice_id` would make its documents unwritable instead, which is the
+  /// same bug moved rather than fixed.
+  ///
+  /// The RLS policy carries both branches, the shape `invites` and `guidance`
+  /// already use in rls.sql. Contract change: issue #17.
+  practiceId String? @map("practice_id")
+  businessId String? @map("business_id")
 
   s3Key            String  @map("s3_key")
   originalFilename String  @map("original_filename")
@@ -389,7 +452,8 @@ model Document {
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @updatedAt @map("updated_at")
 
-  business Business   @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  practice Practice?  @relation(fields: [practiceId], references: [id], onDelete: Restrict)
+  business Business?  @relation(fields: [businessId], references: [id], onDelete: Restrict)
   owner    User?      @relation("DocumentOwner", fields: [submitterUserId], references: [id], onDelete: SetNull)
   parent   Document?  @relation("DocumentSplit", fields: [parentDocumentId], references: [id], onDelete: SetNull)
   children Document[] @relation("DocumentSplit")
@@ -409,6 +473,11 @@ model Document {
   @@index([businessId, byteHash])
   @@index([businessId, supplierName, documentDate])
   @@index([parentDocumentId])
+  /// The Unrouted queue: "everything this practice has received that nobody has
+  /// routed yet". Every existing index above leads with business_id, which is
+  /// precisely NULL for the rows this query wants, so none of them can serve it.
+  /// Ships with the query pattern it exists for (Governance, expand-contract).
+  @@index([practiceId, inbox])
   @@map("documents")
 }
 

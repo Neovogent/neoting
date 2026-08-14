@@ -1,3 +1,47 @@
+-- CreateEnum
+CREATE TYPE "UserKind" AS ENUM ('HUMAN', 'SYSTEM');
+
+-- AlterTable
+ALTER TABLE "documents" ADD COLUMN     "practice_id" TEXT,
+ALTER COLUMN "business_id" DROP NOT NULL;
+
+-- AlterTable
+ALTER TABLE "users" ADD COLUMN     "kind" "UserKind" NOT NULL DEFAULT 'HUMAN';
+
+-- CreateIndex
+CREATE INDEX "documents_practice_id_inbox_idx" ON "documents"("practice_id", "inbox");
+
+-- AddForeignKey
+ALTER TABLE "documents" ADD CONSTRAINT "documents_practice_id_fkey" FOREIGN KEY ("practice_id") REFERENCES "practices"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+
+-- ---------------------------------------------------------------------------
+-- Backfill: every existing document takes the practice of its business.
+--
+-- Runs BEFORE the CHECK constraint below, because rows written under the old
+-- NOT NULL business_id all have a business and would satisfy the constraint
+-- anyway -- but a standalone business has practice_id NULL, so this leaves
+-- those documents with business_id set and practice_id null, which is exactly
+-- the shape the constraint permits.
+-- ---------------------------------------------------------------------------
+UPDATE "documents" d
+   SET "practice_id" = b."practice_id"
+  FROM "businesses" b
+ WHERE b."id" = d."business_id"
+   AND d."practice_id" IS NULL;
+
+-- ---------------------------------------------------------------------------
+-- The tenancy anchor. Prisma cannot express a CHECK constraint, so it lives
+-- here and must be carried forward by hand if this table is ever rebuilt.
+--
+-- Without it, `INSERT INTO documents` with both columns null succeeds, and the
+-- row is owned by nobody: no policy branch matches, so it is invisible to every
+-- user in the product forever. A document lost in plain sight is worse than a
+-- rejected one, because nothing reports it.
+-- ---------------------------------------------------------------------------
+ALTER TABLE "documents"
+  ADD CONSTRAINT "documents_tenant_anchor"
+  CHECK ("practice_id" IS NOT NULL OR "business_id" IS NOT NULL);
 -- NEOTING — row-level security policies (Sprint-0 contract, LAW per G7/D15)
 --
 -- Governance §5.2. This file is the tenancy guarantee. Prisma cannot express

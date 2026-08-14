@@ -42,10 +42,12 @@ DELETE FROM users            WHERE id LIKE 't\_%';
 DELETE FROM businesses       WHERE id LIKE 't\_%';
 DELETE FROM practices        WHERE id LIKE 't\_%';
 
--- Seeded as superuser, which bypasses RLS. Worth noting deliberately: initial
--- provisioning cannot run under these policies either, because
--- app_can_access_business needs a membership that does not exist until
--- provisioning has finished creating it (see prisma/CLAUDE.md).
+-- Seeded as superuser, which bypasses RLS — for harness convenience only.
+--
+-- (An earlier version of this comment claimed provisioning could not run under
+-- these policies. It can: users, practices and memberships carry no RLS, so the
+-- membership exists before the first policed insert needs it. Verified as
+-- nt_app with no bypass — see prisma/CLAUDE.md and issue #17.)
 INSERT INTO practices (id, name, updated_at) VALUES
   ('t_prac_a', 'Test Practice A', now()),
   ('t_prac_b', 'Test Practice B', now());
@@ -71,6 +73,19 @@ INSERT INTO documents (id, business_id, s3_key, original_filename, mime_type,
   ('t_doc_a1_2', 't_biz_a1', 'k2', 'a1-two.pdf', 'application/pdf', 10, 't_h2', 'WEB_UPLOAD', now()),
   ('t_doc_a2_1', 't_biz_a2', 'k3', 'a2-one.pdf', 'application/pdf', 10, 't_h3', 'WEB_UPLOAD', now()),
   ('t_doc_b1_1', 't_biz_b1', 'k4', 'b1-one.pdf', 'application/pdf', 10, 't_h4', 'WEB_UPLOAD', now());
+
+-- An UNROUTED document: no business yet, anchored on the practice that received
+-- it (issue #17). This is what every email and WhatsApp arrival looks like
+-- before routing resolves, so it is the common case, not an edge case.
+INSERT INTO documents (id, practice_id, business_id, s3_key, original_filename,
+                       mime_type, byte_size, byte_hash, channel, inbox, updated_at) VALUES
+  ('t_doc_unrouted', 't_prac_a', NULL, 'k5', 'from-a-stranger.pdf',
+   'application/pdf', 10, 't_h5', 'EMAIL', 'UNROUTED', now());
+
+-- A child of that unrouted document. Child policies reach their tenant THROUGH
+-- documents, so this row is the one that catches the cascade being missed.
+INSERT INTO extractions (id, document_id, fields, extractor_kind) VALUES
+  ('t_ext_unrouted', 't_doc_unrouted', '{}'::jsonb, 'fixture');
 
 CREATE OR REPLACE FUNCTION assert_eq(actual bigint, expected bigint, label text)
   RETURNS void LANGUAGE plpgsql AS $$
@@ -98,7 +113,9 @@ BEGIN;
   SET LOCAL app.practice_id = 't_prac_a';
   SET LOCAL app.session_scope = 'user';
 
-  SELECT assert_eq(count(*), 3, 'practice A sees its own 3 documents')
+  -- 4, not 3: three business-owned plus the unrouted one, which practice staff
+  -- must see precisely because routing it is their job (issue #17).
+  SELECT assert_eq(count(*), 4, 'practice A sees its own 3 documents + 1 unrouted')
     FROM documents WHERE id LIKE 't\_%';
   SELECT assert_eq(count(*), 0, 'practice A sees no practice B documents')
     FROM documents WHERE id LIKE 't\_%' AND business_id = 't_biz_b1';
@@ -148,6 +165,61 @@ BEGIN;
     FROM documents WHERE id = 't_doc_a1_2';
   SELECT assert_eq(count(*), 0, 'delegated session cannot see any business row')
     FROM businesses WHERE id LIKE 't\_%';
+COMMIT;
+
+-- === 5b. UNROUTED documents: practice-anchored, not business-anchored ======
+-- Issue #17. These four assertions are the whole reason business_id became
+-- nullable, and the extraction one is the reason all five child policies had to
+-- change with it — a miss there would have hidden the children of every
+-- unrouted document from the only people who can route them.
+BEGIN;
+  SET LOCAL ROLE nt_app;
+  SET LOCAL app.actor_id = 't_user_a';
+  SET LOCAL app.practice_id = 't_prac_a';
+  SET LOCAL app.session_scope = 'user';
+
+  SELECT assert_eq(count(*), 1, 'practice A sees its unrouted document')
+    FROM documents WHERE id = 't_doc_unrouted';
+  SELECT assert_eq(count(*), 1, 'practice A sees the unrouted document''s extraction')
+    FROM extractions WHERE id = 't_ext_unrouted';
+COMMIT;
+
+BEGIN;
+  SET LOCAL ROLE nt_app;
+  SET LOCAL app.actor_id = 't_user_b';
+  SET LOCAL app.practice_id = 't_prac_b';
+  SET LOCAL app.session_scope = 'user';
+
+  SELECT assert_eq(count(*), 0, 'practice B cannot see practice A''s unrouted document')
+    FROM documents WHERE id = 't_doc_unrouted';
+  SELECT assert_eq(count(*), 0, 'practice B cannot see its extraction either')
+    FROM extractions WHERE id = 't_ext_unrouted';
+COMMIT;
+
+-- A client user is scoped to a business. An unrouted document has none, so it
+-- must NOT leak to them — routing is practice staff's job, and a document from
+-- an unidentified sender may belong to any client or none.
+BEGIN;
+  SET LOCAL ROLE nt_app;
+  SET LOCAL app.actor_id = 't_user_client';
+  SET LOCAL app.business_id = 't_biz_a1';
+  SET LOCAL app.session_scope = 'user';
+
+  SELECT assert_eq(count(*), 0, 'a client user cannot see an unrouted document')
+    FROM documents WHERE id = 't_doc_unrouted';
+COMMIT;
+
+-- A delegated OTP link must not reach an unrouted document even if the id is
+-- guessed into the grant: the practice branch requires session_scope = 'user'.
+BEGIN;
+  SET LOCAL ROLE nt_app;
+  SET LOCAL app.actor_id = 't_user_client';
+  SET LOCAL app.practice_id = 't_prac_a';
+  SET LOCAL app.session_scope = 'delegated_upload';
+  SET LOCAL app.granted_item_ids = 't_doc_unrouted';
+
+  SELECT assert_eq(count(*), 0, 'a delegated session cannot reach an unrouted document')
+    FROM documents WHERE id = 't_doc_unrouted';
 COMMIT;
 
 -- === 6. no context means no rows (global, not scoped) ======================

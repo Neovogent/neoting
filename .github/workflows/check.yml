@@ -69,12 +69,19 @@ permissions:
   contents: read
 
 env:
-  # Same connection string as .env.example, character for character. CI has no
+  # Same connection strings as .env.example, character for character. CI has no
   # native Postgres competing for 5432, so 5433 is not forced here — it is
   # chosen, so that the string you debug locally is the string that ran in CI.
   # One fewer difference between the environment that failed and the one you
   # are looking at.
-  DATABASE_URL: postgresql://neoting:neoting@localhost:5433/neoting?schema=public
+  #
+  # TWO URLS, and the split is the tenancy guarantee (issue #17). `neoting` owns
+  # the schema and is a superuser, so an application connected as it bypasses RLS
+  # entirely — even with FORCE ROW LEVEL SECURITY — and every policy in
+  # prisma/sql/rls.sql becomes decorative. CI must run the application half as
+  # the role production uses, or the isolation tests here prove nothing.
+  DATABASE_URL: postgresql://nt_app:nt_app_local@localhost:5433/neoting?schema=public
+  DIRECT_URL: postgresql://neoting:neoting@localhost:5433/neoting?schema=public
   REDIS_URL: redis://localhost:6379
   TZ: Europe/London
 
@@ -358,6 +365,15 @@ jobs:
       - name: 1 · pnpm install --frozen-lockfile
         run: pnpm install --frozen-lockfile
 
+      # The Prisma client is GENERATED code that is not committed, and stage 2
+      # typechecks against it — `@prisma/client` exports nothing until this runs,
+      # so without it typecheck fails with "has no exported member 'PrismaClient'"
+      # and reads like a broken import rather than a missing build step. It runs
+      # again before the migration; generating twice costs a second and is
+      # cheaper than the ordering being implicit.
+      - name: 1a · prisma generate (typecheck depends on generated types)
+        run: pnpm --filter @neoting/api exec prisma generate
+
       # The PR title becomes the squash commit (G4), so it is the thing that
       # must be a valid conventional commit — not the individual commits.
       - name: 1b · commitlint (PR title)
@@ -392,15 +408,6 @@ jobs:
         run: |
           echo "::warning title=Stage 3 incomplete::No ESLint config exists, so none of a11y / i18n-literal / money-type / module-boundary / unscoped-query (§14.3) is enforced. The unscoped-query rule is the one that backs the tenancy guarantee (§5.2) — until it exists, scopedDb discipline is review-only."
 
-      # ---- 4 · test (unit + integration) ----------------------------------
-      - name: 4 · pnpm test
-        if: ${{ needs.readiness.outputs.test == 'yes' }}
-        run: bash "$RUNNER_TEMP/stage.sh" test
-
-      - name: 4 · test — NOT IMPLEMENTED (no package has a real test script)
-        if: ${{ needs.readiness.outputs.test != 'yes' }}
-        run: echo "::warning title=Stage 4 skipped::Every test script is an S0 placeholder. No unit or integration test ran. The only real assertion in this stage today is the SQL tenancy check below."
-
       # These three ARE real, today, and they block. `migrate deploy` is the
       # only migration command allowed off a laptop (§5.3); the seed is what
       # keeps a fresh clone honest (§8.6), so a broken seed must break CI, not
@@ -413,6 +420,18 @@ jobs:
           pnpm --filter @neoting/api exec prisma generate
           pnpm --filter @neoting/api exec prisma migrate deploy
 
+      # The application's role, created AFTER the schema exists so the grants
+      # have tables to attach to. `migrate deploy` connects on DIRECT_URL (the
+      # owner); everything the application does connects on DATABASE_URL as this
+      # role, which is not the owner, not a superuser, and has no BYPASSRLS.
+      # Without this step the test stage cannot connect at all — which is the
+      # correct failure, and far better than connecting as a superuser and
+      # reporting green while every policy sits unused.
+      - name: 4a2 · create the application role (nt_app)
+        run: |
+          docker exec -i ${{ job.services.postgres.id }} \
+            psql -U neoting -d neoting -v ON_ERROR_STOP=1 -q < prisma/sql/app-role.sql
+
       - name: 4b · seed
         run: pnpm --filter @neoting/api exec prisma db seed
 
@@ -423,6 +442,15 @@ jobs:
         run: |
           docker exec -i ${{ job.services.postgres.id }} \
             psql -U neoting -d neoting -v ON_ERROR_STOP=1 -q < prisma/sql/tenancy-check.sql
+
+      # ---- 4 · test (unit + integration) ----------------------------------
+      - name: 4 · pnpm test
+        if: ${{ needs.readiness.outputs.test == 'yes' }}
+        run: bash "$RUNNER_TEMP/stage.sh" test
+
+      - name: 4 · test — NOT IMPLEMENTED (no package has a real test script)
+        if: ${{ needs.readiness.outputs.test != 'yes' }}
+        run: echo "::warning title=Stage 4 skipped::Every test script is an S0 placeholder. No unit or integration test ran. The only real assertion in this stage today is the SQL tenancy check below."
 
       # ---- 5 · build ------------------------------------------------------
       - name: 5 · pnpm build
