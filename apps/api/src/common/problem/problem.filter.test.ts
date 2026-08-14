@@ -32,10 +32,11 @@ test('an AppException renders its own NT- code, status and a traceId', () => {
 
 test('an unknown error becomes a 500 NT-SRV-001 and leaks no internal detail', () => {
   const { host, sent } = harness();
-  new ProblemFilter().catch(new Error('boom: secret=hunter2'), host);
+  const internalMarker = 'internal-detail-must-not-leak';
+  new ProblemFilter().catch(new Error(`boom: ${internalMarker}`), host);
   expect(sent.status).toBe(500);
   expect((sent.body as { code: string }).code).toBe('NT-SRV-001');
-  expect(JSON.stringify(sent.body)).not.toContain('hunter2');
+  expect(JSON.stringify(sent.body)).not.toContain(internalMarker);
 });
 
 test('a framework HttpException maps to a code by status', () => {
