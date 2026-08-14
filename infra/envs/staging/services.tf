@@ -318,6 +318,14 @@ resource "aws_ecs_task_definition" "workers" {
       image     = "${aws_ecr_repository.this["workers"].repository_url}:${local.image_tag}"
       essential = true
 
+      # ⚠ REQUIRED, not decoration. api and workers ship the SAME image
+      # (apps/api/Dockerfile — one build, one digest, so the migration that ran
+      # and the code that runs are provably the same commit). That image's CMD
+      # starts the API, so a workers container with no `command` would come up
+      # as a second, load-balancer-less copy of the API: healthy-looking,
+      # consuming nothing, and the queue would just grow.
+      command = ["node", "apps/api/dist/worker/main.js"]
+
       # No portMappings: BullMQ consumers pull from Redis. Nothing dials in,
       # and the app security group has no inbound rule that would let it.
 

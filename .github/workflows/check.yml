@@ -178,19 +178,35 @@ jobs:
 
           # ------------------------------------------------------------------
           # Stage 9 is the ONE hand-set guard: no probe can detect "the deploy
-          # target exists". Flip this to true when ALL of the following are
-          # true, and not one of them before:
-          #   · Dockerfiles exist for api / web / workers (none in the repo today)
-          #   · ECS services + task definitions exist (compute.tf ships the
-          #     cluster, ECR repos and log groups only — services land in S4)
-          #   · an ALB + ACM cert front the cluster (not yet written)
-          #   · `prisma migrate deploy` has a route to RDS. It does NOT from a
-          #     GitHub runner: the database sits in the data subnets with no
-          #     internet route (network.tf) and its SG admits only the app SG.
-          #     The migration must run as a one-off `aws ecs run-task` inside
-          #     the VPC. Do not "fix" this by making RDS publicly accessible.
+          # target exists".
+          #
+          # FLIPPED TO yes ON 14 AUG 2026, and only the api half is behind it.
+          # What the flip list asked for, and where each item now stands:
+          #   1. Dockerfile — apps/api/Dockerfile, one image for api + workers
+          #      + migrate. Built and run on both amd64 and arm64 before merge.
+          #      (apps/web is NOT containerised: Vercel owns it per G6.)
+          #   2. ECS task definitions + services — services.tf, live since
+          #      13 Aug, both at desired_count 0 awaiting an image.
+          #   3. ALB + ACM — alb.tf / edge.tf, live. api.neoting.neovogent.com
+          #      resolves through CloudFront to the ALB today (503, no tasks).
+          #   4. A route from the migration runner to RDS — still absent, and
+          #      still must not be created by opening RDS to the internet. The
+          #      `nt-staging-migrate` task definition exists for exactly this,
+          #      but the container is handed DATABASE_HOST/PORT/NAME plus
+          #      DB_MIGRATOR_* and Prisma wants DATABASE_URL/DIRECT_URL. Until
+          #      something composes them, `ecs run-task` would fail on a
+          #      missing env var. THE DEPLOY BELOW THEREFORE RUNS NO MIGRATION
+          #      and says so on every run.
+          #   5. A health signal to roll back on — the api target group probes
+          #      /healthz and both services carry deployment_circuit_breaker
+          #      with rollback = true (services.tf). ECS owns the rollback.
+          #
+          # STILL NOT DEPLOYED, deliberately, and each has a stated reason the
+          # deploy job repeats in its summary: the workers service (its
+          # REDIS_URL is not composed from the injected auth token, so it would
+          # spin against localhost) and the migration (item 4).
           # ------------------------------------------------------------------
-          deploy=no
+          deploy=yes
 
           # Evals are REQUIRED when extraction, prompts, models, routing,
           # thresholds or packages/component-grammar changed (§14.7). Widen the
@@ -236,7 +252,7 @@ jobs:
             echo "| 6 | test:e2e (+ axe, tenancy suite) | $n_e2e package(s) | $([ "$n_e2e" -gt 0 ] && echo '**runs**' || echo '**NOT IMPLEMENTED — SKIPPED**') |"
             echo "| 7 | test:eval | $n_eval package(s) | $([ "$n_eval" -gt 0 ] && echo '**runs**' || echo '**NOT IMPLEMENTED — SKIPPED**') (required by this diff: $eval_required) |"
             echo "| 8 | security (audit + secret scan) | n/a | **runs** |"
-            echo "| 9 | deploy | n/a | $([ "$deploy" = yes ] && echo '**runs**' || echo '**NOT IMPLEMENTED — SKIPPED**') |"
+            echo "| 9 | deploy | n/a | $([ "$deploy" = yes ] && echo '**runs — api only; no migration, no workers**' || echo '**NOT IMPLEMENTED — SKIPPED**') |"
             echo
             echo "A stage marked NOT IMPLEMENTED did **not** run and proves nothing."
             echo "It turns itself on the moment a workspace package defines the script"
@@ -249,7 +265,11 @@ jobs:
           [ "$n_e2e" -gt 0 ]   || echo "::warning title=Stage 6 not implemented::No \`test:e2e\` script exists — the blocking tenancy suite and axe checks (§14.6, §15.3, §15.4) are not running in CI."
           [ "$n_eval" -gt 0 ]  || echo "::warning title=Stage 7 not implemented::No \`test:eval\` script exists — extraction thresholds and the adversarial injection corpus (§15.5) are not gating merges."
           [ "$lint_rules" = yes ] || echo "::warning title=Stage 3 incomplete::No ESLint config in the repo — a11y, i18n-literal, money-type, module-boundary and unscoped-query (§14.3) are unenforced."
-          [ "$deploy" = yes ]  || echo "::warning title=Stage 9 not implemented::No deploy path exists yet (no Dockerfiles, no ECS services, no route from a runner to RDS). See the DEPLOY_READY block in check.yml."
+          if [ "$deploy" = yes ]; then
+            echo "::warning title=Stage 9 is partial::The staging deploy ships the api only. No database migration runs (nothing composes DATABASE_URL/DIRECT_URL for the migrate task) and the workers service stays at 0 (nothing composes REDIS_URL from the injected auth token). Both are stated on the deploy job."
+          else
+            echo "::warning title=Stage 9 not implemented::No deploy path exists yet. See the DEPLOY_READY block in check.yml."
+          fi
 
   # =========================================================================
   # 1-5 · install → typecheck → lint → test → build.
@@ -702,21 +722,31 @@ jobs:
   # comments the URL. It is not a GitHub Actions job and duplicating it here
   # would give us two deploy paths to keep in step.
   #
-  # WHAT IS MISSING, precisely — this is the flip list for DEPLOY_READY in the
-  # readiness job:
-  #   1. Dockerfiles for api / web / workers. None exist in the repo.
-  #   2. ECS task definitions + services. compute.tf ships the cluster, the
-  #      three ECR repos and the log groups; services land with the app (S4).
-  #   3. An ALB + ACM certificate. Not written yet — the alb security group in
-  #      network.tf is waiting for one.
-  #   4. A route from the migration runner to RDS. A GitHub runner has none and
-  #      must not be given one: RDS sits in data subnets with no internet route
-  #      and an SG that admits only the app SG. `prisma migrate deploy` runs as
-  #      a one-off `aws ecs run-task` inside the VPC, using the nt-staging-app
-  #      task role. Never by opening the database to the internet.
-  #   5. A health signal to roll back ON. §16 wants auto-rollback on health
-  #      regression; with no ALB target group and no alarms there is nothing to
-  #      watch, and "deploy then hope" is not a pipeline.
+  # WHAT THIS DEPLOYS: the api service, and nothing else. The scope is narrow
+  # on purpose and the two exclusions are not oversights:
+  #
+  #   · NO MIGRATION. The `nt-staging-migrate` task definition exists and is
+  #     the right mechanism (a one-off `ecs run-task` inside the VPC — a
+  #     GitHub runner has no route to RDS and must never be given one). But it
+  #     receives DATABASE_HOST/PORT/NAME and DB_MIGRATOR_USER/PASSWORD, while
+  #     Prisma reads DATABASE_URL and DIRECT_URL. Nothing composes one from
+  #     the other yet, so `run-task` would fail on a missing env var. Running
+  #     it is the next PR. Nothing deployed here touches the database: the api
+  #     serves /healthz, /readyz and the WhatsApp webhook, none of which open
+  #     a Prisma client.
+  #   · NO WORKERS. Same shape of gap on the other dependency: the task gets
+  #     REDIS_HOST/PORT/TLS and a REDIS_AUTH_TOKEN secret, and the app reads
+  #     REDIS_URL — which defaults to redis://localhost:6379. A workers task
+  #     would come up and reconnect-loop against itself forever. Better at 0
+  #     than pretending.
+  #
+  # CONSEQUENCE, SAID PLAINLY: after this deploy, a real WhatsApp message
+  # reaching the deployed api is signature-verified and then enqueued to the
+  # in-memory fixture queue (INGEST_QUEUE defaults to `fixture` and the task
+  # definition does not override it), where it is dropped. The endpoint being
+  # up is what this buys — a stable callback URL that does not die with a
+  # cloudflared tunnel (docs/runbooks/whatsapp-sandbox.md, trap 4). It is not
+  # a working ingest lane, and the summary at the end of this job says so.
   #
   # Production promote (§14.9 "one-click promote") is a GitHub Environment with
   # required reviewers — adding a reviewer to the `production` environment
@@ -725,11 +755,28 @@ jobs:
   # which is why rollback is code-only (§16) and never a reversed migration.
   # =========================================================================
   deploy:
-    name: ${{ needs.readiness.outputs.deploy == 'yes' && '9 · deploy' || '9 · deploy — NOT IMPLEMENTED (skipped)' }}
+    name: ${{ needs.readiness.outputs.deploy == 'yes' && '9 · deploy (api only)' || '9 · deploy — NOT IMPLEMENTED (skipped)' }}
     needs: [readiness, verify, e2e, security]
-    if: ${{ needs.readiness.outputs.deploy == 'yes' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+    # ⚠ THE UPSTREAM RESULTS ARE CHECKED BY HAND HERE, AND THEY HAVE TO BE.
+    # A job with `needs` normally carries an implicit `if: success()`. Writing
+    # any `if:` REPLACES that implicit condition — so the obvious form,
+    # `if: deploy == 'yes' && github.ref == ...`, would deploy a commit whose
+    # build or security stage had just failed. Naming each result is what keeps
+    # "main is always deployable" (§14) from meaning "main is always deployed".
+    #
+    # e2e is `!= 'failure'` rather than `== 'success'` because it is legitimately
+    # SKIPPED today (no test:e2e suite exists — stage 6). The day it becomes
+    # real, a failing e2e blocks the deploy without touching this line.
+    if: >-
+      ${{ needs.readiness.outputs.deploy == 'yes'
+          && github.event_name == 'push'
+          && github.ref == 'refs/heads/main'
+          && needs.verify.result == 'success'
+          && needs.security.result == 'success'
+          && needs.e2e.result != 'failure' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     # Named here so the environment's protection rules (required reviewers,
     # deployment branch policy) become the gate the moment someone sets them.
@@ -739,10 +786,147 @@ jobs:
       contents: read
       id-token: write # OIDC only. There are no static AWS keys in this repo.
 
+    env:
+      AWS_REGION: eu-west-2
+      CLUSTER: nt-staging
+      SERVICE: nt-staging-api
+      TASK_FAMILY: nt-staging-api
+      EDGE_HOST: api.neoting.neovogent.com
+
     steps:
-      - run: |
-          echo "::error title=Deploy stage enabled with nothing behind it::DEPLOY_READY was flipped but the deploy steps have not been written. See the flip list in the stage 9 comment block."
+      - uses: actions/checkout@v4
+
+      # Trusted for exactly one subject — refs/heads/main — in the role's own
+      # trust policy (infra/envs/staging/main.tf). The `if:` above is a
+      # convenience; that condition is the security boundary.
+      - name: Assume the staging deploy role (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::252959251643:role/nt-staging-ci-deploy
+          role-session-name: gha-deploy-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # The task definitions pin ARM64 (Graviton, ~20% cheaper — services.tf).
+      # GitHub-hosted arm64 runners are not available on this org's plan, so
+      # the build is emulated. Measured at ~6 minutes: sharp resolves a
+      # PREBUILT @img/sharp-linux-arm64, so QEMU is paying for I/O, not for
+      # compiling a native module. If that ever changes, the sanctioned
+      # fallback is flipping cpu_architecture to X86_64 in services.tf — the
+      # comment there costs it at a few dollars a month.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v3
+
+      # ONE build, pushed to TWO repositories. api and workers share an image
+      # by design (apps/api/Dockerfile); services.tf points the workers task
+      # definition at nt/workers, so the tag has to exist in both. Same
+      # content, same digest, no second build.
+      #
+      # The tag is the commit SHA because ECR tags are IMMUTABLE (compute.tf) —
+      # a tag can therefore never move under a running task, and "which commit
+      # is in staging" is answerable from the task definition alone.
+      - name: Build and push the api image (linux/arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/arm64
+          provenance: false # keeps a single-arch manifest ECS can pull directly
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/nt/api:${{ github.sha }}
+            ${{ steps.ecr.outputs.registry }}/nt/workers:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Read the live definition rather than rendering one from scratch: it is
+      # the only source that already carries the secrets, roles, log config and
+      # environment Terraform put there. Rendering here would mean maintaining
+      # the same container definition in two places, and they would drift.
+      - name: Register a task definition revision pinned to this commit
+        id: taskdef
+        run: |
+          set -euo pipefail
+          aws ecs describe-task-definition --task-definition "$TASK_FAMILY" \
+            --query taskDefinition > live.json
+
+          # Strip the server-populated fields register-task-definition rejects.
+          jq --arg image "${{ steps.ecr.outputs.registry }}/nt/api:${{ github.sha }}" '
+            .containerDefinitions |= map(if .name == "api" then .image = $image else . end)
+            | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                  .compatibilities, .registeredAt, .registeredBy)
+          ' live.json > next.json
+
+          arn=$(aws ecs register-task-definition --cli-input-json file://next.json \
+                  --query taskDefinition.taskDefinitionArn --output text)
+          echo "arn=$arn" >> "$GITHUB_OUTPUT"
+          echo "registered $arn"
+
+      # desired_count is in ignore_changes on the service (services.tf) because
+      # CI owns it. It is 0 until the first image exists, so the first deploy
+      # has to raise it — but every deploy after this must NOT, or this step
+      # would stamp on autoscaling the day it lands.
+      - name: Deploy
+        run: |
+          set -euo pipefail
+          current=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+                      --query 'services[0].desiredCount' --output text)
+          echo "current desired count: $current"
+
+          if [ "$current" = "0" ]; then
+            echo "first deploy — raising desired count to 2 (services.tf sizes api at 2 tasks)"
+            aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
+              --task-definition "${{ steps.taskdef.outputs.arn }}" \
+              --desired-count 2 --no-cli-pager > /dev/null
+          else
+            aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
+              --task-definition "${{ steps.taskdef.outputs.arn }}" --no-cli-pager > /dev/null
+          fi
+
+      # The circuit breaker (services.tf) rolls back on its own if the tasks
+      # cannot pass the target-group health check. This wait is what turns that
+      # rollback into a RED pipeline instead of a green one in front of a
+      # silently reverted service.
+      - name: Wait for the service to reach steady state
+        run: aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
+
+      # Through CloudFront, not the ALB: the HTTPS listener's default action is
+      # a 403 and only the origin-verified rule passes traffic (alb.tf), so
+      # hitting the ALB directly proves nothing. This asserts the whole edge
+      # path — DNS, CloudFront, WAF, ALB, target group, container.
+      - name: Post-deploy check — /healthz through the edge
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 10); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "https://$EDGE_HOST/healthz" || true)
+            echo "attempt $attempt: $code"
+            [ "$code" = "200" ] && exit 0
+            sleep 10
+          done
+          echo "::error title=Deployed but not serving::https://$EDGE_HOST/healthz did not return 200 within 100s. ECS reported steady state, so look at CloudFront, WAF and the ALB origin-verify rule before the container."
           exit 1
+
+      - name: Say what was NOT deployed
+        if: ${{ always() }}
+        run: |
+          {
+            echo "### Stage 9 — deployed, partially"
+            echo
+            echo "- **api** → \`${{ github.sha }}\`, live at https://$EDGE_HOST"
+            echo "- **workers** — NOT started. Nothing composes \`REDIS_URL\` from the injected"
+            echo "  \`REDIS_AUTH_TOKEN\`, so a task would reconnect-loop against localhost."
+            echo "- **migrations** — NOT run. The migrate task definition exists but Prisma needs"
+            echo "  \`DATABASE_URL\`/\`DIRECT_URL\` and the task is given host/port/name/credentials."
+            echo
+            echo "The staging database schema is therefore whatever the last manual apply left."
+            echo "A WhatsApp message to the deployed api verifies and then lands in the in-memory"
+            echo "fixture queue — the callback URL is stable, the ingest lane is not yet real."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # =========================================================================
   # THE GATE. Branch protection requires the status check named `check` and
