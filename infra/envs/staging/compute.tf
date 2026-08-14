@@ -94,16 +94,38 @@ resource "aws_iam_role_policy" "ecs_execution_secrets" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid      = "ReadServiceSecrets"
-        Effect   = "Allow"
-        Action   = ["secretsmanager:GetSecretValue"]
-        Resource = [module.data.redis_secret_arn, module.data.db_master_user_secret_arn]
+        Sid    = "ReadServiceSecrets"
+        Effect = "Allow"
+        Action = ["secretsmanager:GetSecretValue"]
+        Resource = [
+          module.data.redis_secret_arn,
+          module.data.db_master_user_secret_arn,
+          # The Meta webhook pair (services.tf `injected_secrets`). services.tf
+          # warns that adding an entry there without its ARN here makes EVERY
+          # task fail at start with ResourceInitializationError — which reads
+          # like a broken image and is not. This is that ARN.
+          aws_secretsmanager_secret.app["whatsapp"].arn,
+        ]
       },
       {
-        Sid      = "DecryptForImagePullAndSecrets"
-        Effect   = "Allow"
-        Action   = ["kms:Decrypt"]
-        Resource = module.storage.kms_key_arn
+        Sid    = "DecryptForImagePullAndSecrets"
+        Effect = "Allow"
+        Action = ["kms:Decrypt"]
+        Resource = [
+          module.storage.kms_key_arn,
+          # ⚠ THE SECOND KEY IS NOT OPTIONAL AND IS EASY TO MISS. The vendor
+          # secrets in secrets.tf are encrypted with a DEDICATED CMK
+          # (`aws_kms_key.secrets`, alias/nt-staging-secrets), not the documents
+          # key. Granting GetSecretValue without Decrypt on that key fails at
+          # task start with an AccessDeniedException naming KMS, not Secrets
+          # Manager, so the obvious next move is to widen the wrong policy.
+          #
+          # The redis and RDS-managed secrets above did not need this because
+          # they sit under an AWS-managed key the execution role can already use
+          # — which is exactly why the omission survived until the first
+          # customer-managed secret was injected.
+          aws_kms_key.secrets.arn,
+        ]
       }
     ]
   })

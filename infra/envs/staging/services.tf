@@ -91,6 +91,22 @@ locals {
   # ------------------------------------------------------------------------
   injected_secrets = [
     { name = "REDIS_AUTH_TOKEN", valueFrom = "${module.data.redis_secret_arn}:auth_token::" },
+
+    # The Meta webhook pair. WITHOUT THESE THE DEPLOYED ENDPOINT IS UNUSABLE
+    # AS A CALLBACK, and it does not look broken — `config/env.ts` defaults both
+    # to an empty string and every check then fails CLOSED, exactly as designed:
+    # Meta's GET handshake gets 403 NT-INT-002 and a signed POST gets 401.
+    # Measured against the deployed task on 15 Aug 2026 before this landed.
+    #
+    # That is the whole point of deploying the api at all (issue #25): a stable
+    # callback URL that does not die with a cloudflared tunnel. The URL existed
+    # and could not be verified, which is the least useful state to stop in.
+    #
+    # The names are the ones env.ts reads; the JSON keys they select are the
+    # ones secrets.tf writes. Those two differ and both are load-bearing —
+    # `META_APP_SECRET` ← `app_secret`, `META_VERIFY_TOKEN` ← `verify_token`.
+    { name = "META_APP_SECRET", valueFrom = "${aws_secretsmanager_secret.app["whatsapp"].arn}:app_secret::" },
+    { name = "META_VERIFY_TOKEN", valueFrom = "${aws_secretsmanager_secret.app["whatsapp"].arn}:verify_token::" },
   ]
 
   # ⚠ THE RDS MASTER CREDENTIAL GOES TO THE MIGRATION TASK AND NOWHERE ELSE.
