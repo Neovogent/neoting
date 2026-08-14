@@ -126,10 +126,29 @@ Implemented and unit-tested (24 tests green):
   `Rejection { kind, NT-ING code, plain-English message }` for every refusal —
   nothing fails silently; password-protected files rejected visibly.
 
-BOOTSTRAP shims (need a dependency — awaiting Shakib, see issue):
-- Image normaliser (EXIF strip + HEIC→JPEG) — identity passthrough for now.
+**Image normalisation is real** (#21, #23). `createSharpImageNormaliser` applies
+and strips EXIF, decodes HEIC via `heic-decode` (WASM libheif — sharp's prebuilt
+binaries carry no HEIF, because that needs x265 and x265 is GPL), and re-encodes
+to JPEG. Selected by `IMAGE_NORMALISER=fixture|sharp`, config not import, so unit
+tests keep running on hand-built magic-byte stubs that a real decoder would
+rightly refuse.
+
+Two things worth knowing before changing it:
+
+- **`normalise` returns a result, not a Buffer.** Images are the one input we
+  *decode*, and a 200 KB file can describe a 40,000 × 40,000 surface — 6.4 GB of
+  RGBA. The channel byte cap cannot see that, so normalisation has to be able to
+  refuse. `decode.all` is used for HEIC precisely because it exposes dimensions
+  *before* producing pixels; `decode` would allocate first and let us measure
+  afterwards, which is not a check.
+- **The fixture refuses HEIC on purpose.** It cannot decode one, and passing it
+  through was the original bug — the file sailed through sanitisation and failed
+  in extraction looking corrupt, so the accountant was told the wrong thing about
+  a photo that was fine.
+
+BOOTSTRAP shim still standing (dep approved on #7, work tracked in #22):
 - PDF/Office guard — only the dep-free encrypted-PDF (`/Encrypt`) check is live;
-  JS-flatten, embedded-file detach, encrypted-Office detection are dep-gated.
+  JS-flatten, embedded-file detach, encrypted-Office detection await `qpdf`.
 
 Toolchain: **stood up in issue #9** — real `typecheck` (tsc, Bundler
 resolution), `lint` (eslint, `no-explicit-any`), `test` (Vitest). The 24

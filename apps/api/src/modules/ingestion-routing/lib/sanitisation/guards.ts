@@ -12,10 +12,25 @@
  */
 
 import type { AcceptedFormat } from './formats.js';
+import { reject, type Rejection } from './reasons.js';
+
+/**
+ * Normalisation can REFUSE, not only transform.
+ *
+ * An image is the one input we decode rather than merely inspect, and decoding
+ * is where the expensive failures live: a 200 KB HEIC or PNG can describe a
+ * 40,000 × 40,000 surface, which the channel byte cap cannot see because
+ * compressed size says nothing about decoded size. A normaliser that could only
+ * return a Buffer would have to throw or die for those, and both surface to the
+ * submitter as "something went wrong" — which SoT §4 Stage 1 forbids.
+ */
+export type NormaliseResult =
+  | { readonly ok: true; readonly bytes: Buffer }
+  | { readonly ok: false; readonly rejection: Rejection };
 
 export interface ImageNormaliser {
-  /** Return normalised bytes (EXIF-corrected, HEIC→JPEG). Order-preserving. */
-  normalise(bytes: Buffer, format: AcceptedFormat): Promise<Buffer>;
+  /** Normalised bytes (EXIF-corrected, HEIC→JPEG), or a visible refusal. */
+  normalise(bytes: Buffer, format: AcceptedFormat): Promise<NormaliseResult>;
 }
 
 export interface DocumentGuardVerdict {
@@ -27,13 +42,34 @@ export interface DocumentGuard {
 }
 
 /**
- * BOOTSTRAP: identity passthrough. Real EXIF stripping and HEIC→JPEG need
- * sharp/libvips — a dependency awaiting approval.
- * TODO(#7): replace with the sharp-backed normaliser.
+ * BOOTSTRAP normaliser: passes ordinary images through untouched, and REFUSES
+ * HEIC with a reason the sender can act on.
+ *
+ * The refusal is the point (issue #21). HEIC used to pass through here silently
+ * and then fail in extraction looking like a corrupt file, so the accountant was
+ * told the wrong thing about a photo that was fine — a silent drop wearing a
+ * different hat, and against this module's first invariant. Refusing it visibly
+ * is worse UX than converting it and strictly better than lying about it.
+ *
+ * Note it is NOT removed from the accepted-format allowlist: `sniff` must keep
+ * recognising HEIC, or the file falls through to "we cannot accept this type"
+ * and the sender loses the one instruction that actually fixes their problem.
+ *
+ * EXIF stripping is still absent — that lands with sharp (#23), and this whole
+ * implementation is deleted in the same PR.
  */
 export const bootstrapImageNormaliser: ImageNormaliser = {
-  async normalise(bytes: Buffer): Promise<Buffer> {
-    return bytes;
+  async normalise(bytes: Buffer, format: AcceptedFormat): Promise<NormaliseResult> {
+    if (format === 'heic') {
+      return {
+        ok: false,
+        rejection: reject(
+          'format_not_processable',
+          'We cannot read HEIC photos yet. On an iPhone, please resend the photo as a JPEG — or set Camera > Formats to "Most Compatible" and take it again.',
+        ),
+      };
+    }
+    return { ok: true, bytes };
   },
 };
 

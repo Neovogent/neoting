@@ -16,6 +16,7 @@ export type RejectionKind =
   | 'type_not_allowed' // real type is not on the accepted allowlist
   | 'magic_byte_mismatch' // bytes contradict the declared extension/type
   | 'password_protected' // encrypted PDF / Office doc — cannot be processed
+  | 'format_not_processable' // a format we accept in principle but cannot process yet
   | 'virus_detected' // the scan hook flagged it
   | 'zip_depth_exceeded' // nested-archive depth over cap
   | 'zip_total_size_exceeded' // decompressed-size explosion over cap
@@ -39,6 +40,11 @@ const CODE_BY_KIND: Readonly<Record<RejectionKind, IngestCode>> = {
   type_not_allowed: 'NT-ING-002',
   magic_byte_mismatch: 'NT-ING-004',
   password_protected: 'NT-ING-004',
+  // NT-ING-002 ("type not allowed") rather than a new wire code: from the
+  // submitter's side the outcome is identical — this file cannot be used, send a
+  // different one — and the codes are LAW (G7), so inventing one for a state we
+  // intend to delete would be a contract change with a short life.
+  format_not_processable: 'NT-ING-002',
   virus_detected: 'NT-ING-004',
   zip_depth_exceeded: 'NT-ING-004',
   zip_total_size_exceeded: 'NT-ING-004',

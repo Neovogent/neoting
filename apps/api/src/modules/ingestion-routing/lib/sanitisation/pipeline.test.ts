@@ -99,3 +99,42 @@ test('an injected scanner failure is surfaced as a virus rejection', async () =>
   expect(r.ok).toBe(false);
   if (!r.ok) expect(r.rejection.detail?.signature).toBe('Test.Injected');
 });
+
+/** A minimal HEIC: ISO-BMFF box with `ftyp` at offset 4 and a HEIC brand at 8. */
+function heic(): Buffer {
+  const header = Buffer.alloc(16);
+  header.writeUInt32BE(16, 0); // box size
+  header.write('ftyp', 4, 'latin1');
+  header.write('heic', 8, 'latin1'); // major brand
+  header.write('mif1', 12, 'latin1');
+  return Buffer.concat([header, Buffer.from('heic-payload')]);
+}
+
+test('a HEIC photo is refused with an actionable reason, not passed through (#21)', async () => {
+  const r = await sanitise({ bytes: heic(), filename: 'IMG_4021.HEIC', channel: 'client' });
+
+  // The whole point: it used to be ACCEPTED here and then fail in extraction
+  // looking like a corrupt file, which told the accountant the wrong thing.
+  expect(r.ok).toBe(false);
+  if (!r.ok) {
+    expect(r.rejection.kind).toBe('format_not_processable');
+    expect(r.rejection.code).toBe('NT-ING-002');
+    // The message has to tell a non-technical sender what to actually do.
+    expect(r.rejection.message).toMatch(/JPEG/i);
+  }
+});
+
+test('HEIC is still SNIFFED as heic, so the refusal can name the fix', async () => {
+  // If HEIC were simply dropped from the allowlist, this file would be refused
+  // as "a type we cannot accept" and the sender would lose the one instruction
+  // that solves their problem. Detection and processability are different things.
+  const r = await sanitise({ bytes: heic(), filename: 'IMG_4021.HEIC', channel: 'client' });
+  expect(r.ok).toBe(false);
+  if (!r.ok) expect(r.rejection.message).not.toMatch(/not one we can accept/i);
+});
+
+test('an ordinary image is still passed through untouched', async () => {
+  const r = await sanitise({ bytes: png(), filename: 'receipt.png', channel: 'client' });
+  expect(r.ok).toBe(true);
+  if (r.ok) expect(r.document.bytes.equals(png())).toBe(true);
+});
