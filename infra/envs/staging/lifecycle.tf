@@ -100,6 +100,28 @@ resource "aws_s3_bucket_lifecycle_configuration" "receipts" {
       noncurrent_days = 7
     }
   }
+
+  # DMARC aggregate reports (email.tf). Longer than raw inbound mail on purpose:
+  # these exist to answer "are reports clean enough to move to p=quarantine",
+  # and that judgement wants a run of weeks, not days. A prefix with no rule at
+  # all would accumulate forever, which is how a transient bucket becomes a
+  # permanent one.
+  rule {
+    id     = "expire-dmarc-reports"
+    status = "Enabled"
+
+    filter {
+      prefix = "dmarc/"
+    }
+
+    expiration {
+      days = 90
+    }
+
+    noncurrent_version_expiration {
+      noncurrent_days = 7
+    }
+  }
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "exports" {
