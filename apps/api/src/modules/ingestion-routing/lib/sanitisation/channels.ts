@@ -5,7 +5,8 @@
  */
 
 export type Channel =
-  | 'client' // chat upload, SMS secure link, WhatsApp intake, email to doc@
+  | 'client' // chat upload, SMS secure link, WhatsApp intake
+  | 'email' // forwarded to doc@ (SES → S3); same 25 MB cap as the client channels
   | 'accountant_upload' // batch / ZIP web upload
   | 'bank_statement' // statements
   | 'vault'; // contracts and long agreements
@@ -20,6 +21,7 @@ const MB = 1024 * 1024;
 
 export const CHANNEL_POLICY: Readonly<Record<Channel, ChannelPolicy>> = {
   client: { maxBytes: 25 * MB },
+  email: { maxBytes: 25 * MB },
   accountant_upload: { maxBytes: 100 * MB },
   bank_statement: { maxBytes: 50 * MB, maxPdfPages: 300 },
   vault: { maxBytes: 100 * MB },
