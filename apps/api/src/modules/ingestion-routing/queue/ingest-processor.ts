@@ -97,7 +97,7 @@ async function handle(payload: IngestJobPayload, deps: ProcessorDeps): Promise<v
     // failure must still detect, and the write is idempotent (ordered pair +
     // unique index). See the module CLAUDE.md for the unrouted decision.
     if (businessId !== null) {
-      const { findings } = await deps.detector.detect({
+      const { findings, candidatesTruncated } = await deps.detector.detect({
         documentId,
         practiceId: payload.practiceId,
         businessId,
@@ -105,6 +105,16 @@ async function handle(payload: IngestJobPayload, deps: ProcessorDeps): Promise<v
         perceptualHash,
       });
       deps.logger.log(`dedupe ${documentId}: ${findings.length} match(es) trace=${payload.traceId}`);
+
+      // A duplicate we declined to look for is still one we missed. The
+      // perceptual scan is capped, so when the cap bites it is said out loud
+      // rather than left to look like a clean run — the module's first
+      // invariant is that nothing is ever silently dropped.
+      if (candidatesTruncated) {
+        deps.logger.warn(
+          `dedupe ${documentId}: perceptual scan hit the candidate cap for business ${businessId} — older images were not compared (trace=${payload.traceId})`,
+        );
+      }
     }
     return;
   }

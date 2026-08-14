@@ -33,7 +33,36 @@ export interface DuplicateFinding {
 
 export interface DuplicateDetectionResult {
   readonly findings: readonly DuplicateFinding[];
+  /**
+   * True when the perceptual candidate scan hit {@link PERCEPTUAL_CANDIDATE_LIMIT}
+   * and older images were therefore NOT compared. The caller must surface this —
+   * a duplicate we declined to look for is still a duplicate we missed, and this
+   * module's first invariant is that nothing is ever silently dropped.
+   */
+  readonly candidatesTruncated: boolean;
 }
+
+/**
+ * How many of a business's past images the perceptual net compares against.
+ *
+ * ⚠ THIS IS A BOUND ON A SCAN, NOT A PAGE SIZE, AND IT CAN COST A MISS.
+ *
+ * Governance §5.1: "never load unbounded relations". A Hamming distance cannot
+ * be answered by a B-tree, so there is no index that narrows this — the query is
+ * a scan of every image the business has ever sent, and it grows forever. At 50
+ * documents per client per month that is fine this year and not fine in three.
+ *
+ * Ordering by `receivedAt desc` is what makes the cap defensible rather than
+ * arbitrary: it is index-backed (`@@index([businessId, receivedAt])`) and
+ * duplicates cluster in time — the same receipt photographed twice arrives
+ * minutes apart, not years. Beyond the cap the result is reported truncated, so
+ * the gap is visible instead of silent.
+ *
+ * The real fix is an index-supported search (hash banding, or a BK-tree) and
+ * that is a `prisma/` change — LAW under G7, so it needs a contract-change issue
+ * before a PR, not a quiet migration here.
+ */
+export const PERCEPTUAL_CANDIDATE_LIMIT = 500;
 
 export interface DuplicateDetector {
   detect(input: DetectDuplicatesInput): Promise<DuplicateDetectionResult>;
@@ -61,7 +90,7 @@ export class InMemoryDuplicateDetector implements DuplicateDetector {
 
   async detect(input: DetectDuplicatesInput): Promise<DuplicateDetectionResult> {
     this.seen.push(input);
-    return { findings: [] };
+    return { findings: [], candidatesTruncated: false };
   }
 }
 
@@ -71,8 +100,9 @@ export class InMemoryDuplicateDetector implements DuplicateDetector {
  * look within the SAME business for:
  *   - exact  — another document with the same `byteHash` (indexed lookup)
  *   - near   — an image document whose `perceptualHash` is within the measured
- *              threshold (Hamming distance computed in memory; there is no index
- *              for it, and per-business the candidate set is bounded)
+ *              threshold (Hamming distance computed in memory; no index can
+ *              answer it, so the candidate set is capped and ordered newest-first
+ *              — see PERCEPTUAL_CANDIDATE_LIMIT, and note the cap can cost a miss)
  * and record one `Duplicate` row per matched pair, verdict PENDING (the Review
  * mode of SoT Stage 6).
  *
@@ -81,7 +111,16 @@ export class InMemoryDuplicateDetector implements DuplicateDetector {
  * transaction abort and not a double-row.
  */
 export class PrismaDuplicateDetector implements DuplicateDetector {
-  constructor(private readonly prisma: PrismaClient) {}
+  /**
+   * `candidateLimit` is injectable for one reason: so a test can prove the cap
+   * REPORTS itself without seeding 500 rows to reach the real one. Production
+   * always takes the default — an override at a call site would be a silent
+   * narrowing of how far back we look for duplicates.
+   */
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly candidateLimit: number = PERCEPTUAL_CANDIDATE_LIMIT,
+  ) {}
 
   async detect(input: DetectDuplicatesInput): Promise<DuplicateDetectionResult> {
     const systemUserId = await resolveSystemActor(this.prisma, input.practiceId);
@@ -94,11 +133,18 @@ export class PrismaDuplicateDetector implements DuplicateDetector {
       const exactIds = new Set(exactRows.map((r) => r.id));
 
       const nearDistance = new Map<string, number>();
+      let candidatesTruncated = false;
       if (input.perceptualHash !== null) {
         const candidates = await db.document.findMany({
           where: { businessId: input.businessId, perceptualHash: { not: null }, id: { not: input.documentId } },
           select: { id: true, perceptualHash: true },
+          // Newest first, and capped — see PERCEPTUAL_CANDIDATE_LIMIT. The order
+          // is index-backed; the cap is what keeps this off the unbounded-query
+          // list, at the price of not comparing against the oldest images.
+          orderBy: { receivedAt: 'desc' },
+          take: this.candidateLimit,
         });
+        candidatesTruncated = candidates.length === this.candidateLimit;
         for (const c of candidates) {
           if (c.perceptualHash === null) continue;
           const distance = hammingDistance(input.perceptualHash, c.perceptualHash);
@@ -132,7 +178,7 @@ export class PrismaDuplicateDetector implements DuplicateDetector {
         });
       }
 
-      return { findings };
+      return { findings, candidatesTruncated };
     });
   }
 }

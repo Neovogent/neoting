@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
 import { systemContext } from '../../../common/db/scope-context.js';
 import { scopedDb } from '../../../common/db/scoped-db.js';
-import { PrismaDuplicateDetector } from './duplicate-detector.js';
+import { PERCEPTUAL_CANDIDATE_LIMIT, PrismaDuplicateDetector } from './duplicate-detector.js';
 
 /**
  * Duplicate detection proven against a REAL database (issue #40). Two things only
@@ -168,6 +168,42 @@ describe.skipIf(!DATABASE_URL || !OWNER_URL)('PrismaDuplicateDetector', () => {
     });
     const after = await owner.duplicate.count({ where: { businessId: B1 } });
     expect(after).toBe(before); // no new row — the (a1,a2) pair already exists
+  });
+
+  test('the capped perceptual scan reports its truncation instead of hiding it', async () => {
+    // Governance §5.1 forbids unbounded loads, so the candidate scan is capped —
+    // and a cap on a SEARCH can cost a miss, which this module's first invariant
+    // says must never be silent. The contract is therefore not "the cap exists"
+    // but "the cap announces itself", and that is what is asserted here.
+    //
+    // The limit is injected at 1 rather than seeding 500 rows: the behaviour
+    // under test is the reporting, and making the test wait on half a thousand
+    // inserts would test Postgres, not us.
+    await seedDoc('p40_cap_a', B1, 'cap-hash-a', '0000000000000000');
+    await seedDoc('p40_cap_b', B1, 'cap-hash-b', '0000000000000000');
+    // The probe must exist as a row: the detector writes `Duplicate` rows that
+    // reference it, and `duplicates_document_bid_fkey` is a real constraint.
+    await seedDoc('p40_cap_probe', B1, 'cap-hash-probe', '0000000000000000');
+
+    const capped = new PrismaDuplicateDetector(app, 1);
+    const truncated = await capped.detect({
+      documentId: 'p40_cap_probe',
+      practiceId: P,
+      businessId: B1,
+      byteHash: 'cap-hash-probe',
+      perceptualHash: '0000000000000000',
+    });
+    expect(truncated.candidatesTruncated).toBe(true);
+
+    // Same query with the real limit sees everything and says so.
+    const full = new PrismaDuplicateDetector(app, PERCEPTUAL_CANDIDATE_LIMIT).detect({
+      documentId: 'p40_cap_probe',
+      practiceId: P,
+      businessId: B1,
+      byteHash: 'cap-hash-probe',
+      perceptualHash: '0000000000000000',
+    });
+    expect((await full).candidatesTruncated).toBe(false);
   });
 
   test('detection does not reach across businesses in the same practice', async () => {

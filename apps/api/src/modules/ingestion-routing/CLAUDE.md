@@ -178,9 +178,20 @@ re-send, and the same paper photographed twice.
 - **`queue/duplicate-detector.ts`** runs after a document persists. Within the
   **same business**: exact = same `byteHash` (the indexed `@@index([businessId,
   byteHash])` lookup); near = an image whose `perceptualHash` is within the
-  threshold (Hamming computed in memory — no index for it, bounded per business).
-  One `Duplicate` row per matched pair: `signals` (`byteHash` / `pHash`), a
-  `score` (1 for exact, `1 − distance/64` for near), verdict `PENDING`.
+  threshold (Hamming computed in memory — no index can answer it). One
+  `Duplicate` row per matched pair: `signals` (`byteHash` / `pHash`), a `score`
+  (1 for exact, `1 − distance/64` for near), verdict `PENDING`.
+- **The perceptual scan is CAPPED, and the cap announces itself.** Governance
+  §5.1 forbids unbounded loads, and "bounded per business" is not a bound — it is
+  every image that business has ever sent, growing forever. So the candidate
+  query takes `PERCEPTUAL_CANDIDATE_LIMIT` (500) ordered `receivedAt desc`, which
+  is index-backed (`@@index([businessId, receivedAt])`) and puts the newest
+  candidates first, where duplicates actually live.
+  **A cap on a search can cost a miss**, and a missed duplicate must not look
+  like a clean run — so `detect()` returns `candidatesTruncated` and the
+  processor logs a warning when it fires. The real fix is an index-supported
+  search (hash banding or a BK-tree), which is a `prisma/` change and therefore a
+  contract-change issue under G7, not a quiet migration.
 
 **The unrouted decision (written down, as required).** `Duplicate.business_id` is
 `NOT NULL`, and an UNROUTED document has `business_id = null`, so it *cannot* have
