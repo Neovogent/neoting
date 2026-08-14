@@ -100,10 +100,13 @@ is one accepted document and one visible rejection, never all-or-nothing.
 Extends `IngestJob.source` to `'whatsapp' | 'email'` (+ optional `filename` /
 `sha256`) and adds the `email` channel (25 MB, client cap).
 
-The MIME parser sits behind an `EmailParser` interface — **not added until
-Shakib approves** the §19 proposal on the issue. The logic is fully tested with
-`ParsedEmail` fixtures; the raw-MIME-on-disk test lands with the parser. No DB,
-no S3 (the S3-event trigger is Terraform, Shakib's).
+The MIME parser sits behind an `EmailParser` interface: **`postal-mime@3.0.0`
+approved (§19, issue #14) and landed** — MIT-0, zero runtime deps, pinned exact.
+The logic stays tested with `ParsedEmail` fixtures; the parser has its own
+raw-MIME-on-disk test. No DB, no S3 (the S3-event trigger is Terraform,
+Shakib's). The idempotency key carries the content sha256 alongside the
+`Message-ID` — the key is the BullMQ `jobId`, a duplicate jobId is dropped
+silently, and a sender-controlled header must not be able to delete a document.
 
 ### Sanitisation pipeline (merged, PR #3)
 

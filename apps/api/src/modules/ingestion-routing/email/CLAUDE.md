@@ -24,10 +24,12 @@ Terraform (Shakib's), out of this lane.
 ## The MIME parser is behind an interface
 
 `EmailParser.parse(raw) → ParsedEmail`. MIME parsing of hostile input is not
-hand-rolled — the concrete parser is a dependency proposed on issue #14 (§19)
-and **not added until Shakib approves**. `processEmail` works off `ParsedEmail`,
-so it is fully tested offline with hand-built fixtures; the raw-MIME-on-disk test
-lands with the approved parser.
+hand-rolled. **`postal-mime@3.0.0` approved on issue #14 (§19) and landed** —
+MIT-0, zero runtime dependencies, pinned exact — as `PostalMimeEmailParser`
+behind the interface. `processEmail` works off `ParsedEmail`, so the logic stays
+tested offline with hand-built fixtures and the parser has its own
+raw-MIME-on-disk test. Keep the interface: it is what makes the parser
+replaceable without touching a call site.
 
 ## Invariants
 
@@ -35,6 +37,14 @@ lands with the approved parser.
   visible rejection with a plain-English reason and NT-ING code.
 - Untrusted content wrapped before it can reach a model.
 - No Prisma, no DB writes (persistence blocked on `scopedDb`).
+- **Nothing the sender controls may be the whole idempotency key.** The key is
+  the BullMQ `jobId` and a duplicate jobId is discarded silently, so a key made
+  only of `Message-ID` would let a forged header delete a real document with no
+  rejection and no trace. The content sha256 is part of the key: a collision
+  then requires identical bytes, which is the only case where dropping is right.
+- The `Date:` header is the sender's clock. It feeds `receivedAtSeconds` today
+  because nothing upstream offers a real receipt time — no freshness or triage
+  decision may rest on it until the S3 trigger supplies one.
 
 ## Tests
 
@@ -44,8 +54,9 @@ pnpm --filter @neoting/api test
 
 ## TODO
 
-- [ ] Add the approved MIME parser + `PostalMimeEmailParser` (or Shakib's pick)
-      behind `EmailParser`, and a raw-MIME-fixture-on-disk test.
+- [x] Add the approved MIME parser + `PostalMimeEmailParser` behind
+      `EmailParser`, and a raw-MIME-fixture-on-disk test — `postal-mime@3.0.0`.
 - [ ] When the S3 event notification (Terraform) lands, wire the trigger →
-      fetch raw bytes → `parse` → `processEmail`.
+      fetch raw bytes → `parse` → `processEmail`, and take `receivedAtSeconds`
+      from the S3 event rather than the sender's `Date:` header.
 - [ ] Persist accepted documents once `scopedDb` exists (currently enqueue-only).

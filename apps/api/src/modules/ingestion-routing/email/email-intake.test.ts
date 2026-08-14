@@ -110,3 +110,27 @@ test('an attacker-controlled path in the filename is reduced to a basename, neve
   expect(result.accepted[0]?.filename).toBe('passwd');
   expect(queue.enqueued[0]?.filename).toBe('passwd');
 });
+
+test('a forged duplicate Message-ID cannot silently displace a real document', async () => {
+  // The key becomes the BullMQ jobId, and a duplicate jobId is discarded with no
+  // rejection and no log. Message-ID is a header the sender writes, so if it were
+  // the whole key an attacker could pre-claim a victim's key and delete their
+  // attachment invisibly. Same ID, same index, different bytes => two jobs.
+  const queue = new FixtureIngestQueue();
+  await processEmail(email([attach('a.png', 'image/png', png())]), { queue });
+  await processEmail(email([attach('b.pdf', 'application/pdf', cleanPdf())]), { queue });
+
+  expect(queue.enqueued).toHaveLength(2);
+  expect(new Set(queue.enqueued.map((job) => job.idempotencyKey)).size).toBe(2);
+});
+
+test('the same message redelivered keeps one stable key, so genuine duplicates still collapse', async () => {
+  // The other half of the trade: SES redelivering the same message must still
+  // dedupe. Identical bytes and index => identical key, which is what lets
+  // BullMQ collapse it.
+  const queue = new FixtureIngestQueue();
+  await processEmail(email([attach('a.png', 'image/png', png())]), { queue });
+  await processEmail(email([attach('a.png', 'image/png', png())]), { queue });
+
+  expect(queue.enqueued[0]?.idempotencyKey).toBe(queue.enqueued[1]?.idempotencyKey);
+});
