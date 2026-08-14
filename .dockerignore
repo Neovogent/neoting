@@ -1,0 +1,34 @@
+# Build context for apps/api/Dockerfile is the REPO ROOT (the image needs
+# pnpm-workspace.yaml, the root package.json and prisma/), so this file is what
+# stops that from meaning "upload the whole working tree".
+#
+# Excluding .git is not cosmetic: it is the largest thing here and it carries
+# every secret that has ever been committed and reverted. A build context is a
+# tarball sent to a daemon — treat it like a diff.
+
+.git
+.github
+.husky
+.turbo
+node_modules
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+
+# Never in an image. .env holds the local Meta secrets (runbook: whatsapp-sandbox)
+# and staging reads its own from Secrets Manager at task start (Gov §11.5).
+.env
+.env.*
+!.env.example
+
+# NOT excluded, and this trips people: apps/web, e2e, evals, packages/* and
+# services/* are pnpm workspace members (pnpm-workspace.yaml). Dropping any of
+# their package.json files makes `pnpm install --frozen-lockfile` fail with a
+# lockfile-mismatch error that says nothing about the missing directory. They
+# contribute a few KB of manifests; only their node_modules are excluded above.
+docs
+infra
+
+**/*.log
+**/.DS_Store

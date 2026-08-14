@@ -1,0 +1,36 @@
+{
+  // Emit config, separate from tsconfig.json because that one is `noEmit`
+  // (it exists to typecheck tests as well as sources, and tests must never
+  // reach dist/).
+  //
+  // WHY A tsc EMIT WORKS HERE AT ALL, given moduleResolution: "Bundler":
+  // `@neoting/contracts` is consumed as workspace .ts SOURCE through its
+  // exports map, which Node could not resolve at runtime — but every import
+  // of it in this app is `import type` (problem.ts, problem.filter.ts) and is
+  // erased at emit. The compiled output therefore has NO runtime dependency
+  // on the contracts package. Verify with:
+  //   grep -rn "@neoting/contracts" dist/   # must return nothing
+  // The day a VALUE is imported from contracts, this build breaks at runtime
+  // with ERR_UNKNOWN_FILE_EXTENSION, not at compile time. At that point the
+  // answer is to give contracts a real build output and point its exports map
+  // at the JS — not to reach for a bundler.
+  //
+  // Relative imports already carry explicit `.js` extensions throughout src/,
+  // which is what makes the emitted ESM runnable by Node directly.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "src",
+
+    // Nothing consumes this app as a library; declarations are dead weight in
+    // a container image and slow the build.
+    "declaration": false,
+    "declarationMap": false,
+
+    // Kept: a stack trace from a staging task should point at a .ts line.
+    "sourceMap": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", ".turbo", "src/**/*.test.ts", "src/**/*.integration.test.ts"]
+}
