@@ -8,10 +8,10 @@
     "seed": "tsx ../../prisma/seed.ts"
   },
   "scripts": {
-    "dev": "tsx --env-file-if-exists=../../.env watch src/main.ts",
+    "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
     "start": "tsx --env-file-if-exists=../../.env src/main.ts",
     "worker": "tsx --env-file-if-exists=../../.env src/worker/main.ts",
-    "dev:worker": "tsx --env-file-if-exists=../../.env watch src/worker/main.ts",
+    "dev:worker": "tsx watch --env-file-if-exists=../../.env src/worker/main.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint src",
     "test": "vitest run",
