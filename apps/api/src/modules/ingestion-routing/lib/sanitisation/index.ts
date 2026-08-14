@@ -8,7 +8,7 @@
 
 export { sanitise, defaultDeps, type SanitisationDeps } from './pipeline.js';
 export { CHANNEL_POLICY, type Channel, type ChannelPolicy } from './channels.js';
-export { ACCEPTED_FORMATS, sniff, type AcceptedFormat, type SniffResult } from './formats.js';
+export { ACCEPTED_FORMATS, mimeForFormat, sniff, type AcceptedFormat, type SniffResult } from './formats.js';
 export { reject, type IngestCode, type Rejection, type RejectionKind } from './reasons.js';
 export type { AcceptedDocument, SanitisationInput, SanitisationResult } from './types.js';
 export {

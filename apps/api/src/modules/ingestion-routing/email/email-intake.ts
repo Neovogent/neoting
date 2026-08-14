@@ -1,5 +1,6 @@
 import { wrapUntrusted } from '../../../common/untrusted-content.js';
-import { type Channel, sanitise, type VirusScanner } from '../lib/sanitisation/index.js';
+import { type Channel, mimeForFormat, sanitise, type VirusScanner } from '../lib/sanitisation/index.js';
+import { type DocumentStore, InMemoryDocumentStore } from '../storage/document-store.js';
 import type { IngestJob, IngestQueue } from '../webhooks/whatsapp/ingest-queue.js';
 import { decideRouting, type RoutingDecision } from '../webhooks/whatsapp/routing.js';
 import type { ParsedEmail } from './parsed-email.js';
@@ -30,10 +31,25 @@ export interface EmailIntakeResult {
 
 export interface EmailIntakeDeps {
   readonly queue: IngestQueue;
+  /**
+   * The practice this email arrived for — REQUIRED, and not derivable here.
+   *
+   * An unrouted document has no business, so the practice is the only tenancy
+   * anchor it has: it is what the `documents_tenant_anchor` CHECK accepts, what
+   * the RLS practice branch matches on, and what partitions the object key. A
+   * document with neither is one nobody can read and nobody can erase.
+   *
+   * It comes from the RECIPIENT address, which must identify a practice
+   * (`doc+<practice>@…`) rather than being a single shared `doc@` — issue #17.
+   * Until the SES receipt rules encode that, the caller supplies it.
+   */
+  readonly practiceId: string;
   /** Sender→workspace map. None exists yet (no DB) — pass empty → everything Unrouted. */
   readonly senderMap?: ReadonlyMap<string, readonly string[]>;
   /** Injected for the sanitisation virus-scan step; defaults to the fixture. */
   readonly scanner?: VirusScanner;
+  /** Object storage for sanitised bytes (#16); defaults to the in-memory fixture. */
+  readonly store?: DocumentStore;
 }
 
 /**
@@ -65,6 +81,9 @@ function safeBasename(name: string): string {
 
 export async function processEmail(email: ParsedEmail, deps: EmailIntakeDeps): Promise<EmailIntakeResult> {
   const routing = decideRouting(email.from, deps.senderMap ?? new Map<string, readonly string[]>());
+  const store = deps.store ?? new InMemoryDocumentStore();
+  // Every attachment of one email shares its routing, so one workspace for all.
+  const workspaceId = routing.kind === 'matched' ? routing.businessId : null;
   const untrustedBody = wrapUntrusted(`${email.subject}\n\n${email.text}`);
   // NOTE: this is the sender's `Date:` header — their clock, and forgeable. It
   // is the best available today because nothing upstream hands us a real
@@ -96,6 +115,17 @@ export async function processEmail(email: ParsedEmail, deps: EmailIntakeDeps): P
 
     accepted.push({ filename, detectedType: result.document.detectedType, sha256: result.document.sha256 });
 
+    // Store the SANITISED bytes before enqueuing, so the job never describes a
+    // document that exists nowhere. Content-type is the magic-byte-authoritative
+    // one, not the sender's declared header.
+    const stored = await store.put({
+      bytes: result.document.bytes,
+      sha256: result.document.sha256,
+      contentType: mimeForFormat(result.document.detectedType),
+      workspaceId,
+      practiceId: deps.practiceId,
+    });
+
     const job: IngestJob = {
       source: 'email',
       // The content hash is IN the key, not a fallback for a missing Message-ID.
@@ -117,6 +147,7 @@ export async function processEmail(email: ParsedEmail, deps: EmailIntakeDeps): P
       stale: false,
       filename,
       sha256: result.document.sha256,
+      storageKey: stored.key,
     };
     await deps.queue.enqueue(job);
   }

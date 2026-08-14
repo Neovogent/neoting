@@ -28,6 +28,21 @@ const EnvSchema = z.object({
   // not by import, so the webhook controller is identical either way.
   INGEST_QUEUE: z.enum(['fixture', 'bullmq']).default('fixture'),
   REDIS_URL: z.string().url().default('redis://localhost:6379'),
+
+  // Object storage for sanitised documents (#16). `fixture` = in-memory
+  // (offline tests, dev without MinIO); `s3` = real S3 / MinIO. Selected by
+  // config, not by import. In staging S3_ENDPOINT is empty (real AWS endpoint)
+  // and credentials come from the task role's default provider chain, so both
+  // are blank there — not required.
+  OBJECT_STORE: z.enum(['fixture', 's3']).default('fixture'),
+  S3_ENDPOINT: z.string().default(''), // e.g. http://localhost:9000 for MinIO; empty = AWS default
+  S3_REGION: z.string().default('eu-west-2'),
+  S3_ACCESS_KEY_ID: z.string().default(''),
+  S3_SECRET_ACCESS_KEY: z.string().default(''),
+  // Coerce the string env value to a real boolean — z.coerce.boolean() treats any
+  // non-empty string (including "false") as true, which is the wrong default.
+  S3_FORCE_PATH_STYLE: z.string().default('false').transform((value) => value === 'true'),
+  S3_BUCKET_DOCUMENTS: z.string().default('nt-local-docs'),
 });
 
 export type Env = Readonly<z.infer<typeof EnvSchema>>;
