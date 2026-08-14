@@ -135,6 +135,22 @@ tenancy anchor.
   path is config/DI-selected in `worker/main.ts` (`PrismaDocumentSink`), not
   import-selected. `PrismaClient` is received, never constructed here — the type
   is imported from `common/db/prisma.ts` (the one directory allowed to name it).
+- **Idempotency is claimed and RELEASED, in that order.** `ProcessedStore.markProcessed`
+  is a claim taken *before* the work; the processor wraps everything after it in
+  a `try`/`catch` that calls `release(key)` and rethrows. Without that, a persist
+  that throws leaves the key claimed, BullMQ's retry sees "already processed",
+  and the job reports **success having written nothing** — the document lost
+  silently, never reaching the DLQ. That is the one outcome this module's
+  "nothing is ever silently dropped" invariant forbids, and it is the reason
+  `release` exists on the interface at all.
+- **The durable guarantee is the derived primary key, not that store.**
+  `InMemoryProcessedStore` is per-process; SES redelivering produces a *second*
+  BullMQ job another worker task can run concurrently. Both find nothing, both
+  create, one loses on the primary key — so `PrismaDocumentSink` catches `P2002`
+  and returns `created: false`. Under RLS the loser's `findUnique` cannot even
+  see a winning row belonging to another practice, so the collision is the only
+  signal available; without the catch a correctly-handled redelivery becomes a
+  DLQ entry and a page.
 - **Proven against a real database** (`queue/document-sink.integration.test.ts`,
   the #20 acceptance): an unrouted document is visible to its own practice and
   invisible to another; same job twice = one row; a practice with no SYSTEM actor

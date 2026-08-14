@@ -1,5 +1,5 @@
 import type { DocumentSink } from './document-sink.js';
-import { IngestJobPayloadSchema } from './job-payload.js';
+import { type IngestJobPayload, IngestJobPayloadSchema } from './job-payload.js';
 import type { ProcessedStore } from './processed-store.js';
 
 /** Minimal logger surface the processor needs — kept narrow so tests inject a fake. */
@@ -35,6 +35,22 @@ export async function processIngestJob(raw: unknown, deps: ProcessorDeps): Promi
     return;
   }
 
+  // ⚠ EVERYTHING PAST THE CLAIM MUST RELEASE IT ON FAILURE. `markProcessed`
+  // above is a claim made BEFORE the work; if the work throws and the claim
+  // stands, BullMQ's retry sees "already processed", returns cleanly, and the
+  // job reports SUCCESS having written nothing. The document is lost silently
+  // and never reaches the DLQ — the exact opposite of the retry this throw is
+  // asking for, and a breach of the module's "nothing is ever silently dropped"
+  // invariant.
+  try {
+    await handle(payload, deps);
+  } catch (error) {
+    await deps.processed.release(payload.idempotencyKey);
+    throw error;
+  }
+}
+
+async function handle(payload: IngestJobPayload, deps: ProcessorDeps): Promise<void> {
   const staleTag = payload.stale ? ' [stale]' : '';
   deps.logger.log(
     `ingest ${payload.idempotencyKey} from ${payload.from} (${payload.messageType}, ${payload.routing.kind})${staleTag} trace=${payload.traceId}`,

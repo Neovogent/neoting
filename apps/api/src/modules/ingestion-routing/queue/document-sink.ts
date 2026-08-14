@@ -45,6 +45,17 @@ export function documentIdFor(idempotencyKey: string): string {
   return `doc_${createHash('sha256').update(idempotencyKey).digest('hex').slice(0, 24)}`;
 }
 
+/**
+ * Postgres unique-violation, surfaced by Prisma as `P2002`.
+ *
+ * Narrowed by hand rather than by importing `PrismaClientKnownRequestError`,
+ * which lives under `@prisma/client/runtime` — a path the `no-restricted-imports`
+ * rule guarding `scopedDb` deliberately does not exempt.
+ */
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && (error as { code: unknown }).code === 'P2002';
+}
+
 /** Offline fixture — records what would have persisted, idempotent on the id. */
 export class InMemoryDocumentSink implements DocumentSink {
   readonly persisted = new Map<string, PersistDocumentInput>();
@@ -75,26 +86,42 @@ export class PrismaDocumentSink implements DocumentSink {
       const existing = await db.document.findUnique({ where: { id: documentId }, select: { id: true } });
       if (existing !== null) return { documentId, created: false };
 
-      await db.document.create({
-        data: {
-          id: documentId,
-          practiceId: input.practiceId,
-          businessId: input.businessId,
-          s3Key: input.s3Key,
-          byteHash: input.byteHash,
-          mimeType: input.mimeType,
-          byteSize: input.byteSize,
-          channel: input.channel,
-          originalFilename: input.originalFilename,
-          // Business known → its workspace (Costs vs Sales is a later
-          // classification, so it defaults to COSTS, the common case). Unknown →
-          // UNROUTED, anchored on the practice.
-          inbox: input.businessId === null ? 'UNROUTED' : 'COSTS',
-          state: 'RECEIVED',
-          submitterLabel: input.submitterLabel,
-          routingDecision: input.routing as Prisma.InputJsonValue,
-        },
-      });
+      // ⚠ THE find-THEN-create ABOVE IS NOT ATOMIC, AND THE IN-MEMORY
+      // ProcessedStore DOES NOT COVER IT. That store is per-process; SES
+      // redelivering the same message produces a NEW BullMQ job, which a second
+      // worker task can run concurrently with the first. Both find nothing,
+      // both create, and one loses on the primary key.
+      //
+      // Without this catch that loser throws, the job retries, and a redelivery
+      // shows up as a DLQ entry and a page for something that was in fact
+      // handled correctly. Issue #20's requirement is that a redelivery is a
+      // NO-OP — so the collision is the answer, not the error: the row is there,
+      // written by the winner, with the same derived id and the same content.
+      try {
+        await db.document.create({
+          data: {
+            id: documentId,
+            practiceId: input.practiceId,
+            businessId: input.businessId,
+            s3Key: input.s3Key,
+            byteHash: input.byteHash,
+            mimeType: input.mimeType,
+            byteSize: input.byteSize,
+            channel: input.channel,
+            originalFilename: input.originalFilename,
+            // Business known → its workspace (Costs vs Sales is a later
+            // classification, so it defaults to COSTS, the common case). Unknown →
+            // UNROUTED, anchored on the practice.
+            inbox: input.businessId === null ? 'UNROUTED' : 'COSTS',
+            state: 'RECEIVED',
+            submitterLabel: input.submitterLabel,
+            routingDecision: input.routing as Prisma.InputJsonValue,
+          },
+        });
+      } catch (error) {
+        if (isUniqueViolation(error)) return { documentId, created: false };
+        throw error;
+      }
 
       await db.documentEvent.create({
         data: {

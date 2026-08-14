@@ -120,6 +120,47 @@ describe.skipIf(!DATABASE_URL || !OWNER_URL)('PrismaDocumentSink', () => {
     expect(await owner.document.count({ where: { id: first.documentId } })).toBe(1);
   });
 
+  test('losing the primary-key race is a no-op even when RLS hides the winning row', async () => {
+    // The find-then-create in the sink is NOT atomic, and the in-memory
+    // ProcessedStore cannot cover it: SES redelivering produces a SECOND BullMQ
+    // job that another worker task can run concurrently. Both find nothing, both
+    // create, one loses on the primary key.
+    //
+    // This writes the winning row under practice B and then persists the same
+    // job as practice A. That is deliberately the HARD half of the race: under
+    // RLS the sink's `findUnique` cannot see B's row, so the early-return is
+    // blind and the `create` is what discovers the collision. Without the P2002
+    // catch this throws, the job retries, and a correctly-handled redelivery
+    // shows up as a DLQ entry and a page.
+    //
+    // (The easy half — the winner's row being visible to the same practice — is
+    // covered by the idempotency test above, which returns before the create.)
+    const key = 'p20-race';
+    const documentId = documentIdFor(key);
+    await owner.document.create({
+      data: {
+        id: documentId,
+        practiceId: P_B,
+        s3Key: `w/_unrouted/documents/${key}`,
+        byteHash: `h-${key}`,
+        mimeType: 'image/png',
+        byteSize: 11,
+        channel: 'EMAIL',
+        originalFilename: 'receipt.png',
+        inbox: 'UNROUTED',
+        state: 'RECEIVED',
+      },
+    });
+
+    const result = await new PrismaDocumentSink(app).persist(input(key));
+    expect(result).toEqual({ documentId, created: false });
+
+    expect(await owner.document.count({ where: { id: documentId } })).toBe(1);
+    // The loser must add nothing at all — not even an event against a row it
+    // did not write.
+    expect(await owner.documentEvent.count({ where: { documentId } })).toBe(0);
+  });
+
   test('a job for a practice with no SYSTEM actor fails loudly, writing nothing', async () => {
     await expect(
       new PrismaDocumentSink(app).persist(input('p20-k4', { practiceId: 'p20_prac_missing' })),

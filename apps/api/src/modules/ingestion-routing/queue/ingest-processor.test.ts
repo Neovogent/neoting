@@ -84,3 +84,27 @@ test('a malformed payload is rejected at the boundary (throws → BullMQ retries
   await expect(processIngestJob({ nonsense: true }, h.deps)).rejects.toThrow();
   await expect(processIngestJob({ ...emailJob, traceId: '' }, h.deps)).rejects.toThrow();
 });
+
+test('a job whose persistence fails is retried, not silently swallowed', async () => {
+  const h = harness();
+  let attempts = 0;
+  const flaky = {
+    async persist(input: Parameters<InMemoryDocumentSink['persist']>[0]) {
+      attempts += 1;
+      if (attempts === 1) throw new Error('database unreachable');
+      return h.sink.persist(input);
+    },
+  };
+  const deps = { ...h.deps, sink: flaky };
+
+  // First delivery: the sink is down, so the job must throw and let BullMQ retry.
+  await expect(processIngestJob(emailJob, deps)).rejects.toThrow('database unreachable');
+
+  // The retry MUST do the work. If the processor marked the key processed before
+  // persisting, this returns quietly having written nothing — the document is
+  // lost, the job reports success, and it never reaches the DLQ.
+  await processIngestJob(emailJob, deps);
+
+  expect(attempts).toBe(2);
+  expect(h.sink.persisted.size).toBe(1);
+});
