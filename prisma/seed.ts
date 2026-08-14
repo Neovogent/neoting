@@ -23,7 +23,24 @@
  */
 import { PrismaClient, Prisma } from '@prisma/client';
 
-const prisma = new PrismaClient();
+/**
+ * The seed connects as the OWNER (`DIRECT_URL`), never as the application role.
+ *
+ * Two reasons, and both bite immediately rather than subtly. Seeding writes
+ * across every practice and client at once, which is precisely what RLS exists
+ * to prevent — as `nt_app` it would insert a handful of rows and then silently
+ * write nothing, because a policy denial on INSERT is an error but a policy
+ * denial on the rows you then read back is just an empty set.
+ *
+ * And `prisma migrate reset` drops and recreates the `public` schema, which
+ * takes `nt_app`'s grants and default privileges with it. Postgres reports the
+ * result as `relation "practices" does not exist` — not "permission denied" —
+ * because a role without USAGE on the schema cannot see that the table is
+ * there. `db:reset` therefore re-runs `db:app-role` afterwards.
+ */
+const prisma = new PrismaClient({
+  datasources: { db: { url: process.env['DIRECT_URL'] ?? process.env['DATABASE_URL'] } },
+});
 
 if (process.env.NODE_ENV === 'production') {
   throw new Error('The seed dataset must never run against production.');
@@ -91,6 +108,13 @@ async function main() {
       { id: 'usr_tom', email: 'tom@ledgerline.test', firstName: 'Tom', lastName: 'Whitfield', emailVerified: true },
       { id: 'usr_dee', email: 'dee@americanburger.test', firstName: 'Dee', lastName: 'Okafor', emailVerified: true },
       { id: 'usr_marco', email: 'marco@cosmorestaurants.test', firstName: 'Marco', lastName: 'Silva', emailVerified: true },
+
+      // The practice's machine actor (issue #17). Queue workers run as this
+      // user, because every RLS policy requires an actor and a worker has no
+      // human behind it. No email, no password, no sessions — it cannot sign in
+      // even if it leaks into a screen, and it must be excluded from team
+      // lists, seat counts and invites.
+      { id: 'usr_system_ledgerline', kind: 'SYSTEM', firstName: 'Neoting', lastName: 'automation' },
     ],
   });
 
@@ -157,6 +181,12 @@ async function main() {
       { id: 'mem_tom_burger', userId: 'usr_tom', practiceId: 'prac_ledgerline', businessId: 'biz_burger', role: 'PRACTICE_STANDARD', permissions: ['chase', 'publish'] },
       { id: 'mem_dee', userId: 'usr_dee', businessId: 'biz_burger', role: 'BUSINESS_ADMIN', permissions: ['export'] },
       { id: 'mem_marco', userId: 'usr_marco', businessId: 'biz_cosmo', role: 'BUSINESS_ADMIN' },
+
+      // Practice-level, so the system actor can write a document that has no
+      // business yet — which is every document, before routing resolves. It is
+      // deliberately NOT scoped to a business: a worker that guessed one would
+      // be filing one client's receipt into another client's workspace.
+      { id: 'mem_system', userId: 'usr_system_ledgerline', practiceId: 'prac_ledgerline', role: 'PRACTICE_STANDARD' },
     ],
   });
 
@@ -250,18 +280,30 @@ async function main() {
     const { totalPence, taxPence } = withVat(s.grossPounds, s.vatRate ?? 0.2);
     const receivedAt = daysAgo(s.daysOld);
 
+    // An UNROUTED document is one we could not attribute to a client, so it has
+    // no business — that is what unrouted MEANS (issue #17). Before business_id
+    // became nullable the seed had to pick one anyway, which made the Unrouted
+    // queue look like a list of documents that already knew where they belonged
+    // and quietly hid the hardest screen in Stage 1. It is anchored on the
+    // practice instead, exactly as a real arrival from an unknown sender is.
+    const unrouted = s.inbox === 'UNROUTED';
+    const businessId = unrouted ? null : s.business;
+
     await prisma.document.create({
       data: {
         id,
-        businessId: s.business,
-        s3Key: `w/${s.business}/${id}.pdf`,
+        businessId,
+        practiceId: 'prac_ledgerline',
+        s3Key: `w/${businessId ?? 'unrouted'}/${id}.pdf`,
         originalFilename: `${s.supplier.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${id}.pdf`,
         mimeType: s.docType === 'RECEIPT' ? 'image/jpeg' : 'application/pdf',
         byteSize: 120_000 + i * 3_100,
         byteHash: `sha256:${id}${'0'.repeat(50)}`,
         perceptualHash: s.docType === 'RECEIPT' ? `phash:${id}` : null,
         channel: s.channel,
-        submitterUserId: s.channel === 'WEB_UPLOAD' ? 'usr_tom' : s.business === 'biz_burger' ? 'usr_dee' : null,
+        // An unrouted document has no known submitter either — if we knew who
+        // sent it, sender identity would have routed it.
+        submitterUserId: unrouted ? null : s.channel === 'WEB_UPLOAD' ? 'usr_tom' : s.business === 'biz_burger' ? 'usr_dee' : null,
         receivedAt,
         inbox: s.inbox,
         state: s.state,

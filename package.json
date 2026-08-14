@@ -8,6 +8,11 @@
     "pnpm": ">=9"
   },
   "packageManager": "pnpm@9.12.0",
+  "//prisma": "Declared at the ROOT, not in apps/api. The Prisma CLI resolves .env relative to its working directory, and .env lives here — running it from apps/api silently loses DATABASE_URL and DIRECT_URL, which surfaces as 'Environment variable not found' rather than anything about the working directory.",
+  "prisma": {
+    "schema": "prisma/schema.prisma",
+    "seed": "tsx prisma/seed.ts"
+  },
   "scripts": {
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
@@ -17,9 +22,11 @@
     "test:e2e": "turbo run test:e2e",
     "test:eval": "turbo run test:eval",
     "e2e:smoke": "turbo run e2e:smoke",
-    "db:migrate": "pnpm --filter @neoting/api exec prisma migrate dev",
-    "db:seed": "pnpm --filter @neoting/api exec prisma db seed",
-    "db:reset": "pnpm --filter @neoting/api exec prisma migrate reset --force",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:seed": "prisma db seed",
+    "db:reset": "prisma migrate reset --force --skip-seed && pnpm db:app-role && pnpm db:seed",
+    "db:app-role": "docker exec -i nt-postgres psql -U neoting -d neoting -v ON_ERROR_STOP=1 -q < prisma/sql/app-role.sql",
     "db:tenancy-check": "docker exec -i nt-postgres psql -U neoting -d neoting -v ON_ERROR_STOP=1 -q < prisma/sql/tenancy-check.sql",
     "prepare": "husky"
   },

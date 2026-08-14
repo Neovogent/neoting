@@ -6,7 +6,7 @@ Schema, RLS policies and migrations. Owned by Shakib; changes go through the con
 
 Every tenant-owned row carries `practice_id` (nullable for standalone businesses) and `business_id`. RLS is enforced **below the application layer**:
 
-- Each request-scoped unit of work opens a transaction that first runs `SET LOCAL app.actor_id / app.practice_id / app.business_id / app.actor_role / app.session_scope`; policies read them via `current_setting()`.
+- Each request-scoped unit of work opens a transaction that first runs `SET LOCAL` for the five GUCs the policies actually read: `app.actor_id`, `app.practice_id`, `app.business_id`, `app.session_scope`, `app.granted_item_ids`. (An earlier draft listed `app.actor_role`; no policy reads it — roles are checked at call sites, never in SQL.)
 - **The only sanctioned accessor is `scopedDb(ctx)`.** An unscoped query is a code-review reject and a CI-grep failure.
 - Delegated OTP sessions set `app.session_scope = 'delegated_upload'` plus granted item IDs, and can touch exactly those items and nothing else.
 
@@ -34,6 +34,22 @@ The CI tenancy suite (Governance §15.4) must assert that `nt_app` cannot bypass
 
 Never drop or rename a column in one step. Indexes ship in the **same migration** as the query pattern that needs them. `prisma migrate dev` is local-only; `migrate deploy` is the only migration command that runs anywhere else.
 
+## Documents are practice-anchored until they are business-anchored
+
+Issue #17. `documents.business_id` is **nullable** and `documents.practice_id` was added, because `inbox` defaults to `UNROUTED` — a document from a sender we do not recognise has no business until routing says so, and a NOT NULL `business_id` made that state unwritable.
+
+- Exactly one of the two is guaranteed by the CHECK constraint `documents_tenant_anchor`. A row with neither would be owned by nobody and visible to nobody — lost in plain sight, with nothing reporting it.
+- `practice_id` is nullable too, because a standalone business has no practice above it. Such a business receives at its own address, so `business_id` is known from the first byte.
+- `documents` is **not** in the `direct_tables` loop; it has an explicit two-branch policy via `app_can_access_document()`.
+- **The five child tables changed with it** — `extractions`, `document_events`, `suggestions`, `item_threads`, `approvals` reach their tenant through `documents`, and a predicate of the form `app_can_access_business(d.business_id)` returns NULL, not true, for an unrouted parent. Missing one hides that document's children from the only people who can route it.
+- `documents_delegated_upload` gained `AND business_id IS NOT NULL`. That changed nothing previously possible — before this, every document had a business — but without it a delegated OTP session could read an unrouted document that reached its grant.
+
+## Machine writes need an actor
+
+`UserKind.SYSTEM`: one seeded user per practice with a practice-level membership. Workers run as that actor, so machine writes go through the *same* predicate as human ones — no third session scope, no privileged connection, and `audit_events.actor_id` names a real row. `rls.sql` did not change for this.
+
+SYSTEM users have no email, password or sessions. Exclude them from team lists, seat counts and invites.
+
 ## Current state
 
 **Draft for review — not yet frozen.**
@@ -57,9 +73,20 @@ pnpm --filter @neoting/api exec prisma migrate deploy   # deploy, not dev — de
 pnpm db:tenancy-check
 ```
 
-### ⚠ Provisioning cannot run under these policies
+### ✅ Provisioning runs under these policies — settled 14 Aug 2026
 
-`app_can_access_business()` requires a membership row — which does not exist until provisioning has finished creating it. Signup, practice creation and client intake therefore cannot run as `nt_app` through normal policies. Decide the route in S1 before auth-tenancy is written; the options are a narrow `SECURITY DEFINER` provisioning function, or a separate privileged connection used **only** by that path and nothing else. Do not solve it by loosening a policy.
+An earlier draft of this file warned that provisioning could not run as `nt_app` and would need a `SECURITY DEFINER` function or a privileged connection. **That was wrong**, and it was wrong in the expensive direction: it proposed a bypass for a problem that does not exist.
+
+`users`, `practices`, `memberships` and `sessions` appear in none of the RLS table lists — they carry no policies. So the ordering resolves itself:
+
+1. `practices` insert — unpoliced
+2. `users` insert — unpoliced
+3. `memberships` insert — unpoliced, **and this is the row the predicate needs**
+4. `businesses` insert — policed, and now passes on its own merits, because `businesses`' `WITH CHECK` accepts a practice-level membership
+
+Verified against the live database as `nt_app`, in one transaction, with no bypass of any kind. Reproduce it with the transcript in issue #17.
+
+No `SECURITY DEFINER` function, no second connection, no loosened policy. If a future change makes `memberships` tenant-owned, this reasoning collapses and the question reopens — so that change must revisit this section.
 
 ### Open questions for the freeze
 
