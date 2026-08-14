@@ -31,6 +31,16 @@ export interface IngestJob {
    * it the job would describe a document that exists nowhere.
    */
   readonly storageKey?: string;
+  /**
+   * The practice this document arrived for (#20) — the tenancy anchor an
+   * unrouted document has instead of a business. Present for email; the worker
+   * cannot persist without it, and cannot invent it.
+   */
+  readonly practiceId?: string;
+  /** Magic-byte-authoritative MIME of the sanitised bytes (#20), for `documents.mime_type`. */
+  readonly mimeType?: string;
+  /** Byte length of the sanitised bytes (#20), for `documents.byte_size`. */
+  readonly byteSize?: number;
 }
 
 /**

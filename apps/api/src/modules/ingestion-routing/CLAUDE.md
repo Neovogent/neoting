@@ -108,6 +108,55 @@ Shakib's). The idempotency key carries the content sha256 alongside the
 `Message-ID` — the key is the BullMQ `jobId`, a duplicate jobId is dropped
 silently, and a sender-controlled header must not be able to delete a document.
 
+### Document persistence through `scopedDb` (issue #20)
+
+`queue/document-sink.ts` — the worker now *writes*. `DocumentSink.persist(input)`
+resolves the practice's SYSTEM actor (`common/db/resolveSystemActor`), then writes
+the `Document` and its first `DocumentEvent` in ONE `scopedDb` transaction under
+`systemContext(practiceId, systemUserId)`, so RLS — not convention — enforces the
+tenancy anchor.
+
+- **Idempotent on `idempotencyKey`, NOT `byteHash`.** The document id is derived
+  `doc_${sha256(idempotencyKey).slice(0,24)}` (`documentIdFor`). The same receipt
+  legitimately forwarded for two clients has identical bytes but two jobs → two
+  documents; a redelivery of one job has the same key → one row, `created: false`.
+  A sender-controlled header must not be able to collapse two clients' documents
+  into one, nor delete one.
+- **Persist only when the bytes are in hand.** The processor calls the sink only
+  when the payload carries `practiceId + storageKey + sha256 + mimeType +
+  byteSize + filename` — email does (it stored and sanitised the attachment).
+  WhatsApp does not yet (its media is a Meta id needing a Graph fetch — a later
+  task), so those jobs are logged and left unpersisted rather than written as an
+  orphan with no bytes behind it.
+- **Unknown business → `Inbox.UNROUTED`** anchored on the practice; known business
+  → its workspace (`COSTS` by default, the Costs-vs-Sales split is later
+  classification).
+- **`InMemoryDocumentSink`** keeps the processor unit-testable offline; the real
+  path is config/DI-selected in `worker/main.ts` (`PrismaDocumentSink`), not
+  import-selected. `PrismaClient` is received, never constructed here — the type
+  is imported from `common/db/prisma.ts` (the one directory allowed to name it).
+- **Idempotency is claimed and RELEASED, in that order.** `ProcessedStore.markProcessed`
+  is a claim taken *before* the work; the processor wraps everything after it in
+  a `try`/`catch` that calls `release(key)` and rethrows. Without that, a persist
+  that throws leaves the key claimed, BullMQ's retry sees "already processed",
+  and the job reports **success having written nothing** — the document lost
+  silently, never reaching the DLQ. That is the one outcome this module's
+  "nothing is ever silently dropped" invariant forbids, and it is the reason
+  `release` exists on the interface at all.
+- **The durable guarantee is the derived primary key, not that store.**
+  `InMemoryProcessedStore` is per-process; SES redelivering produces a *second*
+  BullMQ job another worker task can run concurrently. Both find nothing, both
+  create, one loses on the primary key — so `PrismaDocumentSink` catches `P2002`
+  and returns `created: false`. Under RLS the loser's `findUnique` cannot even
+  see a winning row belonging to another practice, so the collision is the only
+  signal available; without the catch a correctly-handled redelivery becomes a
+  DLQ entry and a page.
+- **Proven against a real database** (`queue/document-sink.integration.test.ts`,
+  the #20 acceptance): an unrouted document is visible to its own practice and
+  invisible to another; same job twice = one row; a practice with no SYSTEM actor
+  fails loudly, writing nothing. Skips when no DB is configured, fails when one is
+  configured but unreachable.
+
 ### Sanitisation pipeline (merged, PR #3)
 
 **Pure library** — `lib/sanitisation/`.
@@ -186,4 +235,7 @@ sanitisation tests were ported from `tsx --test` to Vitest and run in the suite.
       at the controller boundary (NT-ING-001/002/004 mirrored in `reasons.ts`)
 - [x] #12: BullMQ behind `IngestQueue` + the worker (DLQ, idempotency, traceId),
       controller unchanged — done; live docker e2e pending a Docker install
+- [x] #20: worker persists `Document` + `DocumentEvent` through `scopedDb`
+      (`queue/document-sink.ts`), idempotent on `idempotencyKey`, proven against a
+      real DB. WhatsApp media fetch (so those jobs persist too) is the next task.
 - [ ] Update this file on exit — it is how the next session picks up

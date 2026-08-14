@@ -13,12 +13,18 @@ export const IngestJobPayloadSchema = z.object({
   receivedAtSeconds: z.number(),
   messageType: z.string(),
   caption: z.string().nullable(),
-  routing: z.object({ kind: z.enum(['matched', 'multiple', 'unrouted']) }).passthrough(),
+  routing: z.object({ kind: z.enum(['matched', 'multiple', 'unrouted']), businessId: z.string().optional() }).passthrough(),
   stale: z.boolean(),
   traceId: z.string().min(1),
   filename: z.string().optional(),
   sha256: z.string().optional(),
   storageKey: z.string().optional(),
+  // Tenancy + persistence fields (#20). Present for email (which has the bytes,
+  // the practice anchor and the sanitised type in hand); absent for WhatsApp
+  // until its media fetch lands, so persistence is skipped for those.
+  practiceId: z.string().min(1).optional(),
+  mimeType: z.string().optional(),
+  byteSize: z.number().int().nonnegative().optional(),
 });
 
 export type IngestJobPayload = z.infer<typeof IngestJobPayloadSchema>;
