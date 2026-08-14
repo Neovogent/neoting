@@ -163,6 +163,18 @@ locals {
 
   github_repo = "neovogent/neoting"
 
+  # See the long note on the same local in envs/staging/main.tf. Short version,
+  # measured 14 Aug 2026 by decoding a real Actions ID token: GitHub emits
+  # `repo:<org>@<org-id>/<repo>@<repo-id>:...`, not `repo:<org>/<repo>:...`,
+  # so a trust policy written against the documented-looking format matches
+  # nothing and the role can never be assumed.
+  #
+  # Fixing it here as well as in staging, even though prod is authored-but-
+  # unapplied (ADR 0005), precisely because it is unapplied: this is the class
+  # of bug that is free to fix now and costs an afternoon of a production
+  # deploy window later.
+  github_sub_immutable = "repo:Neovogent@316230831/neoting@1333088145"
+
   # D5: neoting.neovogent.com is the pre-launch domain; neoting.com at cutover.
   #
   # ⚠ PROD TAKES A SUBDOMAIN OF IT, AND THAT IS NOT COSMETIC. There is exactly
@@ -411,8 +423,16 @@ resource "aws_iam_role" "ci_deploy" {
         # case-SENSITIVE, the org's canonical casing is `Neovogent` while this
         # config carries `neovogent`, and GitHub does not permit two orgs
         # differing only by case — so it costs nothing in strength.
+        # First entry is the one GitHub actually sends; the legacy spelling is
+        # kept only as a rollback cushion. Both stay pinned to
+        # `:environment:prod`, which is what makes the GitHub Environment's
+        # required reviewers the "one-click promote" gate of §14.9 — a subject
+        # carrying that suffix is only ever minted after the approval.
         StringEqualsIgnoreCase = {
-          "token.actions.githubusercontent.com:sub" = "repo:${local.github_repo}:environment:prod"
+          "token.actions.githubusercontent.com:sub" = [
+            "${local.github_sub_immutable}:environment:prod",
+            "repo:${local.github_repo}:environment:prod",
+          ]
         }
       }
     }]
