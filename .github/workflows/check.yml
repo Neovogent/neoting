@@ -60,6 +60,13 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
+  # Re-run the pipeline — and therefore stage 9 — against `main` without
+  # inventing a commit to do it. Two real needs, both met on 14 Aug 2026:
+  # GitHub silently created NO run for the merge of #31 (zero runs for that
+  # SHA, confirmed via the API), leaving `main` built but never deployed with
+  # nothing to re-run; and a failed deploy otherwise has no retry that is not
+  # an empty commit. `terraform.yml` already carries this for the same reason.
+  workflow_dispatch:
 
 concurrency:
   group: check-${{ github.ref }}
@@ -768,9 +775,25 @@ jobs:
     # e2e is `!= 'failure'` rather than `== 'success'` because it is legitimately
     # SKIPPED today (no test:e2e suite exists — stage 6). The day it becomes
     # real, a failing e2e blocks the deploy without touching this line.
+    #
+    # ⚠ `always()` IS LOAD-BEARING AND IS NOT A CONTRADICTION OF THE ABOVE.
+    # A job is skipped when any of its `needs` was SKIPPED, unless its `if`
+    # calls a status function. Stage 6 (e2e) is legitimately skipped today —
+    # no suite exists — so without `always()` this job could never run at all,
+    # which is exactly what happened on the first attempt: the merge of #31
+    # produced a green pipeline with the deploy quietly skipped.
+    #
+    # The `check` aggregator at the foot of this file carries the same
+    # `always()` for the same reason, and says so. Reading one and not the
+    # other is how this was missed.
+    #
+    # With `always()` the explicit result checks below are the ONLY thing
+    # stopping a failed build from deploying — they are the safety, not
+    # decoration.
     if: >-
-      ${{ needs.readiness.outputs.deploy == 'yes'
-          && github.event_name == 'push'
+      ${{ always()
+          && needs.readiness.outputs.deploy == 'yes'
+          && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
           && github.ref == 'refs/heads/main'
           && needs.verify.result == 'success'
           && needs.security.result == 'success'
