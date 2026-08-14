@@ -33,12 +33,21 @@ export interface ImageNormaliser {
   normalise(bytes: Buffer, format: AcceptedFormat): Promise<NormaliseResult>;
 }
 
-export interface DocumentGuardVerdict {
-  readonly passwordProtected: boolean;
-}
+/**
+ * Like normalisation, the document guard both REFUSES and REWRITES.
+ *
+ * A password-protected file is a refusal; a file carrying JavaScript or an
+ * embedded payload is not — we strip those and keep the document, because an
+ * invoice with an interactive form field is ordinary accounting paperwork and
+ * refusing it would be refusing the customer's actual work. So the guard returns
+ * bytes on success, and those bytes may differ from the ones it was given.
+ */
+export type DocumentGuardResult =
+  | { readonly ok: true; readonly bytes: Buffer }
+  | { readonly ok: false; readonly rejection: Rejection };
 
 export interface DocumentGuard {
-  inspect(bytes: Buffer, format: AcceptedFormat): Promise<DocumentGuardVerdict>;
+  inspect(bytes: Buffer, format: AcceptedFormat): Promise<DocumentGuardResult>;
 }
 
 /**
@@ -81,7 +90,7 @@ export const bootstrapImageNormaliser: ImageNormaliser = {
  * TODO(#7): replace with the PDF-toolkit-backed guard.
  */
 export const bootstrapDocumentGuard: DocumentGuard = {
-  async inspect(bytes: Buffer, format: AcceptedFormat): Promise<DocumentGuardVerdict> {
+  async inspect(bytes: Buffer, format: AcceptedFormat): Promise<DocumentGuardResult> {
     if (format === 'pdf') {
       // Head AND tail, not tail alone. "The trailer is at the end" is true of a
       // plain PDF and false of the two shapes we will actually meet:
@@ -102,9 +111,17 @@ export const bootstrapDocumentGuard: DocumentGuard = {
       const head = bytes.toString('latin1', 0, Math.min(window, bytes.length));
       const tail = bytes.toString('latin1', Math.max(0, bytes.length - window));
       if (head.includes('/Encrypt') || tail.includes('/Encrypt')) {
-        return { passwordProtected: true };
+        return { ok: false, rejection: passwordProtectedRejection() };
       }
     }
-    return { passwordProtected: false };
+    return { ok: true, bytes };
   },
 };
+
+/** One wording, used by both guards, so the shim and the real thing agree. */
+export function passwordProtectedRejection(): Rejection {
+  return reject(
+    'password_protected',
+    'This file is password-protected, so we could not open it. Please remove the password and resend.',
+  );
+}

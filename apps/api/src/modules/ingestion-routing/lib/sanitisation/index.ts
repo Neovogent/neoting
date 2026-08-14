@@ -21,7 +21,7 @@ export {
   bootstrapDocumentGuard,
   bootstrapImageNormaliser,
   type DocumentGuard,
-  type DocumentGuardVerdict,
+  type DocumentGuardResult,
   type ImageNormaliser,
   type NormaliseResult,
 } from './guards.js';
@@ -29,3 +29,5 @@ export { DEFAULT_ZIP_CAPS, inspectZip, type ZipCaps } from './zip-safety.js';
 
 export { selectImageNormaliser, type ImageNormaliserMode } from './select-image-normaliser.js';
 export { createSharpImageNormaliser, type SharpNormaliserOptions } from './sharp-image-normaliser.js';
+export { createQpdfDocumentGuard, type QpdfGuardOptions, type QpdfRunner } from './qpdf-document-guard.js';
+export { selectDocumentGuard, type DocumentGuardMode } from './select-document-guard.js';

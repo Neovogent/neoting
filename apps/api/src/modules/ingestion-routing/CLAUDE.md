@@ -146,9 +146,27 @@ Two things worth knowing before changing it:
   in extraction looking corrupt, so the accountant was told the wrong thing about
   a photo that was fine.
 
-BOOTSTRAP shim still standing (dep approved on #7, work tracked in #22):
-- PDF/Office guard — only the dep-free encrypted-PDF (`/Encrypt`) check is live;
-  JS-flatten, embedded-file detach, encrypted-Office detection await `qpdf`.
+**The PDF guard is real** (#22). `createQpdfDocumentGuard` runs `qpdf`
+(Apache-2.0) as a SUBPROCESS with a timeout — this is the code path that parses
+bytes a stranger emailed us, and a malicious PDF must cost one failed document
+rather than the worker. Selected by `DOCUMENT_GUARD=fixture|qpdf`.
+
+- **Encryption** via `--is-encrypted`, which walks the xref chain. This is what
+  the shim got wrong: it greps the first and last 8 KB for `/Encrypt` and misses
+  a mid-file trailer in an incrementally-updated PDF — anything signed,
+  form-filled or annotated. Those passed as clean and failed in extraction
+  looking corrupt rather than locked, so the client was told the wrong thing.
+- **Active content** via `qpdf --empty --pages in 1-z -- out`. **`--empty` is
+  the mechanism, not a detail.** qpdf is content-*preserving* by design, so
+  without it the JavaScript name tree, OpenAction and embedded files are copied
+  straight through and the guard silently does nothing. Verified against
+  qpdf 11.9.1 both ways; pinned by a test on the argument vector.
+- The guard REWRITES as well as refuses, so `sanitise` continues with the
+  stripped bytes. A form-bearing invoice is kept and cleaned, not rejected.
+
+Still shimmed: **encrypted Office detection**. qpdf knows nothing about OOXML,
+and a guard that reports clean because it never looked is worse than one that
+admits the gap.
 
 Toolchain: **stood up in issue #9** — real `typecheck` (tsc, Bundler
 resolution), `lint` (eslint, `no-explicit-any`), `test` (Vitest). The 24
@@ -156,8 +174,13 @@ sanitisation tests were ported from `tsx --test` to Vitest and run in the suite.
 
 ## TODO
 
-- [ ] Shakib (#7): `sharp` (prove on ARM64 first) + a named PDF toolkit, then
-      replace the two BOOTSTRAP guards with real dep-backed implementations
+- [x] #7/#21/#22/#23: `sharp` + `heic-decode` + `qpdf` approved and landed; both
+      BOOTSTRAP guards replaced. Two things NOT yet proven: decoding a real HEIC
+      (no fixture exists — nothing available can encode one) and the ARM64 image
+      (no Dockerfile yet). sharp picks its binary via optional dependencies at
+      INSTALL time, so building on x64 and copying node_modules into an ARM64
+      image ships the wrong one and fails at runtime, not at build.
+- [ ] Encrypted Office (OOXML) detection — qpdf does not cover it
 - [ ] Enforce the bank-statement 300-page cap in the PDF-safety step
 - [ ] Await the frozen ingestion endpoints; map `Rejection` → NT-ING wire error
       at the controller boundary (NT-ING-001/002/004 mirrored in `reasons.ts`)

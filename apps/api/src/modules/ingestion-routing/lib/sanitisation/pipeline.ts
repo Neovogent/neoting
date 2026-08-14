@@ -130,13 +130,12 @@ export async function sanitise(
 
   // 6 · PDF/Office safety — password-protected is a visible rejection.
   if (DOCUMENT_FORMATS.has(detected)) {
-    const guard = await deps.documentGuard.inspect(bytes, detected);
-    if (guard.passwordProtected) {
-      return {
-        ok: false,
-        rejection: reject('password_protected', 'This file is password-protected, so we could not open it. Please remove the password and resend.'),
-      };
-    }
+    // The guard may REWRITE as well as refuse: a PDF carrying JavaScript or an
+    // embedded payload comes back stripped rather than rejected, because an
+    // invoice with a form field is ordinary paperwork.
+    const guarded = await deps.documentGuard.inspect(bytes, detected);
+    if (!guarded.ok) return { ok: false, rejection: guarded.rejection };
+    bytes = guarded.bytes;
   }
 
   // 7 · ZIP explode caps.

@@ -1,5 +1,5 @@
 import { wrapUntrusted } from '../../../common/untrusted-content.js';
-import { type Channel, type ImageNormaliser, mimeForFormat, sanitise, type SanitisationDeps, type VirusScanner } from '../lib/sanitisation/index.js';
+import { type Channel, type DocumentGuard, type ImageNormaliser, mimeForFormat, sanitise, type SanitisationDeps, type VirusScanner } from '../lib/sanitisation/index.js';
 import { type DocumentStore, InMemoryDocumentStore } from '../storage/document-store.js';
 import type { IngestJob, IngestQueue } from '../webhooks/whatsapp/ingest-queue.js';
 import { decideRouting, type RoutingDecision } from '../webhooks/whatsapp/routing.js';
@@ -55,6 +55,8 @@ export interface EmailIntakeDeps {
    * looks live.
    */
   readonly imageNormaliser?: ImageNormaliser;
+  /** The PDF guard (#22). Same reasoning as the normaliser above. */
+  readonly documentGuard?: DocumentGuard;
   /** Object storage for sanitised bytes (#16); defaults to the in-memory fixture. */
   readonly store?: DocumentStore;
 }
@@ -113,6 +115,7 @@ export async function processEmail(email: ParsedEmail, deps: EmailIntakeDeps): P
     const sanitisationDeps: Partial<SanitisationDeps> = {
       ...(deps.scanner ? { scanner: deps.scanner } : {}),
       ...(deps.imageNormaliser ? { imageNormaliser: deps.imageNormaliser } : {}),
+      ...(deps.documentGuard ? { documentGuard: deps.documentGuard } : {}),
     };
     const result = await sanitise({ bytes: attachment.bytes, filename: '', channel: EMAIL_CHANNEL }, sanitisationDeps);
 
