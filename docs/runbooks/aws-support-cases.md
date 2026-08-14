@@ -7,7 +7,7 @@ The drafts below are kept as the record of **what we told them**, not as a to-do
 | Case | Subject | Status | Blocks until granted |
 |---|---|---|---|
 | `178662887400793` | SES production access, eu-west-2 | **Replied 14 Aug** — awaiting AWS | All outbound email |
-| `178662889700456` | Textract `AnalyzeExpense` TPS 1 → 10 | **Replied 14 Aug** — awaiting AWS | Extraction throughput at pilot |
+| `178662889700456` | Textract `AnalyzeExpense` TPS **5** → 10 | **Correction owed** — see the ⚠ below; the reply as sent argues from a quota we do not have | Extraction throughput at pilot |
 | `178662889900075` | Textract `StartExpenseAnalysis` TPS 1 → 10 | **Replied 14 Aug** — awaiting AWS | Async extraction (300-page statements) |
 
 Quoted turnaround: SES gives an initial response within 24 hours; Textract quota requests are reviewed in Seattle business hours, up to 2 business days.
@@ -44,17 +44,48 @@ No document-per-day figure exists in the source-of-truth pair, so it is built fr
 | → Average per calendar day | ~830 | |
 | → Average per *working* day (22) | ~1,140 | |
 
-### Why 10 TPS, argued from the SLO rather than from headroom
+### ⚠ CORRECTION, 14 Aug 2026 — the AnalyzeExpense argument was built on a wrong number
 
-Average throughput is a weak argument — 830 documents spread over 24 hours is 0.01 TPS and would justify nothing. The quota exists for the burst, and the burst is bounded by a published commitment:
+**The reply below argues from "the default 1 TPS". This account is already at 5.** Measured, not assumed:
 
-**Governance §13.3 sets extraction p95 < 5 minutes for digital PDFs**, and SoT §4 Stage 2 repeats it as a product promise. That is the number the quota has to satisfy.
+```
+$ aws service-quotas list-service-quotas --service-code textract --region eu-west-2
+AnalyzeExpense throttle limit in transactions per second        5.0   (AWS default: 1.0)
+StartExpenseAnalysis throttle limit in transactions per second  1.0   (AWS default: 1.0)
+GetExpenseAnalysis throttle limit in transactions per second    5.0
+Async ExpenseAnalysis max concurrent jobs                     100.0
+```
 
-- Neoting auto-splits multi-document PDFs as standard (SoT Stage 1). One accountant uploading a month-end batch scan produces **30–100 extraction calls in seconds**, from a single user action.
-- Month-end is when this happens, across firms at once. Governance §15.6 sizes the load test as an **ingestion soak at 10× expected volume**.
-- A realistic month-end concentration — one practice clearing ~1,000 documents — takes **~17 minutes at the default 1 TPS**, which breaches the 5-minute p95 by more than 3×. At **10 TPS it clears in ~100 seconds**, inside the SLO with room for the other nine firms.
+So **Reply 2 (`StartExpenseAnalysis`) is sound** — that quota genuinely is at the default 1 TPS. **Reply 1 (`AnalyzeExpense`) is not.** Its central claim —
 
-So 10 TPS is not padding: 1 TPS makes the product's own latency commitment unmeetable at pilot scale, and the request is sized to the SLO rather than to the average.
+> *"At the default 1 TPS, a single practice clearing a ~1,000-document month-end batch would take about 17 minutes, breaching that by more than threefold"*
+
+— describes a quota we do not have. At the actual 5 TPS the same batch clears in **3.3 minutes, inside the 5-minute p95**. A reviewer whose job is assessing whether an applicant understands their own usage will check the current quota, find the argument refutes itself, and reasonably discount the rest of the case.
+
+**Withdraw that claim rather than repeat it.** The honest argument is weaker-sounding and much more defensible, and it is about the p95 *budget* rather than the SLO being unmeetable:
+
+- The 5-minute p95 is **end to end** — sanitisation, extraction, validation, coding, dedupe — not extraction alone. Extraction gets a fraction of 300 seconds, not all of it.
+- At 5 TPS, a 1,000-document month-end batch spends **200 seconds in the throttle queue alone**: ~65% of the total budget consumed before the first document finishes, with a *single* practice submitting.
+- The account quota is **shared across all ten pilot practices**, and month-end is precisely when they submit simultaneously. Auto-split (SoT Stage 1) multiplies it: one accountant's batch scan is 30–100 calls in seconds, so five concurrent uploads is ~325 calls — 65 seconds of queue at 5 TPS, 33 at 10.
+- Governance §15.6 requires a pre-pilot **k6 ingestion soak at 10× expected volume**. That test is designed to fail at 5 TPS.
+
+10 TPS is therefore **headroom against a published latency budget**, not a fix for something already broken. Say that.
+
+### The two-sentence correction to send on case `178662889700456`
+
+Post as a follow-up on the existing case; do not open a new one.
+
+```
+Correction to my previous reply: I quoted the AnalyzeExpense default of 1 TPS, but our account is
+already at 5 TPS for that operation, so the 17-minute figure I gave does not describe our current
+position and I withdraw it. The request stands on the p95 budget rather than on a breach: our
+extraction service level of 5 minutes is end-to-end (sanitisation, extraction, validation, coding
+and duplicate detection), so a 1,000-document month-end batch spending 200 seconds in the throttle
+queue at 5 TPS consumes roughly two-thirds of that budget before the first document completes, with
+only one of our ten pilot customers submitting — and because our product auto-splits multi-document
+PDFs, five concurrent batch uploads is around 325 calls arriving within seconds. Our separate
+request for StartExpenseAnalysis is unaffected: that quota is genuinely at the default 1 TPS.
+```
 
 ### Cross-check against the approved envelope
 
@@ -118,6 +149,10 @@ commitment to our customers. At the default 1 TPS, a single practice clearing a 
 month-end batch would take about 17 minutes, breaching that by more than threefold, and a throttled
 extraction surfaces to an accountant as a document stuck in processing with no explanation. At 10 TPS
 the same batch clears in under two minutes, leaving capacity for the other nine customers.
+
+⚠ THIS PARAGRAPH IS WRONG AS SENT — the account was already at 5 TPS, not 1. It is left here
+unedited because it is the record of what AWS was told; the correction to send is at the top of
+this file. Do not re-use this wording.
 
 I ACKNOWLEDGE THAT I AM REQUESTING A QUOTA INCREASE AND THAT THE INFORMATION PROVIDED ABOVE IS ACCURATE.
 ```
