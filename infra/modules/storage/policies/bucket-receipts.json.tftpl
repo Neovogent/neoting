@@ -14,7 +14,10 @@
       "Effect": "Allow",
       "Principal": { "Service": "ses.amazonaws.com" },
       "Action": "s3:PutObject",
-      "Resource": "arn:aws:s3:::${bucket}/inbound/*",
+      "Resource": [
+        "arn:aws:s3:::${bucket}/inbound/*",
+        "arn:aws:s3:::${bucket}/dmarc/*"
+      ],
       "Condition": {
         "StringEquals": { "aws:SourceAccount": "${account_id}" }
       }
