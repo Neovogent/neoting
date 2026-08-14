@@ -7,7 +7,7 @@ import { z } from 'zod';
  * producer is us today" is not a reason to trust it tomorrow.
  */
 export const IngestJobPayloadSchema = z.object({
-  source: z.literal('whatsapp'),
+  source: z.enum(['whatsapp', 'email']),
   idempotencyKey: z.string().min(1),
   from: z.string(),
   receivedAtSeconds: z.number(),
@@ -16,6 +16,8 @@ export const IngestJobPayloadSchema = z.object({
   routing: z.object({ kind: z.enum(['matched', 'multiple', 'unrouted']) }).passthrough(),
   stale: z.boolean(),
   traceId: z.string().min(1),
+  filename: z.string().optional(),
+  sha256: z.string().optional(),
 });
 
 export type IngestJobPayload = z.infer<typeof IngestJobPayloadSchema>;

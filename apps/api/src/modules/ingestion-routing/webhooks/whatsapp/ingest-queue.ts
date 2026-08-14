@@ -7,7 +7,7 @@ import type { RoutingDecision } from './routing.js';
  * in apps/api/CLAUDE.md.
  */
 export interface IngestJob {
-  readonly source: 'whatsapp';
+  readonly source: 'whatsapp' | 'email';
   readonly idempotencyKey: string;
   readonly from: string;
   readonly receivedAtSeconds: number;
@@ -18,8 +18,13 @@ export interface IngestJob {
    * Triage flag, not a gate: the message was correctly signed but its timestamp
    * is outside the ±5-minute window (or unparseable). It is still enqueued —
    * age is never a reason to drop a signed document — and marked for review.
+   * Email attachments are always fresh (`false`).
    */
   readonly stale: boolean;
+  /** Attachment filename — present for email attachments, absent for WhatsApp. */
+  readonly filename?: string;
+  /** SHA-256 of the sanitised bytes — present when the document is already in hand (email). */
+  readonly sha256?: string;
 }
 
 /**

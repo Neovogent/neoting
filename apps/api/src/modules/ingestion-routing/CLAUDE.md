@@ -89,6 +89,25 @@ the module swaps the provider by config (`INGEST_QUEUE=fixture|bullmq`).
   (no Docker). The logic is unit-tested; the end-to-end capture is the one
   acceptance item outstanding.
 
+### Email intake (issue #14)
+
+`email/` — a pure lane (own `CLAUDE.md`). `processEmail(parsedEmail, deps)`:
+route by sender (`decideRouting`, empty map → Unrouted) → wrap subject+body in
+`<untrusted_content>` → sanitise **each attachment independently** on
+`channel: 'email'` (25 MB) → enqueue each accepted through `IngestQueue`.
+**Partial acceptance is the point**: a password-protected PDF next to a clean one
+is one accepted document and one visible rejection, never all-or-nothing.
+Extends `IngestJob.source` to `'whatsapp' | 'email'` (+ optional `filename` /
+`sha256`) and adds the `email` channel (25 MB, client cap).
+
+The MIME parser sits behind an `EmailParser` interface: **`postal-mime@3.0.0`
+approved (§19, issue #14) and landed** — MIT-0, zero runtime deps, pinned exact.
+The logic stays tested with `ParsedEmail` fixtures; the parser has its own
+raw-MIME-on-disk test. No DB, no S3 (the S3-event trigger is Terraform,
+Shakib's). The idempotency key carries the content sha256 alongside the
+`Message-ID` — the key is the BullMQ `jobId`, a duplicate jobId is dropped
+silently, and a sender-controlled header must not be able to delete a document.
+
 ### Sanitisation pipeline (merged, PR #3)
 
 **Pure library** — `lib/sanitisation/`.
