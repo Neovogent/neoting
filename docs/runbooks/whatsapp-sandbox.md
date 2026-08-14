@@ -97,9 +97,15 @@ Order matters: **API on :3000 → tunnel → save the callback in Meta.** Meta f
 the GET the instant you press Save.
 
 This goes away when the API is deployed — the callback becomes
-`https://api.neoting.neovogent.com/webhooks/whatsapp`. As of 14 Aug 2026 that
-host returns 503: CloudFront, WAF and DNS are all live, but both ECS services sit
-at `desired_count = 0` because no image exists in ECR yet.
+`https://api.neoting.neovogent.com/webhooks/whatsapp`. That host returned 503
+until 14 Aug 2026 (CloudFront, WAF and DNS live, both ECS services at
+`desired_count = 0`, no image in ECR); issue #25 built the image and the deploy
+stage, so the endpoint is stable from the first merge to `main` afterwards.
+
+⚠ A stable callback is **not** a working ingest lane. The deployed task does not
+set `INGEST_QUEUE`, so it defaults to `fixture` — a message is signature-checked
+and then enqueued in memory, where it is dropped. Verified inbound still means
+verified, not stored.
 
 ## Prove the chain without waiting on Meta
 
@@ -145,10 +151,46 @@ handshake nor signature verification touches it. Inbound receipts arrive as medi
 IDs, so a durable System User token is required before anyone builds media fetch.
 Regenerate the temporary one after any session where it has been on screen.
 
+## The +880 number — closed, and it was never open
+
+Recorded here because it was being carried as an open question, and it is not
+one. Two locked statements already answer it:
+
+- **D25:** WhatsApp intake runs *"on a **dedicated UK virtual number**"*.
+- **Kickoff 4.1:** Twilio — *"**buy one UK virtual number** (for WhatsApp
+  registration, 4.2)"*, owner Integrations lead, clock starts night one.
+
+The `Puzzlex` WABA's **+880 1822-706901** is a Bangladeshi number. It cannot be
+the client-facing identity of a product whose entire pitch to UK accounting
+practices is UK-first — the same instinct that made D30 refuse an EU inference
+profile applies to the number a client sees in their phone. Making it the
+identity is a **versioned amendment to D25**, not a config choice, and there is
+no argument for one: the UK number costs ~£1–5/month.
+
+**So the real action is Kickoff 4.1 — buy the Twilio UK number.** It is a
+prerequisite of 4.2 (Meta registration) and it is on the D0 P-list as P4.
+Nothing about WhatsApp production moves until it exists.
+
+## Do NOT click Subscribe on the Puzzlex WABA
+
+The `Puzzlex` WABA (`2156858288587947`) has an unclicked **Subscribe webhooks**
+button and it should stay unclicked. Clicking it is not a tidying-up step:
+
+1. It begins delivering **real inbound messages from a real number** to
+   whatever callback is configured at that moment. During the sprint that has
+   usually been a dead `cloudflared` tunnel (trap 4) — and once the API is
+   deployed it is the staging endpoint, where `INGEST_QUEUE` defaults to
+   `fixture`, so a real client's document would be verified and then dropped in
+   memory.
+2. G2 is unambiguous: **synthetic data only** until ICO registration and the
+   DPIA are done. A real person sending a real receipt to that number is real
+   personal data arriving on a system that is not yet allowed to hold it.
+3. It attaches a number to the product that D25 says will not be the identity.
+
+Subscribe it when the UK number exists and the ingest lane is real. Until then
+the test WABA and its +1 555 number cover every technical question.
+
 ## Still open
 
-- The `Puzzlex` WABA (`2156858288587947`, real number +880 1822-706901) has its
-  own unclicked **Subscribe webhooks** button.
-- Whether a +880 number should be the client-facing WhatsApp identity for a UK
-  practice — a D5 decision, not a technical one.
-- Business Verification, needed only for production numbers.
+- **Business Verification** (Kickoff 4.2), needed only for production numbers —
+  and blocked behind buying the UK number first.
