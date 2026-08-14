@@ -54,6 +54,31 @@ A sender mapping to multiple client workspaces gets an in-chat "Which
 company?" prompt; a sender mapping to none lands in the Unrouted queue.
 Nothing is ever silently dropped.
 
+## Freshness is a triage signal, not an auth decision
+
+**A correctly-signed message must never be rejected for being old.**
+
+Meta retries a delivery we failed, with backoff, over a long window. So
+the sequence that matters is: our service is down or erroring for six
+minutes; Meta retries the messages that arrived during it; each retry
+now carries a timestamp outside any short freshness window; we reject
+them; Meta eventually stops trying. **Our own downtime becomes permanent
+customer-document loss, wearing the costume of a security rejection.**
+That breaks the invariant this module is built on — nothing is ever
+silently dropped — and it breaks it precisely when someone is already
+busy with an incident.
+
+The ±5 minute tolerance in Governance §11.7 is a replay defence, and
+here it is redundant: the HMAC already makes forgery impossible, and the
+per-`wamid` replay store already makes reprocessing impossible. A
+timestamp window adds no third guarantee — only a new way to lose data.
+
+So: verify the signature (401 on failure), consult the replay store
+(duplicate is an idempotent no-op), and **enqueue regardless of age**,
+marking anything beyond the window as stale so it can be triaged rather
+than trusted as timely. The message timestamp is inside the signed body,
+so it is integrity-protected and safe to carry forward as metadata.
+
  * @summary Inbound WhatsApp message
  */
 export const receiveWhatsappWebhookBody = zod.record(zod.string(), zod.unknown())
