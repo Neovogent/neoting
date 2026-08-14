@@ -232,9 +232,36 @@ resource "aws_iam_role" "ci_deploy" {
         # is the security boundary of the whole deploy path — a PR branch must
         # not be able to assume this role — and the `if:` on the workflow job is
         # only a convenience.
+        # ⚠ A JOB THAT DECLARES `environment:` GETS A DIFFERENT SUBJECT, AND IT
+        # CARRIES NO REF AT ALL. Measured 14 Aug 2026 from a real token:
+        #
+        #   job with no environment:   ...:ref:refs/heads/main
+        #   job with environment: staging → ...:environment:staging
+        #
+        # Both `check.yml`'s deploy job and `terraform.yml`'s apply job declare
+        # `environment: staging`, so neither could ever assume this role while
+        # only the ref form was listed. That is the second half of the same bug
+        # as the immutable-id one above, and it failed the same way — an
+        # AssumeRoleWithWebIdentity denial that reads like a permissions problem.
+        #
+        # ⚠ AND THE ENVIRONMENT FORM IS WEAKER ON ITS OWN. The probe that
+        # measured it ran on a throwaway branch, NOT main, and still minted
+        # `:environment:staging` — because the environment had no deployment
+        # branch policy. Adding this entry without that policy would have let
+        # ANY branch assume the deploy role by declaring the environment.
+        #
+        # So the ref pin does not disappear, it MOVES: the `staging` GitHub
+        # Environment now carries a custom deployment branch policy allowing
+        # `main` only (set 14 Aug 2026; available on the free plan — it is the
+        # required-reviewer rules that are not). Both halves are load-bearing.
+        # If that policy is ever removed, this entry becomes a hole.
+        #
+        # The `:ref:` entries stay for a job that declares no environment.
         StringEqualsIgnoreCase = {
           "token.actions.githubusercontent.com:sub" = [
+            "${local.github_sub_immutable}:environment:${local.env}",
             "${local.github_sub_immutable}:ref:refs/heads/main",
+            "repo:${local.github_repo}:environment:${local.env}",
             "repo:${local.github_repo}:ref:refs/heads/main",
           ]
         }
