@@ -7,6 +7,7 @@ import { getPrismaClient } from '../common/db/prisma.js';
 import { loadEnv } from '../config/env.js';
 import { BullmqDeadLetterQueue } from '../modules/ingestion-routing/queue/dead-letter.js';
 import { PrismaDocumentSink } from '../modules/ingestion-routing/queue/document-sink.js';
+import { PrismaDuplicateDetector } from '../modules/ingestion-routing/queue/duplicate-detector.js';
 import { processIngestJob } from '../modules/ingestion-routing/queue/ingest-processor.js';
 import { InMemoryProcessedStore } from '../modules/ingestion-routing/queue/processed-store.js';
 import { INGEST_QUEUE_NAME } from '../modules/ingestion-routing/queue/queue-names.js';
@@ -25,6 +26,7 @@ function bootstrap(): void {
   const processed = new InMemoryProcessedStore();
   const deadLetters = new BullmqDeadLetterQueue(connection);
   const sink = new PrismaDocumentSink(getPrismaClient());
+  const detector = new PrismaDuplicateDetector(getPrismaClient());
 
   const worker = new Worker(
     INGEST_QUEUE_NAME,
@@ -33,6 +35,7 @@ function bootstrap(): void {
         processed,
         logger: { log: (message) => logger.log(message), warn: (message) => logger.warn(message) },
         sink,
+        detector,
       }),
     { connection, concurrency: 8 },
   );

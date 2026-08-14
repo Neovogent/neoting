@@ -25,6 +25,9 @@ export const IngestJobPayloadSchema = z.object({
   practiceId: z.string().min(1).optional(),
   mimeType: z.string().optional(),
   byteSize: z.number().int().nonnegative().optional(),
+  // dHash of the sanitised image bytes (#40), for near-duplicate detection. Image
+  // documents only — absent for PDFs and for bytes no decoder could read.
+  perceptualHash: z.string().optional(),
 });
 
 export type IngestJobPayload = z.infer<typeof IngestJobPayloadSchema>;

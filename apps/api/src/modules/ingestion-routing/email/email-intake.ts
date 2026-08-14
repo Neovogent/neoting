@@ -1,4 +1,7 @@
 import { wrapUntrusted } from '../../../common/untrusted-content.js';
+// Type-only — erased at runtime, so this lane never loads `sharp` and stays
+// offline-testable. The sharp-backed hasher is injected on the real path.
+import type { PerceptualHasher } from '../lib/dedupe/perceptual-hash.js';
 import { type Channel, type DocumentGuard, type ImageNormaliser, mimeForFormat, sanitise, type SanitisationDeps, type VirusScanner } from '../lib/sanitisation/index.js';
 import { type DocumentStore, InMemoryDocumentStore } from '../storage/document-store.js';
 import type { IngestJob, IngestQueue } from '../webhooks/whatsapp/ingest-queue.js';
@@ -59,6 +62,13 @@ export interface EmailIntakeDeps {
   readonly documentGuard?: DocumentGuard;
   /** Object storage for sanitised bytes (#16); defaults to the in-memory fixture. */
   readonly store?: DocumentStore;
+  /**
+   * Perceptual hasher (#40) for near-duplicate detection. Injected rather than
+   * called inline, for the same reason as the normaliser above: it is sharp-backed,
+   * and this lane must stay pure. Absent → no perceptual hash is computed (the
+   * byte-hash net still covers exact re-sends).
+   */
+  readonly perceptualHasher?: PerceptualHasher;
 }
 
 /**
@@ -126,6 +136,12 @@ export async function processEmail(email: ParsedEmail, deps: EmailIntakeDeps): P
 
     accepted.push({ filename, detectedType: result.document.detectedType, sha256: result.document.sha256 });
 
+    // Perceptual hash the SANITISED bytes while they are already in hand (#40) —
+    // never fetched back from S3 to re-hash. Images only; null otherwise.
+    const perceptualHash = deps.perceptualHasher
+      ? await deps.perceptualHasher.hash(result.document.bytes, result.document.detectedType)
+      : null;
+
     // Store the SANITISED bytes before enqueuing, so the job never describes a
     // document that exists nowhere. Content-type is the magic-byte-authoritative
     // one, not the sender's declared header.
@@ -162,6 +178,7 @@ export async function processEmail(email: ParsedEmail, deps: EmailIntakeDeps): P
       practiceId: deps.practiceId,
       mimeType: mimeForFormat(result.document.detectedType),
       byteSize: result.document.byteLength,
+      ...(perceptualHash === null ? {} : { perceptualHash }),
     };
     await deps.queue.enqueue(job);
   }

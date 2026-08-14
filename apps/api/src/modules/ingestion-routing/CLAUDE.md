@@ -157,6 +157,57 @@ tenancy anchor.
   fails loudly, writing nothing. Skips when no DB is configured, fails when one is
   configured but unreachable.
 
+### Duplicate detection — byte hash + perceptual hash (issue #40)
+
+SoT Stage 6, the two nets that work with **no extracted fields**: an exact
+re-send, and the same paper photographed twice.
+
+- **`lib/dedupe/perceptual-hash.ts`** — a pure dHash (resize 9×8 greyscale via
+  `sharp`, compare adjacent pixels → 64 bits), a Hamming-distance helper, and the
+  `PerceptualHasher` interface + sharp-backed factory. **The threshold is
+  measured, not guessed**: `perceptual-hash.test.ts` records the distances on
+  every run (re-encode q92→q25 = 0, downscale 4× = 0, different image = 28), and
+  `PERCEPTUAL_HASH_MAX_DISTANCE = 10` sits clear of both. No new dependency —
+  `sharp` was already approved and in the sanitisation lane.
+- **Computed where the bytes are already in hand.** `email-intake` hashes
+  `result.document.bytes` (the sanitised output) right after it computes the
+  sha256 — never a round-trip back to S3. The hasher is **injected** (type-only
+  import) so the email lane stays pure and offline; images only, `null` for PDFs
+  and undecodable rasters. Carried on the job next to `sha256`, written to
+  `documents.perceptual_hash` by the sink.
+- **`queue/duplicate-detector.ts`** runs after a document persists. Within the
+  **same business**: exact = same `byteHash` (the indexed `@@index([businessId,
+  byteHash])` lookup); near = an image whose `perceptualHash` is within the
+  threshold (Hamming computed in memory — no index for it, bounded per business).
+  One `Duplicate` row per matched pair: `signals` (`byteHash` / `pHash`), a
+  `score` (1 for exact, `1 − distance/64` for near), verdict `PENDING`.
+
+**The unrouted decision (written down, as required).** `Duplicate.business_id` is
+`NOT NULL`, and an UNROUTED document has `business_id = null`, so it *cannot* have
+a `Duplicate` row as the schema stands. This is **not** a schema bug: SoT Stage 6
+runs after routing, and the only indexed dedupe lookup is per-business. So
+detection runs **for routed documents only** (`business_id` present); an unrouted
+document is persisted and left undeduped, and will be deduped when routing gives
+it a business (a later stage). The schema encodes the pipeline order; we honour
+it rather than change LAW.
+
+**Tenancy finding (verified before building, then in a live test).** A worker runs
+under a practice-only `systemContext` (no `app.business_id`). The `duplicates`
+WITH CHECK is `app_can_access_business(business_id)`, whose **practice-membership
+branch** (rls.sql) admits a SYSTEM actor whose practice owns the target business.
+So the worker *can* write the `Duplicate` — proven in
+`duplicate-detector.integration.test.ts`, not just reasoned.
+
+**Two review hazards from #20, carried in (both: a failure turning into a silent
+success).**
+1. `queue/processed-store.ts` gained `release(key)`; the processor releases the
+   idempotency claim if the work throws, so a retry redoes it instead of logging
+   "already processed" and reporting a success that wrote nothing.
+2. Concurrent writes rest on the **primary/unique key**, not `find`-then-`create`:
+   the sink catches `P2002` as the no-op it is, and the detector writes via
+   `createMany({ skipDuplicates })` with a **deterministically ordered pair**, so
+   two workers detecting the same pair at once collapse to one row.
+
 ### Sanitisation pipeline (merged, PR #3)
 
 **Pure library** — `lib/sanitisation/`.
@@ -238,4 +289,8 @@ sanitisation tests were ported from `tsx --test` to Vitest and run in the suite.
 - [x] #20: worker persists `Document` + `DocumentEvent` through `scopedDb`
       (`queue/document-sink.ts`), idempotent on `idempotencyKey`, proven against a
       real DB. WhatsApp media fetch (so those jobs persist too) is the next task.
+- [x] #40: duplicate detection on byte hash + perceptual hash
+      (`lib/dedupe/`, `queue/duplicate-detector.ts`), routed documents only,
+      proven against a real DB. Not yet: dedupe on route (so unrouted docs get
+      deduped when they gain a business), and the OCR/field nets (need extraction).
 - [ ] Update this file on exit — it is how the next session picks up

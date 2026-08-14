@@ -1,4 +1,5 @@
 import type { DocumentSink } from './document-sink.js';
+import type { DuplicateDetector } from './duplicate-detector.js';
 import { type IngestJobPayload, IngestJobPayloadSchema } from './job-payload.js';
 import type { ProcessedStore } from './processed-store.js';
 
@@ -13,18 +14,20 @@ export interface ProcessorDeps {
   readonly logger: JobLogger;
   /** Persists the sanitised document (#20); the durable idempotency lives here. */
   readonly sink: DocumentSink;
+  /** Flags exact/near duplicates after a routed document persists (#40). */
+  readonly detector: DuplicateDetector;
 }
 
 /**
- * Process one ingest job. Today's contract (issue #12): **validate, log,
- * acknowledge** — persistence is blocked on `scopedDb`, so nothing is written.
+ * Process one ingest job.
  *
  * - Zod-validates the payload at the boundary; a bad payload throws, which lets
  *   BullMQ retry / dead-letter it rather than processing garbage.
  * - Idempotent on `idempotencyKey`: a redelivery of an already-handled job is a
  *   logged no-op, never double-processed.
- * - Logs with the job's `traceId`, so the Journey Inspector has no hole at the
- *   async boundary (Governance §13.1).
+ * - Persists the document (#20) and flags duplicates (#40) when the bytes are in
+ *   hand; logs with the job's `traceId`, so the Journey Inspector has no hole at
+ *   the async boundary (Governance §13.1).
  */
 export async function processIngestJob(raw: unknown, deps: ProcessorDeps): Promise<void> {
   const payload = IngestJobPayloadSchema.parse(raw);
@@ -69,12 +72,15 @@ async function handle(payload: IngestJobPayload, deps: ProcessorDeps): Promise<v
     payload.byteSize !== undefined &&
     payload.filename !== undefined
   ) {
+    const businessId = payload.routing.businessId ?? null;
+    const perceptualHash = payload.perceptualHash ?? null;
     const { documentId, created } = await deps.sink.persist({
       idempotencyKey: payload.idempotencyKey,
       practiceId: payload.practiceId,
-      businessId: payload.routing.businessId ?? null,
+      businessId,
       s3Key: payload.storageKey,
       byteHash: payload.sha256,
+      perceptualHash,
       mimeType: payload.mimeType,
       byteSize: payload.byteSize,
       channel: payload.source === 'email' ? 'EMAIL' : 'WHATSAPP',
@@ -84,6 +90,22 @@ async function handle(payload: IngestJobPayload, deps: ProcessorDeps): Promise<v
       traceId: payload.traceId,
     });
     deps.logger.log(`persisted document ${documentId} (created=${created}) trace=${payload.traceId}`);
+
+    // Duplicate detection (#40) runs for ROUTED documents only: a `Duplicate`
+    // row needs a business to anchor on, and an unrouted document has none. It
+    // runs on every handle, not just `created` ones — a retry after a mid-job
+    // failure must still detect, and the write is idempotent (ordered pair +
+    // unique index). See the module CLAUDE.md for the unrouted decision.
+    if (businessId !== null) {
+      const { findings } = await deps.detector.detect({
+        documentId,
+        practiceId: payload.practiceId,
+        businessId,
+        byteHash: payload.sha256,
+        perceptualHash,
+      });
+      deps.logger.log(`dedupe ${documentId}: ${findings.length} match(es) trace=${payload.traceId}`);
+    }
     return;
   }
 

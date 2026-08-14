@@ -23,6 +23,11 @@ Terraform (Shakib's), out of this lane.
    `storageKey`, so the job never describes a document that exists nowhere. The
    producer attaches the traceId from the request context, as the webhook does.
 
+Between 3 and 4, the **perceptual hash** (#40) is computed from the sanitised
+bytes while they are already in hand — never re-fetched from S3. The hasher is an
+**injected** dependency (`PerceptualHasher`, type-only import so this lane never
+loads `sharp`); absent → no hash, images only. It rides the job next to `sha256`.
+
 ## The MIME parser is behind an interface
 
 `EmailParser.parse(raw) → ParsedEmail`. MIME parsing of hostile input is not
@@ -60,7 +65,9 @@ pnpm --filter @neoting/api test
       `EmailParser`, and a raw-MIME-fixture-on-disk test — `postal-mime@3.0.0`.
 - [ ] When the S3 event notification (Terraform) lands, wire the trigger →
       fetch raw bytes → `parse` → `processEmail`, and take `receivedAtSeconds`
-      from the S3 event rather than the sender's `Date:` header.
+      from the S3 event rather than the sender's `Date:` header. Inject the
+      sharp-backed `createSharpPerceptualHasher()` here too (#40) — the hasher is
+      a seam today, live only once a real call site constructs `processEmail`.
 - [x] Store sanitised bytes to object storage (#16) — `storage/`, `w/` keys.
 - [ ] Persist document RECORDS once `scopedDb` exists (bytes are in object
       storage + the queue today; no DB row yet).
