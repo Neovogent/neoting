@@ -12,28 +12,73 @@
  */
 
 import type { AcceptedFormat } from './formats.js';
+import { reject, type Rejection } from './reasons.js';
+
+/**
+ * Normalisation can REFUSE, not only transform.
+ *
+ * An image is the one input we decode rather than merely inspect, and decoding
+ * is where the expensive failures live: a 200 KB HEIC or PNG can describe a
+ * 40,000 × 40,000 surface, which the channel byte cap cannot see because
+ * compressed size says nothing about decoded size. A normaliser that could only
+ * return a Buffer would have to throw or die for those, and both surface to the
+ * submitter as "something went wrong" — which SoT §4 Stage 1 forbids.
+ */
+export type NormaliseResult =
+  | { readonly ok: true; readonly bytes: Buffer }
+  | { readonly ok: false; readonly rejection: Rejection };
 
 export interface ImageNormaliser {
-  /** Return normalised bytes (EXIF-corrected, HEIC→JPEG). Order-preserving. */
-  normalise(bytes: Buffer, format: AcceptedFormat): Promise<Buffer>;
-}
-
-export interface DocumentGuardVerdict {
-  readonly passwordProtected: boolean;
-}
-
-export interface DocumentGuard {
-  inspect(bytes: Buffer, format: AcceptedFormat): Promise<DocumentGuardVerdict>;
+  /** Normalised bytes (EXIF-corrected, HEIC→JPEG), or a visible refusal. */
+  normalise(bytes: Buffer, format: AcceptedFormat): Promise<NormaliseResult>;
 }
 
 /**
- * BOOTSTRAP: identity passthrough. Real EXIF stripping and HEIC→JPEG need
- * sharp/libvips — a dependency awaiting approval.
- * TODO(#7): replace with the sharp-backed normaliser.
+ * Like normalisation, the document guard both REFUSES and REWRITES.
+ *
+ * A password-protected file is a refusal; a file carrying JavaScript or an
+ * embedded payload is not — we strip those and keep the document, because an
+ * invoice with an interactive form field is ordinary accounting paperwork and
+ * refusing it would be refusing the customer's actual work. So the guard returns
+ * bytes on success, and those bytes may differ from the ones it was given.
+ */
+export type DocumentGuardResult =
+  | { readonly ok: true; readonly bytes: Buffer }
+  | { readonly ok: false; readonly rejection: Rejection };
+
+export interface DocumentGuard {
+  inspect(bytes: Buffer, format: AcceptedFormat): Promise<DocumentGuardResult>;
+}
+
+/**
+ * BOOTSTRAP normaliser: passes ordinary images through untouched, and REFUSES
+ * HEIC with a reason the sender can act on.
+ *
+ * The refusal is the point (issue #21). HEIC used to pass through here silently
+ * and then fail in extraction looking like a corrupt file, so the accountant was
+ * told the wrong thing about a photo that was fine — a silent drop wearing a
+ * different hat, and against this module's first invariant. Refusing it visibly
+ * is worse UX than converting it and strictly better than lying about it.
+ *
+ * Note it is NOT removed from the accepted-format allowlist: `sniff` must keep
+ * recognising HEIC, or the file falls through to "we cannot accept this type"
+ * and the sender loses the one instruction that actually fixes their problem.
+ *
+ * EXIF stripping is still absent — that lands with sharp (#23), and this whole
+ * implementation is deleted in the same PR.
  */
 export const bootstrapImageNormaliser: ImageNormaliser = {
-  async normalise(bytes: Buffer): Promise<Buffer> {
-    return bytes;
+  async normalise(bytes: Buffer, format: AcceptedFormat): Promise<NormaliseResult> {
+    if (format === 'heic') {
+      return {
+        ok: false,
+        rejection: reject(
+          'format_not_processable',
+          'We cannot read HEIC photos yet. On an iPhone, please resend the photo as a JPEG — or set Camera > Formats to "Most Compatible" and take it again.',
+        ),
+      };
+    }
+    return { ok: true, bytes };
   },
 };
 
@@ -45,7 +90,7 @@ export const bootstrapImageNormaliser: ImageNormaliser = {
  * TODO(#7): replace with the PDF-toolkit-backed guard.
  */
 export const bootstrapDocumentGuard: DocumentGuard = {
-  async inspect(bytes: Buffer, format: AcceptedFormat): Promise<DocumentGuardVerdict> {
+  async inspect(bytes: Buffer, format: AcceptedFormat): Promise<DocumentGuardResult> {
     if (format === 'pdf') {
       // Head AND tail, not tail alone. "The trailer is at the end" is true of a
       // plain PDF and false of the two shapes we will actually meet:
@@ -66,9 +111,17 @@ export const bootstrapDocumentGuard: DocumentGuard = {
       const head = bytes.toString('latin1', 0, Math.min(window, bytes.length));
       const tail = bytes.toString('latin1', Math.max(0, bytes.length - window));
       if (head.includes('/Encrypt') || tail.includes('/Encrypt')) {
-        return { passwordProtected: true };
+        return { ok: false, rejection: passwordProtectedRejection() };
       }
     }
-    return { passwordProtected: false };
+    return { ok: true, bytes };
   },
 };
+
+/** One wording, used by both guards, so the shim and the real thing agree. */
+export function passwordProtectedRejection(): Rejection {
+  return reject(
+    'password_protected',
+    'This file is password-protected, so we could not open it. Please remove the password and resend.',
+  );
+}

@@ -121,18 +121,21 @@ export async function sanitise(
   // 5 · EXIF orientation + HEIC→JPEG (image formats only).
   let bytes = input.bytes;
   if (IMAGE_FORMATS.has(detected)) {
-    bytes = await deps.imageNormaliser.normalise(bytes, detected);
+    // Normalisation may refuse: HEIC is unreadable until #23, and a decode bomb
+    // must be a visible rejection rather than an OOM that kills the worker.
+    const normalised = await deps.imageNormaliser.normalise(bytes, detected);
+    if (!normalised.ok) return { ok: false, rejection: normalised.rejection };
+    bytes = normalised.bytes;
   }
 
   // 6 · PDF/Office safety — password-protected is a visible rejection.
   if (DOCUMENT_FORMATS.has(detected)) {
-    const guard = await deps.documentGuard.inspect(bytes, detected);
-    if (guard.passwordProtected) {
-      return {
-        ok: false,
-        rejection: reject('password_protected', 'This file is password-protected, so we could not open it. Please remove the password and resend.'),
-      };
-    }
+    // The guard may REWRITE as well as refuse: a PDF carrying JavaScript or an
+    // embedded payload comes back stripped rather than rejected, because an
+    // invoice with a form field is ordinary paperwork.
+    const guarded = await deps.documentGuard.inspect(bytes, detected);
+    if (!guarded.ok) return { ok: false, rejection: guarded.rejection };
+    bytes = guarded.bytes;
   }
 
   // 7 · ZIP explode caps.

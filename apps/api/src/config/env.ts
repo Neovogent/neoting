@@ -35,6 +35,18 @@ const EnvSchema = z.object({
   // and credentials come from the task role's default provider chain, so both
   // are blank there — not required.
   OBJECT_STORE: z.enum(['fixture', 's3']).default('fixture'),
+
+  // The image normaliser (#23). `fixture` = passthrough, and it REFUSES HEIC
+  // because it genuinely cannot read one; `sharp` = the real EXIF/HEIC path.
+  // Selected by config rather than by import so unit tests stay offline and
+  // deterministic — a test feeding four magic bytes and the word "image" must
+  // not be handed to a real decoder that correctly rejects it.
+  IMAGE_NORMALISER: z.enum(['fixture', 'sharp']).default('fixture'),
+
+  // The PDF guard (#22). `fixture` = the dependency-free /Encrypt grep, which
+  // has a known false-negative on incrementally-updated PDFs; `qpdf` = the real
+  // one. Defaults to fixture so a machine without the binary still runs tests.
+  DOCUMENT_GUARD: z.enum(['fixture', 'qpdf']).default('fixture'),
   S3_ENDPOINT: z.string().default(''), // e.g. http://localhost:9000 for MinIO; empty = AWS default
   S3_REGION: z.string().default('eu-west-2'),
   S3_ACCESS_KEY_ID: z.string().default(''),

@@ -1,5 +1,5 @@
 import { wrapUntrusted } from '../../../common/untrusted-content.js';
-import { type Channel, mimeForFormat, sanitise, type VirusScanner } from '../lib/sanitisation/index.js';
+import { type Channel, type DocumentGuard, type ImageNormaliser, mimeForFormat, sanitise, type SanitisationDeps, type VirusScanner } from '../lib/sanitisation/index.js';
 import { type DocumentStore, InMemoryDocumentStore } from '../storage/document-store.js';
 import type { IngestJob, IngestQueue } from '../webhooks/whatsapp/ingest-queue.js';
 import { decideRouting, type RoutingDecision } from '../webhooks/whatsapp/routing.js';
@@ -48,6 +48,15 @@ export interface EmailIntakeDeps {
   readonly senderMap?: ReadonlyMap<string, readonly string[]>;
   /** Injected for the sanitisation virus-scan step; defaults to the fixture. */
   readonly scanner?: VirusScanner;
+  /**
+   * The image normaliser (#23). Threaded through rather than selected inside
+   * `sanitise`, because this lane must stay pure and offline-testable — and
+   * because a sharp-backed normaliser that nothing injects is dead code that
+   * looks live.
+   */
+  readonly imageNormaliser?: ImageNormaliser;
+  /** The PDF guard (#22). Same reasoning as the normaliser above. */
+  readonly documentGuard?: DocumentGuard;
   /** Object storage for sanitised bytes (#16); defaults to the in-memory fixture. */
   readonly store?: DocumentStore;
 }
@@ -103,10 +112,12 @@ export async function processEmail(email: ParsedEmail, deps: EmailIntakeDeps): P
     // file is (Shakib's condition) — a part labelled image/jpeg that carries a PDF
     // is accepted as a PDF, not rejected for the mismatch.
     const filename = safeBasename(attachment.filename);
-    const result = await sanitise(
-      { bytes: attachment.bytes, filename: '', channel: EMAIL_CHANNEL },
-      deps.scanner ? { scanner: deps.scanner } : {},
-    );
+    const sanitisationDeps: Partial<SanitisationDeps> = {
+      ...(deps.scanner ? { scanner: deps.scanner } : {}),
+      ...(deps.imageNormaliser ? { imageNormaliser: deps.imageNormaliser } : {}),
+      ...(deps.documentGuard ? { documentGuard: deps.documentGuard } : {}),
+    };
+    const result = await sanitise({ bytes: attachment.bytes, filename: '', channel: EMAIL_CHANNEL }, sanitisationDeps);
 
     if (!result.ok) {
       rejected.push({ filename, reason: result.rejection.message, code: result.rejection.code });
