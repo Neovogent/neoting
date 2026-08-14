@@ -18,6 +18,7 @@ export const IngestJobPayloadSchema = z.object({
   traceId: z.string().min(1),
   filename: z.string().optional(),
   sha256: z.string().optional(),
+  storageKey: z.string().optional(),
 });
 
 export type IngestJobPayload = z.infer<typeof IngestJobPayloadSchema>;

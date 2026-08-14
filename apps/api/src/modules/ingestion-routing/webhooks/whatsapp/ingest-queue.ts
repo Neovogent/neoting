@@ -25,6 +25,12 @@ export interface IngestJob {
   readonly filename?: string;
   /** SHA-256 of the sanitised bytes — present when the document is already in hand (email). */
   readonly sha256?: string;
+  /**
+   * Object-storage key for the sanitised bytes (#16), present when the document
+   * is already stored (email). The worker fetches the bytes from here; without
+   * it the job would describe a document that exists nowhere.
+   */
+  readonly storageKey?: string;
 }
 
 /**

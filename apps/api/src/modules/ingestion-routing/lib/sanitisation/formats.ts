@@ -128,3 +128,27 @@ export function extensionContradicts(filename: string, detected: AcceptedFormat)
   if (!known.has(ext)) return false; // unknown extension: not a positive contradiction
   return !EXTENSIONS[detected].includes(ext);
 }
+
+const MIME_BY_FORMAT: Readonly<Record<AcceptedFormat, string>> = {
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  bmp: 'image/bmp',
+  tiff: 'image/tiff',
+  heic: 'image/heic',
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  odt: 'application/vnd.oasis.opendocument.text',
+  rtf: 'application/rtf',
+  zip: 'application/zip',
+};
+
+/**
+ * The MIME type for a sniffed format — the authoritative content-type, derived
+ * from the magic bytes, not the sender's declared header. Used when storing so a
+ * mislabelled part is stored (and later served) as what it actually is.
+ */
+export function mimeForFormat(format: AcceptedFormat): string {
+  return MIME_BY_FORMAT[format];
+}

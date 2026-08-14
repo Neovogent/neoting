@@ -1,0 +1,46 @@
+import { expect, test } from 'vitest';
+
+import type { Env } from '../../../config/env.js';
+import { type DocumentStore, InMemoryDocumentStore } from './document-store.js';
+import { selectDocumentStore } from './select-document-store.js';
+
+function env(overrides: Partial<Env> = {}): Env {
+  return Object.freeze({
+    NODE_ENV: 'test',
+    PORT: 3000,
+    META_APP_SECRET: '',
+    META_VERIFY_TOKEN: '',
+    INGEST_QUEUE: 'fixture',
+    REDIS_URL: 'redis://localhost:6379',
+    OBJECT_STORE: 'fixture',
+    S3_ENDPOINT: '',
+    S3_REGION: 'eu-west-2',
+    S3_ACCESS_KEY_ID: '',
+    S3_SECRET_ACCESS_KEY: '',
+    S3_FORCE_PATH_STYLE: false,
+    S3_BUCKET_DOCUMENTS: 'nt-local-docs',
+    ...overrides,
+  });
+}
+
+test('fixture mode returns the in-memory store (offline default)', () => {
+  expect(selectDocumentStore(env({ OBJECT_STORE: 'fixture' }))).toBeInstanceOf(InMemoryDocumentStore);
+});
+
+test('s3 mode builds the real store from config — no S3 client opened in the test', () => {
+  const stub: DocumentStore = {
+    async put() {
+      return { key: 'w/x/documents/y', sha256: 'y', byteLength: 0 };
+    },
+    async get() {
+      return Buffer.alloc(0);
+    },
+  };
+  let called = false;
+  const store = selectDocumentStore(env({ OBJECT_STORE: 's3' }), () => {
+    called = true;
+    return stub;
+  });
+  expect(store).toBe(stub);
+  expect(called).toBe(true);
+});

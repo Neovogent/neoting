@@ -18,8 +18,10 @@ Terraform (Shakib's), out of this lane.
 3. **Sanitise each attachment independently** via `sanitise()` (#2) on
    `channel: 'email'` (25 MB client cap). A rejection is visible with its reason
    and does **not** discard the rest — partial acceptance, never all-or-nothing.
-4. **Enqueue** each accepted document through `IngestQueue` (#12); the producer
-   attaches the traceId from the request context, as the webhook does.
+4. **Store** each sanitised document via `DocumentStore` (#16) — bytes into object
+   storage under a `w/` key — then **enqueue** through `IngestQueue` (#12) with the
+   `storageKey`, so the job never describes a document that exists nowhere. The
+   producer attaches the traceId from the request context, as the webhook does.
 
 ## The MIME parser is behind an interface
 
@@ -59,4 +61,6 @@ pnpm --filter @neoting/api test
 - [ ] When the S3 event notification (Terraform) lands, wire the trigger →
       fetch raw bytes → `parse` → `processEmail`, and take `receivedAtSeconds`
       from the S3 event rather than the sender's `Date:` header.
-- [ ] Persist accepted documents once `scopedDb` exists (currently enqueue-only).
+- [x] Store sanitised bytes to object storage (#16) — `storage/`, `w/` keys.
+- [ ] Persist document RECORDS once `scopedDb` exists (bytes are in object
+      storage + the queue today; no DB row yet).
