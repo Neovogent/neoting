@@ -47,9 +47,37 @@ locals {
   env         = "staging"
   region      = "eu-west-2"
   github_repo = "neovogent/neoting"
-  domain      = "neoting.neovogent.com" # pre-launch domain (D5); neoting.com at cutover
-  azs         = ["eu-west-2a", "eu-west-2b", "eu-west-2c"]
-  vpc_cidr    = "10.20.0.0/16" # staging; prod takes 10.30.0.0/16 — never overlap
+
+  # ⚠ THE OIDC SUBJECT GITHUB ACTUALLY SENDS, and it is not `repo:<owner>/<repo>`.
+  #
+  # Measured on 14 Aug 2026 by decoding a real Actions ID token:
+  #
+  #   "sub": "repo:Neovogent@316230831/neoting@1333088145:ref:refs/heads/..."
+  #   "aud": "sts.amazonaws.com"
+  #   "repository": "Neovogent/neoting"
+  #
+  # GitHub now embeds the immutable ORGANISATION ID and REPOSITORY ID in the
+  # subject, so a rename cannot be used to impersonate a repo. Confirmable
+  # without a workflow run:
+  #   gh api repos/Neovogent/neoting/actions/oidc/customization/sub
+  #   → "sub_claim_prefix": "repo:Neovogent@316230831/neoting@1333088145"
+  #
+  # Both trust policies below were written against the OLD format, so neither
+  # role could ever be assumed. That is why terraform.yml's own comment says
+  # they "have never been used" — they had never worked. The symptom is
+  # `Not authorized to perform sts:AssumeRoleWithWebIdentity` after the
+  # action's retry loop, which reads like a missing permission and is a string
+  # mismatch.
+  #
+  # These IDs are stable for the life of the org and repo, and they are not
+  # secret — they are readable from the public API by anyone who can see the
+  # repo. Deleting and recreating the repository under the same name mints a
+  # NEW id, and CI stops working until this line is updated. That is the
+  # security property, not a bug: the old subject can never be replayed.
+  github_sub_immutable = "repo:Neovogent@316230831/neoting@1333088145"
+  domain               = "neoting.neovogent.com" # pre-launch domain (D5); neoting.com at cutover
+  azs                  = ["eu-west-2a", "eu-west-2b", "eu-west-2c"]
+  vpc_cidr             = "10.20.0.0/16" # staging; prod takes 10.30.0.0/16 — never overlap
 
   # Convenience alias so the twenty-odd references across compute.tf,
   # services.tf, clamav.tf and email.tf did not all have to change shape when
@@ -194,8 +222,21 @@ resource "aws_iam_role" "ci_deploy" {
         # This costs nothing in strength: GitHub does not allow two
         # organisations whose names differ only by case, so case-insensitive
         # matching cannot widen who this trusts.
+        # TWO forms, and the FIRST is the one that actually matches today (see
+        # `github_sub_immutable` in locals): GitHub emits the immutable
+        # org-id/repo-id subject. The legacy `owner/repo` spelling is retained
+        # only so that a rollback of GitHub's format does not take CI down; it
+        # can be deleted once the immutable form has been stable for a while.
+        #
+        # Still an EXACT match on `:ref:refs/heads/main`, not a wildcard. This
+        # is the security boundary of the whole deploy path — a PR branch must
+        # not be able to assume this role — and the `if:` on the workflow job is
+        # only a convenience.
         StringEqualsIgnoreCase = {
-          "token.actions.githubusercontent.com:sub" = "repo:${local.github_repo}:ref:refs/heads/main"
+          "token.actions.githubusercontent.com:sub" = [
+            "${local.github_sub_immutable}:ref:refs/heads/main",
+            "repo:${local.github_repo}:ref:refs/heads/main",
+          ]
         }
       }
     }]
@@ -247,8 +288,17 @@ resource "aws_iam_role" "ci_plan" {
         # organisation is not something this file should have to be right about.
         # It costs nothing: GitHub does not allow two organisations whose names
         # differ only by case, so no third party can occupy the other spelling.
+        # The FIRST entry is the one that matches today — GitHub emits the
+        # immutable org-id/repo-id subject (see `github_sub_immutable` in
+        # locals). The two legacy spellings are retained so a rollback of
+        # GitHub's format does not take plan runs down.
+        #
+        # The wildcard is wider than the deploy role's on purpose: plan runs on
+        # PR branches, so the ref cannot be pinned. It is bounded instead by
+        # ReadOnlyAccess and by the workflow refusing to run for forks.
         StringLike = {
           "token.actions.githubusercontent.com:sub" = [
+            "${local.github_sub_immutable}:*",
             "repo:Neovogent/neoting:*",
             "repo:neovogent/neoting:*",
           ]
