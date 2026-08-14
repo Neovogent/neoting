@@ -584,7 +584,7 @@ Each one line to a page, per Kickoff §8's "each gets a one-line ADR":
 | 0004 | Transcribe streaming en-GB quality floor (10 utterances) | 8.5 | ⏳ **Blocked** — verification 8.5 not run. |
 | 0005 | AWS account topology, SCP set, and the Slice A/B/C sequencing (§0.1 of this runbook) | 3.1 / G1 / G8 | ✅ Accepted — also records that the G8 trigger fired on 13 Aug (D34 + D35) |
 | 0006 | Terraform state layout + OIDC role scoping | 3.2 / 4.10 | ✅ Accepted |
-| 0007 | DR region choice for the cross-region backup target (D30's last named fallback) | Gov §17 | 🟡 **Proposed** — needs Shakib's ratification; it fixes the wording of a residency exception |
+| 0007 | DR region choice for the cross-region backup target (D30's last named fallback) | Gov §17 | ✅ **Accepted** — ratified 14 Aug 2026: eu-west-1 (Ireland), backup and replication targets only, nothing processes there. One follow-up stays open and it is the acceptance test, not the build: the quarterly restore drill has not run, so RTO ≤ 4 h is asserted rather than measured |
 | 0008 | S3 encryption topology: request-time gating, not per-workspace keys | §6.2 / Gov §5.2 / SoT §15 | ✅ Accepted — cited by both governing documents, which is why it could not stay unwritten |
 
 ### 12.3 Escalations this runbook expects to generate

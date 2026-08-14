@@ -1,7 +1,13 @@
 # ADR 0007 — DR region for the cross-region backup target
 
-**Status:** Proposed — needs Shakib's ratification, because it fixes the wording of D30's last remaining exception
-**Date:** 13 August 2026 · **Decider:** Shakib · **Implements:** Governance §17 · **Constrained by:** D30, D36
+**Status:** **Accepted** — ratified by Shakib, 14 August 2026
+**Date:** 13 August 2026 · **Ratified:** 14 August 2026 · **Decider:** Shakib · **Implements:** Governance §17 · **Constrained by:** D30, D36
+
+> **Ratification note (14 Aug 2026).** Accepted as written; nothing in the decision changed on review. It sat at Proposed for a day while it blocked work it should not have: Governance §17 backups cannot be configured before the DR region is settled, because a backup written to the wrong region is a residency incident that has already happened by the time anyone reads the ADR.
+>
+> Three of the four consequences were verified as already built in `infra/envs/prod/` before ratifying, rather than taken on trust — see the follow-ups below. The fourth, the restore drill, is the one that matters most and is the one still open: §17 is explicit that an untested backup is a hope, so this ADR is not *finished* until an RTO number is measured and written into it.
+>
+> D30's wording was re-read against the named region and still reads correctly: the exception is a *location*, and this ADR narrows it to backup and replication targets with nothing processing there.
 
 ---
 
@@ -53,7 +59,9 @@ That is true, and it is not what this decision is for. DR protects against *regi
 
 ## Follow-ups
 
-- [ ] Shakib to ratify, moving Status to Accepted, and confirm the D30 wording still reads correctly with the region named.
-- [ ] Add the narrow eu-west-1 carve-out to `policies/region-guardrail.json`, scoped to backup and replication actions only (consequence 2).
-- [ ] Create the eu-west-1 replication CMK in Terraform with the ADR 0008 policy shape (consequence 3).
-- [ ] Schedule the first restore drill and record the measured RTO in this ADR (consequence 4).
+- [x] **Ratified** 14 Aug 2026; D30's wording confirmed to still read correctly with the region named.
+- [x] `dr_region = "eu-west-1"` is a variable, not a literal — `infra/envs/prod/main.tf` (consequence 1).
+- [x] The narrow carve-out is in `infra/envs/prod/policies/region-guardrail.json.tftpl` (consequence 2), and it is narrow in the way this ADR demanded rather than in name only: `NothingProcessesInTheDrRegion` denies the compute and AI services outright in `${dr_region}`, and `DrRegionS3IsTheBackupBucketsOnly` confines S3 there to the replication targets. **Staging's guardrail deliberately has no carve-out** — staging replicates nothing, and an unused permission is a permission.
+- [x] The eu-west-1 replication CMK exists in Terraform with the ADR 0008 explicit-Deny shape — `infra/envs/prod/replication.tf`, `policies/kms-dr.json.tftpl` (consequence 3).
+- [ ] **Still open, and it is the important one:** schedule the first restore drill and record the measured RTO here (consequence 4). Blocked on staging holding seed data. Until a number replaces this line, RTO ≤ 4 h is an assertion, not a measurement — Governance §17's own standard.
+- [ ] Note that none of the prod Terraform above has been **applied** (ADR 0005: Slice C is authored, applied selectively). The controls are code-complete and untested against a real bucket.
