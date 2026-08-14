@@ -365,6 +365,15 @@ jobs:
       - name: 1 · pnpm install --frozen-lockfile
         run: pnpm install --frozen-lockfile
 
+      # The Prisma client is GENERATED code that is not committed, and stage 2
+      # typechecks against it — `@prisma/client` exports nothing until this runs,
+      # so without it typecheck fails with "has no exported member 'PrismaClient'"
+      # and reads like a broken import rather than a missing build step. It runs
+      # again before the migration; generating twice costs a second and is
+      # cheaper than the ordering being implicit.
+      - name: 1a · prisma generate (typecheck depends on generated types)
+        run: pnpm --filter @neoting/api exec prisma generate
+
       # The PR title becomes the squash commit (G4), so it is the thing that
       # must be a valid conventional commit — not the individual commits.
       - name: 1b · commitlint (PR title)
