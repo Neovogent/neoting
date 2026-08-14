@@ -22,6 +22,12 @@ const EnvSchema = z.object({
   // webhook to accept anything.
   META_APP_SECRET: z.string().default(''),
   META_VERIFY_TOKEN: z.string().default(''),
+
+  // The ingest queue (#12). `fixture` = in-memory (default — offline tests and
+  // any dev without Redis); `bullmq` = real BullMQ on Redis. Selected by config,
+  // not by import, so the webhook controller is identical either way.
+  INGEST_QUEUE: z.enum(['fixture', 'bullmq']).default('fixture'),
+  REDIS_URL: z.string().url().default('redis://localhost:6379'),
 });
 
 export type Env = Readonly<z.infer<typeof EnvSchema>>;
