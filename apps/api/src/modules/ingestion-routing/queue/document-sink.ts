@@ -20,6 +20,8 @@ export interface PersistDocumentInput {
   readonly submitterLabel: string | null;
   readonly routing: unknown;
   readonly traceId: string;
+  /** dHash of the sanitised image bytes (#40); null for PDFs and undecodable rasters. */
+  readonly perceptualHash: string | null;
 }
 
 export interface PersistedDocument {
@@ -105,6 +107,7 @@ export class PrismaDocumentSink implements DocumentSink {
             businessId: input.businessId,
             s3Key: input.s3Key,
             byteHash: input.byteHash,
+            perceptualHash: input.perceptualHash,
             mimeType: input.mimeType,
             byteSize: input.byteSize,
             channel: input.channel,

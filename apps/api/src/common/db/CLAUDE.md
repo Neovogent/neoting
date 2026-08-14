@@ -60,6 +60,12 @@ RLS (verified empirically). It **fails loudly** (throws) when a practice has no
 SYSTEM actor, rather than writing a document with a dangling actor — a missing
 system user is a seed bug, not a runtime branch to paper over.
 
+Every worker consumer resolves its actor this way: the `PrismaDocumentSink` (#20)
+and the `PrismaDuplicateDetector` (#40) both call it before opening their
+`scopedDb` transaction. The detector *writes a business-owned row* (`duplicates`)
+from a practice-only context — which works only because `app_can_access_business`
+has a practice-membership branch (see the ingestion-routing CLAUDE.md finding).
+
 ## TODO
 
 - [ ] Request-scoped context from the session, once auth lands — today every caller builds its own.

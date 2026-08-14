@@ -41,6 +41,13 @@ export interface IngestJob {
   readonly mimeType?: string;
   /** Byte length of the sanitised bytes (#20), for `documents.byte_size`. */
   readonly byteSize?: number;
+  /**
+   * dHash of the sanitised image bytes (#40) → `documents.perceptual_hash`, and
+   * the near-duplicate net. Present only for image documents the hasher could
+   * decode; absent for PDFs, so the column stays null and the byte-hash net covers
+   * them.
+   */
+  readonly perceptualHash?: string;
 }
 
 /**

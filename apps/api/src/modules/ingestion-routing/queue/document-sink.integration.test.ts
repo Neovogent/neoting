@@ -69,6 +69,7 @@ function input(idempotencyKey: string, over: Partial<PersistDocumentInput> = {})
     businessId: null,
     s3Key: `w/_unrouted/documents/${idempotencyKey}`,
     byteHash: `h-${idempotencyKey}`,
+    perceptualHash: null,
     mimeType: 'image/png',
     byteSize: 11,
     channel: 'EMAIL',

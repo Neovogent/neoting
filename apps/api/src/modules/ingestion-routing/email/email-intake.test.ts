@@ -98,6 +98,26 @@ test('accepted documents enqueue with source email, filename and sha256', async 
   expect(job?.sha256).toMatch(/^[0-9a-f]{64}$/);
 });
 
+test('an image document carries a perceptual hash to the queue when a hasher is injected (#40)', async () => {
+  const queue = new FixtureIngestQueue();
+  await processEmail(email([attach('receipt.png', 'image/png', png())]), {
+    queue,
+    practiceId: PRACTICE,
+    perceptualHasher: { hash: async (_bytes, format) => (format === 'png' ? 'a1b2c3d4e5f60718' : null) },
+  });
+  expect(queue.enqueued[0]?.perceptualHash).toBe('a1b2c3d4e5f60718');
+});
+
+test('a non-image document leaves the perceptual hash absent — the byte-hash net covers it', async () => {
+  const queue = new FixtureIngestQueue();
+  await processEmail(email([attach('b.pdf', 'application/pdf', cleanPdf())]), {
+    queue,
+    practiceId: PRACTICE,
+    perceptualHasher: { hash: async (_bytes, format) => (format === 'pdf' ? null : 'should-not-appear') },
+  });
+  expect(queue.enqueued[0]?.perceptualHash).toBeUndefined();
+});
+
 test('a mislabelled attachment is accepted by its magic bytes, not rejected for the declared type', async () => {
   // A real PDF the email declares as image/jpeg with a .jpg name — normal inbound
   // traffic (Shakib): magic bytes are the authority, so it is accepted as a PDF.
