@@ -66,6 +66,29 @@ codes), `common/untrusted-content.ts`, `modules/health/` (`/healthz` + `/readyz`
   against a locally-set secret in unit tests; real end-to-end handshake is a
   separate step once `META_APP_SECRET`/`META_VERIFY_TOKEN` are issued.
 
+### Ingest queue + worker (issue #12)
+
+`queue/` + `src/worker/main.ts`. The webhook enqueues through the **same**
+`IngestQueue` interface as before — `whatsapp.controller.ts` is unchanged; only
+the module swaps the provider by config (`INGEST_QUEUE=fixture|bullmq`).
+
+- `BullmqIngestQueue` — real producer: `jobId = wamid` (producer idempotency),
+  capped attempts + exponential backoff, failed jobs kept for the DLQ. Attaches
+  the `traceId` read from `common/trace` (AsyncLocalStorage) at enqueue, so the
+  trace born at the webhook survives into the job without the controller passing
+  it — a `TraceMiddleware` opens the context per request.
+- The **worker** (`src/worker/main.ts`, `pnpm --filter @neoting/api worker`) is a
+  separate process. Per job: Zod-parse the payload (boundary), idempotent on
+  `wamid` (a redelivery is a logged no-op), log with the `traceId`. On exhausted
+  retries → DLQ (`ingest-dlq`); `classifyFailure` quarantines a poison message
+  after `MAX_REPLAYS`. No DB writes (blocked on `scopedDb`).
+- **Fixtures stay** (`FixtureIngestQueue`, `InMemoryProcessedStore`) so tests run
+  offline; the real path is config-selected, not import-selected.
+- **Pending my Docker install**: the live `docker compose up` → signed POST →
+  worker-picks-it-up-with-same-traceId proof can't run on this machine yet
+  (no Docker). The logic is unit-tested; the end-to-end capture is the one
+  acceptance item outstanding.
+
 ### Sanitisation pipeline (merged, PR #3)
 
 **Pure library** — `lib/sanitisation/`.
@@ -100,6 +123,6 @@ sanitisation tests were ported from `tsx --test` to Vitest and run in the suite.
 - [ ] Enforce the bank-statement 300-page cap in the PDF-safety step
 - [ ] Await the frozen ingestion endpoints; map `Rejection` → NT-ING wire error
       at the controller boundary (NT-ING-001/002/004 mirrored in `reasons.ts`)
-- [ ] #12: wire BullMQ behind `IngestQueue` + the worker (DLQ, idempotency,
-      traceId) — `whatsapp.controller.ts` must not change
+- [x] #12: BullMQ behind `IngestQueue` + the worker (DLQ, idempotency, traceId),
+      controller unchanged — done; live docker e2e pending a Docker install
 - [ ] Update this file on exit — it is how the next session picks up

@@ -9,7 +9,10 @@ import { InMemoryReplayStore } from './replay-store.js';
 import { WhatsAppWebhookController } from './whatsapp.controller.js';
 
 const NOW_S = 1_700_000_000;
-const env: Env = Object.freeze({ NODE_ENV: 'test', PORT: 3000, META_APP_SECRET: 's', META_VERIFY_TOKEN: 'vtoken' });
+const env: Env = Object.freeze({
+  NODE_ENV: 'test', PORT: 3000, META_APP_SECRET: 's', META_VERIFY_TOKEN: 'vtoken',
+  INGEST_QUEUE: 'fixture', REDIS_URL: 'redis://localhost:6379',
+});
 const clock: Clock = { now: () => NOW_S * 1000 };
 
 function makeController(): { controller: WhatsAppWebhookController; queue: FixtureIngestQueue } {

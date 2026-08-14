@@ -8,7 +8,10 @@ import type { Env } from '../../../../config/env.js';
 import { WhatsAppSignatureGuard } from './whatsapp-signature.guard.js';
 
 const SECRET = 'guard-secret';
-const env: Env = Object.freeze({ NODE_ENV: 'test', PORT: 3000, META_APP_SECRET: SECRET, META_VERIFY_TOKEN: 'vt' });
+const env: Env = Object.freeze({
+  NODE_ENV: 'test', PORT: 3000, META_APP_SECRET: SECRET, META_VERIFY_TOKEN: 'vt',
+  INGEST_QUEUE: 'fixture', REDIS_URL: 'redis://localhost:6379',
+});
 
 function sign(body: Buffer): string {
   return `sha256=${createHmac('sha256', SECRET).update(body).digest('hex')}`;
