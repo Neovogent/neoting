@@ -209,7 +209,37 @@ resource "aws_kms_key" "rds_master_secret" {
               "arn:aws:iam::${local.account_id}:root",
             ]
           }
-          BoolIfExists = { "aws:PrincipalIsAWSService" = "false" }
+
+          # ⚠ THIS LINE IS WHY THE FIRST PROD APPLY FAILED, AND THE MECHANISM
+          # IS NOT THE OBVIOUS ONE. Measured 15 Aug 2026: RDS put nt-prod into
+          # `incompatible-create` with "the KMS Key used to encrypt the secret
+          # ... doesn't exist, isn't enabled, or is in an invalid state", and
+          # the secret came up `impaired`.
+          #
+          # The previous attempt at this exemption was
+          #   BoolIfExists = { "aws:PrincipalIsAWSService" = "false" }
+          # copied from modules/storage/policies/bucket.json.tftpl, where it
+          # works. It does NOT work here. `BoolIfExists` returns TRUE when the
+          # key is ABSENT, and aws:PrincipalIsAWSService is not populated on
+          # the grant-mediated path RDS uses for a master user secret. So the
+          # guard that was meant to exempt AWS services evaluated true, the
+          # deny applied, and RDS could not encrypt the secret it had just been
+          # told to create.
+          #
+          # kms:ViaService is the right key because it describes the CALL, not
+          # the caller. This key encrypts exactly one thing — the RDS-managed
+          # master user secret — so "reached through Secrets Manager" is a
+          # complete description of every legitimate use of it, and anything
+          # arriving by another route has no business here regardless of who
+          # is asking.
+          #
+          # Reaching the secret still requires secretsmanager:GetSecretValue on
+          # that specific secret, so this is not a hole: it moves the boundary
+          # from "which principal" to "which principal, through the one service
+          # that is allowed to hold this key's plaintext".
+          StringNotEquals = {
+            "kms:ViaService" = "secretsmanager.${local.region}.amazonaws.com"
+          }
         }
       }
     ]
