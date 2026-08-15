@@ -27,7 +27,9 @@ Every deny guard in the bucket and KMS policies keys off `arn:aws:iam::252959251
 ```
 infra/
   envs/
-    account/      CloudTrail, GuardDuty, Budgets — account-scoped, own state key
+    account/      applied. CloudTrail, GuardDuty, Budgets, Access Analyzer,
+                  the public hosted zone, the state-bucket deny — account-scoped,
+                  own state key
     staging/      applied (shared account, eu-west-2)
     prod/         written, NOT YET APPLIED — see "envs/prod/" below
   modules/
@@ -36,6 +38,9 @@ infra/
     storage/      documents CMK + the S3 buckets it protects, with their
                   policies, versioning, PAB and encryption defaults
     data/         RDS Postgres, ElastiCache Redis, subnet groups, Redis secret
+    iam-policies/ the region guardrail, the secrets key policy and the CI
+                  deploy inline policy — rendered per environment, creates
+                  nothing
   README.md
 ```
 
@@ -61,7 +66,7 @@ It calls the same three modules with production arguments, and diverges from sta
 
 ### What is a module, and what is deliberately not
 
-Three modules, and the test each one passed was **"prod needs this in the same shape but a different size"** — which is where copy-paste actually costs you. `network` takes `enable_nat_gateway` (staging refuses the ~$36/mo; prod cannot) and grows a private subnet tier when it is on. `data` takes `db_multi_az`, `db_deletion_protection`, `db_skip_final_snapshot`, `db_instance_class` and the backup retention — staging is single-AZ and disposable (G1/G2), prod is neither. `storage` takes the bucket map, so prod adds a bucket without editing shared code.
+Four modules, and the test each one passed was **"prod needs this in the same shape but a different size"** — which is where copy-paste actually costs you. `network` takes `enable_nat_gateway` (staging refuses the ~$36/mo; prod cannot) and grows a private subnet tier when it is on. `data` takes `db_multi_az`, `db_deletion_protection`, `db_skip_final_snapshot`, `db_instance_class` and the backup retention — staging is single-AZ and disposable (G1/G2), prod is neither. `storage` takes the bucket map, so prod adds a bucket without editing shared code. `iam-policies` is the odd one out — it **creates nothing** and renders text, because the documents it produces attach to a managed policy in one place, an inline role policy in another and a KMS key policy in a third, and a module that owned all three would need to know about roles and keys that are none of its business.
 
 Everything else stays flat in `envs/staging/`, on purpose: `compute`, `alb`, `services`, `edge`, `observability`, `secrets`, `email`, `unleash`, `clamav`, `monitoring-backend`, `db-app-role`, `lifecycle`. They are either genuinely environment-specific (dashboards, alarm thresholds, the SES identity, the WAF ACL) or still in flux. Extracting them now would freeze an interface nobody has tested against a second caller, and a partial extraction that is verified beats a total one that is not.
 
@@ -87,7 +92,11 @@ Split by **lifetime**, not by team or service. Locking is S3-native (`use_lockfi
 
 Chicken-and-egg: the backend cannot manage itself, and a `terraform destroy` that eats the state bucket is a bad afternoon. Created by CLI, documented here, left alone.
 
-**Known gap:** the state bucket has **no bucket policy**, so it lacks the explicit `Deny` for principals outside `role/nt-*` that every other Neoting bucket carries. In a shared account with seven IAM users, state is a high-value target — it holds resource configuration and, for some resource types, secret material. A policy can be added without adopting the bucket into state.
+**Closed 15 Aug 2026:** the state bucket now carries the shared `role/nt-*` deny (`envs/account/tfstate.tf`), rendered from the same `modules/storage/policies/bucket.json.tftpl` as every other Neoting bucket. It is still not *adopted* into state — a bucket policy attaches by name and does not require owning the bucket, which is what made the gap closeable without unpicking the bootstrap decision.
+
+⚠ Read the header of `tfstate.tf` before editing that policy or the shared template. This root's own state lives in the bucket it guards, so a deny that catches the applying principal would apply first and the state write would fail second. Two things keep it safe: every Terraform runner is on the allow list (`user/Mubashir` — there is no `shakib` IAM user — plus `role/nt-*`), and the template denies object actions only, never `s3:PutBucketPolicy`, so a bad policy is recoverable.
+
+**Remaining gap:** the bucket is SSE-S3, not the Neoting CMK, so that deny is the only lock on state — there is no second, independent KMS-policy lock behind it as there is on the documents bucket.
 
 ## Usage
 
@@ -105,24 +114,33 @@ Credentials are never in the config: locally via `AWS_PROFILE`, in CI via the `n
 
 **Each directory is its own root module.** There is no `terraform apply` at `infra/` and one should not be invented — run them separately, account first when a change touches both.
 
-### Adopting `envs/account/`
+### `envs/account/` — adopted 15 Aug 2026
 
-That directory ships with `imports.tf`, containing declarative `import` blocks for resources that already exist in AWS. The first plan **adopts** rather than creates.
+Applied. The adoption ran as predicted: **10 imported, 0 added, 6 changed, 0 destroyed**, where five of the six changes were the provider's `default_tags` materialising on resources that carried no tags at all, and the sixth was the documented `neoting-pot-8000` `time_period_start` correction. `Project=neoting` is load-bearing for every cost figure we quote while the account is shared (D36), so those tag updates were the point, not noise.
 
-Expect **zero creates and zero destroys**. Do *not* expect a completely empty diff: the imported resources currently carry no tags at all, and the provider's `default_tags` will add `Project`/`Env`/`Owner`/`ManagedBy` to each. Those are in-place tag updates and they are wanted — `Project=neoting` is load-bearing for every cost figure we quote while the account is shared (D36). If the plan wants to *create* something that already exists, the import ID is wrong: fix the import, never let it create a duplicate.
+`imports.tf` has been deleted — import blocks are one-shot by design, and leaving them behind tells the next reader these resources are still unmanaged. The hosted-zone adoption that followed in `dns.tf` was removed the same way.
 
-Delete `imports.tf` once adoption has applied. Import blocks are one-shot by design.
+Until this ran, the audit controls themselves were console artefacts, which was a hole in exactly the place the D36 compensating-control argument could least afford one. `account/core.tfstate` now exists.
 
 ## Still outstanding
 
 - **`envs/prod/` is written but unapplied, and three things must land before it carries a real document.** (1) The alarm estate — `observability.tf` does not exist there, so nothing would notice a queue backing up, a failed S3 replication, or Redis running out of memory. (2) The `nt_app` non-owning database role in `prisma/` — until it exists the application connects as an RDS superuser and every RLS policy is decoration (`envs/prod/db-app-role.tf` lists the four things needed). (3) A bucket policy on the state bucket — prod's `random_password` values sit in a state file that carries no `role/nt-*` deny.
 - **The prod GitHub environment does not exist yet.** `nt-prod-ci-deploy` trusts `repo:neovogent/neoting:environment:prod`, and GitHub will not mint a token with that `sub` until an environment named exactly `prod`, with required reviewers, exists on the repository. Until then the role is unassumable and every prod deploy fails at the credential step. It is a repository setting, not AWS.
-- **Two IAM policy documents are now duplicated between `envs/staging/policies/` and `envs/prod/policies/`.** They are genuinely different policies (prod's guardrail carries the ADR 0007 carve-out) but their shared halves must stay in step and nothing enforces that. The fix is a shared `modules/iam-policies` rendered per environment; see `envs/prod/policies/README.md`.
-- **`modules/data` cannot put the RDS-managed master secret under our CMK.** `master_user_secret_kms_key_id` is not exposed, so production's database master password sits under the AWS-managed `aws/secretsmanager` key, outside the `role/nt-*` deny boundary that D36's whole compensating-control story rests on. Additive module variable, own PR.
+- ~~**Two IAM policy documents are now duplicated between `envs/staging/policies/` and `envs/prod/policies/`.**~~ — extracted to `modules/iam-policies` on 15 Aug 2026. `envs/staging/policies/` is gone entirely; `envs/prod/policies/` keeps only `kms-dr.json.tftpl`, which has no staging twin and therefore nothing to drift against. What made prod different is now **input** rather than a second file: `dr_region` + `dr_buckets` for the guardrail, `state_key_prefix` for the CI role, `env` for the key-policy `Id`. Verified the way `moved.tf` was — `terraform plan` in `envs/staging` reports **no changes**, prod still plans `158 to add, 0 to change, 0 to destroy`, and every rendered document was diffed as normalised JSON against the file it replaced.
+- **⚠ `nt-staging-ci-deploy` can read and overwrite `prod/core.tfstate` and `account/core.tfstate`.** Its state grant covers the whole bucket (`state_key_prefix = ""`), where prod's own role is correctly scoped to `prod/core.tfstate*`. This is latent rather than harmless: **prod's state will hold `random_password` values in plaintext the moment `envs/prod` is applied**, so from that point a compromised staging CI job is a path to production credentials. The fix is one word at the `envs/staging` call site. It was deliberately **not** bundled into the extraction PR, because a refactor that also changes a permission can no longer be verified by "the plan is empty".
+- **`modules/data` can now put the RDS-managed master secret under our CMK — but the call sites deliberately don't yet, and one of them never can.** `master_user_secret_kms_key_arn` exists as of 15 Aug 2026, defaulting to `null`. Two AWS behaviours, both verified against the RDS User Guide and the live account, decide how it may be used:
+  - **The key is immutable after creation.** *"After RDS is managing the database credentials for a DB instance, you can't change the KMS key that is used to encrypt the secret."* So this is a **create-time** decision, not something a later apply fixes. `nt-staging` already exists on the AWS-managed key (verified: `KeyManager: AWS`) and cannot be moved by editing the variable — the only recovery is turning credential management off and on again, which mints a new secret at a new ARN and breaks every task definition referencing the old one. **Staging stays as it is.**
+  - **⚠ The key policy must exempt AWS services or rotation fails silently.** Creation works on the caller's own permissions (`kms:DescribeKey`, `kms:Decrypt`, `kms:GenerateDataKey`, `kms:CreateGrant`), but RDS rotates this secret every 7 days as a *service* principal, where `aws:PrincipalArn` matches no `role/nt-*`. `StringNotLike` on a missing key is true, and an explicit deny beats the grant. `envs/prod/policies/kms-secrets.json.tftpl` drops the `aws:PrincipalIsAWSService` carve-out on purpose — sound for every secret we write ourselves, and wrong for this one, which is the single case where a service really does encrypt a secret on its own behalf. The apply would succeed and `SecretStatus` would flip to `impaired` a week later, still readable, silently unrotated.
+
+  **Decided 15 Aug 2026: prod gets a dedicated CMK.** `aws_kms_key.rds_master_secret` (~$1/mo) carries the `aws:PrincipalIsAWSService` exemption that this one secret needs, and `aws_kms_key.secrets` keeps its absolute deny for the twenty-odd secrets that do not. Confining the exemption to the one key that genuinely needs it was the point — the alternative was weakening a deliberate deny for everything under it. Wired at `envs/prod/data.tf`; full reasoning and the verification command are at the key in `envs/prod/secrets.tf`.
+
+  ⚠ **Verify it seven days after the first apply, not at apply time.** A broken key policy here does not fail the apply — the secret is created, everything looks right, and rotation silently stops a week later. `aws rds describe-db-instances --db-instance-identifier nt-prod --query 'DBInstances[0].MasterUserSecret'` must read `SecretStatus: active`, not `impaired`.
 - **`modules/` are unversioned local paths.** `source = "../../modules/network"` means a prod call site and a staging call site always run the same code, so a module edit made for prod plans against staging too. That is the right default while there is one environment and one owner; it stops being right the moment prod carries real data, and the fix then is a tag or a pinned ref, not discipline.
-- **Route 53 hosted zone `Z08402112LR2AWM4XBVST`** is created outside Terraform and consumed by `envs/staging/email.tf` as a `data` source. A plan fails outright if it is ever absent or renamed. Adopting it into `envs/account/` would close that.
+- ~~**Route 53 hosted zone `Z08402112LR2AWM4XBVST`**~~ — adopted into `envs/account/dns.tf` on 15 Aug 2026. Staging is unaffected: `data "aws_route53_zone" "primary"` resolves against live AWS, not against whoever's state holds the resource, so no cross-state dependency was created. The zone is account-scoped because D5 splits it between two environments (prod on the apex, staging on `staging.`) and it outlives both. `prevent_destroy` is on; the records inside stay owned by the environment that creates them.
+- **The staging hostname has been decided but not moved.** Shakib settled the split on 15 Aug 2026: production takes the apex `neoting.neovogent.com`, staging moves to `staging.neoting.neovogent.com`. Staging is currently live on `api.neoting.neovogent.com` — healthy, in the CloudFront alias, on the ACM cert — so the move is a certificate + distribution + Route 53 change against a working environment and belongs in its own PR. This unblocks prod's `edge.tf` and `email.tf`, which were held only by the undecided name.
 - **Budget notifications go to one personal inbox.** Runbook §10.1 wants an SNS topic plus a role address. One human inbox is a single point of failure for the alert that tells us the pot is emptying.
-- **IAM Access Analyzer is not enabled** (`list-analyzers` returns `[]`). In a shared account with seven users it is the cheapest way to find unintended cross-principal access. Security Hub is also absent — probably Infra Week, but it should be a decision rather than an omission.
+- ~~**IAM Access Analyzer is not enabled**~~ — enabled 15 Aug 2026 in both eu-west-2 and eu-west-1 (`envs/account/access-analyzer.tf`), free, `ACTIVE`. It is the only control in the repo that answers "given everything actually attached right now, who can reach Neoting's data?" rather than restating a policy we wrote ourselves. `ACCOUNT_UNUSED_ACCESS` is deliberately **not** on: it bills per IAM principal across the whole account, and all but nine of the roles here belong to three other products. ⚠ Findings are not routed anywhere — they surface in the console and EventBridge only, and wiring them to SNS belongs with the alerting work.
+- **Security Hub is still absent, and it is now the open decision rather than the open omission.** Unlike Access Analyzer it is not free and it is not ours alone: enabling it subscribes the entire shared account, so standards checks run against Cedofinance, visa-processing and needz resources, billed to Neoting, generating findings this repo has no authority to fix. It becomes obviously correct once the dedicated `neoting-*` accounts land.
 - **SES production access** — replied 14 Aug 2026, awaiting AWS (case `178662887400793`). Outbound email stays blocked until granted; inbound is unaffected. `sesv2 get-account` will keep reporting DENIED until it is actually granted — check the case, not the API. See `docs/runbooks/aws-support-cases.md`.
 - **Textract quota increases** — replied 14 Aug 2026, awaiting AWS. Verification 8.4 and ADR 0003 unblock when they are granted.
 
