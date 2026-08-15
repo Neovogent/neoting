@@ -47,7 +47,9 @@ export function ChaseModal({ clientIds, missingItemIds, note, onClose }: {
           </button>
         </div>
 
-        <ChaseComposer clientIds={clientIds} missingItemIds={missingItemIds} />
+        {/* Omitted rather than passed as undefined: absent means "everything
+            outstanding", which is not the same request as an empty narrowing. */}
+        <ChaseComposer clientIds={clientIds} {...(missingItemIds === undefined ? {} : { missingItemIds })} />
       </motion.div>
     </div>
   );

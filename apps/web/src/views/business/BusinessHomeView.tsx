@@ -257,9 +257,9 @@ export function BusinessHomeView({
                       const ok = await confirm({
                         title: `Change ${c.label.toLowerCase()} to "${c.to}"?`,
                         detail: `It is currently ${c.from}.`,
-                        consequence: c.field === 'mobile'
-                          ? 'Chases, approvals and sign-in codes will go to the new number from now on.'
-                          : undefined,
+                        ...(c.field === 'mobile'
+                          ? { consequence: 'Chases, approvals and sign-in codes will go to the new number from now on.' }
+                          : {}),
                         confirmLabel: 'Yes, change it',
                       });
                       if (ok) reviewClientDetailChange(c.id, 'approve');

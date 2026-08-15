@@ -85,9 +85,9 @@ export function InboxTable({ clientIds, clientNames }: { clientIds: string[]; cl
             const ok = await confirm({
               title: `Move ${ready.length} item${ready.length === 1 ? '' : 's'} to Ready?`,
               detail: 'Ready means every check has passed and they are queued to publish.',
-              consequence: blocked.length
-                ? `${blocked.length} still missing required fields will be left alone.`
-                : undefined,
+              ...(blocked.length
+                ? { consequence: `${blocked.length} still missing required fields will be left alone.` }
+                : {}),
               confirmLabel: 'Yes, mark them Ready',
             });
             if (ok) ready.forEach((d) => updateDocumentStatus(d.id, 'ready'));

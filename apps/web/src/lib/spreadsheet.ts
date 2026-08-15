@@ -97,7 +97,9 @@ export function parseDelimited(text: string, delimiter = ','): TableRow[] {
 export function sniffDelimiter(text: string): string {
   const line = text.split('\n').find((l) => l.trim()) ?? '';
   const counts = [',', ';', '\t', '|'].map((d) => [d, line.split(d).length - 1] as const);
-  const best = counts.sort((a, b) => b[1] - a[1])[0];
+  // The candidates are a literal list, so there is always a winner; a tie keeps
+  // the earlier candidate, which is the comma.
+  const best = counts.reduce((a, b) => (b[1] > a[1] ? b : a));
   return best[1] > 0 ? best[0] : ',';
 }
 
@@ -176,8 +178,10 @@ const unescapeXml = (s: string) =>
 
 /** Every `<t>` run inside a shared string, concatenated. */
 function sharedStrings(xml: string): string[] {
+  // Group 1 is unconditional in both patterns, so a match always carries it and
+  // the empty fallbacks never fire.
   return [...xml.matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>/g)].map((m) =>
-    [...m[1].matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map((t) => unescapeXml(t[1])).join(''),
+    [...(m[1] ?? '').matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map((t) => unescapeXml(t[1] ?? '')).join(''),
   );
 }
 
@@ -193,15 +197,17 @@ function sheetToRows(xml: string, strings: string[]): TableRow[] {
 
   for (const rowMatch of xml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)) {
     const cells: string[] = [];
-    for (const cellMatch of rowMatch[1].matchAll(/<c\b([^>]*)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
-      const attrs = cellMatch[1];
+    // The row body and the attribute run are unconditional groups; only the
+    // cell body is genuinely optional, since `<c/>` is a legal empty cell.
+    for (const cellMatch of (rowMatch[1] ?? '').matchAll(/<c\b([^>]*)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+      const attrs = cellMatch[1] ?? '';
       const body = cellMatch[2] ?? '';
       const ref = /r="([A-Z]+\d+)"/.exec(attrs)?.[1];
       const type = /t="([^"]+)"/.exec(attrs)?.[1];
 
       let value = '';
       if (type === 'inlineStr') {
-        value = [...body.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map((t) => unescapeXml(t[1])).join('');
+        value = [...body.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map((t) => unescapeXml(t[1] ?? '')).join('');
       } else {
         const v = /<v\b[^>]*>([\s\S]*?)<\/v>/.exec(body)?.[1] ?? '';
         value = type === 's' ? strings[Number(v)] ?? '' : unescapeXml(v);
@@ -312,12 +318,13 @@ export function analyseSheet(rows: TableRow[]): SheetAnalysis {
   // The header is the first row that names at least two things we recognise —
   // exports habitually open with a title line or two of account details.
   let headerAt = 0;
-  for (let i = 0; i < Math.min(rows.length, 10); i++) {
-    const { mapping } = mapColumns(rows[i]);
+  for (const [i, row] of rows.slice(0, 10).entries()) {
+    const { mapping } = mapColumns(row);
     if (Object.keys(mapping).length >= 2) { headerAt = i; break; }
   }
 
-  const headers = rows[headerAt].map(normalise);
+  // headerAt indexes a row we just walked, and the file is non-empty above.
+  const headers = (rows[headerAt] ?? []).map(normalise);
   const { mapping, unmapped } = mapColumns(headers);
   const { kind, reason } = sniffSheet(headers, mapping);
 

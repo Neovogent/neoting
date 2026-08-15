@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import {
   Search, AlertCircle, CheckCircle2, UploadCloud, Eye, PencilLine, X, Copy, Link2,
   ShieldAlert, Sparkles, Send, Trash2, RefreshCw, Download, ArrowRightLeft, Check, SlidersHorizontal,
+  LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppContext } from '../context/AppContext';
@@ -162,7 +163,9 @@ export function InboxesView() {
     const ok = await confirm({
       title: failure.stage === 'extraction' ? `Read ${doc.supplier} again?` : `Publish ${doc.supplier} again?`,
       detail: `${failure.reason}. ${retryMeaning(failure)}`,
-      consequence: failure.retryHelps ? undefined : `This is unlikely to clear it on its own — ${failure.fixLabel.toLowerCase()} is what changes the outcome.`,
+      ...(failure.retryHelps
+        ? {}
+        : { consequence: `This is unlikely to clear it on its own — ${failure.fixLabel.toLowerCase()} is what changes the outcome.` }),
       confirmLabel: 'Yes, retry',
     });
     if (!ok) return;
@@ -186,8 +189,10 @@ export function InboxesView() {
   const handleReplacement = async (files: FileList | null) => {
     const doc = replacing;
     setReplacing(null);
-    if (!doc || !files?.length) return;
-    const file = files[0];
+    // Reading the file first says what the length check was really asserting:
+    // a replacement is exactly one file, and there is nothing to do without it.
+    const file = files?.[0];
+    if (!doc || !file) return;
     const ok = await confirm({
       title: `Replace ${doc.supplier === 'Unknown' ? 'this document' : doc.supplier} with ${file.name}?`,
       detail: 'The new file is read from scratch under the same client.',
@@ -405,9 +410,9 @@ export function InboxesView() {
                           const ok = await confirm({
                             title: `Move ${ready.length} item${ready.length === 1 ? '' : 's'} to Ready?`,
                             detail: 'Ready means every check has passed and they are queued to publish.',
-                            consequence: blocked.length
-                              ? `${blocked.length} still missing required fields will be left alone: ${blocked.map((b) => b.doc.supplier).join(', ')}.`
-                              : undefined,
+                            ...(blocked.length
+                              ? { consequence: `${blocked.length} still missing required fields will be left alone: ${blocked.map((b) => b.doc.supplier).join(', ')}.` }
+                              : {}),
                             confirmLabel: 'Yes, mark them Ready',
                           });
                           if (!ok) return;
@@ -454,9 +459,9 @@ export function InboxesView() {
                                     const ok = await confirm({
                                       title: `Move ${selected.length} document${selected.length === 1 ? '' : 's'} to ${c.name}?`,
                                       detail: selectedDocs.map((d) => d.supplier).slice(0, 4).join(' · '),
-                                      consequence: teachSender
-                                        ? 'Every future document from these senders will be filed under this client automatically.'
-                                        : undefined,
+                                      ...(teachSender
+                                        ? { consequence: 'Every future document from these senders will be filed under this client automatically.' }
+                                        : {}),
                                       confirmLabel: 'Yes, move them',
                                     });
                                     if (!ok) return;
@@ -486,11 +491,17 @@ export function InboxesView() {
                       </AnimatePresence>
                     </div>
                     <BulkBtn icon={Sparkles} label="Ask AI" onClick={() => {
+                      // The bar only renders with a selection, but the rows it
+                      // names can go under it — a delete elsewhere leaves ids
+                      // selected with no document behind them, and there is
+                      // nothing to open in the workspace then.
+                      const first = selectedDocs[0];
+                      if (!first) return;
                       const names = [...new Set(selectedDocs.map((d) => d.clientName))];
                       const ids = clients.filter((c) => names.includes(c.name)).map((c) => c.id);
                       startConversation(ids, [
-                        { id: `${Date.now()}-u`, role: 'user', content: `Review the ${selectedDocs[0].supplier} document` },
-                        { id: `${Date.now()}-a`, role: 'assistant', content: 'Every field shows confidence and provenance — click any value to correct it.', intent: 'REVIEW_DOCUMENT', payload: { documentId: selectedDocs[0].id, clientIds: ids, clientNames: names } },
+                        { id: `${Date.now()}-u`, role: 'user', content: `Review the ${first.supplier} document` },
+                        { id: `${Date.now()}-a`, role: 'assistant', content: 'Every field shows confidence and provenance — click any value to correct it.', intent: 'REVIEW_DOCUMENT', payload: { documentId: first.id, clientIds: ids, clientNames: names } },
                       ]);
                     }} />
                     {statusTab === 'ready' && (
@@ -826,6 +837,9 @@ export function InboxesView() {
           const publishable = docs.length - held.length;
           const totalValue = docs.reduce((s, d) => s + d.total, 0);
           const clientNames = [...new Set(docs.map((d) => d.clientName))];
+          // One client is named; more than one is counted. Naming the single
+          // case keeps that the only thing clientNames[0] is read under.
+          const onlyClient = clientNames.length === 1 ? clientNames[0] : undefined;
           return (
             <motion.div
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -848,7 +862,7 @@ export function InboxesView() {
                 <div className="p-6 flex flex-col gap-3">
                   <ConfirmRow label="Items" value={String(docs.length)} />
                   <ConfirmRow label="Total value" value={currency(totalValue)} />
-                  <ConfirmRow label={clientNames.length === 1 ? 'Client' : 'Clients'} value={clientNames.length === 1 ? clientNames[0] : `${clientNames.length} clients`} />
+                  <ConfirmRow label={clientNames.length === 1 ? 'Client' : 'Clients'} value={onlyClient ?? `${clientNames.length} clients`} />
                   {held.length > 0 && (
                     <div className="flex items-start gap-2.5 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-[13px] text-amber-300 leading-relaxed">
                       <ShieldAlert size={16} className="shrink-0 mt-0.5" />
@@ -943,7 +957,7 @@ function StatusBadge({ doc, blocked }: { doc: Document; blocked: string[] }) {
     // cause and the way out are one hover away rather than nowhere.
     const failure = failureOf(doc);
     return (
-      <Tooltip label={failure?.reason ?? 'Failed'} detail={failure?.detail}>
+      <Tooltip label={failure?.reason ?? 'Failed'} {...(failure ? { detail: failure.detail } : {})}>
         <span className="inline-flex items-center gap-1.5 text-white text-xs font-bold bg-red-500 px-3 py-1 rounded-full cursor-help">
           <AlertCircle size={14} />
           Failed
@@ -1005,7 +1019,7 @@ function ConfirmRow({ label, value }: { label: string; value: string }) {
  * open it stays a hint and keeps the help cursor, so the two do not look alike.
  */
 function FlagIcon({ icon: Icon, tone, title, detail, onClick }: {
-  icon: any;
+  icon: LucideIcon;
   tone: 'amber' | 'blue' | 'red';
   title: string;
   detail?: string;
@@ -1019,7 +1033,7 @@ function FlagIcon({ icon: Icon, tone, title, detail, onClick }: {
   const shape = `w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${tones[tone]}`;
 
   return (
-    <Tooltip label={title} detail={detail ? `${detail}${onClick ? ' Click to open.' : ''}` : undefined}>
+    <Tooltip label={title} {...(detail ? { detail: `${detail}${onClick ? ' Click to open.' : ''}` } : {})}>
       {onClick ? (
         <button
           type="button"
@@ -1077,7 +1091,7 @@ function TabButton({ active, onClick, label, count }: { active: boolean; onClick
 }
 
 function BulkBtn({ icon: Icon, label, onClick, danger, minSelected, selectedCount, disabledHint }: {
-  icon: any;
+  icon: LucideIcon;
   label: string;
   onClick: () => void;
   danger?: boolean;

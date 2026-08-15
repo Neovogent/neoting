@@ -26,7 +26,9 @@ export function BusinessSignInView() {
     contactName: '',
     email: '',
     mobile: '',
-    industry: INDUSTRIES[0],
+    // The list above is a literal and never empty, so the fallback is only
+    // there to keep the field a plain string rather than a maybe.
+    industry: INDUSTRIES[0] ?? '',
     practiceCode: '',
   });
 

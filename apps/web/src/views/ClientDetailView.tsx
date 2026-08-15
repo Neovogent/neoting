@@ -3,6 +3,7 @@ import {
   ArrowLeft, Sparkles, Send, Activity, Landmark, Link2, Star,
   RefreshCw, CheckCircle, Eye, Users, Settings as SettingsIcon, Download, Smartphone,
   Radio, History, ListChecks, Bot, Circle, Plus, PencilLine, X as XIcon, ShieldCheck, Clock, Check,
+  LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppContext } from '../context/AppContext';
@@ -20,7 +21,7 @@ import { healthTone } from '../lib/selectors';
 import { fromSlug, slug, useQueryParam, useSegment } from '../lib/router';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { channelLabel } from '../lib/channels';
-import type { ApprovalWorkflow, BusinessMemberRole, Client, ClientDetailChange, Colleague, Document, MissingItem, SetupTask, WorkflowTask } from '../lib/types';
+import type { ApprovalWorkflow, BusinessMemberRole, Client, ClientDetailChange, Colleague, Document, Intent, MissingItem, SetupTask, WorkflowTask } from '../lib/types';
 
 /**
  * Wireframe screen 7 — the client is the single home of everything
@@ -46,6 +47,14 @@ function statusLabel(d: Document): string {
   if (d.status === 'rejected') return note ? `Rejected — ${note.toLowerCase()}` : 'Rejected';
   if (d.status === 'processing') return note || 'Processing';
   return 'Published';
+}
+
+/**
+ * `title?: string` means absent or a string — never present-and-undefined — so
+ * a document with no note has to hand the Pill no prop at all.
+ */
+function noteTitle(note: string | undefined): { title?: string } {
+  return note === undefined ? {} : { title: note };
 }
 
 /** How each intake channel is named on the Overview's channel mix. */
@@ -168,7 +177,7 @@ export function ClientDetailView() {
     return [...fromAudit, ...fromChase].slice(0, 8);
   }, [auditLog, chase, client.name]);
 
-  const scoped = (intent: any, content: string, response: string) =>
+  const scoped = (intent: Intent, content: string, response: string) =>
     startConversation([client.id], [
       { id: `${Date.now()}-u`, role: 'user', content },
       { id: `${Date.now()}-a`, role: 'assistant', content: response, intent, payload: { clientIds: [client.id], clientNames: [client.name] } },
@@ -209,15 +218,15 @@ export function ClientDetailView() {
           // Green Ready vs yellow Ready: a previous publish having failed is
           // the whole difference, and it was invisible in this table.
           return d.publishFailed
-            ? <Pill tone="amber" title={d.statusNote}>{label}</Pill>
+            ? <Pill tone="amber" {...noteTitle(d.statusNote)}>{label}</Pill>
             : <Pill tone="green">Ready</Pill>;
         }
         if (d.status === 'review') return <Pill tone="amber">{label}</Pill>;
         // Rejected and Processing carry their reason too — a bare "Rejected"
         // hides the one thing that says what to do about it.
-        if (d.status === 'rejected') return <Pill tone="red" title={d.statusNote}>{label}</Pill>;
+        if (d.status === 'rejected') return <Pill tone="red" {...noteTitle(d.statusNote)}>{label}</Pill>;
         if (d.status === 'published') return <Pill tone="blue">Published</Pill>;
-        return <Pill title={d.statusNote}>{label}</Pill>;
+        return <Pill {...noteTitle(d.statusNote)}>{label}</Pill>;
       },
     },
   ];
@@ -318,7 +327,7 @@ export function ClientDetailView() {
                   value={s.missing}
                   tone="red"
                   onClick={() => setTab('Chases')}
-                  action={s.missing > 0 ? { label: 'Chase', onClick: () => chaseClient() } : undefined}
+                  {...(s.missing > 0 ? { action: { label: 'Chase', onClick: () => chaseClient() } } : {})}
                 />
                 <Tile label="Unmatched bank txns" value={s.unmatched} tone="red" onClick={() => setTab('Bank')} />
                 <Tile label="Awaiting approval" value={s.approvals} onClick={() => setTab('Approvals')} />
@@ -485,11 +494,11 @@ export function ClientDetailView() {
                   financial statements.
                 </p>
                 <div className="flex flex-col gap-2 mb-5">
-                  {[
+                  {([
                     { q: `What is still missing for ${client.name}?`, intent: 'SHOW_MISSING' },
                     { q: `Show the bank matches for ${client.name}`, intent: 'SHOW_MATCHES' },
                     { q: `Which items are waiting on approval?`, intent: 'SHOW_APPROVALS' },
-                  ].map((p) => (
+                  ] satisfies { q: string; intent: Intent }[]).map((p) => (
                     <button
                       key={p.q}
                       onClick={() => scoped(p.intent, p.q, 'Here you go:')}
@@ -730,24 +739,24 @@ export function ClientDetailView() {
                 title="Pending items"
                 subtitle="Approving here is the same queue an approver sees under Approvals"
                 columns={[
-                  { key: 'supplier', label: 'Supplier', sortValue: (a: any) => a.supplier, render: (a: any) => <span className="text-white font-semibold">{a.supplier}</span> },
-                  { key: 'stage', label: 'Stage', sortValue: (a: any) => a.stage },
-                  { key: 'approver', label: 'Approver', sortValue: (a: any) => a.approver },
+                  { key: 'supplier', label: 'Supplier', sortValue: (a) => a.supplier, render: (a) => <span className="text-white font-semibold">{a.supplier}</span> },
+                  { key: 'stage', label: 'Stage', sortValue: (a) => a.stage },
+                  { key: 'approver', label: 'Approver', sortValue: (a) => a.approver },
                   {
                     key: 'side', label: 'Signed off by',
-                    render: (a: any) =>
+                    render: (a) =>
                       approvalWorkflows.find((w) => w.id === a.workflowId)?.stages[a.stageIndex]?.clientSide
                         ? <Pill tone="amber">Client — by SMS</Pill>
                         : <Pill tone="blue">Practice</Pill>,
                   },
-                  { key: 'waitingDays', label: 'Waiting', align: 'right', sortValue: (a: any) => a.waitingDays, render: (a: any) => (a.waitingDays >= 5 ? <Pill tone="red">{a.waitingDays}d</Pill> : <Pill>{a.waitingDays}d</Pill>) },
-                  { key: 'total', label: 'Total', align: 'right', sortValue: (a: any) => a.total, render: (a: any) => <span className="text-white font-bold tabular-nums">{currency(a.total)}</span> },
+                  { key: 'waitingDays', label: 'Waiting', align: 'right', sortValue: (a) => a.waitingDays, render: (a) => (a.waitingDays >= 5 ? <Pill tone="red">{a.waitingDays}d</Pill> : <Pill>{a.waitingDays}d</Pill>) },
+                  { key: 'total', label: 'Total', align: 'right', sortValue: (a) => a.total, render: (a) => <span className="text-white font-bold tabular-nums">{currency(a.total)}</span> },
                   {
                     // Every action the row allows, on the row. Edit appears
                     // only where the stage permits it, and neither Approve nor
                     // Reject is offered on a stage that has left the practice.
                     key: 'actions', label: '', align: 'right',
-                    render: (a: any) => {
+                    render: (a) => {
                       const stage = approvalWorkflows.find((w) => w.id === a.workflowId)?.stages[a.stageIndex];
                       if (a.state !== 'pending') {
                         return a.state === 'approved' ? <Pill tone="green">Approved</Pill> : <Pill tone="red">Rejected</Pill>;
@@ -800,7 +809,7 @@ export function ClientDetailView() {
                   },
                 ]}
                 rows={clientApprovals}
-                rowId={(a: any) => a.id}
+                rowId={(a) => a.id}
                 selectable
                 emptyMessage={
                   clientWorkflows.length === 0
@@ -812,7 +821,7 @@ export function ClientDetailView() {
                     label: 'Approve selected', icon: CheckCircle, primary: true,
                     // Acted on here rather than in chat — the rows are already
                     // picked, so there is nothing left to ask the agent.
-                    onClick: async (sel: any[]) => {
+                    onClick: async (sel) => {
                       const mine = sel.filter(
                         (a) => a.state === 'pending' && !approvalWorkflows.find((w) => w.id === a.workflowId)?.stages[a.stageIndex]?.clientSide,
                       );
@@ -859,7 +868,7 @@ export function ClientDetailView() {
                     <WorkflowCard
                       key={w.id}
                       workflow={w}
-                      usage={clientApprovals.filter((a: any) => a.workflowId === w.id).length}
+                      usage={clientApprovals.filter((a) => a.workflowId === w.id).length}
                       onEdit={() => setEditingWorkflow(w)}
                       onToggle={() => saveWorkflow({ ...w, active: !w.active })}
                       onDelete={async () => {
@@ -943,7 +952,7 @@ export function ClientDetailView() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-                        <Pill tone={m.role === 'Owner' ? 'blue' : undefined}>{m.role}</Pill>
+                        <Pill tone={m.role === 'Owner' ? 'blue' : 'neutral'}>{m.role}</Pill>
                         {m.status === 'pending-client-approval'
                           ? <Pill tone="amber">Waiting client approval</Pill>
                           : m.status === 'declined'
@@ -1189,9 +1198,11 @@ function downloadDocuments(rows: Document[], clientName: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
+  // A single row always has rows[0]; a supplier that slugs to nothing already
+  // falls back to "document", so the same fallback covers the lookup.
   a.download =
     rows.length === 1
-      ? `${slug(clientName) || 'client'}-${slug(rows[0].supplier) || 'document'}.csv`
+      ? `${slug(clientName) || 'client'}-${slug(rows[0]?.supplier ?? '') || 'document'}.csv`
       : `${slug(clientName) || 'client'}-documents.csv`;
   a.click();
   URL.revokeObjectURL(url);
@@ -1269,7 +1280,14 @@ function ClientDetailsPanel({ client, pending, onPropose }: {
   const [draft, setDraft] = useState<Record<string, string>>(current);
   const [sent, setSent] = useState(0);
 
-  const changed = FIELDS.filter((f) => draft[f.field].trim() !== String(client[f.field] ?? '').trim());
+  /**
+   * The draft is seeded from `current()`, which writes an entry for every
+   * FIELDS key, and editing only overwrites them — so a FIELDS lookup is always
+   * set, and the empty fallback reads the same as a field the client left blank.
+   */
+  const drafted = (field: ClientDetailChange['field']) => draft[field] ?? '';
+
+  const changed = FIELDS.filter((f) => drafted(f.field).trim() !== String(client[f.field] ?? '').trim());
 
   return (
     <Panel title="Client details" icon={SettingsIcon}>
@@ -1333,7 +1351,7 @@ function ClientDetailsPanel({ client, pending, onPropose }: {
               onClick={() => {
                 const n = onPropose(
                   client.id,
-                  changed.map((f) => ({ field: f.field, label: f.label, to: draft[f.field] })),
+                  changed.map((f) => ({ field: f.field, label: f.label, to: drafted(f.field) })),
                 );
                 setSent(n);
                 setEditing(false);
@@ -1675,7 +1693,7 @@ function Field({ label, value, onChange, placeholder }: {
   );
 }
 
-function Panel({ title, icon: Icon, children }: { title: string; icon: any; children: React.ReactNode }) {
+function Panel({ title, icon: Icon, children }: { title: string; icon: LucideIcon; children: React.ReactNode }) {
   return (
     <div className="border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
       <div className="p-6 pb-4 flex items-center gap-3 border-b border-white/5">

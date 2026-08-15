@@ -100,7 +100,9 @@ export function classifyLocally(text: string): { intent: Intent; response: strin
 export function resolveScope(text: string, clients: Client[], attachedClientIds: string[]) {
   const lower = text.toLowerCase();
   const mentioned = clients.filter((c) => {
-    const first = c.name.split(' ')[0].toLowerCase();
+    // Splitting always yields a first element; on a nameless client it is the
+    // empty string, which the length check below rejects anyway.
+    const first = (c.name.split(' ')[0] ?? '').toLowerCase();
     return lower.includes(c.name.toLowerCase()) || (first.length > 3 && lower.includes(first));
   });
 
@@ -120,7 +122,9 @@ const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 
 function extractPeriod(text: string): string | undefined {
   const lower = text.toLowerCase();
   const month = MONTHS.find((m) => lower.includes(m));
-  if (month) return month[0].toUpperCase() + month.slice(1);
+  // charAt over indexing: every name in MONTHS is a non-empty literal, so this
+  // is the same first character without a possibly-undefined read.
+  if (month) return month.charAt(0).toUpperCase() + month.slice(1);
   if (/\bthis month\b/.test(lower)) return 'This month';
   if (/\blast month\b/.test(lower)) return 'Last month';
   return undefined;
@@ -146,7 +150,9 @@ export function extractClientName(text: string): string {
 function titleCaseName(s: string) {
   return s
     .split(/\s+/)
-    .map((w) => (/^(ltd|llp|plc|uk)$/i.test(w) ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1)))
+    // The caller trims before splitting, so no word is empty; charAt keeps that
+    // honest without asserting on the index.
+    .map((w) => (/^(ltd|llp|plc|uk)$/i.test(w) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1)))
     .join(' ');
 }
 

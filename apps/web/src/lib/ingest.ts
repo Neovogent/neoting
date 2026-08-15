@@ -2,9 +2,12 @@ import { ATTRIBUTION_CONFIDENT, attributeClient } from './attribution';
 import { isTabular } from './spreadsheet';
 import type { Client, Document, DocKind, ExtractedField, RoutingRule, SourceChannel } from './types';
 
+/** The ceiling an accountant working in the app gets, and the default. */
+const ACCOUNTANT_UPLOAD_LIMIT = 100 * 1024 * 1024;
+
 /** Per-channel size limits — asymmetric by design (PRD stage 1). */
 export const CHANNEL_LIMITS: Record<string, number> = {
-  'accountant-upload': 100 * 1024 * 1024,
+  'accountant-upload': ACCOUNTANT_UPLOAD_LIMIT,
   client: 25 * 1024 * 1024,
   vault: 100 * 1024 * 1024,
 };
@@ -59,7 +62,7 @@ export function ingestFiles(
   files: { name: string; size: number; raw?: File }[],
   client: Client | undefined,
   source: SourceChannel,
-  { limit = CHANNEL_LIMITS['accountant-upload'], uploader = 'You (web upload)', kind, clientNote }: IngestOptions = {},
+  { limit = ACCOUNTANT_UPLOAD_LIMIT, uploader = 'You (web upload)', kind, clientNote }: IngestOptions = {},
 ): IngestResult {
   const documents: Document[] = [];
   const rejected: { fileName: string; reason: string }[] = [];
@@ -138,10 +141,12 @@ export function completeExtraction(
   routingRules: RoutingRule[] = [],
 ): Document {
   const h = hashString(doc.id);
-  const supplier = EXTRACTED_SUPPLIERS[h % EXTRACTED_SUPPLIERS.length];
+  // Both lists are non-empty literals declared above, so a modulo of their own
+  // length always lands on an entry.
+  const supplier = EXTRACTED_SUPPLIERS[h % EXTRACTED_SUPPLIERS.length]!;
   const total = Math.round((40 + (h % 180000) / 100) * 100) / 100;
   const needsReview = h % 3 === 0;
-  const category = needsReview ? '—' : EXTRACTED_CATEGORIES[h % EXTRACTED_CATEGORIES.length];
+  const category = needsReview ? '—' : EXTRACTED_CATEGORIES[h % EXTRACTED_CATEGORIES.length]!;
 
   /**
    * Money in or money out. Whoever sent the file was never asked — the

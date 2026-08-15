@@ -19,8 +19,15 @@ type IntakeMode = 'invite' | 'practice';
 const PRACTICE_TASKS: SetupTask[] = ['ledger', 'bank'];
 const INVITE_TASKS: SetupTask[] = ['profile', 'ledger', 'bank'];
 
-const INDUSTRIES = ['Hospitality & Food', 'Software & IT', 'Architecture', 'Retail', 'Construction', 'Professional Services'];
-const COMPANY_TYPES = [
+/**
+ * A picker's options. Typed non-empty because the form takes its defaults off
+ * the head of each list, and these lists are literals a few lines below —
+ * emptiness is not a state the form can ever be handed.
+ */
+type Options = [string, ...string[]];
+
+const INDUSTRIES: Options = ['Hospitality & Food', 'Software & IT', 'Architecture', 'Retail', 'Construction', 'Professional Services'];
+const COMPANY_TYPES: Options = [
   'Private limited company (Ltd)',
   'Limited liability partnership (LLP)',
   'Partnership',
@@ -28,8 +35,9 @@ const COMPANY_TYPES = [
   'Public limited company (PLC)',
   'Charity / CIC',
 ];
-const VAT_SCHEMES = ['Standard', 'Flat rate', 'Cash accounting', 'Not registered'];
-const FREQUENCIES = ['Weekly', 'Monthly', 'Quarterly'];
+const VAT_SCHEMES: Options = ['Standard', 'Flat rate', 'Cash accounting', 'Not registered'];
+/** Fixed at three, and the form opens on the last of them. */
+const FREQUENCIES: [string, string, string] = ['Weekly', 'Monthly', 'Quarterly'];
 
 /**
  * Consolidated client intake (PRD section 5.1) — the same component the sidebar

@@ -1,7 +1,7 @@
 import { FileSearch, ArrowRight, Eye, Download } from 'lucide-react';
 import { useAppContext } from '../../context/AppContext';
 import { currency } from '../../lib/resolver';
-import type { MissingItem } from '../../lib/types';
+import type { Intent, MissingItem } from '../../lib/types';
 
 const ENGINE_LABEL: Record<MissingItem['detectedBy'], string> = {
   'bank-transaction': 'bank gaps',
@@ -15,7 +15,10 @@ const ENGINE_LABEL: Record<MissingItem['detectedBy'], string> = {
  * Missing-evidence action card (PRD stage 8). Summarises what the five
  * detection engines found and offers the next step inline in chat.
  */
-export function ActionCard({ clientIds, period }: { clientIds: string[]; period?: string }) {
+// `period?: string | undefined` rather than `?: string` — it is read straight
+// off `MessagePayload.period`, which is optional, so the caller genuinely does
+// pass an explicit `undefined`. See the note in lib/types.ts.
+export function ActionCard({ clientIds, period }: { clientIds: string[]; period?: string | undefined }) {
   const { missing, clients, addMessage } = useAppContext();
 
   const items = missing.filter((m) => (clientIds.length ? clientIds.includes(m.clientId) : true) && !m.chased);
@@ -28,7 +31,7 @@ export function ActionCard({ clientIds, period }: { clientIds: string[]; period?
     return acc;
   }, {});
 
-  const post = (content: string, intent: any) =>
+  const post = (content: string, intent: Intent) =>
     addMessage({
       id: `${Date.now()}-${intent}`,
       role: 'assistant',

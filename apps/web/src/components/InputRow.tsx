@@ -99,7 +99,9 @@ export function InputRow() {
       id: Date.now().toString(),
       role: 'user',
       content: userMessage,
-      attachments: attachments.length ? attachments : undefined,
+      // Left off entirely when there are none — an empty array would draw an
+      // attachment strip on a message that has nothing attached.
+      ...(attachments.length ? { attachments } : {}),
       viaVoice: wasDictated || undefined,
     });
     setIsLoading(true);
@@ -266,7 +268,9 @@ export function InputRow() {
                 {attachedClients.length === 0
                   ? 'All clients'
                   : attachedClients.length === 1
-                    ? attachedClients[0].name
+                    // A length of one means the client is there; the count
+                    // wording is only a fallback for an impossible hole.
+                    ? attachedClients[0]?.name ?? '1 client'
                     : `${attachedClients.length} clients`}
                 <ChevronDown size={13} className={`transition-transform ${pickerOpen ? 'rotate-180' : ''}`} />
               </button>

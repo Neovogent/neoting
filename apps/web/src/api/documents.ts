@@ -22,8 +22,16 @@ import type { DocKind, Document as LocalDocument, DocStatus, SourceChannel } fro
  *   sometimes one and sometimes the other.
  *
  *   ENUMS. `TO_REVIEW` is not `review`. Mapping through a table rather than
- *   lowercasing means an enum value the app has never seen fails loudly in one
- *   place instead of rendering an empty status pill in four.
+ *   lowercasing puts every translation in one place instead of four.
+ *
+ * ⚠ The tables below fall back rather than throw, so an unrecognised value
+ * renders as `processing` / `web` rather than failing. That is deliberate — a
+ * mapper that throws takes the whole screen down over one odd row — but it does
+ * mean a NEW enum value would show as something plausible instead of announcing
+ * itself. The enforcement is at test time, not run time: `documents.test.ts`
+ * pins both tables against `DocumentState` and `DocumentChannel` from the
+ * contract, so a value added to the spec fails there. Both tables are
+ * exhaustive against the contract today; keep them that way.
  */
 
 /** Integer pence to the pounds the local shape carries. */

@@ -3,6 +3,14 @@ import { ArrowDown, ArrowUp, Check, LucideIcon } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export interface Column<T> {
+  /**
+   * Identifies the column for sorting and for React's key. It is also the
+   * field name used when `render` is omitted.
+   *
+   * Deliberately `string` and not `keyof T`: several tables declare presentation
+   * columns — `actions`, `balances` — that correspond to no field at all and
+   * always supply `render`. Narrowing this would reject those.
+   */
   key: string;
   label: string;
   align?: 'left' | 'right';
@@ -230,7 +238,10 @@ export function DataTable<T>({
                         c.align === 'right' ? 'text-right' : 'text-left'
                       }`}
                     >
-                      {c.render ? c.render(row) : String((row as any)[c.key] ?? '')}
+                      {/* No `render` means "just show the field named by `key`".
+                          `key` is a plain string rather than `keyof T`, so this
+                          read cannot be checked — see the note on `Column.key`. */}
+                      {c.render ? c.render(row) : String((row as Record<string, unknown>)[c.key] ?? '')}
                     </td>
                   ))}
                 </motion.tr>

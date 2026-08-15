@@ -57,6 +57,8 @@ export function AnalysisModal({ docIds, importIds = [], onClose, lockedClientId 
     [importIds, sheetImports],
   );
   const readingSheets = sheets.some((t) => t.status === 'reading');
+  /** A lone import is named in the heading; two or more are only counted. */
+  const onlySheet = sheets.length === 1 ? sheets[0] : undefined;
 
   // A spreadsheet import produces no document to walk through: the result is
   // the sheet itself — what it turned out to be and where its rows went.
@@ -121,7 +123,7 @@ export function AnalysisModal({ docIds, importIds = [], onClose, lockedClientId 
                 <div>
                   <h2 className="text-lg font-bold text-white">
                     {readingSheets
-                      ? `Reading ${sheets.length === 1 ? sheets[0].fileName : `${sheets.length} spreadsheets`}`
+                      ? `Reading ${onlySheet ? onlySheet.fileName : `${sheets.length} spreadsheets`}`
                       : `Reading ${docIds.length === 1 ? 'your document' : `${docIds.length} documents`}`}
                   </h2>
                   <p className="text-[13px] text-zinc-500">
@@ -393,8 +395,9 @@ function Count({ label, value }: { label: string; value: number }) {
 /** One AI call: what it decided, how sure it was, and the way to overrule it. */
 function Decision({ title, confidence, provenance, children }: {
   title: string;
-  confidence?: number;
-  provenance?: string;
+  /** Absent when the field carried no score — the panel then shows no badge. */
+  confidence?: number | undefined;
+  provenance?: string | undefined;
   children: React.ReactNode;
 }) {
   const pct = confidence === undefined ? null : Math.round(confidence * 100);

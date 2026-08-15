@@ -25,7 +25,9 @@ export function IntentRenderer({ message }: { message: Message }) {
   const clientIds: string[] = payload.clientIds ?? [];
   const clientNames: string[] = payload.clientNames ?? [];
   const query: string = payload.query ?? '';
-  const scopeName = clientNames.length === 1 ? clientNames[0] : clientNames.length ? `${clientNames.length} clients` : 'All clients';
+  // A length of one guarantees the name is there; the fallback is the same
+  // wording used when nothing is scoped, so an impossible hole reads sanely.
+  const scopeName = clientNames.length === 1 ? clientNames[0] ?? 'All clients' : clientNames.length ? `${clientNames.length} clients` : 'All clients';
 
   switch (message.intent) {
     case 'ADD_CLIENT':

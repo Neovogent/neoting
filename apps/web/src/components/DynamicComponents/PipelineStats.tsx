@@ -14,6 +14,9 @@ export function PipelineStats({ scopeName }: { scopeName: string }) {
   const data = seedAnalytics.processed;
   const max = Math.max(...data.map((d) => d.value));
   const peak = data.findIndex((d) => d.value === max);
+  // `hover` is only ever set from a bar's own index, so this resolves whenever
+  // it is not null; naming the bar saves reaching back into the array to read it.
+  const hovered = hover === null ? null : data[hover];
 
   return (
     <div className="w-full max-w-3xl border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden flex flex-col">
@@ -44,7 +47,7 @@ export function PipelineStats({ scopeName }: { scopeName: string }) {
         <div className="flex items-baseline justify-between mb-5">
           <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Documents processed per day</span>
           <span className="text-[11px] font-semibold text-zinc-600 tabular-nums">
-            {hover !== null ? `${data[hover].label} — ${data[hover].value}` : `peak ${max}`}
+            {hovered ? `${hovered.label} — ${hovered.value}` : `peak ${max}`}
           </span>
         </div>
 

@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import {
   Send, Play, X, Check, MessageSquare, Clock, ShieldOff, Ban, Wand2, FileSearch, PencilLine,
-  Link2, ChevronRight, SlidersHorizontal, Undo2, Upload,
+  Link2, ChevronRight, SlidersHorizontal, Undo2, Upload, LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppContext } from '../context/AppContext';
@@ -13,7 +13,7 @@ import { MessageEditor } from '../components/DynamicComponents/ChaseComposer';
 import { ChaseModal } from '../components/DynamicComponents/ChaseModal';
 import { currency } from '../lib/resolver';
 import { clampLinkTtl, LINK_TTL_PRESETS, MAX_LINK_TTL_HOURS, MIN_LINK_TTL_HOURS } from '../lib/generate';
-import type { Chase, ChaseItem, ChaseItemStatus } from '../lib/types';
+import type { Chase, ChaseItem, ChaseItemStatus, ChasePolicy } from '../lib/types';
 
 const STAGE_LABEL: Record<Chase['stage'], { label: string; light: string; dark: string }> = {
   sent: { label: 'Sent', light: 'bg-zinc-900 text-white', dark: 'bg-[#202026] text-zinc-300' },
@@ -68,9 +68,11 @@ export function ChasesView() {
     setChasing({
       clientIds: [clientId],
       missingItemIds: ids,
-      note: ids.length
-        ? undefined
-        : 'Everything for this client is already requested — send a reminder from the chase detail instead.',
+      // No note is an absent note, not a `note: undefined` the modal would
+      // still have to reason about.
+      ...(ids.length
+        ? {}
+        : { note: 'Everything for this client is already requested — send a reminder from the chase detail instead.' }),
     });
   };
 
@@ -243,8 +245,8 @@ export function ChasesView() {
         {chasing && (
           <ChaseModal
             clientIds={chasing.clientIds}
-            missingItemIds={chasing.missingItemIds}
-            note={chasing.note}
+            {...(chasing.missingItemIds === undefined ? {} : { missingItemIds: chasing.missingItemIds })}
+            {...(chasing.note === undefined ? {} : { note: chasing.note })}
             onClose={() => setChasing(null)}
           />
         )}
@@ -363,8 +365,13 @@ function ChaseDetail({ chase, onClose }: { chase: Chase; onClose: () => void }) 
   const handleUpload = (files: FileList | null) => {
     const item = uploadFor;
     setUploadForState(null);
-    if (!item || !files?.length) return;
-    const file = files[0];
+    // One guard, not two: for a FileList "length > 0" and "index 0 exists" are
+    // the same fact, so checking the file itself restates the invariant rather
+    // than asserting past it. (The earlier form checked `files.length` and then
+    // re-checked `files[0]` under a comment claiming the first check made the
+    // second unnecessary — which read as a contradiction.)
+    const file = files?.[0];
+    if (!item || !file) return;
     ingest([{ name: file.name, size: file.size, raw: file }], chase.clientId, 'web', {
       uploader: 'You (web upload)',
       kind: 'cost',
@@ -637,9 +644,12 @@ function ChaseDetail({ chase, onClose }: { chase: Chase; onClose: () => void }) 
   );
 }
 
-function PolicyPanel({ policy, onChange, onClose }: { policy: any; onChange: (p: any) => void; onClose: () => void }) {
+function PolicyPanel({ policy, onChange, onClose }: { policy: ChasePolicy; onChange: (p: ChasePolicy) => void; onClose: () => void }) {
   const [draft, setDraft] = useState(policy);
-  const set = (k: string, v: any) => setDraft({ ...draft, [k]: v });
+  // Keyed to the policy itself, so a field can only ever be set to the type it
+  // already holds — a number field cannot write a string into the draft.
+  const set = <K extends keyof ChasePolicy>(k: K, v: ChasePolicy[K]) =>
+    setDraft({ ...draft, [k]: v });
 
   return (
     <Modal onClose={onClose}>
@@ -806,7 +816,7 @@ function StatusPill({ status }: { status: ChaseItemStatus }) {
  * announced correctly.
  */
 function FooterAction({ icon: Icon, label, onClick, blocked, blockedTitle, blockedDetail, title, detail, primary }: {
-  icon?: any;
+  icon?: LucideIcon;
   label: string;
   onClick: () => void;
   blocked?: boolean;
@@ -834,10 +844,12 @@ function FooterAction({ icon: Icon, label, onClick, blocked, blockedTitle, block
 
   const label_ = blocked ? blockedTitle : title;
   const detail_ = blocked ? blockedDetail : detail;
-  return label_ ? <Tooltip label={label_} detail={detail_}>{button}</Tooltip> : button;
+  // A button with no second line passes no `detail` at all, rather than one
+  // that is present and undefined.
+  return label_ ? <Tooltip label={label_} {...(detail_ === undefined ? {} : { detail: detail_ })}>{button}</Tooltip> : button;
 }
 
-function MiniBtn({ icon: Icon, label, onClick, primary }: { icon: any; label: string; onClick: () => void; primary?: boolean }) {
+function MiniBtn({ icon: Icon, label, onClick, primary }: { icon: LucideIcon; label: string; onClick: () => void; primary?: boolean }) {
   return (
     <button
       onClick={onClick}

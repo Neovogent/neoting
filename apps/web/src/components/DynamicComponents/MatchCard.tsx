@@ -1,4 +1,4 @@
-import { ArrowLeftRight, FileText, Landmark, Unlink } from 'lucide-react';
+import { ArrowLeftRight, FileText, Landmark, LucideIcon, Unlink } from 'lucide-react';
 import { useAppContext } from '../../context/AppContext';
 import { useConfirm } from './ConfirmProvider';
 import { currency } from '../../lib/resolver';
@@ -95,7 +95,7 @@ export function MatchCard({ matches }: { matches: Match[] }) {
   );
 }
 
-function Side({ icon: Icon, label, value, muted }: { icon: any; label: string; value: string; muted?: boolean }) {
+function Side({ icon: Icon, label, value, muted }: { icon: LucideIcon; label: string; value: string; muted?: boolean }) {
   return (
     <div className="flex items-center gap-3 min-w-0">
       <div className="w-9 h-9 rounded-xl bg-[#202026] border border-white/5 flex items-center justify-center text-zinc-400 shrink-0 shadow-inner">

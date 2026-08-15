@@ -12,9 +12,11 @@ import type { Client, Document, ExpenseClaim, ExpenseClaimItem, ExpenseClaimStat
  * not a document — it is a wrapper around several, plus the one thing a
  * document cannot carry: who is out of pocket and whether they have been paid.
  */
-const STATUS_TONE: Record<ExpenseClaimStatus, 'green' | 'amber' | 'red' | 'blue' | undefined> = {
-  draft: undefined,
-  submitted: undefined,
+// 'neutral' is what a Pill draws with no tone at all, so the two stages that
+// carry no signal name it rather than leaving a hole in the map.
+const STATUS_TONE: Record<ExpenseClaimStatus, 'green' | 'amber' | 'red' | 'blue' | 'neutral'> = {
+  draft: 'neutral',
+  submitted: 'neutral',
   'internally-approved': 'amber',
   approved: 'blue',
   reimbursed: 'green',
@@ -262,9 +264,9 @@ export function ClientExpenseClaims({ client, onPreview }: {
                           const ok = await confirm({
                             title: `Accept ${c.claimant}'s claim for the books?`,
                             detail: `${currency(total(c))} across ${c.items.length} line${c.items.length === 1 ? '' : 's'}.`,
-                            consequence: c.items.some((i) => !i.documentId)
-                              ? 'Some lines have no receipt — those cannot be reclaimed against VAT.'
-                              : undefined,
+                            ...(c.items.some((i) => !i.documentId)
+                              ? { consequence: 'Some lines have no receipt — those cannot be reclaimed against VAT.' }
+                              : {}),
                             confirmLabel: 'Yes, accept it',
                           });
                           if (ok) setExpenseClaimStatus(c.id, 'approved');

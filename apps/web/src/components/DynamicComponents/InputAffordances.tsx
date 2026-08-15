@@ -136,7 +136,10 @@ export function DocumentFormats({ open, anchor }: {
 
   const GAP = 12;
   const MARGIN = 8;
+  // `index` only ever advances modulo ACCEPTED.length, so it always lands on a
+  // format; the guard is here because the array read cannot say so on its own.
   const item = ACCEPTED[index];
+  if (!item) return null;
 
   return createPortal(
     <AnimatePresence>

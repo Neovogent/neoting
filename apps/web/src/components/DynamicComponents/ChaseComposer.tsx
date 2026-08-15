@@ -116,8 +116,11 @@ export function ChaseComposer({ clientIds, missingItemIds }: {
    * Narrows the chase to specific items. Without it the composer takes
    * everything outstanding for the client, which is right when the request
    * came from "chase this client" but wrong when someone picked three rows.
+   *
+   * `| undefined` is explicit because it is read off `MessagePayload`, which
+   * makes it optional, so the caller passes a real `undefined`.
    */
-  missingItemIds?: string[];
+  missingItemIds?: string[] | undefined;
 }) {
   const { clients, missing, sendChase } = useAppContext();
   /** Rewrites, per client. Absent means the suggested wording still stands. */
@@ -150,10 +153,16 @@ export function ChaseComposer({ clientIds, missingItemIds }: {
    * render body gave a different URL every time the component drew — the text
    * an accountant read was not the text that would go out. Memoised on what
    * the message actually depends on.
+   *
+   * The dependency is a derived IDENTITY STRING, not `targets` itself, because
+   * `targets` is rebuilt every render and comparing it by reference would defeat
+   * the memo entirely. `react-hooks/exhaustive-deps` would flag this shape; the
+   * plugin is not installed here yet, so there is nothing to suppress and a
+   * disable directive for it is itself a lint error. Tracked with the other
+   * missing plugins in eslint.config.js.
    */
   const suggested = useMemo(
     () => targets.map((t) => ({ ...t, sms: composeSms(t.client, t.items) })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [targets.map((t) => `${t.client.id}:${t.items.map((i) => i.id).join(',')}`).join('|')],
   );
 
@@ -225,10 +234,14 @@ export function ChaseComposer({ clientIds, missingItemIds }: {
     </>
   );
 
+  // Naming the one recipient beats a count of one. `drafts` is never empty
+  // here — the nothing-to-chase case returned above.
+  const only = drafts.length === 1 ? drafts[0] : undefined;
+
   return (
     <ReviewGate
       icon={Send}
-      title={drafts.length === 1 ? `Chase ${drafts[0].client.name}` : `Chase ${drafts.length} clients`}
+      title={only ? `Chase ${only.client.name}` : `Chase ${drafts.length} clients`}
       onEdit={() => setEditing((v) => !v)}
       editLabel={editing ? 'Done editing' : 'Edit message'}
       subtitle={`SMS to primary contacts • ${totalItems} missing item${totalItems === 1 ? '' : 's'}`}

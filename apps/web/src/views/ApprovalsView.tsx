@@ -69,6 +69,13 @@ export function ApprovalsView() {
   const mine = practicePending.filter((a) => a.approver === 'You');
   const pending = scope === 'mine' ? mine : practicePending;
 
+  /**
+   * Resolved out here so the detail panel can be given the workflow or nothing
+   * at all — an item whose workflow has since been deleted draws no stage rail
+   * rather than an empty one.
+   */
+  const detailWorkflow = detail ? approvalWorkflows.find((w) => w.id === detail.workflowId) : undefined;
+
   const history = approvals.filter((a) => a.state !== 'pending');
   const totalPending = pending.reduce((n, a) => n + a.total, 0);
   const aging = pending.filter((a) => a.waitingDays >= 5).length;
@@ -351,25 +358,28 @@ export function ApprovalsView() {
         {detail && (
           <ApprovalDetail
             item={approvals.find((a) => a.id === detail.id) ?? detail}
-            workflow={approvalWorkflows.find((w) => w.id === detail.workflowId)}
+            {...(detailWorkflow ? { workflow: detailWorkflow } : {})}
             onApprove={(note) => { advanceApproval(detail.id, note); logAudit({ action: 'Passed approval stage', scope: `${detail.supplier} — ${detail.clientName}`, reviewOpened: true }); }}
             onReject={(reason) => { rejectApproval(detail.id, reason); logAudit({ action: 'Rejected item', scope: `${detail.supplier} — ${reason}`, reviewOpened: true }); }}
             // Correcting the coding happens where every other correction
             // happens — the document itself, with confidence and provenance
-            // on every field.
-            onEdit={detail.documentId ? () => {
-              setDetail(null);
-              startConversation([detail.clientId], [
-                { id: `${Date.now()}-u`, role: 'user', content: `Review the ${detail.supplier} document before I approve it` },
-                {
-                  id: `${Date.now()}-a`,
-                  role: 'assistant',
-                  content: 'Click any value to correct it — the item stays on its approval stage until you pass it.',
-                  intent: 'REVIEW_DOCUMENT',
-                  payload: { documentId: detail.documentId, clientIds: [detail.clientId], clientNames: [detail.clientName] },
-                },
-              ]);
-            } : undefined}
+            // on every field. Withheld entirely when there is no document to
+            // open, rather than offered and inert.
+            {...(detail.documentId ? {
+              onEdit: () => {
+                setDetail(null);
+                startConversation([detail.clientId], [
+                  { id: `${Date.now()}-u`, role: 'user', content: `Review the ${detail.supplier} document before I approve it` },
+                  {
+                    id: `${Date.now()}-a`,
+                    role: 'assistant',
+                    content: 'Click any value to correct it — the item stays on its approval stage until you pass it.',
+                    intent: 'REVIEW_DOCUMENT',
+                    payload: { documentId: detail.documentId, clientIds: [detail.clientId], clientNames: [detail.clientName] },
+                  },
+                ]);
+              },
+            } : {})}
             onClose={() => setDetail(null)}
           />
         )}

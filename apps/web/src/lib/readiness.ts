@@ -30,7 +30,7 @@ export interface Readiness {
    * separate list because it is fixed differently — filling a field in, or
    * comparing two copies — and the button should say which.
    */
-  flag?: string;
+  flag?: string | undefined;
 }
 
 /**

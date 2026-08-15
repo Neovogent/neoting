@@ -85,16 +85,20 @@ export function attributeClient(
   // 3. Nothing on the document points anywhere. With one client on the books
   //    there is no ambiguity to report; with several there is, and the caller
   //    is told the confidence is low so the row asks to be confirmed.
-  if (clients.length === 1) {
+  const sole = clients.length === 1 ? clients[0] : undefined;
+  if (sole) {
     return {
-      clientId: clients[0].id,
-      clientName: clients[0].name,
+      clientId: sole.id,
+      clientName: sole.name,
       confidence: 0.8,
       provenance: 'the only client on the books',
     };
   }
 
   const pick = clients[hashString(doc.id) % clients.length];
+  // Unreachable: the list is non-empty (checked on entry) and the modulo keeps
+  // the index inside it.
+  if (!pick) return null;
   return {
     clientId: pick.id,
     clientName: pick.name,

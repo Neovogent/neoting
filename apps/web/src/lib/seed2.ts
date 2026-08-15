@@ -224,7 +224,9 @@ export function buildTasks(clients: Client[]): WorkflowTask[] {
         clientId: client.id,
         clientName: client.name,
         title,
-        assignee: ['You', 'R. Okafor', 'S. Patel', 'L. Nguyen'][(ci + i) % 4],
+        // The modulo matches the list length, so the rotation never falls off
+        // the end and the fallback names the same first person it starts on.
+        assignee: ['You', 'R. Okafor', 'S. Patel', 'L. Nguyen'][(ci + i) % 4] ?? 'You',
         due: client.deadline,
         status: 'open',
         // These three can be answered from real pipeline state.
@@ -263,7 +265,8 @@ export function buildVault(clients: Client[]): VaultDocument[] {
 
       // Statutory and permanent records belong to the practice; the rest sit
       // with whichever accountant handles the engagement.
-      const uploader = ['You', 'R. Okafor', 'S. Patel'][(ci + i) % 3];
+      // Same rotation as the task assignees: the modulo matches the length.
+      const uploader = ['You', 'R. Okafor', 'S. Patel'][(ci + i) % 3] ?? 'You';
       const firmOwned =
         t.tags.includes('permanent') || t.category === 'Payroll' || t.category === 'Engagement letters';
 

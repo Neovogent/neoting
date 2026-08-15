@@ -13,9 +13,13 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 export function parseDate(s: string): number | null {
   const m = s.match(/^(\d{1,2})\s+([A-Za-z]{3})\w*\s+(\d{4})$/);
   if (!m) return null;
-  const month = MONTHS.indexOf(m[2].slice(0, 3));
+  const [, day, mon, year] = m;
+  // Unreachable: none of the three groups is optional, so a match means all
+  // three participated.
+  if (!day || !mon || !year) return null;
+  const month = MONTHS.indexOf(mon.slice(0, 3));
   if (month < 0) return null;
-  return Date.UTC(Number(m[3]), month, Number(m[1]));
+  return Date.UTC(Number(year), month, Number(day));
 }
 
 export function daysBetween(a: string, b: string): number | null {
@@ -178,7 +182,10 @@ export function assessTransaction(
 ): MatchVerdict {
   const candidates = matchCandidates(txn, documents, settings);
 
-  if (candidates.length === 0) {
+  // Reading the first entry is the empty check: matchCandidates builds a dense
+  // array, so a missing candidates[0] means there were none at all.
+  const best = candidates[0];
+  if (!best) {
     return {
       kind: 'none',
       candidates,
@@ -186,7 +193,7 @@ export function assessTransaction(
     };
   }
 
-  const [best, runner] = candidates;
+  const runner = candidates[1];
   const clearWinner = best.confidence >= CONFIDENT_MIN && (!runner || best.confidence - runner.confidence >= CLEAR_GAP);
 
   if (clearWinner) return { kind: 'confident', candidates, best, reason: best.reason };

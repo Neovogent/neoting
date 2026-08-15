@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   Search, Plus, Sparkles, Send, ExternalLink, Activity, LayoutGrid, Rows3,
-  Star, Columns3, Download, X, Check,
+  Star, Columns3, Download, X, Check, LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppContext } from '../context/AppContext';
@@ -9,7 +9,7 @@ import { ClientIntakeForm } from '../components/DynamicComponents/ClientIntakeFo
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { currency } from '../lib/resolver';
 import { healthTone, type ClientStats } from '../lib/selectors';
-import type { Client } from '../lib/types';
+import type { Client, Intent } from '../lib/types';
 import { useQueryParam } from '../lib/router';
 import { ChaseModal } from '../components/DynamicComponents/ChaseModal';
 import { EXPORT_HINT } from '../lib/exportRules';
@@ -61,7 +61,7 @@ export function ClientsView() {
    */
   const chase = (ids: string[]) => setChasing(ids);
 
-  const drill = (ids: string[], intent: any, content: string) => {
+  const drill = (ids: string[], intent: Intent, content: string) => {
     const names = clients.filter((c) => ids.includes(c.id)).map((c) => c.name);
     startConversation(ids, [
       { id: `${Date.now()}-u`, role: 'user', content: `${content} for ${names.join(', ')}` },
@@ -251,7 +251,7 @@ export function ClientsView() {
         {chasing && (
           <ChaseModal
             clientIds={chasing}
-            note={chasing.length > 1 ? 'Grouped per client — one SMS each.' : undefined}
+            {...(chasing.length > 1 ? { note: 'Grouped per client — one SMS each.' } : {})}
             onClose={() => setChasing(null)}
           />
         )}
@@ -325,7 +325,7 @@ function countColumn(
   ];
 }
 
-function ViewToggle({ active, onClick, icon: Icon, label }: { active: boolean; onClick: () => void; icon: any; label: string }) {
+function ViewToggle({ active, onClick, icon: Icon, label }: { active: boolean; onClick: () => void; icon: LucideIcon; label: string }) {
   return (
     <button
       onClick={onClick}

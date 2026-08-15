@@ -7,13 +7,16 @@ import type { ApprovalItem } from '../../lib/types';
 
 /** Parses "under two hundred pounds" / "under £200" out of the utterance. */
 function thresholdFrom(text: string): number | null {
-  const numeric = text.match(/(?:under|below|less than)\s*£?\s*([\d,]+)/i);
-  if (numeric) return Number(numeric[1].replace(/,/g, ''));
+  // The digit group is not optional in the pattern, so a match always carries it.
+  const digits = text.match(/(?:under|below|less than)\s*£?\s*([\d,]+)/i)?.[1];
+  if (digits !== undefined) return Number(digits.replace(/,/g, ''));
   const words: Record<string, number> = {
     'two hundred': 200, 'five hundred': 500, 'one thousand': 1000, 'a thousand': 1000, 'two thousand': 2000,
   };
-  const key = Object.keys(words).find((w) => new RegExp(`under\\s+${w}`, 'i').test(text));
-  return key ? words[key] : null;
+  // Matching on the entry keeps the amount in hand, rather than looking the
+  // matched key back up in a record that types every lookup as a maybe.
+  const hit = Object.entries(words).find(([w]) => new RegExp(`under\\s+${w}`, 'i').test(text));
+  return hit ? hit[1] : null;
 }
 
 /**

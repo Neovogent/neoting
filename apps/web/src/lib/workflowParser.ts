@@ -153,7 +153,9 @@ export function parseWorkflow(text: string, base: ApprovalWorkflow): ParsedWorkf
   const added = text.match(
     /(?:over|above|more than)\s*£?\s*([\d,]+)\s*(k\b)?[^.]{0,40}?\b(?:also (?:needs|requires)|adds?|brings? in|pulls? in)\s+(?:the\s+)?([a-z ]{3,24}?)\b/i,
   );
-  if (added) {
+  // The figure and the approver are both required groups — only the "k" suffix
+  // is optional — so a match that reaches here carries them.
+  if (added?.[1] && added[3]) {
     let amount = Number(added[1].replace(/,/g, ''));
     if (added[2]) amount *= 1000;
     const who = titleCase(added[3].trim());
@@ -177,14 +179,17 @@ export function parseWorkflow(text: string, base: ApprovalWorkflow): ParsedWorkf
 
   /* ── name ───────────────────────────────────────────────────────────────── */
   const quoted = text.match(/"([^"]{2,40})"|call it ([a-z0-9 &-]{2,40})/i);
-  const name = quoted
-    ? (quoted[1] ?? quoted[2]).trim()
+  // The two are alternatives, so a match fills exactly one of them.
+  const given = quoted?.[1] ?? quoted?.[2];
+  const [smallest] = amounts;
+  const name = given
+    ? given.trim()
     : categories.length
     ? `${categories[0]} approvals`
     : appliesTo === 'All sales items'
     ? 'Sales approvals'
-    : amounts.length
-    ? `Over ${money(amounts[0].value)}`
+    : smallest
+    ? `Over ${money(smallest.value)}`
     : 'Approval workflow';
   if (!quoted) assumed.push(`Named it "${name}"`);
 
@@ -284,7 +289,7 @@ const money = (n: number) => `£${n.toLocaleString('en-GB')}`;
 function titleCase(s: string) {
   return s
     .split(/\s+/)
-    .map((w) => (w.length > 2 ? w[0].toUpperCase() + w.slice(1) : w))
+    .map((w) => (w.length > 2 ? w.charAt(0).toUpperCase() + w.slice(1) : w))
     .join(' ');
 }
 

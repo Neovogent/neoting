@@ -56,7 +56,9 @@ export function navigate(to: string, options: { replace?: boolean } = {}) {
 /** The path split into segments, with empties dropped. */
 export function usePath(): string[] {
   const href = useHref();
-  return href.split('?')[0].split('/').filter(Boolean).map(decodeURIComponent);
+  // `split` always yields at least one element, so the part before the query is
+  // the whole path when there is no query at all.
+  return (href.split('?')[0] ?? href).split('/').filter(Boolean).map(decodeURIComponent);
 }
 
 /**
@@ -70,7 +72,9 @@ export function useQueryParam(key: string): [string | null, (value: string | nul
 
   const set = useCallback(
     (next: string | null, options: { replace?: boolean } = {}) => {
-      const [path, search] = currentHref().split('?');
+      // The address always has a path before the '?', so the default never
+      // applies — it only states what `split` already guarantees.
+      const [path = '/', search] = currentHref().split('?');
       const params = new URLSearchParams(search ?? '');
       if (next === null) params.delete(key);
       else params.set(key, next);
@@ -92,7 +96,10 @@ export function useSegment(index: number): [string | undefined, (value: string |
   const segments = usePath();
   const set = useCallback(
     (value: string | null) => {
-      const parts = currentHref().split('?')[0].split('/').filter(Boolean);
+      const href = currentHref();
+      // As in usePath: the part before the query is the whole address when
+      // there is no query.
+      const parts = (href.split('?')[0] ?? href).split('/').filter(Boolean);
       const next = value === null ? parts.slice(0, index) : [...parts.slice(0, index), value];
       // The query is dropped: whatever was layered over the old tab — a
       // preview, a compare — belonged to it, and carrying it across would

@@ -62,8 +62,10 @@ export function suggestPrompts({ clients, documents, missing, chases, approvals 
 
   // Chases nobody has answered, oldest first — this is the relationship risk.
   const stale = chases.filter((c) => c.stage !== 'closed' && c.hoursSinceSent >= 72);
-  if (stale.length) {
-    const oldest = [...stale].sort((a, b) => b.hoursSinceSent - a.hoursSinceSent)[0];
+  // A non-empty list always has a first element after sorting, so gating on the
+  // oldest chase is the same condition as gating on `stale.length`.
+  const oldest = [...stale].sort((a, b) => b.hoursSinceSent - a.hoursSinceSent)[0];
+  if (oldest) {
     out.push({
       text: `Which chases have had no reply, and what should I do about ${oldest.clientName}?`,
       because: `${plural(stale.length, 'chase')} unanswered for 3 days or more`,

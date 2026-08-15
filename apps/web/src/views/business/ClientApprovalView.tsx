@@ -54,7 +54,11 @@ export function ClientApprovalView() {
     return <OtpChallenge request={request} onVerify={verifyApprovalCode} onResend={resendApprovalRequest} onExit={exitBusinessPortal} />;
   }
 
-  if (pending.length === 0) {
+  // The index is clamped to the batch, so the lookup misses on exactly one
+  // condition — an empty batch — which is the "all done" screen itself.
+  const current = pending[Math.min(index, pending.length - 1)];
+
+  if (!current) {
     return (
       <Shell title="All done">
         <div className="w-14 h-14 rounded-2xl bg-[#14e3c4]/15 border border-[#14e3c4]/30 flex items-center justify-center text-[#14e3c4] mb-2">
@@ -69,7 +73,6 @@ export function ClientApprovalView() {
     );
   }
 
-  const current = pending[Math.min(index, pending.length - 1)];
   const position = Math.min(index, pending.length - 1) + 1;
 
   return (
@@ -179,9 +182,14 @@ function ApprovalCard({
   position: number;
   total: number;
   clientName: string;
-  document?: import('../../lib/types').Document;
-  transaction?: import('../../lib/types').BankTransaction;
-  match?: import('../../lib/types').Match;
+  /**
+   * Each of these is a lookup that may legitimately find nothing — an approval
+   * with no document attached, or one the bank has not matched yet — so the
+   * absent case is spelled out rather than left to the caller to omit.
+   */
+  document?: import('../../lib/types').Document | undefined;
+  transaction?: import('../../lib/types').BankTransaction | undefined;
+  match?: import('../../lib/types').Match | undefined;
   onApprove: (note?: string) => void;
   onReject: (reason: string) => void;
   onExit: () => void;

@@ -59,6 +59,9 @@ export function detectDuplicates(
     for (let j = i + 1; j < candidates.length; j++) {
       const a = candidates[i];
       const b = candidates[j];
+      // Unreachable: both indices are bounded by the loop conditions and the
+      // array is dense, having come straight out of filter().
+      if (!a || !b) continue;
 
       // A duplicate is always within one client. The same invoice reaching two
       // different companies is two legitimate documents.
@@ -247,9 +250,13 @@ function dayGap(a: string, b: string): number | null {
   const parse = (s: string) => {
     const m = s.trim().match(/^(\d{1,2})\s+([A-Za-z]{3})[a-z]*\s+(\d{4})$/);
     if (!m) return null;
-    const month = MONTHS.indexOf(m[2].toLowerCase());
+    const [, day, mon, year] = m;
+    // Unreachable: none of the three groups is optional, so a match means all
+    // three participated.
+    if (!day || !mon || !year) return null;
+    const month = MONTHS.indexOf(mon.toLowerCase());
     if (month < 0) return null;
-    return Date.UTC(Number(m[3]), month, Number(m[1]));
+    return Date.UTC(Number(year), month, Number(day));
   };
   const x = parse(a);
   const y = parse(b);

@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import {
   Shield, Plus, Trash2, Check, CircleSlash, AlertTriangle, Sparkles, MapPin, Users,
-  KeyRound, ImagePlus, X, UserPlus, Pencil,
+  KeyRound, ImagePlus, X, UserPlus, Pencil, LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppContext } from '../context/AppContext';
@@ -250,17 +250,20 @@ export function TeamView() {
               columns={[
                 {
                   key: 'title', label: 'Task', sortValue: (t) => t.title,
-                  render: (t) => (
-                    <span>
-                      <span className="block text-white font-semibold">{t.title}</span>
-                      {prefill[t.id] && (
-                        <span className="inline-flex items-center gap-1.5 text-[11px] text-[#14e3c4] font-semibold mt-0.5">
-                          <Sparkles size={10} />
-                          {prefill[t.id].why}
-                        </span>
-                      )}
-                    </span>
-                  ),
+                  render: (t) => {
+                    const suggestion = prefill[t.id];
+                    return (
+                      <span>
+                        <span className="block text-white font-semibold">{t.title}</span>
+                        {suggestion && (
+                          <span className="inline-flex items-center gap-1.5 text-[11px] text-[#14e3c4] font-semibold mt-0.5">
+                            <Sparkles size={10} />
+                            {suggestion.why}
+                          </span>
+                        )}
+                      </span>
+                    );
+                  },
                 },
                 { key: 'clientName', label: 'Client', sortValue: (t) => t.clientName },
                 {
@@ -813,7 +816,7 @@ function Chip({ children, active, onClick }: { children: React.ReactNode; active
   );
 }
 
-function IconBtn({ icon: Icon, title, onClick }: { icon: any; title: string; onClick: () => void }) {
+function IconBtn({ icon: Icon, title, onClick }: { icon: LucideIcon; title: string; onClick: () => void }) {
   return (
     <button
       onClick={(e) => { e.stopPropagation(); onClick(); }}

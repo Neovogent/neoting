@@ -52,8 +52,10 @@ export function RolePicker({ value, onChange, hint }: {
         {!isSuggested && !adding && (
           <span className="px-4 py-2.5 rounded-xl border border-[#14e3c4]/40 bg-[#14e3c4]/10 text-[13px] font-bold text-[#14e3c4] flex items-center gap-2">
             {value}
+            {/* Clearing a custom role drops to the least-privileged suggestion,
+                which is the last of the three the list always holds. */}
             <button
-              onClick={() => { onChange(BUSINESS_ROLES[BUSINESS_ROLES.length - 1]); }}
+              onClick={() => { onChange(BUSINESS_ROLES[BUSINESS_ROLES.length - 1] ?? 'Staff'); }}
               title="Clear this role"
               aria-label="Clear this role"
               className="text-[#14e3c4]/70 hover:text-[#14e3c4]"

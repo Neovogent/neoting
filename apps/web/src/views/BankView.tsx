@@ -239,7 +239,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
               Match rules
             </button>
             <button
-              onClick={() => { setUploadFor(clientFilter === 'all' ? clients[0].id : clientFilter); fileRef.current?.click(); }}
+              onClick={() => { setUploadFor(clientFilter === 'all' ? clients[0]?.id ?? null : clientFilter); fileRef.current?.click(); }}
               className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-[#14e3c4] rounded-full hover:bg-[#0fcbaf] transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
             >
               <UploadCloud size={16} />
@@ -280,7 +280,9 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
             tabs={TABS.map((t) => ({
               key: t,
               label: t,
-              count: t === 'Matches' ? scopedMatches.length : undefined,
+              // A count only exists on Matches, and SubTab asks for the key to
+              // be absent rather than present and undefined.
+              ...(t === 'Matches' ? { count: scopedMatches.length } : {}),
               alert: t === 'Statements' && scopedGaps.length > 0,
               badge:
                 t === 'Statements' && scopedGaps.length > 0 ? (
@@ -490,10 +492,10 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                 title="Statements"
                 subtitle="PDF / TIFF up to 50MB, 300 pages · CSV and XLSX also accepted"
                 columns={[
-                  { key: 'fileName', label: 'File', render: (s: any) => <span className="text-white font-semibold">{s.fileName}</span> },
-                  { key: 'clientName', label: 'Client', sortValue: (s: any) => s.clientName },
-                  { key: 'period', label: 'Period', sortValue: (s: any) => s.period },
-                  { key: 'rows', label: 'Rows', align: 'right', sortValue: (s: any) => s.rows, render: (s: any) => <span className="tabular-nums text-zinc-400">{s.rows || '—'}</span> },
+                  { key: 'fileName', label: 'File', render: (s) => <span className="text-white font-semibold">{s.fileName}</span> },
+                  { key: 'clientName', label: 'Client', sortValue: (s) => s.clientName },
+                  { key: 'period', label: 'Period', sortValue: (s) => s.period },
+                  { key: 'rows', label: 'Rows', align: 'right', sortValue: (s) => s.rows, render: (s) => <span className="tabular-nums text-zinc-400">{s.rows || '—'}</span> },
                   {
                     key: 'balances', label: 'Opening → Closing', align: 'right',
                     render: (s: Statement) => s.status === 'extracted'
@@ -501,7 +503,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                       : <span className="text-zinc-600">—</span>,
                   },
                   {
-                    key: 'status', label: 'Status', sortValue: (s: any) => s.status,
+                    key: 'status', label: 'Status', sortValue: (s) => s.status,
                     render: (s: Statement) =>
                       s.status === 'extracted' ? <Pill tone="green">Extracted</Pill>
                         : s.status === 'processing' ? <Pill>Extracting…</Pill>
@@ -520,7 +522,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                   },
                 ]}
                 rows={scopedStatements}
-                rowId={(s: any) => s.id}
+                rowId={(s) => s.id}
                 emptyMessage="No statements uploaded."
               />
             </div>
@@ -808,7 +810,9 @@ function CashCodePanel({ txn, customCategories, onAddCategory, onConfirm }: {
 }) {
   // Presets first, the accountant's own categories after, "Decide later" always last.
   const categories = [...CASH_CODE_CATEGORIES.filter((c) => c !== '—'), ...customCategories, '—'];
-  const [category, setCategory] = useState(categories[0]);
+  // '—' is appended unconditionally above, so the list is never empty and the
+  // fallback is exactly what the first entry would be if it were.
+  const [category, setCategory] = useState(categories[0] ?? '—');
   const [draft, setDraft] = useState('');
 
   const addCustom = () => {

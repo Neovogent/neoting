@@ -162,12 +162,15 @@ export function ClientInbox({ client, kind, onPreview }: {
   };
 
   /** Publishing always goes through the review gate — one path for row and bulk. */
-  const publish = (docs: Document[]) =>
-    startConversation([client.id], [
+  const publish = (docs: Document[]) => {
+    // Naming the single document keeps the "length === 1" invariant — the only
+    // thing that makes docs[0] present — visible at the point it is relied on.
+    const single = docs.length === 1 ? docs[0] : undefined;
+    return startConversation([client.id], [
       {
         id: `${Date.now()}-u`,
         role: 'user',
-        content: `Publish ${docs.length === 1 ? docs[0].supplier : `${docs.length} ready items`} for ${client.name}`,
+        content: `Publish ${single ? single.supplier : `${docs.length} ready items`} for ${client.name}`,
       },
       {
         id: `${Date.now()}-a`,
@@ -177,6 +180,7 @@ export function ClientInbox({ client, kind, onPreview }: {
         payload: { clientIds: [client.id], clientNames: [client.name], documentIds: docs.map((d) => d.id) },
       },
     ]);
+  };
 
   const openInChat = (doc: Document) =>
     startConversation([client.id], [
@@ -307,7 +311,7 @@ export function ClientInbox({ client, kind, onPreview }: {
     render: (d) => {
       const { text, tone } = whyFlagged(d);
       if (text === '—') return <span className="text-zinc-700">—</span>;
-      return <Pill tone={tone === 'neutral' ? undefined : tone}>{text}</Pill>;
+      return <Pill tone={tone}>{text}</Pill>;
     },
   };
 
@@ -324,7 +328,9 @@ export function ClientInbox({ client, kind, onPreview }: {
     const ok = await confirm({
       title: failure.stage === 'extraction' ? `Read ${d.supplier} again?` : `Publish ${d.supplier} again?`,
       detail: `${failure.reason}. ${retryMeaning(failure)}`,
-      consequence: failure.retryHelps ? undefined : `This is unlikely to clear it on its own — ${failure.fixLabel.toLowerCase()} is what changes the outcome.`,
+      ...(failure.retryHelps
+        ? {}
+        : { consequence: `This is unlikely to clear it on its own — ${failure.fixLabel.toLowerCase()} is what changes the outcome.` }),
       confirmLabel: 'Yes, retry',
     });
     if (ok) retryDocument(d.id);
@@ -334,8 +340,10 @@ export function ClientInbox({ client, kind, onPreview }: {
   const handleReplacement = async (files: FileList | null) => {
     const doc = replacing;
     setReplacing(null);
-    if (!doc || !files?.length) return;
-    const file = files[0];
+    // Reading the file first says what the length check was really asserting:
+    // a replacement is exactly one file, and there is nothing to do without it.
+    const file = files?.[0];
+    if (!doc || !file) return;
     const ok = await confirm({
       title: `Replace ${doc.supplier === 'Unknown' ? 'this document' : doc.supplier} with ${file.name}?`,
       detail: 'The new file is read from scratch under this client.',
@@ -368,10 +376,11 @@ export function ClientInbox({ client, kind, onPreview }: {
         label: 'Move to Ready',
         icon: CheckCircle,
         run: async () => {
+          const flag = whyFlagged(d).text;
           const ok = await confirm({
             title: `Move ${d.supplier} to Ready?`,
             detail: `${currency(d.total)} · ${d.category}. Ready means every check has passed and it is queued to publish.`,
-            consequence: whyFlagged(d).text !== '—' ? `This item is flagged: ${whyFlagged(d).text}.` : undefined,
+            ...(flag === '—' ? {} : { consequence: `This item is flagged: ${flag}.` }),
             confirmLabel: 'Yes, mark it Ready',
           });
           if (ok) updateDocumentStatus(d.id, 'ready');

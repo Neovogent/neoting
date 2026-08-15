@@ -69,19 +69,21 @@ function findConditions(text: string): RuleCondition[] {
   const conditions: RuleCondition[] = [];
   const lower = text.toLowerCase();
 
-  const numeric = lower.match(/(?:over|above|more than|greater than|>)\s*£?\s*([\d,]+(?:\.\d+)?)/);
+  // The figure is the one capture group and is not optional, so a match carries it.
+  const numeric = lower.match(/(?:over|above|more than|greater than|>)\s*£?\s*([\d,]+(?:\.\d+)?)/)?.[1];
   if (numeric) {
-    conditions.push({ field: 'Total', operator: '>', value: `£${Number(numeric[1].replace(/,/g, '')).toLocaleString('en-GB')}` });
+    conditions.push({ field: 'Total', operator: '>', value: `£${Number(numeric.replace(/,/g, '')).toLocaleString('en-GB')}` });
   } else {
-    const worded = Object.keys(WORD_AMOUNTS).find((w) => lower.includes(`over ${w}`) || lower.includes(`above ${w}`));
+    // Entries rather than keys so the amount comes back with the word it matched.
+    const worded = Object.entries(WORD_AMOUNTS).find(([w]) => lower.includes(`over ${w}`) || lower.includes(`above ${w}`));
     if (worded) {
-      conditions.push({ field: 'Total', operator: '>', value: `£${WORD_AMOUNTS[worded].toLocaleString('en-GB')}` });
+      conditions.push({ field: 'Total', operator: '>', value: `£${worded[1].toLocaleString('en-GB')}` });
     }
   }
 
-  const under = lower.match(/(?:under|below|less than|<)\s*£?\s*([\d,]+(?:\.\d+)?)/);
+  const under = lower.match(/(?:under|below|less than|<)\s*£?\s*([\d,]+(?:\.\d+)?)/)?.[1];
   if (under) {
-    conditions.push({ field: 'Total', operator: '<', value: `£${Number(under[1].replace(/,/g, '')).toLocaleString('en-GB')}` });
+    conditions.push({ field: 'Total', operator: '<', value: `£${Number(under.replace(/,/g, '')).toLocaleString('en-GB')}` });
   }
 
   if (/\bcredit note\b/i.test(text)) conditions.push({ field: 'Document type', operator: 'is', value: 'Credit note' });
@@ -136,6 +138,6 @@ export const TIER_ORDER: { tier: Rule['tier']; label: string }[] = [
 function titleCase(s: string) {
   return s
     .split(/\s+/)
-    .map((w) => (w.length > 2 ? w[0].toUpperCase() + w.slice(1) : w))
+    .map((w) => (w.length > 2 ? w.charAt(0).toUpperCase() + w.slice(1) : w))
     .join(' ');
 }

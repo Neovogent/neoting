@@ -42,9 +42,13 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 export function toIsoDate(display: string): string | null {
   const m = /^(\d{1,2}) ([A-Za-z]{3}) (\d{4})$/.exec(display.trim());
   if (!m) return null;
-  const month = MONTHS.indexOf(m[2]);
+  // Every group in the pattern is mandatory, so a match fills all three; the
+  // guard restates that rather than asserting past it.
+  const [, day, mon, year] = m;
+  if (!day || !mon || !year) return null;
+  const month = MONTHS.indexOf(mon);
   if (month < 0) return null;
-  return `${m[3]}-${String(month + 1).padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  return `${year}-${String(month + 1).padStart(2, '0')}-${day.padStart(2, '0')}`;
 }
 
 /** Businesses are ids in the contract; the seed uses '1' and '2'. */

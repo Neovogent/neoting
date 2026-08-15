@@ -68,7 +68,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
           {...pending.options}
           onConfirm={() => close(true)}
           onCancel={() => close(false)}
-          onAlt={pending.options.altLabel ? () => close('alt') : undefined}
+          {...(pending.options.altLabel ? { onAlt: () => close('alt') } : {})}
         />
       )}
     </ConfirmContext.Provider>

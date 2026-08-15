@@ -812,13 +812,43 @@ export const READ_ONLY_INTENTS: Intent[] = [
   'SHOW_MISSING_TABLE',
 ];
 
+/**
+ * What an assistant message carries besides its prose.
+ *
+ * ⚠ THE SCOPE FIELDS ARE WHY THIS IS NOT `any`. `IntentRenderer` reads
+ * `clientIds` off here and hands it to the tables, which filter on it — so a
+ * typo in a payload key does not throw, it silently produces an EMPTY scope,
+ * and an empty scope renders as "All clients". Mistyping the key that decides
+ * whose documents an accountant is looking at is exactly the class of error a
+ * type should catch, and `any` caught none of them.
+ *
+ * Every field is optional because one intent's payload is another's noise, but
+ * the SET is closed: adding a key means adding it here, which is the point.
+ * `| undefined` is written out because `exactOptionalPropertyTypes` is on and
+ * `InputRow` assigns `clientName` unconditionally from a ternary.
+ */
+export interface MessagePayload {
+  /** Which clients this answer is scoped to. Empty means every client. */
+  clientIds?: string[] | undefined;
+  /** Display names for the same scope, kept alongside so cards need no lookup. */
+  clientNames?: string[] | undefined;
+  /** A single client's name, for the intake form's prefill. */
+  clientName?: string | undefined;
+  /** The user's own words, kept so a card can quote what was asked. */
+  query?: string | undefined;
+  period?: string | undefined;
+  missingItemIds?: string[] | undefined;
+  documentId?: string | undefined;
+  documentIds?: string[] | undefined;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   intent?: Intent | undefined;
   /** Resolved data the dynamic component renders from. */
-  payload?: any | undefined;
+  payload?: MessagePayload | undefined;
   attachments?: { name: string; size: number }[];
   viaVoice?: boolean | undefined;
 }

@@ -45,13 +45,14 @@ export function parseSheetDate(cell: string | undefined): string | null {
     return Number.isNaN(d.getTime()) ? null : display(new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
   }
 
-  // ISO, which sorts and parses unambiguously.
+  // ISO, which sorts and parses unambiguously. Every group in both patterns
+  // below is unconditional, so a match carries all three of them.
   const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
-  if (iso) return display(new Date(+iso[1], +iso[2] - 1, +iso[3]));
+  if (iso?.[1] && iso[2] && iso[3]) return display(new Date(+iso[1], +iso[2] - 1, +iso[3]));
 
   // Day-first slash or dot separated.
   const slash = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/.exec(raw);
-  if (slash) {
+  if (slash?.[1] && slash[2] && slash[3]) {
     const year = slash[3].length === 2 ? 2000 + +slash[3] : +slash[3];
     const d = new Date(year, +slash[2] - 1, +slash[1]);
     return Number.isNaN(d.getTime()) ? null : display(d);
@@ -76,7 +77,10 @@ const COST_WORDS = /\b(purchases?|costs?|expenses?|suppliers?|payable|spend|bill
  * write every figure as a positive number.
  */
 export function defaultKindFor(analysis: SheetAnalysis, fileName: string): { kind: DocKind; reason: string } {
-  const partyHeader = analysis.mapping.party !== undefined ? analysis.headers[analysis.mapping.party] : '';
+  // The mapping's column indexes are positions in these same headers, so the
+  // lookup only misses when there is no party column at all.
+  const partyAt = analysis.mapping.party;
+  const partyHeader = (partyAt === undefined ? '' : analysis.headers[partyAt]) ?? '';
 
   if (SALES_WORDS.test(partyHeader)) return { kind: 'sales', reason: `the "${partyHeader}" column names customers` };
   if (COST_WORDS.test(partyHeader)) return { kind: 'cost', reason: `the "${partyHeader}" column names suppliers` };
