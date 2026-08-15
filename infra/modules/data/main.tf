@@ -68,6 +68,14 @@ resource "aws_db_instance" "main" {
   # never appears in Terraform state or in anyone's shell history.
   manage_master_user_password = true
 
+  # null leaves the secret under the AWS-managed aws/secretsmanager key, which
+  # is outside the role/nt-* deny boundary. ⚠ CREATE-TIME ONLY — RDS refuses to
+  # change this key once it is managing the credentials, and the key policy
+  # must exempt AWS service principals or the 7-day rotation goes `impaired`
+  # while still reading fine. variables.tf carries the full reasoning and the
+  # doc citations; read it before setting this at any call site.
+  master_user_secret_kms_key_id = var.master_user_secret_kms_key_arn
+
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = var.security_group_ids
   parameter_group_name   = aws_db_parameter_group.main.name
