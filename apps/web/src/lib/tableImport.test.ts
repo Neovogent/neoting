@@ -215,3 +215,39 @@ describe('importSheet — a bank export', () => {
     expect(result.transactions.map((t) => t.description)).toEqual(['BIDFOOD UK LTD', 'DELIVEROO PAYOUT']);
   });
 });
+
+/**
+ * Regression (#66). `new Date(y, m, d)` rolls over out-of-range components and
+ * the result is a valid Date, so the old `Number.isNaN` guard never fired: an
+ * impossible date became a different, plausible one and imported as `ready`
+ * with a confident "Document date" on screen.
+ *
+ * A US-formatted client export is the case that matters — 01/13/2026 was
+ * landing in the wrong VAT quarter, silently.
+ */
+describe('parseSheetDate refuses impossible dates rather than re-dating them', () => {
+  it('rejects a month-first US export instead of rolling it into the next year', () => {
+    expect(parseSheetDate('01/13/2026')).toBeNull();
+  });
+
+  it('rejects a day that does not exist in that month', () => {
+    expect(parseSheetDate('32/08/2026')).toBeNull();
+    expect(parseSheetDate('31/09/2026')).toBeNull(); // September has 30
+    expect(parseSheetDate('30/02/2026')).toBeNull();
+  });
+
+  it('accepts a real leap day and rejects one that is not', () => {
+    expect(parseSheetDate('29/02/2024')).toBe('29 Feb 2024');
+    expect(parseSheetDate('29/02/2026')).toBeNull();
+  });
+
+  it('still reads unambiguous day-first dates the UK way', () => {
+    expect(parseSheetDate('07/12/2026')).toBe('07 Dec 2026');
+  });
+
+  it('applies the same refusal to ISO input, which had the identical rollover', () => {
+    expect(parseSheetDate('2026-13-01')).toBeNull();
+    expect(parseSheetDate('2026-02-30')).toBeNull();
+    expect(parseSheetDate('2026-08-07')).toBe('07 Aug 2026');
+  });
+});

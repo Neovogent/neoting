@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assessTransaction,
   autoMatches,
+  CONFIDENT_MIN,
   DEFAULT_MATCH_SETTINGS,
   daysBetween,
   matchCandidates,
@@ -210,5 +211,69 @@ describe('labels', () => {
   it('reads as a line an accountant can scan', () => {
     expect(shortLabel(seedDocuments[0]!)).toBe('Bidfood UK · £1420.50 · 10 Aug');
     expect(txnLabel(find('t4'))).toBe('BIDFOOD UK LTD REFUND · £212.40 · 14 Aug');
+  });
+});
+
+/**
+ * Regressions. Both of these auto-linked or silently re-dated real data before
+ * they were fixed, and neither failed loudly — which is why they are pinned
+ * here with the exact inputs that reproduced them.
+ */
+describe('credit notes do not auto-link across suppliers (#67)', () => {
+  const currys = seedDocuments.find((d) => d.id === 'd4')!;
+
+  const refundFrom = (description: string): BankTransaction => ({
+    id: 'refund-1',
+    clientId: currys.clientId,
+    clientName: currys.clientName,
+    description,
+    date: '12 Aug 2026',
+    amount: -currys.total,
+    isCredit: true,
+    accountId: find('t1').accountId,
+  });
+
+  it('does not offer an unrelated supplier a confident credit-note match', () => {
+    const best = matchCandidates(refundFrom('RANDOM UNRELATED CO'), [currys], DEFAULT_MATCH_SETTINGS)[0];
+
+    // It still appears — a person should be asked — but never above the bar
+    // that autoMatches links without asking.
+    expect(best?.confidence).toBeLessThan(CONFIDENT_MIN);
+  });
+
+  it('never auto-links it', () => {
+    const linked = autoMatches([refundFrom('RANDOM UNRELATED CO')], [currys], DEFAULT_MATCH_SETTINGS);
+
+    expect(linked).toHaveLength(0);
+  });
+
+  it('still auto-links a refund that is genuinely from the same supplier', () => {
+    const linked = autoMatches([refundFrom('CURRYS REFUND')], [currys], DEFAULT_MATCH_SETTINGS);
+
+    expect(linked.map((m) => m.candidate.document.id)).toEqual(['d4']);
+    expect(linked[0]?.candidate.kind).toBe('credit-note');
+  });
+
+  it('keeps the unrelated refund visible rather than dropping it from review', () => {
+    const candidates = matchCandidates(refundFrom('RANDOM UNRELATED CO'), [currys], DEFAULT_MATCH_SETTINGS);
+
+    expect(candidates).not.toHaveLength(0);
+  });
+});
+
+describe('merchantSimilarity measures overlap, not alignment (#67)', () => {
+  it('scores a shifted prefix as similar', () => {
+    // The old positional comparison scored this near zero: every character is
+    // offset by one, so nothing lined up.
+    expect(sameMerchant('JSAINSBURY', 'Sainsburys')).toBe(true);
+  });
+
+  it('still keeps Costco off Costa', () => {
+    expect(sameMerchant('COSTCO WHOLESALE', 'Costa Coffee')).toBe(false);
+  });
+
+  it('does not reward a repeated bigram that is not in both', () => {
+    expect(sameMerchant('AAAA', 'AA')).toBe(true); // substring rule, not bigrams
+    expect(sameMerchant('ABABABAB', 'ZZZZ')).toBe(false);
   });
 });
