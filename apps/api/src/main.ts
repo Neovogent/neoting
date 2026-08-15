@@ -6,6 +6,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 
 import { AppModule } from './app.module.js';
 import { loadEnv } from './config/env.js';
+import { API_PREFIX, UNVERSIONED_ROUTES } from './config/routing.js';
 
 /**
  * Bootstrap on port 3000 — pinned by infra/envs/staging (the ALB target group
@@ -17,8 +18,9 @@ import { loadEnv } from './config/env.js';
 async function bootstrap(): Promise<void> {
   const env = loadEnv(); // validate the environment before opening a socket
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
+  app.setGlobalPrefix(API_PREFIX, { exclude: UNVERSIONED_ROUTES });
   await app.listen(env.PORT);
-  new Logger('Bootstrap').log(`Neoting API listening on :${env.PORT}`);
+  new Logger('Bootstrap').log(`Neoting API listening on :${env.PORT}/${API_PREFIX}`);
 }
 
 void bootstrap();
