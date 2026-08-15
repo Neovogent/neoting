@@ -1,77 +1,79 @@
-# `envs/prod/policies/` — why these files are not shared with staging
+# `envs/prod/policies/` — what is left here, and why
 
-Four JSON policy documents live here. Two of them are **deliberately different**
-from their staging counterparts, and two are **duplicates that should not stay
-duplicated**. Knowing which is which is the point of this file.
+One file. Everything else moved to `infra/modules/iam-policies` on 15 Aug 2026.
 
-## Deliberately different
+## What moved, and what replaced the difference
 
-### `region-guardrail.json.tftpl`
+Three of the four documents that used to live here had near-identical twins in
+`envs/staging/policies/`, with nothing keeping the shared halves in step. They
+are now rendered once, from `modules/iam-policies`, and what made prod different
+is expressed as **input** rather than as a second file:
 
-staging attaches the account-wide `nt-region-guardrail` managed policy: eu-west-2,
-plus the documented global-service exemption in us-east-1 (CloudFront, WAF,
-Route 53, IAM, Budgets — none of which can be created in London and none of which
-touches customer data), and a hard `Deny` on every data service in us-east-1.
-
-Prod cannot use that policy, because Governance §17 requires cross-region backups
-and ADR 0007 puts them in **eu-west-1**. A policy that denies eu-west-1 denies the
-backup. So this file adds the carve-out ADR 0007 consequence 2 asks for — and
-nothing beyond it:
-
-| Statement | What it does |
+| Was | Now |
 |---|---|
-| `DenyOutsideApprovedRegions` | Unchanged in shape. `eu-west-1` joins the permitted set, which on its own would be exactly the "blanket region allow" the ADR forbids — statements 3 and 4 are what stop it being that. |
-| `NoDataServicesInUsEast1` | Unchanged. |
-| `NothingProcessesInTheDrRegion` | In eu-west-1 **only S3, KMS and STS are permitted at all.** No RDS, no ECS, no EC2, no Bedrock, no Textract, no Transcribe, no SES, no Secrets Manager. This is the IAM expression of the sentence ADR 0007 makes its whole argument on: *"Nothing processes there."* `sts:*` is exempt because a regional STS endpoint is how a caller gets credentials in the first place; it moves no data. |
-| `DrRegionS3IsTheBackupBucketsOnly` | In eu-west-1, S3 may touch **only the named DR bucket**. Anything else in S3 in Dublin is denied, so a stray `CreateBucket` cannot quietly become a second copy of customer data outside the one the DPIA declares. |
+| `kms-secrets.json.tftpl` — a copy of staging's with the `Id` templated | `env` input. The deny shape was always identical and now cannot drift. |
+| `ci-deploy-inline.json.tftpl` — a copy with the state grant scoped to `prod/*` | `state_key_prefix` input. Prod passes `"prod/core.tfstate"`, staging passes `""`. |
+| `region-guardrail.json.tftpl` — a copy plus two ADR 0007 statements | `dr_region` + `dr_buckets` inputs. |
 
-**KMS is region-scoped but not resource-scoped here, and that is a known gap.**
-There is exactly one key in eu-west-1 (`replication.tf`), so the practical blast
-radius is that key — but the policy would permit a second one. Resource-scoping it
-means the key ARN, which does not exist until Terraform creates it, so it would
-have to become a two-pass apply or a hardcoded ARN. Recorded, not done.
+**The guardrail is the one worth understanding.** ADR 0007 consequence 2 forbids
+a blanket region allow — *"A broad `eu-west-1: *` would silently reopen
+everything D30 closed."* So `dr_region` does not merely permit the region. Setting
+it does three inseparable things:
 
-**When the nightly logical-Postgres-backup bucket lands** (Governance §17 wants
-dumps in the DR region as well as replicated objects), its ARN must be added to
-`DrRegionS3IsTheBackupBucketsOnly` in the same change, or the backup job is denied
-and the failure looks like an S3 outage.
+1. adds the region to `DenyOutsideApprovedRegions`'s permitted set;
+2. adds `NothingProcessesInTheDrRegion` — in eu-west-1 **only S3, KMS and STS are
+   permitted at all.** No RDS, no ECS, no EC2, no Bedrock, no Textract, no
+   Transcribe, no SES, no Secrets Manager. This is the IAM expression of the
+   sentence ADR 0007 makes its whole argument on: *"Nothing processes there."*
+   `sts:*` is exempt because a regional STS endpoint is how a caller gets
+   credentials in the first place; it moves no data;
+3. adds `DrRegionS3IsTheBackupBucketsOnly` — in eu-west-1, S3 may touch only the
+   buckets named in `dr_buckets`, so a stray `CreateBucket` cannot quietly become
+   a second copy of customer data outside the one the DPIA declares.
 
-### `ci-deploy-inline.json.tftpl`
+One variable drives all three precisely so that nobody can do the first without
+the other two.
 
-Same shape as staging's, with one hardening: the state-object grant is scoped to
-`prod/*` rather than the whole bucket. The prod deploy role can read and write
-production state and **cannot read or overwrite** `staging/core.tfstate` or
-`account/core.tfstate`. In a shared account that is the difference between a
-misconfigured `-backend-config` corrupting one environment and corrupting three.
+⚠ **`dr_buckets` is a list, and that is load-bearing.** When the nightly
+logical-Postgres-backup bucket lands (Governance §17 wants dumps in the DR region
+as well as replicated objects), **add it there in the same change** — or the
+backup job is denied and the failure looks like an S3 outage rather than a policy
+error. As a list that is a one-line call-site edit. As the hardcoded pair of ARNs
+it used to be, it was a policy-file edit somebody would forget.
 
-## Duplicated, and it should not stay that way
+The module carries a precondition for the adjacent mistake: `dr_region` set with
+an empty `dr_buckets` fails at plan, because that combination permits the region
+and then denies S3 everywhere in it — denying the very backup the region was
+permitted for.
 
-### `kms-secrets.json.tftpl`
+### Verification, not assertion
 
-A copy of `envs/staging/policies/kms-secrets.json.tftpl` with the policy `Id`
-templated on the environment instead of hardcoded to `nt-staging-...`. The
-*content* is the same explicit-Deny shape and it must stay the same shape in both
-places: root administers, `role/nt-*` (plus the one named human) may use, everyone
-else is explicitly denied.
+The extraction was proved the same way `envs/staging/moved.tf` was: **`terraform
+plan` in `envs/staging` reports no changes**, against an environment that is
+already applied. `envs/prod` still plans `158 to add, 0 to change, 0 to destroy`.
+Each rendered document was also diffed as normalised JSON against the file it
+replaced — all identical, with one intentional exception: prod's state-grant
+`Sid` is now `TerraformStateObjectsAndLockfile` rather than
+`...ForProdOnly`. The **resource scope is unchanged**; a `Sid` is a label.
+
+## What is still here
 
 ### `kms-dr.json.tftpl`
 
-New — there is no staging equivalent, because staging has no DR region. Same
-explicit-Deny shape as the secrets key, applied to the replication CMK in
-eu-west-1, plus the one grant that key actually needs: S3 replication decrypting
-in London and encrypting in Dublin under the caller's (`nt-prod-s3-replication`)
-credentials.
+Prod-only, because staging has no DR region — so there is nothing to share and
+nothing to drift against. Same explicit-Deny shape as the secrets key, applied to
+the replication CMK in eu-west-1, plus the one grant that key actually needs: S3
+replication decrypting in London and encrypting in Dublin under the caller's
+(`nt-prod-s3-replication`) credentials.
 
-## The fix, recorded
+It moves into `modules/iam-policies` the day a second environment needs a DR
+region, and not before — a shared module with exactly one caller freezes an
+interface nobody has tested against a second one.
 
-Three environments' worth of these files is where the drift starts hurting. The
-right shape is a shared `infra/modules/iam-policies` rendered per environment with
-`env`, `account_id` and `dr_region` as inputs — the same argument the storage
-module already makes for the bucket deny guard:
+## Known gap, carried over
 
-> *two copies of a `role/nt-*` deny guard is precisely the drift that silently
-> opens a bucket, and it would be invisible in review because both files would
-> look correct on their own.*
-
-Not done here because moving staging's copies is a change to an environment that
-is already applied and in state, and it belongs in its own PR with its own plan.
+**KMS is region-scoped but not resource-scoped in the guardrail.** There is
+exactly one key in eu-west-1 (`replication.tf`), so the practical blast radius is
+that key — but the policy would permit a second one. Resource-scoping it means
+the key ARN, which does not exist until Terraform creates it, so it would have to
+become a two-pass apply or a hardcoded ARN. Recorded, not done.

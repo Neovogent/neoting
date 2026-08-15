@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { composeRedisUrl } from './connection-urls.js';
+
 /**
  * The single place that reads `process.env` (Governance §11.5). Zod-validated,
  * fails fast at boot on a malformed value, and no other module touches
@@ -59,8 +61,42 @@ const EnvSchema = z.object({
 
 export type Env = Readonly<z.infer<typeof EnvSchema>>;
 
+/**
+ * Derive `REDIS_URL` from the parts ECS actually injects.
+ *
+ * ⚠ THIS IS NOT A CONVENIENCE. Without it the deployed workers service is
+ * broken in the quietest possible way: the task definitions supply
+ * `REDIS_HOST` / `REDIS_PORT` / `REDIS_TLS` and a `REDIS_AUTH_TOKEN` secret,
+ * none of which the schema above reads, so `REDIS_URL` falls back to its
+ * `redis://localhost:6379` default and a worker container reconnect-loops
+ * against itself. It never crashes, so nothing alarms; the queue simply grows.
+ * That is why `workers` sat at desired_count = 0.
+ *
+ * An ECS `secrets` entry cannot be interpolated into another environment
+ * variable, so the join has to happen in the process that reads them — here.
+ *
+ * An explicitly-set `REDIS_URL` always wins. That keeps `.env` and
+ * docker-compose working unchanged, and gives anyone debugging an escape hatch
+ * that does not involve editing a task definition.
+ */
+function withDerivedRedisUrl(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  if (source.REDIS_URL || !source.REDIS_HOST) return source;
+
+  return {
+    ...source,
+    REDIS_URL: composeRedisUrl({
+      host: source.REDIS_HOST,
+      port: source.REDIS_PORT ?? '6379',
+      // The string 'true', not truthiness — 'false' is a non-empty string and
+      // would otherwise enable TLS against a cluster that does not speak it.
+      tls: source.REDIS_TLS === 'true',
+      password: source.REDIS_AUTH_TOKEN,
+    }),
+  };
+}
+
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
-  const parsed = EnvSchema.safeParse(source);
+  const parsed = EnvSchema.safeParse(withDerivedRedisUrl(source));
   if (!parsed.success) {
     // Fail fast and loud — but never print the values, they may be secret.
     const issues = parsed.error.issues

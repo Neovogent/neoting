@@ -5,13 +5,13 @@
       "Sid": "TerraformState",
       "Effect": "Allow",
       "Action": ["s3:ListBucket", "s3:GetBucketVersioning"],
-      "Resource": "arn:aws:s3:::nt-tfstate-staging-${account_id}"
+      "Resource": "arn:aws:s3:::${tfstate_bucket}"
     },
     {
-      "Sid": "TerraformStateObjectsAndLockfileForProdOnly",
+      "Sid": "TerraformStateObjectsAndLockfile",
       "Effect": "Allow",
       "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
-      "Resource": "arn:aws:s3:::nt-tfstate-staging-${account_id}/${state_key}*"
+      "Resource": "arn:aws:s3:::${tfstate_bucket}/${state_key_prefix}*"
     },
     {
       "Sid": "ScopedIamForNeotingResourcesOnly",
