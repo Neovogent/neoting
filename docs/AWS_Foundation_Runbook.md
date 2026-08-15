@@ -2,7 +2,7 @@
 
 **Version 1.1 · 13 August 2026 · Confidential**
 *Changelog v1.0 → v1.1: legal entity resolved (NEOVOGENT AI SOLUTIONS UK LTD, 15946429) — §0.3 P-a closed; AWS spend envelope fixed at **$8,000 across 6 months** — Appendix B rewritten as a burn profile with per-account budget numbers and the credit-tracking caveat, Step 10 budgets made concrete, Step 7 AMP/AMG deferred to Infra Week per Guideline §8.5; **Step 6.2 corrected** — S3 SSE-KMS cannot carry a per-workspace encryption context, replacement design + ADR raised.*
-Subordinate to the source-of-truth pair (SoT v1.4 · Governance v1.4) and the Team Engineering Guideline v1.1. It changes no locked decision; where it appears to, the pair wins and this file is wrong.
+Subordinate to the source-of-truth pair (SoT v1.5 · Governance v1.5) and the Team Engineering Guideline v1.2. It changes no locked decision; where it appears to, the pair wins and this file is wrong.
 
 **Scope.** Everything needed to satisfy Kickoff Requirements §3.1–3.10, plus the AWS-side of §2.1–2.5 (DNS/SES), §4.10 (GitHub OIDC into AWS), and W0 verification items 8.1–8.5. Owner throughout: **Shakib (Eng lead)**, except where a row names Ops/CEO.
 

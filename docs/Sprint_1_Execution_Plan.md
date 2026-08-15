@@ -4,7 +4,7 @@
 *Changelog v1.0 → v1.1: aligned to the 13 Aug doc bump (SoT v1.3 · Governance v1.3 · Guideline v1.1 · Kickoff v1.2). Kickoff-date fold recorded as D29; §13.3 mandates wired in — provenance-class language + context header into the S0 contracts pre-freeze, context header into F0, next-actions queue as T2 in F9, provenance check in QA charter 8; AWS Budgets added to S3 (D33); §2 reflects R16, the draft-CI skip, and G9 reserves on the sprint clock; the D1 gate asserts a protected preview. No dates, tiers, or owners change.*
 **Start: Thursday 13 August 2026, morning (BD time) · Sign-off: Wednesday 19 August 2026, 19:00 — sharp.**
 
-Subordinate to the source-of-truth pair (v1.3) and the Team Guideline (v1.1); it changes no locked decision. It **resolved SoT open decision #1** — kickoff = 13 Aug 2026 — now folded into the decision log as **D29** (SoT v1.3). The 14-week map to pilot still governs everything after Day 7; this sprint executes its front half at Claude-Code speed.
+Subordinate to the source-of-truth pair (v1.5) and the Team Guideline (v1.2); it changes no locked decision. It **resolved SoT open decision #1** — kickoff = 13 Aug 2026 — now folded into the decision log as **D29** (SoT v1.3). The 14-week map to pilot still governs everything after Day 7; this sprint executes its front half at Claude-Code speed.
 
 ## 0. The honest frame
 
@@ -48,7 +48,7 @@ Subordinate to the source-of-truth pair (v1.3) and the Team Guideline (v1.1); it
 | S1 | **Auth-tenancy + the constitution** | Argon2 + sessions + TOTP scaffold · SMS-OTP sessions (Twilio Verify test) · RLS policies + `scopedDb` + GUC pattern · **ActionProposal engine (Review→Approve, Governance §10)** · audit service (hash-chained). Everything depends on this — it lands before anything integrates. | T1 | D1–2 |
 | S2 | **AI & prompting** | `models.ts` (three tiers + effort map, D28) · Bedrock client + Anthropic contingency switch · `DocumentExtractor`: Textract + **fixture mode** (lanes stay green if Bedrock access lags) + vision ladder rungs · prompts per task class (coding suggestion, addressee routing, rule parsing, chase composition, chase validation, chat) · grammar-emission service (model → schema-validated cards) · **mini eval harness + injection mini-corpus wired as a CI gate** · Transcribe glue (T2). | T1 (voice T2) | D2–5 |
 | S3 | **Infra & CI/CD** | Terraform: **one staging environment** — RDS, ElastiCache, ECS (api + workers), S3/KMS, SES, CloudFront + basic WAF, secrets · **AWS Budgets** (org + per-account, 50/80/100% alerts — D33; the full §13.5 per-vendor telemetry is Infra Week) · CI deploy job to staging · domain/TLS wiring. Production is a post-sprint re-apply of the same modules. | T1 | D2–4 |
-| S4 | **Integration** | D3 **canary**: wire ONE flow (upload → inbox) web↔staging to catch contract drift early · D5–6: auth wiring into web, `NEXT_PUBLIC_API_MODE` flip, screen-by-screen wiring checklist, env config, drift fixes. | T1 | D3 (canary), D5–6 |
+| S4 | **Integration** | D3 **canary**: wire ONE flow (upload → inbox) web↔staging to catch contract drift early · D5–6: auth wiring into web, `VITE_API_MODE` flip, screen-by-screen wiring checklist, env config, drift fixes. | T1 | D3 (canary), D5–6 |
 
 ### 3.2 Abdullah — backend logic & API exposing (the B-modules)
 
@@ -99,7 +99,7 @@ Each day ends at the **18:00 checkpoint** — the gate demos, or the drop rule f
 ## 5. Integration plan (S4 — Shakib)
 
 1. **D3 canary** (the drift detector): one real flow, web↔staging, days before the crunch. Any contract drift found here is a Day-3 problem, not a Day-6 crisis.
-2. **D5–6 sequence:** wire auth + session first → flip `NEXT_PUBLIC_API_MODE` per screen, in T1 order: inboxes → chat → clients → chase/portal → bank → approvals/publish → rejected/failed → exports. A screen is "wired" when its happy path AND its error state render from real API responses.
+2. **D5–6 sequence:** wire auth + session first → flip `VITE_API_MODE` per screen, in T1 order: inboxes → chat → clients → chase/portal → bank → approvals/publish → rejected/failed → exports. A screen is "wired" when its happy path AND its error state render from real API responses.
 3. Mock handlers stay in the repo — they're the frontend's permanent offline mode and the contract's living test double.
 4. Every drift fix flows **through the contract** (regenerate both sides), never a hand-patched type. That rule is why integration is two days and not a week.
 

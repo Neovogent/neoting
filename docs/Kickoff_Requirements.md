@@ -3,7 +3,7 @@
 **Version 1.2 · 13 August 2026 · Confidential**
 *Changelog v1.0 → v1.1: model list expanded to three tiers (D28); Bedrock verification 8.1 covers Opus 4.8 + Sonnet 4.6 + Haiku 4.5 and per-model effort support; guardrail reference restored to £0.02/doc.*
 *Changelog v1.1 → v1.2: kickoff-review feedback (11–12 Aug) folded in — 1.5 gains SLA/support and self-serve-offboarding terms (D31/D32); new 3.10 central cost & usage monitoring build item (D33); 5.4 expanded to the pilot support commitments; new build input 6.7 (support & status-page copy); new verification 8.8 (Vercel Deployment Protection).*
-Companion to the source-of-truth pair (v1.3). This is the complete, actionable list of everything that must **exist before W0 ends** — accounts, purchases, API access, legal prerequisites, verification items, and build inputs — so all lanes can start in W1 with nothing blocked. Every row has an owner column to fill at kickoff; suggested owners use the roles CEO / Eng lead / Integrations lead / Ops.
+Companion to the source-of-truth pair (v1.5). This is the complete, actionable list of everything that must **exist before W0 ends** — accounts, purchases, API access, legal prerequisites, verification items, and build inputs — so all lanes can start in W1 with nothing blocked. Every row has an owner column to fill at kickoff; suggested owners use the roles CEO / Eng lead / Integrations lead / Ops.
 
 **How to use it:** work top to bottom — sections are ordered by critical path. An item marked ⛔ blocks a named milestone; start its clock first. Costs marked are order-of-magnitude signals for spend approval, not quotes.
 
