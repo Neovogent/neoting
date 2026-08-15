@@ -55,10 +55,30 @@ export class NtTransportError extends Error {
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+/**
+ * The API origin, resolved for both runtimes this module is loaded in.
+ *
+ * ⚠ THIS READ USED TO BE DEAD IN THE ONLY RUNTIME THAT MATTERS. It was
+ * `process.env.NEXT_PUBLIC_API_URL`, which D37 (SoT v1.5) retired along with
+ * Next.js: in a Vite browser build `process` does not exist and `NEXT_PUBLIC_*`
+ * is never defined. The branch could not be taken, so setting an env var to
+ * point the app at staging silently kept calling localhost — it failed SOFT,
+ * which is why nothing surfaced it.
+ *
+ * Both branches are guarded because this module is imported from two places
+ * with different globals: `apps/web` (browser, Vite) and `apps/api` plus its
+ * tests (Node). In Node, `import.meta.env` is simply undefined; in the browser,
+ * `process` is. Neither guard is defensive tidiness — remove either one and the
+ * other runtime throws at module load.
+ */
 function baseUrl(): string {
-  const fromEnv =
-    (typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_API_URL : undefined) ?? 'http://localhost:3001';
-  return `${fromEnv.replace(/\/$/, '')}/v1`;
+  const fromVite =
+    typeof import.meta !== 'undefined'
+      ? (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_API_BASE_URL
+      : undefined;
+  const fromNode = typeof process !== 'undefined' ? process.env?.API_BASE_URL : undefined;
+  const origin = fromVite ?? fromNode ?? 'http://localhost:3001';
+  return `${origin.replace(/\/$/, '')}/v1`;
 }
 
 function newIdempotencyKey(): string {
