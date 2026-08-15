@@ -297,23 +297,53 @@ data "aws_iam_openid_connect_provider" "github" {
 # closed." policies/region-guardrail.json implements exactly that and the file
 # itself explains each statement. Read it before editing it.
 #
-# ⚠ DRIFT WARNING. This is the second copy of a policy whose first copy lives
-# in envs/staging/policies/. They are deliberately different files because they
-# are deliberately different policies — but the SHARED part of them (the
-# eu-west-2 pin, the global-service NotAction list, the NoDataServicesInUsEast1
-# deny) must stay in step, and nothing enforces that. When a third environment
-# appears, this belongs in a shared module rendered per-environment with a
-# `dr_region` variable. Recorded rather than done: moving staging's copy is a
-# change to an environment already in state and belongs in its own PR.
+# The drift warning that used to live here is DISCHARGED as of 15 Aug 2026.
+# There is no longer a second copy: both environments render
+# modules/iam-policies, and the shared part — the eu-west-2 pin, the
+# global-service NotAction list, the NoDataServicesInUsEast1 deny — now exists
+# once. What made prod different is expressed as INPUT rather than as a
+# separate file: setting `dr_region` adds the region to the permitted set AND
+# denies every service there except S3, KMS and STS AND confines S3 to
+# `dr_buckets`. One variable drives all three because ADR 0007 consequence 2
+# forbids the first without the other two — "a broad eu-west-1: * would
+# silently reopen everything D30 closed."
 # --------------------------------------------------------------------------
 resource "aws_iam_policy" "region_guardrail" {
   name        = "nt-${local.env}-region-guardrail"
   description = "D30 UK-first residency guardrail with the ADR 0007 eu-west-1 backup carve-out - SCP substitute (org is consolidated-billing, SCPs unavailable)"
 
-  policy = templatefile("${path.module}/policies/region-guardrail.json.tftpl", {
-    dr_region = local.dr_region
-    dr_bucket = local.dr_bucket_name
-  })
+  policy = module.iam_policies.region_guardrail_policy
+}
+
+# --------------------------------------------------------------------------
+# The shared policy documents. See the long note above for what prod changes
+# and why it is an input rather than a file.
+#
+# ⚠ WHEN THE NIGHTLY LOGICAL-POSTGRES-BACKUP BUCKET LANDS (Governance §17
+# wants dumps in the DR region as well as replicated objects), ADD IT TO
+# `dr_buckets` IN THE SAME CHANGE. Miss it and the backup job is denied by
+# DrRegionS3IsTheBackupBucketsOnly, and the failure looks like an S3 outage
+# rather than a policy error. `dr_buckets` is a list for exactly this reason —
+# it makes that a one-line call-site edit instead of a policy-file edit.
+# --------------------------------------------------------------------------
+module "iam_policies" {
+  source = "../../modules/iam-policies"
+
+  env            = local.env
+  account_id     = local.account_id
+  tfstate_bucket = "nt-tfstate-staging-${local.account_id}"
+
+  region_guardrail_policy_id = "nt-${local.env}-region-guardrail"
+
+  # Prod's one hardening over staging's copy, preserved exactly: the state
+  # grant is scoped to production's own object and its lockfile, so the prod
+  # deploy role cannot read or overwrite staging/core.tfstate or
+  # account/core.tfstate. In a shared account that is the difference between a
+  # misconfigured -backend-config corrupting one environment and three.
+  state_key_prefix = "prod/core.tfstate"
+
+  dr_region  = local.dr_region
+  dr_buckets = [local.dr_bucket_name]
 }
 
 # --------------------------------------------------------------------------
@@ -458,10 +488,7 @@ resource "aws_iam_role_policy" "ci_deploy_scoped_iam" {
   name = "nt-terraform-scoped-iam"
   role = aws_iam_role.ci_deploy.name
 
-  policy = templatefile("${path.module}/policies/ci-deploy-inline.json.tftpl", {
-    account_id = local.account_id
-    state_key  = "prod/core.tfstate"
-  })
+  policy = module.iam_policies.ci_deploy_inline_policy
 }
 
 # ==========================================================================

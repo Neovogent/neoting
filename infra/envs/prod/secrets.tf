@@ -70,10 +70,7 @@ resource "aws_kms_key" "secrets" {
   # behalf. Secrets Manager calls KMS with the CALLER's credentials
   # (aws:PrincipalArn is the assuming role's ARN, not an STS session ARN), so
   # role/nt-* covers the real path and the deny can stay absolute.
-  policy = templatefile("${path.module}/policies/kms-secrets.json.tftpl", {
-    account_id = local.account_id
-    env        = local.env
-  })
+  policy = module.iam_policies.kms_secrets_policy
 
   tags = { DataClass = "credential" }
 }
@@ -246,7 +243,9 @@ resource "aws_kms_alias" "rds_master_secret" {
 # This bites harder in prod than in staging, because setting the real values
 # below is exactly the console task a human will try to do from an SSO session
 # on day one. If SSO becomes the normal human path (runbook Step 1.4), add the
-# SSO role ARN pattern to policies/kms-secrets.json.tftpl in the same change —
+# SSO role ARN pattern to modules/iam-policies/policies/kms-secrets.json.tftpl
+# in the same change — and note that doing so widens it for STAGING too, which
+# is the cost of the documents being shared —
 # do not "fix" it by widening the grant to the account root.
 
 # --------------------------------------------------------------------------
