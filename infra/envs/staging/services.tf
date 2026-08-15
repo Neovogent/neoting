@@ -175,7 +175,19 @@ resource "aws_ecs_task_definition" "migrate" {
       # Overridden by the pipeline if a different entrypoint is wanted; stated
       # here so the task is runnable by hand during an incident without anyone
       # having to remember the command.
-      command = ["pnpm", "prisma", "migrate", "deploy"]
+      #
+      # ⚠ NOT `pnpm prisma migrate deploy` DIRECTLY, and the indirection is the
+      # point. This task receives DATABASE_HOST/PORT/NAME as environment values
+      # and DB_MIGRATOR_USER/PASSWORD as Secrets Manager injections, because
+      # §11.5 forbids a plaintext credential in a task definition — while Prisma
+      # reads DATABASE_URL and DIRECT_URL. An ECS `secrets` entry cannot be
+      # interpolated into another environment variable, so nothing here can join
+      # them; the wrapper composes the URL in-process and execs the same
+      # `prisma migrate deploy` underneath.
+      #
+      # That gap is why the deploy pipeline shipped with no migration step at
+      # all. apps/api/src/db/migrate.ts carries the full reasoning.
+      command = ["node", "apps/api/dist/db/migrate.js"]
 
       environment = concat(local.common_environment, [
         { name = "SERVICE_NAME", value = "migrate" },

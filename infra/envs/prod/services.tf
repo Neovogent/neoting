@@ -159,7 +159,13 @@ resource "aws_ecs_task_definition" "migrate" {
       # Overridden by the pipeline if a different entrypoint is wanted; stated
       # here so the task is runnable by hand during an incident without anyone
       # having to remember the command.
-      command = ["pnpm", "prisma", "migrate", "deploy"]
+      #
+      # ⚠ NOT `pnpm prisma migrate deploy` DIRECTLY — see the identical note in
+      # envs/staging/services.tf. ECS cannot interpolate a `secrets` entry into
+      # another environment variable, so the DATABASE_URL Prisma reads has to be
+      # composed in-process from the injected parts. The wrapper execs the same
+      # `prisma migrate deploy` underneath.
+      command = ["node", "apps/api/dist/db/migrate.js"]
 
       environment = concat(local.common_environment, [
         { name = "SERVICE_NAME", value = "migrate" },
