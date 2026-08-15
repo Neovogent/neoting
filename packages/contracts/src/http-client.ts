@@ -20,9 +20,17 @@ export class NtProblemError extends Error {
   /** Stable machine code, e.g. `NT-PRP-002`. Shown to the user; has a runbook page. */
   readonly code: string;
   readonly title: string;
-  readonly detail?: string;
-  readonly traceId?: string;
-  readonly fieldErrors?: Array<{ field: string; message: string }>;
+  // `| undefined` is written out rather than relying on `?` alone, and it is
+  // load-bearing under exactOptionalPropertyTypes: `?` means "may be absent",
+  // which is not the same as "may be present and undefined". The constructor
+  // assigns `problem.detail` unconditionally, so these ARE the second thing.
+  //
+  // This package sets exactOptionalPropertyTypes: false for orval's generated
+  // output, which was masking it here — apps/web consumes this file as source
+  // under the base config, where the flag is on, and surfaced it.
+  readonly detail?: string | undefined;
+  readonly traceId?: string | undefined;
+  readonly fieldErrors?: Array<{ field: string; message: string }> | undefined;
 
   constructor(problem: {
     status: number;
@@ -45,7 +53,7 @@ export class NtProblemError extends Error {
 
 /** Thrown when the API is unreachable or answers with something that is not a problem+json. */
 export class NtTransportError extends Error {
-  readonly status?: number;
+  readonly status?: number | undefined; // see the note on NtProblemError's fields
   constructor(message: string, status?: number) {
     super(message);
     this.name = 'NtTransportError';

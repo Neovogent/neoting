@@ -1,0 +1,54 @@
+import { X } from 'lucide-react';
+import { motion } from 'motion/react';
+import { ChaseComposer } from './ChaseComposer';
+
+/**
+ * The chase composer, opened over whatever page asked for it.
+ *
+ * Chasing from a table is manual work: the person has already chosen who and
+ * what, so there is nothing left for the agent to help decide, and sending
+ * them to the chat costs them their place on the page. The composer itself is
+ * the same component the chat renders, with the same Review → Approve gate —
+ * only the route to it differs.
+ */
+export function ChaseModal({ clientIds, missingItemIds, note, onClose }: {
+  clientIds: string[];
+  /** Narrows to specific items; omit to take everything outstanding. */
+  missingItemIds?: string[];
+  /** Context for why this chase was raised, when the rows do not say it. */
+  note?: string;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Compose chase"
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 16, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-xl my-auto flex flex-col items-center gap-3"
+      >
+        <div className="w-full flex items-center justify-between gap-4 px-5 py-3 rounded-[20px] border border-white/5 bg-[#16161a] shadow-2xl">
+          <p className="text-[12px] text-zinc-500 min-w-0">
+            {note ?? 'Nothing sends until you read the review and approve it.'}
+          </p>
+          <button
+            onClick={onClose}
+            aria-label="Close the composer"
+            className="shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold text-zinc-400 hover:text-white transition-colors"
+          >
+            <X size={14} />
+            Close
+          </button>
+        </div>
+
+        <ChaseComposer clientIds={clientIds} missingItemIds={missingItemIds} />
+      </motion.div>
+    </div>
+  );
+}
