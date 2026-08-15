@@ -187,31 +187,32 @@ jobs:
           # Stage 9 is the ONE hand-set guard: no probe can detect "the deploy
           # target exists".
           #
-          # FLIPPED TO yes ON 14 AUG 2026, and only the api half is behind it.
-          # What the flip list asked for, and where each item now stands:
+          # FLIPPED TO yes ON 14 AUG 2026 for the api half; COMPLETED 15 AUG
+          # 2026. What the flip list asked for, and where each item now stands:
           #   1. Dockerfile — apps/api/Dockerfile, one image for api + workers
           #      + migrate. Built and run on both amd64 and arm64 before merge.
           #      (apps/web is NOT containerised: Vercel owns it per G6.)
           #   2. ECS task definitions + services — services.tf, live since
-          #      13 Aug, both at desired_count 0 awaiting an image.
+          #      13 Aug. CI owns desired_count and raises it on first deploy.
           #   3. ALB + ACM — alb.tf / edge.tf, live. api.neoting.neovogent.com
-          #      resolves through CloudFront to the ALB today (503, no tasks).
-          #   4. A route from the migration runner to RDS — still absent, and
-          #      still must not be created by opening RDS to the internet. The
-          #      `nt-staging-migrate` task definition exists for exactly this,
-          #      but the container is handed DATABASE_HOST/PORT/NAME plus
-          #      DB_MIGRATOR_* and Prisma wants DATABASE_URL/DIRECT_URL. Until
-          #      something composes them, `ecs run-task` would fail on a
-          #      missing env var. THE DEPLOY BELOW THEREFORE RUNS NO MIGRATION
-          #      and says so on every run.
+          #      resolves through CloudFront to the ALB.
+          #   4. A route from the migration runner to RDS — CLOSED, and closed
+          #      the way it had to be: `ecs run-task` puts the migration INSIDE
+          #      the VPC on the api service's own network configuration. RDS was
+          #      never opened to the internet and must never be. The composition
+          #      gap that blocked it (task gets DATABASE_HOST/PORT/NAME plus
+          #      DB_MIGRATOR_*, Prisma wants DATABASE_URL/DIRECT_URL, and ECS
+          #      cannot interpolate a secret into another variable) is closed in
+          #      apps/api/src/db/migrate.ts.
           #   5. A health signal to roll back on — the api target group probes
           #      /healthz and both services carry deployment_circuit_breaker
           #      with rollback = true (services.tf). ECS owns the rollback.
           #
-          # STILL NOT DEPLOYED, deliberately, and each has a stated reason the
-          # deploy job repeats in its summary: the workers service (its
-          # REDIS_URL is not composed from the injected auth token, so it would
-          # spin against localhost) and the migration (item 4).
+          # ⚠ WHAT IS STILL NOT TRUE, so nobody reads a green stage 9 as more
+          # than it is: INGEST_QUEUE is unset on the task definitions and
+          # defaults to `fixture`, so a WhatsApp message is verified and then
+          # enqueued in memory where workers cannot see it. The deploy job
+          # repeats this in its summary on every run.
           # ------------------------------------------------------------------
           deploy=yes
 
@@ -259,7 +260,7 @@ jobs:
             echo "| 6 | test:e2e (+ axe, tenancy suite) | $n_e2e package(s) | $([ "$n_e2e" -gt 0 ] && echo '**runs**' || echo '**NOT IMPLEMENTED — SKIPPED**') |"
             echo "| 7 | test:eval | $n_eval package(s) | $([ "$n_eval" -gt 0 ] && echo '**runs**' || echo '**NOT IMPLEMENTED — SKIPPED**') (required by this diff: $eval_required) |"
             echo "| 8 | security (audit + secret scan) | n/a | **runs** |"
-            echo "| 9 | deploy | n/a | $([ "$deploy" = yes ] && echo '**runs — api only; no migration, no workers**' || echo '**NOT IMPLEMENTED — SKIPPED**') |"
+            echo "| 9 | deploy | n/a | $([ "$deploy" = yes ] && echo '**runs — migrate, api, workers**' || echo '**NOT IMPLEMENTED — SKIPPED**') |"
             echo
             echo "A stage marked NOT IMPLEMENTED did **not** run and proves nothing."
             echo "It turns itself on the moment a workspace package defines the script"
@@ -273,7 +274,7 @@ jobs:
           [ "$n_eval" -gt 0 ]  || echo "::warning title=Stage 7 not implemented::No \`test:eval\` script exists — extraction thresholds and the adversarial injection corpus (§15.5) are not gating merges."
           [ "$lint_rules" = yes ] || echo "::warning title=Stage 3 incomplete::No ESLint config in the repo — a11y, i18n-literal, money-type, module-boundary and unscoped-query (§14.3) are unenforced."
           if [ "$deploy" = yes ]; then
-            echo "::warning title=Stage 9 is partial::The staging deploy ships the api only. No database migration runs (nothing composes DATABASE_URL/DIRECT_URL for the migrate task) and the workers service stays at 0 (nothing composes REDIS_URL from the injected auth token). Both are stated on the deploy job."
+            echo "::warning title=Deployed is not the same as working::Stage 9 runs migrations, api and workers. But INGEST_QUEUE is unset on the task definitions and defaults to \`fixture\`, so a WhatsApp message is signature-verified and then enqueued IN MEMORY, where the workers service cannot see it. The ingest lane is not real until that flips to \`bullmq\`."
           else
             echo "::warning title=Stage 9 not implemented::No deploy path exists yet. See the DEPLOY_READY block in check.yml."
           fi
@@ -729,31 +730,37 @@ jobs:
   # comments the URL. It is not a GitHub Actions job and duplicating it here
   # would give us two deploy paths to keep in step.
   #
-  # WHAT THIS DEPLOYS: the api service, and nothing else. The scope is narrow
-  # on purpose and the two exclusions are not oversights:
+  # WHAT THIS DEPLOYS: migrations, then the api, then workers — in that order,
+  # which is the expand-contract order (§5.3). Both exclusions this job used to
+  # carry were the same bug in two places, and both are now closed:
   #
-  #   · NO MIGRATION. The `nt-staging-migrate` task definition exists and is
-  #     the right mechanism (a one-off `ecs run-task` inside the VPC — a
-  #     GitHub runner has no route to RDS and must never be given one). But it
-  #     receives DATABASE_HOST/PORT/NAME and DB_MIGRATOR_USER/PASSWORD, while
-  #     Prisma reads DATABASE_URL and DIRECT_URL. Nothing composes one from
-  #     the other yet, so `run-task` would fail on a missing env var. Running
-  #     it is the next PR. Nothing deployed here touches the database: the api
-  #     serves /healthz, /readyz and the WhatsApp webhook, none of which open
-  #     a Prisma client.
-  #   · NO WORKERS. Same shape of gap on the other dependency: the task gets
-  #     REDIS_HOST/PORT/TLS and a REDIS_AUTH_TOKEN secret, and the app reads
-  #     REDIS_URL — which defaults to redis://localhost:6379. A workers task
-  #     would come up and reconnect-loop against itself forever. Better at 0
-  #     than pretending.
+  #   · MIGRATIONS RUN, as a one-off `ecs run-task` inside the VPC. That is the
+  #     only correct mechanism — a GitHub runner has no route to RDS and must
+  #     never be given one. The task definition receives DATABASE_HOST/PORT/NAME
+  #     plus DB_MIGRATOR_USER/PASSWORD, while Prisma reads DATABASE_URL and
+  #     DIRECT_URL; ECS cannot interpolate a `secrets` entry into another
+  #     environment variable, so the join happens in-process
+  #     (apps/api/src/db/migrate.ts) and the task command points at it.
+  #   · WORKERS DEPLOY. Same gap on the other dependency: the task gets
+  #     REDIS_HOST/PORT/TLS and a REDIS_AUTH_TOKEN secret while the app read
+  #     REDIS_URL, which defaulted to redis://localhost:6379 — a worker would
+  #     come up and reconnect-loop against itself forever, never crashing, never
+  #     alarming, with the queue quietly growing. config/env.ts now derives the
+  #     URL from those parts.
   #
-  # CONSEQUENCE, SAID PLAINLY: after this deploy, a real WhatsApp message
-  # reaching the deployed api is signature-verified and then enqueued to the
-  # in-memory fixture queue (INGEST_QUEUE defaults to `fixture` and the task
-  # definition does not override it), where it is dropped. The endpoint being
-  # up is what this buys — a stable callback URL that does not die with a
-  # cloudflared tunnel (docs/runbooks/whatsapp-sandbox.md, trap 4). It is not
-  # a working ingest lane, and the summary at the end of this job says so.
+  # ⚠ ORDER IS LOAD-BEARING AND MIGRATIONS FAIL THE JOB. The migration runs
+  # BEFORE any service is updated, so a failed migration stops the deploy with
+  # the old code still serving. That is only safe because §5.3 requires
+  # migrations to be additive — a destructive migration would break the running
+  # version between these two steps, which is exactly what expand-contract
+  # exists to prevent.
+  #
+  # STILL TRUE AFTER THIS DEPLOY: INGEST_QUEUE is not set on the task
+  # definitions, so it defaults to `fixture`. A real WhatsApp message reaching
+  # the api is signature-verified and enqueued IN MEMORY, where the workers
+  # service cannot see it. Workers running is necessary for the ingest lane and
+  # is not sufficient — flipping INGEST_QUEUE to `bullmq` is a separate change,
+  # and the summary at the end of this job keeps saying so until it lands.
   #
   # Production promote (§14.9 "one-click promote") is a GitHub Environment with
   # required reviewers — adding a reviewer to the `production` environment
@@ -762,7 +769,7 @@ jobs:
   # which is why rollback is code-only (§16) and never a reversed migration.
   # =========================================================================
   deploy:
-    name: ${{ needs.readiness.outputs.deploy == 'yes' && '9 · deploy (api only)' || '9 · deploy — NOT IMPLEMENTED (skipped)' }}
+    name: ${{ needs.readiness.outputs.deploy == 'yes' && '9 · deploy (migrate → api → workers)' || '9 · deploy — NOT IMPLEMENTED (skipped)' }}
     needs: [readiness, verify, e2e, security]
 
     # ⚠ THE UPSTREAM RESULTS ARE CHECKED BY HAND HERE, AND THEY HAVE TO BE.
@@ -814,6 +821,10 @@ jobs:
       CLUSTER: nt-staging
       SERVICE: nt-staging-api
       TASK_FAMILY: nt-staging-api
+      WORKERS_SERVICE: nt-staging-workers
+      WORKERS_TASK_FAMILY: nt-staging-workers
+      MIGRATE_TASK_FAMILY: nt-staging-migrate
+      MIGRATE_LOG_GROUP: /nt/staging/migrate
       EDGE_HOST: api.neoting.neovogent.com
 
     steps:
@@ -890,6 +901,91 @@ jobs:
           echo "arn=$arn" >> "$GITHUB_OUTPUT"
           echo "registered $arn"
 
+      # Same read-the-live-definition trick as the api, for the same reason: the
+      # migrate family carries DB_MIGRATOR_USER/PASSWORD and DB_APP_ROLE_PASSWORD
+      # as Secrets Manager injections that only Terraform knows about.
+      - name: Register a migrate task definition revision pinned to this commit
+        id: migratedef
+        run: |
+          set -euo pipefail
+          aws ecs describe-task-definition --task-definition "$MIGRATE_TASK_FAMILY" \
+            --query taskDefinition > live-migrate.json
+
+          jq --arg image "${{ steps.ecr.outputs.registry }}/nt/api:${{ github.sha }}" '
+            .containerDefinitions |= map(if .name == "migrate" then .image = $image else . end)
+            | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                  .compatibilities, .registeredAt, .registeredBy)
+          ' live-migrate.json > next-migrate.json
+
+          arn=$(aws ecs register-task-definition --cli-input-json file://next-migrate.json \
+                  --query taskDefinition.taskDefinitionArn --output text)
+          echo "arn=$arn" >> "$GITHUB_OUTPUT"
+          echo "registered $arn"
+
+      # ⚠ BEFORE the service update, deliberately. A failed migration must stop
+      # the deploy with the OLD code still serving — which is only safe because
+      # §5.3 requires migrations to be additive. A destructive migration would
+      # break the running version in the window between this step and the next.
+      #
+      # The network configuration is READ FROM THE API SERVICE rather than
+      # hardcoded. Subnet and security-group IDs are Terraform's to know, and a
+      # second copy here would be wrong the first time the network changes — the
+      # failure would be a task stuck in PROVISIONING with no route to RDS.
+      - name: Run migrations (ecs run-task, inside the VPC)
+        id: migrate
+        run: |
+          set -euo pipefail
+
+          netcfg=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+                     --query 'services[0].networkConfiguration' --output json)
+
+          run=$(aws ecs run-task \
+                  --cluster "$CLUSTER" \
+                  --task-definition "${{ steps.migratedef.outputs.arn }}" \
+                  --launch-type FARGATE \
+                  --network-configuration "$netcfg" \
+                  --started-by "gha-${{ github.run_id }}" \
+                  --output json)
+
+          # run-task returns HTTP 200 with an empty `tasks` array and a populated
+          # `failures` array when placement fails. Trusting the exit code alone
+          # would report a migration that never started as a success.
+          failures=$(echo "$run" | jq -r '.failures | length')
+          if [ "$failures" != "0" ]; then
+            echo "::error title=Migration task could not start::$(echo "$run" | jq -c '.failures')"
+            exit 1
+          fi
+
+          task_arn=$(echo "$run" | jq -r '.tasks[0].taskArn')
+          task_id="${task_arn##*/}"
+          echo "task=$task_id" >> "$GITHUB_OUTPUT"
+          echo "running migration task $task_id"
+
+          aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$task_arn"
+
+          exit_code=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$task_arn" \
+                        --query 'tasks[0].containers[0].exitCode' --output text)
+          reason=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$task_arn" \
+                     --query 'tasks[0].stoppedReason' --output text)
+
+          echo "--- migration log ---"
+          # Best-effort: the stream only exists once the container actually
+          # started, and a placement failure has no log at all. Never let a
+          # missing log turn a real exit code into a green deploy.
+          aws logs get-log-events \
+            --log-group-name "$MIGRATE_LOG_GROUP" \
+            --log-stream-name "migrate/migrate/$task_id" \
+            --limit 200 --query 'events[].message' --output text 2>/dev/null || echo "(no log stream)"
+          echo "--- end ---"
+
+          # "None" is what --output text prints for a null exitCode, which is
+          # what a task killed before the container ran reports.
+          if [ "$exit_code" != "0" ]; then
+            echo "::error title=Migration failed::exitCode=$exit_code stoppedReason=$reason. The deploy stopped here and the previously deployed code is still serving."
+            exit 1
+          fi
+          echo "migration succeeded"
+
       # desired_count is in ignore_changes on the service (services.tf) because
       # CI owns it. It is 0 until the first image exists, so the first deploy
       # has to raise it — but every deploy after this must NOT, or this step
@@ -934,21 +1030,73 @@ jobs:
           echo "::error title=Deployed but not serving::https://$EDGE_HOST/healthz did not return 200 within 100s. ECS reported steady state, so look at CloudFront, WAF and the ALB origin-verify rule before the container."
           exit 1
 
-      - name: Say what was NOT deployed
+      # Workers last: it consumes the queue the api fills, so a worker running
+      # older code than the api is the ordering that matters least. The image is
+      # the SAME digest as the api — one build, pushed to two repositories.
+      - name: Register a workers task definition revision pinned to this commit
+        id: workersdef
+        run: |
+          set -euo pipefail
+          aws ecs describe-task-definition --task-definition "$WORKERS_TASK_FAMILY" \
+            --query taskDefinition > live-workers.json
+
+          jq --arg image "${{ steps.ecr.outputs.registry }}/nt/workers:${{ github.sha }}" '
+            .containerDefinitions |= map(if .name == "workers" then .image = $image else . end)
+            | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                  .compatibilities, .registeredAt, .registeredBy)
+          ' live-workers.json > next-workers.json
+
+          arn=$(aws ecs register-task-definition --cli-input-json file://next-workers.json \
+                  --query taskDefinition.taskDefinitionArn --output text)
+          echo "arn=$arn" >> "$GITHUB_OUTPUT"
+          echo "registered $arn"
+
+      - name: Deploy workers
+        run: |
+          set -euo pipefail
+          current=$(aws ecs describe-services --cluster "$CLUSTER" --services "$WORKERS_SERVICE" \
+                      --query 'services[0].desiredCount' --output text)
+          echo "current desired count: $current"
+
+          if [ "$current" = "0" ]; then
+            echo "first workers deploy — raising desired count to 1 (services.tf sizes workers at 1 task)"
+            aws ecs update-service --cluster "$CLUSTER" --service "$WORKERS_SERVICE" \
+              --task-definition "${{ steps.workersdef.outputs.arn }}" \
+              --desired-count 1 --no-cli-pager > /dev/null
+          else
+            aws ecs update-service --cluster "$CLUSTER" --service "$WORKERS_SERVICE" \
+              --task-definition "${{ steps.workersdef.outputs.arn }}" --no-cli-pager > /dev/null
+          fi
+
+      # ⚠ WEAKER THAN THE API'S EQUIVALENT, AND WORTH KNOWING. workers has no
+      # load balancer and no container healthCheck (services.tf carries the TODO),
+      # so ECS calls a task healthy the moment it is RUNNING. This proves the
+      # container started and stayed up; it does NOT prove it reached Redis. A
+      # worker that connects and then silently stops consuming still looks
+      # identical to an idle one until the queue-age alarm fires.
+      - name: Wait for workers to reach steady state
+        run: aws ecs wait services-stable --cluster "$CLUSTER" --services "$WORKERS_SERVICE"
+
+      - name: Say what was and was not deployed
         if: ${{ always() }}
         run: |
           {
-            echo "### Stage 9 — deployed, partially"
+            echo "### Stage 9 — deployed"
             echo
+            echo "- **migrations** — \`prisma migrate deploy\` ran as ECS task \`${{ steps.migrate.outputs.task || 'not started' }}\`, before any service was updated."
             echo "- **api** → \`${{ github.sha }}\`, live at https://$EDGE_HOST"
-            echo "- **workers** — NOT started. Nothing composes \`REDIS_URL\` from the injected"
-            echo "  \`REDIS_AUTH_TOKEN\`, so a task would reconnect-loop against localhost."
-            echo "- **migrations** — NOT run. The migrate task definition exists but Prisma needs"
-            echo "  \`DATABASE_URL\`/\`DIRECT_URL\` and the task is given host/port/name/credentials."
+            echo "- **workers** → \`${{ github.sha }}\`, consuming BullMQ over TLS."
             echo
-            echo "The staging database schema is therefore whatever the last manual apply left."
-            echo "A WhatsApp message to the deployed api verifies and then lands in the in-memory"
-            echo "fixture queue — the callback URL is stable, the ingest lane is not yet real."
+            echo "#### Still not true"
+            echo
+            echo "\`INGEST_QUEUE\` is not set on the task definitions, so it defaults to \`fixture\`."
+            echo "A WhatsApp message to the deployed api is signature-verified and then enqueued"
+            echo "**in memory**, where the workers service cannot see it. Workers running is"
+            echo "necessary for the ingest lane and is not sufficient — flipping \`INGEST_QUEUE\`"
+            echo "to \`bullmq\` is a separate change."
+            echo
+            echo "Workers has no load balancer and no container health check, so steady state"
+            echo "proves the task started, not that it reached Redis."
           } >> "$GITHUB_STEP_SUMMARY"
 
   # =========================================================================
