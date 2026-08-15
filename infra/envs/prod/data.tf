@@ -42,6 +42,19 @@ module "data" {
   kms_key_arn         = module.storage.kms_key_arn
   secrets_kms_key_arn = aws_kms_key.secrets.arn
 
+  # ⚠ CREATE-TIME AND IRREVERSIBLE. RDS refuses to change this key once it is
+  # managing the credentials, so this line has to be right on the FIRST apply —
+  # the recovery is disabling and re-enabling credential management, which
+  # mints a new secret at a new ARN and breaks every task definition that
+  # references the old one.
+  #
+  # A dedicated key rather than aws_kms_key.secrets, because this is the one
+  # secret a SERVICE encrypts on its own behalf and its key policy therefore
+  # needs an aws:PrincipalIsAWSService exemption the shared secrets key
+  # deliberately does not have. secrets.tf carries the full reasoning and the
+  # command to verify the rotation is actually working.
+  master_user_secret_kms_key_arn = aws_kms_key.rds_master_secret.arn
+
   db_engine_version = "16.14"
 
   # ------------------------------------------------------------------------
