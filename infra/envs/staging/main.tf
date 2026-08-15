@@ -157,12 +157,50 @@ module "storage" {
 }
 
 # --------------------------------------------------------------------------
+# The shared policy documents.
+#
+# These used to be four hand-maintained JSON files in envs/staging/policies/,
+# with near-identical copies in envs/prod/policies/ and nothing keeping the two
+# in step. envs/prod/policies/README.md named the fix and this is it — the same
+# argument modules/storage already makes for the bucket deny guard: two copies
+# of a role/nt-* deny is precisely the drift that silently opens something,
+# and it would be invisible in review because both files look correct alone.
+#
+# ⚠ THIS MODULE CREATES NOTHING. It renders text. The resources below decide
+# what the text is attached to, which is why a managed policy, an inline role
+# policy and a KMS key policy can all share it.
+#
+# staging passes no dr_region: it has no DR region, so the guardrail renders
+# without the two ADR 0007 statements and is byte-for-byte what is applied
+# today. That was the acceptance test for this extraction — `terraform plan`
+# reporting no changes, the same test envs/staging/moved.tf was held to.
+# --------------------------------------------------------------------------
+module "iam_policies" {
+  source = "../../modules/iam-policies"
+
+  env            = local.env
+  account_id     = local.account_id
+  tfstate_bucket = "nt-tfstate-staging-${local.account_id}"
+
+  # ⚠ "" IS THE CURRENT BEHAVIOUR, NOT AN ENDORSEMENT OF IT. It grants
+  # nt-staging-ci-deploy the whole state bucket, which includes
+  # prod/core.tfstate and account/core.tfstate. Harmless only for as long as
+  # prod does not exist — prod's state will hold random_password values in
+  # plaintext, at which point a compromised staging CI job is a path to
+  # production credentials. Narrowing this to "staging/" is a one-word change
+  # and is tracked in infra/README.md; it is not bundled into this refactor
+  # because a refactor that also changes a permission cannot be verified by
+  # "the plan is empty".
+  state_key_prefix = ""
+}
+
+# --------------------------------------------------------------------------
 # IAM — the SCP substitute plus the three Neoting principals.
 # --------------------------------------------------------------------------
 resource "aws_iam_policy" "region_guardrail" {
   name        = "nt-region-guardrail"
   description = "D30 UK-first residency guardrail - SCP substitute (org is consolidated-billing, SCPs unavailable)"
-  policy      = file("${path.module}/policies/region-guardrail.json")
+  policy      = module.iam_policies.region_guardrail_policy
 }
 
 resource "aws_iam_role" "app" {
@@ -281,11 +319,9 @@ resource "aws_iam_role_policy_attachment" "ci_deploy_guardrail" {
 }
 
 resource "aws_iam_role_policy" "ci_deploy_scoped_iam" {
-  name = "nt-terraform-scoped-iam"
-  role = aws_iam_role.ci_deploy.name
-  policy = templatefile("${path.module}/policies/ci-deploy-inline.json.tftpl", {
-    account_id = local.account_id
-  })
+  name   = "nt-terraform-scoped-iam"
+  role   = aws_iam_role.ci_deploy.name
+  policy = module.iam_policies.ci_deploy_inline_policy
 }
 
 resource "aws_iam_role" "ci_plan" {

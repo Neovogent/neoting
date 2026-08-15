@@ -70,10 +70,7 @@ resource "aws_kms_key" "secrets" {
   # behalf. Secrets Manager calls KMS with the CALLER's credentials
   # (aws:PrincipalArn is the assuming role's ARN, not an STS session ARN), so
   # role/nt-* covers the real path and the deny can stay absolute.
-  policy = templatefile("${path.module}/policies/kms-secrets.json.tftpl", {
-    account_id = local.account_id
-    env        = local.env
-  })
+  policy = module.iam_policies.kms_secrets_policy
 
   tags = { DataClass = "credential" }
 }
