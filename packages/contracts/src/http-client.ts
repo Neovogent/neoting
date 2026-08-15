@@ -20,9 +20,17 @@ export class NtProblemError extends Error {
   /** Stable machine code, e.g. `NT-PRP-002`. Shown to the user; has a runbook page. */
   readonly code: string;
   readonly title: string;
-  readonly detail?: string;
-  readonly traceId?: string;
-  readonly fieldErrors?: Array<{ field: string; message: string }>;
+  // `| undefined` is written out rather than relying on `?` alone, and it is
+  // load-bearing under exactOptionalPropertyTypes: `?` means "may be absent",
+  // which is not the same as "may be present and undefined". The constructor
+  // assigns `problem.detail` unconditionally, so these ARE the second thing.
+  //
+  // This package sets exactOptionalPropertyTypes: false for orval's generated
+  // output, which was masking it here — apps/web consumes this file as source
+  // under the base config, where the flag is on, and surfaced it.
+  readonly detail?: string | undefined;
+  readonly traceId?: string | undefined;
+  readonly fieldErrors?: Array<{ field: string; message: string }> | undefined;
 
   constructor(problem: {
     status: number;
@@ -45,7 +53,7 @@ export class NtProblemError extends Error {
 
 /** Thrown when the API is unreachable or answers with something that is not a problem+json. */
 export class NtTransportError extends Error {
-  readonly status?: number;
+  readonly status?: number | undefined; // see the note on NtProblemError's fields
   constructor(message: string, status?: number) {
     super(message);
     this.name = 'NtTransportError';
@@ -55,10 +63,30 @@ export class NtTransportError extends Error {
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+/**
+ * The API origin, resolved for both runtimes this module is loaded in.
+ *
+ * ⚠ THIS READ USED TO BE DEAD IN THE ONLY RUNTIME THAT MATTERS. It was
+ * `process.env.NEXT_PUBLIC_API_URL`, which D37 (SoT v1.5) retired along with
+ * Next.js: in a Vite browser build `process` does not exist and `NEXT_PUBLIC_*`
+ * is never defined. The branch could not be taken, so setting an env var to
+ * point the app at staging silently kept calling localhost — it failed SOFT,
+ * which is why nothing surfaced it.
+ *
+ * Both branches are guarded because this module is imported from two places
+ * with different globals: `apps/web` (browser, Vite) and `apps/api` plus its
+ * tests (Node). In Node, `import.meta.env` is simply undefined; in the browser,
+ * `process` is. Neither guard is defensive tidiness — remove either one and the
+ * other runtime throws at module load.
+ */
 function baseUrl(): string {
-  const fromEnv =
-    (typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_API_URL : undefined) ?? 'http://localhost:3001';
-  return `${fromEnv.replace(/\/$/, '')}/v1`;
+  const fromVite =
+    typeof import.meta !== 'undefined'
+      ? (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_API_BASE_URL
+      : undefined;
+  const fromNode = typeof process !== 'undefined' ? process.env?.API_BASE_URL : undefined;
+  const origin = fromVite ?? fromNode ?? 'http://localhost:3001';
+  return `${origin.replace(/\/$/, '')}/v1`;
 }
 
 function newIdempotencyKey(): string {
