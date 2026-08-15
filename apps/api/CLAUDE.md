@@ -10,6 +10,24 @@ Node 22, TypeScript strict, Prisma + Postgres 16 (RLS), BullMQ on Redis. One dep
 - Services own business logic and are the only layer that touches Prisma.
 - A module exposes its **public providers only**. Cross-module work goes through those providers or through domain events on the transactional outbox — never by reaching into another module's internals.
 
+## Routing — `/v1`, and the three routes that are not
+
+`main.ts` sets a global `v1` prefix. The value and the exclusion list live in `src/config/routing.ts`, not inline, so a test can pin them.
+
+**The prefix is asserted against `packages/contracts/openapi.yaml`, not against the string `'v1'`.** The contract is authoritative (Governance §3, D10) and the API was the non-conforming half — it served at root while the generated frontend client called `/v1`, so every call 404'd and would have looked like a frontend bug.
+
+Three routes are excluded, and each breaks something specific if that changes:
+
+| Route | Who holds the URL |
+|---|---|
+| `GET /healthz` | The ALB target group and the deploy's post-check. Moving it fails the health check, trips the deployment circuit breaker, and reads as a broken image. |
+| `GET /readyz` | The deploy gate and synthetic checks. |
+| `GET`+`POST /webhooks/whatsapp` | **Meta**, in its own configuration. It does not follow redirects for delivery and reports a 404 nowhere we would see — messages just stop arriving (`docs/runbooks/whatsapp-sandbox.md`, trap 4). |
+
+The webhook is also excluded on principle: an inbound webhook is not part of *our* REST contract. It is versioned by the provider, on the provider's schedule.
+
+A test couples the exclusion to the controller's own `@Controller` path, so renaming one without the other fails rather than silently moving Meta's callback under `/v1`.
+
 ## Async spine
 
 Anything over 5 seconds, any retryable external call, and every ingest/extract/publish/chase/export runs through BullMQ — never inline in a request. Handlers are idempotent (keyed by `idempotencyKey`), validate payloads with Zod, and use exponential backoff with a capped retry count. Exhausted retries land in a dead-letter queue that pages; poison messages auto-quarantine after 3 replays.
