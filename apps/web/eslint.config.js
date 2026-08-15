@@ -6,12 +6,16 @@ import tsPlugin from '@typescript-eslint/eslint-plugin';
  * rules the review bar actually rejects on (Guideline §6). `no-explicit-any`
  * and no stray `console`/`debugger` (R9).
  *
- * NOT here yet, and both are tracked rather than forgotten:
+ * NOT here yet, and all three are tracked rather than forgotten:
  *   · jsx-a11y — Governance §12.5 makes it blocking. It needs the plugin and a
  *     pass over the imported code; landing it in the import PR would bury a
  *     genuine accessibility review inside a 27k-line diff.
  *   · the i18n-literal rule — it would fail on ~1,200 strings today, so it
- *     arrives with the extraction work, not before it.
+ *     arrives with the extraction work, not before it (issue #65).
+ *   · react-hooks — `exhaustive-deps` and `rules-of-hooks` are the two that
+ *     would earn their place in a codebase this hook-heavy. Adding the plugin
+ *     is a dependency decision, which this repo routes past a human first
+ *     (CLAUDE.md), so it is not slipped into the import PR.
  *
  * Generated output is not a lint surface: `@neoting/contracts` owns its own.
  */
