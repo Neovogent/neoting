@@ -182,16 +182,26 @@ module "iam_policies" {
   account_id     = local.account_id
   tfstate_bucket = "nt-tfstate-staging-${local.account_id}"
 
-  # ⚠ "" IS THE CURRENT BEHAVIOUR, NOT AN ENDORSEMENT OF IT. It grants
-  # nt-staging-ci-deploy the whole state bucket, which includes
-  # prod/core.tfstate and account/core.tfstate. Harmless only for as long as
-  # prod does not exist — prod's state will hold random_password values in
-  # plaintext, at which point a compromised staging CI job is a path to
-  # production credentials. Narrowing this to "staging/" is a one-word change
-  # and is tracked in infra/README.md; it is not bundled into this refactor
-  # because a refactor that also changes a permission cannot be verified by
-  # "the plan is empty".
-  state_key_prefix = ""
+  # ⚠ NARROWED 16 AUG 2026, AND THE TIMING WAS THE POINT.
+  #
+  # This was "" — the whole state bucket, including prod/core.tfstate and
+  # account/core.tfstate. That was survivable only while prod did not exist.
+  # The moment envs/prod is applied its state file holds `random_password`
+  # values in PLAINTEXT (the Redis auth token, the nt_app role password), so a
+  # compromised staging CI job would have been a direct path to production
+  # credentials — and staging is the environment that runs on every push to
+  # main, from the least-privileged trust boundary we have.
+  #
+  # So this landed BEFORE the first prod apply rather than after it. Closing
+  # the hole once it is real is incident response; closing it while it is still
+  # theoretical is a permission change nobody has to explain.
+  #
+  # ⚠ IF STAGING CI EVER LEGITIMATELY NEEDS ANOTHER ENVIRONMENT'S STATE, THAT
+  # IS A DESIGN PROBLEM, NOT A PERMISSIONS ONE. The answer is a remote-state
+  # data source with its own read-only role, not widening this back — one
+  # environment's deploy role being able to WRITE another's state is how a
+  # mis-set -backend-config corrupts an environment nobody was touching.
+  state_key_prefix = "staging/"
 }
 
 # --------------------------------------------------------------------------
