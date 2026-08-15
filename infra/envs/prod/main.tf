@@ -516,13 +516,22 @@ resource "aws_iam_role_policy" "ci_deploy_scoped_iam" {
 #      migration. The task role deliberately carries no ses:SendEmail grant
 #      until then.
 #
-#  observability.tf / monitoring-backend.tf (alarms, dashboards, SNS, AMP/AMG)
-#      NOT BUILT. This is the most uncomfortable omission on the list and it is
-#      a HARD BLOCKER on carrying pilot traffic: Governance §13.2 wants alerts
-#      on queue age > 5 min, and Appendix B.1's November pilot has no meaning
-#      without them. It is not here because the alarm estate is sized against
-#      the services it watches and both services are at zero. ⚠ Prod must not
-#      take a single real document until this lands. Budget ~$15–25/mo.
+#  observability.tf — BUILT, 15 Aug 2026. The hard blocker is cleared: 46
+#      resources, ~$8.60/mo, two SNS topics (page / ticket) rather than
+#      staging's one, and alarms on the cross-region replication that staging
+#      cannot have. §13.2's queue-age alarm exists and sits in
+#      INSUFFICIENT_DATA until the app emits the metric, which is truthful
+#      rather than green.
+#      ⚠ ONE THING STILL GATES A REAL DOCUMENT: neither SNS topic has a
+#      subscriber. Subscriptions are confirmed out of band on purpose (a
+#      Terraform-created email subscription sits in PendingConfirmation while
+#      the console shows a subscriber), so the alarm estate is decoration until
+#      someone confirms one. observability.tf says so at the topics.
+#
+#  monitoring-backend.tf (AMP / AMG)
+#      NOT BUILT, and deferred for the same reason staging defers it: ~$40–70/mo
+#      against an $8,000 envelope, and it is the OTel instrumentation that
+#      carries over to it, not the CloudWatch config.
 #
 #  unleash.tf / clamav.tf
 #      NOT BUILT. Both are Fargate services with their own load balancers and
