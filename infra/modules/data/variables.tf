@@ -33,6 +33,53 @@ variable "secrets_kms_key_arn" {
   EOT
 }
 
+variable "master_user_secret_kms_key_arn" {
+  type        = string
+  default     = null
+  description = <<-EOT
+    CMK for the RDS-MANAGED master user password secret. null (the default)
+    leaves it under the AWS-managed `aws/secretsmanager` key, which is OUTSIDE
+    the role/nt-* explicit-Deny boundary that D36's compensating-control story
+    rests on.
+
+    ⚠ READ BOTH OF THESE BEFORE SETTING IT. They are properties of the AWS
+    API, not of this module, and both were verified against the RDS docs and
+    the live account on 15 Aug 2026.
+
+    1. THE KEY IS IMMUTABLE AFTER CREATION. The RDS User Guide states it four
+       times over: "After RDS is managing the database credentials for a DB
+       instance, you can't change the KMS key that is used to encrypt the
+       secret." So this is a CREATE-TIME decision. Getting it wrong is not a
+       later `terraform apply` away - the recovery is to modify the instance
+       to turn credential management OFF and then ON again, which mints a new
+       secret at a new ARN and breaks every task definition referencing the
+       old one. staging (nt-staging) is already created on the AWS-managed
+       key and cannot be moved by editing this value.
+
+    2. THE KEY POLICY MUST EXEMPT AWS SERVICES, OR ROTATION BREAKS QUIETLY.
+       Creation works with the caller's own permissions - the docs require
+       kms:DescribeKey, kms:Decrypt, kms:GenerateDataKey and kms:CreateGrant
+       on the CALLING principal, and RDS then holds a grant. But RDS rotates
+       this secret every 7 days by default, and at rotation the request comes
+       from the RDS service principal, where aws:PrincipalArn does not match
+       role/nt-*. An absolute `StringNotLike` deny therefore catches it: a
+       missing condition key makes StringNotLike true, and an explicit deny
+       in the key policy overrides the grant.
+
+       The failure is NOT the apply. The apply succeeds, the secret is
+       created, and seven days later SecretStatus flips to `impaired` - the
+       credential still reads, it just silently stops rotating. That is the
+       worst shape a security control can fail in.
+
+       A key used here needs the same `BoolIfExists aws:PrincipalIsAWSService
+       = false` carve-out that modules/storage/policies/bucket.json.tftpl
+       already has. envs/prod/policies/kms-secrets.json.tftpl deliberately
+       DROPS that carve-out, on reasoning that is correct for every secret we
+       write ourselves and does not hold for this one - it is the single case
+       where a service really does encrypt a secret on its own behalf.
+  EOT
+}
+
 # --------------------------------------------------------------------------
 # POSTGRES.
 #

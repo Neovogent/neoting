@@ -80,6 +80,159 @@ resource "aws_kms_alias" "secrets" {
   target_key_id = aws_kms_key.secrets.key_id
 }
 
+# ==========================================================================
+# A THIRD CMK, FOR ONE SECRET, AND THE $1/MONTH IS BUYING SOMETHING SPECIFIC.
+#
+# The RDS-managed master user password (module.data, manage_master_user_password)
+# lands in a secret AWS creates and rotates. Left alone it sits under the
+# AWS-managed `aws/secretsmanager` key — OUTSIDE the role/nt-* explicit-Deny
+# boundary that D36's entire compensating-control story rests on. That was the
+# last item on infra/README.md's list, and staging is still in that state.
+#
+# WHY IT CANNOT SIMPLY USE aws_kms_key.secrets ABOVE.
+#
+# That key's policy ends in an ABSOLUTE deny, on reasoning stated at the key
+# itself: "nothing encrypts a secret on its own behalf. Secrets Manager calls
+# KMS with the CALLER's credentials, so role/nt-* covers the real path and the
+# deny can stay absolute."
+#
+# That is correct for every secret we write ourselves, and it is wrong for
+# exactly this one. The RDS-managed secret is the single case where a service
+# genuinely does encrypt on its own behalf: RDS rotates it every 7 days, and at
+# rotation the request comes from the RDS service principal, where
+# `aws:PrincipalArn` matches no role/nt-*. `StringNotLike` against a MISSING
+# condition key evaluates TRUE, and an explicit deny in a key policy overrides
+# the grant RDS holds.
+#
+# ⚠ AND THE FAILURE IS NOT THE APPLY. The apply succeeds, the secret is created
+# under our key, everything looks right — and seven days later SecretStatus
+# flips to `impaired`. The credential still READS, so nothing breaks and no
+# alarm fires. It has simply, silently, stopped rotating. That is the worst
+# shape a security control can fail in, and it is why this is a separate key
+# rather than a carve-out in the shared one: the exemption is confined to the
+# one key that genuinely needs it, and aws_kms_key.secrets keeps its absolute
+# deny for the twenty-odd secrets that do not.
+#
+# ⚠ THE KEY IS IMMUTABLE AFTER CREATION. The RDS User Guide states it four
+# times: "After RDS is managing the database credentials for a DB instance, you
+# can't change the KMS key that is used to encrypt the secret." This is a
+# CREATE-TIME decision. Getting it wrong is not a later apply away — the
+# recovery is modifying the instance to turn credential management off and then
+# on again, which mints a NEW secret at a NEW ARN and breaks every task
+# definition referencing the old one.
+#
+# staging (nt-staging) already exists on the AWS-managed key and CANNOT be
+# moved by editing configuration. It stays as it is, deliberately.
+# ==========================================================================
+resource "aws_kms_key" "rds_master_secret" {
+  description              = "Neoting production - the RDS-managed master user password secret, and nothing else"
+  key_usage                = "ENCRYPT_DECRYPT"
+  customer_master_key_spec = "SYMMETRIC_DEFAULT"
+  enable_key_rotation      = true
+  deletion_window_in_days  = 30
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Id      = "nt-${local.env}-rds-master-secret-key-policy"
+    Statement = [
+      {
+        Sid       = "AllowKeyAdministration"
+        Effect    = "Allow"
+        Principal = { AWS = "arn:aws:iam::${local.account_id}:root" }
+        Action = [
+          "kms:Create*", "kms:Describe*", "kms:Enable*", "kms:List*", "kms:Put*",
+          "kms:Update*", "kms:Revoke*", "kms:Disable*", "kms:Get*", "kms:Delete*",
+          "kms:TagResource", "kms:UntagResource", "kms:ScheduleKeyDeletion",
+          "kms:CancelKeyDeletion", "kms:CreateGrant", "kms:RetireGrant"
+        ]
+        Resource = "*"
+      },
+      {
+        # kms:CreateGrant is in this list and it is NOT decoration. The RDS docs
+        # are explicit that the principal specifying a customer managed key must
+        # hold kms:Decrypt, kms:GenerateDataKey AND kms:CreateGrant — RDS then
+        # creates a grant on our behalf, and that grant is what the service uses
+        # afterwards. Without CreateGrant the DB creation itself fails.
+        Sid       = "AllowNeotingPrincipalsToUseAndGrantOnKey"
+        Effect    = "Allow"
+        Principal = { AWS = "arn:aws:iam::${local.account_id}:root" }
+        Action = [
+          "kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*",
+          "kms:GenerateDataKey*", "kms:DescribeKey", "kms:CreateGrant"
+        ]
+        Resource = "*"
+        Condition = {
+          StringLike = {
+            "aws:PrincipalArn" = [
+              "arn:aws:iam::${local.account_id}:role/nt-*",
+              "arn:aws:iam::${local.account_id}:user/Mubashir",
+            ]
+          }
+        }
+      },
+      {
+        # Belt and braces. The grant RDS holds is the mechanism that actually
+        # authorises rotation; this statement makes the intent explicit and
+        # survives a grant being retired by accident. Scoped to this account so
+        # a service principal acting for ANOTHER account in the shared org
+        # (D36) cannot use the key.
+        Sid       = "AllowRdsAndSecretsManagerToRotate"
+        Effect    = "Allow"
+        Principal = { Service = ["rds.amazonaws.com", "secretsmanager.amazonaws.com"] }
+        Action    = ["kms:Encrypt", "kms:Decrypt", "kms:GenerateDataKey*", "kms:DescribeKey", "kms:CreateGrant"]
+        Resource  = "*"
+        Condition = { StringEquals = { "aws:SourceAccount" = local.account_id } }
+      },
+      {
+        # THE ONE DIFFERENCE FROM aws_kms_key.secrets, and the whole reason this
+        # key exists: `BoolIfExists aws:PrincipalIsAWSService = false`.
+        #
+        # Without it, this deny catches the RDS service principal at rotation —
+        # a missing aws:PrincipalArn makes StringNotLike true — and the secret
+        # goes `impaired` while still reading fine.
+        #
+        # With it, an AWS service acting on our behalf is exempt and every human
+        # or role outside role/nt-* is still denied, because for them
+        # PrincipalIsAWSService is false. This is the same construction
+        # modules/storage/policies/bucket.json.tftpl already uses, for the same
+        # reason.
+        Sid       = "DenyCryptoUseByEveryoneElse"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = ["kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*"]
+        Resource  = "*"
+        Condition = {
+          StringNotLike = {
+            "aws:PrincipalArn" = [
+              "arn:aws:iam::${local.account_id}:role/nt-*",
+              "arn:aws:iam::${local.account_id}:user/Mubashir",
+              "arn:aws:iam::${local.account_id}:root",
+            ]
+          }
+          BoolIfExists = { "aws:PrincipalIsAWSService" = "false" }
+        }
+      }
+    ]
+  })
+
+  tags = { DataClass = "credential", Component = "rds-master-secret" }
+}
+
+resource "aws_kms_alias" "rds_master_secret" {
+  name          = "alias/nt-${local.env}-rds-master-secret"
+  target_key_id = aws_kms_key.rds_master_secret.key_id
+}
+
+# ⚠ HOW TO TELL IT IS ACTUALLY WORKING, because "the apply succeeded" does not.
+# Seven days after prod is applied, and after every rotation thereafter:
+#
+#   aws rds describe-db-instances --db-instance-identifier nt-prod \
+#     --query 'DBInstances[0].MasterUserSecret' --region eu-west-2
+#
+# SecretStatus must read `active`. If it reads `impaired`, the key policy is
+# denying the rotation and this key's carve-out has regressed. KmsKeyId must be
+# this key's ARN and not the aws/secretsmanager one.
+
 # ⚠ OPERATOR TRAP, and it will look like a Secrets Manager bug: the deny above
 # matches on aws:PrincipalArn, and an AWS Identity Center session
 # (role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_*) matches neither
@@ -90,7 +243,9 @@ resource "aws_kms_alias" "secrets" {
 # This bites harder in prod than in staging, because setting the real values
 # below is exactly the console task a human will try to do from an SSO session
 # on day one. If SSO becomes the normal human path (runbook Step 1.4), add the
-# SSO role ARN pattern to policies/kms-secrets.json.tftpl in the same change —
+# SSO role ARN pattern to modules/iam-policies/policies/kms-secrets.json.tftpl
+# in the same change — and note that doing so widens it for STAGING too, which
+# is the cost of the documents being shared —
 # do not "fix" it by widening the grant to the account root.
 
 # --------------------------------------------------------------------------
