@@ -1,0 +1,168 @@
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Building2, ChevronDown, Plus, PanelLeftClose, PanelLeft, X, Check } from 'lucide-react';
+import { useAppContext } from '../context/AppContext';
+import { motion, AnimatePresence } from 'motion/react';
+
+/**
+ * Context bar: shows every client attached to the conversation. Multiple
+ * clients can be attached at once for cross-client questions (PRD section 5.4).
+ */
+export function ContextBar() {
+  const { isHistoryVisible, toggleHistory, clients, attachedClients, attachClient, detachClient } = useAppContext();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * The workspace clips this bar on three sides (the collapse animation, the
+   * view container and <main> all use overflow-hidden), so the menu is rendered
+   * in a portal and positioned against the trigger instead of nested inside it.
+   */
+  const place = useCallback(() => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const width = 288;
+    setAnchor({
+      top: rect.bottom + 8,
+      // Keep it on screen if the bar sits near the right edge.
+      left: Math.min(rect.left, window.innerWidth - width - 16),
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (pickerOpen) place();
+  }, [pickerOpen, place]);
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (triggerRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setPickerOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setPickerOpen(false);
+
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [pickerOpen, place]);
+
+
+  return (
+    <header className="h-20 border-b border-white/5 px-8 flex items-center justify-between gap-4 shrink-0 bg-[#0a0a0c]/80 backdrop-blur-md z-10 sticky top-0">
+      <div className="flex items-center gap-4 min-w-0">
+        <button
+          onClick={toggleHistory}
+          className="p-2.5 text-zinc-400 hover:text-white bg-[#16161a] hover:bg-[#202026] border border-white/5 rounded-full transition-all shadow-lg overflow-hidden relative flex items-center justify-center w-10 h-10 shrink-0"
+          title={isHistoryVisible ? 'Hide history' : 'Show history'}
+        >
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={isHistoryVisible ? 'hide' : 'show'}
+              initial={{ y: -20, opacity: 0, rotate: -45, scale: 0.5 }}
+              animate={{ y: 0, opacity: 1, rotate: 0, scale: 1 }}
+              exit={{ y: 20, opacity: 0, rotate: 45, scale: 0.5 }}
+              transition={{ type: 'spring', stiffness: 350, damping: 25, duration: 0.2 }}
+              className="absolute"
+            >
+              {isHistoryVisible ? <PanelLeftClose size={18} /> : <PanelLeft size={18} />}
+            </motion.div>
+          </AnimatePresence>
+        </button>
+
+        <div className="flex items-center gap-2 min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <AnimatePresence initial={false}>
+            {attachedClients.map((c) => (
+              <motion.div
+                key={c.id}
+                layout
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                className="group flex items-center gap-3 bg-[#16161a] pl-4 pr-2 py-2 rounded-full border border-white/5 shadow-lg shrink-0"
+              >
+                <Building2 size={16} className="text-zinc-400 shrink-0" />
+                <span className="text-sm font-semibold text-white tracking-wide whitespace-nowrap">{c.name}</span>
+                <button
+                  onClick={() => detachClient(c.id)}
+                  className="p-1 rounded-full text-zinc-600 hover:text-white hover:bg-white/10 transition-colors"
+                  title="Detach"
+                >
+                  <X size={13} strokeWidth={3} />
+                </button>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+
+          {attachedClients.length === 0 && (
+            <span className="text-sm text-zinc-500 font-medium px-2 whitespace-nowrap">No client attached — answers span all clients</span>
+          )}
+        </div>
+
+        <div className="shrink-0">
+          <button
+            ref={triggerRef}
+            onClick={() => setPickerOpen((o) => !o)}
+            className="flex items-center gap-2 text-zinc-400 hover:text-[#14e3c4] text-sm font-medium transition-colors px-3 py-2 rounded-full hover:bg-white/5 whitespace-nowrap"
+          >
+            <Plus size={16} />
+            Attach Client
+            <ChevronDown size={14} className={`transition-transform ${pickerOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {createPortal(
+            <AnimatePresence>
+              {pickerOpen && anchor && (
+                <motion.div
+                  ref={menuRef}
+                  initial={{ opacity: 0, y: -8, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -8, scale: 0.97 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                  style={{ top: anchor.top, left: anchor.left }}
+                  className="fixed w-72 max-h-[60vh] overflow-y-auto bg-[#16161a] border border-white/10 rounded-2xl shadow-2xl z-[100] p-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                >
+                  <div className="px-3 py-2 text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Attach to conversation</div>
+                  {clients.map((c) => {
+                    const attached = attachedClients.some((a) => a.id === c.id);
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => (attached ? detachClient(c.id) : attachClient(c.id))}
+                        className="w-full px-3 py-2.5 rounded-xl flex items-center justify-between gap-3 text-sm text-left hover:bg-white/5 transition-colors"
+                      >
+                        <span className="flex items-center gap-3 min-w-0">
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${attached ? 'bg-[#14e3c4]' : 'bg-zinc-700'}`} />
+                          <span className="truncate text-zinc-300">{c.name}</span>
+                        </span>
+                        {attached && <Check size={15} strokeWidth={3} className="text-[#14e3c4] shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </motion.div>
+              )}
+            </AnimatePresence>,
+            document.body,
+          )}
+        </div>
+      </div>
+
+      {/* The connection chips are gone from here.
+          Both said the same thing on every conversation regardless of subject,
+          and neither was the answer to anything asked in the chat. Connection
+          state belongs where it can be acted on — the client's Overview and
+          Integrations tabs, and Settings → Connections, all of which show it
+          and offer the re-auth. */}
+    </header>
+  );
+}

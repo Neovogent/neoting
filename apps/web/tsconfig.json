@@ -1,0 +1,32 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Browser surface, so DOM is required here. Bundler resolution because
+    // `@neoting/contracts` is consumed as workspace .ts SOURCE through its
+    // exports map, and its generated tree uses extensionless relative imports —
+    // NodeNext would reject them. Vite is a bundler, so the three agree.
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "types": ["vite/client", "vitest/globals"],
+
+    // ⚠ THE ONE RELAXATION, AND IT IS CONFINED BY `exclude` BELOW, NOT HERE.
+    // packages/contracts/tsconfig.json anticipated this exact moment:
+    //
+    //   "apps/web will meet the same wall when it imports the generated
+    //    handlers as workspace source. Decide it there rather than inheriting
+    //    this silently: either match this setting, or exclude **/*.msw.ts from
+    //    its typecheck and keep the flag on for its own code."
+    //
+    // We took the second option. exactOptionalPropertyTypes stays ON for every
+    // line this team writes; only orval's MSW fixture generator — which emits
+    // `{ min: undefined, max: undefined }` and assigns `T | undefined` into
+    // required-but-nullable properties — is excluded, and it is excluded by
+    // path so the exemption cannot spread.
+    "allowImportingTsExtensions": false
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "vitest.setup.ts"],
+  "exclude": ["node_modules", "dist", ".turbo", "src/**/*.msw.ts"]
+}
