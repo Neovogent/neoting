@@ -57,7 +57,15 @@ It calls the same three modules with production arguments, and diverges from sta
 | **No `ci-plan` role at all** | `envs/staging/main.tf` says why prod must not copy the `refresh-secret-versions` grant. Prod plans and applies both run as `nt-prod-ci-deploy`, trusted only for the GitHub `prod` environment, so a reviewer approves before any production credential is minted. ⚠ That GitHub environment must be created by hand or the role is unassumable. |
 | ECR repos `nt-prod/*`, not `nt/*` | ECR names are account-global and staging already owns `nt/*`. Same reason `nt-region-guardrail` and the GitHub OIDC provider are **read**, not created, in prod. |
 
-**What prod deliberately does not have yet:** CloudFront + WAF, SES, the CloudWatch alarm estate, AMP/AMG, Unleash, ClamAV. `envs/prod/main.tf` closes with the full list and the reason for each. The consequential one: **no observability**, which is a hard blocker on prod carrying a single real document.
+**What prod deliberately does not have yet:** CloudFront + WAF, SES, AMP/AMG, Unleash, ClamAV. `envs/prod/main.tf` closes with the full list and the reason for each.
+
+**The alarm estate landed 15 Aug 2026** (`envs/prod/observability.tf`, 46 resources, ~$8.60/mo) and with it the hard blocker on prod carrying a real document. Three things make it prod's rather than a copy of staging's:
+
+- **Two SNS topics, `page` and `ticket`**, because staging's own file says one topic is wrong for prod — *"mixing 'a slow query happened' with 'the database is down' in one feed is how that channel gets muted."* Every alarm names a severity, and severity maps to a topic in exactly one place.
+- **Replication alarms staging cannot have.** ADR 0007 replicates documents to eu-west-1 with RTC and Governance §17 puts an RPO of ≤ 15 min on it. `ReplicationLatency`, `OperationsFailedReplication` and `OperationsPendingReplication` are what stop that SLA being a hope. A *failed* replication is a page and not a ticket, because unlike a latency spike it never heals on its own — the object needs S3 Batch Replication or it stays single-copy forever.
+- **No CPU-credit alarm.** staging has one because `db.t4g.small` is burstable; `db.m7g.large` is not, and that metric is never published. Copying it would have created an alarm parked in INSUFFICIENT_DATA forever — the exact thing that teaches people to ignore the console.
+
+⚠ **It is still decoration until a topic has a confirmed subscriber.** Subscriptions are added out of band deliberately: a Terraform-created email subscription sits in `PendingConfirmation` while Terraform reports it created and the console shows a subscriber. Verify with `aws sns list-subscriptions-by-topic` and check nothing reads `PendingConfirmation`.
 
 ### What is a module, and what is deliberately not
 
