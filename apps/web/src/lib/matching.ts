@@ -53,6 +53,25 @@ export function normaliseMerchant(name: string): string {
  */
 export const sameMerchant = (a: string, b: string) => merchantSimilarity(a, b) > 0.8;
 
+/**
+ * Character-bigram overlap (Dice coefficient), 0..1.
+ *
+ * ⚠ THIS USED TO BE A POSITIONAL COMPARISON — `if (x[i] === y[i]) shared++` —
+ * under a comment that said "token overlap". Comment and code disagreed, and
+ * the code was the wrong one: positional comparison collapses to near zero the
+ * moment one string is shifted by a character, so "jsainsbury" against
+ * "sainsburys" scored ~0.1 while "abc" against "abd" scored 0.67. It measured
+ * alignment, not similarity.
+ *
+ * Bigrams are shift-invariant, which is the property actually wanted here:
+ * bank descriptions carry prefixes and reference numbers that the invoice
+ * does not.
+ *
+ * The thresholds either side of this are UNCHANGED (0.8 for sameMerchant,
+ * 0.5 in matchCandidates) — this fixes the measure, not the bar. Worth knowing
+ * that the docstring's "keep Costco off Costa" is upheld by the 0.8 bar and
+ * not by the 0.5 one: those two score ~0.67 under either measure.
+ */
 function merchantSimilarity(a: string, b: string): number {
   const x = normaliseMerchant(a);
   const y = normaliseMerchant(b);
@@ -60,10 +79,27 @@ function merchantSimilarity(a: string, b: string): number {
   if (x === y) return 1;
   if (x.includes(y) || y.includes(x)) return 0.85;
 
-  // Token overlap on the longer of the two.
+  // A single character has no bigrams; without this the Dice denominator is 0.
+  if (x.length < 2 || y.length < 2) return 0;
+
+  const bigrams = (s: string) => {
+    const out = new Map<string, number>();
+    for (let i = 0; i < s.length - 1; i++) {
+      const g = s.slice(i, i + 2);
+      out.set(g, (out.get(g) ?? 0) + 1);
+    }
+    return out;
+  };
+
+  const bx = bigrams(x);
+  const by = bigrams(y);
+
+  // Multiset intersection: a repeated bigram only counts as often as it
+  // appears in BOTH, so "aaaa" does not score highly against "aa".
   let shared = 0;
-  for (let i = 0; i < Math.min(x.length, y.length); i++) if (x[i] === y[i]) shared++;
-  return shared / Math.max(x.length, y.length);
+  for (const [g, n] of bx) shared += Math.min(n, by.get(g) ?? 0);
+
+  return (2 * shared) / (x.length - 1 + (y.length - 1));
 }
 
 export interface Candidate {
@@ -100,12 +136,49 @@ export function matchCandidates(
     const merchant = merchantSimilarity(txn.description, doc.supplier);
     const inWindow = gap === null || (gap >= -settings.dueWindow && gap <= settings.documentWindow);
 
-    if (amountsEqual && txn.isCredit) {
+    // ⚠ THE MERCHANT AND WINDOW TESTS ARE NOT OPTIONAL HERE, AND THEY USED TO
+    // BE MISSING. This branch checked only that the absolute amounts were
+    // equal, yet scored 0.94 — above CONFIDENT_MIN — so autoMatches linked it
+    // with nobody looking. A £340 refund from "RANDOM UNRELATED CO"
+    // auto-linked to an Uber Eats £340 invoice, while the equivalent
+    // non-credit transaction scored 0.86 and was correctly held back. It was
+    // the one place in the matcher where the LOOSER case got the HIGHER
+    // confidence, which reads as an inverted condition rather than an intended
+    // relaxation.
+    //
+    // A refund genuinely from a different supplier than the invoice is not a
+    // match worth making silently. The two conditions below are the same ones
+    // the exact branch immediately after this already requires.
+    //
+    // Partial mitigation that hid this: clearWinner needs a CLEAR_GAP over the
+    // runner-up, so two documents sharing an amount both score 0.94, the gap is
+    // zero, and it goes to a human. It bit when exactly ONE document in the
+    // lookback shared the amount — the common case for a small client, and the
+    // case where that single document can be the wrong supplier entirely.
+    if (amountsEqual && txn.isCredit && inWindow && merchant > 0.5) {
       candidates.push({
         document: doc,
         confidence: 0.94,
         kind: 'credit-note',
-        reason: 'Negative amount matched to a credit note or refund.',
+        reason: 'Negative amount matched to a credit note or refund from the same supplier.',
+      });
+      continue;
+    }
+
+    // A credit that failed the gate above is still worth SHOWING — it just must
+    // not be linked without a person. Refunds routinely lag their invoice by
+    // more than the document window, so without this a legitimate late refund
+    // would produce no candidate at all and disappear from review rather than
+    // being asked about. Deliberately below CONFIDENT_MIN.
+    //
+    // Anything reaching here failed (inWindow && merchant > 0.5), so it cannot
+    // satisfy the exact branch below either — this does not shadow it.
+    if (amountsEqual && txn.isCredit) {
+      candidates.push({
+        document: doc,
+        confidence: 0.6,
+        kind: 'credit-note',
+        reason: 'Equal amount and a credit, but the supplier name or the date window does not line up.',
       });
       continue;
     }
