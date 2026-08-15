@@ -44,3 +44,4 @@ pnpm-debug.log*
 
 # Local scratch — anything here is yours and nobody else's
 .scratch/
+apps/web/web-errors.txt

@@ -1,0 +1,218 @@
+@import "tailwindcss";
+
+/* fix_colors.cjs is a spent one-off migration script that still contains the
+   previous brand hexes. Excluding it stops Tailwind emitting dead utilities
+   for colours the app no longer uses. */
+@source not "../fix_colors.cjs";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", sans-serif;
+  --font-serif: "Newsreader", serif;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #0a0a0c;
+  color: #ffffff;
+}
+
+/* Custom scrollbar for clean look */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+/* ==========================================================================
+   Brand
+   --------------------------------------------------------------------------
+   Taken from the logo: a dark plate under a mint glow. The mint (#14E3C4) is
+   the brand, but white text on it is 1.4:1 — unreadable. Anything filled with
+   the brand therefore takes the logo's own dark ink, which measures 11.7:1.
+
+   This is one rule rather than an edit to ~200 buttons, and it means a new
+   `bg-[#14e3c4]` button is legible by default instead of by remembering.
+   ========================================================================== */
+.bg-\[\#14e3c4\],
+.bg-\[\#0fcbaf\] {
+  color: #04231f;
+}
+
+.bg-\[\#14e3c4\].text-white,
+.bg-\[\#0fcbaf\].text-white,
+.bg-\[\#14e3c4\] .text-white,
+.bg-\[\#0fcbaf\] .text-white {
+  color: #04231f !important;
+}
+
+/* ==========================================================================
+   Light theme
+   --------------------------------------------------------------------------
+   The UI is written against a fixed dark palette — five surface colours, a
+   brand blue, and a zinc text ramp. Rather than rewrite every class in every
+   view, light mode remaps those exact tokens when `.light` is on <html>.
+
+   Two things this has to get right:
+   1. The text ramp inverts. On dark, zinc-700 is the dimmest; on light it is
+      the darkest. Mapping each step to its opposite keeps the hierarchy.
+   2. `text-white` means "primary text" on a panel but "label" on a blue
+      button. The first must darken, the second must not — so coloured
+      surfaces re-assert white below.
+   ========================================================================== */
+
+html.light {
+  color-scheme: light;
+}
+
+html.light body {
+  background-color: #f4f5f7;
+  color: #0b0d12;
+}
+
+html.light ::-webkit-scrollbar-thumb {
+  background: #d4d4d8;
+}
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: #a1a1aa;
+}
+
+/* --- Surfaces ------------------------------------------------------------ */
+html.light .bg-\[\#0a0a0c\] { background-color: #f4f5f7; }
+html.light .bg-\[\#0a0a0c\]\/80 { background-color: rgba(255, 255, 255, 0.8); }
+html.light .bg-\[\#0a0a0c\]\/60 { background-color: #f7f8fa; }
+html.light .bg-\[\#0a0a0c\]\/50 { background-color: #f7f8fa; }
+html.light .bg-\[\#0a0a0c\]\/40 { background-color: #f9fafb; }
+html.light .border-\[\#0a0a0c\] { border-color: #e4e6ea; }
+html.light .via-\[\#0a0a0c\] { --tw-gradient-via: #f4f5f7; }
+
+html.light .bg-\[\#16161a\] { background-color: #ffffff; }
+html.light .bg-\[\#16161a\]\/60 { background-color: rgba(255, 255, 255, 0.7); }
+html.light .hover\:bg-\[\#16161a\]\/50:hover { background-color: #f0f1f4; }
+html.light .hover\:bg-\[\#16161a\]:hover { background-color: #f0f1f4; }
+
+html.light .bg-\[\#202026\] { background-color: #eceef2; }
+html.light .bg-\[\#202026\]\/60 { background-color: #eef0f3; }
+html.light .bg-\[\#202026\]\/50 { background-color: #f0f1f4; }
+html.light .bg-\[\#202026\]\/40 { background-color: #f2f3f6; }
+html.light .bg-\[\#202026\]\/30 { background-color: #f4f5f7; }
+html.light .hover\:bg-\[\#202026\]:hover { background-color: #e4e6ea; }
+
+html.light .bg-\[\#050508\] { background-color: #e9ebef; }
+
+/* --- Text ramp, inverted ------------------------------------------------- */
+html.light .text-white { color: #0b0d12; }
+html.light .text-zinc-200 { color: #27272a; }
+html.light .text-zinc-300 { color: #3f3f46; }
+html.light .text-zinc-400 { color: #52525b; }
+html.light .text-zinc-400\/80 { color: rgba(82, 82, 91, 0.85); }
+html.light .text-zinc-500 { color: #6b7076; }
+html.light .text-zinc-600 { color: #8b9098; }
+html.light .text-zinc-700 { color: #b4b8bf; }
+
+/* Parts of the app are already light in the dark theme — the Inboxes table, the
+   chat composer. Inside those, the zinc ramp reads correctly as-is, so the
+   inversion has to be undone or their body text turns pale on white. */
+html.light .bg-white .text-zinc-300 { color: #a1a1aa; }
+html.light .bg-white .text-zinc-400 { color: #71717a; }
+html.light .bg-white .text-zinc-500 { color: #71717a; }
+html.light .bg-white .text-zinc-600 { color: #52525b; }
+html.light .bg-white .text-zinc-700 { color: #3f3f46; }
+html.light .bg-white .text-zinc-800 { color: #27272a; }
+
+/* Deliberately dark chips on those light surfaces — the Chases stage pill, the
+   auto-chase policy, the Review & Chase button. They are dark in both themes,
+   so their text has to stay light rather than follow the inverted ramp. */
+html.light .bg-zinc-900,
+html.light .bg-zinc-800 {
+  color: #ffffff;
+}
+html.light .bg-zinc-900.text-white,
+html.light .bg-zinc-800.text-white,
+html.light .bg-zinc-900 .text-white,
+html.light .bg-zinc-800 .text-white {
+  color: #ffffff !important;
+}
+html.light .bg-zinc-900.text-zinc-500,
+html.light .bg-zinc-800.text-zinc-500 { color: #a1a1aa; }
+html.light .bg-zinc-900.text-zinc-400,
+html.light .bg-zinc-800.text-zinc-400 { color: #d4d4d8; }
+
+/* Coloured surfaces keep white text — a label on a blue button, not body copy.
+   These use exact class selectors, not [class*=…]: a substring match also hits
+   `selection:bg-[#14e3c4]/30` and `bg-[#14e3c4]/10`, which would drag every
+   translucent chip and the whole app root back to white text. */
+html.light .bg-black,
+html.light .bg-red-500,
+html.light .bg-emerald-500 {
+  color: #ffffff;
+}
+
+html.light .bg-black.text-white,
+html.light .bg-red-500.text-white,
+html.light .bg-emerald-500.text-white,
+html.light .bg-black .text-white,
+html.light .bg-red-500 .text-white {
+  color: #ffffff !important;
+}
+
+/* Mint reads well as text on a dark panel and badly on a white one, so brand
+   text drops to the deeper teal from the same hue family in light mode. */
+html.light .text-\[\#14e3c4\] { color: #00806d; }
+html.light .border-\[\#14e3c4\]\/40 { border-color: rgba(0, 128, 109, 0.45); }
+html.light .border-\[\#14e3c4\]\/30 { border-color: rgba(0, 128, 109, 0.35); }
+html.light .border-\[\#14e3c4\]\/20 { border-color: rgba(0, 128, 109, 0.28); }
+html.light .bg-\[\#14e3c4\]\/10 { background-color: rgba(0, 128, 109, 0.10); }
+html.light .bg-\[\#14e3c4\]\/15 { background-color: rgba(0, 128, 109, 0.14); }
+html.light .bg-\[\#14e3c4\]\/20 { background-color: rgba(0, 128, 109, 0.16); }
+
+/* --- Hairlines and overlays: white alpha becomes ink alpha ---------------- */
+html.light .border-white\/5 { border-color: rgba(11, 13, 18, 0.10); }
+html.light .border-white\/10 { border-color: rgba(11, 13, 18, 0.14); }
+html.light .border-white\/15 { border-color: rgba(11, 13, 18, 0.18); }
+html.light .border-white\/20 { border-color: rgba(11, 13, 18, 0.22); }
+html.light .border-white\/25 { border-color: rgba(11, 13, 18, 0.26); }
+html.light .hover\:border-white\/10:hover { border-color: rgba(11, 13, 18, 0.16); }
+html.light .hover\:border-white\/15:hover { border-color: rgba(11, 13, 18, 0.2); }
+html.light .hover\:border-white\/20:hover { border-color: rgba(11, 13, 18, 0.24); }
+html.light .hover\:border-white\/25:hover { border-color: rgba(11, 13, 18, 0.28); }
+html.light .divide-white\/5 > * + * { border-color: rgba(11, 13, 18, 0.10); }
+
+html.light .bg-white\/5 { background-color: rgba(11, 13, 18, 0.045); }
+html.light .bg-white\/10 { background-color: rgba(11, 13, 18, 0.07); }
+html.light .bg-white\/\[0\.02\] { background-color: rgba(11, 13, 18, 0.03); }
+html.light .bg-white\/\[0\.03\] { background-color: rgba(11, 13, 18, 0.04); }
+html.light .bg-white\/\[0\.07\] { background-color: rgba(11, 13, 18, 0.06); }
+html.light .hover\:bg-white\/5:hover { background-color: rgba(11, 13, 18, 0.05); }
+html.light .hover\:bg-white\/10:hover { background-color: rgba(11, 13, 18, 0.08); }
+html.light .group\/item:hover .group-hover\/item\:bg-white\/5,
+html.light .group:hover .group-hover\:bg-white\/5 { background-color: rgba(11, 13, 18, 0.05); }
+html.light .hover\:bg-white\/\[0\.02\]:hover { background-color: rgba(11, 13, 18, 0.03); }
+
+/* "Goes white on hover" means "goes to full-strength text" — which on a light
+   page is ink, not white. Genuinely dark chips keep white. */
+html.light .hover\:text-white:hover { color: #0b0d12; }
+html.light .bg-zinc-900.hover\:text-white:hover,
+html.light .bg-zinc-800.hover\:text-white:hover,
+html.light .bg-black.hover\:text-white:hover { color: #ffffff; }
+
+/* The workspace hero is a black-to-blue wash built for a dark room. On light it
+   becomes a pale sky, so the heading keeps its contrast. */
+html.light .from-black { --tw-gradient-from: #ffffff; }
+html.light .to-\[\#0be0bf\]\/40 { --tw-gradient-to: rgba(11, 224, 191, 0.10); }
+html.light .from-\[\#14e3c4\]\/80 { --tw-gradient-from: rgba(20, 227, 196, 0.22); }
+html.light .via-\[\#00a88f\]\/30 { --tw-gradient-via: rgba(0, 168, 143, 0.10); }
+html.light .bg-\[\#f4f4f5\] { background-color: #eceef2; }
+
+/* Dark-on-dark shadows read as smudges on a light page. */
+html.light .shadow-2xl { box-shadow: 0 1px 2px rgba(11, 13, 18, 0.04), 0 8px 24px rgba(11, 13, 18, 0.06); }
+html.light .shadow-inner { box-shadow: inset 0 1px 2px rgba(11, 13, 18, 0.04); }
+html.light .shadow-lg { box-shadow: 0 4px 12px rgba(11, 13, 18, 0.07); }
