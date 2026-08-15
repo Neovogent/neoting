@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { X, Building2, ArrowRight, Send, Search, Smartphone } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { useAppContext } from '../context/AppContext';
 import { Pill } from './DynamicComponents/DataTable';
 import { newBusinessAccount, newMember } from '../lib/business';

@@ -737,7 +737,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ? {
           ...draft,
           messages: seed,
-          title: titleFromMessage(seed.find((m) => m.role === 'user')?.content ?? seed[0].content),
+          // The `seed.length` ternary above guarantees seed[0]; restate it.
+          title: titleFromMessage(seed.find((m) => m.role === 'user')?.content ?? seed[0]?.content ?? ''),
         }
       : draft;
     setConversations((prev) => [conversation, ...prev.filter((c) => c.messages.length > 0)]);
@@ -1146,6 +1147,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         sheets.forEach((sheet, i) => {
           const ticket = tickets[i];
+          if (!ticket) return; // `tickets` was mapped from `sheets`, so i is in range — restated for the compiler
           void (async () => {
             try {
               const analysis = analyseSheet(await readTable(sheet.file));
@@ -1914,8 +1916,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
 
           const stage = workflow.stages[Math.min(nextIndex, workflow.stages.length - 1)];
-          const stageName = nextIndex < workflow.stages.length ? stage.name : extra[nextIndex - workflow.stages.length].addApprover;
-          const approver = nextIndex < workflow.stages.length ? stage.approver : extra[nextIndex - workflow.stages.length].addApprover;
+          if (!stage) return a; // a workflow with no stages cannot advance
+          // Past the workflow's own stages, the extra approvers added by a
+          // conditional branch take over. Falling back to the stage keeps a
+          // malformed branch list from erasing the approver entirely.
+          const branchStage = extra[nextIndex - workflow.stages.length];
+          const stageName = nextIndex < workflow.stages.length ? stage.name : (branchStage?.addApprover ?? stage.name);
+          const approver = nextIndex < workflow.stages.length ? stage.approver : (branchStage?.addApprover ?? stage.approver);
 
           return {
             ...a,
@@ -1965,6 +1972,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (items.length === 0) return;
 
       const headline = items[0];
+      if (!headline) return; // items.length === 0 returned above; this restates it for the compiler
       const rest = items.length - 1;
       const message =
         `${client.name}: ${items.length} item${items.length === 1 ? '' : 's'} need${items.length === 1 ? 's' : ''} your approval` +

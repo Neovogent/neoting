@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import {
   Settings as SettingsIcon, Link2, ScanLine, Wand2, Send, CheckCircle, Download,
   List, Sparkles, MessageSquare, ShieldCheck, Building2, Sun, Moon,

@@ -33,8 +33,34 @@ export interface ClientStats {
  * an action taken in the workspace — chasing, publishing, retrying a failure —
  * moves the client's figures immediately. Nothing here is a stored total.
  */
+/** Every counter at zero — what a practice with no clients actually has. */
+const EMPTY_CLIENT_STATS: ClientStats = {
+  missing: 0,
+  requested: 0,
+  overdue: 0,
+  unmatched: 0,
+  statementGaps: 0,
+  toReview: 0,
+  ready: 0,
+  processing: 0,
+  rejected: 0,
+  published: 0,
+  duplicates: 0,
+  approvals: 0,
+  unverified: 0,
+  health: 100,
+  itemDelay: 0,
+  autoPublishCoverage: 0,
+};
+
 export function deriveClientStats(
-  client: Client,
+  /**
+   * `undefined` is a real state, not a defensive parameter: a practice with no
+   * clients yet asks for stats before it has anyone to derive them from. Zeroed
+   * figures are the honest answer — inventing a client to satisfy the type
+   * would put someone else's numbers on an empty screen.
+   */
+  client: Client | undefined,
   data: {
     documents: Document[];
     missing: MissingItem[];
@@ -45,6 +71,7 @@ export function deriveClientStats(
     statementGaps: StatementGap[];
   },
 ): ClientStats {
+  if (!client) return EMPTY_CLIENT_STATS;
   const docs = data.documents.filter((d) => d.clientId === client.id);
   const miss = data.missing.filter((m) => m.clientId === client.id);
   const chase = data.chases.find((c) => c.clientId === client.id);

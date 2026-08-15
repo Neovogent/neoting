@@ -1,4 +1,18 @@
 /**
+ * ⚠ OPTIONAL FIELDS ARE WRITTEN `?: T | undefined`, NOT `?: T`.
+ *
+ * Under `exactOptionalPropertyTypes` (tsconfig.base.json) those two are
+ * different types: `?: T` means "absent or T", while `?: T | undefined` means
+ * "absent, or present and undefined". This model is populated by generators and
+ * API mappers that build object literals with computed values — they write
+ * `statusNote: maybeUndefined` rather than conditionally omitting the key — so
+ * the second is what the data actually is.
+ *
+ * Writing `?: T` here does not make the code safer; it makes every construction
+ * site an error, which is how this file was before the import.
+ */
+
+/**
  * Domain types for the document pipeline.
  * Ingest -> Extract -> Rules -> AI -> Validate -> Dedupe -> Match -> Chase -> Approve -> Publish -> Archive
  */
@@ -15,19 +29,19 @@ export interface Client {
   deadline: string;
   xeroConnected: boolean;
   bankConnected: boolean;
-  contactName?: string;
-  mobile?: string;
-  vatNumber?: string;
+  contactName?: string | undefined;
+  mobile?: string | undefined;
+  vatNumber?: string | undefined;
   /** Ltd, LLP, sole trader… — drives the filings the client is subject to. */
-  companyType?: string;
+  companyType?: string | undefined;
   /** Data URI, uploaded by the accountant at intake. */
-  logoDataUrl?: string;
+  logoDataUrl?: string | undefined;
   /**
    * Created from an invite rather than keyed in by the practice: the record
    * holds only a name, a contact and a mobile until the client fills the rest
    * in from their setup link.
    */
-  awaitingRegistration?: boolean;
+  awaitingRegistration?: boolean | undefined;
 }
 
 /**
@@ -82,7 +96,7 @@ export interface BusinessMember {
   name: string;
   email: string;
   /** Where the registration link and later sign-in codes go. */
-  mobile?: string;
+  mobile?: string | undefined;
   role: BusinessMemberRole;
   canUpload: boolean;
   /** Staff photographing receipts often shouldn't see the company's figures. */
@@ -101,16 +115,16 @@ export interface BusinessMember {
    * user list is the practice deciding who works at that business, which is
    * not the practice's decision to make.
    */
-  status?: 'pending-client-approval' | 'invited' | 'active' | 'declined';
+  status?: 'pending-client-approval' | 'invited' | 'active' | 'declined' | undefined;
   /** Added by the person during registration, not by the accountant. */
-  avatarDataUrl?: string;
-  invitedAt?: string;
+  avatarDataUrl?: string | undefined;
+  invitedAt?: string | undefined;
   /** Set when the accountant raised the invite rather than the business. */
-  invitedBy?: string;
+  invitedBy?: string | undefined;
   /** Who at the business ruled on it, and when. */
-  approvedBy?: string;
-  approvedAt?: string;
-  declinedReason?: string;
+  approvedBy?: string | undefined;
+  approvedAt?: string | undefined;
+  declinedReason?: string | undefined;
 }
 
 export interface BusinessAccount {
@@ -126,7 +140,7 @@ export interface BusinessAccount {
   createdAt: string;
   createdBy: string;
   /** Set on a self-signup that has not been claimed by a practice yet. */
-  practiceCode?: string;
+  practiceCode?: string | undefined;
   // — Settings the business controls itself —
   notifyBySms: boolean;
   notifyByEmail: boolean;
@@ -169,7 +183,7 @@ export interface Document {
   total: number;
   category: string;
   status: DocStatus;
-  statusNote?: string;
+  statusNote?: string | undefined;
   source: SourceChannel;
   uploader: string;
   currency: string;
@@ -180,19 +194,19 @@ export interface Document {
    * client channel — a business sends its accountant paperwork, it does not
    * file it, and asking it to choose an inbox is asking it to do bookkeeping.
    */
-  classifyKind?: boolean;
+  classifyKind?: boolean | undefined;
   /** Set when nobody named a client at upload — extraction reads the addressee. */
-  classifyClient?: boolean;
+  classifyClient?: boolean | undefined;
   /** The original file name, kept only until extraction has used it. */
-  uploadFileName?: string;
+  uploadFileName?: string | undefined;
   fields: ExtractedField[];
   lineItems: LineItem[];
   /** Set when a previous publish to the accounting software failed (yellow Ready). */
-  publishFailed?: boolean;
+  publishFailed?: boolean | undefined;
   /** Auto-split provenance: "page 3 of 40-page batch". */
-  splitFrom?: string;
+  splitFrom?: string | undefined;
   /** Free text the business typed when sending this from its portal. */
-  clientNote?: string;
+  clientNote?: string | undefined;
 }
 
 /**
@@ -213,7 +227,7 @@ export interface BankTransaction {
   description: string;
   date: string;
   amount: number;
-  matchedDocId?: string;
+  matchedDocId?: string | undefined;
   /** Negative amounts are credit notes / refunds — the 266-vote Dext gap. */
   isCredit: boolean;
   accountId: string;
@@ -221,7 +235,7 @@ export interface BankTransaction {
    * A transaction with no document evidence IS a missing item. Keeping the link
    * explicit means matching or cash-coding it closes the chase everywhere.
    */
-  missingItemId?: string;
+  missingItemId?: string | undefined;
 }
 
 export interface BankAccount {
@@ -254,7 +268,7 @@ export interface SupplierStatementLine {
   date: string;
   total: number;
   /** The document we hold for this line. Absent means it is missing. */
-  documentId?: string;
+  documentId?: string | undefined;
 }
 
 export interface SupplierStatement {
@@ -269,7 +283,7 @@ export interface SupplierStatement {
   lines: SupplierStatementLine[];
   status: 'processing' | 'reconciled' | 'gaps' | 'failed';
   uploadedAt: string;
-  note?: string;
+  note?: string | undefined;
 }
 
 /** Employee-submitted spend, grouped for reimbursement. */
@@ -280,7 +294,7 @@ export interface ExpenseClaimItem {
   total: number;
   category: string;
   /** The receipt backing this line — absent means it is unevidenced. */
-  documentId?: string;
+  documentId?: string | undefined;
 }
 
 /**
@@ -302,7 +316,7 @@ export interface ClaimApproval {
   by: string;
   role: 'Manager' | 'Owner' | 'HR';
   at: string;
-  note?: string;
+  note?: string | undefined;
 }
 
 export interface ExpenseClaim {
@@ -314,12 +328,12 @@ export interface ExpenseClaim {
   period: string;
   items: ExpenseClaimItem[];
   status: ExpenseClaimStatus;
-  submittedAt?: string;
+  submittedAt?: string | undefined;
   /** Absent until someone at the business has approved it. */
-  approval?: ClaimApproval;
+  approval?: ClaimApproval | undefined;
   /** Set when the business sent it back rather than approving. */
-  rejectedReason?: string;
-  note?: string;
+  rejectedReason?: string | undefined;
+  note?: string | undefined;
 }
 
 export interface StatementGap {
@@ -344,7 +358,7 @@ export interface Statement {
   rows: number;
   status: 'processing' | 'extracted' | 'failed';
   uploadedAt: string;
-  note?: string;
+  note?: string | undefined;
 }
 
 /** Bank Match tolerances — configurable, unlike Dext's fixed windows. */
@@ -371,7 +385,7 @@ export interface Match {
   kind: MatchKind;
   reason: string;
   /** Linked by the matcher itself because there was nothing to decide. */
-  auto?: boolean;
+  auto?: boolean | undefined;
 }
 
 export interface DuplicatePair {
@@ -403,7 +417,7 @@ export interface Rule {
   active: boolean;
   retroApply: boolean;
   /** Populated when this rule overlaps an existing one for the same supplier. */
-  conflictsWith?: string;
+  conflictsWith?: string | undefined;
 }
 
 export type ChaseStage = 'sent' | 'reminder-1' | 'reminder-2' | 'escalated' | 'closed';
@@ -424,19 +438,19 @@ export interface ChaseItem {
    */
   origin: MissingItem;
   /** The document that answered this request, once one has arrived. */
-  answeredByDocId?: string;
+  answeredByDocId?: string | undefined;
   /**
    * Documents the accountant has said are not this item. Without it, undoing a
    * wrong match would be pointless — the matcher would pick the same document
    * up again on the next pass.
    */
-  rejectedDocIds?: string[];
+  rejectedDocIds?: string[] | undefined;
 }
 
 export interface ChaseEvent {
   at: string;
   label: string;
-  detail?: string;
+  detail?: string | undefined;
 }
 
 export interface Chase {
@@ -447,7 +461,7 @@ export interface Chase {
    * is what actually reached the client's phone, and editing it would be the
    * app pretending a delivered SMS said something else.
    */
-  nextMessage?: string;
+  nextMessage?: string | undefined;
   clientId: string;
   clientName: string;
   recipientName: string;
@@ -492,7 +506,7 @@ export interface ClientDetailChange {
   requestedBy: string;
   requestedAt: string;
   status: 'pending' | 'approved' | 'declined';
-  declinedReason?: string;
+  declinedReason?: string | undefined;
 }
 
 /** Per-firm chase schedule and escalation policy (PRD stage 8.6). */
@@ -523,21 +537,21 @@ export interface ItemMessage {
   documentLabel: string;
   question: string;
   sentAt: string;
-  answer?: string;
+  answer?: string | undefined;
 }
 
 export interface ApprovalStage {
   name: string;
   approver: string;
   /** Always, or only when the amount clears a threshold. */
-  thresholdAbove?: number;
+  thresholdAbove?: number | undefined;
   canEdit: boolean;
   /**
    * Approved by someone at the business rather than in the practice. These
    * stages are delivered by SMS + OTP — the client never installs an app or
    * holds a login, exactly as chasing works.
    */
-  clientSide?: boolean;
+  clientSide?: boolean | undefined;
 }
 
 /** Conditional branching — the upmarket gap Dext's linear workflows can't cover. */
@@ -581,7 +595,7 @@ export type ApprovalState = 'pending' | 'approved' | 'rejected';
 
 export interface ApprovalItem {
   id: string;
-  documentId?: string;
+  documentId?: string | undefined;
   clientId: string;
   clientName: string;
   supplier: string;
@@ -595,7 +609,7 @@ export interface ApprovalItem {
   state: ApprovalState;
   /** Approver names added by a branch condition firing on this item. */
   addedByBranch: string[];
-  history: { at: string; label: string; actor: string; note?: string }[];
+  history: { at: string; label: string; actor: string; note?: string | undefined }[];
   /** Item details lock once approved. */
   locked: boolean;
 }
@@ -654,8 +668,8 @@ export interface VaultDocument {
   /** The practice name when firm-owned, otherwise the accountant's name. */
   ownerName: string;
   /** Key dates the AI extracted; drives the expiry reminders. */
-  expiresOn?: string;
-  daysToExpiry?: number;
+  expiresOn?: string | undefined;
+  daysToExpiry?: number | undefined;
   sizeKb: number;
   source: string;
   uploader: string;
@@ -671,17 +685,17 @@ export interface Colleague {
   email: string;
   role: ColleagueRole;
   location: string;
-  teamId?: string;
+  teamId?: string | undefined;
   clientIds: string[];
   permissions: string[];
   hideFinanceFields: boolean;
   active: boolean;
   /** Profile picture, held as a data URI. */
-  avatarDataUrl?: string;
-  jobTitle?: string;
-  mobile?: string;
+  avatarDataUrl?: string | undefined;
+  jobTitle?: string | undefined;
+  mobile?: string | undefined;
   /** Set when a reset link was last sent; the practice never sees a password. */
-  passwordResetSentAt?: string;
+  passwordResetSentAt?: string | undefined;
 }
 
 export interface Team {
@@ -704,7 +718,7 @@ export interface WorkflowTask {
   status: TaskStatus;
   /** True when the engine can mark it done from real pipeline state. */
   aiPrefilled: boolean;
-  dependsOn?: string;
+  dependsOn?: string | undefined;
 }
 
 export type Theme = 'dark' | 'light';
@@ -802,9 +816,9 @@ export interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  intent?: Intent;
+  intent?: Intent | undefined;
   /** Resolved data the dynamic component renders from. */
-  payload?: any;
+  payload?: any | undefined;
   attachments?: { name: string; size: number }[];
-  viaVoice?: boolean;
+  viaVoice?: boolean | undefined;
 }

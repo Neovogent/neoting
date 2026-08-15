@@ -32,7 +32,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
   const {
     clients, transactions, matches, documents, accounts, statements, statementGaps,
     matchSettings, setMatchSettings, matchTransaction, unmatchTransaction, cashCode,
-    uploadStatement, reauthAccount, startConversation, logAudit, statsFor,
+    uploadStatement, reauthAccount, logAudit, statsFor,
   } = useAppContext();
 
   /**

@@ -67,8 +67,15 @@ const ENGINES: MissingItem['detectedBy'][] = [
 
 const CHANNELS: Document['source'][] = ['email', 'email', 'web', 'whatsapp', 'sms-link', 'csv'];
 
-function pick<T>(list: T[], r: () => number): T {
-  return list[Math.floor(r() * list.length)];
+function pick<T>(list: readonly T[], r: () => number): T {
+  // Indexed access is `T | undefined` under noUncheckedIndexedAccess, and that
+  // is not pedantry here: every caller passes a table that is expected to be
+  // non-empty, so an empty one is a seeding bug. Throwing names it at the point
+  // it happens rather than producing an `undefined` supplier that surfaces
+  // three screens away as a blank cell.
+  const item = list[Math.floor(r() * list.length)];
+  if (item === undefined) throw new Error('pick(): cannot choose from an empty list');
+  return item;
 }
 
 function dateIn(month: string, day: number) {
@@ -76,11 +83,14 @@ function dateIn(month: string, day: number) {
 }
 
 function suppliersFor(client: Client) {
-  return SUPPLIERS_BY_INDUSTRY[client.industry] ?? SUPPLIERS_BY_INDUSTRY.default;
+  // `default` is a required key of the table, but a Record<string, string[]>
+  // index is still `string[] | undefined` under noUncheckedIndexedAccess — so
+  // the fallback needs its own fallback, or the type never narrows.
+  return SUPPLIERS_BY_INDUSTRY[client.industry] ?? SUPPLIERS_BY_INDUSTRY['default'] ?? [];
 }
 
 function categoriesFor(client: Client) {
-  return CATEGORIES_BY_INDUSTRY[client.industry] ?? CATEGORIES_BY_INDUSTRY.default;
+  return CATEGORIES_BY_INDUSTRY[client.industry] ?? CATEGORIES_BY_INDUSTRY['default'] ?? [];
 }
 
 function seedFromId(id: string) {
@@ -159,7 +169,7 @@ export function buildAccounts(clients: Client[]): BankAccount[] {
         clientId: client.id,
         clientName: client.name,
         bankName: bank,
-        sortCode: accounts[0].sortCode,
+        sortCode: accounts[0]?.sortCode ?? '00-00-00',
         last4: String(1000 + Math.floor(r() * 8999)).slice(0, 4),
         balance: Math.round((500 + r() * 24000) * 100) / 100,
         lastSync: client.bankConnected ? `${1 + Math.floor(r() * 9)}h ago` : 'never',
@@ -241,7 +251,7 @@ export function buildTransactions(
         date: dateIn('Aug', 1 + Math.floor(r() * 20)),
         amount: -Math.round((30 + r() * 600) * 100) / 100,
         isCredit: true,
-        accountId: clientAccounts[0].id,
+        accountId: clientAccounts[0]?.id ?? `acct-${client.id}-1`,
       });
     }
   }
@@ -317,6 +327,9 @@ export function buildApprovals(documents: Document[], workflows: ApprovalWorkflo
       0,
     );
     const stage = workflow.stages[stageIndex];
+    // A workflow with no stage at this index is a seeding bug, not a state to
+    // render. This is a forEach callback, so `return` skips this document.
+    if (!stage) return;
 
     out.push({
       id: `appr-${doc.id}`,
@@ -411,7 +424,10 @@ export function buildChases(
     const chased = missing.filter((m) => m.clientId === client.id && m.chased);
     if (chased.length === 0) return;
 
-    const hoursSinceSent = AGES[index % AGES.length];
+    // Indexed modulo the table's own length, so this is always in range —
+    // but noUncheckedIndexedAccess cannot see that, and the fallback is the
+    // first band rather than a silent NaN downstream.
+    const hoursSinceSent = AGES[index % AGES.length] ?? AGES[0] ?? 30;
     const days = hoursSinceSent / 24;
 
     let stage: ChaseStage = 'sent';
@@ -591,7 +607,8 @@ export function buildDocuments(base: Document[], clients: Client[]): Document[] 
         fields: fieldsFor(supplier, total, category, r),
         // Vary which lines appear so keyword search genuinely discriminates.
         lineItems: Array.from({ length: 1 + Math.floor(r() * 3) }, (_, li) => ({
-          description: LINE_ITEM_POOL[(i * 3 + li + Math.floor(r() * 8)) % LINE_ITEM_POOL.length],
+          description:
+            LINE_ITEM_POOL[(i * 3 + li + Math.floor(r() * 8)) % LINE_ITEM_POOL.length] ?? 'Item',
           quantity: 1 + li,
           total: Math.round((total / (li + 2)) * 100) / 100,
           tax: 0,
@@ -600,8 +617,8 @@ export function buildDocuments(base: Document[], clients: Client[]): Document[] 
     }
 
     // Sales-side documents land in their own inbox via AI classification.
-    const customers = CUSTOMERS_BY_INDUSTRY[client.industry] ?? CUSTOMERS_BY_INDUSTRY.default;
-    const salesCategories = SALES_CATEGORIES[client.industry] ?? SALES_CATEGORIES.default;
+    const customers = CUSTOMERS_BY_INDUSTRY[client.industry] ?? CUSTOMERS_BY_INDUSTRY['default'] ?? [];
+    const salesCategories = SALES_CATEGORIES[client.industry] ?? SALES_CATEGORIES['default'] ?? [];
     const salesCount = Math.round(needed * 0.22);
     for (let i = 0; i < salesCount; i++) {
       const customer = pick(customers, r);

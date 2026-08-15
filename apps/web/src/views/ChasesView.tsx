@@ -26,7 +26,7 @@ const STAGE_LABEL: Record<Chase['stage'], { label: string; light: string; dark: 
 export function ChasesView() {
   const {
     clients, chases, missing, statsFor, chasePolicy, setChasePolicy, itemMessages,
-    startConversation, logAudit,
+    logAudit,
   } = useAppContext();
 
   const [filter, setFilter] = useState<'all' | 'overdue'>('all');

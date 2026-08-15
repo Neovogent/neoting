@@ -8,7 +8,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useAppContext } from '../context/AppContext';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { DocumentPreview } from '../components/DynamicComponents/DocumentPreview';
-import { MatchCard } from '../components/DynamicComponents/MatchCard';
 import { Modal, WorkflowCard, WorkflowEditor, blankWorkflow } from './ApprovalsView';
 import { RolePicker } from '../components/DynamicComponents/RolePicker';
 import { ClientInbox } from './ClientInbox';
@@ -21,7 +20,7 @@ import { healthTone } from '../lib/selectors';
 import { fromSlug, slug, useQueryParam, useSegment } from '../lib/router';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { channelLabel } from '../lib/channels';
-import type { ApprovalWorkflow, BankTransaction, BusinessMemberRole, Client, ClientDetailChange, Colleague, Document, MissingItem, SetupTask, WorkflowTask } from '../lib/types';
+import type { ApprovalWorkflow, BusinessMemberRole, Client, ClientDetailChange, Colleague, Document, MissingItem, SetupTask, WorkflowTask } from '../lib/types';
 
 /**
  * Wireframe screen 7 — the client is the single home of everything
@@ -62,8 +61,8 @@ const CHANNEL_LABEL: Record<Document['source'], string> = {
 
 export function ClientDetailView() {
   const {
-    clients, openClientId, openClient, statsFor, documents, transactions, matches, missing,
-    approvals, chases, startConversation, updateClient, updateDocumentStatus, retryDocument,
+    clients, openClientId, openClient, statsFor, documents, missing,
+    approvals, chases, startConversation, retryDocument,
     starredClientIds, toggleStarClient,
     onboardingLinks, sendOnboardingLink, resendOnboardingLink,
     accounts, reauthAccount,
@@ -97,8 +96,6 @@ export function ClientDetailView() {
   const s = statsFor(client.id);
   const docs = documents.filter((d) => d.clientId === client.id);
   const miss = missing.filter((m) => m.clientId === client.id);
-  const txns = transactions.filter((t) => t.clientId === client.id);
-  const clientMatches = matches.filter((m) => m.clientName === client.name);
   const clientApprovals = approvals.filter((a) => a.clientName === client.name);
   /** Live workflows this client's items are actually running through. */
   const clientWorkflows = approvalWorkflows.filter(
@@ -1729,33 +1726,6 @@ function ConnectionRow({ name, detail, connected, requested }: { name: string; d
       ) : (
         <Pill tone="red">Not connected</Pill>
       )}
-    </div>
-  );
-}
-
-function EditField({ label, value, onSave }: { label: string; value: string; onSave: (v: string) => void }) {
-  const [draft, setDraft] = useState(value);
-  const dirty = draft !== value;
-
-  return (
-    <div>
-      <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">{label}</div>
-      <div className="flex items-center gap-2">
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && dirty && onSave(draft)}
-          className="flex-1 bg-[#0a0a0c] border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#14e3c4] transition-colors"
-        />
-        {dirty && (
-          <button
-            onClick={() => onSave(draft)}
-            className="px-4 py-2.5 rounded-xl bg-[#14e3c4] text-white text-[13px] font-bold hover:bg-[#0fcbaf] transition-colors shrink-0"
-          >
-            Save
-          </button>
-        )}
-      </div>
     </div>
   );
 }

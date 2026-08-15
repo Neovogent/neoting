@@ -1,4 +1,4 @@
-import { FileText, X, Download, Check, AlertTriangle, Landmark, Building2 } from 'lucide-react';
+import { X, Download, Check, AlertTriangle, Landmark, Building2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Pill } from './DataTable';
 import { currency } from '../../lib/resolver';

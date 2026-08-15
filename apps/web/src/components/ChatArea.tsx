@@ -16,8 +16,8 @@ export function ChatArea() {
   return (
     <div className={`flex-1 overflow-y-auto px-6 py-8 flex flex-col gap-8 max-w-4xl w-full mx-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden`}>
       
-      {messages.map((msg, index) => (
-        <Message key={msg.id} role={msg.role} index={index}>
+      {messages.map((msg) => (
+        <Message key={msg.id} role={msg.role}>
           <p className={`text-[15px] leading-relaxed mb-4 ${msg.role === 'user' ? 'text-white' : 'text-zinc-300'}`}>
             {msg.content}
           </p>
@@ -52,7 +52,7 @@ export function ChatArea() {
   );
 }
 
-function Message({ role, children, index }: { role: 'user' | 'assistant', children: ReactNode, index: number }) {
+function Message({ role, children }: { role: 'user' | 'assistant', children: ReactNode }) {
   const isUser = role === 'user';
   
   return (
