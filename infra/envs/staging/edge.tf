@@ -45,6 +45,28 @@ locals {
   # §11.9 rules the second one out.
   edge_api_host = "api.${local.domain}"
 
+  # ⚠ D5, SETTLED 15 AUG 2026: production takes the APEX and staging moves to
+  # `staging.`. This is the first half of that move, and it is deliberately
+  # ADDITIVE rather than a rename.
+  #
+  # WHY BOTH NAMES, AND WHY THAT IS NOT FENCE-SITTING. `api.` is in Meta's
+  # saved webhook configuration, and Meta does not follow redirects for
+  # delivery and reports a 404 nowhere we would see — renaming in one step
+  # would stop WhatsApp messages arriving with no error anywhere
+  # (docs/runbooks/whatsapp-sandbox.md, trap 4). It is also the
+  # `EDGE_HOST` the deploy job's post-check curls, and the staging server URL
+  # in packages/contracts/openapi.yaml.
+  #
+  # Serving both costs nothing: the ACM certificate is already the wildcard
+  # `*.${local.domain}`, so the new name needs NO revalidation window, and one
+  # distribution can carry both aliases.
+  #
+  # RETIRING `api.` IS A SEPARATE CHANGE and needs three things done together,
+  # in this order: update the callback in Meta's app configuration, change the
+  # staging server URL in openapi.yaml, then drop `edge_api_host` from the
+  # aliases and delete its two records here. Do not do the last one first.
+  edge_staging_host = "staging.${local.domain}"
+
   # Rate ceilings, per IP. These are DoS walls, not the Governance §11.8
   # business limits — see the WAF section for why the two are different numbers.
   edge_rate_otp_per_ip_10m   = 30
@@ -789,8 +811,11 @@ resource "aws_cloudfront_distribution" "api" {
   is_ipv6_enabled = true
   http_version    = "http2and3"
   comment         = "nt-${local.env} api"
-  aliases         = [local.edge_api_host]
-  web_acl_id      = aws_wafv2_web_acl.edge.arn
+  # Both names, one distribution — see the D5 note on local.edge_staging_host.
+  # A CloudFront alias must be covered by the attached certificate; both are,
+  # because it is the wildcard.
+  aliases    = [local.edge_api_host, local.edge_staging_host]
+  web_acl_id = aws_wafv2_web_acl.edge.arn
 
   # NA + EU edges only. UK and EU users get the nearest edge; a forwarded chase
   # link opened outside that footprint still works, just via a further-away
@@ -971,6 +996,42 @@ resource "aws_route53_record" "api" {
 resource "aws_route53_record" "api_v6" {
   zone_id = data.aws_route53_zone.primary.zone_id
   name    = local.edge_api_host
+  type    = "AAAA"
+
+  alias {
+    name                   = aws_cloudfront_distribution.api.domain_name
+    zone_id                = aws_cloudfront_distribution.api.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+
+# --------------------------------------------------------------------------
+# The D5 name. Same distribution, same certificate, same everything — this is
+# an additional way to reach staging, not a second environment.
+#
+# A and AAAA for the same reason as above: is_ipv6_enabled is on, and a client
+# on an IPv6-only mobile network cannot resolve an A-only name.
+#
+# ⚠ These records live in a zone that envs/account now MANAGES (dns.tf) but
+# whose contents stay owned by the environment that creates them. That split is
+# deliberate and documented at the zone; adding a record here needs no change
+# there.
+# --------------------------------------------------------------------------
+resource "aws_route53_record" "staging" {
+  zone_id = data.aws_route53_zone.primary.zone_id
+  name    = local.edge_staging_host
+  type    = "A"
+
+  alias {
+    name                   = aws_cloudfront_distribution.api.domain_name
+    zone_id                = aws_cloudfront_distribution.api.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+
+resource "aws_route53_record" "staging_v6" {
+  zone_id = data.aws_route53_zone.primary.zone_id
+  name    = local.edge_staging_host
   type    = "AAAA"
 
   alias {
