@@ -18,8 +18,21 @@ export default defineConfig({
       target: './openapi.yaml',
     },
     output: {
-      target: './src/generated/client/index.ts',
-      schemas: './src/generated/model',
+      // ⚠ EVERY PATH IN THIS BLOCK IS RELATIVE TO `workspace`, NOT TO THIS
+      // FILE. That is the whole gotcha: setting `workspace` re-roots `target`,
+      // `schemas` AND `mutator.path` at once. Leaving them config-relative
+      // emitted a barrel full of `./src/generated/client/...` imports that
+      // resolve to nothing, plus a stray nested `src/` directory.
+      target: './index.ts',
+      schemas: '../model',
+      // ⚠ `workspace` IS WHAT WRITES THE BARREL. `indexFiles` defaults to true
+      // and does nothing on its own — orval only emits `<workspace>/index.ts`
+      // inside `if (output.workspace)` (generate-*.js). Without it, tags-split
+      // produces `documents/documents.ts`, `ingestion/ingestion.ts` … and NO
+      // index, so package.json's `"./client"` export pointed at a file that was
+      // never generated. It failed silently for weeks because apps/api imports
+      // `./model` (which has its own index, via `schemas`) and nothing else.
+      workspace: './src/generated/client',
       client: 'react-query',
       httpClient: 'fetch',
       mode: 'tags-split',
@@ -36,7 +49,11 @@ export default defineConfig({
         // session cookie, Idempotency-Key on mutations, problem+json mapped to
         // a typed error. Callers never assemble a request by hand.
         mutator: {
-          path: './src/http-client.ts',
+          // ⚠ RELATIVE TO `workspace`, NOT TO THIS FILE. Setting `workspace`
+          // above re-roots mutator resolution, so `./src/http-client.ts` became
+          // `src/generated/client/src/http-client.ts` and orval failed with
+          // ENOENT. Two hops up from the workspace is this package's src/.
+          path: '../../http-client.ts', // from src/generated/client -> src/
           name: 'ntFetch',
         },
         query: {
@@ -60,7 +77,18 @@ export default defineConfig({
       target: './openapi.yaml',
     },
     output: {
-      target: './src/generated/zod/index.ts',
+      // Workspace-relative, as in the client project above.
+      target: './index.ts',
+      // Points at the CLIENT project's model output, not a second copy. orval's
+      // barrel always emits a `schemas` re-export line, and with no `schemas`
+      // set it emitted `./index.schemas` — a file it never wrote, so `"./zod"`
+      // failed to typecheck. Pointing here satisfies the barrel and reuses the
+      // types that already exist; setting it to a fresh dir instead generated
+      // 147 duplicate type aliases of exactly what `model/` already holds.
+      schemas: '../model',
+      // Same reason as the client project — without this there is no
+      // `zod/index.ts` and `"./zod"` resolves to nothing.
+      workspace: './src/generated/zod',
       client: 'zod',
       mode: 'tags-split',
       clean: true,

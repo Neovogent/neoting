@@ -1,8 +1,9 @@
 # NEOTING — Team Engineering Guideline
 
-**Version 1.1 · 13 August 2026 · Confidential**
+**Version 1.2 · 15 August 2026 · Confidential**
 *Changelog v1.0 → v1.1: kickoff-review feedback (11–12 Aug) folded in — G9 reserve review & merge authority (Mubashir, Shadman) with CODEOWNERS updated; G10 preview protection mandatory (§7.2, new R16); thin CI skips draft PRs (§8.7); companion references bumped (Governance v1.3, SoT v1.3).*
-The working handbook for the four of us — plus two named G9 reserves. It sits **under** the Engineering Governance (v1.3) — governance is the law of the codebase, this is the law of the team and of the **bootstrap phase**. Where governance describes the funded target state (ECS, Terraform, full CI), this document says what we do *right now*, with free and disposable tools, so nothing blocks while approvals and spend are pending. Every rule here is written so that **app code runs unchanged when the real infrastructure arrives** — that is the test of whether we did bootstrap right.
+*Changelog v1.1 → v1.2: aligned to SoT v1.5 / Governance v1.5 — **D37** makes `apps/web` a Vite SPA, so §7.4 rule 1 (server components) is retired and replaced by the route-splitting rule that now carries the per-route budget; §7.2 Vercel setup and the API-mode variable renamed to `VITE_`; §7.4 rule 4 drops the library name per Governance §12.6. **D38** changes the palette values — rule 2 and R8 are unchanged, because the discipline was never about which colours.*
+The working handbook for the four of us — plus two named G9 reserves. It sits **under** the Engineering Governance (v1.5) — governance is the law of the codebase, this is the law of the team and of the **bootstrap phase**. Where governance describes the funded target state (ECS, Terraform, full CI), this document says what we do *right now*, with free and disposable tools, so nothing blocks while approvals and spend are pending. Every rule here is written so that **app code runs unchanged when the real infrastructure arrives** — that is the test of whether we did bootstrap right.
 
 This file lives at `docs/NEOTING-Team-Engineering-Guideline-v1.1.md`. Changing it is a PR reviewed by Shakib. New joiner? Read this first, then Governance §1.
 
@@ -63,7 +64,7 @@ This file lives at `docs/NEOTING-Team-Engineering-Guideline-v1.1.md`. Changing i
 Monorepo (pnpm + Turborepo) — full layout in Governance §1.2. The short version of who lives where:
 
 ```
-apps/web            → Shamim & Moyen        (Next.js: (workspace) + (portal) route groups)
+apps/web            → Shamim & Moyen        (Vite + React: (workspace) + (portal) separate build entries)
 apps/api            → Shakib & Abdullah     (NestJS modular monolith)
 packages/contracts  → LAW — Shakib approves  (OpenAPI + generated clients + Zod schemas)
 packages/component-grammar → LAW            (chat card schemas incl. Review→Approve)
@@ -192,26 +193,26 @@ Shamim owns the architecture of `apps/web` — route groups, the chat framework 
 
 ### 7.2 Vercel — the development viewing surface (G6)
 One-time setup (Shamim, ~20 minutes):
-1. Vercel account (Hobby, free) → **Import** the GitHub repo → **Root Directory: `apps/web`** → framework auto-detects Next.js, pnpm auto-detects from the lockfile.
+1. Vercel account (Hobby, free) → **Import** the GitHub repo → **Root Directory: `apps/web`** → framework preset **Vite**, pnpm auto-detects from the lockfile.
 2. **Ignored Build Step:** `npx turbo-ignore` — previews only rebuild when `apps/web` or its dependencies actually changed. Saves the free-tier build minutes.
-3. Environment variables (Preview + Development): `NEXT_PUBLIC_API_MODE=mock`. **Nothing secret ever goes into Vercel** — the frontend needs no secrets, and that's by design.
+3. Environment variables (Preview + Development): `VITE_API_MODE=mock`. **Nothing secret ever goes into Vercel** — the frontend needs no secrets, and that's by design.
 4. Enable **Deployment Protection (Vercel Authentication)** so every preview URL requires a Vercel login — **mandatory before the first preview ships (G10, R16)**; add the four of us plus the G9 reserves. "Unguessable" is not protection: a leaked preview URL stays publicly reachable and indexable. If any plan change ever puts protection behind a paywall, we pay for the tier or the surface dies — an unprotected preview never ships.
 5. Done. Every PR now auto-comments its preview URL; `main` maintains one standing dev URL for Friday demos.
 
 Rules of the surface: it renders **synthetic data only** (G2); it is **not** the product and never gets a real domain — production hosting is D23 (ECS) and does not change; reviewers open previews **on a real phone** (the Moto-G-class device from kickoff 5.1 lives on Shamim's desk). Honest ToS note: Vercel's Hobby tier is for non-commercial use — fine for private throwaway previews now; the moment anything customer-facing or demo-to-prospects happens on it, we either pay for Pro or it's already Infra Week and the point is moot. Shamim flags it, Shakib decides.
 
 ### 7.3 Mock-first development — never blocked on backend
-`packages/contracts` generates two things from the OpenAPI spec: the **typed API client** and **MSW mock handlers** with fixtures shaped like the seed dataset. `NEXT_PUBLIC_API_MODE` selects:
+`packages/contracts` generates two things from the OpenAPI spec: the **typed API client** and **MSW mock handlers** with fixtures shaped like the seed dataset. `VITE_API_MODE` selects:
 - `mock` — MSW intercepts everything; the default on Vercel and for pure-UI work.
 - `local` — talks to `pnpm dev` NestJS on localhost; use when verifying against a real endpoint.
 
 The consequence: **frontend starts building any screen the moment its contract exists**, days before the endpoint does. When the contract changes, regeneration breaks the build loudly — that's the system working. Never hand-write an API type; never `fetch` raw in a component (data flows through the generated client + TanStack Query; client components receive data or use Query for polling/streaming only).
 
 ### 7.4 Code rules (the frontend ten)
-1. Server Components by default; `"use client"` on leaf components only, and only for interactivity.
+1. **Route-split every top-level area** (lazy import + suspense boundary), and **keep the practice app out of the `(portal)` build**. This replaces the server-components rule retired by D37, and it inherits its job: rule 8's per-route budget and the portal being the lightest surface in the product are now produced by this rule alone. A route over budget is a reject.
 2. **Tokens only** — no hex, no arbitrary px; the lint rule is not a suggestion.
 3. Chat renders **component-grammar primitives only** — no bespoke chat UI outside the grammar; if the grammar lacks a card you need, that's a G7 contract conversation, not a one-off `<div>`.
-4. Every user-facing string through next-intl (en-GB); the lint rule blocks literals.
+4. Every user-facing string through the message catalogues (en-GB); the lint rule blocks literals. Governance §12.6 fixes the rules; the library is an implementation choice since next-intl was retired with App Router.
 5. All four states designed per screen: empty (teaches), loading (skeletons, no spinners on primary surfaces), error (plain English + `NT-` code), success.
 6. Accessibility habits on every PR: full keyboard path, visible focus, `aria-live="polite"` on chat updates, contrast from tokens, error text never colour-only. Run axe DevTools locally before requesting review.
 7. Motion by the numbers (SoT §14): 120–150 ms micro, 200–250 ms cards, one mover at a time, `prefers-reduced-motion` respected, animation never delays input.

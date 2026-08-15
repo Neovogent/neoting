@@ -1,12 +1,13 @@
 # NEOTING — Engineering Governance
 
-**Version 1.4 · 13 August 2026 · Confidential**
+**Version 1.5 · 15 August 2026 · Confidential**
 *Changelog v1.0 → v1.1: model config rewritten Opus-led with task→effort map (D21); Bedrock/Transcribe/Textract routes (D20/D22); infra concretised — ECS Fargate, ElastiCache, CloudFront + WAF, Managed Grafana/Prometheus, Sentry EU (D23/D24); cost guardrail £0.02 → £0.05/document; explicit no-fine-tuning clause (D19).*
 *Changelog v1.1 → v1.2: three-tier model config with task→(model, effort) map and degradation chain (D28); pipeline guardrail restored to £0.02/document; per-class tier flags.*
 *Changelog v1.2 → v1.3: kickoff-review feedback (11–12 Aug) folded in — §12.1 UK-first residency made explicit with the named-fallback rule (D30) and no-ticket offboarding incl. trial end (D32); new §13.5 cost & usage telemetry for every metered vendor (D33); §13.2 alert list and §13.3 SLA linkage extended accordingly.*
 *Changelog v1.3 → v1.4: brought level with Source of Truth v1.4 after W0 measurement — §9.1 `MODELS` repinned to the in-region tiers (D28 as amended) with the access-route bullet updated now verification 8.1 is closed; **"temperature 0" reworded to be model-family-aware** (Opus 4.8 rejects the parameter outright, so a flat rule was unenforceable); §5.2 per-workspace KMS encryption context corrected to the request-time gating that S3 can actually enforce (ADR 0008); §1.1 stack line updated; §12.1 residency exceptions reduced from two to one after verification 8.2; §13.5 records the controls now live and the shared-account caveat (D36); §9.1 "week-2 bake-off" corrected to calibration per D20.*
+*Changelog v1.4 → v1.5: brought level with Source of Truth v1.5 — §1.1 and §1.2 rewritten for **D37** (the web client is a Vite SPA, not Next.js App Router; two build entries, no server components); §12.6 keeps every internationalisation rule and drops the library name, because **next-intl is Next.js-only and cannot be used** — the replacement is an implementation choice, the rules are not; §1.5 Definition of Done reworded accordingly; §12.5 gains the measured-contrast obligation that D38 introduces. No security, tenancy, AI-runtime or Review→Approve rule changes in this version.*
 
-Companion to **NEOTING-Source-of-Truth-v1.4.md**. Together these two files are the **only source of truth**. This file governs *how the product is built and operated*: architecture rules, security enforcement, AI runtime rules, compliance operations, testing, and process — for every engineer and every AI coding agent working in the repository.
+Companion to **NEOTING-Source-of-Truth-v1.5.md**. Together these two files are the **only source of truth**. This file governs *how the product is built and operated*: architecture rules, security enforcement, AI runtime rules, compliance operations, testing, and process — for every engineer and every AI coding agent working in the repository.
 
 **Conflict rule:** the Source of Truth wins on product scope and requirements; this file wins on engineering rules, security enforcement, and process. Where a rule here can be enforced by ESLint, CI, or a pre-commit hook, it lives there too — the tooling is the rule's teeth, this file is its record.
 
@@ -16,7 +17,7 @@ Companion to **NEOTING-Source-of-Truth-v1.4.md**. Together these two files are t
 
 ### 1.1 Stack
 
-Next.js (App Router) · React · TypeScript (strict) · Node 22+ · **NestJS modular monolith** · Prisma + PostgreSQL 16 (RDS, RLS) · **ElastiCache Redis + BullMQ** · S3 (KMS) · **ECS Fargate behind CloudFront + AWS WAF** (D23) · **Amazon Bedrock (Claude Opus 4.6 / Claude Sonnet 4.6 / Amazon Nova Lite)** · **Amazon Textract** · **Amazon Transcribe** · next-intl · Zod · Unleash (self-hosted) · Terraform · GitHub Actions · OTel → Managed Prometheus/Grafana + Sentry EU (D24). All eu-west-2.
+**Vite** · React · TypeScript (strict) · Node 22+ · (D37 — the web client is a Vite SPA; App Router was retired in SoT v1.5) **NestJS modular monolith** · Prisma + PostgreSQL 16 (RDS, RLS) · **ElastiCache Redis + BullMQ** · S3 (KMS) · **ECS Fargate behind CloudFront + AWS WAF** (D23) · **Amazon Bedrock (Claude Opus 4.6 / Claude Sonnet 4.6 / Amazon Nova Lite)** · **Amazon Textract** · **Amazon Transcribe** · next-intl · Zod · Unleash (self-hosted) · Terraform · GitHub Actions · OTel → Managed Prometheus/Grafana + Sentry EU (D24). All eu-west-2.
 
 **Package manager: `pnpm` only. Never `npm` or `yarn`.**
 
@@ -24,7 +25,10 @@ Next.js (App Router) · React · TypeScript (strict) · Node 22+ · **NestJS mod
 
 ```
 apps/
-  web/            # Next.js — two route groups: (workspace) practice app · (portal) public OTP portal + onboarding
+  web/            # Vite + React (D37) — two SEPARATE BUILD ENTRIES: (workspace) practice app ·
+                  # (portal) public OTP portal + onboarding. The portal must not ship the
+                  # practice app: it is the lightest surface in the product (SoT §14) and
+                  # nothing enforces that but the build config and review.
   api/            # NestJS modular monolith (module list in §4.1)
 packages/
   contracts/      # OpenAPI spec + generated TS clients + shared Zod schemas — Sprint-0 artefact, LAW
@@ -72,7 +76,7 @@ Before declaring any task complete:
 1. `pnpm typecheck && pnpm lint && pnpm test && pnpm build` — all green.
 2. E2E covers any user flow touched; `pnpm test:eval` passes if prompts, models, extraction, routing, or the component grammar changed.
 3. Prisma changes: migration created, required indexes in the **same** migration, expand-contract respected, RLS policies updated in the same PR.
-4. All UI copy goes through next-intl (no hardcoded strings); labels, focus order, and contrast tokens intact.
+4. All UI copy goes through the message catalogues (no hardcoded strings, §12.6); labels, focus order, and contrast tokens intact.
 5. Audit events emitted for every new state change; every new state-changing path goes through the ActionProposal gate (§10).
 6. Diff contains no secrets (`/(SECRET|TOKEN|KEY|PASSWORD)/i`) and no edits to generated dirs.
 7. Seed data updated so every screen has honest data on a fresh clone; the module's `CLAUDE.md` updated.
@@ -398,10 +402,11 @@ TLS 1.3 in transit; AES-256 at rest (DB, backups, S3, Redis where supported). Se
 ### 12.5 Accessibility (WCAG 2.2 AA — enforced, not aspired)
 
 - `eslint-plugin-jsx-a11y` inside `pnpm lint` (blocking) · `axe-core` assertions inside Playwright on every critical flow **including the OTP portal** (blocking) · manual screen-reader pass (NVDA + VoiceOver) on changed flows each release.
-- All interactive elements keyboard-reachable in logical order; visible focus states; focus traps in modals with restore-on-close; contrast via tokens ≥ 4.5:1 (no ad-hoc colours); chat/streaming updates announced via `aria-live="polite"`; motion respects `prefers-reduced-motion`; error text never colour-only.
+- All interactive elements keyboard-reachable in logical order; visible focus states; focus traps in modals with restore-on-close; contrast via tokens ≥ 4.5:1 (no ad-hoc colours) — **and measured, not assumed: a colour pair entering the palette is checked against this floor before it ships (SoT D38 records the current measurements)**; chat/streaming updates announced via `aria-live="polite"`; motion respects `prefers-reduced-motion`; error text never colour-only.
 
-### 12.6 Internationalisation (next-intl)
+### 12.6 Internationalisation
 
+- **The library is an implementation choice; none of the rules below are.** next-intl was named here until v1.5 and is Next.js-only, so D37 retired it. Any ICU-MessageFormat catalogue library satisfies this section — the constraint is the behaviour, not the package.
 - **No hardcoded user-facing strings** — a lint rule blocks string literals in JSX; everything goes through message catalogs. Key convention `domain.component.purpose`; ICU MessageFormat for plurals/interpolation — never string concatenation.
 - en-GB is the product default; locale-aware dates/numbers/currency via formatters; US MM/DD/YYYY exists as an **export setting**, not a locale hack. Layouts tolerate 2× text expansion and RTL (logical CSS properties). Missing keys fail CI.
 
