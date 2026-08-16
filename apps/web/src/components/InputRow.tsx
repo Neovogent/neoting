@@ -8,6 +8,7 @@ import { useSpeech } from '../lib/useSpeech';
 import { suggestPrompts } from '../lib/promptSuggestions';
 import { TypedPlaceholder } from './DynamicComponents/TypedPlaceholder';
 import { DocumentFormats, VoiceIcon } from './DynamicComponents/InputAffordances';
+import { CHAT_PROXY_ENABLED } from '../api/config';
 import type { Intent } from '../lib/types';
 
 export function InputRow() {
@@ -112,25 +113,42 @@ export function InputRow() {
     let intent: Intent = local.intent;
     let response = local.response;
 
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: userMessage,
-          context: { clients: clients.map((c) => c.name), attached: scope.clientNames, hasAttachments: attachments.length > 0 },
-        }),
-      });
-      // A non-2xx carries the server's own error fallback — keep the local
-      // classification rather than letting it overwrite a good answer.
-      if (res.ok) {
-        const data = await res.json();
-        // The model classifies; the payload is always resolved locally against real state.
-        if (data?.intent) intent = data.intent as Intent;
-        if (data?.response) response = data.response;
+    // BOOTSTRAP: https://github.com/Neovogent/neoting/issues/59 — remove with that issue.
+    //
+    // `POST /api/chat` is served by the pre-monorepo frontend's `server.ts`,
+    // which calls Google Gemini. That is outside D22/D28 (Bedrock, eu-west-2)
+    // and outside D30 (UK-first residency), so #59 keeps it as a deliberate,
+    // temporary local-development exception with one binding condition: it goes
+    // before the frontend is deployed anywhere that is not a laptop.
+    //
+    // Gated rather than unconditional so that condition has something enforcing
+    // it. `CHAT_PROXY_ENABLED` is off unless someone sets `VITE_CHAT_PROXY`,
+    // and `server.ts` did not come across in the import — so here this is dead
+    // anyway, and the local classifier above has been the answer all along.
+    //
+    // It closes when the Bedrock-backed chat surface exists, and the request
+    // this replaces it with belongs to `chat-framework`, not to this component.
+    if (CHAT_PROXY_ENABLED) {
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: userMessage,
+            context: { clients: clients.map((c) => c.name), attached: scope.clientNames, hasAttachments: attachments.length > 0 },
+          }),
+        });
+        // A non-2xx carries the server's own error fallback — keep the local
+        // classification rather than letting it overwrite a good answer.
+        if (res.ok) {
+          const data = await res.json();
+          // The model classifies; the payload is always resolved locally against real state.
+          if (data?.intent) intent = data.intent as Intent;
+          if (data?.response) response = data.response;
+        }
+      } catch {
+        /* Server unavailable — the local classifier above already answered. */
       }
-    } catch {
-      /* Server unavailable — the local classifier above already answered. */
     }
 
     // Attachments really enter the pipeline — they appear in the Inboxes

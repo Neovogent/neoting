@@ -21,11 +21,13 @@ Read `docs/Source_Of_Truth.md` D37 before assuming anything Next-shaped. The req
 
 `packages/contracts` generates the typed client and the MSW handlers. **Never hand-write an API type; never `fetch` raw in a component.** Data flows through the generated client and TanStack Query.
 
-`VITE_API_BASE_URL` (**not** `NEXT_PUBLIC_*` — those are dead in a Vite build and fail silently) sets the API origin; `packages/contracts/src/http-client.ts` appends `/v1`. Unset, it is `http://localhost:3001`.
+`VITE_API_BASE_URL` (**not** `NEXT_PUBLIC_*` — those are dead in a Vite build and fail silently) sets the API origin; `packages/contracts/src/http-client.ts` appends `/v1`. Unset, it is `http://localhost:3000` — the port the API actually listens on. It said 3001 here until PR #82, which was the same wrong number the spec's `servers` block carried; nothing has ever served 3001, so an unconfigured clone called a closed port.
 
 ⚠ **The screens do not read from the API yet.** `AppContext` is still driven by the synthetic generators in `lib/seed.ts`, `lib/seed2.ts` and `lib/generate.ts`. The contract path exists and is exercised (`src/api/documents.ts`, `useDocuments`, and the MSW handlers), but wiring the views onto it is the next piece of work, not something already done.
 
 MSW is started from `src/main.tsx` behind a **dynamic** `import()`, which is what keeps it and `@faker-js/faker` out of the production bundle. Verified: neither string appears in `dist`. Keep it dynamic.
+
+`VITE_CHAT_PROXY=enabled` is the one remaining escape hatch, and it is **off by default deliberately** — it lets the chat box call `POST /api/chat`, the Gemini-backed classifier in the pre-monorepo frontend's `server.ts`. Gemini sits outside D22/D28 (Bedrock, eu-west-2) and outside D30 (UK-first residency); issue #59 keeps it as a temporary local-development exception whose whole condition is that it goes before the frontend is deployed anywhere that is not a laptop. `server.ts` did not come across in the import, so in this repository the route does not exist and the flag has nothing to reach. **Do not turn it on in any deployed build.**
 
 ## Bundle
 
