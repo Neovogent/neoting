@@ -32,6 +32,30 @@ const display = (d: Date) => `${String(d.getDate()).padStart(2, '0')} ${MONTHS[d
  * Ambiguous slash dates are read day-first: this is a UK product, and
  * 03/08/2026 is the third of August to every client using it.
  */
+/**
+ * `new Date(y, m, d)` with an out-of-range component ROLLS OVER, and the result
+ * is a perfectly valid Date — so a `Number.isNaN` guard never fires on it. An
+ * impossible date does not become null, it becomes a different, plausible one.
+ *
+ * That is why this reads the components back rather than checking for NaN.
+ * A US-formatted client export of `01/13/2026` was being read day-first as
+ * "month 13", rolled forward, and imported as **1 January 2027** — the wrong
+ * VAT quarter — with `status: 'ready'` and a confident "Document date" on
+ * screen. `32/08/2026` became 1 September. Nothing indicated a guess.
+ *
+ * Reading day-first is correct and is the repo invariant (CLAUDE.md, "UK d/m/y
+ * disambiguation in parsers"). Silently accepting month-first input and
+ * re-dating it is not the same thing, and is what this refuses.
+ *
+ * Returning null is already handled: analyseSheet has a "Missing date" path, so
+ * the row surfaces for review instead of importing a fiction.
+ */
+function exactDate(year: number, monthIndex: number, day: number): Date | null {
+  const d = new Date(year, monthIndex, day);
+  if (d.getFullYear() !== year || d.getMonth() !== monthIndex || d.getDate() !== day) return null;
+  return d;
+}
+
 export function parseSheetDate(cell: string | undefined): string | null {
   if (!cell) return null;
   const raw = cell.trim();
@@ -48,14 +72,17 @@ export function parseSheetDate(cell: string | undefined): string | null {
   // ISO, which sorts and parses unambiguously. Every group in both patterns
   // below is unconditional, so a match carries all three of them.
   const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
-  if (iso?.[1] && iso[2] && iso[3]) return display(new Date(+iso[1], +iso[2] - 1, +iso[3]));
+  if (iso?.[1] && iso[2] && iso[3]) {
+    const d = exactDate(+iso[1], +iso[2] - 1, +iso[3]);
+    return d ? display(d) : null;
+  }
 
   // Day-first slash or dot separated.
   const slash = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/.exec(raw);
   if (slash?.[1] && slash[2] && slash[3]) {
     const year = slash[3].length === 2 ? 2000 + +slash[3] : +slash[3];
-    const d = new Date(year, +slash[2] - 1, +slash[1]);
-    return Number.isNaN(d.getTime()) ? null : display(d);
+    const d = exactDate(year, +slash[2] - 1, +slash[1]);
+    return d ? display(d) : null;
   }
 
   // "12 Aug 2026" and friends, which Date already understands.
