@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Home, Upload, Camera, Settings, ArrowLeft, Building2, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
 import { BusinessHomeView } from './BusinessHomeView';
 import { BusinessUploadView } from './BusinessUploadView';
@@ -9,11 +10,24 @@ import { BusinessSettingsView } from './BusinessSettingsView';
 import { BusinessSignInView } from './BusinessSignInView';
 import { slug, useSegment } from '../../lib/router';
 
+const m = defineMessages({
+  tabHome: { id: 'portal.businessPortal.tabHome', defaultMessage: 'Home' },
+  tabUpload: { id: 'portal.businessPortal.tabUpload', defaultMessage: 'Upload' },
+  tabCapture: { id: 'portal.businessPortal.tabCapture', defaultMessage: 'Capture' },
+  tabSettings: { id: 'portal.businessPortal.tabSettings', defaultMessage: 'Settings' },
+  subtitle: { id: 'portal.businessPortal.subtitle', defaultMessage: 'Business portal' },
+  exitAction: { id: 'portal.businessPortal.exitAction', defaultMessage: 'Accountant portal' },
+  switchTrigger: { id: 'portal.switchAccount.trigger', defaultMessage: 'Switch business' },
+  switchSignOut: { id: 'portal.switchAccount.signInAsAnother', defaultMessage: 'Sign in as another business' },
+});
+
+// `key` stays the machine value — it is the union the router and `onGo` speak,
+// and slugs the URL. Only `label` is copy.
 const TABS = [
-  { key: 'Home', icon: Home },
-  { key: 'Upload', icon: Upload },
-  { key: 'Capture', icon: Camera },
-  { key: 'Settings', icon: Settings },
+  { key: 'Home', icon: Home, label: m.tabHome },
+  { key: 'Upload', icon: Upload, label: m.tabUpload },
+  { key: 'Capture', icon: Camera, label: m.tabCapture },
+  { key: 'Settings', icon: Settings, label: m.tabSettings },
 ] as const;
 
 type Tab = (typeof TABS)[number]['key'];
@@ -26,6 +40,7 @@ type Tab = (typeof TABS)[number]['key'];
  */
 export function BusinessPortal() {
   const { businessAccounts, portalAccountId, exitBusinessPortal } = useAppContext();
+  const intl = useIntl();
   // /portal/:accountId/:tab
   const [tabSlug, setTabSlug] = useSegment(2);
   const tab: Tab = (TABS.map((x) => x.key).find((k) => slug(k) === tabSlug) as Tab) ?? 'Home';
@@ -45,7 +60,9 @@ export function BusinessPortal() {
           </div>
           <div className="min-w-0">
             <div className="font-sans font-bold text-[15px] text-white tracking-tight truncate">{account.businessName}</div>
-            <div className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider">Business portal</div>
+            <div className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider">
+              {intl.formatMessage(m.subtitle)}
+            </div>
           </div>
         </div>
 
@@ -56,7 +73,7 @@ export function BusinessPortal() {
             className="flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold text-zinc-400 border border-white/5 bg-ground hover:text-white hover:border-white/15 transition-colors"
           >
             <ArrowLeft size={14} strokeWidth={2.5} />
-            Accountant portal
+            {intl.formatMessage(m.exitAction)}
           </button>
         </div>
       </header>
@@ -73,7 +90,7 @@ export function BusinessPortal() {
               }`}
             >
               <t.icon size={15} className={isActive ? 'text-brand' : ''} />
-              {t.key}
+              {intl.formatMessage(t.label)}
               {isActive && (
                 <motion.span
                   layoutId="business-tab-underline"
@@ -100,6 +117,7 @@ export function BusinessPortal() {
 /** Demo affordance: hop between the seeded businesses without signing out. */
 function SwitchAccount() {
   const { businessAccounts, portalAccountId, openBusinessPortal } = useAppContext();
+  const intl = useIntl();
   const [open, setOpen] = useState(false);
   const active = businessAccounts.find((a) => a.id === portalAccountId);
 
@@ -109,7 +127,7 @@ function SwitchAccount() {
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold text-zinc-400 border border-white/5 bg-ground hover:text-white hover:border-white/15 transition-colors"
       >
-        Switch business
+        {intl.formatMessage(m.switchTrigger)}
         <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       <AnimatePresence>
@@ -144,7 +162,7 @@ function SwitchAccount() {
                 }}
                 className="w-full text-left px-3 py-2.5 rounded-xl text-[13px] font-semibold text-zinc-400 hover:bg-white/5 hover:text-white transition-colors border-t border-white/5 mt-1.5 pt-3"
               >
-                Sign in as another business
+                {intl.formatMessage(m.switchSignOut)}
               </button>
             </motion.div>
           </>

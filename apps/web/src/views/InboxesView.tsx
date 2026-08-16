@@ -1,10 +1,11 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Search, AlertCircle, CheckCircle2, UploadCloud, Eye, PencilLine, X, Copy, Link2,
   ShieldAlert, Sparkles, Send, Trash2, RefreshCw, Download, ArrowRightLeft, Check, SlidersHorizontal,
   LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { Tooltip } from '../components/DynamicComponents/Tooltip';
@@ -15,7 +16,7 @@ import { missingMandatory, OPTIONAL_MANDATORY } from '../lib/selectors';
 import { DuplicateModal } from '../components/DynamicComponents/DuplicateModal';
 import { navigate, path, usePath, useQueryParam } from '../lib/router';
 import { EXPORT_HINT, EXPORT_MIN_ROWS } from '../lib/exportRules';
-import { failureOf, retryMeaning } from '../lib/failures';
+import { failureOf, reasonText, retryMeaning } from '../lib/failures';
 import { AnalysisModal } from '../components/DynamicComponents/AnalysisModal';
 import type { DocKind, DocStatus, Document, DuplicatePair } from '../lib/types';
 
@@ -25,6 +26,253 @@ const INBOXES = ['cost', 'sales'] as const;
 type StatusTab = (typeof STATUS_TABS)[number];
 type Inbox = (typeof INBOXES)[number] & DocKind;
 
+const m = defineMessages({
+  uploadAudit: { id: 'inboxes.inboxesView.uploadAudit', defaultMessage: 'Uploaded documents' },
+  uploadAuditScope: {
+    id: 'inboxes.inboxesView.uploadAuditScope',
+    defaultMessage: '{count} document(s) from {files} file(s)',
+  },
+  publishAudit: { id: 'inboxes.inboxesView.publishAudit', defaultMessage: 'Published documents' },
+  publishAuditScope: {
+    id: 'inboxes.inboxesView.publishAuditScope',
+    defaultMessage: '{count} item(s) · {amount} → {clients}',
+  },
+  retryReadTitle: { id: 'inboxes.inboxesView.retryReadTitle', defaultMessage: 'Read {supplier} again?' },
+  retryPublishTitle: { id: 'inboxes.inboxesView.retryPublishTitle', defaultMessage: 'Publish {supplier} again?' },
+  retryDetail: { id: 'inboxes.inboxesView.retryDetail', defaultMessage: '{reason}. {meaning}' },
+  retryConsequence: {
+    id: 'inboxes.inboxesView.retryConsequence',
+    defaultMessage: 'This is unlikely to clear it on its own — {fix} is what changes the outcome.',
+  },
+  retryConfirm: { id: 'inboxes.inboxesView.retryConfirm', defaultMessage: 'Yes, retry' },
+  replaceTitle: { id: 'inboxes.inboxesView.replaceTitle', defaultMessage: 'Replace {supplier} with {file}?' },
+  replaceUnknownTitle: {
+    id: 'inboxes.inboxesView.replaceUnknownTitle',
+    defaultMessage: 'Replace this document with {file}?',
+  },
+  replaceDetail: {
+    id: 'inboxes.inboxesView.replaceDetail',
+    defaultMessage: 'The new file is read from scratch under the same client.',
+  },
+  replaceConsequence: {
+    id: 'inboxes.inboxesView.replaceConsequence',
+    defaultMessage: 'The unreadable original is removed, so the same spend is not on file twice.',
+  },
+  replaceConfirm: { id: 'inboxes.inboxesView.replaceConfirm', defaultMessage: 'Yes, replace it' },
+  replaceAudit: { id: 'inboxes.inboxesView.replaceAudit', defaultMessage: 'Replaced an unreadable document' },
+  replaceAuditScope: { id: 'inboxes.inboxesView.replaceAuditScope', defaultMessage: '{file} → {client}' },
+  replaceAuditScopeWithNote: {
+    id: 'inboxes.inboxesView.replaceAuditScopeWithNote',
+    defaultMessage: '{file} → {client} — was: {note}',
+  },
+  notReadyTitle: { id: 'inboxes.inboxesView.notReadyTitle', defaultMessage: '{supplier} is not ready yet' },
+  notReadyDetail: {
+    id: 'inboxes.inboxesView.notReadyDetail',
+    defaultMessage: '{missing}. Ready means every check has passed, so it cannot move until they are filled in.',
+  },
+  closeAction: { id: 'inboxes.inboxesView.closeAction', defaultMessage: 'Close' },
+  markReadyTitle: { id: 'inboxes.inboxesView.markReadyTitle', defaultMessage: 'Move {supplier} to Ready?' },
+  markReadyDetail: {
+    id: 'inboxes.inboxesView.markReadyDetail',
+    defaultMessage: '{amount} · {category}. Ready means every check has passed and it is queued to publish.',
+  },
+  markReadyConfirm: { id: 'inboxes.inboxesView.markReadyConfirm', defaultMessage: 'Yes, mark it Ready' },
+  markReviewedAudit: { id: 'inboxes.inboxesView.markReviewedAudit', defaultMessage: 'Marked document reviewed' },
+  markReviewedAuditScope: {
+    id: 'inboxes.inboxesView.markReviewedAuditScope',
+    defaultMessage: '{supplier} · {amount} → Ready',
+  },
+  heading: { id: 'inboxes.inboxesView.heading', defaultMessage: 'Inboxes' },
+  inboxCosts: { id: 'inboxes.inboxesView.inboxCosts', defaultMessage: 'Costs' },
+  inboxSales: { id: 'inboxes.inboxesView.inboxSales', defaultMessage: 'Sales' },
+  requiredFieldsTitle: {
+    id: 'inboxes.inboxesView.requiredFieldsTitle',
+    defaultMessage: 'Fields required before publishing',
+  },
+  requiredFieldsAction: { id: 'inboxes.inboxesView.requiredFieldsAction', defaultMessage: 'Required fields' },
+  uploadAction: { id: 'inboxes.inboxesView.uploadAction', defaultMessage: 'Upload Documents' },
+  documentsError: { id: 'inboxes.inboxesView.documentsError', defaultMessage: 'Could not load documents — {error}' },
+  documentsLoading: {
+    id: 'inboxes.inboxesView.documentsLoading',
+    defaultMessage: 'Loading documents from the API…',
+  },
+  tabReview: { id: 'inboxes.inboxesView.tabReview', defaultMessage: 'To Review' },
+  tabReady: { id: 'inboxes.inboxesView.tabReady', defaultMessage: 'Ready' },
+  tabProcessing: { id: 'inboxes.inboxesView.tabProcessing', defaultMessage: 'Processing' },
+  tabPublished: { id: 'inboxes.inboxesView.tabPublished', defaultMessage: 'Published' },
+  tabRejected: { id: 'inboxes.inboxesView.tabRejected', defaultMessage: 'Failed' },
+  searchPlaceholder: { id: 'inboxes.inboxesView.searchPlaceholder', defaultMessage: 'Search supplier, amount...' },
+  filterAllClients: { id: 'inboxes.inboxesView.filterAllClients', defaultMessage: 'All clients' },
+  filterAllChannels: { id: 'inboxes.inboxesView.filterAllChannels', defaultMessage: 'All channels' },
+  channelEmail: { id: 'inboxes.inboxesView.channelEmail', defaultMessage: 'Email' },
+  channelWeb: { id: 'inboxes.inboxesView.channelWeb', defaultMessage: 'Web upload' },
+  channelWhatsapp: { id: 'inboxes.inboxesView.channelWhatsapp', defaultMessage: 'WhatsApp' },
+  channelSmsLink: { id: 'inboxes.inboxesView.channelSmsLink', defaultMessage: 'SMS link' },
+  channelCsv: { id: 'inboxes.inboxesView.channelCsv', defaultMessage: 'CSV / XLSX' },
+  channelPortal: { id: 'inboxes.inboxesView.channelPortal', defaultMessage: 'Business portal' },
+  rowCount: { id: 'inboxes.inboxesView.rowCount', defaultMessage: '{count} items' },
+  publishItemsAction: { id: 'inboxes.inboxesView.publishItemsAction', defaultMessage: 'Publish {count} Items' },
+  selectedCount: { id: 'inboxes.inboxesView.selectedCount', defaultMessage: '{count} selected' },
+  markReviewedAction: { id: 'inboxes.inboxesView.markReviewedAction', defaultMessage: 'Mark reviewed' },
+  bulkNoneReadyTitle: { id: 'inboxes.inboxesView.bulkNoneReadyTitle', defaultMessage: 'None of these can move yet' },
+  bulkNoneReadyItem: { id: 'inboxes.inboxesView.bulkNoneReadyItem', defaultMessage: '{supplier} — {missing}' },
+  bulkMarkReadyTitle: {
+    id: 'inboxes.inboxesView.bulkMarkReadyTitle',
+    defaultMessage: '{count, plural, one {Move # item to Ready?} other {Move # items to Ready?}}',
+  },
+  bulkMarkReadyDetail: {
+    id: 'inboxes.inboxesView.bulkMarkReadyDetail',
+    defaultMessage: 'Ready means every check has passed and they are queued to publish.',
+  },
+  bulkMarkReadyConsequence: {
+    id: 'inboxes.inboxesView.bulkMarkReadyConsequence',
+    defaultMessage: '{count} still missing required fields will be left alone: {suppliers}.',
+  },
+  bulkMarkReadyConfirm: { id: 'inboxes.inboxesView.bulkMarkReadyConfirm', defaultMessage: 'Yes, mark them Ready' },
+  bulkMove: { id: 'inboxes.inboxesView.bulkMove', defaultMessage: 'Move to client' },
+  moveMenuHeading: { id: 'inboxes.inboxesView.moveMenuHeading', defaultMessage: 'Move to' },
+  teachSenderLabel: { id: 'inboxes.inboxesView.teachSenderLabel', defaultMessage: 'Always route this sender here' },
+  teachSenderFallback: {
+    id: 'inboxes.inboxesView.teachSenderFallback',
+    defaultMessage: 'the senders of these documents',
+  },
+  moveTitle: {
+    id: 'inboxes.inboxesView.moveTitle',
+    defaultMessage: '{count, plural, one {Move # document to {client}?} other {Move # documents to {client}?}}',
+  },
+  moveConsequence: {
+    id: 'inboxes.inboxesView.moveConsequence',
+    defaultMessage: 'Every future document from these senders will be filed under this client automatically.',
+  },
+  moveConfirm: { id: 'inboxes.inboxesView.moveConfirm', defaultMessage: 'Yes, move them' },
+  moveAudit: { id: 'inboxes.inboxesView.moveAudit', defaultMessage: 'Moved documents between entities' },
+  moveAuditScope: { id: 'inboxes.inboxesView.moveAuditScope', defaultMessage: '{count} item(s) → {client}' },
+  moveAuditScopeTaught: {
+    id: 'inboxes.inboxesView.moveAuditScopeTaught',
+    defaultMessage: '{count} item(s) → {client} · sender taught',
+  },
+  addresseeMismatch: {
+    id: 'inboxes.inboxesView.addresseeMismatch',
+    defaultMessage: 'Addressee differs from the current workspace',
+  },
+  bulkAskAi: { id: 'inboxes.inboxesView.bulkAskAi', defaultMessage: 'Ask AI' },
+  askAiPrompt: { id: 'inboxes.inboxesView.askAiPrompt', defaultMessage: 'Review the {supplier} document' },
+  askAiReply: {
+    id: 'inboxes.inboxesView.askAiReply',
+    defaultMessage: 'Every field shows confidence and provenance — click any value to correct it.',
+  },
+  publishAction: { id: 'inboxes.inboxesView.publishAction', defaultMessage: 'Publish' },
+  retryAction: { id: 'inboxes.inboxesView.retryAction', defaultMessage: 'Retry' },
+  bulkRetryTitle: {
+    id: 'inboxes.inboxesView.bulkRetryTitle',
+    defaultMessage: '{count, plural, one {Retry # failed item?} other {Retry # failed items?}}',
+  },
+  bulkRetryDetail: {
+    id: 'inboxes.inboxesView.bulkRetryDetail',
+    defaultMessage:
+      'Anything that failed to extract is read again; anything that failed to publish goes back to Ready to be pushed again. Whatever was already read off a document is kept.',
+  },
+  bulkExport: { id: 'inboxes.inboxesView.bulkExport', defaultMessage: 'Export CSV' },
+  bulkDelete: { id: 'inboxes.inboxesView.bulkDelete', defaultMessage: 'Delete' },
+  deleteTitle: {
+    id: 'inboxes.inboxesView.deleteTitle',
+    defaultMessage: '{count, plural, one {Delete # document?} other {Delete # documents?}}',
+  },
+  deleteDetailFallback: { id: 'inboxes.inboxesView.deleteDetailFallback', defaultMessage: 'The selected items.' },
+  deleteConsequence: {
+    id: 'inboxes.inboxesView.deleteConsequence',
+    defaultMessage: 'The originals go with them, and a deleted document cannot be matched to a bank line later.',
+  },
+  deleteConfirm: { id: 'inboxes.inboxesView.deleteConfirm', defaultMessage: 'Yes, delete' },
+  deleteAudit: { id: 'inboxes.inboxesView.deleteAudit', defaultMessage: 'Deleted documents' },
+  deleteAuditScope: { id: 'inboxes.inboxesView.deleteAuditScope', defaultMessage: '{count} item(s)' },
+  columnClient: { id: 'inboxes.inboxesView.columnClient', defaultMessage: 'Client' },
+  columnCustomer: { id: 'inboxes.inboxesView.columnCustomer', defaultMessage: 'Customer' },
+  columnSupplier: { id: 'inboxes.inboxesView.columnSupplier', defaultMessage: 'Supplier' },
+  columnDate: { id: 'inboxes.inboxesView.columnDate', defaultMessage: 'Date' },
+  columnTotal: { id: 'inboxes.inboxesView.columnTotal', defaultMessage: 'Total' },
+  columnCategory: { id: 'inboxes.inboxesView.columnCategory', defaultMessage: 'Category' },
+  columnFlags: { id: 'inboxes.inboxesView.columnFlags', defaultMessage: 'Flags' },
+  columnStatus: { id: 'inboxes.inboxesView.columnStatus', defaultMessage: 'Status' },
+  columnAction: { id: 'inboxes.inboxesView.columnAction', defaultMessage: 'Action' },
+  emptyTable: {
+    id: 'inboxes.inboxesView.emptyTable',
+    defaultMessage: 'Nothing in this view. Drop files anywhere on this page to ingest them.',
+  },
+  fieldRequiredTitle: {
+    id: 'inboxes.inboxesView.fieldRequiredTitle',
+    defaultMessage: '{field} is required before this can be published',
+  },
+  fieldMissing: { id: 'inboxes.inboxesView.fieldMissing', defaultMessage: 'Missing' },
+  flagDuplicate: { id: 'inboxes.inboxesView.flagDuplicate', defaultMessage: 'Suspected duplicate' },
+  flagDuplicateDetail: {
+    id: 'inboxes.inboxesView.flagDuplicateDetail',
+    defaultMessage: 'Another document on file looks like the same spend. Open them side by side to compare.',
+  },
+  flagMatched: { id: 'inboxes.inboxesView.flagMatched', defaultMessage: 'Matched to a bank transaction' },
+  flagMatchedDetail: {
+    id: 'inboxes.inboxesView.flagMatchedDetail',
+    defaultMessage: 'The payment for this is on the bank feed, so it is evidenced.',
+  },
+  cannotPublish: { id: 'inboxes.inboxesView.cannotPublish', defaultMessage: 'Cannot publish — missing {fields}' },
+  flagBlockedDetail: {
+    id: 'inboxes.inboxesView.flagBlockedDetail',
+    defaultMessage: 'Your practice made these fields mandatory before anything reaches the ledger.',
+  },
+  markReviewedTitle: {
+    id: 'inboxes.inboxesView.markReviewedTitle',
+    defaultMessage: 'Move to Ready — publish is the next step',
+  },
+  fixTitle: { id: 'inboxes.inboxesView.fixTitle', defaultMessage: '{reason} — open it to sort that out first.' },
+  fixAction: { id: 'inboxes.inboxesView.fixAction', defaultMessage: 'Fix' },
+  retryUnlikelyTitle: {
+    id: 'inboxes.inboxesView.retryUnlikelyTitle',
+    defaultMessage: 'Unlikely to help — {reason}. {meaning}',
+  },
+  publishRowTitle: { id: 'inboxes.inboxesView.publishRowTitle', defaultMessage: 'Publish this item' },
+  viewTitle: {
+    id: 'inboxes.inboxesView.viewTitle',
+    defaultMessage: 'Open the document — the original with every extracted field',
+  },
+  viewAction: { id: 'inboxes.inboxesView.viewAction', defaultMessage: 'View' },
+  dropHeading: { id: 'inboxes.inboxesView.dropHeading', defaultMessage: 'Drop to ingest' },
+  dropDetail: {
+    id: 'inboxes.inboxesView.dropDetail',
+    defaultMessage: 'Multi-document PDFs are auto-split · 100MB per file',
+  },
+  confirmPublishTitle: {
+    id: 'inboxes.inboxesView.confirmPublishTitle',
+    defaultMessage: '{count, plural, one {Publish # item?} other {Publish # items?}}',
+  },
+  confirmPublishSubtitle: {
+    id: 'inboxes.inboxesView.confirmPublishSubtitle',
+    defaultMessage: "This posts to the ledger and can't be undone here",
+  },
+  confirmRowItems: { id: 'inboxes.inboxesView.confirmRowItems', defaultMessage: 'Items' },
+  confirmRowValue: { id: 'inboxes.inboxesView.confirmRowValue', defaultMessage: 'Total value' },
+  confirmRowClient: { id: 'inboxes.inboxesView.confirmRowClient', defaultMessage: 'Client' },
+  confirmRowClients: { id: 'inboxes.inboxesView.confirmRowClients', defaultMessage: 'Clients' },
+  clientCount: { id: 'inboxes.inboxesView.clientCount', defaultMessage: '{count} clients' },
+  heldBack: {
+    id: 'inboxes.inboxesView.heldBack',
+    defaultMessage:
+      '{count, plural, one {<highlight># item</highlight>} other {<highlight># items</highlight>}} held back — missing required fields. Fix them in the review, or publish the remaining {remaining} now.',
+  },
+  cancelAction: { id: 'inboxes.inboxesView.cancelAction', defaultMessage: 'Cancel' },
+  confirmPublishAction: {
+    id: 'inboxes.inboxesView.confirmPublishAction',
+    defaultMessage: '{count, plural, one {Publish # item} other {Publish # items}}',
+  },
+  fieldsHeading: { id: 'inboxes.inboxesView.fieldsHeading', defaultMessage: 'Required before publish' },
+  fieldsSubtitle: { id: 'inboxes.inboxesView.fieldsSubtitle', defaultMessage: 'Items missing these are held back' },
+  fieldsIntro: {
+    id: 'inboxes.inboxesView.fieldsIntro',
+    defaultMessage:
+      'Supplier, Total and Category are always required. Add more below — construction firms require a class, QBO users require a customer reference.',
+  },
+  doneAction: { id: 'inboxes.inboxesView.doneAction', defaultMessage: 'Done' },
+});
+
 export function InboxesView() {
   const {
     documents, clients, duplicates, transactions, ingest, sheetImports,
@@ -32,6 +280,7 @@ export function InboxesView() {
     documentsSource, documentsLoading, documentsError,
     moveDocuments, deleteDocuments, retryDocument, startConversation, logAudit, publishDocuments,
   } = useAppContext();
+  const intl = useIntl();
 
   /**
    * /inboxes/:inbox/:status — both rows of tabs live in the address.
@@ -123,8 +372,8 @@ export function InboxesView() {
     }
 
     logAudit({
-      action: 'Uploaded documents',
-      scope: `${result.documents.length} document(s) from ${list.length} file(s)`,
+      action: intl.formatMessage(m.uploadAudit),
+      scope: intl.formatMessage(m.uploadAuditScope, { count: result.documents.length, files: list.length }),
       reviewOpened: true,
     });
     goTo({ inbox: 'cost', status: 'processing' });
@@ -144,8 +393,12 @@ export function InboxesView() {
     publishDocuments(publishable.map((d) => d.id));
     const names = [...new Set(publishable.map((d) => d.clientName))];
     logAudit({
-      action: 'Published documents',
-      scope: `${publishable.length} item(s) · ${currency(publishable.reduce((s, d) => s + d.total, 0))} → ${names.join(', ')}`,
+      action: intl.formatMessage(m.publishAudit),
+      scope: intl.formatMessage(m.publishAuditScope, {
+        count: publishable.length,
+        amount: currency(publishable.reduce((s, d) => s + d.total, 0)),
+        clients: names.join(', '),
+      }),
       reviewOpened: true,
     });
     setConfirmPublish(null);
@@ -161,12 +414,21 @@ export function InboxesView() {
     const failure = failureOf(doc);
     if (!failure) return;
     const ok = await confirm({
-      title: failure.stage === 'extraction' ? `Read ${doc.supplier} again?` : `Publish ${doc.supplier} again?`,
-      detail: `${failure.reason}. ${retryMeaning(failure)}`,
+      title: intl.formatMessage(failure.stage === 'extraction' ? m.retryReadTitle : m.retryPublishTitle, {
+        supplier: doc.supplier,
+      }),
+      detail: intl.formatMessage(m.retryDetail, {
+        reason: reasonText(failure, intl),
+        meaning: intl.formatMessage(retryMeaning(failure)),
+      }),
       ...(failure.retryHelps
         ? {}
-        : { consequence: `This is unlikely to clear it on its own — ${failure.fixLabel.toLowerCase()} is what changes the outcome.` }),
-      confirmLabel: 'Yes, retry',
+        : {
+            consequence: intl.formatMessage(m.retryConsequence, {
+              fix: intl.formatMessage(failure.fixLabel).toLowerCase(),
+            }),
+          }),
+      confirmLabel: intl.formatMessage(m.retryConfirm),
     });
     if (!ok) return;
     retryDocument(doc.id);
@@ -194,17 +456,24 @@ export function InboxesView() {
     const file = files?.[0];
     if (!doc || !file) return;
     const ok = await confirm({
-      title: `Replace ${doc.supplier === 'Unknown' ? 'this document' : doc.supplier} with ${file.name}?`,
-      detail: 'The new file is read from scratch under the same client.',
-      consequence: 'The unreadable original is removed, so the same spend is not on file twice.',
-      confirmLabel: 'Yes, replace it',
+      title:
+        doc.supplier === 'Unknown'
+          ? intl.formatMessage(m.replaceUnknownTitle, { file: file.name })
+          : intl.formatMessage(m.replaceTitle, { supplier: doc.supplier, file: file.name }),
+      detail: intl.formatMessage(m.replaceDetail),
+      consequence: intl.formatMessage(m.replaceConsequence),
+      confirmLabel: intl.formatMessage(m.replaceConfirm),
     });
     if (!ok) return;
     ingest([{ name: file.name, size: file.size }], doc.clientId, 'web');
     deleteDocuments([doc.id]);
     logAudit({
-      action: 'Replaced an unreadable document',
-      scope: `${file.name} → ${doc.clientName}${doc.statusNote ? ` — was: ${doc.statusNote}` : ''}`,
+      action: intl.formatMessage(m.replaceAudit),
+      scope: intl.formatMessage(doc.statusNote ? m.replaceAuditScopeWithNote : m.replaceAuditScope, {
+        file: file.name,
+        client: doc.clientName,
+        note: doc.statusNote,
+      }),
       reviewOpened: true,
     });
     goTo({ status: 'processing' });
@@ -221,20 +490,24 @@ export function InboxesView() {
     if (!ready) {
       await confirm({
         tone: 'red',
-        title: `${doc.supplier} is not ready yet`,
-        detail: `${describeMissing(missing)}. Ready means every check has passed, so it cannot move until they are filled in.`,
-        confirmLabel: 'Close',
+        title: intl.formatMessage(m.notReadyTitle, { supplier: doc.supplier }),
+        detail: intl.formatMessage(m.notReadyDetail, { missing: describeMissing(missing) }),
+        confirmLabel: intl.formatMessage(m.closeAction),
       });
       return;
     }
     const ok = await confirm({
-      title: `Move ${doc.supplier} to Ready?`,
-      detail: `${currency(doc.total)} · ${doc.category}. Ready means every check has passed and it is queued to publish.`,
-      confirmLabel: 'Yes, mark it Ready',
+      title: intl.formatMessage(m.markReadyTitle, { supplier: doc.supplier }),
+      detail: intl.formatMessage(m.markReadyDetail, { amount: currency(doc.total), category: doc.category }),
+      confirmLabel: intl.formatMessage(m.markReadyConfirm),
     });
     if (!ok) return;
     updateDocumentStatus(doc.id, 'ready');
-    logAudit({ action: 'Marked document reviewed', scope: `${doc.supplier} · ${currency(doc.total)} → Ready`, reviewOpened: true });
+    logAudit({
+      action: intl.formatMessage(m.markReviewedAudit),
+      scope: intl.formatMessage(m.markReviewedAuditScope, { supplier: doc.supplier, amount: currency(doc.total) }),
+      reviewOpened: true,
+    });
   };
 
   return (
@@ -247,10 +520,10 @@ export function InboxesView() {
       <header className="px-10 py-8 shrink-0 flex flex-col items-center">
         <div className="flex items-center justify-between w-full mb-6 gap-4 flex-wrap">
           <div className="flex items-center gap-5">
-            <h1 className="font-sans text-3xl font-semibold text-white tracking-tight">Inboxes</h1>
+            <h1 className="font-sans text-3xl font-semibold text-white tracking-tight">{intl.formatMessage(m.heading)}</h1>
             <div className="flex items-center gap-2">
-              <InboxPill active={inbox === 'cost'} onClick={() => { setInbox('cost'); setSelected([]); }} label="Costs" />
-              <InboxPill active={inbox === 'sales'} onClick={() => { setInbox('sales'); setSelected([]); }} label="Sales" />
+              <InboxPill active={inbox === 'cost'} onClick={() => { setInbox('cost'); setSelected([]); }} label={intl.formatMessage(m.inboxCosts)} />
+              <InboxPill active={inbox === 'sales'} onClick={() => { setInbox('sales'); setSelected([]); }} label={intl.formatMessage(m.inboxSales)} />
             </div>
           </div>
 
@@ -258,10 +531,10 @@ export function InboxesView() {
             <button
               onClick={() => setFieldsOpen(true)}
               className="flex items-center gap-2 px-5 py-3 text-sm font-bold text-zinc-300 bg-card border border-white/10 rounded-full hover:bg-white/5 shadow-lg transition-all"
-              title="Fields required before publishing"
+              title={intl.formatMessage(m.requiredFieldsTitle)}
             >
               <SlidersHorizontal size={16} />
-              Required fields
+              {intl.formatMessage(m.requiredFieldsAction)}
               {mandatoryFields.length > 0 && (
                 <span className="px-2 py-0.5 rounded-full bg-brand text-white text-[11px]">{mandatoryFields.length}</span>
               )}
@@ -271,7 +544,7 @@ export function InboxesView() {
               className="flex items-center gap-2 px-6 py-3 text-sm font-bold text-white bg-card border border-white/10 rounded-full hover:bg-white/5 shadow-lg transition-all"
             >
               <UploadCloud size={18} />
-              Upload Documents
+              {intl.formatMessage(m.uploadAction)}
             </button>
             <input
               ref={fileRef}
@@ -307,8 +580,8 @@ export function InboxesView() {
             {documentsError ? <AlertCircle size={15} /> : <RefreshCw size={15} className="animate-spin" />}
             <span className="min-w-0">
               {documentsError
-                ? `Could not load documents — ${documentsError}`
-                : 'Loading documents from the API…'}
+                ? intl.formatMessage(m.documentsError, { error: documentsError })
+                : intl.formatMessage(m.documentsLoading)}
             </span>
           </div>
         )}
@@ -328,11 +601,11 @@ export function InboxesView() {
 
         {(
           <div className="flex items-center gap-2 bg-card p-1.5 rounded-full border border-white/5 shadow-2xl relative z-10 -mb-16">
-            <TabButton active={statusTab === 'review'} onClick={() => switchTab('review')} label="To Review" count={counts('review')} />
-            <TabButton active={statusTab === 'ready'} onClick={() => switchTab('ready')} label="Ready" count={counts('ready')} />
-            <TabButton active={statusTab === 'processing'} onClick={() => switchTab('processing')} label="Processing" count={counts('processing')} />
-            <TabButton active={statusTab === 'published'} onClick={() => switchTab('published')} label="Published" count={counts('published')} />
-            <TabButton active={statusTab === 'rejected'} onClick={() => switchTab('rejected')} label="Failed" count={counts('rejected')} />
+            <TabButton active={statusTab === 'review'} onClick={() => switchTab('review')} label={intl.formatMessage(m.tabReview)} count={counts('review')} />
+            <TabButton active={statusTab === 'ready'} onClick={() => switchTab('ready')} label={intl.formatMessage(m.tabReady)} count={counts('ready')} />
+            <TabButton active={statusTab === 'processing'} onClick={() => switchTab('processing')} label={intl.formatMessage(m.tabProcessing)} count={counts('processing')} />
+            <TabButton active={statusTab === 'published'} onClick={() => switchTab('published')} label={intl.formatMessage(m.tabPublished)} count={counts('published')} />
+            <TabButton active={statusTab === 'rejected'} onClick={() => switchTab('rejected')} label={intl.formatMessage(m.tabRejected)} count={counts('rejected')} />
           </div>
         )}
       </header>
@@ -347,34 +620,34 @@ export function InboxesView() {
                   <input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search supplier, amount..."
+                    placeholder={intl.formatMessage(m.searchPlaceholder)}
                     className="w-64 bg-zinc-100 border-none rounded-full py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder:text-zinc-500 font-medium"
                   />
                 </div>
-                <LightSelect value={clientFilter} onChange={setClientFilter} options={[{ value: 'all', label: 'All clients' }, ...clients.map((c) => ({ value: c.id, label: c.name }))]} />
+                <LightSelect value={clientFilter} onChange={setClientFilter} options={[{ value: 'all', label: intl.formatMessage(m.filterAllClients) }, ...clients.map((c) => ({ value: c.id, label: c.name }))]} />
                 <LightSelect
                   value={channelFilter}
                   onChange={setChannelFilter}
                   options={[
-                    { value: 'all', label: 'All channels' },
-                    { value: 'email', label: 'Email' },
-                    { value: 'web', label: 'Web upload' },
-                    { value: 'whatsapp', label: 'WhatsApp' },
-                    { value: 'sms-link', label: 'SMS link' },
-                    { value: 'csv', label: 'CSV / XLSX' },
-                    { value: 'portal', label: 'Business portal' },
+                    { value: 'all', label: intl.formatMessage(m.filterAllChannels) },
+                    { value: 'email', label: intl.formatMessage(m.channelEmail) },
+                    { value: 'web', label: intl.formatMessage(m.channelWeb) },
+                    { value: 'whatsapp', label: intl.formatMessage(m.channelWhatsapp) },
+                    { value: 'sms-link', label: intl.formatMessage(m.channelSmsLink) },
+                    { value: 'csv', label: intl.formatMessage(m.channelCsv) },
+                    { value: 'portal', label: intl.formatMessage(m.channelPortal) },
                   ]}
                 />
               </div>
 
               <div className="flex items-center gap-3">
-                <span className="text-[13px] font-bold text-zinc-400">{rows.length} items</span>
+                <span className="text-[13px] font-bold text-zinc-400">{intl.formatMessage(m.rowCount, { count: rows.length })}</span>
                 <button
                   onClick={() => requestPublish(selected.length ? selected : rows.map((d) => d.id))}
                   disabled={statusTab !== 'ready' || rows.length === 0}
                   className="px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  Publish {selected.length ? selected.length : rows.length} Items
+                  {intl.formatMessage(m.publishItemsAction, { count: selected.length ? selected.length : rows.length })}
                 </button>
               </div>
             </div>
@@ -388,32 +661,42 @@ export function InboxesView() {
                   className="shrink-0 mb-5 mx-2 overflow-visible"
                 >
                   <div className="flex items-center gap-2 flex-wrap bg-zinc-100 rounded-2xl px-4 py-3">
-                    <span className="text-[13px] font-bold text-zinc-700 mr-2">{selected.length} selected</span>
+                    <span className="text-[13px] font-bold text-zinc-700 mr-2">{intl.formatMessage(m.selectedCount, { count: selected.length })}</span>
                     {statusTab === 'review' && (
                       <BulkBtn
                         icon={CheckCircle2}
-                        label="Mark reviewed"
+                        label={intl.formatMessage(m.markReviewedAction)}
                         onClick={async () => {
-                          const { ready, blocked } = partitionByReadiness(selectedDocs, mandatoryFields);
+                          const { ready, blocked } = partitionByReadiness(selectedDocs, mandatoryFields, intl);
                           if (ready.length === 0) {
                             await confirm({
                               tone: 'red',
-                              title: 'None of these can move yet',
+                              title: intl.formatMessage(m.bulkNoneReadyTitle),
                               detail: blocked
-                                .map(({ doc, missing }) => `${doc.supplier} — ${describeMissing(missing).toLowerCase()}`)
+                                .map(({ doc, missing }) =>
+                                  intl.formatMessage(m.bulkNoneReadyItem, {
+                                    supplier: doc.supplier,
+                                    missing: describeMissing(missing).toLowerCase(),
+                                  }),
+                                )
                                 .slice(0, 4)
                                 .join('. '),
-                              confirmLabel: 'Close',
+                              confirmLabel: intl.formatMessage(m.closeAction),
                             });
                             return;
                           }
                           const ok = await confirm({
-                            title: `Move ${ready.length} item${ready.length === 1 ? '' : 's'} to Ready?`,
-                            detail: 'Ready means every check has passed and they are queued to publish.',
+                            title: intl.formatMessage(m.bulkMarkReadyTitle, { count: ready.length }),
+                            detail: intl.formatMessage(m.bulkMarkReadyDetail),
                             ...(blocked.length
-                              ? { consequence: `${blocked.length} still missing required fields will be left alone: ${blocked.map((b) => b.doc.supplier).join(', ')}.` }
+                              ? {
+                                  consequence: intl.formatMessage(m.bulkMarkReadyConsequence, {
+                                    count: blocked.length,
+                                    suppliers: blocked.map((b) => b.doc.supplier).join(', '),
+                                  }),
+                                }
                               : {}),
-                            confirmLabel: 'Yes, mark them Ready',
+                            confirmLabel: intl.formatMessage(m.bulkMarkReadyConfirm),
                           });
                           if (!ok) return;
                           ready.forEach((d) => updateDocumentStatus(d.id, 'ready'));
@@ -422,7 +705,7 @@ export function InboxesView() {
                       />
                     )}
                     <div className="relative">
-                      <BulkBtn icon={ArrowRightLeft} label="Move to client" onClick={() => setMoveOpen((o) => !o)} />
+                      <BulkBtn icon={ArrowRightLeft} label={intl.formatMessage(m.bulkMove)} onClick={() => setMoveOpen((o) => !o)} />
                       <AnimatePresence>
                         {moveOpen && (
                           <motion.div
@@ -431,7 +714,7 @@ export function InboxesView() {
                             exit={{ opacity: 0, y: -6 }}
                             className="absolute top-full left-0 mt-2 w-72 bg-white border border-zinc-200 rounded-2xl shadow-2xl z-50 p-2"
                           >
-                            <div className="px-3 py-2 text-[11px] font-bold text-zinc-400 uppercase tracking-widest">Move to</div>
+                            <div className="px-3 py-2 text-[11px] font-bold text-zinc-400 uppercase tracking-widest">{intl.formatMessage(m.moveMenuHeading)}</div>
                             {/* The taught-sender tick from the old unrouted
                                 card, kept where the routing decision now
                                 happens: correcting an addressee once should
@@ -444,9 +727,9 @@ export function InboxesView() {
                                 className="mt-0.5 accent-brand"
                               />
                               <span className="text-[12px] font-semibold text-zinc-600 leading-snug">
-                                Always route this sender here
+                                {intl.formatMessage(m.teachSenderLabel)}
                                 <span className="block text-[11px] font-medium text-zinc-400">
-                                  {[...new Set(selectedDocs.map((d) => d.uploader))].slice(0, 2).join(', ') || 'the senders of these documents'}
+                                  {[...new Set(selectedDocs.map((d) => d.uploader))].slice(0, 2).join(', ') || intl.formatMessage(m.teachSenderFallback)}
                                 </span>
                               </span>
                             </label>
@@ -457,18 +740,21 @@ export function InboxesView() {
                                   key={c.id}
                                   onClick={async () => {
                                     const ok = await confirm({
-                                      title: `Move ${selected.length} document${selected.length === 1 ? '' : 's'} to ${c.name}?`,
+                                      title: intl.formatMessage(m.moveTitle, { count: selected.length, client: c.name }),
                                       detail: selectedDocs.map((d) => d.supplier).slice(0, 4).join(' · '),
                                       ...(teachSender
-                                        ? { consequence: 'Every future document from these senders will be filed under this client automatically.' }
+                                        ? { consequence: intl.formatMessage(m.moveConsequence) }
                                         : {}),
-                                      confirmLabel: 'Yes, move them',
+                                      confirmLabel: intl.formatMessage(m.moveConfirm),
                                     });
                                     if (!ok) return;
                                     moveDocuments(selected, c.id, teachSender);
                                     logAudit({
-                                      action: 'Moved documents between entities',
-                                      scope: `${selected.length} item(s) → ${c.name}${teachSender ? ' · sender taught' : ''}`,
+                                      action: intl.formatMessage(m.moveAudit),
+                                      scope: intl.formatMessage(teachSender ? m.moveAuditScopeTaught : m.moveAuditScope, {
+                                        count: selected.length,
+                                        client: c.name,
+                                      }),
                                       reviewOpened: true,
                                     });
                                     setMoveOpen(false);
@@ -480,7 +766,7 @@ export function InboxesView() {
                                   {c.name}
                                   {mismatch && (
                                     <span className="block text-[11px] font-medium text-amber-600 mt-0.5">
-                                      Addressee differs from the current workspace
+                                      {intl.formatMessage(m.addresseeMismatch)}
                                     </span>
                                   )}
                                 </button>
@@ -490,7 +776,7 @@ export function InboxesView() {
                         )}
                       </AnimatePresence>
                     </div>
-                    <BulkBtn icon={Sparkles} label="Ask AI" onClick={() => {
+                    <BulkBtn icon={Sparkles} label={intl.formatMessage(m.bulkAskAi)} onClick={() => {
                       // The bar only renders with a selection, but the rows it
                       // names can go under it — a delete elsewhere leaves ids
                       // selected with no document behind them, and there is
@@ -500,22 +786,22 @@ export function InboxesView() {
                       const names = [...new Set(selectedDocs.map((d) => d.clientName))];
                       const ids = clients.filter((c) => names.includes(c.name)).map((c) => c.id);
                       startConversation(ids, [
-                        { id: `${Date.now()}-u`, role: 'user', content: `Review the ${first.supplier} document` },
-                        { id: `${Date.now()}-a`, role: 'assistant', content: 'Every field shows confidence and provenance — click any value to correct it.', intent: 'REVIEW_DOCUMENT', payload: { documentId: first.id, clientIds: ids, clientNames: names } },
+                        { id: `${Date.now()}-u`, role: 'user', content: intl.formatMessage(m.askAiPrompt, { supplier: first.supplier }) },
+                        { id: `${Date.now()}-a`, role: 'assistant', content: intl.formatMessage(m.askAiReply), intent: 'REVIEW_DOCUMENT', payload: { documentId: first.id, clientIds: ids, clientNames: names } },
                       ]);
                     }} />
                     {statusTab === 'ready' && (
-                      <BulkBtn icon={Send} label="Publish" onClick={() => requestPublish(selected)} />
+                      <BulkBtn icon={Send} label={intl.formatMessage(m.publishAction)} onClick={() => requestPublish(selected)} />
                     )}
                     {statusTab === 'rejected' && (
                       <BulkBtn
                         icon={RefreshCw}
-                        label="Retry"
+                        label={intl.formatMessage(m.retryAction)}
                         onClick={async () => {
                           const ok = await confirm({
-                            title: `Retry ${selected.length} failed item${selected.length === 1 ? '' : 's'}?`,
-                            detail: 'Anything that failed to extract is read again; anything that failed to publish goes back to Ready to be pushed again. Whatever was already read off a document is kept.',
-                            confirmLabel: 'Yes, retry',
+                            title: intl.formatMessage(m.bulkRetryTitle, { count: selected.length }),
+                            detail: intl.formatMessage(m.bulkRetryDetail),
+                            confirmLabel: intl.formatMessage(m.retryConfirm),
                           });
                           if (!ok) return;
                           selected.forEach((id) => retryDocument(id));
@@ -525,29 +811,33 @@ export function InboxesView() {
                     )}
                     <BulkBtn
                       icon={Download}
-                      label="Export CSV"
+                      label={intl.formatMessage(m.bulkExport)}
                       minSelected={EXPORT_MIN_ROWS}
                       selectedCount={selected.length}
-                      disabledHint={EXPORT_HINT}
+                      disabledHint={intl.formatMessage(EXPORT_HINT)}
                       onClick={() => exportDocs(selectedDocs)}
                     />
                     {/* Was a click-twice-within-4s pattern, which is easy to
                         trip by accident and says nothing about what goes. */}
                     <BulkBtn
                       icon={Trash2}
-                      label="Delete"
+                      label={intl.formatMessage(m.bulkDelete)}
                       danger
                       onClick={async () => {
                         const ok = await confirm({
                           tone: 'red',
-                          title: `Delete ${selected.length} document${selected.length === 1 ? '' : 's'}?`,
-                          detail: selectedDocs.map((d) => d.supplier).slice(0, 4).join(' · ') || 'The selected items.',
-                          consequence: 'The originals go with them, and a deleted document cannot be matched to a bank line later.',
-                          confirmLabel: 'Yes, delete',
+                          title: intl.formatMessage(m.deleteTitle, { count: selected.length }),
+                          detail: selectedDocs.map((d) => d.supplier).slice(0, 4).join(' · ') || intl.formatMessage(m.deleteDetailFallback),
+                          consequence: intl.formatMessage(m.deleteConsequence),
+                          confirmLabel: intl.formatMessage(m.deleteConfirm),
                         });
                         if (!ok) return;
                         deleteDocuments(selected);
-                        logAudit({ action: 'Deleted documents', scope: `${selected.length} item(s)`, reviewOpened: true });
+                        logAudit({
+                          action: intl.formatMessage(m.deleteAudit),
+                          scope: intl.formatMessage(m.deleteAuditScope, { count: selected.length }),
+                          reviewOpened: true,
+                        });
                         setSelected([]);
                       }}
                     />
@@ -566,11 +856,11 @@ export function InboxesView() {
                         onChange={() => setSelected(allSelected ? [] : rows.map((d) => d.id))}
                       />
                     </th>
-                    <th className="px-4 py-4">Client</th>
-                    <th className="px-4 py-4">{inbox === 'sales' ? 'Customer' : 'Supplier'}</th>
-                    <th className="px-4 py-4">Date</th>
-                    <th className="px-4 py-4 text-right">Total</th>
-                    <th className="px-4 py-4">Category</th>
+                    <th className="px-4 py-4">{intl.formatMessage(m.columnClient)}</th>
+                    <th className="px-4 py-4">{intl.formatMessage(inbox === 'sales' ? m.columnCustomer : m.columnSupplier)}</th>
+                    <th className="px-4 py-4">{intl.formatMessage(m.columnDate)}</th>
+                    <th className="px-4 py-4 text-right">{intl.formatMessage(m.columnTotal)}</th>
+                    <th className="px-4 py-4">{intl.formatMessage(m.columnCategory)}</th>
                     {/* A field the practice made mandatory is a field they
                         need to see: making it required and then hiding it
                         leaves people opening documents one by one to find out
@@ -578,16 +868,16 @@ export function InboxesView() {
                     {mandatoryFields.map((f) => (
                       <th key={f} className="px-4 py-4">{f}</th>
                     ))}
-                    <th className="px-4 py-4">Flags</th>
-                    <th className="px-4 py-4 text-right">Status</th>
-                    <th className="px-4 py-4 text-right">Action</th>
+                    <th className="px-4 py-4">{intl.formatMessage(m.columnFlags)}</th>
+                    <th className="px-4 py-4 text-right">{intl.formatMessage(m.columnStatus)}</th>
+                    <th className="px-4 py-4 text-right">{intl.formatMessage(m.columnAction)}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
                   {rows.length === 0 && (
                     <tr>
                       <td colSpan={9 + mandatoryFields.length} className="px-4 py-16 text-center text-zinc-400 font-medium">
-                        Nothing in this view. Drop files anywhere on this page to ingest them.
+                        {intl.formatMessage(m.emptyTable)}
                       </td>
                     </tr>
                   )}
@@ -622,9 +912,9 @@ export function InboxesView() {
                             <td key={label} className="px-4 py-5">
                               <span
                                 className={`text-[13px] font-semibold ${filled ? 'text-zinc-700' : 'text-amber-600'}`}
-                                title={filled ? undefined : `${label} is required before this can be published`}
+                                title={filled ? undefined : intl.formatMessage(m.fieldRequiredTitle, { field: label })}
                               >
-                                {filled ? value : 'Missing'}
+                                {filled ? value : intl.formatMessage(m.fieldMissing)}
                               </span>
                             </td>
                           );
@@ -635,8 +925,8 @@ export function InboxesView() {
                               <FlagIcon
                                 icon={Copy}
                                 tone="amber"
-                                title="Suspected duplicate"
-                                detail="Another document on file looks like the same spend. Open them side by side to compare."
+                                title={intl.formatMessage(m.flagDuplicate)}
+                                detail={intl.formatMessage(m.flagDuplicateDetail)}
                                 onClick={() => setComparing(pairFor.get(doc.id)!)}
                               />
                             )}
@@ -644,16 +934,16 @@ export function InboxesView() {
                               <FlagIcon
                                 icon={Link2}
                                 tone="blue"
-                                title="Matched to a bank transaction"
-                                detail="The payment for this is on the bank feed, so it is evidenced."
+                                title={intl.formatMessage(m.flagMatched)}
+                                detail={intl.formatMessage(m.flagMatchedDetail)}
                               />
                             )}
                             {doc.status === 'ready' && blocked.length > 0 && (
                               <FlagIcon
                                 icon={ShieldAlert}
                                 tone="red"
-                                title={`Cannot publish — missing ${blocked.join(', ')}`}
-                                detail="Your practice made these fields mandatory before anything reaches the ledger."
+                                title={intl.formatMessage(m.cannotPublish, { fields: blocked.join(', ') })}
+                                detail={intl.formatMessage(m.flagBlockedDetail)}
                               />
                             )}
                           </span>
@@ -672,19 +962,19 @@ export function InboxesView() {
                                 <button
                                   onClick={(e) => { e.stopPropagation(); markReviewed(doc); }}
                                   className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold bg-zinc-100 text-zinc-700 hover:bg-brand hover:text-white transition-colors"
-                                  title="Move to Ready — publish is the next step"
+                                  title={intl.formatMessage(m.markReviewedTitle)}
                                 >
                                   <CheckCircle2 size={14} />
-                                  Mark reviewed
+                                  {intl.formatMessage(m.markReviewedAction)}
                                 </button>
                               ) : (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); setPreview(doc); }}
                                   className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
-                                  title={`${blockedReason(verdict)} — open it to sort that out first.`}
+                                  title={intl.formatMessage(m.fixTitle, { reason: blockedReason(verdict, intl) })}
                                 >
                                   <PencilLine size={14} />
-                                  Fix
+                                  {intl.formatMessage(m.fixAction)}
                                 </button>
                               );
                             })()}
@@ -701,10 +991,10 @@ export function InboxesView() {
                                     <button
                                       onClick={(e) => { e.stopPropagation(); runFix(doc); }}
                                       className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
-                                      title={failure.detail}
+                                      title={intl.formatMessage(failure.detail)}
                                     >
                                       {failure.fix === 'replace-file' ? <UploadCloud size={14} /> : failure.fix === 'reconnect-ledger' ? <Link2 size={14} /> : <PencilLine size={14} />}
-                                      {failure.fixLabel}
+                                      {intl.formatMessage(failure.fixLabel)}
                                     </button>
                                   )}
                                   <button
@@ -716,12 +1006,15 @@ export function InboxesView() {
                                     }`}
                                     title={
                                       failure.retryHelps
-                                        ? retryMeaning(failure)
-                                        : `Unlikely to help — ${failure.reason.toLowerCase()}. ${retryMeaning(failure)}`
+                                        ? intl.formatMessage(retryMeaning(failure))
+                                        : intl.formatMessage(m.retryUnlikelyTitle, {
+                                            reason: reasonText(failure, intl).toLowerCase(),
+                                            meaning: intl.formatMessage(retryMeaning(failure)),
+                                          })
                                     }
                                   >
                                     <RefreshCw size={13} />
-                                    Retry
+                                    {intl.formatMessage(m.retryAction)}
                                   </button>
                                 </>
                               );
@@ -731,10 +1024,10 @@ export function InboxesView() {
                                 onClick={(e) => { e.stopPropagation(); requestPublish([doc.id]); }}
                                 disabled={blocked.length > 0}
                                 className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold bg-brand text-white hover:bg-brand-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                                title={blocked.length ? `Cannot publish — missing ${blocked.join(', ')}` : 'Publish this item'}
+                                title={blocked.length ? intl.formatMessage(m.cannotPublish, { fields: blocked.join(', ') }) : intl.formatMessage(m.publishRowTitle)}
                               >
                                 <Send size={13} />
-                                Publish
+                                {intl.formatMessage(m.publishAction)}
                               </button>
                             )}
                             {/* An eye, not an overflow menu: this opens the
@@ -745,10 +1038,10 @@ export function InboxesView() {
                             <button
                               onClick={(e) => { e.stopPropagation(); setPreview(doc); }}
                               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-bold text-zinc-500 border border-zinc-200 hover:text-black hover:border-zinc-300 transition-colors"
-                              title="Open the document — the original with every extracted field"
+                              title={intl.formatMessage(m.viewTitle)}
                             >
                               <Eye size={14} />
-                              View
+                              {intl.formatMessage(m.viewAction)}
                             </button>
                           </div>
                         </td>
@@ -773,8 +1066,8 @@ export function InboxesView() {
           >
             <div className="bg-card border border-white/10 rounded-[32px] px-10 py-8 text-center shadow-2xl">
               <UploadCloud size={40} className="text-brand mx-auto mb-4" />
-              <p className="text-xl font-bold text-white">Drop to ingest</p>
-              <p className="text-[13px] text-zinc-500 mt-1">Multi-document PDFs are auto-split · 100MB per file</p>
+              <p className="text-xl font-bold text-white">{intl.formatMessage(m.dropHeading)}</p>
+              <p className="text-[13px] text-zinc-500 mt-1">{intl.formatMessage(m.dropDetail)}</p>
             </div>
           </motion.div>
         )}
@@ -853,22 +1146,30 @@ export function InboxesView() {
               >
                 <div className="p-6 border-b border-white/5">
                   <h3 className="font-sans font-bold text-xl text-white tracking-tight">
-                    Publish {docs.length} item{docs.length === 1 ? '' : 's'}?
+                    {intl.formatMessage(m.confirmPublishTitle, { count: docs.length })}
                   </h3>
                   <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
-                    This posts to the ledger and can't be undone here
+                    {intl.formatMessage(m.confirmPublishSubtitle)}
                   </p>
                 </div>
                 <div className="p-6 flex flex-col gap-3">
-                  <ConfirmRow label="Items" value={String(docs.length)} />
-                  <ConfirmRow label="Total value" value={currency(totalValue)} />
-                  <ConfirmRow label={clientNames.length === 1 ? 'Client' : 'Clients'} value={onlyClient ?? `${clientNames.length} clients`} />
+                  <ConfirmRow label={intl.formatMessage(m.confirmRowItems)} value={String(docs.length)} />
+                  <ConfirmRow label={intl.formatMessage(m.confirmRowValue)} value={currency(totalValue)} />
+                  <ConfirmRow
+                    label={intl.formatMessage(clientNames.length === 1 ? m.confirmRowClient : m.confirmRowClients)}
+                    value={onlyClient ?? intl.formatMessage(m.clientCount, { count: clientNames.length })}
+                  />
                   {held.length > 0 && (
                     <div className="flex items-start gap-2.5 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-[13px] text-amber-300 leading-relaxed">
                       <ShieldAlert size={16} className="shrink-0 mt-0.5" />
                       <span>
-                        <span className="font-bold">{held.length} item{held.length === 1 ? '' : 's'}</span> held back — missing required
-                        fields. Fix them in the review, or publish the remaining {publishable} now.
+                        {intl.formatMessage(m.heldBack, {
+                          count: held.length,
+                          remaining: publishable,
+                          // Keyed because formatMessage hands the parts back as an
+                          // array and React counts this element as a list child.
+                          highlight: (chunks: ReactNode[]) => <span key="held" className="font-bold">{chunks}</span>,
+                        })}
                       </span>
                     </div>
                   )}
@@ -878,14 +1179,14 @@ export function InboxesView() {
                     onClick={() => setConfirmPublish(null)}
                     className="px-6 py-2.5 text-sm font-bold text-zinc-300 bg-white/5 hover:bg-white/10 rounded-full transition-all"
                   >
-                    Cancel
+                    {intl.formatMessage(m.cancelAction)}
                   </button>
                   <button
                     onClick={publishConfirmed}
                     disabled={publishable === 0}
                     className="px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    Publish {publishable} item{publishable === 1 ? '' : 's'}
+                    {intl.formatMessage(m.confirmPublishAction, { count: publishable })}
                   </button>
                 </div>
               </motion.div>
@@ -908,13 +1209,12 @@ export function InboxesView() {
               className="w-full max-w-md border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden"
             >
               <div className="p-6 border-b border-white/5">
-                <h3 className="font-sans font-bold text-xl text-white tracking-tight">Required before publish</h3>
-                <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">Items missing these are held back</p>
+                <h3 className="font-sans font-bold text-xl text-white tracking-tight">{intl.formatMessage(m.fieldsHeading)}</h3>
+                <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">{intl.formatMessage(m.fieldsSubtitle)}</p>
               </div>
               <div className="p-6 flex flex-col gap-3">
                 <div className="text-[13px] text-zinc-500 leading-relaxed">
-                  Supplier, Total and Category are always required. Add more below — construction firms require a class,
-                  QBO users require a customer reference.
+                  {intl.formatMessage(m.fieldsIntro)}
                 </div>
                 {OPTIONAL_MANDATORY.map((f) => (
                   <button
@@ -931,7 +1231,7 @@ export function InboxesView() {
               </div>
               <div className="p-4 bg-raised/50 flex justify-end">
                 <button onClick={() => setFieldsOpen(false)} className="px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all">
-                  Done
+                  {intl.formatMessage(m.doneAction)}
                 </button>
               </div>
             </motion.div>
@@ -943,12 +1243,26 @@ export function InboxesView() {
 }
 
 
+const mStatus = defineMessages({
+  processing: { id: 'inboxes.statusBadge.processing', defaultMessage: 'Processing' },
+  failedReason: { id: 'inboxes.statusBadge.failedReason', defaultMessage: 'Failed' },
+  failed: { id: 'inboxes.statusBadge.failed', defaultMessage: 'Failed' },
+  toReview: { id: 'inboxes.statusBadge.toReview', defaultMessage: 'To review' },
+  published: { id: 'inboxes.statusBadge.published', defaultMessage: 'Published' },
+  missingTitle: { id: 'inboxes.statusBadge.missingTitle', defaultMessage: 'Missing {fields}' },
+  readyPublishFailed: { id: 'inboxes.statusBadge.readyPublishFailed', defaultMessage: 'Ready — publish failed' },
+  readyBlocked: { id: 'inboxes.statusBadge.readyBlocked', defaultMessage: 'Ready — blocked' },
+  ready: { id: 'inboxes.statusBadge.ready', defaultMessage: 'Ready' },
+});
+
 function StatusBadge({ doc, blocked }: { doc: Document; blocked: string[] }) {
+  const intl = useIntl();
+
   if (doc.status === 'processing') {
     return (
       <span className="inline-flex items-center gap-1.5 text-zinc-600 text-xs font-bold bg-zinc-100 px-3 py-1 rounded-full">
         <span className="w-2 h-2 rounded-full bg-zinc-400 animate-pulse" />
-        Processing
+        {intl.formatMessage(mStatus.processing)}
       </span>
     );
   }
@@ -957,10 +1271,13 @@ function StatusBadge({ doc, blocked }: { doc: Document; blocked: string[] }) {
     // cause and the way out are one hover away rather than nowhere.
     const failure = failureOf(doc);
     return (
-      <Tooltip label={failure?.reason ?? 'Failed'} {...(failure ? { detail: failure.detail } : {})}>
+      <Tooltip
+        label={failure ? reasonText(failure, intl) : intl.formatMessage(mStatus.failedReason)}
+        {...(failure ? { detail: intl.formatMessage(failure.detail) } : {})}
+      >
         <span className="inline-flex items-center gap-1.5 text-white text-xs font-bold bg-red-500 px-3 py-1 rounded-full cursor-help">
           <AlertCircle size={14} />
-          Failed
+          {intl.formatMessage(mStatus.failed)}
         </span>
       </Tooltip>
     );
@@ -969,7 +1286,7 @@ function StatusBadge({ doc, blocked }: { doc: Document; blocked: string[] }) {
     return (
       <span className="inline-flex items-center gap-1.5 text-zinc-900 text-xs font-bold bg-amber-200 px-3 py-1 rounded-full">
         <AlertCircle size={14} />
-        {doc.statusNote ?? 'To review'}
+        {doc.statusNote ?? intl.formatMessage(mStatus.toReview)}
       </span>
     );
   }
@@ -977,7 +1294,7 @@ function StatusBadge({ doc, blocked }: { doc: Document; blocked: string[] }) {
     return (
       <span className="inline-flex items-center gap-1.5 text-white text-xs font-bold bg-emerald-500 px-3 py-1 rounded-full">
         <CheckCircle2 size={14} />
-        Published
+        {intl.formatMessage(mStatus.published)}
       </span>
     );
   }
@@ -988,10 +1305,14 @@ function StatusBadge({ doc, blocked }: { doc: Document; blocked: string[] }) {
       className={`inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full ${
         yellow ? 'bg-amber-200 text-zinc-900' : 'bg-brand text-white'
       }`}
-      title={doc.publishFailed ? doc.statusNote : blocked.length ? `Missing ${blocked.join(', ')}` : undefined}
+      title={doc.publishFailed ? doc.statusNote : blocked.length ? intl.formatMessage(mStatus.missingTitle, { fields: blocked.join(', ') }) : undefined}
     >
       <CheckCircle2 size={14} />
-      {doc.publishFailed ? 'Ready — publish failed' : blocked.length ? 'Ready — blocked' : 'Ready'}
+      {doc.publishFailed
+        ? intl.formatMessage(mStatus.readyPublishFailed)
+        : blocked.length
+          ? intl.formatMessage(mStatus.readyBlocked)
+          : intl.formatMessage(mStatus.ready)}
     </span>
   );
 }
@@ -1018,6 +1339,11 @@ function ConfirmRow({ label, value }: { label: string; value: string }) {
  * duplicate" is only useful next to the other copy. Where there is nothing to
  * open it stays a hint and keeps the help cursor, so the two do not look alike.
  */
+const mFlag = defineMessages({
+  compareLabel: { id: 'inboxes.flagIcon.compareLabel', defaultMessage: '{title} — compare' },
+  detailClickable: { id: 'inboxes.flagIcon.detailClickable', defaultMessage: '{detail} Click to open.' },
+});
+
 function FlagIcon({ icon: Icon, tone, title, detail, onClick }: {
   icon: LucideIcon;
   tone: 'amber' | 'blue' | 'red';
@@ -1025,6 +1351,7 @@ function FlagIcon({ icon: Icon, tone, title, detail, onClick }: {
   detail?: string;
   onClick?: () => void;
 }) {
+  const intl = useIntl();
   const tones = {
     amber: 'bg-amber-100 text-amber-700 hover:bg-amber-200',
     blue: 'bg-brand/20 text-brand-deep hover:bg-brand/35',
@@ -1033,11 +1360,11 @@ function FlagIcon({ icon: Icon, tone, title, detail, onClick }: {
   const shape = `w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${tones[tone]}`;
 
   return (
-    <Tooltip label={title} {...(detail ? { detail: `${detail}${onClick ? ' Click to open.' : ''}` } : {})}>
+    <Tooltip label={title} {...(detail ? { detail: onClick ? intl.formatMessage(mFlag.detailClickable, { detail }) : detail } : {})}>
       {onClick ? (
         <button
           type="button"
-          aria-label={`${title} — compare`}
+          aria-label={intl.formatMessage(mFlag.compareLabel, { title })}
           onClick={(e) => { e.stopPropagation(); onClick(); }}
           className={`${shape} cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60`}
         >

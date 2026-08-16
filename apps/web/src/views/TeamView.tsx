@@ -4,6 +4,7 @@ import {
   KeyRound, ImagePlus, X, UserPlus, Pencil, LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
 import { fromSlug, slug, useSegment } from '../lib/router';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
@@ -11,11 +12,177 @@ import { DataTable, Pill, type Column } from '../components/DynamicComponents/Da
 import { Modal, Field, Toggle } from './ApprovalsView';
 import type { Colleague, ColleagueRole, Team, WorkflowTask } from '../lib/types';
 
+/**
+ * `TABS` is identity, not copy: it is the `Tab` union, and `slug()`/`fromSlug()`
+ * turn its members into the second path segment. Translating it would rewrite
+ * every tab's URL. The labels live beside it as message descriptors instead,
+ * keyed by the same members so the lookup stays exhaustive.
+ */
 const TABS = ['Colleagues', 'Teams', 'Tasks'] as const;
 type Tab = (typeof TABS)[number];
 
+const TAB_LABELS = defineMessages({
+  Colleagues: { id: 'team.teamView.tabColleagues', defaultMessage: 'Colleagues' },
+  Teams: { id: 'team.teamView.tabTeams', defaultMessage: 'Teams' },
+  Tasks: { id: 'team.teamView.tabTasks', defaultMessage: 'Tasks' },
+});
+
+// Not extracted, deliberately: these are the stored values of `ColleagueRole`
+// and of `Colleague.permissions`, rendered straight from the record elsewhere
+// in this file (`<Pill>{c.role}</Pill>`). Translating the picker but not the
+// record would make one row disagree with the chip that set it.
 const ROLES: ColleagueRole[] = ['Practice Admin', 'Client Admin', 'Standard User'];
 const PERMISSIONS = ['Publish', 'Approve', 'Chase', 'Connect bank', 'Export', 'Delete'];
+
+const m = defineMessages({
+  heading: { id: 'team.teamView.heading', defaultMessage: 'Team' },
+  subtitle: {
+    id: 'team.teamView.subtitle',
+    defaultMessage: '{active} active · {teams} teams · {open} open tasks',
+  },
+  inviteColleague: { id: 'team.teamView.inviteColleague', defaultMessage: 'Invite colleague' },
+  createTeam: { id: 'team.teamView.createTeam', defaultMessage: 'Create team' },
+  newTask: { id: 'team.teamView.newTask', defaultMessage: 'New task' },
+  allClients: { id: 'team.teamView.allClients', defaultMessage: 'All clients' },
+
+  // Engine-derived task explanations.
+  feedLive: { id: 'team.teamView.feedLive', defaultMessage: 'Feed is live' },
+  noFeed: { id: 'team.teamView.noFeed', defaultMessage: 'No feed — statement fallback' },
+  nothingOutstanding: { id: 'team.teamView.nothingOutstanding', defaultMessage: 'Nothing outstanding' },
+  stillUnchased: { id: 'team.teamView.stillUnchased', defaultMessage: '{count} still unchased' },
+  queueClear: { id: 'team.teamView.queueClear', defaultMessage: 'Queue is clear' },
+  awaitingApproval: { id: 'team.teamView.awaitingApproval', defaultMessage: '{count} awaiting approval' },
+
+  // Colleagues table.
+  colColleague: { id: 'team.teamView.colColleague', defaultMessage: 'Colleague' },
+  colRole: { id: 'team.teamView.colRole', defaultMessage: 'Role' },
+  colLocation: { id: 'team.teamView.colLocation', defaultMessage: 'Location' },
+  colClientAccess: { id: 'team.teamView.colClientAccess', defaultMessage: 'Client access' },
+  colPermissions: { id: 'team.teamView.colPermissions', defaultMessage: 'Permissions' },
+  colFields: { id: 'team.teamView.colFields', defaultMessage: 'Fields' },
+  colStatus: { id: 'team.teamView.colStatus', defaultMessage: 'Status' },
+  allAccess: { id: 'team.teamView.allAccess', defaultMessage: 'All' },
+  financeHidden: { id: 'team.teamView.financeHidden', defaultMessage: 'Finance hidden' },
+  active: { id: 'team.teamView.active', defaultMessage: 'Active' },
+  deactivated: { id: 'team.teamView.deactivated', defaultMessage: 'Deactivated' },
+  colleaguesEmpty: { id: 'team.teamView.colleaguesEmpty', defaultMessage: 'No colleagues yet.' },
+  colleaguesFooter: {
+    id: 'team.teamView.colleaguesFooter',
+    defaultMessage: 'The account owner cannot be deactivated · roles are set per account',
+  },
+
+  // Teams tab.
+  teamMembers: { id: 'team.teamView.teamMembers', defaultMessage: '{count} members' },
+  editTeam: { id: 'team.teamView.editTeam', defaultMessage: 'Edit team' },
+  teamNoMembers: {
+    id: 'team.teamView.teamNoMembers',
+    defaultMessage: 'No members yet — edit the team to add some.',
+  },
+  teamsEmpty: {
+    id: 'team.teamView.teamsEmpty',
+    defaultMessage: 'No teams yet. Create one to group colleagues and scope their client access.',
+  },
+
+  // Tasks table.
+  colTask: { id: 'team.teamView.colTask', defaultMessage: 'Task' },
+  colClient: { id: 'team.teamView.colClient', defaultMessage: 'Client' },
+  colAssignee: { id: 'team.teamView.colAssignee', defaultMessage: 'Assigned to' },
+  colDue: { id: 'team.teamView.colDue', defaultMessage: 'Due' },
+  colTaskStatus: { id: 'team.teamView.colTaskStatus', defaultMessage: 'Status' },
+  unassigned: { id: 'team.teamView.unassigned', defaultMessage: 'Unassigned' },
+  statusDoneAuto: { id: 'team.teamView.statusDoneAuto', defaultMessage: 'Done (auto)' },
+  statusBlocked: { id: 'team.teamView.statusBlocked', defaultMessage: 'Blocked' },
+  statusComplete: { id: 'team.teamView.statusComplete', defaultMessage: 'Complete' },
+  statusWithIssues: { id: 'team.teamView.statusWithIssues', defaultMessage: 'With issues' },
+  statusNotApplicable: { id: 'team.teamView.statusNotApplicable', defaultMessage: 'N/A' },
+  statusOpen: { id: 'team.teamView.statusOpen', defaultMessage: 'Open' },
+  actionComplete: { id: 'team.teamView.actionComplete', defaultMessage: 'Complete' },
+  actionCompleteWithIssues: {
+    id: 'team.teamView.actionCompleteWithIssues',
+    defaultMessage: 'Complete with issues',
+  },
+  actionNotApplicable: { id: 'team.teamView.actionNotApplicable', defaultMessage: 'Not applicable' },
+  tasksEmpty: { id: 'team.teamView.tasksEmpty', defaultMessage: 'No tasks for this scope.' },
+  bulkMarkComplete: { id: 'team.teamView.bulkMarkComplete', defaultMessage: 'Mark complete' },
+  bulkAssignAction: { id: 'team.teamView.bulkAssignAction', defaultMessage: 'Assign to…' },
+  bulkAskAi: { id: 'team.teamView.bulkAskAi', defaultMessage: 'Ask AI about workload' },
+  tasksFooter: {
+    id: 'team.teamView.tasksFooter',
+    defaultMessage: "Recurring per-client checklists scoped to this product's job",
+  },
+
+  // Confirmations.
+  removeColleagueTitle: { id: 'team.teamView.removeColleagueTitle', defaultMessage: 'Remove {name}?' },
+  removeColleagueDetail: {
+    id: 'team.teamView.removeColleagueDetail',
+    defaultMessage: '{role} · {count, plural, one {# client} other {# clients}}.',
+  },
+  removeColleagueConsequence: {
+    id: 'team.teamView.removeColleagueConsequence',
+    defaultMessage: 'Their access ends immediately. Approvals they already gave stay on the record.',
+  },
+  removeColleagueConfirm: {
+    id: 'team.teamView.removeColleagueConfirm',
+    defaultMessage: 'Yes, remove them',
+  },
+  deleteTeamTitle: {
+    id: 'team.teamView.deleteTeamTitle',
+    defaultMessage: 'Delete the "{name}" team?',
+  },
+  deleteTeamDetail: {
+    id: 'team.teamView.deleteTeamDetail',
+    defaultMessage: '{count, plural, one {# member} other {# members}} · {accessLevel}.',
+  },
+  deleteTeamConsequence: {
+    id: 'team.teamView.deleteTeamConsequence',
+    defaultMessage: 'Members keep their own client access; only the grouping goes.',
+  },
+  deleteTeamConfirm: { id: 'team.teamView.deleteTeamConfirm', defaultMessage: 'Yes, delete it' },
+
+  // Bulk-assign modal.
+  bulkAssignHeading: { id: 'team.teamView.bulkAssignHeading', defaultMessage: 'Assign to' },
+  bulkAssignCount: {
+    id: 'team.teamView.bulkAssignCount',
+    defaultMessage: '{count, plural, one {# task} other {# tasks}}',
+  },
+
+  // Audit entries. These are rendered to a human in the audit table
+  // (`AuditTable` reads `action` and `scope` straight out of the log), so they
+  // are copy, not machine keys — the same call the reference conversion makes
+  // for the chat replies it posts.
+  auditSavedColleague: { id: 'team.teamView.auditSavedColleague', defaultMessage: 'Saved colleague' },
+  auditColleagueScope: { id: 'team.teamView.auditColleagueScope', defaultMessage: '{name} — {role}' },
+  auditPasswordReset: {
+    id: 'team.teamView.auditPasswordReset',
+    defaultMessage: 'Sent a password reset link',
+  },
+  auditPasswordResetScope: {
+    id: 'team.teamView.auditPasswordResetScope',
+    defaultMessage: '{name} — {email}',
+  },
+  auditNewColleague: { id: 'team.teamView.auditNewColleague', defaultMessage: 'new colleague' },
+  auditAssignedTask: { id: 'team.teamView.auditAssignedTask', defaultMessage: 'Assigned a task' },
+  auditAssignedTaskScope: {
+    id: 'team.teamView.auditAssignedTaskScope',
+    defaultMessage: '{title} → {assignee}',
+  },
+  auditSavedTeam: { id: 'team.teamView.auditSavedTeam', defaultMessage: 'Saved team' },
+  auditSavedTeamScope: {
+    id: 'team.teamView.auditSavedTeamScope',
+    defaultMessage: '{name} — {count} member(s)',
+  },
+  auditDeletedTeam: { id: 'team.teamView.auditDeletedTeam', defaultMessage: 'Deleted team' },
+  auditCreatedTask: { id: 'team.teamView.auditCreatedTask', defaultMessage: 'Created a task' },
+  auditCreatedTaskScope: {
+    id: 'team.teamView.auditCreatedTaskScope',
+    defaultMessage: '{title} — {clientName} → {assignee}',
+  },
+  auditAssignedTasks: { id: 'team.teamView.auditAssignedTasks', defaultMessage: 'Assigned tasks' },
+  auditAssignedTasksScope: {
+    id: 'team.teamView.auditAssignedTasksScope',
+    defaultMessage: '{count} task(s) → {assignee}',
+  },
+});
 
 export function TeamView() {
   const {
@@ -25,6 +192,7 @@ export function TeamView() {
   } = useAppContext();
 
   // The sub-tab is the second path segment, so every one has a link.
+  const intl = useIntl();
   const confirm = useConfirm();
   const [tabSlug, setTabSlug] = useSegment(1);
   const tab: Tab = fromSlug(tabSlug, TABS) ?? 'Colleagues';
@@ -48,21 +216,34 @@ export function TeamView() {
       const s = statsFor(t.clientId);
       const client = clients.find((c) => c.id === t.clientId);
       if (t.title.startsWith('Confirm bank feed')) {
-        map[t.id] = { done: !!client?.bankConnected, why: client?.bankConnected ? 'Feed is live' : 'No feed — statement fallback' };
+        map[t.id] = {
+          done: !!client?.bankConnected,
+          why: intl.formatMessage(client?.bankConnected ? m.feedLive : m.noFeed),
+        };
       } else if (t.title.startsWith('Chase missing')) {
-        map[t.id] = { done: s.missing === 0, why: s.missing === 0 ? 'Nothing outstanding' : `${s.missing} still unchased` };
+        map[t.id] = {
+          done: s.missing === 0,
+          why: s.missing === 0
+            ? intl.formatMessage(m.nothingOutstanding)
+            : intl.formatMessage(m.stillUnchased, { count: s.missing }),
+        };
       } else if (t.title.startsWith('Approve')) {
-        map[t.id] = { done: s.approvals === 0, why: s.approvals === 0 ? 'Queue is clear' : `${s.approvals} awaiting approval` };
+        map[t.id] = {
+          done: s.approvals === 0,
+          why: s.approvals === 0
+            ? intl.formatMessage(m.queueClear)
+            : intl.formatMessage(m.awaitingApproval, { count: s.approvals }),
+        };
       }
     });
     return map;
-  }, [tasks, statsFor, clients]);
+  }, [tasks, statsFor, clients, intl]);
 
   const scopedTasks = tasks.filter((t) => taskClient === 'all' || t.clientId === taskClient);
 
   const colleagueColumns: Column<Colleague>[] = [
     {
-      key: 'name', label: 'Colleague', sortValue: (c) => c.name,
+      key: 'name', label: intl.formatMessage(m.colColleague), sortValue: (c) => c.name,
       render: (c) => (
         <span className="flex items-center gap-3">
           <span className="w-9 h-9 rounded-xl bg-raised border border-white/5 flex items-center justify-center font-bold text-white text-[13px] shrink-0 overflow-hidden">
@@ -76,16 +257,16 @@ export function TeamView() {
       ),
     },
     {
-      key: 'role', label: 'Role', sortValue: (c) => c.role,
+      key: 'role', label: intl.formatMessage(m.colRole), sortValue: (c) => c.role,
       render: (c) => <Pill tone={c.role === 'Practice Admin' ? 'blue' : 'neutral'}>{c.role}</Pill>,
     },
-    { key: 'location', label: 'Location', sortValue: (c) => c.location, render: (c) => <span className="inline-flex items-center gap-1.5 text-zinc-400"><MapPin size={12} />{c.location}</span> },
+    { key: 'location', label: intl.formatMessage(m.colLocation), sortValue: (c) => c.location, render: (c) => <span className="inline-flex items-center gap-1.5 text-zinc-400"><MapPin size={12} />{c.location}</span> },
     {
-      key: 'clients', label: 'Client access', align: 'right', sortValue: (c) => c.clientIds.length,
-      render: (c) => (c.role === 'Standard User' ? <span className="tabular-nums text-zinc-300">{c.clientIds.length}</span> : <Pill>All</Pill>),
+      key: 'clients', label: intl.formatMessage(m.colClientAccess), align: 'right', sortValue: (c) => c.clientIds.length,
+      render: (c) => (c.role === 'Standard User' ? <span className="tabular-nums text-zinc-300">{c.clientIds.length}</span> : <Pill>{intl.formatMessage(m.allAccess)}</Pill>),
     },
     {
-      key: 'permissions', label: 'Permissions',
+      key: 'permissions', label: intl.formatMessage(m.colPermissions),
       render: (c) => (
         <span className="flex flex-wrap gap-1">
           {c.permissions.slice(0, 3).map((p) => <Pill key={p}>{p}</Pill>)}
@@ -94,12 +275,12 @@ export function TeamView() {
       ),
     },
     {
-      key: 'hide', label: 'Fields',
-      render: (c) => (c.hideFinanceFields ? <Pill tone="amber">Finance hidden</Pill> : <span className="text-zinc-700">—</span>),
+      key: 'hide', label: intl.formatMessage(m.colFields),
+      render: (c) => (c.hideFinanceFields ? <Pill tone="amber">{intl.formatMessage(m.financeHidden)}</Pill> : <span className="text-zinc-700">—</span>),
     },
     {
-      key: 'active', label: 'Status', align: 'right', sortValue: (c) => String(c.active),
-      render: (c) => (c.active ? <Pill tone="green">Active</Pill> : <Pill tone="red">Deactivated</Pill>),
+      key: 'active', label: intl.formatMessage(m.colStatus), align: 'right', sortValue: (c) => String(c.active),
+      render: (c) => (c.active ? <Pill tone="green">{intl.formatMessage(m.active)}</Pill> : <Pill tone="red">{intl.formatMessage(m.deactivated)}</Pill>),
     },
   ];
 
@@ -112,9 +293,13 @@ export function TeamView() {
               <Shield size={22} />
             </div>
             <div>
-              <h1 className="font-sans text-3xl font-semibold text-white tracking-tight">Team</h1>
+              <h1 className="font-sans text-3xl font-semibold text-white tracking-tight">{intl.formatMessage(m.heading)}</h1>
               <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
-                {colleagues.filter((c) => c.active).length} active · {teams.length} teams · {tasks.filter((t) => t.status === 'open').length} open tasks
+                {intl.formatMessage(m.subtitle, {
+                  active: colleagues.filter((c) => c.active).length,
+                  teams: teams.length,
+                  open: tasks.filter((t) => t.status === 'open').length,
+                })}
               </p>
             </div>
           </div>
@@ -124,7 +309,7 @@ export function TeamView() {
               className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
             >
               <Plus size={16} strokeWidth={2.5} />
-              Invite colleague
+              {intl.formatMessage(m.inviteColleague)}
             </button>
           )}
           {tab === 'Teams' && (
@@ -133,7 +318,7 @@ export function TeamView() {
               className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
             >
               <Plus size={16} strokeWidth={2.5} />
-              Create team
+              {intl.formatMessage(m.createTeam)}
             </button>
           )}
           {tab === 'Tasks' && (
@@ -143,7 +328,7 @@ export function TeamView() {
                 onChange={(e) => setTaskClient(e.target.value)}
                 className="bg-card border border-white/5 rounded-full py-2.5 px-4 text-sm font-semibold text-zinc-300 focus:outline-none focus:border-brand shadow-inner"
               >
-                <option value="all">All clients</option>
+                <option value="all">{intl.formatMessage(m.allClients)}</option>
                 {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
               <button
@@ -151,7 +336,7 @@ export function TeamView() {
                 className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
               >
                 <Plus size={16} strokeWidth={2.5} />
-                New task
+                {intl.formatMessage(m.newTask)}
               </button>
             </div>
           )}
@@ -169,7 +354,7 @@ export function TeamView() {
                 : 'bg-card text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
             }`}
           >
-            {t}
+            {intl.formatMessage(TAB_LABELS[t])}
           </button>
         ))}
       </div>
@@ -183,8 +368,8 @@ export function TeamView() {
               rows={colleagues}
               rowId={(c) => c.id}
               onRowClick={(c) => setEditing(c)}
-              emptyMessage="No colleagues yet."
-              footer="The account owner cannot be deactivated · roles are set per account"
+              emptyMessage={intl.formatMessage(m.colleaguesEmpty)}
+              footer={intl.formatMessage(m.colleaguesFooter)}
             />
           )}
 
@@ -203,10 +388,10 @@ export function TeamView() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <Pill>{team.memberIds.length} members</Pill>
+                      <Pill>{intl.formatMessage(m.teamMembers, { count: team.memberIds.length })}</Pill>
                       <button
                         onClick={() => setEditingTeam(team)}
-                        title="Edit team"
+                        title={intl.formatMessage(m.editTeam)}
                         className="w-8 h-8 rounded-lg border border-white/5 text-zinc-500 hover:text-white hover:border-white/20 flex items-center justify-center transition-colors"
                       >
                         <Pencil size={13} />
@@ -215,7 +400,7 @@ export function TeamView() {
                   </div>
                   <div className="p-6 flex flex-col gap-2">
                     {team.memberIds.length === 0 && (
-                      <p className="text-[13px] text-zinc-500 py-4 text-center">No members yet — edit the team to add some.</p>
+                      <p className="text-[13px] text-zinc-500 py-4 text-center">{intl.formatMessage(m.teamNoMembers)}</p>
                     )}
                     {team.memberIds.map((id) => {
                       const member = colleagues.find((c) => c.id === id);
@@ -238,7 +423,7 @@ export function TeamView() {
 
               {teams.length === 0 && (
                 <div className="border border-white/5 rounded-[32px] bg-card p-10 text-center text-zinc-500 lg:col-span-2">
-                  No teams yet. Create one to group colleagues and scope their client access.
+                  {intl.formatMessage(m.teamsEmpty)}
                 </div>
               )}
             </div>
@@ -249,7 +434,7 @@ export function TeamView() {
               className="max-w-none"
               columns={[
                 {
-                  key: 'title', label: 'Task', sortValue: (t) => t.title,
+                  key: 'title', label: intl.formatMessage(m.colTask), sortValue: (t) => t.title,
                   render: (t) => {
                     const suggestion = prefill[t.id];
                     return (
@@ -265,46 +450,52 @@ export function TeamView() {
                     );
                   },
                 },
-                { key: 'clientName', label: 'Client', sortValue: (t) => t.clientName },
+                { key: 'clientName', label: intl.formatMessage(m.colClient), sortValue: (t) => t.clientName },
                 {
-                  key: 'assignee', label: 'Assigned to', sortValue: (t) => t.assignee,
+                  key: 'assignee', label: intl.formatMessage(m.colAssignee), sortValue: (t) => t.assignee,
                   render: (t) => (
                     <select
                       value={assignees.includes(t.assignee) ? t.assignee : ''}
                       onClick={(e) => e.stopPropagation()}
                       onChange={(e) => {
                         assignTask(t.id, e.target.value);
-                        logAudit({ action: 'Assigned a task', scope: `${t.title} → ${e.target.value}`, reviewOpened: false });
+                        logAudit({
+                          action: intl.formatMessage(m.auditAssignedTask),
+                          scope: intl.formatMessage(m.auditAssignedTaskScope, { title: t.title, assignee: e.target.value }),
+                          reviewOpened: false,
+                        });
                       }}
                       className="bg-ground border border-white/5 rounded-lg py-1.5 px-2.5 text-[12px] font-semibold text-zinc-300 focus:outline-none focus:border-brand"
                     >
-                      {!assignees.includes(t.assignee) && <option value="">{t.assignee || 'Unassigned'}</option>}
+                      {!assignees.includes(t.assignee) && <option value="">{t.assignee || intl.formatMessage(m.unassigned)}</option>}
                       {assignees.map((a) => <option key={a} value={a} className="bg-card">{a}</option>)}
                     </select>
                   ),
                 },
-                { key: 'due', label: 'Due', sortValue: (t) => t.due },
+                { key: 'due', label: intl.formatMessage(m.colDue), sortValue: (t) => t.due },
                 {
-                  key: 'status', label: 'Status', align: 'right', sortValue: (t) => t.status,
+                  key: 'status', label: intl.formatMessage(m.colTaskStatus), align: 'right', sortValue: (t) => t.status,
                   render: (t) => {
                     // Engine-answered tasks show their derived state until a human overrides it.
                     const derived = prefill[t.id];
                     if (t.status === 'open' && derived) {
-                      return derived.done ? <Pill tone="green">Done (auto)</Pill> : <Pill tone="amber">Blocked</Pill>;
+                      return derived.done
+                        ? <Pill tone="green">{intl.formatMessage(m.statusDoneAuto)}</Pill>
+                        : <Pill tone="amber">{intl.formatMessage(m.statusBlocked)}</Pill>;
                     }
-                    return t.status === 'complete' ? <Pill tone="green">Complete</Pill>
-                      : t.status === 'complete-with-issues' ? <Pill tone="amber">With issues</Pill>
-                      : t.status === 'not-applicable' ? <Pill>N/A</Pill>
-                      : <Pill>Open</Pill>;
+                    return t.status === 'complete' ? <Pill tone="green">{intl.formatMessage(m.statusComplete)}</Pill>
+                      : t.status === 'complete-with-issues' ? <Pill tone="amber">{intl.formatMessage(m.statusWithIssues)}</Pill>
+                      : t.status === 'not-applicable' ? <Pill>{intl.formatMessage(m.statusNotApplicable)}</Pill>
+                      : <Pill>{intl.formatMessage(m.statusOpen)}</Pill>;
                   },
                 },
                 {
                   key: 'actions', label: '', align: 'right',
                   render: (t) => (
                     <span className="flex items-center gap-1.5 justify-end">
-                      <IconBtn icon={Check} title="Complete" onClick={() => setTaskStatus(t.id, 'complete')} />
-                      <IconBtn icon={AlertTriangle} title="Complete with issues" onClick={() => setTaskStatus(t.id, 'complete-with-issues')} />
-                      <IconBtn icon={CircleSlash} title="Not applicable" onClick={() => setTaskStatus(t.id, 'not-applicable')} />
+                      <IconBtn icon={Check} title={intl.formatMessage(m.actionComplete)} onClick={() => setTaskStatus(t.id, 'complete')} />
+                      <IconBtn icon={AlertTriangle} title={intl.formatMessage(m.actionCompleteWithIssues)} onClick={() => setTaskStatus(t.id, 'complete-with-issues')} />
+                      <IconBtn icon={CircleSlash} title={intl.formatMessage(m.actionNotApplicable)} onClick={() => setTaskStatus(t.id, 'not-applicable')} />
                     </span>
                   ),
                 },
@@ -312,22 +503,22 @@ export function TeamView() {
               rows={scopedTasks}
               rowId={(t) => t.id}
               selectable
-              emptyMessage="No tasks for this scope."
+              emptyMessage={intl.formatMessage(m.tasksEmpty)}
               bulkActions={[
-                { label: 'Mark complete', icon: Check, onClick: (sel) => sel.forEach((t) => setTaskStatus(t.id, 'complete')) },
+                { label: intl.formatMessage(m.bulkMarkComplete), icon: Check, onClick: (sel) => sel.forEach((t) => setTaskStatus(t.id, 'complete')) },
                 {
-                  label: 'Assign to…',
+                  label: intl.formatMessage(m.bulkAssignAction),
                   icon: UserPlus,
                   onClick: (sel) => setBulkAssign(sel.map((t) => t.id)),
                 },
                 {
-                  label: 'Ask AI about workload',
+                  label: intl.formatMessage(m.bulkAskAi),
                   icon: Sparkles,
                   primary: true,
                   onClick: () => startConversation(taskClient === 'all' ? [] : [taskClient]),
                 },
               ]}
-              footer="Recurring per-client checklists scoped to this product's job"
+              footer={intl.formatMessage(m.tasksFooter)}
             />
           )}
         </motion.div>
@@ -339,16 +530,20 @@ export function TeamView() {
             colleague={editing}
             onSave={(c) => {
               saveColleague(c);
-              logAudit({ action: 'Saved colleague', scope: `${c.name} — ${c.role}`, reviewOpened: true });
+              logAudit({
+                action: intl.formatMessage(m.auditSavedColleague),
+                scope: intl.formatMessage(m.auditColleagueScope, { name: c.name, role: c.role }),
+                reviewOpened: true,
+              });
               setEditing(null);
             }}
             onRemove={async () => {
               const ok = await confirm({
                 tone: 'red',
-                title: `Remove ${editing.name}?`,
-                detail: `${editing.role} · ${editing.clientIds.length} client${editing.clientIds.length === 1 ? '' : 's'}.`,
-                consequence: 'Their access ends immediately. Approvals they already gave stay on the record.',
-                confirmLabel: 'Yes, remove them',
+                title: intl.formatMessage(m.removeColleagueTitle, { name: editing.name }),
+                detail: intl.formatMessage(m.removeColleagueDetail, { role: editing.role, count: editing.clientIds.length }),
+                consequence: intl.formatMessage(m.removeColleagueConsequence),
+                confirmLabel: intl.formatMessage(m.removeColleagueConfirm),
               });
               if (!ok) return;
               removeColleague(editing.id);
@@ -356,7 +551,14 @@ export function TeamView() {
             }}
             onResetPassword={() => {
               sendPasswordReset(editing.id);
-              logAudit({ action: 'Sent a password reset link', scope: `${editing.name || 'new colleague'} — ${editing.email}`, reviewOpened: true });
+              logAudit({
+                action: intl.formatMessage(m.auditPasswordReset),
+                scope: intl.formatMessage(m.auditPasswordResetScope, {
+                  name: editing.name || intl.formatMessage(m.auditNewColleague),
+                  email: editing.email,
+                }),
+                reviewOpened: true,
+              });
             }}
             onClose={() => setEditing(null)}
           />
@@ -367,20 +569,27 @@ export function TeamView() {
             team={editingTeam}
             onSave={(t) => {
               saveTeam(t);
-              logAudit({ action: 'Saved team', scope: `${t.name} — ${t.memberIds.length} member(s)`, reviewOpened: true });
+              logAudit({
+                action: intl.formatMessage(m.auditSavedTeam),
+                scope: intl.formatMessage(m.auditSavedTeamScope, { name: t.name, count: t.memberIds.length }),
+                reviewOpened: true,
+              });
               setEditingTeam(null);
             }}
             onRemove={async () => {
               const ok = await confirm({
                 tone: 'red',
-                title: `Delete the "${editingTeam.name}" team?`,
-                detail: `${editingTeam.memberIds.length} member${editingTeam.memberIds.length === 1 ? '' : 's'} · ${editingTeam.accessLevel}.`,
-                consequence: 'Members keep their own client access; only the grouping goes.',
-                confirmLabel: 'Yes, delete it',
+                title: intl.formatMessage(m.deleteTeamTitle, { name: editingTeam.name }),
+                detail: intl.formatMessage(m.deleteTeamDetail, {
+                  count: editingTeam.memberIds.length,
+                  accessLevel: editingTeam.accessLevel,
+                }),
+                consequence: intl.formatMessage(m.deleteTeamConsequence),
+                confirmLabel: intl.formatMessage(m.deleteTeamConfirm),
               });
               if (!ok) return;
               removeTeam(editingTeam.id);
-              logAudit({ action: 'Deleted team', scope: editingTeam.name, reviewOpened: true });
+              logAudit({ action: intl.formatMessage(m.auditDeletedTeam), scope: editingTeam.name, reviewOpened: true });
               setEditingTeam(null);
             }}
             onClose={() => setEditingTeam(null)}
@@ -393,7 +602,15 @@ export function TeamView() {
             defaultClientId={taskClient === 'all' ? clients[0]?.id ?? '' : taskClient}
             onCreate={(t) => {
               addTask(t);
-              logAudit({ action: 'Created a task', scope: `${t.title} — ${t.clientName} → ${t.assignee}`, reviewOpened: true });
+              logAudit({
+                action: intl.formatMessage(m.auditCreatedTask),
+                scope: intl.formatMessage(m.auditCreatedTaskScope, {
+                  title: t.title,
+                  clientName: t.clientName,
+                  assignee: t.assignee,
+                }),
+                reviewOpened: true,
+              });
               setNewTask(false);
             }}
             onClose={() => setNewTask(false)}
@@ -404,9 +621,9 @@ export function TeamView() {
           <Modal onClose={() => setBulkAssign(null)}>
             <div className="w-full max-w-sm border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
               <div className="p-6 border-b border-white/5">
-                <h3 className="font-sans font-bold text-xl text-white tracking-tight">Assign to</h3>
+                <h3 className="font-sans font-bold text-xl text-white tracking-tight">{intl.formatMessage(m.bulkAssignHeading)}</h3>
                 <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
-                  {bulkAssign.length} task{bulkAssign.length === 1 ? '' : 's'}
+                  {intl.formatMessage(m.bulkAssignCount, { count: bulkAssign.length })}
                 </p>
               </div>
               <div className="p-4 flex flex-col gap-1">
@@ -415,7 +632,11 @@ export function TeamView() {
                     key={a}
                     onClick={() => {
                       bulkAssign.forEach((id) => assignTask(id, a));
-                      logAudit({ action: 'Assigned tasks', scope: `${bulkAssign.length} task(s) → ${a}`, reviewOpened: true });
+                      logAudit({
+                        action: intl.formatMessage(m.auditAssignedTasks),
+                        scope: intl.formatMessage(m.auditAssignedTasksScope, { count: bulkAssign.length, assignee: a }),
+                        reviewOpened: true,
+                      });
                       setBulkAssign(null);
                     }}
                     className="px-4 py-3 rounded-2xl text-left text-sm font-bold text-zinc-300 hover:bg-white/5 hover:text-white transition-colors"
@@ -432,11 +653,28 @@ export function TeamView() {
   );
 }
 
+const teamEditorM = defineMessages({
+  heading: { id: 'team.teamEditor.heading', defaultMessage: 'Create team' },
+  subtitle: {
+    id: 'team.teamEditor.subtitle',
+    defaultMessage: 'Groups colleagues and scopes the clients they can reach',
+  },
+  nameLabel: { id: 'team.teamEditor.nameLabel', defaultMessage: 'Team name' },
+  namePlaceholder: { id: 'team.teamEditor.namePlaceholder', defaultMessage: 'Hospitality team' },
+  clientAccessLabel: { id: 'team.teamEditor.clientAccessLabel', defaultMessage: 'Client access' },
+  membersLabel: { id: 'team.teamEditor.membersLabel', defaultMessage: 'Members ({count})' },
+  deleteTeam: { id: 'team.teamEditor.deleteTeam', defaultMessage: 'Delete team' },
+  create: { id: 'team.teamEditor.create', defaultMessage: 'Create team' },
+  save: { id: 'team.teamEditor.save', defaultMessage: 'Save' },
+  untitled: { id: 'team.teamEditor.untitled', defaultMessage: 'Untitled team' },
+});
+
 /** Create or edit a team: name, how much client access it carries, members. */
 function TeamEditor({ team, onSave, onRemove, onClose }: {
   team: Team; onSave: (t: Team) => void; onRemove: () => void; onClose: () => void;
 }) {
   const { colleagues } = useAppContext();
+  const intl = useIntl();
   const [draft, setDraft] = useState(team);
   const isNew = !team.name;
 
@@ -444,17 +682,22 @@ function TeamEditor({ team, onSave, onRemove, onClose }: {
     <Modal onClose={onClose}>
       <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
         <div className="p-6 border-b border-white/5">
-          <h3 className="font-sans font-bold text-xl text-white tracking-tight">{team.name || 'Create team'}</h3>
+          <h3 className="font-sans font-bold text-xl text-white tracking-tight">{team.name || intl.formatMessage(teamEditorM.heading)}</h3>
           <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
-            Groups colleagues and scopes the clients they can reach
+            {intl.formatMessage(teamEditorM.subtitle)}
           </p>
         </div>
 
         <div className="p-6 flex flex-col gap-5 max-h-[55vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <Field label="Team name" value={draft.name} onChange={(v) => setDraft({ ...draft, name: v })} placeholder="Hospitality team" />
+          <Field
+            label={intl.formatMessage(teamEditorM.nameLabel)}
+            value={draft.name}
+            onChange={(v) => setDraft({ ...draft, name: v })}
+            placeholder={intl.formatMessage(teamEditorM.namePlaceholder)}
+          />
 
           <div>
-            <Label>Client access</Label>
+            <Label>{intl.formatMessage(teamEditorM.clientAccessLabel)}</Label>
             <div className="flex flex-wrap gap-2">
               {(['All clients', 'Assigned clients only'] as Team['accessLevel'][]).map((level) => (
                 <Chip key={level} active={draft.accessLevel === level} onClick={() => setDraft({ ...draft, accessLevel: level })}>
@@ -465,7 +708,7 @@ function TeamEditor({ team, onSave, onRemove, onClose }: {
           </div>
 
           <div>
-            <Label>Members ({draft.memberIds.length})</Label>
+            <Label>{intl.formatMessage(teamEditorM.membersLabel, { count: draft.memberIds.length })}</Label>
             <div className="flex flex-col gap-2">
               {colleagues.map((c) => {
                 const member = draft.memberIds.includes(c.id);
@@ -503,20 +746,38 @@ function TeamEditor({ team, onSave, onRemove, onClose }: {
           ) : (
             <button onClick={onRemove} className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-bold text-zinc-500 hover:text-red-400 hover:bg-white/5 transition-colors">
               <Trash2 size={15} />
-              Delete team
+              {intl.formatMessage(teamEditorM.deleteTeam)}
             </button>
           )}
           <button
-            onClick={() => onSave({ ...draft, name: draft.name.trim() || 'Untitled team' })}
+            onClick={() => onSave({ ...draft, name: draft.name.trim() || intl.formatMessage(teamEditorM.untitled) })}
             className="px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-all"
           >
-            {isNew ? 'Create team' : 'Save'}
+            {intl.formatMessage(isNew ? teamEditorM.create : teamEditorM.save)}
           </button>
         </div>
       </div>
     </Modal>
   );
 }
+
+const taskComposerM = defineMessages({
+  heading: { id: 'team.taskComposer.heading', defaultMessage: 'New task' },
+  subtitle: { id: 'team.taskComposer.subtitle', defaultMessage: 'Scoped to one client and one owner' },
+  titleLabel: { id: 'team.taskComposer.titleLabel', defaultMessage: 'What needs doing' },
+  titlePlaceholder: {
+    id: 'team.taskComposer.titlePlaceholder',
+    defaultMessage: 'Chase missing July receipts',
+  },
+  clientLabel: { id: 'team.taskComposer.clientLabel', defaultMessage: 'Client' },
+  assigneeLabel: { id: 'team.taskComposer.assigneeLabel', defaultMessage: 'Assign to' },
+  dueLabel: { id: 'team.taskComposer.dueLabel', defaultMessage: 'Due' },
+  duePlaceholder: { id: 'team.taskComposer.duePlaceholder', defaultMessage: '31 Aug 2026' },
+  cancel: { id: 'team.taskComposer.cancel', defaultMessage: 'Cancel' },
+  create: { id: 'team.taskComposer.create', defaultMessage: 'Create task' },
+  defaultAssignee: { id: 'team.taskComposer.defaultAssignee', defaultMessage: 'You' },
+  untitled: { id: 'team.taskComposer.untitled', defaultMessage: 'Untitled task' },
+});
 
 /** Raise a one-off task and put it on someone's desk. */
 function TaskComposer({ assignees, defaultClientId, onCreate, onClose }: {
@@ -526,9 +787,10 @@ function TaskComposer({ assignees, defaultClientId, onCreate, onClose }: {
   onClose: () => void;
 }) {
   const { clients } = useAppContext();
+  const intl = useIntl();
   const [title, setTitle] = useState('');
   const [clientId, setClientId] = useState(defaultClientId);
-  const [assignee, setAssignee] = useState(assignees[0] ?? 'You');
+  const [assignee, setAssignee] = useState(assignees[0] ?? intl.formatMessage(taskComposerM.defaultAssignee));
   const [due, setDue] = useState('');
 
   const client = clients.find((c) => c.id === clientId);
@@ -537,17 +799,22 @@ function TaskComposer({ assignees, defaultClientId, onCreate, onClose }: {
     <Modal onClose={onClose}>
       <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
         <div className="p-6 border-b border-white/5">
-          <h3 className="font-sans font-bold text-xl text-white tracking-tight">New task</h3>
+          <h3 className="font-sans font-bold text-xl text-white tracking-tight">{intl.formatMessage(taskComposerM.heading)}</h3>
           <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
-            Scoped to one client and one owner
+            {intl.formatMessage(taskComposerM.subtitle)}
           </p>
         </div>
 
         <div className="p-6 flex flex-col gap-5">
-          <Field label="What needs doing" value={title} onChange={setTitle} placeholder="Chase missing July receipts" />
+          <Field
+            label={intl.formatMessage(taskComposerM.titleLabel)}
+            value={title}
+            onChange={setTitle}
+            placeholder={intl.formatMessage(taskComposerM.titlePlaceholder)}
+          />
 
           <div>
-            <Label>Client</Label>
+            <Label>{intl.formatMessage(taskComposerM.clientLabel)}</Label>
             <select
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
@@ -558,7 +825,7 @@ function TaskComposer({ assignees, defaultClientId, onCreate, onClose }: {
           </div>
 
           <div>
-            <Label>Assign to</Label>
+            <Label>{intl.formatMessage(taskComposerM.assigneeLabel)}</Label>
             <div className="flex flex-wrap gap-2">
               {assignees.map((a) => (
                 <Chip key={a} active={assignee === a} onClick={() => setAssignee(a)}>{a}</Chip>
@@ -566,12 +833,17 @@ function TaskComposer({ assignees, defaultClientId, onCreate, onClose }: {
             </div>
           </div>
 
-          <Field label="Due" value={due} onChange={setDue} placeholder="31 Aug 2026" />
+          <Field
+            label={intl.formatMessage(taskComposerM.dueLabel)}
+            value={due}
+            onChange={setDue}
+            placeholder={intl.formatMessage(taskComposerM.duePlaceholder)}
+          />
         </div>
 
         <div className="p-4 bg-raised/50 flex justify-end gap-3">
           <button onClick={onClose} className="px-5 py-2.5 rounded-full text-sm font-bold text-zinc-400 hover:text-white transition-colors">
-            Cancel
+            {intl.formatMessage(taskComposerM.cancel)}
           </button>
           <button
             onClick={() =>
@@ -579,7 +851,7 @@ function TaskComposer({ assignees, defaultClientId, onCreate, onClose }: {
                 id: `task-${Date.now()}`,
                 clientId,
                 clientName: client?.name ?? '—',
-                title: title.trim() || 'Untitled task',
+                title: title.trim() || intl.formatMessage(taskComposerM.untitled),
                 assignee,
                 due: due.trim() || '—',
                 status: 'open',
@@ -589,7 +861,7 @@ function TaskComposer({ assignees, defaultClientId, onCreate, onClose }: {
             disabled={!title.trim()}
             className="px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all"
           >
-            Create task
+            {intl.formatMessage(taskComposerM.create)}
           </button>
         </div>
       </div>
@@ -597,14 +869,24 @@ function TaskComposer({ assignees, defaultClientId, onCreate, onClose }: {
   );
 }
 
+const avatarPickerM = defineMessages({
+  label: { id: 'team.avatarPicker.label', defaultMessage: 'Profile picture' },
+  replace: { id: 'team.avatarPicker.replace', defaultMessage: 'Replace' },
+  upload: { id: 'team.avatarPicker.upload', defaultMessage: 'Upload' },
+  remove: { id: 'team.avatarPicker.remove', defaultMessage: 'Remove' },
+  notAnImage: { id: 'team.avatarPicker.notAnImage', defaultMessage: 'That is not an image file.' },
+  tooLarge: { id: 'team.avatarPicker.tooLarge', defaultMessage: 'Pictures must be under 2MB.' },
+});
+
 /** Profile picture for a colleague, stored as a data URI. */
 function AvatarPicker({ value, name, onChange }: { value: string; name: string; onChange: (v: string) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const intl = useIntl();
   const [error, setError] = useState('');
 
   return (
     <div>
-      <Label>Profile picture</Label>
+      <Label>{intl.formatMessage(avatarPickerM.label)}</Label>
       <div className="flex items-center gap-4">
         <div className="w-16 h-16 rounded-2xl bg-ground border border-white/5 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
           {value ? (
@@ -619,7 +901,7 @@ function AvatarPicker({ value, name, onChange }: { value: string; name: string; 
             className="flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold text-zinc-300 border border-white/10 hover:text-white hover:border-white/25 transition-colors"
           >
             <ImagePlus size={15} />
-            {value ? 'Replace' : 'Upload'}
+            {intl.formatMessage(value ? avatarPickerM.replace : avatarPickerM.upload)}
           </button>
           {value && (
             <button
@@ -627,7 +909,7 @@ function AvatarPicker({ value, name, onChange }: { value: string; name: string; 
               className="flex items-center gap-1.5 px-3 py-2 rounded-full text-[13px] font-bold text-zinc-500 hover:text-white transition-colors"
             >
               <X size={14} />
-              Remove
+              {intl.formatMessage(avatarPickerM.remove)}
             </button>
           )}
         </div>
@@ -640,8 +922,8 @@ function AvatarPicker({ value, name, onChange }: { value: string; name: string; 
             const file = e.target.files?.[0];
             e.target.value = '';
             if (!file) return;
-            if (!file.type.startsWith('image/')) { setError('That is not an image file.'); return; }
-            if (file.size > 2 * 1024 * 1024) { setError('Pictures must be under 2MB.'); return; }
+            if (!file.type.startsWith('image/')) { setError(intl.formatMessage(avatarPickerM.notAnImage)); return; }
+            if (file.size > 2 * 1024 * 1024) { setError(intl.formatMessage(avatarPickerM.tooLarge)); return; }
             setError('');
             const reader = new FileReader();
             reader.onload = () => onChange(String(reader.result));
@@ -658,6 +940,58 @@ function blankTeam(): Team {
   return { id: `team-${Date.now()}`, name: '', accessLevel: 'Assigned clients only', memberIds: [] };
 }
 
+const colleagueEditorM = defineMessages({
+  heading: { id: 'team.colleagueEditor.heading', defaultMessage: 'Invite colleague' },
+  subtitle: {
+    id: 'team.colleagueEditor.subtitle',
+    defaultMessage: 'Role, per-permission toggles and client access',
+  },
+  nameLabel: { id: 'team.colleagueEditor.nameLabel', defaultMessage: 'Name' },
+  namePlaceholder: { id: 'team.colleagueEditor.namePlaceholder', defaultMessage: 'Sam Patel' },
+  emailLabel: { id: 'team.colleagueEditor.emailLabel', defaultMessage: 'Email' },
+  emailPlaceholder: { id: 'team.colleagueEditor.emailPlaceholder', defaultMessage: 'sam@practice.co.uk' },
+  jobTitleLabel: { id: 'team.colleagueEditor.jobTitleLabel', defaultMessage: 'Job title' },
+  jobTitlePlaceholder: {
+    id: 'team.colleagueEditor.jobTitlePlaceholder',
+    defaultMessage: 'Senior bookkeeper',
+  },
+  mobileLabel: { id: 'team.colleagueEditor.mobileLabel', defaultMessage: 'Mobile' },
+  mobilePlaceholder: { id: 'team.colleagueEditor.mobilePlaceholder', defaultMessage: '+44 7700 900123' },
+  locationLabel: { id: 'team.colleagueEditor.locationLabel', defaultMessage: 'Location' },
+  locationPlaceholder: { id: 'team.colleagueEditor.locationPlaceholder', defaultMessage: 'London' },
+
+  // Three whole sentences rather than one with the changing clause inserted:
+  // the three states say genuinely different things.
+  passwordLabel: { id: 'team.colleagueEditor.passwordLabel', defaultMessage: 'Password' },
+  resetJustSent: {
+    id: 'team.colleagueEditor.resetJustSent',
+    defaultMessage: 'Reset link sent to {email} just now.',
+  },
+  theirEmail: { id: 'team.colleagueEditor.theirEmail', defaultMessage: 'their email' },
+  resetLastSent: {
+    id: 'team.colleagueEditor.resetLastSent',
+    defaultMessage: 'Last reset link sent {when}.',
+  },
+  resetHint: {
+    id: 'team.colleagueEditor.resetHint',
+    defaultMessage: 'You cannot see or set it — send a reset link instead.',
+  },
+  resetSentAction: { id: 'team.colleagueEditor.resetSentAction', defaultMessage: 'Sent' },
+  resetAction: { id: 'team.colleagueEditor.resetAction', defaultMessage: 'Send reset link' },
+
+  roleLabel: { id: 'team.colleagueEditor.roleLabel', defaultMessage: 'Role' },
+  permissionsLabel: { id: 'team.colleagueEditor.permissionsLabel', defaultMessage: 'Permissions' },
+  clientAccessLabel: { id: 'team.colleagueEditor.clientAccessLabel', defaultMessage: 'Client access' },
+  hideFinanceLabel: { id: 'team.colleagueEditor.hideFinanceLabel', defaultMessage: 'Hide finance fields' },
+  hideFinanceHint: {
+    id: 'team.colleagueEditor.hideFinanceHint',
+    defaultMessage: 'For non-finance submitters — they see capture, not coding.',
+  },
+  activeLabel: { id: 'team.colleagueEditor.activeLabel', defaultMessage: 'Active' },
+  remove: { id: 'team.colleagueEditor.remove', defaultMessage: 'Remove' },
+  save: { id: 'team.colleagueEditor.save', defaultMessage: 'Save' },
+});
+
 function ColleagueEditor({ colleague, onSave, onRemove, onResetPassword, onClose }: {
   colleague: Colleague;
   onSave: (c: Colleague) => void;
@@ -666,6 +1000,7 @@ function ColleagueEditor({ colleague, onSave, onRemove, onResetPassword, onClose
   onClose: () => void;
 }) {
   const { clients } = useAppContext();
+  const intl = useIntl();
   const [draft, setDraft] = useState(colleague);
   const [resetSent, setResetSent] = useState(false);
   const set = <K extends keyof Colleague>(k: K, v: Colleague[K]) => setDraft({ ...draft, [k]: v });
@@ -675,9 +1010,9 @@ function ColleagueEditor({ colleague, onSave, onRemove, onResetPassword, onClose
     <Modal onClose={onClose}>
       <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
         <div className="p-6 border-b border-white/5">
-          <h3 className="font-sans font-bold text-xl text-white tracking-tight">{colleague.name || 'Invite colleague'}</h3>
+          <h3 className="font-sans font-bold text-xl text-white tracking-tight">{colleague.name || intl.formatMessage(colleagueEditorM.heading)}</h3>
           <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
-            Role, per-permission toggles and client access
+            {intl.formatMessage(colleagueEditorM.subtitle)}
           </p>
         </div>
 
@@ -688,25 +1023,52 @@ function ColleagueEditor({ colleague, onSave, onRemove, onResetPassword, onClose
             onChange={(v) => set('avatarDataUrl', v || undefined)}
           />
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Name" value={draft.name} onChange={(v) => set('name', v)} placeholder="Sam Patel" />
-            <Field label="Email" value={draft.email} onChange={(v) => set('email', v)} placeholder="sam@practice.co.uk" />
+            <Field
+              label={intl.formatMessage(colleagueEditorM.nameLabel)}
+              value={draft.name}
+              onChange={(v) => set('name', v)}
+              placeholder={intl.formatMessage(colleagueEditorM.namePlaceholder)}
+            />
+            <Field
+              label={intl.formatMessage(colleagueEditorM.emailLabel)}
+              value={draft.email}
+              onChange={(v) => set('email', v)}
+              placeholder={intl.formatMessage(colleagueEditorM.emailPlaceholder)}
+            />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Job title" value={draft.jobTitle ?? ''} onChange={(v) => set('jobTitle', v)} placeholder="Senior bookkeeper" />
-            <Field label="Mobile" value={draft.mobile ?? ''} onChange={(v) => set('mobile', v)} placeholder="+44 7700 900123" />
+            <Field
+              label={intl.formatMessage(colleagueEditorM.jobTitleLabel)}
+              value={draft.jobTitle ?? ''}
+              onChange={(v) => set('jobTitle', v)}
+              placeholder={intl.formatMessage(colleagueEditorM.jobTitlePlaceholder)}
+            />
+            <Field
+              label={intl.formatMessage(colleagueEditorM.mobileLabel)}
+              value={draft.mobile ?? ''}
+              onChange={(v) => set('mobile', v)}
+              placeholder={intl.formatMessage(colleagueEditorM.mobilePlaceholder)}
+            />
           </div>
-          <Field label="Location" value={draft.location} onChange={(v) => set('location', v)} placeholder="London" />
+          <Field
+            label={intl.formatMessage(colleagueEditorM.locationLabel)}
+            value={draft.location}
+            onChange={(v) => set('location', v)}
+            placeholder={intl.formatMessage(colleagueEditorM.locationPlaceholder)}
+          />
 
           {/* Sign-in is the colleague's own; the practice can only start a reset. */}
           <div className="p-4 rounded-2xl border border-white/5 bg-ground/60 shadow-inner flex items-center justify-between gap-4">
             <div className="min-w-0">
-              <div className="text-sm font-bold text-white">Password</div>
+              <div className="text-sm font-bold text-white">{intl.formatMessage(colleagueEditorM.passwordLabel)}</div>
               <div className="text-[12px] text-zinc-500 mt-0.5">
                 {resetSent
-                  ? `Reset link sent to ${draft.email || 'their email'} just now.`
+                  ? intl.formatMessage(colleagueEditorM.resetJustSent, {
+                      email: draft.email || intl.formatMessage(colleagueEditorM.theirEmail),
+                    })
                   : draft.passwordResetSentAt
-                    ? `Last reset link sent ${draft.passwordResetSentAt}.`
-                    : 'You cannot see or set it — send a reset link instead.'}
+                    ? intl.formatMessage(colleagueEditorM.resetLastSent, { when: draft.passwordResetSentAt })
+                    : intl.formatMessage(colleagueEditorM.resetHint)}
               </div>
             </div>
             <button
@@ -715,12 +1077,12 @@ function ColleagueEditor({ colleague, onSave, onRemove, onResetPassword, onClose
               className="shrink-0 flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold text-zinc-300 border border-white/10 hover:text-white hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <KeyRound size={13} />
-              {resetSent ? 'Sent' : 'Send reset link'}
+              {intl.formatMessage(resetSent ? colleagueEditorM.resetSentAction : colleagueEditorM.resetAction)}
             </button>
           </div>
 
           <div>
-            <Label>Role</Label>
+            <Label>{intl.formatMessage(colleagueEditorM.roleLabel)}</Label>
             <div className="flex flex-wrap gap-2">
               {ROLES.map((r) => (
                 <Chip key={r} active={draft.role === r} onClick={() => set('role', r)}>{r}</Chip>
@@ -729,7 +1091,7 @@ function ColleagueEditor({ colleague, onSave, onRemove, onResetPassword, onClose
           </div>
 
           <div>
-            <Label>Permissions</Label>
+            <Label>{intl.formatMessage(colleagueEditorM.permissionsLabel)}</Label>
             <div className="flex flex-wrap gap-2">
               {PERMISSIONS.map((p) => (
                 <Chip
@@ -745,7 +1107,7 @@ function ColleagueEditor({ colleague, onSave, onRemove, onResetPassword, onClose
 
           {!isAdmin && (
             <div>
-              <Label>Client access</Label>
+              <Label>{intl.formatMessage(colleagueEditorM.clientAccessLabel)}</Label>
               <div className="flex flex-wrap gap-2">
                 {clients.map((c) => (
                   <Chip
@@ -761,21 +1123,21 @@ function ColleagueEditor({ colleague, onSave, onRemove, onResetPassword, onClose
           )}
 
           <Toggle
-            label="Hide finance fields"
-            hint="For non-finance submitters — they see capture, not coding."
+            label={intl.formatMessage(colleagueEditorM.hideFinanceLabel)}
+            hint={intl.formatMessage(colleagueEditorM.hideFinanceHint)}
             value={draft.hideFinanceFields}
             onChange={(v) => set('hideFinanceFields', v)}
           />
-          <Toggle label="Active" value={draft.active} onChange={(v) => set('active', v)} />
+          <Toggle label={intl.formatMessage(colleagueEditorM.activeLabel)} value={draft.active} onChange={(v) => set('active', v)} />
         </div>
 
         <div className="p-4 bg-raised/50 flex justify-between gap-3">
           <button onClick={onRemove} className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-bold text-zinc-500 hover:text-red-400 hover:bg-white/5 transition-colors">
             <Trash2 size={15} />
-            Remove
+            {intl.formatMessage(colleagueEditorM.remove)}
           </button>
           <button onClick={() => onSave(draft)} className="px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-all">
-            Save
+            {intl.formatMessage(colleagueEditorM.save)}
           </button>
         </div>
       </div>

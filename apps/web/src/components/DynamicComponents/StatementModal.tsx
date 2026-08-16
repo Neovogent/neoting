@@ -1,8 +1,68 @@
 import { X, Download, Check, AlertTriangle, Landmark, Building2 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { defineMessages, useIntl } from 'react-intl';
 import { Pill } from './DataTable';
 import { currency } from '../../lib/resolver';
 import type { Statement, SupplierStatement } from '../../lib/types';
+
+const m = defineMessages({
+  // Two whole lines rather than a shared "· {client}" tail: a translator handed
+  // a fragment cannot see where it lands, and the two kinds carry different
+  // numbers of parts.
+  metaBank: { id: 'documents.statementModal.metaBank', defaultMessage: 'Bank statement · {client}' },
+  metaSupplier: {
+    id: 'documents.statementModal.metaSupplier',
+    defaultMessage: 'Supplier statement · {supplier} · {client}',
+  },
+  close: { id: 'documents.statementModal.close', defaultMessage: 'Close' },
+  downloadNote: {
+    id: 'documents.statementModal.downloadNote',
+    defaultMessage: 'The download is what was read off the file, as CSV. The original upload is not kept in this build.',
+  },
+  downloadAction: { id: 'documents.statementModal.downloadAction', defaultMessage: 'Download CSV' },
+});
+
+const bankMessages = defineMessages({
+  figurePeriod: { id: 'documents.bankBody.figurePeriod', defaultMessage: 'Period' },
+  figureRows: { id: 'documents.bankBody.figureRows', defaultMessage: 'Rows read' },
+  figureOpening: { id: 'documents.bankBody.figureOpening', defaultMessage: 'Opening' },
+  figureClosing: { id: 'documents.bankBody.figureClosing', defaultMessage: 'Closing' },
+  movementHeading: { id: 'documents.bankBody.movementHeading', defaultMessage: 'Movement over the period' },
+  movementDetail: {
+    id: 'documents.bankBody.movementDetail',
+    defaultMessage: 'Closing less opening, across {rows} rows',
+  },
+  stillExtracting: { id: 'documents.bankBody.stillExtracting', defaultMessage: 'Still extracting' },
+  nothingRead: { id: 'documents.bankBody.nothingRead', defaultMessage: 'Nothing could be read' },
+  noBalances: {
+    id: 'documents.bankBody.noBalances',
+    defaultMessage: 'Extraction has not produced balances for this file yet.',
+  },
+  footnote: {
+    id: 'documents.bankBody.footnote',
+    defaultMessage:
+      'Uploaded {uploadedAt}. Balances are what the gap detector compares — a closing balance that does not meet the next opening is how a missing statement is found.',
+  },
+});
+
+const supplierMessages = defineMessages({
+  figurePeriod: { id: 'documents.supplierBody.figurePeriod', defaultMessage: 'Period' },
+  figureLines: { id: 'documents.supplierBody.figureLines', defaultMessage: 'Lines' },
+  figureTotal: { id: 'documents.supplierBody.figureTotal', defaultMessage: 'Statement total' },
+  figureNotOnFile: { id: 'documents.supplierBody.figureNotOnFile', defaultMessage: 'Not on file' },
+  linesHeading: { id: 'documents.supplierBody.linesHeading', defaultMessage: 'Every line, reconciled' },
+  noLines: {
+    id: 'documents.supplierBody.noLines',
+    defaultMessage: 'No lines read from this statement yet.',
+  },
+  onFile: { id: 'documents.supplierBody.onFile', defaultMessage: 'On file' },
+  noDocument: { id: 'documents.supplierBody.noDocument', defaultMessage: 'No document' },
+  footnote: {
+    id: 'documents.supplierBody.footnote',
+    defaultMessage:
+      'Uploaded {uploadedAt}. A line with no document is an invoice the supplier says they sent and we do not hold — which is what makes it worth asking for the statement.',
+  },
+});
 
 /**
  * What was read off an uploaded statement, and a way to take it away.
@@ -25,6 +85,7 @@ export function StatementModal({ statement, onClose }: {
 }) {
   const isBank = statement.kind === 'bank';
   const data = statement.data;
+  const intl = useIntl();
 
   return (
     <div
@@ -48,12 +109,16 @@ export function StatementModal({ statement, onClose }: {
             <div className="min-w-0">
               <h3 className="font-sans font-bold text-xl text-white tracking-tight truncate">{data.fileName}</h3>
               <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
-                {isBank ? 'Bank statement' : `Supplier statement · ${(data as SupplierStatement).supplier}`}
-                {' · '}{data.clientName}
+                {isBank
+                  ? intl.formatMessage(m.metaBank, { client: data.clientName })
+                  : intl.formatMessage(m.metaSupplier, {
+                      supplier: (data as SupplierStatement).supplier,
+                      client: data.clientName,
+                    })}
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors shrink-0" aria-label="Close">
+          <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors shrink-0" aria-label={intl.formatMessage(m.close)}>
             <X size={20} />
           </button>
         </div>
@@ -64,14 +129,14 @@ export function StatementModal({ statement, onClose }: {
 
         <div className="p-4 bg-raised/50 flex items-center justify-between gap-3 flex-wrap">
           <p className="text-[11.5px] text-zinc-600 leading-relaxed max-w-md">
-            The download is what was read off the file, as CSV. The original upload is not kept in this build.
+            {intl.formatMessage(m.downloadNote)}
           </p>
           <button
             onClick={() => (isBank ? downloadBank(data as Statement) : downloadSupplier(data as SupplierStatement))}
             className="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
           >
             <Download size={15} strokeWidth={2.5} />
-            Download CSV
+            {intl.formatMessage(m.downloadAction)}
           </button>
         </div>
       </motion.div>
@@ -81,20 +146,24 @@ export function StatementModal({ statement, onClose }: {
 
 function BankBody({ s }: { s: Statement }) {
   const movement = s.closingBalance - s.openingBalance;
+  const intl = useIntl();
+
   return (
     <>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Figure label="Period" value={s.period} />
-        <Figure label="Rows read" value={s.rows ? String(s.rows) : '—'} />
-        <Figure label="Opening" value={s.status === 'extracted' ? currency(s.openingBalance) : '—'} />
-        <Figure label="Closing" value={s.status === 'extracted' ? currency(s.closingBalance) : '—'} />
+        <Figure label={intl.formatMessage(bankMessages.figurePeriod)} value={s.period} />
+        <Figure label={intl.formatMessage(bankMessages.figureRows)} value={s.rows ? String(s.rows) : '—'} />
+        <Figure label={intl.formatMessage(bankMessages.figureOpening)} value={s.status === 'extracted' ? currency(s.openingBalance) : '—'} />
+        <Figure label={intl.formatMessage(bankMessages.figureClosing)} value={s.status === 'extracted' ? currency(s.closingBalance) : '—'} />
       </div>
 
       {s.status === 'extracted' ? (
         <div className="p-4 rounded-2xl bg-ground/60 border border-white/5 shadow-inner flex items-center justify-between gap-4">
           <div className="min-w-0">
-            <div className="text-[13px] font-bold text-white">Movement over the period</div>
-            <div className="text-[12px] text-zinc-500 mt-0.5">Closing less opening, across {s.rows} rows</div>
+            <div className="text-[13px] font-bold text-white">{intl.formatMessage(bankMessages.movementHeading)}</div>
+            <div className="text-[12px] text-zinc-500 mt-0.5">
+              {intl.formatMessage(bankMessages.movementDetail, { rows: s.rows })}
+            </div>
           </div>
           <span className={`text-lg font-bold tabular-nums shrink-0 ${movement < 0 ? 'text-red-400' : 'text-brand'}`}>
             {movement < 0 ? '−' : '+'}{currency(Math.abs(movement))}
@@ -105,18 +174,17 @@ function BankBody({ s }: { s: Statement }) {
           <AlertTriangle size={16} className="text-red-400 mt-0.5 shrink-0" />
           <div className="min-w-0">
             <div className="text-[13px] font-bold text-white">
-              {s.status === 'processing' ? 'Still extracting' : 'Nothing could be read'}
+              {intl.formatMessage(s.status === 'processing' ? bankMessages.stillExtracting : bankMessages.nothingRead)}
             </div>
             <p className="text-[12px] text-zinc-400 mt-1 leading-relaxed">
-              {s.note ?? 'Extraction has not produced balances for this file yet.'}
+              {s.note ?? intl.formatMessage(bankMessages.noBalances)}
             </p>
           </div>
         </div>
       )}
 
       <p className="text-[12px] text-zinc-500 leading-relaxed">
-        Uploaded {s.uploadedAt}. Balances are what the gap detector compares — a closing balance that does not meet
-        the next opening is how a missing statement is found.
+        {intl.formatMessage(bankMessages.footnote, { uploadedAt: s.uploadedAt })}
       </p>
     </>
   );
@@ -124,19 +192,25 @@ function BankBody({ s }: { s: Statement }) {
 
 function SupplierBody({ s }: { s: SupplierStatement }) {
   const missing = s.lines.filter((l) => !l.documentId);
+  const intl = useIntl();
+
   return (
     <>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Figure label="Period" value={s.period} />
-        <Figure label="Lines" value={String(s.lines.length)} />
-        <Figure label="Statement total" value={currency(s.statementTotal)} />
-        <Figure label="Not on file" value={String(missing.length)} tone={missing.length ? 'red' : 'plain'} />
+        <Figure label={intl.formatMessage(supplierMessages.figurePeriod)} value={s.period} />
+        <Figure label={intl.formatMessage(supplierMessages.figureLines)} value={String(s.lines.length)} />
+        <Figure label={intl.formatMessage(supplierMessages.figureTotal)} value={currency(s.statementTotal)} />
+        <Figure label={intl.formatMessage(supplierMessages.figureNotOnFile)} value={String(missing.length)} tone={missing.length ? 'red' : 'plain'} />
       </div>
 
       <div>
-        <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2.5">Every line, reconciled</div>
+        <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2.5">
+          {intl.formatMessage(supplierMessages.linesHeading)}
+        </div>
         <div className="flex flex-col gap-2">
-          {s.lines.length === 0 && <p className="text-[13px] text-zinc-500">No lines read from this statement yet.</p>}
+          {s.lines.length === 0 && (
+            <p className="text-[13px] text-zinc-500">{intl.formatMessage(supplierMessages.noLines)}</p>
+          )}
           {s.lines.map((l) => (
             <div key={l.reference} className="flex items-center gap-3 p-3.5 rounded-2xl bg-ground/60 border border-white/5">
               <span
@@ -154,7 +228,9 @@ function SupplierBody({ s }: { s: SupplierStatement }) {
               </div>
               <span className="text-[13px] font-bold text-white tabular-nums shrink-0">{currency(l.total)}</span>
               <span className="shrink-0 w-28 text-right">
-                {l.documentId ? <Pill tone="green">On file</Pill> : <Pill tone="red">No document</Pill>}
+                {l.documentId
+                  ? <Pill tone="green">{intl.formatMessage(supplierMessages.onFile)}</Pill>
+                  : <Pill tone="red">{intl.formatMessage(supplierMessages.noDocument)}</Pill>}
               </span>
             </div>
           ))}
@@ -162,8 +238,7 @@ function SupplierBody({ s }: { s: SupplierStatement }) {
       </div>
 
       <p className="text-[12px] text-zinc-500 leading-relaxed">
-        Uploaded {s.uploadedAt}. A line with no document is an invoice the supplier says they sent and we do not
-        hold — which is what makes it worth asking for the statement.
+        {intl.formatMessage(supplierMessages.footnote, { uploadedAt: s.uploadedAt })}
       </p>
     </>
   );

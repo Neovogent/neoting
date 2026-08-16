@@ -1,3 +1,4 @@
+import { defineMessages, type MessageDescriptor } from 'react-intl';
 import type { MissingItem } from './types';
 
 /**
@@ -11,45 +12,101 @@ import type { MissingItem } from './types';
  * item is really deciding how much to trust the detection, so the row has to
  * say which one found it rather than presenting five different confidences as
  * one undifferentiated list.
+ *
+ * The table below is module scope, where no hook can run, so it holds
+ * `MessageDescriptor`s and the screen showing a row formats them — the pattern
+ * in `i18n/index.ts`.
  */
+
+const m = defineMessages({
+  // Where an accountant goes to check it. These are screen names, so they are
+  // one shared vocabulary: two engines both point at Chases, and a second id
+  // for the same destination is how the two drift apart in translation.
+  whereBankUnmatched: { id: 'pipeline.detection.whereBankUnmatched', defaultMessage: 'Bank → Unmatched' },
+  whereBankStatements: { id: 'pipeline.detection.whereBankStatements', defaultMessage: 'Bank → Statements' },
+  whereSupplierStatements: {
+    id: 'pipeline.detection.whereSupplierStatements',
+    defaultMessage: 'Supplier Statements',
+  },
+  whereDocuments: { id: 'pipeline.detection.whereDocuments', defaultMessage: 'Documents' },
+  whereChases: { id: 'pipeline.detection.whereChases', defaultMessage: 'Chases' },
+
+  bankTransactionTag: { id: 'pipeline.detection.bankTransactionTag', defaultMessage: 'Bank line' },
+  bankTransactionDetail: {
+    id: 'pipeline.detection.bankTransactionDetail',
+    defaultMessage:
+      'Money left the account and no document explains it. The payment is on the feed, so this one is not in doubt — the paperwork simply has not arrived.',
+  },
+
+  supplierStatementTag: { id: 'pipeline.detection.supplierStatementTag', defaultMessage: 'Supplier statement' },
+  supplierStatementDetail: {
+    id: 'pipeline.detection.supplierStatementDetail',
+    defaultMessage:
+      'The supplier’s own statement lists this invoice and we do not hold it. Their records say it exists, which makes it worth chasing them as well as the client.',
+  },
+
+  statementGapTag: { id: 'pipeline.detection.statementGapTag', defaultMessage: 'Statement gap' },
+  statementGapDetail: {
+    id: 'pipeline.detection.statementGapDetail',
+    defaultMessage:
+      'A bank statement is missing for this period, so anything inside it is unverifiable. This is a gap in the evidence rather than one absent receipt.',
+  },
+
+  ledgerAttachmentTag: { id: 'pipeline.detection.ledgerAttachmentTag', defaultMessage: 'Posted, no attachment' },
+  ledgerAttachmentDetail: {
+    id: 'pipeline.detection.ledgerAttachmentDetail',
+    defaultMessage:
+      'The entry is already in the ledger with nothing attached to support it. It will be the first thing an inspector asks for.',
+  },
+
+  recurringTag: { id: 'pipeline.detection.recurringTag', defaultMessage: 'Expected, not arrived' },
+  recurringDetail: {
+    id: 'pipeline.detection.recurringDetail',
+    defaultMessage:
+      'This supplier bills on a regular cycle and this period is absent. It is an inference, not a certainty — the charge may genuinely have stopped.',
+  },
+
+  fallbackTag: { id: 'pipeline.detection.fallbackTag', defaultMessage: 'Flagged' },
+  fallbackDetail: { id: 'pipeline.detection.fallbackDetail', defaultMessage: 'Flagged as missing.' },
+});
 
 export interface DetectionLabel {
   /** For a chip on a row. Two or three words. */
-  tag: string;
+  tag: MessageDescriptor;
   /** What the engine actually saw, for the tooltip. */
-  detail: string;
+  detail: MessageDescriptor;
   /** Where an accountant goes to check it themselves. */
-  where: string;
+  where: MessageDescriptor;
 }
 
 export const DETECTION: Record<MissingItem['detectedBy'], DetectionLabel> = {
   'bank-transaction': {
-    tag: 'Bank line',
-    detail: 'Money left the account and no document explains it. The payment is on the feed, so this one is not in doubt — the paperwork simply has not arrived.',
-    where: 'Bank → Unmatched',
+    tag: m.bankTransactionTag,
+    detail: m.bankTransactionDetail,
+    where: m.whereBankUnmatched,
   },
   'supplier-statement': {
-    tag: 'Supplier statement',
-    detail: 'The supplier’s own statement lists this invoice and we do not hold it. Their records say it exists, which makes it worth chasing them as well as the client.',
-    where: 'Supplier Statements',
+    tag: m.supplierStatementTag,
+    detail: m.supplierStatementDetail,
+    where: m.whereSupplierStatements,
   },
   'statement-gap': {
-    tag: 'Statement gap',
-    detail: 'A bank statement is missing for this period, so anything inside it is unverifiable. This is a gap in the evidence rather than one absent receipt.',
-    where: 'Bank → Statements',
+    tag: m.statementGapTag,
+    detail: m.statementGapDetail,
+    where: m.whereBankStatements,
   },
   'ledger-attachment': {
-    tag: 'Posted, no attachment',
-    detail: 'The entry is already in the ledger with nothing attached to support it. It will be the first thing an inspector asks for.',
-    where: 'Documents',
+    tag: m.ledgerAttachmentTag,
+    detail: m.ledgerAttachmentDetail,
+    where: m.whereDocuments,
   },
   recurring: {
-    tag: 'Expected, not arrived',
-    detail: 'This supplier bills on a regular cycle and this period is absent. It is an inference, not a certainty — the charge may genuinely have stopped.',
-    where: 'Chases',
+    tag: m.recurringTag,
+    detail: m.recurringDetail,
+    where: m.whereChases,
   },
 };
 
 /** The engine's label, with a safe fallback for anything unrecognised. */
 export const detectionOf = (by: MissingItem['detectedBy']): DetectionLabel =>
-  DETECTION[by] ?? { tag: 'Flagged', detail: 'Flagged as missing.', where: 'Chases' };
+  DETECTION[by] ?? { tag: m.fallbackTag, detail: m.fallbackDetail, where: m.whereChases };

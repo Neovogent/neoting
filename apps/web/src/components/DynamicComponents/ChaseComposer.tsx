@@ -1,13 +1,122 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, RotateCcw, Send } from 'lucide-react';
+import { defineMessages, useIntl, type IntlShape } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
 import { currency } from '../../lib/resolver';
 import { ReviewGate, ReviewRows, ReviewSection } from './ReviewGate';
 import { Pill } from './DataTable';
 import type { Client, MissingItem } from '../../lib/types';
 
-/** One SMS per client naming the exact transactions — never one text per receipt. */
-function composeSms(client: Client, items: MissingItem[]) {
+const m = defineMessages({
+  // MessageEditor
+  messageLabel: { id: 'shell.chaseComposer.messageLabel', defaultMessage: 'Message text' },
+  // "{chars} characters" is not a `plural` argument on purpose: the source said
+  // "1 characters" and #65 extracts copy rather than correcting it. The segment
+  // count was a concatenated 's' and had to become ICU (§12.6).
+  counts: {
+    id: 'shell.chaseComposer.counts',
+    defaultMessage: '{chars} characters · {segments, plural, one {# text} other {# texts}}',
+  },
+  countsUnicode: {
+    id: 'shell.chaseComposer.countsUnicode',
+    defaultMessage:
+      '{chars} characters · {segments, plural, one {# text} other {# texts}} · non-standard characters, 70 per text',
+  },
+  resetAction: { id: 'shell.chaseComposer.resetAction', defaultMessage: 'Reset to suggested' },
+  linkGone: {
+    id: 'shell.chaseComposer.linkGone',
+    defaultMessage: 'The upload link has gone. Without it there is nowhere for the client to send the document.',
+  },
+
+  // ChaseComposer
+  nothingOutstanding: {
+    id: 'shell.chaseComposer.nothingOutstanding',
+    defaultMessage:
+      'Nothing outstanding to chase for this scope — every detected gap is either received, chased or suppressed.',
+  },
+  previewHeading: {
+    id: 'shell.chaseComposer.previewHeading',
+    defaultMessage:
+      '{count, plural, one {Message preview (SMS) — # recipient} other {Message preview (SMS) — # recipients}}',
+  },
+  // Not a `plural`: the source read "1 items" for a single row and this is an
+  // extraction, not a rewrite.
+  itemsPill: { id: 'shell.chaseComposer.itemsPill', defaultMessage: '{count} items' },
+  itemsHeading: { id: 'shell.chaseComposer.itemsHeading', defaultMessage: 'Items being chased' },
+  policyHeading: { id: 'shell.chaseComposer.policyHeading', defaultMessage: 'Policy' },
+  channelLabel: { id: 'shell.chaseComposer.channelLabel', defaultMessage: 'Channel' },
+  channelValue: {
+    id: 'shell.chaseComposer.channelValue',
+    defaultMessage: 'SMS only — no WhatsApp or email chases',
+  },
+  linkSecurityLabel: { id: 'shell.chaseComposer.linkSecurityLabel', defaultMessage: 'Link security' },
+  linkSecurityValue: {
+    id: 'shell.chaseComposer.linkSecurityValue',
+    defaultMessage: 'Signed short-lived URL + OTP to registered mobile',
+  },
+  portalScopeLabel: { id: 'shell.chaseComposer.portalScopeLabel', defaultMessage: 'Portal scope' },
+  portalScopeValue: {
+    id: 'shell.chaseComposer.portalScopeValue',
+    defaultMessage: 'Upload-only, limited to the requested items',
+  },
+  remindersLabel: { id: 'shell.chaseComposer.remindersLabel', defaultMessage: 'Auto-reminders' },
+  remindersValue: {
+    id: 'shell.chaseComposer.remindersValue',
+    defaultMessage: '+3 days, then +7 days, then escalate',
+  },
+  suppressionLabel: { id: 'shell.chaseComposer.suppressionLabel', defaultMessage: 'Suppression' },
+  suppressionValue: {
+    id: 'shell.chaseComposer.suppressionValue',
+    defaultMessage: 'Received · unavailable · dismissed · cash-coded',
+  },
+  appRequiredLabel: { id: 'shell.chaseComposer.appRequiredLabel', defaultMessage: 'App required' },
+  appRequiredValue: { id: 'shell.chaseComposer.appRequiredValue', defaultMessage: 'No — OTP link' },
+  titleOne: { id: 'shell.chaseComposer.titleOne', defaultMessage: 'Chase {client}' },
+  titleMany: { id: 'shell.chaseComposer.titleMany', defaultMessage: 'Chase {count} clients' },
+  editDone: { id: 'shell.chaseComposer.editDone', defaultMessage: 'Done editing' },
+  editStart: { id: 'shell.chaseComposer.editStart', defaultMessage: 'Edit message' },
+  subtitle: {
+    id: 'shell.chaseComposer.subtitle',
+    defaultMessage: 'SMS to primary contacts • {count, plural, one {# missing item} other {# missing items}}',
+  },
+  approveAction: { id: 'shell.chaseComposer.approveAction', defaultMessage: 'Approve & send' },
+  success: {
+    id: 'shell.chaseComposer.success',
+    defaultMessage: 'Chase sent to {clientCount, plural, one {# client} other {# clients}} ({itemCount} items) via SMS.',
+  },
+  auditAction: { id: 'shell.chaseComposer.auditAction', defaultMessage: 'Sent chase' },
+  auditScope: { id: 'shell.chaseComposer.auditScope', defaultMessage: '{count} items across {clients}' },
+
+  // The one fragment of the SMS body that had to move (see `composeSms`).
+  // Whole clause inside the arms rather than a bare "# item"/"# items": a
+  // locale that puts the count last, or joins with something other than a
+  // comma, can then rewrite the fragment instead of being handed the English
+  // word order with a hole in it.
+  smsTail: {
+    id: 'shell.chaseComposer.smsTail',
+    defaultMessage: '{count, plural, one {, plus # other item} other {, plus # other items}}',
+  },
+});
+
+/**
+ * One SMS per client naming the exact transactions — never one text per receipt.
+ *
+ * Deliberately NOT extracted by #65, with one exception. This is the chase
+ * template, and CLAUDE.md puts "anything touching SMS sending or chase
+ * templates" on the stop-and-ask list; `lib/seed`'s `generate.ts` holds a second
+ * copy of the same wording, so extracting one and not the other would split the
+ * template across two sources of truth. It needs a decision about where chase
+ * wording lives before it can move into a catalogue.
+ *
+ * The exception is the "plus N other items" tail. That was a concatenated
+ * `? '' : 's'`, which §12.6 forbids outright and which no translator can fix
+ * from a catalogue — the plural rule is baked into the code, not the message.
+ * It is ICU now, which is why this function takes an `intl`: it runs at module
+ * scope and cannot call a hook. The rest of the wording is untouched and still
+ * waiting on that decision, and `generate.ts` still carries the same
+ * concatenation in its own copy of this template.
+ */
+function composeSms(client: Client, items: MissingItem[], intl: IntlShape) {
   const head = items[0];
   const rest = items.length - 1;
   const first = head
@@ -15,7 +124,9 @@ function composeSms(client: Client, items: MissingItem[]) {
         head.amount ? ` ${currency(head.amount)}` : ''
       } on ${head.date.replace(/ \d{4}$/, '')}`
     : 'we need some paperwork from you';
-  const tail = rest > 0 ? `, plus ${rest} other item${rest === 1 ? '' : 's'}` : '';
+  // The `rest > 0` guard stays: a `plural` on zero renders "plus 0 other
+  // items", and the tail is meant to be absent entirely for a single item.
+  const tail = rest > 0 ? intl.formatMessage(m.smsTail, { count: rest }) : '';
   return `${client.name.replace(/ Ltd$/, '')} Accounts: ${first}${tail}. Upload securely: https://sec.ure/${client.id}${Math.random()
     .toString(36)
     .slice(2, 6)}`;
@@ -63,6 +174,7 @@ export function MessageEditor({ value, suggested, onChange, onReset }: {
   onChange: (text: string) => void;
   onReset: () => void;
 }) {
+  const intl = useIntl();
   const { segments, unicode } = smsSegments(value);
   // A chase without the upload link is a text asking for something with no way
   // to send it — the single most damaging edit possible here.
@@ -75,14 +187,13 @@ export function MessageEditor({ value, suggested, onChange, onReset }: {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         rows={4}
-        aria-label="Message text"
+        aria-label={intl.formatMessage(m.messageLabel)}
         className="w-full px-3 py-2.5 rounded-xl bg-raised border border-white/10 text-[13px] text-white font-mono leading-relaxed resize-y focus:outline-none focus:border-brand/50"
       />
 
       <div className="flex items-center justify-between gap-3 flex-wrap text-[11px] font-bold">
         <span className={segments > 2 ? 'text-amber-400' : 'text-zinc-500'}>
-          {value.length} characters · {segments} text{segments === 1 ? '' : 's'}
-          {unicode && ' · non-standard characters, 70 per text'}
+          {intl.formatMessage(unicode ? m.countsUnicode : m.counts, { chars: value.length, segments })}
         </span>
         {changed && (
           <button
@@ -90,7 +201,7 @@ export function MessageEditor({ value, suggested, onChange, onReset }: {
             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-zinc-400 hover:text-white hover:bg-white/5 transition-colors"
           >
             <RotateCcw size={11} />
-            Reset to suggested
+            {intl.formatMessage(m.resetAction)}
           </button>
         )}
       </div>
@@ -98,7 +209,7 @@ export function MessageEditor({ value, suggested, onChange, onReset }: {
       {!linkKept && (
         <p className="flex items-start gap-2 text-[11.5px] font-semibold text-amber-400 leading-snug">
           <AlertTriangle size={13} className="mt-px shrink-0" />
-          The upload link has gone. Without it there is nowhere for the client to send the document.
+          {intl.formatMessage(m.linkGone)}
         </p>
       )}
     </div>
@@ -123,6 +234,7 @@ export function ChaseComposer({ clientIds, missingItemIds }: {
   missingItemIds?: string[] | undefined;
 }) {
   const { clients, missing, sendChase } = useAppContext();
+  const intl = useIntl();
   /** Rewrites, per client. Absent means the suggested wording still stands. */
   const [edited, setEdited] = useState<Record<string, string>>({});
   const [editing, setEditing] = useState(false);
@@ -139,7 +251,7 @@ export function ChaseComposer({ clientIds, missingItemIds }: {
   if (targets.length === 0) {
     return (
       <div className="w-full max-w-xl border border-white/5 rounded-[24px] bg-card p-5 text-sm text-zinc-400">
-        Nothing outstanding to chase for this scope — every detected gap is either received, chased or suppressed.
+        {intl.formatMessage(m.nothingOutstanding)}
       </div>
     );
   }
@@ -162,7 +274,7 @@ export function ChaseComposer({ clientIds, missingItemIds }: {
    * missing plugins in eslint.config.js.
    */
   const suggested = useMemo(
-    () => targets.map((t) => ({ ...t, sms: composeSms(t.client, t.items) })),
+    () => targets.map((t) => ({ ...t, sms: composeSms(t.client, t.items, intl) })),
     [targets.map((t) => `${t.client.id}:${t.items.map((i) => i.id).join(',')}`).join('|')],
   );
 
@@ -170,7 +282,7 @@ export function ChaseComposer({ clientIds, missingItemIds }: {
 
   const detail = (
     <>
-      <ReviewSection title={`Message preview (SMS) — ${drafts.length} recipient${drafts.length === 1 ? '' : 's'}`}>
+      <ReviewSection title={intl.formatMessage(m.previewHeading, { count: drafts.length })}>
         <div className="flex flex-col gap-3">
           {drafts.map((d) => (
             <div key={d.client.id} className="bg-card border border-white/5 rounded-2xl p-4 shadow-inner">
@@ -178,7 +290,7 @@ export function ChaseComposer({ clientIds, missingItemIds }: {
                 <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">
                   {d.client.contactName} · {d.client.mobile}
                 </span>
-                <Pill tone="blue">{d.items.length} items</Pill>
+                <Pill tone="blue">{intl.formatMessage(m.itemsPill, { count: d.items.length })}</Pill>
               </div>
               {editing ? (
                 <MessageEditor
@@ -201,7 +313,7 @@ export function ChaseComposer({ clientIds, missingItemIds }: {
         </div>
       </ReviewSection>
 
-      <ReviewSection title="Items being chased">
+      <ReviewSection title={intl.formatMessage(m.itemsHeading)}>
         <div className="bg-card border border-white/5 rounded-2xl divide-y divide-white/5 shadow-inner max-h-56 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {drafts.flatMap((d) =>
             d.items.map((it) => (
@@ -219,15 +331,15 @@ export function ChaseComposer({ clientIds, missingItemIds }: {
         </div>
       </ReviewSection>
 
-      <ReviewSection title="Policy">
+      <ReviewSection title={intl.formatMessage(m.policyHeading)}>
         <ReviewRows
           rows={[
-            { label: 'Channel', value: 'SMS only — no WhatsApp or email chases' },
-            { label: 'Link security', value: 'Signed short-lived URL + OTP to registered mobile' },
-            { label: 'Portal scope', value: 'Upload-only, limited to the requested items' },
-            { label: 'Auto-reminders', value: '+3 days, then +7 days, then escalate' },
-            { label: 'Suppression', value: 'Received · unavailable · dismissed · cash-coded' },
-            { label: 'App required', value: <Pill tone="blue">No — OTP link</Pill> },
+            { label: intl.formatMessage(m.channelLabel), value: intl.formatMessage(m.channelValue) },
+            { label: intl.formatMessage(m.linkSecurityLabel), value: intl.formatMessage(m.linkSecurityValue) },
+            { label: intl.formatMessage(m.portalScopeLabel), value: intl.formatMessage(m.portalScopeValue) },
+            { label: intl.formatMessage(m.remindersLabel), value: intl.formatMessage(m.remindersValue) },
+            { label: intl.formatMessage(m.suppressionLabel), value: intl.formatMessage(m.suppressionValue) },
+            { label: intl.formatMessage(m.appRequiredLabel), value: <Pill tone="blue">{intl.formatMessage(m.appRequiredValue)}</Pill> },
           ]}
         />
       </ReviewSection>
@@ -241,15 +353,22 @@ export function ChaseComposer({ clientIds, missingItemIds }: {
   return (
     <ReviewGate
       icon={Send}
-      title={only ? `Chase ${only.client.name}` : `Chase ${drafts.length} clients`}
+      title={
+        only
+          ? intl.formatMessage(m.titleOne, { client: only.client.name })
+          : intl.formatMessage(m.titleMany, { count: drafts.length })
+      }
       onEdit={() => setEditing((v) => !v)}
-      editLabel={editing ? 'Done editing' : 'Edit message'}
-      subtitle={`SMS to primary contacts • ${totalItems} missing item${totalItems === 1 ? '' : 's'}`}
+      editLabel={intl.formatMessage(editing ? m.editDone : m.editStart)}
+      subtitle={intl.formatMessage(m.subtitle, { count: totalItems })}
       detail={detail}
-      approveLabel="Approve & send"
-      successMessage={`Chase sent to ${drafts.length} client${drafts.length === 1 ? '' : 's'} (${totalItems} items) via SMS.`}
-      auditAction="Sent chase"
-      auditScope={`${totalItems} items across ${drafts.map((d) => d.client.name).join(', ')}`}
+      approveLabel={intl.formatMessage(m.approveAction)}
+      successMessage={intl.formatMessage(m.success, { clientCount: drafts.length, itemCount: totalItems })}
+      auditAction={intl.formatMessage(m.auditAction)}
+      auditScope={intl.formatMessage(m.auditScope, {
+        count: totalItems,
+        clients: drafts.map((d) => d.client.name).join(', '),
+      })}
       onApprove={() => {
         // The approved wording is what goes, not a freshly composed one.
         drafts.forEach((d) => sendChase(d.client.id, d.items.map((i) => i.id), d.sms));

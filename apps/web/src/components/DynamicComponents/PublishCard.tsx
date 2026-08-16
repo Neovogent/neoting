@@ -1,9 +1,65 @@
 import { UploadCloud, AlertTriangle } from 'lucide-react';
+import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
 import { currency } from '../../lib/resolver';
 import { isPublishable, missingMandatory } from '../../lib/selectors';
 import { ReviewGate, ReviewRows, ReviewSection } from './ReviewGate';
 import { Pill } from './DataTable';
+
+/**
+ * "Xero" and "QuickBooks Online" stay literals: they are product names, they
+ * are not translated, and `destination` is also the identity of where the batch
+ * goes. Every message that names one takes it as an argument instead.
+ *
+ * `heldBack` keeps the bold count and the explanation in one message, joined by
+ * a rich text tag, because they are one sentence — splitting at the `</span>`
+ * would hand a translator a fragment starting with an em dash.
+ *
+ * `auditScope` does NOT pluralise. Neither did the string it replaces, and this
+ * is an extraction: see the note in the report about "1 items, gross £12.00".
+ */
+const m = defineMessages({
+  nothingReady: {
+    id: 'shell.publishCard.nothingReady',
+    defaultMessage: 'Nothing ready to publish for this scope.',
+  },
+  previewSection: { id: 'shell.publishCard.previewSection', defaultMessage: 'Publish preview' },
+  destination: { id: 'shell.publishCard.destination', defaultMessage: 'Destination' },
+  items: { id: 'shell.publishCard.items', defaultMessage: 'Items' },
+  grossTotal: { id: 'shell.publishCard.grossTotal', defaultMessage: 'Gross total' },
+  vatTotal: { id: 'shell.publishCard.vatTotal', defaultMessage: 'VAT total' },
+  sends: { id: 'shell.publishCard.sends', defaultMessage: 'Sends' },
+  sendsValue: {
+    id: 'shell.publishCard.sendsValue',
+    defaultMessage: 'Extracted data + the original document image',
+  },
+  itemisedSection: { id: 'shell.publishCard.itemisedSection', defaultMessage: 'Itemised' },
+  itemisedRow: { id: 'shell.publishCard.itemisedRow', defaultMessage: '{supplier} · {category}' },
+  nothingPasses: { id: 'shell.publishCard.nothingPasses', defaultMessage: 'Nothing passes the checks yet.' },
+  heldBack: {
+    id: 'shell.publishCard.heldBack',
+    defaultMessage:
+      '<strong>{count, plural, one {# item held back} other {# items held back}}</strong> — mandatory fields are missing, so they cannot publish:',
+  },
+  heldRow: { id: 'shell.publishCard.heldRow', defaultMessage: '{supplier} — missing {fields}' },
+  heldMore: { id: 'shell.publishCard.heldMore', defaultMessage: '…and {count} more' },
+  approvalsPill: { id: 'shell.publishCard.approvalsPill', defaultMessage: 'Approvals override auto-publish' },
+  archivePill: { id: 'shell.publishCard.archivePill', defaultMessage: 'Published items auto-archive' },
+  title: {
+    id: 'shell.publishCard.title',
+    defaultMessage:
+      '{count, plural, one {Publish # item to {destination}} other {Publish # items to {destination}}}',
+  },
+  subtitle: { id: 'shell.publishCard.subtitle', defaultMessage: 'gross {gross} • VAT {vat}' },
+  approveLabel: { id: 'shell.publishCard.approveLabel', defaultMessage: 'Approve & publish' },
+  successMessage: {
+    id: 'shell.publishCard.successMessage',
+    defaultMessage:
+      '{count, plural, one {# item published to {destination} and archived.} other {# items published to {destination} and archived.}}',
+  },
+  auditAction: { id: 'shell.publishCard.auditAction', defaultMessage: 'Published to {destination}' },
+  auditScope: { id: 'shell.publishCard.auditScope', defaultMessage: '{count} items, gross {gross}' },
+});
 
 /**
  * Publish preview (PRD stage 10). Counts plus gross/VAT totals are always shown
@@ -12,6 +68,7 @@ import { Pill } from './DataTable';
  */
 export function PublishCard({ clientIds }: { clientIds: string[] }) {
   const { documents, clients, publishDocuments, mandatoryFields } = useAppContext();
+  const intl = useIntl();
 
   const scoped = documents.filter(
     (d) => (clientIds.length ? clientIds.includes(d.clientId) : true) && (d.status === 'ready' || d.status === 'review'),
@@ -29,36 +86,38 @@ export function PublishCard({ clientIds }: { clientIds: string[] }) {
   if (publishable.length === 0 && held.length === 0) {
     return (
       <div className="w-full max-w-xl border border-white/5 rounded-[24px] bg-card p-5 text-sm text-zinc-400">
-        Nothing ready to publish for this scope.
+        {intl.formatMessage(m.nothingReady)}
       </div>
     );
   }
 
   const detail = (
     <>
-      <ReviewSection title="Publish preview">
+      <ReviewSection title={intl.formatMessage(m.previewSection)}>
         <ReviewRows
           rows={[
-            { label: 'Destination', value: destination },
-            { label: 'Items', value: `${publishable.length}` },
-            { label: 'Gross total', value: currency(gross) },
-            { label: 'VAT total', value: currency(vat) },
-            { label: 'Sends', value: 'Extracted data + the original document image' },
+            { label: intl.formatMessage(m.destination), value: destination },
+            { label: intl.formatMessage(m.items), value: `${publishable.length}` },
+            { label: intl.formatMessage(m.grossTotal), value: currency(gross) },
+            { label: intl.formatMessage(m.vatTotal), value: currency(vat) },
+            { label: intl.formatMessage(m.sends), value: intl.formatMessage(m.sendsValue) },
           ]}
         />
       </ReviewSection>
 
-      <ReviewSection title="Itemised">
+      <ReviewSection title={intl.formatMessage(m.itemisedSection)}>
         <div className="bg-card border border-white/5 rounded-2xl divide-y divide-white/5 shadow-inner max-h-52 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {publishable.map((d) => (
             <div key={d.id} className="px-4 py-2.5 flex items-center justify-between gap-3 text-[13px]">
               <span className="text-zinc-400 truncate">
-                {d.supplier} · {d.category}
+                {intl.formatMessage(m.itemisedRow, { supplier: d.supplier, category: d.category })}
               </span>
               <span className="text-white font-bold shrink-0">{currency(d.total)}</span>
             </div>
           ))}
-          {publishable.length === 0 && <div className="px-4 py-4 text-[13px] text-zinc-500">Nothing passes the checks yet.</div>}
+          {publishable.length === 0 && (
+            <div className="px-4 py-4 text-[13px] text-zinc-500">{intl.formatMessage(m.nothingPasses)}</div>
+          )}
         </div>
       </ReviewSection>
 
@@ -66,25 +125,27 @@ export function PublishCard({ clientIds }: { clientIds: string[] }) {
         <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4">
           <AlertTriangle size={18} className="text-amber-400 shrink-0 mt-0.5" />
           <div className="text-[13px] text-amber-200/90 leading-relaxed">
-            <span className="font-bold text-amber-400">
-              {held.length} item{held.length === 1 ? '' : 's'} held back
-            </span>{' '}
-            — mandatory fields are missing, so they cannot publish:
+            {intl.formatMessage(m.heldBack, {
+              count: held.length,
+              strong: (chunks) => <span className="font-bold text-amber-400">{chunks}</span>,
+            })}
             <div className="mt-2 flex flex-col gap-1">
               {held.slice(0, 8).map((d) => (
                 <span key={d.id} className="text-amber-200/70">
-                  {d.supplier} — missing {d.blockedBy.join(', ')}
+                  {intl.formatMessage(m.heldRow, { supplier: d.supplier, fields: d.blockedBy.join(', ') })}
                 </span>
               ))}
-              {held.length > 8 && <span className="text-amber-200/50">…and {held.length - 8} more</span>}
+              {held.length > 8 && (
+                <span className="text-amber-200/50">{intl.formatMessage(m.heldMore, { count: held.length - 8 })}</span>
+              )}
             </div>
           </div>
         </div>
       )}
 
       <div className="flex flex-wrap gap-2">
-        <Pill tone="blue">Approvals override auto-publish</Pill>
-        <Pill>Published items auto-archive</Pill>
+        <Pill tone="blue">{intl.formatMessage(m.approvalsPill)}</Pill>
+        <Pill>{intl.formatMessage(m.archivePill)}</Pill>
       </div>
     </>
   );
@@ -92,13 +153,13 @@ export function PublishCard({ clientIds }: { clientIds: string[] }) {
   return (
     <ReviewGate
       icon={UploadCloud}
-      title={`Publish ${publishable.length} item${publishable.length === 1 ? '' : 's'} to ${destination}`}
-      subtitle={`gross ${currency(gross)} • VAT ${currency(vat)}`}
+      title={intl.formatMessage(m.title, { count: publishable.length, destination })}
+      subtitle={intl.formatMessage(m.subtitle, { gross: currency(gross), vat: currency(vat) })}
       detail={detail}
-      approveLabel="Approve & publish"
-      successMessage={`${publishable.length} item${publishable.length === 1 ? '' : 's'} published to ${destination} and archived.`}
-      auditAction={`Published to ${destination}`}
-      auditScope={`${publishable.length} items, gross ${currency(gross)}`}
+      approveLabel={intl.formatMessage(m.approveLabel)}
+      successMessage={intl.formatMessage(m.successMessage, { count: publishable.length, destination })}
+      auditAction={intl.formatMessage(m.auditAction, { destination })}
+      auditScope={intl.formatMessage(m.auditScope, { count: publishable.length, gross: currency(gross) })}
       onApprove={() => publishDocuments(publishable.map((d) => d.id))}
     />
   );

@@ -6,6 +6,7 @@ import {
   LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { defineMessages, useIntl, type IntlShape, type MessageDescriptor } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { DocumentPreview } from '../components/DynamicComponents/DocumentPreview';
@@ -24,9 +25,460 @@ import { channelLabel } from '../lib/channels';
 import type { ApprovalWorkflow, BusinessMemberRole, Client, ClientDetailChange, Colleague, Document, Intent, MissingItem, SetupTask, WorkflowTask } from '../lib/types';
 
 /**
+ * Copy for the client detail screen — Governance §12.6, following the shape of
+ * `components/DynamicComponents/ActionCard.tsx`.
+ *
+ * Counted phrases are ICU `plural` rather than `n === 1 ? '' : 's'`, and a
+ * sentence whose ending changes is two whole messages rather than one with an
+ * inserted clause — see the note at the head of ActionCard for why.
+ */
+const m = defineMessages({
+  // ── Status column ───────────────────────────────────────────────────────
+  statusToReview: { id: 'clients.clientDetailView.statusToReview', defaultMessage: 'To review' },
+  statusReady: { id: 'clients.clientDetailView.statusReady', defaultMessage: 'Ready' },
+  statusReadyPublishFailed: { id: 'clients.clientDetailView.statusReadyPublishFailed', defaultMessage: 'Ready — publish failed' },
+  statusRejected: { id: 'clients.clientDetailView.statusRejected', defaultMessage: 'Rejected' },
+  statusRejectedWithNote: { id: 'clients.clientDetailView.statusRejectedWithNote', defaultMessage: 'Rejected — {note}' },
+  statusProcessing: { id: 'clients.clientDetailView.statusProcessing', defaultMessage: 'Processing' },
+  statusPublished: { id: 'clients.clientDetailView.statusPublished', defaultMessage: 'Published' },
+
+  // ── Header ──────────────────────────────────────────────────────────────
+  backToClients: { id: 'clients.clientDetailView.backToClients', defaultMessage: 'All clients' },
+  pillAwaitingRegistration: { id: 'clients.clientDetailView.pillAwaitingRegistration', defaultMessage: 'Awaiting client registration' },
+  pillPipelineHealth: { id: 'clients.clientDetailView.pillPipelineHealth', defaultMessage: 'Pipeline health {health}%' },
+  pillXero: { id: 'clients.clientDetailView.pillXero', defaultMessage: 'Xero' },
+  pillNoLedger: { id: 'clients.clientDetailView.pillNoLedger', defaultMessage: 'No ledger' },
+  pillBankFeedLive: { id: 'clients.clientDetailView.pillBankFeedLive', defaultMessage: 'Bank feed live' },
+  pillStatementFallback: { id: 'clients.clientDetailView.pillStatementFallback', defaultMessage: 'Statement fallback' },
+  pillSetupLinkSent: { id: 'clients.clientDetailView.pillSetupLinkSent', defaultMessage: 'Setup link sent' },
+  askAi: { id: 'clients.clientDetailView.askAi', defaultMessage: 'Ask AI' },
+  chaseAction: { id: 'clients.clientDetailView.chaseAction', defaultMessage: 'Chase' },
+  chaseActionCount: { id: 'clients.clientDetailView.chaseActionCount', defaultMessage: 'Chase ({count})' },
+
+  // ── Overview: pipeline snapshot ─────────────────────────────────────────
+  tileInProcessing: { id: 'clients.clientDetailView.tileInProcessing', defaultMessage: 'In processing' },
+  tileInProcessingHint: { id: 'clients.clientDetailView.tileInProcessingHint', defaultMessage: 'ETA per item' },
+  tileToReview: { id: 'clients.clientDetailView.tileToReview', defaultMessage: 'To review' },
+  tileReady: { id: 'clients.clientDetailView.tileReady', defaultMessage: 'Ready' },
+  tileRejected: { id: 'clients.clientDetailView.tileRejected', defaultMessage: 'Rejected / failed' },
+  tileMissingDocs: { id: 'clients.clientDetailView.tileMissingDocs', defaultMessage: 'Missing docs' },
+  tileUnmatched: { id: 'clients.clientDetailView.tileUnmatched', defaultMessage: 'Unmatched bank txns' },
+  tileAwaitingApproval: { id: 'clients.clientDetailView.tileAwaitingApproval', defaultMessage: 'Awaiting approval' },
+
+  // ── Overview: channel mix ───────────────────────────────────────────────
+  panelChannelMix: { id: 'clients.clientDetailView.panelChannelMix', defaultMessage: 'Channel mix' },
+  channelMixIntro: {
+    id: 'clients.clientDetailView.channelMixIntro',
+    defaultMessage: "How this client's documents arrive. Email lands at <highlight>{email}</highlight>.",
+  },
+  channelMixEmpty: { id: 'clients.clientDetailView.channelMixEmpty', defaultMessage: 'No documents in yet.' },
+  channelSharePct: { id: 'clients.clientDetailView.channelSharePct', defaultMessage: '{pct}%' },
+
+  // ── Overview: integration health ────────────────────────────────────────
+  panelIntegrationHealth: { id: 'clients.clientDetailView.panelIntegrationHealth', defaultMessage: 'Integration health' },
+  accountingSoftware: { id: 'clients.clientDetailView.accountingSoftware', defaultMessage: 'Accounting software' },
+  ledgerTokenValidLong: { id: 'clients.clientDetailView.ledgerTokenValidLong', defaultMessage: 'Xero token valid — re-auth in 284d' },
+  ledgerNotConnected: { id: 'clients.clientDetailView.ledgerNotConnected', defaultMessage: 'No ledger connected' },
+  pillLive: { id: 'clients.clientDetailView.pillLive', defaultMessage: 'Live' },
+  pillOff: { id: 'clients.clientDetailView.pillOff', defaultMessage: 'Off' },
+  bankFeed: { id: 'clients.clientDetailView.bankFeed', defaultMessage: 'Bank feed' },
+  bankFeedNoAccount: { id: 'clients.clientDetailView.bankFeedNoAccount', defaultMessage: 'No account on file.' },
+  bankAccountName: { id: 'clients.clientDetailView.bankAccountName', defaultMessage: '{bank} ••{last4}' },
+  bankAccountLive: { id: 'clients.clientDetailView.bankAccountLive', defaultMessage: 'Re-auth in {days}d · synced {sync}' },
+  bankAccountError: { id: 'clients.clientDetailView.bankAccountError', defaultMessage: 'Credential error — feed has stalled' },
+  bankAccountDisconnected: { id: 'clients.clientDetailView.bankAccountDisconnected', defaultMessage: 'Disconnected — statement upload only' },
+  reauthNow: { id: 'clients.clientDetailView.reauthNow', defaultMessage: 'Re-auth now' },
+
+  // ── Overview: recent activity ───────────────────────────────────────────
+  panelRecentActivity: { id: 'clients.clientDetailView.panelRecentActivity', defaultMessage: 'Recent activity' },
+  activityEmpty: {
+    id: 'clients.clientDetailView.activityEmpty',
+    defaultMessage: 'Nothing yet. Approvals, chases and publishes for this client appear here as they happen.',
+  },
+  activityMeta: { id: 'clients.clientDetailView.activityMeta', defaultMessage: '{actor} · {at}' },
+  activityChaseEngine: { id: 'clients.clientDetailView.activityChaseEngine', defaultMessage: 'Chase engine' },
+
+  // ── Overview: pipeline health ───────────────────────────────────────────
+  panelPipelineHealth: { id: 'clients.clientDetailView.panelPipelineHealth', defaultMessage: 'Pipeline health' },
+  pipelineHealthPct: { id: 'clients.clientDetailView.pipelineHealthPct', defaultMessage: '{health}%' },
+  pipelineHealthCaveat: { id: 'clients.clientDetailView.pipelineHealthCaveat', defaultMessage: 'document pipeline only' },
+  rowUnverifiedSpend: { id: 'clients.clientDetailView.rowUnverifiedSpend', defaultMessage: 'Unverified spend' },
+  rowItemDelay: { id: 'clients.clientDetailView.rowItemDelay', defaultMessage: 'Item delay' },
+  itemDelayValue: { id: 'clients.clientDetailView.itemDelayValue', defaultMessage: '{days} days' },
+  rowAutoPublish: { id: 'clients.clientDetailView.rowAutoPublish', defaultMessage: 'Suppliers on auto-publish' },
+  autoPublishValue: { id: 'clients.clientDetailView.autoPublishValue', defaultMessage: '{pct}%' },
+  rowDuplicates: { id: 'clients.clientDetailView.rowDuplicates', defaultMessage: 'Duplicates flagged' },
+  rowOverdueChases: { id: 'clients.clientDetailView.rowOverdueChases', defaultMessage: 'Overdue chases' },
+  rowUnexplained: { id: 'clients.clientDetailView.rowUnexplained', defaultMessage: 'Unexplained transactions' },
+  rowStatementGaps: { id: 'clients.clientDetailView.rowStatementGaps', defaultMessage: 'Statement gaps' },
+  rowRejected: { id: 'clients.clientDetailView.rowRejected', defaultMessage: 'Rejected / failed' },
+
+  // ── Overview: client contact ────────────────────────────────────────────
+  panelClientContact: { id: 'clients.clientDetailView.panelClientContact', defaultMessage: 'Client contact' },
+  rowPrimaryContact: { id: 'clients.clientDetailView.rowPrimaryContact', defaultMessage: 'Primary contact' },
+  rowMobile: { id: 'clients.clientDetailView.rowMobile', defaultMessage: 'Mobile' },
+  rowVatNumber: { id: 'clients.clientDetailView.rowVatNumber', defaultMessage: 'VAT number' },
+  rowNextDeadline: { id: 'clients.clientDetailView.rowNextDeadline', defaultMessage: 'Next deadline' },
+  rowChasePolicy: { id: 'clients.clientDetailView.rowChasePolicy', defaultMessage: 'Chase policy' },
+  chasePolicyDefault: { id: 'clients.clientDetailView.chasePolicyDefault', defaultMessage: 'Standard (3/7 days)' },
+  rowLastUpload: { id: 'clients.clientDetailView.rowLastUpload', defaultMessage: 'Last upload' },
+  clientContactNote: {
+    id: 'clients.clientDetailView.clientContactNote',
+    defaultMessage: 'Chasing is SMS-only to this number. The client needs no app — the secure link opens in any phone browser.',
+  },
+
+  // ── AI tab ──────────────────────────────────────────────────────────────
+  panelAskAboutClient: { id: 'clients.clientDetailView.panelAskAboutClient', defaultMessage: 'Ask about this client' },
+  askIntro: {
+    id: 'clients.clientDetailView.askIntro',
+    defaultMessage:
+      "Opens the workspace on a conversation already scoped to {client} — every answer is drawn from this client's pipeline only. Analysis stays within document operations; it does not prepare financial statements.",
+  },
+  promptMissing: { id: 'clients.clientDetailView.promptMissing', defaultMessage: 'What is still missing for {client}?' },
+  promptMatches: { id: 'clients.clientDetailView.promptMatches', defaultMessage: 'Show the bank matches for {client}' },
+  promptApprovals: { id: 'clients.clientDetailView.promptApprovals', defaultMessage: 'Which items are waiting on approval?' },
+  promptReply: { id: 'clients.clientDetailView.promptReply', defaultMessage: 'Here you go:' },
+  newConversation: { id: 'clients.clientDetailView.newConversation', defaultMessage: 'New conversation' },
+  panelConversations: { id: 'clients.clientDetailView.panelConversations', defaultMessage: 'Conversations about this client' },
+  conversationsEmpty: {
+    id: 'clients.clientDetailView.conversationsEmpty',
+    defaultMessage: 'None yet. Anything you ask with {client} attached is kept here.',
+  },
+  conversationMeta: {
+    id: 'clients.clientDetailView.conversationMeta',
+    defaultMessage: '{count, plural, one {# message} other {# messages}}',
+  },
+  conversationMetaWithClients: {
+    id: 'clients.clientDetailView.conversationMetaWithClients',
+    defaultMessage: '{count, plural, one {# message} other {# messages}} · {clients} clients attached',
+  },
+
+  // ── Shared table columns ────────────────────────────────────────────────
+  colSupplier: { id: 'clients.clientDetailView.colSupplier', defaultMessage: 'Supplier' },
+  colDate: { id: 'clients.clientDetailView.colDate', defaultMessage: 'Date' },
+  colCategory: { id: 'clients.clientDetailView.colCategory', defaultMessage: 'Category' },
+  colChannel: { id: 'clients.clientDetailView.colChannel', defaultMessage: 'Channel' },
+  colTotal: { id: 'clients.clientDetailView.colTotal', defaultMessage: 'Total' },
+  colStatus: { id: 'clients.clientDetailView.colStatus', defaultMessage: 'Status' },
+  colDetectedBy: { id: 'clients.clientDetailView.colDetectedBy', defaultMessage: 'Detected by' },
+  colAmount: { id: 'clients.clientDetailView.colAmount', defaultMessage: 'Amount' },
+  colStage: { id: 'clients.clientDetailView.colStage', defaultMessage: 'Stage' },
+  colApprover: { id: 'clients.clientDetailView.colApprover', defaultMessage: 'Approver' },
+  colSignedOffBy: { id: 'clients.clientDetailView.colSignedOffBy', defaultMessage: 'Signed off by' },
+  colWaiting: { id: 'clients.clientDetailView.colWaiting', defaultMessage: 'Waiting' },
+
+  // ── Chases tab ──────────────────────────────────────────────────────────
+  pillRequested: { id: 'clients.clientDetailView.pillRequested', defaultMessage: 'Requested' },
+  pillNotChased: { id: 'clients.clientDetailView.pillNotChased', defaultMessage: 'Not chased' },
+  chaseAgain: { id: 'clients.clientDetailView.chaseAgain', defaultMessage: 'Chase again' },
+  chasesEmpty: { id: 'clients.clientDetailView.chasesEmpty', defaultMessage: 'Nothing outstanding for this client.' },
+  chaseSelected: { id: 'clients.clientDetailView.chaseSelected', defaultMessage: 'Chase selected' },
+  chasesFooter: {
+    id: 'clients.clientDetailView.chasesFooter',
+    defaultMessage: '{missing} not chased • {requested} requested • {overdue} overdue',
+  },
+
+  // ── Tasks tab ───────────────────────────────────────────────────────────
+  panelTasks: { id: 'clients.clientDetailView.panelTasks', defaultMessage: 'Document-workflow tasks' },
+  tasksIntro: {
+    id: 'clients.clientDetailView.tasksIntro',
+    defaultMessage:
+      'The recurring checklist for {client}. Steps marked AI-prefilled can be answered from real pipeline state rather than from memory.',
+  },
+  addTask: { id: 'clients.clientDetailView.addTask', defaultMessage: 'Add task' },
+  tasksEmpty: { id: 'clients.clientDetailView.tasksEmpty', defaultMessage: 'No tasks for this client.' },
+  taskWaitingOn: { id: 'clients.clientDetailView.taskWaitingOn', defaultMessage: 'Waiting on: {title}' },
+  taskMarkComplete: { id: 'clients.clientDetailView.taskMarkComplete', defaultMessage: 'Mark complete' },
+  taskReopen: { id: 'clients.clientDetailView.taskReopen', defaultMessage: 'Reopen' },
+  taskMeta: { id: 'clients.clientDetailView.taskMeta', defaultMessage: '{assignee} · due {due}' },
+  taskMetaBlocked: {
+    id: 'clients.clientDetailView.taskMetaBlocked',
+    defaultMessage: '{assignee} · due {due} · waiting on "{title}"',
+  },
+  pillAiPrefilled: { id: 'clients.clientDetailView.pillAiPrefilled', defaultMessage: 'AI-prefilled' },
+  pillComplete: { id: 'clients.clientDetailView.pillComplete', defaultMessage: 'Complete' },
+  pillWithIssues: { id: 'clients.clientDetailView.pillWithIssues', defaultMessage: 'With issues' },
+  pillNotApplicable: { id: 'clients.clientDetailView.pillNotApplicable', defaultMessage: 'N/A' },
+
+  // ── Approvals tab: the client-side banner ───────────────────────────────
+  clientSideHeading: {
+    id: 'clients.clientDetailView.clientSideHeading',
+    defaultMessage: '{count, plural, one {# item} other {# items}} waiting on {client}',
+  },
+  itemSummary: { id: 'clients.clientDetailView.itemSummary', defaultMessage: '{supplier} {amount}' },
+  clientSideLinkOpened: {
+    id: 'clients.clientDetailView.clientSideLinkOpened',
+    defaultMessage: '{items} — link sent {sentAt} to {mobile}, opened',
+  },
+  clientSideLinkUnopened: {
+    id: 'clients.clientDetailView.clientSideLinkUnopened',
+    defaultMessage: '{items} — link sent {sentAt} to {mobile}, not opened yet',
+  },
+  clientSideNoLink: { id: 'clients.clientDetailView.clientSideNoLink', defaultMessage: '{items} — no link sent yet' },
+  resendTitle: { id: 'clients.clientDetailView.resendTitle', defaultMessage: 'Text {name} again?' },
+  resendApprovalDetail: {
+    id: 'clients.clientDetailView.resendApprovalDetail',
+    defaultMessage: 'A fresh link replaces the one sent {sentAt}. Their previous link stops working.',
+  },
+  resendConfirmLabel: { id: 'clients.clientDetailView.resendConfirmLabel', defaultMessage: 'Yes, resend it' },
+  resendLockedHint: {
+    id: 'clients.clientDetailView.resendLockedHint',
+    defaultMessage: 'The link sent {sentAt} is still live. Resend unlocks in {hours}h — change the wait under Settings → Chasing.',
+  },
+  resendReadyHint: { id: 'clients.clientDetailView.resendReadyHint', defaultMessage: 'Send a fresh link' },
+  resendLocked: { id: 'clients.clientDetailView.resendLocked', defaultMessage: 'Resend in {hours}h' },
+  resend: { id: 'clients.clientDetailView.resend', defaultMessage: 'Resend' },
+  sendRequestTitle: { id: 'clients.clientDetailView.sendRequestTitle', defaultMessage: 'Text {name} for approval?' },
+  sendRequestTitleUnnamed: {
+    id: 'clients.clientDetailView.sendRequestTitleUnnamed',
+    defaultMessage: 'Text the approver for approval?',
+  },
+  sendRequestDetail: {
+    id: 'clients.clientDetailView.sendRequestDetail',
+    defaultMessage: '{count, plural, one {# item} other {# items}} · {amount} to {mobile}.',
+  },
+  sendRequestConsequence: {
+    id: 'clients.clientDetailView.sendRequestConsequence',
+    defaultMessage: 'One link covers the whole batch and expires with the chase policy.',
+  },
+  sendRequestConfirmLabel: { id: 'clients.clientDetailView.sendRequestConfirmLabel', defaultMessage: 'Yes, send it' },
+  sendRequestNoMobile: { id: 'clients.clientDetailView.sendRequestNoMobile', defaultMessage: 'No mobile on file for this client' },
+  sendRequest: { id: 'clients.clientDetailView.sendRequest', defaultMessage: 'Send the request' },
+  openLinkHint: { id: 'clients.clientDetailView.openLinkHint', defaultMessage: 'See exactly what the approver sees' },
+  openLinkDisabledHint: { id: 'clients.clientDetailView.openLinkDisabledHint', defaultMessage: 'Send the request first' },
+  openLink: { id: 'clients.clientDetailView.openLink', defaultMessage: 'Open the link' },
+
+  // ── Approvals tab: the queue ────────────────────────────────────────────
+  approvalsTableTitle: { id: 'clients.clientDetailView.approvalsTableTitle', defaultMessage: 'Pending items' },
+  approvalsTableSubtitle: {
+    id: 'clients.clientDetailView.approvalsTableSubtitle',
+    defaultMessage: 'Approving here is the same queue an approver sees under Approvals',
+  },
+  pillClientBySms: { id: 'clients.clientDetailView.pillClientBySms', defaultMessage: 'Client — by SMS' },
+  pillPractice: { id: 'clients.clientDetailView.pillPractice', defaultMessage: 'Practice' },
+  waitingDays: { id: 'clients.clientDetailView.waitingDays', defaultMessage: '{days}d' },
+  pillApproved: { id: 'clients.clientDetailView.pillApproved', defaultMessage: 'Approved' },
+  pillRejected: { id: 'clients.clientDetailView.pillRejected', defaultMessage: 'Rejected' },
+  pillWithTheClient: { id: 'clients.clientDetailView.pillWithTheClient', defaultMessage: 'With the client' },
+  editCodingHint: { id: 'clients.clientDetailView.editCodingHint', defaultMessage: 'Correct the coding before approving' },
+  rejectItemHint: { id: 'clients.clientDetailView.rejectItemHint', defaultMessage: 'Reject this item' },
+  rejectTitle: { id: 'clients.clientDetailView.rejectTitle', defaultMessage: 'Reject {supplier}?' },
+  rejectDetail: {
+    id: 'clients.clientDetailView.rejectDetail',
+    defaultMessage: '{amount} · {category}. It stops here and is not published.',
+  },
+  rejectConsequence: {
+    id: 'clients.clientDetailView.rejectConsequence',
+    defaultMessage: 'No reason is recorded from this button — open the row to add one.',
+  },
+  rejectConfirmLabel: { id: 'clients.clientDetailView.rejectConfirmLabel', defaultMessage: 'Yes, reject' },
+  rejectReason: {
+    id: 'clients.clientDetailView.rejectReason',
+    defaultMessage: 'Rejected from the client approvals tab',
+  },
+  approveHint: { id: 'clients.clientDetailView.approveHint', defaultMessage: 'Approve — passes {stage}' },
+  approveTitle: { id: 'clients.clientDetailView.approveTitle', defaultMessage: 'Pass {stage} on {supplier}?' },
+  approveDetail: {
+    id: 'clients.clientDetailView.approveDetail',
+    defaultMessage: '{amount} · {category}. Your name goes on the approval.',
+  },
+  approveConsequence: {
+    id: 'clients.clientDetailView.approveConsequence',
+    defaultMessage: 'At the last stage this locks the item and publishes it.',
+  },
+  approveConfirmLabel: { id: 'clients.clientDetailView.approveConfirmLabel', defaultMessage: 'Yes, approve' },
+  approvalsEmptyNoWorkflow: {
+    id: 'clients.clientDetailView.approvalsEmptyNoWorkflow',
+    defaultMessage: 'No workflow applies to this client, so nothing pauses for approval — Ready items publish directly.',
+  },
+  approvalsEmpty: { id: 'clients.clientDetailView.approvalsEmpty', defaultMessage: 'Nothing awaiting approval.' },
+  approveSelected: { id: 'clients.clientDetailView.approveSelected', defaultMessage: 'Approve selected' },
+  nothingYoursTitle: { id: 'clients.clientDetailView.nothingYoursTitle', defaultMessage: 'Nothing here is yours to approve' },
+  nothingYoursDetail: {
+    id: 'clients.clientDetailView.nothingYoursDetail',
+    defaultMessage: 'These are either already decided or sitting with the client.',
+  },
+  nothingYoursConfirmLabel: { id: 'clients.clientDetailView.nothingYoursConfirmLabel', defaultMessage: 'Close' },
+  bulkApproveTitle: {
+    id: 'clients.clientDetailView.bulkApproveTitle',
+    defaultMessage: 'Pass {count, plural, one {# item} other {# items}}?',
+  },
+  bulkApproveConsequence: {
+    id: 'clients.clientDetailView.bulkApproveConsequence',
+    defaultMessage: 'Anything on its last stage locks and publishes to the accounting software.',
+  },
+
+  // ── Approvals tab: workflows ────────────────────────────────────────────
+  workflowsHeading: { id: 'clients.clientDetailView.workflowsHeading', defaultMessage: 'Workflows' },
+  workflowsIntro: {
+    id: 'clients.clientDetailView.workflowsIntro',
+    defaultMessage:
+      'Approvals are opt-in. With no active workflow this client has no approval step at all — items go Ready → publish with nothing pausing.',
+  },
+  newWorkflow: { id: 'clients.clientDetailView.newWorkflow', defaultMessage: 'New workflow' },
+  deleteWorkflowTitle: { id: 'clients.clientDetailView.deleteWorkflowTitle', defaultMessage: 'Delete the "{name}" workflow?' },
+  deleteWorkflowDetail: {
+    id: 'clients.clientDetailView.deleteWorkflowDetail',
+    defaultMessage: '{count, plural, one {# stage} other {# stages}}, applying to {appliesTo}.',
+  },
+  deleteWorkflowConsequence: {
+    id: 'clients.clientDetailView.deleteWorkflowConsequence',
+    defaultMessage: 'Items on it stop pausing for approval and publish straight through.',
+  },
+  deleteWorkflowConfirmLabel: { id: 'clients.clientDetailView.deleteWorkflowConfirmLabel', defaultMessage: 'Yes, delete it' },
+
+  // ── Documents tab ───────────────────────────────────────────────────────
+  documentsEmpty: { id: 'clients.clientDetailView.documentsEmpty', defaultMessage: 'No documents yet.' },
+  bulkPreview: { id: 'clients.clientDetailView.bulkPreview', defaultMessage: 'Preview' },
+  download: { id: 'clients.clientDetailView.download', defaultMessage: 'Download' },
+  bulkRetryFailed: { id: 'clients.clientDetailView.bulkRetryFailed', defaultMessage: 'Retry failed' },
+  retryTitle: {
+    id: 'clients.clientDetailView.retryTitle',
+    defaultMessage: 'Retry {count, plural, one {# failed item} other {# failed items}}?',
+  },
+  retryDetail: {
+    id: 'clients.clientDetailView.retryDetail',
+    defaultMessage:
+      'Anything that failed to extract is read again; anything that failed to publish goes back to Ready to be pushed again. Whatever was already read off a document is kept.',
+  },
+  retryConfirmLabel: { id: 'clients.clientDetailView.retryConfirmLabel', defaultMessage: 'Yes, retry' },
+  documentsFooter: {
+    id: 'clients.clientDetailView.documentsFooter',
+    defaultMessage: '{total} total • {published} published • {rejected} rejected — click a row to preview',
+  },
+
+  // ── Users tab ───────────────────────────────────────────────────────────
+  panelBusinessUsers: { id: 'clients.clientDetailView.panelBusinessUsers', defaultMessage: 'Business users' },
+  businessUsersIntro: {
+    id: 'clients.clientDetailView.businessUsersIntro',
+    defaultMessage:
+      'People at {client} who can send paperwork. You propose them and set what they may do — the business approves before anyone is contacted, because who works there is their call, not yours.',
+  },
+  businessUsersEmpty: {
+    id: 'clients.clientDetailView.businessUsersEmpty',
+    defaultMessage: 'Nobody yet. Invite whoever handles the paperwork.',
+  },
+  memberUnnamed: { id: 'clients.clientDetailView.memberUnnamed', defaultMessage: 'Unnamed' },
+  memberProposed: {
+    id: 'clients.clientDetailView.memberProposed',
+    defaultMessage: 'Proposed {at} · nothing sent to them yet',
+  },
+  memberDeclined: { id: 'clients.clientDetailView.memberDeclined', defaultMessage: 'Declined by the business' },
+  memberDeclinedWithReason: {
+    id: 'clients.clientDetailView.memberDeclinedWithReason',
+    defaultMessage: 'Declined by the business — {reason}',
+  },
+  memberInvited: {
+    id: 'clients.clientDetailView.memberInvited',
+    defaultMessage: 'Approved by {approver} · invite {channel} to {email}',
+  },
+  memberApproverFallback: { id: 'clients.clientDetailView.memberApproverFallback', defaultMessage: 'the business' },
+  memberEmailFallback: { id: 'clients.clientDetailView.memberEmailFallback', defaultMessage: 'their email' },
+  memberNoContact: { id: 'clients.clientDetailView.memberNoContact', defaultMessage: 'No contact on file' },
+  pillWaitingClientApproval: { id: 'clients.clientDetailView.pillWaitingClientApproval', defaultMessage: 'Waiting client approval' },
+  pillDeclinedByClient: { id: 'clients.clientDetailView.pillDeclinedByClient', defaultMessage: 'Declined by the client' },
+  pillAwaitingMemberRegistration: {
+    id: 'clients.clientDetailView.pillAwaitingMemberRegistration',
+    defaultMessage: 'Awaiting registration',
+  },
+  pillRegistered: { id: 'clients.clientDetailView.pillRegistered', defaultMessage: 'Registered' },
+  openRegistrationLink: { id: 'clients.clientDetailView.openRegistrationLink', defaultMessage: 'Open link' },
+  addUser: { id: 'clients.clientDetailView.addUser', defaultMessage: 'Add user' },
+  panelContacts: { id: 'clients.clientDetailView.panelContacts', defaultMessage: 'Contacts' },
+  contactNoMobile: { id: 'clients.clientDetailView.contactNoMobile', defaultMessage: 'No mobile on file' },
+  contactPrimaryRole: { id: 'clients.clientDetailView.contactPrimaryRole', defaultMessage: 'Primary — receives chases' },
+  contactInboxName: { id: 'clients.clientDetailView.contactInboxName', defaultMessage: 'Accounts inbox' },
+  contactInboxDetail: { id: 'clients.clientDetailView.contactInboxDetail', defaultMessage: 'Forwards to {email}' },
+  contactInboxRole: { id: 'clients.clientDetailView.contactInboxRole', defaultMessage: 'Document owner on email intake' },
+  contactsNote: {
+    id: 'clients.clientDetailView.contactsNote',
+    defaultMessage:
+      'A contact is a verified phone number and nothing more — it receives chases and uploads through OTP links without ever being provisioned as a user. A business user, above, can sign in to the portal.',
+  },
+
+  // ── Integrations tab ────────────────────────────────────────────────────
+  panelConnections: { id: 'clients.clientDetailView.panelConnections', defaultMessage: 'Connections' },
+  connectionLedgerDetail: {
+    id: 'clients.clientDetailView.connectionLedgerDetail',
+    defaultMessage: 'Chart of accounts, tax rates and tracking categories sync both ways',
+  },
+  connectionBankName: { id: 'clients.clientDetailView.connectionBankName', defaultMessage: 'Bank feed (open banking)' },
+  connectionBankConnected: { id: 'clients.clientDetailView.connectionBankConnected', defaultMessage: 'Re-auth due in 62 days' },
+  connectionBankFallback: {
+    id: 'clients.clientDetailView.connectionBankFallback',
+    defaultMessage: 'Statement upload is the fallback until connected',
+  },
+  // The three states of a ConnectionRow pill. Own ids rather than reuse of
+  // `waitingOnClient` / `ledgerTokenNone`, which happen to read the same today:
+  // those label a setup task and a token row, and a translator who shortens one
+  // to fit its column must not silently reword a pill on another tab.
+  connectionConnected: { id: 'clients.clientDetailView.connectionConnected', defaultMessage: 'Connected' },
+  connectionRequested: { id: 'clients.clientDetailView.connectionRequested', defaultMessage: 'Waiting on client' },
+  connectionNotConnected: { id: 'clients.clientDetailView.connectionNotConnected', defaultMessage: 'Not connected' },
+  connectionsNote: {
+    id: 'clients.clientDetailView.connectionsNote',
+    defaultMessage:
+      'Only the client can switch these on — both need their own login at the provider, which the practice never holds. Ask for them with a setup link.',
+  },
+  panelSetupLink: { id: 'clients.clientDetailView.panelSetupLink', defaultMessage: 'Client setup link' },
+  rowSentTo: { id: 'clients.clientDetailView.rowSentTo', defaultMessage: 'Sent to' },
+  setupSentToValue: { id: 'clients.clientDetailView.setupSentToValue', defaultMessage: '{name} · {mobile}' },
+  rowSent: { id: 'clients.clientDetailView.rowSent', defaultMessage: 'Sent' },
+  rowExpires: { id: 'clients.clientDetailView.rowExpires', defaultMessage: 'Expires' },
+  setupExpiresValue: { id: 'clients.clientDetailView.setupExpiresValue', defaultMessage: '{hours}h from sending' },
+  rowResent: { id: 'clients.clientDetailView.rowResent', defaultMessage: 'Resent' },
+  setupNotResent: { id: 'clients.clientDetailView.setupNotResent', defaultMessage: 'Not resent' },
+  setupResentCount: { id: 'clients.clientDetailView.setupResentCount', defaultMessage: '{count}×' },
+  setupTaskProfile: { id: 'clients.clientDetailView.setupTaskProfile', defaultMessage: 'Company details' },
+  setupTaskDoneProfile: { id: 'clients.clientDetailView.setupTaskDoneProfile', defaultMessage: 'Registered by client' },
+  setupTaskDoneConnection: { id: 'clients.clientDetailView.setupTaskDoneConnection', defaultMessage: 'Connected by client' },
+  waitingOnClient: { id: 'clients.clientDetailView.waitingOnClient', defaultMessage: 'Waiting on client' },
+  resendSetupDetail: {
+    id: 'clients.clientDetailView.resendSetupDetail',
+    defaultMessage: 'A fresh setup link replaces the one sent {sentAt}. Their previous link stops working.',
+  },
+  resendSetupLink: { id: 'clients.clientDetailView.resendSetupLink', defaultMessage: 'Resend link' },
+  setupAllConnected: {
+    id: 'clients.clientDetailView.setupAllConnected',
+    defaultMessage: 'Everything the client had to connect is connected.',
+  },
+  setupNoLinkSent: {
+    id: 'clients.clientDetailView.setupNoLinkSent',
+    defaultMessage: 'No setup link has been sent. One SMS covers everything still outstanding.',
+  },
+  sendSetupLink: { id: 'clients.clientDetailView.sendSetupLink', defaultMessage: 'Send setup link' },
+  setupNeedsMobile: {
+    id: 'clients.clientDetailView.setupNeedsMobile',
+    defaultMessage: 'Add a mobile number on the Settings tab first.',
+  },
+  rowLedgerToken: { id: 'clients.clientDetailView.rowLedgerToken', defaultMessage: 'Ledger token' },
+  ledgerTokenValid: { id: 'clients.clientDetailView.ledgerTokenValid', defaultMessage: 'Valid — 284 days' },
+  ledgerTokenNone: { id: 'clients.clientDetailView.ledgerTokenNone', defaultMessage: 'Not connected' },
+  rowBankReauth: { id: 'clients.clientDetailView.rowBankReauth', defaultMessage: 'Bank re-auth' },
+  bankReauthValue: { id: 'clients.clientDetailView.bankReauthValue', defaultMessage: '62 days' },
+  rowPublishFailures: { id: 'clients.clientDetailView.rowPublishFailures', defaultMessage: 'Publish failures' },
+
+  // ── Modals ──────────────────────────────────────────────────────────────
+  chaseReviewNote: {
+    id: 'clients.clientDetailView.chaseReviewNote',
+    defaultMessage: 'Nothing sends until you read the review and approve it.',
+  },
+  chaseDone: { id: 'clients.clientDetailView.chaseDone', defaultMessage: 'Done' },
+  previewNote: {
+    id: 'clients.clientDetailView.previewNote',
+    defaultMessage: 'Extracted data and line items · the original stays immutable',
+  },
+});
+
+/**
  * Wireframe screen 7 — the client is the single home of everything
  * client-scoped, so this tab set is the whole surface. Order matches the
  * wireframe exactly: the daily pipeline work first, configuration last.
+ *
+ * The tuple stays untranslated on purpose: it types `Tab`, it is what the URL
+ * segment round-trips through `slug`/`fromSlug`, and it is what every
+ * `tab === 'Costs'` compares against. The words on the buttons are a separate
+ * lookup, so translating a tab cannot break a route.
  */
 const TABS = [
   'Overview', 'Costs', 'Sales', 'Bank', 'Supplier Statements', 'Expense Claims',
@@ -34,19 +486,44 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number];
 
+/** What each tab is called on screen. Descriptors, formatted at the call site. */
+const TAB_LABEL: Record<Tab, MessageDescriptor> = defineMessages({
+  Overview: { id: 'clients.clientDetailView.tabOverview', defaultMessage: 'Overview' },
+  Costs: { id: 'clients.clientDetailView.tabCosts', defaultMessage: 'Costs' },
+  Sales: { id: 'clients.clientDetailView.tabSales', defaultMessage: 'Sales' },
+  Bank: { id: 'clients.clientDetailView.tabBank', defaultMessage: 'Bank' },
+  'Supplier Statements': { id: 'clients.clientDetailView.tabSupplierStatements', defaultMessage: 'Supplier Statements' },
+  'Expense Claims': { id: 'clients.clientDetailView.tabExpenseClaims', defaultMessage: 'Expense Claims' },
+  Approvals: { id: 'clients.clientDetailView.tabApprovals', defaultMessage: 'Approvals' },
+  Documents: { id: 'clients.clientDetailView.tabDocuments', defaultMessage: 'Documents' },
+  Chases: { id: 'clients.clientDetailView.tabChases', defaultMessage: 'Chases' },
+  Tasks: { id: 'clients.clientDetailView.tabTasks', defaultMessage: 'Tasks' },
+  Integrations: { id: 'clients.clientDetailView.tabIntegrations', defaultMessage: 'Integrations' },
+  Users: { id: 'clients.clientDetailView.tabUsers', defaultMessage: 'Users' },
+  Settings: { id: 'clients.clientDetailView.tabSettings', defaultMessage: 'Settings' },
+  AI: { id: 'clients.clientDetailView.tabAi', defaultMessage: 'AI' },
+});
+
 /**
  * What the Status column actually says. Four of the five states are a fixed
  * word, but `review` has always shown its note instead — so "Missing VAT" is
  * not a status, it is a review note. Rejected, Processing and a failed-publish
  * Ready now show theirs too, trimmed to fit a cell with the full text on hover.
+ *
+ * Takes `intl` rather than calling `useIntl` — it is a plain function, used for
+ * the sort value as well as the cell, so it cannot hold a hook.
  */
-function statusLabel(d: Document): string {
+function statusLabel(intl: IntlShape, d: Document): string {
   const note = d.statusNote?.split('—')[0]?.trim();
-  if (d.status === 'review') return d.statusNote ?? 'To review';
-  if (d.status === 'ready') return d.publishFailed ? 'Ready — publish failed' : 'Ready';
-  if (d.status === 'rejected') return note ? `Rejected — ${note.toLowerCase()}` : 'Rejected';
-  if (d.status === 'processing') return note || 'Processing';
-  return 'Published';
+  if (d.status === 'review') return d.statusNote ?? intl.formatMessage(m.statusToReview);
+  if (d.status === 'ready') return intl.formatMessage(d.publishFailed ? m.statusReadyPublishFailed : m.statusReady);
+  if (d.status === 'rejected') {
+    return note
+      ? intl.formatMessage(m.statusRejectedWithNote, { note: note.toLowerCase() })
+      : intl.formatMessage(m.statusRejected);
+  }
+  if (d.status === 'processing') return note || intl.formatMessage(m.statusProcessing);
+  return intl.formatMessage(m.statusPublished);
 }
 
 /**
@@ -58,15 +535,15 @@ function noteTitle(note: string | undefined): { title?: string } {
 }
 
 /** How each intake channel is named on the Overview's channel mix. */
-const CHANNEL_LABEL: Record<Document['source'], string> = {
-  email: 'Email',
-  whatsapp: 'WhatsApp',
-  'sms-link': 'SMS chase links',
-  web: 'Web upload',
-  portal: 'Client portal',
-  chat: 'Chat upload',
-  csv: 'CSV import',
-};
+const CHANNEL_LABEL: Record<Document['source'], MessageDescriptor> = defineMessages({
+  email: { id: 'clients.clientDetailView.channelEmail', defaultMessage: 'Email' },
+  whatsapp: { id: 'clients.clientDetailView.channelWhatsapp', defaultMessage: 'WhatsApp' },
+  'sms-link': { id: 'clients.clientDetailView.channelSmsLink', defaultMessage: 'SMS chase links' },
+  web: { id: 'clients.clientDetailView.channelWeb', defaultMessage: 'Web upload' },
+  portal: { id: 'clients.clientDetailView.channelPortal', defaultMessage: 'Client portal' },
+  chat: { id: 'clients.clientDetailView.channelChat', defaultMessage: 'Chat upload' },
+  csv: { id: 'clients.clientDetailView.channelCsv', defaultMessage: 'CSV import' },
+});
 
 export function ClientDetailView() {
   const {
@@ -99,6 +576,7 @@ export function ClientDetailView() {
   const [addingTask, setAddingTask] = useState(false);
   const [chasing, setChasing] = useState<string[] | null>(null);
   const confirm = useConfirm();
+  const intl = useIntl();
   const client = clients.find((c) => c.id === openClientId);
   if (!client) return null;
 
@@ -172,10 +650,10 @@ export function ClientDetailView() {
       at: e.at,
       label: e.label,
       detail: e.detail,
-      actor: 'Chase engine',
+      actor: intl.formatMessage(m.activityChaseEngine),
     }));
     return [...fromAudit, ...fromChase].slice(0, 8);
-  }, [auditLog, chase, client.name]);
+  }, [auditLog, chase, client.name, intl]);
 
   const scoped = (intent: Intent, content: string, response: string) =>
     startConversation([client.id], [
@@ -201,31 +679,31 @@ export function ClientDetailView() {
   const chaseClient = () => setChasing(miss.filter((m) => !m.chased).map((m) => m.id));
 
   const docColumns: Column<Document>[] = [
-    { key: 'supplier', label: 'Supplier', sortValue: (d) => d.supplier, render: (d) => <span className="text-white font-semibold">{d.supplier}</span> },
-    { key: 'date', label: 'Date', sortValue: (d) => d.date },
-    { key: 'category', label: 'Category', sortValue: (d) => d.category },
-    { key: 'source', label: 'Channel', sortValue: (d) => d.source, render: (d) => <Pill>{d.source}</Pill> },
-    { key: 'total', label: 'Total', align: 'right', sortValue: (d) => d.total, render: (d) => <span className="text-white font-bold tabular-nums">{currency(d.total)}</span> },
+    { key: 'supplier', label: intl.formatMessage(m.colSupplier), sortValue: (d) => d.supplier, render: (d) => <span className="text-white font-semibold">{d.supplier}</span> },
+    { key: 'date', label: intl.formatMessage(m.colDate), sortValue: (d) => d.date },
+    { key: 'category', label: intl.formatMessage(m.colCategory), sortValue: (d) => d.category },
+    { key: 'source', label: intl.formatMessage(m.colChannel), sortValue: (d) => d.source, render: (d) => <Pill>{d.source}</Pill> },
+    { key: 'total', label: intl.formatMessage(m.colTotal), align: 'right', sortValue: (d) => d.total, render: (d) => <span className="text-white font-bold tabular-nums">{currency(d.total)}</span> },
     {
-      key: 'status', label: 'Status',
+      key: 'status', label: intl.formatMessage(m.colStatus),
       // Sorted by the label on screen, not the raw status — "Missing VAT" and
       // "Suspected duplicate" both being `review` made the column look
       // unsorted to anyone reading it.
-      sortValue: (d) => statusLabel(d),
+      sortValue: (d) => statusLabel(intl, d),
       render: (d) => {
-        const label = statusLabel(d);
+        const label = statusLabel(intl, d);
         if (d.status === 'ready') {
           // Green Ready vs yellow Ready: a previous publish having failed is
           // the whole difference, and it was invisible in this table.
           return d.publishFailed
             ? <Pill tone="amber" {...noteTitle(d.statusNote)}>{label}</Pill>
-            : <Pill tone="green">Ready</Pill>;
+            : <Pill tone="green">{intl.formatMessage(m.statusReady)}</Pill>;
         }
         if (d.status === 'review') return <Pill tone="amber">{label}</Pill>;
         // Rejected and Processing carry their reason too — a bare "Rejected"
         // hides the one thing that says what to do about it.
         if (d.status === 'rejected') return <Pill tone="red" {...noteTitle(d.statusNote)}>{label}</Pill>;
-        if (d.status === 'published') return <Pill tone="blue">Published</Pill>;
+        if (d.status === 'published') return <Pill tone="blue">{intl.formatMessage(m.statusPublished)}</Pill>;
         return <Pill {...noteTitle(d.statusNote)}>{label}</Pill>;
       },
     },
@@ -239,7 +717,7 @@ export function ClientDetailView() {
           className="flex items-center gap-2 text-[13px] font-bold text-zinc-500 hover:text-white transition-colors mb-5"
         >
           <ArrowLeft size={15} />
-          All clients
+          {intl.formatMessage(m.backToClients)}
         </button>
 
         <div className="flex items-start justify-between gap-6 flex-wrap">
@@ -264,12 +742,16 @@ export function ClientDetailView() {
               <div className="flex items-center gap-3 mt-2 flex-wrap">
                 <Pill>{client.industry}</Pill>
                 {client.companyType && <Pill>{client.companyType}</Pill>}
-                {client.awaitingRegistration && <Pill tone="amber">Awaiting client registration</Pill>}
-                <Pill tone={healthTone(s.health)}>Pipeline health {s.health}%</Pill>
-                {client.xeroConnected ? <Pill tone="blue">Xero</Pill> : <Pill tone="red">No ledger</Pill>}
-                {client.bankConnected ? <Pill tone="green">Bank feed live</Pill> : <Pill tone="amber">Statement fallback</Pill>}
+                {client.awaitingRegistration && <Pill tone="amber">{intl.formatMessage(m.pillAwaitingRegistration)}</Pill>}
+                <Pill tone={healthTone(s.health)}>{intl.formatMessage(m.pillPipelineHealth, { health: s.health })}</Pill>
+                {client.xeroConnected
+                  ? <Pill tone="blue">{intl.formatMessage(m.pillXero)}</Pill>
+                  : <Pill tone="red">{intl.formatMessage(m.pillNoLedger)}</Pill>}
+                {client.bankConnected
+                  ? <Pill tone="green">{intl.formatMessage(m.pillBankFeedLive)}</Pill>
+                  : <Pill tone="amber">{intl.formatMessage(m.pillStatementFallback)}</Pill>}
                 {setupLink && setupLink.completed.length < setupLink.tasks.length && (
-                  <Pill tone="amber">Setup link sent</Pill>
+                  <Pill tone="amber">{intl.formatMessage(m.pillSetupLinkSent)}</Pill>
                 )}
               </div>
             </div>
@@ -281,7 +763,7 @@ export function ClientDetailView() {
               className="flex items-center gap-2 px-5 py-2.5 bg-brand/10 text-brand border border-brand/20 text-sm font-bold rounded-full hover:bg-brand/20 transition-all"
             >
               <Sparkles size={16} />
-              Ask AI
+              {intl.formatMessage(m.askAi)}
             </button>
             <button
               disabled={s.missing === 0}
@@ -289,7 +771,9 @@ export function ClientDetailView() {
               className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)] disabled:opacity-40"
             >
               <Send size={16} />
-              Chase {s.missing > 0 ? `(${s.missing})` : ''}
+              {s.missing > 0
+                ? intl.formatMessage(m.chaseActionCount, { count: s.missing })
+                : intl.formatMessage(m.chaseAction)}
             </button>
           </div>
         </div>
@@ -306,7 +790,7 @@ export function ClientDetailView() {
                 : 'bg-card text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
             }`}
           >
-            {t}
+            {intl.formatMessage(TAB_LABEL[t])}
           </button>
         ))}
       </div>
@@ -318,36 +802,42 @@ export function ClientDetailView() {
               {/* Wireframe's pipeline snapshot — the same seven figures, in the
                   same order, each one drilling to the tab that can act on it. */}
               <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-4">
-                <Tile label="In processing" value={s.processing} hint="ETA per item" onClick={() => setTab('Costs')} />
-                <Tile label="To review" value={s.toReview} onClick={() => setTab('Costs')} />
-                <Tile label="Ready" value={s.ready} onClick={() => setTab('Costs')} />
-                <Tile label="Rejected / failed" value={s.rejected} tone="red" onClick={() => setTab('Costs')} />
+                <Tile label={intl.formatMessage(m.tileInProcessing)} value={s.processing} hint={intl.formatMessage(m.tileInProcessingHint)} onClick={() => setTab('Costs')} />
+                <Tile label={intl.formatMessage(m.tileToReview)} value={s.toReview} onClick={() => setTab('Costs')} />
+                <Tile label={intl.formatMessage(m.tileReady)} value={s.ready} onClick={() => setTab('Costs')} />
+                <Tile label={intl.formatMessage(m.tileRejected)} value={s.rejected} tone="red" onClick={() => setTab('Costs')} />
                 <Tile
-                  label="Missing docs"
+                  label={intl.formatMessage(m.tileMissingDocs)}
                   value={s.missing}
                   tone="red"
                   onClick={() => setTab('Chases')}
-                  {...(s.missing > 0 ? { action: { label: 'Chase', onClick: () => chaseClient() } } : {})}
+                  {...(s.missing > 0
+                    ? { action: { label: intl.formatMessage(m.chaseAction), onClick: () => chaseClient() } }
+                    : {})}
                 />
-                <Tile label="Unmatched bank txns" value={s.unmatched} tone="red" onClick={() => setTab('Bank')} />
-                <Tile label="Awaiting approval" value={s.approvals} onClick={() => setTab('Approvals')} />
+                <Tile label={intl.formatMessage(m.tileUnmatched)} value={s.unmatched} tone="red" onClick={() => setTab('Bank')} />
+                <Tile label={intl.formatMessage(m.tileAwaitingApproval)} value={s.approvals} onClick={() => setTab('Approvals')} />
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-                <Panel title="Channel mix" icon={Radio}>
+                <Panel title={intl.formatMessage(m.panelChannelMix)} icon={Radio}>
                   <p className="text-[12px] text-zinc-500 mb-4 leading-relaxed">
-                    How this client's documents arrive. Email lands at{' '}
-                    <span className="text-zinc-300 font-semibold">{settings.docEmail}</span>.
+                    {intl.formatMessage(m.channelMixIntro, {
+                      email: settings.docEmail,
+                      highlight: (chunks: React.ReactNode[]) => (
+                        <span className="text-zinc-300 font-semibold">{chunks}</span>
+                      ),
+                    })}
                   </p>
                   {channelMix.length === 0 ? (
-                    <p className="text-[13px] text-zinc-500">No documents in yet.</p>
+                    <p className="text-[13px] text-zinc-500">{intl.formatMessage(m.channelMixEmpty)}</p>
                   ) : (
                     <div className="flex flex-col gap-3">
                       {channelMix.map((c) => (
                         <div key={c.source}>
                           <div className="flex justify-between items-baseline gap-3 mb-1.5">
-                            <span className="text-[13px] text-zinc-300 font-semibold">{CHANNEL_LABEL[c.source]}</span>
-                            <span className="text-[13px] text-white font-bold tabular-nums">{c.pct}%</span>
+                            <span className="text-[13px] text-zinc-300 font-semibold">{intl.formatMessage(CHANNEL_LABEL[c.source])}</span>
+                            <span className="text-[13px] text-white font-bold tabular-nums">{intl.formatMessage(m.channelSharePct, { pct: c.pct })}</span>
                           </div>
                           <div className="h-1.5 w-full bg-raised rounded-full overflow-hidden shadow-inner">
                             <div className="h-full rounded-full bg-brand" style={{ width: `${c.pct}%` }} />
@@ -360,49 +850,51 @@ export function ClientDetailView() {
 
                 {/* Wireframe puts integration health on Overview, not buried on
                     the Integrations tab — a dead token stops the pipeline. */}
-                <Panel title="Integration health" icon={Landmark}>
+                <Panel title={intl.formatMessage(m.panelIntegrationHealth)} icon={Landmark}>
                   <div className="flex flex-col gap-3">
                     <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-ground/60 border border-white/5">
                       <div className="min-w-0">
-                        <div className="text-[13px] font-bold text-white">Accounting software</div>
+                        <div className="text-[13px] font-bold text-white">{intl.formatMessage(m.accountingSoftware)}</div>
                         <div className="text-[12px] text-zinc-500">
-                          {client.xeroConnected ? 'Xero token valid — re-auth in 284d' : 'No ledger connected'}
+                          {intl.formatMessage(client.xeroConnected ? m.ledgerTokenValidLong : m.ledgerNotConnected)}
                         </div>
                       </div>
-                      {client.xeroConnected ? <Pill tone="green">Live</Pill> : <Pill tone="red">Off</Pill>}
+                      {client.xeroConnected
+                        ? <Pill tone="green">{intl.formatMessage(m.pillLive)}</Pill>
+                        : <Pill tone="red">{intl.formatMessage(m.pillOff)}</Pill>}
                     </div>
 
                     {clientAccounts.length === 0 ? (
                       <div className="p-3.5 rounded-2xl bg-ground/60 border border-white/5">
-                        <div className="text-[13px] font-bold text-white">Bank feed</div>
-                        <div className="text-[12px] text-zinc-500">No account on file.</div>
+                        <div className="text-[13px] font-bold text-white">{intl.formatMessage(m.bankFeed)}</div>
+                        <div className="text-[12px] text-zinc-500">{intl.formatMessage(m.bankFeedNoAccount)}</div>
                       </div>
                     ) : (
                       clientAccounts.map((a) => (
                         <div key={a.id} className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-ground/60 border border-white/5">
                           <div className="min-w-0">
                             <div className="text-[13px] font-bold text-white truncate">
-                              {a.bankName} ••{a.last4}
+                              {intl.formatMessage(m.bankAccountName, { bank: a.bankName, last4: a.last4 })}
                             </div>
                             <div className="text-[12px] text-zinc-500">
                               {a.status === 'live'
-                                ? `Re-auth in ${a.reauthDays}d · synced ${a.lastSync}`
+                                ? intl.formatMessage(m.bankAccountLive, { days: a.reauthDays, sync: a.lastSync })
                                 : a.status === 'error'
-                                ? 'Credential error — feed has stalled'
-                                : 'Disconnected — statement upload only'}
+                                ? intl.formatMessage(m.bankAccountError)
+                                : intl.formatMessage(m.bankAccountDisconnected)}
                             </div>
                           </div>
                           {/* Open banking consent expires every 90 days; this is
                               the one integration action the practice can take. */}
                           {a.status === 'live' && a.reauthDays > 14 ? (
-                            <Pill tone="green">Live</Pill>
+                            <Pill tone="green">{intl.formatMessage(m.pillLive)}</Pill>
                           ) : (
                             <button
                               onClick={() => reauthAccount(a.id)}
                               className="shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
                             >
                               <RefreshCw size={13} strokeWidth={2.5} />
-                              Re-auth now
+                              {intl.formatMessage(m.reauthNow)}
                             </button>
                           )}
                         </div>
@@ -411,10 +903,10 @@ export function ClientDetailView() {
                   </div>
                 </Panel>
 
-                <Panel title="Recent activity" icon={History}>
+                <Panel title={intl.formatMessage(m.panelRecentActivity)} icon={History}>
                   {activity.length === 0 ? (
                     <p className="text-[13px] text-zinc-500 leading-relaxed">
-                      Nothing yet. Approvals, chases and publishes for this client appear here as they happen.
+                      {intl.formatMessage(m.activityEmpty)}
                     </p>
                   ) : (
                     <div className="flex flex-col gap-3">
@@ -425,7 +917,7 @@ export function ClientDetailView() {
                             <div className="text-[13px] text-white font-semibold leading-snug">{e.label}</div>
                             <div className="text-[12px] text-zinc-500 leading-snug">{e.detail}</div>
                             <div className="text-[11px] text-zinc-600 font-semibold uppercase tracking-wider mt-0.5">
-                              {e.actor} · {e.at}
+                              {intl.formatMessage(m.activityMeta, { actor: e.actor, at: e.at })}
                             </div>
                           </div>
                         </div>
@@ -436,10 +928,10 @@ export function ClientDetailView() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Panel title="Pipeline health" icon={Activity}>
+                <Panel title={intl.formatMessage(m.panelPipelineHealth)} icon={Activity}>
                   <div className="flex items-end justify-between mb-3">
-                    <span className="text-4xl font-bold text-white tracking-tight tabular-nums">{s.health}%</span>
-                    <span className="text-[12px] text-zinc-500 font-semibold">document pipeline only</span>
+                    <span className="text-4xl font-bold text-white tracking-tight tabular-nums">{intl.formatMessage(m.pipelineHealthPct, { health: s.health })}</span>
+                    <span className="text-[12px] text-zinc-500 font-semibold">{intl.formatMessage(m.pipelineHealthCaveat)}</span>
                   </div>
                   <div className="h-2 w-full bg-raised rounded-full overflow-hidden shadow-inner mb-5">
                     <div
@@ -448,28 +940,28 @@ export function ClientDetailView() {
                     />
                   </div>
                   <div className="flex flex-col gap-2.5 text-[13px]">
-                    <Row label="Unverified spend" value={currency(s.unverified)} />
-                    <Row label="Item delay" value={`${s.itemDelay} days`} />
-                    <Row label="Suppliers on auto-publish" value={`${s.autoPublishCoverage}%`} />
-                    <Row label="Duplicates flagged" value={String(s.duplicates)} />
-                    <Row label="Overdue chases" value={String(s.overdue)} />
-                    <Row label="Unexplained transactions" value={String(s.unmatched)} />
-                    <Row label="Statement gaps" value={String(s.statementGaps)} />
-                    <Row label="Rejected / failed" value={String(s.rejected)} />
+                    <Row label={intl.formatMessage(m.rowUnverifiedSpend)} value={currency(s.unverified)} />
+                    <Row label={intl.formatMessage(m.rowItemDelay)} value={intl.formatMessage(m.itemDelayValue, { days: s.itemDelay })} />
+                    <Row label={intl.formatMessage(m.rowAutoPublish)} value={intl.formatMessage(m.autoPublishValue, { pct: s.autoPublishCoverage })} />
+                    <Row label={intl.formatMessage(m.rowDuplicates)} value={String(s.duplicates)} />
+                    <Row label={intl.formatMessage(m.rowOverdueChases)} value={String(s.overdue)} />
+                    <Row label={intl.formatMessage(m.rowUnexplained)} value={String(s.unmatched)} />
+                    <Row label={intl.formatMessage(m.rowStatementGaps)} value={String(s.statementGaps)} />
+                    <Row label={intl.formatMessage(m.rowRejected)} value={String(s.rejected)} />
                   </div>
                 </Panel>
 
-                <Panel title="Client contact" icon={Users}>
+                <Panel title={intl.formatMessage(m.panelClientContact)} icon={Users}>
                   <div className="flex flex-col gap-2.5 text-[13px]">
-                    <Row label="Primary contact" value={client.contactName ?? '—'} />
-                    <Row label="Mobile" value={client.mobile ?? '—'} />
-                    <Row label="VAT number" value={client.vatNumber ?? '—'} />
-                    <Row label="Next deadline" value={client.deadline} />
-                    <Row label="Chase policy" value={chase?.policy ?? 'Standard (3/7 days)'} />
-                    <Row label="Last upload" value={chase?.lastUpload ?? '—'} />
+                    <Row label={intl.formatMessage(m.rowPrimaryContact)} value={client.contactName ?? '—'} />
+                    <Row label={intl.formatMessage(m.rowMobile)} value={client.mobile ?? '—'} />
+                    <Row label={intl.formatMessage(m.rowVatNumber)} value={client.vatNumber ?? '—'} />
+                    <Row label={intl.formatMessage(m.rowNextDeadline)} value={client.deadline} />
+                    <Row label={intl.formatMessage(m.rowChasePolicy)} value={chase?.policy ?? intl.formatMessage(m.chasePolicyDefault)} />
+                    <Row label={intl.formatMessage(m.rowLastUpload)} value={chase?.lastUpload ?? '—'} />
                   </div>
                   <p className="text-[12px] text-zinc-500 mt-5 leading-relaxed">
-                    Chasing is SMS-only to this number. The client needs no app — the secure link opens in any phone browser.
+                    {intl.formatMessage(m.clientContactNote)}
                   </p>
                 </Panel>
               </div>
@@ -487,21 +979,19 @@ export function ClientDetailView() {
               in and the record of what has already been asked. */}
           {tab === 'AI' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Panel title="Ask about this client" icon={Bot}>
+              <Panel title={intl.formatMessage(m.panelAskAboutClient)} icon={Bot}>
                 <p className="text-[13px] text-zinc-500 leading-relaxed mb-5">
-                  Opens the workspace on a conversation already scoped to {client.name} — every answer is drawn from
-                  this client's pipeline only. Analysis stays within document operations; it does not prepare
-                  financial statements.
+                  {intl.formatMessage(m.askIntro, { client: client.name })}
                 </p>
                 <div className="flex flex-col gap-2 mb-5">
                   {([
-                    { q: `What is still missing for ${client.name}?`, intent: 'SHOW_MISSING' },
-                    { q: `Show the bank matches for ${client.name}`, intent: 'SHOW_MATCHES' },
-                    { q: `Which items are waiting on approval?`, intent: 'SHOW_APPROVALS' },
+                    { q: intl.formatMessage(m.promptMissing, { client: client.name }), intent: 'SHOW_MISSING' },
+                    { q: intl.formatMessage(m.promptMatches, { client: client.name }), intent: 'SHOW_MATCHES' },
+                    { q: intl.formatMessage(m.promptApprovals), intent: 'SHOW_APPROVALS' },
                   ] satisfies { q: string; intent: Intent }[]).map((p) => (
                     <button
                       key={p.q}
-                      onClick={() => scoped(p.intent, p.q, 'Here you go:')}
+                      onClick={() => scoped(p.intent, p.q, intl.formatMessage(m.promptReply))}
                       className="text-left px-4 py-3 rounded-2xl bg-ground/60 border border-white/5 text-[13px] text-zinc-300 hover:text-white hover:border-white/15 transition-colors"
                     >
                       {p.q}
@@ -513,14 +1003,14 @@ export function ClientDetailView() {
                   className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
                 >
                   <Sparkles size={15} />
-                  New conversation
+                  {intl.formatMessage(m.newConversation)}
                 </button>
               </Panel>
 
-              <Panel title="Conversations about this client" icon={History}>
+              <Panel title={intl.formatMessage(m.panelConversations)} icon={History}>
                 {clientConversations.length === 0 ? (
                   <p className="text-[13px] text-zinc-500 leading-relaxed">
-                    None yet. Anything you ask with {client.name} attached is kept here.
+                    {intl.formatMessage(m.conversationsEmpty, { client: client.name })}
                   </p>
                 ) : (
                   <div className="flex flex-col gap-2">
@@ -536,8 +1026,12 @@ export function ClientDetailView() {
                       >
                         <div className="text-[13px] font-bold text-white truncate">{c.title}</div>
                         <div className="text-[12px] text-zinc-500 mt-0.5">
-                          {c.messages.length} message{c.messages.length === 1 ? '' : 's'}
-                          {c.attachedClientIds.length > 1 ? ` · ${c.attachedClientIds.length} clients attached` : ''}
+                          {c.attachedClientIds.length > 1
+                            ? intl.formatMessage(m.conversationMetaWithClients, {
+                                count: c.messages.length,
+                                clients: c.attachedClientIds.length,
+                              })
+                            : intl.formatMessage(m.conversationMeta, { count: c.messages.length })}
                         </div>
                       </button>
                     ))}
@@ -566,59 +1060,58 @@ export function ClientDetailView() {
             <DataTable<MissingItem>
               className="max-w-none"
               columns={[
-                { key: 'supplier', label: 'Supplier', sortValue: (m) => m.supplier, render: (m) => <span className="text-white font-semibold">{m.supplier}</span> },
-                { key: 'date', label: 'Date', sortValue: (m) => m.date },
-                { key: 'detectedBy', label: 'Detected by', sortValue: (m) => m.detectedBy, render: (m) => <Pill>{m.detectedBy}</Pill> },
-                { key: 'chased', label: 'Status', sortValue: (m) => String(m.chased), render: (m) => (m.chased ? <Pill tone="blue">Requested</Pill> : <Pill tone="red">Not chased</Pill>) },
-                { key: 'amount', label: 'Amount', align: 'right', sortValue: (m) => m.amount, render: (m) => <span className="text-white font-bold tabular-nums">{m.amount ? currency(m.amount) : '—'}</span> },
+                { key: 'supplier', label: intl.formatMessage(m.colSupplier), sortValue: (row) => row.supplier, render: (row) => <span className="text-white font-semibold">{row.supplier}</span> },
+                { key: 'date', label: intl.formatMessage(m.colDate), sortValue: (row) => row.date },
+                { key: 'detectedBy', label: intl.formatMessage(m.colDetectedBy), sortValue: (row) => row.detectedBy, render: (row) => <Pill>{row.detectedBy}</Pill> },
+                { key: 'chased', label: intl.formatMessage(m.colStatus), sortValue: (row) => String(row.chased), render: (row) => (row.chased ? <Pill tone="blue">{intl.formatMessage(m.pillRequested)}</Pill> : <Pill tone="red">{intl.formatMessage(m.pillNotChased)}</Pill>) },
+                { key: 'amount', label: intl.formatMessage(m.colAmount), align: 'right', sortValue: (row) => row.amount, render: (row) => <span className="text-white font-bold tabular-nums">{row.amount ? currency(row.amount) : '—'}</span> },
                 {
                   // The verb on the row, so one item can be chased without
                   // ticking it first. Already-requested items say so and offer
                   // the nudge instead, since asking twice is a different act.
                   key: 'actions', label: '', align: 'right',
-                  render: (m) => (
+                  render: (row) => (
                     <button
-                      onClick={(e) => { e.stopPropagation(); chaseItems([m]); }}
+                      onClick={(e) => { e.stopPropagation(); chaseItems([row]); }}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold text-brand bg-brand/10 border border-brand/25 hover:bg-brand/20 transition-colors whitespace-nowrap"
                     >
                       <Send size={12} strokeWidth={2.5} />
-                      {m.chased ? 'Chase again' : 'Chase'}
+                      {intl.formatMessage(row.chased ? m.chaseAgain : m.chaseAction)}
                     </button>
                   ),
                 },
               ]}
               rows={miss}
-              rowId={(m) => m.id}
+              rowId={(row) => row.id}
               selectable
               actionsOnTop
-              emptyMessage="Nothing outstanding for this client."
+              emptyMessage={intl.formatMessage(m.chasesEmpty)}
               bulkActions={[
                 {
-                  label: 'Chase selected', icon: Send, primary: true,
+                  label: intl.formatMessage(m.chaseSelected), icon: Send, primary: true,
                   onClick: (sel) => chaseItems(sel),
                 },
               ]}
-              footer={`${s.missing} not chased • ${s.requested} requested • ${s.overdue} overdue`}
+              footer={intl.formatMessage(m.chasesFooter, { missing: s.missing, requested: s.requested, overdue: s.overdue })}
             />
           )}
 
           {tab === 'Tasks' && (
-            <Panel title="Document-workflow tasks" icon={ListChecks}>
+            <Panel title={intl.formatMessage(m.panelTasks)} icon={ListChecks}>
               <div className="flex items-start justify-between gap-4 mb-5 flex-wrap">
                 <p className="text-[13px] text-zinc-500 leading-relaxed max-w-xl">
-                  The recurring checklist for {client.name}. Steps marked AI-prefilled can be answered from real
-                  pipeline state rather than from memory.
+                  {intl.formatMessage(m.tasksIntro, { client: client.name })}
                 </p>
                 <button
                   onClick={() => setAddingTask(true)}
                   className="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
                 >
                   <Plus size={15} strokeWidth={2.5} />
-                  Add task
+                  {intl.formatMessage(m.addTask)}
                 </button>
               </div>
               {clientTasks.length === 0 ? (
-                <p className="text-[13px] text-zinc-500">No tasks for this client.</p>
+                <p className="text-[13px] text-zinc-500">{intl.formatMessage(m.tasksEmpty)}</p>
               ) : (
                 <div className="flex flex-col gap-2">
                   {clientTasks.map((t) => {
@@ -630,7 +1123,11 @@ export function ClientDetailView() {
                         <button
                           onClick={() => setTaskStatus(t.id, open ? 'complete' : 'open')}
                           disabled={blocked && open}
-                          title={blocked && open ? `Waiting on: ${blocker?.title}` : open ? 'Mark complete' : 'Reopen'}
+                          title={
+                            blocked && open
+                              ? intl.formatMessage(m.taskWaitingOn, { title: blocker?.title })
+                              : intl.formatMessage(open ? m.taskMarkComplete : m.taskReopen)
+                          }
                           className={`shrink-0 transition-colors ${
                             !open ? 'text-brand' : blocked ? 'text-zinc-700 cursor-not-allowed' : 'text-zinc-600 hover:text-white'
                           }`}
@@ -642,14 +1139,15 @@ export function ClientDetailView() {
                             {t.title}
                           </div>
                           <div className="text-[12px] text-zinc-500">
-                            {t.assignee} · due {t.due}
-                            {blocked && open ? ` · waiting on "${blocker?.title}"` : ''}
+                            {blocked && open
+                              ? intl.formatMessage(m.taskMetaBlocked, { assignee: t.assignee, due: t.due, title: blocker?.title })
+                              : intl.formatMessage(m.taskMeta, { assignee: t.assignee, due: t.due })}
                           </div>
                         </div>
-                        {t.aiPrefilled && open && <Pill tone="blue">AI-prefilled</Pill>}
-                        {t.status === 'complete' && <Pill tone="green">Complete</Pill>}
-                        {t.status === 'complete-with-issues' && <Pill tone="amber">With issues</Pill>}
-                        {t.status === 'not-applicable' && <Pill>N/A</Pill>}
+                        {t.aiPrefilled && open && <Pill tone="blue">{intl.formatMessage(m.pillAiPrefilled)}</Pill>}
+                        {t.status === 'complete' && <Pill tone="green">{intl.formatMessage(m.pillComplete)}</Pill>}
+                        {t.status === 'complete-with-issues' && <Pill tone="amber">{intl.formatMessage(m.pillWithIssues)}</Pill>}
+                        {t.status === 'not-applicable' && <Pill>{intl.formatMessage(m.pillNotApplicable)}</Pill>}
                       </div>
                     );
                   })}
@@ -667,13 +1165,19 @@ export function ClientDetailView() {
                 <div className="border border-brand/20 rounded-[28px] bg-brand/[0.05] p-5 flex items-center justify-between gap-4 flex-wrap">
                   <div className="min-w-0">
                     <div className="text-[14px] font-bold text-white">
-                      {clientSideItems.length} item{clientSideItems.length === 1 ? '' : 's'} waiting on {client.name}
+                      {intl.formatMessage(m.clientSideHeading, { count: clientSideItems.length, client: client.name })}
                     </div>
                     <p className="text-[12px] text-zinc-400 mt-1 leading-relaxed">
-                      {clientSideItems.map((a) => `${a.supplier} ${currency(a.total)}`).join(' · ')}
-                      {approvalRequest
-                        ? ` — link sent ${approvalRequest.sentAt} to ${approvalRequest.recipientMobile}${approvalRequest.verified ? ', opened' : ', not opened yet'}`
-                        : ' — no link sent yet'}
+                      {(() => {
+                        const items = clientSideItems
+                          .map((a) => intl.formatMessage(m.itemSummary, { supplier: a.supplier, amount: currency(a.total) }))
+                          .join(' · ');
+                        if (!approvalRequest) return intl.formatMessage(m.clientSideNoLink, { items });
+                        return intl.formatMessage(
+                          approvalRequest.verified ? m.clientSideLinkOpened : m.clientSideLinkUnopened,
+                          { items, sentAt: approvalRequest.sentAt, mobile: approvalRequest.recipientMobile },
+                        );
+                      })()}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -681,21 +1185,21 @@ export function ClientDetailView() {
                       <button
                         onClick={async () => {
                           const ok = await confirm({
-                            title: `Text ${approvalRequest.recipientName} again?`,
-                            detail: `A fresh link replaces the one sent ${approvalRequest.sentAt}. Their previous link stops working.`,
-                            confirmLabel: 'Yes, resend it',
+                            title: intl.formatMessage(m.resendTitle, { name: approvalRequest.recipientName }),
+                            detail: intl.formatMessage(m.resendApprovalDetail, { sentAt: approvalRequest.sentAt }),
+                            confirmLabel: intl.formatMessage(m.resendConfirmLabel),
                           });
                           if (ok) resendApprovalRequest(approvalRequest.id);
                         }}
                         disabled={resendIn > 0}
                         title={
                           resendIn > 0
-                            ? `The link sent ${approvalRequest.sentAt} is still live. Resend unlocks in ${resendIn}h — change the wait under Settings → Chasing.`
-                            : 'Send a fresh link'
+                            ? intl.formatMessage(m.resendLockedHint, { sentAt: approvalRequest.sentAt, hours: resendIn })
+                            : intl.formatMessage(m.resendReadyHint)
                         }
                         className="px-4 py-2 rounded-full text-[12px] font-bold text-zinc-400 border border-white/10 hover:text-white hover:border-white/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                       >
-                        {resendIn > 0 ? `Resend in ${resendIn}h` : 'Resend'}
+                        {resendIn > 0 ? intl.formatMessage(m.resendLocked, { hours: resendIn }) : intl.formatMessage(m.resend)}
                       </button>
                     )}
                     {/* Two acts, two buttons. Sending texts the approver;
@@ -706,29 +1210,38 @@ export function ClientDetailView() {
                       <button
                         onClick={async () => {
                           const ok = await confirm({
-                            title: `Text ${client.contactName ?? 'the approver'} for approval?`,
-                            detail: `${clientSideItems.length} item${clientSideItems.length === 1 ? '' : 's'} · ${currency(clientSideItems.reduce((n, a) => n + a.total, 0))} to ${client.mobile}.`,
-                            consequence: 'One link covers the whole batch and expires with the chase policy.',
-                            confirmLabel: 'Yes, send it',
+                            // Two whole messages rather than a name with an
+                            // inline fallback: `undefined` is the only case the
+                            // `??` covered, and each sentence translates alone.
+                            title: client.contactName === undefined
+                              ? intl.formatMessage(m.sendRequestTitleUnnamed)
+                              : intl.formatMessage(m.sendRequestTitle, { name: client.contactName }),
+                            detail: intl.formatMessage(m.sendRequestDetail, {
+                              count: clientSideItems.length,
+                              amount: currency(clientSideItems.reduce((n, a) => n + a.total, 0)),
+                              mobile: client.mobile,
+                            }),
+                            consequence: intl.formatMessage(m.sendRequestConsequence),
+                            confirmLabel: intl.formatMessage(m.sendRequestConfirmLabel),
                           });
                           if (ok) sendApprovalRequest(client.id);
                         }}
                         disabled={!client.mobile}
-                        title={client.mobile ? undefined : 'No mobile on file for this client'}
+                        title={client.mobile ? undefined : intl.formatMessage(m.sendRequestNoMobile)}
                         className="flex items-center gap-2 px-5 py-2 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                       >
                         <Send size={13} strokeWidth={2.5} />
-                        Send the request
+                        {intl.formatMessage(m.sendRequest)}
                       </button>
                     )}
                     <button
                       onClick={() => openApprovalLink(approvalRequest?.id ?? `appr-req-${client.id}-0`)}
                       disabled={!approvalRequest}
-                      title={approvalRequest ? 'See exactly what the approver sees' : 'Send the request first'}
+                      title={intl.formatMessage(approvalRequest ? m.openLinkHint : m.openLinkDisabledHint)}
                       className="flex items-center gap-2 px-5 py-2 rounded-full text-[12px] font-bold text-brand bg-brand/10 border border-brand/25 hover:bg-brand/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     >
                       <Smartphone size={13} strokeWidth={2.5} />
-                      Open the link
+                      {intl.formatMessage(m.openLink)}
                     </button>
                   </div>
                 </div>
@@ -736,21 +1249,21 @@ export function ClientDetailView() {
 
               <DataTable
                 className="max-w-none"
-                title="Pending items"
-                subtitle="Approving here is the same queue an approver sees under Approvals"
+                title={intl.formatMessage(m.approvalsTableTitle)}
+                subtitle={intl.formatMessage(m.approvalsTableSubtitle)}
                 columns={[
-                  { key: 'supplier', label: 'Supplier', sortValue: (a) => a.supplier, render: (a) => <span className="text-white font-semibold">{a.supplier}</span> },
-                  { key: 'stage', label: 'Stage', sortValue: (a) => a.stage },
-                  { key: 'approver', label: 'Approver', sortValue: (a) => a.approver },
+                  { key: 'supplier', label: intl.formatMessage(m.colSupplier), sortValue: (a) => a.supplier, render: (a) => <span className="text-white font-semibold">{a.supplier}</span> },
+                  { key: 'stage', label: intl.formatMessage(m.colStage), sortValue: (a) => a.stage },
+                  { key: 'approver', label: intl.formatMessage(m.colApprover), sortValue: (a) => a.approver },
                   {
-                    key: 'side', label: 'Signed off by',
+                    key: 'side', label: intl.formatMessage(m.colSignedOffBy),
                     render: (a) =>
                       approvalWorkflows.find((w) => w.id === a.workflowId)?.stages[a.stageIndex]?.clientSide
-                        ? <Pill tone="amber">Client — by SMS</Pill>
-                        : <Pill tone="blue">Practice</Pill>,
+                        ? <Pill tone="amber">{intl.formatMessage(m.pillClientBySms)}</Pill>
+                        : <Pill tone="blue">{intl.formatMessage(m.pillPractice)}</Pill>,
                   },
-                  { key: 'waitingDays', label: 'Waiting', align: 'right', sortValue: (a) => a.waitingDays, render: (a) => (a.waitingDays >= 5 ? <Pill tone="red">{a.waitingDays}d</Pill> : <Pill>{a.waitingDays}d</Pill>) },
-                  { key: 'total', label: 'Total', align: 'right', sortValue: (a) => a.total, render: (a) => <span className="text-white font-bold tabular-nums">{currency(a.total)}</span> },
+                  { key: 'waitingDays', label: intl.formatMessage(m.colWaiting), align: 'right', sortValue: (a) => a.waitingDays, render: (a) => (a.waitingDays >= 5 ? <Pill tone="red">{intl.formatMessage(m.waitingDays, { days: a.waitingDays })}</Pill> : <Pill>{intl.formatMessage(m.waitingDays, { days: a.waitingDays })}</Pill>) },
+                  { key: 'total', label: intl.formatMessage(m.colTotal), align: 'right', sortValue: (a) => a.total, render: (a) => <span className="text-white font-bold tabular-nums">{currency(a.total)}</span> },
                   {
                     // Every action the row allows, on the row. Edit appears
                     // only where the stage permits it, and neither Approve nor
@@ -759,15 +1272,17 @@ export function ClientDetailView() {
                     render: (a) => {
                       const stage = approvalWorkflows.find((w) => w.id === a.workflowId)?.stages[a.stageIndex];
                       if (a.state !== 'pending') {
-                        return a.state === 'approved' ? <Pill tone="green">Approved</Pill> : <Pill tone="red">Rejected</Pill>;
+                        return a.state === 'approved'
+                          ? <Pill tone="green">{intl.formatMessage(m.pillApproved)}</Pill>
+                          : <Pill tone="red">{intl.formatMessage(m.pillRejected)}</Pill>;
                       }
-                      if (stage?.clientSide) return <Pill tone="amber">With the client</Pill>;
+                      if (stage?.clientSide) return <Pill tone="amber">{intl.formatMessage(m.pillWithTheClient)}</Pill>;
                       return (
                         <span className="flex items-center justify-end gap-1.5">
                           {stage?.canEdit && a.documentId && (
                             <ApprovalAction
                               icon={PencilLine}
-                              title="Correct the coding before approving"
+                              title={intl.formatMessage(m.editCodingHint)}
                               onClick={() => {
                                 const doc = documents.find((d) => d.id === a.documentId);
                                 if (doc) setPreview(doc);
@@ -776,29 +1291,32 @@ export function ClientDetailView() {
                           )}
                           <ApprovalAction
                             icon={XIcon}
-                            title="Reject this item"
+                            title={intl.formatMessage(m.rejectItemHint)}
                             tone="red"
                             onClick={async () => {
                               const ok = await confirm({
                                 tone: 'red',
-                                title: `Reject ${a.supplier}?`,
-                                detail: `${currency(a.total)} · ${a.category}. It stops here and is not published.`,
-                                consequence: 'No reason is recorded from this button — open the row to add one.',
-                                confirmLabel: 'Yes, reject',
+                                title: intl.formatMessage(m.rejectTitle, { supplier: a.supplier }),
+                                detail: intl.formatMessage(m.rejectDetail, { amount: currency(a.total), category: a.category }),
+                                consequence: intl.formatMessage(m.rejectConsequence),
+                                confirmLabel: intl.formatMessage(m.rejectConfirmLabel),
                               });
-                              if (ok) rejectApproval(a.id, 'Rejected from the client approvals tab');
+                              if (ok) rejectApproval(a.id, intl.formatMessage(m.rejectReason));
                             }}
                           />
                           <ApprovalAction
                             icon={CheckCircle}
-                            title={`Approve — passes ${a.stage}`}
+                            title={intl.formatMessage(m.approveHint, { stage: a.stage })}
                             tone="brand"
                             onClick={async () => {
                               const ok = await confirm({
-                                title: `Pass ${a.stage.replace(/^Stage \d+ — /, '')} on ${a.supplier}?`,
-                                detail: `${currency(a.total)} · ${a.category}. Your name goes on the approval.`,
-                                consequence: 'At the last stage this locks the item and publishes it.',
-                                confirmLabel: 'Yes, approve',
+                                title: intl.formatMessage(m.approveTitle, {
+                                  stage: a.stage.replace(/^Stage \d+ — /, ''),
+                                  supplier: a.supplier,
+                                }),
+                                detail: intl.formatMessage(m.approveDetail, { amount: currency(a.total), category: a.category }),
+                                consequence: intl.formatMessage(m.approveConsequence),
+                                confirmLabel: intl.formatMessage(m.approveConfirmLabel),
                               });
                               if (ok) advanceApproval(a.id);
                             }}
@@ -811,14 +1329,12 @@ export function ClientDetailView() {
                 rows={clientApprovals}
                 rowId={(a) => a.id}
                 selectable
-                emptyMessage={
-                  clientWorkflows.length === 0
-                    ? 'No workflow applies to this client, so nothing pauses for approval — Ready items publish directly.'
-                    : 'Nothing awaiting approval.'
-                }
+                emptyMessage={intl.formatMessage(
+                  clientWorkflows.length === 0 ? m.approvalsEmptyNoWorkflow : m.approvalsEmpty,
+                )}
                 bulkActions={[
                   {
-                    label: 'Approve selected', icon: CheckCircle, primary: true,
+                    label: intl.formatMessage(m.approveSelected), icon: CheckCircle, primary: true,
                     // Acted on here rather than in chat — the rows are already
                     // picked, so there is nothing left to ask the agent.
                     onClick: async (sel) => {
@@ -828,17 +1344,20 @@ export function ClientDetailView() {
                       if (mine.length === 0) {
                         await confirm({
                           tone: 'red',
-                          title: 'Nothing here is yours to approve',
-                          detail: 'These are either already decided or sitting with the client.',
-                          confirmLabel: 'Close',
+                          title: intl.formatMessage(m.nothingYoursTitle),
+                          detail: intl.formatMessage(m.nothingYoursDetail),
+                          confirmLabel: intl.formatMessage(m.nothingYoursConfirmLabel),
                         });
                         return;
                       }
                       const ok = await confirm({
-                        title: `Pass ${mine.length} item${mine.length === 1 ? '' : 's'}?`,
-                        detail: mine.map((a) => `${a.supplier} ${currency(a.total)}`).slice(0, 4).join(' · '),
-                        consequence: 'Anything on its last stage locks and publishes to the accounting software.',
-                        confirmLabel: 'Yes, approve',
+                        title: intl.formatMessage(m.bulkApproveTitle, { count: mine.length }),
+                        detail: mine
+                          .map((a) => intl.formatMessage(m.itemSummary, { supplier: a.supplier, amount: currency(a.total) }))
+                          .slice(0, 4)
+                          .join(' · '),
+                        consequence: intl.formatMessage(m.bulkApproveConsequence),
+                        confirmLabel: intl.formatMessage(m.approveConfirmLabel),
                       });
                       if (ok) mine.forEach((a) => advanceApproval(a.id));
                     },
@@ -849,10 +1368,9 @@ export function ClientDetailView() {
               <div>
                 <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
                   <div>
-                    <h3 className="font-sans font-bold text-lg text-white tracking-tight">Workflows</h3>
+                    <h3 className="font-sans font-bold text-lg text-white tracking-tight">{intl.formatMessage(m.workflowsHeading)}</h3>
                     <p className="text-[12px] text-zinc-500 mt-0.5">
-                      Approvals are opt-in. With no active workflow this client has no approval step at all — items
-                      go Ready → publish with nothing pausing.
+                      {intl.formatMessage(m.workflowsIntro)}
                     </p>
                   </div>
                   <button
@@ -860,7 +1378,7 @@ export function ClientDetailView() {
                     className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
                   >
                     <Plus size={15} strokeWidth={2.5} />
-                    New workflow
+                    {intl.formatMessage(m.newWorkflow)}
                   </button>
                 </div>
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -874,10 +1392,13 @@ export function ClientDetailView() {
                       onDelete={async () => {
                         const ok = await confirm({
                           tone: 'red',
-                          title: `Delete the "${w.name}" workflow?`,
-                          detail: `${w.stages.length} stage${w.stages.length === 1 ? '' : 's'}, applying to ${w.appliesTo}.`,
-                          consequence: 'Items on it stop pausing for approval and publish straight through.',
-                          confirmLabel: 'Yes, delete it',
+                          title: intl.formatMessage(m.deleteWorkflowTitle, { name: w.name }),
+                          detail: intl.formatMessage(m.deleteWorkflowDetail, {
+                            count: w.stages.length,
+                            appliesTo: w.appliesTo,
+                          }),
+                          consequence: intl.formatMessage(m.deleteWorkflowConsequence),
+                          confirmLabel: intl.formatMessage(m.deleteWorkflowConfirmLabel),
                         });
                         if (ok) deleteWorkflow(w.id);
                       }}
@@ -896,77 +1417,82 @@ export function ClientDetailView() {
               rowId={(d) => d.id}
               selectable
               onRowClick={(d) => setPreview(d)}
-              emptyMessage="No documents yet."
+              emptyMessage={intl.formatMessage(m.documentsEmpty)}
               bulkActions={[
-                { label: 'Preview', icon: Eye, onClick: (sel) => sel[0] && setPreview(sel[0]) },
-                { label: 'Download', icon: Download, primary: true, onClick: (sel) => downloadDocuments(sel, client.name) },
+                { label: intl.formatMessage(m.bulkPreview), icon: Eye, onClick: (sel) => sel[0] && setPreview(sel[0]) },
+                { label: intl.formatMessage(m.download), icon: Download, primary: true, onClick: (sel) => downloadDocuments(sel, client.name) },
                 {
-                  label: 'Retry failed', icon: RefreshCw,
+                  label: intl.formatMessage(m.bulkRetryFailed), icon: RefreshCw,
                   onClick: async (sel) => {
                     const failed = sel.filter((d) => d.status === 'rejected');
                     if (failed.length === 0) return;
                     const ok = await confirm({
-                      title: `Retry ${failed.length} failed item${failed.length === 1 ? '' : 's'}?`,
-                      detail: 'Anything that failed to extract is read again; anything that failed to publish goes back to Ready to be pushed again. Whatever was already read off a document is kept.',
-                      confirmLabel: 'Yes, retry',
+                      title: intl.formatMessage(m.retryTitle, { count: failed.length }),
+                      detail: intl.formatMessage(m.retryDetail),
+                      confirmLabel: intl.formatMessage(m.retryConfirmLabel),
                     });
                     if (ok) failed.forEach((d) => retryDocument(d.id));
                   },
                 },
               ]}
-              footer={`${docs.length} total • ${s.published} published • ${s.rejected} rejected — click a row to preview`}
+              footer={intl.formatMessage(m.documentsFooter, { total: docs.length, published: s.published, rejected: s.rejected })}
             />
           )}
 
           {tab === 'Users' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Panel title="Business users" icon={Users}>
+              <Panel title={intl.formatMessage(m.panelBusinessUsers)} icon={Users}>
                 <p className="text-[13px] text-zinc-500 leading-relaxed mb-5">
-                  People at {client.name} who can send paperwork. You propose them and set what they may do — the
-                  business approves before anyone is contacted, because who works there is their call, not yours.
+                  {intl.formatMessage(m.businessUsersIntro, { client: client.name })}
                 </p>
 
                 <div className="flex flex-col gap-2">
                   {businessMembers.length === 0 && (
                     <p className="text-[13px] text-zinc-500 py-2">
-                      Nobody yet. Invite whoever handles the paperwork.
+                      {intl.formatMessage(m.businessUsersEmpty)}
                     </p>
                   )}
-                  {businessMembers.map((m) => (
-                    <div key={m.id} className="p-4 rounded-2xl bg-ground/60 border border-white/5 flex items-center gap-4">
+                  {businessMembers.map((member) => (
+                    <div key={member.id} className="p-4 rounded-2xl bg-ground/60 border border-white/5 flex items-center gap-4">
                       <div className="w-10 h-10 rounded-xl bg-raised border border-white/5 flex items-center justify-center overflow-hidden font-bold text-white shrink-0">
-                        {m.avatarDataUrl
-                          ? <img src={m.avatarDataUrl} alt="" className="w-full h-full object-cover" />
-                          : (m.name.trim().charAt(0).toUpperCase() || '?')}
+                        {member.avatarDataUrl
+                          ? <img src={member.avatarDataUrl} alt="" className="w-full h-full object-cover" />
+                          : (member.name.trim().charAt(0).toUpperCase() || '?')}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="text-sm font-bold text-white truncate">{m.name || 'Unnamed'}</div>
+                        <div className="text-sm font-bold text-white truncate">{member.name || intl.formatMessage(m.memberUnnamed)}</div>
                         <div className="text-[12px] text-zinc-500 truncate">
-                          {m.status === 'pending-client-approval'
-                            ? `Proposed ${m.invitedAt ?? ''} · nothing sent to them yet`
-                            : m.status === 'declined'
-                            ? `Declined by the business${m.declinedReason ? ` — ${m.declinedReason}` : ''}`
-                            : m.status === 'invited'
-                            ? `Approved by ${m.approvedBy ?? 'the business'} · invite ${channelLabel('user-invite')} to ${m.email || 'their email'}`
-                            : m.email || m.mobile || 'No contact on file'}
+                          {member.status === 'pending-client-approval'
+                            ? intl.formatMessage(m.memberProposed, { at: member.invitedAt ?? '' })
+                            : member.status === 'declined'
+                            ? member.declinedReason
+                              ? intl.formatMessage(m.memberDeclinedWithReason, { reason: member.declinedReason })
+                              : intl.formatMessage(m.memberDeclined)
+                            : member.status === 'invited'
+                            ? intl.formatMessage(m.memberInvited, {
+                                approver: member.approvedBy ?? intl.formatMessage(m.memberApproverFallback),
+                                channel: intl.formatMessage(channelLabel('user-invite')),
+                                email: member.email || intl.formatMessage(m.memberEmailFallback),
+                              })
+                            : member.email || member.mobile || intl.formatMessage(m.memberNoContact)}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-                        <Pill tone={m.role === 'Owner' ? 'blue' : 'neutral'}>{m.role}</Pill>
-                        {m.status === 'pending-client-approval'
-                          ? <Pill tone="amber">Waiting client approval</Pill>
-                          : m.status === 'declined'
-                          ? <Pill tone="red">Declined by the client</Pill>
-                          : m.status === 'invited'
-                          ? <Pill tone="amber">Awaiting registration</Pill>
-                          : <Pill tone="green">Registered</Pill>}
+                        <Pill tone={member.role === 'Owner' ? 'blue' : 'neutral'}>{member.role}</Pill>
+                        {member.status === 'pending-client-approval'
+                          ? <Pill tone="amber">{intl.formatMessage(m.pillWaitingClientApproval)}</Pill>
+                          : member.status === 'declined'
+                          ? <Pill tone="red">{intl.formatMessage(m.pillDeclinedByClient)}</Pill>
+                          : member.status === 'invited'
+                          ? <Pill tone="amber">{intl.formatMessage(m.pillAwaitingMemberRegistration)}</Pill>
+                          : <Pill tone="green">{intl.formatMessage(m.pillRegistered)}</Pill>}
                         {/* Demo affordance: open the link as that person. */}
-                        {m.status === 'invited' && businessAccount && (
+                        {member.status === 'invited' && businessAccount && (
                           <button
-                            onClick={() => openRegistrationLink(businessAccount.id, m.id)}
+                            onClick={() => openRegistrationLink(businessAccount.id, member.id)}
                             className="px-3 py-1.5 rounded-full text-[11px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
                           >
-                            Open link
+                            {intl.formatMessage(m.openRegistrationLink)}
                           </button>
                         )}
                       </div>
@@ -978,19 +1504,26 @@ export function ClientDetailView() {
                     className="flex items-center justify-center gap-2 p-3.5 rounded-2xl border border-dashed border-white/10 text-[13px] font-bold text-zinc-400 hover:text-white hover:border-white/25 transition-colors"
                   >
                     <Plus size={15} />
-                    Add user
+                    {intl.formatMessage(m.addUser)}
                   </button>
                 </div>
               </Panel>
 
-              <Panel title="Contacts" icon={Users}>
+              <Panel title={intl.formatMessage(m.panelContacts)} icon={Users}>
                 <div className="flex flex-col gap-3">
-                  <ContactRow name={client.contactName ?? 'Primary contact'} detail={client.mobile ?? 'No mobile on file'} role="Primary — receives chases" />
-                  <ContactRow name="Accounts inbox" detail={`Forwards to ${settings.docEmail}`} role="Document owner on email intake" />
+                  <ContactRow
+                    name={client.contactName ?? intl.formatMessage(m.rowPrimaryContact)}
+                    detail={client.mobile ?? intl.formatMessage(m.contactNoMobile)}
+                    role={intl.formatMessage(m.contactPrimaryRole)}
+                  />
+                  <ContactRow
+                    name={intl.formatMessage(m.contactInboxName)}
+                    detail={intl.formatMessage(m.contactInboxDetail, { email: settings.docEmail })}
+                    role={intl.formatMessage(m.contactInboxRole)}
+                  />
                 </div>
                 <p className="text-[12px] text-zinc-500 mt-5 leading-relaxed">
-                  A contact is a verified phone number and nothing more — it receives chases and uploads through OTP
-                  links without ever being provisioned as a user. A business user, above, can sign in to the portal.
+                  {intl.formatMessage(m.contactsNote)}
                 </p>
               </Panel>
             </div>
@@ -998,46 +1531,56 @@ export function ClientDetailView() {
 
           {tab === 'Integrations' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Panel title="Connections" icon={Link2}>
+              <Panel title={intl.formatMessage(m.panelConnections)} icon={Link2}>
                 <div className="flex flex-col gap-3">
                   <ConnectionRow
-                    name="Accounting software"
-                    detail="Chart of accounts, tax rates and tracking categories sync both ways"
+                    name={intl.formatMessage(m.accountingSoftware)}
+                    detail={intl.formatMessage(m.connectionLedgerDetail)}
                     connected={client.xeroConnected}
                     requested={setupLink?.tasks.includes('ledger') ?? false}
                   />
                   <ConnectionRow
-                    name="Bank feed (open banking)"
-                    detail={client.bankConnected ? 'Re-auth due in 62 days' : 'Statement upload is the fallback until connected'}
+                    name={intl.formatMessage(m.connectionBankName)}
+                    detail={intl.formatMessage(client.bankConnected ? m.connectionBankConnected : m.connectionBankFallback)}
                     connected={client.bankConnected}
                     requested={setupLink?.tasks.includes('bank') ?? false}
                   />
                 </div>
                 <p className="text-[12px] text-zinc-500 mt-5 leading-relaxed">
-                  Only the client can switch these on — both need their own login at the provider, which the practice
-                  never holds. Ask for them with a setup link.
+                  {intl.formatMessage(m.connectionsNote)}
                 </p>
               </Panel>
 
-              <Panel title="Client setup link" icon={Smartphone}>
+              <Panel title={intl.formatMessage(m.panelSetupLink)} icon={Smartphone}>
                 {setupLink ? (
                   <>
                     <div className="flex flex-col gap-2.5 text-[13px]">
-                      <Row label="Sent to" value={`${setupLink.recipientName} · ${setupLink.recipientMobile}`} />
-                      <Row label="Sent" value={setupLink.sentAt} />
-                      <Row label="Expires" value={`${setupLink.expiresInHours}h from sending`} />
-                      <Row label="Resent" value={setupLink.resendCount === 0 ? 'Not resent' : `${setupLink.resendCount}×`} />
+                      <Row label={intl.formatMessage(m.rowSentTo)} value={intl.formatMessage(m.setupSentToValue, { name: setupLink.recipientName, mobile: setupLink.recipientMobile })} />
+                      <Row label={intl.formatMessage(m.rowSent)} value={setupLink.sentAt} />
+                      <Row label={intl.formatMessage(m.rowExpires)} value={intl.formatMessage(m.setupExpiresValue, { hours: setupLink.expiresInHours })} />
+                      <Row
+                        label={intl.formatMessage(m.rowResent)}
+                        value={
+                          setupLink.resendCount === 0
+                            ? intl.formatMessage(m.setupNotResent)
+                            : intl.formatMessage(m.setupResentCount, { count: setupLink.resendCount })
+                        }
+                      />
                     </div>
                     <div className="flex flex-col gap-2 mt-4">
                       {setupLink.tasks.map((t) => (
                         <div key={t} className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-ground/60 border border-white/5">
                           <span className="text-[13px] font-semibold text-white">
-                            {t === 'profile' ? 'Company details' : t === 'ledger' ? 'Accounting software' : 'Bank feed'}
+                            {intl.formatMessage(
+                              t === 'profile' ? m.setupTaskProfile : t === 'ledger' ? m.accountingSoftware : m.bankFeed,
+                            )}
                           </span>
                           {setupLink.completed.includes(t) ? (
-                            <Pill tone="green">{t === 'profile' ? 'Registered by client' : 'Connected by client'}</Pill>
+                            <Pill tone="green">
+                              {intl.formatMessage(t === 'profile' ? m.setupTaskDoneProfile : m.setupTaskDoneConnection)}
+                            </Pill>
                           ) : (
-                            <Pill tone="amber">Waiting on client</Pill>
+                            <Pill tone="amber">{intl.formatMessage(m.waitingOnClient)}</Pill>
                           )}
                         </div>
                       ))}
@@ -1045,24 +1588,22 @@ export function ClientDetailView() {
                     <button
                       onClick={async () => {
                         const ok = await confirm({
-                          title: `Text ${setupLink.recipientName} again?`,
-                          detail: `A fresh setup link replaces the one sent ${setupLink.sentAt}. Their previous link stops working.`,
-                          confirmLabel: 'Yes, resend it',
+                          title: intl.formatMessage(m.resendTitle, { name: setupLink.recipientName }),
+                          detail: intl.formatMessage(m.resendSetupDetail, { sentAt: setupLink.sentAt }),
+                          confirmLabel: intl.formatMessage(m.resendConfirmLabel),
                         });
                         if (ok) resendOnboardingLink(setupLink.id);
                       }}
                       className="mt-4 flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
                     >
                       <Send size={15} />
-                      Resend link
+                      {intl.formatMessage(m.resendSetupLink)}
                     </button>
                   </>
                 ) : (
                   <>
                     <p className="text-[13px] text-zinc-500 leading-relaxed">
-                      {pendingTasks.length === 0
-                        ? 'Everything the client had to connect is connected.'
-                        : 'No setup link has been sent. One SMS covers everything still outstanding.'}
+                      {intl.formatMessage(pendingTasks.length === 0 ? m.setupAllConnected : m.setupNoLinkSent)}
                     </p>
                     {pendingTasks.length > 0 && (
                       <button
@@ -1071,23 +1612,26 @@ export function ClientDetailView() {
                         className="mt-4 flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                       >
                         <Send size={15} />
-                        Send setup link
+                        {intl.formatMessage(m.sendSetupLink)}
                       </button>
                     )}
                     {pendingTasks.length > 0 && !client.mobile && (
                       <p className="text-[12px] text-amber-400 font-semibold mt-3">
-                        Add a mobile number on the Settings tab first.
+                        {intl.formatMessage(m.setupNeedsMobile)}
                       </p>
                     )}
                   </>
                 )}
               </Panel>
 
-              <Panel title="Integration health" icon={Landmark}>
+              <Panel title={intl.formatMessage(m.panelIntegrationHealth)} icon={Landmark}>
                 <div className="flex flex-col gap-2.5 text-[13px]">
-                  <Row label="Ledger token" value={client.xeroConnected ? 'Valid — 284 days' : 'Not connected'} />
-                  <Row label="Bank re-auth" value={client.bankConnected ? '62 days' : '—'} />
-                  <Row label="Publish failures" value={String(s.rejected)} />
+                  <Row
+                    label={intl.formatMessage(m.rowLedgerToken)}
+                    value={intl.formatMessage(client.xeroConnected ? m.ledgerTokenValid : m.ledgerTokenNone)}
+                  />
+                  <Row label={intl.formatMessage(m.rowBankReauth)} value={client.bankConnected ? intl.formatMessage(m.bankReauthValue) : '—'} />
+                  <Row label={intl.formatMessage(m.rowPublishFailures)} value={String(s.rejected)} />
                 </div>
               </Panel>
             </div>
@@ -1111,13 +1655,13 @@ export function ClientDetailView() {
             <div className="w-full flex flex-col items-center gap-3">
               <div className="w-full max-w-xl flex items-center justify-between gap-4 px-5 py-3 rounded-[20px] border border-white/5 bg-card shadow-2xl">
                 <p className="text-[12px] text-zinc-500">
-                  Nothing sends until you read the review and approve it.
+                  {intl.formatMessage(m.chaseReviewNote)}
                 </p>
                 <button
                   onClick={() => setChasing(null)}
                   className="shrink-0 px-4 py-1.5 rounded-full text-[12px] font-bold text-zinc-400 hover:text-white transition-colors"
                 >
-                  Done
+                  {intl.formatMessage(m.chaseDone)}
                 </button>
               </div>
               <ChaseComposer clientIds={[client.id]} missingItemIds={chasing} />
@@ -1155,14 +1699,14 @@ export function ClientDetailView() {
               {/* pr-12 keeps the Download button clear of the modal's close button. */}
               <div className="w-full max-w-3xl flex items-center justify-between gap-4 pl-5 pr-12 py-3 rounded-[20px] border border-white/5 bg-card shadow-2xl">
                 <p className="text-[12px] text-zinc-500 truncate">
-                  Extracted data and line items · the original stays immutable
+                  {intl.formatMessage(m.previewNote)}
                 </p>
                 <button
                   onClick={() => downloadDocuments([preview], client.name)}
                   className="shrink-0 flex items-center gap-2 px-5 py-2 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
                 >
                   <Download size={15} strokeWidth={2.5} />
-                  Download
+                  {intl.formatMessage(m.download)}
                 </button>
               </div>
               {/* Kept live from state so a correction made here shows immediately. */}
@@ -1250,6 +1794,46 @@ function Tile({
   );
 }
 
+const detailsPanelMessages = defineMessages({
+  panelTitle: { id: 'clients.clientDetailsPanel.panelTitle', defaultMessage: 'Client details' },
+  fieldName: { id: 'clients.clientDetailsPanel.fieldName', defaultMessage: 'Legal name' },
+  fieldIndustry: { id: 'clients.clientDetailsPanel.fieldIndustry', defaultMessage: 'Industry' },
+  fieldContactName: { id: 'clients.clientDetailsPanel.fieldContactName', defaultMessage: 'Primary contact' },
+  fieldMobile: { id: 'clients.clientDetailsPanel.fieldMobile', defaultMessage: 'Mobile' },
+  fieldMobileHint: {
+    id: 'clients.clientDetailsPanel.fieldMobileHint',
+    defaultMessage: 'Every chase, approval and sign-in code goes here',
+  },
+  fieldVatNumber: { id: 'clients.clientDetailsPanel.fieldVatNumber', defaultMessage: 'VAT number' },
+  fieldDeadline: { id: 'clients.clientDetailsPanel.fieldDeadline', defaultMessage: 'Next deadline' },
+  fieldHint: { id: 'clients.clientDetailsPanel.fieldHint', defaultMessage: '— {hint}' },
+  pendingHeading: {
+    id: 'clients.clientDetailsPanel.pendingHeading',
+    defaultMessage: '{count, plural, one {# change} other {# changes}} waiting on {client}',
+  },
+  pendingChange: { id: 'clients.clientDetailsPanel.pendingChange', defaultMessage: '{label}: {from} → {to}' },
+  sentHeading: { id: 'clients.clientDetailsPanel.sentHeading', defaultMessage: 'Sent to {client} for approval' },
+  sentDetail: {
+    id: 'clients.clientDetailsPanel.sentDetail',
+    defaultMessage:
+      '{count, plural, one {# change} other {# changes}} are waiting for them to confirm. Nothing on the record has changed yet — it updates the moment they approve.',
+  },
+  sendChanges: {
+    id: 'clients.clientDetailsPanel.sendChanges',
+    defaultMessage: 'Send {count, plural, one {# change} other {# changes}} for approval',
+  },
+  sendChangesNone: { id: 'clients.clientDetailsPanel.sendChangesNone', defaultMessage: 'Send changes for approval' },
+  cancel: { id: 'clients.clientDetailsPanel.cancel', defaultMessage: 'Cancel' },
+  nothingChanged: { id: 'clients.clientDetailsPanel.nothingChanged', defaultMessage: 'Nothing changed yet' },
+  changingFields: { id: 'clients.clientDetailsPanel.changingFields', defaultMessage: 'Changing: {fields}' },
+  editDetails: { id: 'clients.clientDetailsPanel.editDetails', defaultMessage: 'Edit details' },
+  footnote: {
+    id: 'clients.clientDetailsPanel.footnote',
+    defaultMessage:
+      "These are the business's own facts, so {client} confirms any change before it takes effect. It appears in their portal alongside anything else waiting on them.",
+  },
+});
+
 /**
  * The client's own record. Editing it here is a proposal, not a write: a legal
  * name, a primary contact and the mobile that every chase goes to are the
@@ -1264,13 +1848,18 @@ function ClientDetailsPanel({ client, pending, onPropose }: {
     changes: { field: ClientDetailChange['field']; label: string; to: string }[],
   ) => number;
 }) {
-  const FIELDS: { field: ClientDetailChange['field']; label: string; hint?: string }[] = [
-    { field: 'name', label: 'Legal name' },
-    { field: 'industry', label: 'Industry' },
-    { field: 'contactName', label: 'Primary contact' },
-    { field: 'mobile', label: 'Mobile', hint: 'Every chase, approval and sign-in code goes here' },
-    { field: 'vatNumber', label: 'VAT number' },
-    { field: 'deadline', label: 'Next deadline' },
+  const intl = useIntl();
+
+  // Descriptors, not copy: the label doubles as the wording the client sees on
+  // the proposal, so it is formatted where it is used rather than at module
+  // scope, where no hook can reach.
+  const FIELDS: { field: ClientDetailChange['field']; label: MessageDescriptor; hint?: MessageDescriptor }[] = [
+    { field: 'name', label: detailsPanelMessages.fieldName },
+    { field: 'industry', label: detailsPanelMessages.fieldIndustry },
+    { field: 'contactName', label: detailsPanelMessages.fieldContactName },
+    { field: 'mobile', label: detailsPanelMessages.fieldMobile, hint: detailsPanelMessages.fieldMobileHint },
+    { field: 'vatNumber', label: detailsPanelMessages.fieldVatNumber },
+    { field: 'deadline', label: detailsPanelMessages.fieldDeadline },
   ];
 
   const current = () =>
@@ -1290,7 +1879,7 @@ function ClientDetailsPanel({ client, pending, onPropose }: {
   const changed = FIELDS.filter((f) => drafted(f.field).trim() !== String(client[f.field] ?? '').trim());
 
   return (
-    <Panel title="Client details" icon={SettingsIcon}>
+    <Panel title={intl.formatMessage(detailsPanelMessages.panelTitle)} icon={SettingsIcon}>
       {/* What is already with the client, so a second edit is not proposed
           blindly on top of the first. */}
       {pending.length > 0 && (
@@ -1298,10 +1887,12 @@ function ClientDetailsPanel({ client, pending, onPropose }: {
           <Clock size={15} className="text-amber-400 mt-0.5 shrink-0" />
           <div className="min-w-0">
             <div className="text-[13px] font-bold text-amber-400">
-              {pending.length} change{pending.length === 1 ? '' : 's'} waiting on {client.name}
+              {intl.formatMessage(detailsPanelMessages.pendingHeading, { count: pending.length, client: client.name })}
             </div>
             <div className="text-[12px] text-zinc-400 mt-1 leading-relaxed">
-              {pending.map((c) => `${c.label}: ${c.from} → ${c.to}`).join(' · ')}
+              {pending
+                .map((c) => intl.formatMessage(detailsPanelMessages.pendingChange, { label: c.label, from: c.from, to: c.to }))
+                .join(' · ')}
             </div>
           </div>
         </div>
@@ -1312,11 +1903,10 @@ function ClientDetailsPanel({ client, pending, onPropose }: {
           <Check size={15} className="text-brand mt-0.5 shrink-0" strokeWidth={3} />
           <div className="min-w-0">
             <div className="text-[13px] font-bold text-white">
-              Sent to {client.name} for approval
+              {intl.formatMessage(detailsPanelMessages.sentHeading, { client: client.name })}
             </div>
             <p className="text-[12px] text-zinc-400 mt-1 leading-relaxed">
-              {sent} change{sent === 1 ? '' : 's'} are waiting for them to confirm. Nothing on the record has changed
-              yet — it updates the moment they approve.
+              {intl.formatMessage(detailsPanelMessages.sentDetail, { count: sent })}
             </p>
           </div>
         </div>
@@ -1326,8 +1916,12 @@ function ClientDetailsPanel({ client, pending, onPropose }: {
         {FIELDS.map((f) => (
           <div key={f.field}>
             <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
-              {f.label}
-              {f.hint && <span className="ml-2 normal-case tracking-normal text-zinc-600">— {f.hint}</span>}
+              {intl.formatMessage(f.label)}
+              {f.hint && (
+                <span className="ml-2 normal-case tracking-normal text-zinc-600">
+                  {intl.formatMessage(detailsPanelMessages.fieldHint, { hint: intl.formatMessage(f.hint) })}
+                </span>
+              )}
             </div>
             {editing ? (
               <input
@@ -1351,7 +1945,7 @@ function ClientDetailsPanel({ client, pending, onPropose }: {
               onClick={() => {
                 const n = onPropose(
                   client.id,
-                  changed.map((f) => ({ field: f.field, label: f.label, to: drafted(f.field) })),
+                  changed.map((f) => ({ field: f.field, label: intl.formatMessage(f.label), to: drafted(f.field) })),
                 );
                 setSent(n);
                 setEditing(false);
@@ -1359,16 +1953,22 @@ function ClientDetailsPanel({ client, pending, onPropose }: {
               disabled={changed.length === 0}
               className="px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
             >
-              Send {changed.length || ''} change{changed.length === 1 ? '' : 's'} for approval
+              {changed.length === 0
+                ? intl.formatMessage(detailsPanelMessages.sendChangesNone)
+                : intl.formatMessage(detailsPanelMessages.sendChanges, { count: changed.length })}
             </button>
             <button
               onClick={() => { setDraft(current()); setEditing(false); }}
               className="px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 hover:text-white transition-colors"
             >
-              Cancel
+              {intl.formatMessage(detailsPanelMessages.cancel)}
             </button>
             <span className="text-[12px] text-zinc-500 font-semibold">
-              {changed.length === 0 ? 'Nothing changed yet' : `Changing: ${changed.map((f) => f.label).join(', ')}`}
+              {changed.length === 0
+                ? intl.formatMessage(detailsPanelMessages.nothingChanged)
+                : intl.formatMessage(detailsPanelMessages.changingFields, {
+                    fields: changed.map((f) => intl.formatMessage(f.label)).join(', '),
+                  })}
             </span>
           </>
         ) : (
@@ -1377,18 +1977,47 @@ function ClientDetailsPanel({ client, pending, onPropose }: {
             className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-300 border border-white/10 hover:text-white hover:border-white/25 transition-colors"
           >
             <PencilLine size={15} />
-            Edit details
+            {intl.formatMessage(detailsPanelMessages.editDetails)}
           </button>
         )}
       </div>
 
       <p className="text-[12px] text-zinc-500 leading-relaxed mt-4">
-        These are the business's own facts, so {client.name} confirms any change before it takes effect. It appears in
-        their portal alongside anything else waiting on them.
+        {intl.formatMessage(detailsPanelMessages.footnote, { client: client.name })}
       </p>
     </Panel>
   );
 }
+
+const addTaskMessages = defineMessages({
+  assigneeFallback: { id: 'clients.addTaskForm.assigneeFallback', defaultMessage: 'You' },
+  problemTitle: { id: 'clients.addTaskForm.problemTitle', defaultMessage: 'Say what needs doing.' },
+  problemAssignee: { id: 'clients.addTaskForm.problemAssignee', defaultMessage: 'Give it an owner.' },
+  problemDue: {
+    id: 'clients.addTaskForm.problemDue',
+    defaultMessage: 'Give it a due date — an undated task never becomes urgent.',
+  },
+  heading: { id: 'clients.addTaskForm.heading', defaultMessage: 'Add a task' },
+  subheading: { id: 'clients.addTaskForm.subheading', defaultMessage: 'On {client}' },
+  titleLabel: { id: 'clients.addTaskForm.titleLabel', defaultMessage: 'What needs doing' },
+  titlePlaceholder: { id: 'clients.addTaskForm.titlePlaceholder', defaultMessage: 'Chase the missing Brakes invoice' },
+  assignTo: { id: 'clients.addTaskForm.assignTo', defaultMessage: 'Assign to' },
+  noColleagues: {
+    id: 'clients.addTaskForm.noColleagues',
+    defaultMessage: 'No active colleagues to assign to — add one under Team first.',
+  },
+  dueLabel: { id: 'clients.addTaskForm.dueLabel', defaultMessage: 'Due' },
+  duePlaceholder: { id: 'clients.addTaskForm.duePlaceholder', defaultMessage: '12 Aug 2026' },
+  blockedBy: { id: 'clients.addTaskForm.blockedBy', defaultMessage: 'Blocked by' },
+  blockedByOptional: { id: 'clients.addTaskForm.blockedByOptional', defaultMessage: '(optional)' },
+  blockedByNone: { id: 'clients.addTaskForm.blockedByNone', defaultMessage: 'Nothing — it can start now' },
+  blockedByNote: {
+    id: 'clients.addTaskForm.blockedByNote',
+    defaultMessage: 'A blocked task cannot be ticked until the one before it is done.',
+  },
+  cancel: { id: 'clients.addTaskForm.cancel', defaultMessage: 'Cancel' },
+  submit: { id: 'clients.addTaskForm.submit', defaultMessage: 'Add the task' },
+});
 
 /**
  * A one-off task on a client, alongside the recurring checklist. Everything a
@@ -1403,35 +2032,41 @@ function AddTaskForm({ client, colleagues, existing, onAdd, onClose }: {
   onAdd: (task: WorkflowTask) => void;
   onClose: () => void;
 }) {
+  const intl = useIntl();
   const eligible = colleagues.filter((c) => c.active);
   const [title, setTitle] = useState('');
-  const [assignee, setAssignee] = useState(eligible[0]?.name ?? 'You');
+  const [assignee, setAssignee] = useState(eligible[0]?.name ?? intl.formatMessage(addTaskMessages.assigneeFallback));
   const [due, setDue] = useState(client.deadline !== '—' ? client.deadline : '');
   const [dependsOn, setDependsOn] = useState('');
 
   const problem = !title.trim()
-    ? 'Say what needs doing.'
+    ? intl.formatMessage(addTaskMessages.problemTitle)
     : !assignee
-    ? 'Give it an owner.'
+    ? intl.formatMessage(addTaskMessages.problemAssignee)
     : !due.trim()
-    ? 'Give it a due date — an undated task never becomes urgent.'
+    ? intl.formatMessage(addTaskMessages.problemDue)
     : '';
 
   return (
     <Modal onClose={onClose}>
       <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
         <div className="p-6 border-b border-white/5">
-          <h3 className="font-sans font-bold text-xl text-white tracking-tight">Add a task</h3>
+          <h3 className="font-sans font-bold text-xl text-white tracking-tight">{intl.formatMessage(addTaskMessages.heading)}</h3>
           <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
-            On {client.name}
+            {intl.formatMessage(addTaskMessages.subheading, { client: client.name })}
           </p>
         </div>
 
         <div className="p-6 flex flex-col gap-5">
-          <Field label="What needs doing" value={title} onChange={setTitle} placeholder="Chase the missing Brakes invoice" />
+          <Field
+            label={intl.formatMessage(addTaskMessages.titleLabel)}
+            value={title}
+            onChange={setTitle}
+            placeholder={intl.formatMessage(addTaskMessages.titlePlaceholder)}
+          />
 
           <div>
-            <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Assign to</div>
+            <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">{intl.formatMessage(addTaskMessages.assignTo)}</div>
             <div className="flex flex-wrap gap-2">
               {eligible.map((c) => (
                 <button
@@ -1450,29 +2085,35 @@ function AddTaskForm({ client, colleagues, existing, onAdd, onClose }: {
             </div>
             {eligible.length === 0 && (
               <p className="text-[13px] text-amber-400 font-semibold mt-2">
-                No active colleagues to assign to — add one under Team first.
+                {intl.formatMessage(addTaskMessages.noColleagues)}
               </p>
             )}
           </div>
 
-          <Field label="Due" value={due} onChange={setDue} placeholder="12 Aug 2026" />
+          <Field
+            label={intl.formatMessage(addTaskMessages.dueLabel)}
+            value={due}
+            onChange={setDue}
+            placeholder={intl.formatMessage(addTaskMessages.duePlaceholder)}
+          />
 
           <div>
             <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
-              Blocked by <span className="text-zinc-600 normal-case tracking-normal font-semibold">(optional)</span>
+              {intl.formatMessage(addTaskMessages.blockedBy)}{' '}
+              <span className="text-zinc-600 normal-case tracking-normal font-semibold">{intl.formatMessage(addTaskMessages.blockedByOptional)}</span>
             </div>
             <select
               value={dependsOn}
               onChange={(e) => setDependsOn(e.target.value)}
               className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-brand transition-colors appearance-none"
             >
-              <option value="" className="bg-card">Nothing — it can start now</option>
+              <option value="" className="bg-card">{intl.formatMessage(addTaskMessages.blockedByNone)}</option>
               {existing.map((t) => (
                 <option key={t.id} value={t.id} className="bg-card">{t.title}</option>
               ))}
             </select>
             <p className="text-[12px] text-zinc-500 mt-2 leading-relaxed">
-              A blocked task cannot be ticked until the one before it is done.
+              {intl.formatMessage(addTaskMessages.blockedByNote)}
             </p>
           </div>
 
@@ -1481,7 +2122,7 @@ function AddTaskForm({ client, colleagues, existing, onAdd, onClose }: {
 
         <div className="p-4 bg-raised/50 flex items-center gap-3 justify-end">
           <button onClick={onClose} className="px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 hover:text-white transition-colors">
-            Cancel
+            {intl.formatMessage(addTaskMessages.cancel)}
           </button>
           <button
             onClick={() =>
@@ -1503,13 +2144,83 @@ function AddTaskForm({ client, colleagues, existing, onAdd, onClose }: {
             className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
           >
             <Plus size={15} strokeWidth={2.5} />
-            Add the task
+            {intl.formatMessage(addTaskMessages.submit)}
           </button>
         </div>
       </div>
     </Modal>
   );
 }
+
+const inviteMessages = defineMessages({
+  problemName: { id: 'clients.inviteBusinessUser.problemName', defaultMessage: 'Add their name.' },
+  problemEmail: {
+    id: 'clients.inviteBusinessUser.problemEmail',
+    defaultMessage: 'Add an email — their invite goes {channel}.',
+  },
+  problemEmailInvalid: {
+    id: 'clients.inviteBusinessUser.problemEmailInvalid',
+    defaultMessage: 'That email does not look right.',
+  },
+  problemMobile: {
+    id: 'clients.inviteBusinessUser.problemMobile',
+    defaultMessage: 'A mobile is required — chases and approvals reach them by SMS.',
+  },
+  heading: { id: 'clients.inviteBusinessUser.heading', defaultMessage: 'Add a user at {client}' },
+  subheading: {
+    id: 'clients.inviteBusinessUser.subheading',
+    defaultMessage: 'They finish their own details from the link',
+  },
+  roleHintOwner: {
+    id: 'clients.inviteBusinessUser.roleHintOwner',
+    defaultMessage: 'Full access to the portal, its settings and the figures.',
+  },
+  roleHintManager: {
+    id: 'clients.inviteBusinessUser.roleHintManager',
+    defaultMessage: 'Sends documents and sees what is outstanding.',
+  },
+  roleHintStaff: {
+    id: 'clients.inviteBusinessUser.roleHintStaff',
+    defaultMessage: 'Sends documents only — the day-to-day receipt handler.',
+  },
+  roleHintCustom: {
+    id: 'clients.inviteBusinessUser.roleHintCustom',
+    defaultMessage: 'A role of your own. Set what they can do below.',
+  },
+  fieldName: { id: 'clients.inviteBusinessUser.fieldName', defaultMessage: 'Name' },
+  fieldNamePlaceholder: { id: 'clients.inviteBusinessUser.fieldNamePlaceholder', defaultMessage: 'Tom Whyte' },
+  fieldEmail: { id: 'clients.inviteBusinessUser.fieldEmail', defaultMessage: 'Email' },
+  fieldEmailPlaceholder: {
+    id: 'clients.inviteBusinessUser.fieldEmailPlaceholder',
+    defaultMessage: 'tom@americanburger.co.uk',
+  },
+  fieldMobile: { id: 'clients.inviteBusinessUser.fieldMobile', defaultMessage: 'Mobile' },
+  fieldMobilePlaceholder: { id: 'clients.inviteBusinessUser.fieldMobilePlaceholder', defaultMessage: '+44 7700 900123' },
+  channelNote: {
+    id: 'clients.inviteBusinessUser.channelNote',
+    defaultMessage:
+      'Both are needed and they do different jobs. Their invite and anything routine go {inviteChannel}; chases, reminders and approvals go {chaseChannel}, because those have to reach someone who has installed nothing.',
+  },
+  permUploadLabel: { id: 'clients.inviteBusinessUser.permUploadLabel', defaultMessage: 'Can send documents' },
+  permUploadHint: {
+    id: 'clients.inviteBusinessUser.permUploadHint',
+    defaultMessage: 'Upload and photograph paperwork for the business.',
+  },
+  permTotalsLabel: { id: 'clients.inviteBusinessUser.permTotalsLabel', defaultMessage: 'Can see totals' },
+  permTotalsHint: {
+    id: 'clients.inviteBusinessUser.permTotalsHint',
+    defaultMessage: 'Amounts and what is outstanding. Usually off for staff photographing receipts.',
+  },
+  approvalHeading: { id: 'clients.inviteBusinessUser.approvalHeading', defaultMessage: '{client} approves this first' },
+  approvalNote: {
+    id: 'clients.inviteBusinessUser.approvalNote',
+    defaultMessage:
+      'Nothing is sent to {name} until someone at the business agrees. It appears in their portal to approve, and shows here as waiting on them. If they approve, the invite goes {channel} and the person adds their own photo and details.',
+  },
+  approvalNoteUnnamed: { id: 'clients.inviteBusinessUser.approvalNoteUnnamed', defaultMessage: 'them' },
+  cancel: { id: 'clients.inviteBusinessUser.cancel', defaultMessage: 'Cancel' },
+  submit: { id: 'clients.inviteBusinessUser.submit', defaultMessage: 'Ask {client} to approve' },
+});
 
 /**
  * Inviting someone at the business, from the practice side. Deliberately three
@@ -1522,6 +2233,7 @@ function InviteBusinessUser({ clientName, onSend, onClose }: {
   onSend: (invite: { name: string; email: string; mobile: string; role: BusinessMemberRole; canUpload: boolean; canSeeTotals: boolean }) => void;
   onClose: () => void;
 }) {
+  const intl = useIntl();
   const [role, setRole] = useState<BusinessMemberRole>('Staff');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -1539,22 +2251,22 @@ function InviteBusinessUser({ clientName, onSend, onClose }: {
   };
 
   const problem = !name.trim()
-    ? 'Add their name.'
+    ? intl.formatMessage(inviteMessages.problemName)
     : !email.trim()
-    ? `Add an email — their invite goes ${channelLabel('user-invite')}.`
+    ? intl.formatMessage(inviteMessages.problemEmail, { channel: intl.formatMessage(channelLabel('user-invite')) })
     : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
-    ? 'That email does not look right.'
+    ? intl.formatMessage(inviteMessages.problemEmailInvalid)
     : !mobile.trim()
-    ? 'A mobile is required — chases and approvals reach them by SMS.'
+    ? intl.formatMessage(inviteMessages.problemMobile)
     : '';
 
   return (
     <Modal onClose={onClose}>
       <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
         <div className="p-6 border-b border-white/5">
-          <h3 className="font-sans font-bold text-xl text-white tracking-tight">Add a user at {clientName}</h3>
+          <h3 className="font-sans font-bold text-xl text-white tracking-tight">{intl.formatMessage(inviteMessages.heading, { client: clientName })}</h3>
           <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
-            They finish their own details from the link
+            {intl.formatMessage(inviteMessages.subheading)}
           </p>
         </div>
 
@@ -1562,38 +2274,54 @@ function InviteBusinessUser({ clientName, onSend, onClose }: {
           <RolePicker
             value={role}
             onChange={pickRole}
-            hint={
+            hint={intl.formatMessage(
               role === 'Owner'
-                ? 'Full access to the portal, its settings and the figures.'
+                ? inviteMessages.roleHintOwner
                 : role === 'Manager'
-                ? 'Sends documents and sees what is outstanding.'
+                ? inviteMessages.roleHintManager
                 : role === 'Staff'
-                ? 'Sends documents only — the day-to-day receipt handler.'
-                : 'A role of your own. Set what they can do below.'
-            }
+                ? inviteMessages.roleHintStaff
+                : inviteMessages.roleHintCustom,
+            )}
           />
 
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Name" value={name} onChange={setName} placeholder="Tom Whyte" />
-            <Field label="Email" value={email} onChange={setEmail} placeholder="tom@americanburger.co.uk" />
+            <Field
+              label={intl.formatMessage(inviteMessages.fieldName)}
+              value={name}
+              onChange={setName}
+              placeholder={intl.formatMessage(inviteMessages.fieldNamePlaceholder)}
+            />
+            <Field
+              label={intl.formatMessage(inviteMessages.fieldEmail)}
+              value={email}
+              onChange={setEmail}
+              placeholder={intl.formatMessage(inviteMessages.fieldEmailPlaceholder)}
+            />
           </div>
-          <Field label="Mobile" value={mobile} onChange={setMobile} placeholder="+44 7700 900123" />
+          <Field
+            label={intl.formatMessage(inviteMessages.fieldMobile)}
+            value={mobile}
+            onChange={setMobile}
+            placeholder={intl.formatMessage(inviteMessages.fieldMobilePlaceholder)}
+          />
           <p className="text-[12px] text-zinc-500 leading-relaxed -mt-2">
-            Both are needed and they do different jobs. Their invite and anything routine go {channelLabel('user-invite')};
-            chases, reminders and approvals go {channelLabel('chase')}, because those have to reach someone who has
-            installed nothing.
+            {intl.formatMessage(inviteMessages.channelNote, {
+              inviteChannel: intl.formatMessage(channelLabel('user-invite')),
+              chaseChannel: intl.formatMessage(channelLabel('chase')),
+            })}
           </p>
 
           <div className="flex flex-col gap-2">
             <PermissionToggle
-              label="Can send documents"
-              hint="Upload and photograph paperwork for the business."
+              label={intl.formatMessage(inviteMessages.permUploadLabel)}
+              hint={intl.formatMessage(inviteMessages.permUploadHint)}
               value={canUpload}
               onChange={setCanUpload}
             />
             <PermissionToggle
-              label="Can see totals"
-              hint="Amounts and what is outstanding. Usually off for staff photographing receipts."
+              label={intl.formatMessage(inviteMessages.permTotalsLabel)}
+              hint={intl.formatMessage(inviteMessages.permTotalsHint)}
               value={canSeeTotals}
               onChange={setCanSeeTotals}
             />
@@ -1603,11 +2331,12 @@ function InviteBusinessUser({ clientName, onSend, onClose }: {
           <div className="flex items-start gap-3 p-4 rounded-2xl border border-brand/20 bg-brand/[0.06] shadow-inner">
             <ShieldCheck size={16} className="text-brand mt-0.5 shrink-0" />
             <div className="min-w-0">
-              <div className="text-[13px] font-bold text-white">{clientName} approves this first</div>
+              <div className="text-[13px] font-bold text-white">{intl.formatMessage(inviteMessages.approvalHeading, { client: clientName })}</div>
               <p className="text-[12px] text-zinc-500 mt-1 leading-relaxed">
-                Nothing is sent to {name.trim() || 'them'} until someone at the business agrees. It appears in their
-                portal to approve, and shows here as waiting on them. If they approve, the invite goes
-                {' '}{channelLabel('user-invite')} and the person adds their own photo and details.
+                {intl.formatMessage(inviteMessages.approvalNote, {
+                  name: name.trim() || intl.formatMessage(inviteMessages.approvalNoteUnnamed),
+                  channel: intl.formatMessage(channelLabel('user-invite')),
+                })}
               </p>
             </div>
           </div>
@@ -1617,7 +2346,7 @@ function InviteBusinessUser({ clientName, onSend, onClose }: {
 
         <div className="p-4 bg-raised/50 flex items-center gap-3 justify-end">
           <button onClick={onClose} className="px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 hover:text-white transition-colors">
-            Cancel
+            {intl.formatMessage(inviteMessages.cancel)}
           </button>
           <button
             onClick={() => onSend({ name, email, mobile, role, canUpload, canSeeTotals })}
@@ -1625,7 +2354,7 @@ function InviteBusinessUser({ clientName, onSend, onClose }: {
             className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
           >
             <Send size={15} />
-            Ask {clientName} to approve
+            {intl.formatMessage(inviteMessages.submit, { client: clientName })}
           </button>
         </div>
       </div>
@@ -1731,6 +2460,8 @@ function ContactRow({ name, detail, role }: { name: string; detail: string; role
  * cannot make either connection; it can only ask the client to.
  */
 function ConnectionRow({ name, detail, connected, requested }: { name: string; detail: string; connected: boolean; requested: boolean }) {
+  const intl = useIntl();
+
   return (
     <div className="flex items-center justify-between gap-4 p-4 border border-white/5 rounded-2xl bg-ground/60 shadow-inner">
       <div className="min-w-0">
@@ -1738,11 +2469,11 @@ function ConnectionRow({ name, detail, connected, requested }: { name: string; d
         <div className="text-[12px] text-zinc-500">{detail}</div>
       </div>
       {connected ? (
-        <Pill tone="green">Connected</Pill>
+        <Pill tone="green">{intl.formatMessage(m.connectionConnected)}</Pill>
       ) : requested ? (
-        <Pill tone="amber">Waiting on client</Pill>
+        <Pill tone="amber">{intl.formatMessage(m.connectionRequested)}</Pill>
       ) : (
-        <Pill tone="red">Not connected</Pill>
+        <Pill tone="red">{intl.formatMessage(m.connectionNotConnected)}</Pill>
       )}
     </div>
   );

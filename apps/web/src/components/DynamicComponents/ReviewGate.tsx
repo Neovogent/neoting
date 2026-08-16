@@ -1,7 +1,16 @@
 import { ReactNode, useState } from 'react';
 import { ChevronDown, Check, Edit2, LucideIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
+
+const m = defineMessages({
+  approve: { id: 'shell.reviewGate.approve', defaultMessage: 'Approve' },
+  edit: { id: 'shell.reviewGate.edit', defaultMessage: 'Edit' },
+  cancelled: { id: 'shell.reviewGate.cancelled', defaultMessage: 'Cancelled — nothing was changed.' },
+  readReview: { id: 'shell.reviewGate.readReview', defaultMessage: 'Read review' },
+  cancel: { id: 'shell.reviewGate.cancel', defaultMessage: 'Cancel' },
+});
 
 interface ReviewGateProps {
   icon: LucideIcon;
@@ -39,19 +48,26 @@ export function ReviewGate({
   title,
   subtitle,
   detail,
-  approveLabel = 'Approve',
+  approveLabel,
   successMessage,
   auditAction,
   auditScope,
   onApprove,
   onEdit,
-  editLabel = 'Edit',
+  editLabel,
   accent = 'blue',
 }: ReviewGateProps) {
   const { logAudit } = useAppContext();
+  const intl = useIntl();
   const [isExpanded, setIsExpanded] = useState(false);
   const [isApproved, setIsApproved] = useState(false);
   const [isCancelled, setIsCancelled] = useState(false);
+
+  // The two fallbacks were parameter defaults until #65. A default is evaluated
+  // in the parameter scope, before the body runs, so it cannot reach `intl` —
+  // they resolve here instead, which renders the same characters either way.
+  const approveText = approveLabel ?? intl.formatMessage(m.approve);
+  const editText = editLabel ?? intl.formatMessage(m.edit);
 
   const handleApprove = () => {
     onApprove();
@@ -77,7 +93,7 @@ export function ReviewGate({
   if (isCancelled) {
     return (
       <div className="w-full max-w-xl border border-white/5 bg-card rounded-[24px] p-5 flex items-center gap-4 text-zinc-500">
-        <p className="text-sm font-bold tracking-wide">Cancelled — nothing was changed.</p>
+        <p className="text-sm font-bold tracking-wide">{intl.formatMessage(m.cancelled)}</p>
       </div>
     );
   }
@@ -102,7 +118,7 @@ export function ReviewGate({
             onClick={() => setIsExpanded(true)}
             className="shrink-0 flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-white bg-brand rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
           >
-            Read review
+            {intl.formatMessage(m.readReview)}
             <ChevronDown size={16} strokeWidth={2.5} />
           </button>
         )}
@@ -128,21 +144,21 @@ export function ReviewGate({
             onClick={() => setIsCancelled(true)}
             className="px-5 py-2.5 text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 rounded-full transition-colors"
           >
-            Cancel
+            {intl.formatMessage(m.cancel)}
           </button>
           <button
             onClick={() => (onEdit ? onEdit() : setIsExpanded(false))}
             className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white bg-raised hover:bg-white/10 border border-white/5 rounded-full transition-all shadow-inner"
           >
             <Edit2 size={16} />
-            {editLabel}
+            {editText}
           </button>
           <button
             onClick={handleApprove}
             className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all shadow-[0_0_15px_rgba(20,227,196,0.3)]"
           >
             <Check size={18} strokeWidth={2.5} />
-            {approveLabel}
+            {approveText}
           </button>
         </div>
       )}

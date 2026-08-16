@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from 'react';
+import { useIntl, type IntlShape } from 'react-intl';
 import {
   seedClients,
   seedConversations,
@@ -38,7 +39,7 @@ import {
 } from '../lib/seed2';
 import { autoMatches, DEFAULT_MATCH_SETTINGS, sameMerchant, shortLabel, txnLabel } from '../lib/matching';
 import { completeExtraction, ingestFiles, type IngestOptions } from '../lib/ingest';
-import { analyseSheet, readTable } from '../lib/spreadsheet';
+import { analyseSheet, readTable, sheetReadMessage } from '../lib/spreadsheet';
 import { useDocuments } from '../api/documents';
 import { API_ENABLED } from '../api/config';
 import { importSheet, type SheetImport } from '../lib/tableImport';
@@ -433,8 +434,12 @@ function newDraft(attachedClientIds: string[], id?: string): Conversation {
  * The starting pipeline, built once. Anything the matcher can settle on its own
  * is already linked here, so the Bank section only ever asks about transactions
  * it genuinely cannot call.
+ *
+ * `intl` comes in as an argument because the matcher writes the reason a
+ * transaction was linked, and `Match.reason` is text the accountant reads. This
+ * runs inside `useState`'s initialiser, below the provider's own `useIntl()`.
  */
-function buildInitialPipeline() {
+function buildInitialPipeline(intl: IntlShape) {
   // Expense receipts are ordinary cost documents — they belong in the inbox
   // and the archive like anything else, and the claim just points at them.
   const documents = buildDocuments(
@@ -445,7 +450,7 @@ function buildInitialPipeline() {
   const missing = buildMissing(seedMissing, seedClients);
   const transactions = buildTransactions(seedTransactions, seedClients, missing, accounts);
 
-  const auto = autoMatches(transactions, documents, DEFAULT_MATCH_SETTINGS);
+  const auto = autoMatches(intl, transactions, documents, DEFAULT_MATCH_SETTINGS);
   const byTxn = new Map(auto.map((a) => [a.txnId, a.candidate]));
 
   const linked = transactions.map((t) => {
@@ -485,7 +490,11 @@ function buildInitialPipeline() {
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [initial] = useState(buildInitialPipeline);
+  // `AppIntlProvider` sits above this in `main.tsx`, so messages are available
+  // to the seed pipeline and to every derivation below it.
+  const intl = useIntl();
+
+  const [initial] = useState(() => buildInitialPipeline(intl));
 
   const [clients, setClients] = useState<Client[]>(seedClients);
   const [documents, setDocuments] = useState<Document[]>(initial.documents);
@@ -623,8 +632,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     () =>
       settings.duplicateMode === 'off'
         ? []
-        : detectDuplicates(documents).filter((d) => !resolvedDuplicates.includes(d.id)),
-    [documents, settings.duplicateMode, resolvedDuplicates],
+        : detectDuplicates(intl, documents).filter((d) => !resolvedDuplicates.includes(d.id)),
+    [intl, documents, settings.duplicateMode, resolvedDuplicates],
   );
 
   const [missing, setMissing] = useState<MissingItem[]>(initial.missing);
@@ -1104,7 +1113,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       options?: IngestOptions,
     ) => {
       const client = clients.find((c) => c.id === clientId);
-      const { documents: created, rejected, sheets } = ingestFiles(files, client, source, options);
+      const { documents: created, rejected, sheets } = ingestFiles(files, client, source, intl, options);
 
       if (rejected.length) {
         setIngestRejections((prev) => [
@@ -1196,12 +1205,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 reviewOpened: true,
               });
             } catch (error) {
+              // The reader is module scope, so the two failures it raises
+              // itself come back as catalogue entries and are worded here.
+              // Anything else — a platform error, a corrupt buffer — keeps
+              // whatever text it already carried.
+              const descriptor = sheetReadMessage(error);
+              const message = descriptor
+                ? intl.formatMessage(descriptor)
+                : error instanceof Error
+                ? error.message
+                : 'The file could not be read';
+
               setSheetImports((prev) =>
-                prev.map((t) =>
-                  t.id !== ticket.id
-                    ? t
-                    : { ...t, status: 'failed', error: error instanceof Error ? error.message : 'The file could not be read' },
-                ),
+                prev.map((t) => (t.id !== ticket.id ? t : { ...t, status: 'failed', error: message })),
               );
             }
           })();
@@ -1210,7 +1226,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       return { documents: created, rejected, imports: tickets };
     },
-    [clients, routingRules, accounts, logAudit],
+    [clients, routingRules, accounts, logAudit, intl],
   );
 
   const moveDocuments = useCallback(

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Copy, X, Trash2, Layers, GitCompare, ArrowRight } from 'lucide-react';
 import { motion } from 'motion/react';
+import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
 import { DocumentPreview } from './DocumentPreview';
 import { Pill } from './DataTable';
@@ -20,9 +21,90 @@ import type { DuplicatePair } from '../../lib/types';
  *   Different documents    — the flag was wrong; teaches nothing away
  *   Keep both              — an intentional duplicate, which genuinely happens
  */
+const m = defineMessages({
+  heading: { id: 'documents.duplicateModal.heading', defaultMessage: 'Suspected duplicate' },
+  // Two whole lines rather than one with an optional "· cross-type" tail: the
+  // clause sits mid-sentence, which is exactly where word order differs.
+  meta: { id: 'documents.duplicateModal.meta', defaultMessage: '{client} · {similarity}% similar' },
+  metaCrossType: {
+    id: 'documents.duplicateModal.metaCrossType',
+    defaultMessage: '{client} · {similarity}% similar · cross-type',
+  },
+  close: { id: 'documents.duplicateModal.close', defaultMessage: 'Close' },
+  signalsHeading: { id: 'documents.duplicateModal.signalsHeading', defaultMessage: 'Signals that flagged it' },
+  sideThisCopy: { id: 'documents.duplicateModal.sideThisCopy', defaultMessage: 'This copy' },
+  sideOnFile: { id: 'documents.duplicateModal.sideOnFile', defaultMessage: 'Already on file' },
+  expandedThisCopy: {
+    id: 'documents.duplicateModal.expandedThisCopy',
+    defaultMessage: 'This copy — the original, immutable',
+  },
+  expandedOnFile: {
+    id: 'documents.duplicateModal.expandedOnFile',
+    defaultMessage: 'Already on file — the original, immutable',
+  },
+  hide: { id: 'documents.duplicateModal.hide', defaultMessage: 'Hide' },
+  gone: { id: 'documents.duplicateModal.gone', defaultMessage: 'That copy is no longer on file.' },
+
+  confirmDetail: {
+    id: 'documents.duplicateModal.confirmDetail',
+    defaultMessage: '{left} and {right}, {similarity}% similar.',
+  },
+  confirmDelete: { id: 'documents.duplicateModal.confirmDelete', defaultMessage: 'Yes, delete the copy' },
+  confirmKeep: { id: 'documents.duplicateModal.confirmKeep', defaultMessage: 'Yes, that is right' },
+
+  differentTitle: {
+    id: 'documents.duplicateModal.differentTitle',
+    defaultMessage: 'These are two different documents?',
+  },
+  differentConsequence: {
+    id: 'documents.duplicateModal.differentConsequence',
+    defaultMessage: 'The flag is dismissed and both stay in the pipeline.',
+  },
+  differentHint: {
+    id: 'documents.duplicateModal.differentHint',
+    defaultMessage: 'The flag was wrong — these are two different documents',
+  },
+  differentAction: { id: 'documents.duplicateModal.differentAction', defaultMessage: 'Different documents' },
+
+  keepBothTitle: { id: 'documents.duplicateModal.keepBothTitle', defaultMessage: 'Keep both copies?' },
+  keepBothConsequence: {
+    id: 'documents.duplicateModal.keepBothConsequence',
+    defaultMessage: 'Both stay and both will be published — an intentional duplicate.',
+  },
+  keepBothHint: {
+    id: 'documents.duplicateModal.keepBothHint',
+    defaultMessage: 'Two identical documents that both genuinely exist',
+  },
+  keepBothAction: { id: 'documents.duplicateModal.keepBothAction', defaultMessage: 'Keep both' },
+
+  attachTitle: { id: 'documents.duplicateModal.attachTitle', defaultMessage: 'Attach this to the original?' },
+  attachConsequence: {
+    id: 'documents.duplicateModal.attachConsequence',
+    defaultMessage: 'They become one document with two images. The flag is cleared.',
+  },
+  attachHint: { id: 'documents.duplicateModal.attachHint', defaultMessage: 'One document, two images of it' },
+  attachAction: { id: 'documents.duplicateModal.attachAction', defaultMessage: 'Attach to the original' },
+
+  deleteTitle: { id: 'documents.duplicateModal.deleteTitle', defaultMessage: 'Delete the {type} copy?' },
+  deleteConsequence: {
+    id: 'documents.duplicateModal.deleteConsequence',
+    defaultMessage:
+      'The copy and its original are removed. A deleted document cannot be matched to a bank line later.',
+  },
+  deleteAction: { id: 'documents.duplicateModal.deleteAction', defaultMessage: 'Delete the copy' },
+});
+
+const sideMessages = defineMessages({
+  rowDate: { id: 'documents.side.rowDate', defaultMessage: 'Date' },
+  rowSentBy: { id: 'documents.side.rowSentBy', defaultMessage: 'Sent by' },
+  view: { id: 'documents.side.view', defaultMessage: 'View this document' },
+  gone: { id: 'documents.side.gone', defaultMessage: 'No longer on file' },
+});
+
 export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose: () => void }) {
   const { documents, resolveDuplicate } = useAppContext();
   const confirm = useConfirm();
+  const intl = useIntl();
   const [expanded, setExpanded] = useState<'left' | 'right' | null>(null);
 
   const left = documents.find((d) => d.id === pair.left.id);
@@ -32,9 +114,13 @@ export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose
     const ok = await confirm({
       tone: action === 'delete' ? 'red' : 'brand',
       title: label,
-      detail: `${pair.left.label} and ${pair.right.label}, ${Math.round(pair.similarity * 100)}% similar.`,
+      detail: intl.formatMessage(m.confirmDetail, {
+        left: pair.left.label,
+        right: pair.right.label,
+        similarity: Math.round(pair.similarity * 100),
+      }),
       consequence,
-      confirmLabel: action === 'delete' ? 'Yes, delete the copy' : 'Yes, that is right',
+      confirmLabel: intl.formatMessage(action === 'delete' ? m.confirmDelete : m.confirmKeep),
     });
     if (!ok) return;
     resolveDuplicate(pair.id, action);
@@ -58,14 +144,16 @@ export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose
               <Copy size={20} />
             </div>
             <div className="min-w-0">
-              <h3 className="font-sans font-bold text-xl text-white tracking-tight">Suspected duplicate</h3>
+              <h3 className="font-sans font-bold text-xl text-white tracking-tight">{intl.formatMessage(m.heading)}</h3>
               <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
-                {pair.clientName} · {Math.round(pair.similarity * 100)}% similar
-                {pair.crossType ? ' · cross-type' : ''}
+                {intl.formatMessage(pair.crossType ? m.metaCrossType : m.meta, {
+                  client: pair.clientName,
+                  similarity: Math.round(pair.similarity * 100),
+                })}
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors shrink-0" aria-label="Close">
+          <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors shrink-0" aria-label={intl.formatMessage(m.close)}>
             <X size={20} />
           </button>
         </div>
@@ -74,7 +162,7 @@ export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose
             tells you which of the four buttons below is the right one. */}
         <div className="px-6 py-4 bg-ground/50 border-b border-white/5">
           <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2.5">
-            Signals that flagged it
+            {intl.formatMessage(m.signalsHeading)}
           </div>
           <div className="flex flex-wrap gap-2">
             {pair.signals.map((s) => (
@@ -93,28 +181,28 @@ export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose
         </div>
 
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Side title="This copy" pair={pair.left} onOpen={() => setExpanded('left')} hasDoc={!!left} />
-          <Side title="Already on file" pair={pair.right} onOpen={() => setExpanded('right')} hasDoc={!!right} tone="muted" />
+          <Side title={intl.formatMessage(m.sideThisCopy)} pair={pair.left} onOpen={() => setExpanded('left')} hasDoc={!!left} />
+          <Side title={intl.formatMessage(m.sideOnFile)} pair={pair.right} onOpen={() => setExpanded('right')} hasDoc={!!right} tone="muted" />
         </div>
 
         {expanded && (
           <div className="px-6 pb-6">
             <div className="flex items-center justify-between gap-3 mb-3">
               <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">
-                {expanded === 'left' ? 'This copy' : 'Already on file'} — the original, immutable
+                {intl.formatMessage(expanded === 'left' ? m.expandedThisCopy : m.expandedOnFile)}
               </span>
               <button
                 onClick={() => setExpanded(null)}
                 className="text-[12px] font-bold text-zinc-500 hover:text-white transition-colors"
               >
-                Hide
+                {intl.formatMessage(m.hide)}
               </button>
             </div>
             <div className="flex justify-center">
               {(expanded === 'left' ? left : right) ? (
                 <DocumentPreview document={(expanded === 'left' ? left : right)!} />
               ) : (
-                <p className="text-[13px] text-zinc-500">That copy is no longer on file.</p>
+                <p className="text-[13px] text-zinc-500">{intl.formatMessage(m.gone)}</p>
               )}
             </div>
           </div>
@@ -122,35 +210,47 @@ export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose
 
         <div className="p-4 bg-raised/50 flex items-center gap-2 justify-end flex-wrap">
           <button
-            onClick={() => decide('keep-both', 'These are two different documents?', 'The flag is dismissed and both stay in the pipeline.')}
-            title="The flag was wrong — these are two different documents"
+            onClick={() =>
+              decide('keep-both', intl.formatMessage(m.differentTitle), intl.formatMessage(m.differentConsequence))
+            }
+            title={intl.formatMessage(m.differentHint)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 border border-white/5 hover:text-white hover:border-white/20 transition-colors"
           >
             <GitCompare size={14} />
-            Different documents
+            {intl.formatMessage(m.differentAction)}
           </button>
           <button
-            onClick={() => decide('keep-both', 'Keep both copies?', 'Both stay and both will be published — an intentional duplicate.')}
-            title="Two identical documents that both genuinely exist"
+            onClick={() =>
+              decide('keep-both', intl.formatMessage(m.keepBothTitle), intl.formatMessage(m.keepBothConsequence))
+            }
+            title={intl.formatMessage(m.keepBothHint)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 border border-white/5 hover:text-white hover:border-white/20 transition-colors"
           >
             <Layers size={14} />
-            Keep both
+            {intl.formatMessage(m.keepBothAction)}
           </button>
           <button
-            onClick={() => decide('keep-both', 'Attach this to the original?', 'They become one document with two images. The flag is cleared.')}
-            title="One document, two images of it"
+            onClick={() =>
+              decide('keep-both', intl.formatMessage(m.attachTitle), intl.formatMessage(m.attachConsequence))
+            }
+            title={intl.formatMessage(m.attachHint)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 border border-white/5 hover:text-white hover:border-white/20 transition-colors"
           >
             <ArrowRight size={14} />
-            Attach to the original
+            {intl.formatMessage(m.attachAction)}
           </button>
           <button
-            onClick={() => decide('delete', `Delete the ${pair.right.type.toLowerCase()} copy?`, 'The copy and its original are removed. A deleted document cannot be matched to a bank line later.')}
+            onClick={() =>
+              decide(
+                'delete',
+                intl.formatMessage(m.deleteTitle, { type: pair.right.type.toLowerCase() }),
+                intl.formatMessage(m.deleteConsequence),
+              )
+            }
             className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-red-500 hover:bg-red-600 transition-colors"
           >
             <Trash2 size={14} />
-            Delete the copy
+            {intl.formatMessage(m.deleteAction)}
           </button>
         </div>
       </motion.div>
@@ -165,6 +265,8 @@ function Side({ title, pair, onOpen, hasDoc, tone = 'plain' }: {
   hasDoc: boolean;
   tone?: 'plain' | 'muted';
 }) {
+  const intl = useIntl();
+
   return (
     <div className={`rounded-2xl border p-5 flex flex-col gap-3 ${
       tone === 'muted' ? 'border-white/5 bg-ground/40' : 'border-white/10 bg-ground/70'
@@ -180,8 +282,8 @@ function Side({ title, pair, onOpen, hasDoc, tone = 'plain' }: {
       </div>
 
       <div className="flex flex-col gap-1.5 text-[12.5px]">
-        <Row label="Date" value={pair.date} />
-        <Row label="Sent by" value={pair.uploader} />
+        <Row label={intl.formatMessage(sideMessages.rowDate)} value={pair.date} />
+        <Row label={intl.formatMessage(sideMessages.rowSentBy)} value={pair.uploader} />
       </div>
 
       <button
@@ -189,7 +291,7 @@ function Side({ title, pair, onOpen, hasDoc, tone = 'plain' }: {
         disabled={!hasDoc}
         className="mt-auto px-4 py-2 rounded-full text-[12px] font-bold text-brand bg-brand/10 border border-brand/20 hover:bg-brand/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
-        {hasDoc ? 'View this document' : 'No longer on file'}
+        {intl.formatMessage(hasDoc ? sideMessages.view : sideMessages.gone)}
       </button>
     </div>
   );
