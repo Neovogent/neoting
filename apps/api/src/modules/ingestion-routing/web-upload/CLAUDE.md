@@ -1,0 +1,194 @@
+# ingestion-routing / web-upload
+
+**Source of Truth:** SoT §4 Stage 1 · **Added by:** issue #76 · **Contract:** `POST /v1/document-uploads`, `POST /v1/document-uploads/{uploadId}/complete`
+
+## Purpose
+
+The first inbound lane with an HTTP surface. Two steps, because **the API never
+touches the bytes**:
+
+1. `POST /document-uploads` — declare what is coming. Checks the size against the
+   channel cap and the MIME against the allowlist, resolves the business through
+   RLS, presigns a direct `PUT` to object storage, and returns a signed
+   `uploadId`.
+2. `POST /document-uploads/{uploadId}/complete` — the bytes have landed. Verify
+   the object exists and hashes to what the client declared, persist the
+   `Document` in `RECEIVED` through `scopedDb`, and enqueue sanitisation.
+
+Keeping the file off the request path is what makes a 100 MB accountant batch
+viable and keeps the OTP portal light on a bad connection.
+
+## `uploadId` is a signed token, not a table
+
+There is no `DocumentUpload` model — `prisma/` is LAW (G7) and this lane did not
+justify a contract-change issue. `upload-token.ts` HMACs the claims (business,
+practice, filename, declared MIME/size, split mode, s3 key, expiry) with
+`UPLOAD_URL_SECRET` and hands the result back as the `uploadId`.
+
+The consequence to know: **completion trusts the claims, not the request.** A
+client cannot change the filename or the business between the two calls, because
+neither is a parameter of step two — they are inside the signature. A forged or
+edited token fails verification and is a 400.
+
+Expiry lives in the claims as well as in the presigned URL, so an expired intent
+is `410 NT-ING-005` with a plain reason rather than an opaque storage error.
+
+## The tenancy check that is easy to miss
+
+`createUpload` resolves the business through `scopedDb` **before anything is
+signed**, and returns 404 when RLS returns no row.
+
+Without it this endpoint mints a write URL into `w/<businessId>/uploads/…` from a
+`businessId` taken straight out of the request body. Postgres would still refuse
+the row at completion (`documents_tenant`'s WITH CHECK) — but by then the bytes
+are already in another practice's S3 prefix, and **object storage has no RLS to
+undo that**. The database check happens too late to be the guard; the guard has
+to be here.
+
+**404, never 403** — a 403 confirms the record exists (`packages/contracts/CLAUDE.md`).
+
+The practice anchor on the document comes from the **business row**, not from the
+caller's context. They coincide for practice staff, but a business-level actor
+has no `practiceId` in scope, and taking it from there would file the same
+document two different ways depending on who uploaded it.
+
+## Error codes, and one that was wrong
+
+Mapped at the controller/service boundary, from the `ErrorCode` enum in
+`openapi.yaml`:
+
+| Code | Status | When |
+|---|---|---|
+| `NT-ING-001` | 413 | declared size over the channel cap |
+| `NT-ING-002` | 415 | declared MIME off the allowlist |
+| `NT-ING-003` | 409 | **byte hash mismatch between client and storage** |
+| `NT-ING-005` | 410 | the upload intent expired |
+| `NT-IDM-001` | 409 | `Idempotency-Key` replayed with a different payload |
+| `NT-VAL-001` | 400/404 | schema failure, forged token, unreachable business |
+
+⚠ The hash mismatch is **`NT-ING-003`**. `NT-ING-004` is *file rejected by
+sanitisation* — a different failure, at a different stage, that this endpoint
+cannot produce because sanitisation has not run yet. It was wrong in the first
+draft; the enum is the authority, not intuition.
+
+`NT-VAL-001` is the house fallback for an otherwise-uncoded 4xx (see
+`ProblemFilter.CODE_BY_STATUS`), which is why it covers both a 400 and the 404.
+
+## The boundary is generated, never hand-written
+
+Both operations parse with the generated schemas from `@neoting/contracts/zod`
+via `common/validation/parseBoundary`. No DTO is written by hand — drift is the
+thing the contract exists to prevent, and the schemas come from the same
+`openapi.yaml` the frontend client is generated from.
+
+Two details that follow from that:
+
+- **The generated schemas are `.strict()`**, so a misspelled field is a 400, not
+  a silent ignore. `parseBoundary` expands Zod's `unrecognized_keys` issue into
+  one `Problem.errors` entry **per key** — Zod reports it against the parent
+  object with an empty path, which renders as `(body)` and tells a caller who
+  sent `businesId` nothing about which of their seven fields is wrong.
+- **The service's request type is derived from the schema**
+  (`z.infer<typeof createDocumentUploadBody>`), not from the generated
+  `DocumentUploadRequest` interface. `exactOptionalPropertyTypes` is on; Zod
+  infers `splitMode?: SplitMode | undefined` and the interface writes
+  `splitMode?: SplitMode`, and under that flag a parsed body will not assign to
+  the interface. Both are generated from the same spec, so this is still a
+  generated type — it is just the one that actually validated the value, which
+  avoids a cast at the controller.
+
+Field errors name the field and never echo the **value**: a body carries
+filenames and free text a client typed, and error responses are logged and
+screenshotted far more freely than request bodies are.
+
+## `Idempotency-Key`
+
+Required by the contract on both operations, so a missing header is a 400 rather
+than a silent non-idempotent write. A replay returns the original response; the
+same key with a different payload is `409 NT-IDM-001`.
+
+`InMemoryIdempotencyStore` is per-process — enough for one API instance and the
+tests. A durable store is a follow-up and stays behind the interface, because
+there is no idempotency table and `prisma/` is LAW.
+
+**The durable guarantee is not that store.** `completeUpload` derives the
+document id from the `uploadId` (`documentIdFor`), so a replayed completion
+finds the existing row instead of creating a second one, and a lost primary-key
+race is caught as `P2002` and treated as the no-op it is — the same shape as the
+worker's `PrismaDocumentSink` (#20).
+
+## No side-effect endpoint outside Review → Approve
+
+Both operations are `x-nt-side-effect: ingest` in the contract. Submitting
+evidence creates a new record and changes no existing one, so it needs no
+Approve. The architectural route-table test (Governance §10.6) reads that field,
+so this is mechanical rather than a promise in prose.
+
+## Wiring
+
+`WebUploadModule` imports `IngestQueueModule` — a **shared** producer. Nest
+providers are per-module, so giving this lane its own `selectIngestQueue` factory
+would open a second Redis connection the moment `INGEST_QUEUE=bullmq`. Invisible
+under the fixture, real in staging.
+
+Store and queue are config-selected (`OBJECT_STORE`, `INGEST_QUEUE`), never
+import-selected, so `pnpm dev` and `pnpm test` run this lane offline while
+staging runs the real thing through the same code.
+
+## Tests
+
+```bash
+pnpm --filter @neoting/api test                          # unit, offline
+RUN_S3_INTEGRATION=1 pnpm --filter @neoting/api test     # + the real end-to-end (needs docker compose up)
+```
+
+`web-upload.integration.test.ts` is the #76 acceptance and the only test that can
+be: **intent → a real `PUT` to the presigned URL → complete**, against Postgres
+and MinIO. Every unit test hands the service an `InMemoryDocumentStore` whose
+`presignPut` returns `https://fixture.local/…` — a URL nothing ever fetches, which
+proves the branching and nothing about the signature. The two failures only the
+integration test can catch:
+
+1. **The presigned PUT is rejected.** `presignPut` folds `content-type` and
+   `content-length` into the signature; if the headers we hand the client are not
+   the headers it covers, the browser's PUT 403s while the API reports success.
+2. **The document does not land under RLS.** The row is business-anchored and
+   written from a practice context — `documents_tenant`'s WITH CHECK decides
+   whether that is allowed, and no fake can answer for it.
+
+It also proves the cross-tenant hole is closed against the **real**
+`businesses_tenant` policy: the unit test can only show the branch fires when
+`findUnique` returns null; the integration test shows Postgres is what returns
+null.
+
+Run 16 Aug 2026 against `docker compose up -d`: 4/4 green. Vitest loads `.env`
+itself, so `DATABASE_URL`/`DIRECT_URL` are picked up automatically; only
+`RUN_S3_INTEGRATION=1` has to be set by hand.
+
+## Out of scope (issue #76)
+
+- **Auto-split.** `splitMode` is accepted, carried in the claims and stored, but
+  nothing splits yet. A caller passing `AUTO_SPLIT` gets the parent document, as
+  the contract already documents.
+- **Sanitisation of web uploads.** The job is enqueued with `documentId` set, so
+  the worker's persist path deliberately does *not* fire on it (that would
+  double-create). The worker-side sanitisation step for an already-persisted
+  document is the follow-up; today the acceptance is the document plus the job.
+- **Duplicate detection on this lane** — runs in the worker (#40), after the
+  document exists.
+- **Auth.** The request context comes from `common/context` (#75); real sessions
+  are `auth-tenancy`.
+
+## TODO
+
+- [ ] Durable `IdempotencyStore` (Redis) — the in-memory one is per-instance, so
+      a replay that hits a different API task does the work twice. The derived
+      document id keeps that correct, not fast.
+- [ ] Worker-side sanitisation for `source: 'web_upload'` jobs, then map the
+      pipeline's `Rejection` onto `NT-ING-004` on the document, not on a response
+      (by then the HTTP call is long finished).
+- [ ] Re-key the object from `w/<biz>/uploads/<nonce>` to the content-addressed
+      `w/<biz>/documents/<sha256>` once sanitisation has the final bytes. The
+      intent key cannot be content-addressed — the sha256 is not known until the
+      bytes land.
+- [ ] Update this file on exit.

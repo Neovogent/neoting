@@ -4,13 +4,15 @@ import { documentKey } from './document-store.js';
 import { createS3Client, S3DocumentStore } from './s3-document-store.js';
 
 // GUARDED so `pnpm test` stays offline (issue #16). This runs only when it is
-// explicitly enabled AND MinIO is up. Docker is not installed on my machine, so
-// Shakib runs it:
+// explicitly enabled AND MinIO is up:
 //
 //   docker compose up -d
 //   RUN_S3_INTEGRATION=1 pnpm --filter @neoting/api test
 //
 // (MinIO on :9000, credentials + the nt-local-docs bucket from docker-compose.yml.)
+//
+// This used to say Docker was not installed here and that Shakib had to run it.
+// Docker is installed as of 16 Aug 2026 and this test was run locally during #76.
 const enabled = process.env.RUN_S3_INTEGRATION === '1';
 
 test.skipIf(!enabled)('S3DocumentStore round-trips against MinIO and the key lands under w/', async () => {

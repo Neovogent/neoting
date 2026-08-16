@@ -67,9 +67,35 @@ pnpm --filter @neoting/api test                         # unit, offline (integra
 RUN_S3_INTEGRATION=1 pnpm --filter @neoting/api test    # + MinIO round-trip (needs docker compose up)
 ```
 
+## Presigned PUT (issue #76)
+
+`presignPut({ key, contentType, byteSize, expiresInSeconds })` and `head(key)`
+were added for the web-upload lane, where the API never receives the bytes.
+
+**`ContentType` and `ContentLength` are set on the command, so the presigner
+folds them into the signature.** The client must PUT with exactly that type and
+exactly that many bytes or storage rejects it — which is what makes "the
+presigned policy enforces the cap too" true rather than aspirational. The API's
+own cap check is the other half; neither is sufficient alone.
+
+The consequence for tests: a fixture `presignPut` returns
+`https://fixture.local/…`, a URL nothing fetches, so **no unit test can prove the
+signature is right**. If the headers handed to the client are not the headers the
+signature covers, every unit test passes and the browser's PUT 403s. Only
+`web-upload/web-upload.integration.test.ts` catches that, by doing the real PUT.
+
+An intent is presigned to `w/<businessId>/uploads/<nonce>` (`uploadIntentKey`) —
+still under `w/`, still naming the business, but **not** content-addressed,
+because the sha256 is not known until the bytes land. Re-keying it onto the
+content-addressed path after sanitisation is a follow-up.
+
 ## TODO
 
 - [x] MinIO integration test — run by Shakib 14 Aug 2026, object confirmed in the
-      bucket at `w/_unrouted/prac_int/documents/<sha256>`.
+      bucket at `w/_unrouted/prac_int/documents/<sha256>`. Re-run locally
+      16 Aug 2026 (Docker is installed here now; the note saying otherwise was
+      stale).
+- [ ] Re-key a web-upload object from `w/<biz>/uploads/<nonce>` to
+      `w/<biz>/documents/<sha256>` once sanitisation produces the final bytes.
 - [ ] When the S3 trigger + `scopedDb` land, the worker fetches bytes via
       `get(storageKey)` and the object record is persisted.

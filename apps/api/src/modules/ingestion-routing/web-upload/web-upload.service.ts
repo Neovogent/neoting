@@ -1,10 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import { HttpStatus } from '@nestjs/common';
+import type { z } from 'zod';
 
 import type { Document as DocumentRow } from '@prisma/client';
 
-import type { Document, DocumentUpload, DocumentUploadRequest } from '@neoting/contracts/model';
+import type { Document, DocumentUpload } from '@neoting/contracts/model';
+import type { createDocumentUploadBody } from '@neoting/contracts/zod';
 
 import type { PrismaClient } from '../../../common/db/prisma.js';
 import type { ScopeContext } from '../../../common/db/scope-context.js';
@@ -25,6 +27,21 @@ export interface WebUploadConfig {
 }
 
 /**
+ * The upload intent as the **boundary** produces it, derived from the generated
+ * Zod schema rather than the generated `DocumentUploadRequest` interface.
+ *
+ * Both come from `openapi.yaml`, so this is still a generated type and not a
+ * hand-written DTO. They differ in exactly one way that matters here:
+ * `exactOptionalPropertyTypes` is on, Zod infers `splitMode?: SplitMode |
+ * undefined`, and the interface writes `splitMode?: SplitMode`. Under that flag
+ * those are not the same type and a parsed body will not assign to the
+ * interface. Taking the schema's own output type means the service is typed by
+ * the thing that actually validated the value — one generated source, no cast
+ * at the controller to paper over the difference.
+ */
+export type UploadIntentRequest = z.infer<typeof createDocumentUploadBody>;
+
+/**
  * Web upload (issue #76), two steps because the API never touches the bytes:
  * `createUpload` presigns a direct PUT and hands back a stateless signed
  * `uploadId`; `completeUpload` verifies what landed, persists the `Document` in
@@ -39,7 +56,7 @@ export class WebUploadService {
     private readonly config: WebUploadConfig,
   ) {}
 
-  async createUpload(ctx: ScopeContext, request: DocumentUploadRequest, idempotencyKey?: string): Promise<DocumentUpload> {
+  async createUpload(ctx: ScopeContext, request: UploadIntentRequest, idempotencyKey?: string): Promise<DocumentUpload> {
     const replay = await this.replayed<DocumentUpload>(idempotencyKey, request);
     if (replay !== null) return replay;
 
@@ -54,6 +71,25 @@ export class WebUploadService {
       throw new AppException('NT-ING-002', HttpStatus.UNSUPPORTED_MEDIA_TYPE, `Declared MIME type '${request.mimeType}' is not accepted`);
     }
 
+    // THE BUSINESS IS RESOLVED THROUGH RLS BEFORE ANYTHING IS SIGNED, and that
+    // is the whole tenancy guarantee on this path.
+    //
+    // The presigned key is `w/<businessId>/uploads/…`, taken from the request
+    // body. Postgres would refuse a foreign `business_id` at completion
+    // (`documents_tenant` WITH CHECK) — but by then the bytes are already
+    // sitting in another practice's S3 prefix, and object storage has no RLS to
+    // undo that. So reachability is decided here, by the same policy, before a
+    // URL exists: `businesses_tenant` makes this `findUnique` return null for a
+    // business the caller cannot reach.
+    //
+    // 404, never 403 — a 403 confirms the record exists (packages/contracts/CLAUDE.md).
+    const business = await scopedDb(this.prisma, ctx, (db) =>
+      db.business.findUnique({ where: { id: request.businessId }, select: { id: true, practiceId: true } }),
+    );
+    if (business === null) {
+      throw new AppException('NT-VAL-001', HttpStatus.NOT_FOUND, 'No such business', 'No business with that id is reachable.');
+    }
+
     const key = uploadIntentKey(request.businessId, randomUUID());
     const presigned = await this.store.presignPut({
       key,
@@ -65,7 +101,12 @@ export class WebUploadService {
     const expiresAtMs = this.now() + this.config.uploadTtlSeconds * 1000;
     const claims: UploadClaims = {
       businessId: request.businessId,
-      practiceId: ctx.practiceId ?? null,
+      // The practice comes from the BUSINESS row, not from the actor's context.
+      // They coincide for practice staff, but a business-level actor has no
+      // practiceId in scope, and taking it from there would write a document
+      // whose practice anchor is null for one uploader and set for another —
+      // the same document filed two different ways depending on who sent it.
+      practiceId: business.practiceId,
       channel: request.channel,
       filename: request.filename,
       mimeType: request.mimeType,
@@ -104,12 +145,17 @@ export class WebUploadService {
     // declared hash is not trusted — it is checked against what is in storage.
     const head = await this.store.head(claims.s3Key);
     if (head === null) {
+      // No dedicated ingest code exists for "the PUT never landed", and 404 is
+      // what the contract lists. NT-VAL-001 is the house code for an otherwise
+      // uncoded 4xx (see `ProblemFilter.CODE_BY_STATUS`).
       throw new AppException('NT-VAL-001', HttpStatus.NOT_FOUND, 'No uploaded object was found for this intent');
     }
     const bytes = await this.store.get(claims.s3Key);
     const actualHash = createHash('sha256').update(bytes).digest('hex');
     if (actualHash !== byteHash) {
-      throw new AppException('NT-ING-004', HttpStatus.CONFLICT, 'The uploaded bytes do not match the declared hash');
+      // NT-ING-003 is "byte hash mismatch between client and storage" — NT-ING-004
+      // is sanitisation rejection, a different failure that happens later.
+      throw new AppException('NT-ING-003', HttpStatus.CONFLICT, 'The uploaded bytes do not match the declared hash');
     }
 
     const row = await this.persistDocument(ctx, uploadId, claims, byteHash);

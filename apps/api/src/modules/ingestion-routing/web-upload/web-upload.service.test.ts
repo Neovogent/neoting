@@ -17,13 +17,27 @@ import { WebUploadService } from './web-upload.service.js';
 const SECRET = 'svc-secret';
 const CTX: ScopeContext = ScopeContextSchema.parse({ actorId: 'usr_1', practiceId: 'prac_1' });
 
-function harness(): { store: InMemoryDocumentStore; queue: FixtureIngestQueue; service: WebUploadService } {
+/**
+ * A Prisma stand-in for the two reads these tests reach: the business
+ * reachability lookup in `createUpload`, and nothing else. `business === null`
+ * simulates a business RLS does not let this caller see — the real policy does
+ * the same thing by returning no row, so the service branch under test is
+ * identical. The persist path is the integration test's job, not this file's.
+ */
+function fakePrisma(business: { id: string; practiceId: string | null } | null): PrismaClient {
+  const tx = {
+    $executeRaw: async () => 0,
+    business: { findUnique: async () => business },
+  };
+  return { $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx) } as unknown as PrismaClient;
+}
+
+function harness(
+  business: { id: string; practiceId: string | null } | null = { id: 'biz_1', practiceId: 'prac_1' },
+): { store: InMemoryDocumentStore; queue: FixtureIngestQueue; service: WebUploadService } {
   const store = new InMemoryDocumentStore();
   const queue = new FixtureIngestQueue();
-  // prisma is only reached on the happy-path persist (the integration test); the
-  // validation branches below throw before it, so a stub is safe here.
-  const prisma = {} as unknown as PrismaClient;
-  const service = new WebUploadService(prisma, store, queue, new InMemoryIdempotencyStore(), {
+  const service = new WebUploadService(fakePrisma(business), store, queue, new InMemoryIdempotencyStore(), {
     uploadSecret: SECRET,
     uploadTtlSeconds: 900,
   });
@@ -68,6 +82,25 @@ test('createUpload rejects a MIME off the allowlist with 415 NT-ING-002', async 
   const err = await grab(() => service.createUpload(CTX, request({ mimeType: 'application/x-msdownload' })));
   expect((err as AppException).getStatus()).toBe(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
   expect((err as AppException).code).toBe('NT-ING-002');
+});
+
+test('a business the caller cannot reach is 404 and nothing is signed', async () => {
+  // The tenancy guard on the presign path: RLS returns no row, so no URL into
+  // that business's S3 prefix is ever minted. 404, not 403 — a 403 would confirm
+  // the business exists.
+  const { service } = harness(null);
+  const err = await grab(() => service.createUpload(CTX, request()));
+  expect((err as AppException).getStatus()).toBe(HttpStatus.NOT_FOUND);
+});
+
+test('the practice anchor comes from the business row, not the caller context', async () => {
+  // A business-level actor has no practiceId in scope; the document must still
+  // be anchored on the business's own practice.
+  const { service } = harness({ id: 'biz_1', practiceId: 'prac_owner' });
+  const ctx = ScopeContextSchema.parse({ actorId: 'usr_1', businessId: 'biz_1' });
+  const result = await service.createUpload(ctx, request());
+  const verified = verifyUploadToken(result.uploadId, SECRET);
+  expect(verified.ok && verified.claims.practiceId).toBe('prac_owner');
 });
 
 test('Idempotency-Key: same key + payload replays; same key + different payload is 409 NT-IDM-001', async () => {
@@ -118,10 +151,10 @@ test('completeUpload is 404 when nothing landed at the key', async () => {
   expect((err as AppException).getStatus()).toBe(HttpStatus.NOT_FOUND);
 });
 
-test('completeUpload is 409 when the landed bytes do not match the declared hash', async () => {
+test('completeUpload is 409 NT-ING-003 when the landed bytes do not match the declared hash', async () => {
   const { store, service } = harness();
   const token = tokenFor(store, Buffer.from('actual-bytes'), Date.now() + 60_000);
   const err = await grab(() => service.completeUpload(CTX, token, 'b'.repeat(64)));
   expect((err as AppException).getStatus()).toBe(HttpStatus.CONFLICT);
-  expect((err as AppException).code).toBe('NT-ING-004');
+  expect((err as AppException).code).toBe('NT-ING-003');
 });
