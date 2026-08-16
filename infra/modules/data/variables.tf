@@ -56,27 +56,33 @@ variable "master_user_secret_kms_key_arn" {
        old one. staging (nt-staging) is already created on the AWS-managed
        key and cannot be moved by editing this value.
 
-    2. THE KEY POLICY MUST EXEMPT AWS SERVICES, OR ROTATION BREAKS QUIETLY.
-       Creation works with the caller's own permissions - the docs require
-       kms:DescribeKey, kms:Decrypt, kms:GenerateDataKey and kms:CreateGrant
-       on the CALLING principal, and RDS then holds a grant. But RDS rotates
-       this secret every 7 days by default, and at rotation the request comes
-       from the RDS service principal, where aws:PrincipalArn does not match
-       role/nt-*. An absolute `StringNotLike` deny therefore catches it: a
-       missing condition key makes StringNotLike true, and an explicit deny
-       in the key policy overrides the grant.
+    2. THE KEY POLICY MUST EXEMPT THE SECRETS MANAGER PATH, AND IT FAILS AT
+       CREATE - NOT, AS THIS NOTE ORIGINALLY CLAIMED, AT THE FIRST ROTATION.
 
-       The failure is NOT the apply. The apply succeeds, the secret is
-       created, and seven days later SecretStatus flips to `impaired` - the
-       credential still reads, it just silently stops rotating. That is the
-       worst shape a security control can fail in.
+       MEASURED 15 AUG 2026 on the first prod apply. RDS put nt-prod into
+       `incompatible-create` and the instance never became available:
 
-       A key used here needs the same `BoolIfExists aws:PrincipalIsAWSService
-       = false` carve-out that modules/storage/policies/bucket.json.tftpl
-       already has. envs/prod/policies/kms-secrets.json.tftpl deliberately
-       DROPS that carve-out, on reasoning that is correct for every secret we
-       write ourselves and does not hold for this one - it is the single case
-       where a service really does encrypt a secret on its own behalf.
+         "You can't create the DB instance because of incompatible resources.
+          The secret can't be updated because the KMS Key used to encrypt the
+          secret ... doesn't exist, isn't enabled, or is in an invalid state"
+
+       SecretStatus came up `impaired`. So this is louder than predicted, and
+       that is the good news - it fails the apply rather than lying for a week.
+
+       ⚠ THE EXEMPTION THAT DOES NOT WORK, because it is the one everybody
+       reaches for first: `BoolIfExists aws:PrincipalIsAWSService = false`,
+       copied from modules/storage/policies/bucket.json.tftpl where it is
+       correct. BoolIfExists returns TRUE when the key is ABSENT, and
+       aws:PrincipalIsAWSService is not populated on the grant-mediated path
+       RDS uses here. The guard meant to exempt AWS services evaluates true,
+       the deny applies, and RDS cannot encrypt the secret it was just told to
+       create.
+
+       WHAT WORKS: exempt on `kms:ViaService` =
+       secretsmanager.<region>.amazonaws.com. It describes the CALL rather
+       than the caller, and for a key that encrypts exactly one RDS-managed
+       secret, "reached through Secrets Manager" is a complete description of
+       every legitimate use. See envs/prod/secrets.tf.
   EOT
 }
 

@@ -868,7 +868,14 @@ resource "aws_cloudwatch_metric_alarm" "log_errors" {
 resource "aws_cloudwatch_log_metric_filter" "postgres_slow_queries" {
   name           = "nt-${local.env}-postgres-slow-queries"
   log_group_name = "/aws/rds/instance/${module.data.db_instance_identifier}/postgresql"
-  pattern        = "duration:"
+
+  # ⚠ THE QUOTES ARE PART OF THE PATTERN, not Terraform string syntax. A
+  # CloudWatch Logs filter term containing `:` must be double-quoted inside the
+  # pattern itself; unquoted, the API rejects it with
+  # "InvalidParameterException: Invalid character(s) in term ':'". Cost an
+  # apply on 16 Aug 2026 — envs/staging/observability.tf had it right and this
+  # was retyped rather than copied.
+  pattern = "\"duration:\""
 
   metric_transformation {
     name          = "postgres.slow_queries"
@@ -1111,12 +1118,20 @@ resource "aws_cloudwatch_dashboard" "main" {
         properties = {
           title  = "Redis — engine CPU and memory, per node",
           region = local.region, view = "timeSeries", stacked = false
-          metrics = flatten([
-            for node in tolist(local.redis_nodes) : [
-              ["AWS/ElastiCache", "EngineCPUUtilization", "CacheClusterId", node],
-              ["AWS/ElastiCache", "DatabaseMemoryUsagePercentage", "CacheClusterId", node],
-            ]
-          ])
+          # ⚠ concat(), NEVER flatten(). A CloudWatch `metrics` entry is an
+          # ARRAY OF ARRAYS — one inner array per series. flatten() collapses
+          # every level, so the inner arrays dissolve into one long list of
+          # strings and CloudWatch rejects the body with "Field metrics has to
+          # be an array of array of strings".
+          #
+          # It fails at APPLY and not at plan: Terraform cannot validate a
+          # dashboard body, only CloudWatch can. This cost an apply on 16 Aug
+          # 2026 — the dashboard is the last resource in the graph, so
+          # everything else had already been created when it failed.
+          metrics = concat(
+            [for node in tolist(local.redis_nodes) : ["AWS/ElastiCache", "EngineCPUUtilization", "CacheClusterId", node]],
+            [for node in tolist(local.redis_nodes) : ["AWS/ElastiCache", "DatabaseMemoryUsagePercentage", "CacheClusterId", node]],
+          )
         }
       },
       {
@@ -1151,12 +1166,11 @@ resource "aws_cloudwatch_dashboard" "main" {
         properties = {
           title  = "ECS — running vs desired",
           region = local.region, view = "timeSeries", stacked = false
-          metrics = flatten([
-            for name in values(local.ecs_services) : [
-              ["ECS/ContainerInsights", "RunningTaskCount", "ClusterName", aws_ecs_cluster.main.name, "ServiceName", name],
-              ["ECS/ContainerInsights", "DesiredTaskCount", "ClusterName", aws_ecs_cluster.main.name, "ServiceName", name],
-            ]
-          ])
+          # concat(), not flatten() — see the note on the Redis widget above.
+          metrics = concat(
+            [for name in values(local.ecs_services) : ["ECS/ContainerInsights", "RunningTaskCount", "ClusterName", aws_ecs_cluster.main.name, "ServiceName", name]],
+            [for name in values(local.ecs_services) : ["ECS/ContainerInsights", "DesiredTaskCount", "ClusterName", aws_ecs_cluster.main.name, "ServiceName", name]],
+          )
         }
       },
       {

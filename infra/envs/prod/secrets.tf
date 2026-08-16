@@ -98,20 +98,32 @@ resource "aws_kms_alias" "secrets" {
 #
 # That is correct for every secret we write ourselves, and it is wrong for
 # exactly this one. The RDS-managed secret is the single case where a service
-# genuinely does encrypt on its own behalf: RDS rotates it every 7 days, and at
-# rotation the request comes from the RDS service principal, where
-# `aws:PrincipalArn` matches no role/nt-*. `StringNotLike` against a MISSING
-# condition key evaluates TRUE, and an explicit deny in a key policy overrides
-# the grant RDS holds.
+# genuinely does encrypt on its own behalf: RDS creates and rotates it, and
+# those requests do not carry an `aws:PrincipalArn` matching role/nt-*.
+# `StringNotLike` against a MISSING condition key evaluates TRUE, and an
+# explicit deny in a key policy overrides the grant RDS holds.
 #
-# ⚠ AND THE FAILURE IS NOT THE APPLY. The apply succeeds, the secret is created
-# under our key, everything looks right — and seven days later SecretStatus
-# flips to `impaired`. The credential still READS, so nothing breaks and no
-# alarm fires. It has simply, silently, stopped rotating. That is the worst
-# shape a security control can fail in, and it is why this is a separate key
-# rather than a carve-out in the shared one: the exemption is confined to the
-# one key that genuinely needs it, and aws_kms_key.secrets keeps its absolute
-# deny for the twenty-odd secrets that do not.
+# A separate key is what confines the exemption to the one secret that needs
+# it — aws_kms_key.secrets keeps its absolute deny for the twenty-odd secrets
+# that do not.
+#
+# ⚠ CORRECTION, 15 AUG 2026. This block used to continue: "AND THE FAILURE IS
+# NOT THE APPLY. The apply succeeds ... and seven days later SecretStatus flips
+# to `impaired`." That was WRONG, and it was the sentence a future reader would
+# have trusted.
+#
+# It fails at CREATE. Measured on the first prod apply: RDS put nt-prod into
+# `incompatible-create`, the instance never became available, and the secret
+# came up `impaired` immediately —
+#
+#   "You can't create the DB instance because of incompatible resources. The
+#    secret can't be updated because the KMS Key used to encrypt the secret
+#    ... doesn't exist, isn't enabled, or is in an invalid state"
+#
+# That is louder than predicted, and better: it fails the apply rather than
+# lying for a week. The recovery cost was real though — the failed instance had
+# deletion_protection on and skip_final_snapshot off, so Terraform could
+# neither replace nor snapshot it, and it had to be cleared by hand.
 #
 # ⚠ THE KEY IS IMMUTABLE AFTER CREATION. The RDS User Guide states it four
 # times: "After RDS is managing the database credentials for a DB instance, you
@@ -209,7 +221,37 @@ resource "aws_kms_key" "rds_master_secret" {
               "arn:aws:iam::${local.account_id}:root",
             ]
           }
-          BoolIfExists = { "aws:PrincipalIsAWSService" = "false" }
+
+          # ⚠ THIS LINE IS WHY THE FIRST PROD APPLY FAILED, AND THE MECHANISM
+          # IS NOT THE OBVIOUS ONE. Measured 15 Aug 2026: RDS put nt-prod into
+          # `incompatible-create` with "the KMS Key used to encrypt the secret
+          # ... doesn't exist, isn't enabled, or is in an invalid state", and
+          # the secret came up `impaired`.
+          #
+          # The previous attempt at this exemption was
+          #   BoolIfExists = { "aws:PrincipalIsAWSService" = "false" }
+          # copied from modules/storage/policies/bucket.json.tftpl, where it
+          # works. It does NOT work here. `BoolIfExists` returns TRUE when the
+          # key is ABSENT, and aws:PrincipalIsAWSService is not populated on
+          # the grant-mediated path RDS uses for a master user secret. So the
+          # guard that was meant to exempt AWS services evaluated true, the
+          # deny applied, and RDS could not encrypt the secret it had just been
+          # told to create.
+          #
+          # kms:ViaService is the right key because it describes the CALL, not
+          # the caller. This key encrypts exactly one thing — the RDS-managed
+          # master user secret — so "reached through Secrets Manager" is a
+          # complete description of every legitimate use of it, and anything
+          # arriving by another route has no business here regardless of who
+          # is asking.
+          #
+          # Reaching the secret still requires secretsmanager:GetSecretValue on
+          # that specific secret, so this is not a hole: it moves the boundary
+          # from "which principal" to "which principal, through the one service
+          # that is allowed to hold this key's plaintext".
+          StringNotEquals = {
+            "kms:ViaService" = "secretsmanager.${local.region}.amazonaws.com"
+          }
         }
       }
     ]
