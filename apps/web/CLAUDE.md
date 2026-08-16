@@ -27,6 +27,8 @@ Read `docs/Source_Of_Truth.md` D37 before assuming anything Next-shaped. The req
 
 MSW is started from `src/main.tsx` behind a **dynamic** `import()`, which is what keeps it and `@faker-js/faker` out of the production bundle. Verified: neither string appears in `dist`. Keep it dynamic.
 
+`VITE_CHAT_PROXY=enabled` is the one remaining escape hatch, and it is **off by default deliberately** — it lets the chat box call `POST /api/chat`, the Gemini-backed classifier in the pre-monorepo frontend's `server.ts`. Gemini sits outside D22/D28 (Bedrock, eu-west-2) and outside D30 (UK-first residency); issue #59 keeps it as a temporary local-development exception whose whole condition is that it goes before the frontend is deployed anywhere that is not a laptop. `server.ts` did not come across in the import, so in this repository the route does not exist and the flag has nothing to reach. **Do not turn it on in any deployed build.**
+
 ## Bundle
 
 Measured on the import build, gzipped:
