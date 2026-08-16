@@ -44,6 +44,19 @@ const EnvSchema = z.object({
   // are blank there — not required.
   OBJECT_STORE: z.enum(['fixture', 's3']).default('fixture'),
 
+  // Inbound email source (#78). `fixture` = in-memory (offline tests); `mailhog`
+  // = the local SES stand-in's HTTP API; `s3` = the SES receipt prefix in
+  // staging. Selected by config, not import, like the switches above. Default
+  // `fixture` so a fresh clone and CI never poll a mail server that is not there.
+  EMAIL_SOURCE: z.enum(['fixture', 'mailhog', 's3']).default('fixture'),
+  // MailHog's HTTP API (SMTP is 1025; the API is 8025). Only read when
+  // EMAIL_SOURCE=mailhog.
+  MAILHOG_API_URL: z.string().url().default('http://localhost:8025'),
+  // The SES receipt bucket (raw inbound MIME under `inbound/`). Distinct from
+  // S3_BUCKET_DOCUMENTS — this is where SES writes, not where sanitised documents
+  // land. Local MinIO seeds `nt-local-receipts` (docker-compose).
+  S3_BUCKET_RECEIPTS: z.string().default('nt-local-receipts'),
+
   // The image normaliser (#23). `fixture` = passthrough, and it REFUSES HEIC
   // because it genuinely cannot read one; `sharp` = the real EXIF/HEIC path.
   // Selected by config rather than by import so unit tests stay offline and
