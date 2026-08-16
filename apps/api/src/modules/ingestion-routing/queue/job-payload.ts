@@ -19,15 +19,21 @@ export const IngestJobPayloadSchema = z.object({
   filename: z.string().optional(),
   sha256: z.string().optional(),
   storageKey: z.string().optional(),
-  // Tenancy + persistence fields (#20). Present for email (which has the bytes,
-  // the practice anchor and the sanitised type in hand); absent for WhatsApp
-  // until its media fetch lands, so persistence is skipped for those.
+  // Tenancy + persistence fields (#20). Email fills all of them at enqueue time
+  // (it has the bytes, the practice anchor and the sanitised type in hand). A
+  // WhatsApp job arrives with `practiceId` and `mediaId` only — the worker
+  // fetches the media (#79) and fills the rest before it persists.
   practiceId: z.string().min(1).optional(),
   mimeType: z.string().optional(),
   byteSize: z.number().int().nonnegative().optional(),
   // dHash of the sanitised image bytes (#40), for near-duplicate detection. Image
   // documents only — absent for PDFs and for bytes no decoder could read.
   perceptualHash: z.string().optional(),
+  // WhatsApp media fetch (#79). `mediaId` is Meta's handle for the bytes;
+  // `phoneNumberId` is the number that received the message, kept as the evidence
+  // behind `practiceId`.
+  mediaId: z.string().min(1).optional(),
+  phoneNumberId: z.string().min(1).optional(),
 });
 
 export type IngestJobPayload = z.infer<typeof IngestJobPayloadSchema>;

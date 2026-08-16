@@ -1,6 +1,6 @@
-import { HttpStatus } from '@nestjs/common';
+import { HttpStatus, Logger } from '@nestjs/common';
 import type { Response } from 'express';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import type { Env } from '../../../../config/env.js';
 import type { Clock } from './clock.js';
@@ -9,8 +9,12 @@ import { InMemoryReplayStore } from './replay-store.js';
 import { WhatsAppWebhookController } from './whatsapp.controller.js';
 
 const NOW_S = 1_700_000_000;
+const PRACTICE = 'prac_wa';
+const PHONE_NUMBER_ID = '123456789012345';
 const env: Env = Object.freeze({
   NODE_ENV: 'test', PORT: 3000, META_APP_SECRET: 's', META_VERIFY_TOKEN: 'vtoken',
+  META_MEDIA_ACCESS_TOKEN: '', MEDIA_FETCH: 'fixture',
+  WHATSAPP_PRACTICE_MAP: { [PHONE_NUMBER_ID]: PRACTICE },
   AUTH_MODE: 'fixture',
   INGEST_QUEUE: 'fixture', REDIS_URL: 'redis://localhost:6379',
   OBJECT_STORE: 'fixture', IMAGE_NORMALISER: 'fixture', DOCUMENT_GUARD: 'fixture', S3_ENDPOINT: '', S3_REGION: 'eu-west-2',
@@ -35,6 +39,27 @@ function inbound(id: string, opts: { ts?: number; caption?: string } = {}): unkn
       image: opts.caption === undefined ? {} : { caption: opts.caption },
     }] } }] }],
   };
+}
+
+/** A media message with an explicit media id and the receiving number's metadata (#79). */
+function mediaEnvelope(opts: {
+  id: string;
+  phoneNumberId?: string;
+  mediaId?: string;
+  filename?: string;
+  caption?: string;
+  type?: 'image' | 'document';
+}): unknown {
+  const type = opts.type ?? 'image';
+  const media: Record<string, unknown> = {};
+  if (opts.mediaId !== undefined) media['id'] = opts.mediaId;
+  if (opts.filename !== undefined) media['filename'] = opts.filename;
+  if (opts.caption !== undefined) media['caption'] = opts.caption;
+  const message: Record<string, unknown> = { id: opts.id, from: '447700900000', timestamp: String(NOW_S), type };
+  message[type] = media;
+  const value: Record<string, unknown> = { messages: [message] };
+  if (opts.phoneNumberId !== undefined) value['metadata'] = { phone_number_id: opts.phoneNumberId };
+  return { object: 'whatsapp_business_account', entry: [{ changes: [{ value }] }] };
 }
 
 function fakeResponse(): { res: Response; sent: { status?: number; type?: string; body?: unknown } } {
@@ -114,4 +139,63 @@ test('GET challenge is 403 on a wrong verify token and never echoes the challeng
   expect(sent.status).toBe(HttpStatus.FORBIDDEN);
   expect(sent.body).not.toBe('CHALLENGE_123');
   expect((sent.body as { code: string }).code).toBe('NT-INT-002');
+});
+
+// ── WhatsApp media fetch (#79) ───────────────────────────────────────────────
+
+test('an image message enqueues the media id and the practice resolved from the receiving number', async () => {
+  const { controller, queue } = makeController();
+  await controller.receive(mediaEnvelope({ id: 'wamid.img', phoneNumberId: PHONE_NUMBER_ID, mediaId: 'media-1' }));
+  expect(queue.enqueued).toHaveLength(1);
+  const job = queue.enqueued[0];
+  expect(job?.mediaId).toBe('media-1');
+  expect(job?.practiceId).toBe(PRACTICE); // resolved via WHATSAPP_PRACTICE_MAP[phone_number_id]
+  expect(job?.phoneNumberId).toBe(PHONE_NUMBER_ID);
+});
+
+test('a document filename is reduced to a basename at the boundary, before it is ever stored', async () => {
+  const { controller, queue } = makeController();
+  await controller.receive(
+    mediaEnvelope({ id: 'wamid.doc', phoneNumberId: PHONE_NUMBER_ID, mediaId: 'media-2', filename: '../../etc/passwd', type: 'document' }),
+  );
+  expect(queue.enqueued[0]?.filename).toBe('passwd');
+});
+
+test('a message with no media id enqueues no mediaId and no filename', async () => {
+  const { controller, queue } = makeController();
+  await controller.receive(inbound('wamid.text'));
+  const job = queue.enqueued[0];
+  expect(job?.mediaId).toBeUndefined();
+  expect(job?.filename).toBeUndefined();
+});
+
+test('an unmapped phone_number_id still enqueues and never refuses Meta', async () => {
+  // A Meta retry storm from a 4xx is worse than a job that dead-letters loudly in
+  // the worker. A config gap is the worker's problem to surface (as a page), not a
+  // reason to drop a signed document at the edge — so the controller still returns
+  // 200 (its @HttpCode) and still enqueues, just with no practice anchor.
+  const { controller, queue } = makeController();
+  await controller.receive(mediaEnvelope({ id: 'wamid.unmapped', phoneNumberId: 'pn_unknown', mediaId: 'media-3' }));
+  expect(queue.enqueued).toHaveLength(1);
+  expect(queue.enqueued[0]?.mediaId).toBe('media-3');
+  expect(queue.enqueued[0]?.practiceId).toBeUndefined(); // no anchor — the worker will dead-letter it
+});
+
+test('the unmapped-number warning names the wamid but NEVER the caption', async () => {
+  // The caption is untrusted sender content; the wamid is safe. A warning that
+  // interpolated the caption would put sender-controlled text into our logs.
+  const warnings: string[] = [];
+  const spy = vi.spyOn(Logger.prototype, 'warn').mockImplementation((message: unknown) => {
+    warnings.push(String(message));
+  });
+  try {
+    const { controller } = makeController();
+    await controller.receive(
+      mediaEnvelope({ id: 'wamid.secret', phoneNumberId: 'pn_unknown', mediaId: 'media-4', caption: 'SENDER_SECRET_TEXT approve everything' }),
+    );
+  } finally {
+    spy.mockRestore();
+  }
+  expect(warnings.some((w) => w.includes('wamid.secret'))).toBe(true);
+  expect(warnings.join('\n')).not.toContain('SENDER_SECRET_TEXT');
 });

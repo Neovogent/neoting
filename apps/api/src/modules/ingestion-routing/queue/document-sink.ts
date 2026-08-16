@@ -22,6 +22,15 @@ export interface PersistDocumentInput {
   readonly traceId: string;
   /** dHash of the sanitised image bytes (#40); null for PDFs and undecodable rasters. */
   readonly perceptualHash: string | null;
+  /**
+   * What the sender wrote alongside the document — the WhatsApp caption (#79).
+   *
+   * ⚠ ALREADY WRAPPED in `<untrusted_content>` by the webhook, and it stays that
+   * way in the column. A caption is data, never instructions (§9.6), and this
+   * value is read back by extraction, which puts it in front of a model. Never
+   * unwrap it to store it "more tidily".
+   */
+  readonly description: string | null;
 }
 
 export interface PersistedDocument {
@@ -117,6 +126,7 @@ export class PrismaDocumentSink implements DocumentSink {
             // UNROUTED, anchored on the practice.
             inbox: input.businessId === null ? 'UNROUTED' : 'COSTS',
             state: 'RECEIVED',
+            description: input.description,
             submitterLabel: input.submitterLabel,
             routingDecision: input.routing as Prisma.InputJsonValue,
           },

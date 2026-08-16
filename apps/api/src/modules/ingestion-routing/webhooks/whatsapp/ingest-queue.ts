@@ -48,6 +48,20 @@ export interface IngestJob {
    * them.
    */
   readonly perceptualHash?: string;
+  /**
+   * Meta media id (#79) — present for WhatsApp media messages, absent for text
+   * and for email (which already carries its bytes). The worker resolves it to
+   * bytes through `MediaFetcher`; without it a WhatsApp job describes a document
+   * that exists nowhere and can never be retrieved.
+   */
+  readonly mediaId?: string;
+  /**
+   * Which of OUR numbers took delivery (`value.metadata.phone_number_id`). Kept
+   * on the job as the evidence behind `practiceId`: the anchor was derived from
+   * this, and when a real `phone_number_id → practice` lookup lands it is the
+   * field it reads.
+   */
+  readonly phoneNumberId?: string;
 }
 
 /**

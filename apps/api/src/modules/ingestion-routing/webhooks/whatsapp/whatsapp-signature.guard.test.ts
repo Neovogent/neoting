@@ -10,6 +10,7 @@ import { WhatsAppSignatureGuard } from './whatsapp-signature.guard.js';
 const SECRET = 'guard-secret';
 const env: Env = Object.freeze({
   NODE_ENV: 'test', PORT: 3000, META_APP_SECRET: SECRET, META_VERIFY_TOKEN: 'vt',
+  META_MEDIA_ACCESS_TOKEN: '', MEDIA_FETCH: 'fixture', WHATSAPP_PRACTICE_MAP: {},
   AUTH_MODE: 'fixture',
   INGEST_QUEUE: 'fixture', REDIS_URL: 'redis://localhost:6379',
   OBJECT_STORE: 'fixture', IMAGE_NORMALISER: 'fixture', DOCUMENT_GUARD: 'fixture', S3_ENDPOINT: '', S3_REGION: 'eu-west-2',
