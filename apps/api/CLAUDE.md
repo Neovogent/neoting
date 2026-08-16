@@ -40,7 +40,14 @@ See `src/modules/*/CLAUDE.md`. Read the module's file on entry, update it on exi
 
 ## Build and container
 
-`pnpm --filter @neoting/api build` runs `tsc -p tsconfig.build.json` and emits `dist/`. That plain `tsc` emit only works because **every import of `@neoting/contracts` in this app is `import type`** — the package is consumed as `.ts` source through its exports map, which Node cannot load, so a value import would compile clean and then die at runtime with `ERR_UNKNOWN_FILE_EXTENSION`. `apps/api/Dockerfile` greps the compiled output for exactly that and fails the build. If you ever need a *value* from contracts, give contracts a real build output and point its exports map at the JS — do not reach for a bundler.
+`pnpm --filter @neoting/api build` runs `tsc -p tsconfig.build.json` and emits `dist/`.
+
+**You may import values from `@neoting/contracts` — parse every boundary with the generated Zod schemas.** That is new as of #88: this file used to say the opposite, because the package was consumed as `.ts` source through its exports map and Node cannot load that, so a value import compiled clean and died at runtime with `ERR_UNKNOWN_FILE_EXTENSION`. `packages/contracts` now emits a real build and its exports map points at the JS, which is precisely the fix this file predicted would be needed.
+
+Two consequences:
+
+- **`packages/contracts` must be built before this app runs or typechecks.** Turbo wires `typecheck`, `dev` and `test` to depend on it, so the normal commands are fine; a bare `tsx`/`node` against a cold tree is not. `apps/api/Dockerfile` builds contracts explicitly, because it uses `pnpm --filter` rather than `turbo run` and so resolves no dependency graph.
+- **The Dockerfile guard is inverted, not gone.** It used to fail the image build on any runtime contracts import. It now fails when the compiled output imports contracts *without* the contracts build shipping alongside it, or when that build contains an extensionless relative specifier Node cannot resolve. Same failure class, caught at the point it can still be fixed.
 
 `apps/api/Dockerfile` builds **one image for three commands** (build context is the repo root):
 
