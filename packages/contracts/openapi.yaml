@@ -103,8 +103,19 @@ info:
     schema: prisma/schema.prisma
 
 servers:
-  - url: http://localhost:3001/v1
-    description: Local — docker compose. The canonical development environment.
+  - url: http://localhost:3000/v1
+    description: |
+      Local — docker compose. The canonical development environment.
+
+      3000, not 3001. This is the port the API actually listens on and it is
+      the same number in all four places that have to agree: `PORT` in
+      `apps/api/src/config/env.ts`, `EXPOSE` in `apps/api/Dockerfile`,
+      `local.app_port` in `infra/envs/*/alb.tf`, and `containerPort` on the
+      ECS task definition. An earlier draft of this block said 3001, which
+      nothing served — so a fresh clone's web client called a closed port and
+      every request failed with a transport error rather than a 404 (issue
+      #63). Change it here and the client default in `src/http-client.ts`
+      together, or they disagree again.
   - url: https://api.neoting.neovogent.com/v1
     description: Staging — real third-party sandboxes, synthetic data only (G2).
 

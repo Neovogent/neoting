@@ -11,7 +11,7 @@ The OpenAPI spec is the **build-first contract**. Handlers are generated against
 
 ## Why frontend is never blocked
 
-`NEXT_PUBLIC_API_MODE=mock` makes MSW intercept everything. **The frontend starts building any screen the moment its contract exists** — days before the endpoint does. When the contract changes, regeneration breaks the build loudly. That is the system working, not a problem to route around.
+`VITE_API_ENABLED=true` plus `VITE_API_MOCKING=enabled` makes MSW intercept everything (the flags `apps/web/src/api/config.ts` actually reads — `NEXT_PUBLIC_*` died with Next.js in D37 and is never defined in a Vite build). **The frontend starts building any screen the moment its contract exists** — days before the endpoint does. When the contract changes, regeneration breaks the build loudly. That is the system working, not a problem to route around.
 
 ## Rules
 

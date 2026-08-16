@@ -38,7 +38,7 @@ export default defineConfig({
       mode: 'tags-split',
       clean: true,
       // MSW handlers with faker-backed fixtures. This is what makes
-      // NEXT_PUBLIC_API_MODE=mock work, and therefore what keeps the frontend
+      // VITE_API_MOCKING=enabled work, and therefore what keeps the frontend
       // unblocked days before an endpoint exists (Guideline §7.3).
       mock: {
         type: 'msw',
