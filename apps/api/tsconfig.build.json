@@ -4,16 +4,26 @@
   // reach dist/).
   //
   // WHY A tsc EMIT WORKS HERE AT ALL, given moduleResolution: "Bundler":
-  // `@neoting/contracts` is consumed as workspace .ts SOURCE through its
-  // exports map, which Node could not resolve at runtime — but every import
-  // of it in this app is `import type` (problem.ts, problem.filter.ts) and is
-  // erased at emit. The compiled output therefore has NO runtime dependency
-  // on the contracts package. Verify with:
-  //   grep -rn "@neoting/contracts" dist/   # must return nothing
-  // The day a VALUE is imported from contracts, this build breaks at runtime
-  // with ERR_UNKNOWN_FILE_EXTENSION, not at compile time. At that point the
-  // answer is to give contracts a real build output and point its exports map
-  // at the JS — not to reach for a bundler.
+  //
+  // It used to work only because every `@neoting/contracts` import in this app
+  // was `import type` and erased at emit, leaving the compiled output with no
+  // runtime dependency on a package Node could not load. This comment used to
+  // end by predicting the day a VALUE would be imported, and prescribing the
+  // fix: give contracts a real build output and point its exports map at the
+  // JS, rather than reaching for a bundler.
+  //
+  // That happened — issue #88, needed by the ingestion and documents
+  // controllers, which parse their boundaries with the generated Zod schemas.
+  // `packages/contracts` now emits ESM whose relative specifiers all carry
+  // `.js`, so Node resolves them, and value imports from contracts are
+  // ordinary. The prediction is kept here rather than deleted because it is
+  // the reasoning that still holds: `tsc` copies specifiers through verbatim,
+  // so an extensionless import anywhere in the graph is a runtime failure with
+  // a clean build — which is why contracts guards that mechanically
+  // (check-contract.mjs assertion 7, and its `test` script).
+  //
+  // Consequence: contracts must be BUILT before this app is built. Turbo knows;
+  // the Dockerfile is told explicitly because it uses `pnpm --filter`.
   //
   // Relative imports already carry explicit `.js` extensions throughout src/,
   // which is what makes the emitted ESM runnable by Node directly.
