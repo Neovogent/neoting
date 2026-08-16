@@ -123,7 +123,12 @@ export function toDocumentEvent(row: DocumentEventRow): DocumentEvent {
     // `ScopeContext` carries no role today, so there is nothing to branch on.
     // Every caller who can see the document sees its full detail. Tracked as a
     // follow-up — see modules/documents/CLAUDE.md.
-    detail: (row.detail as Record<string, unknown> | null) ?? null,
+    //
+    // Guarded like `fields` below rather than cast: the contract types this as
+    // an object-or-null, the column is bare `Json`, and every writer today
+    // happens to store an object — "happens to" being the operative words for a
+    // read surface that has to survive whatever the next writer does.
+    detail: isJsonObject(row.detail) ? row.detail : null,
     createdAt: row.createdAt.toISOString(),
   };
 }

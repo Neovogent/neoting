@@ -95,14 +95,36 @@ export interface DocumentStore {
  * contains a newline, and a document called `in"voice.pdf` downloading as
  * `invoice.pdf` is not a bug worth a parser for.
  *
+ * The strip covers the **whole C0/C1 control range plus DEL**, not just CR and
+ * LF. CR and LF are the header-splitting pair everyone thinks of, but they are
+ * not the only characters that have no business in a header value: RFC 7230
+ * §3.2.6 forbids NUL outright, and several HTTP parsers truncate a field at the
+ * first NUL — which would serve a silently shortened filename rather than fail
+ * loudly. A bare TAB is legal inside a quoted-string and is stripped anyway,
+ * because a filename that renders as a column break is a bug either way and
+ * "legal but nobody means it" is not worth the carve-out.
+ *
+ * Postgres already refuses NUL in a `text` column, so the storage path cannot
+ * currently deliver one here. That is a reason this is defence in depth rather
+ * than a live hole — not a reason to leave it out. This function is the single
+ * point where an uploader-chosen name becomes a header, and it should not
+ * depend on a column type three layers away staying the way it is.
+ *
  * `inline` rather than `attachment`: the review screen renders the original in
  * an overlay, and forcing a download would break the single most-used screen in
  * the product. That is safe because the type is pinned from the sanitised MIME
  * rather than sniffed, and because the object is served from the bucket origin,
  * not the app's.
+ *
+ * ⚠ Non-ASCII is passed through as-is. RFC 6266 wants `filename*=UTF-8''…` for
+ * anything outside ISO-8859-1, so `facture-café.pdf` may render mojibake in the
+ * download name. It is a cosmetic bug, not a safety one, and the fix is a
+ * second `filename*` parameter — see `storage/CLAUDE.md`.
  */
 export function contentDisposition(filename: string): string {
-  const safe = filename.replace(/[\r\n"\\]/g, '').trim();
+  // The control characters in this class are deliberate, not a paste accident —
+  // stripping them is the entire point of the function.
+  const safe = filename.replace(/[\x00-\x1f\x7f-\x9f"\\]/g, '').trim();
   return safe === '' ? 'inline' : `inline; filename="${safe}"`;
 }
 

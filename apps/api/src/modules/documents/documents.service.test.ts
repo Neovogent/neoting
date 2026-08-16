@@ -74,9 +74,18 @@ interface Calls {
  * the right `where`, `orderBy` and `take` reach it, and that the child queries
  * never run when the parent lookup came back empty.
  */
-function harness(options: { document?: DocumentRow | null; children?: { id: string; createdAt: Date }[] } = {}) {
+function harness(
+  options: {
+    document?: DocumentRow | null;
+    /** More than one row, for the paging tests — `document` handles the single-row cases. */
+    documents?: DocumentRow[];
+    children?: { id: string; createdAt: Date }[];
+  } = {},
+) {
   const calls: Calls = { documentFindMany: [], childFindMany: [], presignGet: [] };
-  const rows = options.document === undefined ? [doc('doc_1')] : options.document === null ? [] : [options.document];
+  const rows =
+    options.documents ??
+    (options.document === undefined ? [doc('doc_1')] : options.document === null ? [] : [options.document]);
   const children = options.children ?? [];
 
   const tx = {
@@ -230,6 +239,59 @@ test('a malformed cursor is a 400, not a silent first page', async () => {
   const err = await grab(() => service.listDocuments(CTX, listQuery({ cursor: 'not-a-cursor!!' })));
   expect((err as AppException).getStatus()).toBe(HttpStatus.BAD_REQUEST);
   expect((err as AppException).code).toBe('NT-VAL-001');
+});
+
+test("page 1's own cursor is accepted by page 2 and seeks past the last row", async () => {
+  // REGRESSION. The fingerprint was computed over the whole parsed query,
+  // *including* `cursor` — which is undefined on page 1 and a token on page 2, so
+  // the digest could never match on the way back and EVERY page-2 request 400'd
+  // with "issued for a different set of filters". Nothing caught it: the only
+  // cursor test asserted a malformed one is refused, which a broken fingerprint
+  // does correctly. It would have surfaced on the first real paginated request.
+  const rows = [doc('doc_1'), doc('doc_2'), doc('doc_3')];
+  const query = { limit: 2, state: ['READY'] };
+
+  const first = harness({ documents: rows });
+  const page1 = await first.service.listDocuments(CTX, listQuery(query));
+  expect(page1.pageInfo.hasMore).toBe(true);
+  const cursor = page1.pageInfo.nextCursor;
+  expect(cursor).not.toBeNull();
+
+  const second = harness({ documents: rows });
+  const page2 = await second.service.listDocuments(CTX, listQuery({ ...query, cursor }));
+
+  // Not a 400 — and more than that, the cursor was decoded and turned into a
+  // seek, ANDed under the same filters rather than replacing them.
+  expect(second.calls.documentFindMany[0]?.where).toEqual({
+    AND: [
+      { state: { in: ['READY'] } },
+      {
+        OR: [
+          { receivedAt: { lt: NOW } }, // a Date, never the ISO string — Postgres would compare text
+          { receivedAt: NOW, id: { lt: 'doc_2' } }, // the id tie-break, since every row shares receivedAt
+        ],
+      },
+    ],
+  });
+  expect(page2.data).toHaveLength(2);
+});
+
+test('receivedFrom is INCLUSIVE and receivedTo is EXCLUSIVE, so a midnight document belongs to one day only', async () => {
+  // Half-open is what makes day-by-day paging work: yesterday's `receivedTo` is
+  // today's `receivedFrom`. `lte` would show a document landing exactly on
+  // midnight in both days, and the contract says "Exclusive upper bound".
+  const { calls, service } = harness();
+  await service.listDocuments(
+    CTX,
+    listQuery({ receivedFrom: '2026-08-01T00:00:00.000Z', receivedTo: '2026-09-01T00:00:00.000Z' }),
+  );
+
+  expect(calls.documentFindMany[0]?.where).toEqual({
+    receivedAt: {
+      gte: new Date('2026-08-01T00:00:00.000Z'),
+      lt: new Date('2026-09-01T00:00:00.000Z'),
+    },
+  });
 });
 
 // ---- get ----

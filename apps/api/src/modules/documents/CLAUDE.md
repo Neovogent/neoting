@@ -76,10 +76,43 @@ Three things about it that are load-bearing:
   the query still runs inside `scopedDb`, so RLS is the boundary either way, and
   the worst outcome is a page of the caller's own rows starting somewhere odd.
   Signing would add a secret to rotate for a boundary it does not move.
+- **The fingerprint must be computed over the query MINUS the cursor**, which is
+  why `listDocuments` passes `{ ...query, cursor: undefined }` and not `query`.
+  This shipped wrong and is worth knowing about before touching it. `cursor` is a
+  field *of* the parsed `ListQuery`: on page 1 it is undefined and
+  `stableStringify` drops it, on page 2 it is the token the client just sent
+  back, which folds into the digest — so the fingerprint sealed into a cursor
+  could never match the one recomputed when that cursor came back, and **every
+  page-2 request 400'd** with "issued for a different set of filters". The
+  fingerprint has to cover what identifies the *list*; the caller's position in
+  it is not part of that. `listChildren` had it right (`{ documentId, cursor:
+  undefined, limit }`) and this did not, which is the shape to copy.
+  Nothing caught it: the only cursor test asserted a malformed cursor is refused,
+  and a broken fingerprint does that correctly. The regression test is *"page 1's
+  own cursor is accepted by page 2 and seeks past the last row"* — a genuine
+  two-page round trip, which is the only shape that would have.
 
 The envelope is shaped as the contract's `{ data, pageInfo }`, so a service
 method returns `toPage(...)` directly and there is no hand-written mapping step
 in between to drift from the spec.
+
+## The filters, and two that are easy to get wrong
+
+`buildFilters` is **not a security boundary** — read the comment on it before
+adding anything. Two details there are load-bearing:
+
+- **The date range is half-open: `receivedFrom` is `gte`, `receivedTo` is `lt`.**
+  The asymmetry is the contract's, not a typo — `openapi.yaml` documents them as
+  "Inclusive lower bound" and "Exclusive upper bound". It is what makes
+  day-by-day paging work: yesterday's `receivedTo` is today's `receivedFrom`, and
+  a document landing exactly on midnight belongs to exactly one of those days
+  rather than both. This was `lte` on the first pass; a test now pins it.
+- **`q` sequentially scans, at every needle length.** `contains` is
+  `ILIKE '%q%'`, and a leading wildcard cannot use a B-tree index. The contract's
+  2-char minimum on `q` bounds how wide the *result* is and does nothing whatever
+  to the plan — an earlier comment in the source claimed the minimum kept this
+  off a full scan, which was false and has been corrected. The fix is a `pg_trgm`
+  GIN index, which is a `prisma/` change and so a contract-change issue (G7).
 
 ## `presignGet` — a link, never the bytes
 
@@ -156,6 +189,15 @@ controller → guard → service → RLS path end to end.
 - [ ] `DocumentEvent.detail` redaction, once `ScopeContext` carries a role.
 - [ ] Contract change (Shakib, G7): `DocumentSummary.businessId` must admit null,
       or the Unrouted queue cannot be represented honestly.
-- [ ] `q` is `contains` (ILIKE substring), not full-text. Real FTS needs a
-      `tsvector` column — a `prisma/` change, so a contract-change issue.
+- [ ] `q` is `contains` (ILIKE substring), not full-text, and it **sequentially
+      scans** — see the filters section. A `pg_trgm` GIN index (or real FTS on a
+      `tsvector` column) is a `prisma/` change, so a contract-change issue.
+- [ ] Contract change (Shakib, G7): `listDocumentEvents` and
+      `listDocumentExtractions` declare no `400` response, but both can return
+      one — a malformed or replayed `cursor` is a 400 from `decodeCursor`. A
+      client generated from the spec has no branch for it.
+- [ ] Contract change (Shakib, G7): sorting by `totalPence` or `documentDate` has
+      no supporting index. `documents` is indexed on `(businessId, receivedAt)`
+      and `(businessId, byteHash)` only, so those two sorts are a scan-and-sort
+      over everything RLS leaves visible.
 - [ ] Update this file on exit.

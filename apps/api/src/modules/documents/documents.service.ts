@@ -98,9 +98,19 @@ export class DocumentsService {
       order: query.order,
       limit: query.limit,
       cursor: query.cursor,
-      // The whole parsed query, so a cursor minted for one filter set is refused
-      // rather than mis-seeked against another.
-      query,
+      // The parsed query MINUS the cursor, so a cursor minted for one filter set
+      // is refused rather than mis-seeked against another.
+      //
+      // `cursor: undefined` is the load-bearing part, not tidiness. `query` is
+      // the whole parsed `ListQuery`, and `cursor` is one of its fields. On page
+      // 1 it is undefined and `stableStringify` drops it; on page 2 it is the
+      // token the client just sent back, which `stableStringify` folds into the
+      // digest — so the fingerprint stored inside the cursor could never match
+      // the one recomputed when that cursor came back, and EVERY page-2 request
+      // 400'd with "issued for a different set of filters". The fingerprint has
+      // to cover what identifies the list, and the caller's position in it is
+      // not part of that. `listChildren` had it right; this did not.
+      query: { ...query, cursor: undefined },
     };
     const seek = pageQuery(request);
     const filters = buildFilters(query);
@@ -277,8 +287,14 @@ function buildFilters(query: ListQuery): Prisma.DocumentWhereInput {
     ...(query.receivedFrom !== undefined || query.receivedTo !== undefined
       ? {
           receivedAt: {
+            // `gte` and `lt`, and the asymmetry is the contract's, not a typo:
+            // `receivedFrom` is documented "Inclusive lower bound" and
+            // `receivedTo` "Exclusive upper bound" (`openapi.yaml`). Half-open
+            // is what makes day-by-day paging work — yesterday's `receivedTo`
+            // is today's `receivedFrom`, and a document landing exactly on
+            // midnight belongs to exactly one of those days rather than both.
             ...(query.receivedFrom !== undefined ? { gte: new Date(query.receivedFrom) } : {}),
-            ...(query.receivedTo !== undefined ? { lte: new Date(query.receivedTo) } : {}),
+            ...(query.receivedTo !== undefined ? { lt: new Date(query.receivedTo) } : {}),
           },
         }
       : {}),
@@ -287,9 +303,15 @@ function buildFilters(query: ListQuery): Prisma.DocumentWhereInput {
           // `contains` is ILIKE '%q%' — deliberately a substring match and not a
           // full-text index. Real FTS needs a `tsvector` column, which is a
           // `prisma/` change and therefore a contract-change issue (G7), not
-          // something to slip in here. The `q` parameter has a 2-char minimum in
-          // the contract, which is what keeps this off a full scan for a single
-          // letter.
+          // something to slip in here.
+          //
+          // ⚠ This SEQUENTIALLY SCANS every row RLS leaves visible, on every
+          // search, at every needle length. A leading-wildcard ILIKE cannot use
+          // a B-tree index — the contract's 2-char minimum on `q` bounds how
+          // wide the *result* is, and does nothing whatever to the plan. An
+          // earlier version of this comment claimed the minimum kept this off a
+          // full scan; that was false, and believing it is what would stop the
+          // next reader adding the `pg_trgm` GIN index this actually needs.
           OR: [
             { supplierName: { contains: query.q, mode: 'insensitive' as const } },
             { originalFilename: { contains: query.q, mode: 'insensitive' as const } },
