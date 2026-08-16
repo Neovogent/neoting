@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 import { HttpStatus } from '@nestjs/common';
 import { expect, test } from 'vitest';
 
+import type { Document as DocumentRow } from '@prisma/client';
+
 import type { DocumentUploadRequest } from '@neoting/contracts/model';
 
 import type { PrismaClient } from '../../../common/db/prisma.js';
@@ -18,16 +20,47 @@ const SECRET = 'svc-secret';
 const CTX: ScopeContext = ScopeContextSchema.parse({ actorId: 'usr_1', practiceId: 'prac_1' });
 
 /**
- * A Prisma stand-in for the two reads these tests reach: the business
- * reachability lookup in `createUpload`, and nothing else. `business === null`
- * simulates a business RLS does not let this caller see — the real policy does
- * the same thing by returning no row, so the service branch under test is
- * identical. The persist path is the integration test's job, not this file's.
+ * The columns Postgres fills in that `persistDocument` never writes. They are
+ * here only because `toDocumentResponse` reads every one of them, and calls
+ * `.toISOString()` on the three `Date`s — a row without them throws before the
+ * assertion under test is reached. Fixed instants, so a response can be compared
+ * with `toEqual` across two calls.
+ */
+const NOW = new Date('2026-08-16T09:00:00.000Z');
+const DOCUMENT_DEFAULTS = {
+  docType: null, supplierName: null, customerName: null, documentDate: null, dueDate: null,
+  currency: null, totalPence: null, taxPence: null, reference: null, categoryCode: null,
+  description: null, projectRef: null, parentDocumentId: null, failureCode: null,
+  failureMessage: null, archivedAt: null, perceptualHash: null, submitterLabel: null,
+  receivedLocal: null, routingDecision: null, routingConfidence: null, pageRange: null,
+  receivedAt: NOW, createdAt: NOW, updatedAt: NOW,
+};
+
+/**
+ * A Prisma stand-in for the reads these tests reach: the business reachability
+ * lookup in `createUpload`, and a documents map just real enough to make
+ * `persistDocument`'s derived-id idempotency observable — a second completion of
+ * the same intent has to *find* a row for `created: false` to mean anything.
+ *
+ * `business === null` simulates a business RLS does not let this caller see —
+ * the real policy does the same thing by returning no row, so the service branch
+ * under test is identical. What Postgres does with the *write* (the WITH CHECK,
+ * the real unique violation) is the integration test's job, not this file's.
  */
 function fakePrisma(business: { id: string; practiceId: string | null } | null): PrismaClient {
+  const documents = new Map<string, DocumentRow>();
   const tx = {
     $executeRaw: async () => 0,
     business: { findUnique: async () => business },
+    document: {
+      findUnique: async ({ where }: { where: { id: string } }) => documents.get(where.id) ?? null,
+      create: async ({ data }: { data: Record<string, unknown> & { id: string } }) => {
+        const row = { ...DOCUMENT_DEFAULTS, ...data } as unknown as DocumentRow;
+        documents.set(data.id, row);
+        return row;
+      },
+    },
+    documentEvent: { create: async () => ({}) },
   };
   return { $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx) } as unknown as PrismaClient;
 }
@@ -157,4 +190,45 @@ test('completeUpload is 409 NT-ING-003 when the landed bytes do not match the de
   const err = await grab(() => service.completeUpload(CTX, token, 'b'.repeat(64)));
   expect((err as AppException).getStatus()).toBe(HttpStatus.CONFLICT);
   expect((err as AppException).code).toBe('NT-ING-003');
+});
+
+test('a second completion of the same intent returns the same document and does not re-enqueue', async () => {
+  // The `created` gate. Both calls pass NO Idempotency-Key, so the replay store
+  // cannot short-circuit the second one — it runs the whole path and is stopped
+  // only by `persistDocument` finding the row under the id derived from the
+  // uploadId. That is the durable guarantee; the in-memory store is not.
+  //
+  // Re-enqueuing is not harmless: `BullmqIngestQueue` sets `removeOnComplete`,
+  // so its jobId dedupe expires the moment the first job finishes, and a second
+  // job would be accepted and sanitise the document twice.
+  const { store, queue, service } = harness();
+  const bytes = Buffer.from('same-bytes');
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  const token = tokenFor(store, bytes, Date.now() + 60_000);
+
+  const first = await service.completeUpload(CTX, token, hash);
+  const second = await service.completeUpload(CTX, token, hash);
+
+  expect(second.id).toBe(first.id); // one document, not two
+  expect(second).toEqual(first);
+  expect(queue.enqueued).toHaveLength(1); // and one sanitisation job
+});
+
+test('completeUpload: same Idempotency-Key + different payload is 409 NT-IDM-001', async () => {
+  const { store, queue, service } = harness();
+  const bytes = Buffer.from('same-bytes');
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  const token = tokenFor(store, bytes, Date.now() + 60_000);
+
+  const first = await service.completeUpload(CTX, token, hash, 'key-c');
+  expect(await service.completeUpload(CTX, token, hash, 'key-c')).toEqual(first); // replay
+
+  // Same key, a different declared hash. The replay guard runs BEFORE the token
+  // is verified, so this conflict is NT-IDM-001 and not the NT-ING-003 the same
+  // wrong hash would produce without the key — both are 409, and only the code
+  // tells the caller whether to fix their hash or their key.
+  const err = await grab(() => service.completeUpload(CTX, token, 'c'.repeat(64), 'key-c'));
+  expect((err as AppException).getStatus()).toBe(HttpStatus.CONFLICT);
+  expect((err as AppException).code).toBe('NT-IDM-001');
+  expect(queue.enqueued).toHaveLength(1); // neither the replay nor the conflict enqueued
 });

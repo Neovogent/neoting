@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { ScopeContextSchema } from '../../../common/db/scope-context.js';
 import { scopedDb } from '../../../common/db/scoped-db.js';
 import type { AppException } from '../../../common/problem/problem.js';
+import type { DocumentStore } from '../storage/document-store.js';
 import { createS3Client, S3DocumentStore } from '../storage/s3-document-store.js';
 import { FixtureIngestQueue } from '../webhooks/whatsapp/ingest-queue.js';
 import { InMemoryIdempotencyStore } from './idempotency-store.js';
@@ -115,16 +116,42 @@ afterAll(async () => {
   await app?.$disconnect();
 });
 
-function makeService(): { service: WebUploadService; queue: FixtureIngestQueue } {
+function makeService(documentStore: DocumentStore = store): { service: WebUploadService; queue: FixtureIngestQueue } {
   // The queue stays a fixture on purpose: this test is about the HTTP/storage/DB
   // path, and asserting on `queue.enqueued` proves the handoff without making
   // Redis a second reason for the suite to be red.
   const queue = new FixtureIngestQueue();
-  const service = new WebUploadService(app, store, queue, new InMemoryIdempotencyStore(), {
+  const service = new WebUploadService(app, documentStore, queue, new InMemoryIdempotencyStore(), {
     uploadSecret: SECRET,
     uploadTtlSeconds: 900,
   });
   return { service, queue };
+}
+
+/**
+ * The real store, wrapped to count `presignPut`. Delegation is written out rather
+ * than spread because `S3DocumentStore` is a class and its methods live on the
+ * prototype, which `{ ...store }` would not copy.
+ *
+ * This is what lets the cross-tenant test assert the NEGATIVE its name claims.
+ * Without it the test proves only that the call threw 404 — and a refactor that
+ * moved the presign above the RLS lookup would still mint a URL into another
+ * practice's prefix and still pass.
+ */
+function countingStore(inner: DocumentStore): { store: DocumentStore; presignPutCalls: () => number } {
+  let calls = 0;
+  return {
+    presignPutCalls: () => calls,
+    store: {
+      put: (input) => inner.put(input),
+      get: (key) => inner.get(key),
+      head: (key) => inner.head(key),
+      presignPut: (input) => {
+        calls += 1;
+        return inner.presignPut(input);
+      },
+    },
+  };
 }
 
 /** The PUT a browser would do. Failure is surfaced with the body, not as a bare status. */
@@ -220,7 +247,8 @@ describe.skipIf(!enabled)('web upload, end to end', () => {
     // Proven here against the REAL `businesses_tenant` policy: the unit test can
     // only show the branch fires when `findUnique` returns null; this shows that
     // Postgres is what returns null.
-    const { service, queue } = makeService();
+    const spy = countingStore(store);
+    const { service, queue } = makeService(spy.store);
     const before = await owner.document.count({ where: { practiceId: P_B } });
 
     const error = await service
@@ -238,6 +266,10 @@ describe.skipIf(!enabled)('web upload, end to end', () => {
 
     // 404, never 403 — a 403 would confirm the business exists.
     expect(error?.getStatus()).toBe(HttpStatus.NOT_FOUND);
+    // The assertion the test is named for: no URL was ever minted. This is the
+    // one that pins the ORDER of the check against the presign, and it is the
+    // only one here that a reordering refactor would break.
+    expect(spy.presignPutCalls()).toBe(0);
     expect(queue.enqueued).toHaveLength(0);
     expect(await owner.document.count({ where: { practiceId: P_B } })).toBe(before);
   });

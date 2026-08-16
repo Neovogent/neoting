@@ -86,6 +86,24 @@ const EnvSchema = z.object({
       message: 'AUTH_MODE=fixture trusts X-NT-* request headers and must never run in production — set AUTH_MODE=session (S1)',
     });
   }
+  // Same gate, different failure. An empty UPLOAD_URL_SECRET does fail closed —
+  // `requireSecret` refuses to sign or verify with it, so nothing forgeable is
+  // ever minted. But it fails closed at REQUEST time, which means the process
+  // boots, passes its ALB health check, reports steady state, and then 500s
+  // every upload. That reads as a broken lane rather than a missing variable,
+  // and the deploy that caused it is already green.
+  //
+  // This is where it differs from the Meta secrets, which use the same empty
+  // default: an unset META_APP_SECRET rejects a webhook Meta may never send to
+  // that environment anyway. UPLOAD_URL_SECRET gates the whole web-upload lane,
+  // so a boot failure is the cheaper and louder outcome (found by review of #76).
+  if (env.NODE_ENV === 'production' && env.UPLOAD_URL_SECRET === '') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['UPLOAD_URL_SECRET'],
+      message: 'UPLOAD_URL_SECRET must be set in production — an empty secret cannot sign or verify upload intents, so every upload would 500 (#76)',
+    });
+  }
 });
 
 export type Env = Readonly<z.infer<typeof EnvSchema>>;

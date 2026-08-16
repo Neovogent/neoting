@@ -62,14 +62,36 @@ Mapped at the controller/service boundary, from the `ErrorCode` enum in
 | `NT-ING-001` | 413 | declared size over the channel cap |
 | `NT-ING-002` | 415 | declared MIME off the allowlist |
 | `NT-ING-003` | 409 | **byte hash mismatch between client and storage** |
-| `NT-ING-005` | 410 | the upload intent expired |
+| `NT-ING-005` | 410 ⚠ | the upload intent expired |
 | `NT-IDM-001` | 409 | `Idempotency-Key` replayed with a different payload |
-| `NT-VAL-001` | 400/404 | schema failure, forged token, unreachable business |
+| `NT-VAL-001` | 400 / 404 ⚠ | schema failure, forged token, unreachable business |
 
 ⚠ The hash mismatch is **`NT-ING-003`**. `NT-ING-004` is *file rejected by
 sanitisation* — a different failure, at a different stage, that this endpoint
 cannot produce because sanitisation has not run yet. It was wrong in the first
 draft; the enum is the authority, not intuition.
+
+⚠ **Two of those statuses are emitted but NOT declared on the operation.** The
+codes are all in the `ErrorCode` enum — that part is fine — but a code being in
+the enum and a status being declared on the operation are separate things, and
+only the first was checked when this table was first written:
+
+| Emitted | Operation | Declared in `openapi.yaml`? |
+|---|---|---|
+| `410` (`NT-ING-005`, expired) | `completeDocumentUpload` | **no** — 201/400/401/404/409/429/500 |
+| `404` (`NT-VAL-001`, unreachable business) | `createDocumentUpload` | **no** — 201/400/401/**403**/409/413/415/429/500 |
+
+The generated client therefore has no typed branch for either. The second is the
+more interesting one: `createDocumentUpload` declares **403**, and
+`packages/contracts/CLAUDE.md` states as a load-bearing convention that a
+`businessId` the caller cannot reach returns *"`404`, never `403` — `403` would
+confirm the record exists"*. So the spec contradicts its own rule on this
+operation, and the code follows the rule.
+
+**Nothing here is fixed by editing the code.** `openapi.yaml` is LAW (G7) and
+both entries need a contract-change issue approved by Shakib. Raised on #76;
+until it lands this table is the honest record of the divergence rather than a
+claim the contract agrees.
 
 `NT-VAL-001` is the house fallback for an otherwise-uncoded 4xx (see
 `ProblemFilter.CODE_BY_STATUS`), which is why it covers both a 400 and the 404.
@@ -116,6 +138,26 @@ document id from the `uploadId` (`documentIdFor`), so a replayed completion
 finds the existing row instead of creating a second one, and a lost primary-key
 race is caught as `P2002` and treated as the no-op it is — the same shape as the
 worker's `PrismaDocumentSink` (#20).
+
+`persistDocument` returns `{ row, created }` and **only a `created: true`
+completion enqueues sanitisation.** That is not tidiness. `BullmqIngestQueue`
+sets `removeOnComplete: true`, so its `jobId` dedupe holds only while the job is
+still in the queue — once the first sanitisation job finishes and is removed, a
+second completion of the same intent re-enqueues successfully. Harmless today
+(the worker no-ops on a job that carries a `documentId`), a double-sanitisation
+the moment the worker-side TODO below lands. Same shape, same reason, as
+`PrismaDocumentSink`.
+
+⚠ **The store is check-then-act, and that is a real race, not a theoretical
+one.** `get(key)` → do the work → `put(key, response)` is not atomic. Two
+concurrent `createUpload`s with the same `Idempotency-Key` both read null and
+both run: two nonces, two presigned URLs, two signed tokens, and only one
+response recorded. The caller whose response lost is holding a URL that no
+replay will ever return. `completeUpload` is protected from the *document*
+duplicating by the derived id, but both callers still fetch and hash the bytes.
+The fix is store-before-work (`getOrReserve`, or `SET NX PX` once the store is
+Redis), and it belongs with the durable store below rather than bolted onto a
+`Map`.
 
 ## No side-effect endpoint outside Review → Approve
 
@@ -165,6 +207,20 @@ Run 16 Aug 2026 against `docker compose up -d`: 4/4 green. Vitest loads `.env`
 itself, so `DATABASE_URL`/`DIRECT_URL` are picked up automatically; only
 `RUN_S3_INTEGRATION=1` has to be set by hand.
 
+Two things the unit tests pin that are easy to break silently, both added by the
+review of #76:
+
+- **The `created` gate.** `web-upload.service.test.ts` completes the same intent
+  twice with **no** `Idempotency-Key`, so the replay store cannot short-circuit
+  the second call — it runs the whole path and is stopped only by the derived id.
+  One document, **one** enqueued job. The fake Prisma gained a documents map for
+  this; without a row to find, `created: false` is unreachable and untestable.
+- **Nothing is presigned for an unreachable business.** The integration test
+  wraps the real store in `countingStore()` and asserts `presignPutCalls() === 0`.
+  A 404 assertion alone does not prove that: a refactor moving the presign above
+  the RLS lookup would still mint a URL into another practice's prefix and still
+  return 404.
+
 ## Out of scope (issue #76)
 
 - **Auto-split.** `splitMode` is accepted, carried in the claims and stored, but
@@ -183,7 +239,12 @@ itself, so `DATABASE_URL`/`DIRECT_URL` are picked up automatically; only
 
 - [ ] Durable `IdempotencyStore` (Redis) — the in-memory one is per-instance, so
       a replay that hits a different API task does the work twice. The derived
-      document id keeps that correct, not fast.
+      document id keeps that correct, not fast. **Do the store-before-work
+      reservation in the same change** (see the race above); a durable store that
+      is still check-then-act moves the race rather than closing it.
+- [ ] Contract change (Shakib, G7): declare `410` on `completeDocumentUpload`,
+      and `404` on `createDocumentUpload` — where the `403` it currently declares
+      looks wrong against the contracts package's own "404, never 403" rule.
 - [ ] Worker-side sanitisation for `source: 'web_upload'` jobs, then map the
       pipeline's `Rejection` onto `NT-ING-004` on the document, not on a response
       (by then the HTTP call is long finished).

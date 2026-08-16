@@ -68,7 +68,17 @@ export class WebUploadService {
       throw new AppException('NT-ING-001', HttpStatus.PAYLOAD_TOO_LARGE, `Declared size exceeds the ${maxBytes}-byte cap for this channel`);
     }
     if (!isAllowedMime(request.mimeType)) {
-      throw new AppException('NT-ING-002', HttpStatus.UNSUPPORTED_MEDIA_TYPE, `Declared MIME type '${request.mimeType}' is not accepted`);
+      // Names the field, never the value. `mimeType` is client-submitted, and
+      // this module's rule is that error responses — which are logged and
+      // screenshotted far more freely than request bodies — carry no echoed
+      // input. The cap message above is fine: `maxBytes` is a server constant.
+      throw new AppException(
+        'NT-ING-002',
+        HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+        'The declared MIME type is not on the allowlist for this channel',
+        undefined,
+        [{ field: 'mimeType', message: 'Not an accepted document type for this channel.' }],
+      );
     }
 
     // THE BUSINESS IS RESOLVED THROUGH RLS BEFORE ANYTHING IS SIGNED, and that
@@ -158,20 +168,37 @@ export class WebUploadService {
       throw new AppException('NT-ING-003', HttpStatus.CONFLICT, 'The uploaded bytes do not match the declared hash');
     }
 
-    const row = await this.persistDocument(ctx, uploadId, claims, byteHash);
-    await this.enqueueSanitisation(row.id, claims, byteHash);
+    const { row, created } = await this.persistDocument(ctx, uploadId, claims, byteHash);
+    // Only the completion that actually CREATED the document enqueues. A second
+    // completion of the same intent — a replay with a different Idempotency-Key,
+    // or none at all — finds the existing row and must not enqueue again:
+    // `BullmqIngestQueue` sets `removeOnComplete: true`, so jobId dedupe lasts
+    // only while the job is in the queue, and a re-enqueue after the first job
+    // finished is accepted. Harmless today (the worker no-ops on a job with a
+    // documentId), a double-sanitisation the moment that TODO lands.
+    // Same `{ row, created }` shape as `PrismaDocumentSink` (#20), for the same reason.
+    if (created) await this.enqueueSanitisation(row.id, claims, byteHash);
 
     const response = toDocumentResponse(row);
     await this.remember(idempotencyKey, { uploadId, byteHash }, response);
     return response;
   }
 
-  /** Idempotent on the derived id, so a replayed completion returns the same document rather than a second one. */
-  private async persistDocument(ctx: ScopeContext, uploadId: string, claims: UploadClaims, byteHash: string): Promise<DocumentRow> {
+  /**
+   * Idempotent on the derived id, so a replayed completion returns the same
+   * document rather than a second one. `created` distinguishes the two, because
+   * the caller must only enqueue downstream work on a real creation.
+   */
+  private async persistDocument(
+    ctx: ScopeContext,
+    uploadId: string,
+    claims: UploadClaims,
+    byteHash: string,
+  ): Promise<{ row: DocumentRow; created: boolean }> {
     const id = documentIdFor(uploadId);
     const outcome = await scopedDb(this.prisma, ctx, async (db) => {
       const existing = await db.document.findUnique({ where: { id } });
-      if (existing !== null) return existing;
+      if (existing !== null) return { row: existing, created: false };
       try {
         const created = await db.document.create({
           data: {
@@ -192,16 +219,17 @@ export class WebUploadService {
         await db.documentEvent.create({
           data: { documentId: id, stage: 'upload', outcome: 'received', traceId: currentTraceId() ?? null },
         });
-        return created;
+        return { row: created, created: true };
       } catch (error) {
         if (isUniqueViolation(error)) return null; // concurrent completion won the race
         throw error;
       }
     });
     if (outcome !== null) return outcome;
+    // Lost the primary-key race, so the winner created it and enqueued for it.
     const row = await scopedDb(this.prisma, ctx, (db) => db.document.findUnique({ where: { id } }));
     if (row === null) throw new Error(`document ${id} vanished after a unique-violation`);
-    return row;
+    return { row, created: false };
   }
 
   private async enqueueSanitisation(documentId: string, claims: UploadClaims, byteHash: string): Promise<void> {
