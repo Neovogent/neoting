@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { createIntl } from 'react-intl';
 
+import { DEFAULT_LOCALE } from '../i18n';
 import {
   assessTransaction,
   autoMatches,
@@ -21,7 +23,15 @@ import type { BankTransaction } from './types';
  * eager links the wrong invoice to the wrong payment silently; one that is too
  * shy buries the accountant in questions. The tests below are about which of
  * the two happens for a given transaction, not about the scoring internals.
+ *
+ * The match reasons are message descriptors formatted by the caller (#65), so
+ * the matcher takes an `intl`. `locale` and `defaultLocale` are both the source
+ * locale, which is how react-intl resolves each message to its own
+ * `defaultMessage` without reporting a missing translation — the sentences
+ * asserted below are the ones a user reads in en-GB.
  */
+
+const intl = createIntl({ locale: DEFAULT_LOCALE, defaultLocale: DEFAULT_LOCALE });
 
 const txn = (over: Partial<BankTransaction> = {}): BankTransaction => ({
   id: 't-test',
@@ -108,13 +118,13 @@ describe('matchCandidates', () => {
   it('never reaches into another client’s documents', () => {
     const other = txn({ clientId: '2', clientName: 'Cosmo Restaurants' });
 
-    expect(matchCandidates(other, seedDocuments, DEFAULT_MATCH_SETTINGS)).toEqual([]);
+    expect(matchCandidates(intl, other, seedDocuments, DEFAULT_MATCH_SETTINGS)).toEqual([]);
   });
 
   it('never offers a rejected document as the answer', () => {
     // d5 is Adobe, £61.99, rejected.
     const adobe = txn({ description: 'ADOBE', amount: 61.99, date: '02 Aug 2026' });
-    const candidates = matchCandidates(adobe, seedDocuments, DEFAULT_MATCH_SETTINGS);
+    const candidates = matchCandidates(intl, adobe, seedDocuments, DEFAULT_MATCH_SETTINGS);
 
     expect(candidates.map((c) => c.document.id)).not.toContain('d5');
   });
@@ -122,25 +132,25 @@ describe('matchCandidates', () => {
   it('drops a document that is older than the lookback allows', () => {
     const stale = txn({ date: '12 Aug 2030' });
 
-    expect(matchCandidates(stale, seedDocuments, DEFAULT_MATCH_SETTINGS)).toEqual([]);
+    expect(matchCandidates(intl, stale, seedDocuments, DEFAULT_MATCH_SETTINGS)).toEqual([]);
   });
 
   it('drops a document dated after the payment by more than the due window', () => {
     const early = txn({ date: '12 Aug 2025' });
 
-    expect(matchCandidates(early, seedDocuments, DEFAULT_MATCH_SETTINGS)).toEqual([]);
+    expect(matchCandidates(intl, early, seedDocuments, DEFAULT_MATCH_SETTINGS)).toEqual([]);
   });
 
   it('offers no more than a screenful', () => {
     const busy = txn({ amount: 1 });
 
-    expect(matchCandidates(busy, seedDocuments, DEFAULT_MATCH_SETTINGS).length).toBeLessThanOrEqual(6);
+    expect(matchCandidates(intl, busy, seedDocuments, DEFAULT_MATCH_SETTINGS).length).toBeLessThanOrEqual(6);
   });
 });
 
 describe('assessTransaction', () => {
   it('settles equal totals from the same merchant without asking', () => {
-    const verdict = assessTransaction(find('t2'), seedDocuments, DEFAULT_MATCH_SETTINGS);
+    const verdict = assessTransaction(intl, find('t2'), seedDocuments, DEFAULT_MATCH_SETTINGS);
 
     expect(verdict.kind).toBe('confident');
     expect(verdict.best?.document.id).toBe('d1');
@@ -150,7 +160,7 @@ describe('assessTransaction', () => {
 
   it('hands over a refund it cannot pin down rather than guessing', () => {
     // t4 is a £212.40 Bidfood refund; no document explains it.
-    const verdict = assessTransaction(find('t4'), seedDocuments, DEFAULT_MATCH_SETTINGS);
+    const verdict = assessTransaction(intl, find('t4'), seedDocuments, DEFAULT_MATCH_SETTINGS);
 
     expect(verdict.kind).toBe('confused');
     expect(verdict.best?.kind).toBe('probable');
@@ -158,7 +168,7 @@ describe('assessTransaction', () => {
   });
 
   it('says plainly when nothing could explain a payment', () => {
-    const verdict = assessTransaction(find('t3'), seedDocuments, DEFAULT_MATCH_SETTINGS);
+    const verdict = assessTransaction(intl, find('t3'), seedDocuments, DEFAULT_MATCH_SETTINGS);
 
     expect(verdict.kind).toBe('none');
     expect(verdict.candidates).toEqual([]);
@@ -167,7 +177,7 @@ describe('assessTransaction', () => {
 
   it('asks rather than picking when two documents fit equally well', () => {
     const twin = { ...seedDocuments[0]!, id: 'd1-twin' };
-    const verdict = assessTransaction(find('t2'), [...seedDocuments, twin], DEFAULT_MATCH_SETTINGS);
+    const verdict = assessTransaction(intl, find('t2'), [...seedDocuments, twin], DEFAULT_MATCH_SETTINGS);
 
     expect(verdict.kind).toBe('confused');
     expect(verdict.candidates.length).toBeGreaterThan(1);
@@ -175,7 +185,7 @@ describe('assessTransaction', () => {
   });
 
   it('will not offer a probable fit at all when the practice has turned them off', () => {
-    const verdict = assessTransaction(find('t4'), seedDocuments, {
+    const verdict = assessTransaction(intl, find('t4'), seedDocuments, {
       ...DEFAULT_MATCH_SETTINGS,
       allowProbable: false,
     });
@@ -186,21 +196,21 @@ describe('assessTransaction', () => {
 
 describe('autoMatches', () => {
   it('links only what it can settle, and leaves the rest as questions', () => {
-    const linked = autoMatches(seedTransactions, seedDocuments, DEFAULT_MATCH_SETTINGS);
+    const linked = autoMatches(intl, seedTransactions, seedDocuments, DEFAULT_MATCH_SETTINGS);
 
     expect(linked.map((m) => [m.txnId, m.candidate.document.id])).toEqual([['t1', 'd4']]);
   });
 
   it('skips a transaction that already has its document', () => {
     // t2 arrives with matchedDocId 'd1' and must not be linked a second time.
-    const linked = autoMatches(seedTransactions, seedDocuments, DEFAULT_MATCH_SETTINGS);
+    const linked = autoMatches(intl, seedTransactions, seedDocuments, DEFAULT_MATCH_SETTINGS);
 
     expect(linked.map((m) => m.txnId)).not.toContain('t2');
   });
 
   it('never lets one document explain two payments', () => {
     const twice = [find('t1'), { ...find('t1'), id: 't1-again' }];
-    const linked = autoMatches(twice, seedDocuments, DEFAULT_MATCH_SETTINGS);
+    const linked = autoMatches(intl, twice, seedDocuments, DEFAULT_MATCH_SETTINGS);
 
     expect(linked).toHaveLength(1);
     expect(linked[0]?.candidate.document.id).toBe('d4');
@@ -234,7 +244,7 @@ describe('credit notes do not auto-link across suppliers (#67)', () => {
   });
 
   it('does not offer an unrelated supplier a confident credit-note match', () => {
-    const best = matchCandidates(refundFrom('RANDOM UNRELATED CO'), [currys], DEFAULT_MATCH_SETTINGS)[0];
+    const best = matchCandidates(intl, refundFrom('RANDOM UNRELATED CO'), [currys], DEFAULT_MATCH_SETTINGS)[0];
 
     // It still appears — a person should be asked — but never above the bar
     // that autoMatches links without asking.
@@ -242,20 +252,20 @@ describe('credit notes do not auto-link across suppliers (#67)', () => {
   });
 
   it('never auto-links it', () => {
-    const linked = autoMatches([refundFrom('RANDOM UNRELATED CO')], [currys], DEFAULT_MATCH_SETTINGS);
+    const linked = autoMatches(intl, [refundFrom('RANDOM UNRELATED CO')], [currys], DEFAULT_MATCH_SETTINGS);
 
     expect(linked).toHaveLength(0);
   });
 
   it('still auto-links a refund that is genuinely from the same supplier', () => {
-    const linked = autoMatches([refundFrom('CURRYS REFUND')], [currys], DEFAULT_MATCH_SETTINGS);
+    const linked = autoMatches(intl, [refundFrom('CURRYS REFUND')], [currys], DEFAULT_MATCH_SETTINGS);
 
     expect(linked.map((m) => m.candidate.document.id)).toEqual(['d4']);
     expect(linked[0]?.candidate.kind).toBe('credit-note');
   });
 
   it('keeps the unrelated refund visible rather than dropping it from review', () => {
-    const candidates = matchCandidates(refundFrom('RANDOM UNRELATED CO'), [currys], DEFAULT_MATCH_SETTINGS);
+    const candidates = matchCandidates(intl, refundFrom('RANDOM UNRELATED CO'), [currys], DEFAULT_MATCH_SETTINGS);
 
     expect(candidates).not.toHaveLength(0);
   });

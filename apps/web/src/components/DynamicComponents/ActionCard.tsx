@@ -32,6 +32,16 @@ const m = defineMessages({
     id: 'chase.actionCard.heading',
     defaultMessage: '{count, plural, one {# document missing} other {# documents missing}}',
   },
+  // The whole scope line, not the ` • {period} 2026` tail on its own: a
+  // fragment that opens with a separator and a space is not something a
+  // translator can place, and the leading space is exactly what an editor
+  // trims. With no period the line is the scope name alone — nothing to
+  // translate — so that branch stays a bare value rather than a message whose
+  // entire body is a placeholder.
+  scopeInPeriod: {
+    id: 'chase.actionCard.scopeInPeriod',
+    defaultMessage: '{scope} • {period} 2026',
+  },
   unverified: {
     id: 'chase.actionCard.unverified',
     defaultMessage: '{amount} unverified',
@@ -115,8 +125,7 @@ export function ActionCard({ clientIds, period }: { clientIds: string[]; period?
             {intl.formatMessage(m.heading, { count: items.length })}
           </h3>
           <p className="text-[13px] font-semibold text-zinc-500 mt-1 uppercase tracking-wider truncate">
-            {scopeName}
-            {period ? ` • ${period} 2026` : ''}
+            {period ? intl.formatMessage(m.scopeInPeriod, { scope: scopeName, period }) : scopeName}
           </p>
           <div className="flex flex-wrap gap-2 mt-4">
             <span className="inline-flex items-center px-3 py-1.5 rounded-full bg-raised text-[11px] font-bold text-white border border-white/5">

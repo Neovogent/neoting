@@ -1,6 +1,25 @@
 import { useState } from 'react';
 import { BarChart2 } from 'lucide-react';
+import { defineMessages, useIntl } from 'react-intl';
 import { seedAnalytics } from '../../lib/seed';
+
+const m = defineMessages({
+  heading: { id: 'shell.pipelineStats.heading', defaultMessage: 'Pipeline health' },
+  scope: { id: 'shell.pipelineStats.scope', defaultMessage: '{scope} • last 7 days' },
+  seriesTitle: { id: 'shell.pipelineStats.seriesTitle', defaultMessage: 'Documents processed per day' },
+  hovered: { id: 'shell.pipelineStats.hovered', defaultMessage: '{label} — {value}' },
+  peak: { id: 'shell.pipelineStats.peak', defaultMessage: 'peak {max}' },
+  // Not a `plural` argument, deliberately: Sunday's value is 1 in the seed, so
+  // an ICU plural here would render "1 document" where the DOM has always said
+  // "1 documents". #65 extracts copy; it does not rewrite it. Worth fixing as
+  // its own change.
+  barLabel: { id: 'shell.pipelineStats.barLabel', defaultMessage: '{label}: {value} documents' },
+  scopeNote: {
+    id: 'shell.pipelineStats.scopeNote',
+    defaultMessage:
+      'Pipeline metrics only. Ledger reporting — P&L, balance sheet, management accounts — is out of scope for this product.',
+  },
+});
 
 /**
  * Operational counts for the document pipeline (PRD section 11).
@@ -11,6 +30,7 @@ import { seedAnalytics } from '../../lib/seed';
  */
 export function PipelineStats({ scopeName }: { scopeName: string }) {
   const [hover, setHover] = useState<number | null>(null);
+  const intl = useIntl();
   const data = seedAnalytics.processed;
   const max = Math.max(...data.map((d) => d.value));
   const peak = data.findIndex((d) => d.value === max);
@@ -25,9 +45,9 @@ export function PipelineStats({ scopeName }: { scopeName: string }) {
           <BarChart2 size={22} />
         </div>
         <div className="min-w-0">
-          <h3 className="font-sans font-bold text-xl text-white tracking-tight">Pipeline health</h3>
+          <h3 className="font-sans font-bold text-xl text-white tracking-tight">{intl.formatMessage(m.heading)}</h3>
           <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider truncate">
-            {scopeName} • last 7 days
+            {intl.formatMessage(m.scope, { scope: scopeName })}
           </p>
         </div>
       </div>
@@ -45,9 +65,11 @@ export function PipelineStats({ scopeName }: { scopeName: string }) {
 
       <div className="p-6">
         <div className="flex items-baseline justify-between mb-5">
-          <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Documents processed per day</span>
+          <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">{intl.formatMessage(m.seriesTitle)}</span>
           <span className="text-[11px] font-semibold text-zinc-600 tabular-nums">
-            {hovered ? `${hovered.label} — ${hovered.value}` : `peak ${max}`}
+            {hovered
+              ? intl.formatMessage(m.hovered, { label: hovered.label, value: hovered.value })
+              : intl.formatMessage(m.peak, { max })}
           </span>
         </div>
 
@@ -57,7 +79,7 @@ export function PipelineStats({ scopeName }: { scopeName: string }) {
               key={d.label}
               onMouseEnter={() => setHover(i)}
               className="flex-1 h-full flex flex-col justify-end group"
-              aria-label={`${d.label}: ${d.value} documents`}
+              aria-label={intl.formatMessage(m.barLabel, { label: d.label, value: d.value })}
             >
               <div
                 className={`w-full rounded-t transition-colors ${
@@ -85,8 +107,7 @@ export function PipelineStats({ scopeName }: { scopeName: string }) {
       </div>
 
       <div className="bg-raised/50 px-6 py-4 text-[12px] text-zinc-500 font-semibold leading-relaxed">
-        Pipeline metrics only. Ledger reporting — P&amp;L, balance sheet, management accounts — is out of scope for this
-        product.
+        {intl.formatMessage(m.scopeNote)}
       </div>
     </div>
   );

@@ -1,4 +1,72 @@
+import { defineMessages, type IntlShape } from 'react-intl';
 import type { BankTransaction, Document, MatchKind, MatchSettings } from './types';
+
+/**
+ * Bank matching — the explanations, and why `intl` is a parameter.
+ *
+ * This is not a component, so it cannot call `useIntl`: every sentence below is
+ * a `MessageDescriptor` (`i18n/index.ts`). They are formatted here rather than
+ * handed back unformatted because a match reason ends up in `Match.reason`, a
+ * plain string in the shared contract, written once when the matcher links a
+ * transaction and read long afterwards — and because the reason that carries a
+ * day count is only the matcher's to fill in. So the caller passes its `intl`
+ * in and gets finished sentences back, which is the second shape §12.6 allows
+ * for a module with no hooks of its own. `dedupe.ts` does the same.
+ */
+const m = defineMessages({
+  reasonCreditNoteSameSupplier: {
+    id: 'pipeline.matching.reasonCreditNoteSameSupplier',
+    defaultMessage: 'Negative amount matched to a credit note or refund from the same supplier.',
+  },
+  reasonCreditNoteUnaligned: {
+    id: 'pipeline.matching.reasonCreditNoteUnaligned',
+    defaultMessage: 'Equal amount and a credit, but the supplier name or the date window does not line up.',
+  },
+  // Was `paid ${gap} day${Math.abs(gap) === 1 ? '' : 's'} after` — a plural
+  // built by concatenation, which §12.6 forbids. ICU keeps the existing
+  // behaviour exactly, negative gaps included: CLDR selects `one` for -1, which
+  // is what `Math.abs(gap) === 1` used to decide.
+  reasonExactWithGap: {
+    id: 'pipeline.matching.reasonExactWithGap',
+    defaultMessage:
+      '{days, plural, one {Equal totals, paid # day after the document date.} other {Equal totals, paid # days after the document date.}}',
+  },
+  reasonExactMerchantDiffers: {
+    id: 'pipeline.matching.reasonExactMerchantDiffers',
+    defaultMessage: 'Equal totals inside the date window, but the merchant name differs.',
+  },
+  reasonPartial: {
+    id: 'pipeline.matching.reasonPartial',
+    defaultMessage: 'This payment appears to settle several invoices, including this one.',
+  },
+  reasonProbable: {
+    id: 'pipeline.matching.reasonProbable',
+    defaultMessage: 'Merchant name normalises to the same supplier, but the amounts differ.',
+  },
+
+  verdictNothingExplains: {
+    id: 'pipeline.matching.verdictNothingExplains',
+    defaultMessage: 'Nothing in this client’s documents could explain it inside the current match window.',
+  },
+  // `other` alone, deliberately: the branch is guarded by `tied > 1`, so a
+  // singular can never render and inventing English for it would put a sentence
+  // in the catalogue that contradicts itself ("1 document … which one it is").
+  // A locale that distinguishes 2–4 from 5+ still adds those arms in its own
+  // catalogue, which a bare `{count}` would not have allowed.
+  verdictTied: {
+    id: 'pipeline.matching.verdictTied',
+    defaultMessage:
+      '{count, plural, other {# documents fit this transaction equally well — only you can say which one it is.}}',
+  },
+  verdictProbableOnly: {
+    id: 'pipeline.matching.verdictProbableOnly',
+    defaultMessage: 'The closest document is a probable fit only: the amount or the date does not line up exactly.',
+  },
+  verdictTooClose: {
+    id: 'pipeline.matching.verdictTooClose',
+    defaultMessage: 'The top two candidates are too close to call.',
+  },
+});
 
 export const DEFAULT_MATCH_SETTINGS: MatchSettings = {
   documentWindow: 30,
@@ -11,9 +79,10 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 /** Parses the "09 Aug 2026" format used throughout the pipeline. */
 export function parseDate(s: string): number | null {
-  const m = s.match(/^(\d{1,2})\s+([A-Za-z]{3})\w*\s+(\d{4})$/);
-  if (!m) return null;
-  const [, day, mon, year] = m;
+  // `parts`, not `m`: `m` is the message catalogue at module scope now.
+  const parts = s.match(/^(\d{1,2})\s+([A-Za-z]{3})\w*\s+(\d{4})$/);
+  if (!parts) return null;
+  const [, day, mon, year] = parts;
   // Unreachable: none of the three groups is optional, so a match means all
   // three participated.
   if (!day || !mon || !year) return null;
@@ -117,6 +186,7 @@ export interface Candidate {
  * and a clearly-labelled probable tier.
  */
 export function matchCandidates(
+  intl: IntlShape,
   txn: BankTransaction,
   documents: Document[],
   settings: MatchSettings,
@@ -160,7 +230,7 @@ export function matchCandidates(
         document: doc,
         confidence: 0.94,
         kind: 'credit-note',
-        reason: 'Negative amount matched to a credit note or refund from the same supplier.',
+        reason: intl.formatMessage(m.reasonCreditNoteSameSupplier),
       });
       continue;
     }
@@ -178,7 +248,7 @@ export function matchCandidates(
         document: doc,
         confidence: 0.6,
         kind: 'credit-note',
-        reason: 'Equal amount and a credit, but the supplier name or the date window does not line up.',
+        reason: intl.formatMessage(m.reasonCreditNoteUnaligned),
       });
       continue;
     }
@@ -188,7 +258,7 @@ export function matchCandidates(
         document: doc,
         confidence: 1,
         kind: 'exact',
-        reason: `Equal totals, paid ${gap ?? 0} day${Math.abs(gap ?? 0) === 1 ? '' : 's'} after the document date.`,
+        reason: intl.formatMessage(m.reasonExactWithGap, { days: gap ?? 0 }),
       });
       continue;
     }
@@ -198,7 +268,7 @@ export function matchCandidates(
         document: doc,
         confidence: 0.86,
         kind: 'exact',
-        reason: 'Equal totals inside the date window, but the merchant name differs.',
+        reason: intl.formatMessage(m.reasonExactMerchantDiffers),
       });
       continue;
     }
@@ -208,7 +278,7 @@ export function matchCandidates(
         document: doc,
         confidence: 0.72,
         kind: 'partial',
-        reason: 'This payment appears to settle several invoices, including this one.',
+        reason: intl.formatMessage(m.reasonPartial),
       });
       continue;
     }
@@ -218,7 +288,7 @@ export function matchCandidates(
         document: doc,
         confidence: 0.48,
         kind: 'probable',
-        reason: 'Merchant name normalises to the same supplier, but the amounts differ.',
+        reason: intl.formatMessage(m.reasonProbable),
       });
     }
   }
@@ -249,11 +319,12 @@ export interface MatchVerdict {
  * guess dressed up as a match is worse than an honest question.
  */
 export function assessTransaction(
+  intl: IntlShape,
   txn: BankTransaction,
   documents: Document[],
   settings: MatchSettings,
 ): MatchVerdict {
-  const candidates = matchCandidates(txn, documents, settings);
+  const candidates = matchCandidates(intl, txn, documents, settings);
 
   // Reading the first entry is the empty check: matchCandidates builds a dense
   // array, so a missing candidates[0] means there were none at all.
@@ -262,7 +333,7 @@ export function assessTransaction(
     return {
       kind: 'none',
       candidates,
-      reason: 'Nothing in this client’s documents could explain it inside the current match window.',
+      reason: intl.formatMessage(m.verdictNothingExplains),
     };
   }
 
@@ -274,10 +345,10 @@ export function assessTransaction(
   const tied = candidates.filter((c) => Math.abs(c.confidence - best.confidence) < 0.01).length;
   const reason =
     tied > 1
-      ? `${tied} documents fit this transaction equally well — only you can say which one it is.`
+      ? intl.formatMessage(m.verdictTied, { count: tied })
       : best.confidence < CONFIDENT_MIN
-        ? 'The closest document is a probable fit only: the amount or the date does not line up exactly.'
-        : 'The top two candidates are too close to call.';
+        ? intl.formatMessage(m.verdictProbableOnly)
+        : intl.formatMessage(m.verdictTooClose);
 
   return { kind: 'confused', candidates, best, reason };
 }
@@ -292,6 +363,7 @@ export interface AutoMatch {
  * starting data so the queue only ever contains genuine questions.
  */
 export function autoMatches(
+  intl: IntlShape,
   transactions: BankTransaction[],
   documents: Document[],
   settings: MatchSettings,
@@ -301,7 +373,7 @@ export function autoMatches(
 
   for (const txn of transactions) {
     if (txn.matchedDocId) continue;
-    const verdict = assessTransaction(txn, documents, settings);
+    const verdict = assessTransaction(intl, txn, documents, settings);
     // One document cannot explain two different transactions.
     if (verdict.kind !== 'confident' || !verdict.best || claimed.has(verdict.best.document.id)) continue;
     claimed.add(verdict.best.document.id);

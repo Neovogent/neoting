@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Building2, Bell, Users, KeyRound, Link2, Camera, Plus, Trash2 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
 import { Pill } from '../../components/DynamicComponents/DataTable';
 import { newMember } from '../../lib/business';
@@ -8,13 +9,328 @@ import { RolePicker } from '../../components/DynamicComponents/RolePicker';
 import { useConfirm } from '../../components/DynamicComponents/ConfirmProvider';
 import type { BusinessAccount, BusinessMember } from '../../lib/types';
 
+const m = defineMessages({
+  sectionBusiness: { id: 'portal.businessSettingsView.sectionBusiness', defaultMessage: 'Business' },
+  sectionSending: { id: 'portal.businessSettingsView.sectionSending', defaultMessage: 'Sending' },
+  sectionNotifications: { id: 'portal.businessSettingsView.sectionNotifications', defaultMessage: 'Notifications' },
+  sectionPeople: { id: 'portal.businessSettingsView.sectionPeople', defaultMessage: 'People' },
+  sectionConnections: { id: 'portal.businessSettingsView.sectionConnections', defaultMessage: 'Connections' },
+  sectionSecurity: { id: 'portal.businessSettingsView.sectionSecurity', defaultMessage: 'Security' },
+
+  accountantTitle: { id: 'portal.businessSettingsView.accountantTitle', defaultMessage: 'Your accountant' },
+  accountantSubtitle: {
+    id: 'portal.businessSettingsView.accountantSubtitle',
+    defaultMessage: 'Managed by the practice — contact them to change it',
+  },
+  practiceLabel: { id: 'portal.businessSettingsView.practiceLabel', defaultMessage: 'Practice' },
+  practiceValue: { id: 'portal.businessSettingsView.practiceValue', defaultMessage: 'Your accounting practice' },
+  industryLabel: { id: 'portal.businessSettingsView.industryLabel', defaultMessage: 'Industry on file' },
+  vatLabel: { id: 'portal.businessSettingsView.vatLabel', defaultMessage: 'VAT number' },
+  vatNotRegistered: { id: 'portal.businessSettingsView.vatNotRegistered', defaultMessage: 'Not registered' },
+  deadlineLabel: { id: 'portal.businessSettingsView.deadlineLabel', defaultMessage: 'Next deadline' },
+  createdLabel: { id: 'portal.businessSettingsView.createdLabel', defaultMessage: 'Account created' },
+  originSelfSignup: { id: 'portal.businessSettingsView.originSelfSignup', defaultMessage: 'Signed up directly' },
+  originAccountant: { id: 'portal.businessSettingsView.originAccountant', defaultMessage: 'Created by accountant' },
+
+  sendingTitle: { id: 'portal.businessSettingsView.sendingTitle', defaultMessage: 'How documents are sent' },
+  sendingSubtitle: {
+    id: 'portal.businessSettingsView.sendingSubtitle',
+    defaultMessage: 'Defaults for upload and camera capture',
+  },
+  sendingClassifyTitle: {
+    id: 'portal.businessSettingsView.sendingClassifyTitle',
+    defaultMessage: 'We work out what each document is',
+  },
+  sendingClassifyBody: {
+    id: 'portal.businessSettingsView.sendingClassifyBody',
+    defaultMessage:
+      'Bills, receipts and sales invoices can all go in together — you never have to sort them. Your accountant sees what we decided, and can correct it.',
+  },
+  multiPageLabel: { id: 'portal.businessSettingsView.multiPageLabel', defaultMessage: 'Multi-page capture' },
+  multiPageHint: {
+    id: 'portal.businessSettingsView.multiPageHint',
+    defaultMessage: 'Shoot several sheets and send them as one document.',
+  },
+  autoSubmitLabel: { id: 'portal.businessSettingsView.autoSubmitLabel', defaultMessage: 'Send as I shoot' },
+  autoSubmitHint: {
+    id: 'portal.businessSettingsView.autoSubmitHint',
+    defaultMessage: 'Skips the review step — each photo goes straight to your accountant.',
+  },
+
+  notificationsTitle: { id: 'portal.businessSettingsView.notificationsTitle', defaultMessage: 'When we contact you' },
+  notificationsSubtitle: {
+    id: 'portal.businessSettingsView.notificationsSubtitle',
+    defaultMessage: 'Chases always come by SMS — the rest is up to you',
+  },
+  smsLabel: {
+    id: 'portal.businessSettingsView.smsLabel',
+    defaultMessage: 'Text me when something is missing',
+  },
+  smsHint: { id: 'portal.businessSettingsView.smsHint', defaultMessage: 'Sent to {mobile}' },
+  smsHintNoMobile: { id: 'portal.businessSettingsView.smsHintNoMobile', defaultMessage: 'Sent to your mobile' },
+  emailLabel: { id: 'portal.businessSettingsView.emailLabel', defaultMessage: 'Email me too' },
+  emailHintNone: { id: 'portal.businessSettingsView.emailHintNone', defaultMessage: 'No email on file' },
+  weeklyLabel: { id: 'portal.businessSettingsView.weeklyLabel', defaultMessage: 'Weekly summary' },
+  weeklyHint: {
+    id: 'portal.businessSettingsView.weeklyHint',
+    defaultMessage: 'One message a week with anything still outstanding.',
+  },
+
+  peopleTitle: { id: 'portal.businessSettingsView.peopleTitle', defaultMessage: 'Who can send documents' },
+  peopleSubtitle: {
+    id: 'portal.businessSettingsView.peopleSubtitle',
+    defaultMessage: 'Staff can photograph receipts without ever seeing your figures',
+  },
+  peopleEmpty: {
+    id: 'portal.businessSettingsView.peopleEmpty',
+    defaultMessage: 'Nobody added yet. Invite the people who handle paperwork.',
+  },
+  memberUnnamed: { id: 'portal.businessSettingsView.memberUnnamed', defaultMessage: 'Unnamed' },
+  memberNoEmail: { id: 'portal.businessSettingsView.memberNoEmail', defaultMessage: 'No email' },
+  memberCanSend: { id: 'portal.businessSettingsView.memberCanSend', defaultMessage: 'Can send' },
+  memberSeesTotals: { id: 'portal.businessSettingsView.memberSeesTotals', defaultMessage: 'Sees totals' },
+  inviteAction: { id: 'portal.businessSettingsView.inviteAction', defaultMessage: 'Invite someone' },
+  peopleNote: {
+    id: 'portal.businessSettingsView.peopleNote',
+    defaultMessage:
+      'Everyone here signs in the same way you do — a code by SMS or email, no password to share. Removing someone stops their access immediately; the documents they already sent stay with your accountant.',
+  },
+
+  connectionsTitle: {
+    id: 'portal.businessSettingsView.connectionsTitle',
+    defaultMessage: 'Connections your accountant asked for',
+  },
+  connectionsSubtitle: {
+    id: 'portal.businessSettingsView.connectionsSubtitle',
+    defaultMessage: 'Only you can do these — they need your own login, which your accountant never sees',
+  },
+  companyDetailsName: { id: 'portal.businessSettingsView.companyDetailsName', defaultMessage: 'Company details' },
+  companyDetailsDetail: {
+    id: 'portal.businessSettingsView.companyDetailsDetail',
+    defaultMessage: 'Legal name, VAT, year-end and what the business sells',
+  },
+  companyDetailsAction: { id: 'portal.businessSettingsView.companyDetailsAction', defaultMessage: 'Register' },
+  companyDetailsDone: { id: 'portal.businessSettingsView.companyDetailsDone', defaultMessage: 'Registered' },
+  ledgerName: { id: 'portal.businessSettingsView.ledgerName', defaultMessage: 'Accounting software' },
+  ledgerDetail: {
+    id: 'portal.businessSettingsView.ledgerDetail',
+    defaultMessage: 'Xero, QuickBooks, Sage or FreeAgent',
+  },
+  bankFeedName: { id: 'portal.businessSettingsView.bankFeedName', defaultMessage: 'Bank feed' },
+  bankFeedDetail: {
+    id: 'portal.businessSettingsView.bankFeedDetail',
+    defaultMessage: 'Read-only open banking — no payments can be made',
+  },
+  connectionsNote: {
+    id: 'portal.businessSettingsView.connectionsNote',
+    defaultMessage:
+      'A live bank feed is what lets your accountant spot a payment with no receipt — it is the reason most chases exist. Connecting it means fewer texts asking you for paperwork.',
+  },
+
+  bankTitle: { id: 'portal.businessSettingsView.bankTitle', defaultMessage: 'Bank accounts on file' },
+  bankSubtitle: {
+    id: 'portal.businessSettingsView.bankSubtitle',
+    defaultMessage: 'Kept in sync once the feed is connected',
+  },
+  bankAccountLabel: { id: 'portal.businessSettingsView.bankAccountLabel', defaultMessage: '{bankName} ••{last4}' },
+  bankLive: { id: 'portal.businessSettingsView.bankLive', defaultMessage: 'Live · {days}d left' },
+  bankError: { id: 'portal.businessSettingsView.bankError', defaultMessage: 'Needs reconnecting' },
+  bankDisconnected: { id: 'portal.businessSettingsView.bankDisconnected', defaultMessage: 'Disconnected' },
+
+  securityTitle: { id: 'portal.businessSettingsView.securityTitle', defaultMessage: 'Sign-in' },
+  securitySubtitle: {
+    id: 'portal.businessSettingsView.securitySubtitle',
+    defaultMessage: 'Protects everything you send from this portal',
+  },
+  twoFactorLabel: { id: 'portal.businessSettingsView.twoFactorLabel', defaultMessage: 'Two-factor authentication' },
+  twoFactorHint: {
+    id: 'portal.businessSettingsView.twoFactorHint',
+    defaultMessage: 'A code by SMS each time you sign in on a new device.',
+  },
+  accessTitle: { id: 'portal.businessSettingsView.accessTitle', defaultMessage: 'Access' },
+  accessSubtitle: {
+    id: 'portal.businessSettingsView.accessSubtitle',
+    defaultMessage: 'What your accountant can and cannot do',
+  },
+  accessBody: {
+    id: 'portal.businessSettingsView.accessBody',
+    defaultMessage:
+      'Your accountant sees the documents you send and the figures extracted from them. They cannot sign in as you, and they cannot change your notification settings or the people listed above.',
+  },
+
+  removeConfirmTitle: { id: 'portal.businessSettingsView.removeConfirmTitle', defaultMessage: 'Remove {name}?' },
+  removeConfirmDetail: { id: 'portal.businessSettingsView.removeConfirmDetail', defaultMessage: '{role} at {business}.' },
+  removeConfirmConsequence: {
+    id: 'portal.businessSettingsView.removeConfirmConsequence',
+    defaultMessage:
+      'They stop being able to send documents immediately. Anything they already sent stays with your accountant.',
+  },
+  removeConfirmAction: { id: 'portal.businessSettingsView.removeConfirmAction', defaultMessage: 'Yes, remove them' },
+
+  editorHeadingNew: { id: 'portal.memberEditor.headingNew', defaultMessage: 'Invite someone' },
+  editorHeadingFallback: { id: 'portal.memberEditor.headingFallback', defaultMessage: 'Edit person' },
+  editorSubtitle: {
+    id: 'portal.memberEditor.subtitle',
+    defaultMessage: 'What they can do, and what they can see',
+  },
+  editorNameLabel: { id: 'portal.memberEditor.nameLabel', defaultMessage: 'Name' },
+  editorNamePlaceholder: { id: 'portal.memberEditor.namePlaceholder', defaultMessage: 'Tom Whyte' },
+  editorEmailLabel: { id: 'portal.memberEditor.emailLabel', defaultMessage: 'Email' },
+  editorEmailPlaceholder: { id: 'portal.memberEditor.emailPlaceholder', defaultMessage: 'tom@yourbusiness.co.uk' },
+  editorRoleHintOwner: {
+    id: 'portal.memberEditor.roleHintOwner',
+    defaultMessage: 'Full access, including these settings and your figures.',
+  },
+  editorRoleHintManager: {
+    id: 'portal.memberEditor.roleHintManager',
+    defaultMessage: 'Sends documents and sees what is outstanding.',
+  },
+  editorRoleHintStaff: {
+    id: 'portal.memberEditor.roleHintStaff',
+    defaultMessage: 'Sends documents only — the day-to-day receipt handler.',
+  },
+  editorRoleHintCustom: {
+    id: 'portal.memberEditor.roleHintCustom',
+    defaultMessage: 'A role of your own. Set what they can do below.',
+  },
+  editorCanUploadLabel: { id: 'portal.memberEditor.canUploadLabel', defaultMessage: 'Can send documents' },
+  editorCanUploadHint: {
+    id: 'portal.memberEditor.canUploadHint',
+    defaultMessage: 'Upload and photograph paperwork for the business.',
+  },
+  editorCanSeeTotalsLabel: { id: 'portal.memberEditor.canSeeTotalsLabel', defaultMessage: 'Can see totals' },
+  editorCanSeeTotalsHint: {
+    id: 'portal.memberEditor.canSeeTotalsHint',
+    defaultMessage: 'Amounts and what is outstanding. Leave off for staff photographing receipts.',
+  },
+  editorProblemName: { id: 'portal.memberEditor.problemName', defaultMessage: 'Add their name.' },
+  editorProblemEmailMissing: {
+    id: 'portal.memberEditor.problemEmailMissing',
+    defaultMessage: 'Add an email — it is how they receive their sign-in code.',
+  },
+  editorProblemEmailInvalid: {
+    id: 'portal.memberEditor.problemEmailInvalid',
+    defaultMessage: 'That email does not look right.',
+  },
+  editorProblemEmailDuplicate: {
+    id: 'portal.memberEditor.problemEmailDuplicate',
+    defaultMessage: 'Someone here already uses that email.',
+  },
+  editorProblemLastOwner: {
+    id: 'portal.memberEditor.problemLastOwner',
+    defaultMessage: 'This is your only Owner — make someone else an Owner first.',
+  },
+  editorRemoveBlockedTitle: {
+    id: 'portal.memberEditor.removeBlockedTitle',
+    defaultMessage: 'Make someone else an Owner first',
+  },
+  editorRemoveTitle: { id: 'portal.memberEditor.removeTitle', defaultMessage: 'Remove this person' },
+  editorRemoveAction: { id: 'portal.memberEditor.removeAction', defaultMessage: 'Remove' },
+  editorCancelAction: { id: 'portal.memberEditor.cancelAction', defaultMessage: 'Cancel' },
+  editorSendInviteAction: { id: 'portal.memberEditor.sendInviteAction', defaultMessage: 'Send invite' },
+  editorSaveAction: { id: 'portal.memberEditor.saveAction', defaultMessage: 'Save' },
+
+  detailsTitle: { id: 'portal.businessDetailsPanel.title', defaultMessage: 'Your business' },
+  detailsSubtitle: {
+    id: 'portal.businessDetailsPanel.subtitle',
+    defaultMessage: 'Shown to your accountant on everything you send',
+  },
+  detailsBusinessNameLabel: { id: 'portal.businessDetailsPanel.businessNameLabel', defaultMessage: 'Business name' },
+  detailsBusinessNamePlaceholder: {
+    id: 'portal.businessDetailsPanel.businessNamePlaceholder',
+    defaultMessage: 'American Burger Ltd',
+  },
+  detailsContactLabel: { id: 'portal.businessDetailsPanel.contactLabel', defaultMessage: 'Main contact' },
+  detailsContactPlaceholder: { id: 'portal.businessDetailsPanel.contactPlaceholder', defaultMessage: 'John Doe' },
+  detailsEmailLabel: { id: 'portal.businessDetailsPanel.emailLabel', defaultMessage: 'Email' },
+  detailsEmailPlaceholder: {
+    id: 'portal.businessDetailsPanel.emailPlaceholder',
+    defaultMessage: 'john@americanburger.co.uk',
+  },
+  detailsMobileLabel: { id: 'portal.businessDetailsPanel.mobileLabel', defaultMessage: 'Mobile' },
+  detailsMobilePlaceholder: {
+    id: 'portal.businessDetailsPanel.mobilePlaceholder',
+    defaultMessage: '+44 7700 900123',
+  },
+  detailsNote: {
+    id: 'portal.businessDetailsPanel.note',
+    defaultMessage:
+      'Your mobile is the one that matters — document requests and your sign-in codes both go there, and neither needs an app or a password.',
+  },
+  detailsProblemName: {
+    id: 'portal.businessDetailsPanel.problemName',
+    defaultMessage: 'Your business needs a name — it is what your accountant sees on everything you send.',
+  },
+  detailsProblemMobile: {
+    id: 'portal.businessDetailsPanel.problemMobile',
+    defaultMessage: 'A mobile is required. It is where document requests and sign-in codes go.',
+  },
+  detailsProblemEmail: {
+    id: 'portal.businessDetailsPanel.problemEmail',
+    defaultMessage: 'That email does not look right.',
+  },
+  detailsSaveAction: { id: 'portal.businessDetailsPanel.saveAction', defaultMessage: 'Save changes' },
+  detailsDiscardAction: { id: 'portal.businessDetailsPanel.discardAction', defaultMessage: 'Discard' },
+  detailsUnsaved: { id: 'portal.businessDetailsPanel.unsaved', defaultMessage: 'Unsaved: {fields}' },
+  detailsSaved: { id: 'portal.businessDetailsPanel.saved', defaultMessage: 'Saved.' },
+
+  connectRowAction: { id: 'portal.connectRow.connectAction', defaultMessage: 'Connect' },
+  connectRowDone: { id: 'portal.connectRow.connectedLabel', defaultMessage: 'Connected' },
+
+  // Audit entries. `AuditTable` renders `action` and `scope` straight to a
+  // human, and the log is session-scoped React state that is never persisted,
+  // so these are copy — the same call the converted views make.
+  //
+  // The business name stays an interpolated value, not translated text:
+  // `ClientDetailView` builds its activity feed by matching the client name
+  // inside `scope`, so it has to survive translation intact.
+  auditAction: {
+    id: 'portal.businessSettingsView.auditAction',
+    defaultMessage: 'Business changed a portal setting',
+  },
+  auditScope: { id: 'portal.businessSettingsView.auditScope', defaultMessage: '{business} — {label}' },
+  auditScopeMultiPage: { id: 'portal.businessSettingsView.auditScopeMultiPage', defaultMessage: 'multi-page capture' },
+  auditScopeAutoSubmit: { id: 'portal.businessSettingsView.auditScopeAutoSubmit', defaultMessage: 'send as I shoot' },
+  auditScopeSmsNotifications: {
+    id: 'portal.businessSettingsView.auditScopeSmsNotifications',
+    defaultMessage: 'SMS notifications',
+  },
+  auditScopeEmailNotifications: {
+    id: 'portal.businessSettingsView.auditScopeEmailNotifications',
+    defaultMessage: 'email notifications',
+  },
+  auditScopeWeeklySummary: {
+    id: 'portal.businessSettingsView.auditScopeWeeklySummary',
+    defaultMessage: 'weekly summary',
+  },
+  auditScopeTwoFactor: {
+    id: 'portal.businessSettingsView.auditScopeTwoFactor',
+    defaultMessage: 'two-factor authentication',
+  },
+  auditScopeMemberInvited: {
+    id: 'portal.businessSettingsView.auditScopeMemberInvited',
+    defaultMessage: 'invited {name}',
+  },
+  auditScopeMemberUpdated: {
+    id: 'portal.businessSettingsView.auditScopeMemberUpdated',
+    defaultMessage: 'updated {name}',
+  },
+  auditScopeMemberRemoved: {
+    id: 'portal.businessSettingsView.auditScopeMemberRemoved',
+    defaultMessage: 'removed {name}',
+  },
+});
+
+// `key` stays the machine value the switch and the `Section` type are built
+// from; the label beside it is the descriptor, formatted at the call site —
+// a hook cannot be called out here.
 const SECTIONS = [
-  { key: 'Business', icon: Building2 },
-  { key: 'Sending', icon: Camera },
-  { key: 'Notifications', icon: Bell },
-  { key: 'People', icon: Users },
-  { key: 'Connections', icon: Link2 },
-  { key: 'Security', icon: KeyRound },
+  { key: 'Business', icon: Building2, label: m.sectionBusiness },
+  { key: 'Sending', icon: Camera, label: m.sectionSending },
+  { key: 'Notifications', icon: Bell, label: m.sectionNotifications },
+  { key: 'People', icon: Users, label: m.sectionPeople },
+  { key: 'Connections', icon: Link2, label: m.sectionConnections },
+  { key: 'Security', icon: KeyRound, label: m.sectionSecurity },
 ] as const;
 
 type Section = (typeof SECTIONS)[number]['key'];
@@ -29,13 +345,20 @@ export function BusinessSettingsView({ account }: { account: BusinessAccount }) 
   const [section, setSection] = useState<Section>('Business');
   const [editingMember, setEditingMember] = useState<BusinessMember | null>(null);
   const confirm = useConfirm();
+  const intl = useIntl();
 
   const client = clients.find((c) => c.id === account.clientId);
   const bank = accounts.filter((a) => a.clientId === account.clientId);
 
+  // `label` is a formatted string rather than a descriptor: several callers
+  // interpolate a member name into it, which a bare descriptor could not carry.
   const save = (patch: Partial<BusinessAccount>, label: string) => {
     updateBusinessAccount(account.id, patch);
-    logAudit({ action: 'Business changed a portal setting', scope: `${account.businessName} — ${label}`, reviewOpened: false });
+    logAudit({
+      action: intl.formatMessage(m.auditAction),
+      scope: intl.formatMessage(m.auditScope, { business: account.businessName, label }),
+      reviewOpened: false,
+    });
   };
 
   return (
@@ -53,7 +376,7 @@ export function BusinessSettingsView({ account }: { account: BusinessAccount }) 
               }`}
             >
               <s.icon size={15} className={section === s.key ? 'text-brand' : ''} />
-              {s.key}
+              {intl.formatMessage(s.label)}
             </button>
           ))}
         </nav>
@@ -64,18 +387,23 @@ export function BusinessSettingsView({ account }: { account: BusinessAccount }) 
           {section === 'Business' && (
             <>
               <BusinessDetailsPanel account={account} onSave={save} />
-              <Panel title="Your accountant" subtitle="Managed by the practice — contact them to change it">
-                <Row label="Practice" value={<span className="text-white font-semibold">Your accounting practice</span>} />
-                <Row label="Industry on file" value={client?.industry ?? '—'} />
-                <Row label="VAT number" value={client?.vatNumber || 'Not registered'} />
-                <Row label="Next deadline" value={client?.deadline ?? '—'} />
+              <Panel title={intl.formatMessage(m.accountantTitle)} subtitle={intl.formatMessage(m.accountantSubtitle)}>
                 <Row
-                  label="Account created"
+                  label={intl.formatMessage(m.practiceLabel)}
+                  value={<span className="text-white font-semibold">{intl.formatMessage(m.practiceValue)}</span>}
+                />
+                <Row label={intl.formatMessage(m.industryLabel)} value={client?.industry ?? '—'} />
+                <Row label={intl.formatMessage(m.vatLabel)} value={client?.vatNumber || intl.formatMessage(m.vatNotRegistered)} />
+                <Row label={intl.formatMessage(m.deadlineLabel)} value={client?.deadline ?? '—'} />
+                <Row
+                  label={intl.formatMessage(m.createdLabel)}
                   value={
                     <span className="flex items-center gap-2">
                       {account.createdAt}
                       <Pill tone={account.origin === 'self-signup' ? 'blue' : 'neutral'}>
-                        {account.origin === 'self-signup' ? 'Signed up directly' : 'Created by accountant'}
+                        {account.origin === 'self-signup'
+                          ? intl.formatMessage(m.originSelfSignup)
+                          : intl.formatMessage(m.originAccountant)}
                       </Pill>
                     </span>
                   }
@@ -85,54 +413,57 @@ export function BusinessSettingsView({ account }: { account: BusinessAccount }) 
           )}
 
           {section === 'Sending' && (
-            <Panel title="How documents are sent" subtitle="Defaults for upload and camera capture">
+            <Panel title={intl.formatMessage(m.sendingTitle)} subtitle={intl.formatMessage(m.sendingSubtitle)}>
               <div className="flex flex-col gap-3">
                 {/* No money-in / money-out choice: sorting paperwork is
                     bookkeeping, and it is not the business's job. Extraction
                     reads the bill-to block and files it. */}
                 <div className="p-4 rounded-2xl bg-ground/60 border border-white/5 shadow-inner">
-                  <div className="text-sm font-bold text-white">We work out what each document is</div>
+                  <div className="text-sm font-bold text-white">{intl.formatMessage(m.sendingClassifyTitle)}</div>
                   <div className="text-[12px] text-zinc-500 mt-1 leading-relaxed">
-                    Bills, receipts and sales invoices can all go in together — you never have to sort them. Your
-                    accountant sees what we decided, and can correct it.
+                    {intl.formatMessage(m.sendingClassifyBody)}
                   </div>
                 </div>
                 <Toggle
-                  label="Multi-page capture"
-                  hint="Shoot several sheets and send them as one document."
+                  label={intl.formatMessage(m.multiPageLabel)}
+                  hint={intl.formatMessage(m.multiPageHint)}
                   value={account.multiPageCapture}
-                  onChange={(v) => save({ multiPageCapture: v }, 'multi-page capture')}
+                  onChange={(v) => save({ multiPageCapture: v }, intl.formatMessage(m.auditScopeMultiPage))}
                 />
                 <Toggle
-                  label="Send as I shoot"
-                  hint="Skips the review step — each photo goes straight to your accountant."
+                  label={intl.formatMessage(m.autoSubmitLabel)}
+                  hint={intl.formatMessage(m.autoSubmitHint)}
                   value={account.autoSubmitOnCapture}
-                  onChange={(v) => save({ autoSubmitOnCapture: v }, 'send as I shoot')}
+                  onChange={(v) => save({ autoSubmitOnCapture: v }, intl.formatMessage(m.auditScopeAutoSubmit))}
                 />
               </div>
             </Panel>
           )}
 
           {section === 'Notifications' && (
-            <Panel title="When we contact you" subtitle="Chases always come by SMS — the rest is up to you">
+            <Panel title={intl.formatMessage(m.notificationsTitle)} subtitle={intl.formatMessage(m.notificationsSubtitle)}>
               <div className="flex flex-col gap-3">
                 <Toggle
-                  label="Text me when something is missing"
-                  hint={`Sent to ${account.mobile || 'your mobile'}`}
+                  label={intl.formatMessage(m.smsLabel)}
+                  hint={
+                    account.mobile
+                      ? intl.formatMessage(m.smsHint, { mobile: account.mobile })
+                      : intl.formatMessage(m.smsHintNoMobile)
+                  }
                   value={account.notifyBySms}
-                  onChange={(v) => save({ notifyBySms: v }, 'SMS notifications')}
+                  onChange={(v) => save({ notifyBySms: v }, intl.formatMessage(m.auditScopeSmsNotifications))}
                 />
                 <Toggle
-                  label="Email me too"
-                  hint={account.email || 'No email on file'}
+                  label={intl.formatMessage(m.emailLabel)}
+                  hint={account.email || intl.formatMessage(m.emailHintNone)}
                   value={account.notifyByEmail}
-                  onChange={(v) => save({ notifyByEmail: v }, 'email notifications')}
+                  onChange={(v) => save({ notifyByEmail: v }, intl.formatMessage(m.auditScopeEmailNotifications))}
                 />
                 <Toggle
-                  label="Weekly summary"
-                  hint="One message a week with anything still outstanding."
+                  label={intl.formatMessage(m.weeklyLabel)}
+                  hint={intl.formatMessage(m.weeklyHint)}
                   value={account.weeklySummary}
-                  onChange={(v) => save({ weeklySummary: v }, 'weekly summary')}
+                  onChange={(v) => save({ weeklySummary: v }, intl.formatMessage(m.auditScopeWeeklySummary))}
                 />
               </div>
             </Panel>
@@ -140,32 +471,32 @@ export function BusinessSettingsView({ account }: { account: BusinessAccount }) 
 
           {section === 'People' && (
             <Panel
-              title="Who can send documents"
-              subtitle="Staff can photograph receipts without ever seeing your figures"
+              title={intl.formatMessage(m.peopleTitle)}
+              subtitle={intl.formatMessage(m.peopleSubtitle)}
             >
               <div className="flex flex-col gap-2">
                 {account.members.length === 0 && (
                   <p className="text-[13px] text-zinc-500 py-4 text-center">
-                    Nobody added yet. Invite the people who handle paperwork.
+                    {intl.formatMessage(m.peopleEmpty)}
                   </p>
                 )}
-                {account.members.map((m) => (
+                {account.members.map((member) => (
                   <button
-                    key={m.id}
-                    onClick={() => setEditingMember(m)}
+                    key={member.id}
+                    onClick={() => setEditingMember(member)}
                     className="p-4 rounded-2xl bg-ground/60 border border-white/5 hover:border-white/15 transition-colors text-left flex items-center gap-4"
                   >
                     <div className="w-10 h-10 rounded-xl bg-raised border border-white/5 flex items-center justify-center font-bold text-white shrink-0">
-                      {m.name.trim().charAt(0).toUpperCase() || '?'}
+                      {member.name.trim().charAt(0).toUpperCase() || '?'}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm font-bold text-white truncate">{m.name || 'Unnamed'}</div>
-                      <div className="text-[12px] text-zinc-500 truncate">{m.email || 'No email'}</div>
+                      <div className="text-sm font-bold text-white truncate">{member.name || intl.formatMessage(m.memberUnnamed)}</div>
+                      <div className="text-[12px] text-zinc-500 truncate">{member.email || intl.formatMessage(m.memberNoEmail)}</div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-                      <Pill tone={m.role === 'Owner' ? 'blue' : 'neutral'}>{m.role}</Pill>
-                      {m.canUpload && <Pill tone="green">Can send</Pill>}
-                      {m.canSeeTotals && <Pill tone="amber">Sees totals</Pill>}
+                      <Pill tone={member.role === 'Owner' ? 'blue' : 'neutral'}>{member.role}</Pill>
+                      {member.canUpload && <Pill tone="green">{intl.formatMessage(m.memberCanSend)}</Pill>}
+                      {member.canSeeTotals && <Pill tone="amber">{intl.formatMessage(m.memberSeesTotals)}</Pill>}
                     </div>
                   </button>
                 ))}
@@ -174,12 +505,11 @@ export function BusinessSettingsView({ account }: { account: BusinessAccount }) 
                   className="flex items-center justify-center gap-2 p-3.5 rounded-2xl border border-dashed border-white/10 text-[13px] font-bold text-zinc-400 hover:text-white hover:border-white/25 transition-colors"
                 >
                   <Plus size={15} />
-                  Invite someone
+                  {intl.formatMessage(m.inviteAction)}
                 </button>
               </div>
               <p className="text-[12px] text-zinc-500 leading-relaxed mt-4">
-                Everyone here signs in the same way you do — a code by SMS or email, no password to share. Removing
-                someone stops their access immediately; the documents they already sent stay with your accountant.
+                {intl.formatMessage(m.peopleNote)}
               </p>
             </Panel>
           )}
@@ -187,55 +517,54 @@ export function BusinessSettingsView({ account }: { account: BusinessAccount }) 
           {section === 'Connections' && (
             <>
               <Panel
-                title="Connections your accountant asked for"
-                subtitle="Only you can do these — they need your own login, which your accountant never sees"
+                title={intl.formatMessage(m.connectionsTitle)}
+                subtitle={intl.formatMessage(m.connectionsSubtitle)}
               >
                 <div className="flex flex-col gap-2">
                   {/* Only on records the accountant opened with an invite —
                       elsewhere they keyed the company in themselves. */}
                   {client?.awaitingRegistration && (
                     <ConnectRow
-                      name="Company details"
-                      detail="Legal name, VAT, year-end and what the business sells"
+                      name={intl.formatMessage(m.companyDetailsName)}
+                      detail={intl.formatMessage(m.companyDetailsDetail)}
                       connected={false}
                       onConnect={() => completeOnboardingTask(account.clientId, 'profile')}
-                      actionLabel="Register"
-                      doneLabel="Registered"
+                      actionLabel={intl.formatMessage(m.companyDetailsAction)}
+                      doneLabel={intl.formatMessage(m.companyDetailsDone)}
                     />
                   )}
                   <ConnectRow
-                    name="Accounting software"
-                    detail="Xero, QuickBooks, Sage or FreeAgent"
+                    name={intl.formatMessage(m.ledgerName)}
+                    detail={intl.formatMessage(m.ledgerDetail)}
                     connected={client?.xeroConnected ?? false}
                     onConnect={() => completeOnboardingTask(account.clientId, 'ledger')}
                   />
                   <ConnectRow
-                    name="Bank feed"
-                    detail="Read-only open banking — no payments can be made"
+                    name={intl.formatMessage(m.bankFeedName)}
+                    detail={intl.formatMessage(m.bankFeedDetail)}
                     connected={client?.bankConnected ?? false}
                     onConnect={() => completeOnboardingTask(account.clientId, 'bank')}
                   />
                 </div>
                 <p className="text-[12px] text-zinc-500 leading-relaxed mt-4">
-                  A live bank feed is what lets your accountant spot a payment with no receipt — it is the reason most
-                  chases exist. Connecting it means fewer texts asking you for paperwork.
+                  {intl.formatMessage(m.connectionsNote)}
                 </p>
               </Panel>
 
               {bank.length > 0 && (
-                <Panel title="Bank accounts on file" subtitle="Kept in sync once the feed is connected">
+                <Panel title={intl.formatMessage(m.bankTitle)} subtitle={intl.formatMessage(m.bankSubtitle)}>
                   <div className="flex flex-col gap-2">
                     {bank.map((a) => (
                       <Row
                         key={a.id}
-                        label={`${a.bankName} ••${a.last4}`}
+                        label={intl.formatMessage(m.bankAccountLabel, { bankName: a.bankName, last4: a.last4 })}
                         value={
                           a.status === 'live' ? (
-                            <Pill tone="green">Live · {a.reauthDays}d left</Pill>
+                            <Pill tone="green">{intl.formatMessage(m.bankLive, { days: a.reauthDays })}</Pill>
                           ) : a.status === 'error' ? (
-                            <Pill tone="red">Needs reconnecting</Pill>
+                            <Pill tone="red">{intl.formatMessage(m.bankError)}</Pill>
                           ) : (
-                            <Pill tone="amber">Disconnected</Pill>
+                            <Pill tone="amber">{intl.formatMessage(m.bankDisconnected)}</Pill>
                           )
                         }
                       />
@@ -248,18 +577,17 @@ export function BusinessSettingsView({ account }: { account: BusinessAccount }) 
 
           {section === 'Security' && (
             <>
-              <Panel title="Sign-in" subtitle="Protects everything you send from this portal">
+              <Panel title={intl.formatMessage(m.securityTitle)} subtitle={intl.formatMessage(m.securitySubtitle)}>
                 <Toggle
-                  label="Two-factor authentication"
-                  hint="A code by SMS each time you sign in on a new device."
+                  label={intl.formatMessage(m.twoFactorLabel)}
+                  hint={intl.formatMessage(m.twoFactorHint)}
                   value={account.twoFactor}
-                  onChange={(v) => save({ twoFactor: v }, 'two-factor authentication')}
+                  onChange={(v) => save({ twoFactor: v }, intl.formatMessage(m.auditScopeTwoFactor))}
                 />
               </Panel>
-              <Panel title="Access" subtitle="What your accountant can and cannot do">
+              <Panel title={intl.formatMessage(m.accessTitle)} subtitle={intl.formatMessage(m.accessSubtitle)}>
                 <p className="text-[13px] text-zinc-500 leading-relaxed">
-                  Your accountant sees the documents you send and the figures extracted from them. They cannot sign in
-                  as you, and they cannot change your notification settings or the people listed above.
+                  {intl.formatMessage(m.accessBody)}
                 </p>
               </Panel>
             </>
@@ -271,24 +599,27 @@ export function BusinessSettingsView({ account }: { account: BusinessAccount }) 
         <MemberEditor
           member={editingMember}
           existing={account.members}
-          onSave={(m) => {
-            const isNew = !account.members.some((x) => x.id === m.id);
+          onSave={(next) => {
+            const isNew = !account.members.some((x) => x.id === next.id);
             save(
-              { members: isNew ? [...account.members, m] : account.members.map((x) => (x.id === m.id ? m : x)) },
-              isNew ? `invited ${m.name}` : `updated ${m.name}`,
+              { members: isNew ? [...account.members, next] : account.members.map((x) => (x.id === next.id ? next : x)) },
+              intl.formatMessage(isNew ? m.auditScopeMemberInvited : m.auditScopeMemberUpdated, { name: next.name }),
             );
             setEditingMember(null);
           }}
           onRemove={async () => {
             const ok = await confirm({
               tone: 'red',
-              title: `Remove ${editingMember.name}?`,
-              detail: `${editingMember.role} at ${account.businessName}.`,
-              consequence: 'They stop being able to send documents immediately. Anything they already sent stays with your accountant.',
-              confirmLabel: 'Yes, remove them',
+              title: intl.formatMessage(m.removeConfirmTitle, { name: editingMember.name }),
+              detail: intl.formatMessage(m.removeConfirmDetail, { role: editingMember.role, business: account.businessName }),
+              consequence: intl.formatMessage(m.removeConfirmConsequence),
+              confirmLabel: intl.formatMessage(m.removeConfirmAction),
             });
             if (!ok) return;
-            save({ members: account.members.filter((x) => x.id !== editingMember.id) }, `removed ${editingMember.name}`);
+            save(
+              { members: account.members.filter((x) => x.id !== editingMember.id) },
+              intl.formatMessage(m.auditScopeMemberRemoved, { name: editingMember.name }),
+            );
             setEditingMember(null);
           }}
           onClose={() => setEditingMember(null)}
@@ -307,11 +638,12 @@ export function BusinessSettingsView({ account }: { account: BusinessAccount }) 
 function MemberEditor({ member, existing, onSave, onRemove, onClose }: {
   member: BusinessMember;
   existing: BusinessMember[];
-  onSave: (m: BusinessMember) => void;
+  onSave: (next: BusinessMember) => void;
   onRemove: () => void;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState(member);
+  const intl = useIntl();
   const set = <K extends keyof BusinessMember>(k: K, v: BusinessMember[K]) => setDraft({ ...draft, [k]: v });
 
   const isNew = !existing.some((x) => x.id === member.id);
@@ -326,16 +658,16 @@ function MemberEditor({ member, existing, onSave, onRemove, onClose }: {
   const lastOwner = !isNew && member.role === 'Owner' && owners.length === 1;
 
   const problem = !name
-    ? 'Add their name.'
+    ? intl.formatMessage(m.editorProblemName)
     : !email
-    ? 'Add an email — it is how they receive their sign-in code.'
+    ? intl.formatMessage(m.editorProblemEmailMissing)
     : emailLooksWrong
-    ? 'That email does not look right.'
+    ? intl.formatMessage(m.editorProblemEmailInvalid)
     : duplicate
-    ? 'Someone here already uses that email.'
+    ? intl.formatMessage(m.editorProblemEmailDuplicate)
     : draft.role === 'Owner' || !lastOwner || draft.role === member.role
     ? ''
-    : 'This is your only Owner — make someone else an Owner first.';
+    : intl.formatMessage(m.editorProblemLastOwner);
 
   return (
     <div
@@ -350,17 +682,27 @@ function MemberEditor({ member, existing, onSave, onRemove, onClose }: {
       >
         <div className="p-6 border-b border-white/5">
           <h3 className="font-sans font-bold text-xl text-white tracking-tight">
-            {isNew ? 'Invite someone' : draft.name || 'Edit person'}
+            {isNew ? intl.formatMessage(m.editorHeadingNew) : draft.name || intl.formatMessage(m.editorHeadingFallback)}
           </h3>
           <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
-            What they can do, and what they can see
+            {intl.formatMessage(m.editorSubtitle)}
           </p>
         </div>
 
         <div className="p-6 flex flex-col gap-5">
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Name" value={draft.name} onChange={(v) => set('name', v)} placeholder="Tom Whyte" />
-            <Field label="Email" value={draft.email} onChange={(v) => set('email', v)} placeholder="tom@yourbusiness.co.uk" />
+            <Field
+              label={intl.formatMessage(m.editorNameLabel)}
+              value={draft.name}
+              onChange={(v) => set('name', v)}
+              placeholder={intl.formatMessage(m.editorNamePlaceholder)}
+            />
+            <Field
+              label={intl.formatMessage(m.editorEmailLabel)}
+              value={draft.email}
+              onChange={(v) => set('email', v)}
+              placeholder={intl.formatMessage(m.editorEmailPlaceholder)}
+            />
           </div>
 
           <RolePicker
@@ -368,25 +710,25 @@ function MemberEditor({ member, existing, onSave, onRemove, onClose }: {
             onChange={(r) => set('role', r)}
             hint={
               draft.role === 'Owner'
-                ? 'Full access, including these settings and your figures.'
+                ? intl.formatMessage(m.editorRoleHintOwner)
                 : draft.role === 'Manager'
-                ? 'Sends documents and sees what is outstanding.'
+                ? intl.formatMessage(m.editorRoleHintManager)
                 : draft.role === 'Staff'
-                ? 'Sends documents only — the day-to-day receipt handler.'
-                : 'A role of your own. Set what they can do below.'
+                ? intl.formatMessage(m.editorRoleHintStaff)
+                : intl.formatMessage(m.editorRoleHintCustom)
             }
           />
 
           <div className="flex flex-col gap-2">
             <Toggle
-              label="Can send documents"
-              hint="Upload and photograph paperwork for the business."
+              label={intl.formatMessage(m.editorCanUploadLabel)}
+              hint={intl.formatMessage(m.editorCanUploadHint)}
               value={draft.canUpload}
               onChange={(v) => set('canUpload', v)}
             />
             <Toggle
-              label="Can see totals"
-              hint="Amounts and what is outstanding. Leave off for staff photographing receipts."
+              label={intl.formatMessage(m.editorCanSeeTotalsLabel)}
+              hint={intl.formatMessage(m.editorCanSeeTotalsHint)}
               value={draft.canSeeTotals}
               onChange={(v) => set('canSeeTotals', v)}
             />
@@ -400,25 +742,25 @@ function MemberEditor({ member, existing, onSave, onRemove, onClose }: {
             <button
               onClick={onRemove}
               disabled={lastOwner}
-              title={lastOwner ? 'Make someone else an Owner first' : 'Remove this person'}
+              title={lastOwner ? intl.formatMessage(m.editorRemoveBlockedTitle) : intl.formatMessage(m.editorRemoveTitle)}
               className="mr-auto flex items-center gap-2 px-4 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 hover:text-red-400 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-zinc-400 transition-colors"
             >
               <Trash2 size={14} />
-              Remove
+              {intl.formatMessage(m.editorRemoveAction)}
             </button>
           )}
           <button
             onClick={onClose}
             className="px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 hover:text-white transition-colors"
           >
-            Cancel
+            {intl.formatMessage(m.editorCancelAction)}
           </button>
           <button
             onClick={() => onSave({ ...draft, name, email })}
             disabled={!!problem}
             className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
           >
-            {isNew ? 'Send invite' : 'Save'}
+            {isNew ? intl.formatMessage(m.editorSendInviteAction) : intl.formatMessage(m.editorSaveAction)}
           </button>
         </div>
       </motion.div>
@@ -444,6 +786,7 @@ function BusinessDetailsPanel({ account, onSave }: {
     mobile: account.mobile,
   });
   const [saved, setSaved] = useState(false);
+  const intl = useIntl();
 
   const set = <K extends keyof typeof draft>(k: K, v: (typeof draft)[K]) => {
     setDraft({ ...draft, [k]: v });
@@ -454,25 +797,44 @@ function BusinessDetailsPanel({ account, onSave }: {
   const dirty = changed.length > 0;
 
   const problem = !draft.businessName.trim()
-    ? 'Your business needs a name — it is what your accountant sees on everything you send.'
+    ? intl.formatMessage(m.detailsProblemName)
     : !draft.mobile.trim()
-    ? 'A mobile is required. It is where document requests and sign-in codes go.'
+    ? intl.formatMessage(m.detailsProblemMobile)
     : draft.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email.trim())
-    ? 'That email does not look right.'
+    ? intl.formatMessage(m.detailsProblemEmail)
     : '';
 
   return (
-    <Panel title="Your business" subtitle="Shown to your accountant on everything you send">
+    <Panel title={intl.formatMessage(m.detailsTitle)} subtitle={intl.formatMessage(m.detailsSubtitle)}>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="Business name" value={draft.businessName} onChange={(v) => set('businessName', v)} placeholder="American Burger Ltd" />
-        <Field label="Main contact" value={draft.contactName} onChange={(v) => set('contactName', v)} placeholder="John Doe" />
-        <Field label="Email" value={draft.email} onChange={(v) => set('email', v)} placeholder="john@americanburger.co.uk" />
-        <Field label="Mobile" value={draft.mobile} onChange={(v) => set('mobile', v)} placeholder="+44 7700 900123" />
+        <Field
+          label={intl.formatMessage(m.detailsBusinessNameLabel)}
+          value={draft.businessName}
+          onChange={(v) => set('businessName', v)}
+          placeholder={intl.formatMessage(m.detailsBusinessNamePlaceholder)}
+        />
+        <Field
+          label={intl.formatMessage(m.detailsContactLabel)}
+          value={draft.contactName}
+          onChange={(v) => set('contactName', v)}
+          placeholder={intl.formatMessage(m.detailsContactPlaceholder)}
+        />
+        <Field
+          label={intl.formatMessage(m.detailsEmailLabel)}
+          value={draft.email}
+          onChange={(v) => set('email', v)}
+          placeholder={intl.formatMessage(m.detailsEmailPlaceholder)}
+        />
+        <Field
+          label={intl.formatMessage(m.detailsMobileLabel)}
+          value={draft.mobile}
+          onChange={(v) => set('mobile', v)}
+          placeholder={intl.formatMessage(m.detailsMobilePlaceholder)}
+        />
       </div>
 
       <p className="text-[12px] text-zinc-500 leading-relaxed mt-4">
-        Your mobile is the one that matters — document requests and your sign-in codes both go there, and neither
-        needs an app or a password.
+        {intl.formatMessage(m.detailsNote)}
       </p>
 
       {problem && <p className="text-[13px] text-amber-400 font-semibold mt-3">{problem}</p>}
@@ -494,23 +856,23 @@ function BusinessDetailsPanel({ account, onSave }: {
           disabled={!dirty || !!problem}
           className="px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
         >
-          Save changes
+          {intl.formatMessage(m.detailsSaveAction)}
         </button>
         {dirty && (
           <button
             onClick={() => { setDraft({ businessName: account.businessName, contactName: account.contactName, email: account.email, mobile: account.mobile }); setSaved(false); }}
             className="px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 hover:text-white transition-colors"
           >
-            Discard
+            {intl.formatMessage(m.detailsDiscardAction)}
           </button>
         )}
         {/* Say which fields are pending, so Save is never a guess. */}
         {dirty ? (
           <span className="text-[12px] text-zinc-500 font-semibold">
-            Unsaved: {changed.join(', ')}
+            {intl.formatMessage(m.detailsUnsaved, { fields: changed.join(', ') })}
           </span>
         ) : saved ? (
-          <span className="text-[12px] text-brand font-semibold">Saved.</span>
+          <span className="text-[12px] text-brand font-semibold">{intl.formatMessage(m.detailsSaved)}</span>
         ) : null}
       </div>
     </Panel>
@@ -535,8 +897,8 @@ function ConnectRow({
   detail,
   connected,
   onConnect,
-  actionLabel = 'Connect',
-  doneLabel = 'Connected',
+  actionLabel,
+  doneLabel,
 }: {
   name: string;
   detail: string;
@@ -546,6 +908,8 @@ function ConnectRow({
   actionLabel?: string;
   doneLabel?: string;
 }) {
+  const intl = useIntl();
+
   return (
     <div className="flex items-center justify-between gap-4 p-4 border border-white/5 rounded-2xl bg-ground/60 shadow-inner">
       <div className="min-w-0">
@@ -553,13 +917,13 @@ function ConnectRow({
         <div className="text-[12px] text-zinc-500">{detail}</div>
       </div>
       {connected ? (
-        <Pill tone="green">{doneLabel}</Pill>
+        <Pill tone="green">{doneLabel ?? intl.formatMessage(m.connectRowDone)}</Pill>
       ) : (
         <button
           onClick={onConnect}
           className="shrink-0 px-4 py-2 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_12px_rgba(20,227,196,0.25)]"
         >
-          {actionLabel}
+          {actionLabel ?? intl.formatMessage(m.connectRowAction)}
         </button>
       )}
     </div>
@@ -605,4 +969,3 @@ function Toggle({ label, hint, value, onChange }: { label: string; hint?: string
     </button>
   );
 }
-

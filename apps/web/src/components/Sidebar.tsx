@@ -5,6 +5,7 @@ import {
   Shield, Settings, Store, Sun, Moon,
   type LucideProps,
 } from 'lucide-react';
+import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
 import logo from '../assets/logo.png';
 import {
@@ -15,16 +16,43 @@ import {
   type MotionValue,
 } from 'motion/react';
 
+/**
+ * `tab` is the routing vocabulary, not copy: `SIDEBAR_TABS` in AppContext reads
+ * these exact strings off the URL through `slug()`/`fromSlug()`, and `activeTab`
+ * is compared against them. So the visible label is a second field holding a
+ * descriptor rather than a translation of `tab` — translating the tab value
+ * would rewrite every address in the app.
+ */
+const m = defineMessages({
+  aiWorkspace: { id: 'shell.sidebar.aiWorkspace', defaultMessage: 'AI Workspace' },
+  clients: { id: 'shell.sidebar.clients', defaultMessage: 'Clients' },
+  inboxes: { id: 'shell.sidebar.inboxes', defaultMessage: 'Inboxes' },
+  chases: { id: 'shell.sidebar.chases', defaultMessage: 'Chases' },
+  approvals: { id: 'shell.sidebar.approvals', defaultMessage: 'Approvals' },
+  documents: { id: 'shell.sidebar.documents', defaultMessage: 'Documents' },
+  analytics: { id: 'shell.sidebar.analytics', defaultMessage: 'Analytics' },
+  team: { id: 'shell.sidebar.team', defaultMessage: 'Team' },
+  settings: { id: 'shell.sidebar.settings', defaultMessage: 'Settings' },
+  businessPortal: { id: 'shell.sidebar.businessPortal', defaultMessage: 'Business portal' },
+  darkMode: { id: 'shell.sidebar.darkMode', defaultMessage: 'Dark mode' },
+  lightMode: { id: 'shell.sidebar.lightMode', defaultMessage: 'Light mode' },
+  logoAlt: {
+    id: 'shell.sidebar.logoAlt',
+    defaultMessage: 'Migrate Properly',
+    description: 'Alt text for the product mark. A company name — leave untranslated.',
+  },
+});
+
 const navItems = [
-  { icon: Bot, label: 'AI Workspace' },
-  { icon: Users, label: 'Clients' },
-  { icon: Inbox, label: 'Inboxes' },
-  { icon: Send, label: 'Chases' },
-  { icon: CheckCircle, label: 'Approvals' },
-  { icon: FileText, label: 'Documents' },
-  { icon: BarChart2, label: 'Analytics' },
-  { icon: Shield, label: 'Team' },
-  { icon: Settings, label: 'Settings' },
+  { icon: Bot, tab: 'AI Workspace', label: m.aiWorkspace },
+  { icon: Users, tab: 'Clients', label: m.clients },
+  { icon: Inbox, tab: 'Inboxes', label: m.inboxes },
+  { icon: Send, tab: 'Chases', label: m.chases },
+  { icon: CheckCircle, tab: 'Approvals', label: m.approvals },
+  { icon: FileText, tab: 'Documents', label: m.documents },
+  { icon: BarChart2, tab: 'Analytics', label: m.analytics },
+  { icon: Shield, tab: 'Team', label: m.team },
+  { icon: Settings, tab: 'Settings', label: m.settings },
 ];
 
 const RAIL_COLLAPSED = 80;
@@ -47,6 +75,7 @@ interface SidebarProps {
 
 export function Sidebar({ activeTab, setActiveTab, onOpenBusinessPortal }: SidebarProps) {
   const { settings, updateSettings } = useAppContext();
+  const intl = useIntl();
   const isLight = settings.theme === 'light';
   const mouseY = useMotionValue(Number.POSITIVE_INFINITY);
   const [expanded, setExpanded] = useState(false);
@@ -68,20 +97,20 @@ export function Sidebar({ activeTab, setActiveTab, onOpenBusinessPortal }: Sideb
         {/* The mark already carries its own plate and rounded corners. */}
         <img
           src={logo}
-          alt="Migrate Properly"
+          alt={intl.formatMessage(m.logoAlt)}
           className="w-12 h-12 rounded-2xl shrink-0 object-cover shadow-[0_0_18px_rgba(20,227,196,0.25)]"
         />
       </div>
       <nav className="flex flex-col gap-1.5 w-full px-4">
         {navItems.map((item) => (
           <DockItem
-            key={item.label}
+            key={item.tab}
             icon={item.icon}
-            label={item.label}
-            isActive={activeTab === item.label}
+            label={intl.formatMessage(item.label)}
+            isActive={activeTab === item.tab}
             expanded={expanded}
             mouseY={mouseY}
-            onClick={() => setActiveTab(item.label)}
+            onClick={() => setActiveTab(item.tab)}
           />
         ))}
       </nav>
@@ -90,7 +119,7 @@ export function Sidebar({ activeTab, setActiveTab, onOpenBusinessPortal }: Sideb
       <div className="mt-auto w-full px-4 pt-4 border-t border-white/5">
         <DockItem
           icon={Store}
-          label="Business portal"
+          label={intl.formatMessage(m.businessPortal)}
           isActive={false}
           expanded={expanded}
           mouseY={mouseY}
@@ -98,7 +127,7 @@ export function Sidebar({ activeTab, setActiveTab, onOpenBusinessPortal }: Sideb
         />
         <DockItem
           icon={isLight ? Moon : Sun}
-          label={isLight ? 'Dark mode' : 'Light mode'}
+          label={intl.formatMessage(isLight ? m.darkMode : m.lightMode)}
           isActive={false}
           expanded={expanded}
           mouseY={mouseY}

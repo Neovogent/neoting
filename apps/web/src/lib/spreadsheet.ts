@@ -13,7 +13,44 @@
  * already inflate a zip — `DecompressionStream('deflate-raw')` is in every
  * current browser and in Node — so the reader is a hundred lines rather than a
  * megabyte of dependency.
+ *
+ * ## The two failures a person sees
+ *
+ * A reader is not a component, so it cannot call `useIntl`. The two errors that
+ * reach a screen are `MessageDescriptor`s and the screen formats them — the
+ * pattern in `i18n/index.ts`, the same one `lib/failures.ts` uses. They travel
+ * on the thrown Error rather than replacing it, so `error.message` still reads
+ * as the en-GB sentence for a log, a stack trace, or any caller that has not
+ * been taught to look for the descriptor.
  */
+
+import { defineMessages, type MessageDescriptor } from 'react-intl';
+
+const m = defineMessages({
+  notAZipFile: { id: 'pipeline.spreadsheet.notAZipFile', defaultMessage: 'Not a zip file' },
+  noWorksheet: {
+    id: 'pipeline.spreadsheet.noWorksheet',
+    defaultMessage: 'No worksheet found in the workbook',
+  },
+});
+
+/** An Error from this module, carrying the catalogue entry behind it. */
+export interface SheetReadError extends Error {
+  descriptor: MessageDescriptor;
+}
+
+const sheetReadError = (descriptor: MessageDescriptor): SheetReadError =>
+  Object.assign(new Error(String(descriptor.defaultMessage)), { descriptor });
+
+/**
+ * The catalogue entry behind a read failure, when this module is what threw.
+ *
+ * Anything else — a platform error, a corrupt buffer — has no descriptor and
+ * comes back `undefined`, so the caller keeps its own fallback rather than
+ * being handed a message that does not describe what happened.
+ */
+export const sheetReadMessage = (error: unknown): MessageDescriptor | undefined =>
+  error instanceof Error && 'descriptor' in error ? (error as SheetReadError).descriptor : undefined;
 
 export type TableRow = string[];
 
@@ -131,7 +168,7 @@ async function unzip(buffer: ArrayBuffer, want: RegExp[]): Promise<Map<string, s
   for (let i = bytes.length - 22; i >= 0 && i > bytes.length - 22 - 65536; i--) {
     if (view.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
   }
-  if (eocd < 0) throw new Error('Not a zip file');
+  if (eocd < 0) throw sheetReadError(m.notAZipFile);
 
   const entries = view.getUint16(eocd + 10, true);
   let p = view.getUint32(eocd + 16, true);
@@ -226,7 +263,7 @@ function sheetToRows(xml: string, strings: string[]): TableRow[] {
 export async function parseXlsx(buffer: ArrayBuffer): Promise<TableRow[]> {
   const files = await unzip(buffer, [SHEET_PATH, STRINGS_PATH]);
   const sheet = [...files.entries()].find(([n]) => SHEET_PATH.test(n))?.[1];
-  if (!sheet) throw new Error('No worksheet found in the workbook');
+  if (!sheet) throw sheetReadError(m.noWorksheet);
   const stringsXml = [...files.entries()].find(([n]) => STRINGS_PATH.test(n))?.[1];
   return sheetToRows(sheet, stringsXml ? sharedStrings(stringsXml) : []);
 }

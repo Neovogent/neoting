@@ -1,8 +1,31 @@
 import { useMemo, useState } from 'react';
 import { Search, Pin, MessageSquare, Clock, Plus, Trash2, PinOff } from 'lucide-react';
 import { motion, type Variants } from 'motion/react';
+import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
 import { relativeTime } from '../lib/resolver';
+
+/**
+ * The client-list heading is two whole messages rather than one with a `select`
+ * on whether a search is running: "Matching clients" and "Pinned Clients" are
+ * different sentences, not one sentence with a swapped word.
+ */
+const m = defineMessages({
+  heading: { id: 'shell.leftPanel.heading', defaultMessage: 'Workspace' },
+  newConversation: { id: 'shell.leftPanel.newConversation', defaultMessage: 'New conversation' },
+  searchPlaceholder: { id: 'shell.leftPanel.searchPlaceholder', defaultMessage: 'Search clients or history...' },
+  matchingClients: { id: 'shell.leftPanel.matchingClients', defaultMessage: 'Matching clients' },
+  pinnedClients: { id: 'shell.leftPanel.pinnedClients', defaultMessage: 'Pinned Clients' },
+  recentHistory: { id: 'shell.leftPanel.recentHistory', defaultMessage: 'Recent History' },
+  noClients: { id: 'shell.leftPanel.noClients', defaultMessage: 'No clients match.' },
+  noConversations: { id: 'shell.leftPanel.noConversations', defaultMessage: 'No conversations match.' },
+});
+
+const historyMessages = defineMessages({
+  pin: { id: 'shell.historyItem.pin', defaultMessage: 'Pin' },
+  unpin: { id: 'shell.historyItem.unpin', defaultMessage: 'Unpin' },
+  delete: { id: 'shell.historyItem.delete', defaultMessage: 'Delete' },
+});
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -28,6 +51,7 @@ export function LeftPanel() {
     statsFor,
   } = useAppContext();
 
+  const intl = useIntl();
   const [query, setQuery] = useState('');
   const q = query.trim().toLowerCase();
 
@@ -50,10 +74,10 @@ export function LeftPanel() {
   return (
     <aside className="w-full h-full flex flex-col border-r border-white/5 bg-ground">
       <div className="h-20 px-6 flex items-center justify-between gap-3 border-b border-white/5 shrink-0">
-        <h2 className="font-sans text-xl font-semibold text-white tracking-tight">Workspace</h2>
+        <h2 className="font-sans text-xl font-semibold text-white tracking-tight">{intl.formatMessage(m.heading)}</h2>
         <button
           onClick={newConversation}
-          title="New conversation"
+          title={intl.formatMessage(m.newConversation)}
           className="w-9 h-9 rounded-full bg-card border border-white/5 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-raised transition-all shadow-lg"
         >
           <Plus size={17} />
@@ -72,7 +96,7 @@ export function LeftPanel() {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search clients or history..."
+            placeholder={intl.formatMessage(m.searchPlaceholder)}
             className="w-full bg-card border border-white/5 rounded-full py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand transition-all placeholder:text-zinc-600 text-white"
           />
         </div>
@@ -89,7 +113,7 @@ export function LeftPanel() {
             variants={itemVariants}
             className="px-3 mb-3 flex items-center gap-2 text-[11px] font-bold text-zinc-500 uppercase tracking-widest"
           >
-            <Pin size={12} /> {q ? 'Matching clients' : 'Pinned Clients'}
+            <Pin size={12} /> {q ? intl.formatMessage(m.matchingClients) : intl.formatMessage(m.pinnedClients)}
           </motion.div>
           <div className="flex flex-col gap-1">
             {filteredClients.map((c) => (
@@ -102,7 +126,7 @@ export function LeftPanel() {
                 />
               </motion.div>
             ))}
-            {filteredClients.length === 0 && <EmptyRow text="No clients match." />}
+            {filteredClients.length === 0 && <EmptyRow text={intl.formatMessage(m.noClients)} />}
           </div>
         </div>
 
@@ -111,7 +135,7 @@ export function LeftPanel() {
             variants={itemVariants}
             className="px-3 mb-3 flex items-center gap-2 text-[11px] font-bold text-zinc-500 uppercase tracking-widest"
           >
-            <Clock size={12} /> Recent History
+            <Clock size={12} /> {intl.formatMessage(m.recentHistory)}
           </motion.div>
           <div className="flex flex-col gap-1">
             {filteredConversations.map((c) => (
@@ -127,7 +151,7 @@ export function LeftPanel() {
                 />
               </motion.div>
             ))}
-            {filteredConversations.length === 0 && <EmptyRow text="No conversations match." />}
+            {filteredConversations.length === 0 && <EmptyRow text={intl.formatMessage(m.noConversations)} />}
           </div>
         </div>
       </motion.div>
@@ -179,6 +203,8 @@ function HistoryItem({
   onPin: () => void;
   onDelete: () => void;
 }) {
+  const intl = useIntl();
+
   return (
     <div
       onClick={onClick}
@@ -200,7 +226,7 @@ function HistoryItem({
             e.stopPropagation();
             onPin();
           }}
-          title={pinned ? 'Unpin' : 'Pin'}
+          title={intl.formatMessage(pinned ? historyMessages.unpin : historyMessages.pin)}
           className={`p-1 rounded-lg hover:bg-white/10 transition-colors ${pinned ? 'text-brand' : 'text-zinc-600 hidden group-hover:block'}`}
         >
           {pinned ? <Pin size={13} /> : <PinOff size={13} />}
@@ -210,7 +236,7 @@ function HistoryItem({
             e.stopPropagation();
             onDelete();
           }}
-          title="Delete"
+          title={intl.formatMessage(historyMessages.delete)}
           className="p-1 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-white/10 transition-colors hidden group-hover:block"
         >
           <Trash2 size={13} />
