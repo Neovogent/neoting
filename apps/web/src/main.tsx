@@ -6,6 +6,7 @@ import './index.css';
 import { AppProvider } from './context/AppContext';
 import { ConfirmProvider } from './components/DynamicComponents/ConfirmProvider';
 import { queryClient } from './api/queryClient';
+import { AppIntlProvider } from './i18n/AppIntlProvider';
 
 /**
  * The mocked API starts before React does.
@@ -23,6 +24,10 @@ async function bootstrap() {
 
   createRoot(document.getElementById('root')!).render(
   <StrictMode>
+    {/* Outermost, above AppProvider: the context reads seed data that already
+        carries copy, and a confirm dialog is text before it is anything else,
+        so both need `useIntl()` available. Nothing above this needs messages. */}
+    <AppIntlProvider>
     <QueryClientProvider client={queryClient}>
     <AppProvider>
       {/* Outside App so the dialog covers every shell — practice, business
@@ -32,6 +37,7 @@ async function bootstrap() {
       </ConfirmProvider>
     </AppProvider>
     </QueryClientProvider>
+    </AppIntlProvider>
   </StrictMode>,
   );
 }
