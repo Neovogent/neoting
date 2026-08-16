@@ -42,13 +42,68 @@ export interface PresignedPut {
   readonly headers: Readonly<Record<string, string>>;
 }
 
+/**
+ * A presigned direct-from-storage `GET` (issue #77) — the read half of the same
+ * bargain: `GET /documents/{id}/original` hands back a URL rather than proxying
+ * bytes through the API.
+ *
+ * **Short-lived and scoped to one object.** The signature covers this key alone,
+ * so the URL cannot be walked to another document, and it expires — which is
+ * what makes it safe to put in an `<img src>` that a browser will cache and a
+ * referrer header may leak. The alternative the issue explicitly rules out — a
+ * redirect to a public object — is permanent and enumerable.
+ */
+export interface PresignGetInput {
+  readonly key: string;
+  readonly expiresInSeconds: number;
+  /**
+   * Pinned onto the response so the browser does not content-sniff. The stored
+   * MIME is magic-byte-authoritative by then (sanitisation overwrote the
+   * declared one), so this is the trustworthy value, not the uploader's claim.
+   */
+  readonly contentType: string;
+  /** Suggested download name. Untrusted — see `contentDisposition`. */
+  readonly filename: string;
+}
+
+export interface PresignedGet {
+  readonly url: string;
+  /** When the signature stops working, so the caller can tell a client when to re-ask. */
+  readonly expiresAt: Date;
+}
+
 export interface DocumentStore {
   put(input: DocumentStorePutInput): Promise<StoredDocument>;
   get(key: string): Promise<Buffer>;
   /** Presigned `PUT` for a browser→storage upload; the caller signs, the client uploads (#76). */
   presignPut(input: PresignPutInput): Promise<PresignedPut>;
+  /** Presigned `GET` for a browser→storage read; short-lived, one object (#77). */
+  presignGet(input: PresignGetInput): Promise<PresignedGet>;
   /** Object size if it exists, else null — the "did the PUT land?" check on completion (#76). */
   head(key: string): Promise<{ readonly byteLength: number } | null>;
+}
+
+/**
+ * `Content-Disposition` for a presigned GET, built from a filename **the
+ * uploader chose**.
+ *
+ * That is the whole reason this is a function. `originalFilename` is
+ * client-supplied and travels into a response header: a name containing a CR or
+ * LF splits the header and lets the uploader inject headers of their own into a
+ * response served from the bucket's origin, and an unescaped `"` ends the quoted
+ * string early. Both are stripped rather than escaped — no legitimate filename
+ * contains a newline, and a document called `in"voice.pdf` downloading as
+ * `invoice.pdf` is not a bug worth a parser for.
+ *
+ * `inline` rather than `attachment`: the review screen renders the original in
+ * an overlay, and forcing a download would break the single most-used screen in
+ * the product. That is safe because the type is pinned from the sanitised MIME
+ * rather than sniffed, and because the object is served from the bucket origin,
+ * not the app's.
+ */
+export function contentDisposition(filename: string): string {
+  const safe = filename.replace(/[\r\n"\\]/g, '').trim();
+  return safe === '' ? 'inline' : `inline; filename="${safe}"`;
 }
 
 /**
@@ -144,6 +199,18 @@ export class InMemoryDocumentStore implements DocumentStore {
       key: input.key,
       url: `https://fixture.local/${input.key}`,
       headers: { 'Content-Type': input.contentType },
+    };
+  }
+
+  async presignGet(input: PresignGetInput): Promise<PresignedGet> {
+    // Offline stand-in, same as `presignPut`: a URL nothing fetches. It still
+    // refuses a missing object, because "the row exists but the bytes do not" is
+    // a real state (a document persisted before its PUT landed) and a fixture
+    // that happily signs a URL for nothing would hide it until staging.
+    if (!this.objects.has(input.key)) throw new Error(`no object stored at key ${input.key}`);
+    return {
+      url: `https://fixture.local/${input.key}?download`,
+      expiresAt: new Date(Date.now() + input.expiresInSeconds * 1000),
     };
   }
 

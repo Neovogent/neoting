@@ -258,6 +258,28 @@ Proven end to end against Postgres + MinIO (`web-upload.integration.test.ts`),
 including the presigned PUT actually being accepted — the signature covers
 `content-type` and `content-length`, so a fixture URL can never prove it.
 
+### What the documents read surface took out of this lane (issue #77)
+
+**The read surface is NOT in this module.** `GET /documents…` lives in
+`modules/documents/` — read that `CLAUDE.md` before changing anything it touches.
+Two things it changed *here*, and one it deliberately did not:
+
+- **`storage/` gained `presignGet`.** The signed `ResponseContentType` /
+  `ResponseContentDisposition` overrides and the filename-header sanitising are
+  described in `storage/CLAUDE.md`. Nothing about `presignPut` changed.
+- **`web-upload/document-response.ts` moved to `common/documents/`.** Two modules
+  now project the same Prisma row onto the same contract `Document`, and a module
+  may not reach into another's internals — so it moved rather than being copied.
+  A second copy is how the write surface and the read surface start disagreeing
+  about what a `Document` is, which is the drift the generated contract exists to
+  prevent. `web-upload.service.ts` imports it from its new home; behaviour is
+  unchanged.
+- **No `POST /documents/{id}/retry` was added**, and none may be. `retryable` on
+  the summary is *derived* (`state === REJECTED || FAILED`) and is a hint to the
+  UI, not a route. A retry is a `document.reprocess` proposal on the Review →
+  Approve spine (Governance §10). All five read operations are
+  `x-nt-side-effect: none`.
+
 ### Sanitisation pipeline (merged, PR #3)
 
 **Pure library** — `lib/sanitisation/`.
@@ -356,4 +378,9 @@ sanitisation tests were ported from `tsx --test` to Vitest and run in the suite.
       (`lib/dedupe/`, `queue/duplicate-detector.ts`), routed documents only,
       proven against a real DB. Not yet: dedupe on route (so unrouted docs get
       deduped when they gain a business), and the OCR/field nets (need extraction).
+- [x] #77: `storage/presignGet` added and `web-upload/document-response.ts` moved
+      to `common/documents/`. The endpoints themselves are `modules/documents/`,
+      not this lane. Not yet: a MinIO round-trip proving the GET signature, and an
+      HTTP-level test (blocked — needs `@nestjs/testing`/`supertest` added as
+      devDependencies, which needs a human).
 - [ ] Update this file on exit — it is how the next session picks up
