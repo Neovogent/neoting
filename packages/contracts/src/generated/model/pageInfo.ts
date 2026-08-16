@@ -17,7 +17,7 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { PageInfoNextCursor } from './pageInfoNextCursor';
+import type { PageInfoNextCursor } from './pageInfoNextCursor.js';
 
 export interface PageInfo {
   /** Pass back as `cursor`. Null when there is no next page. */

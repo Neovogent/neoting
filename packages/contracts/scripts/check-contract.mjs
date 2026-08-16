@@ -201,6 +201,47 @@ if (existsSync(ZOD_DIR)) {
   }
 }
 
+// --- 7. every generated relative import can be resolved by Node -------------
+//
+// orval emits extensionless specifiers (`from './documents/documents'`). Node
+// ESM does no extension or directory resolution, so `tsc` copying one through
+// verbatim produces a dist/ that typechecks, builds, ships — and then throws
+// ERR_MODULE_NOT_FOUND on first import. scripts/add-js-extensions.mjs rewrites
+// them; this is what notices if that hook is removed, reordered or silently
+// fails.
+//
+// It matters more than it looks: apps/api imports the Zod schemas at RUNTIME to
+// parse its boundaries, so a missed specifier is not a build warning, it is the
+// API failing to start.
+//
+// Skipped when nothing has been generated yet, so a fresh clone can lint before
+// its first `pnpm generate`.
+
+const GENERATED_DIR = resolvePath(HERE, '../src/generated');
+if (existsSync(GENERATED_DIR)) {
+  const bare = [];
+  const stack = [GENERATED_DIR];
+  while (stack.length) {
+    const dir = stack.pop();
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = resolvePath(dir, entry.name);
+      if (entry.isDirectory()) stack.push(full);
+      else if (entry.name.endsWith('.ts')) {
+        const source = readFileSync(full, 'utf8');
+        for (const match of source.matchAll(/\bfrom\s+['"](\.[^'"]*)['"]/g)) {
+          if (!/\.(js|json|css)$/.test(match[1])) bare.push(`${entry.name}: ${match[1]}`);
+        }
+      }
+    }
+  }
+  if (bare.length) {
+    fail(
+      `${bare.length} generated relative import(s) carry no extension, so Node cannot resolve them at runtime. ` +
+        `Did scripts/add-js-extensions.mjs run? First few: ${bare.slice(0, 3).join(', ')}`,
+    );
+  }
+}
+
 // --- report ----------------------------------------------------------------
 
 const operationCount = Object.values(spec.paths ?? {}).flatMap((item) =>

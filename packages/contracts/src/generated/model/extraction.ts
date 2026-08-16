@@ -17,14 +17,14 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { ExtractionFields } from './extractionFields';
-import type { ExtractionLineItemsItem } from './extractionLineItemsItem';
-import type { ExtractionLadderRung } from './extractionLadderRung';
-import type { ExtractionModelVersion } from './extractionModelVersion';
-import type { ExtractionPromptVersion } from './extractionPromptVersion';
-import type { ExtractionOverallConfidence } from './extractionOverallConfidence';
-import type { ExtractionValidatorResults } from './extractionValidatorResults';
-import type { ExtractionKeyedByUserId } from './extractionKeyedByUserId';
+import type { ExtractionFields } from './extractionFields.js';
+import type { ExtractionLineItemsItem } from './extractionLineItemsItem.js';
+import type { ExtractionLadderRung } from './extractionLadderRung.js';
+import type { ExtractionModelVersion } from './extractionModelVersion.js';
+import type { ExtractionPromptVersion } from './extractionPromptVersion.js';
+import type { ExtractionOverallConfidence } from './extractionOverallConfidence.js';
+import type { ExtractionValidatorResults } from './extractionValidatorResults.js';
+import type { ExtractionKeyedByUserId } from './extractionKeyedByUserId.js';
 
 export interface Extraction {
   id: string;

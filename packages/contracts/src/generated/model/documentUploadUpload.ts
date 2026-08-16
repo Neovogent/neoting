@@ -17,8 +17,8 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { DocumentUploadUploadMethod } from './documentUploadUploadMethod';
-import type { DocumentUploadUploadHeaders } from './documentUploadUploadHeaders';
+import type { DocumentUploadUploadMethod } from './documentUploadUploadMethod.js';
+import type { DocumentUploadUploadHeaders } from './documentUploadUploadHeaders.js';
 
 export type DocumentUploadUpload = {
   method: DocumentUploadUploadMethod;

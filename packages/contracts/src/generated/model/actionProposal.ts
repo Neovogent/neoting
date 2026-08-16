@@ -17,20 +17,20 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { ActionProposalBusinessId } from './actionProposalBusinessId';
-import type { ProposalKind } from './proposalKind';
-import type { ProposalState } from './proposalState';
-import type { ActionProposalPayload } from './actionProposalPayload';
-import type { ActionProposalRenderedSummaryHash } from './actionProposalRenderedSummaryHash';
-import type { ActionProposalCreatedByUserId } from './actionProposalCreatedByUserId';
-import type { ActionProposalCreatedByModel } from './actionProposalCreatedByModel';
-import type { ActionProposalReviewedAt } from './actionProposalReviewedAt';
-import type { ActionProposalApprovedByUserId } from './actionProposalApprovedByUserId';
-import type { ActionProposalApprovedAt } from './actionProposalApprovedAt';
-import type { ActionProposalExecutedAt } from './actionProposalExecutedAt';
-import type { ActionProposalPolicyProposalId } from './actionProposalPolicyProposalId';
-import type { ActionProposalOutcome } from './actionProposalOutcome';
-import type { ActionProposalTraceId } from './actionProposalTraceId';
+import type { ActionProposalBusinessId } from './actionProposalBusinessId.js';
+import type { ProposalKind } from './proposalKind.js';
+import type { ProposalState } from './proposalState.js';
+import type { ActionProposalPayload } from './actionProposalPayload.js';
+import type { ActionProposalRenderedSummaryHash } from './actionProposalRenderedSummaryHash.js';
+import type { ActionProposalCreatedByUserId } from './actionProposalCreatedByUserId.js';
+import type { ActionProposalCreatedByModel } from './actionProposalCreatedByModel.js';
+import type { ActionProposalReviewedAt } from './actionProposalReviewedAt.js';
+import type { ActionProposalApprovedByUserId } from './actionProposalApprovedByUserId.js';
+import type { ActionProposalApprovedAt } from './actionProposalApprovedAt.js';
+import type { ActionProposalExecutedAt } from './actionProposalExecutedAt.js';
+import type { ActionProposalPolicyProposalId } from './actionProposalPolicyProposalId.js';
+import type { ActionProposalOutcome } from './actionProposalOutcome.js';
+import type { ActionProposalTraceId } from './actionProposalTraceId.js';
 
 export interface ActionProposal {
   id: string;

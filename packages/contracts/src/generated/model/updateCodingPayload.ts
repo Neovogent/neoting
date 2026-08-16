@@ -17,7 +17,7 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { UpdateCodingPayloadFields } from './updateCodingPayloadFields';
+import type { UpdateCodingPayloadFields } from './updateCodingPayloadFields.js';
 
 /**
  * Confirming a document's coding is explicitly named in SoT §8.2 as a

@@ -33,11 +33,11 @@ import type {
 import {
   ProposalKind,
   ProposalState
-} from '../../model';
+} from '../../model/index.js';
 import type {
   ActionProposal,
   ProposalReview
-} from '../../model';
+} from '../../model/index.js';
 
 
 export const getCreateActionProposalResponseMock = (overrideResponse: Partial< ActionProposal > = {}): ActionProposal => ({id: faker.string.alpha({length: {min: 10, max: 20}}), businessId: faker.helpers.arrayElement([faker.helpers.arrayElement([faker.string.alpha({length: {min: 10, max: 20}}),null,]), undefined]), kind: faker.helpers.arrayElement(Object.values(ProposalKind)), state: faker.helpers.arrayElement(Object.values(ProposalState)), payload: faker.helpers.arrayElement([{}, undefined]), payloadHash: faker.helpers.fromRegExp('^[a-f0-9]{64}$'), renderedSummaryHash: faker.helpers.arrayElement([faker.helpers.arrayElement([faker.string.alpha({length: {min: 10, max: 20}}),null,]), undefined]), createdByUserId: faker.helpers.arrayElement([faker.helpers.arrayElement([faker.string.alpha({length: {min: 10, max: 20}}),null,]), undefined]), createdByModel: faker.helpers.arrayElement([faker.helpers.arrayElement([faker.string.alpha({length: {min: 10, max: 20}}),null,]), undefined]), createdAt: `${faker.date.past().toISOString().split('.')[0]}Z`, reviewedAt: faker.helpers.arrayElement([`${faker.date.past().toISOString().split('.')[0]}Z`, undefined]), approvedByUserId: faker.helpers.arrayElement([faker.helpers.arrayElement([faker.string.alpha({length: {min: 10, max: 20}}),null,]), undefined]), approvedAt: faker.helpers.arrayElement([`${faker.date.past().toISOString().split('.')[0]}Z`, undefined]), executedAt: faker.helpers.arrayElement([`${faker.date.past().toISOString().split('.')[0]}Z`, undefined]), expiresAt: `${faker.date.past().toISOString().split('.')[0]}Z`, policyProposalId: faker.helpers.arrayElement([faker.helpers.arrayElement([faker.string.alpha({length: {min: 10, max: 20}}),null,]), undefined]), outcome: faker.helpers.arrayElement([faker.helpers.arrayElement([null,]), undefined]), traceId: faker.helpers.arrayElement([faker.helpers.arrayElement([faker.string.alpha({length: {min: 10, max: 20}}),null,]), undefined]), ...overrideResponse})

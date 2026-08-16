@@ -17,6 +17,6 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { Extraction } from './extraction';
+import type { Extraction } from './extraction.js';
 
 export type DocumentAllOfAcceptedExtraction = Extraction | null;

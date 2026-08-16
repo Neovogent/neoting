@@ -17,9 +17,9 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { DocumentChannel } from './documentChannel';
-import type { SplitMode } from './splitMode';
-import type { DocumentUploadRequestDocumentOwnerContactId } from './documentUploadRequestDocumentOwnerContactId';
+import type { DocumentChannel } from './documentChannel.js';
+import type { SplitMode } from './splitMode.js';
+import type { DocumentUploadRequestDocumentOwnerContactId } from './documentUploadRequestDocumentOwnerContactId.js';
 
 export interface DocumentUploadRequest {
   /** The client workspace this document belongs to. Required even for

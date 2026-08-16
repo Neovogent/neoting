@@ -17,7 +17,7 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { DocumentType } from './documentType';
+import type { DocumentType } from './documentType.js';
 
 export type UpdateCodingPayloadFields = {
   docType?: DocumentType;

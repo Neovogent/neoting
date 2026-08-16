@@ -36,12 +36,12 @@ import {
   DocumentType,
   Inbox,
   ProvenanceClass
-} from '../../model';
+} from '../../model/index.js';
 import type {
   Document,
   DocumentUpload,
   Extraction
-} from '../../model';
+} from '../../model/index.js';
 
 
 export const getCreateDocumentUploadResponseMock = (overrideResponse: Partial< DocumentUpload > = {}): DocumentUpload => ({uploadId: faker.string.alpha({length: {min: 10, max: 20}}), upload: {method: faker.helpers.arrayElement(['PUT'] as const), url: faker.internet.url(), headers: {

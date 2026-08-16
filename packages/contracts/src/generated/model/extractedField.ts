@@ -17,11 +17,11 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { ExtractedFieldValue } from './extractedFieldValue';
-import type { ProvenanceClass } from './provenanceClass';
-import type { ExtractedFieldConfidence } from './extractedFieldConfidence';
-import type { ExtractedFieldSource } from './extractedFieldSource';
-import type { ExtractedFieldBoundingBox } from './extractedFieldBoundingBox';
+import type { ExtractedFieldValue } from './extractedFieldValue.js';
+import type { ProvenanceClass } from './provenanceClass.js';
+import type { ExtractedFieldConfidence } from './extractedFieldConfidence.js';
+import type { ExtractedFieldSource } from './extractedFieldSource.js';
+import type { ExtractedFieldBoundingBox } from './extractedFieldBoundingBox.js';
 
 /**
  * One extracted value and everything needed to judge it. Never send a bare

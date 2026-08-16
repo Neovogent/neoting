@@ -17,7 +17,7 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { ExtractedFieldBoundingBoxAnyOf } from './extractedFieldBoundingBoxAnyOf';
+import type { ExtractedFieldBoundingBoxAnyOf } from './extractedFieldBoundingBoxAnyOf.js';
 
 /**
  * Where on the page it was read, normalised 0–1. Drives the editable

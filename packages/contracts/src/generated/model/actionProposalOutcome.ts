@@ -17,7 +17,7 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { ActionProposalOutcomeAnyOf } from './actionProposalOutcomeAnyOf';
+import type { ActionProposalOutcomeAnyOf } from './actionProposalOutcomeAnyOf.js';
 
 /**
  * What actually changed. Populated on execution.

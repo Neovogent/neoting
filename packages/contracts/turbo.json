@@ -2,12 +2,22 @@
   "$schema": "https://turbo.build/schema.json",
   "extends": ["//"],
   "tasks": {
-    // `build` here means "generate from the contract". The generated tree is
-    // gitignored (Governance §1.4), so everything that reads it has to depend on
-    // this task rather than assume the files are on disk.
+    // `build` here means "generate from the contract, then compile it". BOTH
+    // trees are gitignored (Governance §1.4), so everything that reads either
+    // one has to depend on this task rather than assume the files are on disk.
+    //
+    // `dist/**` is an output because the exports map now points at it: a
+    // consumer that resolves `@neoting/contracts/zod` gets built JS, not
+    // source. Leave it out and a cache hit restores src/generated/ while dist/
+    // stays missing, which fails at import time rather than at build time.
     "build": {
-      "inputs": ["openapi.yaml", "orval.config.ts", "scripts/**"],
-      "outputs": ["src/generated/**"]
+      "inputs": ["openapi.yaml", "orval.config.ts", "scripts/**", "src/**", "tsconfig*.json"],
+      "outputs": ["src/generated/**", "dist/**"]
+    },
+    // The runtime-import assertion needs the emitted dist/, so it cannot run
+    // before the build the way a pure unit test could.
+    "test": {
+      "dependsOn": ["build"]
     },
     "typecheck": {
       "dependsOn": ["^build", "build"]

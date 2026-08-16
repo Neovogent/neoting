@@ -17,7 +17,7 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { DocumentAllOfRoutingDecisionAnyOf } from './documentAllOfRoutingDecisionAnyOf';
+import type { DocumentAllOfRoutingDecisionAnyOf } from './documentAllOfRoutingDecisionAnyOf.js';
 
 /**
  * How this document reached this workspace: which rule matched, or

@@ -17,25 +17,25 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { Inbox } from './inbox';
-import type { DocumentState } from './documentState';
-import type { DocumentSummaryDocType } from './documentSummaryDocType';
-import type { DocumentChannel } from './documentChannel';
-import type { DocumentSummarySupplierName } from './documentSummarySupplierName';
-import type { DocumentSummaryCustomerName } from './documentSummaryCustomerName';
-import type { DocumentSummaryDocumentDate } from './documentSummaryDocumentDate';
-import type { DocumentSummaryDueDate } from './documentSummaryDueDate';
-import type { DocumentSummaryCurrency } from './documentSummaryCurrency';
-import type { DocumentSummaryTotalPence } from './documentSummaryTotalPence';
-import type { DocumentSummaryTaxPence } from './documentSummaryTaxPence';
-import type { DocumentSummaryReference } from './documentSummaryReference';
-import type { DocumentSummaryCategoryCode } from './documentSummaryCategoryCode';
-import type { DocumentSummaryDescription } from './documentSummaryDescription';
-import type { DocumentSummaryProjectRef } from './documentSummaryProjectRef';
-import type { DocumentSummaryParentDocumentId } from './documentSummaryParentDocumentId';
-import type { DocumentSummaryFailureCode } from './documentSummaryFailureCode';
-import type { DocumentSummaryFailureMessage } from './documentSummaryFailureMessage';
-import type { DocumentSummaryArchivedAt } from './documentSummaryArchivedAt';
+import type { Inbox } from './inbox.js';
+import type { DocumentState } from './documentState.js';
+import type { DocumentSummaryDocType } from './documentSummaryDocType.js';
+import type { DocumentChannel } from './documentChannel.js';
+import type { DocumentSummarySupplierName } from './documentSummarySupplierName.js';
+import type { DocumentSummaryCustomerName } from './documentSummaryCustomerName.js';
+import type { DocumentSummaryDocumentDate } from './documentSummaryDocumentDate.js';
+import type { DocumentSummaryDueDate } from './documentSummaryDueDate.js';
+import type { DocumentSummaryCurrency } from './documentSummaryCurrency.js';
+import type { DocumentSummaryTotalPence } from './documentSummaryTotalPence.js';
+import type { DocumentSummaryTaxPence } from './documentSummaryTaxPence.js';
+import type { DocumentSummaryReference } from './documentSummaryReference.js';
+import type { DocumentSummaryCategoryCode } from './documentSummaryCategoryCode.js';
+import type { DocumentSummaryDescription } from './documentSummaryDescription.js';
+import type { DocumentSummaryProjectRef } from './documentSummaryProjectRef.js';
+import type { DocumentSummaryParentDocumentId } from './documentSummaryParentDocumentId.js';
+import type { DocumentSummaryFailureCode } from './documentSummaryFailureCode.js';
+import type { DocumentSummaryFailureMessage } from './documentSummaryFailureMessage.js';
+import type { DocumentSummaryArchivedAt } from './documentSummaryArchivedAt.js';
 
 /**
  * The row shape for inbox lists and tables. Header fields are a projection
