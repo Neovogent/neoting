@@ -85,7 +85,14 @@ function baseUrl(): string {
       ? (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_API_BASE_URL
       : undefined;
   const fromNode = typeof process !== 'undefined' ? process.env?.API_BASE_URL : undefined;
-  const origin = fromVite ?? fromNode ?? 'http://localhost:3001';
+  // 3000 is the port the API listens on — `PORT` in apps/api/src/config/env.ts,
+  // `EXPOSE` in its Dockerfile, `local.app_port` in the ALB config and
+  // `containerPort` on the ECS task all carry the same number. This default
+  // used to be 3001, copied from the spec's `servers` block, which was itself
+  // wrong: nothing has ever served 3001, so an unconfigured clone called a
+  // closed port and every request failed as a transport error (issue #63).
+  // This value and the spec's `servers` block move together or not at all.
+  const origin = fromVite ?? fromNode ?? 'http://localhost:3000';
   return `${origin.replace(/\/$/, '')}/v1`;
 }
 
