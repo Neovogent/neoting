@@ -106,7 +106,7 @@ export function Tooltip({ label, detail, children, side = 'top' }: {
               // rather than flashing at the top-left of the window.
               visibility: pos ? 'visible' : 'hidden',
             }}
-            className="pointer-events-none z-[100] px-3 py-2 rounded-xl border border-white/10 bg-[#202026] shadow-2xl text-left whitespace-normal break-words"
+            className="pointer-events-none z-[100] px-3 py-2 rounded-xl border border-white/10 bg-raised shadow-2xl text-left whitespace-normal break-words"
           >
             <span className="block text-[12px] font-bold text-white leading-snug">{label}</span>
             {detail && <span className="block text-[11.5px] text-zinc-400 leading-snug mt-1">{detail}</span>}

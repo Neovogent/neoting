@@ -16,7 +16,7 @@ export function DuplicateCompare({ pairs }: { pairs: DuplicatePair[] }) {
 
   if (pairs.length === 0) {
     return (
-      <div className="w-full max-w-xl border border-white/5 rounded-[24px] bg-[#16161a] p-5 text-sm text-zinc-400">
+      <div className="w-full max-w-xl border border-white/5 rounded-[24px] bg-card p-5 text-sm text-zinc-400">
         No duplicates flagged for this scope.
       </div>
     );
@@ -25,7 +25,7 @@ export function DuplicateCompare({ pairs }: { pairs: DuplicatePair[] }) {
   return (
     <div className="w-full max-w-3xl flex flex-col gap-4">
       {pairs.map((p) => (
-        <div key={p.id} className="border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+        <div key={p.id} className="border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
           <div className="p-6 flex items-start justify-between gap-4 border-b border-white/5">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-400 shrink-0 border border-amber-500/20 shadow-inner">
@@ -55,7 +55,7 @@ export function DuplicateCompare({ pairs }: { pairs: DuplicatePair[] }) {
             </div>
           </div>
 
-          <div className="flex items-center bg-[#202026]/50 p-4 gap-3 flex-wrap">
+          <div className="flex items-center bg-raised/50 p-4 gap-3 flex-wrap">
             <button
               onClick={async () => {
                 const ok = await confirm({
@@ -69,7 +69,7 @@ export function DuplicateCompare({ pairs }: { pairs: DuplicatePair[] }) {
                 resolveDuplicate(p.id, 'delete');
                 logAudit({ action: 'Deleted duplicate', scope: `${p.right.label} — ${p.clientName}`, reviewOpened: true });
               }}
-              className="flex-1 min-w-[160px] flex items-center justify-center gap-2 py-3 text-sm font-bold text-white bg-[#14e3c4] rounded-2xl hover:bg-[#0fcbaf] transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+              className="flex-1 min-w-[160px] flex items-center justify-center gap-2 py-3 text-sm font-bold text-white bg-brand rounded-2xl hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
             >
               <Trash2 size={16} />
               Delete duplicate
@@ -87,7 +87,7 @@ export function DuplicateCompare({ pairs }: { pairs: DuplicatePair[] }) {
                 resolveDuplicate(p.id, 'keep-both');
                 logAudit({ action: 'Merged as evidence', scope: `${p.left.label} + ${p.right.label}`, reviewOpened: true });
               }}
-              className="flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 rounded-2xl transition-colors border border-white/5 bg-[#16161a] shadow-inner"
+              className="flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 rounded-2xl transition-colors border border-white/5 bg-card shadow-inner"
             >
               <GitMerge size={16} />
               Attach to original
@@ -105,7 +105,7 @@ export function DuplicateCompare({ pairs }: { pairs: DuplicatePair[] }) {
                 resolveDuplicate(p.id, 'keep-both');
                 logAudit({ action: 'Kept both — intentional duplicate', scope: `${p.left.label} — ${p.clientName}`, reviewOpened: true });
               }}
-              className="flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 rounded-2xl transition-colors border border-white/5 bg-[#16161a] shadow-inner"
+              className="flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 rounded-2xl transition-colors border border-white/5 bg-card shadow-inner"
               title="Force a legitimate duplicate through"
             >
               <ShieldCheck size={16} />

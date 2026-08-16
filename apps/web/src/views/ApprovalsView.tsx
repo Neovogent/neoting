@@ -168,11 +168,11 @@ export function ApprovalsView() {
   ];
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-[#0a0a0c] h-full overflow-hidden">
+    <div className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden">
       <header className="px-10 pt-8 pb-5 shrink-0">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-[#202026] flex items-center justify-center text-white border border-white/5 shadow-inner">
+            <div className="w-12 h-12 rounded-2xl bg-raised flex items-center justify-center text-white border border-white/5 shadow-inner">
               <CheckCircle size={22} />
             </div>
             <div>
@@ -186,7 +186,7 @@ export function ApprovalsView() {
             <select
               value={clientFilter}
               onChange={(e) => setClientFilter(e.target.value)}
-              className="bg-[#16161a] border border-white/5 rounded-full py-2.5 px-4 text-sm font-semibold text-zinc-300 focus:outline-none focus:border-[#14e3c4] shadow-inner"
+              className="bg-card border border-white/5 rounded-full py-2.5 px-4 text-sm font-semibold text-zinc-300 focus:outline-none focus:border-brand shadow-inner"
             >
               <option value="all">All clients</option>
               {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -194,7 +194,7 @@ export function ApprovalsView() {
             {tab === 'Workflows' && (
               <button
                 onClick={() => setEditing(blankWorkflow())}
-                className="flex items-center gap-2 px-6 py-2.5 bg-[#14e3c4] text-white text-sm font-bold rounded-full hover:bg-[#0fcbaf] transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+                className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
               >
                 <Plus size={16} strokeWidth={2.5} />
                 New workflow
@@ -211,8 +211,8 @@ export function ApprovalsView() {
             onClick={() => setTab(t)}
             className={`px-4 py-2 rounded-full text-[13px] font-bold transition-all border ${
               tab === t
-                ? 'bg-[#14e3c4] text-white border-[#14e3c4] shadow-[0_0_12px_rgba(20,227,196,0.25)]'
-                : 'bg-[#16161a] text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
+                ? 'bg-brand text-white border-brand shadow-[0_0_12px_rgba(20,227,196,0.25)]'
+                : 'bg-card text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
             }`}
           >
             {t}
@@ -227,7 +227,7 @@ export function ApprovalsView() {
             <>
               <div className="flex items-center gap-3 mb-5 flex-wrap">
                 {/* Screen 12 opens on my own queue, not the practice's. */}
-                <div className="flex items-center bg-[#16161a] border border-white/5 rounded-full p-1 shadow-inner">
+                <div className="flex items-center bg-card border border-white/5 rounded-full p-1 shadow-inner">
                   <ScopePill active={scope === 'mine'} onClick={() => setScope('mine')} label="Waiting on me" count={mine.length} />
                   <ScopePill active={scope === 'all'} onClick={() => setScope('all')} label="All pending" count={practicePending.length} />
                 </div>
@@ -237,7 +237,7 @@ export function ApprovalsView() {
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Search supplier or approver..."
-                    className="w-full bg-[#16161a] border border-white/5 rounded-full py-2.5 pl-11 pr-4 text-sm focus:outline-none focus:border-[#14e3c4] placeholder:text-zinc-600 text-white font-medium shadow-inner"
+                    className="w-full bg-card border border-white/5 rounded-full py-2.5 pl-11 pr-4 text-sm focus:outline-none focus:border-brand placeholder:text-zinc-600 text-white font-medium shadow-inner"
                   />
                 </div>
               </div>
@@ -299,7 +299,7 @@ export function ApprovalsView() {
                 </p>
                 <button
                   onClick={() => setEditing(blankWorkflow())}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors"
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
                 >
                   <Plus size={15} />
                   New workflow
@@ -407,7 +407,7 @@ export function ApprovalsView() {
               <button
                 onClick={() => setPreview(null)}
                 aria-label="Close the document"
-                className="absolute -top-3 -right-3 z-10 p-2 bg-[#16161a] hover:bg-[#202026] text-zinc-400 hover:text-white rounded-full border border-white/10 transition-colors shadow-lg"
+                className="absolute -top-3 -right-3 z-10 p-2 bg-card hover:bg-raised text-zinc-400 hover:text-white rounded-full border border-white/10 transition-colors shadow-lg"
               >
                 <X size={18} />
               </button>
@@ -425,7 +425,7 @@ function ScopePill({ active, onClick, label, count }: { active: boolean; onClick
     <button
       onClick={onClick}
       className={`px-4 py-1.5 rounded-full flex items-center gap-2 text-[13px] font-bold transition-all ${
-        active ? 'bg-[#14e3c4] text-white' : 'text-zinc-500 hover:text-white'
+        active ? 'bg-brand text-white' : 'text-zinc-500 hover:text-white'
       }`}
     >
       {label}
@@ -451,9 +451,9 @@ function ClientSideBatch({ items }: { items: ApprovalItem[] }) {
   }));
 
   return (
-    <div className="border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden mb-6">
+    <div className="border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden mb-6">
       <div className="p-6 pb-4 flex items-center gap-3 border-b border-white/5">
-        <div className="w-9 h-9 rounded-xl bg-[#202026] border border-white/5 flex items-center justify-center text-zinc-400 shadow-inner">
+        <div className="w-9 h-9 rounded-xl bg-raised border border-white/5 flex items-center justify-center text-zinc-400 shadow-inner">
           <Smartphone size={16} />
         </div>
         <div className="min-w-0">
@@ -466,7 +466,7 @@ function ClientSideBatch({ items }: { items: ApprovalItem[] }) {
 
       <div className="p-6 flex flex-col gap-3">
         {byClient.map(({ clientId, client, rows, request }) => (
-          <div key={clientId} className="p-4 rounded-2xl bg-[#0a0a0c]/60 border border-white/5 shadow-inner">
+          <div key={clientId} className="p-4 rounded-2xl bg-ground/60 border border-white/5 shadow-inner">
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <div className="min-w-0">
                 <div className="text-[13px] font-bold text-white">{client?.name ?? clientId}</div>
@@ -496,7 +496,7 @@ function ClientSideBatch({ items }: { items: ApprovalItem[] }) {
                     {/* Demo affordance: step into the approver's shoes. */}
                     <button
                       onClick={() => openApprovalLink(request.id)}
-                      className="flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors"
+                      className="flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
                     >
                       <Smartphone size={13} strokeWidth={2.5} />
                       Open the link
@@ -506,7 +506,7 @@ function ClientSideBatch({ items }: { items: ApprovalItem[] }) {
                   <button
                     onClick={() => sendApprovalRequest(clientId)}
                     disabled={!client?.mobile}
-                    className="flex items-center gap-2 px-5 py-2 rounded-full text-[12px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    className="flex items-center gap-2 px-5 py-2 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
                     <Send size={13} strokeWidth={2.5} />
                     Send approval request
@@ -526,7 +526,7 @@ export function WorkflowCard({ workflow, usage, onEdit, onToggle, onDelete }: {
 }) {
   const { clients } = useAppContext();
   return (
-    <div className="border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+    <div className="border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
       <div className="p-6 flex items-start justify-between gap-4 border-b border-white/5">
         <div className="min-w-0">
           <h3 className="font-sans font-bold text-xl text-white tracking-tight truncate">{workflow.name}</h3>
@@ -551,8 +551,8 @@ export function WorkflowCard({ workflow, usage, onEdit, onToggle, onDelete }: {
           <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Stages</div>
           <div className="flex flex-col gap-2">
             {workflow.stages.map((s, i) => (
-              <div key={i} className="flex items-center gap-3 p-3 rounded-2xl bg-[#0a0a0c]/60 border border-white/5">
-                <span className="w-6 h-6 rounded-lg bg-[#202026] text-[11px] font-bold text-zinc-400 flex items-center justify-center shrink-0">
+              <div key={i} className="flex items-center gap-3 p-3 rounded-2xl bg-ground/60 border border-white/5">
+                <span className="w-6 h-6 rounded-lg bg-raised text-[11px] font-bold text-zinc-400 flex items-center justify-center shrink-0">
                   {i + 1}
                 </span>
                 <div className="min-w-0 flex-1">
@@ -581,7 +581,7 @@ export function WorkflowCard({ workflow, usage, onEdit, onToggle, onDelete }: {
             </div>
             <div className="flex flex-col gap-2">
               {workflow.branches.map((b, i) => (
-                <div key={i} className="text-[12px] text-[#14e3c4] bg-[#14e3c4]/[0.07] border border-[#14e3c4]/20 rounded-xl px-3 py-2">
+                <div key={i} className="text-[12px] text-brand bg-brand/[0.07] border border-brand/20 rounded-xl px-3 py-2">
                   {b.label}
                 </div>
               ))}
@@ -596,8 +596,8 @@ export function WorkflowCard({ workflow, usage, onEdit, onToggle, onDelete }: {
         </div>
       </div>
 
-      <div className="p-4 bg-[#202026]/50 flex items-center gap-3 flex-wrap">
-        <button onClick={onEdit} className="px-5 py-2.5 rounded-2xl text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors">
+      <div className="p-4 bg-raised/50 flex items-center gap-3 flex-wrap">
+        <button onClick={onEdit} className="px-5 py-2.5 rounded-2xl text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-colors">
           Edit
         </button>
         <button onClick={onToggle} className="px-4 py-2.5 rounded-2xl text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 border border-white/5 transition-colors">
@@ -630,7 +630,7 @@ function ApprovalDetail({ item, workflow, onApprove, onReject, onEdit, onClose }
 
   return (
     <Modal onClose={onClose}>
-      <div className="w-full max-w-2xl border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+      <div className="w-full max-w-2xl border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
         <div className="p-6 flex items-start justify-between gap-4 border-b border-white/5">
           <div className="min-w-0">
             <h3 className="font-sans font-bold text-xl text-white tracking-tight truncate">{item.supplier}</h3>
@@ -656,8 +656,8 @@ function ApprovalDetail({ item, workflow, onApprove, onReject, onEdit, onClose }
                       i < item.stageIndex || item.state === 'approved'
                         ? 'bg-emerald-500/10 text-emerald-400'
                         : i === item.stageIndex
-                          ? 'bg-[#14e3c4] text-white'
-                          : 'bg-[#202026] text-zinc-500'
+                          ? 'bg-brand text-white'
+                          : 'bg-raised text-zinc-500'
                     }`}
                   >
                     {s}
@@ -669,7 +669,7 @@ function ApprovalDetail({ item, workflow, onApprove, onReject, onEdit, onClose }
           </div>
 
           {item.addedByBranch.length > 0 && (
-            <div className="text-[13px] text-[#14e3c4] bg-[#14e3c4]/[0.07] border border-[#14e3c4]/20 rounded-2xl px-4 py-3 flex items-start gap-2.5">
+            <div className="text-[13px] text-brand bg-brand/[0.07] border border-brand/20 rounded-2xl px-4 py-3 flex items-start gap-2.5">
               <GitBranch size={16} className="shrink-0 mt-0.5" />
               <span>
                 Branch conditions fired on this item — {item.addedByBranch.join(' and ')} added to the chain before it
@@ -683,7 +683,7 @@ function ApprovalDetail({ item, workflow, onApprove, onReject, onEdit, onClose }
             <div className="flex flex-col gap-3">
               {item.history.map((h, i) => (
                 <div key={i} className="flex items-start gap-3">
-                  <div className="w-7 h-7 rounded-lg bg-[#202026] border border-white/5 flex items-center justify-center text-zinc-500 shrink-0 mt-0.5">
+                  <div className="w-7 h-7 rounded-lg bg-raised border border-white/5 flex items-center justify-center text-zinc-500 shrink-0 mt-0.5">
                     <Clock size={13} />
                   </div>
                   <div className="min-w-0">
@@ -705,13 +705,13 @@ function ApprovalDetail({ item, workflow, onApprove, onReject, onEdit, onClose }
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder={rejecting ? 'Coding looks wrong — recheck the VAT' : 'Add context for the audit log'}
-                className="w-full bg-[#0a0a0c] border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#14e3c4] transition-colors"
+                className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors"
               />
             </div>
           )}
 
           {item.locked && (
-            <div className="text-[13px] text-zinc-400 bg-[#0a0a0c]/60 border border-white/5 rounded-2xl px-4 py-3 flex items-center gap-2.5">
+            <div className="text-[13px] text-zinc-400 bg-ground/60 border border-white/5 rounded-2xl px-4 py-3 flex items-center gap-2.5">
               <Lock size={15} className="shrink-0" />
               Item details are locked. Approvals override every auto-publish path, including the AI's.
             </div>
@@ -719,7 +719,7 @@ function ApprovalDetail({ item, workflow, onApprove, onReject, onEdit, onClose }
         </div>
 
         {item.state === 'pending' && (
-          <div className="p-4 bg-[#202026]/50 flex items-center gap-3 justify-end flex-wrap">
+          <div className="p-4 bg-raised/50 flex items-center gap-3 justify-end flex-wrap">
             {/* Screen 12's per-stage can-edit toggle: whether this approver may
                 correct the coding, or only pass and reject, is the workflow
                 author's call — so the button reflects the stage, not the role. */}
@@ -750,7 +750,7 @@ function ApprovalDetail({ item, workflow, onApprove, onReject, onEdit, onClose }
             </button>
             <button
               onClick={() => setConfirming('approve')}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-all shadow-[0_0_15px_rgba(20,227,196,0.3)]"
+              className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.3)]"
             >
               <ShieldCheck size={16} />
               Pass this stage
@@ -800,7 +800,7 @@ function RejectionNote({ item, onClose }: { item: ApprovalItem; onClose: () => v
 
   return (
     <Modal onClose={onClose}>
-      <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+      <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
         <div className="p-6 border-b border-white/5 flex items-start gap-4">
           <div className="w-11 h-11 rounded-2xl bg-red-500/10 border border-red-400/25 flex items-center justify-center text-red-400 shrink-0">
             <MessageSquare size={18} />
@@ -814,7 +814,7 @@ function RejectionNote({ item, onClose }: { item: ApprovalItem; onClose: () => v
         </div>
 
         <div className="p-6 flex flex-col gap-5">
-          <div className="p-4 rounded-2xl bg-[#0a0a0c]/60 border border-white/5 shadow-inner">
+          <div className="p-4 rounded-2xl bg-ground/60 border border-white/5 shadow-inner">
             <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Reason given</div>
             <p className="text-[14px] text-white leading-relaxed">
               {rejection?.note ?? 'No reason was recorded.'}
@@ -829,7 +829,7 @@ function RejectionNote({ item, onClose }: { item: ApprovalItem; onClose: () => v
             <div className="flex flex-col gap-3">
               {item.history.map((h, i) => (
                 <div key={i} className="flex items-start gap-3">
-                  <div className="w-7 h-7 rounded-lg bg-[#202026] border border-white/5 flex items-center justify-center text-zinc-500 shrink-0 mt-0.5">
+                  <div className="w-7 h-7 rounded-lg bg-raised border border-white/5 flex items-center justify-center text-zinc-500 shrink-0 mt-0.5">
                     <Clock size={13} />
                   </div>
                   <div className="min-w-0">
@@ -843,10 +843,10 @@ function RejectionNote({ item, onClose }: { item: ApprovalItem; onClose: () => v
           </div>
         </div>
 
-        <div className="p-4 bg-[#202026]/50 flex justify-end">
+        <div className="p-4 bg-raised/50 flex justify-end">
           <button
             onClick={onClose}
-            className="px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors"
+            className="px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
           >
             Close
           </button>
@@ -875,7 +875,7 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
 
   return (
     <Modal onClose={onClose}>
-      <div className="w-full max-w-2xl border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+      <div className="w-full max-w-2xl border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
         <div className="p-6 border-b border-white/5 flex items-start justify-between gap-4">
           <div>
             <h3 className="font-sans font-bold text-xl text-white tracking-tight">
@@ -888,7 +888,7 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
           {!describing && (
             <button
               onClick={() => setDescribing(true)}
-              className="shrink-0 flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold text-[#14e3c4] bg-[#14e3c4]/10 border border-[#14e3c4]/20 hover:bg-[#14e3c4]/20 transition-colors"
+              className="shrink-0 flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold text-brand bg-brand/10 border border-brand/20 hover:bg-brand/20 transition-colors"
             >
               <Sparkles size={13} />
               Describe it instead
@@ -903,7 +903,7 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
           <div className="p-6 border-b border-white/5 flex flex-col gap-4">
             <div>
               <div className="flex items-center gap-2 text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
-                <Sparkles size={12} className="text-[#14e3c4]" />
+                <Sparkles size={12} className="text-brand" />
                 Describe the policy
               </div>
               <textarea
@@ -914,7 +914,7 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
                 }}
                 rows={3}
                 placeholder="Anything over £500 needs a manager, and over £2,000 the Finance Director too. Auto-publish once approved."
-                className="w-full bg-[#0a0a0c] border border-white/5 rounded-2xl px-4 py-3 text-[13.5px] text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#14e3c4] transition-colors resize-none"
+                className="w-full bg-ground border border-white/5 rounded-2xl px-4 py-3 text-[13.5px] text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors resize-none"
               />
             </div>
 
@@ -923,7 +923,7 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
                 <button
                   key={ex}
                   onClick={() => setPrompt(ex)}
-                  className="px-3 py-1.5 rounded-full text-[11px] font-semibold text-zinc-400 bg-[#0a0a0c] border border-white/5 hover:text-white hover:border-white/20 transition-colors text-left max-w-full truncate"
+                  className="px-3 py-1.5 rounded-full text-[11px] font-semibold text-zinc-400 bg-ground border border-white/5 hover:text-white hover:border-white/20 transition-colors text-left max-w-full truncate"
                 >
                   {ex}
                 </button>
@@ -934,7 +934,7 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
               <button
                 onClick={build}
                 disabled={!prompt.trim()}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+                className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
               >
                 <Sparkles size={15} />
                 Build the workflow
@@ -955,11 +955,11 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
         {/* What the description was taken to mean, and what it did not say. */}
         {read && !describing && (
           <div className="px-6 pt-5">
-            <div className="p-4 rounded-2xl bg-[#14e3c4]/[0.06] border border-[#14e3c4]/20 flex flex-col gap-2">
-              <div className="text-[11px] font-bold text-[#14e3c4] uppercase tracking-widest">Filled in from your description</div>
+            <div className="p-4 rounded-2xl bg-brand/[0.06] border border-brand/20 flex flex-col gap-2">
+              <div className="text-[11px] font-bold text-brand uppercase tracking-widest">Filled in from your description</div>
               {read.understood.map((u) => (
                 <div key={u} className="text-[12.5px] text-zinc-300 flex items-start gap-2">
-                  <Check size={13} className="text-[#14e3c4] mt-0.5 shrink-0" strokeWidth={3} />
+                  <Check size={13} className="text-brand mt-0.5 shrink-0" strokeWidth={3} />
                   {u}
                 </div>
               ))}
@@ -999,8 +999,8 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
                     }
                     className={`px-3.5 py-2 rounded-full text-[12.5px] font-bold border transition-colors ${
                       on
-                        ? 'text-[#14e3c4] bg-[#14e3c4]/10 border-[#14e3c4]/30'
-                        : 'text-zinc-400 bg-[#0a0a0c]/60 border-white/5 hover:text-white'
+                        ? 'text-brand bg-brand/10 border-brand/30'
+                        : 'text-zinc-400 bg-ground/60 border-white/5 hover:text-white'
                     }`}
                   >
                     {on ? '✓ ' : ''}{c.name}
@@ -1020,14 +1020,14 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
               <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Stages</span>
               <button
                 onClick={() => set('stages', [...draft.stages, { name: 'New stage', approver: 'Manager', canEdit: false }])}
-                className="text-[12px] font-bold text-[#14e3c4] hover:underline"
+                className="text-[12px] font-bold text-brand hover:underline"
               >
                 + Add stage
               </button>
             </div>
             <div className="flex flex-col gap-2">
               {draft.stages.map((s, i) => (
-                <div key={i} className="flex items-center gap-2 p-3 rounded-2xl bg-[#0a0a0c]/60 border border-white/5">
+                <div key={i} className="flex items-center gap-2 p-3 rounded-2xl bg-ground/60 border border-white/5">
                   <input
                     value={s.name}
                     onChange={(e) => set('stages', draft.stages.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
@@ -1036,14 +1036,14 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
                   <input
                     value={s.approver}
                     onChange={(e) => set('stages', draft.stages.map((x, j) => (j === i ? { ...x, approver: e.target.value } : x)))}
-                    className="w-32 bg-[#16161a] border border-white/5 rounded-lg px-2 py-1 text-[12px] text-zinc-300 focus:outline-none focus:border-[#14e3c4]"
+                    className="w-32 bg-card border border-white/5 rounded-lg px-2 py-1 text-[12px] text-zinc-300 focus:outline-none focus:border-brand"
                   />
                   <input
                     type="number"
                     placeholder="threshold"
                     value={s.thresholdAbove ?? ''}
                     onChange={(e) => set('stages', draft.stages.map((x, j) => (j === i ? { ...x, thresholdAbove: e.target.value ? Number(e.target.value) : undefined } : x)))}
-                    className="w-24 bg-[#16161a] border border-white/5 rounded-lg px-2 py-1 text-[12px] text-zinc-300 focus:outline-none focus:border-[#14e3c4]"
+                    className="w-24 bg-card border border-white/5 rounded-lg px-2 py-1 text-[12px] text-zinc-300 focus:outline-none focus:border-brand"
                   />
                   {/* Whether this stage leaves the practice. A client-side
                       stage is delivered by SMS + OTP, so it can never edit. */}
@@ -1056,7 +1056,7 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
                     title={s.clientSide ? 'Approved by the business, over SMS' : 'Approved inside the practice'}
                     className={`shrink-0 px-3 py-1 rounded-full text-[11px] font-bold border transition-colors ${
                       s.clientSide
-                        ? 'text-[#14e3c4] bg-[#14e3c4]/10 border-[#14e3c4]/25'
+                        ? 'text-brand bg-brand/10 border-brand/25'
                         : 'text-zinc-500 border-white/5 hover:text-white hover:border-white/15'
                     }`}
                   >
@@ -1068,7 +1068,7 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
                     title={s.clientSide ? 'A client-side approver never edits the coding' : 'Can this approver correct the coding?'}
                     className={`shrink-0 px-3 py-1 rounded-full text-[11px] font-bold border transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
                       s.canEdit
-                        ? 'text-[#14e3c4] bg-[#14e3c4]/10 border-[#14e3c4]/25'
+                        ? 'text-brand bg-brand/10 border-brand/25'
                         : 'text-zinc-500 border-white/5 hover:text-white hover:border-white/15'
                     }`}
                   >
@@ -1090,18 +1090,18 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
               <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Conditional branches</span>
               <button
                 onClick={() => set('branches', [...draft.branches, { field: 'amount', operator: '>', value: '2000', addApprover: 'Finance Director', label: 'Amount over £2,000 adds the Finance Director' }])}
-                className="text-[12px] font-bold text-[#14e3c4] hover:underline"
+                className="text-[12px] font-bold text-brand hover:underline"
               >
                 + Add branch
               </button>
             </div>
             <div className="flex flex-col gap-2">
               {draft.branches.map((b, i) => (
-                <div key={i} className="flex items-center gap-2 p-3 rounded-2xl bg-[#0a0a0c]/60 border border-white/5">
+                <div key={i} className="flex items-center gap-2 p-3 rounded-2xl bg-ground/60 border border-white/5">
                   <input
                     value={b.label}
                     onChange={(e) => set('branches', draft.branches.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))}
-                    className="flex-1 bg-transparent text-[12px] text-[#14e3c4] focus:outline-none min-w-0"
+                    className="flex-1 bg-transparent text-[12px] text-brand focus:outline-none min-w-0"
                   />
                   <button
                     onClick={() => set('branches', draft.branches.filter((_, j) => j !== i))}
@@ -1124,11 +1124,11 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
           />
         </div>
 
-        <div className="p-4 bg-[#202026]/50 flex justify-end gap-3">
+        <div className="p-4 bg-raised/50 flex justify-end gap-3">
           <button onClick={onClose} className="px-5 py-2.5 rounded-full text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 transition-colors">
             Cancel
           </button>
-          <button onClick={() => onSave(draft)} className="px-6 py-2.5 rounded-full text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-all">
+          <button onClick={() => onSave(draft)} className="px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-all">
             Save workflow
           </button>
         </div>
@@ -1178,7 +1178,7 @@ export function Modal({ children, onClose }: { children: React.ReactNode; onClos
         onClick={(e) => e.stopPropagation()}
         className="relative w-full max-w-2xl flex justify-center"
       >
-        <button onClick={onClose} className="absolute -top-3 -right-3 z-10 p-2 bg-[#16161a] hover:bg-[#202026] text-zinc-400 hover:text-white rounded-full border border-white/10 transition-colors shadow-lg">
+        <button onClick={onClose} className="absolute -top-3 -right-3 z-10 p-2 bg-card hover:bg-raised text-zinc-400 hover:text-white rounded-full border border-white/10 transition-colors shadow-lg">
           <X size={18} />
         </button>
         {children}
@@ -1195,7 +1195,7 @@ export function Field({ label, value, onChange, placeholder }: { label: string; 
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full bg-[#0a0a0c] border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#14e3c4] transition-colors"
+        className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors"
       />
     </div>
   );
@@ -1205,13 +1205,13 @@ export function Toggle({ label, hint, value, onChange }: { label: string; hint?:
   return (
     <button
       onClick={() => onChange(!value)}
-      className="bg-[#0a0a0c]/60 border border-white/5 rounded-2xl p-4 flex items-center justify-between gap-4 shadow-inner hover:border-white/10 transition-colors text-left"
+      className="bg-ground/60 border border-white/5 rounded-2xl p-4 flex items-center justify-between gap-4 shadow-inner hover:border-white/10 transition-colors text-left"
     >
       <div>
         <div className="text-sm font-bold text-white">{label}</div>
         {hint && <div className="text-[12px] text-zinc-500 mt-0.5">{hint}</div>}
       </div>
-      <span className={`w-11 h-6 rounded-full shrink-0 transition-colors relative ${value ? 'bg-[#14e3c4]' : 'bg-white/10'}`}>
+      <span className={`w-11 h-6 rounded-full shrink-0 transition-colors relative ${value ? 'bg-brand' : 'bg-white/10'}`}>
         <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${value ? 'left-6' : 'left-1'}`} />
       </span>
     </button>

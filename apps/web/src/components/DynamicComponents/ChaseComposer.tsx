@@ -76,7 +76,7 @@ export function MessageEditor({ value, suggested, onChange, onReset }: {
         onChange={(e) => onChange(e.target.value)}
         rows={4}
         aria-label="Message text"
-        className="w-full px-3 py-2.5 rounded-xl bg-[#202026] border border-white/10 text-[13px] text-white font-mono leading-relaxed resize-y focus:outline-none focus:border-[#14e3c4]/50"
+        className="w-full px-3 py-2.5 rounded-xl bg-raised border border-white/10 text-[13px] text-white font-mono leading-relaxed resize-y focus:outline-none focus:border-brand/50"
       />
 
       <div className="flex items-center justify-between gap-3 flex-wrap text-[11px] font-bold">
@@ -138,7 +138,7 @@ export function ChaseComposer({ clientIds, missingItemIds }: {
 
   if (targets.length === 0) {
     return (
-      <div className="w-full max-w-xl border border-white/5 rounded-[24px] bg-[#16161a] p-5 text-sm text-zinc-400">
+      <div className="w-full max-w-xl border border-white/5 rounded-[24px] bg-card p-5 text-sm text-zinc-400">
         Nothing outstanding to chase for this scope — every detected gap is either received, chased or suppressed.
       </div>
     );
@@ -173,7 +173,7 @@ export function ChaseComposer({ clientIds, missingItemIds }: {
       <ReviewSection title={`Message preview (SMS) — ${drafts.length} recipient${drafts.length === 1 ? '' : 's'}`}>
         <div className="flex flex-col gap-3">
           {drafts.map((d) => (
-            <div key={d.client.id} className="bg-[#16161a] border border-white/5 rounded-2xl p-4 shadow-inner">
+            <div key={d.client.id} className="bg-card border border-white/5 rounded-2xl p-4 shadow-inner">
               <div className="flex items-center justify-between gap-3 mb-2.5">
                 <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">
                   {d.client.contactName} · {d.client.mobile}
@@ -202,7 +202,7 @@ export function ChaseComposer({ clientIds, missingItemIds }: {
       </ReviewSection>
 
       <ReviewSection title="Items being chased">
-        <div className="bg-[#16161a] border border-white/5 rounded-2xl divide-y divide-white/5 shadow-inner max-h-56 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="bg-card border border-white/5 rounded-2xl divide-y divide-white/5 shadow-inner max-h-56 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {drafts.flatMap((d) =>
             d.items.map((it) => (
               <div key={it.id} className="px-4 py-2.5 flex items-center justify-between gap-3 text-[13px]">

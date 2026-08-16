@@ -37,10 +37,10 @@ export function BusinessPortal() {
   if (!account) return <BusinessSignInView />;
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 h-full bg-[#0a0a0c] overflow-hidden">
-      <header className="shrink-0 border-b border-white/5 bg-[#16161a] px-6 py-4 flex items-center justify-between gap-4">
+    <div className="flex-1 flex flex-col min-w-0 h-full bg-ground overflow-hidden">
+      <header className="shrink-0 border-b border-white/5 bg-card px-6 py-4 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-2xl bg-[#14e3c4] flex items-center justify-center text-white shrink-0 shadow-[0_0_15px_rgba(20,227,196,0.3)]">
+          <div className="w-10 h-10 rounded-2xl bg-brand flex items-center justify-center text-white shrink-0 shadow-[0_0_15px_rgba(20,227,196,0.3)]">
             <Building2 size={18} />
           </div>
           <div className="min-w-0">
@@ -53,7 +53,7 @@ export function BusinessPortal() {
           <SwitchAccount />
           <button
             onClick={exitBusinessPortal}
-            className="flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold text-zinc-400 border border-white/5 bg-[#0a0a0c] hover:text-white hover:border-white/15 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold text-zinc-400 border border-white/5 bg-ground hover:text-white hover:border-white/15 transition-colors"
           >
             <ArrowLeft size={14} strokeWidth={2.5} />
             Accountant portal
@@ -61,7 +61,7 @@ export function BusinessPortal() {
         </div>
       </header>
 
-      <nav className="shrink-0 border-b border-white/5 bg-[#16161a]/60 px-6 flex items-center gap-1">
+      <nav className="shrink-0 border-b border-white/5 bg-card/60 px-6 flex items-center gap-1">
         {TABS.map((t) => {
           const isActive = tab === t.key;
           return (
@@ -72,12 +72,12 @@ export function BusinessPortal() {
                 isActive ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'
               }`}
             >
-              <t.icon size={15} className={isActive ? 'text-[#14e3c4]' : ''} />
+              <t.icon size={15} className={isActive ? 'text-brand' : ''} />
               {t.key}
               {isActive && (
                 <motion.span
                   layoutId="business-tab-underline"
-                  className="absolute left-3 right-3 -bottom-px h-0.5 rounded-full bg-[#14e3c4]"
+                  className="absolute left-3 right-3 -bottom-px h-0.5 rounded-full bg-brand"
                 />
               )}
             </button>
@@ -107,7 +107,7 @@ function SwitchAccount() {
     <div className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold text-zinc-400 border border-white/5 bg-[#0a0a0c] hover:text-white hover:border-white/15 transition-colors"
+        className="flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold text-zinc-400 border border-white/5 bg-ground hover:text-white hover:border-white/15 transition-colors"
       >
         Switch business
         <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -120,7 +120,7 @@ function SwitchAccount() {
               initial={{ opacity: 0, y: -6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
-              className="absolute right-0 top-full mt-2 w-64 z-30 rounded-2xl border border-white/5 bg-[#16161a] shadow-2xl overflow-hidden p-1.5"
+              className="absolute right-0 top-full mt-2 w-64 z-30 rounded-2xl border border-white/5 bg-card shadow-2xl overflow-hidden p-1.5"
             >
               {businessAccounts.map((a) => (
                 <button
@@ -130,7 +130,7 @@ function SwitchAccount() {
                     setOpen(false);
                   }}
                   className={`w-full text-left px-3 py-2.5 rounded-xl text-[13px] font-semibold transition-colors ${
-                    a.id === active?.id ? 'bg-[#14e3c4]/15 text-[#14e3c4]' : 'text-zinc-300 hover:bg-white/5 hover:text-white'
+                    a.id === active?.id ? 'bg-brand/15 text-brand' : 'text-zinc-300 hover:bg-white/5 hover:text-white'
                   }`}
                 >
                   {a.businessName}

@@ -93,9 +93,9 @@ export function BusinessHomeView({
       </div>
 
       {toApprove.length > 0 && (
-        <div className="rounded-[24px] border border-[#14e3c4]/25 bg-[#14e3c4]/[0.07] overflow-hidden">
+        <div className="rounded-[24px] border border-brand/25 bg-brand/[0.07] overflow-hidden">
           <div className="p-5 flex items-start gap-3">
-            <span className="w-10 h-10 rounded-2xl bg-[#14e3c4] flex items-center justify-center text-white shrink-0 shadow-[0_0_15px_rgba(20,227,196,0.3)]">
+            <span className="w-10 h-10 rounded-2xl bg-brand flex items-center justify-center text-white shrink-0 shadow-[0_0_15px_rgba(20,227,196,0.3)]">
               <ShieldCheck size={18} />
             </span>
             <div className="min-w-0 flex-1">
@@ -116,7 +116,7 @@ export function BusinessHomeView({
                 // next tick when this is the first time.
                 setTimeout(() => openApprovalLink(approvalRequest?.id ?? `appr-req-${account.clientId}-0`), 0);
               }}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 rounded-full text-[13px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
             >
               <ShieldCheck size={15} strokeWidth={2.5} />
               Review and approve
@@ -126,9 +126,9 @@ export function BusinessHomeView({
       )}
 
       {proposedUsers.length > 0 && (
-        <div className="rounded-[24px] border border-[#14e3c4]/25 bg-[#14e3c4]/[0.07] overflow-hidden">
-          <div className="p-5 flex items-start gap-3 border-b border-[#14e3c4]/15">
-            <span className="w-10 h-10 rounded-2xl bg-[#14e3c4] flex items-center justify-center text-white shrink-0 shadow-[0_0_15px_rgba(20,227,196,0.3)]">
+        <div className="rounded-[24px] border border-brand/25 bg-brand/[0.07] overflow-hidden">
+          <div className="p-5 flex items-start gap-3 border-b border-brand/15">
+            <span className="w-10 h-10 rounded-2xl bg-brand flex items-center justify-center text-white shrink-0 shadow-[0_0_15px_rgba(20,227,196,0.3)]">
               <UserPlus size={18} />
             </span>
             <div className="min-w-0 flex-1">
@@ -143,9 +143,9 @@ export function BusinessHomeView({
 
           <div className="p-5 flex flex-col gap-3">
             {proposedUsers.map((m) => (
-              <div key={m.id} className="p-4 rounded-2xl bg-[#16161a] border border-white/5 flex flex-col gap-3">
+              <div key={m.id} className="p-4 rounded-2xl bg-card border border-white/5 flex flex-col gap-3">
                 <div className="flex items-center gap-3 flex-wrap">
-                  <span className="w-10 h-10 rounded-xl bg-[#202026] border border-white/5 flex items-center justify-center font-bold text-white shrink-0">
+                  <span className="w-10 h-10 rounded-xl bg-raised border border-white/5 flex items-center justify-center font-bold text-white shrink-0">
                     {m.name.trim().charAt(0).toUpperCase() || '?'}
                   </span>
                   <div className="min-w-0 flex-1">
@@ -192,7 +192,7 @@ export function BusinessHomeView({
                       });
                       if (ok) reviewProposedUser(account.id, m.id, 'approve');
                     }}
-                    className="flex items-center gap-2 px-5 py-2 rounded-full text-[12px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors"
+                    className="flex items-center gap-2 px-5 py-2 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
                   >
                     <Check size={13} strokeWidth={3} />
                     Approve
@@ -205,9 +205,9 @@ export function BusinessHomeView({
       )}
 
       {proposedChanges.length > 0 && (
-        <div className="rounded-[24px] border border-[#14e3c4]/25 bg-[#14e3c4]/[0.07] overflow-hidden">
-          <div className="p-5 flex items-start gap-3 border-b border-[#14e3c4]/15">
-            <span className="w-10 h-10 rounded-2xl bg-[#14e3c4] flex items-center justify-center text-white shrink-0 shadow-[0_0_15px_rgba(20,227,196,0.3)]">
+        <div className="rounded-[24px] border border-brand/25 bg-brand/[0.07] overflow-hidden">
+          <div className="p-5 flex items-start gap-3 border-b border-brand/15">
+            <span className="w-10 h-10 rounded-2xl bg-brand flex items-center justify-center text-white shrink-0 shadow-[0_0_15px_rgba(20,227,196,0.3)]">
               <FileText size={18} />
             </span>
             <div className="min-w-0 flex-1">
@@ -222,7 +222,7 @@ export function BusinessHomeView({
 
           <div className="p-5 flex flex-col gap-3">
             {proposedChanges.map((c) => (
-              <div key={c.id} className="p-4 rounded-2xl bg-[#16161a] border border-white/5 flex flex-col gap-3">
+              <div key={c.id} className="p-4 rounded-2xl bg-card border border-white/5 flex flex-col gap-3">
                 <div>
                   <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">{c.label}</div>
                   <div className="flex items-center gap-3 mt-2 flex-wrap text-[13.5px]">
@@ -264,7 +264,7 @@ export function BusinessHomeView({
                       });
                       if (ok) reviewClientDetailChange(c.id, 'approve');
                     }}
-                    className="flex items-center gap-2 px-5 py-2 rounded-full text-[12px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors"
+                    className="flex items-center gap-2 px-5 py-2 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
                   >
                     <Check size={13} strokeWidth={3} />
                     Approve
@@ -279,9 +279,9 @@ export function BusinessHomeView({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <button
           onClick={() => onGo('Capture')}
-          className="flex items-center gap-4 p-5 rounded-2xl border border-white/5 bg-[#16161a] hover:border-[#14e3c4]/40 transition-colors text-left group"
+          className="flex items-center gap-4 p-5 rounded-2xl border border-white/5 bg-card hover:border-brand/40 transition-colors text-left group"
         >
-          <span className="w-12 h-12 rounded-2xl bg-[#14e3c4] flex items-center justify-center text-white shrink-0 shadow-[0_0_15px_rgba(20,227,196,0.3)]">
+          <span className="w-12 h-12 rounded-2xl bg-brand flex items-center justify-center text-white shrink-0 shadow-[0_0_15px_rgba(20,227,196,0.3)]">
             <Camera size={20} />
           </span>
           <span className="min-w-0">
@@ -291,9 +291,9 @@ export function BusinessHomeView({
         </button>
         <button
           onClick={() => onGo('Upload')}
-          className="flex items-center gap-4 p-5 rounded-2xl border border-white/5 bg-[#16161a] hover:border-[#14e3c4]/40 transition-colors text-left"
+          className="flex items-center gap-4 p-5 rounded-2xl border border-white/5 bg-card hover:border-brand/40 transition-colors text-left"
         >
-          <span className="w-12 h-12 rounded-2xl bg-[#202026] border border-white/5 flex items-center justify-center text-zinc-300 shrink-0">
+          <span className="w-12 h-12 rounded-2xl bg-raised border border-white/5 flex items-center justify-center text-zinc-300 shrink-0">
             <Upload size={20} />
           </span>
           <span className="min-w-0">
@@ -318,7 +318,7 @@ export function BusinessHomeView({
             {requests.slice(0, 8).map((m) => (
               <div
                 key={m.id}
-                className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-[#0a0a0c]/60 border border-white/5"
+                className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-ground/60 border border-white/5"
               >
                 <div className="min-w-0">
                   <div className="text-sm font-bold text-white truncate">{m.supplier}</div>
@@ -330,7 +330,7 @@ export function BusinessHomeView({
                   {m.chased ? <Pill tone="amber">Requested</Pill> : <Pill>Spotted</Pill>}
                   <button
                     onClick={() => onGo('Capture')}
-                    className="px-4 py-2 rounded-full text-[12px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors"
+                    className="px-4 py-2 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
                   >
                     Send it
                   </button>
@@ -358,7 +358,7 @@ export function BusinessHomeView({
                 <button
                   key={d.id}
                   onClick={() => setPreviewId(d.id)}
-                  className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-[#0a0a0c]/60 border border-white/5 hover:border-white/20 transition-colors text-left"
+                  className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-ground/60 border border-white/5 hover:border-white/20 transition-colors text-left"
                 >
                   <div className="min-w-0">
                     <div className="text-sm font-bold text-white truncate">{d.supplier}</div>
@@ -377,7 +377,7 @@ export function BusinessHomeView({
         )}
       </Panel>
 
-      <div className="flex items-start gap-3 p-4 rounded-2xl border border-white/5 bg-[#16161a]/60">
+      <div className="flex items-start gap-3 p-4 rounded-2xl border border-white/5 bg-card/60">
         <ShieldCheck size={16} className="text-zinc-500 mt-0.5 shrink-0" />
         <p className="text-[12px] text-zinc-500 leading-relaxed">
           You only ever see your own business here. Your accountant handles the coding and filing — nothing you send is
@@ -396,7 +396,7 @@ export function BusinessHomeView({
             <DocumentPreview document={preview} />
             <button
               onClick={() => setPreviewId(null)}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-[#202026] border border-white/10 hover:border-white/25 transition-colors"
+              className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-raised border border-white/10 hover:border-white/25 transition-colors"
             >
               <X size={15} />
               Close
@@ -433,7 +433,7 @@ function Stat({
     zinc: 'text-white',
   };
   return (
-    <div className="p-4 rounded-2xl border border-white/5 bg-[#16161a]">
+    <div className="p-4 rounded-2xl border border-white/5 bg-card">
       <Icon size={16} className="text-zinc-500" />
       <div className={`text-2xl font-bold mt-3 tracking-tight ${tones[tone]}`}>{value}</div>
       <div className="text-[11px] text-zinc-500 font-bold uppercase tracking-wider mt-1">{label}</div>
@@ -451,7 +451,7 @@ export function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-[28px] border border-white/5 bg-[#16161a] p-6">
+    <section className="rounded-[28px] border border-white/5 bg-card p-6">
       <div className="mb-4">
         <h2 className="text-[15px] font-bold text-white tracking-tight">{title}</h2>
         {subtitle && <p className="text-[12px] text-zinc-500 mt-1">{subtitle}</p>}

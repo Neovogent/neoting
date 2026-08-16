@@ -78,7 +78,7 @@ export function ClientsView() {
         <span className="flex items-center gap-3">
           <button
             onClick={(e) => { e.stopPropagation(); toggleStarClient(c.id); }}
-            className={starredClientIds.includes(c.id) ? 'text-[#14e3c4]' : 'text-zinc-700 hover:text-zinc-400'}
+            className={starredClientIds.includes(c.id) ? 'text-brand' : 'text-zinc-700 hover:text-zinc-400'}
           >
             <Star size={14} fill={starredClientIds.includes(c.id) ? 'currentColor' : 'none'} />
           </button>
@@ -128,7 +128,7 @@ export function ClientsView() {
   ];
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-[#0a0a0c] h-full overflow-hidden">
+    <div className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden">
       <header className="px-10 pt-8 pb-5 flex items-center justify-between gap-4 shrink-0 flex-wrap">
         <div className="flex items-baseline gap-4">
           <h1 className="font-sans text-3xl font-semibold text-white tracking-tight">Clients</h1>
@@ -141,11 +141,11 @@ export function ClientsView() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search clients..."
-              className="w-64 bg-[#16161a] border border-white/5 rounded-full py-2.5 pl-11 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-[#14e3c4] transition-all placeholder:text-zinc-600 text-white font-medium shadow-inner"
+              className="w-64 bg-card border border-white/5 rounded-full py-2.5 pl-11 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-brand transition-all placeholder:text-zinc-600 text-white font-medium shadow-inner"
             />
           </div>
 
-          <div className="flex items-center bg-[#16161a] border border-white/5 rounded-full p-1 shadow-inner">
+          <div className="flex items-center bg-card border border-white/5 rounded-full p-1 shadow-inner">
             <ViewToggle active={view === 'cards'} onClick={() => setView('cards')} icon={LayoutGrid} label="Cards" />
             <ViewToggle active={view === 'table'} onClick={() => setView('table')} icon={Rows3} label="Table" />
           </div>
@@ -154,7 +154,7 @@ export function ClientsView() {
             <div className="relative">
               <button
                 onClick={() => setColumnPickerOpen((o) => !o)}
-                className="p-2.5 text-zinc-400 hover:text-white hover:bg-white/5 rounded-full border border-white/5 transition-colors bg-[#16161a]"
+                className="p-2.5 text-zinc-400 hover:text-white hover:bg-white/5 rounded-full border border-white/5 transition-colors bg-card"
                 title="Choose columns"
               >
                 <Columns3 size={16} />
@@ -165,7 +165,7 @@ export function ClientsView() {
                     initial={{ opacity: 0, y: -8, scale: 0.97 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -8, scale: 0.97 }}
-                    className="absolute right-0 top-full mt-2 w-56 bg-[#16161a] border border-white/10 rounded-2xl shadow-2xl z-50 p-2 max-h-80 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                    className="absolute right-0 top-full mt-2 w-56 bg-card border border-white/10 rounded-2xl shadow-2xl z-50 p-2 max-h-80 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                   >
                     <div className="px-3 py-2 text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Columns</div>
                     {OPTIONAL_COLUMNS.map((col) => (
@@ -175,7 +175,7 @@ export function ClientsView() {
                         className="w-full px-3 py-2 rounded-xl flex items-center justify-between gap-2 text-[13px] text-zinc-300 hover:bg-white/5 transition-colors text-left"
                       >
                         {col}
-                        {columns.includes(col) && <Check size={14} strokeWidth={3} className="text-[#14e3c4]" />}
+                        {columns.includes(col) && <Check size={14} strokeWidth={3} className="text-brand" />}
                       </button>
                     ))}
                   </motion.div>
@@ -186,7 +186,7 @@ export function ClientsView() {
 
           <button
             onClick={() => setAdding(true)}
-            className="flex items-center gap-2 px-6 py-2.5 bg-[#14e3c4] text-white text-sm font-bold rounded-full hover:bg-[#0fcbaf] transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+            className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
           >
             <Plus size={16} strokeWidth={2.5} />
             Add Client
@@ -201,8 +201,8 @@ export function ClientsView() {
             onClick={() => setTab(t)}
             className={`px-4 py-2 rounded-full text-[13px] font-bold transition-all border ${
               tab === t
-                ? 'bg-[#14e3c4] text-white border-[#14e3c4] shadow-[0_0_12px_rgba(20,227,196,0.25)]'
-                : 'bg-[#16161a] text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
+                ? 'bg-brand text-white border-brand shadow-[0_0_12px_rgba(20,227,196,0.25)]'
+                : 'bg-card text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
             }`}
           >
             {t}
@@ -212,7 +212,7 @@ export function ClientsView() {
 
       <div className="flex-1 overflow-y-auto px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {visible.length === 0 ? (
-          <div className="border border-white/5 rounded-[32px] bg-[#16161a] p-10 text-center text-zinc-500">
+          <div className="border border-white/5 rounded-[32px] bg-card p-10 text-center text-zinc-500">
             No clients match this filter.
           </div>
         ) : view === 'cards' ? (
@@ -273,7 +273,7 @@ export function ClientsView() {
             >
               <button
                 onClick={() => setAdding(false)}
-                className="absolute -top-3 -right-3 z-10 p-2 bg-[#16161a] hover:bg-[#202026] text-zinc-400 hover:text-white rounded-full border border-white/10 transition-colors shadow-lg"
+                className="absolute -top-3 -right-3 z-10 p-2 bg-card hover:bg-raised text-zinc-400 hover:text-white rounded-full border border-white/10 transition-colors shadow-lg"
               >
                 <X size={18} />
               </button>
@@ -331,7 +331,7 @@ function ViewToggle({ active, onClick, icon: Icon, label }: { active: boolean; o
       onClick={onClick}
       title={label}
       className={`px-3.5 py-1.5 rounded-full flex items-center gap-2 text-[13px] font-bold transition-all ${
-        active ? 'bg-[#14e3c4] text-white' : 'text-zinc-500 hover:text-white'
+        active ? 'bg-brand text-white' : 'text-zinc-500 hover:text-white'
       }`}
     >
       <Icon size={15} />
@@ -354,11 +354,11 @@ function ClientCard({
   const s = statsFor(client.id);
 
   return (
-    <div className="border border-white/5 rounded-[32px] bg-[#16161a] p-6 flex flex-col justify-between shadow-2xl group hover:border-white/10 transition-all hover:-translate-y-1 relative overflow-hidden">
+    <div className="border border-white/5 rounded-[32px] bg-card p-6 flex flex-col justify-between shadow-2xl group hover:border-white/10 transition-all hover:-translate-y-1 relative overflow-hidden">
       <div className="flex justify-between items-start mb-6">
         <button
           onClick={onOpen}
-          className="w-14 h-14 rounded-2xl bg-[#202026] flex items-center justify-center font-sans text-2xl font-bold text-white border border-white/5 shadow-inner hover:border-white/20 transition-colors"
+          className="w-14 h-14 rounded-2xl bg-raised flex items-center justify-center font-sans text-2xl font-bold text-white border border-white/5 shadow-inner hover:border-white/20 transition-colors"
         >
           {client.name.charAt(0)}
         </button>
@@ -366,19 +366,19 @@ function ClientCard({
           <button
             onClick={onStar}
             className={`w-8 h-8 rounded-full flex items-center justify-center border transition-colors ${
-              starred ? 'bg-[#14e3c4]/10 text-[#14e3c4] border-[#14e3c4]/20' : 'text-zinc-600 border-white/5 hover:text-white'
+              starred ? 'bg-brand/10 text-brand border-brand/20' : 'text-zinc-600 border-white/5 hover:text-white'
             }`}
             title={starred ? 'Unstar' : 'Star'}
           >
             <Star size={14} fill={starred ? 'currentColor' : 'none'} />
           </button>
           {client.xeroConnected && (
-            <div className="w-8 h-8 rounded-full bg-[#14e3c4]/10 text-[#14e3c4] flex items-center justify-center border border-[#14e3c4]/20" title="Xero connected">
+            <div className="w-8 h-8 rounded-full bg-brand/10 text-brand flex items-center justify-center border border-brand/20" title="Xero connected">
               <span className="font-bold text-[11px]">X</span>
             </div>
           )}
           {client.bankConnected && (
-            <div className="w-8 h-8 rounded-full bg-[#14e3c4]/10 text-[#14e3c4] flex items-center justify-center border border-[#14e3c4]/20" title="Bank feed live">
+            <div className="w-8 h-8 rounded-full bg-brand/10 text-brand flex items-center justify-center border border-brand/20" title="Bank feed live">
               <span className="font-bold text-[11px]">$</span>
             </div>
           )}
@@ -387,7 +387,7 @@ function ClientCard({
 
       <div className="flex-1">
         <button onClick={onOpen} className="text-left w-full">
-          <h3 className="font-sans text-xl font-bold text-white leading-tight mb-1 truncate hover:text-[#14e3c4] transition-colors">
+          <h3 className="font-sans text-xl font-bold text-white leading-tight mb-1 truncate hover:text-brand transition-colors">
             {client.name}
           </h3>
         </button>
@@ -396,26 +396,26 @@ function ClientCard({
         <div className="mb-6">
           <div className="flex justify-between items-end mb-2">
             <span className="text-[11px] font-bold text-zinc-500 flex items-center gap-1.5 tracking-wide uppercase">
-              <Activity size={12} className="text-[#14e3c4]" />
+              <Activity size={12} className="text-brand" />
               Pipeline Health
             </span>
             <span className="text-xs font-bold text-white">{s.health}%</span>
           </div>
-          <div className="h-2 w-full bg-[#202026] rounded-full overflow-hidden shadow-inner">
+          <div className="h-2 w-full bg-raised rounded-full overflow-hidden shadow-inner">
             <motion.div
               layout
-              className={`h-full rounded-full ${s.health > 80 ? 'bg-[#14e3c4]' : s.health > 50 ? 'bg-amber-400' : 'bg-red-500'}`}
+              className={`h-full rounded-full ${s.health > 80 ? 'bg-brand' : s.health > 50 ? 'bg-amber-400' : 'bg-red-500'}`}
               style={{ width: `${s.health}%` }}
             />
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3 mb-5">
-          <div className="bg-[#202026] p-4 rounded-2xl border border-white/5 text-center shadow-inner">
+          <div className="bg-raised p-4 rounded-2xl border border-white/5 text-center shadow-inner">
             <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Missing</div>
             <div className={`text-2xl font-sans font-bold ${s.missing > 20 ? 'text-red-400' : 'text-white'}`}>{s.missing}</div>
           </div>
-          <div className="bg-[#202026] p-4 rounded-2xl border border-white/5 text-center shadow-inner">
+          <div className="bg-raised p-4 rounded-2xl border border-white/5 text-center shadow-inner">
             <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">To Review</div>
             <div className="text-2xl font-sans font-bold text-white">{s.toReview}</div>
           </div>
@@ -427,20 +427,20 @@ function ClientCard({
           </div>
         )}
 
-        <div className="text-[12px] font-semibold text-zinc-500 flex items-center justify-center gap-2 bg-[#0a0a0c]/50 py-2 rounded-xl">
-          <span className="w-2 h-2 rounded-full bg-[#14e3c4] animate-pulse" />
+        <div className="text-[12px] font-semibold text-zinc-500 flex items-center justify-center gap-2 bg-ground/50 py-2 rounded-xl">
+          <span className="w-2 h-2 rounded-full bg-brand animate-pulse" />
           Next: <span className="text-white">{client.deadline}</span>
         </div>
       </div>
 
       <div className="grid grid-cols-3 gap-2 mt-6">
-        <button onClick={onOpen} className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl text-zinc-400 hover:bg-[#202026] hover:text-white transition-colors" title="Open client">
+        <button onClick={onOpen} className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl text-zinc-400 hover:bg-raised hover:text-white transition-colors" title="Open client">
           <ExternalLink size={18} />
         </button>
-        <button onClick={onAskAI} className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl text-[#14e3c4] bg-[#14e3c4]/10 hover:bg-[#14e3c4]/20 transition-colors border border-[#14e3c4]/10" title="Ask AI about this client">
+        <button onClick={onAskAI} className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl text-brand bg-brand/10 hover:bg-brand/20 transition-colors border border-brand/10" title="Ask AI about this client">
           <Sparkles size={18} />
         </button>
-        <button onClick={onChase} className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl text-zinc-400 hover:bg-[#202026] hover:text-white transition-colors disabled:opacity-30" title="Chase missing documents" disabled={s.missing === 0}>
+        <button onClick={onChase} className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl text-zinc-400 hover:bg-raised hover:text-white transition-colors disabled:opacity-30" title="Chase missing documents" disabled={s.missing === 0}>
           <Send size={18} />
         </button>
       </div>

@@ -33,7 +33,7 @@ export function ChaseModal({ clientIds, missingItemIds, note, onClose }: {
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-xl my-auto flex flex-col items-center gap-3"
       >
-        <div className="w-full flex items-center justify-between gap-4 px-5 py-3 rounded-[20px] border border-white/5 bg-[#16161a] shadow-2xl">
+        <div className="w-full flex items-center justify-between gap-4 px-5 py-3 rounded-[20px] border border-white/5 bg-card shadow-2xl">
           <p className="text-[12px] text-zinc-500 min-w-0">
             {note ?? 'Nothing sends until you read the review and approve it.'}
           </p>

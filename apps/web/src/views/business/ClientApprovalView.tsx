@@ -61,7 +61,7 @@ export function ClientApprovalView() {
   if (!current) {
     return (
       <Shell title="All done">
-        <div className="w-14 h-14 rounded-2xl bg-[#14e3c4]/15 border border-[#14e3c4]/30 flex items-center justify-center text-[#14e3c4] mb-2">
+        <div className="w-14 h-14 rounded-2xl bg-brand/15 border border-brand/30 flex items-center justify-center text-brand mb-2">
           <Check size={26} strokeWidth={3} />
         </div>
         <p className="text-[14px] text-zinc-400 leading-relaxed">
@@ -118,7 +118,7 @@ function OtpChallenge({
   return (
     <Shell title="Approve securely">
       {/* ① The message the approver actually received. */}
-      <div className="p-4 rounded-2xl bg-[#0a0a0c] border border-white/5 shadow-inner">
+      <div className="p-4 rounded-2xl bg-ground border border-white/5 shadow-inner">
         <div className="flex items-center gap-2 text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
           <MessageSquare size={12} />
           SMS received
@@ -139,7 +139,7 @@ function OtpChallenge({
             inputMode="numeric"
             placeholder="0000"
             aria-label="One-time code"
-            className="flex-1 bg-[#0a0a0c] border border-white/5 rounded-2xl px-5 py-4 text-2xl font-bold tracking-[0.4em] text-center text-white placeholder:text-zinc-700 focus:outline-none focus:border-[#14e3c4] transition-colors tabular-nums"
+            className="flex-1 bg-ground border border-white/5 rounded-2xl px-5 py-4 text-2xl font-bold tracking-[0.4em] text-center text-white placeholder:text-zinc-700 focus:outline-none focus:border-brand transition-colors tabular-nums"
           />
         </div>
         <p className="text-[12px] text-zinc-600 mt-3 leading-relaxed">
@@ -155,7 +155,7 @@ function OtpChallenge({
       <div className="flex flex-col gap-2">
         <button
           onClick={submit}
-          className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors shadow-[0_0_20px_rgba(20,227,196,0.25)]"
+          className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_20px_rgba(20,227,196,0.25)]"
         >
           <ShieldCheck size={16} strokeWidth={2.5} />
           Verify
@@ -220,8 +220,8 @@ function ApprovalCard({
   const vat = document?.fields.find((f) => f.label.toLowerCase().includes('tax'))?.value;
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 h-full bg-[#0a0a0c] overflow-hidden">
-      <header className="shrink-0 border-b border-white/5 bg-[#16161a] px-5 py-4 flex items-center justify-between gap-3">
+    <div className="flex-1 flex flex-col min-w-0 h-full bg-ground overflow-hidden">
+      <header className="shrink-0 border-b border-white/5 bg-card px-5 py-4 flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="font-sans font-bold text-[15px] text-white tracking-tight truncate">{clientName}</div>
           <div className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider">
@@ -246,7 +246,7 @@ function ApprovalCard({
 
           {/* The approver never approves blind — the source document is one tap
               away and stays reachable throughout. */}
-          <div className="p-4 rounded-2xl bg-[#16161a] border border-white/5 shadow-inner">
+          <div className="p-4 rounded-2xl bg-card border border-white/5 shadow-inner">
             <div className="flex items-center gap-2 text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
               <FileText size={12} />
               Source document
@@ -258,7 +258,7 @@ function ApprovalCard({
                 </p>
                 <button
                   onClick={() => setViewingDoc(true)}
-                  className="mt-3 w-full px-4 py-2.5 rounded-full text-[13px] font-bold text-[#14e3c4] bg-[#14e3c4]/10 border border-[#14e3c4]/20 hover:bg-[#14e3c4]/20 transition-colors"
+                  className="mt-3 w-full px-4 py-2.5 rounded-full text-[13px] font-bold text-brand bg-brand/10 border border-brand/20 hover:bg-brand/20 transition-colors"
                 >
                   View document
                 </button>
@@ -270,7 +270,7 @@ function ApprovalCard({
 
           {/* Matched bank transaction — the evidence that it was actually paid. */}
           {(transaction || match) && (
-            <div className="p-4 rounded-2xl bg-[#16161a] border border-white/5 shadow-inner">
+            <div className="p-4 rounded-2xl bg-card border border-white/5 shadow-inner">
               <div className="flex items-center gap-2 text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
                 <Link2 size={12} />
                 Matched bank transaction
@@ -287,7 +287,7 @@ function ApprovalCard({
           {!reviewOpened ? (
             <button
               onClick={() => setReviewOpened(true)}
-              className="w-full px-5 py-3.5 rounded-2xl text-[14px] font-bold text-white bg-[#202026] border border-white/10 hover:border-white/25 transition-colors text-left flex items-center justify-between gap-3"
+              className="w-full px-5 py-3.5 rounded-2xl text-[14px] font-bold text-white bg-raised border border-white/10 hover:border-white/25 transition-colors text-left flex items-center justify-between gap-3"
             >
               Read review
               <ArrowRight size={16} strokeWidth={2.5} />
@@ -296,7 +296,7 @@ function ApprovalCard({
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
-              className="p-4 rounded-2xl bg-[#16161a] border border-white/5 shadow-inner overflow-hidden"
+              className="p-4 rounded-2xl bg-card border border-white/5 shadow-inner overflow-hidden"
             >
               <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-3">
                 What you are approving
@@ -361,7 +361,7 @@ function ApprovalCard({
                 onChange={(e) => setNote(e.target.value)}
                 rows={3}
                 placeholder="Wrong category — this was for the Camden site"
-                className="w-full bg-[#0a0a0c] border border-white/5 rounded-2xl px-4 py-3 text-[13.5px] text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#14e3c4] transition-colors resize-none"
+                className="w-full bg-ground border border-white/5 rounded-2xl px-4 py-3 text-[13.5px] text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors resize-none"
               />
               <p className="text-[12px] text-zinc-600 mt-2 leading-relaxed">
                 Your accountant sees this with the item — say what is wrong and they can fix it without asking.
@@ -372,7 +372,7 @@ function ApprovalCard({
       </div>
 
       {/* Thumb-reach action bar — the client side is mobile-first by mandate. */}
-      <div className="shrink-0 border-t border-white/5 bg-[#16161a] px-5 py-4">
+      <div className="shrink-0 border-t border-white/5 bg-card px-5 py-4">
         <div className="w-full max-w-md mx-auto flex flex-col gap-2">
           {rejecting ? (
             <>
@@ -395,13 +395,13 @@ function ApprovalCard({
               {reviewOpened ? (
                 <button
                   onClick={() => setConfirming('approve')}
-                  className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors shadow-[0_0_20px_rgba(20,227,196,0.25)]"
+                  className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_20px_rgba(20,227,196,0.25)]"
                 >
                   <Lock size={15} strokeWidth={2.5} />
                   Approve
                 </button>
               ) : (
-                <div className="w-full px-6 py-3.5 rounded-full text-[13px] font-bold text-zinc-600 bg-[#0a0a0c] border border-white/5 text-center">
+                <div className="w-full px-6 py-3.5 rounded-full text-[13px] font-bold text-zinc-600 bg-ground border border-white/5 text-center">
                   Read the review to approve
                 </div>
               )}
@@ -462,7 +462,7 @@ function ApprovalCard({
               <DocumentPreview document={document} />
               <button
                 onClick={() => setViewingDoc(false)}
-                className="px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-[#202026] border border-white/10 hover:border-white/25 transition-colors"
+                className="px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-raised border border-white/10 hover:border-white/25 transition-colors"
               >
                 Close
               </button>
@@ -478,10 +478,10 @@ function ApprovalCard({
 
 function Shell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="flex-1 flex flex-col min-w-0 h-full bg-[#0a0a0c] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="flex-1 flex flex-col min-w-0 h-full bg-ground overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <div className="w-full max-w-md mx-auto px-5 py-10 flex flex-col gap-5">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-[#14e3c4] flex items-center justify-center text-white shrink-0 shadow-[0_0_15px_rgba(20,227,196,0.3)]">
+          <div className="w-11 h-11 rounded-2xl bg-brand flex items-center justify-center text-white shrink-0 shadow-[0_0_15px_rgba(20,227,196,0.3)]">
             <Smartphone size={19} />
           </div>
           <div>

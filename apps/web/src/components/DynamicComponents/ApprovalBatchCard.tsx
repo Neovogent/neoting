@@ -35,7 +35,7 @@ export function ApprovalBatchCard({ query, clientIds }: { query: string; clientI
 
   if (batch.length === 0) {
     return (
-      <div className="w-full max-w-xl border border-white/5 rounded-[24px] bg-[#16161a] p-5 text-sm text-zinc-400">
+      <div className="w-full max-w-xl border border-white/5 rounded-[24px] bg-card p-5 text-sm text-zinc-400">
         Nothing in the approval queue matches that
         {threshold !== null ? ` (under ${currency(threshold)})` : ''}.
       </div>
@@ -52,7 +52,7 @@ export function ApprovalBatchCard({ query, clientIds }: { query: string; clientI
       detail={
         <>
           <ReviewSection title="Items that will be approved">
-            <div className="bg-[#16161a] border border-white/5 rounded-2xl divide-y divide-white/5 shadow-inner max-h-56 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="bg-card border border-white/5 rounded-2xl divide-y divide-white/5 shadow-inner max-h-56 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {batch.map((a) => (
                 <div key={a.id} className="px-4 py-3 flex items-center justify-between gap-3 text-[13px]">
                   <div className="min-w-0">

@@ -1,18 +1,69 @@
 @import "tailwindcss";
 
-/* fix_colors.cjs is a spent one-off migration script that still contains the
-   previous brand hexes. Excluding it stops Tailwind emitting dead utilities
-   for colours the app no longer uses. */
-@source not "../fix_colors.cjs";
+/* ⚠ DO NOT WRITE AN ARBITRARY-VALUE CLASS IN A COMMENT IN THIS FILE.
+   Tailwind scans this file as source like any other, so `bg-` followed by a
+   bracketed hex inside a comment generates that utility for real. Every
+   example below is therefore written with the hex alone, never in the
+   bracket form. Measured, not assumed: an explanatory comment here was
+   emitting six dead utilities until it was rewritten this way.
 
+   (The previous `@source not "../fix_colors.cjs"` line is gone with this
+   change — that file was an untracked one-off migration script, was never
+   committed, and no longer exists, so the directive was excluding nothing.) */
+
+/* ==========================================================================
+   The palette — SoT §14, values adopted by D38
+   --------------------------------------------------------------------------
+   These variables are the only place a brand colour is written down.
+   Everything else says `bg-card`, `text-brand`, `border-ground`; nothing names
+   a raw hex. That is Guideline R8, and it is also what makes the light theme
+   below a redefinition rather than a second stylesheet.
+
+   `packages/tokens` is empty (LAW, G7) and will consume this block when it
+   lands. Doing it here first is deliberate: one file to move, not 84.
+
+   Naming is by ROLE, not by value. `--color-raised` stays "the surface above a
+   card" whether it is #202026 or #eceef2 — which is the property that lets the
+   light theme swap values without any component knowing.
+   ========================================================================== */
 @theme {
   --font-sans: "Plus Jakarta Sans", sans-serif;
   --font-serif: "Newsreader", serif;
+
+  /* Surfaces, darkest to lightest. */
+  --color-deep: #050508;
+  --color-ground: #0a0a0c;
+  --color-card: #16161a;
+  --color-raised: #202026;
+  --color-pale: #f4f4f5;
+
+  /* Brand. `--color-brand` is the FILL and is mint in both themes (D38 says
+     brand hover is "deliberately identical in both themes"; the fill is too).
+     Brand as *ink* — text, and translucent borders and tints — drops to the
+     deeper teal on a light page, because mint on white is illegible. That
+     split lives in the light block below, per utility, exactly as it did
+     before this file grew variables. */
+  --color-brand: #14e3c4;
+  --color-brand-hover: #0fcbaf;
+  --color-brand-deep: #00806d;
+  /* Ink ON a brand fill. White on mint is 1.4:1; the logo's own dark measures
+     11.7:1, so anything filled with the brand takes it. */
+  --color-brand-on: #04231f;
+
+  /* Gradient stops for the workspace hero. */
+  --color-mint-soft: #0be0bf;
+  --color-teal-deep: #00a88f;
+
+  /* Fully transparent brand, for gradient stops that fade out. Written as an
+     explicit token because `transparent` is not the same colour: a gradient to
+     `transparent` interpolates through transparent BLACK and greys the ramp,
+     which is the classic dirty-gradient bug. */
+  --color-brand-fade: rgba(20, 227, 196, 0);
 }
 
 body {
   font-family: var(--font-sans);
-  background-color: #0a0a0c;
+  background-color: var(--color-ground);
   color: #ffffff;
 }
 
@@ -33,48 +84,63 @@ body {
 }
 
 /* ==========================================================================
-   Brand
+   Brand fills carry the logo's dark ink
    --------------------------------------------------------------------------
-   Taken from the logo: a dark plate under a mint glow. The mint (#14E3C4) is
-   the brand, but white text on it is 1.4:1 — unreadable. Anything filled with
-   the brand therefore takes the logo's own dark ink, which measures 11.7:1.
-
-   This is one rule rather than an edit to ~200 buttons, and it means a new
-   `bg-[#14e3c4]` button is legible by default instead of by remembering.
+   One rule rather than an edit to ~200 buttons, and it means a new `bg-brand`
+   button is legible by default instead of by remembering.
    ========================================================================== */
-.bg-\[\#14e3c4\],
-.bg-\[\#0fcbaf\] {
-  color: #04231f;
+.bg-brand,
+.bg-brand-hover {
+  color: var(--color-brand-on);
 }
 
-.bg-\[\#14e3c4\].text-white,
-.bg-\[\#0fcbaf\].text-white,
-.bg-\[\#14e3c4\] .text-white,
-.bg-\[\#0fcbaf\] .text-white {
-  color: #04231f !important;
+.bg-brand.text-white,
+.bg-brand-hover.text-white,
+.bg-brand .text-white,
+.bg-brand-hover .text-white {
+  color: var(--color-brand-on) !important;
 }
 
 /* ==========================================================================
    Light theme
    --------------------------------------------------------------------------
-   The UI is written against a fixed dark palette — five surface colours, a
-   brand blue, and a zinc text ramp. Rather than rewrite every class in every
-   view, light mode remaps those exact tokens when `.light` is on <html>.
+   Most of it is now six variable redefinitions. A component that says
+   `bg-card` follows the theme automatically, which is the defect this
+   replaces: light mode used to be ~60 rules keyed to exact hex class names
+   (`html.light .bg-\[\#16161a\]`), so a colour only worked in light if
+   somebody had written a rule for that exact string, and any new arbitrary
+   hex silently stayed dark.
 
-   Two things this has to get right:
-   1. The text ramp inverts. On dark, zinc-700 is the dimmest; on light it is
-      the darkest. Mapping each step to its opposite keeps the hierarchy.
-   2. `text-white` means "primary text" on a panel but "label" on a blue
-      button. The first must darken, the second must not — so coloured
-      surfaces re-assert white below.
+   What still needs explicit rules, and why — worth reading before adding to
+   the list:
+
+   1. **Opacity steps.** `bg-raised/50` computes 50% of whatever `--color-raised`
+      currently is. On dark that is the intended translucent panel; on light the
+      design calls for an opaque, hand-picked grey (#f0f1f4), not 50% of
+      #eceef2. These were tuned by eye and are not derivable, so they stay
+      written down.
+   2. **A utility whose light value differs from its own token's.** `border-ground`
+      is a hairline (#e4e6ea), not the page ground (#f4f5f7).
+   3. **Brand as ink.** The fill stays mint; text and translucent brand drop to
+      the deeper teal.
+
+   The text ramp inverts: on dark, zinc-700 is dimmest; on light it is darkest.
+   Mapping each step to its opposite keeps the hierarchy.
    ========================================================================== */
 
 html.light {
   color-scheme: light;
+
+  /* The six that carry the theme. Everything below is an exception to these. */
+  --color-ground: #f4f5f7;
+  --color-card: #ffffff;
+  --color-raised: #eceef2;
+  --color-deep: #e9ebef;
+  --color-pale: #eceef2;
 }
 
 html.light body {
-  background-color: #f4f5f7;
+  background-color: var(--color-ground);
   color: #0b0d12;
 }
 
@@ -85,28 +151,23 @@ html.light ::-webkit-scrollbar-thumb:hover {
   background: #a1a1aa;
 }
 
-/* --- Surfaces ------------------------------------------------------------ */
-html.light .bg-\[\#0a0a0c\] { background-color: #f4f5f7; }
-html.light .bg-\[\#0a0a0c\]\/80 { background-color: rgba(255, 255, 255, 0.8); }
-html.light .bg-\[\#0a0a0c\]\/60 { background-color: #f7f8fa; }
-html.light .bg-\[\#0a0a0c\]\/50 { background-color: #f7f8fa; }
-html.light .bg-\[\#0a0a0c\]\/40 { background-color: #f9fafb; }
-html.light .border-\[\#0a0a0c\] { border-color: #e4e6ea; }
-html.light .via-\[\#0a0a0c\] { --tw-gradient-via: #f4f5f7; }
+/* --- Surfaces: the opacity steps, which are hand-picked greys on light ---- */
+html.light .bg-ground\/80 { background-color: rgba(255, 255, 255, 0.8); }
+html.light .bg-ground\/60 { background-color: #f7f8fa; }
+html.light .bg-ground\/50 { background-color: #f7f8fa; }
+html.light .bg-ground\/40 { background-color: #f9fafb; }
+/* A hairline, not the page ground — the one place these two roles diverge. */
+html.light .border-ground { border-color: #e4e6ea; }
 
-html.light .bg-\[\#16161a\] { background-color: #ffffff; }
-html.light .bg-\[\#16161a\]\/60 { background-color: rgba(255, 255, 255, 0.7); }
-html.light .hover\:bg-\[\#16161a\]\/50:hover { background-color: #f0f1f4; }
-html.light .hover\:bg-\[\#16161a\]:hover { background-color: #f0f1f4; }
+html.light .bg-card\/60 { background-color: rgba(255, 255, 255, 0.7); }
+html.light .hover\:bg-card\/50:hover { background-color: #f0f1f4; }
+html.light .hover\:bg-card:hover { background-color: #f0f1f4; }
 
-html.light .bg-\[\#202026\] { background-color: #eceef2; }
-html.light .bg-\[\#202026\]\/60 { background-color: #eef0f3; }
-html.light .bg-\[\#202026\]\/50 { background-color: #f0f1f4; }
-html.light .bg-\[\#202026\]\/40 { background-color: #f2f3f6; }
-html.light .bg-\[\#202026\]\/30 { background-color: #f4f5f7; }
-html.light .hover\:bg-\[\#202026\]:hover { background-color: #e4e6ea; }
-
-html.light .bg-\[\#050508\] { background-color: #e9ebef; }
+html.light .bg-raised\/60 { background-color: #eef0f3; }
+html.light .bg-raised\/50 { background-color: #f0f1f4; }
+html.light .bg-raised\/40 { background-color: #f2f3f6; }
+html.light .bg-raised\/30 { background-color: #f4f5f7; }
+html.light .hover\:bg-raised:hover { background-color: #e4e6ea; }
 
 /* --- Text ramp, inverted ------------------------------------------------- */
 html.light .text-white { color: #0b0d12; }
@@ -148,7 +209,7 @@ html.light .bg-zinc-800.text-zinc-400 { color: #d4d4d8; }
 
 /* Coloured surfaces keep white text — a label on a blue button, not body copy.
    These use exact class selectors, not [class*=…]: a substring match also hits
-   `selection:bg-[#14e3c4]/30` and `bg-[#14e3c4]/10`, which would drag every
+   `selection:bg-brand/30` and `bg-brand/10`, which would drag every
    translucent chip and the whole app root back to white text. */
 html.light .bg-black,
 html.light .bg-red-500,
@@ -165,14 +226,16 @@ html.light .bg-red-500 .text-white {
 }
 
 /* Mint reads well as text on a dark panel and badly on a white one, so brand
-   text drops to the deeper teal from the same hue family in light mode. */
-html.light .text-\[\#14e3c4\] { color: #00806d; }
-html.light .border-\[\#14e3c4\]\/40 { border-color: rgba(0, 128, 109, 0.45); }
-html.light .border-\[\#14e3c4\]\/30 { border-color: rgba(0, 128, 109, 0.35); }
-html.light .border-\[\#14e3c4\]\/20 { border-color: rgba(0, 128, 109, 0.28); }
-html.light .bg-\[\#14e3c4\]\/10 { background-color: rgba(0, 128, 109, 0.10); }
-html.light .bg-\[\#14e3c4\]\/15 { background-color: rgba(0, 128, 109, 0.14); }
-html.light .bg-\[\#14e3c4\]\/20 { background-color: rgba(0, 128, 109, 0.16); }
+   text drops to the deeper teal from the same hue family in light mode. The
+   FILL (`bg-brand`) deliberately does not move — a mint button is mint in both
+   themes, which is why this is per-utility rather than a variable swap. */
+html.light .text-brand { color: var(--color-brand-deep); }
+html.light .border-brand\/40 { border-color: rgba(0, 128, 109, 0.45); }
+html.light .border-brand\/30 { border-color: rgba(0, 128, 109, 0.35); }
+html.light .border-brand\/20 { border-color: rgba(0, 128, 109, 0.28); }
+html.light .bg-brand\/10 { background-color: rgba(0, 128, 109, 0.10); }
+html.light .bg-brand\/15 { background-color: rgba(0, 128, 109, 0.14); }
+html.light .bg-brand\/20 { background-color: rgba(0, 128, 109, 0.16); }
 
 /* --- Hairlines and overlays: white alpha becomes ink alpha ---------------- */
 html.light .border-white\/5 { border-color: rgba(11, 13, 18, 0.10); }
@@ -207,10 +270,9 @@ html.light .bg-black.hover\:text-white:hover { color: #ffffff; }
 /* The workspace hero is a black-to-blue wash built for a dark room. On light it
    becomes a pale sky, so the heading keeps its contrast. */
 html.light .from-black { --tw-gradient-from: #ffffff; }
-html.light .to-\[\#0be0bf\]\/40 { --tw-gradient-to: rgba(11, 224, 191, 0.10); }
-html.light .from-\[\#14e3c4\]\/80 { --tw-gradient-from: rgba(20, 227, 196, 0.22); }
-html.light .via-\[\#00a88f\]\/30 { --tw-gradient-via: rgba(0, 168, 143, 0.10); }
-html.light .bg-\[\#f4f4f5\] { background-color: #eceef2; }
+html.light .to-mint-soft\/40 { --tw-gradient-to: rgba(11, 224, 191, 0.10); }
+html.light .from-brand\/80 { --tw-gradient-from: rgba(20, 227, 196, 0.22); }
+html.light .via-teal-deep\/30 { --tw-gradient-via: rgba(0, 168, 143, 0.10); }
 
 /* Dark-on-dark shadows read as smudges on a light page. */
 html.light .shadow-2xl { box-shadow: 0 1px 2px rgba(11, 13, 18, 0.04), 0 8px 24px rgba(11, 13, 18, 0.06); }

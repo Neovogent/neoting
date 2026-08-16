@@ -28,7 +28,7 @@ export function PublishCard({ clientIds }: { clientIds: string[] }) {
 
   if (publishable.length === 0 && held.length === 0) {
     return (
-      <div className="w-full max-w-xl border border-white/5 rounded-[24px] bg-[#16161a] p-5 text-sm text-zinc-400">
+      <div className="w-full max-w-xl border border-white/5 rounded-[24px] bg-card p-5 text-sm text-zinc-400">
         Nothing ready to publish for this scope.
       </div>
     );
@@ -49,7 +49,7 @@ export function PublishCard({ clientIds }: { clientIds: string[] }) {
       </ReviewSection>
 
       <ReviewSection title="Itemised">
-        <div className="bg-[#16161a] border border-white/5 rounded-2xl divide-y divide-white/5 shadow-inner max-h-52 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="bg-card border border-white/5 rounded-2xl divide-y divide-white/5 shadow-inner max-h-52 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {publishable.map((d) => (
             <div key={d.id} className="px-4 py-2.5 flex items-center justify-between gap-3 text-[13px]">
               <span className="text-zinc-400 truncate">

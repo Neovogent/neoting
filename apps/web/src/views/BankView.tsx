@@ -187,7 +187,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
             {v.kind === 'confused' && (
               <button
                 onClick={(e) => { e.stopPropagation(); setMatchFor(t); }}
-                className="px-3 py-1.5 rounded-full text-[12px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors"
+                className="px-3 py-1.5 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
               >
                 Match
               </button>
@@ -207,7 +207,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
   return (
     <div className={scopedToClient
       ? 'flex flex-col min-w-0'
-      : 'flex-1 flex flex-col min-w-0 bg-[#0a0a0c] h-full overflow-hidden'}>
+      : 'flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden'}>
       <header className={scopedToClient ? 'pb-5 shrink-0' : 'px-10 pt-8 pb-5 shrink-0'}>
         <div className="flex items-start justify-between gap-4 flex-wrap">
           {/* The client page already names the client, so the embedded copy
@@ -218,7 +218,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
             </p>
           ) : (
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-[#202026] flex items-center justify-center text-white border border-white/5 shadow-inner">
+              <div className="w-12 h-12 rounded-2xl bg-raised flex items-center justify-center text-white border border-white/5 shadow-inner">
                 <Landmark size={22} />
               </div>
               <div>
@@ -233,14 +233,14 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
           <div className="flex items-center gap-3 flex-wrap">
             <button
               onClick={() => setSettingsOpen(true)}
-              className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-zinc-300 bg-[#16161a] border border-white/10 rounded-full hover:bg-white/5 transition-all shadow-lg"
+              className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-zinc-300 bg-card border border-white/10 rounded-full hover:bg-white/5 transition-all shadow-lg"
             >
               <SlidersHorizontal size={16} />
               Match rules
             </button>
             <button
               onClick={() => { setUploadFor(clientFilter === 'all' ? clients[0]?.id ?? null : clientFilter); fileRef.current?.click(); }}
-              className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-[#14e3c4] rounded-full hover:bg-[#0fcbaf] transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+              className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-brand rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
             >
               <UploadCloud size={16} />
               Upload statement
@@ -302,8 +302,8 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                 onClick={() => setTab(t)}
                 className={`px-4 py-2 rounded-full text-[13px] font-bold transition-all border ${
                   tab === t
-                    ? 'bg-[#14e3c4] text-white border-[#14e3c4] shadow-[0_0_12px_rgba(20,227,196,0.25)]'
-                    : 'bg-[#16161a] text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
+                    ? 'bg-brand text-white border-brand shadow-[0_0_12px_rgba(20,227,196,0.25)]'
+                    : 'bg-card text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
                 }`}
               >
                 {t}
@@ -332,7 +332,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Search transactions..."
-                    className="w-64 bg-[#16161a] border border-white/5 rounded-full py-2.5 pl-11 pr-4 text-sm focus:outline-none focus:border-[#14e3c4] placeholder:text-zinc-600 text-white font-medium shadow-inner"
+                    className="w-64 bg-card border border-white/5 rounded-full py-2.5 pl-11 pr-4 text-sm focus:outline-none focus:border-brand placeholder:text-zinc-600 text-white font-medium shadow-inner"
                   />
                 </div>
                 {(['all', 'needs-you', 'unmatched', 'matched', 'credits'] as const).map((f) => (
@@ -343,8 +343,8 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                       f === 'needs-you' ? '' : 'capitalize'
                     } ${
                       evidenceFilter === f
-                        ? 'bg-[#14e3c4] text-white border-[#14e3c4]'
-                        : 'bg-[#16161a] text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
+                        ? 'bg-brand text-white border-brand'
+                        : 'bg-card text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
                     }`}
                   >
                     {f === 'credits' ? 'Credit notes' : f === 'needs-you' ? `Needs you (${needsYouCount})` : f}
@@ -379,7 +379,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
               two on a laptop, three on a wide screen. */}
           {tab === 'Matches' && (
             scopedMatches.length === 0 ? (
-              <div className="border border-white/5 rounded-[32px] bg-[#16161a] p-10 text-center text-zinc-500 text-[13px] shadow-2xl">
+              <div className="border border-white/5 rounded-[32px] bg-card p-10 text-center text-zinc-500 text-[13px] shadow-2xl">
                 No matches yet. Match a transaction from the Transactions tab.
               </div>
             ) : (
@@ -387,7 +387,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                 {scopedMatches.map((m: Match) => (
                   <div
                     key={m.id}
-                    className="border border-white/5 rounded-[24px] bg-[#16161a] shadow-2xl overflow-hidden flex flex-col"
+                    className="border border-white/5 rounded-[24px] bg-card shadow-2xl overflow-hidden flex flex-col"
                   >
                     <div className="p-5 flex items-center justify-between gap-3 flex-wrap border-b border-white/5">
                       <span className="inline-flex items-center gap-2">
@@ -401,7 +401,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                       <span className="inline-flex items-center gap-2 shrink-0">
                         <span className="w-14 h-1.5 rounded-full bg-white/5 overflow-hidden">
                           <span
-                            className={`block h-full rounded-full ${m.kind === 'probable' ? 'bg-amber-400' : 'bg-[#14e3c4]'}`}
+                            className={`block h-full rounded-full ${m.kind === 'probable' ? 'bg-amber-400' : 'bg-brand'}`}
                             style={{ width: `${Math.round(m.confidence * 100)}%` }}
                           />
                         </span>
@@ -423,7 +423,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                       {m.reason && <p className="text-[12px] text-zinc-500 leading-relaxed">{m.reason}</p>}
                     </div>
 
-                    <div className="p-4 bg-[#202026]/50 flex items-center justify-between gap-3">
+                    <div className="p-4 bg-raised/50 flex items-center justify-between gap-3">
                       <span className="text-[13px] font-bold text-white tabular-nums">{currency(Math.abs(m.amount))}</span>
                       <button
                         onClick={async () => {
@@ -476,7 +476,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                         </div>
                         <button
                           onClick={() => chase([g.clientId])}
-                          className="flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors shrink-0"
+                          className="flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shrink-0"
                         >
                           <Send size={14} />
                           Request statement
@@ -531,7 +531,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
           {tab === 'Accounts' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {scopedAccounts.map((a: BankAccount) => (
-                <div key={a.id} className="border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+                <div key={a.id} className="border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
                   <div className="p-6 flex items-start justify-between gap-4 border-b border-white/5">
                     <div>
                       <h3 className="font-sans font-bold text-xl text-white tracking-tight">{a.bankName}</h3>
@@ -553,19 +553,19 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                           <span className="text-zinc-500 font-medium">Consent expires in</span>
                           <span className={`font-bold ${a.reauthDays < 14 ? 'text-red-400' : 'text-white'}`}>{a.reauthDays} days</span>
                         </div>
-                        <div className="h-1.5 w-full bg-[#202026] rounded-full overflow-hidden">
+                        <div className="h-1.5 w-full bg-raised rounded-full overflow-hidden">
                           <div
-                            className={`h-full rounded-full ${a.reauthDays < 14 ? 'bg-red-500' : 'bg-[#14e3c4]'}`}
+                            className={`h-full rounded-full ${a.reauthDays < 14 ? 'bg-red-500' : 'bg-brand'}`}
                             style={{ width: `${Math.min(100, (a.reauthDays / 90) * 100)}%` }}
                           />
                         </div>
                       </div>
                     )}
                   </div>
-                  <div className="p-4 bg-[#202026]/50 flex items-center gap-3 flex-wrap">
+                  <div className="p-4 bg-raised/50 flex items-center gap-3 flex-wrap">
                     <button
                       onClick={() => { reauthAccount(a.id); logAudit({ action: 'Re-authorised bank connection', scope: `${a.bankName} ••${a.last4}`, reviewOpened: true }); }}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors"
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
                     >
                       <RefreshCw size={15} />
                       {a.status === 'disconnected' ? 'Connect feed' : 'Re-authorise'}
@@ -653,7 +653,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
       <AnimatePresence>
         {settingsOpen && (
           <Modal onClose={() => setSettingsOpen(false)}>
-            <div className="w-full max-w-md border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+            <div className="w-full max-w-md border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
               <div className="p-6 border-b border-white/5">
                 <h3 className="font-sans font-bold text-xl text-white tracking-tight">Match rules</h3>
                 <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
@@ -666,19 +666,19 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                 <NumberField label="Lookback (months)" value={matchSettings.lookbackMonths} onChange={(v) => setMatchSettings({ ...matchSettings, lookbackMonths: v })} />
                 <button
                   onClick={() => setMatchSettings({ ...matchSettings, allowProbable: !matchSettings.allowProbable })}
-                  className="flex items-center justify-between gap-4 p-4 rounded-2xl border border-white/5 bg-[#0a0a0c]/60 hover:border-white/15 transition-colors text-left"
+                  className="flex items-center justify-between gap-4 p-4 rounded-2xl border border-white/5 bg-ground/60 hover:border-white/15 transition-colors text-left"
                 >
                   <div>
                     <div className="text-sm font-bold text-white">Suggest probable matches</div>
                     <div className="text-[12px] text-zinc-500 mt-0.5">Always shown as visually distinct from exact matches.</div>
                   </div>
-                  <span className={`w-11 h-6 rounded-full shrink-0 transition-colors relative ${matchSettings.allowProbable ? 'bg-[#14e3c4]' : 'bg-white/10'}`}>
+                  <span className={`w-11 h-6 rounded-full shrink-0 transition-colors relative ${matchSettings.allowProbable ? 'bg-brand' : 'bg-white/10'}`}>
                     <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${matchSettings.allowProbable ? 'left-6' : 'left-1'}`} />
                   </span>
                 </button>
               </div>
-              <div className="p-4 bg-[#202026]/50 flex justify-end">
-                <button onClick={() => setSettingsOpen(false)} className="px-6 py-2.5 text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] rounded-full transition-all">
+              <div className="p-4 bg-raised/50 flex justify-end">
+                <button onClick={() => setSettingsOpen(false)} className="px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all">
                   Done
                 </button>
               </div>
@@ -707,9 +707,9 @@ function MatchPicker({ txn, verdict, onMatch, onPreview, onCashCode, onChase }: 
   const { candidates } = verdict;
 
   return (
-    <div className="w-full max-w-2xl border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+    <div className="w-full max-w-2xl border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
       <div className="p-6 border-b border-white/5 flex items-center gap-4">
-        <div className="w-12 h-12 rounded-2xl bg-[#202026] flex items-center justify-center text-white border border-white/5 shadow-inner shrink-0">
+        <div className="w-12 h-12 rounded-2xl bg-raised flex items-center justify-center text-white border border-white/5 shadow-inner shrink-0">
           <Link2 size={20} />
         </div>
         <div className="min-w-0">
@@ -748,7 +748,7 @@ function MatchPicker({ txn, verdict, onMatch, onPreview, onCashCode, onChase }: 
                   className={`p-4 rounded-2xl border transition-all ${
                     probable
                       ? 'border-dashed border-amber-500/30 bg-amber-500/[0.04]'
-                      : 'border-white/5 bg-[#0a0a0c]/60'
+                      : 'border-white/5 bg-ground/60'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-3 mb-1.5">
@@ -769,7 +769,7 @@ function MatchPicker({ txn, verdict, onMatch, onPreview, onCashCode, onChase }: 
                   <div className="flex items-center gap-2 mt-3">
                     <button
                       onClick={() => onMatch(c)}
-                      className="px-4 py-2 rounded-full text-[12px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors"
+                      className="px-4 py-2 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
                     >
                       This is the one
                     </button>
@@ -788,12 +788,12 @@ function MatchPicker({ txn, verdict, onMatch, onPreview, onCashCode, onChase }: 
         )}
       </div>
 
-      <div className="p-4 bg-[#202026]/50 flex items-center gap-3 flex-wrap justify-end">
+      <div className="p-4 bg-raised/50 flex items-center gap-3 flex-wrap justify-end">
         <button onClick={onChase} className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 border border-white/5 transition-colors">
           <Send size={15} />
           Chase for it
         </button>
-        <button onClick={onCashCode} className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors">
+        <button onClick={onCashCode} className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-colors">
           <Wand2 size={15} />
           Cash code instead
         </button>
@@ -825,7 +825,7 @@ function CashCodePanel({ txn, customCategories, onAddCategory, onConfirm }: {
   };
 
   return (
-    <div className="w-full max-w-md border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+    <div className="w-full max-w-md border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
       <div className="p-6 border-b border-white/5">
         <h3 className="font-sans font-bold text-xl text-white tracking-tight">Cash code</h3>
         <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
@@ -846,8 +846,8 @@ function CashCodePanel({ txn, customCategories, onAddCategory, onConfirm }: {
                 onClick={() => setCategory(c)}
                 className={`px-3.5 py-2 rounded-full text-[13px] font-bold border transition-all ${
                   category === c
-                    ? 'bg-[#14e3c4] text-white border-[#14e3c4]'
-                    : 'bg-[#0a0a0c] text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
+                    ? 'bg-brand text-white border-brand'
+                    : 'bg-ground text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
                 }`}
               >
                 {c === '—' ? 'Decide later' : c}
@@ -861,7 +861,7 @@ function CashCodePanel({ txn, customCategories, onAddCategory, onConfirm }: {
               onKeyDown={(e) => { if (e.key === 'Enter') addCustom(); }}
               placeholder="Add your own category…"
               maxLength={40}
-              className="flex-1 bg-[#0a0a0c] border border-white/5 rounded-full py-2 px-4 text-[13px] font-semibold text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-[#14e3c4]"
+              className="flex-1 bg-ground border border-white/5 rounded-full py-2 px-4 text-[13px] font-semibold text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-brand"
             />
             <button
               onClick={addCustom}
@@ -874,10 +874,10 @@ function CashCodePanel({ txn, customCategories, onAddCategory, onConfirm }: {
           </div>
         </div>
       </div>
-      <div className="p-4 bg-[#202026]/50 flex justify-end">
+      <div className="p-4 bg-raised/50 flex justify-end">
         <button
           onClick={() => onConfirm(category)}
-          className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] rounded-full transition-all"
+          className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all"
         >
           <Check size={16} strokeWidth={3} />
           Create cost item
@@ -899,7 +899,7 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
         onClick={(e) => e.stopPropagation()}
         className="relative w-full max-w-2xl flex justify-center"
       >
-        <button onClick={onClose} className="absolute -top-3 -right-3 z-10 p-2 bg-[#16161a] hover:bg-[#202026] text-zinc-400 hover:text-white rounded-full border border-white/10 transition-colors shadow-lg">
+        <button onClick={onClose} className="absolute -top-3 -right-3 z-10 p-2 bg-card hover:bg-raised text-zinc-400 hover:text-white rounded-full border border-white/10 transition-colors shadow-lg">
           <X size={18} />
         </button>
         {children}
@@ -939,7 +939,7 @@ function NumberField({ label, value, onChange }: { label: string; value: number;
         type="number"
         value={value}
         onChange={(e) => onChange(Math.max(0, Number(e.target.value)))}
-        className="w-full bg-[#0a0a0c] border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#14e3c4] transition-colors"
+        className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-brand transition-colors"
       />
     </div>
   );

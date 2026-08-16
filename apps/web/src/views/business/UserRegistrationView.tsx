@@ -45,7 +45,7 @@ export function UserRegistrationView() {
   if (done || member.status === 'active') {
     return (
       <Shell title="You're set up">
-        <div className="w-14 h-14 rounded-2xl bg-[#14e3c4]/15 border border-[#14e3c4]/30 flex items-center justify-center text-[#14e3c4]">
+        <div className="w-14 h-14 rounded-2xl bg-brand/15 border border-brand/30 flex items-center justify-center text-brand">
           <Check size={26} strokeWidth={3} />
         </div>
         <p className="text-[14px] text-zinc-400 leading-relaxed">
@@ -62,7 +62,7 @@ export function UserRegistrationView() {
     const masked = (member.mobile ?? '').replace(/(\+\d{2}\s?\d)(.*)(\d{2})$/, '$1••• •••$3');
     return (
       <Shell title={`Join ${account.businessName}`}>
-        <div className="p-4 rounded-2xl bg-[#0a0a0c] border border-white/5 shadow-inner">
+        <div className="p-4 rounded-2xl bg-ground border border-white/5 shadow-inner">
           <p className="text-[13.5px] text-zinc-300 leading-relaxed">
             {account.businessName} added you as {article(member.role)} <strong className="text-white">{member.role}</strong>.
             Confirm it is you and add your details — it takes a minute.
@@ -80,7 +80,7 @@ export function UserRegistrationView() {
             inputMode="numeric"
             placeholder="0000"
             aria-label="One-time code"
-            className="w-full bg-[#0a0a0c] border border-white/5 rounded-2xl px-5 py-4 text-2xl font-bold tracking-[0.4em] text-center text-white placeholder:text-zinc-700 focus:outline-none focus:border-[#14e3c4] transition-colors tabular-nums"
+            className="w-full bg-ground border border-white/5 rounded-2xl px-5 py-4 text-2xl font-bold tracking-[0.4em] text-center text-white placeholder:text-zinc-700 focus:outline-none focus:border-brand transition-colors tabular-nums"
           />
           <p className="text-[12px] text-zinc-600 mt-3">
             Codes are issued and checked server-side — Verify continues without one here.
@@ -89,7 +89,7 @@ export function UserRegistrationView() {
 
         <button
           onClick={() => setVerified(true)}
-          className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors shadow-[0_0_20px_rgba(20,227,196,0.25)]"
+          className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_20px_rgba(20,227,196,0.25)]"
         >
           <ShieldCheck size={16} strokeWidth={2.5} />
           Verify
@@ -112,7 +112,7 @@ export function UserRegistrationView() {
   return (
     <Shell title="Add your details">
       <div className="flex items-center gap-4">
-        <div className="w-16 h-16 rounded-2xl bg-[#0a0a0c] border border-white/5 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
+        <div className="w-16 h-16 rounded-2xl bg-ground border border-white/5 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
           {draft.avatarDataUrl ? (
             <img src={draft.avatarDataUrl} alt="" className="w-full h-full object-cover" />
           ) : (
@@ -161,7 +161,7 @@ export function UserRegistrationView() {
 
       {/* Set by the business, shown so it can be queried rather than silently
           wrong — but not editable here. */}
-      <div className="p-4 rounded-2xl bg-[#0a0a0c] border border-white/5 shadow-inner flex flex-col gap-2">
+      <div className="p-4 rounded-2xl bg-ground border border-white/5 shadow-inner flex flex-col gap-2">
         <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Set by {account.businessName}</div>
         <div className="flex items-center gap-2 flex-wrap">
           <Pill tone="blue">{member.role}</Pill>
@@ -185,7 +185,7 @@ export function UserRegistrationView() {
           setDone(true);
         }}
         disabled={!!problem}
-        className="w-full px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_20px_rgba(20,227,196,0.25)]"
+        className="w-full px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_20px_rgba(20,227,196,0.25)]"
       >
         Finish
       </button>
@@ -198,14 +198,14 @@ const article = (role: string) => (/^[AEIOU]/i.test(role) ? 'an' : 'a');
 
 function Shell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="flex-1 flex flex-col min-w-0 h-full bg-[#0a0a0c] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="flex-1 flex flex-col min-w-0 h-full bg-ground overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-md mx-auto px-5 py-10 flex flex-col gap-5"
       >
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-[#14e3c4] flex items-center justify-center text-white shrink-0 shadow-[0_0_15px_rgba(20,227,196,0.3)]">
+          <div className="w-11 h-11 rounded-2xl bg-brand flex items-center justify-center text-white shrink-0 shadow-[0_0_15px_rgba(20,227,196,0.3)]">
             <Smartphone size={19} />
           </div>
           <div>
@@ -229,7 +229,7 @@ function Field({ label, value, onChange, placeholder }: {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full bg-[#0a0a0c] border border-white/5 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#14e3c4] transition-colors"
+        className="w-full bg-ground border border-white/5 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors"
       />
     </div>
   );

@@ -24,7 +24,7 @@ export function SubTabs({ tabs, active, onChange }: {
   onChange: (key: string) => void;
 }) {
   return (
-    <div className="inline-flex items-center gap-1 p-1 rounded-2xl bg-[#0a0a0c] border border-white/5 shadow-inner max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="inline-flex items-center gap-1 p-1 rounded-2xl bg-ground border border-white/5 shadow-inner max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {tabs.map((t) => {
         const selected = t.key === active;
         return (
@@ -34,7 +34,7 @@ export function SubTabs({ tabs, active, onChange }: {
             aria-pressed={selected}
             className={`shrink-0 px-3.5 py-2 rounded-xl text-[12.5px] font-bold transition-colors flex items-center gap-2 whitespace-nowrap ${
               selected
-                ? 'bg-[#14e3c4]/15 text-[#14e3c4] border border-[#14e3c4]/30 shadow-[0_0_10px_rgba(20,227,196,0.12)]'
+                ? 'bg-brand/15 text-brand border border-brand/30 shadow-[0_0_10px_rgba(20,227,196,0.12)]'
                 : 'text-zinc-500 hover:text-white border border-transparent'
             }`}
           >
@@ -42,7 +42,7 @@ export function SubTabs({ tabs, active, onChange }: {
             {t.count !== undefined && (
               <span
                 className={`tabular-nums text-[11px] px-1.5 py-0.5 rounded-md ${
-                  selected ? 'bg-[#14e3c4]/15 text-[#14e3c4]' : 'text-zinc-600'
+                  selected ? 'bg-brand/15 text-brand' : 'text-zinc-600'
                 }`}
               >
                 {t.count}

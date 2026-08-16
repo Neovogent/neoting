@@ -59,11 +59,11 @@ export function ContextBar() {
 
 
   return (
-    <header className="h-20 border-b border-white/5 px-8 flex items-center justify-between gap-4 shrink-0 bg-[#0a0a0c]/80 backdrop-blur-md z-10 sticky top-0">
+    <header className="h-20 border-b border-white/5 px-8 flex items-center justify-between gap-4 shrink-0 bg-ground/80 backdrop-blur-md z-10 sticky top-0">
       <div className="flex items-center gap-4 min-w-0">
         <button
           onClick={toggleHistory}
-          className="p-2.5 text-zinc-400 hover:text-white bg-[#16161a] hover:bg-[#202026] border border-white/5 rounded-full transition-all shadow-lg overflow-hidden relative flex items-center justify-center w-10 h-10 shrink-0"
+          className="p-2.5 text-zinc-400 hover:text-white bg-card hover:bg-raised border border-white/5 rounded-full transition-all shadow-lg overflow-hidden relative flex items-center justify-center w-10 h-10 shrink-0"
           title={isHistoryVisible ? 'Hide history' : 'Show history'}
         >
           <AnimatePresence mode="wait" initial={false}>
@@ -89,7 +89,7 @@ export function ContextBar() {
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9 }}
-                className="group flex items-center gap-3 bg-[#16161a] pl-4 pr-2 py-2 rounded-full border border-white/5 shadow-lg shrink-0"
+                className="group flex items-center gap-3 bg-card pl-4 pr-2 py-2 rounded-full border border-white/5 shadow-lg shrink-0"
               >
                 <Building2 size={16} className="text-zinc-400 shrink-0" />
                 <span className="text-sm font-semibold text-white tracking-wide whitespace-nowrap">{c.name}</span>
@@ -113,7 +113,7 @@ export function ContextBar() {
           <button
             ref={triggerRef}
             onClick={() => setPickerOpen((o) => !o)}
-            className="flex items-center gap-2 text-zinc-400 hover:text-[#14e3c4] text-sm font-medium transition-colors px-3 py-2 rounded-full hover:bg-white/5 whitespace-nowrap"
+            className="flex items-center gap-2 text-zinc-400 hover:text-brand text-sm font-medium transition-colors px-3 py-2 rounded-full hover:bg-white/5 whitespace-nowrap"
           >
             <Plus size={16} />
             Attach Client
@@ -130,7 +130,7 @@ export function ContextBar() {
                   exit={{ opacity: 0, y: -8, scale: 0.97 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                   style={{ top: anchor.top, left: anchor.left }}
-                  className="fixed w-72 max-h-[60vh] overflow-y-auto bg-[#16161a] border border-white/10 rounded-2xl shadow-2xl z-[100] p-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                  className="fixed w-72 max-h-[60vh] overflow-y-auto bg-card border border-white/10 rounded-2xl shadow-2xl z-[100] p-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 >
                   <div className="px-3 py-2 text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Attach to conversation</div>
                   {clients.map((c) => {
@@ -142,10 +142,10 @@ export function ContextBar() {
                         className="w-full px-3 py-2.5 rounded-xl flex items-center justify-between gap-3 text-sm text-left hover:bg-white/5 transition-colors"
                       >
                         <span className="flex items-center gap-3 min-w-0">
-                          <span className={`w-2 h-2 rounded-full shrink-0 ${attached ? 'bg-[#14e3c4]' : 'bg-zinc-700'}`} />
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${attached ? 'bg-brand' : 'bg-zinc-700'}`} />
                           <span className="truncate text-zinc-300">{c.name}</span>
                         </span>
-                        {attached && <Check size={15} strokeWidth={3} className="text-[#14e3c4] shrink-0" />}
+                        {attached && <Check size={15} strokeWidth={3} className="text-brand shrink-0" />}
                       </button>
                     );
                   })}

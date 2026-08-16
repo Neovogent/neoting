@@ -35,7 +35,7 @@ export function ConfirmStep({ title, detail, consequence, confirmLabel, altLabel
         initial={{ opacity: 0, y: 12, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md border border-white/10 rounded-[28px] bg-[#16161a] shadow-2xl overflow-hidden"
+        className="w-full max-w-md border border-white/10 rounded-[28px] bg-card shadow-2xl overflow-hidden"
       >
         <div className="p-6 flex flex-col gap-3">
           <div className="flex items-start gap-3.5">
@@ -43,7 +43,7 @@ export function ConfirmStep({ title, detail, consequence, confirmLabel, altLabel
               className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border ${
                 tone === 'red'
                   ? 'bg-red-500/10 border-red-400/25 text-red-400'
-                  : 'bg-[#14e3c4]/10 border-[#14e3c4]/25 text-[#14e3c4]'
+                  : 'bg-brand/10 border-brand/25 text-brand'
               }`}
             >
               {tone === 'red' ? <AlertTriangle size={18} /> : <Check size={18} strokeWidth={3} />}
@@ -59,7 +59,7 @@ export function ConfirmStep({ title, detail, consequence, confirmLabel, altLabel
           )}
         </div>
 
-        <div className="p-4 bg-[#202026]/50 flex items-center gap-3 justify-end">
+        <div className="p-4 bg-raised/50 flex items-center gap-3 justify-end">
           <button
             onClick={onCancel}
             className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 hover:text-white transition-colors"
@@ -72,7 +72,7 @@ export function ConfirmStep({ title, detail, consequence, confirmLabel, altLabel
           {altLabel && onAlt && (
             <button
               onClick={onAlt}
-              className="px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-300 bg-[#16161a] border border-white/10 hover:bg-white/5 transition-colors"
+              className="px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-300 bg-card border border-white/10 hover:bg-white/5 transition-colors"
             >
               {altLabel}
             </button>
@@ -83,7 +83,7 @@ export function ConfirmStep({ title, detail, consequence, confirmLabel, altLabel
             className={`flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white transition-colors ${
               tone === 'red'
                 ? 'bg-red-500 hover:bg-red-600'
-                : 'bg-[#14e3c4] hover:bg-[#0fcbaf] shadow-[0_0_15px_rgba(20,227,196,0.25)]'
+                : 'bg-brand hover:bg-brand-hover shadow-[0_0_15px_rgba(20,227,196,0.25)]'
             }`}
           >
             {confirmLabel}

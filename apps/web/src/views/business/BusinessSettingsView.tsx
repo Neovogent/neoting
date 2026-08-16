@@ -48,11 +48,11 @@ export function BusinessSettingsView({ account }: { account: BusinessAccount }) 
               onClick={() => setSection(s.key)}
               className={`px-4 py-2.5 rounded-xl text-left text-sm font-semibold transition-all flex items-center gap-3 ${
                 section === s.key
-                  ? 'bg-[#16161a] text-white border border-white/5'
-                  : 'text-zinc-400 hover:text-white hover:bg-[#16161a]/50 border border-transparent'
+                  ? 'bg-card text-white border border-white/5'
+                  : 'text-zinc-400 hover:text-white hover:bg-card/50 border border-transparent'
               }`}
             >
-              <s.icon size={15} className={section === s.key ? 'text-[#14e3c4]' : ''} />
+              <s.icon size={15} className={section === s.key ? 'text-brand' : ''} />
               {s.key}
             </button>
           ))}
@@ -90,7 +90,7 @@ export function BusinessSettingsView({ account }: { account: BusinessAccount }) 
                 {/* No money-in / money-out choice: sorting paperwork is
                     bookkeeping, and it is not the business's job. Extraction
                     reads the bill-to block and files it. */}
-                <div className="p-4 rounded-2xl bg-[#0a0a0c]/60 border border-white/5 shadow-inner">
+                <div className="p-4 rounded-2xl bg-ground/60 border border-white/5 shadow-inner">
                   <div className="text-sm font-bold text-white">We work out what each document is</div>
                   <div className="text-[12px] text-zinc-500 mt-1 leading-relaxed">
                     Bills, receipts and sales invoices can all go in together — you never have to sort them. Your
@@ -153,9 +153,9 @@ export function BusinessSettingsView({ account }: { account: BusinessAccount }) 
                   <button
                     key={m.id}
                     onClick={() => setEditingMember(m)}
-                    className="p-4 rounded-2xl bg-[#0a0a0c]/60 border border-white/5 hover:border-white/15 transition-colors text-left flex items-center gap-4"
+                    className="p-4 rounded-2xl bg-ground/60 border border-white/5 hover:border-white/15 transition-colors text-left flex items-center gap-4"
                   >
-                    <div className="w-10 h-10 rounded-xl bg-[#202026] border border-white/5 flex items-center justify-center font-bold text-white shrink-0">
+                    <div className="w-10 h-10 rounded-xl bg-raised border border-white/5 flex items-center justify-center font-bold text-white shrink-0">
                       {m.name.trim().charAt(0).toUpperCase() || '?'}
                     </div>
                     <div className="min-w-0 flex-1">
@@ -346,7 +346,7 @@ function MemberEditor({ member, existing, onSave, onRemove, onClose }: {
         initial={{ opacity: 0, y: 20, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden my-auto"
+        className="w-full max-w-lg border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden my-auto"
       >
         <div className="p-6 border-b border-white/5">
           <h3 className="font-sans font-bold text-xl text-white tracking-tight">
@@ -395,7 +395,7 @@ function MemberEditor({ member, existing, onSave, onRemove, onClose }: {
           {problem && <p className="text-[13px] text-amber-400 font-semibold">{problem}</p>}
         </div>
 
-        <div className="p-4 bg-[#202026]/50 flex items-center gap-3 justify-end flex-wrap">
+        <div className="p-4 bg-raised/50 flex items-center gap-3 justify-end flex-wrap">
           {!isNew && (
             <button
               onClick={onRemove}
@@ -416,7 +416,7 @@ function MemberEditor({ member, existing, onSave, onRemove, onClose }: {
           <button
             onClick={() => onSave({ ...draft, name, email })}
             disabled={!!problem}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
           >
             {isNew ? 'Send invite' : 'Save'}
           </button>
@@ -492,7 +492,7 @@ function BusinessDetailsPanel({ account, onSave }: {
             setSaved(true);
           }}
           disabled={!dirty || !!problem}
-          className="px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+          className="px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
         >
           Save changes
         </button>
@@ -510,7 +510,7 @@ function BusinessDetailsPanel({ account, onSave }: {
             Unsaved: {changed.join(', ')}
           </span>
         ) : saved ? (
-          <span className="text-[12px] text-[#14e3c4] font-semibold">Saved.</span>
+          <span className="text-[12px] text-brand font-semibold">Saved.</span>
         ) : null}
       </div>
     </Panel>
@@ -519,7 +519,7 @@ function BusinessDetailsPanel({ account, onSave }: {
 
 function Panel({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-[28px] border border-white/5 bg-[#16161a] p-6">
+    <section className="rounded-[28px] border border-white/5 bg-card p-6">
       <div className="mb-4">
         <h2 className="text-[15px] font-bold text-white tracking-tight">{title}</h2>
         {subtitle && <p className="text-[12px] text-zinc-500 mt-1">{subtitle}</p>}
@@ -547,7 +547,7 @@ function ConnectRow({
   doneLabel?: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 p-4 border border-white/5 rounded-2xl bg-[#0a0a0c]/60 shadow-inner">
+    <div className="flex items-center justify-between gap-4 p-4 border border-white/5 rounded-2xl bg-ground/60 shadow-inner">
       <div className="min-w-0">
         <div className="text-sm font-bold text-white">{name}</div>
         <div className="text-[12px] text-zinc-500">{detail}</div>
@@ -557,7 +557,7 @@ function ConnectRow({
       ) : (
         <button
           onClick={onConnect}
-          className="shrink-0 px-4 py-2 rounded-full text-[13px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors shadow-[0_0_12px_rgba(20,227,196,0.25)]"
+          className="shrink-0 px-4 py-2 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_12px_rgba(20,227,196,0.25)]"
         >
           {actionLabel}
         </button>
@@ -583,7 +583,7 @@ function Field({ label, value, onChange, placeholder }: { label: string; value: 
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full bg-[#0a0a0c] border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#14e3c4] transition-colors"
+        className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors"
       />
     </div>
   );
@@ -593,13 +593,13 @@ function Toggle({ label, hint, value, onChange }: { label: string; hint?: string
   return (
     <button
       onClick={() => onChange(!value)}
-      className="bg-[#0a0a0c]/60 border border-white/5 rounded-2xl p-4 flex items-center justify-between gap-4 shadow-inner hover:border-white/10 transition-colors text-left"
+      className="bg-ground/60 border border-white/5 rounded-2xl p-4 flex items-center justify-between gap-4 shadow-inner hover:border-white/10 transition-colors text-left"
     >
       <span>
         <span className="block text-sm font-bold text-white">{label}</span>
         {hint && <span className="block text-[12px] text-zinc-500 mt-0.5">{hint}</span>}
       </span>
-      <span className={`w-11 h-6 rounded-full shrink-0 transition-colors relative ${value ? 'bg-[#14e3c4]' : 'bg-white/10'}`}>
+      <span className={`w-11 h-6 rounded-full shrink-0 transition-colors relative ${value ? 'bg-brand' : 'bg-white/10'}`}>
         <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${value ? 'left-6' : 'left-1'}`} />
       </span>
     </button>

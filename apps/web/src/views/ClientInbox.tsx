@@ -205,7 +205,7 @@ export function ClientInbox({ client, kind, onPreview }: {
       const isImage = /receipt|photo|jpg|png|heic/i.test(`${d.source} ${d.splitFrom ?? ''}`) || d.source === 'whatsapp';
       return (
         <span className="flex items-center gap-2.5">
-          <span className="w-8 h-9 rounded-lg bg-[#202026] border border-white/5 flex items-center justify-center text-zinc-500 shrink-0">
+          <span className="w-8 h-9 rounded-lg bg-raised border border-white/5 flex items-center justify-center text-zinc-500 shrink-0">
             {isImage ? <ImageIcon size={14} /> : <FileText size={14} />}
           </span>
           <span className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider">
@@ -245,7 +245,7 @@ export function ClientInbox({ client, kind, onPreview }: {
         <span className="flex items-center gap-2">
           <span className="text-zinc-300">{d.category}</span>
           {byRule ? (
-            <span title={field?.provenance} className="text-[#14e3c4] shrink-0"><Link2 size={12} /></span>
+            <span title={field?.provenance} className="text-brand shrink-0"><Link2 size={12} /></span>
           ) : field ? (
             <span title={`AI · ${Math.round(field.confidence * 100)}% confident`} className="text-zinc-500 shrink-0 flex items-center gap-1">
               <Sparkles size={12} />
@@ -442,7 +442,7 @@ export function ClientInbox({ client, kind, onPreview }: {
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold border transition-colors whitespace-nowrap ${
                 step.blocked
                   ? 'text-amber-400 bg-amber-400/10 border-amber-400/25 hover:bg-amber-400/20'
-                  : 'text-[#14e3c4] bg-[#14e3c4]/10 border-[#14e3c4]/25 hover:bg-[#14e3c4]/20'
+                  : 'text-brand bg-brand/10 border-brand/25 hover:bg-brand/20'
               }`}
             >
               <step.icon size={12} strokeWidth={2.5} />
@@ -668,7 +668,7 @@ export function ClientInbox({ client, kind, onPreview }: {
       {status === 'duplicates' ? (
         <div className="flex flex-col gap-3">
           {clientPairs.length === 0 ? (
-            <div className="border border-white/5 rounded-[32px] bg-[#16161a] p-10 text-center shadow-2xl">
+            <div className="border border-white/5 rounded-[32px] bg-card p-10 text-center shadow-2xl">
               <p className="text-[13px] text-zinc-500 leading-relaxed max-w-md mx-auto">
                 Nothing flagged. Every document is checked against the others on file the moment it is read —
                 same total, supplier, dates within a few days, matching text, file and image hashes — so an
@@ -716,7 +716,7 @@ export function ClientInbox({ client, kind, onPreview }: {
           <>
             <button
               onClick={() => fileRef.current?.click()}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.2)]"
             >
               <Upload size={16} strokeWidth={2.5} />
               Upload
@@ -735,14 +735,14 @@ export function ClientInbox({ client, kind, onPreview }: {
               accept=".jpg,.jpeg,.png,.gif,.bmp,.tiff,.heic,.pdf,.doc,.docx,.odt,.rtf"
               onChange={(e) => { handleReplacement(e.target.files); e.target.value = ''; }}
             />
-            <div className="flex items-center gap-1 bg-[#0a0a0c] border border-white/5 rounded-full p-1 shadow-inner">
+            <div className="flex items-center gap-1 bg-ground border border-white/5 rounded-full p-1 shadow-inner">
               {SPLIT_MODES.map((m) => (
                 <button
                   key={m.key}
                   onClick={() => setSplitMode(m.key)}
                   title={m.hint}
                   className={`px-3 py-1.5 rounded-full text-[12px] font-bold transition-colors ${
-                    splitMode === m.key ? 'bg-[#202026] text-white' : 'text-zinc-500 hover:text-white'
+                    splitMode === m.key ? 'bg-raised text-white' : 'text-zinc-500 hover:text-white'
                   }`}
                 >
                   {m.label}

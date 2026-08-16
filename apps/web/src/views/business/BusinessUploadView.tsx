@@ -80,10 +80,10 @@ export function BusinessUploadView({ account }: { account: BusinessAccount }) {
         onDrop={onDrop}
         onClick={() => inputRef.current?.click()}
         className={`rounded-[28px] border-2 border-dashed p-12 flex flex-col items-center justify-center text-center cursor-pointer transition-colors ${
-          dragging ? 'border-[#14e3c4] bg-[#14e3c4]/5' : 'border-white/10 bg-[#16161a] hover:border-white/20'
+          dragging ? 'border-brand bg-brand/5' : 'border-white/10 bg-card hover:border-white/20'
         }`}
       >
-        <div className="w-14 h-14 rounded-2xl bg-[#202026] border border-white/5 flex items-center justify-center text-zinc-300">
+        <div className="w-14 h-14 rounded-2xl bg-raised border border-white/5 flex items-center justify-center text-zinc-300">
           <UploadCloud size={24} />
         </div>
         <p className="text-sm font-bold text-white mt-4">Drop files here, or click to choose</p>
@@ -111,7 +111,7 @@ export function BusinessUploadView({ account }: { account: BusinessAccount }) {
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="e.g. the Bidfood invoice for the July delivery"
-          className="w-full bg-[#0a0a0c] border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#14e3c4] transition-colors"
+          className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors"
         />
       </div>
 
@@ -149,7 +149,7 @@ export function BusinessUploadView({ account }: { account: BusinessAccount }) {
             <Panel title="Just sent" subtitle="Your accountant can see these already">
               <div className="flex flex-col gap-2">
                 {accepted.map((f, i) => (
-                  <div key={`${f.name}-${i}`} className="flex items-center justify-between gap-4 p-3.5 rounded-2xl bg-[#0a0a0c]/60 border border-white/5">
+                  <div key={`${f.name}-${i}`} className="flex items-center justify-between gap-4 p-3.5 rounded-2xl bg-ground/60 border border-white/5">
                     <span className="flex items-center gap-3 min-w-0">
                       <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
                       <span className="text-[13px] font-semibold text-white truncate">{f.name}</span>
@@ -169,7 +169,7 @@ export function BusinessUploadView({ account }: { account: BusinessAccount }) {
         <Panel title="Sent from this portal" subtitle="Live status from your accountant's system">
           <div className="flex flex-col gap-2">
             {portalDocs.map((d) => (
-              <div key={d.id} className="flex items-center justify-between gap-4 p-3.5 rounded-2xl bg-[#0a0a0c]/60 border border-white/5">
+              <div key={d.id} className="flex items-center justify-between gap-4 p-3.5 rounded-2xl bg-ground/60 border border-white/5">
                 <span className="text-[13px] font-semibold text-white truncate">{d.supplier}</span>
                 <Pill tone={d.status === 'processing' ? 'blue' : d.status === 'review' ? 'amber' : 'green'}>
                   {d.status === 'processing' ? 'Reading it' : d.status === 'review' ? 'With your accountant' : 'Accepted'}

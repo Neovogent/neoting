@@ -49,7 +49,7 @@ export function ActionCard({ clientIds, period }: { clientIds: string[]; period?
   }
 
   return (
-    <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden flex flex-col">
+    <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden flex flex-col">
       <div className="p-6 flex items-start gap-5 border-b border-white/5">
         <div className="w-12 h-12 rounded-2xl bg-red-500/10 flex items-center justify-center text-red-500 shrink-0 border border-red-500/20 shadow-inner">
           <FileSearch size={24} />
@@ -63,13 +63,13 @@ export function ActionCard({ clientIds, period }: { clientIds: string[]; period?
             {period ? ` • ${period} 2026` : ''}
           </p>
           <div className="flex flex-wrap gap-2 mt-4">
-            <span className="inline-flex items-center px-3 py-1.5 rounded-full bg-[#202026] text-[11px] font-bold text-white border border-white/5">
+            <span className="inline-flex items-center px-3 py-1.5 rounded-full bg-raised text-[11px] font-bold text-white border border-white/5">
               {currency(unverified)} unverified
             </span>
             {Object.entries(byEngine).map(([engine, count]) => (
               <span
                 key={engine}
-                className="inline-flex items-center px-3 py-1.5 rounded-full bg-[#202026] text-[11px] font-bold text-white border border-white/5"
+                className="inline-flex items-center px-3 py-1.5 rounded-full bg-raised text-[11px] font-bold text-white border border-white/5"
               >
                 {count} {ENGINE_LABEL[engine as MissingItem['detectedBy']]}
               </span>
@@ -77,24 +77,24 @@ export function ActionCard({ clientIds, period }: { clientIds: string[]; period?
           </div>
         </div>
       </div>
-      <div className="flex items-center bg-[#202026]/50 p-4 gap-3">
+      <div className="flex items-center bg-raised/50 p-4 gap-3">
         <button
           onClick={() => post("Here's the chase, grouped per client. Read the review before it sends.", 'CHASE_MISSING')}
-          className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold text-white bg-[#14e3c4] rounded-2xl hover:bg-[#0fcbaf] transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+          className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold text-white bg-brand rounded-2xl hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
         >
           Chase missing
           <ArrowRight size={16} strokeWidth={2.5} />
         </button>
         <button
           onClick={() => post('Every outstanding item, sortable and bulk-selectable:', 'SHOW_MISSING_TABLE')}
-          className="px-4 py-3 text-zinc-400 hover:text-white hover:bg-white/5 rounded-2xl transition-colors border border-white/5 bg-[#16161a] shadow-inner"
+          className="px-4 py-3 text-zinc-400 hover:text-white hover:bg-white/5 rounded-2xl transition-colors border border-white/5 bg-card shadow-inner"
           title="Review items"
         >
           <Eye size={20} />
         </button>
         <button
           onClick={() => downloadCsv(items)}
-          className="px-4 py-3 text-zinc-400 hover:text-white hover:bg-white/5 rounded-2xl transition-colors border border-white/5 bg-[#16161a] shadow-inner"
+          className="px-4 py-3 text-zinc-400 hover:text-white hover:bg-white/5 rounded-2xl transition-colors border border-white/5 bg-card shadow-inner"
           title="Export CSV"
         >
           <Download size={20} />

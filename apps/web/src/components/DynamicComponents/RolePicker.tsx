@@ -39,8 +39,8 @@ export function RolePicker({ value, onChange, hint }: {
             onClick={() => onChange(r)}
             className={`px-4 py-2.5 rounded-xl border text-[13px] font-bold transition-colors ${
               value === r
-                ? 'bg-[#14e3c4]/10 border-[#14e3c4]/40 text-[#14e3c4]'
-                : 'bg-[#0a0a0c] border-white/5 text-zinc-400 hover:text-white'
+                ? 'bg-brand/10 border-brand/40 text-brand'
+                : 'bg-ground border-white/5 text-zinc-400 hover:text-white'
             }`}
           >
             {r}
@@ -50,7 +50,7 @@ export function RolePicker({ value, onChange, hint }: {
         {/* A role already set to something custom stays visible and selected,
             so reopening the form never silently demotes anyone. */}
         {!isSuggested && !adding && (
-          <span className="px-4 py-2.5 rounded-xl border border-[#14e3c4]/40 bg-[#14e3c4]/10 text-[13px] font-bold text-[#14e3c4] flex items-center gap-2">
+          <span className="px-4 py-2.5 rounded-xl border border-brand/40 bg-brand/10 text-[13px] font-bold text-brand flex items-center gap-2">
             {value}
             {/* Clearing a custom role drops to the least-privileged suggestion,
                 which is the last of the three the list always holds. */}
@@ -58,7 +58,7 @@ export function RolePicker({ value, onChange, hint }: {
               onClick={() => { onChange(BUSINESS_ROLES[BUSINESS_ROLES.length - 1] ?? 'Staff'); }}
               title="Clear this role"
               aria-label="Clear this role"
-              className="text-[#14e3c4]/70 hover:text-[#14e3c4]"
+              className="text-brand/70 hover:text-brand"
             >
               <X size={13} />
             </button>
@@ -78,14 +78,14 @@ export function RolePicker({ value, onChange, hint }: {
               placeholder="Head Chef"
               aria-label="Custom role"
               maxLength={28}
-              className="w-36 bg-[#0a0a0c] border border-white/10 rounded-xl px-3 py-2.5 text-[13px] text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#14e3c4] transition-colors"
+              className="w-36 bg-ground border border-white/10 rounded-xl px-3 py-2.5 text-[13px] text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors"
             />
             <button
               onClick={commit}
               disabled={!draft.trim()}
               title="Use this role"
               aria-label="Use this role"
-              className="p-2.5 rounded-xl text-[#14e3c4] bg-[#14e3c4]/10 border border-[#14e3c4]/25 hover:bg-[#14e3c4]/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="p-2.5 rounded-xl text-brand bg-brand/10 border border-brand/25 hover:bg-brand/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <Check size={14} strokeWidth={3} />
             </button>

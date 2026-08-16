@@ -58,14 +58,14 @@ export function RuleBuilderCard({ query, clientIds }: { query: string; clientIds
       <ReviewSection title="Scope">
         <button
           onClick={() => setRetro((r) => !r)}
-          className="w-full bg-[#16161a] border border-white/5 rounded-2xl p-4 flex items-center justify-between gap-4 shadow-inner hover:border-white/10 transition-colors"
+          className="w-full bg-card border border-white/5 rounded-2xl p-4 flex items-center justify-between gap-4 shadow-inner hover:border-white/10 transition-colors"
         >
           <div className="text-left">
             <div className="text-sm font-bold text-white">Retro-apply to existing inbox items</div>
             <div className="text-[12px] text-zinc-500 mt-0.5">Off = the rule only affects items received from now on.</div>
           </div>
           <div
-            className={`w-11 h-6 rounded-full shrink-0 transition-colors relative ${retro ? 'bg-[#14e3c4]' : 'bg-white/10'}`}
+            className={`w-11 h-6 rounded-full shrink-0 transition-colors relative ${retro ? 'bg-brand' : 'bg-white/10'}`}
           >
             <div
               className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${retro ? 'left-6' : 'left-1'}`}

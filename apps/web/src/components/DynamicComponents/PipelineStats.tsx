@@ -19,9 +19,9 @@ export function PipelineStats({ scopeName }: { scopeName: string }) {
   const hovered = hover === null ? null : data[hover];
 
   return (
-    <div className="w-full max-w-3xl border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden flex flex-col">
+    <div className="w-full max-w-3xl border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden flex flex-col">
       <div className="p-6 flex items-center gap-4 border-b border-white/5">
-        <div className="w-12 h-12 rounded-2xl bg-[#202026] flex items-center justify-center text-white shrink-0 border border-white/5 shadow-inner">
+        <div className="w-12 h-12 rounded-2xl bg-raised flex items-center justify-center text-white shrink-0 border border-white/5 shadow-inner">
           <BarChart2 size={22} />
         </div>
         <div className="min-w-0">
@@ -61,7 +61,7 @@ export function PipelineStats({ scopeName }: { scopeName: string }) {
             >
               <div
                 className={`w-full rounded-t transition-colors ${
-                  hover === i || (hover === null && i === peak) ? 'bg-[#14e3c4]' : 'bg-[#14e3c4]/45 group-hover:bg-[#14e3c4]'
+                  hover === i || (hover === null && i === peak) ? 'bg-brand' : 'bg-brand/45 group-hover:bg-brand'
                 }`}
                 style={{ height: `${(d.value / max) * 100}%` }}
               />
@@ -84,7 +84,7 @@ export function PipelineStats({ scopeName }: { scopeName: string }) {
         </div>
       </div>
 
-      <div className="bg-[#202026]/50 px-6 py-4 text-[12px] text-zinc-500 font-semibold leading-relaxed">
+      <div className="bg-raised/50 px-6 py-4 text-[12px] text-zinc-500 font-semibold leading-relaxed">
         Pipeline metrics only. Ledger reporting — P&amp;L, balance sheet, management accounts — is out of scope for this
         product.
       </div>
