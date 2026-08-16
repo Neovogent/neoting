@@ -90,11 +90,11 @@ export function AnalyticsView() {
   ];
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-[#0a0a0c] h-full overflow-hidden">
+    <div className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden">
       <header className="px-10 pt-8 pb-5 shrink-0">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-[#202026] flex items-center justify-center text-white border border-white/5 shadow-inner">
+            <div className="w-12 h-12 rounded-2xl bg-raised flex items-center justify-center text-white border border-white/5 shadow-inner">
               <BarChart2 size={22} />
             </div>
             <div>
@@ -108,14 +108,14 @@ export function AnalyticsView() {
             <select
               value={scope}
               onChange={(e) => setScope(e.target.value)}
-              className="bg-[#16161a] border border-white/5 rounded-full py-2.5 px-4 text-sm font-semibold text-zinc-300 focus:outline-none focus:border-[#14e3c4] shadow-inner"
+              className="bg-card border border-white/5 rounded-full py-2.5 px-4 text-sm font-semibold text-zinc-300 focus:outline-none focus:border-brand shadow-inner"
             >
               <option value="practice">Whole practice (incl. our own account)</option>
               {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
             <button
               onClick={() => exportMetrics(metrics, scope === 'practice' ? 'practice' : clients.find((c) => c.id === scope)?.name ?? '')}
-              className="flex items-center gap-2 px-6 py-2.5 bg-[#14e3c4] text-white text-sm font-bold rounded-full hover:bg-[#0fcbaf] transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+              className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
             >
               <Download size={16} />
               Export
@@ -160,7 +160,7 @@ export function AnalyticsView() {
             footer={`${metrics.integrationsBroken} client(s) with an incomplete integration • ${metrics.inactive} inactive`}
           />
 
-          <div className="border border-white/5 rounded-[32px] bg-[#16161a] p-6 text-[13px] text-zinc-500 leading-relaxed">
+          <div className="border border-white/5 rounded-[32px] bg-card p-6 text-[13px] text-zinc-500 leading-relaxed">
             Ledger-health analytics — bank reconciliation status, control accounts, lock dates — are deliberately out of
             scope. This platform reports on its own pipeline; the accounting software remains the ledger.
           </div>
@@ -179,7 +179,7 @@ function BarPanel({ title, subtitle, data }: { title: string; subtitle: string; 
   const total = data.reduce((n, d) => n + d.value, 0);
 
   return (
-    <div className="border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+    <div className="border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
       <div className="p-6 pb-4 border-b border-white/5">
         <h3 className="font-sans font-bold text-lg text-white tracking-tight">{title}</h3>
         <p className="text-[12px] text-zinc-500 mt-0.5 font-semibold uppercase tracking-wider">{subtitle}</p>
@@ -194,8 +194,8 @@ function BarPanel({ title, subtitle, data }: { title: string; subtitle: string; 
                 {d.value} · {Math.round((d.value / total) * 100)}%
               </span>
             </div>
-            <div className="h-2 w-full bg-[#202026] rounded-full overflow-hidden">
-              <div className="h-full rounded-full bg-[#14e3c4]" style={{ width: `${(d.value / max) * 100}%` }} />
+            <div className="h-2 w-full bg-raised rounded-full overflow-hidden">
+              <div className="h-full rounded-full bg-brand" style={{ width: `${(d.value / max) * 100}%` }} />
             </div>
           </div>
         ))}
@@ -206,7 +206,7 @@ function BarPanel({ title, subtitle, data }: { title: string; subtitle: string; 
 
 function Tile({ label, value, sub, tone = 'plain' }: { label: string; value: string; sub: string; tone?: 'plain' | 'red' }) {
   return (
-    <div className="bg-[#16161a] border border-white/5 rounded-[24px] p-5 shadow-2xl">
+    <div className="bg-card border border-white/5 rounded-[24px] p-5 shadow-2xl">
       <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">{label}</div>
       <div className={`mt-2 text-2xl font-bold tracking-tight tabular-nums ${tone === 'red' ? 'text-red-400' : 'text-white'}`}>
         {value}

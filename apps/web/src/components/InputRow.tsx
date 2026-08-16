@@ -201,9 +201,12 @@ export function InputRow() {
         <motion.span
           aria-hidden="true"
           className="absolute left-1/2 top-1/2 -z-10 w-[180%] aspect-square -translate-x-1/2 -translate-y-1/2 motion-reduce:hidden"
+          // The one gradient that cannot be a utility class: a conic sweep with
+          // eight stops. It reads the brand from the token rather than repeating
+          // the hex, so it follows the palette like everything else (R8).
           style={{
             background:
-              'conic-gradient(from 0deg, transparent 0deg, rgba(20,227,196,0) 25deg, #14e3c4 60deg, rgba(20,227,196,0) 95deg, transparent 180deg, rgba(20,227,196,0) 205deg, #14e3c4 240deg, rgba(20,227,196,0) 275deg, transparent 360deg)',
+              'conic-gradient(from 0deg, transparent 0deg, var(--color-brand-fade) 25deg, var(--color-brand) 60deg, var(--color-brand-fade) 95deg, transparent 180deg, var(--color-brand-fade) 205deg, var(--color-brand) 240deg, var(--color-brand-fade) 275deg, transparent 360deg)',
           }}
           animate={{ rotate: 360 }}
           transition={{ duration: 22, repeat: Infinity, ease: 'linear' }}
@@ -253,7 +256,7 @@ export function InputRow() {
         {(files.length > 0 || (dictated && input)) && (
           <div className="px-6 pb-3 flex flex-wrap items-center gap-2">
             {dictated && input && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#14e3c4]/10 border border-[#14e3c4]/30 text-[12px] font-bold text-[#14e3c4]">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-brand/10 border border-brand/30 text-[12px] font-bold text-brand">
                 <Mic size={12} />
                 Transcript — edit before sending
               </span>
@@ -313,7 +316,7 @@ export function InputRow() {
                             className="w-full px-3 py-2.5 rounded-xl flex items-center justify-between gap-3 text-[13px] font-semibold text-zinc-600 hover:bg-zinc-50 transition-colors text-left"
                           >
                             <span className="truncate">{c.name}</span>
-                            {attached && <Check size={15} strokeWidth={3} className="text-[#14e3c4] shrink-0" />}
+                            {attached && <Check size={15} strokeWidth={3} className="text-brand shrink-0" />}
                           </button>
                         );
                       })}
@@ -365,7 +368,7 @@ export function InputRow() {
               disabled={!speech.supported}
               className={`px-4 py-2 rounded-full text-[13px] font-semibold transition-all shadow-sm flex items-center gap-2 border disabled:opacity-50 ${
                 speech.listening
-                  ? 'bg-[#14e3c4] text-white border-[#14e3c4]'
+                  ? 'bg-brand text-white border-brand'
                   : 'bg-white text-zinc-500 hover:text-zinc-900 border-zinc-200/50 hover:bg-zinc-50 hover:border-zinc-300'
               }`}
               title={speech.supported ? 'Push to talk — you confirm the transcript before it runs' : 'Voice not supported in this browser'}
@@ -384,7 +387,7 @@ export function InputRow() {
           <button
             onClick={handleSubmit}
             disabled={isLoading || !input.trim()}
-            className="px-6 py-2.5 bg-[#14e3c4] text-white hover:bg-[#0fcbaf] rounded-full transition-all shadow-lg disabled:opacity-50 disabled:shadow-none flex items-center gap-2 font-semibold text-[14px] shrink-0"
+            className="px-6 py-2.5 bg-brand text-white hover:bg-brand-hover rounded-full transition-all shadow-lg disabled:opacity-50 disabled:shadow-none flex items-center gap-2 font-semibold text-[14px] shrink-0"
             title="Generate"
           >
             {isLoading ? <Loader2 size={16} className="animate-spin" /> : 'Generate'}

@@ -22,7 +22,7 @@ export function MatchCard({ matches }: { matches: Match[] }) {
 
   if (matches.length === 0) {
     return (
-      <div className="w-full max-w-xl border border-white/5 rounded-[24px] bg-[#16161a] p-5 text-sm text-zinc-400">
+      <div className="w-full max-w-xl border border-white/5 rounded-[24px] bg-card p-5 text-sm text-zinc-400">
         No bank matches for this scope.
       </div>
     );
@@ -36,7 +36,7 @@ export function MatchCard({ matches }: { matches: Match[] }) {
         return (
           <div
             key={m.id}
-            className={`border rounded-[28px] bg-[#16161a] shadow-2xl overflow-hidden ${
+            className={`border rounded-[28px] bg-card shadow-2xl overflow-hidden ${
               isProbable ? 'border-amber-500/30 border-dashed' : 'border-white/5'
             }`}
           >
@@ -48,7 +48,7 @@ export function MatchCard({ matches }: { matches: Match[] }) {
                 </span>
                 <div className="w-20 h-1.5 rounded-full bg-white/5 overflow-hidden">
                   <div
-                    className={`h-full rounded-full ${isProbable ? 'bg-amber-400' : 'bg-[#14e3c4]'}`}
+                    className={`h-full rounded-full ${isProbable ? 'bg-amber-400' : 'bg-brand'}`}
                     style={{ width: `${Math.round(m.confidence * 100)}%` }}
                   />
                 </div>
@@ -57,7 +57,7 @@ export function MatchCard({ matches }: { matches: Match[] }) {
 
             <div className="p-5 grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-4">
               <Side icon={FileText} label="Document" value={m.documentLabel} muted={m.documentLabel.startsWith('No document')} />
-              <div className="hidden sm:flex w-9 h-9 rounded-xl bg-[#202026] border border-white/5 items-center justify-center text-zinc-500 shadow-inner">
+              <div className="hidden sm:flex w-9 h-9 rounded-xl bg-raised border border-white/5 items-center justify-center text-zinc-500 shadow-inner">
                 <ArrowLeftRight size={16} />
               </div>
               <Side icon={Landmark} label="Transaction" value={m.transactionLabel} />
@@ -67,7 +67,7 @@ export function MatchCard({ matches }: { matches: Match[] }) {
               <p className="text-[12px] text-zinc-500 leading-relaxed">{m.reason}</p>
             </div>
 
-            <div className="flex items-center justify-between bg-[#202026]/50 px-5 py-3 gap-3">
+            <div className="flex items-center justify-between bg-raised/50 px-5 py-3 gap-3">
               <span className="text-sm font-bold text-white">{currency(m.amount)}</span>
               <button
                 onClick={async () => {
@@ -82,7 +82,7 @@ export function MatchCard({ matches }: { matches: Match[] }) {
                 unmatchTransaction(m.id);
                   logAudit({ action: 'Unmatched document from transaction', scope: m.documentLabel, reviewOpened: true });
                 }}
-                className="flex items-center gap-2 px-4 py-2 text-[13px] font-bold text-zinc-400 hover:text-white hover:bg-white/5 rounded-full transition-colors border border-white/5 bg-[#16161a] shadow-inner"
+                className="flex items-center gap-2 px-4 py-2 text-[13px] font-bold text-zinc-400 hover:text-white hover:bg-white/5 rounded-full transition-colors border border-white/5 bg-card shadow-inner"
               >
                 <Unlink size={14} />
                 Unmatch
@@ -98,7 +98,7 @@ export function MatchCard({ matches }: { matches: Match[] }) {
 function Side({ icon: Icon, label, value, muted }: { icon: LucideIcon; label: string; value: string; muted?: boolean }) {
   return (
     <div className="flex items-center gap-3 min-w-0">
-      <div className="w-9 h-9 rounded-xl bg-[#202026] border border-white/5 flex items-center justify-center text-zinc-400 shrink-0 shadow-inner">
+      <div className="w-9 h-9 rounded-xl bg-raised border border-white/5 flex items-center justify-center text-zinc-400 shrink-0 shadow-inner">
         <Icon size={16} />
       </div>
       <div className="min-w-0">

@@ -65,7 +65,7 @@ export function TeamView() {
       key: 'name', label: 'Colleague', sortValue: (c) => c.name,
       render: (c) => (
         <span className="flex items-center gap-3">
-          <span className="w-9 h-9 rounded-xl bg-[#202026] border border-white/5 flex items-center justify-center font-bold text-white text-[13px] shrink-0 overflow-hidden">
+          <span className="w-9 h-9 rounded-xl bg-raised border border-white/5 flex items-center justify-center font-bold text-white text-[13px] shrink-0 overflow-hidden">
             {c.avatarDataUrl ? <img src={c.avatarDataUrl} alt="" className="w-full h-full object-cover" /> : c.name.charAt(0)}
           </span>
           <span>
@@ -104,11 +104,11 @@ export function TeamView() {
   ];
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-[#0a0a0c] h-full overflow-hidden">
+    <div className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden">
       <header className="px-10 pt-8 pb-5 shrink-0">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-[#202026] flex items-center justify-center text-white border border-white/5 shadow-inner">
+            <div className="w-12 h-12 rounded-2xl bg-raised flex items-center justify-center text-white border border-white/5 shadow-inner">
               <Shield size={22} />
             </div>
             <div>
@@ -121,7 +121,7 @@ export function TeamView() {
           {tab === 'Colleagues' && (
             <button
               onClick={() => setEditing(blankColleague())}
-              className="flex items-center gap-2 px-6 py-2.5 bg-[#14e3c4] text-white text-sm font-bold rounded-full hover:bg-[#0fcbaf] transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+              className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
             >
               <Plus size={16} strokeWidth={2.5} />
               Invite colleague
@@ -130,7 +130,7 @@ export function TeamView() {
           {tab === 'Teams' && (
             <button
               onClick={() => setEditingTeam(blankTeam())}
-              className="flex items-center gap-2 px-6 py-2.5 bg-[#14e3c4] text-white text-sm font-bold rounded-full hover:bg-[#0fcbaf] transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+              className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
             >
               <Plus size={16} strokeWidth={2.5} />
               Create team
@@ -141,14 +141,14 @@ export function TeamView() {
               <select
                 value={taskClient}
                 onChange={(e) => setTaskClient(e.target.value)}
-                className="bg-[#16161a] border border-white/5 rounded-full py-2.5 px-4 text-sm font-semibold text-zinc-300 focus:outline-none focus:border-[#14e3c4] shadow-inner"
+                className="bg-card border border-white/5 rounded-full py-2.5 px-4 text-sm font-semibold text-zinc-300 focus:outline-none focus:border-brand shadow-inner"
               >
                 <option value="all">All clients</option>
                 {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
               <button
                 onClick={() => setNewTask(true)}
-                className="flex items-center gap-2 px-6 py-2.5 bg-[#14e3c4] text-white text-sm font-bold rounded-full hover:bg-[#0fcbaf] transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+                className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
               >
                 <Plus size={16} strokeWidth={2.5} />
                 New task
@@ -165,8 +165,8 @@ export function TeamView() {
             onClick={() => setTab(t)}
             className={`px-4 py-2 rounded-full text-[13px] font-bold transition-all border ${
               tab === t
-                ? 'bg-[#14e3c4] text-white border-[#14e3c4] shadow-[0_0_12px_rgba(20,227,196,0.25)]'
-                : 'bg-[#16161a] text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
+                ? 'bg-brand text-white border-brand shadow-[0_0_12px_rgba(20,227,196,0.25)]'
+                : 'bg-card text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
             }`}
           >
             {t}
@@ -191,10 +191,10 @@ export function TeamView() {
           {tab === 'Teams' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {teams.map((team) => (
-                <div key={team.id} className="border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+                <div key={team.id} className="border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
                   <div className="p-6 flex items-start justify-between gap-4 border-b border-white/5">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-[#202026] border border-white/5 flex items-center justify-center text-zinc-400">
+                      <div className="w-10 h-10 rounded-xl bg-raised border border-white/5 flex items-center justify-center text-zinc-400">
                         <Users size={17} />
                       </div>
                       <div>
@@ -221,8 +221,8 @@ export function TeamView() {
                       const member = colleagues.find((c) => c.id === id);
                       if (!member) return null;
                       return (
-                        <div key={id} className="flex items-center gap-3 p-3 rounded-2xl bg-[#0a0a0c]/60 border border-white/5">
-                          <span className="w-8 h-8 rounded-lg bg-[#202026] flex items-center justify-center font-bold text-white text-[12px] shrink-0 overflow-hidden">
+                        <div key={id} className="flex items-center gap-3 p-3 rounded-2xl bg-ground/60 border border-white/5">
+                          <span className="w-8 h-8 rounded-lg bg-raised flex items-center justify-center font-bold text-white text-[12px] shrink-0 overflow-hidden">
                             {member.avatarDataUrl ? <img src={member.avatarDataUrl} alt="" className="w-full h-full object-cover" /> : member.name.charAt(0)}
                           </span>
                           <div className="min-w-0">
@@ -237,7 +237,7 @@ export function TeamView() {
               ))}
 
               {teams.length === 0 && (
-                <div className="border border-white/5 rounded-[32px] bg-[#16161a] p-10 text-center text-zinc-500 lg:col-span-2">
+                <div className="border border-white/5 rounded-[32px] bg-card p-10 text-center text-zinc-500 lg:col-span-2">
                   No teams yet. Create one to group colleagues and scope their client access.
                 </div>
               )}
@@ -256,7 +256,7 @@ export function TeamView() {
                       <span>
                         <span className="block text-white font-semibold">{t.title}</span>
                         {suggestion && (
-                          <span className="inline-flex items-center gap-1.5 text-[11px] text-[#14e3c4] font-semibold mt-0.5">
+                          <span className="inline-flex items-center gap-1.5 text-[11px] text-brand font-semibold mt-0.5">
                             <Sparkles size={10} />
                             {suggestion.why}
                           </span>
@@ -276,10 +276,10 @@ export function TeamView() {
                         assignTask(t.id, e.target.value);
                         logAudit({ action: 'Assigned a task', scope: `${t.title} → ${e.target.value}`, reviewOpened: false });
                       }}
-                      className="bg-[#0a0a0c] border border-white/5 rounded-lg py-1.5 px-2.5 text-[12px] font-semibold text-zinc-300 focus:outline-none focus:border-[#14e3c4]"
+                      className="bg-ground border border-white/5 rounded-lg py-1.5 px-2.5 text-[12px] font-semibold text-zinc-300 focus:outline-none focus:border-brand"
                     >
                       {!assignees.includes(t.assignee) && <option value="">{t.assignee || 'Unassigned'}</option>}
-                      {assignees.map((a) => <option key={a} value={a} className="bg-[#16161a]">{a}</option>)}
+                      {assignees.map((a) => <option key={a} value={a} className="bg-card">{a}</option>)}
                     </select>
                   ),
                 },
@@ -402,7 +402,7 @@ export function TeamView() {
 
         {bulkAssign && (
           <Modal onClose={() => setBulkAssign(null)}>
-            <div className="w-full max-w-sm border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+            <div className="w-full max-w-sm border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
               <div className="p-6 border-b border-white/5">
                 <h3 className="font-sans font-bold text-xl text-white tracking-tight">Assign to</h3>
                 <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
@@ -442,7 +442,7 @@ function TeamEditor({ team, onSave, onRemove, onClose }: {
 
   return (
     <Modal onClose={onClose}>
-      <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+      <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
         <div className="p-6 border-b border-white/5">
           <h3 className="font-sans font-bold text-xl text-white tracking-tight">{team.name || 'Create team'}</h3>
           <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
@@ -479,17 +479,17 @@ function TeamEditor({ team, onSave, onRemove, onClose }: {
                       })
                     }
                     className={`flex items-center gap-3 p-3 rounded-2xl border transition-all text-left ${
-                      member ? 'bg-[#14e3c4]/10 border-[#14e3c4]/30' : 'bg-[#0a0a0c]/60 border-white/5 hover:border-white/15'
+                      member ? 'bg-brand/10 border-brand/30' : 'bg-ground/60 border-white/5 hover:border-white/15'
                     }`}
                   >
-                    <span className="w-8 h-8 rounded-lg bg-[#202026] flex items-center justify-center font-bold text-white text-[12px] shrink-0 overflow-hidden">
+                    <span className="w-8 h-8 rounded-lg bg-raised flex items-center justify-center font-bold text-white text-[12px] shrink-0 overflow-hidden">
                       {c.avatarDataUrl ? <img src={c.avatarDataUrl} alt="" className="w-full h-full object-cover" /> : c.name.charAt(0)}
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block text-[13px] font-bold text-white truncate">{c.name}</span>
                       <span className="block text-[11px] text-zinc-500">{c.role} · {c.location}</span>
                     </span>
-                    {member && <Check size={15} className="text-[#14e3c4] shrink-0" />}
+                    {member && <Check size={15} className="text-brand shrink-0" />}
                   </button>
                 );
               })}
@@ -497,7 +497,7 @@ function TeamEditor({ team, onSave, onRemove, onClose }: {
           </div>
         </div>
 
-        <div className="p-4 bg-[#202026]/50 flex justify-between gap-3">
+        <div className="p-4 bg-raised/50 flex justify-between gap-3">
           {isNew ? (
             <span />
           ) : (
@@ -508,7 +508,7 @@ function TeamEditor({ team, onSave, onRemove, onClose }: {
           )}
           <button
             onClick={() => onSave({ ...draft, name: draft.name.trim() || 'Untitled team' })}
-            className="px-6 py-2.5 rounded-full text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-all"
+            className="px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-all"
           >
             {isNew ? 'Create team' : 'Save'}
           </button>
@@ -535,7 +535,7 @@ function TaskComposer({ assignees, defaultClientId, onCreate, onClose }: {
 
   return (
     <Modal onClose={onClose}>
-      <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+      <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
         <div className="p-6 border-b border-white/5">
           <h3 className="font-sans font-bold text-xl text-white tracking-tight">New task</h3>
           <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
@@ -551,9 +551,9 @@ function TaskComposer({ assignees, defaultClientId, onCreate, onClose }: {
             <select
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
-              className="w-full bg-[#0a0a0c] border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#14e3c4]"
+              className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-brand"
             >
-              {clients.map((c) => <option key={c.id} value={c.id} className="bg-[#16161a]">{c.name}</option>)}
+              {clients.map((c) => <option key={c.id} value={c.id} className="bg-card">{c.name}</option>)}
             </select>
           </div>
 
@@ -569,7 +569,7 @@ function TaskComposer({ assignees, defaultClientId, onCreate, onClose }: {
           <Field label="Due" value={due} onChange={setDue} placeholder="31 Aug 2026" />
         </div>
 
-        <div className="p-4 bg-[#202026]/50 flex justify-end gap-3">
+        <div className="p-4 bg-raised/50 flex justify-end gap-3">
           <button onClick={onClose} className="px-5 py-2.5 rounded-full text-sm font-bold text-zinc-400 hover:text-white transition-colors">
             Cancel
           </button>
@@ -587,7 +587,7 @@ function TaskComposer({ assignees, defaultClientId, onCreate, onClose }: {
               })
             }
             disabled={!title.trim()}
-            className="px-6 py-2.5 rounded-full text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            className="px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all"
           >
             Create task
           </button>
@@ -606,7 +606,7 @@ function AvatarPicker({ value, name, onChange }: { value: string; name: string; 
     <div>
       <Label>Profile picture</Label>
       <div className="flex items-center gap-4">
-        <div className="w-16 h-16 rounded-2xl bg-[#0a0a0c] border border-white/5 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
+        <div className="w-16 h-16 rounded-2xl bg-ground border border-white/5 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
           {value ? (
             <img src={value} alt="" className="w-full h-full object-cover" />
           ) : (
@@ -673,7 +673,7 @@ function ColleagueEditor({ colleague, onSave, onRemove, onResetPassword, onClose
 
   return (
     <Modal onClose={onClose}>
-      <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+      <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
         <div className="p-6 border-b border-white/5">
           <h3 className="font-sans font-bold text-xl text-white tracking-tight">{colleague.name || 'Invite colleague'}</h3>
           <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
@@ -698,7 +698,7 @@ function ColleagueEditor({ colleague, onSave, onRemove, onResetPassword, onClose
           <Field label="Location" value={draft.location} onChange={(v) => set('location', v)} placeholder="London" />
 
           {/* Sign-in is the colleague's own; the practice can only start a reset. */}
-          <div className="p-4 rounded-2xl border border-white/5 bg-[#0a0a0c]/60 shadow-inner flex items-center justify-between gap-4">
+          <div className="p-4 rounded-2xl border border-white/5 bg-ground/60 shadow-inner flex items-center justify-between gap-4">
             <div className="min-w-0">
               <div className="text-sm font-bold text-white">Password</div>
               <div className="text-[12px] text-zinc-500 mt-0.5">
@@ -769,12 +769,12 @@ function ColleagueEditor({ colleague, onSave, onRemove, onResetPassword, onClose
           <Toggle label="Active" value={draft.active} onChange={(v) => set('active', v)} />
         </div>
 
-        <div className="p-4 bg-[#202026]/50 flex justify-between gap-3">
+        <div className="p-4 bg-raised/50 flex justify-between gap-3">
           <button onClick={onRemove} className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-bold text-zinc-500 hover:text-red-400 hover:bg-white/5 transition-colors">
             <Trash2 size={15} />
             Remove
           </button>
-          <button onClick={() => onSave(draft)} className="px-6 py-2.5 rounded-full text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-all">
+          <button onClick={() => onSave(draft)} className="px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-all">
             Save
           </button>
         </div>
@@ -807,8 +807,8 @@ function Chip({ children, active, onClick }: { children: React.ReactNode; active
       onClick={onClick}
       className={`px-3.5 py-2 rounded-full text-[13px] font-bold border transition-all ${
         active
-          ? 'bg-[#14e3c4] text-white border-[#14e3c4] shadow-[0_0_12px_rgba(20,227,196,0.25)]'
-          : 'bg-[#0a0a0c] text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
+          ? 'bg-brand text-white border-brand shadow-[0_0_12px_rgba(20,227,196,0.25)]'
+          : 'bg-ground text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
       }`}
     >
       {children}

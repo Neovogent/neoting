@@ -48,13 +48,13 @@ export function LeftPanel() {
   }, [conversations, q]);
 
   return (
-    <aside className="w-full h-full flex flex-col border-r border-white/5 bg-[#0a0a0c]">
+    <aside className="w-full h-full flex flex-col border-r border-white/5 bg-ground">
       <div className="h-20 px-6 flex items-center justify-between gap-3 border-b border-white/5 shrink-0">
         <h2 className="font-sans text-xl font-semibold text-white tracking-tight">Workspace</h2>
         <button
           onClick={newConversation}
           title="New conversation"
-          className="w-9 h-9 rounded-full bg-[#16161a] border border-white/5 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-[#202026] transition-all shadow-lg"
+          className="w-9 h-9 rounded-full bg-card border border-white/5 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-raised transition-all shadow-lg"
         >
           <Plus size={17} />
         </button>
@@ -73,7 +73,7 @@ export function LeftPanel() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search clients or history..."
-            className="w-full bg-[#16161a] border border-white/5 rounded-full py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-[#14e3c4] focus:border-[#14e3c4] transition-all placeholder:text-zinc-600 text-white"
+            className="w-full bg-card border border-white/5 rounded-full py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand transition-all placeholder:text-zinc-600 text-white"
           />
         </div>
       </motion.div>
@@ -151,11 +151,11 @@ function ClientItem({
       onClick={onClick}
       className={`w-full text-left px-4 py-2.5 rounded-xl text-sm transition-all flex items-center gap-3 ${
         active
-          ? 'bg-[#16161a] text-white font-medium border border-white/5'
-          : 'text-zinc-400 hover:bg-[#16161a]/50 border border-transparent'
+          ? 'bg-card text-white font-medium border border-white/5'
+          : 'text-zinc-400 hover:bg-card/50 border border-transparent'
       }`}
     >
-      <div className={`w-2 h-2 rounded-full shadow-lg shrink-0 ${active ? 'bg-[#14e3c4] shadow-[0_0_10px_rgba(20,227,196,0.5)]' : 'bg-zinc-700'}`} />
+      <div className={`w-2 h-2 rounded-full shadow-lg shrink-0 ${active ? 'bg-brand shadow-[0_0_10px_rgba(20,227,196,0.5)]' : 'bg-zinc-700'}`} />
       <span className="truncate flex-1">{name}</span>
       {missing > 0 && <span className="text-[11px] font-bold text-zinc-600 shrink-0">{missing}</span>}
     </button>
@@ -183,13 +183,13 @@ function HistoryItem({
     <div
       onClick={onClick}
       className={`w-full text-left px-4 py-2.5 rounded-xl text-sm transition-all flex items-center justify-between group cursor-pointer border ${
-        active ? 'bg-[#16161a] text-white border-white/5' : 'text-zinc-400 hover:bg-[#16161a]/50 hover:text-zinc-200 border-transparent'
+        active ? 'bg-card text-white border-white/5' : 'text-zinc-400 hover:bg-card/50 hover:text-zinc-200 border-transparent'
       }`}
     >
       <div className="flex items-center gap-3 truncate">
         <MessageSquare
           size={14}
-          className={`shrink-0 transition-colors ${active ? 'text-[#14e3c4]' : 'text-zinc-600 group-hover:text-[#14e3c4]'}`}
+          className={`shrink-0 transition-colors ${active ? 'text-brand' : 'text-zinc-600 group-hover:text-brand'}`}
         />
         <span className="truncate">{title}</span>
       </div>
@@ -201,7 +201,7 @@ function HistoryItem({
             onPin();
           }}
           title={pinned ? 'Unpin' : 'Pin'}
-          className={`p-1 rounded-lg hover:bg-white/10 transition-colors ${pinned ? 'text-[#14e3c4]' : 'text-zinc-600 hidden group-hover:block'}`}
+          className={`p-1 rounded-lg hover:bg-white/10 transition-colors ${pinned ? 'text-brand' : 'text-zinc-600 hidden group-hover:block'}`}
         >
           {pinned ? <Pin size={13} /> : <PinOff size={13} />}
         </button>

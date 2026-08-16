@@ -175,7 +175,7 @@ export function BusinessCaptureView({ account }: { account: BusinessAccount }) {
 
         {state !== 'live' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
-            <div className="w-14 h-14 rounded-2xl bg-[#202026] border border-white/5 flex items-center justify-center text-zinc-300">
+            <div className="w-14 h-14 rounded-2xl bg-raised border border-white/5 flex items-center justify-center text-zinc-300">
               {state === 'error' ? <CameraOff size={24} /> : <Camera size={24} />}
             </div>
             {state === 'error' ? (
@@ -198,7 +198,7 @@ export function BusinessCaptureView({ account }: { account: BusinessAccount }) {
               <button
                 onClick={start}
                 disabled={state === 'starting'}
-                className="px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] disabled:opacity-50 transition-colors"
+                className="px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-50 transition-colors"
               >
                 {state === 'error' ? 'Try again' : 'Turn on camera'}
               </button>
@@ -245,7 +245,7 @@ export function BusinessCaptureView({ account }: { account: BusinessAccount }) {
             className="w-20 h-20 rounded-full bg-white flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.15)] active:scale-95 transition-transform"
             aria-label="Take photo"
           >
-            <span className="w-16 h-16 rounded-full border-4 border-[#0a0a0c]" />
+            <span className="w-16 h-16 rounded-full border-4 border-ground" />
           </button>
           <button
             onClick={() => {
@@ -277,7 +277,7 @@ export function BusinessCaptureView({ account }: { account: BusinessAccount }) {
       </AnimatePresence>
 
       {pages.length > 0 && (
-        <section className="rounded-[28px] border border-white/5 bg-[#16161a] p-6">
+        <section className="rounded-[28px] border border-white/5 bg-card p-6">
           <div className="flex items-center justify-between gap-4 mb-4">
             <div>
               <h2 className="text-[15px] font-bold text-white tracking-tight">
@@ -315,7 +315,7 @@ export function BusinessCaptureView({ account }: { account: BusinessAccount }) {
             {state === 'live' && (
               <button
                 onClick={shoot}
-                className="rounded-2xl border-2 border-dashed border-white/10 hover:border-[#14e3c4]/50 aspect-[3/4] flex flex-col items-center justify-center text-zinc-500 hover:text-white transition-colors"
+                className="rounded-2xl border-2 border-dashed border-white/10 hover:border-brand/50 aspect-[3/4] flex flex-col items-center justify-center text-zinc-500 hover:text-white transition-colors"
               >
                 <Plus size={20} />
                 <span className="text-[11px] font-bold mt-1">Add page</span>
@@ -334,7 +334,7 @@ export function BusinessCaptureView({ account }: { account: BusinessAccount }) {
             <button
               onClick={() => send()}
               disabled={overLimit}
-              className="flex items-center gap-2 px-6 py-3 rounded-full text-[13px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.3)]"
+              className="flex items-center gap-2 px-6 py-3 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.3)]"
             >
               <Send size={15} strokeWidth={2.5} />
               Send to accountant

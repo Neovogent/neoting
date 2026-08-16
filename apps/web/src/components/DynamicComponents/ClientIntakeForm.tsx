@@ -64,9 +64,9 @@ function Shell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="w-full max-w-xl border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden flex flex-col">
+    <div className="w-full max-w-xl border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden flex flex-col">
       <div className="p-6 flex items-center gap-4 border-b border-white/5">
-        <div className="w-12 h-12 rounded-2xl bg-[#202026] flex items-center justify-center text-white shrink-0 border border-white/5 shadow-inner">
+        <div className="w-12 h-12 rounded-2xl bg-raised flex items-center justify-center text-white shrink-0 border border-white/5 shadow-inner">
           <Building2 size={20} />
         </div>
         <div className="min-w-0 flex-1">
@@ -113,7 +113,7 @@ function ModeChooser({ onPick }: { onPick: (m: IntakeMode) => void }) {
           onClick={() => onPick('practice')}
         />
 
-        <div className="flex items-start gap-3 p-4 rounded-2xl border border-white/5 bg-[#0a0a0c]/60 shadow-inner mt-1">
+        <div className="flex items-start gap-3 p-4 rounded-2xl border border-white/5 bg-ground/60 shadow-inner mt-1">
           <Link2 size={16} className="text-zinc-500 mt-0.5 shrink-0" />
           <div className="min-w-0">
             <div className="text-[13px] font-bold text-white">
@@ -146,10 +146,10 @@ function ModeOption({
   return (
     <button
       onClick={onClick}
-      className="group text-left p-5 rounded-2xl border border-white/5 bg-[#0a0a0c]/60 shadow-inner hover:border-[#14e3c4]/40 hover:bg-[#0a0a0c] transition-all"
+      className="group text-left p-5 rounded-2xl border border-white/5 bg-ground/60 shadow-inner hover:border-brand/40 hover:bg-ground transition-all"
     >
       <div className="flex items-start gap-4">
-        <div className="w-10 h-10 rounded-xl bg-[#202026] border border-white/5 flex items-center justify-center text-zinc-400 shrink-0 group-hover:text-[#14e3c4] transition-colors">
+        <div className="w-10 h-10 rounded-xl bg-raised border border-white/5 flex items-center justify-center text-zinc-400 shrink-0 group-hover:text-brand transition-colors">
           <Icon size={17} />
         </div>
         <div className="min-w-0 flex-1">
@@ -158,14 +158,14 @@ function ModeOption({
             <ChevronRight
               size={15}
               strokeWidth={2.5}
-              className="text-zinc-600 group-hover:text-[#14e3c4] group-hover:translate-x-0.5 transition-all"
+              className="text-zinc-600 group-hover:text-brand group-hover:translate-x-0.5 transition-all"
             />
           </div>
           <p className="text-[12px] text-zinc-500 mt-1.5 leading-relaxed">{detail}</p>
           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3">
             {bullets.map((b) => (
               <span key={b} className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-600">
-                <Check size={12} strokeWidth={3} className="text-[#14e3c4]/70 shrink-0" />
+                <Check size={12} strokeWidth={3} className="text-brand/70 shrink-0" />
                 {b}
               </span>
             ))}
@@ -216,7 +216,7 @@ function InviteIntake({ defaultName, onBack }: { defaultName: string; onBack: ()
           />
           <Field label="Mobile number" value={form.mobile} onChange={(v) => set('mobile', v)} placeholder="+44 7700 900123" />
 
-          <div className="flex items-start gap-3 p-4 rounded-2xl border border-white/5 bg-[#0a0a0c]/60 shadow-inner">
+          <div className="flex items-start gap-3 p-4 rounded-2xl border border-white/5 bg-ground/60 shadow-inner">
             <Smartphone size={16} className="text-zinc-500 mt-0.5 shrink-0" />
             <div className="min-w-0">
               <div className="text-[13px] font-bold text-white">
@@ -237,13 +237,13 @@ function InviteIntake({ defaultName, onBack }: { defaultName: string; onBack: ()
         </motion.div>
       </div>
 
-      <div className="p-4 bg-[#202026]/50">
+      <div className="p-4 bg-raised/50">
         {/* No review card until the link is actually sendable — approving a
             half-filled invite would create a record and queue an SMS to
             nobody. The three fields are the whole form, so this is not a
             hidden gate. */}
         {!ready ? (
-          <div className="flex items-center gap-3 px-5 py-3.5 rounded-full bg-[#0a0a0c]/60 border border-white/5 text-[13px] font-bold text-zinc-500">
+          <div className="flex items-center gap-3 px-5 py-3.5 rounded-full bg-ground/60 border border-white/5 text-[13px] font-bold text-zinc-500">
             <Send size={15} className="shrink-0" />
             Add the {missing.join(', ')} to review this invite
           </div>
@@ -361,7 +361,7 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
             key={s}
             onClick={() => setStep(i)}
             title={s}
-            className={`h-1 flex-1 rounded-full transition-all ${i <= step ? 'bg-[#14e3c4]' : 'bg-white/10 hover:bg-white/20'}`}
+            className={`h-1 flex-1 rounded-full transition-all ${i <= step ? 'bg-brand' : 'bg-white/10 hover:bg-white/20'}`}
           />
         ))}
       </div>
@@ -472,7 +472,7 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
                 detail="Read-only — until it is live the client is on the statement-upload fallback"
               />
 
-              <div className="flex items-start gap-3 p-4 rounded-2xl border border-white/5 bg-[#0a0a0c]/60 shadow-inner">
+              <div className="flex items-start gap-3 p-4 rounded-2xl border border-white/5 bg-ground/60 shadow-inner">
                 <Smartphone size={16} className="text-zinc-500 mt-0.5 shrink-0" />
                 <div className="min-w-0">
                   <div className="text-[13px] font-bold text-white">
@@ -495,7 +495,7 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
       </div>
 
       {!isLast ? (
-        <div className="p-4 bg-[#202026]/50 flex justify-between items-center">
+        <div className="p-4 bg-raised/50 flex justify-between items-center">
           <button
             onClick={() => setStep((s) => Math.max(s - 1, 0))}
             className={`px-5 py-2.5 text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 rounded-full transition-colors ${
@@ -506,14 +506,14 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
           </button>
           <button
             onClick={() => setStep((s) => Math.min(s + 1, STEPS.length - 1))}
-            className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] rounded-full transition-all shadow-[0_0_15px_rgba(20,227,196,0.3)]"
+            className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all shadow-[0_0_15px_rgba(20,227,196,0.3)]"
           >
             Continue
             <ChevronRight size={16} strokeWidth={2.5} />
           </button>
         </div>
       ) : (
-        <div className="p-4 bg-[#202026]/50 flex flex-col gap-3">
+        <div className="p-4 bg-raised/50 flex flex-col gap-3">
           <button
             onClick={() => setStep((s) => Math.max(s - 1, 0))}
             className="self-start px-5 py-2.5 text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 rounded-full transition-colors"
@@ -635,7 +635,7 @@ function Field({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full bg-[#0a0a0c] border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#14e3c4] transition-colors"
+        className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors"
       />
       {hint && <div className="text-[11px] text-zinc-600 mt-1.5 font-medium">{hint}</div>}
     </div>
@@ -659,10 +659,10 @@ function Select({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full bg-[#0a0a0c] border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#14e3c4] transition-colors appearance-none"
+        className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-brand transition-colors appearance-none"
       >
         {options.map((o) => (
-          <option key={o} value={o} className="bg-[#16161a]">
+          <option key={o} value={o} className="bg-card">
             {o}
           </option>
         ))}
@@ -685,13 +685,13 @@ function Toggle({
   return (
     <button
       onClick={() => onChange(!value)}
-      className="bg-[#0a0a0c]/60 border border-white/5 rounded-2xl p-4 flex items-center justify-between gap-4 shadow-inner hover:border-white/10 transition-colors text-left"
+      className="bg-ground/60 border border-white/5 rounded-2xl p-4 flex items-center justify-between gap-4 shadow-inner hover:border-white/10 transition-colors text-left"
     >
       <div>
         <div className="text-sm font-bold text-white">{label}</div>
         {hint && <div className="text-[12px] text-zinc-500 mt-0.5">{hint}</div>}
       </div>
-      <div className={`w-11 h-6 rounded-full shrink-0 transition-colors relative ${value ? 'bg-[#14e3c4]' : 'bg-white/10'}`}>
+      <div className={`w-11 h-6 rounded-full shrink-0 transition-colors relative ${value ? 'bg-brand' : 'bg-white/10'}`}>
         <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${value ? 'left-6' : 'left-1'}`} />
       </div>
     </button>
@@ -705,9 +705,9 @@ function Toggle({
  */
 function SetupRequest({ name, detail }: { name: string; detail: string }) {
   return (
-    <div className="flex items-center justify-between gap-4 p-4 border border-white/5 rounded-2xl bg-[#0a0a0c]/60 shadow-inner">
+    <div className="flex items-center justify-between gap-4 p-4 border border-white/5 rounded-2xl bg-ground/60 shadow-inner">
       <div className="flex items-center gap-3 min-w-0">
-        <div className="w-9 h-9 rounded-xl bg-[#202026] border border-white/5 flex items-center justify-center text-zinc-400 shrink-0">
+        <div className="w-9 h-9 rounded-xl bg-raised border border-white/5 flex items-center justify-center text-zinc-400 shrink-0">
           <Link2 size={16} />
         </div>
         <div className="min-w-0">
@@ -715,7 +715,7 @@ function SetupRequest({ name, detail }: { name: string; detail: string }) {
           <div className="text-[12px] text-zinc-500 truncate">{detail}</div>
         </div>
       </div>
-      <span className="shrink-0 px-4 py-2 rounded-full text-[12px] font-bold text-[#14e3c4] bg-[#14e3c4]/10 border border-[#14e3c4]/20">
+      <span className="shrink-0 px-4 py-2 rounded-full text-[12px] font-bold text-brand bg-brand/10 border border-brand/20">
         Client connects
       </span>
     </div>
@@ -747,7 +747,7 @@ function LogoPicker({ value, onChange, name }: { value: string; onChange: (v: st
     <div>
       <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Logo</div>
       <div className="flex items-center gap-4">
-        <div className="w-16 h-16 rounded-2xl bg-[#0a0a0c] border border-white/5 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
+        <div className="w-16 h-16 rounded-2xl bg-ground border border-white/5 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
           {value ? (
             <img src={value} alt="" className="w-full h-full object-cover" />
           ) : (

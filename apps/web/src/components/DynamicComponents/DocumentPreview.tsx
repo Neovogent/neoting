@@ -31,10 +31,10 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
   const isProcessing = doc.status === 'processing';
 
   return (
-    <div className="w-full max-w-3xl border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden flex flex-col">
+    <div className="w-full max-w-3xl border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden flex flex-col">
       <div className="p-6 flex items-start justify-between gap-4 border-b border-white/5">
         <div className="flex items-center gap-4 min-w-0">
-          <div className="w-12 h-12 rounded-2xl bg-[#202026] flex items-center justify-center text-white shrink-0 border border-white/5 shadow-inner">
+          <div className="w-12 h-12 rounded-2xl bg-raised flex items-center justify-center text-white shrink-0 border border-white/5 shadow-inner">
             <FileText size={22} />
           </div>
           <div className="min-w-0">
@@ -52,7 +52,7 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
 
       {doc.clientNote && (
         <div className="px-6 pt-5">
-          <div className="rounded-2xl border border-white/5 bg-[#202026]/40 p-4">
+          <div className="rounded-2xl border border-white/5 bg-raised/40 p-4">
             <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">Note from the client</div>
             <p className="text-[13px] text-zinc-300 leading-relaxed">{doc.clientNote}</p>
           </div>
@@ -61,14 +61,14 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
 
       {isProcessing ? (
         <div className="p-6 flex flex-col gap-4">
-          <div className="bg-[#202026]/40 border border-white/5 rounded-2xl p-5 text-sm text-zinc-400">
+          <div className="bg-raised/40 border border-white/5 rounded-2xl p-5 text-sm text-zinc-400">
             <p className="font-semibold text-white mb-1">Extraction running — ETA 2 minutes</p>
             <p className="text-[13px] leading-relaxed">
               You don't have to wait. Use the manual-entry bypass to type the values now; OCR results merge in when they
               land and anything you typed wins.
             </p>
           </div>
-          <button className="self-start flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white bg-[#14e3c4] rounded-full hover:bg-[#0fcbaf] transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]">
+          <button className="self-start flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white bg-brand rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]">
             <PencilLine size={16} />
             Enter manually
           </button>
@@ -81,11 +81,11 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-[1fr_1.25fr]">
           {/* Immutable original — the highlighted band shows the provenance of the hovered field. */}
-          <div className="p-6 border-b md:border-b-0 md:border-r border-white/5 bg-[#0a0a0c]/40">
+          <div className="p-6 border-b md:border-b-0 md:border-r border-white/5 bg-ground/40">
             <div className="flex items-center gap-2 mb-4 text-[11px] font-bold text-zinc-500 uppercase tracking-widest">
               <Lock size={11} /> Original — immutable
             </div>
-            <div className="relative aspect-[3/4] rounded-2xl bg-[#202026]/60 border border-white/5 overflow-hidden shadow-inner p-5 flex flex-col gap-2.5">
+            <div className="relative aspect-[3/4] rounded-2xl bg-raised/60 border border-white/5 overflow-hidden shadow-inner p-5 flex flex-col gap-2.5">
               <div className="h-3 w-2/5 rounded bg-white/20" />
               <div className="h-2 w-3/5 rounded bg-white/10" />
               <div className="mt-4 h-2 w-full rounded bg-white/[0.07]" />
@@ -98,13 +98,13 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
               {hovered && (
                 <motion.div
                   layoutId="provenance-band"
-                  className="absolute left-3 right-3 h-8 rounded-lg border-2 border-[#14e3c4] bg-[#14e3c4]/15 pointer-events-none"
+                  className="absolute left-3 right-3 h-8 rounded-lg border-2 border-brand bg-brand/15 pointer-events-none"
                   style={{ top: `${18 + (hashPct(hovered) % 60)}%` }}
                 />
               )}
             </div>
             {hovered && (
-              <p className="mt-3 text-[11px] text-[#14e3c4] font-semibold leading-relaxed">
+              <p className="mt-3 text-[11px] text-brand font-semibold leading-relaxed">
                 {doc.fields.find((f) => f.label === hovered)?.provenance}
               </p>
             )}
@@ -144,11 +144,11 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                           if (e.key === 'Enter') commit(f.label);
                           if (e.key === 'Escape') setEditing(null);
                         }}
-                        className="w-36 bg-[#0a0a0c] border border-[#14e3c4] rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none"
+                        className="w-36 bg-ground border border-brand rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none"
                       />
                       <button
                         onClick={() => commit(f.label)}
-                        className="p-1.5 rounded-lg bg-[#14e3c4] text-white hover:bg-[#0fcbaf] transition-colors"
+                        className="p-1.5 rounded-lg bg-brand text-white hover:bg-brand-hover transition-colors"
                       >
                         <Check size={14} strokeWidth={3} />
                       </button>
@@ -167,7 +167,7 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                       }`}
                     >
                       {f.value}
-                      <PencilLine size={13} className="text-zinc-600 group-hover:text-[#14e3c4] transition-colors" />
+                      <PencilLine size={13} className="text-zinc-600 group-hover:text-brand transition-colors" />
                     </button>
                   )}
                 </div>
@@ -179,7 +179,7 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                 <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-3">
                   Line items — standard, not an add-on
                 </div>
-                <div className="bg-[#0a0a0c]/40 border border-white/5 rounded-2xl divide-y divide-white/5 shadow-inner">
+                <div className="bg-ground/40 border border-white/5 rounded-2xl divide-y divide-white/5 shadow-inner">
                   {doc.lineItems.map((li, i) => (
                     <div key={i} className="px-4 py-3 flex items-center justify-between gap-3 text-[13px]">
                       <span className="text-zinc-400 truncate">{li.description}</span>
@@ -195,7 +195,7 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
         </div>
       )}
 
-      <div className="flex items-center gap-3 bg-[#202026]/50 p-4 text-[12px] text-zinc-500 font-semibold">
+      <div className="flex items-center gap-3 bg-raised/50 p-4 text-[12px] text-zinc-500 font-semibold">
         Uploaded by {doc.uploader}
       </div>
     </div>

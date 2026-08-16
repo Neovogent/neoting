@@ -239,7 +239,7 @@ export function InboxesView() {
 
   return (
     <div
-      className="flex-1 flex flex-col min-w-0 bg-[#0a0a0c] h-full overflow-y-auto relative [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-y-auto relative [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
       onDragLeave={() => setDragging(false)}
       onDrop={(e) => { e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer.files); }}
@@ -257,18 +257,18 @@ export function InboxesView() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setFieldsOpen(true)}
-              className="flex items-center gap-2 px-5 py-3 text-sm font-bold text-zinc-300 bg-[#16161a] border border-white/10 rounded-full hover:bg-white/5 shadow-lg transition-all"
+              className="flex items-center gap-2 px-5 py-3 text-sm font-bold text-zinc-300 bg-card border border-white/10 rounded-full hover:bg-white/5 shadow-lg transition-all"
               title="Fields required before publishing"
             >
               <SlidersHorizontal size={16} />
               Required fields
               {mandatoryFields.length > 0 && (
-                <span className="px-2 py-0.5 rounded-full bg-[#14e3c4] text-white text-[11px]">{mandatoryFields.length}</span>
+                <span className="px-2 py-0.5 rounded-full bg-brand text-white text-[11px]">{mandatoryFields.length}</span>
               )}
             </button>
             <button
               onClick={() => fileRef.current?.click()}
-              className="flex items-center gap-2 px-6 py-3 text-sm font-bold text-white bg-[#16161a] border border-white/10 rounded-full hover:bg-white/5 shadow-lg transition-all"
+              className="flex items-center gap-2 px-6 py-3 text-sm font-bold text-white bg-card border border-white/10 rounded-full hover:bg-white/5 shadow-lg transition-all"
             >
               <UploadCloud size={18} />
               Upload Documents
@@ -327,7 +327,7 @@ export function InboxesView() {
         )}
 
         {(
-          <div className="flex items-center gap-2 bg-[#16161a] p-1.5 rounded-full border border-white/5 shadow-2xl relative z-10 -mb-16">
+          <div className="flex items-center gap-2 bg-card p-1.5 rounded-full border border-white/5 shadow-2xl relative z-10 -mb-16">
             <TabButton active={statusTab === 'review'} onClick={() => switchTab('review')} label="To Review" count={counts('review')} />
             <TabButton active={statusTab === 'ready'} onClick={() => switchTab('ready')} label="Ready" count={counts('ready')} />
             <TabButton active={statusTab === 'processing'} onClick={() => switchTab('processing')} label="Processing" count={counts('processing')} />
@@ -348,7 +348,7 @@ export function InboxesView() {
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Search supplier, amount..."
-                    className="w-64 bg-zinc-100 border-none rounded-full py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-[#14e3c4] transition-all placeholder:text-zinc-500 font-medium"
+                    className="w-64 bg-zinc-100 border-none rounded-full py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder:text-zinc-500 font-medium"
                   />
                 </div>
                 <LightSelect value={clientFilter} onChange={setClientFilter} options={[{ value: 'all', label: 'All clients' }, ...clients.map((c) => ({ value: c.id, label: c.name }))]} />
@@ -372,7 +372,7 @@ export function InboxesView() {
                 <button
                   onClick={() => requestPublish(selected.length ? selected : rows.map((d) => d.id))}
                   disabled={statusTab !== 'ready' || rows.length === 0}
-                  className="px-6 py-2.5 text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] rounded-full transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Publish {selected.length ? selected.length : rows.length} Items
                 </button>
@@ -441,7 +441,7 @@ export function InboxesView() {
                                 type="checkbox"
                                 checked={teachSender}
                                 onChange={(e) => setTeachSender(e.target.checked)}
-                                className="mt-0.5 accent-[#14e3c4]"
+                                className="mt-0.5 accent-brand"
                               />
                               <span className="text-[12px] font-semibold text-zinc-600 leading-snug">
                                 Always route this sender here
@@ -598,7 +598,7 @@ export function InboxesView() {
                       <tr
                         key={doc.id}
                         onClick={() => setSelected((p) => (p.includes(doc.id) ? p.filter((x) => x !== doc.id) : [...p, doc.id]))}
-                        className={`transition-colors group cursor-pointer ${isSel ? 'bg-[#14e3c4]/[0.06]' : 'hover:bg-zinc-50'}`}
+                        className={`transition-colors group cursor-pointer ${isSel ? 'bg-brand/[0.06]' : 'hover:bg-zinc-50'}`}
                       >
                         <td className="px-4 py-5">
                           <LightCheckbox checked={isSel} onChange={() => setSelected((p) => (p.includes(doc.id) ? p.filter((x) => x !== doc.id) : [...p, doc.id]))} />
@@ -671,7 +671,7 @@ export function InboxesView() {
                               return verdict.ready ? (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); markReviewed(doc); }}
-                                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold bg-zinc-100 text-zinc-700 hover:bg-[#14e3c4] hover:text-white transition-colors"
+                                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold bg-zinc-100 text-zinc-700 hover:bg-brand hover:text-white transition-colors"
                                   title="Move to Ready — publish is the next step"
                                 >
                                   <CheckCircle2 size={14} />
@@ -711,7 +711,7 @@ export function InboxesView() {
                                     onClick={(e) => { e.stopPropagation(); askRetry(doc); }}
                                     className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold transition-colors ${
                                       failure.retryHelps
-                                        ? 'bg-zinc-100 text-zinc-700 hover:bg-[#14e3c4] hover:text-white'
+                                        ? 'bg-zinc-100 text-zinc-700 hover:bg-brand hover:text-white'
                                         : 'text-zinc-400 border border-zinc-200 hover:text-zinc-600'
                                     }`}
                                     title={
@@ -730,7 +730,7 @@ export function InboxesView() {
                               <button
                                 onClick={(e) => { e.stopPropagation(); requestPublish([doc.id]); }}
                                 disabled={blocked.length > 0}
-                                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold bg-[#14e3c4] text-white hover:bg-[#0fcbaf] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold bg-brand text-white hover:bg-brand-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                                 title={blocked.length ? `Cannot publish — missing ${blocked.join(', ')}` : 'Publish this item'}
                               >
                                 <Send size={13} />
@@ -769,10 +769,10 @@ export function InboxesView() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[60] bg-[#14e3c4]/20 backdrop-blur-sm border-4 border-dashed border-[#14e3c4] flex items-center justify-center pointer-events-none"
+            className="fixed inset-0 z-[60] bg-brand/20 backdrop-blur-sm border-4 border-dashed border-brand flex items-center justify-center pointer-events-none"
           >
-            <div className="bg-[#16161a] border border-white/10 rounded-[32px] px-10 py-8 text-center shadow-2xl">
-              <UploadCloud size={40} className="text-[#14e3c4] mx-auto mb-4" />
+            <div className="bg-card border border-white/10 rounded-[32px] px-10 py-8 text-center shadow-2xl">
+              <UploadCloud size={40} className="text-brand mx-auto mb-4" />
               <p className="text-xl font-bold text-white">Drop to ingest</p>
               <p className="text-[13px] text-zinc-500 mt-1">Multi-document PDFs are auto-split · 100MB per file</p>
             </div>
@@ -793,7 +793,7 @@ export function InboxesView() {
               onClick={(e) => e.stopPropagation()}
               className="relative w-full max-w-3xl"
             >
-              <button onClick={() => setPreview(null)} className="absolute -top-3 -right-3 z-10 p-2 bg-[#16161a] hover:bg-[#202026] text-zinc-400 hover:text-white rounded-full border border-white/10 transition-colors shadow-lg">
+              <button onClick={() => setPreview(null)} className="absolute -top-3 -right-3 z-10 p-2 bg-card hover:bg-raised text-zinc-400 hover:text-white rounded-full border border-white/10 transition-colors shadow-lg">
                 <X size={18} />
               </button>
               <DocumentPreview document={documents.find((d) => d.id === preview.id) ?? preview} />
@@ -849,7 +849,7 @@ export function InboxesView() {
               <motion.div
                 initial={{ opacity: 0, y: 20, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.97 }}
                 onClick={(e) => e.stopPropagation()}
-                className="w-full max-w-md border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden"
+                className="w-full max-w-md border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden"
               >
                 <div className="p-6 border-b border-white/5">
                   <h3 className="font-sans font-bold text-xl text-white tracking-tight">
@@ -873,7 +873,7 @@ export function InboxesView() {
                     </div>
                   )}
                 </div>
-                <div className="p-4 bg-[#202026]/50 flex justify-end gap-3">
+                <div className="p-4 bg-raised/50 flex justify-end gap-3">
                   <button
                     onClick={() => setConfirmPublish(null)}
                     className="px-6 py-2.5 text-sm font-bold text-zinc-300 bg-white/5 hover:bg-white/10 rounded-full transition-all"
@@ -883,7 +883,7 @@ export function InboxesView() {
                   <button
                     onClick={publishConfirmed}
                     disabled={publishable === 0}
-                    className="px-6 py-2.5 text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] rounded-full transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Publish {publishable} item{publishable === 1 ? '' : 's'}
                   </button>
@@ -905,7 +905,7 @@ export function InboxesView() {
             <motion.div
               initial={{ opacity: 0, y: 20, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.97 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden"
+              className="w-full max-w-md border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden"
             >
               <div className="p-6 border-b border-white/5">
                 <h3 className="font-sans font-bold text-xl text-white tracking-tight">Required before publish</h3>
@@ -920,17 +920,17 @@ export function InboxesView() {
                   <button
                     key={f}
                     onClick={() => setMandatoryFields(mandatoryFields.includes(f) ? mandatoryFields.filter((x) => x !== f) : [...mandatoryFields, f])}
-                    className="flex items-center justify-between gap-3 p-4 rounded-2xl border border-white/5 bg-[#0a0a0c]/60 hover:border-white/15 transition-colors text-left"
+                    className="flex items-center justify-between gap-3 p-4 rounded-2xl border border-white/5 bg-ground/60 hover:border-white/15 transition-colors text-left"
                   >
                     <span className="text-sm font-bold text-white">{f}</span>
-                    <span className={`w-11 h-6 rounded-full shrink-0 transition-colors relative ${mandatoryFields.includes(f) ? 'bg-[#14e3c4]' : 'bg-white/10'}`}>
+                    <span className={`w-11 h-6 rounded-full shrink-0 transition-colors relative ${mandatoryFields.includes(f) ? 'bg-brand' : 'bg-white/10'}`}>
                       <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${mandatoryFields.includes(f) ? 'left-6' : 'left-1'}`} />
                     </span>
                   </button>
                 ))}
               </div>
-              <div className="p-4 bg-[#202026]/50 flex justify-end">
-                <button onClick={() => setFieldsOpen(false)} className="px-6 py-2.5 text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] rounded-full transition-all">
+              <div className="p-4 bg-raised/50 flex justify-end">
+                <button onClick={() => setFieldsOpen(false)} className="px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all">
                   Done
                 </button>
               </div>
@@ -986,7 +986,7 @@ function StatusBadge({ doc, blocked }: { doc: Document; blocked: string[] }) {
   return (
     <span
       className={`inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full ${
-        yellow ? 'bg-amber-200 text-zinc-900' : 'bg-[#14e3c4] text-white'
+        yellow ? 'bg-amber-200 text-zinc-900' : 'bg-brand text-white'
       }`}
       title={doc.publishFailed ? doc.statusNote : blocked.length ? `Missing ${blocked.join(', ')}` : undefined}
     >
@@ -998,7 +998,7 @@ function StatusBadge({ doc, blocked }: { doc: Document; blocked: string[] }) {
 
 function ConfirmRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 p-4 rounded-2xl border border-white/5 bg-[#0a0a0c]/60">
+    <div className="flex items-center justify-between gap-3 p-4 rounded-2xl border border-white/5 bg-ground/60">
       <span className="text-[12px] font-bold text-zinc-500 uppercase tracking-widest">{label}</span>
       <span className="text-sm font-bold text-white">{value}</span>
     </div>
@@ -1027,7 +1027,7 @@ function FlagIcon({ icon: Icon, tone, title, detail, onClick }: {
 }) {
   const tones = {
     amber: 'bg-amber-100 text-amber-700 hover:bg-amber-200',
-    blue: 'bg-[#14e3c4]/20 text-[#00806d] hover:bg-[#14e3c4]/35',
+    blue: 'bg-brand/20 text-brand-deep hover:bg-brand/35',
     red: 'bg-red-100 text-red-600 hover:bg-red-200',
   };
   const shape = `w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${tones[tone]}`;
@@ -1058,13 +1058,13 @@ function InboxPill({ active, onClick, label, count, alert }: { active: boolean; 
       onClick={onClick}
       className={`px-4 py-2 rounded-full text-[13px] font-bold transition-all border flex items-center gap-2 ${
         active
-          ? 'bg-[#14e3c4] text-white border-[#14e3c4] shadow-[0_0_12px_rgba(20,227,196,0.25)]'
-          : 'bg-[#16161a] text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
+          ? 'bg-brand text-white border-brand shadow-[0_0_12px_rgba(20,227,196,0.25)]'
+          : 'bg-card text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
       }`}
     >
       {label}
       {count !== undefined && count > 0 && (
-        <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${active ? 'bg-black/30' : alert ? 'bg-amber-500/20 text-amber-400' : 'bg-[#202026]'}`}>
+        <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${active ? 'bg-black/30' : alert ? 'bg-amber-500/20 text-amber-400' : 'bg-raised'}`}>
           {count}
         </span>
       )}
@@ -1078,12 +1078,12 @@ function TabButton({ active, onClick, label, count }: { active: boolean; onClick
       onClick={onClick}
       className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm transition-all duration-300 ${
         active
-          ? 'bg-[#14e3c4] text-white font-bold shadow-[0_0_10px_rgba(20,227,196,0.2)]'
+          ? 'bg-brand text-white font-bold shadow-[0_0_10px_rgba(20,227,196,0.2)]'
           : 'text-zinc-400 font-semibold hover:text-white hover:bg-white/5'
       }`}
     >
       {label}
-      <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${active ? 'bg-black text-[#14e3c4]' : 'bg-[#202026] text-zinc-500'}`}>
+      <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${active ? 'bg-black text-brand' : 'bg-raised text-zinc-500'}`}>
         {count}
       </span>
     </button>
@@ -1121,7 +1121,7 @@ function LightSelect({ value, onChange, options }: { value: string; onChange: (v
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="bg-zinc-100 border-none rounded-full py-2.5 px-4 text-sm font-semibold text-zinc-600 focus:outline-none focus:ring-2 focus:ring-[#14e3c4] transition-all"
+      className="bg-zinc-100 border-none rounded-full py-2.5 px-4 text-sm font-semibold text-zinc-600 focus:outline-none focus:ring-2 focus:ring-brand transition-all"
     >
       {options.map((o) => (
         <option key={o.value} value={o.value}>{o.label}</option>
@@ -1135,7 +1135,7 @@ function LightCheckbox({ checked, onChange }: { checked: boolean; onChange: () =
     <button
       onClick={(e) => { e.stopPropagation(); onChange(); }}
       className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${
-        checked ? 'bg-[#14e3c4] border-[#14e3c4]' : 'border-zinc-300 hover:border-black'
+        checked ? 'bg-brand border-brand' : 'border-zinc-300 hover:border-black'
       }`}
     >
       {checked && <Check size={12} strokeWidth={4} className="text-white" />}

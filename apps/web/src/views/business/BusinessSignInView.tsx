@@ -86,7 +86,7 @@ export function BusinessSignInView() {
   const canCreate = canContinue && form.mobile.trim().length > 0;
 
   return (
-    <div className="flex-1 min-w-0 h-full overflow-y-auto bg-[#0a0a0c] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="flex-1 min-w-0 h-full overflow-y-auto bg-ground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <div className="min-h-full flex flex-col items-center justify-center p-8">
         <div className="w-full max-w-lg flex flex-col gap-6">
           <div className="flex items-center justify-between gap-4">
@@ -117,7 +117,7 @@ export function BusinessSignInView() {
 
           <motion.div key={mode} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             {mode === 'sign-in' ? (
-              <div className="rounded-[28px] border border-white/5 bg-[#16161a] p-6">
+              <div className="rounded-[28px] border border-white/5 bg-card p-6">
                 <h2 className="text-[15px] font-bold text-white tracking-tight">Choose your business</h2>
                 <p className="text-[12px] text-zinc-500 mt-1 mb-4">
                   Accounts your accountant created show an invite until the first sign-in.
@@ -133,7 +133,7 @@ export function BusinessSignInView() {
                       <button
                         key={a.id}
                         onClick={() => signIn(a.id, a.status === 'invited')}
-                        className="w-full flex items-center justify-between gap-4 p-4 rounded-2xl bg-[#0a0a0c]/60 border border-white/5 hover:border-[#14e3c4]/40 transition-colors text-left group"
+                        className="w-full flex items-center justify-between gap-4 p-4 rounded-2xl bg-ground/60 border border-white/5 hover:border-brand/40 transition-colors text-left group"
                       >
                         <span className="min-w-0">
                           <span className="block text-sm font-bold text-white truncate">{a.businessName}</span>
@@ -151,7 +151,7 @@ export function BusinessSignInView() {
                 )}
               </div>
             ) : (
-              <div className="rounded-[28px] border border-white/5 bg-[#16161a] p-6 flex flex-col gap-4">
+              <div className="rounded-[28px] border border-white/5 bg-card p-6 flex flex-col gap-4">
                 {step === 0 ? (
                   <>
                     <div>
@@ -168,7 +168,7 @@ export function BusinessSignInView() {
                     <button
                       onClick={() => setStep(1)}
                       disabled={!canContinue}
-                      className="self-end flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      className="self-end flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     >
                       Continue
                       <ArrowRight size={16} strokeWidth={2.5} />
@@ -202,7 +202,7 @@ export function BusinessSignInView() {
                       <button
                         onClick={create}
                         disabled={!canCreate}
-                        className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.3)]"
+                        className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.3)]"
                       >
                         <BadgeCheck size={16} strokeWidth={2.5} />
                         Create account
@@ -231,7 +231,7 @@ function ModeTab({
     <button
       onClick={onClick}
       className={`flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-2xl border text-[13px] font-bold transition-colors ${
-        active ? 'bg-[#14e3c4]/10 border-[#14e3c4]/40 text-[#14e3c4]' : 'bg-[#16161a] border-white/5 text-zinc-400 hover:text-white'
+        active ? 'bg-brand/10 border-brand/40 text-brand' : 'bg-card border-white/5 text-zinc-400 hover:text-white'
       }`}
     >
       <Icon size={15} />
@@ -259,7 +259,7 @@ function Field({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className={`w-full bg-[#0a0a0c] border border-white/5 rounded-xl py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#14e3c4] transition-colors ${
+          className={`w-full bg-ground border border-white/5 rounded-xl py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors ${
             Icon ? 'pl-11 pr-4' : 'px-4'
           }`}
         />
@@ -283,10 +283,10 @@ function Select({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full bg-[#0a0a0c] border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#14e3c4] transition-colors appearance-none"
+        className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-brand transition-colors appearance-none"
       >
         {options.map((o) => (
-          <option key={o} value={o} className="bg-[#16161a]">
+          <option key={o} value={o} className="bg-card">
             {o}
           </option>
         ))}

@@ -174,11 +174,11 @@ export function DocumentsView() {
   ];
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-[#0a0a0c] h-full overflow-hidden">
+    <div className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden">
       <header className="px-10 pt-8 pb-5 shrink-0">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-[#202026] flex items-center justify-center text-white border border-white/5 shadow-inner">
+            <div className="w-12 h-12 rounded-2xl bg-raised flex items-center justify-center text-white border border-white/5 shadow-inner">
               <FileText size={22} />
             </div>
             <div>
@@ -196,14 +196,14 @@ export function DocumentsView() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={tab === 'Archive' ? 'Full-text search — try "avocado"' : 'Search vault...'}
-                className="w-72 bg-[#16161a] border border-white/5 rounded-full py-2.5 pl-11 pr-4 text-sm focus:outline-none focus:border-[#14e3c4] placeholder:text-zinc-600 text-white font-medium shadow-inner"
+                className="w-72 bg-card border border-white/5 rounded-full py-2.5 pl-11 pr-4 text-sm focus:outline-none focus:border-brand placeholder:text-zinc-600 text-white font-medium shadow-inner"
               />
             </div>
             {tab === 'Vault' && (
               <>
                 <button
                   onClick={() => fileRef.current?.click()}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-[#14e3c4] text-white text-sm font-bold rounded-full hover:bg-[#0fcbaf] transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+                  className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
                 >
                   <UploadCloud size={16} />
                   Add to vault
@@ -235,8 +235,8 @@ export function DocumentsView() {
             onClick={() => setTab(t)}
             className={`px-4 py-2 rounded-full text-[13px] font-bold transition-all border ${
               tab === t
-                ? 'bg-[#14e3c4] text-white border-[#14e3c4] shadow-[0_0_12px_rgba(20,227,196,0.25)]'
-                : 'bg-[#16161a] text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
+                ? 'bg-brand text-white border-brand shadow-[0_0_12px_rgba(20,227,196,0.25)]'
+                : 'bg-card text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
             }`}
           >
             {t}
@@ -271,7 +271,7 @@ export function DocumentsView() {
             <button
               onClick={() => setGroupByClient((g) => !g)}
               className={`px-4 py-2 rounded-full text-[13px] font-bold border transition-all ${
-                groupByClient ? 'bg-[#14e3c4]/10 text-[#14e3c4] border-[#14e3c4]/30' : 'bg-[#16161a] text-zinc-400 border-white/5 hover:text-white'
+                groupByClient ? 'bg-brand/10 text-brand border-brand/30' : 'bg-card text-zinc-400 border-white/5 hover:text-white'
               }`}
             >
               Group by client
@@ -353,13 +353,13 @@ export function DocumentsView() {
                 const client = clients.find((c) => c.id === clientId);
                 const open = isOpen(clientId);
                 return (
-                  <div key={clientId} className="border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+                  <div key={clientId} className="border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
                     <button
                       onClick={() => setExpanded((p) => (p.includes(clientId) ? p.filter((x) => x !== clientId) : [...p, clientId]))}
                       className="w-full p-5 flex items-center gap-4 hover:bg-white/[0.02] transition-colors text-left"
                     >
                       {open ? <ChevronDown size={18} className="text-zinc-500" /> : <ChevronRight size={18} className="text-zinc-500" />}
-                      <div className="w-10 h-10 rounded-xl bg-[#202026] border border-white/5 flex items-center justify-center font-bold text-white shrink-0 overflow-hidden">
+                      <div className="w-10 h-10 rounded-xl bg-raised border border-white/5 flex items-center justify-center font-bold text-white shrink-0 overflow-hidden">
                         {client?.logoDataUrl ? <img src={client.logoDataUrl} alt="" className="w-full h-full object-cover" /> : client?.name.charAt(0)}
                       </div>
                       <span className="font-sans font-bold text-lg text-white tracking-tight">{client?.name ?? 'Unassigned'}</span>
@@ -383,7 +383,7 @@ export function DocumentsView() {
                 );
               })}
               {archiveByClient.size === 0 && (
-                <div className="border border-white/5 rounded-[32px] bg-[#16161a] p-10 text-center text-zinc-500">
+                <div className="border border-white/5 rounded-[32px] bg-card p-10 text-center text-zinc-500">
                   {query || filtersActive ? 'Nothing in the archive matches those filters.' : 'Nothing archived yet — items land here once published.'}
                 </div>
               )}
@@ -402,13 +402,13 @@ export function DocumentsView() {
                 const open = isOpen(clientId);
                 const count = [...years.values()].reduce((n, list) => n + list.length, 0);
                 return (
-                  <div key={clientId} className="border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+                  <div key={clientId} className="border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
                     <button
                       onClick={() => setExpanded((p) => (p.includes(clientId) ? p.filter((x) => x !== clientId) : [...p, clientId]))}
                       className="w-full p-5 flex items-center gap-4 hover:bg-white/[0.02] transition-colors text-left"
                     >
                       {open ? <ChevronDown size={18} className="text-zinc-500" /> : <ChevronRight size={18} className="text-zinc-500" />}
-                      <div className="w-10 h-10 rounded-xl bg-[#202026] border border-white/5 flex items-center justify-center font-bold text-white shrink-0 overflow-hidden">
+                      <div className="w-10 h-10 rounded-xl bg-raised border border-white/5 flex items-center justify-center font-bold text-white shrink-0 overflow-hidden">
                         {client?.logoDataUrl ? <img src={client.logoDataUrl} alt="" className="w-full h-full object-cover" /> : client?.name.charAt(0)}
                       </div>
                       <span className="font-sans font-bold text-lg text-white tracking-tight">{client?.name}</span>
@@ -422,7 +422,7 @@ export function DocumentsView() {
                             <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-3">{year}</div>
                             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                               {VAULT_CATEGORIES.filter((cat) => docs.some((d) => d.category === cat)).map((cat) => (
-                                <div key={cat} className="rounded-2xl bg-[#0a0a0c]/60 border border-white/5 p-4">
+                                <div key={cat} className="rounded-2xl bg-ground/60 border border-white/5 p-4">
                                   <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2.5">{cat}</div>
                                   <div className="flex flex-col gap-2.5">
                                     {docs.filter((d) => d.category === cat).map((d) => (
@@ -441,7 +441,7 @@ export function DocumentsView() {
               })}
 
               {grouped.size === 0 && (
-                <div className="border border-white/5 rounded-[32px] bg-[#16161a] p-10 text-center text-zinc-500">
+                <div className="border border-white/5 rounded-[32px] bg-card p-10 text-center text-zinc-500">
                   Nothing in the vault matches those filters.
                 </div>
               )}
@@ -487,7 +487,7 @@ export function DocumentsView() {
 
         {moveTarget && (
           <Modal onClose={() => setMoveTarget(null)}>
-            <div className="w-full max-w-md border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+            <div className="w-full max-w-md border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
               <div className="p-6 border-b border-white/5">
                 <h3 className="font-sans font-bold text-xl text-white tracking-tight">Move to another entity</h3>
                 <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
@@ -525,7 +525,7 @@ function VaultFileRow({ doc, onPreview }: { doc: VaultDocument; onPreview: () =>
   return (
     <div className="group/item flex items-start gap-2">
       <button onClick={onPreview} className="text-left min-w-0 flex-1" title={doc.summary}>
-        <div className="text-[13px] font-bold text-white group-hover/item:text-[#14e3c4] transition-colors truncate">
+        <div className="text-[13px] font-bold text-white group-hover/item:text-brand transition-colors truncate">
           {doc.name.replace(` — ${doc.clientName}`, '')}
         </div>
         <div className="flex items-center gap-1.5 mt-1 flex-wrap">
@@ -533,7 +533,7 @@ function VaultFileRow({ doc, onPreview }: { doc: VaultDocument; onPreview: () =>
             className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md border ${
               doc.ownerKind === 'firm'
                 ? 'text-zinc-400 border-white/10 bg-white/[0.03]'
-                : 'text-[#14e3c4] border-[#14e3c4]/25 bg-[#14e3c4]/10'
+                : 'text-brand border-brand/25 bg-brand/10'
             }`}
             title={doc.ownerKind === 'firm' ? 'Owned by the practice' : `Owned by ${doc.ownerName}`}
           >
@@ -582,7 +582,7 @@ function VaultPreview({
   const [confirming, setConfirming] = useState(false);
 
   return (
-    <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+    <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
       <div className="p-6 border-b border-white/5">
         <h3 className="font-sans font-bold text-xl text-white tracking-tight">{doc.name}</h3>
         <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
@@ -605,8 +605,8 @@ function VaultPreview({
               onClick={() => onSetOwner('firm', PRACTICE_NAME)}
               className={`flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold border transition-all ${
                 doc.ownerKind === 'firm'
-                  ? 'bg-[#14e3c4] text-white border-[#14e3c4]'
-                  : 'bg-[#0a0a0c] text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
+                  ? 'bg-brand text-white border-brand'
+                  : 'bg-ground text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
               }`}
             >
               <Building2 size={13} />
@@ -616,8 +616,8 @@ function VaultPreview({
               onClick={() => onSetOwner('accountant', doc.uploader)}
               className={`flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold border transition-all ${
                 doc.ownerKind === 'accountant'
-                  ? 'bg-[#14e3c4] text-white border-[#14e3c4]'
-                  : 'bg-[#0a0a0c] text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
+                  ? 'bg-brand text-white border-brand'
+                  : 'bg-ground text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
               }`}
             >
               <User size={13} />
@@ -669,7 +669,7 @@ function VaultPreview({
           </div>
         </div>
       ) : (
-        <div className="p-4 bg-[#202026]/50 flex items-center gap-3 justify-end flex-wrap">
+        <div className="p-4 bg-raised/50 flex items-center gap-3 justify-end flex-wrap">
           <div className="relative mr-auto">
             <button
               onClick={() => setMenuOpen((o) => !o)}
@@ -684,7 +684,7 @@ function VaultPreview({
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 6 }}
-                  className="absolute bottom-full left-0 mb-2 w-52 rounded-2xl border border-white/5 bg-[#16161a] shadow-2xl p-1.5 z-10"
+                  className="absolute bottom-full left-0 mb-2 w-52 rounded-2xl border border-white/5 bg-card shadow-2xl p-1.5 z-10"
                 >
                   <button
                     onClick={() => { setMenuOpen(false); setConfirming(true); }}
@@ -699,7 +699,7 @@ function VaultPreview({
           </div>
           <button
             onClick={onMove}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
           >
             <ArrowRightLeft size={15} />
             Move to client
@@ -724,12 +724,12 @@ function FilterSelect({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className={`bg-[#16161a] border rounded-full py-2 px-4 text-[13px] font-bold focus:outline-none focus:border-[#14e3c4] shadow-inner transition-colors ${
-        active ? 'text-[#14e3c4] border-[#14e3c4]/30' : 'text-zinc-400 border-white/5'
+      className={`bg-card border rounded-full py-2 px-4 text-[13px] font-bold focus:outline-none focus:border-brand shadow-inner transition-colors ${
+        active ? 'text-brand border-brand/30' : 'text-zinc-400 border-white/5'
       }`}
     >
       {options.map((o) => (
-        <option key={o.value} value={o.value} className="bg-[#16161a] text-white">
+        <option key={o.value} value={o.value} className="bg-card text-white">
           {o.label}
         </option>
       ))}

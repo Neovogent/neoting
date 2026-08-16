@@ -64,9 +64,9 @@ export function ReviewGate({
       <motion.div
         initial={{ opacity: 0, scale: 0.97 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-xl border border-[#14e3c4]/30 bg-[#14e3c4]/10 rounded-[24px] p-5 flex items-center gap-4 text-[#14e3c4]"
+        className="w-full max-w-xl border border-brand/30 bg-brand/10 rounded-[24px] p-5 flex items-center gap-4 text-brand"
       >
-        <div className="w-10 h-10 rounded-2xl bg-[#14e3c4]/20 flex items-center justify-center shrink-0 border border-[#14e3c4]/30">
+        <div className="w-10 h-10 rounded-2xl bg-brand/20 flex items-center justify-center shrink-0 border border-brand/30">
           <Check size={20} strokeWidth={3} />
         </div>
         <p className="text-sm font-bold tracking-wide">{successMessage}</p>
@@ -76,16 +76,16 @@ export function ReviewGate({
 
   if (isCancelled) {
     return (
-      <div className="w-full max-w-xl border border-white/5 bg-[#16161a] rounded-[24px] p-5 flex items-center gap-4 text-zinc-500">
+      <div className="w-full max-w-xl border border-white/5 bg-card rounded-[24px] p-5 flex items-center gap-4 text-zinc-500">
         <p className="text-sm font-bold tracking-wide">Cancelled — nothing was changed.</p>
       </div>
     );
   }
 
-  const accentBg = accent === 'red' ? 'bg-red-500/10 text-red-500 border-red-500/20' : 'bg-[#202026] text-white border-white/5';
+  const accentBg = accent === 'red' ? 'bg-red-500/10 text-red-500 border-red-500/20' : 'bg-raised text-white border-white/5';
 
   return (
-    <div className="w-full max-w-xl border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden flex flex-col">
+    <div className="w-full max-w-xl border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden flex flex-col">
       {/* Header — scope only. No Approve button exists at this point. */}
       <div className="p-6 flex items-center justify-between gap-4 border-b border-white/5">
         <div className="flex items-center gap-4 min-w-0">
@@ -100,7 +100,7 @@ export function ReviewGate({
         {!isExpanded && (
           <button
             onClick={() => setIsExpanded(true)}
-            className="shrink-0 flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-white bg-[#14e3c4] rounded-full hover:bg-[#0fcbaf] transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+            className="shrink-0 flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-white bg-brand rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
           >
             Read review
             <ChevronDown size={16} strokeWidth={2.5} />
@@ -114,7 +114,7 @@ export function ReviewGate({
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="border-b border-white/5 bg-[#202026]/30 overflow-hidden"
+            className="border-b border-white/5 bg-raised/30 overflow-hidden"
           >
             <div className="p-6 space-y-6">{detail}</div>
           </motion.div>
@@ -123,7 +123,7 @@ export function ReviewGate({
 
       {/* Approve only mounts once the review has been opened. */}
       {isExpanded && (
-        <div className="p-4 bg-[#16161a] flex justify-end gap-3 flex-wrap">
+        <div className="p-4 bg-card flex justify-end gap-3 flex-wrap">
           <button
             onClick={() => setIsCancelled(true)}
             className="px-5 py-2.5 text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 rounded-full transition-colors"
@@ -132,14 +132,14 @@ export function ReviewGate({
           </button>
           <button
             onClick={() => (onEdit ? onEdit() : setIsExpanded(false))}
-            className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white bg-[#202026] hover:bg-white/10 border border-white/5 rounded-full transition-all shadow-inner"
+            className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white bg-raised hover:bg-white/10 border border-white/5 rounded-full transition-all shadow-inner"
           >
             <Edit2 size={16} />
             {editLabel}
           </button>
           <button
             onClick={handleApprove}
-            className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] rounded-full transition-all shadow-[0_0_15px_rgba(20,227,196,0.3)]"
+            className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all shadow-[0_0_15px_rgba(20,227,196,0.3)]"
           >
             <Check size={18} strokeWidth={2.5} />
             {approveLabel}
@@ -162,7 +162,7 @@ export function ReviewSection({ title, children }: { title: string; children: Re
 
 export function ReviewRows({ rows }: { rows: { label: string; value: ReactNode }[] }) {
   return (
-    <div className="bg-[#16161a] border border-white/5 rounded-2xl p-4 text-sm text-zinc-300 flex flex-col gap-3 shadow-inner">
+    <div className="bg-card border border-white/5 rounded-2xl p-4 text-sm text-zinc-300 flex flex-col gap-3 shadow-inner">
       {rows.map((r, i) => (
         <div
           key={r.label}

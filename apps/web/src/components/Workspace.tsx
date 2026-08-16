@@ -10,10 +10,10 @@ export function Workspace() {
   const isEmpty = messages.length === 0;
 
   return (
-    <main className="flex-1 flex flex-col min-w-0 bg-[#050508] relative overflow-hidden">
+    <main className="flex-1 flex flex-col min-w-0 bg-deep relative overflow-hidden">
       {/* Dark to Blue Gradient Background matching the image */}
-      <div className="absolute inset-0 bg-gradient-to-b from-black via-[#0a0a0c] to-[#0be0bf]/40 pointer-events-none z-0" />
-      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[150%] h-[60vh] bg-[radial-gradient(ellipse_at_bottom,_var(--tw-gradient-stops))] from-[#14e3c4]/80 via-[#00a88f]/30 to-transparent blur-[80px] pointer-events-none z-0" />
+      <div className="absolute inset-0 bg-gradient-to-b from-black via-ground to-mint-soft/40 pointer-events-none z-0" />
+      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[150%] h-[60vh] bg-[radial-gradient(ellipse_at_bottom,_var(--tw-gradient-stops))] from-brand/80 via-teal-deep/30 to-transparent blur-[80px] pointer-events-none z-0" />
       
       {/* Decorative lines to mimic the image's techy aesthetic */}
       <div className="absolute inset-0 bg-[linear-gradient(to_bottom,#ffffff02_1px,transparent_1px),linear-gradient(to_right,#ffffff02_1px,transparent_1px)] bg-[size:100px_100px] pointer-events-none z-0 mask-image:linear-gradient(to_bottom,transparent,black)" style={{ WebkitMaskImage: 'linear-gradient(to bottom, transparent 20%, black 100%)' }} />

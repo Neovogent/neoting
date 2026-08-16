@@ -38,11 +38,11 @@ export function StatementModal({ statement, onClose }: {
         initial={{ opacity: 0, y: 20, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-3xl my-auto border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden"
+        className="w-full max-w-3xl my-auto border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden"
       >
         <div className="p-6 flex items-start justify-between gap-4 border-b border-white/5">
           <div className="flex items-center gap-4 min-w-0">
-            <div className="w-12 h-12 rounded-2xl bg-[#202026] border border-white/5 flex items-center justify-center text-zinc-400 shrink-0">
+            <div className="w-12 h-12 rounded-2xl bg-raised border border-white/5 flex items-center justify-center text-zinc-400 shrink-0">
               {isBank ? <Landmark size={20} /> : <Building2 size={20} />}
             </div>
             <div className="min-w-0">
@@ -62,13 +62,13 @@ export function StatementModal({ statement, onClose }: {
           {isBank ? <BankBody s={data as Statement} /> : <SupplierBody s={data as SupplierStatement} />}
         </div>
 
-        <div className="p-4 bg-[#202026]/50 flex items-center justify-between gap-3 flex-wrap">
+        <div className="p-4 bg-raised/50 flex items-center justify-between gap-3 flex-wrap">
           <p className="text-[11.5px] text-zinc-600 leading-relaxed max-w-md">
             The download is what was read off the file, as CSV. The original upload is not kept in this build.
           </p>
           <button
             onClick={() => (isBank ? downloadBank(data as Statement) : downloadSupplier(data as SupplierStatement))}
-            className="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+            className="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
           >
             <Download size={15} strokeWidth={2.5} />
             Download CSV
@@ -91,12 +91,12 @@ function BankBody({ s }: { s: Statement }) {
       </div>
 
       {s.status === 'extracted' ? (
-        <div className="p-4 rounded-2xl bg-[#0a0a0c]/60 border border-white/5 shadow-inner flex items-center justify-between gap-4">
+        <div className="p-4 rounded-2xl bg-ground/60 border border-white/5 shadow-inner flex items-center justify-between gap-4">
           <div className="min-w-0">
             <div className="text-[13px] font-bold text-white">Movement over the period</div>
             <div className="text-[12px] text-zinc-500 mt-0.5">Closing less opening, across {s.rows} rows</div>
           </div>
-          <span className={`text-lg font-bold tabular-nums shrink-0 ${movement < 0 ? 'text-red-400' : 'text-[#14e3c4]'}`}>
+          <span className={`text-lg font-bold tabular-nums shrink-0 ${movement < 0 ? 'text-red-400' : 'text-brand'}`}>
             {movement < 0 ? '−' : '+'}{currency(Math.abs(movement))}
           </span>
         </div>
@@ -138,11 +138,11 @@ function SupplierBody({ s }: { s: SupplierStatement }) {
         <div className="flex flex-col gap-2">
           {s.lines.length === 0 && <p className="text-[13px] text-zinc-500">No lines read from this statement yet.</p>}
           {s.lines.map((l) => (
-            <div key={l.reference} className="flex items-center gap-3 p-3.5 rounded-2xl bg-[#0a0a0c]/60 border border-white/5">
+            <div key={l.reference} className="flex items-center gap-3 p-3.5 rounded-2xl bg-ground/60 border border-white/5">
               <span
                 className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border ${
                   l.documentId
-                    ? 'bg-[#14e3c4]/10 text-[#14e3c4] border-[#14e3c4]/25'
+                    ? 'bg-brand/10 text-brand border-brand/25'
                     : 'bg-red-500/10 text-red-400 border-red-400/25'
                 }`}
               >
@@ -171,7 +171,7 @@ function SupplierBody({ s }: { s: SupplierStatement }) {
 
 function Figure({ label, value, tone = 'plain' }: { label: string; value: string; tone?: 'plain' | 'red' }) {
   return (
-    <div className="p-3.5 rounded-2xl bg-[#0a0a0c]/60 border border-white/5 shadow-inner">
+    <div className="p-3.5 rounded-2xl bg-ground/60 border border-white/5 shadow-inner">
       <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{label}</div>
       <div className={`text-[15px] font-bold mt-1 tabular-nums ${tone === 'red' && value !== '0' ? 'text-red-400' : 'text-white'}`}>
         {value}

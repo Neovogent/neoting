@@ -44,7 +44,7 @@ export function SettingsView() {
   };
 
   return (
-    <div className="flex-1 flex min-w-0 bg-[#0a0a0c] h-full overflow-hidden">
+    <div className="flex-1 flex min-w-0 bg-ground h-full overflow-hidden">
       <aside className="w-64 shrink-0 border-r border-white/5 flex flex-col py-8 px-4 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div className="px-4 mb-6 flex items-center gap-3">
           <SettingsIcon size={20} className="text-zinc-400" />
@@ -56,10 +56,10 @@ export function SettingsView() {
               key={s.key}
               onClick={() => setSection(s.key)}
               className={`px-4 py-2.5 rounded-xl text-left text-sm font-semibold transition-all flex items-center gap-3 ${
-                section === s.key ? 'bg-[#16161a] text-white border border-white/5' : 'text-zinc-400 hover:text-white hover:bg-[#16161a]/50 border border-transparent'
+                section === s.key ? 'bg-card text-white border border-white/5' : 'text-zinc-400 hover:text-white hover:bg-card/50 border border-transparent'
               }`}
             >
-              <s.icon size={15} className={section === s.key ? 'text-[#14e3c4]' : ''} />
+              <s.icon size={15} className={section === s.key ? 'text-brand' : ''} />
               {s.key}
             </button>
           ))}
@@ -93,8 +93,8 @@ export function SettingsView() {
                       onClick={() => save({ theme: opt.value }, `${opt.label.toLowerCase()} theme`)}
                       className={`flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-2xl border text-[13px] font-bold transition-all ${
                         settings.theme === opt.value
-                          ? 'bg-[#14e3c4]/10 border-[#14e3c4]/40 text-[#14e3c4]'
-                          : 'bg-[#0a0a0c] border-white/5 text-zinc-400 hover:text-white hover:border-white/15'
+                          ? 'bg-brand/10 border-brand/40 text-brand'
+                          : 'bg-ground border-white/5 text-zinc-400 hover:text-white hover:border-white/15'
                       }`}
                     >
                       <opt.icon size={15} />
@@ -130,7 +130,7 @@ export function SettingsView() {
                 </div>
                 {/* Bank data is always one client's, so the way in is the
                     client — there is no practice-wide Bank to send them to. */}
-                <button onClick={() => setActiveTab('Clients')} className="mt-4 text-[13px] font-bold text-[#14e3c4] hover:underline">
+                <button onClick={() => setActiveTab('Clients')} className="mt-4 text-[13px] font-bold text-brand hover:underline">
                   Manage in the client's Bank tab →
                 </button>
               </Panel>
@@ -286,7 +286,7 @@ export function SettingsView() {
                   />
                 ))}
               </div>
-              <button onClick={() => setActiveTab('Approvals')} className="mt-4 text-[13px] font-bold text-[#14e3c4] hover:underline">
+              <button onClick={() => setActiveTab('Approvals')} className="mt-4 text-[13px] font-bold text-brand hover:underline">
                 Edit in Approvals →
               </button>
             </Panel>
@@ -389,7 +389,7 @@ export function SettingsView() {
 
 function Panel({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
-    <div className="border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+    <div className="border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
       <div className="p-6 pb-4 border-b border-white/5">
         <h3 className="font-sans font-bold text-lg text-white tracking-tight">{title}</h3>
         <p className="text-[12px] text-zinc-500 mt-0.5 font-semibold uppercase tracking-wider">{subtitle}</p>
@@ -418,8 +418,8 @@ function Chip({ children, active, onClick }: { children: React.ReactNode; active
       onClick={onClick}
       className={`px-3.5 py-2 rounded-full text-[13px] font-bold border transition-all capitalize ${
         active
-          ? 'bg-[#14e3c4] text-white border-[#14e3c4] shadow-[0_0_12px_rgba(20,227,196,0.25)]'
-          : 'bg-[#0a0a0c] text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
+          ? 'bg-brand text-white border-brand shadow-[0_0_12px_rgba(20,227,196,0.25)]'
+          : 'bg-ground text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
       }`}
     >
       {children}
@@ -435,7 +435,7 @@ function Num({ label, value, onChange }: { label: string; value: number; onChang
         type="number"
         value={value}
         onChange={(e) => onChange(Math.max(0, Number(e.target.value)))}
-        className="w-full bg-[#0a0a0c] border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#14e3c4] transition-colors"
+        className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-brand transition-colors"
       />
     </div>
   );

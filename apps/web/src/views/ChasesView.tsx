@@ -16,10 +16,10 @@ import { clampLinkTtl, LINK_TTL_PRESETS, MAX_LINK_TTL_HOURS, MIN_LINK_TTL_HOURS 
 import type { Chase, ChaseItem, ChaseItemStatus, ChasePolicy } from '../lib/types';
 
 const STAGE_LABEL: Record<Chase['stage'], { label: string; light: string; dark: string }> = {
-  sent: { label: 'Sent', light: 'bg-zinc-900 text-white', dark: 'bg-[#202026] text-zinc-300' },
+  sent: { label: 'Sent', light: 'bg-zinc-900 text-white', dark: 'bg-raised text-zinc-300' },
   'reminder-1': { label: 'Reminder 1', light: 'bg-amber-100 text-amber-800', dark: 'bg-amber-500/10 text-amber-400' },
   'reminder-2': { label: 'Reminder 2', light: 'bg-amber-200 text-amber-900', dark: 'bg-amber-500/15 text-amber-300' },
-  escalated: { label: 'Escalated', light: 'bg-[#14e3c4] text-white', dark: 'bg-[#14e3c4]/15 text-[#14e3c4]' },
+  escalated: { label: 'Escalated', light: 'bg-brand text-white', dark: 'bg-brand/15 text-brand' },
   closed: { label: 'Closed', light: 'bg-emerald-100 text-emerald-700', dark: 'bg-emerald-500/10 text-emerald-400' },
 };
 
@@ -80,7 +80,7 @@ export function ChasesView() {
   const active = chases.find((c) => c.id === openChase) ?? null;
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-[#0a0a0c] h-full overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <div className="px-10 py-8 shrink-0">
         <div className="flex items-start justify-between mb-8 gap-4 flex-wrap">
           <div>
@@ -90,15 +90,15 @@ export function ChasesView() {
           <div className="flex items-center gap-3 flex-wrap">
             <button
               onClick={() => setMessagesOpen(true)}
-              className="flex items-center gap-2 px-5 py-3 text-sm font-bold text-zinc-300 bg-[#16161a] border border-white/10 rounded-full hover:bg-white/5 transition-all shadow-lg"
+              className="flex items-center gap-2 px-5 py-3 text-sm font-bold text-zinc-300 bg-card border border-white/10 rounded-full hover:bg-white/5 transition-all shadow-lg"
             >
               <MessageSquare size={16} />
               Item messages
-              {itemMessages.length > 0 && <span className="px-2 py-0.5 rounded-full bg-[#14e3c4] text-white text-[11px]">{itemMessages.length}</span>}
+              {itemMessages.length > 0 && <span className="px-2 py-0.5 rounded-full bg-brand text-white text-[11px]">{itemMessages.length}</span>}
             </button>
             <button
               onClick={() => setPolicyOpen(true)}
-              className="flex items-center gap-2 px-5 py-3 text-sm font-bold text-zinc-300 bg-[#16161a] border border-white/10 rounded-full hover:bg-white/5 transition-all shadow-lg"
+              className="flex items-center gap-2 px-5 py-3 text-sm font-bold text-zinc-300 bg-card border border-white/10 rounded-full hover:bg-white/5 transition-all shadow-lg"
             >
               <SlidersHorizontal size={16} />
               Chase policy
@@ -106,7 +106,7 @@ export function ChasesView() {
             <button
               onClick={runEngine}
               disabled={totalMissing === 0}
-              className="flex items-center gap-2 px-6 py-3 bg-[#14e3c4] text-white text-sm font-bold rounded-full hover:bg-[#0fcbaf] transition-all shadow-[0_0_20px_rgba(20,227,196,0.2)] disabled:opacity-40"
+              className="flex items-center gap-2 px-6 py-3 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_20px_rgba(20,227,196,0.2)] disabled:opacity-40"
             >
               <Play size={16} fill="currentColor" />
               Run Chase Engine Now
@@ -142,7 +142,7 @@ export function ChasesView() {
       <div className="flex-1 bg-white rounded-t-[40px] m-4 mt-0 p-8 shadow-2xl flex flex-col overflow-hidden border border-white/10">
         <div className="px-2 py-4 flex items-center justify-between mb-4 gap-4 flex-wrap">
           <h3 className="font-sans text-xl font-bold text-zinc-900 tracking-tight">Practice Dashboard: Chasing Status</h3>
-          <div className="flex items-center gap-2 bg-[#f4f4f5] p-1.5 rounded-full">
+          <div className="flex items-center gap-2 bg-pale p-1.5 rounded-full">
             <button
               onClick={() => setFilter('all')}
               className={`px-5 py-2 rounded-full text-sm font-semibold transition-colors ${filter === 'all' ? 'bg-white text-black shadow-sm' : 'text-zinc-500 hover:text-black'}`}
@@ -194,7 +194,7 @@ export function ChasesView() {
                   <td className="px-4 py-5 text-right font-medium text-zinc-500">{stats.requested}</td>
                   <td className="px-4 py-5 text-right font-bold">
                     {stats.overdue > 0 ? (
-                      <span className="bg-[#14e3c4] text-white px-3 py-1 rounded-full text-xs">{stats.overdue}</span>
+                      <span className="bg-brand text-white px-3 py-1 rounded-full text-xs">{stats.overdue}</span>
                     ) : (
                       <span className="text-zinc-400">0</span>
                     )}
@@ -388,7 +388,7 @@ function ChaseDetail({ chase, onClose }: { chase: Chase; onClose: () => void }) 
 
   return (
     <Modal onClose={attemptClose}>
-      <div className="w-full max-w-3xl border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+      <div className="w-full max-w-3xl border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
         <input
           ref={fileRef}
           type="file"
@@ -399,7 +399,7 @@ function ChaseDetail({ chase, onClose }: { chase: Chase; onClose: () => void }) 
 
         <div className="p-6 flex items-start justify-between gap-4 border-b border-white/5">
           <div className="flex items-center gap-4 min-w-0">
-            <div className="w-12 h-12 rounded-2xl bg-[#202026] flex items-center justify-center text-white border border-white/5 shadow-inner shrink-0">
+            <div className="w-12 h-12 rounded-2xl bg-raised flex items-center justify-center text-white border border-white/5 shadow-inner shrink-0">
               <Send size={20} />
             </div>
             <div className="min-w-0">
@@ -416,7 +416,7 @@ function ChaseDetail({ chase, onClose }: { chase: Chase; onClose: () => void }) 
 
         <div className="p-6 flex flex-col gap-6 max-h-[60vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <Section title="Message sent (SMS)">
-            <div className="bg-[#0a0a0c]/60 border border-white/5 rounded-2xl p-4 text-[13px] text-zinc-300 font-mono leading-relaxed shadow-inner whitespace-pre-wrap">
+            <div className="bg-ground/60 border border-white/5 rounded-2xl p-4 text-[13px] text-zinc-300 font-mono leading-relaxed shadow-inner whitespace-pre-wrap">
               {chase.message}
             </div>
 
@@ -448,7 +448,7 @@ function ChaseDetail({ chase, onClose }: { chase: Chase; onClose: () => void }) 
                 <div className="flex items-center gap-3 flex-wrap">
                   <button
                     onClick={() => { setMessageDraft(messageDraft ?? currentMessage); setEditingMessage(true); }}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold text-zinc-300 bg-[#16161a] border border-white/5 hover:bg-white/5 transition-colors"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold text-zinc-300 bg-card border border-white/5 hover:bg-white/5 transition-colors"
                   >
                     <PencilLine size={13} />
                     Write the next reminder yourself
@@ -462,7 +462,7 @@ function ChaseDetail({ chase, onClose }: { chase: Chase; onClose: () => void }) 
               )}
             </div>
             <div className="flex items-center gap-3 mt-3 flex-wrap text-[12px] font-semibold">
-              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full ${chase.linkExpiresInHours > 0 ? 'bg-[#14e3c4]/10 text-[#14e3c4]' : 'bg-red-500/10 text-red-400'}`}>
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full ${chase.linkExpiresInHours > 0 ? 'bg-brand/10 text-brand' : 'bg-red-500/10 text-red-400'}`}>
                 <Link2 size={12} />
                 {chase.linkExpiresInHours > 0 ? `Link valid ${chase.linkExpiresInHours}h` : 'Link expired'}
               </span>
@@ -471,7 +471,7 @@ function ChaseDetail({ chase, onClose }: { chase: Chase; onClose: () => void }) 
           </Section>
 
           <Section title={`Requested items — ${outstanding.length} outstanding`}>
-            <div className="bg-[#0a0a0c]/60 border border-white/5 rounded-2xl divide-y divide-white/5 shadow-inner">
+            <div className="bg-ground/60 border border-white/5 rounded-2xl divide-y divide-white/5 shadow-inner">
               {chase.items.map((item) => (
                 <div key={item.missingItemId} className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
                   <div className="min-w-0">
@@ -554,7 +554,7 @@ function ChaseDetail({ chase, onClose }: { chase: Chase; onClose: () => void }) 
             <div className="flex flex-col gap-3">
               {chase.events.map((e, i) => (
                 <div key={i} className="flex items-start gap-3">
-                  <div className="w-7 h-7 rounded-lg bg-[#202026] border border-white/5 flex items-center justify-center text-zinc-500 shrink-0 mt-0.5">
+                  <div className="w-7 h-7 rounded-lg bg-raised border border-white/5 flex items-center justify-center text-zinc-500 shrink-0 mt-0.5">
                     <Clock size={13} />
                   </div>
                   <div className="min-w-0">
@@ -577,7 +577,7 @@ function ChaseDetail({ chase, onClose }: { chase: Chase; onClose: () => void }) 
           </div>
         )}
 
-        <div className="p-4 bg-[#202026]/50 flex items-center gap-3 flex-wrap justify-end">
+        <div className="p-4 bg-raised/50 flex items-center gap-3 flex-wrap justify-end">
           {dirty && (
             <span className="mr-auto text-[12px] font-bold text-amber-400">
               {changed.length ? `${changed.length} unsaved change${changed.length === 1 ? '' : 's'}` : 'Chase will be closed'}
@@ -633,7 +633,7 @@ function ChaseDetail({ chase, onClose }: { chase: Chase; onClose: () => void }) 
           <button
             onClick={save}
             disabled={!dirty}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-[0_0_15px_rgba(20,227,196,0.3)]"
+            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-[0_0_15px_rgba(20,227,196,0.3)]"
           >
             <Check size={15} />
             Save changes
@@ -653,7 +653,7 @@ function PolicyPanel({ policy, onChange, onClose }: { policy: ChasePolicy; onCha
 
   return (
     <Modal onClose={onClose}>
-      <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+      <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
         <div className="p-6 border-b border-white/5">
           <h3 className="font-sans font-bold text-xl text-white tracking-tight">Chase policy</h3>
           <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">SMS only — by design</p>
@@ -684,18 +684,18 @@ function PolicyPanel({ policy, onChange, onClose }: { policy: ChasePolicy; onCha
             onChange={(v) => set('notifyOnUpload', v)}
           />
 
-          <div className="text-[12px] text-zinc-500 leading-relaxed bg-[#0a0a0c]/60 border border-white/5 rounded-2xl p-4">
+          <div className="text-[12px] text-zinc-500 leading-relaxed bg-ground/60 border border-white/5 rounded-2xl p-4">
             <span className="font-bold text-zinc-400">Suppression:</span> chasing stops automatically when an item is
             received, marked unavailable, dismissed, cash-coded or exception-approved.
           </div>
         </div>
-        <div className="p-4 bg-[#202026]/50 flex justify-end gap-3">
+        <div className="p-4 bg-raised/50 flex justify-end gap-3">
           <button onClick={onClose} className="px-5 py-2.5 rounded-full text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 transition-colors">
             Cancel
           </button>
           <button
             onClick={() => { onChange(draft); onClose(); }}
-            className="px-6 py-2.5 rounded-full text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-all"
+            className="px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-all"
           >
             Save policy
           </button>
@@ -714,7 +714,7 @@ function ItemMessagesPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal onClose={onClose}>
-      <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+      <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
         <div className="p-6 border-b border-white/5">
           <h3 className="font-sans font-bold text-xl text-white tracking-tight">Item messages</h3>
           <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
@@ -739,7 +739,7 @@ function ItemMessagesPanel({ onClose }: { onClose: () => void }) {
               onChange={(e) => setQuestion(e.target.value)}
               rows={3}
               placeholder="Is this £850 laptop fully business use?"
-              className="w-full bg-[#0a0a0c] border border-white/5 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#14e3c4] transition-colors resize-none"
+              className="w-full bg-ground border border-white/5 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors resize-none"
             />
           </div>
 
@@ -748,7 +748,7 @@ function ItemMessagesPanel({ onClose }: { onClose: () => void }) {
               <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2.5">Sent</div>
               <div className="flex flex-col gap-2 max-h-40 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {itemMessages.map((m) => (
-                  <div key={m.id} className="p-3 rounded-2xl bg-[#0a0a0c]/60 border border-white/5">
+                  <div key={m.id} className="p-3 rounded-2xl bg-ground/60 border border-white/5">
                     <div className="text-[12px] font-bold text-white">{m.clientName} — {m.documentLabel}</div>
                     <div className="text-[12px] text-zinc-400 mt-0.5">{m.question}</div>
                     <div className="text-[11px] text-zinc-600 font-semibold mt-1">{m.sentAt} · awaiting reply</div>
@@ -759,7 +759,7 @@ function ItemMessagesPanel({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
-        <div className="p-4 bg-[#202026]/50 flex justify-end">
+        <div className="p-4 bg-raised/50 flex justify-end">
           <button
             disabled={!question.trim() || !docLabel}
             onClick={() => {
@@ -767,7 +767,7 @@ function ItemMessagesPanel({ onClose }: { onClose: () => void }) {
               logAudit({ action: 'Sent item message', scope: `${docLabel} — ${clients.find((c) => c.id === clientId)?.name}`, reviewOpened: true });
               setQuestion('');
             }}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-all disabled:opacity-40"
+            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-all disabled:opacity-40"
           >
             <Send size={15} />
             Send by SMS
@@ -780,11 +780,11 @@ function ItemMessagesPanel({ onClose }: { onClose: () => void }) {
 
 function StatCard({ title, value, subtitle, trend, alert = false }: { title: string; value: string; subtitle: string; trend: string; alert?: boolean }) {
   return (
-    <div className="p-6 rounded-[32px] bg-[#16161a] border border-white/5 flex flex-col relative overflow-hidden group hover:border-[#14e3c4]/30 transition-colors">
-      {alert && <div className="absolute top-0 left-0 w-full h-1 bg-[#14e3c4]" />}
+    <div className="p-6 rounded-[32px] bg-card border border-white/5 flex flex-col relative overflow-hidden group hover:border-brand/30 transition-colors">
+      {alert && <div className="absolute top-0 left-0 w-full h-1 bg-brand" />}
       <div className="flex justify-between items-start mb-6 gap-3">
         <h3 className="text-[13px] font-semibold text-zinc-400 tracking-wide">{title}</h3>
-        <span className="text-[11px] font-bold text-white bg-[#14e3c4] px-2.5 py-1 rounded-full shrink-0">{trend}</span>
+        <span className="text-[11px] font-bold text-white bg-brand px-2.5 py-1 rounded-full shrink-0">{trend}</span>
       </div>
       <div>
         <div className="text-5xl font-sans font-bold tracking-tight mb-2 text-white">{value}</div>
@@ -796,11 +796,11 @@ function StatCard({ title, value, subtitle, trend, alert = false }: { title: str
 
 function StatusPill({ status }: { status: ChaseItemStatus }) {
   const map: Record<ChaseItemStatus, { label: string; cls: string }> = {
-    requested: { label: 'Requested', cls: 'bg-[#202026] text-zinc-300' },
+    requested: { label: 'Requested', cls: 'bg-raised text-zinc-300' },
     received: { label: 'Received', cls: 'bg-emerald-500/10 text-emerald-400' },
     unavailable: { label: 'Unavailable', cls: 'bg-amber-500/10 text-amber-400' },
     dismissed: { label: 'Dismissed', cls: 'bg-zinc-800 text-zinc-500' },
-    'cash-coded': { label: 'Cash coded', cls: 'bg-[#14e3c4]/15 text-[#14e3c4]' },
+    'cash-coded': { label: 'Cash coded', cls: 'bg-brand/15 text-brand' },
   };
   const s = map[status];
   return <span className={`px-3 py-1.5 rounded-full text-[11px] font-bold tracking-wide ${s.cls}`}>{s.label}</span>;
@@ -833,8 +833,8 @@ function FooterAction({ icon: Icon, label, onClick, blocked, blockedTitle, block
       onClick={() => { if (!blocked) onClick(); }}
       className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold transition-colors ${
         primary
-          ? 'text-white bg-[#14e3c4] hover:bg-[#0fcbaf] shadow-[0_0_15px_rgba(20,227,196,0.3)]'
-          : 'text-zinc-300 bg-[#16161a] border border-white/5 hover:bg-white/5'
+          ? 'text-white bg-brand hover:bg-brand-hover shadow-[0_0_15px_rgba(20,227,196,0.3)]'
+          : 'text-zinc-300 bg-card border border-white/5 hover:bg-white/5'
       } ${blocked ? 'opacity-40 cursor-not-allowed hover:bg-inherit' : ''}`}
     >
       {Icon && <Icon size={15} />}
@@ -854,7 +854,7 @@ function MiniBtn({ icon: Icon, label, onClick, primary }: { icon: LucideIcon; la
     <button
       onClick={onClick}
       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-bold transition-colors ${
-        primary ? 'text-white bg-[#14e3c4] hover:bg-[#0fcbaf]' : 'text-zinc-400 hover:text-white hover:bg-white/5 border border-white/5'
+        primary ? 'text-white bg-brand hover:bg-brand-hover' : 'text-zinc-400 hover:text-white hover:bg-white/5 border border-white/5'
       }`}
     >
       <Icon size={12} />
@@ -884,7 +884,7 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
         onClick={(e) => e.stopPropagation()}
         className="relative w-full max-w-3xl flex justify-center"
       >
-        <button onClick={onClose} className="absolute -top-3 -right-3 z-10 p-2 bg-[#16161a] hover:bg-[#202026] text-zinc-400 hover:text-white rounded-full border border-white/10 transition-colors shadow-lg">
+        <button onClick={onClose} className="absolute -top-3 -right-3 z-10 p-2 bg-card hover:bg-raised text-zinc-400 hover:text-white rounded-full border border-white/10 transition-colors shadow-lg">
           <X size={18} />
         </button>
         {children}
@@ -919,8 +919,8 @@ export function LinkTtlField({ value, onChange }: { value: number; onChange: (v:
             onClick={() => { setReduced(false); onChange(p.hours); }}
             className={`px-3.5 py-2 rounded-full text-[12px] font-bold border transition-all ${
               value === p.hours
-                ? 'bg-[#14e3c4] text-white border-[#14e3c4]'
-                : 'bg-[#0a0a0c] text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
+                ? 'bg-brand text-white border-brand'
+                : 'bg-ground text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
             }`}
           >
             {p.label}
@@ -934,8 +934,8 @@ export function LinkTtlField({ value, onChange }: { value: number; onChange: (v:
           max={MAX_LINK_TTL_HOURS}
           value={value}
           onChange={(e) => commit(e.target.value)}
-          className={`w-28 bg-[#0a0a0c] border rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none transition-colors ${
-            reduced ? 'border-amber-500/50' : 'border-white/5 focus:border-[#14e3c4]'
+          className={`w-28 bg-ground border rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none transition-colors ${
+            reduced ? 'border-amber-500/50' : 'border-white/5 focus:border-brand'
           }`}
         />
         <span className="text-[13px] text-zinc-500 font-semibold">
@@ -959,7 +959,7 @@ function Num({ label, value, onChange }: { label: string; value: number; onChang
         type="number"
         value={value}
         onChange={(e) => onChange(Math.max(0, Number(e.target.value)))}
-        className="w-full bg-[#0a0a0c] border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#14e3c4] transition-colors"
+        className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-brand transition-colors"
       />
     </div>
   );
@@ -972,7 +972,7 @@ function Text({ label, value, onChange }: { label: string; value: string; onChan
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full bg-[#0a0a0c] border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#14e3c4] transition-colors"
+        className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-brand transition-colors"
       />
     </div>
   );
@@ -985,10 +985,10 @@ function Select({ label, value, onChange, options }: { label: string; value: str
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full bg-[#0a0a0c] border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#14e3c4] transition-colors"
+        className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-brand transition-colors"
       >
         {options.map((o) => (
-          <option key={o.value} value={o.value} className="bg-[#16161a]">{o.label}</option>
+          <option key={o.value} value={o.value} className="bg-card">{o.label}</option>
         ))}
       </select>
     </div>
@@ -999,13 +999,13 @@ function Toggle({ label, hint, value, onChange }: { label: string; hint?: string
   return (
     <button
       onClick={() => onChange(!value)}
-      className="bg-[#0a0a0c]/60 border border-white/5 rounded-2xl p-4 flex items-center justify-between gap-4 shadow-inner hover:border-white/10 transition-colors text-left"
+      className="bg-ground/60 border border-white/5 rounded-2xl p-4 flex items-center justify-between gap-4 shadow-inner hover:border-white/10 transition-colors text-left"
     >
       <div>
         <div className="text-sm font-bold text-white">{label}</div>
         {hint && <div className="text-[12px] text-zinc-500 mt-0.5">{hint}</div>}
       </div>
-      <span className={`w-11 h-6 rounded-full shrink-0 transition-colors relative ${value ? 'bg-[#14e3c4]' : 'bg-white/10'}`}>
+      <span className={`w-11 h-6 rounded-full shrink-0 transition-colors relative ${value ? 'bg-brand' : 'bg-white/10'}`}>
         <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${value ? 'left-6' : 'left-1'}`} />
       </span>
     </button>

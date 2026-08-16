@@ -28,9 +28,9 @@ export function UserInviteForm() {
   const accessLabel = isAdmin ? 'All clients (role default)' : clientAccess.length ? `${clientAccess.length} assigned` : 'None yet';
 
   return (
-    <div className="w-full max-w-xl border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden flex flex-col">
+    <div className="w-full max-w-xl border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden flex flex-col">
       <div className="p-6 flex items-center gap-4 border-b border-white/5">
-        <div className="w-12 h-12 rounded-2xl bg-[#202026] flex items-center justify-center text-white border border-white/5 shadow-inner">
+        <div className="w-12 h-12 rounded-2xl bg-raised flex items-center justify-center text-white border border-white/5 shadow-inner">
           <UserPlus size={20} />
         </div>
         <div>
@@ -82,19 +82,19 @@ export function UserInviteForm() {
 
         <button
           onClick={() => setHideFields((h) => !h)}
-          className="bg-[#0a0a0c]/40 border border-white/5 rounded-2xl p-4 flex items-center justify-between gap-4 shadow-inner hover:border-white/10 transition-colors text-left"
+          className="bg-ground/40 border border-white/5 rounded-2xl p-4 flex items-center justify-between gap-4 shadow-inner hover:border-white/10 transition-colors text-left"
         >
           <div>
             <div className="text-sm font-bold text-white">Hide finance fields</div>
             <div className="text-[12px] text-zinc-500 mt-0.5">For non-finance submitters — they see capture, not coding.</div>
           </div>
-          <div className={`w-11 h-6 rounded-full shrink-0 transition-colors relative ${hideFields ? 'bg-[#14e3c4]' : 'bg-white/10'}`}>
+          <div className={`w-11 h-6 rounded-full shrink-0 transition-colors relative ${hideFields ? 'bg-brand' : 'bg-white/10'}`}>
             <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${hideFields ? 'left-6' : 'left-1'}`} />
           </div>
         </button>
       </div>
 
-      <div className="p-4 bg-[#202026]/50">
+      <div className="p-4 bg-raised/50">
         <ReviewGate
           icon={UserPlus}
           title={name.trim() || 'New colleague'}
@@ -152,7 +152,7 @@ function Field({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full bg-[#0a0a0c] border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#14e3c4] transition-colors"
+        className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors"
       />
     </div>
   );
@@ -164,8 +164,8 @@ function Chip({ children, active, onClick }: { children: React.ReactNode; active
       onClick={onClick}
       className={`px-3.5 py-2 rounded-full text-[13px] font-bold border transition-all ${
         active
-          ? 'bg-[#14e3c4] text-white border-[#14e3c4] shadow-[0_0_12px_rgba(20,227,196,0.25)]'
-          : 'bg-[#0a0a0c] text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
+          ? 'bg-brand text-white border-brand shadow-[0_0_12px_rgba(20,227,196,0.25)]'
+          : 'bg-ground text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
       }`}
     >
       {children}

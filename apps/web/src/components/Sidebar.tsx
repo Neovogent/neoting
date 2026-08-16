@@ -62,7 +62,7 @@ export function Sidebar({ activeTab, setActiveTab, onOpenBusinessPortal }: Sideb
       initial={false}
       animate={{ width: expanded ? RAIL_EXPANDED : RAIL_COLLAPSED }}
       transition={{ type: 'spring', stiffness: 400, damping: 34 }}
-      className="h-full flex flex-col py-6 border-r border-white/5 bg-[#16161a] shrink-0 gap-8 z-20 overflow-hidden"
+      className="h-full flex flex-col py-6 border-r border-white/5 bg-card shrink-0 gap-8 z-20 overflow-hidden"
     >
       <div className="flex items-center gap-3 px-4 shrink-0">
         {/* The mark already carries its own plate and rounded corners. */}
@@ -142,13 +142,13 @@ function DockItem({ icon: Icon, label, isActive, expanded, mouseY, onClick }: Do
       onClick={onClick}
       aria-label={label}
       aria-current={isActive ? 'page' : undefined}
-      className="w-full flex items-center gap-3 text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-[#14e3c4]/60 rounded-2xl"
+      className="w-full flex items-center gap-3 text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 rounded-2xl"
     >
       <motion.span
         style={{ height: size }}
         className={`shrink-0 w-12 rounded-2xl flex items-center justify-center transition-colors duration-300 ${
           isActive
-            ? 'bg-[#14e3c4] text-white shadow-[0_0_20px_rgba(20,227,196,0.2)]'
+            ? 'bg-brand text-white shadow-[0_0_20px_rgba(20,227,196,0.2)]'
             : 'text-zinc-500 group-hover:bg-white/5 group-hover:text-white'
         }`}
       >

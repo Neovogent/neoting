@@ -125,8 +125,8 @@ export function DataTable<T>({
         onClick={() => a.onClick(selectable ? selectedRows : rows)}
         className={`flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-bold rounded-2xl transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
           a.primary
-            ? 'text-white bg-[#14e3c4] hover:bg-[#0fcbaf] shadow-[0_0_15px_rgba(20,227,196,0.2)]'
-            : 'text-zinc-400 hover:text-white hover:bg-white/5 border border-white/5 bg-[#16161a] shadow-inner'
+            ? 'text-white bg-brand hover:bg-brand-hover shadow-[0_0_15px_rgba(20,227,196,0.2)]'
+            : 'text-zinc-400 hover:text-white hover:bg-white/5 border border-white/5 bg-card shadow-inner'
         }`}
       >
         {a.icon && <a.icon size={16} />}
@@ -136,7 +136,7 @@ export function DataTable<T>({
   });
 
   return (
-    <div className={`w-full ${className} border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden flex flex-col`}>
+    <div className={`w-full ${className} border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden flex flex-col`}>
       {title && (
         <div className="p-6 pb-4 flex items-start justify-between gap-4 border-b border-white/5">
           <div>
@@ -146,7 +146,7 @@ export function DataTable<T>({
             )}
           </div>
           {selectable && selected.length > 0 && (
-            <span className="shrink-0 px-3 py-1.5 rounded-full bg-[#14e3c4]/15 border border-[#14e3c4]/30 text-[11px] font-bold text-[#14e3c4] tracking-wide">
+            <span className="shrink-0 px-3 py-1.5 rounded-full bg-brand/15 border border-brand/30 text-[11px] font-bold text-brand tracking-wide">
               {selected.length} selected
             </span>
           )}
@@ -224,7 +224,7 @@ export function DataTable<T>({
                   onClick={onRowClick ? () => onRowClick(row) : selectable ? () => toggleOne(id) : undefined}
                   className={`border-b border-white/5 last:border-0 transition-colors ${
                     selectable || onRowClick ? 'cursor-pointer' : ''
-                  } ${isSel ? 'bg-[#14e3c4]/[0.07]' : 'hover:bg-white/[0.02]'}`}
+                  } ${isSel ? 'bg-brand/[0.07]' : 'hover:bg-white/[0.02]'}`}
                 >
                   {selectable && (
                     <td className="px-5 py-3.5">
@@ -252,7 +252,7 @@ export function DataTable<T>({
       </div>
 
       {(bulkActions.length > 0 || footer) && (
-        <div className="flex items-center justify-between gap-3 bg-[#202026]/50 p-4 flex-wrap">
+        <div className="flex items-center justify-between gap-3 bg-raised/50 p-4 flex-wrap">
           <div className="text-[12px] text-zinc-500 font-semibold px-2">
             {footer ?? `${rows.length} item${rows.length === 1 ? '' : 's'}`}
           </div>
@@ -271,7 +271,7 @@ function Checkbox({ checked, onChange }: { checked: boolean; onChange: () => voi
         onChange();
       }}
       className={`w-[18px] h-[18px] rounded-md border flex items-center justify-center transition-all ${
-        checked ? 'bg-[#14e3c4] border-[#14e3c4] shadow-[0_0_10px_rgba(20,227,196,0.4)]' : 'border-white/20 hover:border-white/40'
+        checked ? 'bg-brand border-brand shadow-[0_0_10px_rgba(20,227,196,0.4)]' : 'border-white/20 hover:border-white/40'
       }`}
     >
       {checked && <Check size={12} strokeWidth={4} className="text-white" />}
@@ -287,8 +287,8 @@ export function Pill({ children, tone = 'neutral', title }: {
   title?: string;
 }) {
   const tones: Record<string, string> = {
-    neutral: 'bg-[#202026] text-zinc-300 border-white/5',
-    blue: 'bg-[#14e3c4]/15 text-[#14e3c4] border-[#14e3c4]/30',
+    neutral: 'bg-raised text-zinc-300 border-white/5',
+    blue: 'bg-brand/15 text-brand border-brand/30',
     red: 'bg-red-500/10 text-red-400 border-red-500/20',
     green: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
     amber: 'bg-amber-500/10 text-amber-400 border-amber-500/20',

@@ -50,7 +50,7 @@ export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose
         initial={{ opacity: 0, y: 20, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-4xl my-auto border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden"
+        className="w-full max-w-4xl my-auto border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden"
       >
         <div className="p-6 flex items-start justify-between gap-4 border-b border-white/5">
           <div className="flex items-center gap-4 min-w-0">
@@ -72,7 +72,7 @@ export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose
 
         {/* Why it was flagged. Shown before the documents, because it is what
             tells you which of the four buttons below is the right one. */}
-        <div className="px-6 py-4 bg-[#0a0a0c]/50 border-b border-white/5">
+        <div className="px-6 py-4 bg-ground/50 border-b border-white/5">
           <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2.5">
             Signals that flagged it
           </div>
@@ -82,8 +82,8 @@ export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose
                 key={s}
                 className={`px-2.5 py-1 rounded-lg text-[11.5px] font-semibold border ${
                   /differs|different/i.test(s)
-                    ? 'text-zinc-500 bg-[#16161a] border-white/5'
-                    : 'text-[#14e3c4] bg-[#14e3c4]/10 border-[#14e3c4]/20'
+                    ? 'text-zinc-500 bg-card border-white/5'
+                    : 'text-brand bg-brand/10 border-brand/20'
                 }`}
               >
                 {s}
@@ -120,7 +120,7 @@ export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose
           </div>
         )}
 
-        <div className="p-4 bg-[#202026]/50 flex items-center gap-2 justify-end flex-wrap">
+        <div className="p-4 bg-raised/50 flex items-center gap-2 justify-end flex-wrap">
           <button
             onClick={() => decide('keep-both', 'These are two different documents?', 'The flag is dismissed and both stay in the pipeline.')}
             title="The flag was wrong — these are two different documents"
@@ -167,7 +167,7 @@ function Side({ title, pair, onOpen, hasDoc, tone = 'plain' }: {
 }) {
   return (
     <div className={`rounded-2xl border p-5 flex flex-col gap-3 ${
-      tone === 'muted' ? 'border-white/5 bg-[#0a0a0c]/40' : 'border-white/10 bg-[#0a0a0c]/70'
+      tone === 'muted' ? 'border-white/5 bg-ground/40' : 'border-white/10 bg-ground/70'
     }`}>
       <div className="flex items-center justify-between gap-3">
         <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">{title}</span>
@@ -187,7 +187,7 @@ function Side({ title, pair, onOpen, hasDoc, tone = 'plain' }: {
       <button
         onClick={onOpen}
         disabled={!hasDoc}
-        className="mt-auto px-4 py-2 rounded-full text-[12px] font-bold text-[#14e3c4] bg-[#14e3c4]/10 border border-[#14e3c4]/20 hover:bg-[#14e3c4]/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        className="mt-auto px-4 py-2 rounded-full text-[12px] font-bold text-brand bg-brand/10 border border-brand/20 hover:bg-brand/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         {hasDoc ? 'View this document' : 'No longer on file'}
       </button>

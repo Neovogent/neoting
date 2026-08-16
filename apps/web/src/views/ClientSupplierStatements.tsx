@@ -59,13 +59,13 @@ export function ClientSupplierStatements({ client }: { client: Client }) {
             onChange={(e) => setSupplier(e.target.value)}
             placeholder="Supplier name"
             aria-label="Supplier name"
-            className="w-44 bg-[#16161a] border border-white/5 rounded-full py-2.5 px-4 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#14e3c4] shadow-inner"
+            className="w-44 bg-card border border-white/5 rounded-full py-2.5 px-4 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand shadow-inner"
           />
           <button
             onClick={() => fileRef.current?.click()}
             disabled={!supplier.trim()}
             title={supplier.trim() ? 'Upload a statement' : 'Name the supplier first'}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.2)]"
           >
             <UploadCloud size={16} />
             Upload statement
@@ -88,7 +88,7 @@ export function ClientSupplierStatements({ client }: { client: Client }) {
       </div>
 
       {mine.length === 0 ? (
-        <div className="border border-white/5 rounded-[32px] bg-[#16161a] p-10 text-center shadow-2xl">
+        <div className="border border-white/5 rounded-[32px] bg-card p-10 text-center shadow-2xl">
           <p className="text-[13px] text-zinc-500 leading-relaxed max-w-md mx-auto">
             No supplier statements yet. Ask a regular supplier for their monthly statement and upload it here — it is
             the fastest way to find invoices that never arrived.
@@ -101,9 +101,9 @@ export function ClientSupplierStatements({ client }: { client: Client }) {
             const matched = st.lines.length - missing.length;
             const isOpen = open === st.id;
             return (
-              <div key={st.id} className="border border-white/5 rounded-[28px] bg-[#16161a] shadow-2xl overflow-hidden">
+              <div key={st.id} className="border border-white/5 rounded-[28px] bg-card shadow-2xl overflow-hidden">
                 <div className="p-5 flex items-center gap-4 flex-wrap">
-                  <div className="w-10 h-11 rounded-xl bg-[#202026] border border-white/5 flex items-center justify-center text-zinc-500 shrink-0">
+                  <div className="w-10 h-11 rounded-xl bg-raised border border-white/5 flex items-center justify-center text-zinc-500 shrink-0">
                     <FileText size={16} />
                   </div>
 
@@ -136,7 +136,7 @@ export function ClientSupplierStatements({ client }: { client: Client }) {
                     {missing.length > 0 && (
                       <button
                         onClick={() => setChasingFor(st)}
-                        className="flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors"
+                        className="flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
                       >
                         <Send size={13} />
                         Chase {missing.length}
@@ -205,12 +205,12 @@ export function ClientSupplierStatements({ client }: { client: Client }) {
                         {st.lines.map((l) => (
                           <div
                             key={l.reference}
-                            className="flex items-center gap-3 p-3.5 rounded-2xl bg-[#0a0a0c]/60 border border-white/5"
+                            className="flex items-center gap-3 p-3.5 rounded-2xl bg-ground/60 border border-white/5"
                           >
                             <span
                               className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
                                 l.documentId
-                                  ? 'bg-[#14e3c4]/10 text-[#14e3c4] border border-[#14e3c4]/25'
+                                  ? 'bg-brand/10 text-brand border border-brand/25'
                                   : 'bg-red-500/10 text-red-400 border border-red-400/25'
                               }`}
                             >
@@ -249,7 +249,7 @@ export function ClientSupplierStatements({ client }: { client: Client }) {
       {chasingFor && (
         <Modal onClose={() => setChasingFor(null)}>
           <div className="w-full flex flex-col items-center gap-3">
-            <div className="w-full max-w-xl px-5 py-3 rounded-[20px] border border-white/5 bg-[#16161a] shadow-2xl flex items-center justify-between gap-4">
+            <div className="w-full max-w-xl px-5 py-3 rounded-[20px] border border-white/5 bg-card shadow-2xl flex items-center justify-between gap-4">
               <p className="text-[12px] text-zinc-500 min-w-0">
                 {chasingFor.supplier} say they invoiced{' '}
                 {chasingFor.lines.filter((l) => !l.documentId).length} document(s) we do not hold.

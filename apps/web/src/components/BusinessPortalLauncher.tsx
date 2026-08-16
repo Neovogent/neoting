@@ -45,7 +45,7 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.97 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-xl max-h-[80vh] rounded-[32px] border border-white/5 bg-[#16161a] shadow-2xl flex flex-col overflow-hidden"
+        className="w-full max-w-xl max-h-[80vh] rounded-[32px] border border-white/5 bg-card shadow-2xl flex flex-col overflow-hidden"
       >
         <div className="p-6 border-b border-white/5 flex items-start justify-between gap-4">
           <div>
@@ -92,7 +92,7 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search clients"
-                  className="w-full bg-[#0a0a0c] border border-white/5 rounded-xl pl-11 pr-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#14e3c4] transition-colors"
+                  className="w-full bg-ground border border-white/5 rounded-xl pl-11 pr-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors"
                 />
               </div>
             </div>
@@ -103,10 +103,10 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
                 return (
                   <div
                     key={c.id}
-                    className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-[#0a0a0c]/60 border border-white/5"
+                    className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-ground/60 border border-white/5"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-10 h-10 rounded-xl bg-[#202026] border border-white/5 flex items-center justify-center text-zinc-400 shrink-0">
+                      <div className="w-10 h-10 rounded-xl bg-raised border border-white/5 flex items-center justify-center text-zinc-400 shrink-0">
                         <Building2 size={16} />
                       </div>
                       <div className="min-w-0">
@@ -134,7 +134,7 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
                               openBusinessPortal(account.id);
                               onClose();
                             }}
-                            className="flex items-center gap-1.5 px-4 py-2 rounded-full text-[12px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors"
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
                           >
                             Open
                             <ArrowRight size={13} strokeWidth={2.5} />
@@ -159,7 +159,7 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
             </div>
 
             {awaitingSignOff.length > 0 && (
-              <div className="p-5 border-t border-white/5 bg-[#0a0a0c]/40 flex flex-col gap-3">
+              <div className="p-5 border-t border-white/5 bg-ground/40 flex flex-col gap-3">
                 <div>
                   <div className="text-[13px] font-bold text-white">Waiting on a client to approve</div>
                   <p className="text-[12px] text-zinc-500 mt-0.5 leading-relaxed">
@@ -168,7 +168,7 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
                   </p>
                 </div>
                 {awaitingSignOff.map(({ client, items, request }) => (
-                  <div key={client.id} className="p-4 rounded-2xl bg-[#16161a] border border-white/5 flex items-center justify-between gap-4 flex-wrap">
+                  <div key={client.id} className="p-4 rounded-2xl bg-card border border-white/5 flex items-center justify-between gap-4 flex-wrap">
                     <div className="min-w-0">
                       <div className="text-[13px] font-bold text-white truncate">{client.name}</div>
                       <div className="text-[12px] text-zinc-500 truncate">
@@ -182,7 +182,7 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
                           onClick={() => sendApprovalRequest(client.id)}
                           disabled={!client.mobile}
                           title={client.mobile ? undefined : 'No mobile on file for this client'}
-                          className="flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                          className="flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                         >
                           <Send size={13} strokeWidth={2.5} />
                           Send the request
@@ -192,7 +192,7 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
                         onClick={() => { onClose(); openApprovalLink(request?.id ?? `appr-req-${client.id}-0`); }}
                         disabled={!request}
                         title={request ? 'See exactly what the approver sees' : 'Send the request first'}
-                        className="flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold text-[#14e3c4] bg-[#14e3c4]/10 border border-[#14e3c4]/25 hover:bg-[#14e3c4]/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        className="flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold text-brand bg-brand/10 border border-brand/25 hover:bg-brand/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                       >
                         <Smartphone size={13} strokeWidth={2.5} />
                         Open the link
@@ -212,7 +212,7 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
                   openBusinessPortal(null);
                   onClose();
                 }}
-                className="shrink-0 text-[12px] font-bold text-[#14e3c4] hover:underline"
+                className="shrink-0 text-[12px] font-bold text-brand hover:underline"
               >
                 Open the sign-up screen →
               </button>
@@ -265,7 +265,7 @@ function InviteForm({
         </button>
         <button
           onClick={() => onCreate(contactName.trim() || 'Primary contact', email.trim(), mobile.trim())}
-          className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors shadow-[0_0_15px_rgba(20,227,196,0.3)]"
+          className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.3)]"
         >
           <Send size={15} strokeWidth={2.5} />
           Create & send invite
@@ -293,7 +293,7 @@ function Field({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full bg-[#0a0a0c] border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#14e3c4] transition-colors"
+        className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors"
       />
     </div>
   );

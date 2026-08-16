@@ -232,7 +232,7 @@ export function ClientDetailView() {
   ];
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-[#0a0a0c] h-full overflow-hidden">
+    <div className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden">
       <header className="px-10 pt-8 pb-5 shrink-0">
         <button
           onClick={() => openClient(null)}
@@ -244,7 +244,7 @@ export function ClientDetailView() {
 
         <div className="flex items-start justify-between gap-6 flex-wrap">
           <div className="flex items-center gap-5 min-w-0">
-            <div className="w-16 h-16 rounded-3xl bg-[#202026] flex items-center justify-center font-sans text-3xl font-bold text-white border border-white/5 shadow-inner shrink-0 overflow-hidden">
+            <div className="w-16 h-16 rounded-3xl bg-raised flex items-center justify-center font-sans text-3xl font-bold text-white border border-white/5 shadow-inner shrink-0 overflow-hidden">
               {client.logoDataUrl ? (
                 <img src={client.logoDataUrl} alt="" className="w-full h-full object-cover" />
               ) : (
@@ -256,7 +256,7 @@ export function ClientDetailView() {
                 <h1 className="font-sans text-3xl font-semibold text-white tracking-tight truncate">{client.name}</h1>
                 <button
                   onClick={() => toggleStarClient(client.id)}
-                  className={starredClientIds.includes(client.id) ? 'text-[#14e3c4]' : 'text-zinc-700 hover:text-zinc-400'}
+                  className={starredClientIds.includes(client.id) ? 'text-brand' : 'text-zinc-700 hover:text-zinc-400'}
                 >
                   <Star size={18} fill={starredClientIds.includes(client.id) ? 'currentColor' : 'none'} />
                 </button>
@@ -278,7 +278,7 @@ export function ClientDetailView() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => startConversation([client.id])}
-              className="flex items-center gap-2 px-5 py-2.5 bg-[#14e3c4]/10 text-[#14e3c4] border border-[#14e3c4]/20 text-sm font-bold rounded-full hover:bg-[#14e3c4]/20 transition-all"
+              className="flex items-center gap-2 px-5 py-2.5 bg-brand/10 text-brand border border-brand/20 text-sm font-bold rounded-full hover:bg-brand/20 transition-all"
             >
               <Sparkles size={16} />
               Ask AI
@@ -286,7 +286,7 @@ export function ClientDetailView() {
             <button
               disabled={s.missing === 0}
               onClick={chaseClient}
-              className="flex items-center gap-2 px-6 py-2.5 bg-[#14e3c4] text-white text-sm font-bold rounded-full hover:bg-[#0fcbaf] transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)] disabled:opacity-40"
+              className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)] disabled:opacity-40"
             >
               <Send size={16} />
               Chase {s.missing > 0 ? `(${s.missing})` : ''}
@@ -302,8 +302,8 @@ export function ClientDetailView() {
             onClick={() => setTab(t)}
             className={`px-4 py-2 rounded-full text-[13px] font-bold transition-all border whitespace-nowrap ${
               tab === t
-                ? 'bg-[#14e3c4] text-white border-[#14e3c4] shadow-[0_0_12px_rgba(20,227,196,0.25)]'
-                : 'bg-[#16161a] text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
+                ? 'bg-brand text-white border-brand shadow-[0_0_12px_rgba(20,227,196,0.25)]'
+                : 'bg-card text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
             }`}
           >
             {t}
@@ -349,8 +349,8 @@ export function ClientDetailView() {
                             <span className="text-[13px] text-zinc-300 font-semibold">{CHANNEL_LABEL[c.source]}</span>
                             <span className="text-[13px] text-white font-bold tabular-nums">{c.pct}%</span>
                           </div>
-                          <div className="h-1.5 w-full bg-[#202026] rounded-full overflow-hidden shadow-inner">
-                            <div className="h-full rounded-full bg-[#14e3c4]" style={{ width: `${c.pct}%` }} />
+                          <div className="h-1.5 w-full bg-raised rounded-full overflow-hidden shadow-inner">
+                            <div className="h-full rounded-full bg-brand" style={{ width: `${c.pct}%` }} />
                           </div>
                         </div>
                       ))}
@@ -362,7 +362,7 @@ export function ClientDetailView() {
                     the Integrations tab — a dead token stops the pipeline. */}
                 <Panel title="Integration health" icon={Landmark}>
                   <div className="flex flex-col gap-3">
-                    <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#0a0a0c]/60 border border-white/5">
+                    <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-ground/60 border border-white/5">
                       <div className="min-w-0">
                         <div className="text-[13px] font-bold text-white">Accounting software</div>
                         <div className="text-[12px] text-zinc-500">
@@ -373,13 +373,13 @@ export function ClientDetailView() {
                     </div>
 
                     {clientAccounts.length === 0 ? (
-                      <div className="p-3.5 rounded-2xl bg-[#0a0a0c]/60 border border-white/5">
+                      <div className="p-3.5 rounded-2xl bg-ground/60 border border-white/5">
                         <div className="text-[13px] font-bold text-white">Bank feed</div>
                         <div className="text-[12px] text-zinc-500">No account on file.</div>
                       </div>
                     ) : (
                       clientAccounts.map((a) => (
-                        <div key={a.id} className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#0a0a0c]/60 border border-white/5">
+                        <div key={a.id} className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-ground/60 border border-white/5">
                           <div className="min-w-0">
                             <div className="text-[13px] font-bold text-white truncate">
                               {a.bankName} ••{a.last4}
@@ -399,7 +399,7 @@ export function ClientDetailView() {
                           ) : (
                             <button
                               onClick={() => reauthAccount(a.id)}
-                              className="shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors"
+                              className="shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
                             >
                               <RefreshCw size={13} strokeWidth={2.5} />
                               Re-auth now
@@ -420,7 +420,7 @@ export function ClientDetailView() {
                     <div className="flex flex-col gap-3">
                       {activity.map((e) => (
                         <div key={e.id} className="flex gap-3">
-                          <div className="w-1.5 h-1.5 rounded-full bg-[#14e3c4] mt-2 shrink-0" />
+                          <div className="w-1.5 h-1.5 rounded-full bg-brand mt-2 shrink-0" />
                           <div className="min-w-0">
                             <div className="text-[13px] text-white font-semibold leading-snug">{e.label}</div>
                             <div className="text-[12px] text-zinc-500 leading-snug">{e.detail}</div>
@@ -441,9 +441,9 @@ export function ClientDetailView() {
                     <span className="text-4xl font-bold text-white tracking-tight tabular-nums">{s.health}%</span>
                     <span className="text-[12px] text-zinc-500 font-semibold">document pipeline only</span>
                   </div>
-                  <div className="h-2 w-full bg-[#202026] rounded-full overflow-hidden shadow-inner mb-5">
+                  <div className="h-2 w-full bg-raised rounded-full overflow-hidden shadow-inner mb-5">
                     <div
-                      className={`h-full rounded-full ${s.health > 80 ? 'bg-[#14e3c4]' : s.health > 50 ? 'bg-amber-400' : 'bg-red-500'}`}
+                      className={`h-full rounded-full ${s.health > 80 ? 'bg-brand' : s.health > 50 ? 'bg-amber-400' : 'bg-red-500'}`}
                       style={{ width: `${s.health}%` }}
                     />
                   </div>
@@ -502,7 +502,7 @@ export function ClientDetailView() {
                     <button
                       key={p.q}
                       onClick={() => scoped(p.intent, p.q, 'Here you go:')}
-                      className="text-left px-4 py-3 rounded-2xl bg-[#0a0a0c]/60 border border-white/5 text-[13px] text-zinc-300 hover:text-white hover:border-white/15 transition-colors"
+                      className="text-left px-4 py-3 rounded-2xl bg-ground/60 border border-white/5 text-[13px] text-zinc-300 hover:text-white hover:border-white/15 transition-colors"
                     >
                       {p.q}
                     </button>
@@ -510,7 +510,7 @@ export function ClientDetailView() {
                 </div>
                 <button
                   onClick={() => startConversation([client.id])}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
                 >
                   <Sparkles size={15} />
                   New conversation
@@ -532,7 +532,7 @@ export function ClientDetailView() {
                           setActiveTab('AI Workspace');
                           openClient(null);
                         }}
-                        className="text-left p-4 rounded-2xl bg-[#0a0a0c]/60 border border-white/5 hover:border-white/15 transition-colors"
+                        className="text-left p-4 rounded-2xl bg-ground/60 border border-white/5 hover:border-white/15 transition-colors"
                       >
                         <div className="text-[13px] font-bold text-white truncate">{c.title}</div>
                         <div className="text-[12px] text-zinc-500 mt-0.5">
@@ -579,7 +579,7 @@ export function ClientDetailView() {
                   render: (m) => (
                     <button
                       onClick={(e) => { e.stopPropagation(); chaseItems([m]); }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold text-[#14e3c4] bg-[#14e3c4]/10 border border-[#14e3c4]/25 hover:bg-[#14e3c4]/20 transition-colors whitespace-nowrap"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold text-brand bg-brand/10 border border-brand/25 hover:bg-brand/20 transition-colors whitespace-nowrap"
                     >
                       <Send size={12} strokeWidth={2.5} />
                       {m.chased ? 'Chase again' : 'Chase'}
@@ -611,7 +611,7 @@ export function ClientDetailView() {
                 </p>
                 <button
                   onClick={() => setAddingTask(true)}
-                  className="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+                  className="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
                 >
                   <Plus size={15} strokeWidth={2.5} />
                   Add task
@@ -626,13 +626,13 @@ export function ClientDetailView() {
                     const blocked = !!blocker && blocker.status === 'open';
                     const open = t.status === 'open';
                     return (
-                      <div key={t.id} className="flex items-center gap-3 p-4 rounded-2xl bg-[#0a0a0c]/60 border border-white/5">
+                      <div key={t.id} className="flex items-center gap-3 p-4 rounded-2xl bg-ground/60 border border-white/5">
                         <button
                           onClick={() => setTaskStatus(t.id, open ? 'complete' : 'open')}
                           disabled={blocked && open}
                           title={blocked && open ? `Waiting on: ${blocker?.title}` : open ? 'Mark complete' : 'Reopen'}
                           className={`shrink-0 transition-colors ${
-                            !open ? 'text-[#14e3c4]' : blocked ? 'text-zinc-700 cursor-not-allowed' : 'text-zinc-600 hover:text-white'
+                            !open ? 'text-brand' : blocked ? 'text-zinc-700 cursor-not-allowed' : 'text-zinc-600 hover:text-white'
                           }`}
                         >
                           {open ? <Circle size={18} /> : <CheckCircle size={18} />}
@@ -664,7 +664,7 @@ export function ClientDetailView() {
                   these — the only move is getting the SMS link to the approver
                   and, if they go quiet, chasing it. */}
               {clientSideItems.length > 0 && (
-                <div className="border border-[#14e3c4]/20 rounded-[28px] bg-[#14e3c4]/[0.05] p-5 flex items-center justify-between gap-4 flex-wrap">
+                <div className="border border-brand/20 rounded-[28px] bg-brand/[0.05] p-5 flex items-center justify-between gap-4 flex-wrap">
                   <div className="min-w-0">
                     <div className="text-[14px] font-bold text-white">
                       {clientSideItems.length} item{clientSideItems.length === 1 ? '' : 's'} waiting on {client.name}
@@ -715,7 +715,7 @@ export function ClientDetailView() {
                         }}
                         disabled={!client.mobile}
                         title={client.mobile ? undefined : 'No mobile on file for this client'}
-                        className="flex items-center gap-2 px-5 py-2 rounded-full text-[12px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        className="flex items-center gap-2 px-5 py-2 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                       >
                         <Send size={13} strokeWidth={2.5} />
                         Send the request
@@ -725,7 +725,7 @@ export function ClientDetailView() {
                       onClick={() => openApprovalLink(approvalRequest?.id ?? `appr-req-${client.id}-0`)}
                       disabled={!approvalRequest}
                       title={approvalRequest ? 'See exactly what the approver sees' : 'Send the request first'}
-                      className="flex items-center gap-2 px-5 py-2 rounded-full text-[12px] font-bold text-[#14e3c4] bg-[#14e3c4]/10 border border-[#14e3c4]/25 hover:bg-[#14e3c4]/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      className="flex items-center gap-2 px-5 py-2 rounded-full text-[12px] font-bold text-brand bg-brand/10 border border-brand/25 hover:bg-brand/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     >
                       <Smartphone size={13} strokeWidth={2.5} />
                       Open the link
@@ -857,7 +857,7 @@ export function ClientDetailView() {
                   </div>
                   <button
                     onClick={() => setEditingWorkflow(blankWorkflow())}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
                   >
                     <Plus size={15} strokeWidth={2.5} />
                     New workflow
@@ -933,8 +933,8 @@ export function ClientDetailView() {
                     </p>
                   )}
                   {businessMembers.map((m) => (
-                    <div key={m.id} className="p-4 rounded-2xl bg-[#0a0a0c]/60 border border-white/5 flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-[#202026] border border-white/5 flex items-center justify-center overflow-hidden font-bold text-white shrink-0">
+                    <div key={m.id} className="p-4 rounded-2xl bg-ground/60 border border-white/5 flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-raised border border-white/5 flex items-center justify-center overflow-hidden font-bold text-white shrink-0">
                         {m.avatarDataUrl
                           ? <img src={m.avatarDataUrl} alt="" className="w-full h-full object-cover" />
                           : (m.name.trim().charAt(0).toUpperCase() || '?')}
@@ -964,7 +964,7 @@ export function ClientDetailView() {
                         {m.status === 'invited' && businessAccount && (
                           <button
                             onClick={() => openRegistrationLink(businessAccount.id, m.id)}
-                            className="px-3 py-1.5 rounded-full text-[11px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors"
+                            className="px-3 py-1.5 rounded-full text-[11px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
                           >
                             Open link
                           </button>
@@ -1030,7 +1030,7 @@ export function ClientDetailView() {
                     </div>
                     <div className="flex flex-col gap-2 mt-4">
                       {setupLink.tasks.map((t) => (
-                        <div key={t} className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-[#0a0a0c]/60 border border-white/5">
+                        <div key={t} className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-ground/60 border border-white/5">
                           <span className="text-[13px] font-semibold text-white">
                             {t === 'profile' ? 'Company details' : t === 'ledger' ? 'Accounting software' : 'Bank feed'}
                           </span>
@@ -1051,7 +1051,7 @@ export function ClientDetailView() {
                         });
                         if (ok) resendOnboardingLink(setupLink.id);
                       }}
-                      className="mt-4 flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors"
+                      className="mt-4 flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
                     >
                       <Send size={15} />
                       Resend link
@@ -1068,7 +1068,7 @@ export function ClientDetailView() {
                       <button
                         onClick={() => sendOnboardingLink(client, pendingTasks)}
                         disabled={!client.mobile}
-                        className="mt-4 flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        className="mt-4 flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                       >
                         <Send size={15} />
                         Send setup link
@@ -1109,7 +1109,7 @@ export function ClientDetailView() {
         {chasing && (
           <Modal onClose={() => setChasing(null)}>
             <div className="w-full flex flex-col items-center gap-3">
-              <div className="w-full max-w-xl flex items-center justify-between gap-4 px-5 py-3 rounded-[20px] border border-white/5 bg-[#16161a] shadow-2xl">
+              <div className="w-full max-w-xl flex items-center justify-between gap-4 px-5 py-3 rounded-[20px] border border-white/5 bg-card shadow-2xl">
                 <p className="text-[12px] text-zinc-500">
                   Nothing sends until you read the review and approve it.
                 </p>
@@ -1153,13 +1153,13 @@ export function ClientDetailView() {
               {/* Toolbar sits above the card so Download is reachable without
                   scrolling past a long extraction list. */}
               {/* pr-12 keeps the Download button clear of the modal's close button. */}
-              <div className="w-full max-w-3xl flex items-center justify-between gap-4 pl-5 pr-12 py-3 rounded-[20px] border border-white/5 bg-[#16161a] shadow-2xl">
+              <div className="w-full max-w-3xl flex items-center justify-between gap-4 pl-5 pr-12 py-3 rounded-[20px] border border-white/5 bg-card shadow-2xl">
                 <p className="text-[12px] text-zinc-500 truncate">
                   Extracted data and line items · the original stays immutable
                 </p>
                 <button
                   onClick={() => downloadDocuments([preview], client.name)}
-                  className="shrink-0 flex items-center gap-2 px-5 py-2 rounded-full text-[13px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+                  className="shrink-0 flex items-center gap-2 px-5 py-2 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
                 >
                   <Download size={15} strokeWidth={2.5} />
                   Download
@@ -1230,7 +1230,7 @@ function Tile({
   action?: { label: string; onClick: () => void };
 }) {
   return (
-    <div className="bg-[#16161a] border border-white/5 rounded-[24px] shadow-2xl flex flex-col hover:border-white/15 transition-colors">
+    <div className="bg-card border border-white/5 rounded-[24px] shadow-2xl flex flex-col hover:border-white/15 transition-colors">
       <button onClick={onClick} className="p-5 pb-3 text-left">
         <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest leading-tight">{label}</div>
         <div className={`mt-2 text-3xl font-bold tracking-tight tabular-nums ${tone === 'red' && value > 0 ? 'text-red-400' : 'text-white'}`}>
@@ -1241,7 +1241,7 @@ function Tile({
       {action && (
         <button
           onClick={action.onClick}
-          className="mx-3 mb-3 mt-auto px-3 py-1.5 rounded-full text-[12px] font-bold text-[#14e3c4] bg-[#14e3c4]/10 border border-[#14e3c4]/20 hover:bg-[#14e3c4]/20 transition-colors"
+          className="mx-3 mb-3 mt-auto px-3 py-1.5 rounded-full text-[12px] font-bold text-brand bg-brand/10 border border-brand/20 hover:bg-brand/20 transition-colors"
         >
           {action.label}
         </button>
@@ -1308,8 +1308,8 @@ function ClientDetailsPanel({ client, pending, onPropose }: {
       )}
 
       {sent > 0 && !editing && (
-        <div className="mb-5 p-4 rounded-2xl border border-[#14e3c4]/25 bg-[#14e3c4]/[0.07] flex items-start gap-3">
-          <Check size={15} className="text-[#14e3c4] mt-0.5 shrink-0" strokeWidth={3} />
+        <div className="mb-5 p-4 rounded-2xl border border-brand/25 bg-brand/[0.07] flex items-start gap-3">
+          <Check size={15} className="text-brand mt-0.5 shrink-0" strokeWidth={3} />
           <div className="min-w-0">
             <div className="text-[13px] font-bold text-white">
               Sent to {client.name} for approval
@@ -1333,10 +1333,10 @@ function ClientDetailsPanel({ client, pending, onPropose }: {
               <input
                 value={draft[f.field]}
                 onChange={(e) => setDraft({ ...draft, [f.field]: e.target.value })}
-                className="w-full bg-[#0a0a0c] border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#14e3c4] transition-colors"
+                className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors"
               />
             ) : (
-              <div className="w-full bg-[#0a0a0c]/60 border border-white/5 rounded-xl px-4 py-2.5 text-sm text-zinc-300">
+              <div className="w-full bg-ground/60 border border-white/5 rounded-xl px-4 py-2.5 text-sm text-zinc-300">
                 {String(client[f.field] ?? '') || '—'}
               </div>
             )}
@@ -1357,7 +1357,7 @@ function ClientDetailsPanel({ client, pending, onPropose }: {
                 setEditing(false);
               }}
               disabled={changed.length === 0}
-              className="px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+              className="px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
             >
               Send {changed.length || ''} change{changed.length === 1 ? '' : 's'} for approval
             </button>
@@ -1419,7 +1419,7 @@ function AddTaskForm({ client, colleagues, existing, onAdd, onClose }: {
 
   return (
     <Modal onClose={onClose}>
-      <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+      <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
         <div className="p-6 border-b border-white/5">
           <h3 className="font-sans font-bold text-xl text-white tracking-tight">Add a task</h3>
           <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
@@ -1439,8 +1439,8 @@ function AddTaskForm({ client, colleagues, existing, onAdd, onClose }: {
                   onClick={() => setAssignee(c.name)}
                   className={`px-4 py-2.5 rounded-xl border text-[13px] font-bold transition-colors ${
                     assignee === c.name
-                      ? 'bg-[#14e3c4]/10 border-[#14e3c4]/40 text-[#14e3c4]'
-                      : 'bg-[#0a0a0c] border-white/5 text-zinc-400 hover:text-white'
+                      ? 'bg-brand/10 border-brand/40 text-brand'
+                      : 'bg-ground border-white/5 text-zinc-400 hover:text-white'
                   }`}
                 >
                   {c.name}
@@ -1464,11 +1464,11 @@ function AddTaskForm({ client, colleagues, existing, onAdd, onClose }: {
             <select
               value={dependsOn}
               onChange={(e) => setDependsOn(e.target.value)}
-              className="w-full bg-[#0a0a0c] border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#14e3c4] transition-colors appearance-none"
+              className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-brand transition-colors appearance-none"
             >
-              <option value="" className="bg-[#16161a]">Nothing — it can start now</option>
+              <option value="" className="bg-card">Nothing — it can start now</option>
               {existing.map((t) => (
-                <option key={t.id} value={t.id} className="bg-[#16161a]">{t.title}</option>
+                <option key={t.id} value={t.id} className="bg-card">{t.title}</option>
               ))}
             </select>
             <p className="text-[12px] text-zinc-500 mt-2 leading-relaxed">
@@ -1479,7 +1479,7 @@ function AddTaskForm({ client, colleagues, existing, onAdd, onClose }: {
           {problem && <p className="text-[13px] text-amber-400 font-semibold">{problem}</p>}
         </div>
 
-        <div className="p-4 bg-[#202026]/50 flex items-center gap-3 justify-end">
+        <div className="p-4 bg-raised/50 flex items-center gap-3 justify-end">
           <button onClick={onClose} className="px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 hover:text-white transition-colors">
             Cancel
           </button>
@@ -1500,7 +1500,7 @@ function AddTaskForm({ client, colleagues, existing, onAdd, onClose }: {
               })
             }
             disabled={!!problem}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
           >
             <Plus size={15} strokeWidth={2.5} />
             Add the task
@@ -1550,7 +1550,7 @@ function InviteBusinessUser({ clientName, onSend, onClose }: {
 
   return (
     <Modal onClose={onClose}>
-      <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+      <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
         <div className="p-6 border-b border-white/5">
           <h3 className="font-sans font-bold text-xl text-white tracking-tight">Add a user at {clientName}</h3>
           <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
@@ -1600,8 +1600,8 @@ function InviteBusinessUser({ clientName, onSend, onClose }: {
           </div>
 
           {/* The practice does not get to decide who works at the business. */}
-          <div className="flex items-start gap-3 p-4 rounded-2xl border border-[#14e3c4]/20 bg-[#14e3c4]/[0.06] shadow-inner">
-            <ShieldCheck size={16} className="text-[#14e3c4] mt-0.5 shrink-0" />
+          <div className="flex items-start gap-3 p-4 rounded-2xl border border-brand/20 bg-brand/[0.06] shadow-inner">
+            <ShieldCheck size={16} className="text-brand mt-0.5 shrink-0" />
             <div className="min-w-0">
               <div className="text-[13px] font-bold text-white">{clientName} approves this first</div>
               <p className="text-[12px] text-zinc-500 mt-1 leading-relaxed">
@@ -1615,14 +1615,14 @@ function InviteBusinessUser({ clientName, onSend, onClose }: {
           {problem && <p className="text-[13px] text-amber-400 font-semibold">{problem}</p>}
         </div>
 
-        <div className="p-4 bg-[#202026]/50 flex items-center gap-3 justify-end">
+        <div className="p-4 bg-raised/50 flex items-center gap-3 justify-end">
           <button onClick={onClose} className="px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 hover:text-white transition-colors">
             Cancel
           </button>
           <button
             onClick={() => onSend({ name, email, mobile, role, canUpload, canSeeTotals })}
             disabled={!!problem}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
           >
             <Send size={15} />
             Ask {clientName} to approve
@@ -1647,7 +1647,7 @@ function ApprovalAction({ icon: Icon, title, onClick, tone = 'plain' }: {
       aria-label={title}
       className={`p-2 rounded-lg border transition-colors ${
         tone === 'brand'
-          ? 'text-[#14e3c4] border-[#14e3c4]/25 bg-[#14e3c4]/10 hover:bg-[#14e3c4]/20'
+          ? 'text-brand border-brand/25 bg-brand/10 hover:bg-brand/20'
           : tone === 'red'
           ? 'text-red-400 border-red-400/20 bg-red-400/10 hover:bg-red-400/20'
           : 'text-zinc-400 border-white/5 hover:text-white hover:border-white/20 hover:bg-white/5'
@@ -1664,13 +1664,13 @@ function PermissionToggle({ label, hint, value, onChange }: {
   return (
     <button
       onClick={() => onChange(!value)}
-      className="bg-[#0a0a0c]/60 border border-white/5 rounded-2xl p-4 flex items-center justify-between gap-4 shadow-inner hover:border-white/10 transition-colors text-left"
+      className="bg-ground/60 border border-white/5 rounded-2xl p-4 flex items-center justify-between gap-4 shadow-inner hover:border-white/10 transition-colors text-left"
     >
       <div>
         <div className="text-sm font-bold text-white">{label}</div>
         <div className="text-[12px] text-zinc-500 mt-0.5">{hint}</div>
       </div>
-      <div className={`w-11 h-6 rounded-full shrink-0 transition-colors relative ${value ? 'bg-[#14e3c4]' : 'bg-white/10'}`}>
+      <div className={`w-11 h-6 rounded-full shrink-0 transition-colors relative ${value ? 'bg-brand' : 'bg-white/10'}`}>
         <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${value ? 'left-6' : 'left-1'}`} />
       </div>
     </button>
@@ -1687,7 +1687,7 @@ function Field({ label, value, onChange, placeholder }: {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full bg-[#0a0a0c] border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#14e3c4] transition-colors"
+        className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors"
       />
     </div>
   );
@@ -1695,9 +1695,9 @@ function Field({ label, value, onChange, placeholder }: {
 
 function Panel({ title, icon: Icon, children }: { title: string; icon: LucideIcon; children: React.ReactNode }) {
   return (
-    <div className="border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden">
+    <div className="border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
       <div className="p-6 pb-4 flex items-center gap-3 border-b border-white/5">
-        <div className="w-9 h-9 rounded-xl bg-[#202026] border border-white/5 flex items-center justify-center text-zinc-400 shadow-inner">
+        <div className="w-9 h-9 rounded-xl bg-raised border border-white/5 flex items-center justify-center text-zinc-400 shadow-inner">
           <Icon size={16} />
         </div>
         <h3 className="font-sans font-bold text-lg text-white tracking-tight">{title}</h3>
@@ -1718,7 +1718,7 @@ function Row({ label, value }: { label: string; value: string }) {
 
 function ContactRow({ name, detail, role }: { name: string; detail: string; role: string }) {
   return (
-    <div className="p-4 border border-white/5 rounded-2xl bg-[#0a0a0c]/60 shadow-inner">
+    <div className="p-4 border border-white/5 rounded-2xl bg-ground/60 shadow-inner">
       <div className="text-sm font-bold text-white">{name}</div>
       <div className="text-[12px] text-zinc-400 mt-0.5">{detail}</div>
       <div className="text-[11px] text-zinc-600 font-semibold uppercase tracking-wider mt-2">{role}</div>
@@ -1732,7 +1732,7 @@ function ContactRow({ name, detail, role }: { name: string; detail: string; role
  */
 function ConnectionRow({ name, detail, connected, requested }: { name: string; detail: string; connected: boolean; requested: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-4 p-4 border border-white/5 rounded-2xl bg-[#0a0a0c]/60 shadow-inner">
+    <div className="flex items-center justify-between gap-4 p-4 border border-white/5 rounded-2xl bg-ground/60 shadow-inner">
       <div className="min-w-0">
         <div className="text-sm font-bold text-white">{name}</div>
         <div className="text-[12px] text-zinc-500">{detail}</div>

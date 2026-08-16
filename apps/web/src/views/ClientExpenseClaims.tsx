@@ -77,7 +77,7 @@ export function ClientExpenseClaims({ client, onPreview }: {
         </p>
         <button
           onClick={() => setEditing(blank())}
-          className="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] transition-colors shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+          className="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.2)]"
         >
           <Plus size={16} strokeWidth={2.5} />
           New claim
@@ -85,7 +85,7 @@ export function ClientExpenseClaims({ client, onPreview }: {
       </div>
 
       {mine.length === 0 ? (
-        <div className="border border-white/5 rounded-[32px] bg-[#16161a] p-10 text-center shadow-2xl">
+        <div className="border border-white/5 rounded-[32px] bg-card p-10 text-center shadow-2xl">
           <p className="text-[13px] text-zinc-500 leading-relaxed max-w-md mx-auto">
             No claims for {client.name}. Start one when someone has paid for something out of their own pocket.
           </p>
@@ -95,7 +95,7 @@ export function ClientExpenseClaims({ client, onPreview }: {
           {mine.map((c) => {
             const unevidenced = c.items.filter((i) => !i.documentId).length;
             return (
-              <div key={c.id} className="border border-white/5 rounded-[28px] bg-[#16161a] shadow-2xl overflow-hidden flex flex-col">
+              <div key={c.id} className="border border-white/5 rounded-[28px] bg-card shadow-2xl overflow-hidden flex flex-col">
                 <div className="p-5 flex items-start justify-between gap-4 border-b border-white/5">
                   <div className="min-w-0">
                     <div className="text-[15px] font-bold text-white truncate">{c.claimant || 'Unnamed claimant'}</div>
@@ -114,8 +114,8 @@ export function ClientExpenseClaims({ client, onPreview }: {
                     has not left the company yet, and the practice has nothing
                     to do with it. */}
                 {c.approval ? (
-                  <div className="px-5 py-3 bg-[#14e3c4]/[0.06] border-b border-[#14e3c4]/15 flex items-start gap-2.5">
-                    <ShieldCheck size={14} className="text-[#14e3c4] mt-0.5 shrink-0" />
+                  <div className="px-5 py-3 bg-brand/[0.06] border-b border-brand/15 flex items-start gap-2.5">
+                    <ShieldCheck size={14} className="text-brand mt-0.5 shrink-0" />
                     <div className="min-w-0 text-[12px]">
                       <span className="text-white font-semibold">
                         Approved by {c.approval.by} · {c.approval.role}
@@ -125,7 +125,7 @@ export function ClientExpenseClaims({ client, onPreview }: {
                     </div>
                   </div>
                 ) : c.status === 'submitted' ? (
-                  <div className="px-5 py-3 bg-[#0a0a0c]/60 border-b border-white/5 flex items-center gap-2.5">
+                  <div className="px-5 py-3 bg-ground/60 border-b border-white/5 flex items-center gap-2.5">
                     <Clock size={14} className="text-zinc-500 shrink-0" />
                     <span className="text-[12px] text-zinc-400">
                       Waiting on a manager, owner or HR at {client.name} — not yours to action yet.
@@ -162,7 +162,7 @@ export function ClientExpenseClaims({ client, onPreview }: {
                         }`}
                       >
                         {doc ? (
-                          <span className="shrink-0 w-7 h-8 rounded-lg bg-[#14e3c4]/10 border border-[#14e3c4]/25 flex items-center justify-center text-[#14e3c4] group-hover:bg-[#14e3c4]/20 transition-colors">
+                          <span className="shrink-0 w-7 h-8 rounded-lg bg-brand/10 border border-brand/25 flex items-center justify-center text-brand group-hover:bg-brand/20 transition-colors">
                             <FileText size={13} />
                           </span>
                         ) : (
@@ -201,7 +201,7 @@ export function ClientExpenseClaims({ client, onPreview }: {
                         <span className="text-white font-bold tabular-nums shrink-0">{currency(total)}</span>
                         {/* Says the row is openable without shouting on every line. */}
                         {doc && (
-                          <span className="shrink-0 inline-flex items-center gap-1 text-[11px] font-bold text-zinc-600 group-hover:text-[#14e3c4] transition-colors">
+                          <span className="shrink-0 inline-flex items-center gap-1 text-[11px] font-bold text-zinc-600 group-hover:text-brand transition-colors">
                             <Eye size={13} />
                             View
                           </span>
@@ -217,7 +217,7 @@ export function ClientExpenseClaims({ client, onPreview }: {
                   {c.note && <p className="text-[12px] text-zinc-500 mt-1 leading-relaxed">{c.note}</p>}
                 </div>
 
-                <div className="p-4 bg-[#202026]/50 flex items-center gap-2 flex-wrap">
+                <div className="p-4 bg-raised/50 flex items-center gap-2 flex-wrap">
                   <button
                     onClick={() => setEditing(c)}
                     className="px-4 py-2 rounded-full text-[12px] font-bold text-zinc-400 border border-white/5 hover:text-white hover:border-white/15 transition-colors"
@@ -348,7 +348,7 @@ function ClaimAction({ icon: Icon, label, onClick, primary }: {
       onClick={onClick}
       className={`flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold transition-colors ${
         primary
-          ? 'text-white bg-[#14e3c4] hover:bg-[#0fcbaf]'
+          ? 'text-white bg-brand hover:bg-brand-hover'
           : 'text-zinc-400 border border-white/5 hover:text-white hover:border-white/15'
       }`}
     >
@@ -396,7 +396,7 @@ function ClaimEditor({ claim, onSave, onClose, onAttach }: {
         initial={{ opacity: 0, y: 20, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-2xl border border-white/5 rounded-[32px] bg-[#16161a] shadow-2xl overflow-hidden my-auto"
+        className="w-full max-w-2xl border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden my-auto"
       >
         <div className="p-6 border-b border-white/5">
           <h3 className="font-sans font-bold text-xl text-white tracking-tight">
@@ -416,13 +416,13 @@ function ClaimEditor({ claim, onSave, onClose, onAttach }: {
           <div>
             <div className="flex items-center justify-between mb-3">
               <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Lines</span>
-              <button onClick={addItem} className="text-[12px] font-bold text-[#14e3c4] hover:underline">
+              <button onClick={addItem} className="text-[12px] font-bold text-brand hover:underline">
                 + Add line
               </button>
             </div>
             <div className="flex flex-col gap-2">
               {draft.items.map((i) => (
-                <div key={i.id} className="flex items-center gap-2 p-3 rounded-2xl bg-[#0a0a0c]/60 border border-white/5">
+                <div key={i.id} className="flex items-center gap-2 p-3 rounded-2xl bg-ground/60 border border-white/5">
                   <input
                     value={i.description}
                     onChange={(e) => setItem(i.id, { description: e.target.value })}
@@ -432,14 +432,14 @@ function ClaimEditor({ claim, onSave, onClose, onAttach }: {
                   <input
                     value={i.category}
                     onChange={(e) => setItem(i.id, { category: e.target.value })}
-                    className="w-28 bg-[#16161a] border border-white/5 rounded-lg px-2 py-1 text-[12px] text-zinc-300 focus:outline-none focus:border-[#14e3c4]"
+                    className="w-28 bg-card border border-white/5 rounded-lg px-2 py-1 text-[12px] text-zinc-300 focus:outline-none focus:border-brand"
                   />
                   <input
                     type="number"
                     value={i.total || ''}
                     onChange={(e) => setItem(i.id, { total: Number(e.target.value) })}
                     placeholder="0.00"
-                    className="w-24 bg-[#16161a] border border-white/5 rounded-lg px-2 py-1 text-[12px] text-white text-right tabular-nums focus:outline-none focus:border-[#14e3c4]"
+                    className="w-24 bg-card border border-white/5 rounded-lg px-2 py-1 text-[12px] text-white text-right tabular-nums focus:outline-none focus:border-brand"
                   />
                   <button
                     onClick={() => setDraft({ ...draft, items: draft.items.filter((x) => x.id !== i.id) })}
@@ -455,7 +455,7 @@ function ClaimEditor({ claim, onSave, onClose, onAttach }: {
 
           {/* Receipts enter the normal pipeline, so they are extracted, coded
               and matched like anything else rather than living only here. */}
-          <div className="p-4 rounded-2xl border border-white/5 bg-[#0a0a0c]/60 shadow-inner flex items-center justify-between gap-4">
+          <div className="p-4 rounded-2xl border border-white/5 bg-ground/60 shadow-inner flex items-center justify-between gap-4">
             <div className="min-w-0">
               <div className="text-sm font-bold text-white">Receipts</div>
               <div className="text-[12px] text-zinc-500 mt-0.5">
@@ -485,14 +485,14 @@ function ClaimEditor({ claim, onSave, onClose, onAttach }: {
           {problem && <p className="text-[13px] text-amber-400 font-semibold">{problem}</p>}
         </div>
 
-        <div className="p-4 bg-[#202026]/50 flex items-center gap-3 justify-end">
+        <div className="p-4 bg-raised/50 flex items-center gap-3 justify-end">
           <button onClick={onClose} className="px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 hover:text-white transition-colors">
             Cancel
           </button>
           <button
             onClick={() => onSave(draft)}
             disabled={!!problem}
-            className="px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-[#14e3c4] hover:bg-[#0fcbaf] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             Save claim
           </button>
@@ -512,7 +512,7 @@ function Field({ label, value, onChange, placeholder }: {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full bg-[#0a0a0c] border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#14e3c4] transition-colors"
+        className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors"
       />
     </div>
   );

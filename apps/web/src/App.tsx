@@ -60,7 +60,7 @@ const BusinessPortalLauncher = lazy(() => import('./components/BusinessPortalLau
 function WorkspaceSkeleton() {
   return (
     <div
-      className="flex-1 flex flex-col min-w-0 bg-[#0a0a0c] h-full overflow-hidden"
+      className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden"
       role="status"
       aria-busy="true"
       aria-label="Loading"
@@ -76,7 +76,7 @@ function WorkspaceSkeleton() {
         {[0, 1, 2, 3, 4, 5].map((i) => (
           <div
             key={i}
-            className="h-20 shrink-0 rounded-3xl bg-[#16161a] border border-white/5 animate-pulse"
+            className="h-20 shrink-0 rounded-3xl bg-card border border-white/5 animate-pulse"
             // Staggered so the column reads as one surface arriving rather than
             // six things flashing in unison.
             style={{ animationDelay: `${i * 90}ms` }}
@@ -95,7 +95,7 @@ function WorkspaceSkeleton() {
 function PortalSkeleton() {
   return (
     <div
-      className="flex-1 flex flex-col min-w-0 h-full bg-[#0a0a0c] overflow-hidden"
+      className="flex-1 flex flex-col min-w-0 h-full bg-ground overflow-hidden"
       role="status"
       aria-busy="true"
       aria-label="Loading"
@@ -111,7 +111,7 @@ function PortalSkeleton() {
         {[0, 1, 2].map((i) => (
           <div
             key={i}
-            className="h-24 rounded-3xl bg-[#16161a] border border-white/5 animate-pulse"
+            className="h-24 rounded-3xl bg-card border border-white/5 animate-pulse"
             style={{ animationDelay: `${i * 90}ms` }}
           />
         ))}
@@ -177,7 +177,7 @@ export default function App() {
   // is stricter still: no account, no portal, one client's batch only.
   if (portal !== 'accountant') {
     return (
-      <div className="flex h-screen w-screen overflow-hidden bg-[#0a0a0c] text-white font-sans selection:bg-[#14e3c4]/30">
+      <div className="flex h-screen w-screen overflow-hidden bg-ground text-white font-sans selection:bg-brand/30">
         <Suspense fallback={<PortalSkeleton />}>
           {portal === 'approval' ? <ClientApprovalView />
             : portal === 'registration' ? <UserRegistrationView />
@@ -188,7 +188,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#0a0a0c] text-white font-sans selection:bg-[#14e3c4]/30">
+    <div className="flex h-screen w-screen overflow-hidden bg-ground text-white font-sans selection:bg-brand/30">
       {/* Suspense sits outside AnimatePresence on purpose: AnimatePresence has
           to keep the motion element as its own direct child or it cannot hold
           the launcher on screen long enough to run its exit animation. */}

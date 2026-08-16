@@ -94,7 +94,7 @@ export function TypedPlaceholder({ suggestions, onAccept, paused }: {
           complete ? 'opacity-100' : 'opacity-0'
         }`}
       >
-        <span className="px-2 py-1 rounded-full bg-[#14e3c4]/15 text-[#00806d]">Tab or click to use this</span>
+        <span className="px-2 py-1 rounded-full bg-brand/15 text-brand-deep">Tab or click to use this</span>
         <span className="text-zinc-400 font-semibold normal-case">{current.because}</span>
       </span>
     </button>
