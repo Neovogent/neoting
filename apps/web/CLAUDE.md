@@ -21,7 +21,7 @@ Read `docs/Source_Of_Truth.md` D37 before assuming anything Next-shaped. The req
 
 `packages/contracts` generates the typed client and the MSW handlers. **Never hand-write an API type; never `fetch` raw in a component.** Data flows through the generated client and TanStack Query.
 
-`VITE_API_BASE_URL` (**not** `NEXT_PUBLIC_*` — those are dead in a Vite build and fail silently) sets the API origin; `packages/contracts/src/http-client.ts` appends `/v1`. Unset, it is `http://localhost:3001`.
+`VITE_API_BASE_URL` (**not** `NEXT_PUBLIC_*` — those are dead in a Vite build and fail silently) sets the API origin; `packages/contracts/src/http-client.ts` appends `/v1`. Unset, it is `http://localhost:3000` — the port the API actually listens on. It said 3001 here until PR #82, which was the same wrong number the spec's `servers` block carried; nothing has ever served 3001, so an unconfigured clone called a closed port.
 
 ⚠ **The screens do not read from the API yet.** `AppContext` is still driven by the synthetic generators in `lib/seed.ts`, `lib/seed2.ts` and `lib/generate.ts`. The contract path exists and is exercised (`src/api/documents.ts`, `useDocuments`, and the MSW handlers), but wiring the views onto it is the next piece of work, not something already done.
 
