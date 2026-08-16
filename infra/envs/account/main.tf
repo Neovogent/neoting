@@ -125,4 +125,16 @@ locals {
   # Not a secret: an email address on a budget notification carries no
   # credential. Real secrets never enter Terraform (Governance §5.3).
   budget_alert_email = "migrateproperly@gmail.com"
+
+  # The SNS half of the budget alerting, referenced by LITERAL ARN because the
+  # topic lives in envs/staging's state and this root must not depend on it.
+  # See the long note at the notification blocks in budgets.tf, and the
+  # `AllowAWSBudgetsToPublish` statement in envs/staging/observability.tf that
+  # names this same string. Both sides have to move together.
+  #
+  # ⚠ WHY STAGING'S TOPIC AND NOT PROD'S. Budgets is account-scoped: there is
+  # ONE $1,300 budget for the whole shared account (D36), so its alerts are not
+  # production alerts and must not page. nt-prod-page exists and is deliberately
+  # not used here — a spend threshold at 2am is a ticket, not an incident.
+  budget_alert_topic_arn = "arn:aws:sns:${local.region}:${local.account_id}:nt-staging-alerts"
 }

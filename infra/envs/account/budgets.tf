@@ -90,6 +90,28 @@ resource "aws_budgets_budget" "monthly" {
       threshold                  = notification.value.threshold
       threshold_type             = "PERCENTAGE"
       subscriber_email_addresses = [local.budget_alert_email]
+
+      # ⚠ THE SNS TOPIC IS THE POINT, AND THE EMAIL STAYS ALONGSIDE IT.
+      #
+      # infra/README.md carried "budget notifications go to one personal inbox"
+      # as a gap, and it is the right kind of gap to care about: Governance
+      # §13.5 says "a surprising bill is an alerting failure", and an alert
+      # that reaches exactly one person's mailbox fails the moment that person
+      # is on a plane.
+      #
+      # This is a CROSS-STATE reference by literal ARN, not a Terraform
+      # resource reference, and that is deliberate rather than lazy — the topic
+      # lives in envs/staging (separate state), and a remote-state data source
+      # would couple the audit baseline's apply to an environment that is
+      # explicitly disposable (G1).
+      #
+      # The other half of the contract is already written: the topic policy in
+      # envs/staging/observability.tf carries `AllowAWSBudgetsToPublish`,
+      # scoped to `arn:aws:budgets::<account>:*`, and its comment names this
+      # exact ARN. ⚠ RENAMING THE TOPIC BREAKS THIS SILENTLY — Budgets does not
+      # report a failed publish anywhere a human sees it. Change both files in
+      # the same PR.
+      subscriber_sns_topic_arns = [local.budget_alert_topic_arn]
     }
   }
 }
@@ -163,6 +185,28 @@ resource "aws_budgets_budget" "pot" {
       threshold                  = notification.value.threshold
       threshold_type             = "PERCENTAGE"
       subscriber_email_addresses = [local.budget_alert_email]
+
+      # ⚠ THE SNS TOPIC IS THE POINT, AND THE EMAIL STAYS ALONGSIDE IT.
+      #
+      # infra/README.md carried "budget notifications go to one personal inbox"
+      # as a gap, and it is the right kind of gap to care about: Governance
+      # §13.5 says "a surprising bill is an alerting failure", and an alert
+      # that reaches exactly one person's mailbox fails the moment that person
+      # is on a plane.
+      #
+      # This is a CROSS-STATE reference by literal ARN, not a Terraform
+      # resource reference, and that is deliberate rather than lazy — the topic
+      # lives in envs/staging (separate state), and a remote-state data source
+      # would couple the audit baseline's apply to an environment that is
+      # explicitly disposable (G1).
+      #
+      # The other half of the contract is already written: the topic policy in
+      # envs/staging/observability.tf carries `AllowAWSBudgetsToPublish`,
+      # scoped to `arn:aws:budgets::<account>:*`, and its comment names this
+      # exact ARN. ⚠ RENAMING THE TOPIC BREAKS THIS SILENTLY — Budgets does not
+      # report a failed publish anywhere a human sees it. Change both files in
+      # the same PR.
+      subscriber_sns_topic_arns = [local.budget_alert_topic_arn]
     }
   }
 }
