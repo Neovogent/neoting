@@ -25,6 +25,12 @@ const EnvSchema = z.object({
   META_APP_SECRET: z.string().default(''),
   META_VERIFY_TOKEN: z.string().default(''),
 
+  // The request-context resolver (#75). `fixture` = trust `X-NT-*` dev headers
+  // (default — lets endpoints exercise scopedDb before auth exists); `session` =
+  // the real S1 resolver (not yet implemented). Selected by config, not import,
+  // like the others. ⚠ `fixture` is REFUSED under `NODE_ENV=production` below.
+  AUTH_MODE: z.enum(['fixture', 'session']).default('fixture'),
+
   // The ingest queue (#12). `fixture` = in-memory (default — offline tests and
   // any dev without Redis); `bullmq` = real BullMQ on Redis. Selected by config,
   // not by import, so the webhook controller is identical either way.
@@ -57,6 +63,19 @@ const EnvSchema = z.object({
   // non-empty string (including "false") as true, which is the wrong default.
   S3_FORCE_PATH_STYLE: z.string().default('false').transform((value) => value === 'true'),
   S3_BUCKET_DOCUMENTS: z.string().default('nt-local-docs'),
+}).superRefine((env, ctx) => {
+  // ⚠ A header-trusting auth resolver reaching production is the worst bug this
+  // repo could ship, so it is made structurally impossible: `AUTH_MODE=fixture`
+  // fails validation — the process never boots — under `NODE_ENV=production`.
+  // This is a boot-time gate, not a request-time check, precisely so it cannot be
+  // reached by a request at all (issue #75).
+  if (env.NODE_ENV === 'production' && env.AUTH_MODE === 'fixture') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['AUTH_MODE'],
+      message: 'AUTH_MODE=fixture trusts X-NT-* request headers and must never run in production — set AUTH_MODE=session (S1)',
+    });
+  }
 });
 
 export type Env = Readonly<z.infer<typeof EnvSchema>>;
