@@ -17,8 +17,8 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { ActionProposal } from './actionProposal';
-import type { ProposalReviewRenderedSummary } from './proposalReviewRenderedSummary';
+import type { ActionProposal } from './actionProposal.js';
+import type { ProposalReviewRenderedSummary } from './proposalReviewRenderedSummary.js';
 
 /**
  * The expansion behind [Read review]: every field a rule will set, the full

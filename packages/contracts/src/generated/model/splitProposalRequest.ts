@@ -17,9 +17,9 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { ProposalRequestBase } from './proposalRequestBase';
-import type { SplitProposalRequestAllOf } from './splitProposalRequestAllOf';
-import type { SplitProposalRequestKind } from './splitProposalRequestKind';
+import type { ProposalRequestBase } from './proposalRequestBase.js';
+import type { SplitProposalRequestAllOf } from './splitProposalRequestAllOf.js';
+import type { SplitProposalRequestKind } from './splitProposalRequestKind.js';
 
 export type SplitProposalRequest = ProposalRequestBase & SplitProposalRequestAllOf & {
   kind: SplitProposalRequestKind;

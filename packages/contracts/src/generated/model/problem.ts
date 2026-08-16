@@ -17,8 +17,8 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { ErrorCode } from './errorCode';
-import type { ProblemErrorsItem } from './problemErrorsItem';
+import type { ErrorCode } from './errorCode.js';
+import type { ProblemErrorsItem } from './problemErrorsItem.js';
 
 /**
  * RFC 7807 problem detail. The only error shape this API returns.

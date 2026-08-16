@@ -17,8 +17,8 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { Inbox } from './inbox';
-import type { RoutePayloadToBusinessId } from './routePayloadToBusinessId';
+import type { Inbox } from './inbox.js';
+import type { RoutePayloadToBusinessId } from './routePayloadToBusinessId.js';
 
 export interface RoutePayload {
   documentId: string;

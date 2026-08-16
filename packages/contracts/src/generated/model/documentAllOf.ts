@@ -17,14 +17,14 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { DocumentAllOfPerceptualHash } from './documentAllOfPerceptualHash';
-import type { DocumentAllOfSubmitterUserId } from './documentAllOfSubmitterUserId';
-import type { DocumentAllOfSubmitterLabel } from './documentAllOfSubmitterLabel';
-import type { DocumentAllOfReceivedLocal } from './documentAllOfReceivedLocal';
-import type { DocumentAllOfRoutingDecision } from './documentAllOfRoutingDecision';
-import type { DocumentAllOfRoutingConfidence } from './documentAllOfRoutingConfidence';
-import type { DocumentAllOfPageRange } from './documentAllOfPageRange';
-import type { DocumentAllOfAcceptedExtraction } from './documentAllOfAcceptedExtraction';
+import type { DocumentAllOfPerceptualHash } from './documentAllOfPerceptualHash.js';
+import type { DocumentAllOfSubmitterUserId } from './documentAllOfSubmitterUserId.js';
+import type { DocumentAllOfSubmitterLabel } from './documentAllOfSubmitterLabel.js';
+import type { DocumentAllOfReceivedLocal } from './documentAllOfReceivedLocal.js';
+import type { DocumentAllOfRoutingDecision } from './documentAllOfRoutingDecision.js';
+import type { DocumentAllOfRoutingConfidence } from './documentAllOfRoutingConfidence.js';
+import type { DocumentAllOfPageRange } from './documentAllOfPageRange.js';
+import type { DocumentAllOfAcceptedExtraction } from './documentAllOfAcceptedExtraction.js';
 
 export type DocumentAllOf = {
   /** The type decided by magic-byte sniffing, never the one the client declared. */

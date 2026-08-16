@@ -36,7 +36,7 @@ import {
   DocumentType,
   Inbox,
   ProvenanceClass
-} from '../../model';
+} from '../../model/index.js';
 import type {
   Document,
   Extraction,
@@ -44,7 +44,7 @@ import type {
   ListDocumentEvents200,
   ListDocumentExtractions200,
   ListDocuments200
-} from '../../model';
+} from '../../model/index.js';
 
 
 export const getListDocumentsResponseMock = (overrideResponse: Partial< ListDocuments200 > = {}): ListDocuments200 => ({data: Array.from({ length: faker.number.int({ min: 1, max: 10 }) }, (_, i) => i + 1).map(() => ({id: faker.string.alpha({length: {min: 10, max: 20}}), businessId: faker.string.alpha({length: {min: 10, max: 20}}), inbox: faker.helpers.arrayElement(Object.values(Inbox)), state: faker.helpers.arrayElement(Object.values(DocumentState)), docType: faker.helpers.arrayElement([faker.helpers.arrayElement([faker.helpers.arrayElement(Object.values(DocumentType)),null,]), undefined]), channel: faker.helpers.arrayElement(Object.values(DocumentChannel)), originalFilename: faker.string.alpha({length: {min: 10, max: 20}}), receivedAt: `${faker.date.past().toISOString().split('.')[0]}Z`, supplierName: faker.helpers.arrayElement([faker.helpers.arrayElement([faker.string.alpha({length: {min: 10, max: 20}}),null,]), undefined]), customerName: faker.helpers.arrayElement([faker.helpers.arrayElement([faker.string.alpha({length: {min: 10, max: 20}}),null,]), undefined]), documentDate: faker.helpers.arrayElement([faker.date.past().toISOString().split('T')[0], undefined]), dueDate: faker.helpers.arrayElement([faker.date.past().toISOString().split('T')[0], undefined]), currency: faker.helpers.arrayElement([faker.helpers.arrayElement([faker.string.alpha({length: {min: 10, max: 20}}),null,]), undefined]), totalPence: faker.helpers.arrayElement([faker.helpers.arrayElement([faker.number.int({min: undefined, max: undefined}),null,]), undefined]), taxPence: faker.helpers.arrayElement([faker.helpers.arrayElement([faker.number.int({min: undefined, max: undefined}),null,]), undefined]), reference: faker.helpers.arrayElement([faker.helpers.arrayElement([faker.string.alpha({length: {min: 10, max: 20}}),null,]), undefined]), categoryCode: faker.helpers.arrayElement([faker.helpers.arrayElement([faker.string.alpha({length: {min: 10, max: 20}}),null,]), undefined]), description: faker.helpers.arrayElement([faker.helpers.arrayElement([faker.string.alpha({length: {min: 10, max: 20}}),null,]), undefined]), projectRef: faker.helpers.arrayElement([faker.helpers.arrayElement([faker.string.alpha({length: {min: 10, max: 20}}),null,]), undefined]), parentDocumentId: faker.helpers.arrayElement([faker.helpers.arrayElement([faker.string.alpha({length: {min: 10, max: 20}}),null,]), undefined]), failureCode: faker.helpers.arrayElement([faker.helpers.arrayElement([faker.string.alpha({length: {min: 10, max: 20}}),null,]), undefined]), failureMessage: faker.helpers.arrayElement([faker.helpers.arrayElement([faker.string.alpha({length: {min: 10, max: 20}}),null,]), undefined]), retryable: faker.datatype.boolean(), archivedAt: faker.helpers.arrayElement([`${faker.date.past().toISOString().split('.')[0]}Z`, undefined])})), pageInfo: {nextCursor: faker.helpers.arrayElement([faker.helpers.arrayElement([faker.string.alpha({length: {min: 10, max: 20}}),null,]), undefined]), hasMore: faker.datatype.boolean()}, ...overrideResponse})

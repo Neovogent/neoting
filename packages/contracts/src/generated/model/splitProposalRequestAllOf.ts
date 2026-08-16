@@ -17,7 +17,7 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { SplitPayload } from './splitPayload';
+import type { SplitPayload } from './splitPayload.js';
 
 export type SplitProposalRequestAllOf = {
   kind: 'document.split';

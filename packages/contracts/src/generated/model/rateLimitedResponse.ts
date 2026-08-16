@@ -17,7 +17,7 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { Problem } from './problem';
+import type { Problem } from './problem.js';
 
 /**
  * Rate limit exceeded (Governance §11.8).

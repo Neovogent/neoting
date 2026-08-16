@@ -17,7 +17,7 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { MoveBusinessPayload } from './moveBusinessPayload';
+import type { MoveBusinessPayload } from './moveBusinessPayload.js';
 
 export type MoveBusinessProposalRequestAllOf = {
   kind: 'document.move-business';

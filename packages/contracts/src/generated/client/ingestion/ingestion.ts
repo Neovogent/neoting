@@ -40,9 +40,9 @@ import type {
   Problem,
   RateLimitedResponse,
   UnauthenticatedResponse
-} from '../../model';
+} from '../../model/index.js';
 
-import { ntFetch } from '../../../http-client';
+import { ntFetch } from '../../../http-client.js';
 
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];

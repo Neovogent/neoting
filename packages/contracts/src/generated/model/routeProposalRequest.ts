@@ -17,9 +17,9 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { ProposalRequestBase } from './proposalRequestBase';
-import type { RouteProposalRequestAllOf } from './routeProposalRequestAllOf';
-import type { RouteProposalRequestKind } from './routeProposalRequestKind';
+import type { ProposalRequestBase } from './proposalRequestBase.js';
+import type { RouteProposalRequestAllOf } from './routeProposalRequestAllOf.js';
+import type { RouteProposalRequestKind } from './routeProposalRequestKind.js';
 
 export type RouteProposalRequest = ProposalRequestBase & RouteProposalRequestAllOf & {
   kind: RouteProposalRequestKind;

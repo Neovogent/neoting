@@ -17,8 +17,8 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { ProposalReviewRenderedSummarySectionsItem } from './proposalReviewRenderedSummarySectionsItem';
-import type { ProposalReviewRenderedSummaryWarningsItem } from './proposalReviewRenderedSummaryWarningsItem';
+import type { ProposalReviewRenderedSummarySectionsItem } from './proposalReviewRenderedSummarySectionsItem.js';
+import type { ProposalReviewRenderedSummaryWarningsItem } from './proposalReviewRenderedSummaryWarningsItem.js';
 
 /**
  * The review card content. Typed loosely here on purpose: the precise

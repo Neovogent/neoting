@@ -4,19 +4,34 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./http-client": "./src/http-client.ts",
-    "./client": "./src/generated/client/index.ts",
-    "./model": "./src/generated/model/index.ts",
-    "./zod": "./src/generated/zod/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./http-client": {
+      "types": "./dist/http-client.d.ts",
+      "default": "./dist/http-client.js"
+    },
+    "./client": {
+      "types": "./dist/generated/client/index.d.ts",
+      "default": "./dist/generated/client/index.js"
+    },
+    "./model": {
+      "types": "./dist/generated/model/index.d.ts",
+      "default": "./dist/generated/model/index.js"
+    },
+    "./zod": {
+      "types": "./dist/generated/zod/index.d.ts",
+      "default": "./dist/generated/zod/index.js"
+    }
   },
   "scripts": {
-    "generate": "orval --config ./orval.config.ts && node ./scripts/enforce-money-int.mjs && node ./scripts/check-contract.mjs",
-    "build": "pnpm run generate",
+    "generate": "orval --config ./orval.config.ts && node ./scripts/enforce-money-int.mjs && node ./scripts/add-js-extensions.mjs && node ./scripts/check-contract.mjs",
+    "build": "pnpm run generate && tsc -p tsconfig.build.json",
     "check:contract": "node ./scripts/check-contract.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "node ./scripts/check-contract.mjs",
-    "test": "echo \"test: contract assertions run in lint (scripts/check-contract.mjs)\""
+    "test": "node ./scripts/verify-runtime-import.mjs"
   },
   "dependencies": {
     "zod": "^3.23.8"

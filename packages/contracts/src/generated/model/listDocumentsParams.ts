@@ -17,15 +17,15 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { BusinessIdFilterParameter } from './businessIdFilterParameter';
-import type { Inbox } from './inbox';
-import type { DocumentState } from './documentState';
-import type { DocumentType } from './documentType';
-import type { DocumentChannel } from './documentChannel';
-import type { ListDocumentsSort } from './listDocumentsSort';
-import type { ListDocumentsOrder } from './listDocumentsOrder';
-import type { CursorParameter } from './cursorParameter';
-import type { LimitParameter } from './limitParameter';
+import type { BusinessIdFilterParameter } from './businessIdFilterParameter.js';
+import type { Inbox } from './inbox.js';
+import type { DocumentState } from './documentState.js';
+import type { DocumentType } from './documentType.js';
+import type { DocumentChannel } from './documentChannel.js';
+import type { ListDocumentsSort } from './listDocumentsSort.js';
+import type { ListDocumentsOrder } from './listDocumentsOrder.js';
+import type { CursorParameter } from './cursorParameter.js';
+import type { LimitParameter } from './limitParameter.js';
 
 export type ListDocumentsParams = {
 /**

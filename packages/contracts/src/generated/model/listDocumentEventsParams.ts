@@ -17,8 +17,8 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { CursorParameter } from './cursorParameter';
-import type { LimitParameter } from './limitParameter';
+import type { CursorParameter } from './cursorParameter.js';
+import type { LimitParameter } from './limitParameter.js';
 
 export type ListDocumentEventsParams = {
 /**

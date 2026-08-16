@@ -17,7 +17,7 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { UpdateCodingPayload } from './updateCodingPayload';
+import type { UpdateCodingPayload } from './updateCodingPayload.js';
 
 export type UpdateCodingProposalRequestAllOf = {
   kind: 'document.update-coding';

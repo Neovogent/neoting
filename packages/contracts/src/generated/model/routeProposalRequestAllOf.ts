@@ -17,7 +17,7 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { RoutePayload } from './routePayload';
+import type { RoutePayload } from './routePayload.js';
 
 export type RouteProposalRequestAllOf = {
   kind: 'document.route';

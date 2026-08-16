@@ -1,0 +1,46 @@
+{
+  // Emit config, separate from tsconfig.json because that one is `noEmit` (it
+  // also typechecks orval.config.ts, which must never reach dist/).
+  //
+  // WHY THIS FILE EXISTS AT ALL. Until now `build` here meant "run orval", and
+  // the package was consumed as .ts SOURCE through its exports map. That worked
+  // only because every consumer either bundles (apps/web, via Vite) or imported
+  // types alone (apps/api). `apps/api/tsconfig.build.json` wrote down what
+  // would end it:
+  //
+  //     "The day a VALUE is imported from contracts, this build breaks at
+  //      runtime with ERR_UNKNOWN_FILE_EXTENSION ... the answer is to give
+  //      contracts a real build output and point its exports map at the JS —
+  //      not to reach for a bundler."
+  //
+  // The controllers parse their boundaries with the generated Zod schemas, so
+  // that day arrived. This is that build output.
+  //
+  // `moduleResolution: "Bundler"` is inherited deliberately and is not a
+  // contradiction: every relative specifier in src/ carries an explicit `.js`
+  // (hand-written in index.ts, applied to the generated tree by
+  // scripts/add-js-extensions.mjs and verified by check-contract.mjs), so the
+  // emitted ESM is resolvable by Node without the resolution mode having to
+  // enforce it. Bundler stays because apps/web typechecks this package's source
+  // under it.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "src",
+
+    // Consumers are typechecked against these, not against the source, which is
+    // the point of shipping a build: apps/web stops inheriting this package's
+    // relaxed `exactOptionalPropertyTypes` through the source graph and gets an
+    // already-checked surface instead.
+    "declaration": true,
+    "declarationMap": true,
+
+    // A stack trace from a staging task should point at a .ts line.
+    "sourceMap": true
+  },
+  // orval.config.ts is in tsconfig.json's include for typechecking. It is build
+  // tooling, not shipped surface, so it is excluded here.
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", ".turbo"]
+}

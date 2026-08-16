@@ -17,7 +17,7 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { DocumentEventDetailAnyOf } from './documentEventDetailAnyOf';
+import type { DocumentEventDetailAnyOf } from './documentEventDetailAnyOf.js';
 
 /**
  * Stage-specific evidence — the model and prompt version used,

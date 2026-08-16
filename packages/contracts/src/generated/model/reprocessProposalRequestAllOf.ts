@@ -17,7 +17,7 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { ReprocessPayload } from './reprocessPayload';
+import type { ReprocessPayload } from './reprocessPayload.js';
 
 export type ReprocessProposalRequestAllOf = {
   kind: 'document.reprocess';

@@ -91,17 +91,34 @@ RUN pnpm install --frozen-lockfile
 # instead of a runtime one the first time a controller touches the database.
 RUN pnpm --filter @neoting/api exec prisma generate
 
+# The contracts package is a REAL build now, not just codegen: `pnpm build`
+# there runs orval and then tsc, and its exports map points at dist/. This step
+# is explicit rather than inherited because these are `pnpm --filter` calls, not
+# `turbo run` — nothing here resolves the dependency graph for us, so without
+# this line apps/api's tsc cannot even resolve the package's types.
+RUN pnpm --filter @neoting/contracts build
+
 # tsc emit — see apps/api/tsconfig.build.json for why a plain tsc works here.
 RUN pnpm --filter @neoting/api build
 
-# Fail the build, loudly, if the compiled output ever gains a RUNTIME import of
-# the contracts package. That package is consumed as .ts source through its
-# exports map; Node cannot load it, so this would deploy green and crash on
-# first request with ERR_UNKNOWN_FILE_EXTENSION. Comments mentioning the
-# package are fine — only import/require statements are the bug.
-RUN if grep -rnE "(from|require\()\s*['\"]@neoting/contracts" apps/api/dist/; then \
-      echo "ERROR: compiled output imports @neoting/contracts at runtime. See tsconfig.build.json." >&2; \
-      exit 1; \
+# The compiled output MAY import @neoting/contracts at runtime — controllers
+# parse their boundaries with the generated Zod schemas, and "Zod at every
+# boundary" is not negotiable (Governance §1.7).
+#
+# This guard used to forbid that outright, because the package was consumed as
+# .ts source through its exports map and Node could not load it: such an import
+# deployed green and died on first request with ERR_UNKNOWN_FILE_EXTENSION.
+# That is fixed at the source — contracts emits JS and its exports map points at
+# it — so the guard is inverted rather than deleted. The failure it protects
+# against has not gone away, it has moved: an image that imports the package
+# without shipping its build is the same crash with a different message.
+RUN if grep -rqE "(from|require\()\s*['\"]@neoting/contracts" apps/api/dist/; then \
+      test -f packages/contracts/dist/generated/zod/index.js \
+        || { echo "ERROR: apps/api/dist imports @neoting/contracts but packages/contracts/dist is missing. The contracts build did not run." >&2; exit 1; }; \
+      if grep -rhoE "from ['\"]\.[^'\"]*['\"]" packages/contracts/dist/generated/ | grep -qv "\.js['\"]$"; then \
+        echo "ERROR: packages/contracts/dist has an extensionless relative import. Node cannot resolve it. Did add-js-extensions.mjs run?" >&2; exit 1; \
+      fi; \
+      echo "contracts: runtime import present, build shipped, specifiers resolvable."; \
     fi
 
 # --------------------------------------------------------------------------

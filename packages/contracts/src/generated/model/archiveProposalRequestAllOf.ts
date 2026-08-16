@@ -17,7 +17,7 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { ArchivePayload } from './archivePayload';
+import type { ArchivePayload } from './archivePayload.js';
 
 export type ArchiveProposalRequestAllOf = {
   kind: 'document.archive';

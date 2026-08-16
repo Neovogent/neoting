@@ -17,8 +17,8 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { DocumentSummary } from './documentSummary';
-import type { DocumentAllOf } from './documentAllOf';
+import type { DocumentSummary } from './documentSummary.js';
+import type { DocumentAllOf } from './documentAllOf.js';
 
 /**
  * The full record: everything in the summary, plus routing evidence and the

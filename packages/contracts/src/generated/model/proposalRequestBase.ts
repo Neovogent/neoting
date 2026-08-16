@@ -17,7 +17,7 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { ProposalRequestBaseBusinessId } from './proposalRequestBaseBusinessId';
+import type { ProposalRequestBaseBusinessId } from './proposalRequestBaseBusinessId.js';
 
 export interface ProposalRequestBase {
   /** The workspace the action applies to. Null only for practice-level actions. */

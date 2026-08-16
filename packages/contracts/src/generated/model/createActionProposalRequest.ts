@@ -17,13 +17,13 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { RouteProposalRequest } from './routeProposalRequest';
-import type { UpdateCodingProposalRequest } from './updateCodingProposalRequest';
-import type { MoveBusinessProposalRequest } from './moveBusinessProposalRequest';
-import type { ReprocessProposalRequest } from './reprocessProposalRequest';
-import type { RejectProposalRequest } from './rejectProposalRequest';
-import type { SplitProposalRequest } from './splitProposalRequest';
-import type { ArchiveProposalRequest } from './archiveProposalRequest';
+import type { RouteProposalRequest } from './routeProposalRequest.js';
+import type { UpdateCodingProposalRequest } from './updateCodingProposalRequest.js';
+import type { MoveBusinessProposalRequest } from './moveBusinessProposalRequest.js';
+import type { ReprocessProposalRequest } from './reprocessProposalRequest.js';
+import type { RejectProposalRequest } from './rejectProposalRequest.js';
+import type { SplitProposalRequest } from './splitProposalRequest.js';
+import type { ArchiveProposalRequest } from './archiveProposalRequest.js';
 
 /**
  * A discriminated union on `kind`. The discriminator sits on the union

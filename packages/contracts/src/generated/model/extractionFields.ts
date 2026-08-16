@@ -17,7 +17,7 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { ExtractedField } from './extractedField';
+import type { ExtractedField } from './extractedField.js';
 
 /**
  * Field name → `ExtractedField`. Header fields per SoT Stage 2:

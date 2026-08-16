@@ -17,8 +17,8 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { Extraction } from './extraction';
-import type { PageInfo } from './pageInfo';
+import type { Extraction } from './extraction.js';
+import type { PageInfo } from './pageInfo.js';
 
 export type ListDocumentExtractions200 = {
   data: Extraction[];

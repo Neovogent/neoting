@@ -17,7 +17,7 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { ExtractionValidatorResultsAnyOf } from './extractionValidatorResultsAnyOf';
+import type { ExtractionValidatorResultsAnyOf } from './extractionValidatorResultsAnyOf.js';
 
 /**
  * Deterministic validator output from `packages/validators` — VAT

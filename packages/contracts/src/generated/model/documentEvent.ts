@@ -17,9 +17,9 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { DocumentEventDurationMs } from './documentEventDurationMs';
-import type { DocumentEventTraceId } from './documentEventTraceId';
-import type { DocumentEventDetail } from './documentEventDetail';
+import type { DocumentEventDurationMs } from './documentEventDurationMs.js';
+import type { DocumentEventTraceId } from './documentEventTraceId.js';
+import type { DocumentEventDetail } from './documentEventDetail.js';
 
 /**
  * One stage of the processing log.

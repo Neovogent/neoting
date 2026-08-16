@@ -17,8 +17,8 @@ stamped into the header of every generated file.
 
  * OpenAPI spec version: 0.1.0-draft
  */
-import type { DocumentEvent } from './documentEvent';
-import type { PageInfo } from './pageInfo';
+import type { DocumentEvent } from './documentEvent.js';
+import type { PageInfo } from './pageInfo.js';
 
 export type ListDocumentEvents200 = {
   data: DocumentEvent[];
