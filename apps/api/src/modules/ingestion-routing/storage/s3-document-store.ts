@@ -1,10 +1,13 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 import type { Env } from '../../../config/env.js';
 import {
   type DocumentStore,
   type DocumentStorePutInput,
   documentKey,
+  type PresignedPut,
+  type PresignPutInput,
   type StoredDocument,
 } from './document-store.js';
 
@@ -59,4 +62,40 @@ export class S3DocumentStore implements DocumentStore {
     if (response.Body === undefined) throw new Error(`no object body at key ${key}`);
     return Buffer.from(await response.Body.transformToByteArray());
   }
+
+  async presignPut(input: PresignPutInput): Promise<PresignedPut> {
+    // ContentType and ContentLength are set on the command, so the presigner
+    // folds them into the signature: the client must PUT with exactly this type
+    // and this many bytes, or S3 rejects it. That is the "presigned policy
+    // enforces the cap too" half — the API cap check is the other half.
+    const command = new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: input.key,
+      ContentType: input.contentType,
+      ContentLength: input.byteSize,
+    });
+    const url = await getSignedUrl(this.client, command, {
+      expiresIn: input.expiresInSeconds,
+      signableHeaders: new Set(['content-type', 'content-length']),
+    });
+    return { key: input.key, url, headers: { 'Content-Type': input.contentType } };
+  }
+
+  async head(key: string): Promise<{ readonly byteLength: number } | null> {
+    try {
+      const response = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
+      return { byteLength: response.ContentLength ?? 0 };
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  }
+}
+
+/** S3 signals a missing object as 404 / NotFound / NoSuchKey depending on the operation. */
+function isNotFound(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const name = (error as { name?: unknown }).name;
+  const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+  return name === 'NotFound' || name === 'NoSuchKey' || status === 404;
 }

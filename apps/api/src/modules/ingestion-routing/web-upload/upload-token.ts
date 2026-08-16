@@ -1,0 +1,72 @@
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
+/**
+ * The stateless `uploadId` (issue #76).
+ *
+ * There is no `DocumentUpload` table — `prisma/` is LAW, and the contract's
+ * response carries no server-state fields, so the intended design is a signed
+ * token that IS the state. Everything completion needs travels inside it, HMAC
+ * signed with `UPLOAD_URL_SECRET`, so a forged or tampered `uploadId` fails
+ * verification rather than resolving to a row an attacker could not have created.
+ * `expiresAt` and `NT-ING-005` are claims on the token, not lookups.
+ */
+export interface UploadClaims {
+  readonly businessId: string;
+  /** The practice the actor is in (null for a standalone-business actor), captured at intent time. */
+  readonly practiceId: string | null;
+  readonly channel: string; // contract DocumentChannel
+  readonly filename: string;
+  /** Declared — a hint. Magic-byte sniffing decides the real type after the bytes land. */
+  readonly mimeType: string;
+  readonly byteSize: number;
+  readonly splitMode: string; // contract SplitMode
+  readonly description?: string;
+  readonly documentOwnerContactId?: string | null;
+  /** The object-storage key the bytes were presigned to. */
+  readonly s3Key: string;
+  /** Epoch millis after which completion is refused with NT-ING-005. */
+  readonly expiresAtMs: number;
+}
+
+export type VerifyResult =
+  | { readonly ok: true; readonly claims: UploadClaims }
+  | { readonly ok: false; readonly reason: 'malformed' | 'bad_signature' };
+
+/** `base64url(claims) . base64url(hmacSha256(secret, payload))` — compact and URL-safe. */
+export function signUploadToken(claims: UploadClaims, secret: string): string {
+  requireSecret(secret);
+  const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
+  return `${payload}.${sign(payload, secret)}`;
+}
+
+export function verifyUploadToken(token: string, secret: string): VerifyResult {
+  requireSecret(secret);
+  const dot = token.indexOf('.');
+  if (dot <= 0 || dot === token.length - 1) return { ok: false, reason: 'malformed' };
+  const payload = token.slice(0, dot);
+  const signature = token.slice(dot + 1);
+
+  // Signature first: never parse attacker bytes we have not authenticated.
+  if (!constantTimeEqual(signature, sign(payload, secret))) return { ok: false, reason: 'bad_signature' };
+  try {
+    return { ok: true, claims: JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as UploadClaims };
+  } catch {
+    return { ok: false, reason: 'malformed' };
+  }
+}
+
+function sign(payload: string, secret: string): string {
+  return createHmac('sha256', secret).update(payload).digest('base64url');
+}
+
+function requireSecret(secret: string): void {
+  // Fail closed — an empty secret must never silently mint or accept a forgeable
+  // token (same stance as the Meta webhook secrets in env.ts).
+  if (secret === '') throw new Error('UPLOAD_URL_SECRET is empty — refusing to sign or verify an upload intent with no secret');
+}
+
+function constantTimeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && timingSafeEqual(ab, bb);
+}

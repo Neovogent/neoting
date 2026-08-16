@@ -31,6 +31,16 @@ const EnvSchema = z.object({
   // like the others. ⚠ `fixture` is REFUSED under `NODE_ENV=production` below.
   AUTH_MODE: z.enum(['fixture', 'session']).default('fixture'),
 
+  // Web-upload intent signing (#76). The `uploadId` is a STATELESS HMAC-signed
+  // token (no DocumentUpload table — prisma/ is LAW), and this secret signs it.
+  // Empty default fails CLOSED, exactly like the Meta secrets: signing or
+  // verifying with an empty secret is refused, so an unset secret cannot silently
+  // mint forgeable upload intents.
+  UPLOAD_URL_SECRET: z.string().default(''),
+  // How long a presigned upload intent stays valid. Past it, completion is
+  // `NT-ING-005`. 15 minutes covers a 100 MB batch on a poor connection.
+  UPLOAD_URL_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+
   // The ingest queue (#12). `fixture` = in-memory (default — offline tests and
   // any dev without Redis); `bullmq` = real BullMQ on Redis. Selected by config,
   // not by import, so the webhook controller is identical either way.

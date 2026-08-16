@@ -24,9 +24,41 @@ export interface DocumentStorePutInput {
   readonly practiceId: string | null;
 }
 
+/** A presigned direct-to-storage `PUT` (issue #76) — the API never sees the bytes. */
+export interface PresignPutInput {
+  /** The object key to presign to. Must start `w/` (built via {@link uploadIntentKey}). */
+  readonly key: string;
+  /** Declared content type; pinned into the signature so the PUT must match. */
+  readonly contentType: string;
+  /** Declared exact size; pinned into the signature so the presigned policy enforces the cap too. */
+  readonly byteSize: number;
+  readonly expiresInSeconds: number;
+}
+
+export interface PresignedPut {
+  readonly key: string;
+  readonly url: string;
+  /** Send these verbatim with the PUT — the presigned signature covers them. */
+  readonly headers: Readonly<Record<string, string>>;
+}
+
 export interface DocumentStore {
   put(input: DocumentStorePutInput): Promise<StoredDocument>;
   get(key: string): Promise<Buffer>;
+  /** Presigned `PUT` for a browser→storage upload; the caller signs, the client uploads (#76). */
+  presignPut(input: PresignPutInput): Promise<PresignedPut>;
+  /** Object size if it exists, else null — the "did the PUT land?" check on completion (#76). */
+  head(key: string): Promise<{ readonly byteLength: number } | null>;
+}
+
+/**
+ * The key a web-upload intent is presigned to (#76). Content addressing can't
+ * apply yet — the sha256 is not known until the bytes land — so an intent uses a
+ * random nonce under the business's `w/` prefix. It still starts `w/` (the IAM
+ * constraint) and still names the business (so "erase practice X" has an answer).
+ */
+export function uploadIntentKey(businessId: string, nonce: string): string {
+  return `w/${businessId}/uploads/${nonce}`;
 }
 
 /**
@@ -102,5 +134,26 @@ export class InMemoryDocumentStore implements DocumentStore {
     const bytes = this.objects.get(key);
     if (bytes === undefined) throw new Error(`no object stored at key ${key}`);
     return bytes;
+  }
+
+  async presignPut(input: PresignPutInput): Promise<PresignedPut> {
+    // Offline stand-in: a fake URL the client never actually reaches (unit tests
+    // simulate the landed object with `putRaw`). Keeps the whole flow runnable
+    // with `OBJECT_STORE=fixture` and no MinIO.
+    return {
+      key: input.key,
+      url: `https://fixture.local/${input.key}`,
+      headers: { 'Content-Type': input.contentType },
+    };
+  }
+
+  async head(key: string): Promise<{ readonly byteLength: number } | null> {
+    const bytes = this.objects.get(key);
+    return bytes === undefined ? null : { byteLength: bytes.length };
+  }
+
+  /** Test-only: stand in for the direct PUT the presigned URL would have received. */
+  putRaw(key: string, bytes: Buffer): void {
+    this.objects.set(key, bytes);
   }
 }
