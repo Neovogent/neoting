@@ -10,6 +10,7 @@ function env(overrides: Partial<Env> = {}): Env {
     PORT: 3000,
     META_APP_SECRET: '',
     META_VERIFY_TOKEN: '',
+    AUTH_MODE: 'fixture',
     INGEST_QUEUE: 'fixture',
     REDIS_URL: 'redis://localhost:6379',
     OBJECT_STORE: 'fixture', IMAGE_NORMALISER: 'fixture', DOCUMENT_GUARD: 'fixture',

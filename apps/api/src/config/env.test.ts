@@ -51,3 +51,17 @@ test('REDIS_TLS=false is honoured rather than read as truthy', () => {
 test('falls back to the localhost default when no parts are present', () => {
   expect(loadEnv({}).REDIS_URL).toBe('redis://localhost:6379');
 });
+
+// #75: AUTH_MODE. The header-trusting fixture resolver must be structurally
+// impossible in production — refused at boot, not at request time.
+test('AUTH_MODE defaults to fixture in development', () => {
+  expect(loadEnv({}).AUTH_MODE).toBe('fixture');
+});
+
+test('NODE_ENV=production with the fixture (defaulted) auth mode fails to boot', () => {
+  expect(() => loadEnv({ NODE_ENV: 'production' } as NodeJS.ProcessEnv)).toThrow(/AUTH_MODE|production/i);
+});
+
+test('NODE_ENV=production with AUTH_MODE=session boots', () => {
+  expect(loadEnv({ NODE_ENV: 'production', AUTH_MODE: 'session' } as NodeJS.ProcessEnv).AUTH_MODE).toBe('session');
+});
