@@ -138,9 +138,10 @@ resource "aws_kms_key" "ops" {
         # other.
         #
         # ses.amazonaws.com is granted ahead of use: email.tf does not exist in
-        # this root yet (SES production access is still an open support case).
-        # Granting now means landing SES later is a receipt-rule change rather
-        # than a key-policy change made under time pressure.
+        # this root yet (production access is granted account-wide since
+        # 17 Aug 2026; what gates this root now is the hostname cutover,
+        # main.tf). Granting ahead means landing SES later is a receipt-rule
+        # change rather than a key-policy change made under time pressure.
         Sid    = "AllowAWSServicesToPublishToEncryptedTopic"
         Effect = "Allow"
         Principal = { Service = [

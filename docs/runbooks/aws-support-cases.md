@@ -1,18 +1,18 @@
-# Open AWS support cases — status and draft replies
+# AWS support cases — status and record
 
-**All three replies were submitted on 14 August 2026 (Shakib).** The ball is with AWS.
+**All three replies were submitted on 14 August 2026 (Shakib).** The SES case was **resolved 17 August 2026 — production access granted**; the two Textract cases remain with AWS (and one of them owes AWS our correction, per the ⚠ below).
 
-The drafts below are kept as the record of **what we told them**, not as a to-do. The volume figures and the bounce/complaint process are commitments now — anyone changing sending policy, or wondering where "25,000 documents a month" came from, should read them before contradicting them.
+The drafts below are kept as the record of **what we told them**, not as a to-do. The volume figures and the bounce/complaint process are commitments now — anyone changing sending policy, or wondering where "25,000 documents a month" came from, should read them before contradicting them. Production access is **per-account**: the grant covers `252959251643`, so a move to dedicated Neoting accounts (requested from Cloudvisor) re-runs the request, and Reply 3 below is the template that worked.
 
 | Case | Subject | Status | Blocks until granted |
 |---|---|---|---|
-| `178662887400793` | SES production access, eu-west-2 | **Replied 14 Aug** — awaiting AWS | All outbound email |
+| `178662887400793` | SES production access, eu-west-2 | ✅ **GRANTED — resolved 17 Aug 2026.** 50,000 msgs/day, 14 msg/s, out of sandbox, effective immediately | Nothing on AWS's side — a sending client and the D33 go-live gate remain ours |
 | `178662889700456` | Textract `AnalyzeExpense` TPS **5** → 10 | **Correction owed** — see the ⚠ below; the reply as sent argues from a quota we do not have | Extraction throughput at pilot |
 | `178662889900075` | Textract `StartExpenseAnalysis` TPS 1 → 10 | **Replied 14 Aug** — awaiting AWS | Async extraction (300-page statements) |
 
 Quoted turnaround: SES gives an initial response within 24 hours; Textract quota requests are reviewed in Seattle business hours, up to 2 business days.
 
-> ⚠ **Do not read `sesv2 get-account` as the answer.** It reports `ReviewDetails.Status = "DENIED"` for the whole time a review is open, and will keep saying so until access is actually granted. The support case is the source of truth, not the API. This already misled us once.
+> ⚠ **While a review is open, do not read `sesv2 get-account` as the answer.** It reported `ReviewDetails.Status = "DENIED"` for the whole time our review was open — the support case is the source of truth, not the API, and it misled us once. Resolved for this case: since 17 Aug 2026 it correctly reports `ProductionAccessEnabled: true`. The caveat applies verbatim to any future per-account request.
 
 Check status without opening the console:
 
@@ -172,11 +172,11 @@ Answer 3: Bank statements average approximately 🔶 8-12 pages, with an upper b
 
 ---
 
-## Reply 3 — SES production access (case `178662887400793`)
+## Reply 3 — SES production access (case `178662887400793`) — GRANTED 17 Aug 2026
 
-AWS asked specifically about sending frequency, recipient-list maintenance, and bounce, complaint and unsubscribe handling.
+AWS asked specifically about sending frequency, recipient-list maintenance, and bounce, complaint and unsubscribe handling. The reply below was sent on 14 Aug; access was granted on its strength on 17 Aug — 50,000 messages/day, 14 msg/s, sandbox exited, effective immediately in eu-west-2.
 
-> ⚠ **One correction to make before sending.** The original submission listed *"client onboarding invitations"* as an email type. That is wrong and worth fixing rather than repeating: client onboarding is **SMS-only** (SoT §6, D16 — clients receive an SMS with an OTP link and never need an app or an email account). Emailing a claim that is inaccurate to a reviewer whose whole job is assessing whether you understand your own sending is a bad trade for one bullet point.
+> ⚠ **One correction, made before sending.** The original submission listed *"client onboarding invitations"* as an email type. That was wrong and was fixed rather than repeated: client onboarding is **SMS-only** (SoT §6, D16 — clients receive an SMS with an OTP link and never need an app or an email account). The reply as sent names team invitations only. Kept because the reasoning matters: emailing a claim that is inaccurate to a reviewer whose whole job is assessing whether you understand your own sending is a bad trade for one bullet point.
 
 ```
 Thank you — further detail below.
@@ -238,7 +238,7 @@ residency commitment is UK-only.
 
 ## After they are answered
 
-- Update `infra/envs/staging/email.tf` — the status comment there is the thing engineers will read.
-- Update `docs/adr/0002-*` consequence 5.
+- ~~Update `infra/envs/staging/email.tf`~~ — **done 17 Aug 2026** with the SES grant (the status comment there is the thing engineers will read).
+- ~~Update `docs/adr/0002-*` consequence 5~~ — **done 17 Aug 2026.**
 - Write **ADR 0003** (Textract quotas + per-page pricing at pilot volume). It is listed in runbook §12.2 and is blocked precisely on these cases closing — with the granted numbers in hand it becomes writable.
 - Verification 8.4 closes when the quotas are actually granted, not when the case is replied to.

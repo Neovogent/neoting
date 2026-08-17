@@ -709,7 +709,8 @@ resource "aws_cloudwatch_metric_alarm" "ecs_memory_high" {
 # still room to act.
 #
 # treat_missing_data = notBreaching because these metrics only publish with
-# sending volume, and SES production access is still PENDING (email.tf).
+# sending volume — production access was granted 17 Aug 2026, but no sending
+# client exists in the app yet, so there is no volume (email.tf).
 # --------------------------------------------------------------------------
 resource "aws_cloudwatch_metric_alarm" "ses_bounce_rate" {
   alarm_name          = "nt-${local.env}-ses-bounce-rate"

@@ -508,13 +508,13 @@ resource "aws_iam_role_policy" "ci_deploy_scoped_iam" {
 #      want of an environment with no image and no pen test.
 #
 #  email.tf (SES inbound + outbound identity)
-#      NOT BUILT. SES production access is a support-ticket flow, still open
-#      and pending our reply on case 178662887400793 (see staging's email.tf).
-#      The inbound MX also has to sit on a name, and prod's name is the same
-#      cutover decision as the edge. The receipts bucket and its AES256 default
-#      ARE built, so landing SES later is a receipt-rule change, not a storage
-#      migration. The task role deliberately carries no ses:SendEmail grant
-#      until then.
+#      NOT BUILT. SES production access was GRANTED 17 Aug 2026 (case
+#      178662887400793: 50k msgs/day, 14/s, sandbox exited), so the account no
+#      longer gates this — the hostname does: the inbound MX has to sit on a
+#      name, and prod's name is the same cutover decision as the edge. The
+#      receipts bucket and its AES256 default ARE built, so landing SES later
+#      is a receipt-rule change, not a storage migration. The task role
+#      deliberately carries no ses:SendEmail grant until then.
 #
 #  observability.tf — BUILT, 15 Aug 2026. The hard blocker is cleared: 46
 #      resources, ~$8.60/mo, two SNS topics (page / ticket) rather than

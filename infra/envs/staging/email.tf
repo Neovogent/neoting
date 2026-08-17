@@ -7,31 +7,30 @@
 #
 # ⚠ Production access (sandbox exit) is a support-ticket flow, not Terraform.
 #
-# STATUS: **case open, pending OUR reply** — case 178662887400793.
+# STATUS: **GRANTED, 17 Aug 2026** — case 178662887400793 resolved.
+# Sending quota 50,000 messages/day, max send rate 14/s, sandbox exited,
+# effective immediately in eu-west-2. `aws sesv2 get-account --region eu-west-2`
+# reports ProductionAccessEnabled=true, SendingEnabled=true, enforcement
+# HEALTHY. The grant followed our reply detailing recipient sourcing, bounce
+# handling and consent — the first pass showed ReviewDetails.Status="DENIED"
+# while the case sat "Pending customer action", so remember the API status is
+# misleading on its own if this ever has to be re-requested.
 #
-# Read the API status carefully, because it is misleading on its own:
-# `aws sesv2 get-account --region eu-west-2` reports
-# ProductionAccessEnabled=false with ReviewDetails.Status="DENIED", but the
-# support case itself is "Pending customer action" — AWS replied within the
-# hour asking for more detail on sending processes, bounce handling and
-# recipient-list management. SES marks access as denied while it waits.
+# What this unblocks: every OUTBOUND path may now reach real recipients —
+# client onboarding invites (SoT §6), supplier statement-gap chases (D16),
+# publish-failure and upload notifications.
 #
-# So this is NOT a refusal and NOT a timer running down on its own. It is a
-# question waiting for an answer, and nothing moves until someone answers it.
+# What still gates actual sending, in order:
+#   1. No sending client exists in the app — nothing calls ses:SendEmail yet.
+#   2. D33 go-live gate: budget line + usage metric + alert per vendor.
+#   3. The ses_events topic below has NO SUBSCRIBER (subscriptions are
+#      confirmed out of band by doctrine — observability.tf). Until one is
+#      confirmed, bounce/complaint events publish into a void: suppression
+#      still works account-side, but nobody is TOLD about a bounce.
 #
-# What this blocks: every OUTBOUND path. Client onboarding invites (SoT §6),
-# supplier statement-gap chases (D16), publish-failure and upload notifications.
-# In the sandbox, SES will only deliver to verified identities — so a staging
-# demo can be wired to verified test addresses, but nothing reaches a real
-# recipient.
-#
-# What this does NOT block: inbound. Receiving works in the sandbox, so
-# doc@ intake and the whole of Stage 1 are unaffected.
-#
-# To appeal, AWS wants the things a reviewer looks for and this account cannot
-# yet show: a configuration set with bounce/complaint event handling, a stated
-# suppression-list policy, and a description of who is emailed and why they
-# consented. The configuration set below is the first of those.
+# The quota is ~50× the pilot's stated need (<1,000/day); the binding
+# constraint is the 5% bounce / 0.1% complaint suspension thresholds, which
+# the reputation alarms in observability.tf watch.
 # --------------------------------------------------------------------------
 
 data "aws_route53_zone" "primary" {
@@ -237,8 +236,8 @@ resource "aws_ses_receipt_rule" "doc" {
   # a body of binary, and either throw in the MIME parser or, worse, succeed on
   # garbage and file a document with an empty extraction. Nothing downstream
   # would signal an encryption problem; it would present as malformed email.
-  # That is SoT Stage 1's email intake — the one intake path that works today,
-  # since inbound receiving is unaffected by the SES sandbox.
+  # That is SoT Stage 1's email intake — the first intake path that worked,
+  # since inbound receiving was never gated on the sandbox exit.
   #
   # Omitting the key means the object lands under the bucket's default, which
   # for `receipts` is AES256 (SSE-S3) for the separate SES-validation reason in
