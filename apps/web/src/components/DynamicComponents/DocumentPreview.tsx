@@ -183,6 +183,11 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                   {editing === f.label ? (
                     <div className="flex items-center gap-1.5 shrink-0">
                       <input
+                        // This input mounts because the user just pressed Edit
+                        // on this field: focus is following their action, not
+                        // being stolen — the rule's concern — and Escape hands
+                        // it back.
+                        // eslint-disable-next-line jsx-a11y/no-autofocus
                         autoFocus
                         value={draft}
                         onChange={(e) => setDraft(e.target.value)}

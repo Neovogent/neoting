@@ -85,6 +85,10 @@ export function RolePicker({ value, onChange, hint }: {
         {adding ? (
           <span className="flex items-center gap-1.5">
             <input
+              // This input mounts because the user just chose "add a custom
+              // role": focus is following their action, not being stolen —
+              // the rule's concern — and Escape hands it back.
+              // eslint-disable-next-line jsx-a11y/no-autofocus
               autoFocus
               value={draft}
               onChange={(e) => setDraft(e.target.value)}

@@ -206,9 +206,22 @@ function HistoryItem({
   const intl = useIntl();
 
   return (
+    // A real activation target, but it cannot be a <button>: the pin and
+    // delete buttons live inside it, and a button inside a button is invalid
+    // HTML that browsers un-nest unpredictably. So the button semantics are
+    // spelled out — role, tab stop, Enter/Space — and the accessible name is
+    // the visible title.
     <div
       onClick={onClick}
-      className={`w-full text-left px-4 py-2.5 rounded-xl text-sm transition-all flex items-center justify-between group cursor-pointer border ${
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault(); // Space must not scroll the history list
+          onClick();
+        }
+      }}
+      className={`w-full text-left px-4 py-2.5 rounded-xl text-sm transition-all flex items-center justify-between group cursor-pointer border focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 ${
         active ? 'bg-card text-white border-white/5' : 'text-zinc-400 hover:bg-card/50 hover:text-zinc-200 border-transparent'
       }`}
     >

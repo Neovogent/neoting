@@ -7,6 +7,7 @@ import { useAppContext } from '../../context/AppContext';
 import { DocumentPreview } from './DocumentPreview';
 import { Pill } from './DataTable';
 import { currency } from '../../lib/resolver';
+import { useEscape } from '../../lib/useEscape';
 import { useConfirm } from './ConfirmProvider';
 import type { DuplicatePair } from '../../lib/types';
 
@@ -105,6 +106,9 @@ export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose
   const confirm = useConfirm();
   const intl = useIntl();
   const [expanded, setExpanded] = useState<'left' | 'right' | null>(null);
+  // Stacked under ConfirmStep's own useEscape while a confirm is up, so
+  // Escape mid-confirm cancels the confirm, not this modal.
+  useEscape(onClose);
 
   const left = documents.find((d) => d.id === pair.left.id);
   const right = documents.find((d) => d.id === pair.right.id);
@@ -127,14 +131,21 @@ export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose
   };
 
   return (
+    // The backdrop is not a button — role="presentation" says so; keyboard
+    // dismissal is Escape (useEscape above). The dialog semantics live on the
+    // panel, which is what actually holds the content.
     <div
       className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       onClick={onClose}
+      role="presentation"
     >
       <motion.div
         initial={{ opacity: 0, y: 20, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={intl.formatMessage(m.heading)}
         className="w-full max-w-4xl my-auto border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden"
       >
         <div className="p-6 flex items-start justify-between gap-4 border-b border-white/5">

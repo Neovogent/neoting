@@ -10,6 +10,7 @@ import { useQueryParam } from '../../lib/router';
 import { DocumentPreview } from '../../components/DynamicComponents/DocumentPreview';
 import { useConfirm } from '../../components/DynamicComponents/ConfirmProvider';
 import { channelLabel } from '../../lib/channels';
+import { useEscape } from '../../lib/useEscape';
 
 const m = defineMessages({
   statusProcessing: { id: 'portal.businessHomeView.statusProcessing', defaultMessage: 'Processing' },
@@ -256,6 +257,9 @@ export function BusinessHomeView({
   // ?doc=<id> — the viewer is a link here too.
   const [previewId, setPreviewId] = useQueryParam('doc');
   const preview = previewId ? documents.find((d) => d.id === previewId) ?? null : null;
+  // Enabled only while the viewer is up, so the entry does not sit in the
+  // Escape stack shadowing whatever dialog is actually open.
+  useEscape(() => setPreviewId(null), preview !== null);
 
   const toApprove = clientSideApprovals(account.clientId);
   const approvalRequest = approvalRequests.find((r) => r.clientId === account.clientId);
@@ -635,11 +639,19 @@ export function BusinessHomeView({
       {/* The same viewer the practice sees: the original alongside every value
           read off it, with the confidence on each. */}
       {preview && (
+        // The backdrop and the click-containment wrapper are not buttons —
+        // role="presentation" says so on both; keyboard dismissal is Escape
+        // (useEscape above) and the visible Close button below.
         <div
           className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto p-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           onClick={() => setPreviewId(null)}
+          role="presentation"
         >
-          <div className="min-h-full flex flex-col items-center justify-center gap-3" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="min-h-full flex flex-col items-center justify-center gap-3"
+            onClick={(e) => e.stopPropagation()}
+            role="presentation"
+          >
             <DocumentPreview document={preview} />
             <button
               onClick={() => setPreviewId(null)}

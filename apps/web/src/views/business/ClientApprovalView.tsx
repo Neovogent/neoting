@@ -10,6 +10,7 @@ import { DocumentPreview } from '../../components/DynamicComponents/DocumentPrev
 import { Pill } from '../../components/DynamicComponents/DataTable';
 import { ConfirmStep } from '../../components/DynamicComponents/ConfirmStep';
 import { currency } from '../../lib/resolver';
+import { useEscape } from '../../lib/useEscape';
 import type { ApprovalItem } from '../../lib/types';
 
 const m = defineMessages({
@@ -333,6 +334,9 @@ function ApprovalCard({
   const [confirming, setConfirming] = useState<'approve' | 'reject' | null>(null);
   const rejectRef = useRef<HTMLTextAreaElement>(null);
   const intl = useIntl();
+  // Enabled only while the viewer is up: the entry must not sit in the Escape
+  // stack under the ConfirmStep this view also renders.
+  useEscape(() => setViewingDoc(false), viewingDoc);
 
   /**
    * The note field opens below a long card, and on a phone the thumb-reach
@@ -609,7 +613,13 @@ function ApprovalCard({
             className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto p-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             onClick={() => setViewingDoc(false)}
           >
-            <div className="min-h-full flex flex-col items-center justify-center gap-3" onClick={(e) => e.stopPropagation()}>
+            {/* Not a button, a click-containment wrapper — role="presentation"
+                says so; keyboard dismissal is Escape and the Close button. */}
+            <div
+              className="min-h-full flex flex-col items-center justify-center gap-3"
+              onClick={(e) => e.stopPropagation()}
+              role="presentation"
+            >
               <DocumentPreview document={document} />
               <button
                 onClick={() => setViewingDoc(false)}

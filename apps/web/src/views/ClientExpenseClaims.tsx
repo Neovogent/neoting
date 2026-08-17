@@ -7,6 +7,7 @@ import { useAppContext } from '../context/AppContext';
 import { Pill } from '../components/DynamicComponents/DataTable';
 import { currency } from '../lib/resolver';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
+import { useEscape } from '../lib/useEscape';
 import type { Client, Document, ExpenseClaim, ExpenseClaimItem, ExpenseClaimStatus } from '../lib/types';
 
 /**
@@ -591,6 +592,7 @@ function ClaimEditor({ claim, onSave, onClose, onAttach }: {
   const [draft, setDraft] = useState(claim);
   const fileRef = useRef<HTMLInputElement>(null);
   const intl = useIntl();
+  useEscape(onClose);
 
   const addItem = () =>
     setDraft({
@@ -613,18 +615,25 @@ function ClaimEditor({ claim, onSave, onClose, onAttach }: {
     : '';
 
   return (
+    // The backdrop is not a button — role="presentation" says so; keyboard
+    // dismissal is Escape (useEscape above). The dialog is named by its own
+    // heading rather than a duplicated label expression.
     <div
       className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       onClick={onClose}
+      role="presentation"
     >
       <motion.div
         initial={{ opacity: 0, y: 20, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="claim-editor-heading"
         className="w-full max-w-2xl border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden my-auto"
       >
         <div className="p-6 border-b border-white/5">
-          <h3 className="font-sans font-bold text-xl text-white tracking-tight">
+          <h3 id="claim-editor-heading" className="font-sans font-bold text-xl text-white tracking-tight">
             {claim.items.length === 0 && !claim.claimant
               ? intl.formatMessage(mEditor.headingNew)
               : draft.claimant || intl.formatMessage(mEditor.headingFallback)}

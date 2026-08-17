@@ -8,6 +8,7 @@ import { Pill } from '../../components/DynamicComponents/DataTable';
 import { newMember } from '../../lib/business';
 import { RolePicker } from '../../components/DynamicComponents/RolePicker';
 import { useConfirm } from '../../components/DynamicComponents/ConfirmProvider';
+import { useEscape } from '../../lib/useEscape';
 import type { BusinessAccount, BusinessMember } from '../../lib/types';
 
 const m = defineMessages({
@@ -635,6 +636,7 @@ function MemberEditor({ member, existing, onSave, onRemove, onClose }: {
 }) {
   const [draft, setDraft] = useState(member);
   const intl = useIntl();
+  useEscape(onClose);
   const set = <K extends keyof BusinessMember>(k: K, v: BusinessMember[K]) => setDraft({ ...draft, [k]: v });
 
   const isNew = !existing.some((x) => x.id === member.id);
@@ -661,18 +663,25 @@ function MemberEditor({ member, existing, onSave, onRemove, onClose }: {
     : intl.formatMessage(m.editorProblemLastOwner);
 
   return (
+    // The backdrop is not a button — role="presentation" says so; keyboard
+    // dismissal is Escape (useEscape above). The dialog is named by its own
+    // heading rather than a duplicated label expression.
     <div
       className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       onClick={onClose}
+      role="presentation"
     >
       <motion.div
         initial={{ opacity: 0, y: 20, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="member-editor-heading"
         className="w-full max-w-lg border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden my-auto"
       >
         <div className="p-6 border-b border-white/5">
-          <h3 className="font-sans font-bold text-xl text-white tracking-tight">
+          <h3 id="member-editor-heading" className="font-sans font-bold text-xl text-white tracking-tight">
             {isNew ? intl.formatMessage(m.editorHeadingNew) : draft.name || intl.formatMessage(m.editorHeadingFallback)}
           </h3>
           <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">

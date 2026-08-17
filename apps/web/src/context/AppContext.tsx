@@ -601,6 +601,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
       return queued.length;
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- logAudit is declared later in this file (a dep here is a TDZ crash at render) and is a []-dep useCallback, stable for the app's lifetime; #87 file, inventory for the stable-callback sweep.
     [clients],
   );
 
@@ -763,6 +764,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Drop any other empty drafts so history stays clean.
     setConversations((prev) => [draft, ...prev.filter((c) => c.messages.length > 0)]);
     setActiveConversationId(draft.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setActiveConversationId is a []-dep useCallback, stable for the app's lifetime; #87 file, inventory for the stable-callback sweep.
   }, [active]);
 
   const setMessages = useCallback(
@@ -776,6 +778,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [activeConversationId, patch, startFresh],
   );
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- setActiveConversationId is a []-dep useCallback, stable for the app's lifetime; #87 file, inventory for the stable-callback sweep.
   const selectConversation = useCallback((id: string) => setActiveConversationId(id), []);
 
   const deleteConversation = useCallback(
@@ -972,6 +975,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         reviewOpened: true,
       });
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- logAudit is a []-dep useCallback, stable for the app's lifetime; #87 file, inventory for the stable-callback sweep.
     [clients],
   );
 
@@ -1004,6 +1008,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         reviewOpened: true,
       });
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- logAudit is a []-dep useCallback, stable for the app's lifetime; #87 file, inventory for the stable-callback sweep.
     [],
   );
 
@@ -1404,6 +1409,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         );
       }, 1600);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- logAudit is a []-dep useCallback, stable for the app's lifetime; #87 file, inventory for the stable-callback sweep.
     [clients, documents],
   );
 
@@ -1888,6 +1894,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         reviewOpened: true,
       });
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- logAudit is a []-dep useCallback, stable for the app's lifetime; #87 file, inventory for the stable-callback sweep.
     [duplicates],
   );
 
@@ -2024,6 +2031,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         reviewOpened: true,
       });
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- logAudit is a []-dep useCallback, stable for the app's lifetime; #87 file, inventory for the stable-callback sweep.
     [approvals, clients, stageOf, chasePolicy.linkTtlHours],
   );
 
@@ -2197,6 +2205,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }, 2000);
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- logAudit is stable ([]-dep useCallback); clients/routingRules are read only inside the 2s retry timeout, and rebuilding this callback on their every change was deliberately avoided — the staleness window is noted as inventory for the stable-callback sweep (#87 file, no behavioural edits here).
     [documents],
   );
 

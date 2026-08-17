@@ -2,6 +2,7 @@ import { X, Download, Check, AlertTriangle, Landmark, Building2 } from 'lucide-r
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import { commonActions } from '../../i18n/common';
+import { useEscape } from '../../lib/useEscape';
 import { Pill } from './DataTable';
 import { currency } from '../../lib/resolver';
 import type { Statement, SupplierStatement } from '../../lib/types';
@@ -86,19 +87,23 @@ export function StatementModal({ statement, onClose }: {
   const isBank = statement.kind === 'bank';
   const data = statement.data;
   const intl = useIntl();
+  useEscape(onClose);
 
   return (
+    // The backdrop is not a button — role="presentation" says so; keyboard
+    // dismissal is Escape (useEscape above).
     <div
       className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label={data.fileName}
+      role="presentation"
     >
       <motion.div
         initial={{ opacity: 0, y: 20, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={data.fileName}
         className="w-full max-w-3xl my-auto border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden"
       >
         <div className="p-6 flex items-start justify-between gap-4 border-b border-white/5">

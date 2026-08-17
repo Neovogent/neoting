@@ -259,20 +259,24 @@ export function ChaseComposer({ clientIds, missingItemIds }: {
    * the message actually depends on.
    *
    * The dependency is a derived IDENTITY STRING, not `targets` itself, because
-   * `targets` is rebuilt every render and comparing it by reference would defeat
-   * the memo entirely. `react-hooks/exhaustive-deps` would flag this shape; the
-   * plugin is not installed here yet, so there is nothing to suppress and a
-   * disable directive for it is itself a lint error. Tracked with the other
-   * missing plugins in eslint.config.js.
+   * `targets` is rebuilt every render and comparing it by reference would make
+   * every render a recompute — which for THIS memo is not a harmless waste but
+   * the bug itself, per the paragraph above. So when `exhaustive-deps` arrived
+   * (it wasn't installed when this was written) it got the one thing it is
+   * right about — `intl` in the array, and the expression hoisted to a named
+   * variable it can see — and a disable for the one thing it cannot know:
+   * that `targets` is keyed here by value on purpose.
    *
    * It sits ABOVE the targets-empty return, because a hook after a conditional
    * return changes the hook count between renders — the exact shape behind
    * "Rendered fewer hooks than expected" (#87). It is safe with empty targets:
    * it maps an empty array and its identity-string dep is ''.
    */
+  const targetsIdentity = targets.map((t) => `${t.client.id}:${t.items.map((i) => i.id).join(',')}`).join('|');
   const suggested = useMemo(
     () => targets.map((t) => ({ ...t, sms: composeSms(t.client, t.items, intl) })),
-    [targets.map((t) => `${t.client.id}:${t.items.map((i) => i.id).join(',')}`).join('|')],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- targets is deliberately keyed by targetsIdentity (its value), not by reference: it is rebuilt every render, and a reference dep would re-mint the Math.random() SMS link each render — the bug this memo exists to stop.
+    [targetsIdentity, intl],
   );
 
   if (targets.length === 0) {

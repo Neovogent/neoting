@@ -9,6 +9,7 @@ import { BusinessCaptureView } from './BusinessCaptureView';
 import { BusinessSettingsView } from './BusinessSettingsView';
 import { BusinessSignInView } from './BusinessSignInView';
 import { slug, useSegment } from '../../lib/router';
+import { useEscape } from '../../lib/useEscape';
 
 const m = defineMessages({
   tabHome: { id: 'portal.businessPortal.tabHome', defaultMessage: 'Home' },
@@ -120,6 +121,9 @@ function SwitchAccount() {
   const intl = useIntl();
   const [open, setOpen] = useState(false);
   const active = businessAccounts.find((a) => a.id === portalAccountId);
+  // Enabled only while the menu is open, so the entry does not linger in the
+  // Escape stack under real dialogs.
+  useEscape(() => setOpen(false), open);
 
   return (
     <div className="relative">
@@ -133,7 +137,10 @@ function SwitchAccount() {
       <AnimatePresence>
         {open && (
           <>
-            <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
+            {/* A click-away scrim, not a button — role="presentation" says so.
+                The keyboard already has both exits: Escape above, and the
+                trigger re-toggles. */}
+            <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} role="presentation" />
             <motion.div
               initial={{ opacity: 0, y: -6 }}
               animate={{ opacity: 1, y: 0 }}
