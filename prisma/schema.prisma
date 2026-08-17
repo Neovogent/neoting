@@ -378,8 +378,16 @@ enum DocumentType {
 model Document {
   id String @id @default(cuid())
 
-  /// Tenancy anchor. EXACTLY ONE of these is guaranteed present, enforced by a
+  /// Tenancy anchor. AT LEAST ONE of these is guaranteed present, enforced by a
   /// CHECK constraint (`documents_tenant_anchor`) rather than by convention.
+  /// NOT exactly one — the shipped SQL is `practice_id IS NOT NULL OR
+  /// business_id IS NOT NULL`, and both-set is the NORMAL routed case: web
+  /// upload anchors the document on the business AND the business's own
+  /// practice (#76), and the practice branch of `app_can_access_document`
+  /// plus `@@index([practiceId, inbox])` read `practice_id` on routed rows.
+  /// This comment said "EXACTLY ONE" until #81's review caught it — a test
+  /// that leans on the constraint as an exactly-one oracle passes three
+  /// states it thinks it excludes.
   ///
   /// `inbox` defaults to UNROUTED, which is the honest statement that we do not
   /// yet know whose document this is — a receipt forwarded to doc@ by a sender
