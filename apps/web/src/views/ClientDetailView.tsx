@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl, type IntlShape, type MessageDescriptor } from 'react-intl';
+import { commonActions, commonLabels, commonPlaceholders } from '../i18n/common';
 import { useAppContext } from '../context/AppContext';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { DocumentPreview } from '../components/DynamicComponents/DocumentPreview';
@@ -116,9 +117,6 @@ const m = defineMessages({
   // ── Overview: client contact ────────────────────────────────────────────
   panelClientContact: { id: 'clients.clientDetailView.panelClientContact', defaultMessage: 'Client contact' },
   rowPrimaryContact: { id: 'clients.clientDetailView.rowPrimaryContact', defaultMessage: 'Primary contact' },
-  rowMobile: { id: 'clients.clientDetailView.rowMobile', defaultMessage: 'Mobile' },
-  rowVatNumber: { id: 'clients.clientDetailView.rowVatNumber', defaultMessage: 'VAT number' },
-  rowNextDeadline: { id: 'clients.clientDetailView.rowNextDeadline', defaultMessage: 'Next deadline' },
   rowChasePolicy: { id: 'clients.clientDetailView.rowChasePolicy', defaultMessage: 'Chase policy' },
   chasePolicyDefault: { id: 'clients.clientDetailView.chasePolicyDefault', defaultMessage: 'Standard (3/7 days)' },
   rowLastUpload: { id: 'clients.clientDetailView.rowLastUpload', defaultMessage: 'Last upload' },
@@ -154,14 +152,8 @@ const m = defineMessages({
   },
 
   // ── Shared table columns ────────────────────────────────────────────────
-  colSupplier: { id: 'clients.clientDetailView.colSupplier', defaultMessage: 'Supplier' },
-  colDate: { id: 'clients.clientDetailView.colDate', defaultMessage: 'Date' },
-  colCategory: { id: 'clients.clientDetailView.colCategory', defaultMessage: 'Category' },
   colChannel: { id: 'clients.clientDetailView.colChannel', defaultMessage: 'Channel' },
-  colTotal: { id: 'clients.clientDetailView.colTotal', defaultMessage: 'Total' },
-  colStatus: { id: 'clients.clientDetailView.colStatus', defaultMessage: 'Status' },
   colDetectedBy: { id: 'clients.clientDetailView.colDetectedBy', defaultMessage: 'Detected by' },
-  colAmount: { id: 'clients.clientDetailView.colAmount', defaultMessage: 'Amount' },
   colStage: { id: 'clients.clientDetailView.colStage', defaultMessage: 'Stage' },
   colApprover: { id: 'clients.clientDetailView.colApprover', defaultMessage: 'Approver' },
   colSignedOffBy: { id: 'clients.clientDetailView.colSignedOffBy', defaultMessage: 'Signed off by' },
@@ -298,7 +290,6 @@ const m = defineMessages({
     id: 'clients.clientDetailView.nothingYoursDetail',
     defaultMessage: 'These are either already decided or sitting with the client.',
   },
-  nothingYoursConfirmLabel: { id: 'clients.clientDetailView.nothingYoursConfirmLabel', defaultMessage: 'Close' },
   bulkApproveTitle: {
     id: 'clients.clientDetailView.bulkApproveTitle',
     defaultMessage: 'Pass {count, plural, one {# item} other {# items}}?',
@@ -687,13 +678,13 @@ export function ClientDetailView() {
   const chaseClient = () => setChasing(miss.filter((m) => !m.chased).map((m) => m.id));
 
   const docColumns: Column<Document>[] = [
-    { key: 'supplier', label: intl.formatMessage(m.colSupplier), sortValue: (d) => d.supplier, render: (d) => <span className="text-white font-semibold">{d.supplier}</span> },
-    { key: 'date', label: intl.formatMessage(m.colDate), sortValue: (d) => d.date },
-    { key: 'category', label: intl.formatMessage(m.colCategory), sortValue: (d) => d.category },
+    { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (d) => d.supplier, render: (d) => <span className="text-white font-semibold">{d.supplier}</span> },
+    { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date },
+    { key: 'category', label: intl.formatMessage(commonLabels.category), sortValue: (d) => d.category },
     { key: 'source', label: intl.formatMessage(m.colChannel), sortValue: (d) => d.source, render: (d) => <Pill>{d.source}</Pill> },
-    { key: 'total', label: intl.formatMessage(m.colTotal), align: 'right', sortValue: (d) => d.total, render: (d) => <span className="text-white font-bold tabular-nums">{currency(d.total)}</span> },
+    { key: 'total', label: intl.formatMessage(commonLabels.total), align: 'right', sortValue: (d) => d.total, render: (d) => <span className="text-white font-bold tabular-nums">{currency(d.total)}</span> },
     {
-      key: 'status', label: intl.formatMessage(m.colStatus),
+      key: 'status', label: intl.formatMessage(commonLabels.status),
       // Sorted by the label on screen, not the raw status — "Missing VAT" and
       // "Suspected duplicate" both being `review` made the column look
       // unsorted to anyone reading it.
@@ -962,9 +953,9 @@ export function ClientDetailView() {
                 <Panel title={intl.formatMessage(m.panelClientContact)} icon={Users}>
                   <div className="flex flex-col gap-2.5 text-[13px]">
                     <Row label={intl.formatMessage(m.rowPrimaryContact)} value={client.contactName ?? '—'} />
-                    <Row label={intl.formatMessage(m.rowMobile)} value={client.mobile ?? '—'} />
-                    <Row label={intl.formatMessage(m.rowVatNumber)} value={client.vatNumber ?? '—'} />
-                    <Row label={intl.formatMessage(m.rowNextDeadline)} value={client.deadline} />
+                    <Row label={intl.formatMessage(commonLabels.mobile)} value={client.mobile ?? '—'} />
+                    <Row label={intl.formatMessage(commonLabels.vatNumber)} value={client.vatNumber ?? '—'} />
+                    <Row label={intl.formatMessage(commonLabels.nextDeadline)} value={client.deadline} />
                     <Row label={intl.formatMessage(m.rowChasePolicy)} value={chase?.policy ?? intl.formatMessage(m.chasePolicyDefault)} />
                     <Row label={intl.formatMessage(m.rowLastUpload)} value={chase?.lastUpload ?? '—'} />
                   </div>
@@ -1068,11 +1059,11 @@ export function ClientDetailView() {
             <DataTable<MissingItem>
               className="max-w-none"
               columns={[
-                { key: 'supplier', label: intl.formatMessage(m.colSupplier), sortValue: (row) => row.supplier, render: (row) => <span className="text-white font-semibold">{row.supplier}</span> },
-                { key: 'date', label: intl.formatMessage(m.colDate), sortValue: (row) => row.date },
+                { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (row) => row.supplier, render: (row) => <span className="text-white font-semibold">{row.supplier}</span> },
+                { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (row) => row.date },
                 { key: 'detectedBy', label: intl.formatMessage(m.colDetectedBy), sortValue: (row) => row.detectedBy, render: (row) => <Pill>{row.detectedBy}</Pill> },
-                { key: 'chased', label: intl.formatMessage(m.colStatus), sortValue: (row) => String(row.chased), render: (row) => (row.chased ? <Pill tone="blue">{intl.formatMessage(m.pillRequested)}</Pill> : <Pill tone="red">{intl.formatMessage(m.pillNotChased)}</Pill>) },
-                { key: 'amount', label: intl.formatMessage(m.colAmount), align: 'right', sortValue: (row) => row.amount, render: (row) => <span className="text-white font-bold tabular-nums">{row.amount ? currency(row.amount) : '—'}</span> },
+                { key: 'chased', label: intl.formatMessage(commonLabels.status), sortValue: (row) => String(row.chased), render: (row) => (row.chased ? <Pill tone="blue">{intl.formatMessage(m.pillRequested)}</Pill> : <Pill tone="red">{intl.formatMessage(m.pillNotChased)}</Pill>) },
+                { key: 'amount', label: intl.formatMessage(commonLabels.amount), align: 'right', sortValue: (row) => row.amount, render: (row) => <span className="text-white font-bold tabular-nums">{row.amount ? currency(row.amount) : '—'}</span> },
                 {
                   // The verb on the row, so one item can be chased without
                   // ticking it first. Already-requested items say so and offer
@@ -1260,7 +1251,7 @@ export function ClientDetailView() {
                 title={intl.formatMessage(m.approvalsTableTitle)}
                 subtitle={intl.formatMessage(m.approvalsTableSubtitle)}
                 columns={[
-                  { key: 'supplier', label: intl.formatMessage(m.colSupplier), sortValue: (a) => a.supplier, render: (a) => <span className="text-white font-semibold">{a.supplier}</span> },
+                  { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (a) => a.supplier, render: (a) => <span className="text-white font-semibold">{a.supplier}</span> },
                   { key: 'stage', label: intl.formatMessage(m.colStage), sortValue: (a) => a.stage },
                   { key: 'approver', label: intl.formatMessage(m.colApprover), sortValue: (a) => a.approver },
                   {
@@ -1271,7 +1262,7 @@ export function ClientDetailView() {
                         : <Pill tone="blue">{intl.formatMessage(m.pillPractice)}</Pill>,
                   },
                   { key: 'waitingDays', label: intl.formatMessage(m.colWaiting), align: 'right', sortValue: (a) => a.waitingDays, render: (a) => (a.waitingDays >= 5 ? <Pill tone="red">{intl.formatMessage(m.waitingDays, { days: a.waitingDays })}</Pill> : <Pill>{intl.formatMessage(m.waitingDays, { days: a.waitingDays })}</Pill>) },
-                  { key: 'total', label: intl.formatMessage(m.colTotal), align: 'right', sortValue: (a) => a.total, render: (a) => <span className="text-white font-bold tabular-nums">{currency(a.total)}</span> },
+                  { key: 'total', label: intl.formatMessage(commonLabels.total), align: 'right', sortValue: (a) => a.total, render: (a) => <span className="text-white font-bold tabular-nums">{currency(a.total)}</span> },
                   {
                     // Every action the row allows, on the row. Edit appears
                     // only where the stage permits it, and neither Approve nor
@@ -1354,7 +1345,7 @@ export function ClientDetailView() {
                           tone: 'red',
                           title: intl.formatMessage(m.nothingYoursTitle),
                           detail: intl.formatMessage(m.nothingYoursDetail),
-                          confirmLabel: intl.formatMessage(m.nothingYoursConfirmLabel),
+                          confirmLabel: intl.formatMessage(commonActions.close),
                         });
                         return;
                       }
@@ -1807,13 +1798,10 @@ const detailsPanelMessages = defineMessages({
   fieldName: { id: 'clients.clientDetailsPanel.fieldName', defaultMessage: 'Legal name' },
   fieldIndustry: { id: 'clients.clientDetailsPanel.fieldIndustry', defaultMessage: 'Industry' },
   fieldContactName: { id: 'clients.clientDetailsPanel.fieldContactName', defaultMessage: 'Primary contact' },
-  fieldMobile: { id: 'clients.clientDetailsPanel.fieldMobile', defaultMessage: 'Mobile' },
   fieldMobileHint: {
     id: 'clients.clientDetailsPanel.fieldMobileHint',
     defaultMessage: 'Every chase, approval and sign-in code goes here',
   },
-  fieldVatNumber: { id: 'clients.clientDetailsPanel.fieldVatNumber', defaultMessage: 'VAT number' },
-  fieldDeadline: { id: 'clients.clientDetailsPanel.fieldDeadline', defaultMessage: 'Next deadline' },
   fieldHint: { id: 'clients.clientDetailsPanel.fieldHint', defaultMessage: '— {hint}' },
   pendingHeading: {
     id: 'clients.clientDetailsPanel.pendingHeading',
@@ -1831,7 +1819,6 @@ const detailsPanelMessages = defineMessages({
     defaultMessage: 'Send {count, plural, one {# change} other {# changes}} for approval',
   },
   sendChangesNone: { id: 'clients.clientDetailsPanel.sendChangesNone', defaultMessage: 'Send changes for approval' },
-  cancel: { id: 'clients.clientDetailsPanel.cancel', defaultMessage: 'Cancel' },
   nothingChanged: { id: 'clients.clientDetailsPanel.nothingChanged', defaultMessage: 'Nothing changed yet' },
   changingFields: { id: 'clients.clientDetailsPanel.changingFields', defaultMessage: 'Changing: {fields}' },
   editDetails: { id: 'clients.clientDetailsPanel.editDetails', defaultMessage: 'Edit details' },
@@ -1865,9 +1852,9 @@ function ClientDetailsPanel({ client, pending, onPropose }: {
     { field: 'name', label: detailsPanelMessages.fieldName },
     { field: 'industry', label: detailsPanelMessages.fieldIndustry },
     { field: 'contactName', label: detailsPanelMessages.fieldContactName },
-    { field: 'mobile', label: detailsPanelMessages.fieldMobile, hint: detailsPanelMessages.fieldMobileHint },
-    { field: 'vatNumber', label: detailsPanelMessages.fieldVatNumber },
-    { field: 'deadline', label: detailsPanelMessages.fieldDeadline },
+    { field: 'mobile', label: commonLabels.mobile, hint: detailsPanelMessages.fieldMobileHint },
+    { field: 'vatNumber', label: commonLabels.vatNumber },
+    { field: 'deadline', label: commonLabels.nextDeadline },
   ];
 
   const current = () =>
@@ -1969,7 +1956,7 @@ function ClientDetailsPanel({ client, pending, onPropose }: {
               onClick={() => { setDraft(current()); setEditing(false); }}
               className="px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 hover:text-white transition-colors"
             >
-              {intl.formatMessage(detailsPanelMessages.cancel)}
+              {intl.formatMessage(commonActions.cancel)}
             </button>
             <span className="text-[12px] text-zinc-500 font-semibold">
               {changed.length === 0
@@ -2023,7 +2010,6 @@ const addTaskMessages = defineMessages({
     id: 'clients.addTaskForm.blockedByNote',
     defaultMessage: 'A blocked task cannot be ticked until the one before it is done.',
   },
-  cancel: { id: 'clients.addTaskForm.cancel', defaultMessage: 'Cancel' },
   submit: { id: 'clients.addTaskForm.submit', defaultMessage: 'Add the task' },
 });
 
@@ -2130,7 +2116,7 @@ function AddTaskForm({ client, colleagues, existing, onAdd, onClose }: {
 
         <div className="p-4 bg-raised/50 flex items-center gap-3 justify-end">
           <button onClick={onClose} className="px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 hover:text-white transition-colors">
-            {intl.formatMessage(addTaskMessages.cancel)}
+            {intl.formatMessage(commonActions.cancel)}
           </button>
           <button
             onClick={() =>
@@ -2197,13 +2183,10 @@ const inviteMessages = defineMessages({
   },
   fieldName: { id: 'clients.inviteBusinessUser.fieldName', defaultMessage: 'Name' },
   fieldNamePlaceholder: { id: 'clients.inviteBusinessUser.fieldNamePlaceholder', defaultMessage: 'Tom Whyte' },
-  fieldEmail: { id: 'clients.inviteBusinessUser.fieldEmail', defaultMessage: 'Email' },
   fieldEmailPlaceholder: {
     id: 'clients.inviteBusinessUser.fieldEmailPlaceholder',
     defaultMessage: 'tom@americanburger.co.uk',
   },
-  fieldMobile: { id: 'clients.inviteBusinessUser.fieldMobile', defaultMessage: 'Mobile' },
-  fieldMobilePlaceholder: { id: 'clients.inviteBusinessUser.fieldMobilePlaceholder', defaultMessage: '+44 7700 900123' },
   channelNote: {
     id: 'clients.inviteBusinessUser.channelNote',
     defaultMessage:
@@ -2226,7 +2209,6 @@ const inviteMessages = defineMessages({
       'Nothing is sent to {name} until someone at the business agrees. It appears in their portal to approve, and shows here as waiting on them. If they approve, the invite goes {channel} and the person adds their own photo and details.',
   },
   approvalNoteUnnamed: { id: 'clients.inviteBusinessUser.approvalNoteUnnamed', defaultMessage: 'them' },
-  cancel: { id: 'clients.inviteBusinessUser.cancel', defaultMessage: 'Cancel' },
   submit: { id: 'clients.inviteBusinessUser.submit', defaultMessage: 'Ask {client} to approve' },
 });
 
@@ -2301,17 +2283,17 @@ function InviteBusinessUser({ clientName, onSend, onClose }: {
               placeholder={intl.formatMessage(inviteMessages.fieldNamePlaceholder)}
             />
             <Field
-              label={intl.formatMessage(inviteMessages.fieldEmail)}
+              label={intl.formatMessage(commonLabels.email)}
               value={email}
               onChange={setEmail}
               placeholder={intl.formatMessage(inviteMessages.fieldEmailPlaceholder)}
             />
           </div>
           <Field
-            label={intl.formatMessage(inviteMessages.fieldMobile)}
+            label={intl.formatMessage(commonLabels.mobile)}
             value={mobile}
             onChange={setMobile}
-            placeholder={intl.formatMessage(inviteMessages.fieldMobilePlaceholder)}
+            placeholder={intl.formatMessage(commonPlaceholders.ukMobile)}
           />
           <p className="text-[12px] text-zinc-500 leading-relaxed -mt-2">
             {intl.formatMessage(inviteMessages.channelNote, {
@@ -2354,7 +2336,7 @@ function InviteBusinessUser({ clientName, onSend, onClose }: {
 
         <div className="p-4 bg-raised/50 flex items-center gap-3 justify-end">
           <button onClick={onClose} className="px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 hover:text-white transition-colors">
-            {intl.formatMessage(inviteMessages.cancel)}
+            {intl.formatMessage(commonActions.cancel)}
           </button>
           <button
             onClick={() => onSend({ name, email, mobile, role, canUpload, canSeeTotals })}

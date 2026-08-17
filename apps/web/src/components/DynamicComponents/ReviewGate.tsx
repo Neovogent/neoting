@@ -3,13 +3,13 @@ import { ChevronDown, Check, Edit2, LucideIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
+import { commonActions } from '../../i18n/common';
 
 const m = defineMessages({
   approve: { id: 'shell.reviewGate.approve', defaultMessage: 'Approve' },
   edit: { id: 'shell.reviewGate.edit', defaultMessage: 'Edit' },
   cancelled: { id: 'shell.reviewGate.cancelled', defaultMessage: 'Cancelled — nothing was changed.' },
   readReview: { id: 'shell.reviewGate.readReview', defaultMessage: 'Read review' },
-  cancel: { id: 'shell.reviewGate.cancel', defaultMessage: 'Cancel' },
 });
 
 interface ReviewGateProps {
@@ -144,7 +144,7 @@ export function ReviewGate({
             onClick={() => setIsCancelled(true)}
             className="px-5 py-2.5 text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 rounded-full transition-colors"
           >
-            {intl.formatMessage(m.cancel)}
+            {intl.formatMessage(commonActions.cancel)}
           </button>
           <button
             onClick={() => (onEdit ? onEdit() : setIsExpanded(false))}

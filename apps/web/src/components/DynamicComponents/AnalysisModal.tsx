@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AlertTriangle, ArrowRight, Check, Loader2, ScanLine, Sparkles, Table2, X } from 'lucide-react';
 import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
+import { commonActions } from '../../i18n/common';
 import { useAppContext } from '../../context/AppContext';
 import { DocumentPreview } from './DocumentPreview';
 import type { SheetImport } from '../../lib/tableImport';
@@ -119,7 +120,6 @@ const m = defineMessages({
     id: 'documents.analysisModal.resultSubtitle',
     defaultMessage: 'Change anything that is wrong. Nothing is filed until you confirm.',
   },
-  close: { id: 'documents.analysisModal.close', defaultMessage: 'Close' },
   decisionClient: { id: 'documents.analysisModal.decisionClient', defaultMessage: 'Client' },
   decisionKind: { id: 'documents.analysisModal.decisionKind', defaultMessage: 'Money in or out' },
   kindCost: { id: 'documents.analysisModal.kindCost', defaultMessage: 'Money out — Costs' },
@@ -287,7 +287,7 @@ export function AnalysisModal({ docIds, importIds = [], onClose, lockedClientId 
                   </div>
                   <button
                     onClick={() => onClose(mine)}
-                    aria-label={intl.formatMessage(m.close)}
+                    aria-label={intl.formatMessage(commonActions.close)}
                     className="shrink-0 p-2 rounded-full text-zinc-500 hover:text-white hover:bg-white/5 transition-colors"
                   >
                     <X size={16} />

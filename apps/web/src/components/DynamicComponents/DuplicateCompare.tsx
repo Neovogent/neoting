@@ -1,5 +1,6 @@
 import { Copy, Trash2, GitMerge, ShieldCheck } from 'lucide-react';
 import { defineMessages, useIntl } from 'react-intl';
+import { commonLabels } from '../../i18n/common';
 import { useAppContext } from '../../context/AppContext';
 import { useConfirm } from './ConfirmProvider';
 import { currency } from '../../lib/resolver';
@@ -58,8 +59,6 @@ const m = defineMessages({
 });
 
 const sideMessages = defineMessages({
-  rowTotal: { id: 'documents.docSide.rowTotal', defaultMessage: 'Total' },
-  rowDate: { id: 'documents.docSide.rowDate', defaultMessage: 'Date' },
   rowUploader: { id: 'documents.docSide.rowUploader', defaultMessage: 'Uploader' },
 });
 
@@ -211,8 +210,8 @@ function DocSide({ side }: { side: DuplicatePair['left'] }) {
       <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-3">{side.type}</div>
       <div className="font-sans font-bold text-white text-lg tracking-tight mb-3">{side.label}</div>
       <div className="flex flex-col gap-2.5 text-[13px]">
-        <Row label={intl.formatMessage(sideMessages.rowTotal)} value={currency(side.total)} />
-        <Row label={intl.formatMessage(sideMessages.rowDate)} value={side.date} />
+        <Row label={intl.formatMessage(commonLabels.total)} value={currency(side.total)} />
+        <Row label={intl.formatMessage(commonLabels.date)} value={side.date} />
         <Row label={intl.formatMessage(sideMessages.rowUploader)} value={side.uploader} />
       </div>
     </div>

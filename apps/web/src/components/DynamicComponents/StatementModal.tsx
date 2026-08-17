@@ -1,6 +1,7 @@
 import { X, Download, Check, AlertTriangle, Landmark, Building2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
+import { commonActions } from '../../i18n/common';
 import { Pill } from './DataTable';
 import { currency } from '../../lib/resolver';
 import type { Statement, SupplierStatement } from '../../lib/types';
@@ -14,7 +15,6 @@ const m = defineMessages({
     id: 'documents.statementModal.metaSupplier',
     defaultMessage: 'Supplier statement · {supplier} · {client}',
   },
-  close: { id: 'documents.statementModal.close', defaultMessage: 'Close' },
   downloadNote: {
     id: 'documents.statementModal.downloadNote',
     defaultMessage: 'The download is what was read off the file, as CSV. The original upload is not kept in this build.',
@@ -118,7 +118,7 @@ export function StatementModal({ statement, onClose }: {
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors shrink-0" aria-label={intl.formatMessage(m.close)}>
+          <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors shrink-0" aria-label={intl.formatMessage(commonActions.close)}>
             <X size={20} />
           </button>
         </div>

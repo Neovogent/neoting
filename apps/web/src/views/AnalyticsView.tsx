@@ -3,6 +3,7 @@ import { BarChart2, Download } from 'lucide-react';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
+import { commonLabels } from '../i18n/common';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { currency } from '../lib/resolver';
 import type { Client, SourceChannel } from '../lib/types';
@@ -44,7 +45,6 @@ const m = defineMessages({
   statusPublished: { id: 'analytics.analyticsView.statusPublished', defaultMessage: 'Published' },
   statusRejected: { id: 'analytics.analyticsView.statusRejected', defaultMessage: 'Rejected' },
 
-  columnClient: { id: 'analytics.analyticsView.columnClient', defaultMessage: 'Client' },
   columnHealth: { id: 'analytics.analyticsView.columnHealth', defaultMessage: 'Health' },
   columnToReview: { id: 'analytics.analyticsView.columnToReview', defaultMessage: 'To review' },
   columnMissing: { id: 'analytics.analyticsView.columnMissing', defaultMessage: 'Missing' },
@@ -200,7 +200,7 @@ export function AnalyticsView() {
   ].filter((s) => s.value > 0);
 
   const clientColumns: Column<Client>[] = [
-    { key: 'name', label: intl.formatMessage(m.columnClient), sortValue: (c) => c.name, render: (c) => <span className="text-white font-semibold">{c.name}</span> },
+    { key: 'name', label: intl.formatMessage(commonLabels.client), sortValue: (c) => c.name, render: (c) => <span className="text-white font-semibold">{c.name}</span> },
     { key: 'health', label: intl.formatMessage(m.columnHealth), align: 'right', sortValue: (c) => statsFor(c.id).health, render: (c) => <Pill tone={statsFor(c.id).health > 80 ? 'green' : statsFor(c.id).health > 50 ? 'amber' : 'red'}>{intl.formatMessage(m.percent, { value: statsFor(c.id).health })}</Pill> },
     { key: 'toReview', label: intl.formatMessage(m.columnToReview), align: 'right', sortValue: (c) => statsFor(c.id).toReview, render: (c) => <span className="tabular-nums text-zinc-300">{statsFor(c.id).toReview}</span> },
     { key: 'missing', label: intl.formatMessage(m.columnMissing), align: 'right', sortValue: (c) => statsFor(c.id).missing, render: (c) => <span className="tabular-nums text-zinc-300">{statsFor(c.id).missing}</span> },

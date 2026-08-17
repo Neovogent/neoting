@@ -4,6 +4,7 @@ import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import type { MessageDescriptor } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
+import { commonLabels, commonPlaceholders } from '../../i18n/common';
 import { ReviewGate, ReviewRows, ReviewSection } from './ReviewGate';
 import { Pill } from './DataTable';
 import type { SetupTask } from '../../lib/types';
@@ -117,10 +118,6 @@ const m = defineMessages({
     id: 'clients.inviteIntake.contactNameLabel',
     defaultMessage: 'Responsible person',
   },
-  inviteContactNamePlaceholder: {
-    id: 'clients.inviteIntake.contactNamePlaceholder',
-    defaultMessage: 'John Doe',
-  },
   inviteContactNameHint: {
     id: 'clients.inviteIntake.contactNameHint',
     defaultMessage: 'Whoever signs off — the link and every later chase go to them',
@@ -128,10 +125,6 @@ const m = defineMessages({
   inviteMobileLabel: {
     id: 'clients.inviteIntake.mobileLabel',
     defaultMessage: 'Mobile number',
-  },
-  inviteMobilePlaceholder: {
-    id: 'clients.inviteIntake.mobilePlaceholder',
-    defaultMessage: '+44 7700 900123',
   },
   // Two whole sentences rather than one with an inserted clause: the two states
   // say different things, and only one of them has a number to address.
@@ -339,10 +332,6 @@ const m = defineMessages({
     id: 'clients.practiceIntake.vatRegisteredHint',
     defaultMessage: 'VAT numbers are validated against HMRC.',
   },
-  practiceVatNumberLabel: {
-    id: 'clients.practiceIntake.vatNumberLabel',
-    defaultMessage: 'VAT number',
-  },
   practiceVatNumberPlaceholder: {
     id: 'clients.practiceIntake.vatNumberPlaceholder',
     defaultMessage: 'GB 412 8875 21',
@@ -364,14 +353,6 @@ const m = defineMessages({
     id: 'clients.practiceIntake.contactNameLabel',
     defaultMessage: 'Contact name',
   },
-  practiceContactNamePlaceholder: {
-    id: 'clients.practiceIntake.contactNamePlaceholder',
-    defaultMessage: 'John Doe',
-  },
-  practiceRoleLabel: {
-    id: 'clients.practiceIntake.roleLabel',
-    defaultMessage: 'Role',
-  },
   practiceRolePlaceholder: {
     id: 'clients.practiceIntake.rolePlaceholder',
     defaultMessage: 'Director',
@@ -379,14 +360,6 @@ const m = defineMessages({
   practiceMobileLabel: {
     id: 'clients.practiceIntake.mobileLabel',
     defaultMessage: 'Mobile number (required)',
-  },
-  practiceMobilePlaceholder: {
-    id: 'clients.practiceIntake.mobilePlaceholder',
-    defaultMessage: '+44 7700 900123',
-  },
-  practiceEmailLabel: {
-    id: 'clients.practiceIntake.emailLabel',
-    defaultMessage: 'Email',
   },
   practiceEmailPlaceholder: {
     id: 'clients.practiceIntake.emailPlaceholder',
@@ -564,10 +537,6 @@ const m = defineMessages({
   practiceContactNameValue: {
     id: 'clients.practiceIntake.contactNameValue',
     defaultMessage: '{name} ({role})',
-  },
-  practiceMobileRowLabel: {
-    id: 'clients.practiceIntake.mobileRowLabel',
-    defaultMessage: 'Mobile',
   },
   practiceWhatsappRowLabel: {
     id: 'clients.practiceIntake.whatsappRowLabel',
@@ -908,14 +877,14 @@ function InviteIntake({ defaultName, onBack }: { defaultName: string; onBack: ()
             label={intl.formatMessage(m.inviteContactNameLabel)}
             value={form.contactName}
             onChange={(v) => set('contactName', v)}
-            placeholder={intl.formatMessage(m.inviteContactNamePlaceholder)}
+            placeholder={intl.formatMessage(commonPlaceholders.personName)}
             hint={intl.formatMessage(m.inviteContactNameHint)}
           />
           <Field
             label={intl.formatMessage(m.inviteMobileLabel)}
             value={form.mobile}
             onChange={(v) => set('mobile', v)}
-            placeholder={intl.formatMessage(m.inviteMobilePlaceholder)}
+            placeholder={intl.formatMessage(commonPlaceholders.ukMobile)}
           />
 
           <div className="flex items-start gap-3 p-4 rounded-2xl border border-white/5 bg-ground/60 shadow-inner">
@@ -1157,7 +1126,7 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
               {form.vatRegistered && (
                 <div className="grid grid-cols-2 gap-4">
                   <Field
-                    label={intl.formatMessage(m.practiceVatNumberLabel)}
+                    label={intl.formatMessage(commonLabels.vatNumber)}
                     value={form.vatNumber}
                     onChange={(v) => set('vatNumber', v)}
                     placeholder={intl.formatMessage(m.practiceVatNumberPlaceholder)}
@@ -1189,10 +1158,10 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
                   label={intl.formatMessage(m.practiceContactNameLabel)}
                   value={form.contactName}
                   onChange={(v) => set('contactName', v)}
-                  placeholder={intl.formatMessage(m.practiceContactNamePlaceholder)}
+                  placeholder={intl.formatMessage(commonPlaceholders.personName)}
                 />
                 <Field
-                  label={intl.formatMessage(m.practiceRoleLabel)}
+                  label={intl.formatMessage(commonLabels.role)}
                   value={form.contactRole}
                   onChange={(v) => set('contactRole', v)}
                   placeholder={intl.formatMessage(m.practiceRolePlaceholder)}
@@ -1202,10 +1171,10 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
                 label={intl.formatMessage(m.practiceMobileLabel)}
                 value={form.mobile}
                 onChange={(v) => set('mobile', v)}
-                placeholder={intl.formatMessage(m.practiceMobilePlaceholder)}
+                placeholder={intl.formatMessage(commonPlaceholders.ukMobile)}
               />
               <Field
-                label={intl.formatMessage(m.practiceEmailLabel)}
+                label={intl.formatMessage(commonLabels.email)}
                 value={form.email}
                 onChange={(v) => set('email', v)}
                 placeholder={intl.formatMessage(m.practiceEmailPlaceholder)}
@@ -1389,7 +1358,7 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
                         label: intl.formatMessage(m.practiceVatRegisteredLabel),
                         value: form.vatRegistered ? intl.formatMessage(m.practiceYes) : intl.formatMessage(m.practiceNo),
                       },
-                      { label: intl.formatMessage(m.practiceVatNumberLabel), value: form.vatNumber.trim() || '—' },
+                      { label: intl.formatMessage(commonLabels.vatNumber), value: form.vatNumber.trim() || '—' },
                       { label: intl.formatMessage(m.practiceSchemeLabel), value: form.vatScheme },
                       { label: intl.formatMessage(m.practiceFrequencyLabel), value: form.frequency },
                     ]}
@@ -1405,8 +1374,8 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
                           role: form.contactRole,
                         }),
                       },
-                      { label: intl.formatMessage(m.practiceMobileRowLabel), value: form.mobile.trim() || '—' },
-                      { label: intl.formatMessage(m.practiceEmailLabel), value: form.email.trim() || '—' },
+                      { label: intl.formatMessage(commonLabels.mobile), value: form.mobile.trim() || '—' },
+                      { label: intl.formatMessage(commonLabels.email), value: form.email.trim() || '—' },
                       {
                         label: intl.formatMessage(m.practiceWhatsappRowLabel),
                         value: form.whatsappIntake ? (

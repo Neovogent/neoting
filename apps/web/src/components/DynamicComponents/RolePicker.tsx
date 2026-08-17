@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Check, X } from 'lucide-react';
 import { defineMessages, useIntl } from 'react-intl';
+import { commonActions, commonLabels } from '../../i18n/common';
 import { BUSINESS_ROLES } from '../../lib/business';
 import type { BusinessMemberRole } from '../../lib/types';
 
@@ -11,12 +12,10 @@ import type { BusinessMemberRole } from '../../lib/types';
  * label would change the identity.
  */
 const m = defineMessages({
-  label: { id: 'shell.rolePicker.label', defaultMessage: 'Role' },
   clear: { id: 'shell.rolePicker.clear', defaultMessage: 'Clear this role' },
   customPlaceholder: { id: 'shell.rolePicker.customPlaceholder', defaultMessage: 'Head Chef' },
   customLabel: { id: 'shell.rolePicker.customLabel', defaultMessage: 'Custom role' },
   use: { id: 'shell.rolePicker.use', defaultMessage: 'Use this role' },
-  cancel: { id: 'shell.rolePicker.cancel', defaultMessage: 'Cancel' },
   addCustom: { id: 'shell.rolePicker.addCustom', defaultMessage: '+ Custom role' },
 });
 
@@ -48,7 +47,7 @@ export function RolePicker({ value, onChange, hint }: {
 
   return (
     <div>
-      <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">{intl.formatMessage(m.label)}</div>
+      <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">{intl.formatMessage(commonLabels.role)}</div>
 
       <div className="flex items-center gap-2 flex-wrap">
         {BUSINESS_ROLES.map((r) => (
@@ -109,8 +108,8 @@ export function RolePicker({ value, onChange, hint }: {
             </button>
             <button
               onClick={() => { setDraft(''); setAdding(false); }}
-              title={intl.formatMessage(m.cancel)}
-              aria-label={intl.formatMessage(m.cancel)}
+              title={intl.formatMessage(commonActions.cancel)}
+              aria-label={intl.formatMessage(commonActions.cancel)}
               className="p-2.5 rounded-xl text-zinc-500 border border-white/5 hover:text-white transition-colors"
             >
               <X size={14} />

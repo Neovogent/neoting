@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
+import { commonActions, commonLabels, commonPlaceholders } from '../i18n/common';
 import { useAppContext } from '../context/AppContext';
 import { fromSlug, slug, useSegment } from '../lib/router';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
@@ -55,12 +56,8 @@ const m = defineMessages({
 
   // Colleagues table.
   colColleague: { id: 'team.teamView.colColleague', defaultMessage: 'Colleague' },
-  colRole: { id: 'team.teamView.colRole', defaultMessage: 'Role' },
   colLocation: { id: 'team.teamView.colLocation', defaultMessage: 'Location' },
-  colClientAccess: { id: 'team.teamView.colClientAccess', defaultMessage: 'Client access' },
-  colPermissions: { id: 'team.teamView.colPermissions', defaultMessage: 'Permissions' },
   colFields: { id: 'team.teamView.colFields', defaultMessage: 'Fields' },
-  colStatus: { id: 'team.teamView.colStatus', defaultMessage: 'Status' },
   allAccess: { id: 'team.teamView.allAccess', defaultMessage: 'All' },
   financeHidden: { id: 'team.teamView.financeHidden', defaultMessage: 'Finance hidden' },
   active: { id: 'team.teamView.active', defaultMessage: 'Active' },
@@ -85,10 +82,8 @@ const m = defineMessages({
 
   // Tasks table.
   colTask: { id: 'team.teamView.colTask', defaultMessage: 'Task' },
-  colClient: { id: 'team.teamView.colClient', defaultMessage: 'Client' },
   colAssignee: { id: 'team.teamView.colAssignee', defaultMessage: 'Assigned to' },
   colDue: { id: 'team.teamView.colDue', defaultMessage: 'Due' },
-  colTaskStatus: { id: 'team.teamView.colTaskStatus', defaultMessage: 'Status' },
   unassigned: { id: 'team.teamView.unassigned', defaultMessage: 'Unassigned' },
   statusDoneAuto: { id: 'team.teamView.statusDoneAuto', defaultMessage: 'Done (auto)' },
   statusBlocked: { id: 'team.teamView.statusBlocked', defaultMessage: 'Blocked' },
@@ -257,16 +252,16 @@ export function TeamView() {
       ),
     },
     {
-      key: 'role', label: intl.formatMessage(m.colRole), sortValue: (c) => c.role,
+      key: 'role', label: intl.formatMessage(commonLabels.role), sortValue: (c) => c.role,
       render: (c) => <Pill tone={c.role === 'Practice Admin' ? 'blue' : 'neutral'}>{c.role}</Pill>,
     },
     { key: 'location', label: intl.formatMessage(m.colLocation), sortValue: (c) => c.location, render: (c) => <span className="inline-flex items-center gap-1.5 text-zinc-400"><MapPin size={12} />{c.location}</span> },
     {
-      key: 'clients', label: intl.formatMessage(m.colClientAccess), align: 'right', sortValue: (c) => c.clientIds.length,
+      key: 'clients', label: intl.formatMessage(commonLabels.clientAccess), align: 'right', sortValue: (c) => c.clientIds.length,
       render: (c) => (c.role === 'Standard User' ? <span className="tabular-nums text-zinc-300">{c.clientIds.length}</span> : <Pill>{intl.formatMessage(m.allAccess)}</Pill>),
     },
     {
-      key: 'permissions', label: intl.formatMessage(m.colPermissions),
+      key: 'permissions', label: intl.formatMessage(commonLabels.permissions),
       render: (c) => (
         <span className="flex flex-wrap gap-1">
           {c.permissions.slice(0, 3).map((p) => <Pill key={p}>{p}</Pill>)}
@@ -279,7 +274,7 @@ export function TeamView() {
       render: (c) => (c.hideFinanceFields ? <Pill tone="amber">{intl.formatMessage(m.financeHidden)}</Pill> : <span className="text-zinc-700">—</span>),
     },
     {
-      key: 'active', label: intl.formatMessage(m.colStatus), align: 'right', sortValue: (c) => String(c.active),
+      key: 'active', label: intl.formatMessage(commonLabels.status), align: 'right', sortValue: (c) => String(c.active),
       render: (c) => (c.active ? <Pill tone="green">{intl.formatMessage(m.active)}</Pill> : <Pill tone="red">{intl.formatMessage(m.deactivated)}</Pill>),
     },
   ];
@@ -450,7 +445,7 @@ export function TeamView() {
                     );
                   },
                 },
-                { key: 'clientName', label: intl.formatMessage(m.colClient), sortValue: (t) => t.clientName },
+                { key: 'clientName', label: intl.formatMessage(commonLabels.client), sortValue: (t) => t.clientName },
                 {
                   key: 'assignee', label: intl.formatMessage(m.colAssignee), sortValue: (t) => t.assignee,
                   render: (t) => (
@@ -474,7 +469,7 @@ export function TeamView() {
                 },
                 { key: 'due', label: intl.formatMessage(m.colDue), sortValue: (t) => t.due },
                 {
-                  key: 'status', label: intl.formatMessage(m.colTaskStatus), align: 'right', sortValue: (t) => t.status,
+                  key: 'status', label: intl.formatMessage(commonLabels.status), align: 'right', sortValue: (t) => t.status,
                   render: (t) => {
                     // Engine-answered tasks show their derived state until a human overrides it.
                     const derived = prefill[t.id];
@@ -661,7 +656,6 @@ const teamEditorM = defineMessages({
   },
   nameLabel: { id: 'team.teamEditor.nameLabel', defaultMessage: 'Team name' },
   namePlaceholder: { id: 'team.teamEditor.namePlaceholder', defaultMessage: 'Hospitality team' },
-  clientAccessLabel: { id: 'team.teamEditor.clientAccessLabel', defaultMessage: 'Client access' },
   membersLabel: { id: 'team.teamEditor.membersLabel', defaultMessage: 'Members ({count})' },
   deleteTeam: { id: 'team.teamEditor.deleteTeam', defaultMessage: 'Delete team' },
   create: { id: 'team.teamEditor.create', defaultMessage: 'Create team' },
@@ -697,7 +691,7 @@ function TeamEditor({ team, onSave, onRemove, onClose }: {
           />
 
           <div>
-            <Label>{intl.formatMessage(teamEditorM.clientAccessLabel)}</Label>
+            <Label>{intl.formatMessage(commonLabels.clientAccess)}</Label>
             <div className="flex flex-wrap gap-2">
               {(['All clients', 'Assigned clients only'] as Team['accessLevel'][]).map((level) => (
                 <Chip key={level} active={draft.accessLevel === level} onClick={() => setDraft({ ...draft, accessLevel: level })}>
@@ -769,11 +763,9 @@ const taskComposerM = defineMessages({
     id: 'team.taskComposer.titlePlaceholder',
     defaultMessage: 'Chase missing July receipts',
   },
-  clientLabel: { id: 'team.taskComposer.clientLabel', defaultMessage: 'Client' },
   assigneeLabel: { id: 'team.taskComposer.assigneeLabel', defaultMessage: 'Assign to' },
   dueLabel: { id: 'team.taskComposer.dueLabel', defaultMessage: 'Due' },
   duePlaceholder: { id: 'team.taskComposer.duePlaceholder', defaultMessage: '31 Aug 2026' },
-  cancel: { id: 'team.taskComposer.cancel', defaultMessage: 'Cancel' },
   create: { id: 'team.taskComposer.create', defaultMessage: 'Create task' },
   defaultAssignee: { id: 'team.taskComposer.defaultAssignee', defaultMessage: 'You' },
   untitled: { id: 'team.taskComposer.untitled', defaultMessage: 'Untitled task' },
@@ -814,7 +806,7 @@ function TaskComposer({ assignees, defaultClientId, onCreate, onClose }: {
           />
 
           <div>
-            <Label>{intl.formatMessage(taskComposerM.clientLabel)}</Label>
+            <Label>{intl.formatMessage(commonLabels.client)}</Label>
             <select
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
@@ -843,7 +835,7 @@ function TaskComposer({ assignees, defaultClientId, onCreate, onClose }: {
 
         <div className="p-4 bg-raised/50 flex justify-end gap-3">
           <button onClick={onClose} className="px-5 py-2.5 rounded-full text-sm font-bold text-zinc-400 hover:text-white transition-colors">
-            {intl.formatMessage(taskComposerM.cancel)}
+            {intl.formatMessage(commonActions.cancel)}
           </button>
           <button
             onClick={() =>
@@ -948,15 +940,12 @@ const colleagueEditorM = defineMessages({
   },
   nameLabel: { id: 'team.colleagueEditor.nameLabel', defaultMessage: 'Name' },
   namePlaceholder: { id: 'team.colleagueEditor.namePlaceholder', defaultMessage: 'Sam Patel' },
-  emailLabel: { id: 'team.colleagueEditor.emailLabel', defaultMessage: 'Email' },
   emailPlaceholder: { id: 'team.colleagueEditor.emailPlaceholder', defaultMessage: 'sam@practice.co.uk' },
   jobTitleLabel: { id: 'team.colleagueEditor.jobTitleLabel', defaultMessage: 'Job title' },
   jobTitlePlaceholder: {
     id: 'team.colleagueEditor.jobTitlePlaceholder',
     defaultMessage: 'Senior bookkeeper',
   },
-  mobileLabel: { id: 'team.colleagueEditor.mobileLabel', defaultMessage: 'Mobile' },
-  mobilePlaceholder: { id: 'team.colleagueEditor.mobilePlaceholder', defaultMessage: '+44 7700 900123' },
   locationLabel: { id: 'team.colleagueEditor.locationLabel', defaultMessage: 'Location' },
   locationPlaceholder: { id: 'team.colleagueEditor.locationPlaceholder', defaultMessage: 'London' },
 
@@ -979,9 +968,6 @@ const colleagueEditorM = defineMessages({
   resetSentAction: { id: 'team.colleagueEditor.resetSentAction', defaultMessage: 'Sent' },
   resetAction: { id: 'team.colleagueEditor.resetAction', defaultMessage: 'Send reset link' },
 
-  roleLabel: { id: 'team.colleagueEditor.roleLabel', defaultMessage: 'Role' },
-  permissionsLabel: { id: 'team.colleagueEditor.permissionsLabel', defaultMessage: 'Permissions' },
-  clientAccessLabel: { id: 'team.colleagueEditor.clientAccessLabel', defaultMessage: 'Client access' },
   hideFinanceLabel: { id: 'team.colleagueEditor.hideFinanceLabel', defaultMessage: 'Hide finance fields' },
   hideFinanceHint: {
     id: 'team.colleagueEditor.hideFinanceHint',
@@ -1030,7 +1016,7 @@ function ColleagueEditor({ colleague, onSave, onRemove, onResetPassword, onClose
               placeholder={intl.formatMessage(colleagueEditorM.namePlaceholder)}
             />
             <Field
-              label={intl.formatMessage(colleagueEditorM.emailLabel)}
+              label={intl.formatMessage(commonLabels.email)}
               value={draft.email}
               onChange={(v) => set('email', v)}
               placeholder={intl.formatMessage(colleagueEditorM.emailPlaceholder)}
@@ -1044,10 +1030,10 @@ function ColleagueEditor({ colleague, onSave, onRemove, onResetPassword, onClose
               placeholder={intl.formatMessage(colleagueEditorM.jobTitlePlaceholder)}
             />
             <Field
-              label={intl.formatMessage(colleagueEditorM.mobileLabel)}
+              label={intl.formatMessage(commonLabels.mobile)}
               value={draft.mobile ?? ''}
               onChange={(v) => set('mobile', v)}
-              placeholder={intl.formatMessage(colleagueEditorM.mobilePlaceholder)}
+              placeholder={intl.formatMessage(commonPlaceholders.ukMobile)}
             />
           </div>
           <Field
@@ -1082,7 +1068,7 @@ function ColleagueEditor({ colleague, onSave, onRemove, onResetPassword, onClose
           </div>
 
           <div>
-            <Label>{intl.formatMessage(colleagueEditorM.roleLabel)}</Label>
+            <Label>{intl.formatMessage(commonLabels.role)}</Label>
             <div className="flex flex-wrap gap-2">
               {ROLES.map((r) => (
                 <Chip key={r} active={draft.role === r} onClick={() => set('role', r)}>{r}</Chip>
@@ -1091,7 +1077,7 @@ function ColleagueEditor({ colleague, onSave, onRemove, onResetPassword, onClose
           </div>
 
           <div>
-            <Label>{intl.formatMessage(colleagueEditorM.permissionsLabel)}</Label>
+            <Label>{intl.formatMessage(commonLabels.permissions)}</Label>
             <div className="flex flex-wrap gap-2">
               {PERMISSIONS.map((p) => (
                 <Chip
@@ -1107,7 +1093,7 @@ function ColleagueEditor({ colleague, onSave, onRemove, onResetPassword, onClose
 
           {!isAdmin && (
             <div>
-              <Label>{intl.formatMessage(colleagueEditorM.clientAccessLabel)}</Label>
+              <Label>{intl.formatMessage(commonLabels.clientAccess)}</Label>
               <div className="flex flex-wrap gap-2">
                 {clients.map((c) => (
                   <Chip

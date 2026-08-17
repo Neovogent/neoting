@@ -4,6 +4,7 @@ import {
   Link2, Sparkles, Download, PencilLine, UploadCloud,
 } from 'lucide-react';
 import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
+import { commonActions, commonLabels } from '../i18n/common';
 import { useAppContext } from '../context/AppContext';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { SubTabs } from '../components/DynamicComponents/SubTabs';
@@ -106,14 +107,9 @@ const m = defineMessages({
   columnDoc: { id: 'analytics.clientInbox.columnDoc', defaultMessage: 'Doc' },
   docReceipt: { id: 'analytics.clientInbox.docReceipt', defaultMessage: 'Receipt' },
   docInvoice: { id: 'analytics.clientInbox.docInvoice', defaultMessage: 'Invoice' },
-  columnSupplier: { id: 'analytics.clientInbox.columnSupplier', defaultMessage: 'Supplier' },
   columnCustomer: { id: 'analytics.clientInbox.columnCustomer', defaultMessage: 'Customer' },
-  columnCategory: { id: 'analytics.clientInbox.columnCategory', defaultMessage: 'Category' },
-  columnTotal: { id: 'analytics.clientInbox.columnTotal', defaultMessage: 'Total' },
   columnChannel: { id: 'analytics.clientInbox.columnChannel', defaultMessage: 'Received via' },
-  columnDate: { id: 'analytics.clientInbox.columnDate', defaultMessage: 'Date' },
   columnWhyFlagged: { id: 'analytics.clientInbox.columnWhyFlagged', defaultMessage: 'Why flagged' },
-  columnStatus: { id: 'analytics.clientInbox.columnStatus', defaultMessage: 'Status' },
   columnVat: { id: 'analytics.clientInbox.columnVat', defaultMessage: 'VAT' },
   columnPublishTo: { id: 'analytics.clientInbox.columnPublishTo', defaultMessage: 'Publish to' },
   columnInTheLedger: { id: 'analytics.clientInbox.columnInTheLedger', defaultMessage: 'In the ledger' },
@@ -223,7 +219,6 @@ const m = defineMessages({
     defaultMessage: 'None of these can move yet',
   },
   approveNoneItem: { id: 'analytics.clientInbox.approveNoneItem', defaultMessage: '{supplier} — {reason}' },
-  approveNoneConfirm: { id: 'analytics.clientInbox.approveNoneConfirm', defaultMessage: 'Close' },
   approveTitle: {
     id: 'analytics.clientInbox.approveTitle',
     defaultMessage: "Accept the AI's coding on {count, plural, one {# item} other {# items}}?",
@@ -274,7 +269,6 @@ const m = defineMessages({
   },
   bulkPublish: { id: 'analytics.clientInbox.bulkPublish', defaultMessage: 'Publish selected' },
 
-  bulkExportCsv: { id: 'analytics.clientInbox.bulkExportCsv', defaultMessage: 'Export CSV' },
   bulkUnpublish: { id: 'analytics.clientInbox.bulkUnpublish', defaultMessage: 'Unpublish' },
   unpublishTitle: {
     id: 'analytics.clientInbox.unpublishTitle',
@@ -291,7 +285,6 @@ const m = defineMessages({
   },
   unpublishConfirm: { id: 'analytics.clientInbox.unpublishConfirm', defaultMessage: 'Yes, unpublish' },
 
-  bulkRetry: { id: 'analytics.clientInbox.bulkRetry', defaultMessage: 'Retry' },
   bulkRetryTitle: {
     id: 'analytics.clientInbox.bulkRetryTitle',
     defaultMessage: 'Retry {count, plural, one {# failed item} other {# failed items}}?',
@@ -529,7 +522,7 @@ export function ClientInbox({ client, kind, onPreview }: {
 
   const supplierCell: Column<Document> = {
     key: 'supplier',
-    label: intl.formatMessage(kind === 'cost' ? m.columnSupplier : m.columnCustomer),
+    label: intl.formatMessage(kind === 'cost' ? commonLabels.supplier : m.columnCustomer),
     sortValue: (d) => d.supplier,
     render: (d) => {
       const field = d.fields.find((f) => f.label === 'Supplier' || f.label === 'Customer');
@@ -546,7 +539,7 @@ export function ClientInbox({ client, kind, onPreview }: {
 
   const categoryCell: Column<Document> = {
     key: 'category',
-    label: intl.formatMessage(m.columnCategory),
+    label: intl.formatMessage(commonLabels.category),
     sortValue: (d) => d.category,
     render: (d) => {
       const field = d.fields.find((f) => f.label === 'Category');
@@ -570,7 +563,7 @@ export function ClientInbox({ client, kind, onPreview }: {
 
   const totalCell: Column<Document> = {
     key: 'total',
-    label: intl.formatMessage(m.columnTotal),
+    label: intl.formatMessage(commonLabels.total),
     align: 'right',
     sortValue: (d) => d.total,
     render: (d) => (
@@ -590,7 +583,7 @@ export function ClientInbox({ client, kind, onPreview }: {
     render: (d) => <Pill>{d.source}</Pill>,
   };
 
-  const dateCell: Column<Document> = { key: 'date', label: intl.formatMessage(m.columnDate), sortValue: (d) => d.date };
+  const dateCell: Column<Document> = { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date };
 
   /**
    * A duplicate flag has to be visible wherever the document is, not only on
@@ -814,7 +807,7 @@ export function ClientInbox({ client, kind, onPreview }: {
   const columns: Column<Document>[] =
     status === 'processing'
       ? [docCell, supplierCell, dateCell, channelCell,
-         { key: 'eta', label: intl.formatMessage(m.columnStatus), render: (d) => <Pill>{d.statusNote ?? intl.formatMessage(m.extractionRunning)}</Pill> },
+         { key: 'eta', label: intl.formatMessage(commonLabels.status), render: (d) => <Pill>{d.statusNote ?? intl.formatMessage(m.extractionRunning)}</Pill> },
          flagCell, actionCell]
       : status === 'ready'
       ? [docCell, supplierCell, totalCell, categoryCell,
@@ -893,7 +886,7 @@ export function ClientInbox({ client, kind, onPreview }: {
                     .map(({ doc, reason }) => intl.formatMessage(m.approveNoneItem, { supplier: doc.supplier, reason: reason.toLowerCase() }))
                     .slice(0, 4)
                     .join('. '),
-                  confirmLabel: intl.formatMessage(m.approveNoneConfirm),
+                  confirmLabel: intl.formatMessage(commonActions.close),
                 });
                 return;
               }
@@ -947,7 +940,7 @@ export function ClientInbox({ client, kind, onPreview }: {
       ? [
           // Published is the end of the line, so the only actions are getting
           // the data back out — never a silent edit of what the ledger holds.
-          { label: intl.formatMessage(m.bulkExportCsv), icon: Download, minSelected: 2, disabledHint: intl.formatMessage(EXPORT_HINT), onClick: (sel: Document[]) => exportDocuments(sel, client.name) },
+          { label: intl.formatMessage(commonActions.exportCsv), icon: Download, minSelected: 2, disabledHint: intl.formatMessage(EXPORT_HINT), onClick: (sel: Document[]) => exportDocuments(sel, client.name) },
           {
             label: intl.formatMessage(m.bulkUnpublish), icon: RefreshCw,
             onClick: async (sel: Document[]) => {
@@ -965,7 +958,7 @@ export function ClientInbox({ client, kind, onPreview }: {
       : status === 'rejected'
       ? [
           {
-            label: intl.formatMessage(m.bulkRetry), icon: RefreshCw, primary: true,
+            label: intl.formatMessage(commonActions.retry), icon: RefreshCw, primary: true,
             onClick: async (sel: Document[]) => {
               const ok = await confirm({
                 title: intl.formatMessage(m.bulkRetryTitle, { count: sel.length }),

@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Camera, Upload, AlertCircle, Clock, CheckCircle2, FileText, ShieldCheck, Eye, X, UserPlus, Check } from 'lucide-react';
 import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
+import { commonActions } from '../../i18n/common';
 import { Pill } from '../../components/DynamicComponents/DataTable';
 import { currency } from '../../lib/resolver';
 import type { BusinessAccount, MissingItem } from '../../lib/types';
@@ -194,7 +195,6 @@ const m = defineMessages({
     defaultMessage:
       'You only ever see your own business here. Your accountant handles the coding and filing — nothing you send is published to the accounting software until they have reviewed it.',
   },
-  closePreview: { id: 'portal.businessHomeView.closePreview', defaultMessage: 'Close' },
 
   reasonBankTransaction: {
     id: 'portal.businessHomeView.reasonBankTransaction',
@@ -646,7 +646,7 @@ export function BusinessHomeView({
               className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-raised border border-white/10 hover:border-white/25 transition-colors"
             >
               <X size={15} />
-              {intl.formatMessage(m.closePreview)}
+              {intl.formatMessage(commonActions.close)}
             </button>
           </div>
         </div>

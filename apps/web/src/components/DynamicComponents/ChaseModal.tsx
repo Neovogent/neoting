@@ -1,6 +1,7 @@
 import { X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
+import { commonActions } from '../../i18n/common';
 import { ChaseComposer } from './ChaseComposer';
 
 const m = defineMessages({
@@ -10,7 +11,6 @@ const m = defineMessages({
     defaultMessage: 'Nothing sends until you read the review and approve it.',
   },
   closeLabel: { id: 'shell.chaseModal.closeLabel', defaultMessage: 'Close the composer' },
-  close: { id: 'shell.chaseModal.close', defaultMessage: 'Close' },
 });
 
 /**
@@ -56,7 +56,7 @@ export function ChaseModal({ clientIds, missingItemIds, note, onClose }: {
             className="shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold text-zinc-400 hover:text-white transition-colors"
           >
             <X size={14} />
-            {intl.formatMessage(m.close)}
+            {intl.formatMessage(commonActions.close)}
           </button>
         </div>
 
