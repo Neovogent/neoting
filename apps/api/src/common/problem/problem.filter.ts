@@ -47,6 +47,7 @@ export class ProblemFilter implements ExceptionFilter {
         title: exception.title,
         traceId,
         ...(exception.publicDetail === undefined ? {} : { detail: exception.publicDetail }),
+        ...(exception.fieldErrors === undefined ? {} : { errors: exception.fieldErrors }),
       }));
       return;
     }

@@ -7,10 +7,11 @@ import { ProblemFilter } from './common/problem/problem.filter.js';
 import { TraceMiddleware } from './common/trace/trace.middleware.js';
 import { EnvModule } from './config/env.module.js';
 import { HealthModule } from './modules/health/health.module.js';
+import { WebUploadModule } from './modules/ingestion-routing/web-upload/web-upload.module.js';
 import { WhatsAppWebhookModule } from './modules/ingestion-routing/webhooks/whatsapp/whatsapp.module.js';
 
 @Module({
-  imports: [EnvModule, ContextModule, HealthModule, WhatsAppWebhookModule],
+  imports: [EnvModule, ContextModule, HealthModule, WebUploadModule, WhatsAppWebhookModule],
   providers: [{ provide: APP_FILTER, useClass: ProblemFilter }],
 })
 export class AppModule implements NestModule {

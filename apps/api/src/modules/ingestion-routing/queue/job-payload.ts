@@ -7,7 +7,7 @@ import { z } from 'zod';
  * producer is us today" is not a reason to trust it tomorrow.
  */
 export const IngestJobPayloadSchema = z.object({
-  source: z.enum(['whatsapp', 'email']),
+  source: z.enum(['whatsapp', 'email', 'web_upload']),
   idempotencyKey: z.string().min(1),
   from: z.string(),
   receivedAtSeconds: z.number(),
@@ -28,6 +28,8 @@ export const IngestJobPayloadSchema = z.object({
   // dHash of the sanitised image bytes (#40), for near-duplicate detection. Image
   // documents only — absent for PDFs and for bytes no decoder could read.
   perceptualHash: z.string().optional(),
+  // The already-persisted document a web-upload sanitisation job refers to (#76).
+  documentId: z.string().optional(),
 });
 
 export type IngestJobPayload = z.infer<typeof IngestJobPayloadSchema>;
