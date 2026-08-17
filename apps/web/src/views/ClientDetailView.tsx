@@ -578,6 +578,51 @@ export function ClientDetailView() {
   const confirm = useConfirm();
   const intl = useIntl();
   const client = clients.find((c) => c.id === openClientId);
+
+  /**
+   * Wireframe screen 7, "Channel mix (how docs arrive)" — a real share of this
+   * client's own documents, not the practice-wide figure the Analytics view
+   * shows. Sorted heaviest first so the dominant channel reads immediately.
+   *
+   * Both memos sit above the `!client` return: a hook after a conditional
+   * return changes the hook count between renders, which is the exact shape
+   * behind "Rendered fewer hooks than expected" (#87).
+   */
+  const channelMix = useMemo(() => {
+    const clientDocs = documents.filter((d) => d.clientId === openClientId);
+    const counts = new Map<Document['source'], number>();
+    clientDocs.forEach((d) => counts.set(d.source, (counts.get(d.source) ?? 0) + 1));
+    const total = clientDocs.length;
+    return [...counts.entries()]
+      .map(([source, count]) => ({
+        source,
+        count,
+        pct: total === 0 ? 0 : Math.round((count / total) * 100),
+      }))
+      .sort((a, b) => b.count - a.count);
+  }, [documents, openClientId]);
+
+  /**
+   * Wireframe's "Recent activity" feed. Built from things that actually
+   * happened rather than a seeded list: entries this user approved through a
+   * Review gate, plus the chase timeline. Newest first.
+   */
+  const activity = useMemo(() => {
+    if (!client) return [];
+    const clientChase = chases.find((c) => c.clientId === client.id);
+    const fromAudit = auditLog
+      .filter((e) => e.scope.toLowerCase().includes(client.name.toLowerCase()))
+      .map((e) => ({ id: e.id, at: e.at, label: e.action, detail: e.scope, actor: e.actor }));
+    const fromChase = (clientChase?.events ?? []).map((e, i) => ({
+      id: `chase-ev-${i}`,
+      at: e.at,
+      label: e.label,
+      detail: e.detail,
+      actor: intl.formatMessage(m.activityChaseEngine),
+    }));
+    return [...fromAudit, ...fromChase].slice(0, 8);
+  }, [auditLog, chases, client, intl]);
+
   if (!client) return null;
 
   const s = statsFor(client.id);
@@ -617,43 +662,6 @@ export function ClientDetailView() {
   const clientConversations = conversations.filter(
     (c) => c.attachedClientIds.includes(client.id) && c.messages.length > 0,
   );
-
-  /**
-   * Wireframe screen 7, "Channel mix (how docs arrive)" — a real share of this
-   * client's own documents, not the practice-wide figure the Analytics view
-   * shows. Sorted heaviest first so the dominant channel reads immediately.
-   */
-  const channelMix = useMemo(() => {
-    const counts = new Map<Document['source'], number>();
-    docs.forEach((d) => counts.set(d.source, (counts.get(d.source) ?? 0) + 1));
-    const total = docs.length;
-    return [...counts.entries()]
-      .map(([source, count]) => ({
-        source,
-        count,
-        pct: total === 0 ? 0 : Math.round((count / total) * 100),
-      }))
-      .sort((a, b) => b.count - a.count);
-  }, [docs]);
-
-  /**
-   * Wireframe's "Recent activity" feed. Built from things that actually
-   * happened rather than a seeded list: entries this user approved through a
-   * Review gate, plus the chase timeline. Newest first.
-   */
-  const activity = useMemo(() => {
-    const fromAudit = auditLog
-      .filter((e) => e.scope.toLowerCase().includes(client.name.toLowerCase()))
-      .map((e) => ({ id: e.id, at: e.at, label: e.action, detail: e.scope, actor: e.actor }));
-    const fromChase = (chase?.events ?? []).map((e, i) => ({
-      id: `chase-ev-${i}`,
-      at: e.at,
-      label: e.label,
-      detail: e.detail,
-      actor: intl.formatMessage(m.activityChaseEngine),
-    }));
-    return [...fromAudit, ...fromChase].slice(0, 8);
-  }, [auditLog, chase, client.name, intl]);
 
   const scoped = (intent: Intent, content: string, response: string) =>
     startConversation([client.id], [
