@@ -14,6 +14,8 @@ function env(overrides: Partial<Env> = {}): Env {
     MEDIA_FETCH: 'fixture',
     WHATSAPP_PRACTICE_MAP: {},
     AUTH_MODE: 'fixture',
+    UPLOAD_URL_SECRET: 'test-secret',
+    UPLOAD_URL_TTL_SECONDS: 900,
     INGEST_QUEUE: 'fixture',
     REDIS_URL: 'redis://localhost:6379',
     OBJECT_STORE: 'fixture',

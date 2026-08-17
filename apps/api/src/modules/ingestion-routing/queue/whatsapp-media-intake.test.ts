@@ -24,6 +24,10 @@ function recordingStore(): { store: DocumentStore; puts: DocumentStorePutInput[]
         return inner.put(input);
       },
       get: (key) => inner.get(key),
+      sha256: (key) => inner.sha256(key),
+      presignPut: (input) => inner.presignPut(input),
+      presignGet: (input) => inner.presignGet(input),
+      head: (key) => inner.head(key),
     },
   };
 }
