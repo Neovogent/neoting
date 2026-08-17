@@ -46,7 +46,7 @@ See `src/modules/*/CLAUDE.md`. Read the module's file on entry, update it on exi
 
 Two consequences:
 
-- **`packages/contracts` must be built before this app runs or typechecks.** Turbo wires `typecheck`, `dev` and `test` to depend on it, so the normal commands are fine; a bare `tsx`/`node` against a cold tree is not. `apps/api/Dockerfile` builds contracts explicitly, because it uses `pnpm --filter` rather than `turbo run` and so resolves no dependency graph.
+- **`packages/contracts` must be built before this app runs or typechecks.** Turbo wires `typecheck` and `test` to depend on it (**not `dev`** — root `turbo.json` gives `dev` no `dependsOn`, so a cold clone needs one `pnpm build` before `pnpm dev`), so the checked commands are fine; a bare `tsx`/`node` against a cold tree is not. This matters more since #90 untracked `src/generated/` — the checkout no longer carries the tree at all. `apps/api/Dockerfile` builds contracts explicitly, because it uses `pnpm --filter` rather than `turbo run` and so resolves no dependency graph.
 - **The Dockerfile guard is inverted, not gone.** It used to fail the image build on any runtime contracts import. It now fails when the compiled output imports contracts *without* the contracts build shipping alongside it, or when that build contains an extensionless relative specifier Node cannot resolve. Same failure class, caught at the point it can still be fixed.
 
 `apps/api/Dockerfile` builds **one image for three commands** (build context is the repo root):

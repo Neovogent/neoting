@@ -19,6 +19,13 @@
 # Verify a pattern rather than trusting it — this is the check that caught it:
 #   git check-attr linguist-generated -- packages/contracts/src/generated/model/document.ts
 # `unspecified` means the rule missed; `set` means it applies.
+#
+# The contracts rule now matches NO tracked file, deliberately: issue #90
+# untracked the generated tree (.gitignore never applied to it because the
+# files were tracked before the rule landed — an ignore rule has no effect on
+# already-tracked paths). The rule stays as a belt-and-braces guard: if the
+# tree is ever force-added again, it renders collapsed instead of as 380 KB of
+# hand-written TypeScript, and CI stage 5c fails the build on it regardless.
 pnpm-lock.yaml linguist-generated=true -diff
 packages/contracts/src/generated/** linguist-generated=true -diff
 

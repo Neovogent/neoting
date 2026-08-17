@@ -52,7 +52,7 @@ openapi.yaml ──orval──┬─> src/generated/client/   TanStack Query hoo
 
 Import by subpath — `@neoting/contracts/zod`, `/model`, `/client` — so `apps/api` never drags React Query and MSW in behind the schemas it actually wants.
 
-**The generated tree is gitignored.** Governance §1.4 says never commit generated output, so `packages/contracts/turbo.json` makes `build` produce it and `typecheck`/`dev` depend on `build`. A fresh clone gets it from `pnpm build`; nobody needs to remember a step.
+**The generated tree is untracked and gitignored — since issue #90, and not before.** Governance §1.4 says never commit generated output, and `.gitignore` said so too, but the 159 files under `src/generated/` were tracked before that rule landed and an ignore rule has no effect on already-tracked paths — so for a while this paragraph was a lie the repo told itself: a fresh clone got the tree from git, where a stale commit could silently disagree with `openapi.yaml`. #90 untracked it. Now the only way the tree exists is `pnpm build` producing it: `packages/contracts/turbo.json` makes `build` generate it, and `typecheck`/`test` depend on `build` through the root graph (`dev` does **not** — a bare `pnpm dev` on a cold clone needs one prior `pnpm build`). CI stage 5c fails the build if any file under `src/generated/` ever becomes tracked again.
 
 ### Three things that bit, recorded so they don't bite twice
 
