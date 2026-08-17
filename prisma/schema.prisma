@@ -56,6 +56,7 @@ model Practice {
   invites     Invite[]
   guidance    Guidance[]
   documents   Document[]
+  proposals   ActionProposal[]
 
   @@map("practices")
 }
@@ -1042,6 +1043,15 @@ model ActionProposal {
   id         String  @id @default(cuid())
   businessId String? @map("business_id")
 
+  /// Tenancy anchor, same discipline as `Document` (issue #104). AT LEAST ONE
+  /// of `practiceId`/`businessId` is present, enforced by the CHECK constraint
+  /// `action_proposals_tenant_anchor`. Before this column existed, a proposal
+  /// with `business_id = NULL` satisfied the RLS policy unconditionally — a
+  /// world-readable, world-writable row — and NULL business is the DEFAULT for
+  /// `document.route`, whose subject is an unrouted document. The policy now
+  /// reads the same two-branch predicate documents use.
+  practiceId String? @map("practice_id")
+
   kind                String
   payload             Json
   payloadHash         String  @map("payload_hash")
@@ -1067,10 +1077,12 @@ model ActionProposal {
   traceId String? @map("trace_id")
 
   business   Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  practice   Practice? @relation(fields: [practiceId], references: [id], onDelete: Cascade)
   createdBy  User?     @relation("ProposalCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   approvedBy User?     @relation("ProposalApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
 
   @@index([businessId, state])
+  @@index([practiceId, state])
   @@index([kind, state])
   @@index([traceId])
   @@map("action_proposals")

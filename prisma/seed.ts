@@ -584,6 +584,7 @@ async function main() {
     data: {
       id: 'prop_chase_dental',
       businessId: 'biz_dental',
+      practiceId: 'prac_ledgerline',
       kind: 'chase-send',
       state: 'CREATED',
       createdByModel: 'anthropic.claude-sonnet-4-6',
@@ -608,6 +609,7 @@ async function main() {
     data: {
       id: 'prop_publish_burger',
       businessId: 'biz_burger',
+      practiceId: 'prac_ledgerline',
       kind: 'publish',
       state: 'EXECUTED',
       createdByUserId: 'usr_priya',
