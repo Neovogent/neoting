@@ -642,7 +642,7 @@ One canonical model, one mapping layer, per-platform adapters:
 | HMRC developer hub (check-VAT-number) | Instant, open access | No production-approval clock needed in v1. |
 | AWS org (eu-west-2) + Managed Grafana/Prometheus | Instant | Terraform-managed from day one; no secrets in repo (D23/D24). |
 | **AWS Bedrock model access** (Claude Opus 4.6, Claude Sonnet 4.6, Amazon Nova Lite) | ✅ Enabled and verified 13 Aug 2026 | Verification 8.1 closed: all three invoked on-demand in eu-west-2; D28 model IDs amended, D30 preserved, contingency not needed (ADR 0001). |
-| **AWS SES production access** (out of sandbox) + inbound receiving | Request review: ~1–2 days | Needed before any real email leaves or arrives; **W0 verification: inbound receiving region (eu-west-2 vs eu-west-1 receipt bucket — both permitted under the UK/EU rule).** |
+| **AWS SES production access** (out of sandbox) + inbound receiving | ✅ Granted 17 Aug 2026 | Out of sandbox: 50,000 msgs/day, 14 msg/s (case 178662887400793 resolved); **W0 verification 8.2 closed: inbound receiving confirmed in eu-west-2** (ADR 0002) — real email can now leave and arrive. D33 go-live gate still applies before sending. |
 | Sentry (EU region org) | Instant | Error tracking with scrubber (D24). |
 | **Anthropic account — Claude Code build fleet** | Instant | The agents that build the product (§19); set a spend budget; separate from the product's Bedrock runtime. |
 | GitHub organisation + Actions | Instant | Repo, CI, worktree lanes. |

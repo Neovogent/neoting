@@ -65,7 +65,7 @@ Import blocks are inert after adoption. Leaving `imports.tf` in place would tell
 
 - **`Default-Services-Monitor`** (Cost Explorer anomaly detection) and `Default-Services-Subscription`. Created 2023-11-28, over two years before Neoting, notifying an address belonging to another Neovogent product. Shared-account furniture (D36) — adopting it would mean a Neoting `terraform destroy` deletes someone else's cost alerting. Neoting's own anomaly monitor is a create in a later PR (runbook Step 10).
 - **The Terraform state bucket** `nt-tfstate-staging-252959251643`. Bootstrap; cannot manage itself. See `infra/README.md`.
-- **SES production access and Textract quota increases.** Support-ticket flows, not resources. No Terraform representation exists.
+- **SES production access and Textract quota increases.** Support-ticket flows, not resources. No Terraform representation exists. (SES: granted 17 Aug 2026, case resolved; both Textract cases still open.)
 
 ## Gaps — deliberately left open, each one a follow-up PR
 
