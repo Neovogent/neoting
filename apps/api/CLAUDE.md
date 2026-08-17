@@ -8,7 +8,7 @@ Node 22, TypeScript strict, Prisma + Postgres 16 (RLS), BullMQ on Redis. One dep
 
 - Controllers are thin: parse and validate input (Zod/DTO), call **one** service, map the result. **Cap: 200 lines per controller file.**
 - Services own business logic and are the only layer that touches Prisma.
-- A module exposes its **public providers only**. Cross-module work goes through those providers or through domain events on the transactional outbox — never by reaching into another module's internals.
+- A module exposes its **public providers only**. Cross-module work goes through those providers or through domain events on the transactional outbox — never by reaching into another module's internals. **Lint-enforced** since the §14.3 sweep: `neoting/no-cross-module-internals` fails any `modules/<A>` import that resolves under `modules/<B>` anywhere but `modules/<B>/index.ts`, the module's public seam (rule and test in `apps/api/eslint/`). Composition roots (`app.module.ts`, `worker/`) and `*.integration.test.ts` are exempt — assembly is their job. The first seam is `ingestion-routing/index.ts`; a module needs one only when its first cross-module consumer arrives.
 
 ## Routing — `/v1`, and the three routes that are not
 

@@ -6,7 +6,7 @@ import type { Document as DocumentRow, Extraction as ExtractionRow } from '@pris
 import type { PrismaClient } from '../../common/db/prisma.js';
 import type { ScopeContext } from '../../common/db/scope-context.js';
 import type { AppException } from '../../common/problem/problem.js';
-import type { DocumentStore } from '../ingestion-routing/storage/document-store.js';
+import type { DocumentStore } from '../ingestion-routing/index.js';
 import { DocumentsService } from './documents.service.js';
 
 // `ScopeContext` is the schema's OUTPUT type, so the defaulted fields are

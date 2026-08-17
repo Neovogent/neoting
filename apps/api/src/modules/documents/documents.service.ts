@@ -29,7 +29,7 @@ import {
   toPage,
 } from '../../common/pagination/cursor.js';
 import { AppException } from '../../common/problem/problem.js';
-import type { DocumentStore } from '../ingestion-routing/storage/document-store.js';
+import type { DocumentStore } from '../ingestion-routing/index.js';
 
 type ListQuery = z.infer<typeof listDocumentsQueryParams>;
 type EventsQuery = z.infer<typeof listDocumentEventsQueryParams>;
