@@ -208,11 +208,14 @@ jobs:
           #      /healthz and both services carry deployment_circuit_breaker
           #      with rollback = true (services.tf). ECS owns the rollback.
           #
-          # ⚠ WHAT IS STILL NOT TRUE, so nobody reads a green stage 9 as more
-          # than it is: INGEST_QUEUE is unset on the task definitions and
-          # defaults to `fixture`, so a WhatsApp message is verified and then
-          # enqueued in memory where workers cannot see it. The deploy job
-          # repeats this in its summary on every run.
+          # The INGEST_QUEUE=fixture caveat that used to live here was closed
+          # on 17 Aug 2026: the task definitions set INGEST_QUEUE=bullmq,
+          # OBJECT_STORE=s3 and IMAGE_NORMALISER=sharp (services.tf), so the
+          # deployed api enqueues to Redis and workers actually consume it.
+          # What a green stage 9 still does NOT prove: the email lane
+          # (EMAIL_SOURCE stays `fixture` until the s3 poller has a service)
+          # and qpdf PDF hardening (not in the image). The deploy summary
+          # carries the honest remainder.
           # ------------------------------------------------------------------
           deploy=yes
 
@@ -274,7 +277,7 @@ jobs:
           [ "$n_eval" -gt 0 ]  || echo "::warning title=Stage 7 not implemented::No \`test:eval\` script exists — extraction thresholds and the adversarial injection corpus (§15.5) are not gating merges."
           [ "$lint_rules" = yes ] || echo "::warning title=Stage 3 incomplete::No ESLint config in the repo — a11y, i18n-literal, money-type, module-boundary and unscoped-query (§14.3) are unenforced."
           if [ "$deploy" = yes ]; then
-            echo "::warning title=Deployed is not the same as working::Stage 9 runs migrations, api and workers. But INGEST_QUEUE is unset on the task definitions and defaults to \`fixture\`, so a WhatsApp message is signature-verified and then enqueued IN MEMORY, where the workers service cannot see it. The ingest lane is not real until that flips to \`bullmq\`."
+            echo "::notice title=Stage 9 deploys the real ingest lane::Migrations, api and workers deploy; INGEST_QUEUE=bullmq and OBJECT_STORE=s3 are set on the task definitions, so ingested documents survive a restart. Still fixture-mode by design: the email lane (EMAIL_SOURCE — the s3 poller has no ECS service yet) and qpdf PDF hardening (not in the image)."
           else
             echo "::warning title=Stage 9 not implemented::No deploy path exists yet. See the DEPLOY_READY block in check.yml."
           fi
@@ -771,12 +774,12 @@ jobs:
   # version between these two steps, which is exactly what expand-contract
   # exists to prevent.
   #
-  # STILL TRUE AFTER THIS DEPLOY: INGEST_QUEUE is not set on the task
-  # definitions, so it defaults to `fixture`. A real WhatsApp message reaching
-  # the api is signature-verified and enqueued IN MEMORY, where the workers
-  # service cannot see it. Workers running is necessary for the ingest lane and
-  # is not sufficient — flipping INGEST_QUEUE to `bullmq` is a separate change,
-  # and the summary at the end of this job keeps saying so until it lands.
+  # CLOSED 17 AUG 2026: INGEST_QUEUE=bullmq and OBJECT_STORE=s3 are now set on
+  # the task definitions (services.tf), so the deployed api enqueues to Redis,
+  # workers consume it, and sanitised bytes persist to S3. The remaining
+  # fixture-mode lanes are the email poller (EMAIL_SOURCE — no ECS service for
+  # worker/email-intake-main.js yet) and qpdf (not in the image); the summary
+  # at the end of this job names them until they land.
   #
   # Production promote (§14.9 "one-click promote") is a GitHub Environment with
   # required reviewers — adding a reviewer to the `production` environment
@@ -1162,16 +1165,16 @@ jobs:
             echo "- **api** → \`${{ github.sha }}\`, live at https://$EDGE_HOST"
             echo "- **workers** → \`${{ github.sha }}\`, consuming BullMQ over TLS."
             echo
-            echo "#### Still not true"
+            echo "#### Still fixture-mode, by design"
             echo
-            echo "\`INGEST_QUEUE\` is not set on the task definitions, so it defaults to \`fixture\`."
-            echo "A WhatsApp message to the deployed api is signature-verified and then enqueued"
-            echo "**in memory**, where the workers service cannot see it. Workers running is"
-            echo "necessary for the ingest lane and is not sufficient — flipping \`INGEST_QUEUE\`"
-            echo "to \`bullmq\` is a separate change."
+            echo "- **Email intake**: \`EMAIL_SOURCE\` stays \`fixture\` — the s3 poller"
+            echo "  (\`worker/email-intake-main.js\`) has no ECS service yet, and env.ts refuses"
+            echo "  \`EMAIL_SOURCE=s3\` against fixture stores anyway."
+            echo "- **PDF hardening**: \`DOCUMENT_GUARD\` stays \`fixture\` — qpdf is not in the image."
             echo
             echo "Workers has no load balancer and no container health check, so steady state"
-            echo "proves the task started, not that it reached Redis."
+            echo "proves the task started, not that it reached Redis (the revision assertion"
+            echo "above catches rollbacks, not silent idling)."
           } >> "$GITHUB_STEP_SUMMARY"
 
   # =========================================================================

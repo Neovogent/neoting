@@ -60,7 +60,12 @@ locals {
     { name = "REDIS_PORT", value = "6379" },
     { name = "REDIS_TLS", value = "true" }, # transit encryption is on (data.tf); a non-TLS client just hangs
 
-    { name = "S3_BUCKET_DOCS", value = local.bucket_names["docs"] },
+    # S3_BUCKET_DOCUMENTS is the name env.ts actually reads
+    # (select-document-store.ts). This line said S3_BUCKET_DOCS until the
+    # OBJECT_STORE flip below made the mismatch live: with the wrong name the
+    # store would have silently defaulted to `nt-local-docs` — a bucket that
+    # does not exist in AWS — and every persist would have 403'd at runtime.
+    { name = "S3_BUCKET_DOCUMENTS", value = local.bucket_names["docs"] },
     { name = "S3_BUCKET_RECEIPTS", value = local.bucket_names["receipts"] },
     { name = "S3_BUCKET_EXPORTS", value = local.bucket_names["exports"] },
     { name = "KMS_KEY_ARN", value = module.storage.kms_key_arn },
@@ -73,6 +78,37 @@ locals {
     # S1 implements; until then scoped endpoints answer 401/500 rather than
     # trusting a header, which is the honest state for a reachable surface.
     { name = "AUTH_MODE", value = "session" },
+
+    # ------------------------------------------------------------------------
+    # The ingest lane, made real. Until these three, a WhatsApp message to the
+    # deployed api was signature-verified and then enqueued IN MEMORY, where
+    # the workers service could not see it — stage 9's own summary said so on
+    # every run. Each switch is config-selected in the app (#12, #16, #23);
+    # the code paths and their tests landed with those issues.
+    #
+    #   INGEST_QUEUE=bullmq    api enqueues to Redis (REDIS_* + auth token are
+    #                          already injected); the worker has always
+    #                          consumed the `ingest` queue — the api's default
+    #                          was the break.
+    #   OBJECT_STORE=s3        sanitised bytes persist to the docs bucket under
+    #                          `w/<businessId>/…` — exactly the prefix the task
+    #                          role's DocumentObjectsWorkspacePrefixOnly
+    #                          statement (compute.tf) allows.
+    #   IMAGE_NORMALISER=sharp the real EXIF/HEIC path. Safe: sharp ships in
+    #                          the image (prebuilt @img/sharp-linux-arm64; the
+    #                          worker already constructs the sharp perceptual
+    #                          hasher unconditionally at boot).
+    #
+    # NOT flipped, deliberately:
+    #   EMAIL_SOURCE stays `fixture` — the s3 poller is a separate process
+    #     (worker/email-intake-main.ts) with no ECS service yet, and env.ts
+    #     refuses EMAIL_SOURCE=s3 combined with fixture stores anyway.
+    #   DOCUMENT_GUARD stays `fixture` — qpdf is deliberately not in the image
+    #     (apps/api/Dockerfile says why); flipping it is a Dockerfile change.
+    # ------------------------------------------------------------------------
+    { name = "INGEST_QUEUE", value = "bullmq" },
+    { name = "OBJECT_STORE", value = "s3" },
+    { name = "IMAGE_NORMALISER", value = "sharp" },
   ]
 
   # ------------------------------------------------------------------------
