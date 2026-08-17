@@ -12,6 +12,8 @@
     "start": "tsx --env-file-if-exists=../../.env src/main.ts",
     "worker": "tsx --env-file-if-exists=../../.env src/worker/main.ts",
     "dev:worker": "tsx watch --env-file-if-exists=../../.env src/worker/main.ts",
+    "worker:email": "tsx --env-file-if-exists=../../.env src/worker/email-intake-main.ts",
+    "dev:worker:email": "tsx watch --env-file-if-exists=../../.env src/worker/email-intake-main.ts",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint src",

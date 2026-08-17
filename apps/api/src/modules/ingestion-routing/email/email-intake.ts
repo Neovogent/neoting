@@ -50,6 +50,12 @@ export interface EmailIntakeDeps {
   readonly practiceId: string;
   /** Sender→workspace map. None exists yet (no DB) — pass empty → everything Unrouted. */
   readonly senderMap?: ReadonlyMap<string, readonly string[]>;
+  /**
+   * The real receipt time (UTC seconds), from the trigger that observed the
+   * object — SES's write time, MailHog's receipt (#78). Preferred over the
+   * sender's forgeable `Date:` header. Absent → the `Date:` header, as before.
+   */
+  readonly receivedAtSeconds?: number;
   /** Injected for the sanitisation virus-scan step; defaults to the fixture. */
   readonly scanner?: VirusScanner;
   /**
@@ -95,13 +101,13 @@ export async function processEmail(email: ParsedEmail, deps: EmailIntakeDeps): P
   // Every attachment of one email shares its routing, so one workspace for all.
   const workspaceId = routing.kind === 'matched' ? routing.businessId : null;
   const untrustedBody = wrapUntrusted(`${email.subject}\n\n${email.text}`);
-  // NOTE: this is the sender's `Date:` header — their clock, and forgeable. It
-  // is the best available today because nothing upstream hands us a real
-  // receipt time, and it is harmless while `stale` is hardcoded false. When the
-  // S3 trigger lands it knows when SES actually wrote the object; take the
-  // receipt time from there and demote this to a fallback. Do not build any
-  // freshness or triage decision on it before then.
-  const receivedAtSeconds = email.date === null ? 0 : Math.floor(email.date.getTime() / 1000);
+  // The trigger's observation time (SES write / MailHog receipt) is the real
+  // receipt time and is preferred (#78). The sender's `Date:` header — their
+  // clock, and forgeable — is only the fallback when no trigger supplied one.
+  // Do not build any freshness or triage decision on the header while it can be
+  // the source of this value.
+  const receivedAtSeconds =
+    deps.receivedAtSeconds ?? (email.date === null ? 0 : Math.floor(email.date.getTime() / 1000));
 
   const accepted: AcceptedEmailDocument[] = [];
   const rejected: EmailRejection[] = [];

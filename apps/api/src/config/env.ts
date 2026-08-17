@@ -102,6 +102,19 @@ const EnvSchema = z.object({
   // are blank there — not required.
   OBJECT_STORE: z.enum(['fixture', 's3']).default('fixture'),
 
+  // Inbound email source (#78). `fixture` = in-memory (offline tests); `mailhog`
+  // = the local SES stand-in's HTTP API; `s3` = the SES receipt prefix in
+  // staging. Selected by config, not import, like the switches above. Default
+  // `fixture` so a fresh clone and CI never poll a mail server that is not there.
+  EMAIL_SOURCE: z.enum(['fixture', 'mailhog', 's3']).default('fixture'),
+  // MailHog's HTTP API (SMTP is 1025; the API is 8025). Only read when
+  // EMAIL_SOURCE=mailhog.
+  MAILHOG_API_URL: z.string().url().default('http://localhost:8025'),
+  // The SES receipt bucket (raw inbound MIME under `inbound/`). Distinct from
+  // S3_BUCKET_DOCUMENTS — this is where SES writes, not where sanitised documents
+  // land. Local MinIO seeds `nt-local-receipts` (docker-compose).
+  S3_BUCKET_RECEIPTS: z.string().default('nt-local-receipts'),
+
   // The image normaliser (#23). `fixture` = passthrough, and it REFUSES HEIC
   // because it genuinely cannot read one; `sharp` = the real EXIF/HEIC path.
   // Selected by config rather than by import so unit tests stay offline and
@@ -177,6 +190,22 @@ const EnvSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['UPLOAD_URL_SECRET'],
       message: 'UPLOAD_URL_SECRET must be set in production — an empty secret cannot sign or verify upload intents, so every upload would 500 (#76)',
+    });
+  }
+
+  // The SES receipt prefix is REAL client mail, and the poller DELETES an email
+  // from it once processed. Handing real mail to a fixture queue (in-memory,
+  // gone on restart) or a fixture store (the sanitised bytes live in one
+  // process's memory) and then deleting the source is destruction dressed as a
+  // clean drain. MailHog is exempt: it is a dev tool holding dev mail, and the
+  // fixture combination is exactly how it is used on a laptop (#78, review of
+  // #97).
+  if (env.EMAIL_SOURCE === 's3' && (env.INGEST_QUEUE === 'fixture' || env.OBJECT_STORE === 'fixture')) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['EMAIL_SOURCE'],
+      message:
+        'EMAIL_SOURCE=s3 polls real SES mail and deletes it after processing — it needs INGEST_QUEUE=bullmq and OBJECT_STORE=s3, or a restart destroys everything in flight',
     });
   }
 });
