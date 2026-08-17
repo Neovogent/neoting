@@ -58,7 +58,21 @@ SYSTEM users have no email, password or sessions. Exclude them from team lists, 
 - `sql/rls.sql` — helper functions, the single `app_can_access_business()` predicate, policies for every tenant table, delegated-OTP scoping, the append-only audit trigger, and the ActionProposal guard trigger.
 
 - `migrations/*_init` — generated, applied, and **verified against a live database**.
-- `sql/tenancy-check.sql` — 18 assertions, all passing. Run it with `pnpm db:tenancy-check` after any policy change; it is the miniature of the CI suite that Governance §15.4 requires.
+- `sql/tenancy-check.sql` — assertions all passing. Run it with `pnpm db:tenancy-check` after any policy change; it is the miniature of the CI suite that Governance §15.4 requires.
+
+## ActionProposal is anchored like Document (issue #104)
+
+`action_proposals.practice_id` exists because the original policy read
+`business_id IS NULL OR app_can_access_business(business_id)` — which made a
+NULL-business proposal **world-readable and world-writable**, and NULL business
+is the *default* for `document.route`, whose subject is an unrouted document.
+The migration `20260817130000_action_proposals_practice_anchor` added the
+column, backfilled it from each business's own practice, added the
+`action_proposals_tenant_anchor` CHECK (**at least one** anchor — an OR, same
+shape and same not-exactly-one semantics as `documents_tenant_anchor`), and
+rewrote the policy onto `app_can_access_document(business_id, practice_id)`,
+which despite its name is the anchor-pair predicate. Section 9 of
+`tenancy-check.sql` is the regression: it fails against the old policy.
 
 ### Regenerating from scratch
 
