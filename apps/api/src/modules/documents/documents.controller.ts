@@ -13,6 +13,7 @@ import {
 import { REQUEST_CONTEXT } from '../../common/context/context.module.js';
 import type { RequestContext } from '../../common/context/request-context.js';
 import { parseBoundary } from '../../common/validation/parse-boundary.js';
+import { coerceQuery } from '../../common/validation/query-coercion.js';
 import type { DocumentsService } from './documents.service.js';
 import { DOCUMENTS_SERVICE } from './tokens.js';
 
@@ -38,7 +39,12 @@ export class DocumentsController {
   @Get()
   @HttpCode(HttpStatus.OK)
   async list(@Query() query: unknown) {
-    const parsed = parseBoundary(listDocumentsQueryParams, query, 'query parameters');
+    // `coerceQuery` first: Express delivers every query value as a string and a
+    // once-given repeatable filter as a bare value, while the generated schema
+    // types `limit` as a number and the filters as arrays. Without it,
+    // `?limit=25` and `?state=READY` — the exact shapes apps/web sends — are
+    // both 400s. Schema-driven, so it cannot drift from the contract.
+    const parsed = parseBoundary(listDocumentsQueryParams, coerceQuery(listDocumentsQueryParams, query), 'query parameters');
     // `require()` resolves the context here, inside Nest's pipeline, so a bad
     // one leaves as a 401 problem+json rather than an Express-level crash (#75).
     return this.service.listDocuments(this.context.require(), parsed);
@@ -62,7 +68,7 @@ export class DocumentsController {
   @HttpCode(HttpStatus.OK)
   async events(@Param('documentId') documentId: string, @Query() query: unknown) {
     const params = parseBoundary(listDocumentEventsParams, { documentId }, 'documentId');
-    const parsed = parseBoundary(listDocumentEventsQueryParams, query, 'query parameters');
+    const parsed = parseBoundary(listDocumentEventsQueryParams, coerceQuery(listDocumentEventsQueryParams, query), 'query parameters');
     return this.service.listDocumentEvents(this.context.require(), params.documentId, parsed);
   }
 
@@ -70,7 +76,7 @@ export class DocumentsController {
   @HttpCode(HttpStatus.OK)
   async extractions(@Param('documentId') documentId: string, @Query() query: unknown) {
     const params = parseBoundary(listDocumentExtractionsParams, { documentId }, 'documentId');
-    const parsed = parseBoundary(listDocumentExtractionsQueryParams, query, 'query parameters');
+    const parsed = parseBoundary(listDocumentExtractionsQueryParams, coerceQuery(listDocumentExtractionsQueryParams, query), 'query parameters');
     return this.service.listDocumentExtractions(this.context.require(), params.documentId, parsed);
   }
 }

@@ -183,7 +183,7 @@ export class DocumentsService {
     documentId: string,
     query: EventsQuery,
   ): Promise<Page<DocumentEvent>> {
-    const page = await this.listChildren(ctx, documentId, query, EVENT_SORT, (db, where, seek) =>
+    const page = await this.listChildren(ctx, documentId, query, 'events', 'asc', EVENT_SORT, (db, where, seek) =>
       db.documentEvent.findMany({
         where,
         orderBy: seek.orderBy as Prisma.DocumentEventOrderByWithRelationInput[],
@@ -199,7 +199,7 @@ export class DocumentsService {
     documentId: string,
     query: ExtractionsQuery,
   ): Promise<Page<Extraction>> {
-    const page = await this.listChildren(ctx, documentId, query, EXTRACTION_SORT, (db, where, seek) =>
+    const page = await this.listChildren(ctx, documentId, query, 'extractions', 'desc', EXTRACTION_SORT, (db, where, seek) =>
       db.extraction.findMany({
         where,
         orderBy: seek.orderBy as Prisma.ExtractionOrderByWithRelationInput[],
@@ -226,6 +226,8 @@ export class DocumentsService {
     ctx: ScopeContext,
     documentId: string,
     query: { cursor?: string | undefined; limit: number },
+    list: 'events' | 'extractions',
+    order: 'asc' | 'desc',
     sort: SortField<Row>,
     find: (
       db: Parameters<Parameters<typeof scopedDb<Row[]>>[2]>[0],
@@ -235,12 +237,17 @@ export class DocumentsService {
   ): Promise<Page<Row>> {
     const request: PageRequest<Row> = {
       sort,
-      order: 'asc',
+      order,
       limit: query.limit,
       cursor: query.cursor,
       // `documentId` is part of the identity of this list, so a cursor from one
-      // document's log cannot be replayed against another's.
-      query: { documentId, cursor: undefined, limit: query.limit },
+      // document's log cannot be replayed against another's — and `list` is too,
+      // so a cursor minted by the events log is refused by the extractions
+      // history rather than mis-seeked. Both children sort on `createdAt` + id,
+      // so without the discriminator the payloads are interchangeable, and the
+      // two lists now read in OPPOSITE directions (see below) — a swapped cursor
+      // would not error, it would silently serve a wrong page.
+      query: { list, documentId, cursor: undefined, limit: query.limit },
     };
     const seek = pageQuery(request);
 
@@ -255,10 +262,17 @@ export class DocumentsService {
 }
 
 /**
- * Both child lists read **forward in time**. They are append-only histories of
- * one document: the processing log is only legible in the order it happened, and
- * the extraction ladder's story is "Textract tried, then the workhorse, then
- * judgment" — newest-first would tell it backwards.
+ * The two child lists read in OPPOSITE directions, and both directions are the
+ * contract's, not a preference: `openapi.yaml` documents events as "The
+ * processing log, oldest first" and extractions as "Every extraction attempt,
+ * newest first". The log is legible in the order it happened; the extraction
+ * history leads with the attempt that currently matters — usually the accepted
+ * one — the way any history-of-attempts surface does.
+ *
+ * An earlier version served extractions oldest-first on the "ladder story"
+ * argument. Whatever its merits, that is a conversation to have on a
+ * contract-change issue (G7) — the implementation follows the spec, it does not
+ * out-argue it.
  */
 const EVENT_SORT = dateField<{ id: string; createdAt: Date }>('createdAt', (r) => r.createdAt, false);
 const EXTRACTION_SORT = dateField<{ id: string; createdAt: Date }>('createdAt', (r) => r.createdAt, false);
@@ -277,7 +291,13 @@ function buildFilters(query: ListQuery): Prisma.DocumentWhereInput {
   return {
     ...(query.businessId !== undefined ? { businessId: query.businessId } : {}),
     ...(query.inbox !== undefined && query.inbox.length > 0 ? { inbox: { in: query.inbox } } : {}),
-    ...(query.state !== undefined && query.state.length > 0 ? { state: { in: query.state } } : {}),
+    // The contract's default is NOT "everything": the `state` parameter says
+    // "Omitted means every state except ARCHIVED". Archived documents are the
+    // vault's business — surfacing them in the working queues would make every
+    // inbox grow forever. Asking for ARCHIVED by name still returns it.
+    ...(query.state !== undefined && query.state.length > 0
+      ? { state: { in: query.state } }
+      : { state: { not: 'ARCHIVED' as const } }),
     ...(query.docType !== undefined && query.docType.length > 0 ? { docType: { in: query.docType } } : {}),
     ...(query.channel !== undefined && query.channel.length > 0 ? { channel: { in: query.channel } } : {}),
     ...(query.supplierName !== undefined
@@ -312,10 +332,17 @@ function buildFilters(query: ListQuery): Prisma.DocumentWhereInput {
           // earlier version of this comment claimed the minimum kept this off a
           // full scan; that was false, and believing it is what would stop the
           // next reader adding the `pg_trgm` GIN index this actually needs.
+          // The contract's field list is "supplier, description, reference and
+          // extracted document text". The first three are these; extracted text
+          // has no column until the FTS change above lands. `originalFilename`
+          // is an ADDITION beyond the documented set — searching for the name a
+          // file arrived under is how people actually find things — and widens
+          // the result, never narrows it.
           OR: [
             { supplierName: { contains: query.q, mode: 'insensitive' as const } },
-            { originalFilename: { contains: query.q, mode: 'insensitive' as const } },
+            { description: { contains: query.q, mode: 'insensitive' as const } },
             { reference: { contains: query.q, mode: 'insensitive' as const } },
+            { originalFilename: { contains: query.q, mode: 'insensitive' as const } },
           ],
         }
       : {}),

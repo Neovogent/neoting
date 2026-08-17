@@ -96,10 +96,38 @@ The envelope is shaped as the contract's `{ data, pageInfo }`, so a service
 method returns `toPage(...)` directly and there is no hand-written mapping step
 in between to drift from the spec.
 
-## The filters, and two that are easy to get wrong
+## The query boundary coerces, because query strings have no types
+
+Express hands the controller `{ limit: '25', state: 'READY' }` — every value a
+string, a once-given repeatable filter a bare value — while the generated
+schemas type `limit` as a number and the filters as arrays. Parsed raw, both are
+400s, including the very first call `apps/web` makes. The controller runs each
+query through `common/validation/coerceQuery` **before** `parseBoundary`:
+schema-driven (a key is wrapped/numified only because the generated schema says
+so), matching on `_def.typeName` strings rather than `instanceof` because
+`@neoting/contracts` has its own zod instance under pnpm and cross-instance
+`instanceof` is silently false everywhere. Bodies are NOT coerced — a
+number-as-string in JSON is genuinely wrong and should stay a 400.
+
+## The filters, and four that are easy to get wrong
 
 `buildFilters` is **not a security boundary** — read the comment on it before
-adding anything. Two details there are load-bearing:
+adding anything. Four details there are load-bearing:
+
+- **An omitted `state` filter excludes ARCHIVED** — the contract's own default
+  ("Omitted means every state except ARCHIVED"), not a preference. Without it
+  every working queue grows forever. Asking for ARCHIVED by name still returns
+  it. This shipped as "omitted means everything" and a test now pins both
+  halves. A consequence for tests: the no-filter `where` is `{ state: { not:
+  'ARCHIVED' } }`, never `{}` — the no-second-tenancy-mechanism test asserts on
+  the KEYS for exactly this reason.
+- **Extractions are served NEWEST first, events OLDEST first** — both are the
+  contract's words ("Every extraction attempt, newest first" / "The processing
+  log, oldest first"). Extractions shipped oldest-first on a narrative argument
+  the spec does not make. Because the two child lists now read in opposite
+  directions on the same `createdAt` + id sort, the child-cursor fingerprint
+  carries a `list` discriminator — a cursor minted by events is a 400 on
+  extractions rather than a silently wrong page.
 
 - **The date range is half-open: `receivedFrom` is `gte`, `receivedTo` is `lt`.**
   The asymmetry is the contract's, not a typo — `openapi.yaml` documents them as
@@ -113,6 +141,10 @@ adding anything. Two details there are load-bearing:
   to the plan — an earlier comment in the source claimed the minimum kept this
   off a full scan, which was false and has been corrected. The fix is a `pg_trgm`
   GIN index, which is a `prisma/` change and so a contract-change issue (G7).
+  Field set: `supplierName`, `description`, `reference` (the contract's list,
+  minus extracted text which waits on the FTS column), plus `originalFilename`
+  as a deliberate addition — searching the name a file arrived under is how
+  people actually find things, and it widens results, never narrows them.
 
 ## `presignGet` — a link, never the bytes
 

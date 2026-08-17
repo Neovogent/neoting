@@ -118,6 +118,7 @@ function harness(
   const store: DocumentStore = {
     put: async () => ({ key: 'k', sha256: 's', byteLength: 0 }),
     get: async () => Buffer.alloc(0),
+    sha256: async () => 's',
     head: async () => null,
     presignPut: async () => ({ key: 'k', url: 'https://example.test/put', headers: {} }),
     presignGet: async (input) => {
@@ -193,9 +194,26 @@ test('a businessId filter is a FILTER, never a tenancy guard — no manual pract
   // hand-written practiceId/businessId clause that was not asked for, someone
   // has added a second enforcement mechanism that can disagree with the policy —
   // and the more permissive of the two wins exactly when it matters.
+  //
+  // Asserted on the KEYS, not whole-object equality: the default where is no
+  // longer empty (the ARCHIVED exclusion below lives there), and this test's
+  // claim is about what must be ABSENT.
   const { calls, service } = harness();
   await service.listDocuments(CTX, listQuery());
-  expect(calls.documentFindMany[0]?.where).toEqual({});
+  expect(Object.keys(calls.documentFindMany[0]?.where ?? {})).toEqual(['state']);
+});
+
+test('an omitted state filter excludes ARCHIVED; asking for ARCHIVED by name returns it', async () => {
+  // The contract's `state` parameter: "Omitted means every state except
+  // ARCHIVED". Archived documents are the vault's business — without the
+  // default exclusion every working queue grows forever.
+  const bare = harness();
+  await bare.service.listDocuments(CTX, listQuery());
+  expect(bare.calls.documentFindMany[0]?.where).toEqual({ state: { not: 'ARCHIVED' } });
+
+  const explicit = harness();
+  await explicit.service.listDocuments(CTX, listQuery({ state: ['ARCHIVED'] }));
+  expect(explicit.calls.documentFindMany[0]?.where).toEqual({ state: { in: ['ARCHIVED'] } });
 });
 
 test('an unreachable businessId is an empty page — not 404, not 403', async () => {
@@ -207,14 +225,19 @@ test('an unreachable businessId is an empty page — not 404, not 403', async ()
   expect(page.pageInfo).toEqual({ hasMore: false, nextCursor: null });
 });
 
-test('the free-text q searches supplier, filename and reference case-insensitively', async () => {
+test('the free-text q searches supplier, description, reference and filename case-insensitively', async () => {
+  // The contract's field list is "supplier, description, reference and
+  // extracted document text" — the first three are pinned here; extracted text
+  // waits on the FTS contract change. `originalFilename` is a deliberate
+  // addition beyond the documented set, pinned so it cannot silently vanish.
   const { calls, service } = harness();
   await service.listDocuments(CTX, listQuery({ q: 'acme' }));
-  expect(calls.documentFindMany[0]?.where).toEqual({
+  expect(calls.documentFindMany[0]?.where).toMatchObject({
     OR: [
       { supplierName: { contains: 'acme', mode: 'insensitive' } },
-      { originalFilename: { contains: 'acme', mode: 'insensitive' } },
+      { description: { contains: 'acme', mode: 'insensitive' } },
       { reference: { contains: 'acme', mode: 'insensitive' } },
+      { originalFilename: { contains: 'acme', mode: 'insensitive' } },
     ],
   });
 });
@@ -286,7 +309,9 @@ test('receivedFrom is INCLUSIVE and receivedTo is EXCLUSIVE, so a midnight docum
     listQuery({ receivedFrom: '2026-08-01T00:00:00.000Z', receivedTo: '2026-09-01T00:00:00.000Z' }),
   );
 
-  expect(calls.documentFindMany[0]?.where).toEqual({
+  // toMatchObject: the claim here is the two operators, not the whole where —
+  // the default ARCHIVED exclusion also lives in it.
+  expect(calls.documentFindMany[0]?.where).toMatchObject({
     receivedAt: {
       gte: new Date('2026-08-01T00:00:00.000Z'),
       lt: new Date('2026-09-01T00:00:00.000Z'),
@@ -398,11 +423,32 @@ test('the child list is NEVER queried when the parent document is invisible', as
   }
 });
 
-test('listDocumentExtractions returns the ladder in the order it ran', async () => {
+test('listDocumentExtractions returns the ladder newest first, as the contract declares', async () => {
+  // "Every extraction attempt, newest first" (`openapi.yaml`). This shipped
+  // oldest-first on a narrative argument the spec does not make — the spec is
+  // LAW, and re-arguing it belongs on a contract-change issue, not in orderBy.
   const { calls, service } = harness({ children: [] });
   const page = await service.listDocumentExtractions(CTX, 'doc_1', { limit: 50 } as never);
 
   expect(page.data).toEqual([]);
   expect(page.pageInfo).toEqual({ hasMore: false, nextCursor: null });
-  expect(calls.childFindMany[0]).toMatchObject({ orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
+  expect(calls.childFindMany[0]).toMatchObject({ orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] });
+});
+
+test("an events cursor is refused by extractions — the list's identity is in the fingerprint", async () => {
+  // Both children sort on createdAt + id, so without a discriminator their
+  // cursor payloads are interchangeable — and the two lists read in OPPOSITE
+  // directions, so a swapped cursor would not error, it would silently serve a
+  // wrong page of the other list.
+  const events = harness({ children: [{ id: 'ev_1', createdAt: NOW }, { id: 'ev_2', createdAt: NOW }] });
+  const page1 = await events.service.listDocumentEvents(CTX, 'doc_1', { limit: 1 } as never);
+  const cursor = page1.pageInfo.nextCursor;
+  expect(cursor).not.toBeNull();
+
+  const extractions = harness({ children: [] });
+  const err = await grab(() =>
+    extractions.service.listDocumentExtractions(CTX, 'doc_1', { limit: 1, cursor } as never),
+  );
+  expect((err as AppException).getStatus()).toBe(HttpStatus.BAD_REQUEST);
+  expect((err as AppException).code).toBe('NT-VAL-001');
 });
