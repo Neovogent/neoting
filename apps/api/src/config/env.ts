@@ -136,6 +136,20 @@ const EnvSchema = z.object({
       message: 'MEDIA_FETCH=graph needs META_MEDIA_ACCESS_TOKEN — a System User bearer with whatsapp_business_messaging, NOT META_APP_SECRET',
     });
   }
+
+  // Real fetches into a fixture store is byte loss dressed as success: the
+  // `documents` row persists with an s3_key that names an object in ONE
+  // process's memory, gone on restart and invisible to every other process.
+  // Every later stage (extraction, the presigned original, sanitisation
+  // re-keying) then 404s on a row that looks perfectly healthy. Refuse the
+  // combination at boot, where the cause is unambiguous (#79, review of #96).
+  if (env.MEDIA_FETCH === 'graph' && env.OBJECT_STORE === 'fixture') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['OBJECT_STORE'],
+      message: 'MEDIA_FETCH=graph with OBJECT_STORE=fixture persists rows pointing at in-memory bytes — set OBJECT_STORE=s3 (MinIO locally) before fetching real media',
+    });
+  }
 });
 
 export type Env = Readonly<z.infer<typeof EnvSchema>>;

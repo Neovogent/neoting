@@ -256,11 +256,15 @@ test('a media job with no practice anchor refuses to persist and dead-letters', 
   expect(h.fetcher.requested).toHaveLength(0); // refused before spending a Graph call
 });
 
-test('a sanitisation refusal is said out loud with its NT-ING code, and persists nothing', async () => {
+test('a sanitisation refusal DEAD-LETTERS with its NT-ING code — never a quiet success', async () => {
+  // REGRESSION. This used to warn and return null, which completed the job:
+  // claim kept, wamid replay-blocked, media id expiring at Meta — the document
+  // lost with one log line as its only trace. Terminal, like an unmapped
+  // practice: the DLQ keeps job.data visible and replayable.
   const h = harness();
   h.fetcher.put('media-1', { bytes: Buffer.from('this is not any accepted format') });
 
-  await processIngestJob(whatsappJob, h.deps);
+  await expect(processIngestJob(whatsappJob, h.deps)).rejects.toThrow(TerminalJobError);
 
   expect(h.sink.persisted.size).toBe(0);
   expect(h.warns.some((w) => w.includes('NT-ING-002') && w.includes('trace-wa'))).toBe(true);

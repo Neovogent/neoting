@@ -165,16 +165,21 @@ async function materialise(payload: IngestJobPayload, deps: ProcessorDeps): Prom
   if (!outcome.ok) {
     // A sanitisation refusal is a DECISION about this document, not a transient
     // failure: retrying an oversize or infected file forever changes nothing.
-    // It is said out loud with its NT-ING code and the traceId.
     //
-    // ⚠ It is NOT yet written to the Rejected/Failed surface, because that needs
-    // a `documents` row and `documents.s3_key` is NOT NULL — see #79 for the
-    // contract change. Until it lands this log is the only record, which is why
-    // it carries the code and the reason rather than just "rejected".
-    deps.logger.warn(
-      `whatsapp media ${payload.idempotencyKey} rejected: ${outcome.rejection.code} ${outcome.rejection.message} (trace=${payload.traceId})`,
-    );
-    return null;
+    // ⚠ THROW, do not warn-and-return. Returning null completes the job
+    // successfully: the idempotency claim stands, the webhook replay store
+    // already blocks the wamid, and Meta's media id expires in ~30 days — so a
+    // client's rejected receipt becomes unrecoverable with one warn line as its
+    // only trace. That contradicts this module's first invariant ("nothing is
+    // ever silently dropped") and #79's own acceptance ("a visible rejection
+    // with a reason … never a lost message"). It cannot be a `documents` row
+    // yet — `documents.s3_key` is NOT NULL, the contract change is raised on
+    // #79 — but it CAN be a DLQ entry today, exactly like an unmapped practice
+    // above: `job.data` keeps the mediaId, caption, practiceId and traceId, a
+    // human sees it, and it is replayable while the media id still resolves.
+    const line = `whatsapp media ${payload.idempotencyKey} rejected by sanitisation: ${outcome.rejection.code} ${outcome.rejection.message} (trace=${payload.traceId})`;
+    deps.logger.warn(`${line} — dead-lettering so it stays visible and replayable`);
+    throw new TerminalJobError(line);
   }
 
   deps.logger.log(

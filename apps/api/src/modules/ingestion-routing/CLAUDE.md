@@ -247,11 +247,19 @@ email takes from the point the bytes are in hand.
 - **`fetchWhatsAppMedia` fetch → `sanitise` → perceptual-hash → `store.put`,
   then returns; it does not persist.** The processor owns the sink write, so
   WhatsApp and email converge on one idempotency rule. A fetch failure **throws**
-  (`MediaFetchError`); a sanitisation refusal **returns** `{ok:false, rejection}`.
-  The difference is deliberate — a rejection is a decision about the document, a
-  fetch failure is the world being unavailable, and only the worker knows whether
-  that is a backoff or a dead-letter (`withFetchClassification`: retryable
-  rethrows for BullMQ, terminal → `TerminalJobError` → `UnrecoverableError`).
+  (`MediaFetchError`); a sanitisation refusal **returns** `{ok:false, rejection}`
+  to the processor, which then **throws `TerminalJobError`** so the job
+  dead-letters. The shape difference is deliberate — a rejection is a decision
+  about the document, a fetch failure is the world being unavailable, and only
+  the worker knows whether that is a backoff or a dead-letter
+  (`withFetchClassification`: retryable rethrows for BullMQ, terminal →
+  `TerminalJobError` → `UnrecoverableError`). The review of #96 turned the
+  refusal from warn-and-return into a dead-letter: returning null completed the
+  job, so with the wamid replay-blocked and Meta's media id expiring (~30 days)
+  a rejected receipt was one warn line from being unrecoverable. The DLQ entry
+  keeps `job.data` (mediaId, caption, practiceId, traceId) visible and
+  replayable until the s3_key nullability change (#79, G7) lets it become a
+  REJECTED document row.
 - **The caption becomes `documents.description`, STILL WRAPPED** in
   `<untrusted_content>` (§9.6) — never unwrapped, not even to log it. The
   unmapped-number warning names the wamid only.
@@ -286,7 +294,8 @@ complete** (all posted, awaiting his call):
    Proposed the exact migration (`ALTER COLUMN s3_key DROP NOT NULL` + a
    `CHECK (s3_key IS NOT NULL OR state IN ('REJECTED','FAILED'))`) as a **G7
    contract change**. Until it lands, a rejection is a `logger.warn` with the
-   NT-ING code + traceId, not a row.
+   NT-ING code + traceId **plus a DLQ entry** (review of #96 — see the
+   fetch-vs-refusal bullet above), not a row.
 
 Also corrected two errors in the issue text: `channel: 'whatsapp'` does not exist
 (used `'client'`, which `channels.ts` already documents as WhatsApp intake at

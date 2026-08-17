@@ -65,3 +65,16 @@ test('NODE_ENV=production with the fixture (defaulted) auth mode fails to boot',
 test('NODE_ENV=production with AUTH_MODE=session boots', () => {
   expect(loadEnv({ NODE_ENV: 'production', AUTH_MODE: 'session' } as NodeJS.ProcessEnv).AUTH_MODE).toBe('session');
 });
+
+// #79 / review of #96: real Graph fetches must never land in the in-memory
+// store — the row would outlive the bytes, which is loss dressed as success.
+test('MEDIA_FETCH=graph with the fixture object store fails to boot', () => {
+  expect(() =>
+    loadEnv({ MEDIA_FETCH: 'graph', META_MEDIA_ACCESS_TOKEN: 't' } as NodeJS.ProcessEnv),
+  ).toThrow(/OBJECT_STORE/i);
+});
+
+test('MEDIA_FETCH=graph with a real store boots', () => {
+  const env = loadEnv({ MEDIA_FETCH: 'graph', META_MEDIA_ACCESS_TOKEN: 't', OBJECT_STORE: 's3' } as NodeJS.ProcessEnv);
+  expect(env.MEDIA_FETCH).toBe('graph');
+});
