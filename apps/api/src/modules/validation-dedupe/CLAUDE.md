@@ -83,10 +83,59 @@ real `DocumentsService` under RLS, reason and `retryable` hint present, event
 log gapless. **Retry is a `document.reprocess` proposal on the Review →
 Approve spine — no `POST /documents/{id}/retry` exists and none may** (§10).
 
+### Proposal executors (issue #81)
+
+`proposals/` — the effects the Review → Approve engine (S1) executes, on the
+signature ACKed on the issue. The ENGINE owns authorisation, the review gate,
+the shown-hash check, the audit write and the `outcome` record; an executor
+performs exactly one effect inside the engine's open `scopedDb` transaction
+(`ScopedClient` has no `$transaction`, so one-effect-one-transaction is
+structural) and decides nothing about whether it may happen.
+
+- **`buildExecutorRegistry()`** — total over the contract's `ProposalKind` by
+  mapped type: a missing kind is a compile error; the engine's `NT-PRP-001`
+  stays the second line of defence. Two real executors, five honest holes
+  throwing `ProposalNotImplementedError` by name. **No controller imports the
+  proposals directory** — a test walks every `*.controller.ts` and asserts it;
+  the provider-side half (keep the registry token out of public providers) is
+  S1's to uphold.
+- **`document.route`** — assigns an Unrouted document a business + inbox.
+  Keeps `practice_id` (decision 4; both-set is the normal routed case, #103),
+  refuses UNROUTED as a target, refuses moving an already-routed document
+  (that is `move-business`, which carries the addressee-mismatch warning),
+  resolves the target business through RLS BEFORE writing (the web-upload
+  guard, applied to effects), and never touches `DocumentState`.
+  `teachRouterForSender` is a recorded seam for the rules lane. Idempotent:
+  a replay is a no-op with no second event and no second dedupe.
+- **Dedupe on route** — the deferred design decided on #81: the executor
+  writes `DocumentEvent{stage:'dedupe', outcome:'deferred'}` IN the effect
+  transaction (durable intent — the outbox principle on the table that
+  exists) and returns a `dedupe` follow-up; the engine calls
+  `runDedupeFollowUp` post-commit (detector passed through a STRUCTURAL seam,
+  `DedupeDetection` — never an import into ingestion-routing's internals),
+  which records the completion; `findStaleDedupeFollowUps` is the sweep for
+  deferrals whose completion never landed. Proven end to end against a real
+  database with the real `PrismaDuplicateDetector`: routing a byte-identical
+  twin into a business creates the `Duplicate` pair.
+- **`document.archive`** — batched (1..500), all-or-nothing, drives the state
+  machine per document. Archive sets `state = ARCHIVED` AND `archivedAt`
+  (decision 5 as ruled on #81 — the read surface's default exclusion keys on
+  `state`). Unarchive restores the pre-archive state from the archive event's
+  own `detail.from` (the audit trail as the restore oracle; derivation
+  fallback for pre-machine rows), carries a failure's recorded reason back
+  through the machine's typed gate, and `clearPublishingData` demotes a
+  PUBLISHED restore to readiness's answer while recording
+  `publishingDataClearDeferred` — clearing Publish rows is the publishing
+  module's seam.
+
 ## TODO
 
-- [ ] Proposal executors (#81) — drive the machine from `document.route` /
-      `document.archive`; the unarchive-restore ruling is recorded on #81.
+- [ ] The five unimplemented executors (`update-coding`, `move-business`,
+      `reprocess`, `reject`, `split`) — each needs its own issue; the registry
+      already types and names them.
+- [ ] S1 wires the engine: registry via `useFactory` with the token kept out
+      of public providers; follow-ups enqueued post-commit; a periodic sweep
+      over `findStaleDedupeFollowUps`.
 - [ ] Wire the pipeline (extraction completion) onto `resolveProcessedState`
       when extraction lands; the sink still only creates RECEIVED rows today.
 - [ ] Confidence gating — arrives with eval calibration, lands in the seam
