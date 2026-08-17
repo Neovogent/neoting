@@ -841,6 +841,8 @@ jobs:
       WORKERS_TASK_FAMILY: nt-staging-workers
       MIGRATE_TASK_FAMILY: nt-staging-migrate
       MIGRATE_LOG_GROUP: /nt/staging/migrate
+      API_LOG_GROUP: /nt/staging/api
+      WORKERS_LOG_GROUP: /nt/staging/workers
       EDGE_HOST: api.neoting.neovogent.com
 
     steps:
@@ -1024,11 +1026,42 @@ jobs:
           fi
 
       # The circuit breaker (services.tf) rolls back on its own if the tasks
-      # cannot pass the target-group health check. This wait is what turns that
-      # rollback into a RED pipeline instead of a green one in front of a
-      # silently reverted service.
+      # cannot pass the target-group health check — and `services-stable`
+      # SUCCEEDS after that rollback completes, because a service serving the
+      # OLD revision is perfectly stable. An earlier version of this comment
+      # claimed the wait turns a rollback red; it does not, and the price of
+      # believing it was measured on 17 Aug 2026: every deploy from #90 to
+      # #107 failed at container start (the env.ts production boot gates),
+      # rolled back to rev 25, and this pipeline reported green while staging
+      # sat pinned at #89 for a day. The wait proves the service settled; the
+      # assertion AFTER it proves it settled on the right revision. /healthz
+      # is equally blind here — after a rollback it probes the old build.
       - name: Wait for the service to reach steady state
         run: aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
+
+      - name: Assert the api is serving THIS run's revision (rollback = red)
+        run: |
+          set -euo pipefail
+          serving=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+                      --query "services[0].deployments[?status=='PRIMARY'].taskDefinition | [0]" --output text)
+          expected="${{ steps.taskdef.outputs.arn }}"
+          echo "serving:  $serving"
+          echo "expected: $expected"
+          if [ "$serving" != "$expected" ]; then
+            echo "--- most recent stopped api tasks (why the new revision died) ---"
+            for t in $(aws ecs list-tasks --cluster "$CLUSTER" --family "$TASK_FAMILY" \
+                         --desired-status STOPPED --query 'taskArns[0:3]' --output text); do
+              aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$t" \
+                --query 'tasks[0].{def:taskDefinitionArn,stoppedReason:stoppedReason,exitCode:containers[0].exitCode}' \
+                --output json || true
+              # Best-effort: a task killed before its container ran has no stream.
+              aws logs get-log-events --log-group-name "$API_LOG_GROUP" \
+                --log-stream-name "ecs/api/${t##*/}" --limit 40 \
+                --query 'events[].message' --output text 2>/dev/null | tail -20 || true
+            done
+            echo "::error title=Deploy rolled back::ECS reached steady state on $serving, not on the revision this run registered. The circuit breaker rolled the deployment back — the PREVIOUS build is still serving and this commit is NOT deployed. The stopped-task log above says why the new tasks died."
+            exit 1
+          fi
 
       # Through CloudFront, not the ALB: the HTTPS listener's default action is
       # a 403 and only the origin-verified rule passes traffic (alb.tf), so
@@ -1092,6 +1125,32 @@ jobs:
       # identical to an idle one until the queue-age alarm fires.
       - name: Wait for workers to reach steady state
         run: aws ecs wait services-stable --cluster "$CLUSTER" --services "$WORKERS_SERVICE"
+
+      # A crash-looping worker (boot gate, bad Redis URL) trips the circuit
+      # breaker exactly like the api — and rolled back the same invisible way
+      # from #90 to #107 (running rev 14 while CI had registered rev 24).
+      - name: Assert workers is running THIS run's revision (rollback = red)
+        run: |
+          set -euo pipefail
+          serving=$(aws ecs describe-services --cluster "$CLUSTER" --services "$WORKERS_SERVICE" \
+                      --query "services[0].deployments[?status=='PRIMARY'].taskDefinition | [0]" --output text)
+          expected="${{ steps.workersdef.outputs.arn }}"
+          echo "serving:  $serving"
+          echo "expected: $expected"
+          if [ "$serving" != "$expected" ]; then
+            echo "--- most recent stopped workers tasks ---"
+            for t in $(aws ecs list-tasks --cluster "$CLUSTER" --family "$WORKERS_TASK_FAMILY" \
+                         --desired-status STOPPED --query 'taskArns[0:3]' --output text); do
+              aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$t" \
+                --query 'tasks[0].{def:taskDefinitionArn,stoppedReason:stoppedReason,exitCode:containers[0].exitCode}' \
+                --output json || true
+              aws logs get-log-events --log-group-name "$WORKERS_LOG_GROUP" \
+                --log-stream-name "ecs/workers/${t##*/}" --limit 40 \
+                --query 'events[].message' --output text 2>/dev/null | tail -20 || true
+            done
+            echo "::error title=Workers deploy rolled back::ECS settled on $serving, not on the revision this run registered. The previous workers build is still consuming and this commit is NOT deployed."
+            exit 1
+          fi
 
       - name: Say what was and was not deployed
         if: ${{ always() }}
