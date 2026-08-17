@@ -2,6 +2,7 @@ import { X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import { commonActions } from '../../i18n/common';
+import { useEscape } from '../../lib/useEscape';
 import { ChaseComposer } from './ChaseComposer';
 
 const m = defineMessages({
@@ -31,19 +32,23 @@ export function ChaseModal({ clientIds, missingItemIds, note, onClose }: {
   onClose: () => void;
 }) {
   const intl = useIntl();
+  useEscape(onClose);
 
   return (
+    // The backdrop is not a button — role="presentation" says so, and the
+    // keyboard path is Escape (useEscape above), not a phantom Enter target.
     <div
       className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label={intl.formatMessage(m.dialogLabel)}
+      role="presentation"
     >
       <motion.div
         initial={{ opacity: 0, y: 16, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={intl.formatMessage(m.dialogLabel)}
         className="w-full max-w-xl my-auto flex flex-col items-center gap-3"
       >
         <div className="w-full flex items-center justify-between gap-4 px-5 py-3 rounded-[20px] border border-white/5 bg-card shadow-2xl">

@@ -2,6 +2,7 @@ import { AlertTriangle, Check, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useIntl } from 'react-intl';
 import { commonActions } from '../../i18n/common';
+import { useEscape } from '../../lib/useEscape';
 
 /**
  * Every other label on this dialog arrives as a prop, because only the caller
@@ -33,19 +34,26 @@ export function ConfirmStep({ title, detail, consequence, confirmLabel, altLabel
   onAlt?: () => void;
 }) {
   const intl = useIntl();
+  // Escape is Cancel — the safe exit from a confirmation, never the confirm.
+  // useEscape stacks, so when this sits over another dialog (DuplicateModal
+  // opens it), Escape dismisses this one first.
+  useEscape(onCancel);
 
   return (
+    // The backdrop is not a button — role="presentation" says so; the keyboard
+    // dismissal is Escape above.
     <div
       className="fixed inset-0 z-[60] bg-black/75 backdrop-blur-sm flex items-center justify-center p-6"
       onClick={onCancel}
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
+      role="presentation"
     >
       <motion.div
         initial={{ opacity: 0, y: 12, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
         className="w-full max-w-md border border-white/10 rounded-[28px] bg-card shadow-2xl overflow-hidden"
       >
         <div className="p-6 flex flex-col gap-3">
@@ -89,6 +97,10 @@ export function ConfirmStep({ title, detail, consequence, confirmLabel, altLabel
             </button>
           )}
           <button
+            // A modal owns focus while it is open: landing it on the primary
+            // action on open is the dialog pattern, not a focus theft — the
+            // rule's concern — and Escape (above) is the guarded way back out.
+            // eslint-disable-next-line jsx-a11y/no-autofocus
             autoFocus
             onClick={onConfirm}
             className={`flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white transition-colors ${

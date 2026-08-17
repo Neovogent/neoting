@@ -1362,9 +1362,15 @@ function FlagIcon({ icon: Icon, tone, title, detail, onClick }: {
           <Icon size={13} />
         </button>
       ) : (
-        <span tabIndex={0} aria-label={title} className={`${shape} cursor-help`}>
+        // A tooltip trigger has to be focusable or keyboard users never see
+        // the tooltip, and the ARIA tooltip pattern wants a real interactive
+        // element for that — not a span with a bare tabIndex, which is what
+        // `no-noninteractive-tabindex` rejects. So: a button that deliberately
+        // does nothing on click, exactly like the clickable branch above minus
+        // the handler.
+        <button type="button" aria-label={title} className={`${shape} cursor-help focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60`}>
           <Icon size={13} />
-        </span>
+        </button>
       )}
     </Tooltip>
   );

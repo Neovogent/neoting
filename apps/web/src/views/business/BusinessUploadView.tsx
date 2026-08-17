@@ -125,7 +125,20 @@ export function BusinessUploadView({ account }: { account: BusinessAccount }) {
         <p className="text-[13px] text-zinc-500 mt-1">{intl.formatMessage(m.subtitle)}</p>
       </div>
 
+      {/* The dropzone really is a button — activating it opens the file
+          picker — so it carries the role, the tab stop and Enter/Space, not
+          just the click. Not a <button> element: a drag-and-drop target with
+          block children is not something button content models allow. Its
+          accessible name is its own visible text below. */}
       <div
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault(); // Space must not scroll the page
+            inputRef.current?.click();
+          }
+        }}
         onDragOver={(e) => {
           e.preventDefault();
           setDragging(true);
@@ -133,7 +146,7 @@ export function BusinessUploadView({ account }: { account: BusinessAccount }) {
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
         onClick={() => inputRef.current?.click()}
-        className={`rounded-[28px] border-2 border-dashed p-12 flex flex-col items-center justify-center text-center cursor-pointer transition-colors ${
+        className={`rounded-[28px] border-2 border-dashed p-12 flex flex-col items-center justify-center text-center cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 ${
           dragging ? 'border-brand bg-brand/5' : 'border-white/10 bg-card hover:border-white/20'
         }`}
       >
