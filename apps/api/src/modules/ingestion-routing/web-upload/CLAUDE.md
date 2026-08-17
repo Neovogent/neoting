@@ -12,11 +12,20 @@ touches the bytes**:
    RLS, presigns a direct `PUT` to object storage, and returns a signed
    `uploadId`.
 2. `POST /document-uploads/{uploadId}/complete` — the bytes have landed. Verify
-   the object exists and hashes to what the client declared, persist the
-   `Document` in `RECEIVED` through `scopedDb`, and enqueue sanitisation.
+   the object exists, matches the declared size, and hashes to what the client
+   declared, persist the `Document` in `RECEIVED` through `scopedDb`, and
+   enqueue sanitisation.
 
 Keeping the file off the request path is what makes a 100 MB accountant batch
 viable and keeps the OTP portal light on a bad connection.
+
+**Verification streams; it never buffers.** Completion used to `get()` the whole
+object into one Buffer to hash it — up to the channel cap per in-flight request,
+in the API process, which is exactly the weight this two-step design exists to
+avoid. It now checks `head().byteLength` against the signed `byteSize` claim
+(NT-ING-003 on mismatch, before a single byte is read) and hashes through
+`DocumentStore.sha256(key)`, whose S3 implementation streams. A unit test pins
+that `get()` is never called on the completion path.
 
 ## `uploadId` is a signed token, not a table
 

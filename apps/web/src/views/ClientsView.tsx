@@ -4,6 +4,7 @@ import {
   Star, Columns3, Download, X, Check, LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { defineMessages, useIntl, type IntlShape, type MessageDescriptor } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
 import { ClientIntakeForm } from '../components/DynamicComponents/ClientIntakeForm';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
@@ -14,16 +15,116 @@ import { useQueryParam } from '../lib/router';
 import { ChaseModal } from '../components/DynamicComponents/ChaseModal';
 import { EXPORT_HINT } from '../lib/exportRules';
 
+/**
+ * The tuple is identity, not copy: it types `Tab` and it is what
+ * `tab === 'Starred'` compares against. The words on the buttons are a separate
+ * lookup, so translating a tab cannot break the filter.
+ */
 const TABS = ['All', 'My clients', 'Starred'] as const;
 type Tab = (typeof TABS)[number];
 
+/** Descriptors, not text — a hook cannot be called at module scope. */
+const TAB_LABEL: Record<Tab, MessageDescriptor> = defineMessages({
+  All: { id: 'analytics.clientsView.tabAll', defaultMessage: 'All' },
+  'My clients': { id: 'analytics.clientsView.tabMyClients', defaultMessage: 'My clients' },
+  Starred: { id: 'analytics.clientsView.tabStarred', defaultMessage: 'Starred' },
+});
+
+/**
+ * Column names are identity as well: `columns.includes('Integration')` is what
+ * the picker toggles, and `countColumn` uses the same string as the column key.
+ * So the tuple stays English and the words on screen come from `COLUMN_LABEL`.
+ */
 const OPTIONAL_COLUMNS = [
   'Integration', 'Bank', 'Health', 'To review', 'Ready', 'Missing', 'Requested',
   'Overdue', 'Unmatched', 'Statement gaps', 'Rejected', 'Approvals', 'Item delay',
   'Auto-publish', 'Next deadline',
 ] as const;
+type OptionalColumn = (typeof OPTIONAL_COLUMNS)[number];
+
+/**
+ * What each column is called in the picker, and — for the drillable counts —
+ * in the table header too. Two columns are headed differently from the way the
+ * picker names them (`Integration` → Ledger, `Health` → Pipeline health); those
+ * headers are separate messages on `m`.
+ */
+const COLUMN_LABEL: Record<OptionalColumn, MessageDescriptor> = defineMessages({
+  Integration: { id: 'analytics.clientsView.columnIntegration', defaultMessage: 'Integration' },
+  Bank: { id: 'analytics.clientsView.columnBank', defaultMessage: 'Bank' },
+  Health: { id: 'analytics.clientsView.columnHealth', defaultMessage: 'Health' },
+  'To review': { id: 'analytics.clientsView.columnToReview', defaultMessage: 'To review' },
+  Ready: { id: 'analytics.clientsView.columnReady', defaultMessage: 'Ready' },
+  Missing: { id: 'analytics.clientsView.columnMissing', defaultMessage: 'Missing' },
+  Requested: { id: 'analytics.clientsView.columnRequested', defaultMessage: 'Requested' },
+  Overdue: { id: 'analytics.clientsView.columnOverdue', defaultMessage: 'Overdue' },
+  Unmatched: { id: 'analytics.clientsView.columnUnmatched', defaultMessage: 'Unmatched' },
+  'Statement gaps': { id: 'analytics.clientsView.columnStatementGaps', defaultMessage: 'Statement gaps' },
+  Rejected: { id: 'analytics.clientsView.columnRejected', defaultMessage: 'Rejected' },
+  Approvals: { id: 'analytics.clientsView.columnApprovals', defaultMessage: 'Approvals' },
+  'Item delay': { id: 'analytics.clientsView.columnItemDelay', defaultMessage: 'Item delay' },
+  'Auto-publish': { id: 'analytics.clientsView.columnAutoPublish', defaultMessage: 'Auto-publish' },
+  'Next deadline': { id: 'analytics.clientsView.columnNextDeadline', defaultMessage: 'Next deadline' },
+});
 
 const DEFAULT_COLUMNS = ['Integration', 'Health', 'To review', 'Missing', 'Requested', 'Rejected', 'Next deadline'];
+
+const m = defineMessages({
+  heading: { id: 'analytics.clientsView.heading', defaultMessage: 'Clients' },
+  countOfTotal: { id: 'analytics.clientsView.countOfTotal', defaultMessage: '{shown} of {total}' },
+  searchPlaceholder: {
+    id: 'analytics.clientsView.searchPlaceholder',
+    defaultMessage: 'Search clients...',
+  },
+  viewCards: { id: 'analytics.clientsView.viewCards', defaultMessage: 'Cards' },
+  viewTable: { id: 'analytics.clientsView.viewTable', defaultMessage: 'Table' },
+  chooseColumns: { id: 'analytics.clientsView.chooseColumns', defaultMessage: 'Choose columns' },
+  columnsPickerHeading: { id: 'analytics.clientsView.columnsPickerHeading', defaultMessage: 'Columns' },
+  addClient: { id: 'analytics.clientsView.addClient', defaultMessage: 'Add Client' },
+  emptyFiltered: { id: 'analytics.clientsView.emptyFiltered', defaultMessage: 'No clients match this filter.' },
+
+  // The two halves of a drill: what the user is shown to have asked, and the
+  // agent's one-line answer above the table it opens.
+  drillPrompt: { id: 'analytics.clientsView.drillPrompt', defaultMessage: '{action} for {clients}' },
+  drillReply: { id: 'analytics.clientsView.drillReply', defaultMessage: 'Here you go:' },
+  drillInbox: { id: 'analytics.clientsView.drillInbox', defaultMessage: 'Show the inbox' },
+  drillReady: { id: 'analytics.clientsView.drillReady', defaultMessage: 'Show ready items' },
+  drillMissing: { id: 'analytics.clientsView.drillMissing', defaultMessage: 'Show missing paperwork' },
+  drillRequested: { id: 'analytics.clientsView.drillRequested', defaultMessage: 'Show requested paperwork' },
+  drillOverdue: { id: 'analytics.clientsView.drillOverdue', defaultMessage: 'Show overdue chases' },
+  drillMatches: { id: 'analytics.clientsView.drillMatches', defaultMessage: 'Show bank matches' },
+  drillStatementGaps: { id: 'analytics.clientsView.drillStatementGaps', defaultMessage: 'Show statement gaps' },
+  drillRejected: { id: 'analytics.clientsView.drillRejected', defaultMessage: 'Show rejected items' },
+  drillApprovals: { id: 'analytics.clientsView.drillApprovals', defaultMessage: 'Show the approval queue' },
+
+  columnClient: { id: 'analytics.clientsView.columnClient', defaultMessage: 'Client' },
+  columnLedger: { id: 'analytics.clientsView.columnLedger', defaultMessage: 'Ledger' },
+  columnPipelineHealth: {
+    id: 'analytics.clientsView.columnPipelineHealth',
+    defaultMessage: 'Pipeline health',
+  },
+  awaitingRegistration: {
+    id: 'analytics.clientsView.awaitingRegistration',
+    defaultMessage: 'Awaiting client registration',
+  },
+  pillXero: { id: 'analytics.clientsView.pillXero', defaultMessage: 'Xero' },
+  pillNotConnected: { id: 'analytics.clientsView.pillNotConnected', defaultMessage: 'Not connected' },
+  pillBankLive: { id: 'analytics.clientsView.pillBankLive', defaultMessage: 'Live' },
+  pillBankStatements: { id: 'analytics.clientsView.pillBankStatements', defaultMessage: 'Statements' },
+  percent: { id: 'analytics.clientsView.percent', defaultMessage: '{value}%' },
+  days: { id: 'analytics.clientsView.days', defaultMessage: '{days}d' },
+
+  bulkAskAi: { id: 'analytics.clientsView.bulkAskAi', defaultMessage: 'Ask AI' },
+  bulkExportCsv: { id: 'analytics.clientsView.bulkExportCsv', defaultMessage: 'Export CSV' },
+  bulkChase: { id: 'analytics.clientsView.bulkChase', defaultMessage: 'Chase selected' },
+  tableFooter: {
+    id: 'analytics.clientsView.tableFooter',
+    defaultMessage: '{count, plural, one {# client} other {# clients}} • select rows for bulk actions',
+  },
+  chaseGroupedNote: {
+    id: 'analytics.clientsView.chaseGroupedNote',
+    defaultMessage: 'Grouped per client — one SMS each.',
+  },
+});
 
 export function ClientsView() {
   const {
@@ -40,6 +141,7 @@ export function ClientsView() {
   const [columns, setColumns] = useState<string[]>(DEFAULT_COLUMNS);
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
   const [chasing, setChasing] = useState<string[] | null>(null);
+  const intl = useIntl();
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -61,18 +163,18 @@ export function ClientsView() {
    */
   const chase = (ids: string[]) => setChasing(ids);
 
-  const drill = (ids: string[], intent: Intent, content: string) => {
+  const drill = (ids: string[], intent: Intent, action: string) => {
     const names = clients.filter((c) => ids.includes(c.id)).map((c) => c.name);
     startConversation(ids, [
-      { id: `${Date.now()}-u`, role: 'user', content: `${content} for ${names.join(', ')}` },
-      { id: `${Date.now()}-a`, role: 'assistant', content: 'Here you go:', intent, payload: { clientIds: ids, clientNames: names } },
+      { id: `${Date.now()}-u`, role: 'user', content: intl.formatMessage(m.drillPrompt, { action, clients: names.join(', ') }) },
+      { id: `${Date.now()}-a`, role: 'assistant', content: intl.formatMessage(m.drillReply), intent, payload: { clientIds: ids, clientNames: names } },
     ]);
   };
 
   const tableColumns: Column<Client>[] = [
     {
       key: 'name',
-      label: 'Client',
+      label: intl.formatMessage(m.columnClient),
       sortValue: (c) => c.name,
       render: (c) => (
         <span className="flex items-center gap-3">
@@ -86,44 +188,44 @@ export function ClientsView() {
             <span className="block text-white font-semibold">{c.name}</span>
             <span className="block text-[11px] text-zinc-500 font-medium">
               {/* Invite-path records have no industry until the client registers. */}
-              {c.awaitingRegistration ? 'Awaiting client registration' : c.industry}
+              {c.awaitingRegistration ? intl.formatMessage(m.awaitingRegistration) : c.industry}
             </span>
           </span>
         </span>
       ),
     },
     ...(columns.includes('Integration')
-      ? [{ key: 'integration', label: 'Ledger', sortValue: (c: Client) => String(c.xeroConnected), render: (c: Client) => (c.xeroConnected ? <Pill tone="blue">Xero</Pill> : <Pill tone="red">Not connected</Pill>) }]
+      ? [{ key: 'integration', label: intl.formatMessage(m.columnLedger), sortValue: (c: Client) => String(c.xeroConnected), render: (c: Client) => (c.xeroConnected ? <Pill tone="blue">{intl.formatMessage(m.pillXero)}</Pill> : <Pill tone="red">{intl.formatMessage(m.pillNotConnected)}</Pill>) }]
       : []),
     ...(columns.includes('Bank')
-      ? [{ key: 'bank', label: 'Bank', sortValue: (c: Client) => String(c.bankConnected), render: (c: Client) => (c.bankConnected ? <Pill tone="green">Live</Pill> : <Pill tone="amber">Statements</Pill>) }]
+      ? [{ key: 'bank', label: intl.formatMessage(COLUMN_LABEL.Bank), sortValue: (c: Client) => String(c.bankConnected), render: (c: Client) => (c.bankConnected ? <Pill tone="green">{intl.formatMessage(m.pillBankLive)}</Pill> : <Pill tone="amber">{intl.formatMessage(m.pillBankStatements)}</Pill>) }]
       : []),
     ...(columns.includes('Health')
       ? [{
-          key: 'health', label: 'Pipeline health', align: 'right' as const, sortValue: (c: Client) => statsFor(c.id).health,
+          key: 'health', label: intl.formatMessage(m.columnPipelineHealth), align: 'right' as const, sortValue: (c: Client) => statsFor(c.id).health,
           render: (c: Client) => {
             const h = statsFor(c.id).health;
-            return <Pill tone={healthTone(h)}>{h}%</Pill>;
+            return <Pill tone={healthTone(h)}>{intl.formatMessage(m.percent, { value: h })}</Pill>;
           },
         }]
       : []),
-    ...countColumn('To review', columns, (c) => statsFor(c.id).toReview, (ids) => drill(ids, 'SHOW_INBOX', 'Show the inbox')),
-    ...countColumn('Ready', columns, (c) => statsFor(c.id).ready, (ids) => drill(ids, 'SHOW_INBOX', 'Show ready items')),
-    ...countColumn('Missing', columns, (c) => statsFor(c.id).missing, (ids) => drill(ids, 'SHOW_MISSING_TABLE', 'Show missing paperwork'), 'red'),
-    ...countColumn('Requested', columns, (c) => statsFor(c.id).requested, (ids) => drill(ids, 'SHOW_MISSING_TABLE', 'Show requested paperwork')),
-    ...countColumn('Overdue', columns, (c) => statsFor(c.id).overdue, (ids) => drill(ids, 'SHOW_MISSING_TABLE', 'Show overdue chases'), 'red'),
-    ...countColumn('Unmatched', columns, (c) => statsFor(c.id).unmatched, (ids) => drill(ids, 'SHOW_MATCHES', 'Show bank matches'), 'red'),
-    ...countColumn('Statement gaps', columns, (c) => statsFor(c.id).statementGaps, (ids) => drill(ids, 'SHOW_MISSING_TABLE', 'Show statement gaps'), 'red'),
-    ...countColumn('Rejected', columns, (c) => statsFor(c.id).rejected, (ids) => drill(ids, 'SHOW_REJECTED', 'Show rejected items'), 'red'),
-    ...countColumn('Approvals', columns, (c) => statsFor(c.id).approvals, (ids) => drill(ids, 'SHOW_APPROVALS', 'Show the approval queue')),
+    ...countColumn(intl, 'To review', columns, (c) => statsFor(c.id).toReview, (ids) => drill(ids, 'SHOW_INBOX', intl.formatMessage(m.drillInbox))),
+    ...countColumn(intl, 'Ready', columns, (c) => statsFor(c.id).ready, (ids) => drill(ids, 'SHOW_INBOX', intl.formatMessage(m.drillReady))),
+    ...countColumn(intl, 'Missing', columns, (c) => statsFor(c.id).missing, (ids) => drill(ids, 'SHOW_MISSING_TABLE', intl.formatMessage(m.drillMissing)), 'red'),
+    ...countColumn(intl, 'Requested', columns, (c) => statsFor(c.id).requested, (ids) => drill(ids, 'SHOW_MISSING_TABLE', intl.formatMessage(m.drillRequested))),
+    ...countColumn(intl, 'Overdue', columns, (c) => statsFor(c.id).overdue, (ids) => drill(ids, 'SHOW_MISSING_TABLE', intl.formatMessage(m.drillOverdue)), 'red'),
+    ...countColumn(intl, 'Unmatched', columns, (c) => statsFor(c.id).unmatched, (ids) => drill(ids, 'SHOW_MATCHES', intl.formatMessage(m.drillMatches)), 'red'),
+    ...countColumn(intl, 'Statement gaps', columns, (c) => statsFor(c.id).statementGaps, (ids) => drill(ids, 'SHOW_MISSING_TABLE', intl.formatMessage(m.drillStatementGaps)), 'red'),
+    ...countColumn(intl, 'Rejected', columns, (c) => statsFor(c.id).rejected, (ids) => drill(ids, 'SHOW_REJECTED', intl.formatMessage(m.drillRejected)), 'red'),
+    ...countColumn(intl, 'Approvals', columns, (c) => statsFor(c.id).approvals, (ids) => drill(ids, 'SHOW_APPROVALS', intl.formatMessage(m.drillApprovals))),
     ...(columns.includes('Item delay')
-      ? [{ key: 'delay', label: 'Item delay', align: 'right' as const, sortValue: (c: Client) => statsFor(c.id).itemDelay, render: (c: Client) => <span className="tabular-nums text-zinc-400">{statsFor(c.id).itemDelay}d</span> }]
+      ? [{ key: 'delay', label: intl.formatMessage(COLUMN_LABEL['Item delay']), align: 'right' as const, sortValue: (c: Client) => statsFor(c.id).itemDelay, render: (c: Client) => <span className="tabular-nums text-zinc-400">{intl.formatMessage(m.days, { days: statsFor(c.id).itemDelay })}</span> }]
       : []),
     ...(columns.includes('Auto-publish')
-      ? [{ key: 'autopub', label: 'Auto-publish', align: 'right' as const, sortValue: (c: Client) => statsFor(c.id).autoPublishCoverage, render: (c: Client) => <span className="tabular-nums text-zinc-400">{statsFor(c.id).autoPublishCoverage}%</span> }]
+      ? [{ key: 'autopub', label: intl.formatMessage(COLUMN_LABEL['Auto-publish']), align: 'right' as const, sortValue: (c: Client) => statsFor(c.id).autoPublishCoverage, render: (c: Client) => <span className="tabular-nums text-zinc-400">{intl.formatMessage(m.percent, { value: statsFor(c.id).autoPublishCoverage })}</span> }]
       : []),
     ...(columns.includes('Next deadline')
-      ? [{ key: 'deadline', label: 'Next deadline', align: 'right' as const, sortValue: (c: Client) => c.deadline, render: (c: Client) => <span className="text-zinc-400">{c.deadline}</span> }]
+      ? [{ key: 'deadline', label: intl.formatMessage(COLUMN_LABEL['Next deadline']), align: 'right' as const, sortValue: (c: Client) => c.deadline, render: (c: Client) => <span className="text-zinc-400">{c.deadline}</span> }]
       : []),
   ];
 
@@ -131,8 +233,10 @@ export function ClientsView() {
     <div className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden">
       <header className="px-10 pt-8 pb-5 flex items-center justify-between gap-4 shrink-0 flex-wrap">
         <div className="flex items-baseline gap-4">
-          <h1 className="font-sans text-3xl font-semibold text-white tracking-tight">Clients</h1>
-          <span className="text-sm font-semibold text-zinc-500">{visible.length} of {clients.length}</span>
+          <h1 className="font-sans text-3xl font-semibold text-white tracking-tight">{intl.formatMessage(m.heading)}</h1>
+          <span className="text-sm font-semibold text-zinc-500">
+            {intl.formatMessage(m.countOfTotal, { shown: visible.length, total: clients.length })}
+          </span>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <div className="relative">
@@ -140,14 +244,14 @@ export function ClientsView() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search clients..."
+              placeholder={intl.formatMessage(m.searchPlaceholder)}
               className="w-64 bg-card border border-white/5 rounded-full py-2.5 pl-11 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-brand transition-all placeholder:text-zinc-600 text-white font-medium shadow-inner"
             />
           </div>
 
           <div className="flex items-center bg-card border border-white/5 rounded-full p-1 shadow-inner">
-            <ViewToggle active={view === 'cards'} onClick={() => setView('cards')} icon={LayoutGrid} label="Cards" />
-            <ViewToggle active={view === 'table'} onClick={() => setView('table')} icon={Rows3} label="Table" />
+            <ViewToggle active={view === 'cards'} onClick={() => setView('cards')} icon={LayoutGrid} label={intl.formatMessage(m.viewCards)} />
+            <ViewToggle active={view === 'table'} onClick={() => setView('table')} icon={Rows3} label={intl.formatMessage(m.viewTable)} />
           </div>
 
           {view === 'table' && (
@@ -155,7 +259,7 @@ export function ClientsView() {
               <button
                 onClick={() => setColumnPickerOpen((o) => !o)}
                 className="p-2.5 text-zinc-400 hover:text-white hover:bg-white/5 rounded-full border border-white/5 transition-colors bg-card"
-                title="Choose columns"
+                title={intl.formatMessage(m.chooseColumns)}
               >
                 <Columns3 size={16} />
               </button>
@@ -167,14 +271,14 @@ export function ClientsView() {
                     exit={{ opacity: 0, y: -8, scale: 0.97 }}
                     className="absolute right-0 top-full mt-2 w-56 bg-card border border-white/10 rounded-2xl shadow-2xl z-50 p-2 max-h-80 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                   >
-                    <div className="px-3 py-2 text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Columns</div>
+                    <div className="px-3 py-2 text-[11px] font-bold text-zinc-500 uppercase tracking-widest">{intl.formatMessage(m.columnsPickerHeading)}</div>
                     {OPTIONAL_COLUMNS.map((col) => (
                       <button
                         key={col}
                         onClick={() => setColumns((prev) => (prev.includes(col) ? prev.filter((c) => c !== col) : [...prev, col]))}
                         className="w-full px-3 py-2 rounded-xl flex items-center justify-between gap-2 text-[13px] text-zinc-300 hover:bg-white/5 transition-colors text-left"
                       >
-                        {col}
+                        {intl.formatMessage(COLUMN_LABEL[col])}
                         {columns.includes(col) && <Check size={14} strokeWidth={3} className="text-brand" />}
                       </button>
                     ))}
@@ -189,7 +293,7 @@ export function ClientsView() {
             className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
           >
             <Plus size={16} strokeWidth={2.5} />
-            Add Client
+            {intl.formatMessage(m.addClient)}
           </button>
         </div>
       </header>
@@ -205,7 +309,7 @@ export function ClientsView() {
                 : 'bg-card text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
             }`}
           >
-            {t}
+            {intl.formatMessage(TAB_LABEL[t])}
           </button>
         ))}
       </div>
@@ -213,7 +317,7 @@ export function ClientsView() {
       <div className="flex-1 overflow-y-auto px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {visible.length === 0 ? (
           <div className="border border-white/5 rounded-[32px] bg-card p-10 text-center text-zinc-500">
-            No clients match this filter.
+            {intl.formatMessage(m.emptyFiltered)}
           </div>
         ) : view === 'cards' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -238,11 +342,11 @@ export function ClientsView() {
             selectable
             onRowClick={(c) => openClient(c.id)}
             bulkActions={[
-              { label: 'Ask AI', icon: Sparkles, onClick: (sel) => askAI(sel.map((c) => c.id)) },
-              { label: 'Export CSV', icon: Download, minSelected: 2, disabledHint: EXPORT_HINT, onClick: (sel) => exportClients(sel, statsFor) },
-              { label: 'Chase selected', icon: Send, primary: true, onClick: (sel) => chase(sel.map((c) => c.id)) },
+              { label: intl.formatMessage(m.bulkAskAi), icon: Sparkles, onClick: (sel) => askAI(sel.map((c) => c.id)) },
+              { label: intl.formatMessage(m.bulkExportCsv), icon: Download, minSelected: 2, disabledHint: intl.formatMessage(EXPORT_HINT), onClick: (sel) => exportClients(sel, statsFor) },
+              { label: intl.formatMessage(m.bulkChase), icon: Send, primary: true, onClick: (sel) => chase(sel.map((c) => c.id)) },
             ]}
-            footer={`${visible.length} client${visible.length === 1 ? '' : 's'} • select rows for bulk actions`}
+            footer={intl.formatMessage(m.tableFooter, { count: visible.length })}
           />
         )}
       </div>
@@ -251,7 +355,7 @@ export function ClientsView() {
         {chasing && (
           <ChaseModal
             clientIds={chasing}
-            {...(chasing.length > 1 ? { note: 'Grouped per client — one SMS each.' } : {})}
+            {...(chasing.length > 1 ? { note: intl.formatMessage(m.chaseGroupedNote) } : {})}
             onClose={() => setChasing(null)}
           />
         )}
@@ -287,19 +391,32 @@ export function ClientsView() {
   );
 }
 
-/** A drillable count cell — clicking it opens the matching view in the workspace. */
+const mCount = defineMessages({
+  drillTitle: { id: 'analytics.countColumn.drillTitle', defaultMessage: 'Open {column} for {client}' },
+});
+
+/**
+ * A drillable count cell — clicking it opens the matching view in the workspace.
+ *
+ * Takes `intl` rather than calling `useIntl`: it is a plain function called from
+ * the middle of a column list, so it cannot hold a hook. `label` stays the
+ * English identity — it is the column key and what `enabled.includes` tests —
+ * and the words come from `COLUMN_LABEL`.
+ */
 function countColumn(
-  label: string,
+  intl: IntlShape,
+  label: OptionalColumn,
   enabled: string[],
   value: (c: Client) => number,
   onDrill: (ids: string[]) => void,
   tone: 'neutral' | 'red' = 'neutral',
 ): Column<Client>[] {
   if (!enabled.includes(label)) return [];
+  const text = intl.formatMessage(COLUMN_LABEL[label]);
   return [
     {
       key: label,
-      label,
+      label: text,
       align: 'right',
       sortValue: value,
       render: (c) => {
@@ -315,7 +432,7 @@ function countColumn(
                   ? 'text-red-400 hover:bg-red-500/10'
                   : 'text-white hover:bg-white/5'
             }`}
-            title={n > 0 ? `Open ${label.toLowerCase()} for ${c.name}` : undefined}
+            title={n > 0 ? intl.formatMessage(mCount.drillTitle, { column: text.toLowerCase(), client: c.name }) : undefined}
           >
             {n}
           </button>
@@ -340,6 +457,28 @@ function ViewToggle({ active, onClick, icon: Icon, label }: { active: boolean; o
   );
 }
 
+const mCard = defineMessages({
+  star: { id: 'analytics.clientCard.star', defaultMessage: 'Star' },
+  unstar: { id: 'analytics.clientCard.unstar', defaultMessage: 'Unstar' },
+  xeroConnected: { id: 'analytics.clientCard.xeroConnected', defaultMessage: 'Xero connected' },
+  bankFeedLive: { id: 'analytics.clientCard.bankFeedLive', defaultMessage: 'Bank feed live' },
+  pipelineHealth: { id: 'analytics.clientCard.pipelineHealth', defaultMessage: 'Pipeline Health' },
+  healthPercent: { id: 'analytics.clientCard.healthPercent', defaultMessage: '{value}%' },
+  statMissing: { id: 'analytics.clientCard.statMissing', defaultMessage: 'Missing' },
+  statToReview: { id: 'analytics.clientCard.statToReview', defaultMessage: 'To Review' },
+  // Two whole messages rather than one with an optional tail: word order around
+  // an inserted clause is exactly what differs between languages.
+  requested: { id: 'analytics.clientCard.requested', defaultMessage: '{count} already requested' },
+  requestedWithOverdue: {
+    id: 'analytics.clientCard.requestedWithOverdue',
+    defaultMessage: '{count} already requested • {overdue} overdue',
+  },
+  next: { id: 'analytics.clientCard.next', defaultMessage: 'Next:' },
+  openClient: { id: 'analytics.clientCard.openClient', defaultMessage: 'Open client' },
+  askAi: { id: 'analytics.clientCard.askAi', defaultMessage: 'Ask AI about this client' },
+  chaseMissing: { id: 'analytics.clientCard.chaseMissing', defaultMessage: 'Chase missing documents' },
+});
+
 function ClientCard({
   client, starred, onStar, onOpen, onAskAI, onChase,
 }: {
@@ -351,6 +490,7 @@ function ClientCard({
   onChase: () => void;
 }) {
   const { statsFor } = useAppContext();
+  const intl = useIntl();
   const s = statsFor(client.id);
 
   return (
@@ -368,17 +508,25 @@ function ClientCard({
             className={`w-8 h-8 rounded-full flex items-center justify-center border transition-colors ${
               starred ? 'bg-brand/10 text-brand border-brand/20' : 'text-zinc-600 border-white/5 hover:text-white'
             }`}
-            title={starred ? 'Unstar' : 'Star'}
+            title={intl.formatMessage(starred ? mCard.unstar : mCard.star)}
           >
             <Star size={14} fill={starred ? 'currentColor' : 'none'} />
           </button>
           {client.xeroConnected && (
-            <div className="w-8 h-8 rounded-full bg-brand/10 text-brand flex items-center justify-center border border-brand/20" title="Xero connected">
+            <div className="w-8 h-8 rounded-full bg-brand/10 text-brand flex items-center justify-center border border-brand/20" title={intl.formatMessage(mCard.xeroConnected)}>
+              {/* The Xero mark, drawn as its initial because the real logo is
+                  not ours to redistribute. It is an icon that happens to be a
+                  letter, not copy — a translator has nothing to do with it, and
+                  the accessible name is the `title` above, which is in the
+                  catalogue. The literal rule cannot tell a brand glyph from a
+                  word, so the exemption is stated here rather than widened into
+                  a config that would let real single letters through. */}
+              {/* eslint-disable-next-line neoting/no-literal-string-in-jsx */}
               <span className="font-bold text-[11px]">X</span>
             </div>
           )}
           {client.bankConnected && (
-            <div className="w-8 h-8 rounded-full bg-brand/10 text-brand flex items-center justify-center border border-brand/20" title="Bank feed live">
+            <div className="w-8 h-8 rounded-full bg-brand/10 text-brand flex items-center justify-center border border-brand/20" title={intl.formatMessage(mCard.bankFeedLive)}>
               <span className="font-bold text-[11px]">$</span>
             </div>
           )}
@@ -397,9 +545,9 @@ function ClientCard({
           <div className="flex justify-between items-end mb-2">
             <span className="text-[11px] font-bold text-zinc-500 flex items-center gap-1.5 tracking-wide uppercase">
               <Activity size={12} className="text-brand" />
-              Pipeline Health
+              {intl.formatMessage(mCard.pipelineHealth)}
             </span>
-            <span className="text-xs font-bold text-white">{s.health}%</span>
+            <span className="text-xs font-bold text-white">{intl.formatMessage(mCard.healthPercent, { value: s.health })}</span>
           </div>
           <div className="h-2 w-full bg-raised rounded-full overflow-hidden shadow-inner">
             <motion.div
@@ -412,35 +560,38 @@ function ClientCard({
 
         <div className="grid grid-cols-2 gap-3 mb-5">
           <div className="bg-raised p-4 rounded-2xl border border-white/5 text-center shadow-inner">
-            <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Missing</div>
+            <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">{intl.formatMessage(mCard.statMissing)}</div>
             <div className={`text-2xl font-sans font-bold ${s.missing > 20 ? 'text-red-400' : 'text-white'}`}>{s.missing}</div>
           </div>
           <div className="bg-raised p-4 rounded-2xl border border-white/5 text-center shadow-inner">
-            <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">To Review</div>
+            <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1">{intl.formatMessage(mCard.statToReview)}</div>
             <div className="text-2xl font-sans font-bold text-white">{s.toReview}</div>
           </div>
         </div>
 
         {s.requested > 0 && (
           <div className="text-[11px] font-bold text-zinc-500 mb-3 text-center uppercase tracking-wider">
-            {s.requested} already requested{s.overdue > 0 ? ` • ${s.overdue} overdue` : ''}
+            {intl.formatMessage(s.overdue > 0 ? mCard.requestedWithOverdue : mCard.requested, {
+              count: s.requested,
+              overdue: s.overdue,
+            })}
           </div>
         )}
 
         <div className="text-[12px] font-semibold text-zinc-500 flex items-center justify-center gap-2 bg-ground/50 py-2 rounded-xl">
           <span className="w-2 h-2 rounded-full bg-brand animate-pulse" />
-          Next: <span className="text-white">{client.deadline}</span>
+          {intl.formatMessage(mCard.next)} <span className="text-white">{client.deadline}</span>
         </div>
       </div>
 
       <div className="grid grid-cols-3 gap-2 mt-6">
-        <button onClick={onOpen} className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl text-zinc-400 hover:bg-raised hover:text-white transition-colors" title="Open client">
+        <button onClick={onOpen} className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl text-zinc-400 hover:bg-raised hover:text-white transition-colors" title={intl.formatMessage(mCard.openClient)}>
           <ExternalLink size={18} />
         </button>
-        <button onClick={onAskAI} className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl text-brand bg-brand/10 hover:bg-brand/20 transition-colors border border-brand/10" title="Ask AI about this client">
+        <button onClick={onAskAI} className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl text-brand bg-brand/10 hover:bg-brand/20 transition-colors border border-brand/10" title={intl.formatMessage(mCard.askAi)}>
           <Sparkles size={18} />
         </button>
-        <button onClick={onChase} className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl text-zinc-400 hover:bg-raised hover:text-white transition-colors disabled:opacity-30" title="Chase missing documents" disabled={s.missing === 0}>
+        <button onClick={onChase} className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl text-zinc-400 hover:bg-raised hover:text-white transition-colors disabled:opacity-30" title={intl.formatMessage(mCard.chaseMissing)} disabled={s.missing === 0}>
           <Send size={18} />
         </button>
       </div>

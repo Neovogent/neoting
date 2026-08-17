@@ -45,3 +45,8 @@ pnpm-debug.log*
 # Local scratch — anything here is yours and nobody else's
 .scratch/
 apps/web/web-errors.txt
+
+# Extracted from source by `pnpm --filter @neoting/web i18n:extract` (Governance
+# §1.4: never commit generated output). It is the artefact a translator
+# receives, and `pnpm lint` regenerates and validates it on every run.
+apps/web/lang/

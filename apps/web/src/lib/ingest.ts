@@ -1,6 +1,34 @@
+import { defineMessages, type IntlShape } from 'react-intl';
 import { ATTRIBUTION_CONFIDENT, attributeClient } from './attribution';
 import { isTabular } from './spreadsheet';
 import type { Client, Document, DocKind, ExtractedField, RoutingRule, SourceChannel } from './types';
+
+/**
+ * Why a file was turned away.
+ *
+ * These three are the only copy in this module. Everything else it writes lands
+ * on a `Document` — `supplier`, `statusNote`, `uploader`, `splitFrom`, and every
+ * `ExtractedField.label` — and those are values the rest of the app matches on:
+ * `readiness.ts` tests `supplier` against a list that includes "extracting…",
+ * `selectors.ts` finds mandatory fields by their exact label, and
+ * `api/documents.ts` fills `statusNote` from the server's own `failureMessage`.
+ * A field that can hold a sentence the server wrote is not a catalogue entry,
+ * and a label a matcher compares is a key, not a phrase.
+ */
+const m = defineMessages({
+  unsupportedFormat: {
+    id: 'pipeline.ingest.unsupportedFormat',
+    defaultMessage: 'Unsupported format .{extension}',
+  },
+  contentsUnavailable: {
+    id: 'pipeline.ingest.contentsUnavailable',
+    defaultMessage: 'the file contents were not available to read',
+  },
+  overChannelLimit: {
+    id: 'pipeline.ingest.overChannelLimit',
+    defaultMessage: 'Over the {megabytes}MB limit for this channel — use web upload or split it first',
+  },
+});
 
 /** The ceiling an accountant working in the app gets, and the default. */
 const ACCOUNTANT_UPLOAD_LIMIT = 100 * 1024 * 1024;
@@ -62,6 +90,13 @@ export function ingestFiles(
   files: { name: string; size: number; raw?: File }[],
   client: Client | undefined,
   source: SourceChannel,
+  /**
+   * A parameter rather than a hook, for the reason `lib/failures.ts` gives:
+   * this is module scope. `rejected[].reason` is a string because the caller
+   * puts it straight into a list beside a `toLocaleTimeString` stamp — the
+   * record is written once, at the moment of rejection, and read as text.
+   */
+  intl: IntlShape,
   { limit = ACCOUNTANT_UPLOAD_LIMIT, uploader = 'You (web upload)', kind, clientNote }: IngestOptions = {},
 ): IngestResult {
   const documents: Document[] = [];
@@ -72,20 +107,20 @@ export function ingestFiles(
     const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
 
     if (!ACCEPTED_EXTENSIONS.includes(ext)) {
-      rejected.push({ fileName: file.name, reason: `Unsupported format .${ext}` });
+      rejected.push({ fileName: file.name, reason: intl.formatMessage(m.unsupportedFormat, { extension: ext }) });
       continue;
     }
 
     // A spreadsheet leaves here immediately — its rows are read, not scanned.
     if (isTabular(file.name)) {
       if (file.raw) sheets.push({ fileName: file.name, file: file.raw });
-      else rejected.push({ fileName: file.name, reason: 'the file contents were not available to read' });
+      else rejected.push({ fileName: file.name, reason: intl.formatMessage(m.contentsUnavailable) });
       continue;
     }
     if (file.size > limit) {
       rejected.push({
         fileName: file.name,
-        reason: `Over the ${Math.round(limit / 1024 / 1024)}MB limit for this channel — use web upload or split it first`,
+        reason: intl.formatMessage(m.overChannelLimit, { megabytes: Math.round(limit / 1024 / 1024) }),
       });
       continue;
     }

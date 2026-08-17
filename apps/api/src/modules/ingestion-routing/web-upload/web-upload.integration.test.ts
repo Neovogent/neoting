@@ -145,6 +145,7 @@ function countingStore(inner: DocumentStore): { store: DocumentStore; presignPut
     store: {
       put: (input) => inner.put(input),
       get: (key) => inner.get(key),
+      sha256: (key) => inner.sha256(key),
       head: (key) => inner.head(key),
       presignPut: (input) => {
         calls += 1;

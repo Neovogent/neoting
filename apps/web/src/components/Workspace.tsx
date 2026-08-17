@@ -4,9 +4,16 @@ import { InputRow } from './InputRow';
 import { useAppContext } from '../context/AppContext';
 import { motion, AnimatePresence } from 'motion/react';
 import { X } from 'lucide-react';
+import { defineMessages, useIntl } from 'react-intl';
+
+const m = defineMessages({
+  closeChat: { id: 'shell.workspace.closeChat', defaultMessage: 'Close chat' },
+  hero: { id: 'shell.workspace.hero', defaultMessage: 'Accounting, but make it magic.' },
+});
 
 export function Workspace() {
   const { messages, setMessages } = useAppContext();
+  const intl = useIntl();
   const isEmpty = messages.length === 0;
 
   return (
@@ -44,7 +51,7 @@ export function Workspace() {
               exit={{ scale: 0, opacity: 0, rotate: 90 }}
               transition={{ type: "spring", stiffness: 400, damping: 25, delay: 0.1 }}
               className="absolute top-6 right-6 z-50 p-2.5 bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white rounded-full border border-white/10 backdrop-blur-md transition-colors shadow-lg"
-              title="Close chat"
+              title={intl.formatMessage(m.closeChat)}
             >
               <X size={20} />
             </motion.button>
@@ -63,7 +70,7 @@ export function Workspace() {
                   actually outstanding, which is more use than a joke about
                   shoeboxes to someone opening this at nine in the morning. */}
               <h1 className="text-5xl md:text-[56px] font-medium text-white tracking-tight" style={{ letterSpacing: '-0.02em' }}>
-                Accounting, but make it magic.
+                {intl.formatMessage(m.hero)}
               </h1>
             </motion.div>
             <motion.div 

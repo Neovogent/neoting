@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -64,6 +66,17 @@ export class S3DocumentStore implements DocumentStore {
     const response = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
     if (response.Body === undefined) throw new Error(`no object body at key ${key}`);
     return Buffer.from(await response.Body.transformToByteArray());
+  }
+
+  async sha256(key: string): Promise<string> {
+    const response = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    if (response.Body === undefined) throw new Error(`no object body at key ${key}`);
+    // Chunk by chunk into the hash — peak memory is one chunk, never the object.
+    // In the Node runtime `Body` is a Readable, which is async-iterable; the SDK
+    // types it for three runtimes at once, hence the assertion.
+    const hash = createHash('sha256');
+    for await (const chunk of response.Body as AsyncIterable<Uint8Array>) hash.update(chunk);
+    return hash.digest('hex');
   }
 
   async presignPut(input: PresignPutInput): Promise<PresignedPut> {

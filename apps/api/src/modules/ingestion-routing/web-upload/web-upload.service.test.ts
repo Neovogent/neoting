@@ -192,6 +192,39 @@ test('completeUpload is 409 NT-ING-003 when the landed bytes do not match the de
   expect((err as AppException).code).toBe('NT-ING-003');
 });
 
+test('completeUpload is 409 NT-ING-003 when the landed size differs from the declared one — even with a matching hash', async () => {
+  // The size comes from the HEAD that already ran, so this fires before the
+  // hash pass reads a single byte. Declaring the hash of what actually LANDED
+  // is the point of the test: the declaration is checked against the claims the
+  // intent signed, not only against a digest.
+  const { store, service } = harness();
+  const token = tokenFor(store, Buffer.from('the-declared-bytes'), Date.now() + 60_000);
+  const landed = Buffer.from('something-else-entirely-and-longer');
+  store.putRaw('w/biz_1/uploads/fixed', landed); // replaced behind the intent's back
+  const err = await grab(() =>
+    service.completeUpload(CTX, token, createHash('sha256').update(landed).digest('hex')),
+  );
+  expect((err as AppException).getStatus()).toBe(HttpStatus.CONFLICT);
+  expect((err as AppException).code).toBe('NT-ING-003');
+});
+
+test('completeUpload never materialises the object — the hash is streamed by the store, not get()', async () => {
+  // REGRESSION. Completion used to `get()` the whole object into one Buffer to
+  // hash it — up to the 100 MB channel cap per in-flight request, in the API
+  // process, which is the exact weight the presigned two-step exists to keep
+  // off the request path. The store hashes it now; `get()` must not be called.
+  const { store, queue, service } = harness();
+  const bytes = Buffer.from('streamed-not-buffered');
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  const token = tokenFor(store, bytes, Date.now() + 60_000);
+  store.get = async () => {
+    throw new Error('completeUpload called store.get() — it must hash via store.sha256() instead');
+  };
+  const doc = await service.completeUpload(CTX, token, hash);
+  expect(doc.state).toBe('RECEIVED');
+  expect(queue.enqueued).toHaveLength(1);
+});
+
 test('a second completion of the same intent returns the same document and does not re-enqueue', async () => {
   // The `created` gate. Both calls pass NO Idempotency-Key, so the replay store
   // cannot short-circuit the second one — it runs the whole path and is stopped

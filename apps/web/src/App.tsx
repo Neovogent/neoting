@@ -4,9 +4,25 @@
  */
 
 import { Suspense, lazy, useEffect, useState } from 'react';
+import { defineMessages, useIntl } from 'react-intl';
 import { Sidebar } from './components/Sidebar';
 import { useAppContext } from './context/AppContext';
 import { motion, AnimatePresence } from 'motion/react';
+
+/**
+ * The shell renders almost no copy of its own — the tab names come from the
+ * sidebar and every screen owns its own words. What is left is what the two
+ * skeletons announce to a screen reader, which is copy even though nothing
+ * draws it: `aria-label` is read aloud, so it goes through the catalogue like
+ * anything else a user receives.
+ *
+ * One message for both skeletons rather than two: they say the same word for
+ * the same reason, and splitting them would hand a translator the same string
+ * twice with no way to see they must agree.
+ */
+const m = defineMessages({
+  loading: { id: 'shell.app.loading', defaultMessage: 'Loading' },
+});
 
 /**
  * Every top-level surface is fetched when it is opened, not when the app boots.
@@ -58,12 +74,13 @@ const BusinessPortalLauncher = lazy(() => import('./components/BusinessPortalLau
  * into place rather than replacing one thing with a different thing.
  */
 function WorkspaceSkeleton() {
+  const intl = useIntl();
   return (
     <div
       className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden"
       role="status"
       aria-busy="true"
-      aria-label="Loading"
+      aria-label={intl.formatMessage(m.loading)}
     >
       <header className="px-10 pt-8 pb-5 flex items-center justify-between gap-4 shrink-0">
         <div className="h-8 w-52 rounded-full bg-white/[0.07] animate-pulse" />
@@ -93,12 +110,13 @@ function WorkspaceSkeleton() {
  * connection, so it stays to a handful of nodes.
  */
 function PortalSkeleton() {
+  const intl = useIntl();
   return (
     <div
       className="flex-1 flex flex-col min-w-0 h-full bg-ground overflow-hidden"
       role="status"
       aria-busy="true"
-      aria-label="Loading"
+      aria-label={intl.formatMessage(m.loading)}
     >
       <div className="w-full max-w-md mx-auto px-5 py-10 flex flex-col gap-5">
         <div className="flex items-center gap-3">

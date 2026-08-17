@@ -9,7 +9,56 @@ import { suggestPrompts } from '../lib/promptSuggestions';
 import { TypedPlaceholder } from './DynamicComponents/TypedPlaceholder';
 import { DocumentFormats, VoiceIcon } from './DynamicComponents/InputAffordances';
 import { CHAT_PROXY_ENABLED } from '../api/config';
+import { defineMessages, useIntl } from 'react-intl';
 import type { Intent } from '../lib/types';
+
+const m = defineMessages({
+  listeningPlaceholder: {
+    id: 'shell.inputRow.listeningPlaceholder',
+    defaultMessage: 'Listening — speak now, then edit before sending…',
+  },
+  transcriptChip: { id: 'shell.inputRow.transcriptChip', defaultMessage: 'Transcript — edit before sending' },
+  attachClientContext: { id: 'shell.inputRow.attachClientContext', defaultMessage: 'Attach client context' },
+  allClients: { id: 'shell.inputRow.allClients', defaultMessage: 'All clients' },
+  clientCount: {
+    id: 'shell.inputRow.clientCount',
+    defaultMessage: '{count, plural, one {# client} other {# clients}}',
+  },
+  attachDocuments: {
+    id: 'shell.inputRow.attachDocuments',
+    defaultMessage: 'Attach documents — 25MB per file, auto-split runs on multi-doc PDFs',
+  },
+  documents: { id: 'shell.inputRow.documents', defaultMessage: 'Documents' },
+  voiceSupported: {
+    id: 'shell.inputRow.voiceSupported',
+    defaultMessage: 'Push to talk — you confirm the transcript before it runs',
+  },
+  voiceUnsupported: {
+    id: 'shell.inputRow.voiceUnsupported',
+    defaultMessage: 'Voice not supported in this browser',
+  },
+  stop: { id: 'shell.inputRow.stop', defaultMessage: 'Stop' },
+  voice: { id: 'shell.inputRow.voice', defaultMessage: 'Voice' },
+  generate: { id: 'shell.inputRow.generate', defaultMessage: 'Generate' },
+
+  // The assistant's own replies to an upload. Two whole sentences rather than
+  // one with an inserted clause: the auto-split case and the plain case say
+  // different things, and a translator should not have to hold both at once.
+  ingestedSplit: {
+    id: 'shell.inputRow.ingestedSplit',
+    defaultMessage:
+      'Ingested {fileCount, plural, one {# file} other {# files}} — auto-split produced {documentCount, plural, one {# document} other {# documents}}. They\'re extracting now.',
+  },
+  ingested: {
+    id: 'shell.inputRow.ingested',
+    defaultMessage:
+      'Ingested {documentCount, plural, one {# document} other {# documents}}. Extraction is running.',
+  },
+  rejected: {
+    id: 'shell.inputRow.rejected',
+    defaultMessage: 'I couldn\'t take {count, plural, one {# file} other {# files}}: {reasons}.',
+  },
+});
 
 export function InputRow() {
   const [input, setInput] = useState('');
@@ -29,14 +78,15 @@ export function InputRow() {
   const menuRef = useRef<HTMLDivElement>(null);
 
   const { addMessage, clients, messages, attachedClients, attachClient, detachClient, ingest, missing, chases, approvals, documents } = useAppContext();
+  const intl = useIntl();
 
   /**
    * Read off the live backlog, so the box offers the thing most worth doing
    * rather than five sentences written months ago.
    */
   const suggestions = useMemo(
-    () => suggestPrompts({ clients, documents, missing, chases, approvals }),
-    [clients, documents, missing, chases, approvals],
+    () => suggestPrompts(intl, { clients, documents, missing, chases, approvals }),
+    [intl, clients, documents, missing, chases, approvals],
   );
   const isEmpty = messages.length === 0;
 
@@ -111,7 +161,10 @@ export function InputRow() {
     const local = classifyLocally(userMessage);
 
     let intent: Intent = local.intent;
-    let response = local.response;
+    // The classifier is module scope and hands back a catalogue entry; this is
+    // where it becomes words. `let`, because the proxy below may replace it
+    // with the server's own sentence, which arrives already written.
+    let response = intl.formatMessage(local.response);
 
     // BOOTSTRAP: https://github.com/Neovogent/neoting/issues/59 — remove with that issue.
     //
@@ -162,15 +215,19 @@ export function InputRow() {
         intent = 'SHOW_INBOX';
         response =
           result.documents.length > attachments.length
-            ? `Ingested ${attachments.length} file${attachments.length === 1 ? '' : 's'} — auto-split produced ${result.documents.length} documents. They're extracting now.`
-            : `Ingested ${result.documents.length} document${result.documents.length === 1 ? '' : 's'}. Extraction is running.`;
+            ? intl.formatMessage(m.ingestedSplit, {
+                fileCount: attachments.length,
+                documentCount: result.documents.length,
+              })
+            : intl.formatMessage(m.ingested, { documentCount: result.documents.length });
       } else if (result.rejected.length) {
         // Nothing sits in a queue waiting to be routed — a file either becomes
         // a document or it was refused at the door, and the reason is said.
         intent = 'GENERAL';
-        response = `I couldn't take ${result.rejected.length} file${result.rejected.length === 1 ? '' : 's'}: ${result.rejected
-          .map((r) => `${r.fileName} — ${r.reason.toLowerCase()}`)
-          .join('; ')}.`;
+        response = intl.formatMessage(m.rejected, {
+          count: result.rejected.length,
+          reasons: result.rejected.map((r) => `${r.fileName} — ${r.reason.toLowerCase()}`).join('; '),
+        });
       }
     }
 
@@ -228,7 +285,7 @@ export function InputRow() {
         )}
 
         <textarea
-          placeholder={speech.listening ? 'Listening — speak now, then edit before sending…' : ''}
+          placeholder={speech.listening ? intl.formatMessage(m.listeningPlaceholder) : ''}
           className="w-full bg-transparent resize-none p-6 pb-4 text-[16px] focus:outline-none placeholder:text-zinc-400 text-zinc-800 min-h-[100px] max-h-40 font-medium [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
           rows={2}
           value={input}
@@ -258,7 +315,7 @@ export function InputRow() {
             {dictated && input && (
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-brand/10 border border-brand/30 text-[12px] font-bold text-brand">
                 <Mic size={12} />
-                Transcript — edit before sending
+                {intl.formatMessage(m.transcriptChip)}
               </span>
             )}
             {files.map((f, i) => (
@@ -283,16 +340,16 @@ export function InputRow() {
                 ref={triggerRef}
                 onClick={() => setPickerOpen((o) => !o)}
                 className="px-4 py-2 bg-white text-zinc-500 hover:text-zinc-900 border border-zinc-200/50 hover:bg-zinc-50 hover:border-zinc-300 rounded-full text-[13px] font-semibold transition-all shadow-sm flex items-center gap-2"
-                title="Attach client context"
+                title={intl.formatMessage(m.attachClientContext)}
               >
                 <Building2 size={14} />
                 {attachedClients.length === 0
-                  ? 'All clients'
+                  ? intl.formatMessage(m.allClients)
                   : attachedClients.length === 1
                     // A length of one means the client is there; the count
                     // wording is only a fallback for an impossible hole.
-                    ? attachedClients[0]?.name ?? '1 client'
-                    : `${attachedClients.length} clients`}
+                    ? attachedClients[0]?.name ?? intl.formatMessage(m.clientCount, { count: 1 })
+                    : intl.formatMessage(m.clientCount, { count: attachedClients.length })}
                 <ChevronDown size={13} className={`transition-transform ${pickerOpen ? 'rotate-180' : ''}`} />
               </button>
 
@@ -339,10 +396,10 @@ export function InputRow() {
                 onFocus={() => { setDocsAnchor(docsRef.current?.getBoundingClientRect() ?? null); setDocsHover(true); }}
                 onBlur={() => setDocsHover(false)}
                 className="px-4 py-2 bg-white text-zinc-500 hover:text-zinc-900 border border-zinc-200/50 hover:bg-zinc-50 hover:border-zinc-300 rounded-full text-[13px] font-semibold transition-all shadow-sm flex items-center gap-2"
-                title="Attach documents — 25MB per file, auto-split runs on multi-doc PDFs"
+                title={intl.formatMessage(m.attachDocuments)}
               >
                 <Paperclip size={14} />
-                Documents
+                {intl.formatMessage(m.documents)}
               </button>
             </div>
             <input
@@ -371,12 +428,12 @@ export function InputRow() {
                   ? 'bg-brand text-white border-brand'
                   : 'bg-white text-zinc-500 hover:text-zinc-900 border-zinc-200/50 hover:bg-zinc-50 hover:border-zinc-300'
               }`}
-              title={speech.supported ? 'Push to talk — you confirm the transcript before it runs' : 'Voice not supported in this browser'}
+              title={intl.formatMessage(speech.supported ? m.voiceSupported : m.voiceUnsupported)}
             >
               {speech.listening
                 ? <Square size={13} fill="currentColor" />
                 : <VoiceIcon active={voiceHover && speech.supported} />}
-              {speech.listening ? 'Stop' : 'Voice'}
+              {intl.formatMessage(speech.listening ? m.stop : m.voice)}
             </button>
           </div>
 
@@ -388,9 +445,9 @@ export function InputRow() {
             onClick={handleSubmit}
             disabled={isLoading || !input.trim()}
             className="px-6 py-2.5 bg-brand text-white hover:bg-brand-hover rounded-full transition-all shadow-lg disabled:opacity-50 disabled:shadow-none flex items-center gap-2 font-semibold text-[14px] shrink-0"
-            title="Generate"
+            title={intl.formatMessage(m.generate)}
           >
-            {isLoading ? <Loader2 size={16} className="animate-spin" /> : 'Generate'}
+            {isLoading ? <Loader2 size={16} className="animate-spin" /> : intl.formatMessage(m.generate)}
           </button>
         </div>
         </div>

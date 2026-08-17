@@ -1,20 +1,231 @@
 import { useMemo } from 'react';
 import { Camera, Upload, AlertCircle, Clock, CheckCircle2, FileText, ShieldCheck, Eye, X, UserPlus, Check } from 'lucide-react';
+import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
 import { Pill } from '../../components/DynamicComponents/DataTable';
 import { currency } from '../../lib/resolver';
-import type { BusinessAccount } from '../../lib/types';
+import type { BusinessAccount, MissingItem } from '../../lib/types';
 import { useQueryParam } from '../../lib/router';
 import { DocumentPreview } from '../../components/DynamicComponents/DocumentPreview';
 import { useConfirm } from '../../components/DynamicComponents/ConfirmProvider';
 import { channelLabel } from '../../lib/channels';
 
+const m = defineMessages({
+  statusProcessing: { id: 'portal.businessHomeView.statusProcessing', defaultMessage: 'Processing' },
+  statusReview: { id: 'portal.businessHomeView.statusReview', defaultMessage: 'With your accountant' },
+  statusReady: { id: 'portal.businessHomeView.statusReady', defaultMessage: 'Accepted' },
+  statusPublished: { id: 'portal.businessHomeView.statusPublished', defaultMessage: 'Filed' },
+  statusRejected: { id: 'portal.businessHomeView.statusRejected', defaultMessage: 'Needs another copy' },
+
+  greeting: { id: 'portal.businessHomeView.greeting', defaultMessage: 'Hello {name}' },
+  greetingAnonymous: { id: 'portal.businessHomeView.greetingAnonymous', defaultMessage: 'Hello there' },
+  waitingOn: {
+    id: 'portal.businessHomeView.waitingOn',
+    defaultMessage: 'Your accountant is waiting on {count, plural, one {# document} other {# documents}}.',
+  },
+  nothingOutstanding: {
+    id: 'portal.businessHomeView.nothingOutstanding',
+    defaultMessage: 'Nothing outstanding — your accountant has everything they asked for.',
+  },
+
+  statRequested: { id: 'portal.businessHomeView.statRequested', defaultMessage: 'Requested' },
+  statSent: { id: 'portal.businessHomeView.statSent', defaultMessage: 'Sent from here' },
+  statProcessing: { id: 'portal.businessHomeView.statProcessing', defaultMessage: 'Processing' },
+  statRejected: { id: 'portal.businessHomeView.statRejected', defaultMessage: 'Needs a new copy' },
+
+  approvalsHeading: {
+    id: 'portal.businessHomeView.approvalsHeading',
+    defaultMessage: '{count, plural, one {# item needs your approval} other {# items need your approval}}',
+  },
+  approvalsDetail: {
+    id: 'portal.businessHomeView.approvalsDetail',
+    defaultMessage: '{items} — your accountant cannot publish these until you have signed them off.',
+  },
+  approvalsAction: { id: 'portal.businessHomeView.approvalsAction', defaultMessage: 'Review and approve' },
+
+  proposedUsersHeadingOne: {
+    id: 'portal.businessHomeView.proposedUsersHeadingOne',
+    defaultMessage: 'Your accountant wants to add someone to your account',
+  },
+  proposedUsersHeadingMany: {
+    id: 'portal.businessHomeView.proposedUsersHeadingMany',
+    defaultMessage: 'Your accountant wants to add {count, plural, other {# people}} to your account',
+  },
+  proposedUsersDetail: {
+    id: 'portal.businessHomeView.proposedUsersDetail',
+    defaultMessage: 'Nothing has been sent to them. They can only send documents for {business} once you say yes.',
+  },
+  memberCanUpload: { id: 'portal.businessHomeView.memberCanUpload', defaultMessage: 'Can send documents' },
+  memberCanSeeTotals: { id: 'portal.businessHomeView.memberCanSeeTotals', defaultMessage: 'Can see totals' },
+  memberTotalsHidden: { id: 'portal.businessHomeView.memberTotalsHidden', defaultMessage: 'Totals hidden' },
+  proposedUserAskedByWithTotals: {
+    id: 'portal.businessHomeView.proposedUserAskedByWithTotals',
+    defaultMessage: 'Asked for by {who} {when}. They will be able to see what your business spends.',
+  },
+  proposedUserAskedByNoTotals: {
+    id: 'portal.businessHomeView.proposedUserAskedByNoTotals',
+    defaultMessage: 'Asked for by {who} {when}. They will not see any of your figures.',
+  },
+  defaultInviter: { id: 'portal.businessHomeView.defaultInviter', defaultMessage: 'your accountant' },
+  declineUserTitle: {
+    id: 'portal.businessHomeView.declineUserTitle',
+    defaultMessage: 'Say no to adding {name}?',
+  },
+  declineUserDetail: {
+    id: 'portal.businessHomeView.declineUserDetail',
+    defaultMessage: 'Your accountant is told, and nothing is sent to this person.',
+  },
+  declineConfirmLabel: { id: 'portal.businessHomeView.declineConfirmLabel', defaultMessage: 'Yes, decline' },
+  declineUserAction: { id: 'portal.businessHomeView.declineUserAction', defaultMessage: 'No, decline' },
+  addUserTitle: {
+    id: 'portal.businessHomeView.addUserTitle',
+    defaultMessage: 'Let {name} send documents for {business}?',
+  },
+  addUserDetailWithTotals: {
+    id: 'portal.businessHomeView.addUserDetailWithTotals',
+    defaultMessage: 'They join as {role} and will see your figures.',
+  },
+  addUserDetailNoTotals: {
+    id: 'portal.businessHomeView.addUserDetailNoTotals',
+    defaultMessage: 'They join as {role} and will not see your figures.',
+  },
+  addUserConsequence: {
+    id: 'portal.businessHomeView.addUserConsequence',
+    defaultMessage: 'Their invite goes {channel} to {recipient} as soon as you approve.',
+  },
+  defaultInviteRecipient: {
+    id: 'portal.businessHomeView.defaultInviteRecipient',
+    defaultMessage: 'their email',
+  },
+  addUserConfirmLabel: { id: 'portal.businessHomeView.addUserConfirmLabel', defaultMessage: 'Yes, add them' },
+  approveAction: { id: 'portal.businessHomeView.approveAction', defaultMessage: 'Approve' },
+
+  proposedChangesHeadingOne: {
+    id: 'portal.businessHomeView.proposedChangesHeadingOne',
+    defaultMessage: 'Your accountant wants to change a detail on your record',
+  },
+  proposedChangesHeadingMany: {
+    id: 'portal.businessHomeView.proposedChangesHeadingMany',
+    defaultMessage: 'Your accountant wants to change {count, plural, other {# details}} on your record',
+  },
+  proposedChangesDetail: {
+    id: 'portal.businessHomeView.proposedChangesDetail',
+    defaultMessage:
+      "Nothing has changed yet. These are your business's own details, so they only update if you say yes.",
+  },
+  changeAskedBy: {
+    id: 'portal.businessHomeView.changeAskedBy',
+    defaultMessage: 'Asked for by {who} {when}.',
+  },
+  changeAskedByMobile: {
+    id: 'portal.businessHomeView.changeAskedByMobile',
+    defaultMessage: 'Asked for by {who} {when}. Every chase and sign-in code would go to this number instead.',
+  },
+  declineChangeTitle: {
+    id: 'portal.businessHomeView.declineChangeTitle',
+    defaultMessage: 'Leave {label} as it is?',
+  },
+  declineChangeDetail: {
+    id: 'portal.businessHomeView.declineChangeDetail',
+    defaultMessage: 'Your accountant is told you declined the change to "{to}".',
+  },
+  declineChangeAction: { id: 'portal.businessHomeView.declineChangeAction', defaultMessage: 'No, keep it' },
+  changeTitle: {
+    id: 'portal.businessHomeView.changeTitle',
+    defaultMessage: 'Change {label} to "{to}"?',
+  },
+  changeDetail: { id: 'portal.businessHomeView.changeDetail', defaultMessage: 'It is currently {from}.' },
+  changeMobileConsequence: {
+    id: 'portal.businessHomeView.changeMobileConsequence',
+    defaultMessage: 'Chases, approvals and sign-in codes will go to the new number from now on.',
+  },
+  changeConfirmLabel: { id: 'portal.businessHomeView.changeConfirmLabel', defaultMessage: 'Yes, change it' },
+
+  captureHeading: { id: 'portal.businessHomeView.captureHeading', defaultMessage: 'Capture a document' },
+  captureDetail: {
+    id: 'portal.businessHomeView.captureDetail',
+    defaultMessage: 'Photograph a receipt or invoice with your camera',
+  },
+  uploadHeading: { id: 'portal.businessHomeView.uploadHeading', defaultMessage: 'Upload a file' },
+  uploadDetail: {
+    id: 'portal.businessHomeView.uploadDetail',
+    defaultMessage: 'PDF, photo or spreadsheet from this device',
+  },
+
+  waitingPanelTitle: {
+    id: 'portal.businessHomeView.waitingPanelTitle',
+    defaultMessage: 'What your accountant is waiting for',
+  },
+  waitingChasedJustNow: {
+    id: 'portal.businessHomeView.waitingChasedJustNow',
+    defaultMessage: 'Last chased just now by SMS',
+  },
+  waitingChasedHoursAgo: {
+    id: 'portal.businessHomeView.waitingChasedHoursAgo',
+    defaultMessage: 'Last chased {hours}h ago by SMS',
+  },
+  waitingDetected: {
+    id: 'portal.businessHomeView.waitingDetected',
+    defaultMessage: 'Detected from your bank feed and supplier statements',
+  },
+  waitingEmpty: {
+    id: 'portal.businessHomeView.waitingEmpty',
+    defaultMessage: "Nothing outstanding. You're all caught up.",
+  },
+  requestRequested: { id: 'portal.businessHomeView.requestRequested', defaultMessage: 'Requested' },
+  requestSpotted: { id: 'portal.businessHomeView.requestSpotted', defaultMessage: 'Spotted' },
+  requestSendAction: { id: 'portal.businessHomeView.requestSendAction', defaultMessage: 'Send it' },
+  requestsMore: { id: 'portal.businessHomeView.requestsMore', defaultMessage: '+ {count} more' },
+
+  sentPanelTitle: { id: 'portal.businessHomeView.sentPanelTitle', defaultMessage: 'Recently sent' },
+  sentPanelSubtitle: {
+    id: 'portal.businessHomeView.sentPanelSubtitle',
+    defaultMessage: 'Status updates as your accountant works through them',
+  },
+  sentEmpty: {
+    id: 'portal.businessHomeView.sentEmpty',
+    defaultMessage: 'Nothing sent yet. Capture or upload your first document.',
+  },
+  sentViaPortal: { id: 'portal.businessHomeView.sentViaPortal', defaultMessage: 'via this portal' },
+  sentViaSource: { id: 'portal.businessHomeView.sentViaSource', defaultMessage: 'via {source}' },
+
+  privacyNote: {
+    id: 'portal.businessHomeView.privacyNote',
+    defaultMessage:
+      'You only ever see your own business here. Your accountant handles the coding and filing — nothing you send is published to the accounting software until they have reviewed it.',
+  },
+  closePreview: { id: 'portal.businessHomeView.closePreview', defaultMessage: 'Close' },
+
+  reasonBankTransaction: {
+    id: 'portal.businessHomeView.reasonBankTransaction',
+    defaultMessage: 'a payment left your account with no receipt',
+  },
+  reasonSupplierStatement: {
+    id: 'portal.businessHomeView.reasonSupplierStatement',
+    defaultMessage: 'on a supplier statement but not sent to us',
+  },
+  reasonStatementGap: {
+    id: 'portal.businessHomeView.reasonStatementGap',
+    defaultMessage: 'a gap in your bank statements',
+  },
+  reasonLedgerAttachment: {
+    id: 'portal.businessHomeView.reasonLedgerAttachment',
+    defaultMessage: 'no copy attached in the ledger',
+  },
+  reasonRecurring: {
+    id: 'portal.businessHomeView.reasonRecurring',
+    defaultMessage: 'you usually send this one every month',
+  },
+});
+
+// The keys are pipeline states — machine values. Only `label` is copy, so it
+// holds a descriptor and is formatted where it is rendered.
 const STATUS_TONE = {
-  processing: { tone: 'blue' as const, label: 'Processing' },
-  review: { tone: 'amber' as const, label: 'With your accountant' },
-  ready: { tone: 'green' as const, label: 'Accepted' },
-  published: { tone: 'green' as const, label: 'Filed' },
-  rejected: { tone: 'red' as const, label: 'Needs another copy' },
+  processing: { tone: 'blue' as const, label: m.statusProcessing },
+  review: { tone: 'amber' as const, label: m.statusReview },
+  ready: { tone: 'green' as const, label: m.statusReady },
+  published: { tone: 'green' as const, label: m.statusPublished },
+  rejected: { tone: 'red' as const, label: m.statusRejected },
 };
 
 /**
@@ -35,6 +246,7 @@ export function BusinessHomeView({
     clientDetailChanges, reviewClientDetailChange,
   } = useAppContext();
   const confirm = useConfirm();
+  const intl = useIntl();
 
   /**
    * Wireframe screen 19: "an approver who happens to have a business login
@@ -53,12 +265,12 @@ export function BusinessHomeView({
    * here rather than already having access, because the practice does not get
    * to decide who works at the company.
    */
-  const proposedUsers = account.members.filter((m) => m.status === 'pending-client-approval');
+  const proposedUsers = account.members.filter((member) => member.status === 'pending-client-approval');
   /** Edits the accountant wants to make to this business's own record. */
   const proposedChanges = clientDetailChanges.filter((c) => c.clientId === account.clientId && c.status === 'pending');
 
   const requests = useMemo(
-    () => missing.filter((m) => m.clientId === account.clientId),
+    () => missing.filter((item) => item.clientId === account.clientId),
     [missing, account.clientId],
   );
 
@@ -72,24 +284,28 @@ export function BusinessHomeView({
   const processing = documents.filter((d) => d.clientId === account.clientId && d.status === 'processing').length;
   const rejected = documents.filter((d) => d.clientId === account.clientId && d.status === 'rejected').length;
 
+  const firstName = account.contactName.split(' ')[0];
+
   return (
     <div className="p-8 max-w-5xl mx-auto flex flex-col gap-6">
       <div>
         <h1 className="font-sans text-2xl font-bold text-white tracking-tight">
-          Hello {account.contactName.split(' ')[0] || 'there'}
+          {firstName
+            ? intl.formatMessage(m.greeting, { name: firstName })
+            : intl.formatMessage(m.greetingAnonymous)}
         </h1>
         <p className="text-[13px] text-zinc-500 mt-1">
           {requests.length > 0
-            ? `Your accountant is waiting on ${requests.length} ${requests.length === 1 ? 'document' : 'documents'}.`
-            : 'Nothing outstanding — your accountant has everything they asked for.'}
+            ? intl.formatMessage(m.waitingOn, { count: requests.length })
+            : intl.formatMessage(m.nothingOutstanding)}
         </p>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat icon={AlertCircle} label="Requested" value={requests.length} tone={requests.length ? 'amber' : 'zinc'} />
-        <Stat icon={Upload} label="Sent from here" value={sent} tone="zinc" />
-        <Stat icon={Clock} label="Processing" value={processing} tone="zinc" />
-        <Stat icon={AlertCircle} label="Needs a new copy" value={rejected} tone={rejected ? 'red' : 'zinc'} />
+        <Stat icon={AlertCircle} label={intl.formatMessage(m.statRequested)} value={requests.length} tone={requests.length ? 'amber' : 'zinc'} />
+        <Stat icon={Upload} label={intl.formatMessage(m.statSent)} value={sent} tone="zinc" />
+        <Stat icon={Clock} label={intl.formatMessage(m.statProcessing)} value={processing} tone="zinc" />
+        <Stat icon={AlertCircle} label={intl.formatMessage(m.statRejected)} value={rejected} tone={rejected ? 'red' : 'zinc'} />
       </div>
 
       {toApprove.length > 0 && (
@@ -100,11 +316,12 @@ export function BusinessHomeView({
             </span>
             <div className="min-w-0 flex-1">
               <div className="text-sm font-bold text-white">
-                {toApprove.length} item{toApprove.length === 1 ? '' : 's'} need{toApprove.length === 1 ? 's' : ''} your approval
+                {intl.formatMessage(m.approvalsHeading, { count: toApprove.length })}
               </div>
               <p className="text-[12px] text-zinc-400 mt-1 leading-relaxed">
-                {toApprove.map((a) => `${a.supplier} ${currency(a.total)}`).join(' · ')} — your accountant cannot
-                publish these until you have signed them off.
+                {intl.formatMessage(m.approvalsDetail, {
+                  items: toApprove.map((a) => `${a.supplier} ${currency(a.total)}`).join(' · '),
+                })}
               </p>
             </div>
           </div>
@@ -119,7 +336,7 @@ export function BusinessHomeView({
               className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
             >
               <ShieldCheck size={15} strokeWidth={2.5} />
-              Review and approve
+              {intl.formatMessage(m.approvalsAction)}
             </button>
           </div>
         </div>
@@ -133,37 +350,46 @@ export function BusinessHomeView({
             </span>
             <div className="min-w-0 flex-1">
               <div className="text-sm font-bold text-white">
-                Your accountant wants to add {proposedUsers.length === 1 ? 'someone' : `${proposedUsers.length} people`} to your account
+                {proposedUsers.length === 1
+                  ? intl.formatMessage(m.proposedUsersHeadingOne)
+                  : intl.formatMessage(m.proposedUsersHeadingMany, { count: proposedUsers.length })}
               </div>
               <p className="text-[12px] text-zinc-400 mt-1 leading-relaxed">
-                Nothing has been sent to them. They can only send documents for {account.businessName} once you say yes.
+                {intl.formatMessage(m.proposedUsersDetail, { business: account.businessName })}
               </p>
             </div>
           </div>
 
           <div className="p-5 flex flex-col gap-3">
-            {proposedUsers.map((m) => (
-              <div key={m.id} className="p-4 rounded-2xl bg-card border border-white/5 flex flex-col gap-3">
+            {proposedUsers.map((member) => (
+              <div key={member.id} className="p-4 rounded-2xl bg-card border border-white/5 flex flex-col gap-3">
                 <div className="flex items-center gap-3 flex-wrap">
                   <span className="w-10 h-10 rounded-xl bg-raised border border-white/5 flex items-center justify-center font-bold text-white shrink-0">
-                    {m.name.trim().charAt(0).toUpperCase() || '?'}
+                    {member.name.trim().charAt(0).toUpperCase() || '?'}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-bold text-white truncate">{m.name}</div>
-                    <div className="text-[12px] text-zinc-500 truncate">{m.email || m.mobile}</div>
+                    <div className="text-sm font-bold text-white truncate">{member.name}</div>
+                    <div className="text-[12px] text-zinc-500 truncate">{member.email || member.mobile}</div>
                   </div>
                   <span className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-                    <Pill tone="blue">{m.role}</Pill>
-                    {m.canUpload && <Pill tone="green">Can send documents</Pill>}
-                    {m.canSeeTotals ? <Pill tone="amber">Can see totals</Pill> : <Pill>Totals hidden</Pill>}
+                    <Pill tone="blue">{member.role}</Pill>
+                    {member.canUpload && <Pill tone="green">{intl.formatMessage(m.memberCanUpload)}</Pill>}
+                    {member.canSeeTotals ? (
+                      <Pill tone="amber">{intl.formatMessage(m.memberCanSeeTotals)}</Pill>
+                    ) : (
+                      <Pill>{intl.formatMessage(m.memberTotalsHidden)}</Pill>
+                    )}
                   </span>
                 </div>
 
                 <p className="text-[12px] text-zinc-500 leading-relaxed">
-                  Asked for by {m.invitedBy ?? 'your accountant'} {m.invitedAt ?? ''}.
-                  {m.canSeeTotals
-                    ? ' They will be able to see what your business spends.'
-                    : ' They will not see any of your figures.'}
+                  {intl.formatMessage(
+                    member.canSeeTotals ? m.proposedUserAskedByWithTotals : m.proposedUserAskedByNoTotals,
+                    {
+                      who: member.invitedBy ?? intl.formatMessage(m.defaultInviter),
+                      when: member.invitedAt ?? '',
+                    },
+                  )}
                 </p>
 
                 <div className="flex items-center gap-2 justify-end flex-wrap">
@@ -171,31 +397,40 @@ export function BusinessHomeView({
                     onClick={async () => {
                       const ok = await confirm({
                         tone: 'red',
-                        title: `Say no to adding ${m.name}?`,
-                        detail: 'Your accountant is told, and nothing is sent to this person.',
-                        confirmLabel: 'Yes, decline',
+                        title: intl.formatMessage(m.declineUserTitle, { name: member.name }),
+                        detail: intl.formatMessage(m.declineUserDetail),
+                        confirmLabel: intl.formatMessage(m.declineConfirmLabel),
                       });
-                      if (ok) reviewProposedUser(account.id, m.id, 'decline', 'Declined by the business');
+                      if (ok) reviewProposedUser(account.id, member.id, 'decline', 'Declined by the business');
                     }}
                     className="flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold text-zinc-400 border border-white/10 hover:text-white hover:border-white/25 transition-colors"
                   >
                     <X size={13} />
-                    No, decline
+                    {intl.formatMessage(m.declineUserAction)}
                   </button>
                   <button
                     onClick={async () => {
                       const ok = await confirm({
-                        title: `Let ${m.name} send documents for ${account.businessName}?`,
-                        detail: `They join as ${m.role}${m.canSeeTotals ? ' and will see your figures' : ' and will not see your figures'}.`,
-                        consequence: `Their invite goes ${channelLabel('user-invite')} to ${m.email || 'their email'} as soon as you approve.`,
-                        confirmLabel: 'Yes, add them',
+                        title: intl.formatMessage(m.addUserTitle, {
+                          name: member.name,
+                          business: account.businessName,
+                        }),
+                        detail: intl.formatMessage(
+                          member.canSeeTotals ? m.addUserDetailWithTotals : m.addUserDetailNoTotals,
+                          { role: member.role },
+                        ),
+                        consequence: intl.formatMessage(m.addUserConsequence, {
+                          channel: intl.formatMessage(channelLabel('user-invite')),
+                          recipient: member.email || intl.formatMessage(m.defaultInviteRecipient),
+                        }),
+                        confirmLabel: intl.formatMessage(m.addUserConfirmLabel),
                       });
-                      if (ok) reviewProposedUser(account.id, m.id, 'approve');
+                      if (ok) reviewProposedUser(account.id, member.id, 'approve');
                     }}
                     className="flex items-center gap-2 px-5 py-2 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
                   >
                     <Check size={13} strokeWidth={3} />
-                    Approve
+                    {intl.formatMessage(m.approveAction)}
                   </button>
                 </div>
               </div>
@@ -212,10 +447,12 @@ export function BusinessHomeView({
             </span>
             <div className="min-w-0 flex-1">
               <div className="text-sm font-bold text-white">
-                Your accountant wants to change {proposedChanges.length === 1 ? 'a detail' : `${proposedChanges.length} details`} on your record
+                {proposedChanges.length === 1
+                  ? intl.formatMessage(m.proposedChangesHeadingOne)
+                  : intl.formatMessage(m.proposedChangesHeadingMany, { count: proposedChanges.length })}
               </div>
               <p className="text-[12px] text-zinc-400 mt-1 leading-relaxed">
-                Nothing has changed yet. These are your business's own details, so they only update if you say yes.
+                {intl.formatMessage(m.proposedChangesDetail)}
               </p>
             </div>
           </div>
@@ -231,8 +468,10 @@ export function BusinessHomeView({
                     <span className="text-white font-bold">{c.to}</span>
                   </div>
                   <p className="text-[12px] text-zinc-500 mt-2">
-                    Asked for by {c.requestedBy} {c.requestedAt}.
-                    {c.field === 'mobile' ? ' Every chase and sign-in code would go to this number instead.' : ''}
+                    {intl.formatMessage(c.field === 'mobile' ? m.changeAskedByMobile : m.changeAskedBy, {
+                      who: c.requestedBy,
+                      when: c.requestedAt,
+                    })}
                   </p>
                 </div>
 
@@ -241,33 +480,33 @@ export function BusinessHomeView({
                     onClick={async () => {
                       const ok = await confirm({
                         tone: 'red',
-                        title: `Leave ${c.label.toLowerCase()} as it is?`,
-                        detail: `Your accountant is told you declined the change to "${c.to}".`,
-                        confirmLabel: 'Yes, decline',
+                        title: intl.formatMessage(m.declineChangeTitle, { label: c.label.toLowerCase() }),
+                        detail: intl.formatMessage(m.declineChangeDetail, { to: c.to }),
+                        confirmLabel: intl.formatMessage(m.declineConfirmLabel),
                       });
                       if (ok) reviewClientDetailChange(c.id, 'decline', 'Declined by the business');
                     }}
                     className="flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold text-zinc-400 border border-white/10 hover:text-white hover:border-white/25 transition-colors"
                   >
                     <X size={13} />
-                    No, keep it
+                    {intl.formatMessage(m.declineChangeAction)}
                   </button>
                   <button
                     onClick={async () => {
                       const ok = await confirm({
-                        title: `Change ${c.label.toLowerCase()} to "${c.to}"?`,
-                        detail: `It is currently ${c.from}.`,
+                        title: intl.formatMessage(m.changeTitle, { label: c.label.toLowerCase(), to: c.to }),
+                        detail: intl.formatMessage(m.changeDetail, { from: c.from }),
                         ...(c.field === 'mobile'
-                          ? { consequence: 'Chases, approvals and sign-in codes will go to the new number from now on.' }
+                          ? { consequence: intl.formatMessage(m.changeMobileConsequence) }
                           : {}),
-                        confirmLabel: 'Yes, change it',
+                        confirmLabel: intl.formatMessage(m.changeConfirmLabel),
                       });
                       if (ok) reviewClientDetailChange(c.id, 'approve');
                     }}
                     className="flex items-center gap-2 px-5 py-2 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
                   >
                     <Check size={13} strokeWidth={3} />
-                    Approve
+                    {intl.formatMessage(m.approveAction)}
                   </button>
                 </div>
               </div>
@@ -285,8 +524,8 @@ export function BusinessHomeView({
             <Camera size={20} />
           </span>
           <span className="min-w-0">
-            <span className="block text-sm font-bold text-white">Capture a document</span>
-            <span className="block text-[12px] text-zinc-500 mt-0.5">Photograph a receipt or invoice with your camera</span>
+            <span className="block text-sm font-bold text-white">{intl.formatMessage(m.captureHeading)}</span>
+            <span className="block text-[12px] text-zinc-500 mt-0.5">{intl.formatMessage(m.captureDetail)}</span>
           </span>
         </button>
         <button
@@ -297,56 +536,64 @@ export function BusinessHomeView({
             <Upload size={20} />
           </span>
           <span className="min-w-0">
-            <span className="block text-sm font-bold text-white">Upload a file</span>
-            <span className="block text-[12px] text-zinc-500 mt-0.5">PDF, photo or spreadsheet from this device</span>
+            <span className="block text-sm font-bold text-white">{intl.formatMessage(m.uploadHeading)}</span>
+            <span className="block text-[12px] text-zinc-500 mt-0.5">{intl.formatMessage(m.uploadDetail)}</span>
           </span>
         </button>
       </div>
 
       <Panel
-        title="What your accountant is waiting for"
+        title={intl.formatMessage(m.waitingPanelTitle)}
         subtitle={
           chase
-            ? `Last chased ${chase.hoursSinceSent === 0 ? 'just now' : `${chase.hoursSinceSent}h ago`} by SMS`
-            : 'Detected from your bank feed and supplier statements'
+            ? chase.hoursSinceSent === 0
+              ? intl.formatMessage(m.waitingChasedJustNow)
+              : intl.formatMessage(m.waitingChasedHoursAgo, { hours: chase.hoursSinceSent })
+            : intl.formatMessage(m.waitingDetected)
         }
       >
         {requests.length === 0 ? (
-          <Empty icon={CheckCircle2} message="Nothing outstanding. You're all caught up." />
+          <Empty icon={CheckCircle2} message={intl.formatMessage(m.waitingEmpty)} />
         ) : (
           <div className="flex flex-col gap-2">
-            {requests.slice(0, 8).map((m) => (
+            {requests.slice(0, 8).map((req) => (
               <div
-                key={m.id}
+                key={req.id}
                 className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-ground/60 border border-white/5"
               >
                 <div className="min-w-0">
-                  <div className="text-sm font-bold text-white truncate">{m.supplier}</div>
+                  <div className="text-sm font-bold text-white truncate">{req.supplier}</div>
                   <div className="text-[12px] text-zinc-500 mt-0.5">
-                    {m.date} · {currency(m.amount)} · {REASON[m.detectedBy]}
+                    {req.date} · {currency(req.amount)} · {intl.formatMessage(REASON[req.detectedBy])}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  {m.chased ? <Pill tone="amber">Requested</Pill> : <Pill>Spotted</Pill>}
+                  {req.chased ? (
+                    <Pill tone="amber">{intl.formatMessage(m.requestRequested)}</Pill>
+                  ) : (
+                    <Pill>{intl.formatMessage(m.requestSpotted)}</Pill>
+                  )}
                   <button
                     onClick={() => onGo('Capture')}
                     className="px-4 py-2 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
                   >
-                    Send it
+                    {intl.formatMessage(m.requestSendAction)}
                   </button>
                 </div>
               </div>
             ))}
             {requests.length > 8 && (
-              <p className="text-[12px] text-zinc-600 font-semibold px-1">+ {requests.length - 8} more</p>
+              <p className="text-[12px] text-zinc-600 font-semibold px-1">
+                {intl.formatMessage(m.requestsMore, { count: requests.length - 8 })}
+              </p>
             )}
           </div>
         )}
       </Panel>
 
-      <Panel title="Recently sent" subtitle="Status updates as your accountant works through them">
+      <Panel title={intl.formatMessage(m.sentPanelTitle)} subtitle={intl.formatMessage(m.sentPanelSubtitle)}>
         {myDocs.length === 0 ? (
-          <Empty icon={FileText} message="Nothing sent yet. Capture or upload your first document." />
+          <Empty icon={FileText} message={intl.formatMessage(m.sentEmpty)} />
         ) : (
           <div className="flex flex-col gap-2">
             {myDocs.map((d) => {
@@ -363,11 +610,14 @@ export function BusinessHomeView({
                   <div className="min-w-0">
                     <div className="text-sm font-bold text-white truncate">{d.supplier}</div>
                     <div className="text-[12px] text-zinc-500 mt-0.5 truncate">
-                      {d.date} · {d.total ? currency(d.total) : '—'} · via {d.source === 'portal' ? 'this portal' : d.source}
+                      {d.date} · {d.total ? currency(d.total) : '—'} ·{' '}
+                      {d.source === 'portal'
+                        ? intl.formatMessage(m.sentViaPortal)
+                        : intl.formatMessage(m.sentViaSource, { source: d.source })}
                     </div>
                   </div>
                   <span className="flex items-center gap-2 shrink-0">
-                    <Pill tone={s.tone}>{s.label}</Pill>
+                    <Pill tone={s.tone}>{intl.formatMessage(s.label)}</Pill>
                     <Eye size={15} className="text-zinc-600" />
                   </span>
                 </button>
@@ -379,10 +629,7 @@ export function BusinessHomeView({
 
       <div className="flex items-start gap-3 p-4 rounded-2xl border border-white/5 bg-card/60">
         <ShieldCheck size={16} className="text-zinc-500 mt-0.5 shrink-0" />
-        <p className="text-[12px] text-zinc-500 leading-relaxed">
-          You only ever see your own business here. Your accountant handles the coding and filing — nothing you send is
-          published to the accounting software until they have reviewed it.
-        </p>
+        <p className="text-[12px] text-zinc-500 leading-relaxed">{intl.formatMessage(m.privacyNote)}</p>
       </div>
 
       {/* The same viewer the practice sees: the original alongside every value
@@ -399,7 +646,7 @@ export function BusinessHomeView({
               className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-raised border border-white/10 hover:border-white/25 transition-colors"
             >
               <X size={15} />
-              Close
+              {intl.formatMessage(m.closePreview)}
             </button>
           </div>
         </div>
@@ -408,12 +655,14 @@ export function BusinessHomeView({
   );
 }
 
-const REASON: Record<string, string> = {
-  'bank-transaction': 'a payment left your account with no receipt',
-  'supplier-statement': 'on a supplier statement but not sent to us',
-  'statement-gap': 'a gap in your bank statements',
-  'ledger-attachment': 'no copy attached in the ledger',
-  recurring: 'you usually send this one every month',
+// Keyed by the detection engine — a machine value — so only the phrasing is a
+// message, formatted where the row is rendered.
+const REASON: Record<MissingItem['detectedBy'], MessageDescriptor> = {
+  'bank-transaction': m.reasonBankTransaction,
+  'supplier-statement': m.reasonSupplierStatement,
+  'statement-gap': m.reasonStatementGap,
+  'ledger-attachment': m.reasonLedgerAttachment,
+  recurring: m.reasonRecurring,
 };
 
 function Stat({

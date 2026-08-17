@@ -1,12 +1,65 @@
 import { useRef, useState } from 'react';
 import { UploadCloud, X, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
 import { Pill } from '../../components/DynamicComponents/DataTable';
 import { ACCEPTED_EXTENSIONS } from '../../lib/ingest';
 import { PORTAL_UPLOAD_LIMIT } from '../../lib/business';
 import { Panel } from './BusinessHomeView';
 import type { BusinessAccount } from '../../lib/types';
+
+const m = defineMessages({
+  title: { id: 'portal.businessUploadView.title', defaultMessage: 'Upload a document' },
+  subtitle: {
+    id: 'portal.businessUploadView.subtitle',
+    defaultMessage:
+      'Invoices, receipts, bills and statements — send them as they come. You do not need to sort them: we work out what each one is.',
+  },
+  dropHeading: {
+    id: 'portal.businessUploadView.dropHeading',
+    defaultMessage: 'Drop files here, or click to choose',
+  },
+  dropDetail: {
+    id: 'portal.businessUploadView.dropDetail',
+    defaultMessage:
+      'PDF, JPG, PNG, HEIC, CSV or XLSX · up to {limit}MB each. A PDF with several documents in it is split automatically.',
+  },
+  noteLabel: {
+    id: 'portal.businessUploadView.noteLabel',
+    defaultMessage: 'Note for your accountant (optional)',
+  },
+  notePlaceholder: {
+    id: 'portal.businessUploadView.notePlaceholder',
+    defaultMessage: 'e.g. the Bidfood invoice for the July delivery',
+  },
+  rejectUnreadable: {
+    id: 'portal.businessUploadView.rejectUnreadable',
+    defaultMessage: "We can't read .{extension} files",
+  },
+  rejectTooBig: {
+    id: 'portal.businessUploadView.rejectTooBig',
+    defaultMessage: 'Over the {limit}MB limit — try splitting it',
+  },
+  rejectedHeading: {
+    id: 'portal.businessUploadView.rejectedHeading',
+    defaultMessage: '{count, plural, one {# file not sent} other {# files not sent}}',
+  },
+  justSentTitle: { id: 'portal.businessUploadView.justSentTitle', defaultMessage: 'Just sent' },
+  justSentSubtitle: {
+    id: 'portal.businessUploadView.justSentSubtitle',
+    defaultMessage: 'Your accountant can see these already',
+  },
+  fileSize: { id: 'portal.businessUploadView.fileSize', defaultMessage: '{size}MB' },
+  sentTitle: { id: 'portal.businessUploadView.sentTitle', defaultMessage: 'Sent from this portal' },
+  sentSubtitle: {
+    id: 'portal.businessUploadView.sentSubtitle',
+    defaultMessage: "Live status from your accountant's system",
+  },
+  statusReading: { id: 'portal.businessUploadView.statusReading', defaultMessage: 'Reading it' },
+  statusReview: { id: 'portal.businessUploadView.statusReview', defaultMessage: 'With your accountant' },
+  statusAccepted: { id: 'portal.businessUploadView.statusAccepted', defaultMessage: 'Accepted' },
+});
 
 /**
  * Send a file to the accountant. Rejections are shown with a reason rather than
@@ -15,6 +68,7 @@ import type { BusinessAccount } from '../../lib/types';
  */
 export function BusinessUploadView({ account }: { account: BusinessAccount }) {
   const { ingest, documents } = useAppContext();
+  const intl = useIntl();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [dragging, setDragging] = useState(false);
@@ -31,9 +85,12 @@ export function BusinessUploadView({ account }: { account: BusinessAccount }) {
     for (const f of files) {
       const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
       if (!ACCEPTED_EXTENSIONS.includes(ext)) {
-        bad.push({ name: f.name, reason: `We can't read .${ext} files` });
+        bad.push({ name: f.name, reason: intl.formatMessage(m.rejectUnreadable, { extension: ext }) });
       } else if (f.size > PORTAL_UPLOAD_LIMIT) {
-        bad.push({ name: f.name, reason: `Over the ${Math.round(PORTAL_UPLOAD_LIMIT / 1024 / 1024)}MB limit — try splitting it` });
+        bad.push({
+          name: f.name,
+          reason: intl.formatMessage(m.rejectTooBig, { limit: Math.round(PORTAL_UPLOAD_LIMIT / 1024 / 1024) }),
+        });
       } else {
         ok.push(f);
       }
@@ -64,11 +121,8 @@ export function BusinessUploadView({ account }: { account: BusinessAccount }) {
   return (
     <div className="p-8 max-w-3xl mx-auto flex flex-col gap-6">
       <div>
-        <h1 className="font-sans text-2xl font-bold text-white tracking-tight">Upload a document</h1>
-        <p className="text-[13px] text-zinc-500 mt-1">
-          Invoices, receipts, bills and statements — send them as they come. You do not need to sort them:
-          we work out what each one is.
-        </p>
+        <h1 className="font-sans text-2xl font-bold text-white tracking-tight">{intl.formatMessage(m.title)}</h1>
+        <p className="text-[13px] text-zinc-500 mt-1">{intl.formatMessage(m.subtitle)}</p>
       </div>
 
       <div
@@ -86,10 +140,9 @@ export function BusinessUploadView({ account }: { account: BusinessAccount }) {
         <div className="w-14 h-14 rounded-2xl bg-raised border border-white/5 flex items-center justify-center text-zinc-300">
           <UploadCloud size={24} />
         </div>
-        <p className="text-sm font-bold text-white mt-4">Drop files here, or click to choose</p>
+        <p className="text-sm font-bold text-white mt-4">{intl.formatMessage(m.dropHeading)}</p>
         <p className="text-[12px] text-zinc-500 mt-1.5 max-w-sm leading-relaxed">
-          PDF, JPG, PNG, HEIC, CSV or XLSX · up to {Math.round(PORTAL_UPLOAD_LIMIT / 1024 / 1024)}MB each. A PDF with
-          several documents in it is split automatically.
+          {intl.formatMessage(m.dropDetail, { limit: Math.round(PORTAL_UPLOAD_LIMIT / 1024 / 1024) })}
         </p>
         <input
           ref={inputRef}
@@ -105,12 +158,12 @@ export function BusinessUploadView({ account }: { account: BusinessAccount }) {
 
       <div>
         <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
-          Note for your accountant (optional)
+          {intl.formatMessage(m.noteLabel)}
         </div>
         <input
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder="e.g. the Bidfood invoice for the July delivery"
+          placeholder={intl.formatMessage(m.notePlaceholder)}
           className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors"
         />
       </div>
@@ -126,7 +179,7 @@ export function BusinessUploadView({ account }: { account: BusinessAccount }) {
             <div className="flex items-center justify-between gap-3 mb-3">
               <span className="flex items-center gap-2 text-[13px] font-bold text-red-400">
                 <AlertTriangle size={15} />
-                {rejected.length} {rejected.length === 1 ? 'file' : 'files'} not sent
+                {intl.formatMessage(m.rejectedHeading, { count: rejected.length })}
               </span>
               <button onClick={() => setRejected([])} className="text-zinc-500 hover:text-white">
                 <X size={15} />
@@ -146,7 +199,10 @@ export function BusinessUploadView({ account }: { account: BusinessAccount }) {
       <AnimatePresence>
         {accepted.length > 0 && (
           <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}>
-            <Panel title="Just sent" subtitle="Your accountant can see these already">
+            <Panel
+              title={intl.formatMessage(m.justSentTitle)}
+              subtitle={intl.formatMessage(m.justSentSubtitle)}
+            >
               <div className="flex flex-col gap-2">
                 {accepted.map((f, i) => (
                   <div key={`${f.name}-${i}`} className="flex items-center justify-between gap-4 p-3.5 rounded-2xl bg-ground/60 border border-white/5">
@@ -155,7 +211,7 @@ export function BusinessUploadView({ account }: { account: BusinessAccount }) {
                       <span className="text-[13px] font-semibold text-white truncate">{f.name}</span>
                     </span>
                     <span className="text-[11px] text-zinc-500 font-semibold shrink-0">
-                      {(f.size / 1024 / 1024).toFixed(1)}MB
+                      {intl.formatMessage(m.fileSize, { size: (f.size / 1024 / 1024).toFixed(1) })}
                     </span>
                   </div>
                 ))}
@@ -166,13 +222,17 @@ export function BusinessUploadView({ account }: { account: BusinessAccount }) {
       </AnimatePresence>
 
       {portalDocs.length > 0 && (
-        <Panel title="Sent from this portal" subtitle="Live status from your accountant's system">
+        <Panel title={intl.formatMessage(m.sentTitle)} subtitle={intl.formatMessage(m.sentSubtitle)}>
           <div className="flex flex-col gap-2">
             {portalDocs.map((d) => (
               <div key={d.id} className="flex items-center justify-between gap-4 p-3.5 rounded-2xl bg-ground/60 border border-white/5">
                 <span className="text-[13px] font-semibold text-white truncate">{d.supplier}</span>
                 <Pill tone={d.status === 'processing' ? 'blue' : d.status === 'review' ? 'amber' : 'green'}>
-                  {d.status === 'processing' ? 'Reading it' : d.status === 'review' ? 'With your accountant' : 'Accepted'}
+                  {d.status === 'processing'
+                    ? intl.formatMessage(m.statusReading)
+                    : d.status === 'review'
+                      ? intl.formatMessage(m.statusReview)
+                      : intl.formatMessage(m.statusAccepted)}
                 </Pill>
               </div>
             ))}

@@ -1,10 +1,96 @@
 import { useState } from 'react';
 import { X, Building2, ArrowRight, Send, Search, Smartphone } from 'lucide-react';
 import { motion } from 'motion/react';
+import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
 import { Pill } from './DynamicComponents/DataTable';
 import { newBusinessAccount, newMember } from '../lib/business';
 import type { Client } from '../lib/types';
+
+/**
+ * `accountLine` and `noAccount` are two whole messages rather than one with a
+ * conditional: "Priya Nair · created 02 Mar 2026" and "No portal account yet"
+ * are different statements, not one statement with a hole in it.
+ *
+ * Not extracted here: `'You (Practice Admin)'` and `'Primary contact'`. Those
+ * are written onto the account record, not rendered from this file, and the
+ * seeded accounts in `lib/business.ts` carry the same literals — extracting one
+ * end of that pair would only make the two disagree.
+ */
+const m = defineMessages({
+  heading: { id: 'shell.businessPortalLauncher.heading', defaultMessage: 'Business portal' },
+  subheading: {
+    id: 'shell.businessPortalLauncher.subheading',
+    defaultMessage: 'Where your clients send documents from. Open one to see their side.',
+  },
+  auditAction: {
+    id: 'shell.businessPortalLauncher.auditAction',
+    defaultMessage: 'Invited a business to the portal',
+  },
+  auditScope: { id: 'shell.businessPortalLauncher.auditScope', defaultMessage: '{client} — {contact}' },
+  auditNoContact: { id: 'shell.businessPortalLauncher.auditNoContact', defaultMessage: 'no contact details' },
+  searchPlaceholder: { id: 'shell.businessPortalLauncher.searchPlaceholder', defaultMessage: 'Search clients' },
+  accountLine: {
+    id: 'shell.businessPortalLauncher.accountLine',
+    defaultMessage: '{contact} · created {date}',
+  },
+  noAccount: { id: 'shell.businessPortalLauncher.noAccount', defaultMessage: 'No portal account yet' },
+  statusInvited: { id: 'shell.businessPortalLauncher.statusInvited', defaultMessage: 'Invited' },
+  statusSelfSignup: { id: 'shell.businessPortalLauncher.statusSelfSignup', defaultMessage: 'Self signed-up' },
+  statusActive: { id: 'shell.businessPortalLauncher.statusActive', defaultMessage: 'Active' },
+  openAction: { id: 'shell.businessPortalLauncher.openAction', defaultMessage: 'Open' },
+  inviteAction: { id: 'shell.businessPortalLauncher.inviteAction', defaultMessage: 'Invite' },
+  noMatches: { id: 'shell.businessPortalLauncher.noMatches', defaultMessage: 'No clients match that search.' },
+  awaitingHeading: {
+    id: 'shell.businessPortalLauncher.awaitingHeading',
+    defaultMessage: 'Waiting on a client to approve',
+  },
+  awaitingNote: {
+    id: 'shell.businessPortalLauncher.awaitingNote',
+    defaultMessage:
+      'These sit on a stage only the business can clear. The approver gets an SMS link — open it here to see exactly what they see.',
+  },
+  awaitingItems: {
+    id: 'shell.businessPortalLauncher.awaitingItems',
+    defaultMessage: '{count, plural, one {# item} other {# items}} · {suppliers}',
+  },
+  noMobile: {
+    id: 'shell.businessPortalLauncher.noMobile',
+    defaultMessage: 'No mobile on file for this client',
+  },
+  sendRequest: { id: 'shell.businessPortalLauncher.sendRequest', defaultMessage: 'Send the request' },
+  openLinkHint: {
+    id: 'shell.businessPortalLauncher.openLinkHint',
+    defaultMessage: 'See exactly what the approver sees',
+  },
+  sendFirstHint: { id: 'shell.businessPortalLauncher.sendFirstHint', defaultMessage: 'Send the request first' },
+  openLink: { id: 'shell.businessPortalLauncher.openLink', defaultMessage: 'Open the link' },
+  selfSignupNote: {
+    id: 'shell.businessPortalLauncher.selfSignupNote',
+    defaultMessage: 'A business can also sign itself up and be linked to you afterwards.',
+  },
+  openSignUp: { id: 'shell.businessPortalLauncher.openSignUp', defaultMessage: 'Open the sign-up screen →' },
+});
+
+const inviteMessages = defineMessages({
+  heading: { id: 'shell.inviteForm.heading', defaultMessage: 'Invite {client}' },
+  note: {
+    id: 'shell.inviteForm.note',
+    defaultMessage: 'They get a link by text. The account stays in Invited until they first sign in.',
+  },
+  contactNameLabel: { id: 'shell.inviteForm.contactNameLabel', defaultMessage: 'Contact name' },
+  contactNamePlaceholder: { id: 'shell.inviteForm.contactNamePlaceholder', defaultMessage: 'John Doe' },
+  mobileLabel: { id: 'shell.inviteForm.mobileLabel', defaultMessage: 'Mobile' },
+  mobilePlaceholder: { id: 'shell.inviteForm.mobilePlaceholder', defaultMessage: '+44 7700 900123' },
+  emailLabel: { id: 'shell.inviteForm.emailLabel', defaultMessage: 'Email' },
+  emailPlaceholder: { id: 'shell.inviteForm.emailPlaceholder', defaultMessage: 'john@business.co.uk' },
+  noMobileWarning: {
+    id: 'shell.inviteForm.noMobileWarning',
+    defaultMessage: 'Without a mobile number the invite text cannot be sent.',
+  },
+  cancel: { id: 'shell.inviteForm.cancel', defaultMessage: 'Cancel' },
+  create: { id: 'shell.inviteForm.create', defaultMessage: 'Create & send invite' },
+});
 
 /**
  * The practice side of business-portal accounts: see which clients have one,
@@ -16,6 +102,7 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
     clients, businessAccounts, openBusinessPortal, createBusinessAccount, logAudit,
     clientSideApprovals, approvalRequests, sendApprovalRequest, openApprovalLink,
   } = useAppContext();
+  const intl = useIntl();
 
   /**
    * Clients with something sitting on a client-side approval stage. This is
@@ -49,10 +136,8 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
       >
         <div className="p-6 border-b border-white/5 flex items-start justify-between gap-4">
           <div>
-            <h2 className="font-sans font-bold text-xl text-white tracking-tight">Business portal</h2>
-            <p className="text-[12px] text-zinc-500 mt-1">
-              Where your clients send documents from. Open one to see their side.
-            </p>
+            <h2 className="font-sans font-bold text-xl text-white tracking-tight">{intl.formatMessage(m.heading)}</h2>
+            <p className="text-[12px] text-zinc-500 mt-1">{intl.formatMessage(m.subheading)}</p>
           </div>
           <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors shrink-0">
             <X size={18} />
@@ -76,8 +161,11 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
               });
               createBusinessAccount(account);
               logAudit({
-                action: 'Invited a business to the portal',
-                scope: `${inviting.name} — ${mobile || email || 'no contact details'}`,
+                action: intl.formatMessage(m.auditAction),
+                scope: intl.formatMessage(m.auditScope, {
+                  client: inviting.name,
+                  contact: mobile || email || intl.formatMessage(m.auditNoContact),
+                }),
                 reviewOpened: false,
               });
               setInviting(null);
@@ -91,7 +179,7 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search clients"
+                  placeholder={intl.formatMessage(m.searchPlaceholder)}
                   className="w-full bg-ground border border-white/5 rounded-xl pl-11 pr-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors"
                 />
               </div>
@@ -113,8 +201,11 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
                         <div className="text-sm font-bold text-white truncate">{c.name}</div>
                         <div className="text-[12px] text-zinc-500 truncate">
                           {account
-                            ? `${account.contactName} · created ${account.createdAt}`
-                            : 'No portal account yet'}
+                            ? intl.formatMessage(m.accountLine, {
+                                contact: account.contactName,
+                                date: account.createdAt,
+                              })
+                            : intl.formatMessage(m.noAccount)}
                         </div>
                       </div>
                     </div>
@@ -123,11 +214,11 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
                       {account ? (
                         <>
                           {account.status === 'invited' ? (
-                            <Pill tone="amber">Invited</Pill>
+                            <Pill tone="amber">{intl.formatMessage(m.statusInvited)}</Pill>
                           ) : account.origin === 'self-signup' ? (
-                            <Pill tone="blue">Self signed-up</Pill>
+                            <Pill tone="blue">{intl.formatMessage(m.statusSelfSignup)}</Pill>
                           ) : (
-                            <Pill tone="green">Active</Pill>
+                            <Pill tone="green">{intl.formatMessage(m.statusActive)}</Pill>
                           )}
                           <button
                             onClick={() => {
@@ -136,7 +227,7 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
                             }}
                             className="flex items-center gap-1.5 px-4 py-2 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
                           >
-                            Open
+                            {intl.formatMessage(m.openAction)}
                             <ArrowRight size={13} strokeWidth={2.5} />
                           </button>
                         </>
@@ -146,7 +237,7 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
                           className="flex items-center gap-1.5 px-4 py-2 rounded-full text-[12px] font-bold text-zinc-300 border border-white/10 hover:text-white hover:border-white/25 transition-colors"
                         >
                           <Send size={13} />
-                          Invite
+                          {intl.formatMessage(m.inviteAction)}
                         </button>
                       )}
                     </div>
@@ -154,25 +245,25 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
                 );
               })}
               {visible.length === 0 && (
-                <p className="text-[13px] text-zinc-500 text-center py-10">No clients match that search.</p>
+                <p className="text-[13px] text-zinc-500 text-center py-10">{intl.formatMessage(m.noMatches)}</p>
               )}
             </div>
 
             {awaitingSignOff.length > 0 && (
               <div className="p-5 border-t border-white/5 bg-ground/40 flex flex-col gap-3">
                 <div>
-                  <div className="text-[13px] font-bold text-white">Waiting on a client to approve</div>
-                  <p className="text-[12px] text-zinc-500 mt-0.5 leading-relaxed">
-                    These sit on a stage only the business can clear. The approver gets an SMS link — open it here to
-                    see exactly what they see.
-                  </p>
+                  <div className="text-[13px] font-bold text-white">{intl.formatMessage(m.awaitingHeading)}</div>
+                  <p className="text-[12px] text-zinc-500 mt-0.5 leading-relaxed">{intl.formatMessage(m.awaitingNote)}</p>
                 </div>
                 {awaitingSignOff.map(({ client, items, request }) => (
                   <div key={client.id} className="p-4 rounded-2xl bg-card border border-white/5 flex items-center justify-between gap-4 flex-wrap">
                     <div className="min-w-0">
                       <div className="text-[13px] font-bold text-white truncate">{client.name}</div>
                       <div className="text-[12px] text-zinc-500 truncate">
-                        {items.length} item{items.length === 1 ? '' : 's'} · {items.map((i) => i.supplier).join(', ')}
+                        {intl.formatMessage(m.awaitingItems, {
+                          count: items.length,
+                          suppliers: items.map((i) => i.supplier).join(', '),
+                        })}
                       </div>
                     </div>
                     {/* Sending and looking are two different acts. */}
@@ -181,21 +272,21 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
                         <button
                           onClick={() => sendApprovalRequest(client.id)}
                           disabled={!client.mobile}
-                          title={client.mobile ? undefined : 'No mobile on file for this client'}
+                          title={client.mobile ? undefined : intl.formatMessage(m.noMobile)}
                           className="flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                         >
                           <Send size={13} strokeWidth={2.5} />
-                          Send the request
+                          {intl.formatMessage(m.sendRequest)}
                         </button>
                       )}
                       <button
                         onClick={() => { onClose(); openApprovalLink(request?.id ?? `appr-req-${client.id}-0`); }}
                         disabled={!request}
-                        title={request ? 'See exactly what the approver sees' : 'Send the request first'}
+                        title={intl.formatMessage(request ? m.openLinkHint : m.sendFirstHint)}
                         className="flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold text-brand bg-brand/10 border border-brand/25 hover:bg-brand/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                       >
                         <Smartphone size={13} strokeWidth={2.5} />
-                        Open the link
+                        {intl.formatMessage(m.openLink)}
                       </button>
                     </span>
                   </div>
@@ -204,9 +295,7 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
             )}
 
             <div className="p-4 border-t border-white/5 flex items-center justify-between gap-4">
-              <p className="text-[11px] text-zinc-600 leading-relaxed">
-                A business can also sign itself up and be linked to you afterwards.
-              </p>
+              <p className="text-[11px] text-zinc-600 leading-relaxed">{intl.formatMessage(m.selfSignupNote)}</p>
               <button
                 onClick={() => {
                   openBusinessPortal(null);
@@ -214,7 +303,7 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
                 }}
                 className="shrink-0 text-[12px] font-bold text-brand hover:underline"
               >
-                Open the sign-up screen →
+                {intl.formatMessage(m.openSignUp)}
               </button>
             </div>
           </>
@@ -233,6 +322,7 @@ function InviteForm({
   onCancel: () => void;
   onCreate: (contactName: string, email: string, mobile: string) => void;
 }) {
+  const intl = useIntl();
   const [contactName, setContactName] = useState(client.contactName ?? '');
   const [email, setEmail] = useState('');
   const [mobile, setMobile] = useState(client.mobile ?? '');
@@ -240,20 +330,33 @@ function InviteForm({
   return (
     <div className="p-6 flex flex-col gap-4">
       <div>
-        <h3 className="text-[15px] font-bold text-white tracking-tight">Invite {client.name}</h3>
-        <p className="text-[12px] text-zinc-500 mt-1">
-          They get a link by text. The account stays in Invited until they first sign in.
-        </p>
+        <h3 className="text-[15px] font-bold text-white tracking-tight">
+          {intl.formatMessage(inviteMessages.heading, { client: client.name })}
+        </h3>
+        <p className="text-[12px] text-zinc-500 mt-1">{intl.formatMessage(inviteMessages.note)}</p>
       </div>
 
-      <Field label="Contact name" value={contactName} onChange={setContactName} placeholder="John Doe" />
-      <Field label="Mobile" value={mobile} onChange={setMobile} placeholder="+44 7700 900123" />
-      <Field label="Email" value={email} onChange={setEmail} placeholder="john@business.co.uk" />
+      <Field
+        label={intl.formatMessage(inviteMessages.contactNameLabel)}
+        value={contactName}
+        onChange={setContactName}
+        placeholder={intl.formatMessage(inviteMessages.contactNamePlaceholder)}
+      />
+      <Field
+        label={intl.formatMessage(inviteMessages.mobileLabel)}
+        value={mobile}
+        onChange={setMobile}
+        placeholder={intl.formatMessage(inviteMessages.mobilePlaceholder)}
+      />
+      <Field
+        label={intl.formatMessage(inviteMessages.emailLabel)}
+        value={email}
+        onChange={setEmail}
+        placeholder={intl.formatMessage(inviteMessages.emailPlaceholder)}
+      />
 
       {!mobile.trim() && (
-        <p className="text-[12px] text-amber-400 font-semibold">
-          Without a mobile number the invite text cannot be sent.
-        </p>
+        <p className="text-[12px] text-amber-400 font-semibold">{intl.formatMessage(inviteMessages.noMobileWarning)}</p>
       )}
 
       <div className="flex items-center justify-between gap-3 pt-1">
@@ -261,14 +364,14 @@ function InviteForm({
           onClick={onCancel}
           className="px-5 py-2.5 text-sm font-bold text-zinc-400 hover:text-white rounded-full transition-colors"
         >
-          Cancel
+          {intl.formatMessage(inviteMessages.cancel)}
         </button>
         <button
           onClick={() => onCreate(contactName.trim() || 'Primary contact', email.trim(), mobile.trim())}
           className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.3)]"
         >
           <Send size={15} strokeWidth={2.5} />
-          Create & send invite
+          {intl.formatMessage(inviteMessages.create)}
         </button>
       </div>
     </div>
