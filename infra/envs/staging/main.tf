@@ -440,6 +440,41 @@ resource "aws_iam_role_policy_attachment" "ci_plan_guardrail" {
 }
 
 # --------------------------------------------------------------------------
+# The state-read fence — closing the residual infra/README.md tracked.
+#
+# ReadOnlyAccess grants s3:GetObject account-wide, and this role matches
+# role/nt-* so the state bucket's deny admits it. Any pull request could
+# therefore READ prod/core.tfstate — which will hold random_password values
+# (the Redis auth token, the nt_app role password) in plaintext from prod's
+# first apply. This deny closes that path while it is still theoretical.
+#
+# A surgical explicit Deny on the two foreign prefixes, NOT a scoped rewrite
+# of ReadOnlyAccess: enumerating every read a terraform refresh needs is a
+# policy that breaks the next module added, and a broken plan role blocks
+# every PR. Explicit deny beats the managed allow, costs nothing to reason
+# about, and leaves staging/* (this root's own state) untouched.
+# --------------------------------------------------------------------------
+resource "aws_iam_role_policy" "ci_plan_state_fence" {
+  name = "deny-foreign-state-reads"
+  role = aws_iam_role.ci_plan.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "DenyProdAndAccountStateReads"
+        Effect = "Deny"
+        Action = ["s3:GetObject", "s3:GetObjectVersion"]
+        Resource = [
+          "arn:aws:s3:::nt-tfstate-staging-${local.account_id}/prod/*",
+          "arn:aws:s3:::nt-tfstate-staging-${local.account_id}/account/*",
+        ]
+      }
+    ]
+  })
+}
+
+# --------------------------------------------------------------------------
 output "kms_key_arn" { value = module.storage.kms_key_arn }
 output "bucket_names" { value = local.bucket_names }
 output "ci_deploy_role_arn" { value = aws_iam_role.ci_deploy.arn }
