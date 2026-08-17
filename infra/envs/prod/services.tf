@@ -70,7 +70,10 @@ locals {
     { name = "REDIS_PORT", value = "6379" },
     { name = "REDIS_TLS", value = "true" }, # transit encryption is on; a non-TLS client just hangs
 
-    { name = "S3_BUCKET_DOCS", value = local.bucket_names["docs"] },
+    # S3_BUCKET_DOCUMENTS is the name env.ts actually reads — the DOCS
+    # spelling was a latent mismatch found when staging flipped OBJECT_STORE
+    # (see envs/staging/services.tf for the full story).
+    { name = "S3_BUCKET_DOCUMENTS", value = local.bucket_names["docs"] },
     { name = "S3_BUCKET_RECEIPTS", value = local.bucket_names["receipts"] },
     { name = "S3_BUCKET_EXPORTS", value = local.bucket_names["exports"] },
     { name = "KMS_KEY_ARN", value = module.storage.kms_key_arn },
@@ -82,6 +85,14 @@ locals {
     # (deploys #90–#107 silently rolled back); prod inherits the fix before
     # its first deploy can hit it.
     { name = "AUTH_MODE", value = "session" },
+
+    # The real ingest lane, mirroring staging (which carries the reasoning):
+    # BullMQ on Redis, sanitised bytes to S3 under `w/<businessId>/…`, real
+    # EXIF/HEIC normalisation. EMAIL_SOURCE and DOCUMENT_GUARD stay on their
+    # fixture defaults for the same reasons staging's file states.
+    { name = "INGEST_QUEUE", value = "bullmq" },
+    { name = "OBJECT_STORE", value = "s3" },
+    { name = "IMAGE_NORMALISER", value = "sharp" },
   ]
 
   # ------------------------------------------------------------------------
