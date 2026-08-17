@@ -59,6 +59,15 @@ export class MailHogEmailSource implements EmailSource {
     this.limit = options.limit ?? DEFAULT_LIMIT;
   }
 
+  /**
+   * Ids taken out of the loop for this process's lifetime. MailHog has no
+   * second mailbox to move a message into, and DELETING an unroutable email
+   * would drop it — so quarantine here is a local filter: the message stays in
+   * MailHog's UI (visible, fixable, re-sendable), and this poller stops
+   * re-reading it. A restart re-sees it, which for a dev tool is a feature.
+   */
+  private readonly suppressed = new Set<string>();
+
   async poll(): Promise<readonly InboundRawEmail[]> {
     const response = await this.fetchImpl(`${this.apiUrl}/api/v2/messages?limit=${this.limit}`);
     if (!response.ok) throw new Error(`mailhog list failed: ${response.status}`);
@@ -66,12 +75,14 @@ export class MailHogEmailSource implements EmailSource {
     const parsed = MailHogListSchema.safeParse(await response.json());
     if (!parsed.success) throw new Error('mailhog returned an unexpected messages shape');
 
-    return (parsed.data.items ?? []).map((item) => ({
-      id: item.ID,
-      raw: Buffer.from(item.Raw.Data),
-      envelopeRecipient: item.Raw.To?.[0] ?? null,
-      receivedAtSeconds: toSeconds(item.Created),
-    }));
+    return (parsed.data.items ?? [])
+      .filter((item) => !this.suppressed.has(item.ID))
+      .map((item) => ({
+        id: item.ID,
+        raw: Buffer.from(item.Raw.Data),
+        envelopeRecipient: item.Raw.To?.[0] ?? null,
+        receivedAtSeconds: toSeconds(item.Created),
+      }));
   }
 
   async ack(id: string): Promise<void> {
@@ -80,5 +91,9 @@ export class MailHogEmailSource implements EmailSource {
     });
     // 404 = already gone, which is the state we wanted anyway.
     if (!response.ok && response.status !== 404) throw new Error(`mailhog delete failed: ${response.status}`);
+  }
+
+  async quarantine(id: string): Promise<void> {
+    this.suppressed.add(id);
   }
 }

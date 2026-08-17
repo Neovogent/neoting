@@ -90,6 +90,17 @@ export async function runEmailIntake(raw: InboundRawEmail, deps: EmailIntakeRunn
   deps.logger.log(
     `email ${raw.id} → practice ${practiceId}: ${result.accepted.length} accepted, ${result.rejected.length} rejected (trace=${traceId})`,
   );
+  // Each rejection with its reason, BEFORE the caller acks and deletes the
+  // source email. The count alone survived the production path while the
+  // per-attachment filename/code/reason — the thing a human needs to tell a
+  // client what to re-send — was computed, tested, and then discarded. The
+  // filename is already `safeBasename`d and the reason is the pipeline's own
+  // plain-English sentence, so neither line echoes raw sender content.
+  for (const rejection of result.rejected) {
+    deps.logger.warn(
+      `email ${raw.id}: attachment "${rejection.filename}" rejected ${rejection.code} — ${rejection.reason} (trace=${traceId})`,
+    );
+  }
   return { status: 'processed', result, practiceId };
 }
 
@@ -158,20 +169,50 @@ export async function drainEmailSource(
       continue;
     }
 
+    // Unresolved and unparseable emails can NEVER succeed on a re-poll — an
+    // address with no plus tag does not grow one, and broken MIME does not
+    // heal. "Left in the source" was a starvation bug: the S3 source lists a
+    // bounded window, a stuck email never left it, and plain mail to `doc@`
+    // is unresolvable BY DESIGN — so ordinary traffic filled the window until
+    // no new mail was ever listed again, while the drain reported clean.
+    // Quarantine moves them OUT of the window without dropping them (S3:
+    // `unroutable/` prefix; MailHog: suppressed locally, still in its UI).
     if (outcome.status === 'unresolved-recipient') {
       unresolved += 1;
-      warnOnce(
+      await quarantineOrLeave(
+        source,
         deps.logger,
-        warned,
         raw.id,
-        `email ${raw.id}: no practice for recipient ${outcome.recipient ?? '(none)'} — left in the source, not dropped; set the doc+<practice> mapping (#17)`,
+        `email ${raw.id}: no practice for recipient ${outcome.recipient ?? '(none)'} — quarantined, not dropped; set the doc+<practice> mapping (#17)`,
       );
       continue;
     }
 
     failed += 1;
-    warnOnce(deps.logger, warned, raw.id, `email ${raw.id}: could not parse — left in the source, not dropped (${outcome.error})`);
+    await quarantineOrLeave(source, deps.logger, raw.id, `email ${raw.id}: could not parse — quarantined, not dropped (${outcome.error})`);
   }
 
   return { processed, unresolved, failed };
+}
+
+/**
+ * Quarantine, or leave in the source when even that fails (S3 blipping on the
+ * copy). Leaving it is safe — the next drain retries the quarantine — it just
+ * keeps occupying a window slot until the copy succeeds, so the failure is
+ * warned every time rather than once.
+ */
+async function quarantineOrLeave(
+  source: EmailSource,
+  logger: { warn(message: string): void },
+  id: string,
+  message: string,
+): Promise<void> {
+  try {
+    await source.quarantine(id);
+    logger.warn(message);
+  } catch (error) {
+    logger.warn(
+      `email ${id}: quarantine failed (${error instanceof Error ? error.message : String(error)}) — left in the source; the next drain retries`,
+    );
+  }
 }

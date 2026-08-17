@@ -56,11 +56,31 @@ HTTP request; a per-email failure costs one email, not the loop).
   (SES write / MailHog receipt), not the sender's forgeable `Date:` header —
   `processEmail` gained an optional `receivedAtSeconds` for this.
 - **`drainEmailSource`** — poll once, run each email, and **ack only the ones
-  processed**. An unresolvable or unparseable email is left in the source (never
-  dropped) and warned about **once** per id.
+  processed**. An unresolvable or unparseable email is **QUARANTINED** — moved
+  out of the poll window without being dropped (S3: copy under `unroutable/`
+  then delete; MailHog: suppressed locally, still visible in its UI). This
+  replaced "left in the source, warned once", which the review of #97 showed
+  was a starvation bug: the S3 source lists a bounded window (`MaxKeys`), a
+  stuck email never left it, and plain mail to `doc@` (no plus tag) is
+  unresolvable BY DESIGN — so ordinary traffic filled the window until no new
+  mail was ever listed again, while the drain reported clean. An email whose
+  processing THREW (transient: store blip, queue down) is still left in the
+  source for retry — a transient fault heals, an unroutable address does not.
+  Every rejected attachment is logged with its filename, NT-ING code and reason
+  BEFORE the ack deletes the source email — the count alone is not a record a
+  human can act on. Oversized objects (over the 40 MB SES inbound limit) are
+  quarantined from the LISTING's `Size`, before any bytes are allocated.
 - **Practice from recipient** (`recipient-practice.ts`): the `doc+<practice>@`
   plus tag (the email lane already made `practiceId` a required caller dep for
-  this). The envelope recipient wins over the `To` header.
+  this). The envelope recipient wins over the `To` header. The tag is
+  SENDER-CHOSEN and becomes `documents.practice_id` plus an S3 key segment, so
+  it is shape-checked (`[A-Za-z0-9_-]{1,64}`) before it is allowed to be
+  either; existence fails loudly downstream (`resolveSystemActor`).
+- **`EMAIL_SOURCE=s3` refuses to boot with a fixture queue or store** — the SES
+  prefix is real client mail and the poller deletes it after processing;
+  handing it to in-memory infrastructure and then deleting the source is
+  destruction dressed as a clean drain. MailHog stays fixture-friendly: it is a
+  dev tool holding dev mail.
 - **Entrypoint** `src/worker/email-intake-main.ts` (`pnpm --filter @neoting/api worker:email`),
   a separate process like the ingest worker.
 

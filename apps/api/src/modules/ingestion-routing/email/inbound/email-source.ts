@@ -35,17 +35,29 @@ export interface EmailSource {
   poll(): Promise<readonly InboundRawEmail[]>;
   /**
    * Mark one as handled so it is not delivered again (delete the MailHog message /
-   * the S3 object). Only called after the email was processed — an unresolved or
-   * unparseable email is deliberately left in the source, never dropped.
+   * the S3 object). Only called after the email was processed.
    */
   ack(id: string): Promise<void>;
+  /**
+   * Move one out of the poll window WITHOUT dropping it — for emails that can
+   * never be processed (no resolvable recipient, unparseable MIME). "Left in
+   * the source, warned once" sounded safe and was a starvation bug: the S3
+   * source lists a bounded window (`MaxKeys`), a stuck email never leaves it,
+   * and plain mail to `doc@` (no plus tag) is unresolvable BY DESIGN — so
+   * ordinary traffic filled the window until no new mail was ever listed
+   * again. Quarantine keeps the bytes (S3: copied under `unroutable/`, visible
+   * and replayable once #17's mapping lands) while freeing the window.
+   */
+  quarantine(id: string): Promise<void>;
 }
 
-/** Offline fixture — seed raw emails, assert what was acked. */
+/** Offline fixture — seed raw emails, assert what was acked or quarantined. */
 export class FixtureEmailSource implements EmailSource {
   private readonly pending = new Map<string, InboundRawEmail>();
   /** Every id acked, in order — lets a test prove a processed email was removed. */
   readonly acked: string[] = [];
+  /** Every id quarantined, in order — out of the window, never dropped. */
+  readonly quarantined: string[] = [];
 
   seed(email: InboundRawEmail): this {
     this.pending.set(email.id, email);
@@ -59,5 +71,10 @@ export class FixtureEmailSource implements EmailSource {
   async ack(id: string): Promise<void> {
     this.pending.delete(id);
     this.acked.push(id);
+  }
+
+  async quarantine(id: string): Promise<void> {
+    this.pending.delete(id);
+    this.quarantined.push(id);
   }
 }

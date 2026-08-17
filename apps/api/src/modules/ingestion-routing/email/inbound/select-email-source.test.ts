@@ -10,7 +10,12 @@ function env(overrides: Partial<Env> = {}): Env {
     PORT: 3000,
     META_APP_SECRET: '',
     META_VERIFY_TOKEN: '',
+    META_MEDIA_ACCESS_TOKEN: '',
+    MEDIA_FETCH: 'fixture',
+    WHATSAPP_PRACTICE_MAP: {},
     AUTH_MODE: 'fixture',
+    UPLOAD_URL_SECRET: 'test-secret',
+    UPLOAD_URL_TTL_SECONDS: 900,
     INGEST_QUEUE: 'fixture',
     REDIS_URL: 'redis://localhost:6379',
     OBJECT_STORE: 'fixture',
@@ -34,6 +39,9 @@ const stub: EmailSource = {
     return [];
   },
   async ack() {
+    /* no-op */
+  },
+  async quarantine() {
     /* no-op */
   },
 };

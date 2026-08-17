@@ -192,6 +192,22 @@ const EnvSchema = z.object({
       message: 'UPLOAD_URL_SECRET must be set in production — an empty secret cannot sign or verify upload intents, so every upload would 500 (#76)',
     });
   }
+
+  // The SES receipt prefix is REAL client mail, and the poller DELETES an email
+  // from it once processed. Handing real mail to a fixture queue (in-memory,
+  // gone on restart) or a fixture store (the sanitised bytes live in one
+  // process's memory) and then deleting the source is destruction dressed as a
+  // clean drain. MailHog is exempt: it is a dev tool holding dev mail, and the
+  // fixture combination is exactly how it is used on a laptop (#78, review of
+  // #97).
+  if (env.EMAIL_SOURCE === 's3' && (env.INGEST_QUEUE === 'fixture' || env.OBJECT_STORE === 'fixture')) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['EMAIL_SOURCE'],
+      message:
+        'EMAIL_SOURCE=s3 polls real SES mail and deletes it after processing — it needs INGEST_QUEUE=bullmq and OBJECT_STORE=s3, or a restart destroys everything in flight',
+    });
+  }
 });
 
 export type Env = Readonly<z.infer<typeof EnvSchema>>;

@@ -24,8 +24,21 @@ test('null for an empty tag, a missing @, an empty string, or null', () => {
   expect(resolvePracticeFromRecipient(null)).toBeNull();
 });
 
-test('the tag is everything after the FIRST plus, up to the @', () => {
-  // Practice ids are cuid/uuid (no '+'), so this is only a definition of the
-  // parse: we do not silently truncate at a second '+'.
-  expect(resolvePracticeFromRecipient('doc+prac_x+extra@neoting.example')).toBe('prac_x+extra');
+test('the tag is everything after the FIRST plus, up to the @ — and a second plus fails the shape check', () => {
+  // Practice ids are cuid/uuid (no '+'). The parse does not silently truncate
+  // at a second '+'; the whole tag is taken, and because '+' is outside the
+  // practice-id character class, a doubled tag resolves to nothing rather than
+  // to a guessed prefix.
+  expect(resolvePracticeFromRecipient('doc+prac_x+extra@neoting.example')).toBeNull();
+});
+
+test('a tag that is not shaped like a practice id resolves to nothing — it is sender-chosen text', () => {
+  // The tag becomes documents.practice_id and a segment of the unrouted S3 key,
+  // so shape is checked before it is allowed to be either.
+  expect(resolvePracticeFromRecipient('doc+prac/../../etc@neoting.test')).toBeNull();
+  expect(resolvePracticeFromRecipient('doc+prac id@neoting.test')).toBeNull();
+  expect(resolvePracticeFromRecipient('doc+prac"quote@neoting.test')).toBeNull();
+  expect(resolvePracticeFromRecipient(`doc+${'a'.repeat(65)}@neoting.test`)).toBeNull();
+  // The legitimate cuid/uuid character classes still pass.
+  expect(resolvePracticeFromRecipient('doc+prac_x-1@neoting.test')).toBe('prac_x-1');
 });

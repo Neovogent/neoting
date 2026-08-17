@@ -18,6 +18,20 @@
  * there is no usable tag; the caller must NOT silently drop that email — it is
  * left visible in the source and logged, never persisted without an anchor.
  */
+/**
+ * What a practice id is allowed to look like at this boundary. The tag is
+ * SENDER-CHOSEN text that becomes `documents.practice_id` and a segment of the
+ * unrouted S3 key (`w/_unrouted/<practiceId>/…`), so it is validated for shape
+ * before it is allowed to be either: ids here are cuid/uuid-class tokens, so
+ * anything outside `[A-Za-z0-9_-]` — a slash, a dot-dot, a quote, whitespace, a
+ * control character — is not a practice id, it is an injection attempt or a
+ * typo, and both resolve the same way: no anchor, quarantined, visible.
+ * Existence is NOT checked here (no DB in this parser) — a well-shaped id for
+ * no real practice fails loudly downstream, where `resolveSystemActor` refuses
+ * to write anything for a practice with no SYSTEM actor.
+ */
+const PRACTICE_TAG = /^[A-Za-z0-9_-]{1,64}$/;
+
 export function resolvePracticeFromRecipient(recipient: string | null): string | null {
   if (recipient === null) return null;
 
@@ -33,5 +47,5 @@ export function resolvePracticeFromRecipient(recipient: string | null): string |
   if (plus === -1) return null;
 
   const tag = localPart.slice(plus + 1).trim();
-  return tag.length > 0 ? tag : null;
+  return PRACTICE_TAG.test(tag) ? tag : null;
 }

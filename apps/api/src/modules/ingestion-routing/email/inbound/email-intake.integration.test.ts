@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { documentIdFor, PrismaDocumentSink } from '../../queue/document-sink.js';
 import { InMemoryDuplicateDetector } from '../../queue/duplicate-detector.js';
 import { processIngestJob } from '../../queue/ingest-processor.js';
+import { FixtureMediaFetcher } from '../../queue/media-fetcher.js';
 import { InMemoryProcessedStore } from '../../queue/processed-store.js';
 import { InMemoryDocumentStore } from '../../storage/document-store.js';
 import { FixtureIngestQueue } from '../../webhooks/whatsapp/ingest-queue.js';
@@ -110,11 +111,15 @@ describe.skipIf(!DATABASE_URL || !OWNER_URL)('email intake against a real databa
     const job = { ...enqueued, traceId: 'trace-p78' };
 
     const sink = new PrismaDocumentSink(app);
+    // `media` became a required ProcessorDeps member with #96 (WhatsApp media
+    // fetch). An email job carries its bytes already, so the fetcher is never
+    // consulted on this path — the empty fixture proves that by construction.
     const workerDeps = () => ({
       processed: new InMemoryProcessedStore(),
       logger: quietLogger,
       sink,
       detector: new InMemoryDuplicateDetector(),
+      media: { fetcher: new FixtureMediaFetcher(), store: new InMemoryDocumentStore() },
     });
 
     await processIngestJob(job, workerDeps());

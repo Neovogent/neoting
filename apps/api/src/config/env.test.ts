@@ -90,6 +90,23 @@ test('MEDIA_FETCH=graph with the fixture object store fails to boot', () => {
   ).toThrow(/OBJECT_STORE/i);
 });
 
+// #78 / review of #97: the SES prefix is real client mail and the poller
+// DELETES it after processing — handing it to in-memory infrastructure and
+// then deleting the source is destruction dressed as a clean drain.
+test('EMAIL_SOURCE=s3 with a fixture queue or store fails to boot', () => {
+  expect(() => loadEnv({ EMAIL_SOURCE: 's3' } as NodeJS.ProcessEnv)).toThrow(/EMAIL_SOURCE/);
+  expect(() =>
+    loadEnv({ EMAIL_SOURCE: 's3', INGEST_QUEUE: 'bullmq' } as NodeJS.ProcessEnv),
+  ).toThrow(/EMAIL_SOURCE/);
+});
+
+test('EMAIL_SOURCE=s3 boots with the real queue and store; mailhog stays a fixture-friendly dev tool', () => {
+  const staging = loadEnv({ EMAIL_SOURCE: 's3', INGEST_QUEUE: 'bullmq', OBJECT_STORE: 's3' } as NodeJS.ProcessEnv);
+  expect(staging.EMAIL_SOURCE).toBe('s3');
+  const laptop = loadEnv({ EMAIL_SOURCE: 'mailhog' } as NodeJS.ProcessEnv);
+  expect(laptop.EMAIL_SOURCE).toBe('mailhog');
+});
+
 test('MEDIA_FETCH=graph with a real store boots', () => {
   const env = loadEnv({ MEDIA_FETCH: 'graph', META_MEDIA_ACCESS_TOKEN: 't', OBJECT_STORE: 's3' } as NodeJS.ProcessEnv);
   expect(env.MEDIA_FETCH).toBe('graph');

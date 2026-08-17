@@ -144,6 +144,9 @@ test('an ack failure after a successful handoff is contained, not fatal to the b
     async ack() {
       throw new Error('mailhog unreachable');
     },
+    async quarantine() {
+      /* not reached */
+    },
   };
   const { deps, warns } = baseDeps();
 
@@ -153,7 +156,7 @@ test('an ack failure after a successful handoff is contained, not fatal to the b
   expect(warns.some((w) => w.includes('ok-1') && w.includes('ack failed'))).toBe(true);
 });
 
-test('an unparseable email drains as failed, is left in the source, and warns once', async () => {
+test('an unparseable email drains as failed and is QUARANTINED — out of the window, never dropped', async () => {
   const source = new FixtureEmailSource();
   source.seed(rawEmail({ id: 'bad-mime' }));
   const { deps, warns } = baseDeps({
@@ -161,33 +164,118 @@ test('an unparseable email drains as failed, is left in the source, and warns on
       throw new Error('malformed');
     }),
   });
-  const warned = new Set<string>();
 
-  const first = await drainEmailSource(source, { ...deps, warned });
+  const first = await drainEmailSource(source, deps);
   expect(first.failed).toBe(1);
-  expect(source.acked).toEqual([]); // never dropped
+  expect(source.acked).toEqual([]); // not acked — quarantine is not deletion
+  expect(source.quarantined).toEqual(['bad-mime']);
   expect(warns.filter((w) => w.includes('bad-mime'))).toHaveLength(1);
 
-  const second = await drainEmailSource(source, { ...deps, warned });
-  expect(second.failed).toBe(1);
-  expect(warns.filter((w) => w.includes('bad-mime'))).toHaveLength(1); // still once
+  // Second poll: it has LEFT the window, so nothing re-drains and nothing re-warns.
+  const second = await drainEmailSource(source, deps);
+  expect(second.failed).toBe(0);
+  expect(warns.filter((w) => w.includes('bad-mime'))).toHaveLength(1);
 });
 
-test('drain acks processed emails, leaves an unresolvable one in the source, and warns once', async () => {
+test('drain acks processed emails and quarantines an unresolvable one', async () => {
   const source = new FixtureEmailSource();
   source.seed(rawEmail({ id: 'ok-1', envelopeRecipient: 'doc+prac_x@neoting.test' }));
   source.seed(rawEmail({ id: 'bad-1', envelopeRecipient: 'doc@neoting.test' }));
   const { deps, warns } = baseDeps();
-  const warned = new Set<string>();
 
-  const first = await drainEmailSource(source, { ...deps, warned });
+  const first = await drainEmailSource(source, deps);
   expect(first.processed).toBe(1);
   expect(first.unresolved).toBe(1);
-  expect(source.acked).toEqual(['ok-1']); // the unresolvable one is NOT acked — never dropped
+  expect(source.acked).toEqual(['ok-1']);
+  expect(source.quarantined).toEqual(['bad-1']); // out of the window, not dropped
   expect(warns.filter((w) => w.includes('bad-1'))).toHaveLength(1);
 
-  // Second poll: ok-1 is gone, bad-1 remains and must NOT re-warn (warned-once).
-  const second = await drainEmailSource(source, { ...deps, warned });
-  expect(second.unresolved).toBe(1);
+  const second = await drainEmailSource(source, deps);
+  expect(second.unresolved).toBe(0); // gone from the window; nothing re-warns
   expect(warns.filter((w) => w.includes('bad-1'))).toHaveLength(1);
+});
+
+test('REGRESSION: stuck unresolvable mail cannot starve the poll window', async () => {
+  // "Left in the source, warned once" wedged the whole channel: the S3 source
+  // lists a bounded window, plain mail to doc@ (no plus tag) is unresolvable BY
+  // DESIGN, and a stuck email never left the window — so once it filled, new
+  // mail was never listed again while the drain reported clean. Quarantine
+  // frees the slot; this drives a window-of-one source to prove it.
+  const window = 1;
+  const pending: InboundRawEmail[] = [
+    rawEmail({ id: 'stuck-1', envelopeRecipient: 'doc@neoting.test' }), // unresolvable, sorts first
+    rawEmail({ id: 'stuck-2', envelopeRecipient: 'doc@neoting.test' }),
+    rawEmail({ id: 'new-mail', envelopeRecipient: 'doc+prac_x@neoting.test' }),
+  ];
+  const quarantined: string[] = [];
+  const acked: string[] = [];
+  const source: EmailSource = {
+    async poll() {
+      return pending.slice(0, window); // the bounded window, like MaxKeys
+    },
+    async ack(id) {
+      acked.push(id);
+      const i = pending.findIndex((e) => e.id === id);
+      if (i >= 0) pending.splice(i, 1);
+    },
+    async quarantine(id) {
+      quarantined.push(id);
+      const i = pending.findIndex((e) => e.id === id);
+      if (i >= 0) pending.splice(i, 1);
+    },
+  };
+  const { deps } = baseDeps();
+
+  await drainEmailSource(source, deps);
+  await drainEmailSource(source, deps);
+  await drainEmailSource(source, deps);
+
+  expect(quarantined).toEqual(['stuck-1', 'stuck-2']);
+  expect(acked).toEqual(['new-mail']); // the mail behind the stuck ones still arrives
+});
+
+test('a quarantine failure leaves the email in the source and warns every drain, not once', async () => {
+  const pending = [rawEmail({ id: 'bad-1', envelopeRecipient: 'doc@neoting.test' })];
+  const source: EmailSource = {
+    async poll() {
+      return [...pending];
+    },
+    async ack() {
+      /* not reached */
+    },
+    async quarantine() {
+      throw new Error('s3 blip');
+    },
+  };
+  const { deps, warns } = baseDeps();
+
+  await drainEmailSource(source, deps);
+  await drainEmailSource(source, deps);
+
+  // Still in the source (the next drain retried), and the failure is loud each
+  // time — a quarantine that cannot complete is a window slot that stays taken.
+  expect(warns.filter((w) => w.includes('quarantine failed'))).toHaveLength(2);
+});
+
+test('every rejected attachment is logged with its filename, code and reason before the ack deletes the email', async () => {
+  // The count alone survived the production path; the per-attachment reason —
+  // what a human needs to tell a client what to re-send — was discarded, and
+  // the source email deleted right after. Pinned here.
+  const source = new FixtureEmailSource();
+  source.seed(rawEmail({ id: 'ok-1', envelopeRecipient: 'doc+prac_x@neoting.test' }));
+  const { deps, warns } = baseDeps({
+    parser: stubParser(
+      parsedEmail({
+        attachments: [
+          { filename: 'r.png', contentType: 'image/png', bytes: PNG },
+          { filename: 'evil.exe', contentType: 'application/octet-stream', bytes: Buffer.from('MZ-not-accepted') },
+        ],
+      }),
+    ),
+  });
+
+  const summary = await drainEmailSource(source, deps);
+  expect(summary.processed).toBe(1);
+  expect(source.acked).toEqual(['ok-1']);
+  expect(warns.some((w) => w.includes('evil.exe') && w.includes('NT-ING-'))).toBe(true);
 });
