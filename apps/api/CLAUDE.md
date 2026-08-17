@@ -68,7 +68,7 @@ Task definitions pin **ARM64**, so CI builds `--platform linux/arm64`. An x86 im
 
 Both compose through `config/connection-urls.ts`, which percent-encodes the credentials. That is not defensive tidiness: RDS generates the master password itself and guarantees punctuation in it, and an unencoded `/`, `#` or `?` stops the string being a URL at all. It surfaces on a seven-day rotation, on a day nobody expects it.
 
-⚠ **Consequence to know before debugging staging, still true:** `INGEST_QUEUE` is unset there, so it defaults to `fixture`. A WhatsApp message reaching the deployed api is signature-verified and then enqueued **in memory**, where the workers service cannot see it. Workers running is necessary for the ingest lane and is not sufficient.
+**Staging runs the real ingest lane since 17 Aug 2026:** the task definitions set `INGEST_QUEUE=bullmq`, `OBJECT_STORE=s3`, `IMAGE_NORMALISER=sharp` and `AUTH_MODE=session` (infra/envs/staging/services.tf). Still fixture there, by design: `EMAIL_SOURCE` (the s3 poller in `worker/email-intake-main.ts` has no ECS service yet) and `DOCUMENT_GUARD` (qpdf is not in the image). ⚠ `AUTH_MODE=session` means every scoped endpoint on staging returns an error until S1 implements `SessionContextResolver` — that is the gate working, not a bug; `env.ts` refuses the header-trusting fixture resolver under `NODE_ENV=production`.
 
 ⚠ Workers has no load balancer and no container health check, so ECS steady state proves the task **started**, not that it reached Redis. A worker that connects and then silently stops consuming looks identical to an idle one.
 
