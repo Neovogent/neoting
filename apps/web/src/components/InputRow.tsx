@@ -229,7 +229,7 @@ export function InputRow() {
           animate={{ rotate: 360 }}
           transition={{ duration: 22, repeat: Infinity, ease: 'linear' }}
         />
-        <div className="relative bg-white/90 backdrop-blur-2xl border border-white/60 shadow-[0_20px_40px_-15px_rgba(20,227,196,0.2)] rounded-[32px] flex flex-col transition-all overflow-hidden focus-within:shadow-[0_20px_40px_-15px_rgba(20,227,196,0.4)] focus-within:border-white">
+        <div className="relative bg-white/90 backdrop-blur-2xl border border-white/60 shadow-composer rounded-[32px] flex flex-col transition-all overflow-hidden focus-within:shadow-composer-focus focus-within:border-white">
         {/* Only on the launcher. Once a conversation is running the person
             has already said what they want and is mid-thought — a box that
             starts typing its own sentences underneath their reply competes

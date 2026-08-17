@@ -1045,7 +1045,7 @@ export function ClientInbox({ client, kind, onPreview }: {
           <>
             <button
               onClick={() => fileRef.current?.click()}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-glow-btn-soft"
             >
               <Upload size={16} strokeWidth={2.5} />
               {intl.formatMessage(m.uploadAction)}

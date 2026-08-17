@@ -133,7 +133,7 @@ export function StatementModal({ statement, onClose }: {
           </p>
           <button
             onClick={() => (isBank ? downloadBank(data as Statement) : downloadSupplier(data as SupplierStatement))}
-            className="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+            className="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-glow-btn"
           >
             <Download size={15} strokeWidth={2.5} />
             {intl.formatMessage(m.downloadAction)}

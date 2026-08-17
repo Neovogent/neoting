@@ -138,7 +138,7 @@ export function DuplicateCompare({ pairs }: { pairs: DuplicatePair[] }) {
                   reviewOpened: true,
                 });
               }}
-              className="flex-1 min-w-[160px] flex items-center justify-center gap-2 py-3 text-sm font-bold text-white bg-brand rounded-2xl hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+              className="flex-1 min-w-[160px] flex items-center justify-center gap-2 py-3 text-sm font-bold text-white bg-brand rounded-2xl hover:bg-brand-hover transition-all shadow-glow-btn-soft"
             >
               <Trash2 size={16} />
               {intl.formatMessage(m.deleteAction)}

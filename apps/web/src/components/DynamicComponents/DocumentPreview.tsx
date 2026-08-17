@@ -110,7 +110,7 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
             <p className="font-semibold text-white mb-1">{intl.formatMessage(m.extractionRunning)}</p>
             <p className="text-[13px] leading-relaxed">{intl.formatMessage(m.extractionBypass)}</p>
           </div>
-          <button className="self-start flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white bg-brand rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]">
+          <button className="self-start flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white bg-brand rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft">
             <PencilLine size={16} />
             {intl.formatMessage(m.enterManually)}
           </button>

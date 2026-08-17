@@ -236,7 +236,7 @@ export function AnalyticsView() {
             </select>
             <button
               onClick={() => exportMetrics(metrics, scope === 'practice' ? 'practice' : clients.find((c) => c.id === scope)?.name ?? '')}
-              className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+              className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
             >
               <Download size={16} />
               {intl.formatMessage(m.exportAction)}

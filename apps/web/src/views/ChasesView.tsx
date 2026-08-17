@@ -178,7 +178,7 @@ export function ChasesView() {
             <button
               onClick={runEngine}
               disabled={totalMissing === 0}
-              className="flex items-center gap-2 px-6 py-3 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_20px_rgba(20,227,196,0.2)] disabled:opacity-40"
+              className="flex items-center gap-2 px-6 py-3 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-cta-soft disabled:opacity-40"
             >
               <Play size={16} fill="currentColor" />
               {intl.formatMessage(m.runEngineAction)}
@@ -879,7 +879,7 @@ function ChaseDetail({ chase, onClose }: { chase: Chase; onClose: () => void }) 
           <button
             onClick={save}
             disabled={!dirty}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-[0_0_15px_rgba(20,227,196,0.3)]"
+            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-glow-btn-strong"
           >
             <Check size={15} />
             {intl.formatMessage(mDetail.saveAction)}
@@ -1161,7 +1161,7 @@ function FooterAction({ icon: Icon, label, onClick, blocked, blockedTitle, block
       onClick={() => { if (!blocked) onClick(); }}
       className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold transition-colors ${
         primary
-          ? 'text-white bg-brand hover:bg-brand-hover shadow-[0_0_15px_rgba(20,227,196,0.3)]'
+          ? 'text-white bg-brand hover:bg-brand-hover shadow-glow-btn-strong'
           : 'text-zinc-300 bg-card border border-white/5 hover:bg-white/5'
       } ${blocked ? 'opacity-40 cursor-not-allowed hover:bg-inherit' : ''}`}
     >

@@ -179,7 +179,7 @@ function ClientItem({
           : 'text-zinc-400 hover:bg-card/50 border border-transparent'
       }`}
     >
-      <div className={`w-2 h-2 rounded-full shadow-lg shrink-0 ${active ? 'bg-brand shadow-[0_0_10px_rgba(20,227,196,0.5)]' : 'bg-zinc-700'}`} />
+      <div className={`w-2 h-2 rounded-full shadow-lg shrink-0 ${active ? 'bg-brand shadow-glow-dot' : 'bg-zinc-700'}`} />
       <span className="truncate flex-1">{name}</span>
       {missing > 0 && <span className="text-[11px] font-bold text-zinc-600 shrink-0">{missing}</span>}
     </button>

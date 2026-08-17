@@ -55,7 +55,7 @@ export function BusinessPortal() {
     <div className="flex-1 flex flex-col min-w-0 h-full bg-ground overflow-hidden">
       <header className="shrink-0 border-b border-white/5 bg-card px-6 py-4 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-2xl bg-brand flex items-center justify-center text-white shrink-0 shadow-[0_0_15px_rgba(20,227,196,0.3)]">
+          <div className="w-10 h-10 rounded-2xl bg-brand flex items-center justify-center text-white shrink-0 shadow-glow-tile">
             <Building2 size={18} />
           </div>
           <div className="min-w-0">

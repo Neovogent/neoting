@@ -169,7 +169,7 @@ export function DocumentFormats({ open, anchor }: {
             <motion.div
               layout
               transition={{ layout: { duration: 0.28, ease: [0.16, 1, 0.3, 1] } }}
-              className="inline-flex items-center gap-2.5 pl-2 pr-3.5 py-1.5 rounded-2xl bg-white border border-zinc-200/80 shadow-[0_8px_20px_-8px_rgba(0,0,0,0.25)] overflow-hidden"
+              className="inline-flex items-center gap-2.5 pl-2 pr-3.5 py-1.5 rounded-2xl bg-white border border-zinc-200/80 shadow-chip-lift overflow-hidden"
             >
               <AnimatePresence mode="wait" initial={false}>
                 <motion.span

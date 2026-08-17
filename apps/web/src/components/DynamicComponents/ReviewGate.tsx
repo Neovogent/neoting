@@ -116,7 +116,7 @@ export function ReviewGate({
         {!isExpanded && (
           <button
             onClick={() => setIsExpanded(true)}
-            className="shrink-0 flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-white bg-brand rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+            className="shrink-0 flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-white bg-brand rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
           >
             {intl.formatMessage(m.readReview)}
             <ChevronDown size={16} strokeWidth={2.5} />
@@ -155,7 +155,7 @@ export function ReviewGate({
           </button>
           <button
             onClick={handleApprove}
-            className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all shadow-[0_0_15px_rgba(20,227,196,0.3)]"
+            className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all shadow-glow-btn-strong"
           >
             <Check size={18} strokeWidth={2.5} />
             {approveText}

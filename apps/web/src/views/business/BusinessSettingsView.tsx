@@ -758,7 +758,7 @@ function MemberEditor({ member, existing, onSave, onRemove, onClose }: {
           <button
             onClick={() => onSave({ ...draft, name, email })}
             disabled={!!problem}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-glow-btn"
           >
             {isNew ? intl.formatMessage(m.editorSendInviteAction) : intl.formatMessage(m.editorSaveAction)}
           </button>
@@ -854,7 +854,7 @@ function BusinessDetailsPanel({ account, onSave }: {
             setSaved(true);
           }}
           disabled={!dirty || !!problem}
-          className="px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+          className="px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-glow-btn"
         >
           {intl.formatMessage(m.detailsSaveAction)}
         </button>
@@ -921,7 +921,7 @@ function ConnectRow({
       ) : (
         <button
           onClick={onConnect}
-          className="shrink-0 px-4 py-2 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_12px_rgba(20,227,196,0.25)]"
+          className="shrink-0 px-4 py-2 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-glow-pill"
         >
           {actionLabel ?? intl.formatMessage(m.connectRowAction)}
         </button>

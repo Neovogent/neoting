@@ -443,7 +443,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
             </button>
             <button
               onClick={() => { setUploadFor(clientFilter === 'all' ? clients[0]?.id ?? null : clientFilter); fileRef.current?.click(); }}
-              className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-brand rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+              className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-brand rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
             >
               <UploadCloud size={16} />
               {intl.formatMessage(m.uploadStatementAction)}
@@ -508,7 +508,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                 onClick={() => setTab(t)}
                 className={`px-4 py-2 rounded-full text-[13px] font-bold transition-all border ${
                   tab === t
-                    ? 'bg-brand text-white border-brand shadow-[0_0_12px_rgba(20,227,196,0.25)]'
+                    ? 'bg-brand text-white border-brand shadow-glow-pill'
                     : 'bg-card text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
                 }`}
               >

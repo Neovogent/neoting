@@ -778,7 +778,7 @@ function Chip({ children, active, onClick }: { children: React.ReactNode; active
       onClick={onClick}
       className={`px-3.5 py-2 rounded-full text-[13px] font-bold border transition-all capitalize ${
         active
-          ? 'bg-brand text-white border-brand shadow-[0_0_12px_rgba(20,227,196,0.25)]'
+          ? 'bg-brand text-white border-brand shadow-glow-pill'
           : 'bg-ground text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
       }`}
     >

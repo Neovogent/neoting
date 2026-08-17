@@ -311,7 +311,7 @@ export function BusinessHomeView({
       {toApprove.length > 0 && (
         <div className="rounded-[24px] border border-brand/25 bg-brand/[0.07] overflow-hidden">
           <div className="p-5 flex items-start gap-3">
-            <span className="w-10 h-10 rounded-2xl bg-brand flex items-center justify-center text-white shrink-0 shadow-[0_0_15px_rgba(20,227,196,0.3)]">
+            <span className="w-10 h-10 rounded-2xl bg-brand flex items-center justify-center text-white shrink-0 shadow-glow-tile">
               <ShieldCheck size={18} />
             </span>
             <div className="min-w-0 flex-1">
@@ -333,7 +333,7 @@ export function BusinessHomeView({
                 // next tick when this is the first time.
                 setTimeout(() => openApprovalLink(approvalRequest?.id ?? `appr-req-${account.clientId}-0`), 0);
               }}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-glow-btn"
             >
               <ShieldCheck size={15} strokeWidth={2.5} />
               {intl.formatMessage(m.approvalsAction)}
@@ -345,7 +345,7 @@ export function BusinessHomeView({
       {proposedUsers.length > 0 && (
         <div className="rounded-[24px] border border-brand/25 bg-brand/[0.07] overflow-hidden">
           <div className="p-5 flex items-start gap-3 border-b border-brand/15">
-            <span className="w-10 h-10 rounded-2xl bg-brand flex items-center justify-center text-white shrink-0 shadow-[0_0_15px_rgba(20,227,196,0.3)]">
+            <span className="w-10 h-10 rounded-2xl bg-brand flex items-center justify-center text-white shrink-0 shadow-glow-tile">
               <UserPlus size={18} />
             </span>
             <div className="min-w-0 flex-1">
@@ -442,7 +442,7 @@ export function BusinessHomeView({
       {proposedChanges.length > 0 && (
         <div className="rounded-[24px] border border-brand/25 bg-brand/[0.07] overflow-hidden">
           <div className="p-5 flex items-start gap-3 border-b border-brand/15">
-            <span className="w-10 h-10 rounded-2xl bg-brand flex items-center justify-center text-white shrink-0 shadow-[0_0_15px_rgba(20,227,196,0.3)]">
+            <span className="w-10 h-10 rounded-2xl bg-brand flex items-center justify-center text-white shrink-0 shadow-glow-tile">
               <FileText size={18} />
             </span>
             <div className="min-w-0 flex-1">
@@ -520,7 +520,7 @@ export function BusinessHomeView({
           onClick={() => onGo('Capture')}
           className="flex items-center gap-4 p-5 rounded-2xl border border-white/5 bg-card hover:border-brand/40 transition-colors text-left group"
         >
-          <span className="w-12 h-12 rounded-2xl bg-brand flex items-center justify-center text-white shrink-0 shadow-[0_0_15px_rgba(20,227,196,0.3)]">
+          <span className="w-12 h-12 rounded-2xl bg-brand flex items-center justify-center text-white shrink-0 shadow-glow-tile">
             <Camera size={20} />
           </span>
           <span className="min-w-0">
