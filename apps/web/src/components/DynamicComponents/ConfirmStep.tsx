@@ -1,17 +1,14 @@
 import { AlertTriangle, Check, X } from 'lucide-react';
 import { motion } from 'motion/react';
-import { defineMessages, useIntl } from 'react-intl';
+import { useIntl } from 'react-intl';
+import { commonActions } from '../../i18n/common';
 
 /**
  * Every other label on this dialog arrives as a prop, because only the caller
  * knows what is being confirmed. "Cancel" is the exception — the way out of a
- * confirmation is the same sentence whatever the question was — so it is the
- * one string the component owns, and therefore the one it must put in the
- * catalogue itself.
+ * confirmation is the same sentence whatever the question was — so it comes
+ * from the common catalogue; the component owns no strings of its own.
  */
-const m = defineMessages({
-  cancel: { id: 'shell.confirmStep.cancel', defaultMessage: 'Cancel' },
-});
 
 /**
  * The "are you sure" that sits in front of an approval step.
@@ -79,7 +76,7 @@ export function ConfirmStep({ title, detail, consequence, confirmLabel, altLabel
             className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 hover:text-white transition-colors"
           >
             <X size={14} />
-            {intl.formatMessage(m.cancel)}
+            {intl.formatMessage(commonActions.cancel)}
           </button>
           {/* The third way out sits apart from the primary, so discarding
               work is never the button under the thumb. */}

@@ -4,6 +4,7 @@ import logo from '../../assets/logo.png';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
+import { commonLabels, commonPlaceholders } from '../../i18n/common';
 import { Pill } from '../../components/DynamicComponents/DataTable';
 import { newBusinessAccount, newMember } from '../../lib/business';
 
@@ -56,8 +57,6 @@ const m = defineMessages({
     defaultMessage: 'The mobile number matters — missing paperwork is chased by text.',
   },
   mobileLabel: { id: 'portal.businessSignInView.mobileLabel', defaultMessage: 'Mobile number' },
-  mobilePlaceholder: { id: 'portal.businessSignInView.mobilePlaceholder', defaultMessage: '+44 7700 900123' },
-  emailLabel: { id: 'portal.businessSignInView.emailLabel', defaultMessage: 'Email' },
   emailPlaceholder: {
     id: 'portal.businessSignInView.emailPlaceholder',
     defaultMessage: 'john@americanburger.co.uk',
@@ -310,11 +309,11 @@ export function BusinessSignInView() {
                       label={intl.formatMessage(m.mobileLabel)}
                       value={form.mobile}
                       onChange={(v) => set('mobile', v)}
-                      placeholder={intl.formatMessage(m.mobilePlaceholder)}
+                      placeholder={intl.formatMessage(commonPlaceholders.ukMobile)}
                       icon={Smartphone}
                     />
                     <Field
-                      label={intl.formatMessage(m.emailLabel)}
+                      label={intl.formatMessage(commonLabels.email)}
                       value={form.email}
                       onChange={(v) => set('email', v)}
                       placeholder={intl.formatMessage(m.emailPlaceholder)}

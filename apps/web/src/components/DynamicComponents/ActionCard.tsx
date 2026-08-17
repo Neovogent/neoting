@@ -1,5 +1,6 @@
 import { FileSearch, ArrowRight, Eye, Download } from 'lucide-react';
 import { defineMessages, useIntl } from 'react-intl';
+import { commonActions } from '../../i18n/common';
 import { useAppContext } from '../../context/AppContext';
 import { currency } from '../../lib/resolver';
 import type { Intent, MissingItem } from '../../lib/types';
@@ -61,10 +62,6 @@ const m = defineMessages({
   reviewReply: {
     id: 'chase.actionCard.reviewReply',
     defaultMessage: 'Every outstanding item, sortable and bulk-selectable:',
-  },
-  exportAction: {
-    id: 'chase.actionCard.exportAction',
-    defaultMessage: 'Export CSV',
   },
 });
 
@@ -160,7 +157,7 @@ export function ActionCard({ clientIds, period }: { clientIds: string[]; period?
         <button
           onClick={() => downloadCsv(items)}
           className="px-4 py-3 text-zinc-400 hover:text-white hover:bg-white/5 rounded-2xl transition-colors border border-white/5 bg-card shadow-inner"
-          title={intl.formatMessage(m.exportAction)}
+          title={intl.formatMessage(commonActions.exportCsv)}
         >
           <Download size={20} />
         </button>

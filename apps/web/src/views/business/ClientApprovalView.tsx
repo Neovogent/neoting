@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
+import { commonActions, commonLabels } from '../../i18n/common';
 import { useAppContext } from '../../context/AppContext';
 import { DocumentPreview } from '../../components/DynamicComponents/DocumentPreview';
 import { Pill } from '../../components/DynamicComponents/DataTable';
@@ -67,9 +68,6 @@ const m = defineMessages({
   matchConfidence: { id: 'portal.approvalCard.matchConfidence', defaultMessage: '{percent}% match' },
   readReviewAction: { id: 'portal.approvalCard.readReviewAction', defaultMessage: 'Read review' },
   reviewHeading: { id: 'portal.approvalCard.reviewHeading', defaultMessage: 'What you are approving' },
-  rowSupplier: { id: 'portal.approvalCard.rowSupplier', defaultMessage: 'Supplier' },
-  rowAmount: { id: 'portal.approvalCard.rowAmount', defaultMessage: 'Amount' },
-  rowCategory: { id: 'portal.approvalCard.rowCategory', defaultMessage: 'Category' },
   rowVat: { id: 'portal.approvalCard.rowVat', defaultMessage: 'VAT' },
   rowStage: { id: 'portal.approvalCard.rowStage', defaultMessage: 'Stage' },
   rowWaiting: { id: 'portal.approvalCard.rowWaiting', defaultMessage: 'Waiting' },
@@ -97,7 +95,6 @@ const m = defineMessages({
     defaultMessage: 'Your accountant sees this with the item — say what is wrong and they can fix it without asking.',
   },
   sendRejectionAction: { id: 'portal.approvalCard.sendRejectionAction', defaultMessage: 'Send rejection' },
-  cancelAction: { id: 'portal.approvalCard.cancelAction', defaultMessage: 'Cancel' },
   approveAction: { id: 'portal.approvalCard.approveAction', defaultMessage: 'Approve' },
   approveGate: {
     id: 'portal.approvalCard.approveGate',
@@ -108,7 +105,6 @@ const m = defineMessages({
     id: 'portal.approvalCard.leaveAction',
     defaultMessage: 'Leave — reminders will follow on the chase schedule',
   },
-  closeViewerAction: { id: 'portal.approvalCard.closeViewerAction', defaultMessage: 'Close' },
   confirmApproveTitle: {
     id: 'portal.approvalCard.confirmApproveTitle',
     defaultMessage: 'Approve {supplier} for {amount}?',
@@ -450,9 +446,9 @@ function ApprovalCard({
                 {intl.formatMessage(m.reviewHeading)}
               </div>
               <div className="flex flex-col gap-2.5 text-[13px]">
-                <ReviewRow label={intl.formatMessage(m.rowSupplier)} value={item.supplier} />
-                <ReviewRow label={intl.formatMessage(m.rowAmount)} value={currency(item.total)} />
-                <ReviewRow label={intl.formatMessage(m.rowCategory)} value={item.category} />
+                <ReviewRow label={intl.formatMessage(commonLabels.supplier)} value={item.supplier} />
+                <ReviewRow label={intl.formatMessage(commonLabels.amount)} value={currency(item.total)} />
+                <ReviewRow label={intl.formatMessage(commonLabels.category)} value={item.category} />
                 {vat && <ReviewRow label={intl.formatMessage(m.rowVat)} value={vat} />}
                 <ReviewRow label={intl.formatMessage(m.rowStage)} value={item.stage} />
                 <ReviewRow
@@ -539,7 +535,7 @@ function ApprovalCard({
                 onClick={() => { setRejecting(false); setNote(''); }}
                 className="w-full px-6 py-3 rounded-full text-[13px] font-bold text-zinc-400 hover:text-white transition-colors"
               >
-                {intl.formatMessage(m.cancelAction)}
+                {intl.formatMessage(commonActions.cancel)}
               </button>
             </>
           ) : (
@@ -619,7 +615,7 @@ function ApprovalCard({
                 onClick={() => setViewingDoc(false)}
                 className="px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-raised border border-white/10 hover:border-white/25 transition-colors"
               >
-                {intl.formatMessage(m.closeViewerAction)}
+                {intl.formatMessage(commonActions.close)}
               </button>
             </div>
           </motion.div>

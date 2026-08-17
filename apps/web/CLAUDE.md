@@ -9,7 +9,7 @@ Read `docs/Source_Of_Truth.md` D37 before assuming anything Next-shaped. The req
 1. **Split at the route.** Every screen is `lazy()`-loaded from `App.tsx` so opening one downloads one. This replaced "Server Components by default", and it inherits that rule's job: keeping per-route weight down. (Guideline v1.2 §7.4.)
 2. **Tokens only** — no hex, no arbitrary px, no rgb()/rgba(). Done for colour: the palette AND the shadow/glow ramp live in the `@theme` block of `src/index.css` (issues #64, #85, #86); alpha steps derive from the base tokens via `color-mix`. Light mode is a variable redefinition plus the documented per-utility exceptions in that file. `scripts/check-colors.mjs` fails `pnpm lint` on any rgb()/rgba() literal anywhere under `src`, including the stylesheet ESLint cannot see.
 3. Chat renders **component-grammar primitives only**. If the grammar lacks a card, that is a G7 conversation, not a one-off `<div>`. The grammar is being derived from the imported components rather than imposed on them.
-4. Every user-facing string through a catalogue (en-GB); the lint rule blocks literals. **Done — issue #65.** The library is **react-intl** (§12.6 leaves the library open and fixes the behaviour; react-intl is ICU-MessageFormat and framework-agnostic, which is what D37 needed). `defineMessages` per component, ids on `domain.component.purpose`, and `lang/en-GB.json` extracted from source by `pnpm i18n:extract` — **generated, never hand-edited.** Two gates, at different altitudes: `neoting/no-literal-string-in-jsx` works on source and blocks the next literal someone types, `pnpm i18n:check` works on the catalogue and blocks a message with no default, an off-convention key, a silently-overwritten duplicate id or invalid ICU. **2,756 messages.** See *i18n* below before adding a string.
+4. Every user-facing string through a catalogue (en-GB); the lint rule blocks literals. **Done — issue #65.** The library is **react-intl** (§12.6 leaves the library open and fixes the behaviour; react-intl is ICU-MessageFormat and framework-agnostic, which is what D37 needed). `defineMessages` per component, ids on `domain.component.purpose`, and `lang/en-GB.json` extracted from source by `pnpm i18n:extract` — **generated, never hand-edited.** Two gates, at different altitudes: `neoting/no-literal-string-in-jsx` works on source and blocks the next literal someone types, `pnpm i18n:check` works on the catalogue and blocks a message with no default, an off-convention key, a silently-overwritten duplicate id or invalid ICU. **2,642 messages** (136 local ids collapsed into 22 `common.*` ids in issue #94). See *i18n* below before adding a string.
 5. All four states per screen: empty (teaches the next action), loading (skeletons, no spinners on primary surfaces), error (plain English + `NT-` code), success.
 6. Accessibility on every PR: full keyboard path, visible focus, `aria-live="polite"` on chat updates, contrast from tokens, error text never colour-only. Run axe locally before requesting review. `jsx-a11y` is not yet in `eslint.config.js` — see the note there.
 7. Motion by the numbers (tokens `CLAUDE.md`). `motion` (Framer), not CSS transitions, for anything stateful.
@@ -33,6 +33,8 @@ There is no chat proxy and no escape hatch. `VITE_CHAT_PROXY` and the `POST /api
 
 Adding a string: `defineMessages` at the top of the component, id `domain.component.purpose`, `intl.formatMessage(m.thing)` at the call site. Plurals are ICU (`{count, plural, one {# day} other {# days}}`) — **never** `${n} day${n === 1 ? '' : 's'}`, which encodes an English-only rule about pluralisation and is wrong in most of the languages this would be translated into. Never concatenate a sentence out of fragments; interpolate into one message.
 
+Before minting a per-component id for a universal word, check `src/i18n/common.ts` (`common.action.*`, `common.label.*`, `common.placeholder.*`). Consolidation is by meaning, never string equality: status pills, tabs, navigation labels, channel names and "Yes, …" confirm labels stay per-component so a translator shortening one surface cannot silently reword another (issue #94).
+
 `lang/en-GB.json` is **generated and gitignored** (Governance §1.4 — never commit generated output), so it will not be in the diff and you cannot hand-edit it: `pnpm i18n:check` re-extracts before it checks, and the edit is gone by the time anything reads it. It is the artefact a translator receives, rebuilt on every `pnpm lint`.
 
 **The literal rule is `neoting/no-literal-string-in-jsx`, not `formatjs/`, and the difference is deliberate.** It is the formatjs rule with reports over pure punctuation dropped, because separators like `·`, `—`, `→`, `✓`, `£`, `%` and `{' '}` are not language and putting them in a catalogue teaches everyone the wrong lesson about what a catalogue is for. The upstream rule has no option for that in **any** published version — its only config is `props.include`/`props.exclude`, which match tag and attribute *names*, never the matched text — so the exemption is a wrapper in `eslint/no-literal-string-in-jsx.js`. Read it before touching it; it is eleven lines of predicate and forty of why. Two things about it that matter:
@@ -48,15 +50,15 @@ Gzipped, after the i18n extraction. The budget is **JS** (SoT §14: "initial JS 
 
 | | at import | now |
 |---|---|---|
-| `index.js` (shared) | 162.6 kB | **182.1 kB** |
+| `index.js` (shared) | 162.6 kB | **182.4 kB** |
 | `query.js` (TanStack) | 14.8 kB | 14.8 kB |
 | `react.js` | 1.5 kB | 1.5 kB |
-| **shared JS floor, every route** | **178.9 kB** | **198.5 kB** |
-| heaviest route on top (`ClientDetailView`) | 32.6 kB | **45.6 kB** |
-| **worst route, total JS** | **211.5 kB** | **244.1 kB** |
+| **shared JS floor, every route** | **178.9 kB** | **198.8 kB** |
+| heaviest route on top (`ClientDetailView`) | 32.6 kB | **45.1 kB** |
+| **worst route, total JS** | **211.5 kB** | **243.9 kB** |
 | `index.css` (not in the JS budget) | 11.9 kB | 12.4 kB |
 
-⚠ **The headroom is now about 6 kB, not 25.** Extraction cost ~19.6 kB on the shared floor and ~13 kB on the heaviest route — react-intl itself, plus 2,756 `defaultMessage` strings that ship inline in the components that declare them. That is the honest price of the rule in item 4 and it was worth paying, but it means **the next screen or dependency is very likely to break the budget**, and a route over budget is a reject (D37), not a warning.
+⚠ **The headroom is now about 6 kB, not 25.** Extraction cost ~19.6 kB on the shared floor and ~13 kB on the heaviest route — react-intl itself, plus 2,642 `defaultMessage` strings that ship inline in the components that declare them. That is the honest price of the rule in item 4 and it was worth paying, but it means **the next screen or dependency is very likely to break the budget**, and a route over budget is a reject (D37), not a warning.
 
 Three things drive the floor, all known:
 
@@ -64,7 +66,7 @@ Three things drive the floor, all known:
 - the synthetic dataset (~67 kB of source across the three seed/generate modules) is imported by `AppContext` at module scope and therefore ships to users;
 - every `defaultMessage` is in the bundle. The catalogue is not loaded at runtime yet — `lang/en-GB.json` exists for translators and for the gate. When a second locale arrives, the messages should move to a fetched catalogue and the defaults be stripped at build (`@formatjs/babel-plugin-react-intl` / the SWC equivalent `removeDefaultMessage`), which gives most of the 19.6 kB back.
 
-Most of the seed weight leaves when the views move onto the generated client. Until then, treat 198.5 kB as the floor a new screen is spending against, and re-measure with `pnpm --filter @neoting/web build` before adding a dependency.
+Most of the seed weight leaves when the views move onto the generated client. Until then, treat 198.8 kB as the floor a new screen is spending against, and re-measure with `pnpm --filter @neoting/web build` before adding a dependency.
 
 ## Tests
 

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Copy, X, Trash2, Layers, GitCompare, ArrowRight } from 'lucide-react';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
+import { commonActions, commonLabels } from '../../i18n/common';
 import { useAppContext } from '../../context/AppContext';
 import { DocumentPreview } from './DocumentPreview';
 import { Pill } from './DataTable';
@@ -30,7 +31,6 @@ const m = defineMessages({
     id: 'documents.duplicateModal.metaCrossType',
     defaultMessage: '{client} · {similarity}% similar · cross-type',
   },
-  close: { id: 'documents.duplicateModal.close', defaultMessage: 'Close' },
   signalsHeading: { id: 'documents.duplicateModal.signalsHeading', defaultMessage: 'Signals that flagged it' },
   sideThisCopy: { id: 'documents.duplicateModal.sideThisCopy', defaultMessage: 'This copy' },
   sideOnFile: { id: 'documents.duplicateModal.sideOnFile', defaultMessage: 'Already on file' },
@@ -95,7 +95,6 @@ const m = defineMessages({
 });
 
 const sideMessages = defineMessages({
-  rowDate: { id: 'documents.side.rowDate', defaultMessage: 'Date' },
   rowSentBy: { id: 'documents.side.rowSentBy', defaultMessage: 'Sent by' },
   view: { id: 'documents.side.view', defaultMessage: 'View this document' },
   gone: { id: 'documents.side.gone', defaultMessage: 'No longer on file' },
@@ -153,7 +152,7 @@ export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors shrink-0" aria-label={intl.formatMessage(m.close)}>
+          <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors shrink-0" aria-label={intl.formatMessage(commonActions.close)}>
             <X size={20} />
           </button>
         </div>
@@ -282,7 +281,7 @@ function Side({ title, pair, onOpen, hasDoc, tone = 'plain' }: {
       </div>
 
       <div className="flex flex-col gap-1.5 text-[12.5px]">
-        <Row label={intl.formatMessage(sideMessages.rowDate)} value={pair.date} />
+        <Row label={intl.formatMessage(commonLabels.date)} value={pair.date} />
         <Row label={intl.formatMessage(sideMessages.rowSentBy)} value={pair.uploader} />
       </div>
 

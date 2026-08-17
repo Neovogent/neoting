@@ -6,6 +6,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl, type IntlShape, type MessageDescriptor } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
+import { commonActions, commonLabels } from '../i18n/common';
 import { ClientIntakeForm } from '../components/DynamicComponents/ClientIntakeForm';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { currency } from '../lib/resolver';
@@ -96,7 +97,6 @@ const m = defineMessages({
   drillRejected: { id: 'analytics.clientsView.drillRejected', defaultMessage: 'Show rejected items' },
   drillApprovals: { id: 'analytics.clientsView.drillApprovals', defaultMessage: 'Show the approval queue' },
 
-  columnClient: { id: 'analytics.clientsView.columnClient', defaultMessage: 'Client' },
   columnLedger: { id: 'analytics.clientsView.columnLedger', defaultMessage: 'Ledger' },
   columnPipelineHealth: {
     id: 'analytics.clientsView.columnPipelineHealth',
@@ -114,7 +114,6 @@ const m = defineMessages({
   days: { id: 'analytics.clientsView.days', defaultMessage: '{days}d' },
 
   bulkAskAi: { id: 'analytics.clientsView.bulkAskAi', defaultMessage: 'Ask AI' },
-  bulkExportCsv: { id: 'analytics.clientsView.bulkExportCsv', defaultMessage: 'Export CSV' },
   bulkChase: { id: 'analytics.clientsView.bulkChase', defaultMessage: 'Chase selected' },
   tableFooter: {
     id: 'analytics.clientsView.tableFooter',
@@ -174,7 +173,7 @@ export function ClientsView() {
   const tableColumns: Column<Client>[] = [
     {
       key: 'name',
-      label: intl.formatMessage(m.columnClient),
+      label: intl.formatMessage(commonLabels.client),
       sortValue: (c) => c.name,
       render: (c) => (
         <span className="flex items-center gap-3">
@@ -343,7 +342,7 @@ export function ClientsView() {
             onRowClick={(c) => openClient(c.id)}
             bulkActions={[
               { label: intl.formatMessage(m.bulkAskAi), icon: Sparkles, onClick: (sel) => askAI(sel.map((c) => c.id)) },
-              { label: intl.formatMessage(m.bulkExportCsv), icon: Download, minSelected: 2, disabledHint: intl.formatMessage(EXPORT_HINT), onClick: (sel) => exportClients(sel, statsFor) },
+              { label: intl.formatMessage(commonActions.exportCsv), icon: Download, minSelected: 2, disabledHint: intl.formatMessage(EXPORT_HINT), onClick: (sel) => exportClients(sel, statsFor) },
               { label: intl.formatMessage(m.bulkChase), icon: Send, primary: true, onClick: (sel) => chase(sel.map((c) => c.id)) },
             ]}
             footer={intl.formatMessage(m.tableFooter, { count: visible.length })}

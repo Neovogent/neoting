@@ -15,6 +15,7 @@ import { currency } from '../lib/resolver';
 import { PRACTICE_NAME } from '../lib/seed2';
 import type { Document, VaultDocument } from '../lib/types';
 import { EXPORT_HINT } from '../lib/exportRules';
+import { commonActions, commonLabels } from '../i18n/common';
 
 const TABS = ['Archive', 'Vault'] as const;
 type Tab = (typeof TABS)[number];
@@ -59,13 +60,8 @@ const m = defineMessages({
   addToVault: { id: 'documents.documentsView.addToVault', defaultMessage: 'Add to vault' },
   addToVaultAudit: { id: 'documents.documentsView.addToVaultAudit', defaultMessage: 'Added vault document' },
 
-  columnSupplier: { id: 'documents.documentsView.columnSupplier', defaultMessage: 'Supplier' },
-  columnClient: { id: 'documents.documentsView.columnClient', defaultMessage: 'Client' },
-  columnDate: { id: 'documents.documentsView.columnDate', defaultMessage: 'Date' },
-  columnCategory: { id: 'documents.documentsView.columnCategory', defaultMessage: 'Category' },
   columnSource: { id: 'documents.documentsView.columnSource', defaultMessage: 'Source' },
   columnUploader: { id: 'documents.documentsView.columnUploader', defaultMessage: 'Uploader' },
-  columnTotal: { id: 'documents.documentsView.columnTotal', defaultMessage: 'Total' },
 
   unarchiveAction: { id: 'documents.documentsView.unarchiveAction', defaultMessage: 'Unarchive' },
   unarchiveTitle: {
@@ -87,7 +83,6 @@ const m = defineMessages({
     defaultMessage: '{count} item(s) — publishing data cleared',
   },
   moveToClientAction: { id: 'documents.documentsView.moveToClientAction', defaultMessage: 'Move to client' },
-  exportAction: { id: 'documents.documentsView.exportAction', defaultMessage: 'Export CSV' },
 
   filterAllClients: { id: 'documents.documentsView.filterAllClients', defaultMessage: 'All clients' },
   filterAllCategories: { id: 'documents.documentsView.filterAllCategories', defaultMessage: 'All categories' },
@@ -292,13 +287,13 @@ export function DocumentsView() {
   };
 
   const archiveColumns: Column<Document>[] = [
-    { key: 'supplier', label: intl.formatMessage(m.columnSupplier), sortValue: (d) => d.supplier, render: (d) => <span className="text-white font-semibold">{d.supplier}</span> },
-    ...(groupByClient ? [] : [{ key: 'clientName', label: intl.formatMessage(m.columnClient), sortValue: (d: Document) => d.clientName }]),
-    { key: 'date', label: intl.formatMessage(m.columnDate), sortValue: (d) => d.date },
-    { key: 'category', label: intl.formatMessage(m.columnCategory), sortValue: (d) => d.category },
+    { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (d) => d.supplier, render: (d) => <span className="text-white font-semibold">{d.supplier}</span> },
+    ...(groupByClient ? [] : [{ key: 'clientName', label: intl.formatMessage(commonLabels.client), sortValue: (d: Document) => d.clientName }]),
+    { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date },
+    { key: 'category', label: intl.formatMessage(commonLabels.category), sortValue: (d) => d.category },
     { key: 'source', label: intl.formatMessage(m.columnSource), sortValue: (d) => d.source, render: (d) => <Pill>{d.source}</Pill> },
     { key: 'uploader', label: intl.formatMessage(m.columnUploader), sortValue: (d) => d.uploader },
-    { key: 'total', label: intl.formatMessage(m.columnTotal), align: 'right', sortValue: (d) => d.total, render: (d) => <span className="text-white font-bold tabular-nums">{currency(d.total)}</span> },
+    { key: 'total', label: intl.formatMessage(commonLabels.total), align: 'right', sortValue: (d) => d.total, render: (d) => <span className="text-white font-bold tabular-nums">{currency(d.total)}</span> },
   ];
 
   const archiveActions = [
@@ -323,7 +318,7 @@ export function DocumentsView() {
       },
     },
     { label: intl.formatMessage(m.moveToClientAction), icon: ArrowRightLeft, onClick: (sel: Document[]) => setMoveTarget({ ids: sel.map((d) => d.id), kind: 'doc' as const }) },
-    { label: intl.formatMessage(m.exportAction), icon: Download, primary: true, minSelected: 2, disabledHint: intl.formatMessage(EXPORT_HINT), onClick: (sel: Document[]) => exportDocs(sel) },
+    { label: intl.formatMessage(commonActions.exportCsv), icon: Download, primary: true, minSelected: 2, disabledHint: intl.formatMessage(EXPORT_HINT), onClick: (sel: Document[]) => exportDocs(sel) },
   ];
 
   return (
@@ -808,7 +803,6 @@ const previewMessages = defineMessages({
     id: 'documents.vaultPreview.confirmDelete',
     defaultMessage: 'Delete “{name}” permanently? This cannot be undone.',
   },
-  cancel: { id: 'documents.vaultPreview.cancel', defaultMessage: 'Cancel' },
   deletePermanently: { id: 'documents.vaultPreview.deletePermanently', defaultMessage: 'Delete permanently' },
   moreActions: { id: 'documents.vaultPreview.moreActions', defaultMessage: 'More actions' },
   deleteFile: { id: 'documents.vaultPreview.deleteFile', defaultMessage: 'Delete file…' },
@@ -919,7 +913,7 @@ function VaultPreview({
               onClick={() => setConfirming(false)}
               className="px-4 py-2 rounded-full text-[13px] font-bold text-zinc-400 hover:text-white transition-colors"
             >
-              {intl.formatMessage(previewMessages.cancel)}
+              {intl.formatMessage(commonActions.cancel)}
             </button>
             <button
               onClick={onDelete}

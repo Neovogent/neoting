@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Building2, Bell, Users, KeyRound, Link2, Camera, Plus, Trash2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
+import { commonActions, commonLabels, commonPlaceholders } from '../../i18n/common';
 import { useAppContext } from '../../context/AppContext';
 import { Pill } from '../../components/DynamicComponents/DataTable';
 import { newMember } from '../../lib/business';
@@ -25,7 +26,6 @@ const m = defineMessages({
   practiceLabel: { id: 'portal.businessSettingsView.practiceLabel', defaultMessage: 'Practice' },
   practiceValue: { id: 'portal.businessSettingsView.practiceValue', defaultMessage: 'Your accounting practice' },
   industryLabel: { id: 'portal.businessSettingsView.industryLabel', defaultMessage: 'Industry on file' },
-  vatLabel: { id: 'portal.businessSettingsView.vatLabel', defaultMessage: 'VAT number' },
   vatNotRegistered: { id: 'portal.businessSettingsView.vatNotRegistered', defaultMessage: 'Not registered' },
   deadlineLabel: { id: 'portal.businessSettingsView.deadlineLabel', defaultMessage: 'Next deadline' },
   createdLabel: { id: 'portal.businessSettingsView.createdLabel', defaultMessage: 'Account created' },
@@ -175,7 +175,6 @@ const m = defineMessages({
   },
   editorNameLabel: { id: 'portal.memberEditor.nameLabel', defaultMessage: 'Name' },
   editorNamePlaceholder: { id: 'portal.memberEditor.namePlaceholder', defaultMessage: 'Tom Whyte' },
-  editorEmailLabel: { id: 'portal.memberEditor.emailLabel', defaultMessage: 'Email' },
   editorEmailPlaceholder: { id: 'portal.memberEditor.emailPlaceholder', defaultMessage: 'tom@yourbusiness.co.uk' },
   editorRoleHintOwner: {
     id: 'portal.memberEditor.roleHintOwner',
@@ -226,7 +225,6 @@ const m = defineMessages({
   },
   editorRemoveTitle: { id: 'portal.memberEditor.removeTitle', defaultMessage: 'Remove this person' },
   editorRemoveAction: { id: 'portal.memberEditor.removeAction', defaultMessage: 'Remove' },
-  editorCancelAction: { id: 'portal.memberEditor.cancelAction', defaultMessage: 'Cancel' },
   editorSendInviteAction: { id: 'portal.memberEditor.sendInviteAction', defaultMessage: 'Send invite' },
   editorSaveAction: { id: 'portal.memberEditor.saveAction', defaultMessage: 'Save' },
 
@@ -241,16 +239,9 @@ const m = defineMessages({
     defaultMessage: 'American Burger Ltd',
   },
   detailsContactLabel: { id: 'portal.businessDetailsPanel.contactLabel', defaultMessage: 'Main contact' },
-  detailsContactPlaceholder: { id: 'portal.businessDetailsPanel.contactPlaceholder', defaultMessage: 'John Doe' },
-  detailsEmailLabel: { id: 'portal.businessDetailsPanel.emailLabel', defaultMessage: 'Email' },
   detailsEmailPlaceholder: {
     id: 'portal.businessDetailsPanel.emailPlaceholder',
     defaultMessage: 'john@americanburger.co.uk',
-  },
-  detailsMobileLabel: { id: 'portal.businessDetailsPanel.mobileLabel', defaultMessage: 'Mobile' },
-  detailsMobilePlaceholder: {
-    id: 'portal.businessDetailsPanel.mobilePlaceholder',
-    defaultMessage: '+44 7700 900123',
   },
   detailsNote: {
     id: 'portal.businessDetailsPanel.note',
@@ -393,7 +384,7 @@ export function BusinessSettingsView({ account }: { account: BusinessAccount }) 
                   value={<span className="text-white font-semibold">{intl.formatMessage(m.practiceValue)}</span>}
                 />
                 <Row label={intl.formatMessage(m.industryLabel)} value={client?.industry ?? '—'} />
-                <Row label={intl.formatMessage(m.vatLabel)} value={client?.vatNumber || intl.formatMessage(m.vatNotRegistered)} />
+                <Row label={intl.formatMessage(commonLabels.vatNumber)} value={client?.vatNumber || intl.formatMessage(m.vatNotRegistered)} />
                 <Row label={intl.formatMessage(m.deadlineLabel)} value={client?.deadline ?? '—'} />
                 <Row
                   label={intl.formatMessage(m.createdLabel)}
@@ -698,7 +689,7 @@ function MemberEditor({ member, existing, onSave, onRemove, onClose }: {
               placeholder={intl.formatMessage(m.editorNamePlaceholder)}
             />
             <Field
-              label={intl.formatMessage(m.editorEmailLabel)}
+              label={intl.formatMessage(commonLabels.email)}
               value={draft.email}
               onChange={(v) => set('email', v)}
               placeholder={intl.formatMessage(m.editorEmailPlaceholder)}
@@ -753,7 +744,7 @@ function MemberEditor({ member, existing, onSave, onRemove, onClose }: {
             onClick={onClose}
             className="px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 hover:text-white transition-colors"
           >
-            {intl.formatMessage(m.editorCancelAction)}
+            {intl.formatMessage(commonActions.cancel)}
           </button>
           <button
             onClick={() => onSave({ ...draft, name, email })}
@@ -817,19 +808,19 @@ function BusinessDetailsPanel({ account, onSave }: {
           label={intl.formatMessage(m.detailsContactLabel)}
           value={draft.contactName}
           onChange={(v) => set('contactName', v)}
-          placeholder={intl.formatMessage(m.detailsContactPlaceholder)}
+          placeholder={intl.formatMessage(commonPlaceholders.personName)}
         />
         <Field
-          label={intl.formatMessage(m.detailsEmailLabel)}
+          label={intl.formatMessage(commonLabels.email)}
           value={draft.email}
           onChange={(v) => set('email', v)}
           placeholder={intl.formatMessage(m.detailsEmailPlaceholder)}
         />
         <Field
-          label={intl.formatMessage(m.detailsMobileLabel)}
+          label={intl.formatMessage(commonLabels.mobile)}
           value={draft.mobile}
           onChange={(v) => set('mobile', v)}
-          placeholder={intl.formatMessage(m.detailsMobilePlaceholder)}
+          placeholder={intl.formatMessage(commonPlaceholders.ukMobile)}
         />
       </div>
 

@@ -15,6 +15,7 @@ import { ChaseModal } from '../components/DynamicComponents/ChaseModal';
 import { currency } from '../lib/resolver';
 import { clampLinkTtl, LINK_TTL_PRESETS, MAX_LINK_TTL_HOURS, MIN_LINK_TTL_HOURS } from '../lib/generate';
 import type { Chase, ChaseItem, ChaseItemStatus, ChasePolicy } from '../lib/types';
+import { commonActions, commonLabels } from '../i18n/common';
 
 /** Stage names, shared by the practice table and the chase header. */
 const mStage = defineMessages({
@@ -70,7 +71,6 @@ const m = defineMessages({
   tableHeading: { id: 'chase.chasesView.tableHeading', defaultMessage: 'Practice Dashboard: Chasing Status' },
   filterAll: { id: 'chase.chasesView.filterAll', defaultMessage: 'All Clients' },
   filterOverdue: { id: 'chase.chasesView.filterOverdue', defaultMessage: 'Overdue' },
-  columnClient: { id: 'chase.chasesView.columnClient', defaultMessage: 'Client' },
   columnMissing: { id: 'chase.chasesView.columnMissing', defaultMessage: 'Missing' },
   columnRequested: { id: 'chase.chasesView.columnRequested', defaultMessage: 'Requested' },
   columnOverdue: { id: 'chase.chasesView.columnOverdue', defaultMessage: 'Overdue' },
@@ -239,7 +239,7 @@ export function ChasesView() {
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="text-[11px] uppercase tracking-widest font-bold text-zinc-400">
               <tr>
-                <th className="px-4 py-4">{intl.formatMessage(m.columnClient)}</th>
+                <th className="px-4 py-4">{intl.formatMessage(commonLabels.client)}</th>
                 <th className="px-4 py-4 text-right">{intl.formatMessage(m.columnMissing)}</th>
                 <th className="px-4 py-4 text-right">{intl.formatMessage(m.columnRequested)}</th>
                 <th className="px-4 py-4 text-right">{intl.formatMessage(m.columnOverdue)}</th>
@@ -915,7 +915,6 @@ const mPolicy = defineMessages({
     id: 'chase.policyPanel.suppressionBody',
     defaultMessage: 'chasing stops automatically when an item is received, marked unavailable, dismissed, cash-coded or exception-approved.',
   },
-  cancel: { id: 'chase.policyPanel.cancel', defaultMessage: 'Cancel' },
   save: { id: 'chase.policyPanel.save', defaultMessage: 'Save policy' },
 });
 
@@ -971,7 +970,7 @@ function PolicyPanel({ policy, onChange, onClose }: { policy: ChasePolicy; onCha
         </div>
         <div className="p-4 bg-raised/50 flex justify-end gap-3">
           <button onClick={onClose} className="px-5 py-2.5 rounded-full text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 transition-colors">
-            {intl.formatMessage(mPolicy.cancel)}
+            {intl.formatMessage(commonActions.cancel)}
           </button>
           <button
             onClick={() => { onChange(draft); onClose(); }}
@@ -991,7 +990,6 @@ const mItems = defineMessages({
     id: 'chase.itemMessagesPanel.subheading',
     defaultMessage: 'Per-document questions over the same SMS link — no app required',
   },
-  clientLabel: { id: 'chase.itemMessagesPanel.clientLabel', defaultMessage: 'Client' },
   documentLabel: { id: 'chase.itemMessagesPanel.documentLabel', defaultMessage: 'Document' },
   documentPlaceholder: { id: 'chase.itemMessagesPanel.documentPlaceholder', defaultMessage: 'Choose…' },
   questionLabel: { id: 'chase.itemMessagesPanel.questionLabel', defaultMessage: 'Question' },
@@ -1026,7 +1024,7 @@ function ItemMessagesPanel({ onClose }: { onClose: () => void }) {
 
         <div className="p-6 flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-4">
-            <Select label={intl.formatMessage(mItems.clientLabel)} value={clientId} onChange={(v) => { setClientId(v); setDocLabel(''); }} options={clients.map((c) => ({ value: c.id, label: c.name }))} />
+            <Select label={intl.formatMessage(commonLabels.client)} value={clientId} onChange={(v) => { setClientId(v); setDocLabel(''); }} options={clients.map((c) => ({ value: c.id, label: c.name }))} />
             <Select
               label={intl.formatMessage(mItems.documentLabel)}
               value={docLabel}

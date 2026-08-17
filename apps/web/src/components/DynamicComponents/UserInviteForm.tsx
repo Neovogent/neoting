@@ -4,6 +4,7 @@ import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
 import { ReviewGate, ReviewRows, ReviewSection } from './ReviewGate';
 import { Pill } from './DataTable';
+import { commonLabels } from '../../i18n/common';
 
 const m = defineMessages({
   heading: { id: 'shell.userInviteForm.heading', defaultMessage: 'Invite a colleague' },
@@ -12,9 +13,6 @@ const m = defineMessages({
   namePlaceholder: { id: 'shell.userInviteForm.namePlaceholder', defaultMessage: 'Sam Patel' },
   emailLabel: { id: 'shell.userInviteForm.emailLabel', defaultMessage: 'Work email' },
   emailPlaceholder: { id: 'shell.userInviteForm.emailPlaceholder', defaultMessage: 'sam@practice.co.uk' },
-  roleLabel: { id: 'shell.userInviteForm.roleLabel', defaultMessage: 'Role' },
-  permissionsLabel: { id: 'shell.userInviteForm.permissionsLabel', defaultMessage: 'Permissions' },
-  clientAccessLabel: { id: 'shell.userInviteForm.clientAccessLabel', defaultMessage: 'Client access' },
 
   rolePracticeAdmin: { id: 'shell.userInviteForm.rolePracticeAdmin', defaultMessage: 'Practice Admin' },
   roleClientAdmin: { id: 'shell.userInviteForm.roleClientAdmin', defaultMessage: 'Client Admin' },
@@ -42,9 +40,6 @@ const m = defineMessages({
   reviewSubtitle: { id: 'shell.userInviteForm.reviewSubtitle', defaultMessage: '{role} • {access}' },
   reviewSection: { id: 'shell.userInviteForm.reviewSection', defaultMessage: 'Invitation that will be sent' },
   rowName: { id: 'shell.userInviteForm.rowName', defaultMessage: 'Name' },
-  rowEmail: { id: 'shell.userInviteForm.rowEmail', defaultMessage: 'Email' },
-  rowRole: { id: 'shell.userInviteForm.rowRole', defaultMessage: 'Role' },
-  rowClientAccess: { id: 'shell.userInviteForm.rowClientAccess', defaultMessage: 'Client access' },
   rowPermissions: { id: 'shell.userInviteForm.rowPermissions', defaultMessage: 'Permissions' },
   rowFinanceFields: { id: 'shell.userInviteForm.rowFinanceFields', defaultMessage: 'Finance fields' },
   permissionsNone: { id: 'shell.userInviteForm.permissionsNone', defaultMessage: 'None' },
@@ -151,7 +146,7 @@ export function UserInviteForm() {
         </div>
 
         <div>
-          <Label>{intl.formatMessage(m.roleLabel)}</Label>
+          <Label>{intl.formatMessage(commonLabels.role)}</Label>
           <div className="flex flex-wrap gap-2">
             {ROLES.map((r) => (
               <Chip key={r.value} active={role === r.value} onClick={() => setRole(r.value)}>
@@ -162,7 +157,7 @@ export function UserInviteForm() {
         </div>
 
         <div>
-          <Label>{intl.formatMessage(m.permissionsLabel)}</Label>
+          <Label>{intl.formatMessage(commonLabels.permissions)}</Label>
           <div className="flex flex-wrap gap-2">
             {PERMISSIONS.map((p) => (
               <Chip
@@ -178,7 +173,7 @@ export function UserInviteForm() {
 
         {!isAdmin && (
           <div>
-            <Label>{intl.formatMessage(m.clientAccessLabel)}</Label>
+            <Label>{intl.formatMessage(commonLabels.clientAccess)}</Label>
             <div className="flex flex-wrap gap-2">
               {clients.map((c) => (
                 <Chip key={c.id} active={clientAccess.includes(c.id)} onClick={() => toggle(clientAccess, setClientAccess, c.id)}>
@@ -214,9 +209,9 @@ export function UserInviteForm() {
                 <ReviewRows
                   rows={[
                     { label: intl.formatMessage(m.rowName), value: name.trim() || '—' },
-                    { label: intl.formatMessage(m.rowEmail), value: email.trim() || '—' },
-                    { label: intl.formatMessage(m.rowRole), value: roleLabel(role) },
-                    { label: intl.formatMessage(m.rowClientAccess), value: accessLabel },
+                    { label: intl.formatMessage(commonLabels.email), value: email.trim() || '—' },
+                    { label: intl.formatMessage(commonLabels.role), value: roleLabel(role) },
+                    { label: intl.formatMessage(commonLabels.clientAccess), value: accessLabel },
                     {
                       label: intl.formatMessage(m.rowPermissions),
                       value: permissions.length

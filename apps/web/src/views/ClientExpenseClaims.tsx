@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Plus, Send, Trash2, Check, Banknote, AlertTriangle, X, FileText, ShieldCheck, Clock, Paperclip, Sparkles, Eye } from 'lucide-react';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
+import { commonActions, commonPlaceholders } from '../i18n/common';
 import { useAppContext } from '../context/AppContext';
 import { Pill } from '../components/DynamicComponents/DataTable';
 import { currency } from '../lib/resolver';
@@ -553,7 +554,6 @@ const mEditor = defineMessages({
     defaultMessage: 'Who paid, what for, and what backs it up',
   },
   claimantLabel: { id: 'analytics.claimEditor.claimantLabel', defaultMessage: 'Claimant' },
-  claimantPlaceholder: { id: 'analytics.claimEditor.claimantPlaceholder', defaultMessage: 'John Doe' },
   periodLabel: { id: 'analytics.claimEditor.periodLabel', defaultMessage: 'Period' },
   periodPlaceholder: { id: 'analytics.claimEditor.periodPlaceholder', defaultMessage: 'August 2026' },
   linesHeading: { id: 'analytics.claimEditor.linesHeading', defaultMessage: 'Lines' },
@@ -579,7 +579,6 @@ const mEditor = defineMessages({
     id: 'analytics.claimEditor.problemDescription',
     defaultMessage: 'Every line needs a description.',
   },
-  cancelAction: { id: 'analytics.claimEditor.cancelAction', defaultMessage: 'Cancel' },
   saveAction: { id: 'analytics.claimEditor.saveAction', defaultMessage: 'Save claim' },
 });
 
@@ -637,7 +636,7 @@ function ClaimEditor({ claim, onSave, onClose, onAttach }: {
 
         <div className="p-6 flex flex-col gap-5 max-h-[55vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className="grid grid-cols-2 gap-4">
-            <Field label={intl.formatMessage(mEditor.claimantLabel)} value={draft.claimant} onChange={(v) => setDraft({ ...draft, claimant: v })} placeholder={intl.formatMessage(mEditor.claimantPlaceholder)} />
+            <Field label={intl.formatMessage(mEditor.claimantLabel)} value={draft.claimant} onChange={(v) => setDraft({ ...draft, claimant: v })} placeholder={intl.formatMessage(commonPlaceholders.personName)} />
             <Field label={intl.formatMessage(mEditor.periodLabel)} value={draft.period} onChange={(v) => setDraft({ ...draft, period: v })} placeholder={intl.formatMessage(mEditor.periodPlaceholder)} />
           </div>
 
@@ -715,7 +714,7 @@ function ClaimEditor({ claim, onSave, onClose, onAttach }: {
 
         <div className="p-4 bg-raised/50 flex items-center gap-3 justify-end">
           <button onClick={onClose} className="px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 hover:text-white transition-colors">
-            {intl.formatMessage(mEditor.cancelAction)}
+            {intl.formatMessage(commonActions.cancel)}
           </button>
           <button
             onClick={() => onSave(draft)}

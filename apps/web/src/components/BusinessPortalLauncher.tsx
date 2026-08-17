@@ -3,6 +3,7 @@ import { X, Building2, ArrowRight, Send, Search, Smartphone } from 'lucide-react
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
+import { commonActions, commonLabels, commonPlaceholders } from '../i18n/common';
 import { Pill } from './DynamicComponents/DataTable';
 import { newBusinessAccount, newMember } from '../lib/business';
 import type { Client } from '../lib/types';
@@ -79,16 +80,11 @@ const inviteMessages = defineMessages({
     defaultMessage: 'They get a link by text. The account stays in Invited until they first sign in.',
   },
   contactNameLabel: { id: 'shell.inviteForm.contactNameLabel', defaultMessage: 'Contact name' },
-  contactNamePlaceholder: { id: 'shell.inviteForm.contactNamePlaceholder', defaultMessage: 'John Doe' },
-  mobileLabel: { id: 'shell.inviteForm.mobileLabel', defaultMessage: 'Mobile' },
-  mobilePlaceholder: { id: 'shell.inviteForm.mobilePlaceholder', defaultMessage: '+44 7700 900123' },
-  emailLabel: { id: 'shell.inviteForm.emailLabel', defaultMessage: 'Email' },
   emailPlaceholder: { id: 'shell.inviteForm.emailPlaceholder', defaultMessage: 'john@business.co.uk' },
   noMobileWarning: {
     id: 'shell.inviteForm.noMobileWarning',
     defaultMessage: 'Without a mobile number the invite text cannot be sent.',
   },
-  cancel: { id: 'shell.inviteForm.cancel', defaultMessage: 'Cancel' },
   create: { id: 'shell.inviteForm.create', defaultMessage: 'Create & send invite' },
 });
 
@@ -340,16 +336,16 @@ function InviteForm({
         label={intl.formatMessage(inviteMessages.contactNameLabel)}
         value={contactName}
         onChange={setContactName}
-        placeholder={intl.formatMessage(inviteMessages.contactNamePlaceholder)}
+        placeholder={intl.formatMessage(commonPlaceholders.personName)}
       />
       <Field
-        label={intl.formatMessage(inviteMessages.mobileLabel)}
+        label={intl.formatMessage(commonLabels.mobile)}
         value={mobile}
         onChange={setMobile}
-        placeholder={intl.formatMessage(inviteMessages.mobilePlaceholder)}
+        placeholder={intl.formatMessage(commonPlaceholders.ukMobile)}
       />
       <Field
-        label={intl.formatMessage(inviteMessages.emailLabel)}
+        label={intl.formatMessage(commonLabels.email)}
         value={email}
         onChange={setEmail}
         placeholder={intl.formatMessage(inviteMessages.emailPlaceholder)}
@@ -364,7 +360,7 @@ function InviteForm({
           onClick={onCancel}
           className="px-5 py-2.5 text-sm font-bold text-zinc-400 hover:text-white rounded-full transition-colors"
         >
-          {intl.formatMessage(inviteMessages.cancel)}
+          {intl.formatMessage(commonActions.cancel)}
         </button>
         <button
           onClick={() => onCreate(contactName.trim() || 'Primary contact', email.trim(), mobile.trim())}

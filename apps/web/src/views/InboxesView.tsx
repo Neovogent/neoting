@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
+import { commonActions, commonLabels } from '../i18n/common';
 import { useAppContext } from '../context/AppContext';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { Tooltip } from '../components/DynamicComponents/Tooltip';
@@ -70,7 +71,6 @@ const m = defineMessages({
     id: 'inboxes.inboxesView.notReadyDetail',
     defaultMessage: '{missing}. Ready means every check has passed, so it cannot move until they are filled in.',
   },
-  closeAction: { id: 'inboxes.inboxesView.closeAction', defaultMessage: 'Close' },
   markReadyTitle: { id: 'inboxes.inboxesView.markReadyTitle', defaultMessage: 'Move {supplier} to Ready?' },
   markReadyDetail: {
     id: 'inboxes.inboxesView.markReadyDetail',
@@ -162,7 +162,6 @@ const m = defineMessages({
     defaultMessage: 'Every field shows confidence and provenance — click any value to correct it.',
   },
   publishAction: { id: 'inboxes.inboxesView.publishAction', defaultMessage: 'Publish' },
-  retryAction: { id: 'inboxes.inboxesView.retryAction', defaultMessage: 'Retry' },
   bulkRetryTitle: {
     id: 'inboxes.inboxesView.bulkRetryTitle',
     defaultMessage: '{count, plural, one {Retry # failed item?} other {Retry # failed items?}}',
@@ -172,7 +171,6 @@ const m = defineMessages({
     defaultMessage:
       'Anything that failed to extract is read again; anything that failed to publish goes back to Ready to be pushed again. Whatever was already read off a document is kept.',
   },
-  bulkExport: { id: 'inboxes.inboxesView.bulkExport', defaultMessage: 'Export CSV' },
   bulkDelete: { id: 'inboxes.inboxesView.bulkDelete', defaultMessage: 'Delete' },
   deleteTitle: {
     id: 'inboxes.inboxesView.deleteTitle',
@@ -186,14 +184,8 @@ const m = defineMessages({
   deleteConfirm: { id: 'inboxes.inboxesView.deleteConfirm', defaultMessage: 'Yes, delete' },
   deleteAudit: { id: 'inboxes.inboxesView.deleteAudit', defaultMessage: 'Deleted documents' },
   deleteAuditScope: { id: 'inboxes.inboxesView.deleteAuditScope', defaultMessage: '{count} item(s)' },
-  columnClient: { id: 'inboxes.inboxesView.columnClient', defaultMessage: 'Client' },
   columnCustomer: { id: 'inboxes.inboxesView.columnCustomer', defaultMessage: 'Customer' },
-  columnSupplier: { id: 'inboxes.inboxesView.columnSupplier', defaultMessage: 'Supplier' },
-  columnDate: { id: 'inboxes.inboxesView.columnDate', defaultMessage: 'Date' },
-  columnTotal: { id: 'inboxes.inboxesView.columnTotal', defaultMessage: 'Total' },
-  columnCategory: { id: 'inboxes.inboxesView.columnCategory', defaultMessage: 'Category' },
   columnFlags: { id: 'inboxes.inboxesView.columnFlags', defaultMessage: 'Flags' },
-  columnStatus: { id: 'inboxes.inboxesView.columnStatus', defaultMessage: 'Status' },
   columnAction: { id: 'inboxes.inboxesView.columnAction', defaultMessage: 'Action' },
   emptyTable: {
     id: 'inboxes.inboxesView.emptyTable',
@@ -258,7 +250,6 @@ const m = defineMessages({
     defaultMessage:
       '{count, plural, one {<highlight># item</highlight>} other {<highlight># items</highlight>}} held back — missing required fields. Fix them in the review, or publish the remaining {remaining} now.',
   },
-  cancelAction: { id: 'inboxes.inboxesView.cancelAction', defaultMessage: 'Cancel' },
   confirmPublishAction: {
     id: 'inboxes.inboxesView.confirmPublishAction',
     defaultMessage: '{count, plural, one {Publish # item} other {Publish # items}}',
@@ -492,7 +483,7 @@ export function InboxesView() {
         tone: 'red',
         title: intl.formatMessage(m.notReadyTitle, { supplier: doc.supplier }),
         detail: intl.formatMessage(m.notReadyDetail, { missing: describeMissing(missing) }),
-        confirmLabel: intl.formatMessage(m.closeAction),
+        confirmLabel: intl.formatMessage(commonActions.close),
       });
       return;
     }
@@ -681,7 +672,7 @@ export function InboxesView() {
                                 )
                                 .slice(0, 4)
                                 .join('. '),
-                              confirmLabel: intl.formatMessage(m.closeAction),
+                              confirmLabel: intl.formatMessage(commonActions.close),
                             });
                             return;
                           }
@@ -796,7 +787,7 @@ export function InboxesView() {
                     {statusTab === 'rejected' && (
                       <BulkBtn
                         icon={RefreshCw}
-                        label={intl.formatMessage(m.retryAction)}
+                        label={intl.formatMessage(commonActions.retry)}
                         onClick={async () => {
                           const ok = await confirm({
                             title: intl.formatMessage(m.bulkRetryTitle, { count: selected.length }),
@@ -811,7 +802,7 @@ export function InboxesView() {
                     )}
                     <BulkBtn
                       icon={Download}
-                      label={intl.formatMessage(m.bulkExport)}
+                      label={intl.formatMessage(commonActions.exportCsv)}
                       minSelected={EXPORT_MIN_ROWS}
                       selectedCount={selected.length}
                       disabledHint={intl.formatMessage(EXPORT_HINT)}
@@ -856,11 +847,11 @@ export function InboxesView() {
                         onChange={() => setSelected(allSelected ? [] : rows.map((d) => d.id))}
                       />
                     </th>
-                    <th className="px-4 py-4">{intl.formatMessage(m.columnClient)}</th>
-                    <th className="px-4 py-4">{intl.formatMessage(inbox === 'sales' ? m.columnCustomer : m.columnSupplier)}</th>
-                    <th className="px-4 py-4">{intl.formatMessage(m.columnDate)}</th>
-                    <th className="px-4 py-4 text-right">{intl.formatMessage(m.columnTotal)}</th>
-                    <th className="px-4 py-4">{intl.formatMessage(m.columnCategory)}</th>
+                    <th className="px-4 py-4">{intl.formatMessage(commonLabels.client)}</th>
+                    <th className="px-4 py-4">{intl.formatMessage(inbox === 'sales' ? m.columnCustomer : commonLabels.supplier)}</th>
+                    <th className="px-4 py-4">{intl.formatMessage(commonLabels.date)}</th>
+                    <th className="px-4 py-4 text-right">{intl.formatMessage(commonLabels.total)}</th>
+                    <th className="px-4 py-4">{intl.formatMessage(commonLabels.category)}</th>
                     {/* A field the practice made mandatory is a field they
                         need to see: making it required and then hiding it
                         leaves people opening documents one by one to find out
@@ -869,7 +860,7 @@ export function InboxesView() {
                       <th key={f} className="px-4 py-4">{f}</th>
                     ))}
                     <th className="px-4 py-4">{intl.formatMessage(m.columnFlags)}</th>
-                    <th className="px-4 py-4 text-right">{intl.formatMessage(m.columnStatus)}</th>
+                    <th className="px-4 py-4 text-right">{intl.formatMessage(commonLabels.status)}</th>
                     <th className="px-4 py-4 text-right">{intl.formatMessage(m.columnAction)}</th>
                   </tr>
                 </thead>
@@ -1014,7 +1005,7 @@ export function InboxesView() {
                                     }
                                   >
                                     <RefreshCw size={13} />
-                                    {intl.formatMessage(m.retryAction)}
+                                    {intl.formatMessage(commonActions.retry)}
                                   </button>
                                 </>
                               );
@@ -1179,7 +1170,7 @@ export function InboxesView() {
                     onClick={() => setConfirmPublish(null)}
                     className="px-6 py-2.5 text-sm font-bold text-zinc-300 bg-white/5 hover:bg-white/10 rounded-full transition-all"
                   >
-                    {intl.formatMessage(m.cancelAction)}
+                    {intl.formatMessage(commonActions.cancel)}
                   </button>
                   <button
                     onClick={publishConfirmed}

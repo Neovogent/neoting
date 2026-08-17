@@ -7,6 +7,7 @@ import { currency } from '../../lib/resolver';
 import { DataTable, Pill } from './DataTable';
 import type { ApprovalItem, AuditEntry, Document, MissingItem } from '../../lib/types';
 import { EXPORT_HINT } from '../../lib/exportRules';
+import { commonActions, commonLabels } from '../../i18n/common';
 
 /**
  * Column headings are one shared vocabulary under `shell.tables.column*` rather
@@ -18,20 +19,11 @@ import { EXPORT_HINT } from '../../lib/exportRules';
  * actions — stays under that table's own component id.
  */
 const cols = defineMessages({
-  supplier: { id: 'shell.tables.columnSupplier', defaultMessage: 'Supplier' },
-  client: { id: 'shell.tables.columnClient', defaultMessage: 'Client' },
-  date: { id: 'shell.tables.columnDate', defaultMessage: 'Date' },
-  category: { id: 'shell.tables.columnCategory', defaultMessage: 'Category' },
-  total: { id: 'shell.tables.columnTotal', defaultMessage: 'Total' },
-  status: { id: 'shell.tables.columnStatus', defaultMessage: 'Status' },
   channel: { id: 'shell.tables.columnChannel', defaultMessage: 'Channel' },
   reason: { id: 'shell.tables.columnReason', defaultMessage: 'Reason' },
-  stage: { id: 'shell.tables.columnStage', defaultMessage: 'Stage' },
   approver: { id: 'shell.tables.columnApprover', defaultMessage: 'Approver' },
-  waiting: { id: 'shell.tables.columnWaiting', defaultMessage: 'Waiting' },
   detectedBy: { id: 'shell.tables.columnDetectedBy', defaultMessage: 'Detected by' },
   chased: { id: 'shell.tables.columnChased', defaultMessage: 'Chased' },
-  amount: { id: 'shell.tables.columnAmount', defaultMessage: 'Amount' },
   action: { id: 'shell.tables.columnAction', defaultMessage: 'Action' },
   scope: { id: 'shell.tables.columnScope', defaultMessage: 'Scope' },
   actor: { id: 'shell.tables.columnActor', defaultMessage: 'Actor' },
@@ -69,7 +61,6 @@ const inbox = defineMessages({
   markReviewedAction: { id: 'shell.inboxTable.markReviewedAction', defaultMessage: 'Mark reviewed' },
   noneCanMoveTitle: { id: 'shell.inboxTable.noneCanMoveTitle', defaultMessage: 'None of these can move yet' },
   blockedRow: { id: 'shell.inboxTable.blockedRow', defaultMessage: '{supplier} — {missing}' },
-  closeLabel: { id: 'shell.inboxTable.closeLabel', defaultMessage: 'Close' },
   moveToReadyTitle: {
     id: 'shell.inboxTable.moveToReadyTitle',
     defaultMessage: '{count, plural, one {Move # item to Ready?} other {Move # items to Ready?}}',
@@ -109,14 +100,14 @@ export function InboxTable({ clientIds, clientNames }: { clientIds: string[]; cl
       rowId={(d) => d.id}
       selectable
       columns={[
-        { key: 'supplier', label: intl.formatMessage(cols.supplier), sortValue: (d) => d.supplier, render: (d) => <span className="text-white font-semibold">{d.supplier}</span> },
-        { key: 'clientName', label: intl.formatMessage(cols.client), sortValue: (d) => d.clientName },
-        { key: 'date', label: intl.formatMessage(cols.date), sortValue: (d) => d.date },
-        { key: 'category', label: intl.formatMessage(cols.category), sortValue: (d) => d.category },
-        { key: 'total', label: intl.formatMessage(cols.total), align: 'right', sortValue: (d) => d.total, render: (d) => <span className="text-white font-bold tabular-nums">{currency(d.total)}</span> },
+        { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (d) => d.supplier, render: (d) => <span className="text-white font-semibold">{d.supplier}</span> },
+        { key: 'clientName', label: intl.formatMessage(commonLabels.client), sortValue: (d) => d.clientName },
+        { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date },
+        { key: 'category', label: intl.formatMessage(commonLabels.category), sortValue: (d) => d.category },
+        { key: 'total', label: intl.formatMessage(commonLabels.total), align: 'right', sortValue: (d) => d.total, render: (d) => <span className="text-white font-bold tabular-nums">{currency(d.total)}</span> },
         {
           key: 'status',
-          label: intl.formatMessage(cols.status),
+          label: intl.formatMessage(commonLabels.status),
           sortValue: (d) => d.status,
           render: (d) =>
             d.status === 'ready' ? (
@@ -163,7 +154,7 @@ export function InboxTable({ clientIds, clientNames }: { clientIds: string[]; cl
                   )
                   .slice(0, 4)
                   .join('. '),
-                confirmLabel: intl.formatMessage(inbox.closeLabel),
+                confirmLabel: intl.formatMessage(commonActions.close),
               });
               return;
             }
@@ -206,7 +197,6 @@ const rejected = defineMessages({
     id: 'shell.rejectedTable.empty',
     defaultMessage: 'No failures — extraction and publishing are clean for this scope.',
   },
-  retryAction: { id: 'shell.rejectedTable.retryAction', defaultMessage: 'Retry' },
   retryTitle: {
     id: 'shell.rejectedTable.retryTitle',
     defaultMessage: '{count, plural, one {Retry # failed item?} other {Retry # failed items?}}',
@@ -235,8 +225,8 @@ export function RejectedTable({ clientIds, clientNames }: { clientIds: string[];
       selectable
       emptyMessage={intl.formatMessage(rejected.empty)}
       columns={[
-        { key: 'supplier', label: intl.formatMessage(cols.supplier), sortValue: (d) => d.supplier, render: (d) => <span className="text-white font-semibold">{d.supplier}</span> },
-        { key: 'clientName', label: intl.formatMessage(cols.client), sortValue: (d) => d.clientName },
+        { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (d) => d.supplier, render: (d) => <span className="text-white font-semibold">{d.supplier}</span> },
+        { key: 'clientName', label: intl.formatMessage(commonLabels.client), sortValue: (d) => d.clientName },
         { key: 'source', label: intl.formatMessage(cols.channel), sortValue: (d) => d.source },
         {
           key: 'statusNote',
@@ -245,7 +235,7 @@ export function RejectedTable({ clientIds, clientNames }: { clientIds: string[];
         },
       ]}
       bulkActions={[{
-        label: intl.formatMessage(rejected.retryAction), icon: RefreshCw, primary: true,
+        label: intl.formatMessage(commonActions.retry), icon: RefreshCw, primary: true,
         onClick: async (sel) => {
           const ok = await confirm({
             title: intl.formatMessage(rejected.retryTitle, { count: sel.length }),
@@ -290,13 +280,13 @@ export function ApprovalsTable({ clientIds, clientNames }: { clientIds: string[]
       selectable
       emptyMessage={intl.formatMessage(approvalsMessages.empty)}
       columns={[
-        { key: 'supplier', label: intl.formatMessage(cols.supplier), sortValue: (a) => a.supplier, render: (a) => <span className="text-white font-semibold">{a.supplier}</span> },
-        { key: 'clientName', label: intl.formatMessage(cols.client), sortValue: (a) => a.clientName },
-        { key: 'stage', label: intl.formatMessage(cols.stage), sortValue: (a) => a.stage },
+        { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (a) => a.supplier, render: (a) => <span className="text-white font-semibold">{a.supplier}</span> },
+        { key: 'clientName', label: intl.formatMessage(commonLabels.client), sortValue: (a) => a.clientName },
+        { key: 'stage', label: intl.formatMessage(commonLabels.stage), sortValue: (a) => a.stage },
         { key: 'approver', label: intl.formatMessage(cols.approver), sortValue: (a) => a.approver },
         {
           key: 'waitingDays',
-          label: intl.formatMessage(cols.waiting),
+          label: intl.formatMessage(commonLabels.waiting),
           align: 'right',
           sortValue: (a) => a.waitingDays,
           render: (a) =>
@@ -306,7 +296,7 @@ export function ApprovalsTable({ clientIds, clientNames }: { clientIds: string[]
               <Pill>{intl.formatMessage(approvalsMessages.waitingDays, { days: a.waitingDays })}</Pill>
             ),
         },
-        { key: 'total', label: intl.formatMessage(cols.total), align: 'right', sortValue: (a) => a.total, render: (a) => <span className="text-white font-bold tabular-nums">{currency(a.total)}</span> },
+        { key: 'total', label: intl.formatMessage(commonLabels.total), align: 'right', sortValue: (a) => a.total, render: (a) => <span className="text-white font-bold tabular-nums">{currency(a.total)}</span> },
       ]}
       bulkActions={[
         {
@@ -338,7 +328,6 @@ const missingTable = defineMessages({
     id: 'shell.missingTable.chaseReply',
     defaultMessage: 'Grouped per client. Nothing sends until you read the review and approve.',
   },
-  exportAction: { id: 'shell.missingTable.exportAction', defaultMessage: 'Export CSV' },
 });
 
 /** Missing paperwork across all five detection engines (PRD stage 8). */
@@ -356,9 +345,9 @@ export function MissingTable({ clientIds, clientNames }: { clientIds: string[]; 
       selectable
       emptyMessage={intl.formatMessage(missingTable.empty)}
       columns={[
-        { key: 'supplier', label: intl.formatMessage(cols.supplier), sortValue: (m) => m.supplier, render: (m) => <span className="text-white font-semibold">{m.supplier}</span> },
-        { key: 'clientName', label: intl.formatMessage(cols.client), sortValue: (m) => m.clientName },
-        { key: 'date', label: intl.formatMessage(cols.date), sortValue: (m) => m.date },
+        { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (m) => m.supplier, render: (m) => <span className="text-white font-semibold">{m.supplier}</span> },
+        { key: 'clientName', label: intl.formatMessage(commonLabels.client), sortValue: (m) => m.clientName },
+        { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (m) => m.date },
         { key: 'detectedBy', label: intl.formatMessage(cols.detectedBy), sortValue: (m) => m.detectedBy, render: (m) => <Pill>{m.detectedBy}</Pill> },
         {
           key: 'chased',
@@ -371,7 +360,7 @@ export function MissingTable({ clientIds, clientNames }: { clientIds: string[]; 
               <Pill tone="red">{intl.formatMessage(missingTable.chasedNot)}</Pill>
             ),
         },
-        { key: 'amount', label: intl.formatMessage(cols.amount), align: 'right', sortValue: (m) => m.amount, render: (m) => <span className="text-white font-bold tabular-nums">{m.amount ? currency(m.amount) : '—'}</span> },
+        { key: 'amount', label: intl.formatMessage(commonLabels.amount), align: 'right', sortValue: (m) => m.amount, render: (m) => <span className="text-white font-bold tabular-nums">{m.amount ? currency(m.amount) : '—'}</span> },
       ]}
       bulkActions={[
         {
@@ -387,7 +376,7 @@ export function MissingTable({ clientIds, clientNames }: { clientIds: string[]; 
               payload: { clientIds, clientNames },
             }),
         },
-        { label: intl.formatMessage(missingTable.exportAction), icon: Download, minSelected: 2, disabledHint: intl.formatMessage(EXPORT_HINT), onClick: (sel) => exportCsv(sel) },
+        { label: intl.formatMessage(commonActions.exportCsv), icon: Download, minSelected: 2, disabledHint: intl.formatMessage(EXPORT_HINT), onClick: (sel) => exportCsv(sel) },
       ]}
     />
   );

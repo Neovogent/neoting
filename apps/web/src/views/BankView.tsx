@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
+import { commonActions, commonLabels } from '../i18n/common';
 import { useAppContext } from '../context/AppContext';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { SubTabs } from '../components/DynamicComponents/SubTabs';
@@ -64,9 +65,7 @@ const m = defineMessages({
   searchPlaceholder: { id: 'bank.bankView.searchPlaceholder', defaultMessage: 'Search transactions...' },
   columnDescription: { id: 'bank.bankView.columnDescription', defaultMessage: 'Description' },
   columnClient: { id: 'bank.bankView.columnClient', defaultMessage: 'Client' },
-  columnDate: { id: 'bank.bankView.columnDate', defaultMessage: 'Date' },
   columnEvidence: { id: 'bank.bankView.columnEvidence', defaultMessage: 'Evidence' },
-  columnAmount: { id: 'bank.bankView.columnAmount', defaultMessage: 'Amount' },
   accountFallback: { id: 'bank.bankView.accountFallback', defaultMessage: 'Account' },
   matchedByAi: { id: 'bank.bankView.matchedByAi', defaultMessage: 'Matched by AI' },
   matchedByHand: { id: 'bank.bankView.matchedByHand', defaultMessage: 'Matched' },
@@ -92,7 +91,6 @@ const m = defineMessages({
     defaultMessage: 'No transactions — connect a feed or upload a statement.',
   },
   chaseBulkAction: { id: 'bank.bankView.chaseBulkAction', defaultMessage: 'Chase for evidence' },
-  exportBulkAction: { id: 'bank.bankView.exportBulkAction', defaultMessage: 'Export CSV' },
   transactionsFooter: {
     id: 'bank.bankView.transactionsFooter',
     defaultMessage: '{count} transactions • {unmatched} without evidence',
@@ -131,7 +129,6 @@ const m = defineMessages({
   columnPeriod: { id: 'bank.bankView.columnPeriod', defaultMessage: 'Period' },
   columnRows: { id: 'bank.bankView.columnRows', defaultMessage: 'Rows' },
   columnBalances: { id: 'bank.bankView.columnBalances', defaultMessage: 'Opening → Closing' },
-  columnStatus: { id: 'bank.bankView.columnStatus', defaultMessage: 'Status' },
   statusExtracted: { id: 'bank.bankView.statusExtracted', defaultMessage: 'Extracted' },
   statusProcessing: { id: 'bank.bankView.statusProcessing', defaultMessage: 'Extracting…' },
   statusFailed: { id: 'bank.bankView.statusFailed', defaultMessage: 'Failed' },
@@ -210,7 +207,6 @@ const mCash = defineMessages({
     defaultMessage:
       "This creates a cost item from the transaction. It enters the pipeline like any other document — appearing in the inbox, counting toward this client's figures, and closing the missing-evidence flag.",
   },
-  categoryLabel: { id: 'bank.cashCodePanel.categoryLabel', defaultMessage: 'Category' },
   decideLater: { id: 'bank.cashCodePanel.decideLater', defaultMessage: 'Decide later' },
   addCategoryPlaceholder: { id: 'bank.cashCodePanel.addCategoryPlaceholder', defaultMessage: 'Add your own category…' },
   addAction: { id: 'bank.cashCodePanel.addAction', defaultMessage: 'Add' },
@@ -327,7 +323,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
       ),
     },
     { key: 'clientName', label: intl.formatMessage(m.columnClient), sortValue: (t) => t.clientName },
-    { key: 'date', label: intl.formatMessage(m.columnDate), sortValue: (t) => t.date },
+    { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (t) => t.date },
     {
       key: 'evidence', label: intl.formatMessage(m.columnEvidence), sortValue: (t) => (t.matchedDocId ? 1 : 0),
       render: (t) => {
@@ -345,7 +341,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
       },
     },
     {
-      key: 'amount', label: intl.formatMessage(m.columnAmount), align: 'right', sortValue: (t) => t.amount,
+      key: 'amount', label: intl.formatMessage(commonLabels.amount), align: 'right', sortValue: (t) => t.amount,
       render: (t) => <span className={`font-bold tabular-nums ${t.amount < 0 ? 'text-emerald-400' : 'text-white'}`}>{currency(t.amount)}</span>,
     },
     {
@@ -572,7 +568,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                     primary: true,
                     onClick: (sel) => chase([...new Set(sel.filter((t) => !t.matchedDocId).map((t) => t.clientId))]),
                   },
-                  { label: intl.formatMessage(m.exportBulkAction), icon: Download, minSelected: 2, disabledHint: intl.formatMessage(EXPORT_HINT), onClick: (sel) => exportTxns(sel) },
+                  { label: intl.formatMessage(commonActions.exportCsv), icon: Download, minSelected: 2, disabledHint: intl.formatMessage(EXPORT_HINT), onClick: (sel) => exportTxns(sel) },
                 ]}
                 footer={intl.formatMessage(m.transactionsFooter, { count: scopedTxns.length, unmatched: unmatchedCount })}
               />
@@ -722,7 +718,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                       : <span className="text-zinc-600">—</span>,
                   },
                   {
-                    key: 'status', label: intl.formatMessage(m.columnStatus), sortValue: (s) => s.status,
+                    key: 'status', label: intl.formatMessage(commonLabels.status), sortValue: (s) => s.status,
                     render: (s: Statement) =>
                       s.status === 'extracted' ? <Pill tone="green">{intl.formatMessage(m.statusExtracted)}</Pill>
                         : s.status === 'processing' ? <Pill>{intl.formatMessage(m.statusProcessing)}</Pill>
@@ -1069,7 +1065,7 @@ function CashCodePanel({ txn, customCategories, onAddCategory, onConfirm }: {
         </p>
         <div>
           <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2.5">
-            {intl.formatMessage(mCash.categoryLabel)}
+            {intl.formatMessage(commonLabels.category)}
           </div>
           <div className="flex flex-wrap gap-2">
             {categories.map((c) => (

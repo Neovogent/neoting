@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl, type IntlShape, type MessageDescriptor } from 'react-intl';
+import { commonActions, commonLabels } from '../i18n/common';
 import { useAppContext } from '../context/AppContext';
 import { fromSlug, slug, useSegment } from '../lib/router';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
@@ -53,9 +54,6 @@ const m = defineMessages({
     id: 'approvals.approvalsView.searchPlaceholder',
     defaultMessage: 'Search supplier or approver...',
   },
-  columnSupplier: { id: 'approvals.approvalsView.columnSupplier', defaultMessage: 'Supplier' },
-  columnClient: { id: 'approvals.approvalsView.columnClient', defaultMessage: 'Client' },
-  columnStage: { id: 'approvals.approvalsView.columnStage', defaultMessage: 'Stage' },
   columnApprover: { id: 'approvals.approvalsView.columnApprover', defaultMessage: 'Approver' },
   columnBranching: { id: 'approvals.approvalsView.columnBranching', defaultMessage: 'Branching' },
   columnWaiting: { id: 'approvals.approvalsView.columnWaiting', defaultMessage: 'Waiting' },
@@ -78,7 +76,6 @@ const m = defineMessages({
     defaultMessage: 'Nothing waiting on you. Switch to All pending to see the rest of the practice.',
   },
   emptyAll: { id: 'approvals.approvalsView.emptyAll', defaultMessage: 'Nothing awaiting approval.' },
-  exportAction: { id: 'approvals.approvalsView.exportAction', defaultMessage: 'Export CSV' },
   approveSelectedAction: {
     id: 'approvals.approvalsView.approveSelectedAction',
     defaultMessage: 'Approve selected',
@@ -246,7 +243,7 @@ export function ApprovalsView() {
 
   const columns: Column<ApprovalItem>[] = [
     {
-      key: 'supplier', label: intl.formatMessage(m.columnSupplier), sortValue: (a) => a.supplier,
+      key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (a) => a.supplier,
       render: (a) => {
         const doc = documentFor(a);
         return (
@@ -262,8 +259,8 @@ export function ApprovalsView() {
         );
       },
     },
-    { key: 'clientName', label: intl.formatMessage(m.columnClient), sortValue: (a) => a.clientName },
-    { key: 'stage', label: intl.formatMessage(m.columnStage), sortValue: (a) => a.stage },
+    { key: 'clientName', label: intl.formatMessage(commonLabels.client), sortValue: (a) => a.clientName },
+    { key: 'stage', label: intl.formatMessage(commonLabels.stage), sortValue: (a) => a.stage },
     { key: 'approver', label: intl.formatMessage(m.columnApprover), sortValue: (a) => a.approver },
     {
       key: 'branch', label: intl.formatMessage(m.columnBranching),
@@ -421,7 +418,7 @@ export function ApprovalsView() {
                 onRowClick={(a) => setDetail(a)}
                 emptyMessage={intl.formatMessage(scope === 'mine' ? m.emptyMine : m.emptyAll)}
                 bulkActions={[
-                  { label: intl.formatMessage(m.exportAction), icon: Download, minSelected: 2, disabledHint: intl.formatMessage(EXPORT_HINT), onClick: (sel) => exportApprovals(sel) },
+                  { label: intl.formatMessage(commonActions.exportCsv), icon: Download, minSelected: 2, disabledHint: intl.formatMessage(EXPORT_HINT), onClick: (sel) => exportApprovals(sel) },
                   { label: intl.formatMessage(m.approveSelectedAction), icon: Send, primary: true, onClick: bulkApprove },
                 ]}
                 footer={intl.formatMessage(
@@ -477,8 +474,8 @@ export function ApprovalsView() {
             <DataTable<ApprovalItem>
               className="max-w-none"
               columns={[
-                { key: 'supplier', label: intl.formatMessage(m.columnSupplier), sortValue: (a) => a.supplier, render: (a) => <span className="text-white font-semibold">{a.supplier}</span> },
-                { key: 'clientName', label: intl.formatMessage(m.columnClient), sortValue: (a) => a.clientName },
+                { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (a) => a.supplier, render: (a) => <span className="text-white font-semibold">{a.supplier}</span> },
+                { key: 'clientName', label: intl.formatMessage(commonLabels.client), sortValue: (a) => a.clientName },
                 {
                   key: 'state', label: intl.formatMessage(m.columnOutcome), sortValue: (a) => a.state,
                   render: (a) =>
@@ -1197,7 +1194,6 @@ const mNote = defineMessages({
     id: 'approvals.rejectionNote.trailHeading',
     defaultMessage: 'Everything that happened',
   },
-  closeAction: { id: 'approvals.rejectionNote.closeAction', defaultMessage: 'Close' },
 });
 
 /**
@@ -1265,7 +1261,7 @@ function RejectionNote({ item, onClose }: { item: ApprovalItem; onClose: () => v
             onClick={onClose}
             className="px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
           >
-            {intl.formatMessage(mNote.closeAction)}
+            {intl.formatMessage(commonActions.close)}
           </button>
         </div>
       </div>
@@ -1366,7 +1362,6 @@ const mEditor = defineMessages({
     id: 'approvals.workflowEditor.autoPublishHint',
     defaultMessage: 'Approval always wins over an auto-publish rule, never the other way round.',
   },
-  cancelAction: { id: 'approvals.workflowEditor.cancelAction', defaultMessage: 'Cancel' },
   saveAction: { id: 'approvals.workflowEditor.saveAction', defaultMessage: 'Save workflow' },
 });
 
@@ -1691,7 +1686,7 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
 
         <div className="p-4 bg-raised/50 flex justify-end gap-3">
           <button onClick={onClose} className="px-5 py-2.5 rounded-full text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 transition-colors">
-            {intl.formatMessage(mEditor.cancelAction)}
+            {intl.formatMessage(commonActions.cancel)}
           </button>
           <button onClick={() => onSave(draft)} className="px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-all">
             {intl.formatMessage(mEditor.saveAction)}
