@@ -246,7 +246,7 @@ export function BusinessCaptureView({ account }: { account: BusinessAccount }) {
         {state === 'live' && (
           <>
             <div className="pointer-events-none absolute inset-8 border-2 border-white/25 rounded-2xl" />
-            <div className="pointer-events-none absolute inset-0 shadow-[inset_0_0_120px_rgba(0,0,0,0.55)]" />
+            <div className="pointer-events-none absolute inset-0 shadow-camera-vignette" />
           </>
         )}
 
@@ -332,7 +332,7 @@ export function BusinessCaptureView({ account }: { account: BusinessAccount }) {
           </button>
           <button
             onClick={shoot}
-            className="w-20 h-20 rounded-full bg-white flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.15)] active:scale-95 transition-transform"
+            className="w-20 h-20 rounded-full bg-white flex items-center justify-center shadow-shutter-halo active:scale-95 transition-transform"
             aria-label={intl.formatMessage(m.shutterLabel)}
           >
             <span className="w-16 h-16 rounded-full border-4 border-ground" />
@@ -430,7 +430,7 @@ export function BusinessCaptureView({ account }: { account: BusinessAccount }) {
             <button
               onClick={() => send()}
               disabled={overLimit}
-              className="flex items-center gap-2 px-6 py-3 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.3)]"
+              className="flex items-center gap-2 px-6 py-3 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-glow-btn-strong"
             >
               <Send size={15} strokeWidth={2.5} />
               {intl.formatMessage(m.sendAction)}

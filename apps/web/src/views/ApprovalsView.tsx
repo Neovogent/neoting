@@ -350,7 +350,7 @@ export function ApprovalsView() {
             {tab === 'Workflows' && (
               <button
                 onClick={() => setEditing(blankWorkflow(intl))}
-                className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+                className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
               >
                 <Plus size={16} strokeWidth={2.5} />
                 {intl.formatMessage(m.newWorkflowAction)}
@@ -367,7 +367,7 @@ export function ApprovalsView() {
             onClick={() => setTab(t)}
             className={`px-4 py-2 rounded-full text-[13px] font-bold transition-all border ${
               tab === t
-                ? 'bg-brand text-white border-brand shadow-[0_0_12px_rgba(20,227,196,0.25)]'
+                ? 'bg-brand text-white border-brand shadow-glow-pill'
                 : 'bg-card text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
             }`}
           >
@@ -1140,7 +1140,7 @@ function ApprovalDetail({ item, workflow, onApprove, onReject, onEdit, onClose }
             </button>
             <button
               onClick={() => setConfirming('approve')}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.3)]"
+              className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-all shadow-glow-btn-strong"
             >
               <ShieldCheck size={16} />
               {intl.formatMessage(mDetail.passStageAction)}
@@ -1464,7 +1464,7 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
               <button
                 onClick={build}
                 disabled={!prompt.trim()}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+                className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-glow-btn"
               >
                 <Sparkles size={15} />
                 {intl.formatMessage(mEditor.buildAction)}

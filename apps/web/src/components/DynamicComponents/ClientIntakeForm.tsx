@@ -1334,7 +1334,7 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
           </button>
           <button
             onClick={() => setStep((s) => Math.min(s + 1, STEPS.length - 1))}
-            className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all shadow-[0_0_15px_rgba(20,227,196,0.3)]"
+            className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all shadow-glow-btn-strong"
           >
             {intl.formatMessage(m.practiceContinue)}
             <ChevronRight size={16} strokeWidth={2.5} />

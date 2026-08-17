@@ -306,7 +306,7 @@ export function TeamView() {
           {tab === 'Colleagues' && (
             <button
               onClick={() => setEditing(blankColleague())}
-              className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+              className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
             >
               <Plus size={16} strokeWidth={2.5} />
               {intl.formatMessage(m.inviteColleague)}
@@ -315,7 +315,7 @@ export function TeamView() {
           {tab === 'Teams' && (
             <button
               onClick={() => setEditingTeam(blankTeam())}
-              className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+              className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
             >
               <Plus size={16} strokeWidth={2.5} />
               {intl.formatMessage(m.createTeam)}
@@ -333,7 +333,7 @@ export function TeamView() {
               </select>
               <button
                 onClick={() => setNewTask(true)}
-                className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+                className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
               >
                 <Plus size={16} strokeWidth={2.5} />
                 {intl.formatMessage(m.newTask)}
@@ -350,7 +350,7 @@ export function TeamView() {
             onClick={() => setTab(t)}
             className={`px-4 py-2 rounded-full text-[13px] font-bold transition-all border ${
               tab === t
-                ? 'bg-brand text-white border-brand shadow-[0_0_12px_rgba(20,227,196,0.25)]'
+                ? 'bg-brand text-white border-brand shadow-glow-pill'
                 : 'bg-card text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
             }`}
           >
@@ -1169,7 +1169,7 @@ function Chip({ children, active, onClick }: { children: React.ReactNode; active
       onClick={onClick}
       className={`px-3.5 py-2 rounded-full text-[13px] font-bold border transition-all ${
         active
-          ? 'bg-brand text-white border-brand shadow-[0_0_12px_rgba(20,227,196,0.25)]'
+          ? 'bg-brand text-white border-brand shadow-glow-pill'
           : 'bg-ground text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
       }`}
     >

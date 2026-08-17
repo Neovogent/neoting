@@ -34,7 +34,7 @@ export function SubTabs({ tabs, active, onChange }: {
             aria-pressed={selected}
             className={`shrink-0 px-3.5 py-2 rounded-xl text-[12.5px] font-bold transition-colors flex items-center gap-2 whitespace-nowrap ${
               selected
-                ? 'bg-brand/15 text-brand border border-brand/30 shadow-[0_0_10px_rgba(20,227,196,0.12)]'
+                ? 'bg-brand/15 text-brand border border-brand/30 shadow-glow-subtab'
                 : 'text-zinc-500 hover:text-white border border-transparent'
             }`}
           >

@@ -368,7 +368,7 @@ function InviteForm({
         </button>
         <button
           onClick={() => onCreate(contactName.trim() || 'Primary contact', email.trim(), mobile.trim())}
-          className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.3)]"
+          className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-glow-btn-strong"
         >
           <Send size={15} strokeWidth={2.5} />
           {intl.formatMessage(inviteMessages.create)}

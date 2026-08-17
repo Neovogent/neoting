@@ -1385,7 +1385,7 @@ function InboxPill({ active, onClick, label, count, alert }: { active: boolean; 
       onClick={onClick}
       className={`px-4 py-2 rounded-full text-[13px] font-bold transition-all border flex items-center gap-2 ${
         active
-          ? 'bg-brand text-white border-brand shadow-[0_0_12px_rgba(20,227,196,0.25)]'
+          ? 'bg-brand text-white border-brand shadow-glow-pill'
           : 'bg-card text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
       }`}
     >
@@ -1405,7 +1405,7 @@ function TabButton({ active, onClick, label, count }: { active: boolean; onClick
       onClick={onClick}
       className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm transition-all duration-300 ${
         active
-          ? 'bg-brand text-white font-bold shadow-[0_0_10px_rgba(20,227,196,0.2)]'
+          ? 'bg-brand text-white font-bold shadow-glow-tab'
           : 'text-zinc-400 font-semibold hover:text-white hover:bg-white/5'
       }`}
     >

@@ -291,7 +291,7 @@ function OtpChallenge({
       <div className="flex flex-col gap-2">
         <button
           onClick={submit}
-          className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_20px_rgba(20,227,196,0.25)]"
+          className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-glow-cta"
         >
           <ShieldCheck size={16} strokeWidth={2.5} />
           {intl.formatMessage(m.otpVerifyAction)}
@@ -547,7 +547,7 @@ function ApprovalCard({
               {reviewOpened ? (
                 <button
                   onClick={() => setConfirming('approve')}
-                  className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_20px_rgba(20,227,196,0.25)]"
+                  className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-glow-cta"
                 >
                   <Lock size={15} strokeWidth={2.5} />
                   {intl.formatMessage(m.approveAction)}
@@ -637,7 +637,7 @@ function Shell({ title, children }: { title: string; children: React.ReactNode }
     <div className="flex-1 flex flex-col min-w-0 h-full bg-ground overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <div className="w-full max-w-md mx-auto px-5 py-10 flex flex-col gap-5">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-brand flex items-center justify-center text-white shrink-0 shadow-[0_0_15px_rgba(20,227,196,0.3)]">
+          <div className="w-11 h-11 rounded-2xl bg-brand flex items-center justify-center text-white shrink-0 shadow-glow-tile">
             <Smartphone size={19} />
           </div>
           <div>

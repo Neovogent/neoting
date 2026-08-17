@@ -189,7 +189,7 @@ export function BusinessSignInView() {
               <img
                 src={logo}
                 alt={intl.formatMessage(m.logoAlt)}
-                className="w-11 h-11 rounded-2xl object-cover shadow-[0_0_18px_rgba(20,227,196,0.25)]"
+                className="w-11 h-11 rounded-2xl object-cover shadow-glow-logo"
               />
               <div>
                 <div className="font-sans font-bold text-[15px] text-white tracking-tight">
@@ -338,7 +338,7 @@ export function BusinessSignInView() {
                       <button
                         onClick={create}
                         disabled={!canCreate}
-                        className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.3)]"
+                        className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-glow-btn-strong"
                       >
                         <BadgeCheck size={16} strokeWidth={2.5} />
                         {intl.formatMessage(m.createAction)}

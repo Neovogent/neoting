@@ -168,7 +168,7 @@ export function UserRegistrationView() {
 
         <button
           onClick={() => setVerified(true)}
-          className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_20px_rgba(20,227,196,0.25)]"
+          className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-glow-cta"
         >
           <ShieldCheck size={16} strokeWidth={2.5} />
           {intl.formatMessage(m.verifyAction)}
@@ -284,7 +284,7 @@ export function UserRegistrationView() {
           setDone(true);
         }}
         disabled={!!problem}
-        className="w-full px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_20px_rgba(20,227,196,0.25)]"
+        className="w-full px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-glow-cta"
       >
         {intl.formatMessage(m.finishAction)}
       </button>
@@ -305,7 +305,7 @@ function Shell({ title, children }: { title: string; children: React.ReactNode }
         className="w-full max-w-md mx-auto px-5 py-10 flex flex-col gap-5"
       >
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-brand flex items-center justify-center text-white shrink-0 shadow-[0_0_15px_rgba(20,227,196,0.3)]">
+          <div className="w-11 h-11 rounded-2xl bg-brand flex items-center justify-center text-white shrink-0 shadow-glow-tile">
             <Smartphone size={19} />
           </div>
           <div>

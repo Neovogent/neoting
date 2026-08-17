@@ -145,7 +145,7 @@ export function ActionCard({ clientIds, period }: { clientIds: string[]; period?
       <div className="flex items-center bg-raised/50 p-4 gap-3">
         <button
           onClick={() => post(intl.formatMessage(m.chaseReply), 'CHASE_MISSING')}
-          className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold text-white bg-brand rounded-2xl hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+          className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold text-white bg-brand rounded-2xl hover:bg-brand-hover transition-all shadow-glow-btn-soft"
         >
           {intl.formatMessage(m.chaseAction)}
           <ArrowRight size={16} strokeWidth={2.5} />

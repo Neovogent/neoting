@@ -161,7 +161,7 @@ export function DataTable<T>({
         onClick={() => a.onClick(selectable ? selectedRows : rows)}
         className={`flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-bold rounded-2xl transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
           a.primary
-            ? 'text-white bg-brand hover:bg-brand-hover shadow-[0_0_15px_rgba(20,227,196,0.2)]'
+            ? 'text-white bg-brand hover:bg-brand-hover shadow-glow-btn-soft'
             : 'text-zinc-400 hover:text-white hover:bg-white/5 border border-white/5 bg-card shadow-inner'
         }`}
       >
@@ -309,7 +309,7 @@ function Checkbox({ checked, onChange }: { checked: boolean; onChange: () => voi
         onChange();
       }}
       className={`w-[18px] h-[18px] rounded-md border flex items-center justify-center transition-all ${
-        checked ? 'bg-brand border-brand shadow-[0_0_10px_rgba(20,227,196,0.4)]' : 'border-white/20 hover:border-white/40'
+        checked ? 'bg-brand border-brand shadow-glow-check' : 'border-white/20 hover:border-white/40'
       }`}
     >
       {checked && <Check size={12} strokeWidth={4} className="text-white" />}

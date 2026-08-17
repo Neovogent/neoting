@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "lint": "eslint src && pnpm run i18n:check",
+    "lint": "eslint src && pnpm run i18n:check && node ./scripts/check-colors.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "i18n:extract": "formatjs extract 'src/**/*.{ts,tsx}' --ignore='**/*.test.*' --out-file lang/en-GB.json --id-interpolation-pattern '[sha512:contenthash:base64:6]'",

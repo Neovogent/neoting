@@ -98,7 +98,7 @@ export function Sidebar({ activeTab, setActiveTab, onOpenBusinessPortal }: Sideb
         <img
           src={logo}
           alt={intl.formatMessage(m.logoAlt)}
-          className="w-12 h-12 rounded-2xl shrink-0 object-cover shadow-[0_0_18px_rgba(20,227,196,0.25)]"
+          className="w-12 h-12 rounded-2xl shrink-0 object-cover shadow-glow-logo"
         />
       </div>
       <nav className="flex flex-col gap-1.5 w-full px-4">
@@ -177,7 +177,7 @@ function DockItem({ icon: Icon, label, isActive, expanded, mouseY, onClick }: Do
         style={{ height: size }}
         className={`shrink-0 w-12 rounded-2xl flex items-center justify-center transition-colors duration-300 ${
           isActive
-            ? 'bg-brand text-white shadow-[0_0_20px_rgba(20,227,196,0.2)]'
+            ? 'bg-brand text-white shadow-glow-cta-soft'
             : 'text-zinc-500 group-hover:bg-white/5 group-hover:text-white'
         }`}
       >

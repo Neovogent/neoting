@@ -290,7 +290,7 @@ export function ClientsView() {
 
           <button
             onClick={() => setAdding(true)}
-            className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
+            className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
           >
             <Plus size={16} strokeWidth={2.5} />
             {intl.formatMessage(m.addClient)}
@@ -305,7 +305,7 @@ export function ClientsView() {
             onClick={() => setTab(t)}
             className={`px-4 py-2 rounded-full text-[13px] font-bold transition-all border ${
               tab === t
-                ? 'bg-brand text-white border-brand shadow-[0_0_12px_rgba(20,227,196,0.25)]'
+                ? 'bg-brand text-white border-brand shadow-glow-pill'
                 : 'bg-card text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
             }`}
           >

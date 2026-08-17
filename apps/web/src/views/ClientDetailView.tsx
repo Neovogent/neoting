@@ -776,7 +776,7 @@ export function ClientDetailView() {
             <button
               disabled={s.missing === 0}
               onClick={chaseClient}
-              className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)] disabled:opacity-40"
+              className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft disabled:opacity-40"
             >
               <Send size={16} />
               {s.missing > 0
@@ -794,7 +794,7 @@ export function ClientDetailView() {
             onClick={() => setTab(t)}
             className={`px-4 py-2 rounded-full text-[13px] font-bold transition-all border whitespace-nowrap ${
               tab === t
-                ? 'bg-brand text-white border-brand shadow-[0_0_12px_rgba(20,227,196,0.25)]'
+                ? 'bg-brand text-white border-brand shadow-glow-pill'
                 : 'bg-card text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
             }`}
           >
@@ -1008,7 +1008,7 @@ export function ClientDetailView() {
                 </div>
                 <button
                   onClick={() => startConversation([client.id])}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-glow-btn"
                 >
                   <Sparkles size={15} />
                   {intl.formatMessage(m.newConversation)}
@@ -1112,7 +1112,7 @@ export function ClientDetailView() {
                 </p>
                 <button
                   onClick={() => setAddingTask(true)}
-                  className="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+                  className="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-glow-btn"
                 >
                   <Plus size={15} strokeWidth={2.5} />
                   {intl.formatMessage(m.addTask)}
@@ -1383,7 +1383,7 @@ export function ClientDetailView() {
                   </div>
                   <button
                     onClick={() => setEditingWorkflow(blankWorkflow())}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-glow-btn"
                   >
                     <Plus size={15} strokeWidth={2.5} />
                     {intl.formatMessage(m.newWorkflow)}
@@ -1711,7 +1711,7 @@ export function ClientDetailView() {
                 </p>
                 <button
                   onClick={() => downloadDocuments([preview], client.name)}
-                  className="shrink-0 flex items-center gap-2 px-5 py-2 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+                  className="shrink-0 flex items-center gap-2 px-5 py-2 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-glow-btn"
                 >
                   <Download size={15} strokeWidth={2.5} />
                   {intl.formatMessage(m.download)}
@@ -1959,7 +1959,7 @@ function ClientDetailsPanel({ client, pending, onPropose }: {
                 setEditing(false);
               }}
               disabled={changed.length === 0}
-              className="px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+              className="px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-glow-btn"
             >
               {changed.length === 0
                 ? intl.formatMessage(detailsPanelMessages.sendChangesNone)
@@ -2149,7 +2149,7 @@ function AddTaskForm({ client, colleagues, existing, onAdd, onClose }: {
               })
             }
             disabled={!!problem}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-glow-btn"
           >
             <Plus size={15} strokeWidth={2.5} />
             {intl.formatMessage(addTaskMessages.submit)}
@@ -2359,7 +2359,7 @@ function InviteBusinessUser({ clientName, onSend, onClose }: {
           <button
             onClick={() => onSend({ name, email, mobile, role, canUpload, canSeeTotals })}
             disabled={!!problem}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.25)]"
+            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-glow-btn"
           >
             <Send size={15} />
             {intl.formatMessage(inviteMessages.submit, { client: clientName })}

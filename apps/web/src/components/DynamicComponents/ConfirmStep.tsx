@@ -97,7 +97,7 @@ export function ConfirmStep({ title, detail, consequence, confirmLabel, altLabel
             className={`flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white transition-colors ${
               tone === 'red'
                 ? 'bg-red-500 hover:bg-red-600'
-                : 'bg-brand hover:bg-brand-hover shadow-[0_0_15px_rgba(20,227,196,0.25)]'
+                : 'bg-brand hover:bg-brand-hover shadow-glow-btn'
             }`}
           >
             {confirmLabel}
