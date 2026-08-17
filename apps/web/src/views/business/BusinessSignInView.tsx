@@ -2,11 +2,100 @@ import { useState } from 'react';
 import { ArrowLeft, ArrowRight, LogIn, UserPlus, BadgeCheck, Mail, Smartphone } from 'lucide-react';
 import logo from '../../assets/logo.png';
 import { motion } from 'motion/react';
+import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
 import { Pill } from '../../components/DynamicComponents/DataTable';
 import { newBusinessAccount, newMember } from '../../lib/business';
 
+// Not messages: the chosen value is written to `Client.industry` and read back
+// as data on the practice side, so translating it here would make a stored
+// record locale-dependent. See #65 notes.
 const INDUSTRIES = ['Hospitality & Food', 'Software & IT', 'Architecture', 'Retail', 'Construction', 'Professional Services'];
+
+const m = defineMessages({
+  logoAlt: { id: 'portal.businessSignInView.logoAlt', defaultMessage: 'Migrate Properly' },
+  title: { id: 'portal.businessSignInView.title', defaultMessage: 'Business portal' },
+  subtitle: {
+    id: 'portal.businessSignInView.subtitle',
+    defaultMessage: 'Send paperwork to your accountant',
+  },
+  exitAction: { id: 'portal.businessSignInView.exitAction', defaultMessage: 'Accountant portal' },
+  modeSignIn: { id: 'portal.businessSignInView.modeSignIn', defaultMessage: 'Sign in' },
+  modeSignUp: { id: 'portal.businessSignInView.modeSignUp', defaultMessage: 'Create an account' },
+  chooseHeading: { id: 'portal.businessSignInView.chooseHeading', defaultMessage: 'Choose your business' },
+  chooseHint: {
+    id: 'portal.businessSignInView.chooseHint',
+    defaultMessage: 'Accounts your accountant created show an invite until the first sign-in.',
+  },
+  noAccounts: {
+    id: 'portal.businessSignInView.noAccounts',
+    defaultMessage: 'No portal accounts yet. Create one, or ask your accountant to invite you.',
+  },
+  inviteWaiting: { id: 'portal.businessSignInView.inviteWaiting', defaultMessage: 'Invite waiting' },
+  activeStatus: { id: 'portal.businessSignInView.activeStatus', defaultMessage: 'Active' },
+  aboutHeading: {
+    id: 'portal.businessSignInView.aboutHeading',
+    defaultMessage: 'Tell us about your business',
+  },
+  aboutHint: {
+    id: 'portal.businessSignInView.aboutHint',
+    defaultMessage: 'You can set this up yourself — your accountant does not need to do it for you.',
+  },
+  businessNameLabel: { id: 'portal.businessSignInView.businessNameLabel', defaultMessage: 'Business name' },
+  businessNamePlaceholder: {
+    id: 'portal.businessSignInView.businessNamePlaceholder',
+    defaultMessage: 'American Burger Ltd',
+  },
+  contactNameLabel: { id: 'portal.businessSignInView.contactNameLabel', defaultMessage: 'Your name' },
+  contactNamePlaceholder: { id: 'portal.businessSignInView.contactNamePlaceholder', defaultMessage: 'John Doe' },
+  industryLabel: { id: 'portal.businessSignInView.industryLabel', defaultMessage: 'Industry' },
+  continueAction: { id: 'portal.businessSignInView.continueAction', defaultMessage: 'Continue' },
+  reachHeading: { id: 'portal.businessSignInView.reachHeading', defaultMessage: 'How we reach you' },
+  reachHint: {
+    id: 'portal.businessSignInView.reachHint',
+    defaultMessage: 'The mobile number matters — missing paperwork is chased by text.',
+  },
+  mobileLabel: { id: 'portal.businessSignInView.mobileLabel', defaultMessage: 'Mobile number' },
+  mobilePlaceholder: { id: 'portal.businessSignInView.mobilePlaceholder', defaultMessage: '+44 7700 900123' },
+  emailLabel: { id: 'portal.businessSignInView.emailLabel', defaultMessage: 'Email' },
+  emailPlaceholder: {
+    id: 'portal.businessSignInView.emailPlaceholder',
+    defaultMessage: 'john@americanburger.co.uk',
+  },
+  practiceCodeLabel: {
+    id: 'portal.businessSignInView.practiceCodeLabel',
+    defaultMessage: "Accountant's practice code (optional)",
+  },
+  practiceCodePlaceholder: {
+    id: 'portal.businessSignInView.practiceCodePlaceholder',
+    defaultMessage: 'PRC-4417',
+  },
+  practiceCodeHint: {
+    id: 'portal.businessSignInView.practiceCodeHint',
+    defaultMessage: 'Links you to your accountant straight away. Without it they will claim your account manually.',
+  },
+  backAction: { id: 'portal.businessSignInView.backAction', defaultMessage: 'Back' },
+  createAction: { id: 'portal.businessSignInView.createAction', defaultMessage: 'Create account' },
+
+  // Audit entries. Unlike `INDUSTRIES` above, these are not written to a record
+  // and read back — `AuditTable` renders `action` and `scope` straight to a
+  // human, and the log is session-scoped React state that never reaches
+  // storage. So they are copy, and the converted views extract them.
+  //
+  // Two whole messages rather than one with a `{code, select, ...}` clause, per
+  // the reference conversion: a translator handed a conditional has to reason
+  // about both branches at once, and the word order around an inserted clause
+  // is exactly what differs between languages.
+  auditAction: { id: 'portal.businessSignInView.auditAction', defaultMessage: 'Business signed itself up' },
+  auditScopeWithCode: {
+    id: 'portal.businessSignInView.auditScopeWithCode',
+    defaultMessage: '{name} — practice code {code}',
+  },
+  auditScopeNoCode: {
+    id: 'portal.businessSignInView.auditScopeNoCode',
+    defaultMessage: '{name} — no practice code',
+  },
+});
 
 /**
  * The way into the portal. A business either signs in to an account its
@@ -18,6 +107,7 @@ export function BusinessSignInView() {
     businessAccounts, openBusinessPortal, exitBusinessPortal, activateBusinessAccount,
     createBusinessAccount, addClient, logAudit,
   } = useAppContext();
+  const intl = useIntl();
 
   const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
   const [step, setStep] = useState(0);
@@ -41,6 +131,7 @@ export function BusinessSignInView() {
 
   const create = () => {
     const name = form.businessName.trim() || 'New business';
+    const practiceCode = form.practiceCode.trim();
     const clientId = `client-${Date.now()}`;
 
     // The practice gets a real client record, so a self-signup is not a
@@ -67,7 +158,7 @@ export function BusinessSignInView() {
       mobile: form.mobile.trim(),
       origin: 'self-signup',
       createdBy: 'Signed up directly',
-      practiceCode: form.practiceCode.trim() || undefined,
+      practiceCode: practiceCode || undefined,
       members: [
         { ...newMember(form.contactName.trim() || 'Owner', form.email.trim()), role: 'Owner', canSeeTotals: true },
       ],
@@ -75,8 +166,12 @@ export function BusinessSignInView() {
 
     createBusinessAccount(account);
     logAudit({
-      action: 'Business signed itself up',
-      scope: `${name}${form.practiceCode.trim() ? ` — practice code ${form.practiceCode.trim()}` : ' — no practice code'}`,
+      action: intl.formatMessage(m.auditAction),
+      // `name` stays an interpolated value: `ClientDetailView` builds its
+      // activity feed by matching the client name inside `scope`.
+      scope: practiceCode
+        ? intl.formatMessage(m.auditScopeWithCode, { name, code: practiceCode })
+        : intl.formatMessage(m.auditScopeNoCode, { name }),
       reviewOpened: false,
     });
     openBusinessPortal(account.id);
@@ -93,12 +188,16 @@ export function BusinessSignInView() {
             <div className="flex items-center gap-3">
               <img
                 src={logo}
-                alt="Migrate Properly"
+                alt={intl.formatMessage(m.logoAlt)}
                 className="w-11 h-11 rounded-2xl object-cover shadow-[0_0_18px_rgba(20,227,196,0.25)]"
               />
               <div>
-                <div className="font-sans font-bold text-[15px] text-white tracking-tight">Business portal</div>
-                <div className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider">Send paperwork to your accountant</div>
+                <div className="font-sans font-bold text-[15px] text-white tracking-tight">
+                  {intl.formatMessage(m.title)}
+                </div>
+                <div className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider">
+                  {intl.formatMessage(m.subtitle)}
+                </div>
               </div>
             </div>
             <button
@@ -106,26 +205,28 @@ export function BusinessSignInView() {
               className="flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold text-zinc-400 border border-white/5 hover:text-white hover:border-white/15 transition-colors"
             >
               <ArrowLeft size={14} strokeWidth={2.5} />
-              Accountant portal
+              {intl.formatMessage(m.exitAction)}
             </button>
           </div>
 
           <div className="flex items-center gap-2">
-            <ModeTab active={mode === 'sign-in'} onClick={() => setMode('sign-in')} icon={LogIn} label="Sign in" />
-            <ModeTab active={mode === 'sign-up'} onClick={() => { setMode('sign-up'); setStep(0); }} icon={UserPlus} label="Create an account" />
+            <ModeTab active={mode === 'sign-in'} onClick={() => setMode('sign-in')} icon={LogIn} label={intl.formatMessage(m.modeSignIn)} />
+            <ModeTab active={mode === 'sign-up'} onClick={() => { setMode('sign-up'); setStep(0); }} icon={UserPlus} label={intl.formatMessage(m.modeSignUp)} />
           </div>
 
           <motion.div key={mode} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             {mode === 'sign-in' ? (
               <div className="rounded-[28px] border border-white/5 bg-card p-6">
-                <h2 className="text-[15px] font-bold text-white tracking-tight">Choose your business</h2>
+                <h2 className="text-[15px] font-bold text-white tracking-tight">
+                  {intl.formatMessage(m.chooseHeading)}
+                </h2>
                 <p className="text-[12px] text-zinc-500 mt-1 mb-4">
-                  Accounts your accountant created show an invite until the first sign-in.
+                  {intl.formatMessage(m.chooseHint)}
                 </p>
 
                 {businessAccounts.length === 0 ? (
                   <p className="text-[13px] text-zinc-500 py-8 text-center">
-                    No portal accounts yet. Create one, or ask your accountant to invite you.
+                    {intl.formatMessage(m.noAccounts)}
                   </p>
                 ) : (
                   <div className="flex flex-col gap-2">
@@ -142,7 +243,11 @@ export function BusinessSignInView() {
                           </span>
                         </span>
                         <span className="flex items-center gap-2 shrink-0">
-                          {a.status === 'invited' ? <Pill tone="amber">Invite waiting</Pill> : <Pill tone="green">Active</Pill>}
+                          {a.status === 'invited' ? (
+                            <Pill tone="amber">{intl.formatMessage(m.inviteWaiting)}</Pill>
+                          ) : (
+                            <Pill tone="green">{intl.formatMessage(m.activeStatus)}</Pill>
+                          )}
                           <ArrowRight size={16} className="text-zinc-600 group-hover:text-white transition-colors" />
                         </span>
                       </button>
@@ -155,41 +260,72 @@ export function BusinessSignInView() {
                 {step === 0 ? (
                   <>
                     <div>
-                      <h2 className="text-[15px] font-bold text-white tracking-tight">Tell us about your business</h2>
+                      <h2 className="text-[15px] font-bold text-white tracking-tight">
+                        {intl.formatMessage(m.aboutHeading)}
+                      </h2>
                       <p className="text-[12px] text-zinc-500 mt-1">
-                        You can set this up yourself — your accountant does not need to do it for you.
+                        {intl.formatMessage(m.aboutHint)}
                       </p>
                     </div>
-                    <Field label="Business name" value={form.businessName} onChange={(v) => set('businessName', v)} placeholder="American Burger Ltd" />
+                    <Field
+                      label={intl.formatMessage(m.businessNameLabel)}
+                      value={form.businessName}
+                      onChange={(v) => set('businessName', v)}
+                      placeholder={intl.formatMessage(m.businessNamePlaceholder)}
+                    />
                     <div className="grid grid-cols-2 gap-4">
-                      <Field label="Your name" value={form.contactName} onChange={(v) => set('contactName', v)} placeholder="John Doe" />
-                      <Select label="Industry" value={form.industry} onChange={(v) => set('industry', v)} options={INDUSTRIES} />
+                      <Field
+                        label={intl.formatMessage(m.contactNameLabel)}
+                        value={form.contactName}
+                        onChange={(v) => set('contactName', v)}
+                        placeholder={intl.formatMessage(m.contactNamePlaceholder)}
+                      />
+                      <Select
+                        label={intl.formatMessage(m.industryLabel)}
+                        value={form.industry}
+                        onChange={(v) => set('industry', v)}
+                        options={INDUSTRIES}
+                      />
                     </div>
                     <button
                       onClick={() => setStep(1)}
                       disabled={!canContinue}
                       className="self-end flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     >
-                      Continue
+                      {intl.formatMessage(m.continueAction)}
                       <ArrowRight size={16} strokeWidth={2.5} />
                     </button>
                   </>
                 ) : (
                   <>
                     <div>
-                      <h2 className="text-[15px] font-bold text-white tracking-tight">How we reach you</h2>
+                      <h2 className="text-[15px] font-bold text-white tracking-tight">
+                        {intl.formatMessage(m.reachHeading)}
+                      </h2>
                       <p className="text-[12px] text-zinc-500 mt-1">
-                        The mobile number matters — missing paperwork is chased by text.
+                        {intl.formatMessage(m.reachHint)}
                       </p>
                     </div>
-                    <Field label="Mobile number" value={form.mobile} onChange={(v) => set('mobile', v)} placeholder="+44 7700 900123" icon={Smartphone} />
-                    <Field label="Email" value={form.email} onChange={(v) => set('email', v)} placeholder="john@americanburger.co.uk" icon={Mail} />
                     <Field
-                      label="Accountant's practice code (optional)"
+                      label={intl.formatMessage(m.mobileLabel)}
+                      value={form.mobile}
+                      onChange={(v) => set('mobile', v)}
+                      placeholder={intl.formatMessage(m.mobilePlaceholder)}
+                      icon={Smartphone}
+                    />
+                    <Field
+                      label={intl.formatMessage(m.emailLabel)}
+                      value={form.email}
+                      onChange={(v) => set('email', v)}
+                      placeholder={intl.formatMessage(m.emailPlaceholder)}
+                      icon={Mail}
+                    />
+                    <Field
+                      label={intl.formatMessage(m.practiceCodeLabel)}
                       value={form.practiceCode}
                       onChange={(v) => set('practiceCode', v)}
-                      placeholder="PRC-4417"
-                      hint="Links you to your accountant straight away. Without it they will claim your account manually."
+                      placeholder={intl.formatMessage(m.practiceCodePlaceholder)}
+                      hint={intl.formatMessage(m.practiceCodeHint)}
                     />
 
                     <div className="flex items-center justify-between gap-3 pt-1">
@@ -197,7 +333,7 @@ export function BusinessSignInView() {
                         onClick={() => setStep(0)}
                         className="px-5 py-2.5 text-sm font-bold text-zinc-400 hover:text-white rounded-full transition-colors"
                       >
-                        Back
+                        {intl.formatMessage(m.backAction)}
                       </button>
                       <button
                         onClick={create}
@@ -205,7 +341,7 @@ export function BusinessSignInView() {
                         className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_15px_rgba(20,227,196,0.3)]"
                       >
                         <BadgeCheck size={16} strokeWidth={2.5} />
-                        Create account
+                        {intl.formatMessage(m.createAction)}
                       </button>
                     </div>
                   </>

@@ -1,8 +1,81 @@
 import { useRef, useState } from 'react';
 import { Smartphone, ArrowLeft, ImagePlus, X, Check, ShieldCheck } from 'lucide-react';
 import { motion } from 'motion/react';
+import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
 import { Pill } from '../../components/DynamicComponents/DataTable';
+
+const m = defineMessages({
+  linkNotFoundTitle: { id: 'portal.userRegistrationView.linkNotFoundTitle', defaultMessage: 'Link not found' },
+  linkNotFoundDetail: {
+    id: 'portal.userRegistrationView.linkNotFoundDetail',
+    defaultMessage: 'This registration link is no longer valid. Ask whoever invited you to send a new one.',
+  },
+  doneTitle: { id: 'portal.userRegistrationView.doneTitle', defaultMessage: "You're set up" },
+  doneDetail: {
+    id: 'portal.userRegistrationView.doneDetail',
+    defaultMessage:
+      'You can now send paperwork for {business}. There is nothing to install — every time you come back, you get a code by text.',
+  },
+
+  joinTitle: { id: 'portal.userRegistrationView.joinTitle', defaultMessage: 'Join {business}' },
+  joinIntro: {
+    id: 'portal.userRegistrationView.joinIntro',
+    defaultMessage:
+      '{business} added you as {article} <strong>{role}</strong>. Confirm it is you and add your details — it takes a minute.',
+  },
+  codeSentTo: { id: 'portal.userRegistrationView.codeSentTo', defaultMessage: 'Code sent to {mobile}' },
+  codeSentToFallback: {
+    id: 'portal.userRegistrationView.codeSentToFallback',
+    defaultMessage: 'Code sent to your mobile',
+  },
+  codeAriaLabel: { id: 'portal.userRegistrationView.codeAriaLabel', defaultMessage: 'One-time code' },
+  // See the same placeholder on the approval screen: a numeral, so it is
+  // translated rather than hard-coded.
+  codePlaceholder: { id: 'portal.userRegistrationView.codePlaceholder', defaultMessage: '0000' },
+  serverSideNote: {
+    id: 'portal.userRegistrationView.serverSideNote',
+    defaultMessage: 'Codes are issued and checked server-side — Verify continues without one here.',
+  },
+  verifyAction: { id: 'portal.userRegistrationView.verifyAction', defaultMessage: 'Verify' },
+
+  detailsTitle: { id: 'portal.userRegistrationView.detailsTitle', defaultMessage: 'Add your details' },
+  replacePhotoAction: { id: 'portal.userRegistrationView.replacePhotoAction', defaultMessage: 'Replace photo' },
+  addPhotoAction: { id: 'portal.userRegistrationView.addPhotoAction', defaultMessage: 'Add a photo' },
+  removePhotoAction: { id: 'portal.userRegistrationView.removePhotoAction', defaultMessage: 'Remove' },
+  nameLabel: { id: 'portal.userRegistrationView.nameLabel', defaultMessage: 'Your name' },
+  namePlaceholder: { id: 'portal.userRegistrationView.namePlaceholder', defaultMessage: 'Tom Whyte' },
+  emailLabel: { id: 'portal.userRegistrationView.emailLabel', defaultMessage: 'Your email' },
+  emailPlaceholder: {
+    id: 'portal.userRegistrationView.emailPlaceholder',
+    defaultMessage: 'tom@yourbusiness.co.uk',
+  },
+  setByLabel: { id: 'portal.userRegistrationView.setByLabel', defaultMessage: 'Set by {business}' },
+  canUpload: { id: 'portal.userRegistrationView.canUpload', defaultMessage: 'Can send documents' },
+  canSeeTotals: { id: 'portal.userRegistrationView.canSeeTotals', defaultMessage: 'Can see totals' },
+  totalsHidden: { id: 'portal.userRegistrationView.totalsHidden', defaultMessage: 'Totals hidden' },
+  askOwner: {
+    id: 'portal.userRegistrationView.askOwner',
+    defaultMessage: 'Ask {who} if any of this is wrong — only they can change it.',
+  },
+  askOwnerFallback: {
+    id: 'portal.userRegistrationView.askOwnerFallback',
+    defaultMessage: 'Ask whoever invited you if any of this is wrong — only they can change it.',
+  },
+  problemNoName: { id: 'portal.userRegistrationView.problemNoName', defaultMessage: 'Add your name.' },
+  problemNoEmail: {
+    id: 'portal.userRegistrationView.problemNoEmail',
+    defaultMessage: 'Add an email — it is where copies of anything you send go.',
+  },
+  problemBadEmail: {
+    id: 'portal.userRegistrationView.problemBadEmail',
+    defaultMessage: 'That email does not look right.',
+  },
+  finishAction: { id: 'portal.userRegistrationView.finishAction', defaultMessage: 'Finish' },
+
+  shellSubtitle: { id: 'portal.shell.subtitle', defaultMessage: 'No app · no password' },
+  backLabel: { id: 'portal.back.label', defaultMessage: 'Back to the practice app' },
+});
 
 /**
  * What an invited business user sees when they open their SMS link. The
@@ -17,9 +90,10 @@ export function UserRegistrationView() {
   const {
     businessAccounts, openRegistrationFor, completeBusinessUserRegistration, exitBusinessPortal,
   } = useAppContext();
+  const intl = useIntl();
 
   const account = businessAccounts.find((a) => a.id === openRegistrationFor?.accountId);
-  const member = account?.members.find((m) => m.id === openRegistrationFor?.memberId);
+  const member = account?.members.find((x) => x.id === openRegistrationFor?.memberId);
 
   const [verified, setVerified] = useState(false);
   const [code, setCode] = useState('');
@@ -33,9 +107,9 @@ export function UserRegistrationView() {
 
   if (!account || !member) {
     return (
-      <Shell title="Link not found">
+      <Shell title={intl.formatMessage(m.linkNotFoundTitle)}>
         <p className="text-[14px] text-zinc-400 leading-relaxed">
-          This registration link is no longer valid. Ask whoever invited you to send a new one.
+          {intl.formatMessage(m.linkNotFoundDetail)}
         </p>
         <Back onClick={exitBusinessPortal} />
       </Shell>
@@ -44,13 +118,12 @@ export function UserRegistrationView() {
 
   if (done || member.status === 'active') {
     return (
-      <Shell title="You're set up">
+      <Shell title={intl.formatMessage(m.doneTitle)}>
         <div className="w-14 h-14 rounded-2xl bg-brand/15 border border-brand/30 flex items-center justify-center text-brand">
           <Check size={26} strokeWidth={3} />
         </div>
         <p className="text-[14px] text-zinc-400 leading-relaxed">
-          You can now send paperwork for {account.businessName}. There is nothing to install — every time you come
-          back, you get a code by text.
+          {intl.formatMessage(m.doneDetail, { business: account.businessName })}
         </p>
         <Back onClick={exitBusinessPortal} />
       </Shell>
@@ -61,29 +134,35 @@ export function UserRegistrationView() {
   if (!verified) {
     const masked = (member.mobile ?? '').replace(/(\+\d{2}\s?\d)(.*)(\d{2})$/, '$1••• •••$3');
     return (
-      <Shell title={`Join ${account.businessName}`}>
+      <Shell title={intl.formatMessage(m.joinTitle, { business: account.businessName })}>
         <div className="p-4 rounded-2xl bg-ground border border-white/5 shadow-inner">
           <p className="text-[13.5px] text-zinc-300 leading-relaxed">
-            {account.businessName} added you as {article(member.role)} <strong className="text-white">{member.role}</strong>.
-            Confirm it is you and add your details — it takes a minute.
+            {intl.formatMessage(m.joinIntro, {
+              business: account.businessName,
+              article: article(member.role),
+              role: member.role,
+              strong: (chunks: React.ReactNode[]) => <strong className="text-white">{chunks}</strong>,
+            })}
           </p>
         </div>
 
         <div>
           <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
-            Code sent to {masked || 'your mobile'}
+            {masked
+              ? intl.formatMessage(m.codeSentTo, { mobile: masked })
+              : intl.formatMessage(m.codeSentToFallback)}
           </div>
           <input
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
             onKeyDown={(e) => e.key === 'Enter' && setVerified(true)}
             inputMode="numeric"
-            placeholder="0000"
-            aria-label="One-time code"
+            placeholder={intl.formatMessage(m.codePlaceholder)}
+            aria-label={intl.formatMessage(m.codeAriaLabel)}
             className="w-full bg-ground border border-white/5 rounded-2xl px-5 py-4 text-2xl font-bold tracking-[0.4em] text-center text-white placeholder:text-zinc-700 focus:outline-none focus:border-brand transition-colors tabular-nums"
           />
           <p className="text-[12px] text-zinc-600 mt-3">
-            Codes are issued and checked server-side — Verify continues without one here.
+            {intl.formatMessage(m.serverSideNote)}
           </p>
         </div>
 
@@ -92,7 +171,7 @@ export function UserRegistrationView() {
           className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_20px_rgba(20,227,196,0.25)]"
         >
           <ShieldCheck size={16} strokeWidth={2.5} />
-          Verify
+          {intl.formatMessage(m.verifyAction)}
         </button>
         <Back onClick={exitBusinessPortal} />
       </Shell>
@@ -102,15 +181,15 @@ export function UserRegistrationView() {
   /* ── the details only they can give ────────────────────────────────────── */
   const emailLooksWrong = draft.email.trim() !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email.trim());
   const problem = !draft.name.trim()
-    ? 'Add your name.'
+    ? intl.formatMessage(m.problemNoName)
     : !draft.email.trim()
-    ? 'Add an email — it is where copies of anything you send go.'
+    ? intl.formatMessage(m.problemNoEmail)
     : emailLooksWrong
-    ? 'That email does not look right.'
+    ? intl.formatMessage(m.problemBadEmail)
     : '';
 
   return (
-    <Shell title="Add your details">
+    <Shell title={intl.formatMessage(m.detailsTitle)}>
       <div className="flex items-center gap-4">
         <div className="w-16 h-16 rounded-2xl bg-ground border border-white/5 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
           {draft.avatarDataUrl ? (
@@ -127,7 +206,9 @@ export function UserRegistrationView() {
             className="flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold text-zinc-300 border border-white/10 hover:text-white hover:border-white/25 transition-colors"
           >
             <ImagePlus size={15} />
-            {draft.avatarDataUrl ? 'Replace photo' : 'Add a photo'}
+            {draft.avatarDataUrl
+              ? intl.formatMessage(m.replacePhotoAction)
+              : intl.formatMessage(m.addPhotoAction)}
           </button>
           {draft.avatarDataUrl && (
             <button
@@ -135,7 +216,7 @@ export function UserRegistrationView() {
               className="flex items-center gap-1.5 px-3 py-2 rounded-full text-[13px] font-bold text-zinc-500 hover:text-white transition-colors"
             >
               <X size={14} />
-              Remove
+              {intl.formatMessage(m.removePhotoAction)}
             </button>
           )}
         </div>
@@ -156,20 +237,38 @@ export function UserRegistrationView() {
         />
       </div>
 
-      <Field label="Your name" value={draft.name} onChange={(v) => setDraft({ ...draft, name: v })} placeholder="Tom Whyte" />
-      <Field label="Your email" value={draft.email} onChange={(v) => setDraft({ ...draft, email: v })} placeholder="tom@yourbusiness.co.uk" />
+      <Field
+        label={intl.formatMessage(m.nameLabel)}
+        value={draft.name}
+        onChange={(v) => setDraft({ ...draft, name: v })}
+        placeholder={intl.formatMessage(m.namePlaceholder)}
+      />
+      <Field
+        label={intl.formatMessage(m.emailLabel)}
+        value={draft.email}
+        onChange={(v) => setDraft({ ...draft, email: v })}
+        placeholder={intl.formatMessage(m.emailPlaceholder)}
+      />
 
       {/* Set by the business, shown so it can be queried rather than silently
           wrong — but not editable here. */}
       <div className="p-4 rounded-2xl bg-ground border border-white/5 shadow-inner flex flex-col gap-2">
-        <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Set by {account.businessName}</div>
+        <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">
+          {intl.formatMessage(m.setByLabel, { business: account.businessName })}
+        </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Pill tone="blue">{member.role}</Pill>
-          {member.canUpload && <Pill tone="green">Can send documents</Pill>}
-          {member.canSeeTotals ? <Pill tone="amber">Can see totals</Pill> : <Pill>Totals hidden</Pill>}
+          {member.canUpload && <Pill tone="green">{intl.formatMessage(m.canUpload)}</Pill>}
+          {member.canSeeTotals ? (
+            <Pill tone="amber">{intl.formatMessage(m.canSeeTotals)}</Pill>
+          ) : (
+            <Pill>{intl.formatMessage(m.totalsHidden)}</Pill>
+          )}
         </div>
         <p className="text-[12px] text-zinc-500 leading-relaxed">
-          Ask {account.contactName || 'whoever invited you'} if any of this is wrong — only they can change it.
+          {account.contactName
+            ? intl.formatMessage(m.askOwner, { who: account.contactName })
+            : intl.formatMessage(m.askOwnerFallback)}
         </p>
       </div>
 
@@ -187,7 +286,7 @@ export function UserRegistrationView() {
         disabled={!!problem}
         className="w-full px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_0_20px_rgba(20,227,196,0.25)]"
       >
-        Finish
+        {intl.formatMessage(m.finishAction)}
       </button>
       <Back onClick={exitBusinessPortal} />
     </Shell>
@@ -197,6 +296,7 @@ export function UserRegistrationView() {
 const article = (role: string) => (/^[AEIOU]/i.test(role) ? 'an' : 'a');
 
 function Shell({ title, children }: { title: string; children: React.ReactNode }) {
+  const intl = useIntl();
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full bg-ground overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <motion.div
@@ -210,7 +310,9 @@ function Shell({ title, children }: { title: string; children: React.ReactNode }
           </div>
           <div>
             <h1 className="font-sans font-bold text-xl text-white tracking-tight">{title}</h1>
-            <p className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider">No app · no password</p>
+            <p className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider">
+              {intl.formatMessage(m.shellSubtitle)}
+            </p>
           </div>
         </div>
         {children}
@@ -236,13 +338,14 @@ function Field({ label, value, onChange, placeholder }: {
 }
 
 function Back({ onClick }: { onClick: () => void }) {
+  const intl = useIntl();
   return (
     <button
       onClick={onClick}
       className="self-start flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold text-zinc-500 hover:text-white transition-colors"
     >
       <ArrowLeft size={14} />
-      Back to the practice app
+      {intl.formatMessage(m.backLabel)}
     </button>
   );
 }

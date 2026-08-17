@@ -1,12 +1,29 @@
 import { ReactNode, useEffect, useRef } from 'react';
 import { Mic, Paperclip } from 'lucide-react';
+import { defineMessages, useIntl } from 'react-intl';
 import { IntentRenderer } from './DynamicComponents/IntentRenderer';
 import { useAppContext } from '../context/AppContext';
 import { motion } from 'motion/react';
 import logo from '../assets/logo.png';
 
+/**
+ * The transcript itself is data — `msg.content`, file names, the components the
+ * assistant renders — so the only copy this file owns is what it says *about* a
+ * message: that it was dictated, how large an attachment is, and the letter in
+ * the user's avatar.
+ */
+const m = defineMessages({
+  dictated: { id: 'shell.chatArea.dictated', defaultMessage: 'Dictated, confirmed before sending' },
+  attachmentSize: { id: 'shell.chatArea.attachmentSize', defaultMessage: '{size}KB' },
+  // The initial standing in for the signed-in user, opposite the product mark
+  // on the assistant's side. A letter, but a translated one: the word it
+  // abbreviates is "User".
+  userInitial: { id: 'shell.chatArea.userInitial', defaultMessage: 'U' },
+});
+
 export function ChatArea() {
   const { messages } = useAppContext();
+  const intl = useIntl();
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -24,7 +41,7 @@ export function ChatArea() {
 
           {msg.viaVoice && (
             <div className="flex items-center gap-1.5 text-[11px] font-bold text-zinc-500 uppercase tracking-wider mb-3">
-              <Mic size={11} /> Dictated, confirmed before sending
+              <Mic size={11} /> {intl.formatMessage(m.dictated)}
             </div>
           )}
 
@@ -37,7 +54,9 @@ export function ChatArea() {
                 >
                   <Paperclip size={12} />
                   {f.name}
-                  <span className="text-zinc-500">{(f.size / 1024).toFixed(0)}KB</span>
+                  <span className="text-zinc-500">
+                    {intl.formatMessage(m.attachmentSize, { size: (f.size / 1024).toFixed(0) })}
+                  </span>
                 </span>
               ))}
             </div>
@@ -53,8 +72,9 @@ export function ChatArea() {
 }
 
 function Message({ role, children }: { role: 'user' | 'assistant', children: ReactNode }) {
+  const intl = useIntl();
   const isUser = role === 'user';
-  
+
   return (
     <motion.div 
       initial={{ 
@@ -88,7 +108,7 @@ function Message({ role, children }: { role: 'user' | 'assistant', children: Rea
           className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 mt-1 shadow-lg overflow-hidden ${
           isUser ? 'bg-white/10 text-white border border-white/10 backdrop-blur-md' : ''
         }`}>
-          {isUser ? 'U' : <img src={logo} alt="" className="w-full h-full object-cover" />}
+          {isUser ? intl.formatMessage(m.userInitial) : <img src={logo} alt="" className="w-full h-full object-cover" />}
         </motion.div>
         <div className={`flex flex-col w-full ${isUser ? 'items-end' : 'items-start'}`}>
           {isUser ? (

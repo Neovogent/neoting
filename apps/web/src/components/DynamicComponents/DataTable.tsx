@@ -1,6 +1,38 @@
 import { ReactNode, useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, Check, LucideIcon } from 'lucide-react';
+import { defineMessages, useIntl } from 'react-intl';
 import { motion } from 'motion/react';
+
+/**
+ * The copy this table owns, as opposed to the copy its callers hand it: column
+ * labels, titles and bulk-action names arrive as props and are already
+ * translated by whoever built them. What is left is the table's own furniture.
+ *
+ * `footerCount` is the one that mattered most. It is the default footer under
+ * every table in the product, and it was `${n} item${n === 1 ? '' : 's'}` —
+ * concatenation around a plural, which §12.6 forbids and which no locale with
+ * more than two plural forms can express. As ICU the rule is stated once and
+ * each locale answers it.
+ *
+ * `selectHint` and `selectHintGroup` are two whole sentences rather than one
+ * with an optional clause, for the reason ActionCard gives: a translator handed
+ * a conditional has to reason about both branches at once, and word order
+ * around an inserted clause is exactly what differs between languages.
+ */
+const m = defineMessages({
+  empty: { id: 'shell.dataTable.empty', defaultMessage: 'Nothing here.' },
+  selectHint: { id: 'shell.dataTable.selectHint', defaultMessage: 'Select {count} or more rows' },
+  selectHintGroup: {
+    id: 'shell.dataTable.selectHintGroup',
+    defaultMessage: 'Select {count} or more rows — this acts on a group',
+  },
+  selectPrompt: { id: 'shell.dataTable.selectPrompt', defaultMessage: 'Select rows to act' },
+  selectedCount: { id: 'shell.dataTable.selectedCount', defaultMessage: '{count} selected' },
+  footerCount: {
+    id: 'shell.dataTable.footerCount',
+    defaultMessage: '{count, plural, one {# item} other {# items}}',
+  },
+});
 
 export interface Column<T> {
   /**
@@ -43,6 +75,8 @@ interface DataTableProps<T> {
   rowId: (row: T) => string;
   selectable?: boolean;
   bulkActions?: BulkAction<T>[];
+  /** Defaults to "Nothing here." — applied at the render site, not here, so it
+   *  can go through the catalogue. A parameter default cannot call `useIntl`. */
   emptyMessage?: string;
   footer?: ReactNode;
   onRowClick?: (row: T) => void;
@@ -67,13 +101,14 @@ export function DataTable<T>({
   rowId,
   selectable = false,
   bulkActions = [],
-  emptyMessage = 'Nothing here.',
+  emptyMessage,
   footer,
   onRowClick,
   actionsOnTop = false,
   toolbar,
   className = 'max-w-3xl',
 }: DataTableProps<T>) {
+  const intl = useIntl();
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [selected, setSelected] = useState<string[]>([]);
@@ -119,7 +154,8 @@ export function DataTable<T>({
         disabled={short}
         title={
           short
-            ? a.disabledHint ?? `Select ${need} or more rows${need > 1 ? ' — this acts on a group' : ''}`
+            ? a.disabledHint ??
+              intl.formatMessage(need > 1 ? m.selectHintGroup : m.selectHint, { count: need })
             : undefined
         }
         onClick={() => a.onClick(selectable ? selectedRows : rows)}
@@ -147,7 +183,7 @@ export function DataTable<T>({
           </div>
           {selectable && selected.length > 0 && (
             <span className="shrink-0 px-3 py-1.5 rounded-full bg-brand/15 border border-brand/30 text-[11px] font-bold text-brand tracking-wide">
-              {selected.length} selected
+              {intl.formatMessage(m.selectedCount, { count: selected.length })}
             </span>
           )}
         </div>
@@ -160,7 +196,9 @@ export function DataTable<T>({
             <div className="flex items-center gap-3 flex-wrap">
               {selectable && (
                 <span className="text-[12px] text-zinc-500 font-semibold px-1">
-                  {selected.length === 0 ? 'Select rows to act' : `${selected.length} selected`}
+                  {selected.length === 0
+                    ? intl.formatMessage(m.selectPrompt)
+                    : intl.formatMessage(m.selectedCount, { count: selected.length })}
                 </span>
               )}
               {actionButtons}
@@ -208,7 +246,7 @@ export function DataTable<T>({
             {sorted.length === 0 && (
               <tr>
                 <td colSpan={columns.length + (selectable ? 1 : 0)} className="px-5 py-8 text-center text-zinc-500 text-sm">
-                  {emptyMessage}
+                  {emptyMessage ?? intl.formatMessage(m.empty)}
                 </td>
               </tr>
             )}
@@ -254,7 +292,7 @@ export function DataTable<T>({
       {(bulkActions.length > 0 || footer) && (
         <div className="flex items-center justify-between gap-3 bg-raised/50 p-4 flex-wrap">
           <div className="text-[12px] text-zinc-500 font-semibold px-2">
-            {footer ?? `${rows.length} item${rows.length === 1 ? '' : 's'}`}
+            {footer ?? intl.formatMessage(m.footerCount, { count: rows.length })}
           </div>
           <div className="flex items-center gap-3 flex-wrap">{actionButtons}</div>
         </div>

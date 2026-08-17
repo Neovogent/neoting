@@ -1,3 +1,4 @@
+import { defineMessages, type IntlShape } from 'react-intl';
 import type { Document } from './types';
 
 /**
@@ -15,6 +16,10 @@ import type { Document } from './types';
  * inbox, the practice-wide inbox, the chat table and the archive — and a rule
  * enforced in three of them is not a rule.
  */
+
+const m = defineMessages({
+  outstanding: { id: 'pipeline.readiness.outstanding', defaultMessage: 'Something is still outstanding' },
+});
 
 /** The placeholders extraction leaves behind when it could not read a value. */
 const EMPTY = ['', '—', '-', 'n/a', 'unknown', 'extracting…', 'extracting...'];
@@ -64,11 +69,18 @@ export function readinessOf(doc: Document, mandatoryFields: string[] = []): Read
   return { ready: missing.length === 0 && !flag, missing, flag };
 }
 
-/** One line saying what is stopping this document, whichever kind it is. */
-export function blockedReason(r: Readiness): string {
+/**
+ * One line saying what is stopping this document, whichever kind it is.
+ *
+ * `intl` is a parameter rather than a hook, and the return stays a string: two
+ * of the three answers are not copy at all — the field names the document is
+ * short of, and the extractor's own flag — so only the last one comes from the
+ * catalogue, and the caller wants one sentence either way.
+ */
+export function blockedReason(r: Readiness, intl: IntlShape): string {
   if (r.ready) return '';
   if (r.missing.length) return describeMissing(r.missing);
-  return r.flag ?? 'Something is still outstanding';
+  return r.flag ?? intl.formatMessage(m.outstanding);
 }
 
 /** "Category and Total are still missing" — for a tooltip or a dialog. */
@@ -79,14 +91,19 @@ export function describeMissing(missing: string[]): string {
   return `${missing.slice(0, -1).join(', ')} and ${last} are still missing`;
 }
 
-/** Splits a selection into what can move and what cannot. */
-export function partitionByReadiness(docs: Document[], mandatoryFields: string[] = []) {
+/**
+ * Splits a selection into what can move and what cannot.
+ *
+ * `mandatoryFields` lost its default when `intl` arrived: a default in front of
+ * a required parameter can never be taken, so it only read as optional.
+ */
+export function partitionByReadiness(docs: Document[], mandatoryFields: string[], intl: IntlShape) {
   const ready: Document[] = [];
   const blocked: { doc: Document; missing: string[]; reason: string }[] = [];
   for (const doc of docs) {
     const verdict = readinessOf(doc, mandatoryFields);
     if (verdict.ready) ready.push(doc);
-    else blocked.push({ doc, missing: verdict.missing, reason: blockedReason(verdict) });
+    else blocked.push({ doc, missing: verdict.missing, reason: blockedReason(verdict, intl) });
   }
   return { ready, blocked };
 }

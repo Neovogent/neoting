@@ -3,6 +3,19 @@ import { createPortal } from 'react-dom';
 import { Building2, ChevronDown, Plus, PanelLeftClose, PanelLeft, X, Check } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { motion, AnimatePresence } from 'motion/react';
+import { defineMessages, useIntl } from 'react-intl';
+
+const m = defineMessages({
+  hideHistory: { id: 'shell.contextBar.hideHistory', defaultMessage: 'Hide history' },
+  showHistory: { id: 'shell.contextBar.showHistory', defaultMessage: 'Show history' },
+  detach: { id: 'shell.contextBar.detach', defaultMessage: 'Detach' },
+  noClientAttached: {
+    id: 'shell.contextBar.noClientAttached',
+    defaultMessage: 'No client attached — answers span all clients',
+  },
+  attachClient: { id: 'shell.contextBar.attachClient', defaultMessage: 'Attach Client' },
+  pickerHeading: { id: 'shell.contextBar.pickerHeading', defaultMessage: 'Attach to conversation' },
+});
 
 /**
  * Context bar: shows every client attached to the conversation. Multiple
@@ -10,6 +23,7 @@ import { motion, AnimatePresence } from 'motion/react';
  */
 export function ContextBar() {
   const { isHistoryVisible, toggleHistory, clients, attachedClients, attachClient, detachClient } = useAppContext();
+  const intl = useIntl();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -64,7 +78,7 @@ export function ContextBar() {
         <button
           onClick={toggleHistory}
           className="p-2.5 text-zinc-400 hover:text-white bg-card hover:bg-raised border border-white/5 rounded-full transition-all shadow-lg overflow-hidden relative flex items-center justify-center w-10 h-10 shrink-0"
-          title={isHistoryVisible ? 'Hide history' : 'Show history'}
+          title={intl.formatMessage(isHistoryVisible ? m.hideHistory : m.showHistory)}
         >
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
@@ -96,7 +110,7 @@ export function ContextBar() {
                 <button
                   onClick={() => detachClient(c.id)}
                   className="p-1 rounded-full text-zinc-600 hover:text-white hover:bg-white/10 transition-colors"
-                  title="Detach"
+                  title={intl.formatMessage(m.detach)}
                 >
                   <X size={13} strokeWidth={3} />
                 </button>
@@ -105,7 +119,7 @@ export function ContextBar() {
           </AnimatePresence>
 
           {attachedClients.length === 0 && (
-            <span className="text-sm text-zinc-500 font-medium px-2 whitespace-nowrap">No client attached — answers span all clients</span>
+            <span className="text-sm text-zinc-500 font-medium px-2 whitespace-nowrap">{intl.formatMessage(m.noClientAttached)}</span>
           )}
         </div>
 
@@ -116,7 +130,7 @@ export function ContextBar() {
             className="flex items-center gap-2 text-zinc-400 hover:text-brand text-sm font-medium transition-colors px-3 py-2 rounded-full hover:bg-white/5 whitespace-nowrap"
           >
             <Plus size={16} />
-            Attach Client
+            {intl.formatMessage(m.attachClient)}
             <ChevronDown size={14} className={`transition-transform ${pickerOpen ? 'rotate-180' : ''}`} />
           </button>
 
@@ -132,7 +146,9 @@ export function ContextBar() {
                   style={{ top: anchor.top, left: anchor.left }}
                   className="fixed w-72 max-h-[60vh] overflow-y-auto bg-card border border-white/10 rounded-2xl shadow-2xl z-[100] p-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 >
-                  <div className="px-3 py-2 text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Attach to conversation</div>
+                  <div className="px-3 py-2 text-[11px] font-bold text-zinc-500 uppercase tracking-widest">
+                    {intl.formatMessage(m.pickerHeading)}
+                  </div>
                   {clients.map((c) => {
                     const attached = attachedClients.some((a) => a.id === c.id);
                     return (

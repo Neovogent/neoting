@@ -1,20 +1,138 @@
 import { useMemo, useState } from 'react';
 import { BarChart2, Download } from 'lucide-react';
 import { motion } from 'motion/react';
+import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { currency } from '../lib/resolver';
 import type { Client, SourceChannel } from '../lib/types';
 
+// The union stays English — it is the `Document.source` value, compared and
+// filtered on. Only the words on the chart are translated.
 const CHANNELS: SourceChannel[] = ['email', 'web', 'whatsapp', 'sms-link', 'csv', 'chat', 'portal'];
-const CHANNEL_LABEL: Record<SourceChannel, string> = {
-  email: 'Email', web: 'Web upload', whatsapp: 'WhatsApp', 'sms-link': 'SMS link', csv: 'CSV / XLSX', chat: 'Chat',
-  portal: 'Business portal',
-};
+
+/** What each intake channel is called on the chart. Descriptors, formatted at the call site. */
+const CHANNEL_LABEL: Record<SourceChannel, MessageDescriptor> = defineMessages({
+  email: { id: 'analytics.analyticsView.channelEmail', defaultMessage: 'Email' },
+  web: { id: 'analytics.analyticsView.channelWeb', defaultMessage: 'Web upload' },
+  whatsapp: { id: 'analytics.analyticsView.channelWhatsapp', defaultMessage: 'WhatsApp' },
+  'sms-link': { id: 'analytics.analyticsView.channelSmsLink', defaultMessage: 'SMS link' },
+  csv: { id: 'analytics.analyticsView.channelCsv', defaultMessage: 'CSV / XLSX' },
+  chat: { id: 'analytics.analyticsView.channelChat', defaultMessage: 'Chat' },
+  portal: { id: 'analytics.analyticsView.channelPortal', defaultMessage: 'Business portal' },
+});
+
+const m = defineMessages({
+  heading: { id: 'analytics.analyticsView.heading', defaultMessage: 'Analytics' },
+  subheading: {
+    id: 'analytics.analyticsView.subheading',
+    defaultMessage: 'Document pipeline only — no ledger reporting',
+  },
+  scopePractice: {
+    id: 'analytics.analyticsView.scopePractice',
+    defaultMessage: 'Whole practice (incl. our own account)',
+  },
+  exportAction: { id: 'analytics.analyticsView.exportAction', defaultMessage: 'Export' },
+
+  // A bare percentage and a bare day count are still copy: the space before `%`
+  // and the abbreviation for "day" both move between locales.
+  percent: { id: 'analytics.analyticsView.percent', defaultMessage: '{value}%' },
+  days: { id: 'analytics.analyticsView.days', defaultMessage: '{days}d' },
+
+  statusToReview: { id: 'analytics.analyticsView.statusToReview', defaultMessage: 'To review' },
+  statusReady: { id: 'analytics.analyticsView.statusReady', defaultMessage: 'Ready' },
+  statusPublished: { id: 'analytics.analyticsView.statusPublished', defaultMessage: 'Published' },
+  statusRejected: { id: 'analytics.analyticsView.statusRejected', defaultMessage: 'Rejected' },
+
+  columnClient: { id: 'analytics.analyticsView.columnClient', defaultMessage: 'Client' },
+  columnHealth: { id: 'analytics.analyticsView.columnHealth', defaultMessage: 'Health' },
+  columnToReview: { id: 'analytics.analyticsView.columnToReview', defaultMessage: 'To review' },
+  columnMissing: { id: 'analytics.analyticsView.columnMissing', defaultMessage: 'Missing' },
+  columnRequested: { id: 'analytics.analyticsView.columnRequested', defaultMessage: 'Requested' },
+  columnUnmatched: { id: 'analytics.analyticsView.columnUnmatched', defaultMessage: 'Unmatched' },
+  columnItemDelay: { id: 'analytics.analyticsView.columnItemDelay', defaultMessage: 'Item delay' },
+  columnAutoPublish: { id: 'analytics.analyticsView.columnAutoPublish', defaultMessage: 'Auto-publish' },
+
+  tileProcessed: { id: 'analytics.analyticsView.tileProcessed', defaultMessage: 'Documents processed' },
+  tileProcessedSub: { id: 'analytics.analyticsView.tileProcessedSub', defaultMessage: 'in scope' },
+  tileCorrectionRate: { id: 'analytics.analyticsView.tileCorrectionRate', defaultMessage: 'Correction rate' },
+  tileCorrectionRateSub: {
+    id: 'analytics.analyticsView.tileCorrectionRateSub',
+    defaultMessage: 'fields overridden',
+  },
+  tilePublished: { id: 'analytics.analyticsView.tilePublished', defaultMessage: 'Published' },
+  tilePublishedSub: { id: 'analytics.analyticsView.tilePublishedSub', defaultMessage: '{count} items' },
+  tileMissing: { id: 'analytics.analyticsView.tileMissing', defaultMessage: 'Missing documents' },
+  tileOverdueChases: { id: 'analytics.analyticsView.tileOverdueChases', defaultMessage: 'Overdue chases' },
+  tileOverdueChasesSub: {
+    id: 'analytics.analyticsView.tileOverdueChasesSub',
+    defaultMessage: 'past escalation',
+  },
+  tileItemDelay: { id: 'analytics.analyticsView.tileItemDelay', defaultMessage: 'Item delay' },
+  tileItemDelaySub: { id: 'analytics.analyticsView.tileItemDelaySub', defaultMessage: 'doc date to upload' },
+  tileAwaitingReview: { id: 'analytics.analyticsView.tileAwaitingReview', defaultMessage: 'Awaiting review' },
+  tileAwaitingReviewSub: {
+    id: 'analytics.analyticsView.tileAwaitingReviewSub',
+    defaultMessage: 'needs attention',
+  },
+  tileApprovalQueue: { id: 'analytics.analyticsView.tileApprovalQueue', defaultMessage: 'Approval queue' },
+  tileApprovalQueueSub: {
+    id: 'analytics.analyticsView.tileApprovalQueueSub',
+    defaultMessage: 'avg {days}d old',
+  },
+  tilePublishFailures: { id: 'analytics.analyticsView.tilePublishFailures', defaultMessage: 'Publish failures' },
+  tilePublishFailuresSub: {
+    id: 'analytics.analyticsView.tilePublishFailuresSub',
+    defaultMessage: 'with a retry',
+  },
+  tileUnmatched: {
+    id: 'analytics.analyticsView.tileUnmatched',
+    defaultMessage: 'Unmatched transactions',
+  },
+  tileUnmatchedSub: { id: 'analytics.analyticsView.tileUnmatchedSub', defaultMessage: 'no evidence' },
+  tileStatementGaps: { id: 'analytics.analyticsView.tileStatementGaps', defaultMessage: 'Statement gaps' },
+  tileStatementGapsSub: {
+    id: 'analytics.analyticsView.tileStatementGapsSub',
+    defaultMessage: 'balance discontinuity',
+  },
+  tileLowConfidence: {
+    id: 'analytics.analyticsView.tileLowConfidence',
+    defaultMessage: 'Low-confidence fields',
+  },
+  tileLowConfidenceSub: { id: 'analytics.analyticsView.tileLowConfidenceSub', defaultMessage: 'under 60%' },
+
+  channelMixTitle: { id: 'analytics.analyticsView.channelMixTitle', defaultMessage: 'Channel mix' },
+  channelMixSubtitle: {
+    id: 'analytics.analyticsView.channelMixSubtitle',
+    defaultMessage: 'How documents arrive',
+  },
+  pipelineStatusTitle: { id: 'analytics.analyticsView.pipelineStatusTitle', defaultMessage: 'Pipeline status' },
+  pipelineStatusSubtitle: {
+    id: 'analytics.analyticsView.pipelineStatusSubtitle',
+    defaultMessage: 'Where documents sit right now',
+  },
+
+  tableTitle: { id: 'analytics.analyticsView.tableTitle', defaultMessage: 'Per client' },
+  tableSubtitle: {
+    id: 'analytics.analyticsView.tableSubtitle',
+    defaultMessage: 'Every column derived from live pipeline state',
+  },
+  tableEmpty: { id: 'analytics.analyticsView.tableEmpty', defaultMessage: 'No clients in scope.' },
+  tableFooter: {
+    id: 'analytics.analyticsView.tableFooter',
+    defaultMessage: '{broken} client(s) with an incomplete integration • {inactive} inactive',
+  },
+  outOfScope: {
+    id: 'analytics.analyticsView.outOfScope',
+    defaultMessage:
+      'Ledger-health analytics — bank reconciliation status, control accounts, lock dates — are deliberately out of scope. This platform reports on its own pipeline; the accounting software remains the ledger.',
+  },
+});
 
 export function AnalyticsView() {
   const { clients, documents, missing, chases, approvals, transactions, statementGaps, statsFor, auditLog } = useAppContext();
   const [scope, setScope] = useState('practice');
+  const intl = useIntl();
 
   const scoped = useMemo(
     () => (scope === 'practice' ? documents : documents.filter((d) => d.clientId === scope)),
@@ -67,26 +185,29 @@ export function AnalyticsView() {
   }, [scoped, missing, approvals, transactions, chases, statementGaps, scopedClients, statsFor, scope, auditLog]);
 
   const channelMix = useMemo(() => {
-    const counts = CHANNELS.map((ch) => ({ label: CHANNEL_LABEL[ch], value: scoped.filter((d) => d.source === ch).length }));
+    const counts = CHANNELS.map((ch) => ({
+      label: intl.formatMessage(CHANNEL_LABEL[ch]),
+      value: scoped.filter((d) => d.source === ch).length,
+    }));
     return counts.filter((c) => c.value > 0).sort((a, b) => b.value - a.value);
-  }, [scoped]);
+  }, [scoped, intl]);
 
   const statusMix = [
-    { label: 'To review', value: metrics.toReview },
-    { label: 'Ready', value: metrics.ready },
-    { label: 'Published', value: metrics.published },
-    { label: 'Rejected', value: metrics.rejected },
+    { label: intl.formatMessage(m.statusToReview), value: metrics.toReview },
+    { label: intl.formatMessage(m.statusReady), value: metrics.ready },
+    { label: intl.formatMessage(m.statusPublished), value: metrics.published },
+    { label: intl.formatMessage(m.statusRejected), value: metrics.rejected },
   ].filter((s) => s.value > 0);
 
   const clientColumns: Column<Client>[] = [
-    { key: 'name', label: 'Client', sortValue: (c) => c.name, render: (c) => <span className="text-white font-semibold">{c.name}</span> },
-    { key: 'health', label: 'Health', align: 'right', sortValue: (c) => statsFor(c.id).health, render: (c) => <Pill tone={statsFor(c.id).health > 80 ? 'green' : statsFor(c.id).health > 50 ? 'amber' : 'red'}>{statsFor(c.id).health}%</Pill> },
-    { key: 'toReview', label: 'To review', align: 'right', sortValue: (c) => statsFor(c.id).toReview, render: (c) => <span className="tabular-nums text-zinc-300">{statsFor(c.id).toReview}</span> },
-    { key: 'missing', label: 'Missing', align: 'right', sortValue: (c) => statsFor(c.id).missing, render: (c) => <span className="tabular-nums text-zinc-300">{statsFor(c.id).missing}</span> },
-    { key: 'requested', label: 'Requested', align: 'right', sortValue: (c) => statsFor(c.id).requested, render: (c) => <span className="tabular-nums text-zinc-300">{statsFor(c.id).requested}</span> },
-    { key: 'unmatched', label: 'Unmatched', align: 'right', sortValue: (c) => statsFor(c.id).unmatched, render: (c) => <span className="tabular-nums text-zinc-300">{statsFor(c.id).unmatched}</span> },
-    { key: 'delay', label: 'Item delay', align: 'right', sortValue: (c) => statsFor(c.id).itemDelay, render: (c) => <span className="tabular-nums text-zinc-400">{statsFor(c.id).itemDelay}d</span> },
-    { key: 'autopub', label: 'Auto-publish', align: 'right', sortValue: (c) => statsFor(c.id).autoPublishCoverage, render: (c) => <span className="tabular-nums text-zinc-400">{statsFor(c.id).autoPublishCoverage}%</span> },
+    { key: 'name', label: intl.formatMessage(m.columnClient), sortValue: (c) => c.name, render: (c) => <span className="text-white font-semibold">{c.name}</span> },
+    { key: 'health', label: intl.formatMessage(m.columnHealth), align: 'right', sortValue: (c) => statsFor(c.id).health, render: (c) => <Pill tone={statsFor(c.id).health > 80 ? 'green' : statsFor(c.id).health > 50 ? 'amber' : 'red'}>{intl.formatMessage(m.percent, { value: statsFor(c.id).health })}</Pill> },
+    { key: 'toReview', label: intl.formatMessage(m.columnToReview), align: 'right', sortValue: (c) => statsFor(c.id).toReview, render: (c) => <span className="tabular-nums text-zinc-300">{statsFor(c.id).toReview}</span> },
+    { key: 'missing', label: intl.formatMessage(m.columnMissing), align: 'right', sortValue: (c) => statsFor(c.id).missing, render: (c) => <span className="tabular-nums text-zinc-300">{statsFor(c.id).missing}</span> },
+    { key: 'requested', label: intl.formatMessage(m.columnRequested), align: 'right', sortValue: (c) => statsFor(c.id).requested, render: (c) => <span className="tabular-nums text-zinc-300">{statsFor(c.id).requested}</span> },
+    { key: 'unmatched', label: intl.formatMessage(m.columnUnmatched), align: 'right', sortValue: (c) => statsFor(c.id).unmatched, render: (c) => <span className="tabular-nums text-zinc-300">{statsFor(c.id).unmatched}</span> },
+    { key: 'delay', label: intl.formatMessage(m.columnItemDelay), align: 'right', sortValue: (c) => statsFor(c.id).itemDelay, render: (c) => <span className="tabular-nums text-zinc-400">{intl.formatMessage(m.days, { days: statsFor(c.id).itemDelay })}</span> },
+    { key: 'autopub', label: intl.formatMessage(m.columnAutoPublish), align: 'right', sortValue: (c) => statsFor(c.id).autoPublishCoverage, render: (c) => <span className="tabular-nums text-zinc-400">{intl.formatMessage(m.percent, { value: statsFor(c.id).autoPublishCoverage })}</span> },
   ];
 
   return (
@@ -98,9 +219,9 @@ export function AnalyticsView() {
               <BarChart2 size={22} />
             </div>
             <div>
-              <h1 className="font-sans text-3xl font-semibold text-white tracking-tight">Analytics</h1>
+              <h1 className="font-sans text-3xl font-semibold text-white tracking-tight">{intl.formatMessage(m.heading)}</h1>
               <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
-                Document pipeline only — no ledger reporting
+                {intl.formatMessage(m.subheading)}
               </p>
             </div>
           </div>
@@ -110,7 +231,7 @@ export function AnalyticsView() {
               onChange={(e) => setScope(e.target.value)}
               className="bg-card border border-white/5 rounded-full py-2.5 px-4 text-sm font-semibold text-zinc-300 focus:outline-none focus:border-brand shadow-inner"
             >
-              <option value="practice">Whole practice (incl. our own account)</option>
+              <option value="practice">{intl.formatMessage(m.scopePractice)}</option>
               {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
             <button
@@ -118,7 +239,7 @@ export function AnalyticsView() {
               className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-[0_0_15px_rgba(20,227,196,0.2)]"
             >
               <Download size={16} />
-              Export
+              {intl.formatMessage(m.exportAction)}
             </button>
           </div>
         </div>
@@ -127,42 +248,41 @@ export function AnalyticsView() {
       <div className="flex-1 overflow-y-auto px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <motion.div key={scope} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6">
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-            <Tile label="Documents processed" value={String(metrics.processed)} sub="in scope" />
-            <Tile label="Correction rate" value={`${metrics.correctionRate}%`} sub="fields overridden" />
-            <Tile label="Published" value={`${metrics.autoPublishedPct}%`} sub={`${metrics.published} items`} />
-            <Tile label="Missing documents" value={String(metrics.missing)} sub={currency(metrics.unverified)} tone={metrics.missing > 20 ? 'red' : 'plain'} />
-            <Tile label="Overdue chases" value={String(metrics.overdueChases)} sub="past escalation" tone={metrics.overdueChases ? 'red' : 'plain'} />
-            <Tile label="Item delay" value={`${metrics.itemDelay}d`} sub="doc date to upload" />
+            <Tile label={intl.formatMessage(m.tileProcessed)} value={String(metrics.processed)} sub={intl.formatMessage(m.tileProcessedSub)} />
+            <Tile label={intl.formatMessage(m.tileCorrectionRate)} value={intl.formatMessage(m.percent, { value: metrics.correctionRate })} sub={intl.formatMessage(m.tileCorrectionRateSub)} />
+            <Tile label={intl.formatMessage(m.tilePublished)} value={intl.formatMessage(m.percent, { value: metrics.autoPublishedPct })} sub={intl.formatMessage(m.tilePublishedSub, { count: metrics.published })} />
+            <Tile label={intl.formatMessage(m.tileMissing)} value={String(metrics.missing)} sub={currency(metrics.unverified)} tone={metrics.missing > 20 ? 'red' : 'plain'} />
+            <Tile label={intl.formatMessage(m.tileOverdueChases)} value={String(metrics.overdueChases)} sub={intl.formatMessage(m.tileOverdueChasesSub)} tone={metrics.overdueChases ? 'red' : 'plain'} />
+            <Tile label={intl.formatMessage(m.tileItemDelay)} value={intl.formatMessage(m.days, { days: metrics.itemDelay })} sub={intl.formatMessage(m.tileItemDelaySub)} />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <BarPanel title="Channel mix" subtitle="How documents arrive" data={channelMix} />
-            <BarPanel title="Pipeline status" subtitle="Where documents sit right now" data={statusMix} />
+            <BarPanel title={intl.formatMessage(m.channelMixTitle)} subtitle={intl.formatMessage(m.channelMixSubtitle)} data={channelMix} />
+            <BarPanel title={intl.formatMessage(m.pipelineStatusTitle)} subtitle={intl.formatMessage(m.pipelineStatusSubtitle)} data={statusMix} />
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-            <Tile label="Awaiting review" value={String(metrics.toReview)} sub="needs attention" />
-            <Tile label="Approval queue" value={String(metrics.approvalCount)} sub={`avg ${metrics.approvalAge}d old`} />
-            <Tile label="Publish failures" value={String(metrics.rejected)} sub="with a retry" tone={metrics.rejected ? 'red' : 'plain'} />
-            <Tile label="Unmatched transactions" value={String(metrics.unmatched)} sub="no evidence" />
-            <Tile label="Statement gaps" value={String(metrics.gaps)} sub="balance discontinuity" />
-            <Tile label="Low-confidence fields" value={String(metrics.lowConfidence)} sub="under 60%" />
+            <Tile label={intl.formatMessage(m.tileAwaitingReview)} value={String(metrics.toReview)} sub={intl.formatMessage(m.tileAwaitingReviewSub)} />
+            <Tile label={intl.formatMessage(m.tileApprovalQueue)} value={String(metrics.approvalCount)} sub={intl.formatMessage(m.tileApprovalQueueSub, { days: metrics.approvalAge })} />
+            <Tile label={intl.formatMessage(m.tilePublishFailures)} value={String(metrics.rejected)} sub={intl.formatMessage(m.tilePublishFailuresSub)} tone={metrics.rejected ? 'red' : 'plain'} />
+            <Tile label={intl.formatMessage(m.tileUnmatched)} value={String(metrics.unmatched)} sub={intl.formatMessage(m.tileUnmatchedSub)} />
+            <Tile label={intl.formatMessage(m.tileStatementGaps)} value={String(metrics.gaps)} sub={intl.formatMessage(m.tileStatementGapsSub)} />
+            <Tile label={intl.formatMessage(m.tileLowConfidence)} value={String(metrics.lowConfidence)} sub={intl.formatMessage(m.tileLowConfidenceSub)} />
           </div>
 
           <DataTable<Client>
             className="max-w-none"
-            title="Per client"
-            subtitle="Every column derived from live pipeline state"
+            title={intl.formatMessage(m.tableTitle)}
+            subtitle={intl.formatMessage(m.tableSubtitle)}
             columns={clientColumns}
             rows={scopedClients}
             rowId={(c) => c.id}
-            emptyMessage="No clients in scope."
-            footer={`${metrics.integrationsBroken} client(s) with an incomplete integration • ${metrics.inactive} inactive`}
+            emptyMessage={intl.formatMessage(m.tableEmpty)}
+            footer={intl.formatMessage(m.tableFooter, { broken: metrics.integrationsBroken, inactive: metrics.inactive })}
           />
 
           <div className="border border-white/5 rounded-[32px] bg-card p-6 text-[13px] text-zinc-500 leading-relaxed">
-            Ledger-health analytics — bank reconciliation status, control accounts, lock dates — are deliberately out of
-            scope. This platform reports on its own pipeline; the accounting software remains the ledger.
+            {intl.formatMessage(m.outOfScope)}
           </div>
         </motion.div>
       </div>
@@ -170,11 +290,20 @@ export function AnalyticsView() {
   );
 }
 
+const mBar = defineMessages({
+  empty: { id: 'analytics.barPanel.empty', defaultMessage: 'Nothing in scope.' },
+  valueShare: { id: 'analytics.barPanel.valueShare', defaultMessage: '{count} · {percent}%' },
+});
+
 /**
  * Single-series horizontal bars: no legend needed (the row labels name each
  * value), values in text ink rather than the series colour, recessive track.
+ *
+ * `title`, `subtitle` and every row `label` arrive already formatted — this is
+ * a presentational shell, so the copy stays with the screen that owns it.
  */
 function BarPanel({ title, subtitle, data }: { title: string; subtitle: string; data: { label: string; value: number }[] }) {
+  const intl = useIntl();
   const max = Math.max(1, ...data.map((d) => d.value));
   const total = data.reduce((n, d) => n + d.value, 0);
 
@@ -185,13 +314,13 @@ function BarPanel({ title, subtitle, data }: { title: string; subtitle: string; 
         <p className="text-[12px] text-zinc-500 mt-0.5 font-semibold uppercase tracking-wider">{subtitle}</p>
       </div>
       <div className="p-6 flex flex-col gap-4">
-        {data.length === 0 && <p className="text-[13px] text-zinc-600">Nothing in scope.</p>}
+        {data.length === 0 && <p className="text-[13px] text-zinc-600">{intl.formatMessage(mBar.empty)}</p>}
         {data.map((d) => (
           <div key={d.label}>
             <div className="flex items-baseline justify-between mb-1.5">
               <span className="text-[13px] font-semibold text-zinc-300">{d.label}</span>
               <span className="text-[12px] font-bold text-zinc-500 tabular-nums">
-                {d.value} · {Math.round((d.value / total) * 100)}%
+                {intl.formatMessage(mBar.valueShare, { count: d.value, percent: Math.round((d.value / total) * 100) })}
               </span>
             </div>
             <div className="h-2 w-full bg-raised rounded-full overflow-hidden">

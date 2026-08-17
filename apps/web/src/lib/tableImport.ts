@@ -10,6 +10,33 @@ import type { BankTransaction, Client, DocKind, Document, ExtractedField, Source
  * inferred from a photograph, so it is not 91% — it is simply what the file
  * says. Where a judgement is genuinely made — which way the money went, what
  * category this is — the confidence drops and says why.
+ *
+ * ## Why #65 extracted nothing here
+ *
+ * Every string this module writes lands on a record, and the records are what
+ * the rest of the app joins on:
+ *
+ *   · `ExtractedField.label` — "Supplier", "Customer", "Document date",
+ *     "Invoice number", "Total", "Tax amount", "Category", "Document type" —
+ *     is compared by exact string in `lib/selectors.ts`, `lib/readiness.ts`,
+ *     `views/ClientInbox.tsx`, `DynamicComponents/AnalysisModal.tsx` and
+ *     `api/mocks/fixtures.ts`. They are keys into the extraction, and
+ *     `lib/ingest.ts` writes the same ones from the OCR path.
+ *   · `ExtractedField.value` and `.provenance` are read the same way —
+ *     `AnalysisModal` tests the "Document type" value, `lib/dedupe.ts` matches
+ *     a reference field by pattern.
+ *   · `Document.supplier`, `.statusNote` and `BankTransaction.description` are
+ *     matched too: `readiness.ts` holds a list of placeholder suppliers,
+ *     `matching.ts` scores a transaction description against a supplier name,
+ *     and `api/documents.ts` fills `statusNote` from the server's own
+ *     `failureMessage` — a field that can hold a sentence written elsewhere
+ *     cannot be a catalogue entry.
+ *   · the `display()` date format below is a format, not a phrase (§12.6).
+ *
+ * The one genuine candidate left is `skipped[].reason`, which is transient UI
+ * feedback. It stayed because `tableImport.test.ts` asserts it by substring
+ * and `AnalysisModal` already interpolates it as a value — converting it needs
+ * both of those files in the same change.
  */
 
 let seq = 0;

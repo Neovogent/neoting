@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { defineMessages, useIntl } from 'react-intl';
 import type { Suggestion } from '../../lib/promptSuggestions';
 
 /**
@@ -20,6 +21,10 @@ const TYPE_MS = 26;
 const DELETE_MS = 12;
 const HOLD_MS = 2600;
 
+const m = defineMessages({
+  acceptHint: { id: 'shell.typedPlaceholder.acceptHint', defaultMessage: 'Tab or click to use this' },
+});
+
 export function TypedPlaceholder({ suggestions, onAccept, paused }: {
   suggestions: Suggestion[];
   onAccept: (text: string) => void;
@@ -30,6 +35,7 @@ export function TypedPlaceholder({ suggestions, onAccept, paused }: {
   const [shown, setShown] = useState('');
   const [phase, setPhase] = useState<'typing' | 'holding' | 'deleting'>('typing');
   const reduced = useRef(false);
+  const intl = useIntl();
 
   useEffect(() => {
     reduced.current = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -94,7 +100,7 @@ export function TypedPlaceholder({ suggestions, onAccept, paused }: {
           complete ? 'opacity-100' : 'opacity-0'
         }`}
       >
-        <span className="px-2 py-1 rounded-full bg-brand/15 text-brand-deep">Tab or click to use this</span>
+        <span className="px-2 py-1 rounded-full bg-brand/15 text-brand-deep">{intl.formatMessage(m.acceptHint)}</span>
         <span className="text-zinc-400 font-semibold normal-case">{current.because}</span>
       </span>
     </button>

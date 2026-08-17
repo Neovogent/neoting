@@ -9,7 +9,7 @@ Read `docs/Source_Of_Truth.md` D37 before assuming anything Next-shaped. The req
 1. **Split at the route.** Every screen is `lazy()`-loaded from `App.tsx` so opening one downloads one. This replaced "Server Components by default", and it inherits that rule's job: keeping per-route weight down. (Guideline v1.2 §7.4.)
 2. **Tokens only** — no hex, no arbitrary px. ⚠ **Not true of the imported code yet**: ~1,016 inline hex literals, tracked in issue #64. Light mode is ~60 override rules keyed to exact hex class names, so a *new* arbitrary hex silently stays dark. Do not add more.
 3. Chat renders **component-grammar primitives only**. If the grammar lacks a card, that is a G7 conversation, not a one-off `<div>`. The grammar is being derived from the imported components rather than imposed on them.
-4. Every user-facing string through a catalogue (en-GB); the lint rule blocks literals. ⚠ **No library is chosen** — next-intl was Next-only and D37 retired it. Governance v1.5 §12.6 keeps every rule and drops the name. ~1,200 literals to extract, tracked in issue #65.
+4. Every user-facing string through a catalogue (en-GB); the lint rule blocks literals. **Done — issue #65.** The library is **react-intl** (§12.6 leaves the library open and fixes the behaviour; react-intl is ICU-MessageFormat and framework-agnostic, which is what D37 needed). `defineMessages` per component, ids on `domain.component.purpose`, and `lang/en-GB.json` extracted from source by `pnpm i18n:extract` — **generated, never hand-edited.** Two gates, at different altitudes: `neoting/no-literal-string-in-jsx` works on source and blocks the next literal someone types, `pnpm i18n:check` works on the catalogue and blocks a message with no default, an off-convention key, a silently-overwritten duplicate id or invalid ICU. **2,756 messages.** See *i18n* below before adding a string.
 5. All four states per screen: empty (teaches the next action), loading (skeletons, no spinners on primary surfaces), error (plain English + `NT-` code), success.
 6. Accessibility on every PR: full keyboard path, visible focus, `aria-live="polite"` on chat updates, contrast from tokens, error text never colour-only. Run axe locally before requesting review. `jsx-a11y` is not yet in `eslint.config.js` — see the note there.
 7. Motion by the numbers (tokens `CLAUDE.md`). `motion` (Framer), not CSS transitions, for anything stateful.
@@ -29,25 +29,42 @@ MSW is started from `src/main.tsx` behind a **dynamic** `import()`, which is wha
 
 `VITE_CHAT_PROXY=enabled` is the one remaining escape hatch, and it is **off by default deliberately** — it lets the chat box call `POST /api/chat`, the Gemini-backed classifier in the pre-monorepo frontend's `server.ts`. Gemini sits outside D22/D28 (Bedrock, eu-west-2) and outside D30 (UK-first residency); issue #59 keeps it as a temporary local-development exception whose whole condition is that it goes before the frontend is deployed anywhere that is not a laptop. `server.ts` did not come across in the import, so in this repository the route does not exist and the flag has nothing to reach. **Do not turn it on in any deployed build.**
 
+## i18n
+
+Adding a string: `defineMessages` at the top of the component, id `domain.component.purpose`, `intl.formatMessage(m.thing)` at the call site. Plurals are ICU (`{count, plural, one {# day} other {# days}}`) — **never** `${n} day${n === 1 ? '' : 's'}`, which encodes an English-only rule about pluralisation and is wrong in most of the languages this would be translated into. Never concatenate a sentence out of fragments; interpolate into one message.
+
+`lang/en-GB.json` is **generated and gitignored** (Governance §1.4 — never commit generated output), so it will not be in the diff and you cannot hand-edit it: `pnpm i18n:check` re-extracts before it checks, and the edit is gone by the time anything reads it. It is the artefact a translator receives, rebuilt on every `pnpm lint`.
+
+**The literal rule is `neoting/no-literal-string-in-jsx`, not `formatjs/`, and the difference is deliberate.** It is the formatjs rule with reports over pure punctuation dropped, because separators like `·`, `—`, `→`, `✓`, `£`, `%` and `{' '}` are not language and putting them in a catalogue teaches everyone the wrong lesson about what a catalogue is for. The upstream rule has no option for that in **any** published version — its only config is `props.include`/`props.exclude`, which match tag and attribute *names*, never the matched text — so the exemption is a wrapper in `eslint/no-literal-string-in-jsx.js`. Read it before touching it; it is eleven lines of predicate and forty of why. Two things about it that matter:
+
+- **it drops a report only when every static chunk has no letter and no digit in it, in any script.** A numeral is not punctuation — `0.00` and `0000` are placeholders whose digits and decimal separator change with the locale, so they are in the catalogue like anything else. One letter is enough to fail: the single deliberate exemption in the app is the Xero brand glyph in `ClientsView`, which carries an `eslint-disable-next-line` and a paragraph saying why.
+- **it fails towards reporting.** An unrecognised node shape, or an ESLint that changes how a rule context is built, gets the unfiltered rule — noisy, never quiet. `eslint/no-literal-string-in-jsx.test.js` asserts both halves, because a filter that silently starts matching everything turns the gate into a green tick that checks nothing. This repo has already had one of those (see the header of `scripts/check-i18n.mjs`).
+
+`linterOptions.reportUnusedDisableDirectives` is `error`, so a disable comment that no longer suppresses anything — or that names the upstream rule by mistake — fails the build rather than sitting in the file looking like enforcement.
+
 ## Bundle
 
-Measured on the import build, gzipped:
+Gzipped, after the i18n extraction. The budget is **JS** (SoT §14: "initial JS < 250 KB gzipped per route"), so CSS is listed but not counted against it:
 
-| | gzip |
-|---|---|
-| `index.js` (shared) | 162.6 kB |
-| `query.js` (TanStack) | 14.8 kB |
-| `index.css` | 11.9 kB |
-| `react.js` | 1.5 kB |
-| **shared floor, every route** | **190.9 kB** |
-| heaviest route on top (`ClientDetailView`) | 32.6 kB |
+| | at import | now |
+|---|---|---|
+| `index.js` (shared) | 162.6 kB | **182.1 kB** |
+| `query.js` (TanStack) | 14.8 kB | 14.8 kB |
+| `react.js` | 1.5 kB | 1.5 kB |
+| **shared JS floor, every route** | **178.9 kB** | **198.5 kB** |
+| heaviest route on top (`ClientDetailView`) | 32.6 kB | **45.6 kB** |
+| **worst route, total JS** | **211.5 kB** | **244.1 kB** |
+| `index.css` (not in the JS budget) | 11.9 kB | 12.4 kB |
 
-Every route is inside the 250 KB budget, but **the shared floor is most of it** — the budget is met with roughly 25 kB of headroom, not comfortably. Two things drive that floor and both are known:
+⚠ **The headroom is now about 6 kB, not 25.** Extraction cost ~19.6 kB on the shared floor and ~13 kB on the heaviest route — react-intl itself, plus 2,756 `defaultMessage` strings that ship inline in the components that declare them. That is the honest price of the rule in item 4 and it was worth paying, but it means **the next screen or dependency is very likely to break the budget**, and a route over budget is a reject (D37), not a warning.
+
+Three things drive the floor, all known:
 
 - `AppContext.tsx` is ~90 kB of source and wraps every route, so it can never be split out;
-- the synthetic dataset (~67 kB of source across the three seed/generate modules) is imported by `AppContext` at module scope and therefore ships to users.
+- the synthetic dataset (~67 kB of source across the three seed/generate modules) is imported by `AppContext` at module scope and therefore ships to users;
+- every `defaultMessage` is in the bundle. The catalogue is not loaded at runtime yet — `lang/en-GB.json` exists for translators and for the gate. When a second locale arrives, the messages should move to a fetched catalogue and the defaults be stripped at build (`@formatjs/babel-plugin-react-intl` / the SWC equivalent `removeDefaultMessage`), which gives most of the 19.6 kB back.
 
-Most of that leaves when the views move onto the generated client. Until then, treat 190.9 kB as the floor a new screen is spending against, and re-measure with `pnpm --filter @neoting/web build` before adding a dependency.
+Most of the seed weight leaves when the views move onto the generated client. Until then, treat 198.5 kB as the floor a new screen is spending against, and re-measure with `pnpm --filter @neoting/web build` before adding a dependency.
 
 ## Tests
 
@@ -63,6 +80,7 @@ What is covered today, and why those:
 | `src/lib/tableImport.test.ts` | XLSX date serials, day-first UK dates, totals lines refused rather than booked, signed ledgers where a positive row is a refund. |
 | `src/lib/matching.test.ts` | Whether a transaction is settled or handed to a human, and the merchant bar that keeps Costco off Costa. |
 | `src/lib/dedupe.test.ts` | The two Dext gaps this exists to close: a pair survives a failed extraction, and an invoice matches its receipt twin. |
+| `eslint/no-literal-string-in-jsx.test.js` | The one suite that tests a *gate* rather than the product: real copy still fails the literal rule, punctuation still passes. The cases are lifted verbatim from the views. Not under `src/`, because the rule is not application code — which also keeps it out of `tsc`'s include and out of the bundle. |
 
 Component tests are still owed for anything with logic (frontend ten, item 10).
 

@@ -161,6 +161,20 @@ export function healthTone(health: number): 'green' | 'amber' | 'red' {
 /**
  * Dext's floor is Total + Supplier + Category. Ours is configurable on top of
  * that — the 187-vote "mandatory fields before publishing" request.
+ *
+ * These are keys, not copy, and #65 deliberately left them alone. Each one is
+ * compared by exact string: `missingMandatory` below branches on three of them
+ * and looks the rest up as `doc.fields[].label`; the same equality is done in
+ * `views/ClientInbox.tsx` and `lib/readiness.ts`, and the chosen ones are
+ * persisted in `mandatoryFields` state. Extraction writes the matching side of
+ * that comparison in `lib/ingest.ts` and `lib/tableImport.ts`, and the API
+ * writes it too. Translating either half breaks the join and lets a document
+ * publish with a field the practice made mandatory still empty.
+ *
+ * They are shown to a person — the toggles in Settings and the Inboxes field
+ * dialog render these values directly — so a second locale needs a display
+ * label beside the key rather than a translated key. That is a change to the
+ * screens, which is where a `MessageDescriptor` can be formatted.
  */
 export const BASE_MANDATORY = ['Supplier', 'Total', 'Category'];
 export const OPTIONAL_MANDATORY = ['Tax amount', 'Invoice number', 'Project', 'Customer reference'];

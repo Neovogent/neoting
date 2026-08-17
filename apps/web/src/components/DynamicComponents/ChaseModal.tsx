@@ -1,6 +1,17 @@
 import { X } from 'lucide-react';
 import { motion } from 'motion/react';
+import { defineMessages, useIntl } from 'react-intl';
 import { ChaseComposer } from './ChaseComposer';
+
+const m = defineMessages({
+  dialogLabel: { id: 'shell.chaseModal.dialogLabel', defaultMessage: 'Compose chase' },
+  gateNote: {
+    id: 'shell.chaseModal.gateNote',
+    defaultMessage: 'Nothing sends until you read the review and approve it.',
+  },
+  closeLabel: { id: 'shell.chaseModal.closeLabel', defaultMessage: 'Close the composer' },
+  close: { id: 'shell.chaseModal.close', defaultMessage: 'Close' },
+});
 
 /**
  * The chase composer, opened over whatever page asked for it.
@@ -19,13 +30,15 @@ export function ChaseModal({ clientIds, missingItemIds, note, onClose }: {
   note?: string;
   onClose: () => void;
 }) {
+  const intl = useIntl();
+
   return (
     <div
       className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label="Compose chase"
+      aria-label={intl.formatMessage(m.dialogLabel)}
     >
       <motion.div
         initial={{ opacity: 0, y: 16, scale: 0.98 }}
@@ -35,15 +48,15 @@ export function ChaseModal({ clientIds, missingItemIds, note, onClose }: {
       >
         <div className="w-full flex items-center justify-between gap-4 px-5 py-3 rounded-[20px] border border-white/5 bg-card shadow-2xl">
           <p className="text-[12px] text-zinc-500 min-w-0">
-            {note ?? 'Nothing sends until you read the review and approve it.'}
+            {note ?? intl.formatMessage(m.gateNote)}
           </p>
           <button
             onClick={onClose}
-            aria-label="Close the composer"
+            aria-label={intl.formatMessage(m.closeLabel)}
             className="shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold text-zinc-400 hover:text-white transition-colors"
           >
             <X size={14} />
-            Close
+            {intl.formatMessage(m.close)}
           </button>
         </div>
 

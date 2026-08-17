@@ -3,12 +3,13 @@ import {
   Upload, Eye, Copy, CheckCircle, Send, Trash2, RefreshCw, MessageSquare, FileText, Image as ImageIcon,
   Link2, Sparkles, Download, PencilLine, UploadCloud,
 } from 'lucide-react';
+import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { SubTabs } from '../components/DynamicComponents/SubTabs';
 import { DuplicateModal } from '../components/DynamicComponents/DuplicateModal';
 import { navigate, path, useQueryParam, useSegment } from '../lib/router';
-import { failureOf, retryMeaning } from '../lib/failures';
+import { failureOf, reasonText, retryMeaning } from '../lib/failures';
 import { AnalysisModal } from '../components/DynamicComponents/AnalysisModal';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { blockedReason, partitionByReadiness, readinessOf } from '../lib/readiness';
@@ -39,21 +40,328 @@ import { EXPORT_HINT } from '../lib/exportRules';
 const STATUSES = ['review', 'ready', 'published', 'processing', 'rejected', 'duplicates'] as const;
 type Status = (typeof STATUSES)[number];
 
-const STATUS_LABEL: Record<Status, string> = {
-  review: 'To Review',
-  ready: 'Ready',
-  published: 'Published',
-  processing: 'Processing',
-  rejected: 'Rejected / Failed',
-  duplicates: 'Duplicates',
-};
+/**
+ * The union above is identity — it is the URL segment and what `d.status ===`
+ * compares against. These are the words on the sub-tabs. Descriptors, because a
+ * hook cannot be called at module scope.
+ */
+const STATUS_LABEL: Record<Status, MessageDescriptor> = defineMessages({
+  review: { id: 'analytics.inboxStatus.review', defaultMessage: 'To Review' },
+  ready: { id: 'analytics.inboxStatus.ready', defaultMessage: 'Ready' },
+  published: { id: 'analytics.inboxStatus.published', defaultMessage: 'Published' },
+  processing: { id: 'analytics.inboxStatus.processing', defaultMessage: 'Processing' },
+  rejected: { id: 'analytics.inboxStatus.rejected', defaultMessage: 'Rejected / Failed' },
+  duplicates: { id: 'analytics.inboxStatus.duplicates', defaultMessage: 'Duplicates' },
+});
+
+const mSplit = defineMessages({
+  autoLabel: { id: 'analytics.splitMode.autoLabel', defaultMessage: 'Auto-split' },
+  autoHint: {
+    id: 'analytics.splitMode.autoHint',
+    defaultMessage: 'Standard — a multi-document PDF becomes one document per invoice',
+  },
+  perFileLabel: { id: 'analytics.splitMode.perFileLabel', defaultMessage: 'One per file' },
+  perFileHint: {
+    id: 'analytics.splitMode.perFileHint',
+    defaultMessage: 'Every file is exactly one document',
+  },
+  perPageLabel: { id: 'analytics.splitMode.perPageLabel', defaultMessage: 'One per page' },
+  perPageHint: { id: 'analytics.splitMode.perPageHint', defaultMessage: 'Every page is its own document' },
+});
 
 /** How the file was split on the way in — PRD stage 1, shown so it is auditable. */
 const SPLIT_MODES = [
-  { key: 'auto', label: 'Auto-split', hint: 'Standard — a multi-document PDF becomes one document per invoice' },
-  { key: 'per-file', label: 'One per file', hint: 'Every file is exactly one document' },
-  { key: 'per-page', label: 'One per page', hint: 'Every page is its own document' },
+  { key: 'auto', label: mSplit.autoLabel, hint: mSplit.autoHint },
+  { key: 'per-file', label: mSplit.perFileLabel, hint: mSplit.perFileHint },
+  { key: 'per-page', label: mSplit.perPageLabel, hint: mSplit.perPageHint },
 ] as const;
+
+const m = defineMessages({
+  // Why a document stopped, in the words of whatever stopped it.
+  flagDuplicate: { id: 'analytics.clientInbox.flagDuplicate', defaultMessage: 'Duplicate — {percent}% match' },
+  flagLowConfidence: {
+    id: 'analytics.clientInbox.flagLowConfidence',
+    defaultMessage: 'Low confidence on {field}',
+  },
+  flagMissing: { id: 'analytics.clientInbox.flagMissing', defaultMessage: 'Missing {fields}' },
+
+  publishPromptOne: {
+    id: 'analytics.clientInbox.publishPromptOne',
+    defaultMessage: 'Publish {supplier} for {client}',
+  },
+  publishPromptMany: {
+    id: 'analytics.clientInbox.publishPromptMany',
+    defaultMessage: 'Publish {count} ready items for {client}',
+  },
+  publishReply: {
+    id: 'analytics.clientInbox.publishReply',
+    defaultMessage: 'Read the review — counts and gross/VAT totals — before approving the push.',
+  },
+  reviewPrompt: { id: 'analytics.clientInbox.reviewPrompt', defaultMessage: 'Review the {supplier} document' },
+  reviewReply: {
+    id: 'analytics.clientInbox.reviewReply',
+    defaultMessage: 'Every field shows confidence and provenance — click any value to correct it.',
+  },
+
+  columnDoc: { id: 'analytics.clientInbox.columnDoc', defaultMessage: 'Doc' },
+  docReceipt: { id: 'analytics.clientInbox.docReceipt', defaultMessage: 'Receipt' },
+  docInvoice: { id: 'analytics.clientInbox.docInvoice', defaultMessage: 'Invoice' },
+  columnSupplier: { id: 'analytics.clientInbox.columnSupplier', defaultMessage: 'Supplier' },
+  columnCustomer: { id: 'analytics.clientInbox.columnCustomer', defaultMessage: 'Customer' },
+  columnCategory: { id: 'analytics.clientInbox.columnCategory', defaultMessage: 'Category' },
+  columnTotal: { id: 'analytics.clientInbox.columnTotal', defaultMessage: 'Total' },
+  columnChannel: { id: 'analytics.clientInbox.columnChannel', defaultMessage: 'Received via' },
+  columnDate: { id: 'analytics.clientInbox.columnDate', defaultMessage: 'Date' },
+  columnWhyFlagged: { id: 'analytics.clientInbox.columnWhyFlagged', defaultMessage: 'Why flagged' },
+  columnStatus: { id: 'analytics.clientInbox.columnStatus', defaultMessage: 'Status' },
+  columnVat: { id: 'analytics.clientInbox.columnVat', defaultMessage: 'VAT' },
+  columnPublishTo: { id: 'analytics.clientInbox.columnPublishTo', defaultMessage: 'Publish to' },
+  columnInTheLedger: { id: 'analytics.clientInbox.columnInTheLedger', defaultMessage: 'In the ledger' },
+  columnWhatFailed: { id: 'analytics.clientInbox.columnWhatFailed', defaultMessage: 'What failed' },
+  columnReason: { id: 'analytics.clientInbox.columnReason', defaultMessage: 'Reason' },
+
+  percent: { id: 'analytics.clientInbox.percent', defaultMessage: '{percent}%' },
+  categoryMissing: { id: 'analytics.clientInbox.categoryMissing', defaultMessage: 'Missing' },
+  categoryConfidence: {
+    id: 'analytics.clientInbox.categoryConfidence',
+    defaultMessage: 'AI · {percent}% confident',
+  },
+  duplicateTitle: {
+    id: 'analytics.clientInbox.duplicateTitle',
+    defaultMessage: '{percent}% match — {signals}',
+  },
+  duplicateBadge: { id: 'analytics.clientInbox.duplicateBadge', defaultMessage: 'Duplicate {percent}%' },
+
+  retryReadTitle: { id: 'analytics.clientInbox.retryReadTitle', defaultMessage: 'Read {supplier} again?' },
+  retryPublishTitle: {
+    id: 'analytics.clientInbox.retryPublishTitle',
+    defaultMessage: 'Publish {supplier} again?',
+  },
+  retryDetail: { id: 'analytics.clientInbox.retryDetail', defaultMessage: '{reason}. {meaning}' },
+  retryConsequence: {
+    id: 'analytics.clientInbox.retryConsequence',
+    defaultMessage: 'This is unlikely to clear it on its own — {fix} is what changes the outcome.',
+  },
+  retryConfirm: { id: 'analytics.clientInbox.retryConfirm', defaultMessage: 'Yes, retry' },
+
+  replaceTitle: {
+    id: 'analytics.clientInbox.replaceTitle',
+    defaultMessage: 'Replace {supplier} with {file}?',
+  },
+  replaceTitleUnknown: {
+    id: 'analytics.clientInbox.replaceTitleUnknown',
+    defaultMessage: 'Replace this document with {file}?',
+  },
+  replaceDetail: {
+    id: 'analytics.clientInbox.replaceDetail',
+    defaultMessage: 'The new file is read from scratch under this client.',
+  },
+  replaceConsequence: {
+    id: 'analytics.clientInbox.replaceConsequence',
+    defaultMessage: 'The unreadable original is removed, so the same spend is not on file twice.',
+  },
+  replaceConfirm: { id: 'analytics.clientInbox.replaceConfirm', defaultMessage: 'Yes, replace it' },
+
+  stepFix: { id: 'analytics.clientInbox.stepFix', defaultMessage: 'Fix' },
+  stepMoveToReady: { id: 'analytics.clientInbox.stepMoveToReady', defaultMessage: 'Move to Ready' },
+  stepPublish: { id: 'analytics.clientInbox.stepPublish', defaultMessage: 'Publish' },
+  readyTitle: { id: 'analytics.clientInbox.readyTitle', defaultMessage: 'Move {supplier} to Ready?' },
+  readyDetail: {
+    id: 'analytics.clientInbox.readyDetail',
+    defaultMessage:
+      '{amount} · {category}. Ready means every check has passed and it is queued to publish.',
+  },
+  readyConsequence: {
+    id: 'analytics.clientInbox.readyConsequence',
+    defaultMessage: 'This item is flagged: {flag}.',
+  },
+  readyConfirm: { id: 'analytics.clientInbox.readyConfirm', defaultMessage: 'Yes, mark it Ready' },
+
+  rowOpen: {
+    id: 'analytics.clientInbox.rowOpen',
+    defaultMessage: 'Open — the original with every extracted field',
+  },
+  rowCompare: {
+    id: 'analytics.clientInbox.rowCompare',
+    defaultMessage: 'Compare the two copies side by side',
+  },
+  rowOpenInChat: {
+    id: 'analytics.clientInbox.rowOpenInChat',
+    defaultMessage:
+      'Open in the AI workspace — every field with its confidence, click any value to correct it',
+  },
+  stepBlocked: {
+    id: 'analytics.clientInbox.stepBlocked',
+    defaultMessage: '{reason} — open it to sort that out first.',
+  },
+  rowRetryHelps: { id: 'analytics.clientInbox.rowRetryHelps', defaultMessage: 'Retry — {meaning}' },
+  rowRetryUnlikely: {
+    id: 'analytics.clientInbox.rowRetryUnlikely',
+    defaultMessage: 'Retry — unlikely to help while {reason}',
+  },
+
+  mandatoryMissing: { id: 'analytics.clientInbox.mandatoryMissing', defaultMessage: 'Missing' },
+  mandatoryRequired: {
+    id: 'analytics.clientInbox.mandatoryRequired',
+    defaultMessage: '{field} is required before this can be published',
+  },
+  extractionRunning: {
+    id: 'analytics.clientInbox.extractionRunning',
+    defaultMessage: 'Extraction running',
+  },
+  targetXeroBills: { id: 'analytics.clientInbox.targetXeroBills', defaultMessage: 'Xero — Bills' },
+  targetXeroInvoices: { id: 'analytics.clientInbox.targetXeroInvoices', defaultMessage: 'Xero — Invoices' },
+  targetNoLedger: { id: 'analytics.clientInbox.targetNoLedger', defaultMessage: 'No ledger connected' },
+  targetExported: { id: 'analytics.clientInbox.targetExported', defaultMessage: 'Exported' },
+  failedPublish: { id: 'analytics.clientInbox.failedPublish', defaultMessage: 'Publish' },
+  failedExtraction: { id: 'analytics.clientInbox.failedExtraction', defaultMessage: 'Extraction' },
+  noReasonRecorded: { id: 'analytics.clientInbox.noReasonRecorded', defaultMessage: 'No reason recorded' },
+
+  bulkApprove: { id: 'analytics.clientInbox.bulkApprove', defaultMessage: 'Approve suggestions' },
+  approveNoneTitle: {
+    id: 'analytics.clientInbox.approveNoneTitle',
+    defaultMessage: 'None of these can move yet',
+  },
+  approveNoneItem: { id: 'analytics.clientInbox.approveNoneItem', defaultMessage: '{supplier} — {reason}' },
+  approveNoneConfirm: { id: 'analytics.clientInbox.approveNoneConfirm', defaultMessage: 'Close' },
+  approveTitle: {
+    id: 'analytics.clientInbox.approveTitle',
+    defaultMessage: "Accept the AI's coding on {count, plural, one {# item} other {# items}}?",
+  },
+  approveDetail: {
+    id: 'analytics.clientInbox.approveDetail',
+    defaultMessage: '{suppliers} move to Ready with the categories as suggested.',
+  },
+  approveDetailMore: {
+    id: 'analytics.clientInbox.approveDetailMore',
+    defaultMessage: '{suppliers} and {more} more move to Ready with the categories as suggested.',
+  },
+  approveConsequenceBlocked: {
+    id: 'analytics.clientInbox.approveConsequenceBlocked',
+    defaultMessage: '{count} of the selected cannot move yet and will be left alone: {suppliers}.',
+  },
+  approveConsequence: {
+    id: 'analytics.clientInbox.approveConsequence',
+    defaultMessage: 'Anything the extractor got wrong goes through unchallenged.',
+  },
+  approveConfirm: { id: 'analytics.clientInbox.approveConfirm', defaultMessage: 'Yes, accept them' },
+
+  bulkDelete: { id: 'analytics.clientInbox.bulkDelete', defaultMessage: 'Delete' },
+  deleteTitle: {
+    id: 'analytics.clientInbox.deleteTitle',
+    defaultMessage: 'Delete {count, plural, one {# document} other {# documents}}?',
+  },
+  deleteItem: { id: 'analytics.clientInbox.deleteItem', defaultMessage: '{supplier} {amount}' },
+  deleteConsequence: {
+    id: 'analytics.clientInbox.deleteConsequence',
+    defaultMessage:
+      'The originals go with them, and a deleted document cannot be matched to a bank line later.',
+  },
+  deleteConfirm: { id: 'analytics.clientInbox.deleteConfirm', defaultMessage: 'Yes, delete' },
+
+  bulkBackToReview: { id: 'analytics.clientInbox.bulkBackToReview', defaultMessage: 'Back to review' },
+  backToReviewTitle: {
+    id: 'analytics.clientInbox.backToReviewTitle',
+    defaultMessage: 'Send {count, plural, one {# item} other {# items}} back to review?',
+  },
+  backToReviewDetail: {
+    id: 'analytics.clientInbox.backToReviewDetail',
+    defaultMessage: 'They leave the publish queue until someone passes them again.',
+  },
+  backToReviewConfirm: {
+    id: 'analytics.clientInbox.backToReviewConfirm',
+    defaultMessage: 'Yes, send them back',
+  },
+  bulkPublish: { id: 'analytics.clientInbox.bulkPublish', defaultMessage: 'Publish selected' },
+
+  bulkExportCsv: { id: 'analytics.clientInbox.bulkExportCsv', defaultMessage: 'Export CSV' },
+  bulkUnpublish: { id: 'analytics.clientInbox.bulkUnpublish', defaultMessage: 'Unpublish' },
+  unpublishTitle: {
+    id: 'analytics.clientInbox.unpublishTitle',
+    defaultMessage: 'Unpublish {count, plural, one {# item} other {# items}}?',
+  },
+  unpublishDetail: {
+    id: 'analytics.clientInbox.unpublishDetail',
+    defaultMessage: 'They come back to Ready here.',
+  },
+  unpublishConsequence: {
+    id: 'analytics.clientInbox.unpublishConsequence',
+    defaultMessage:
+      'This does not remove them from the accounting software — that has to be undone in the ledger itself.',
+  },
+  unpublishConfirm: { id: 'analytics.clientInbox.unpublishConfirm', defaultMessage: 'Yes, unpublish' },
+
+  bulkRetry: { id: 'analytics.clientInbox.bulkRetry', defaultMessage: 'Retry' },
+  bulkRetryTitle: {
+    id: 'analytics.clientInbox.bulkRetryTitle',
+    defaultMessage: 'Retry {count, plural, one {# failed item} other {# failed items}}?',
+  },
+  bulkRetryDetail: {
+    id: 'analytics.clientInbox.bulkRetryDetail',
+    defaultMessage:
+      'Anything that failed to extract is read again; anything that failed to publish goes back to Ready to be pushed again. Whatever was already read off a document is kept.',
+  },
+  bulkRetryConfirm: { id: 'analytics.clientInbox.bulkRetryConfirm', defaultMessage: 'Yes, retry' },
+  bulkEnterManually: { id: 'analytics.clientInbox.bulkEnterManually', defaultMessage: 'Enter manually' },
+
+  duplicatesEmpty: {
+    id: 'analytics.clientInbox.duplicatesEmpty',
+    defaultMessage:
+      'Nothing flagged. Every document is checked against the others on file the moment it is read — same total, supplier, dates within a few days, matching text, file and image hashes — so an invoice and its photographed twin are caught even when they came from different people.',
+  },
+  duplicatePair: { id: 'analytics.clientInbox.duplicatePair', defaultMessage: '{left} ↔ {right}' },
+  duplicateCrossType: { id: 'analytics.clientInbox.duplicateCrossType', defaultMessage: 'Cross-type' },
+  duplicateDifferentUploaders: {
+    id: 'analytics.clientInbox.duplicateDifferentUploaders',
+    defaultMessage: 'Different uploaders',
+  },
+
+  uploadAction: { id: 'analytics.clientInbox.uploadAction', defaultMessage: 'Upload' },
+
+  emptyProcessing: {
+    id: 'analytics.clientInbox.emptyProcessing',
+    defaultMessage: 'Nothing extracting right now.',
+  },
+  emptyReview: {
+    id: 'analytics.clientInbox.emptyReview',
+    defaultMessage: 'Nothing to review — the inbox is clear.',
+  },
+  emptyReady: { id: 'analytics.clientInbox.emptyReady', defaultMessage: 'Nothing ready to publish.' },
+  emptyPublished: {
+    id: 'analytics.clientInbox.emptyPublished',
+    defaultMessage: 'Nothing published yet for this client.',
+  },
+  emptyRejected: {
+    id: 'analytics.clientInbox.emptyRejected',
+    defaultMessage: 'Nothing has failed. Anything that does lands here with its reason.',
+  },
+
+  footerReview: {
+    id: 'analytics.clientInbox.footerReview',
+    defaultMessage: 'Ranked by uncertainty — least confident first',
+  },
+  footerReady: {
+    id: 'analytics.clientInbox.footerReady',
+    defaultMessage: 'Needs supplier, total and category before publishing',
+  },
+  footerReadyPlus: {
+    id: 'analytics.clientInbox.footerReadyPlus',
+    defaultMessage: 'Needs supplier, total and category, plus {fields} before publishing',
+  },
+  footerPublished: {
+    id: 'analytics.clientInbox.footerPublished',
+    defaultMessage:
+      'Already in the accounting software — unpublishing here does not remove it from the ledger',
+  },
+  footerRejected: {
+    id: 'analytics.clientInbox.footerRejected',
+    defaultMessage: 'Nothing ever disappears silently — every failure keeps its reason',
+  },
+  footerProcessing: {
+    id: 'analytics.clientInbox.footerProcessing',
+    defaultMessage: '{count} extracting · ETA shown per item',
+  },
+});
 
 export function ClientInbox({ client, kind, onPreview }: {
   client: Client;
@@ -66,6 +374,7 @@ export function ClientInbox({ client, kind, onPreview }: {
   } = useAppContext();
 
   const confirm = useConfirm();
+  const intl = useIntl();
 
   // /clients/:id/costs/:status — the sub-tab is the fourth segment.
   const [statusSlug, setStatusSlug] = useSegment(3);
@@ -123,15 +432,15 @@ export function ClientInbox({ client, kind, onPreview }: {
   /** Why this document stopped, in the words of whatever stopped it. */
   const whyFlagged = (d: Document): { text: string; tone: 'amber' | 'red' | 'neutral' } => {
     if (pairFor.has(d.id)) {
-      return { text: `Duplicate — ${Math.round(pairFor.get(d.id)!.similarity * 100)}% match`, tone: 'amber' };
+      return { text: intl.formatMessage(m.flagDuplicate, { percent: Math.round(pairFor.get(d.id)!.similarity * 100) }), tone: 'amber' };
     }
     if (d.statusNote) return { text: d.statusNote, tone: d.status === 'rejected' ? 'red' : 'amber' };
     const weakest = d.fields.length ? d.fields.reduce((a, b) => (a.confidence < b.confidence ? a : b)) : undefined;
     if (weakest && weakest.confidence < 0.6) {
-      return { text: `Low confidence on ${weakest.label.toLowerCase()}`, tone: 'amber' };
+      return { text: intl.formatMessage(m.flagLowConfidence, { field: weakest.label.toLowerCase() }), tone: 'amber' };
     }
     const missing = mandatoryFields.filter((f) => !d.fields.some((x) => x.label === f && x.value !== '—'));
-    if (missing.length) return { text: `Missing ${missing.join(', ')}`, tone: 'amber' };
+    if (missing.length) return { text: intl.formatMessage(m.flagMissing, { fields: missing.join(', ') }), tone: 'amber' };
     return { text: '—', tone: 'neutral' };
   };
 
@@ -170,12 +479,14 @@ export function ClientInbox({ client, kind, onPreview }: {
       {
         id: `${Date.now()}-u`,
         role: 'user',
-        content: `Publish ${single ? single.supplier : `${docs.length} ready items`} for ${client.name}`,
+        content: single
+          ? intl.formatMessage(m.publishPromptOne, { supplier: single.supplier, client: client.name })
+          : intl.formatMessage(m.publishPromptMany, { count: docs.length, client: client.name }),
       },
       {
         id: `${Date.now()}-a`,
         role: 'assistant',
-        content: 'Read the review — counts and gross/VAT totals — before approving the push.',
+        content: intl.formatMessage(m.publishReply),
         intent: 'PUBLISH',
         payload: { clientIds: [client.id], clientNames: [client.name], documentIds: docs.map((d) => d.id) },
       },
@@ -184,11 +495,11 @@ export function ClientInbox({ client, kind, onPreview }: {
 
   const openInChat = (doc: Document) =>
     startConversation([client.id], [
-      { id: `${Date.now()}-u`, role: 'user', content: `Review the ${doc.supplier} document` },
+      { id: `${Date.now()}-u`, role: 'user', content: intl.formatMessage(m.reviewPrompt, { supplier: doc.supplier }) },
       {
         id: `${Date.now()}-a`,
         role: 'assistant',
-        content: 'Every field shows confidence and provenance — click any value to correct it.',
+        content: intl.formatMessage(m.reviewReply),
         intent: 'REVIEW_DOCUMENT',
         payload: { documentId: doc.id, clientIds: [client.id], clientNames: [client.name] },
       },
@@ -199,7 +510,7 @@ export function ClientInbox({ client, kind, onPreview }: {
 
   const docCell: Column<Document> = {
     key: 'doc',
-    label: 'Doc',
+    label: intl.formatMessage(m.columnDoc),
     sortValue: (d) => d.splitFrom ?? d.id,
     render: (d) => {
       const isImage = /receipt|photo|jpg|png|heic/i.test(`${d.source} ${d.splitFrom ?? ''}`) || d.source === 'whatsapp';
@@ -209,7 +520,7 @@ export function ClientInbox({ client, kind, onPreview }: {
             {isImage ? <ImageIcon size={14} /> : <FileText size={14} />}
           </span>
           <span className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider">
-            {isImage ? 'Receipt' : 'Invoice'}
+            {intl.formatMessage(isImage ? m.docReceipt : m.docInvoice)}
           </span>
         </span>
       );
@@ -218,7 +529,7 @@ export function ClientInbox({ client, kind, onPreview }: {
 
   const supplierCell: Column<Document> = {
     key: 'supplier',
-    label: kind === 'cost' ? 'Supplier' : 'Customer',
+    label: intl.formatMessage(kind === 'cost' ? m.columnSupplier : m.columnCustomer),
     sortValue: (d) => d.supplier,
     render: (d) => {
       const field = d.fields.find((f) => f.label === 'Supplier' || f.label === 'Customer');
@@ -227,7 +538,7 @@ export function ClientInbox({ client, kind, onPreview }: {
         <span className="flex items-center gap-2">
           <span className="text-white font-semibold">{d.supplier}</span>
           {/* Confidence is shown where it changes what you do, not everywhere. */}
-          {low && <Pill tone="amber">{Math.round(field!.confidence * 100)}%</Pill>}
+          {low && <Pill tone="amber">{intl.formatMessage(m.percent, { percent: Math.round(field!.confidence * 100) })}</Pill>}
         </span>
       );
     },
@@ -235,11 +546,11 @@ export function ClientInbox({ client, kind, onPreview }: {
 
   const categoryCell: Column<Document> = {
     key: 'category',
-    label: 'Category',
+    label: intl.formatMessage(m.columnCategory),
     sortValue: (d) => d.category,
     render: (d) => {
       const field = d.fields.find((f) => f.label === 'Category');
-      if (d.category === '—') return <Pill tone="amber">Missing</Pill>;
+      if (d.category === '—') return <Pill tone="amber">{intl.formatMessage(m.categoryMissing)}</Pill>;
       const byRule = field?.provenance?.includes('rule');
       return (
         <span className="flex items-center gap-2">
@@ -247,9 +558,9 @@ export function ClientInbox({ client, kind, onPreview }: {
           {byRule ? (
             <span title={field?.provenance} className="text-brand shrink-0"><Link2 size={12} /></span>
           ) : field ? (
-            <span title={`AI · ${Math.round(field.confidence * 100)}% confident`} className="text-zinc-500 shrink-0 flex items-center gap-1">
+            <span title={intl.formatMessage(m.categoryConfidence, { percent: Math.round(field.confidence * 100) })} className="text-zinc-500 shrink-0 flex items-center gap-1">
               <Sparkles size={12} />
-              <span className="text-[11px] font-semibold">{Math.round(field.confidence * 100)}%</span>
+              <span className="text-[11px] font-semibold">{intl.formatMessage(m.percent, { percent: Math.round(field.confidence * 100) })}</span>
             </span>
           ) : null}
         </span>
@@ -259,7 +570,7 @@ export function ClientInbox({ client, kind, onPreview }: {
 
   const totalCell: Column<Document> = {
     key: 'total',
-    label: 'Total',
+    label: intl.formatMessage(m.columnTotal),
     align: 'right',
     sortValue: (d) => d.total,
     render: (d) => (
@@ -274,12 +585,12 @@ export function ClientInbox({ client, kind, onPreview }: {
   // tell a chased upload from a supplier emailing us directly.
   const channelCell: Column<Document> = {
     key: 'source',
-    label: 'Received via',
+    label: intl.formatMessage(m.columnChannel),
     sortValue: (d) => d.source,
     render: (d) => <Pill>{d.source}</Pill>,
   };
 
-  const dateCell: Column<Document> = { key: 'date', label: 'Date', sortValue: (d) => d.date };
+  const dateCell: Column<Document> = { key: 'date', label: intl.formatMessage(m.columnDate), sortValue: (d) => d.date };
 
   /**
    * A duplicate flag has to be visible wherever the document is, not only on
@@ -294,11 +605,14 @@ export function ClientInbox({ client, kind, onPreview }: {
       return (
         <button
           onClick={(e) => { e.stopPropagation(); setComparing(pair); }}
-          title={`${Math.round(pair.similarity * 100)}% match — ${pair.signals.slice(0, 3).join(', ')}`}
+          title={intl.formatMessage(m.duplicateTitle, {
+            percent: Math.round(pair.similarity * 100),
+            signals: pair.signals.slice(0, 3).join(', '),
+          })}
           className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold text-amber-400 bg-amber-400/10 border border-amber-400/25 hover:bg-amber-400/20 transition-colors whitespace-nowrap"
         >
           <Copy size={11} />
-          Duplicate {Math.round(pair.similarity * 100)}%
+          {intl.formatMessage(m.duplicateBadge, { percent: Math.round(pair.similarity * 100) })}
         </button>
       );
     },
@@ -306,7 +620,7 @@ export function ClientInbox({ client, kind, onPreview }: {
 
   const whyCell: Column<Document> = {
     key: 'why',
-    label: 'Why flagged',
+    label: intl.formatMessage(m.columnWhyFlagged),
     sortValue: (d) => whyFlagged(d).text,
     render: (d) => {
       const { text, tone } = whyFlagged(d);
@@ -326,12 +640,19 @@ export function ClientInbox({ client, kind, onPreview }: {
     const failure = failureOf(d);
     if (!failure) return;
     const ok = await confirm({
-      title: failure.stage === 'extraction' ? `Read ${d.supplier} again?` : `Publish ${d.supplier} again?`,
-      detail: `${failure.reason}. ${retryMeaning(failure)}`,
+      title: intl.formatMessage(failure.stage === 'extraction' ? m.retryReadTitle : m.retryPublishTitle, { supplier: d.supplier }),
+      detail: intl.formatMessage(m.retryDetail, {
+        reason: reasonText(failure, intl),
+        meaning: intl.formatMessage(retryMeaning(failure)),
+      }),
       ...(failure.retryHelps
         ? {}
-        : { consequence: `This is unlikely to clear it on its own — ${failure.fixLabel.toLowerCase()} is what changes the outcome.` }),
-      confirmLabel: 'Yes, retry',
+        : {
+            consequence: intl.formatMessage(m.retryConsequence, {
+              fix: intl.formatMessage(failure.fixLabel).toLowerCase(),
+            }),
+          }),
+      confirmLabel: intl.formatMessage(m.retryConfirm),
     });
     if (ok) retryDocument(d.id);
   };
@@ -345,10 +666,12 @@ export function ClientInbox({ client, kind, onPreview }: {
     const file = files?.[0];
     if (!doc || !file) return;
     const ok = await confirm({
-      title: `Replace ${doc.supplier === 'Unknown' ? 'this document' : doc.supplier} with ${file.name}?`,
-      detail: 'The new file is read from scratch under this client.',
-      consequence: 'The unreadable original is removed, so the same spend is not on file twice.',
-      confirmLabel: 'Yes, replace it',
+      title: doc.supplier === 'Unknown'
+        ? intl.formatMessage(m.replaceTitleUnknown, { file: file.name })
+        : intl.formatMessage(m.replaceTitle, { supplier: doc.supplier, file: file.name }),
+      detail: intl.formatMessage(m.replaceDetail),
+      consequence: intl.formatMessage(m.replaceConsequence),
+      confirmLabel: intl.formatMessage(m.replaceConfirm),
     });
     if (!ok) return;
     ingest([{ name: file.name, size: file.size, raw: file }], client.id, 'web');
@@ -366,28 +689,28 @@ export function ClientInbox({ client, kind, onPreview }: {
       const verdict = readinessOf(d, mandatoryFields);
       if (!verdict.ready) {
         return {
-          label: 'Fix',
+          label: intl.formatMessage(m.stepFix),
           icon: PencilLine,
-          blocked: blockedReason(verdict),
+          blocked: blockedReason(verdict, intl),
           run: () => onPreview(d),
         };
       }
       return {
-        label: 'Move to Ready',
+        label: intl.formatMessage(m.stepMoveToReady),
         icon: CheckCircle,
         run: async () => {
           const flag = whyFlagged(d).text;
           const ok = await confirm({
-            title: `Move ${d.supplier} to Ready?`,
-            detail: `${currency(d.total)} · ${d.category}. Ready means every check has passed and it is queued to publish.`,
-            ...(flag === '—' ? {} : { consequence: `This item is flagged: ${flag}.` }),
-            confirmLabel: 'Yes, mark it Ready',
+            title: intl.formatMessage(m.readyTitle, { supplier: d.supplier }),
+            detail: intl.formatMessage(m.readyDetail, { amount: currency(d.total), category: d.category }),
+            ...(flag === '—' ? {} : { consequence: intl.formatMessage(m.readyConsequence, { flag }) }),
+            confirmLabel: intl.formatMessage(m.readyConfirm),
           });
           if (ok) updateDocumentStatus(d.id, 'ready');
         },
       };
     }
-    if (d.status === 'ready') return { label: 'Publish', icon: Send, run: () => publish([d]) };
+    if (d.status === 'ready') return { label: intl.formatMessage(m.stepPublish), icon: Send, run: () => publish([d]) };
     if (d.status === 'rejected') {
       // "Fix & retry" was one button doing one thing — retrying — whatever the
       // cause. A locked PDF read again is still a locked PDF, so the cause
@@ -395,12 +718,12 @@ export function ClientInbox({ client, kind, onPreview }: {
       const failure = failureOf(d);
       if (!failure) return null;
       if (failure.fix === 'replace-file') {
-        return { label: failure.fixLabel, icon: UploadCloud, blocked: failure.reason, run: () => { setReplacing(d); replaceRef.current?.click(); } };
+        return { label: intl.formatMessage(failure.fixLabel), icon: UploadCloud, blocked: reasonText(failure, intl), run: () => { setReplacing(d); replaceRef.current?.click(); } };
       }
       if (failure.fix === 'open-document') {
-        return { label: failure.fixLabel, icon: PencilLine, blocked: failure.reason, run: () => onPreview(d) };
+        return { label: intl.formatMessage(failure.fixLabel), icon: PencilLine, blocked: reasonText(failure, intl), run: () => onPreview(d) };
       }
-      return { label: failure.fixLabel, icon: RefreshCw, run: () => askRetry(d) };
+      return { label: intl.formatMessage(failure.fixLabel), icon: RefreshCw, run: () => askRetry(d) };
     }
     return null;
   };
@@ -414,11 +737,11 @@ export function ClientInbox({ client, kind, onPreview }: {
       const step = nextStep(d);
       return (
         <span className="flex items-center justify-end gap-1.5">
-          <RowButton icon={Eye} title="Open — the original with every extracted field" onClick={() => onPreview(d)} />
+          <RowButton icon={Eye} title={intl.formatMessage(m.rowOpen)} onClick={() => onPreview(d)} />
           {pairFor.has(d.id) && (
             <RowButton
               icon={Copy}
-              title="Compare the two copies side by side"
+              title={intl.formatMessage(m.rowCompare)}
               tone="amber"
               onClick={() => setComparing(pairFor.get(d.id)!)}
             />
@@ -429,7 +752,7 @@ export function ClientInbox({ client, kind, onPreview }: {
             // makes the jump feel like a misfire.
             <RowButton
               icon={MessageSquare}
-              title="Open in the AI workspace — every field with its confidence, click any value to correct it"
+              title={intl.formatMessage(m.rowOpenInChat)}
               onClick={() => openInChat(d)}
             />
           )}
@@ -438,7 +761,7 @@ export function ClientInbox({ client, kind, onPreview }: {
             // dead grey button — there is always something to do about it.
             <button
               onClick={(e) => { e.stopPropagation(); step.run(); }}
-              title={step.blocked ? `${step.blocked} — open it to sort that out first.` : undefined}
+              title={step.blocked ? intl.formatMessage(m.stepBlocked, { reason: step.blocked }) : undefined}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold border transition-colors whitespace-nowrap ${
                 step.blocked
                   ? 'text-amber-400 bg-amber-400/10 border-amber-400/25 hover:bg-amber-400/20'
@@ -456,7 +779,9 @@ export function ClientInbox({ client, kind, onPreview }: {
             return (
               <RowButton
                 icon={RefreshCw}
-                title={`Retry — ${failure.retryHelps ? retryMeaning(failure) : `unlikely to help while ${failure.reason.toLowerCase()}`}`}
+                title={failure.retryHelps
+                  ? intl.formatMessage(m.rowRetryHelps, { meaning: intl.formatMessage(retryMeaning(failure)) })
+                  : intl.formatMessage(m.rowRetryUnlikely, { reason: reasonText(failure, intl).toLowerCase() })}
                 onClick={() => askRetry(d)}
               />
             );
@@ -481,7 +806,7 @@ export function ClientInbox({ client, kind, onPreview }: {
       return value && value !== '—' ? (
         <span className="text-zinc-300">{value}</span>
       ) : (
-        <span className="text-amber-400" title={`${label} is required before this can be published`}>Missing</span>
+        <span className="text-amber-400" title={intl.formatMessage(m.mandatoryRequired, { field: label })}>{intl.formatMessage(m.mandatoryMissing)}</span>
       );
     },
   }));
@@ -489,12 +814,12 @@ export function ClientInbox({ client, kind, onPreview }: {
   const columns: Column<Document>[] =
     status === 'processing'
       ? [docCell, supplierCell, dateCell, channelCell,
-         { key: 'eta', label: 'Status', render: (d) => <Pill>{d.statusNote ?? 'Extraction running'}</Pill> },
+         { key: 'eta', label: intl.formatMessage(m.columnStatus), render: (d) => <Pill>{d.statusNote ?? intl.formatMessage(m.extractionRunning)}</Pill> },
          flagCell, actionCell]
       : status === 'ready'
       ? [docCell, supplierCell, totalCell, categoryCell,
          {
-           key: 'vat', label: 'VAT', align: 'right',
+           key: 'vat', label: intl.formatMessage(m.columnVat), align: 'right',
            render: (d) => {
              const tax = d.fields.find((f) => f.label.toLowerCase().includes('tax'));
              return <span className="tabular-nums text-zinc-400">{tax?.value ?? '—'}</span>;
@@ -504,10 +829,10 @@ export function ClientInbox({ client, kind, onPreview }: {
          ...mandatoryCols,
          flagCell,
          {
-           key: 'target', label: 'Publish to',
+           key: 'target', label: intl.formatMessage(m.columnPublishTo),
            render: () => (
              <span className="text-zinc-400">
-               {client.xeroConnected ? (kind === 'cost' ? 'Xero — Bills' : 'Xero — Invoices') : 'No ledger connected'}
+               {intl.formatMessage(client.xeroConnected ? (kind === 'cost' ? m.targetXeroBills : m.targetXeroInvoices) : m.targetNoLedger)}
              </span>
            ),
          },
@@ -515,7 +840,7 @@ export function ClientInbox({ client, kind, onPreview }: {
       : status === 'published'
       ? [docCell, supplierCell, dateCell, totalCell, categoryCell,
          {
-           key: 'vat', label: 'VAT', align: 'right',
+           key: 'vat', label: intl.formatMessage(m.columnVat), align: 'right',
            render: (d) => {
              const tax = d.fields.find((f) => f.label.toLowerCase().includes('tax'));
              return <span className="tabular-nums text-zinc-400">{tax?.value ?? '—'}</span>;
@@ -524,25 +849,25 @@ export function ClientInbox({ client, kind, onPreview }: {
          channelCell,
          flagCell,
          {
-           key: 'where', label: 'In the ledger',
+           key: 'where', label: intl.formatMessage(m.columnInTheLedger),
            render: () => (
-             <Pill tone="blue">{client.xeroConnected ? (kind === 'cost' ? 'Xero — Bills' : 'Xero — Invoices') : 'Exported'}</Pill>
+             <Pill tone="blue">{intl.formatMessage(client.xeroConnected ? (kind === 'cost' ? m.targetXeroBills : m.targetXeroInvoices) : m.targetExported)}</Pill>
            ),
          },
          actionCell]
       : status === 'rejected'
       ? [docCell, supplierCell,
          {
-           key: 'failed', label: 'What failed',
-           render: (d) => <Pill tone="red">{failureOf(d)?.stage === 'publish' ? 'Publish' : 'Extraction'}</Pill>,
+           key: 'failed', label: intl.formatMessage(m.columnWhatFailed),
+           render: (d) => <Pill tone="red">{intl.formatMessage(failureOf(d)?.stage === 'publish' ? m.failedPublish : m.failedExtraction)}</Pill>,
          },
          {
-           key: 'reason', label: 'Reason',
+           key: 'reason', label: intl.formatMessage(m.columnReason),
            render: (d) => {
              const failure = failureOf(d);
              return (
-               <span className="text-zinc-400" title={failure?.detail}>
-                 {failure?.reason ?? d.statusNote ?? 'No reason recorded'}
+               <span className="text-zinc-400" {...(failure ? { title: intl.formatMessage(failure.detail) } : {})}>
+                 {failure ? reasonText(failure, intl) : d.statusNote ?? intl.formatMessage(m.noReasonRecorded)}
                </span>
              );
            },
@@ -557,41 +882,47 @@ export function ClientInbox({ client, kind, onPreview }: {
     status === 'review'
       ? [
           {
-            label: 'Approve suggestions', icon: CheckCircle,
+            label: intl.formatMessage(m.bulkApprove), icon: CheckCircle,
             onClick: async (sel: Document[]) => {
-              const { ready, blocked } = partitionByReadiness(sel, mandatoryFields);
+              const { ready, blocked } = partitionByReadiness(sel, mandatoryFields, intl);
               if (ready.length === 0) {
                 await confirm({
                   tone: 'red',
-                  title: 'None of these can move yet',
+                  title: intl.formatMessage(m.approveNoneTitle),
                   detail: blocked
-                    .map(({ doc, reason }) => `${doc.supplier} — ${reason.toLowerCase()}`)
+                    .map(({ doc, reason }) => intl.formatMessage(m.approveNoneItem, { supplier: doc.supplier, reason: reason.toLowerCase() }))
                     .slice(0, 4)
                     .join('. '),
-                  confirmLabel: 'Close',
+                  confirmLabel: intl.formatMessage(m.approveNoneConfirm),
                 });
                 return;
               }
+              const suppliers = ready.map((d) => d.supplier).slice(0, 3).join(', ');
               const ok = await confirm({
-                title: `Accept the AI's coding on ${ready.length} item${ready.length === 1 ? '' : 's'}?`,
-                detail: `${ready.map((d) => d.supplier).slice(0, 3).join(', ')}${ready.length > 3 ? ` and ${ready.length - 3} more` : ''} move to Ready with the categories as suggested.`,
+                title: intl.formatMessage(m.approveTitle, { count: ready.length }),
+                detail: ready.length > 3
+                  ? intl.formatMessage(m.approveDetailMore, { suppliers, more: ready.length - 3 })
+                  : intl.formatMessage(m.approveDetail, { suppliers }),
                 consequence: blocked.length
-                  ? `${blocked.length} of the selected cannot move yet and will be left alone: ${blocked.map((b) => b.doc.supplier).join(', ')}.`
-                  : 'Anything the extractor got wrong goes through unchallenged.',
-                confirmLabel: 'Yes, accept them',
+                  ? intl.formatMessage(m.approveConsequenceBlocked, {
+                      count: blocked.length,
+                      suppliers: blocked.map((b) => b.doc.supplier).join(', '),
+                    })
+                  : intl.formatMessage(m.approveConsequence),
+                confirmLabel: intl.formatMessage(m.approveConfirm),
               });
               if (ok) ready.forEach((d) => updateDocumentStatus(d.id, 'ready'));
             },
           },
           {
-            label: 'Delete', icon: Trash2,
+            label: intl.formatMessage(m.bulkDelete), icon: Trash2,
             onClick: async (sel: Document[]) => {
               const ok = await confirm({
                 tone: 'red',
-                title: `Delete ${sel.length} document${sel.length === 1 ? '' : 's'}?`,
-                detail: sel.map((d) => `${d.supplier} ${currency(d.total)}`).slice(0, 4).join(' · '),
-                consequence: 'The originals go with them, and a deleted document cannot be matched to a bank line later.',
-                confirmLabel: 'Yes, delete',
+                title: intl.formatMessage(m.deleteTitle, { count: sel.length }),
+                detail: sel.map((d) => intl.formatMessage(m.deleteItem, { supplier: d.supplier, amount: currency(d.total) })).slice(0, 4).join(' · '),
+                consequence: intl.formatMessage(m.deleteConsequence),
+                confirmLabel: intl.formatMessage(m.deleteConfirm),
               });
               if (ok) deleteDocuments(sel.map((d) => d.id));
             },
@@ -600,32 +931,32 @@ export function ClientInbox({ client, kind, onPreview }: {
       : status === 'ready'
       ? [
           {
-            label: 'Back to review', icon: RefreshCw,
+            label: intl.formatMessage(m.bulkBackToReview), icon: RefreshCw,
             onClick: async (sel: Document[]) => {
               const ok = await confirm({
-                title: `Send ${sel.length} item${sel.length === 1 ? '' : 's'} back to review?`,
-                detail: 'They leave the publish queue until someone passes them again.',
-                confirmLabel: 'Yes, send them back',
+                title: intl.formatMessage(m.backToReviewTitle, { count: sel.length }),
+                detail: intl.formatMessage(m.backToReviewDetail),
+                confirmLabel: intl.formatMessage(m.backToReviewConfirm),
               });
               if (ok) sel.forEach((d) => updateDocumentStatus(d.id, 'review'));
             },
           },
-          { label: 'Publish selected', icon: Send, primary: true, onClick: publish },
+          { label: intl.formatMessage(m.bulkPublish), icon: Send, primary: true, onClick: publish },
         ]
       : status === 'published'
       ? [
           // Published is the end of the line, so the only actions are getting
           // the data back out — never a silent edit of what the ledger holds.
-          { label: 'Export CSV', icon: Download, minSelected: 2, disabledHint: EXPORT_HINT, onClick: (sel: Document[]) => exportDocuments(sel, client.name) },
+          { label: intl.formatMessage(m.bulkExportCsv), icon: Download, minSelected: 2, disabledHint: intl.formatMessage(EXPORT_HINT), onClick: (sel: Document[]) => exportDocuments(sel, client.name) },
           {
-            label: 'Unpublish', icon: RefreshCw,
+            label: intl.formatMessage(m.bulkUnpublish), icon: RefreshCw,
             onClick: async (sel: Document[]) => {
               const ok = await confirm({
                 tone: 'red',
-                title: `Unpublish ${sel.length} item${sel.length === 1 ? '' : 's'}?`,
-                detail: 'They come back to Ready here.',
-                consequence: 'This does not remove them from the accounting software — that has to be undone in the ledger itself.',
-                confirmLabel: 'Yes, unpublish',
+                title: intl.formatMessage(m.unpublishTitle, { count: sel.length }),
+                detail: intl.formatMessage(m.unpublishDetail),
+                consequence: intl.formatMessage(m.unpublishConsequence),
+                confirmLabel: intl.formatMessage(m.unpublishConfirm),
               });
               if (ok) sel.forEach((d) => updateDocumentStatus(d.id, 'ready'));
             },
@@ -634,17 +965,17 @@ export function ClientInbox({ client, kind, onPreview }: {
       : status === 'rejected'
       ? [
           {
-            label: 'Retry', icon: RefreshCw, primary: true,
+            label: intl.formatMessage(m.bulkRetry), icon: RefreshCw, primary: true,
             onClick: async (sel: Document[]) => {
               const ok = await confirm({
-                title: `Retry ${sel.length} failed item${sel.length === 1 ? '' : 's'}?`,
-                detail: 'Anything that failed to extract is read again; anything that failed to publish goes back to Ready to be pushed again. Whatever was already read off a document is kept.',
-                confirmLabel: 'Yes, retry',
+                title: intl.formatMessage(m.bulkRetryTitle, { count: sel.length }),
+                detail: intl.formatMessage(m.bulkRetryDetail),
+                confirmLabel: intl.formatMessage(m.bulkRetryConfirm),
               });
               if (ok) sel.forEach((d) => retryDocument(d.id));
             },
           },
-          { label: 'Enter manually', icon: MessageSquare, onClick: (sel: Document[]) => sel[0] && openInChat(sel[0]) },
+          { label: intl.formatMessage(m.bulkEnterManually), icon: MessageSquare, onClick: (sel: Document[]) => sel[0] && openInChat(sel[0]) },
         ]
       : [];
 
@@ -657,7 +988,7 @@ export function ClientInbox({ client, kind, onPreview }: {
       <SubTabs
         tabs={STATUSES.map((st) => ({
           key: st,
-          label: STATUS_LABEL[st],
+          label: intl.formatMessage(STATUS_LABEL[st]),
           count: st === 'duplicates' ? clientPairs.length : counts[st],
           alert: (st === 'rejected' && counts.rejected > 0) || (st === 'duplicates' && clientPairs.length > 0),
         }))}
@@ -670,9 +1001,7 @@ export function ClientInbox({ client, kind, onPreview }: {
           {clientPairs.length === 0 ? (
             <div className="border border-white/5 rounded-[32px] bg-card p-10 text-center shadow-2xl">
               <p className="text-[13px] text-zinc-500 leading-relaxed max-w-md mx-auto">
-                Nothing flagged. Every document is checked against the others on file the moment it is read —
-                same total, supplier, dates within a few days, matching text, file and image hashes — so an
-                invoice and its photographed twin are caught even when they came from different people.
+                {intl.formatMessage(m.duplicatesEmpty)}
               </p>
             </div>
           ) : (
@@ -687,16 +1016,16 @@ export function ClientInbox({ client, kind, onPreview }: {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-[14px] font-bold text-white truncate">
-                    {pair.left.label} ↔ {pair.right.label}
+                    {intl.formatMessage(m.duplicatePair, { left: pair.left.label, right: pair.right.label })}
                   </span>
                   <span className="block text-[12px] text-zinc-500 mt-0.5 truncate">
                     {pair.signals.slice(0, 4).join(' · ')}
                   </span>
                 </span>
                 <span className="shrink-0 flex items-center gap-2">
-                  {pair.crossType && <Pill tone="blue">Cross-type</Pill>}
-                  {pair.left.uploader !== pair.right.uploader && <Pill>Different uploaders</Pill>}
-                  <Pill tone="amber">{Math.round(pair.similarity * 100)}%</Pill>
+                  {pair.crossType && <Pill tone="blue">{intl.formatMessage(m.duplicateCrossType)}</Pill>}
+                  {pair.left.uploader !== pair.right.uploader && <Pill>{intl.formatMessage(m.duplicateDifferentUploaders)}</Pill>}
+                  <Pill tone="amber">{intl.formatMessage(m.percent, { percent: Math.round(pair.similarity * 100) })}</Pill>
                 </span>
               </button>
             ))
@@ -719,7 +1048,7 @@ export function ClientInbox({ client, kind, onPreview }: {
               className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(20,227,196,0.2)]"
             >
               <Upload size={16} strokeWidth={2.5} />
-              Upload
+              {intl.formatMessage(m.uploadAction)}
             </button>
             <input
               ref={fileRef}
@@ -736,38 +1065,40 @@ export function ClientInbox({ client, kind, onPreview }: {
               onChange={(e) => { handleReplacement(e.target.files); e.target.value = ''; }}
             />
             <div className="flex items-center gap-1 bg-ground border border-white/5 rounded-full p-1 shadow-inner">
-              {SPLIT_MODES.map((m) => (
+              {SPLIT_MODES.map((mode) => (
                 <button
-                  key={m.key}
-                  onClick={() => setSplitMode(m.key)}
-                  title={m.hint}
+                  key={mode.key}
+                  onClick={() => setSplitMode(mode.key)}
+                  title={intl.formatMessage(mode.hint)}
                   className={`px-3 py-1.5 rounded-full text-[12px] font-bold transition-colors ${
-                    splitMode === m.key ? 'bg-raised text-white' : 'text-zinc-500 hover:text-white'
+                    splitMode === mode.key ? 'bg-raised text-white' : 'text-zinc-500 hover:text-white'
                   }`}
                 >
-                  {m.label}
+                  {intl.formatMessage(mode.label)}
                 </button>
               ))}
             </div>
           </>
         }
-        emptyMessage={
-          status === 'processing' ? 'Nothing extracting right now.'
-            : status === 'review' ? 'Nothing to review — the inbox is clear.'
-            : status === 'ready' ? 'Nothing ready to publish.'
-            : status === 'published' ? 'Nothing published yet for this client.'
-            : 'Nothing has failed. Anything that does lands here with its reason.'
-        }
+        emptyMessage={intl.formatMessage(
+          status === 'processing' ? m.emptyProcessing
+            : status === 'review' ? m.emptyReview
+            : status === 'ready' ? m.emptyReady
+            : status === 'published' ? m.emptyPublished
+            : m.emptyRejected,
+        )}
         footer={
           status === 'review'
-            ? 'Ranked by uncertainty — least confident first'
+            ? intl.formatMessage(m.footerReview)
             : status === 'ready'
-            ? `Needs supplier, total and category${mandatoryFields.length ? `, plus ${mandatoryFields.join(', ')}` : ''} before publishing`
+            ? mandatoryFields.length
+              ? intl.formatMessage(m.footerReadyPlus, { fields: mandatoryFields.join(', ') })
+              : intl.formatMessage(m.footerReady)
             : status === 'published'
-            ? 'Already in the accounting software — unpublishing here does not remove it from the ledger'
+            ? intl.formatMessage(m.footerPublished)
             : status === 'rejected'
-            ? 'Nothing ever disappears silently — every failure keeps its reason'
-            : `${s.processing} extracting · ETA shown per item`
+            ? intl.formatMessage(m.footerRejected)
+            : intl.formatMessage(m.footerProcessing, { count: s.processing })
         }
       />
       )}
