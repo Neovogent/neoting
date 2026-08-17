@@ -360,7 +360,10 @@ resource "aws_iam_role_policy" "ecs_execution_app_secrets" {
         # hand-written ARN is unusable and a wildcard broad enough to cover
         # the suffix is also broad enough to cover every future secret in the
         # path, including ones this role should never read.
-        Resource = [for s in aws_secretsmanager_secret.app : s.arn]
+        Resource = concat(
+          [for s in aws_secretsmanager_secret.app : s.arn],
+          [aws_secretsmanager_secret.upload_url.arn],
+        )
       },
       {
         Sid      = "DecryptApplicationSecrets"
@@ -377,6 +380,55 @@ resource "aws_iam_role_policy" "ecs_execution_app_secrets" {
       }
     ]
   })
+}
+
+# --------------------------------------------------------------------------
+# The upload-intent signing key — the value env.ts refuses to boot without
+# under NODE_ENV=production (#76, #92).
+#
+# NOT a vendor group above, and NOT a placeholder, for one load-bearing
+# reason each:
+#   * No vendor issues it. It is an app-generated HMAC key with no rotation
+#     ceremony at any third party, so the "one secret per vendor" unit does
+#     not apply.
+#   * A placeholder here would PASS the boot gate — Zod only checks non-empty
+#     — and every upload intent would then be signed with a guessable string.
+#     A forgeable signature is strictly worse than a refused boot, so the
+#     value must be real from the first apply.
+#
+# random_password (the data.tf Redis pattern) rather than out-of-band
+# put-secret-value: yes, the value lands in Terraform state, but state lives
+# in the guarded bucket, and the blast radius of rotating this key is 15
+# minutes of in-flight upload links (UPLOAD_URL_TTL_SECONDS) — nothing like
+# the session_secret's log-everyone-out, which is why THAT one stays
+# placeholder-and-hand-set. Rotate with `terraform apply -replace`.
+# --------------------------------------------------------------------------
+resource "random_password" "upload_url" {
+  length  = 64
+  special = false # HMAC key material; alphanumeric keeps it inert in URLs and logs
+}
+
+resource "aws_secretsmanager_secret" "upload_url" {
+  name        = "/neoting/${local.env}/upload-url"
+  description = "HMAC signing key for stateless web-upload intents (#76) - app-generated, Terraform-owned"
+  kms_key_id  = aws_kms_key.secrets.arn
+
+  recovery_window_in_days = 7 # same reasoning as the vendor groups above
+
+  tags = {
+    DataClass = "credential"
+    Component = "secrets"
+    Rotation  = "terraform-replace" # `apply -replace=random_password.upload_url`
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "upload_url" {
+  secret_id     = aws_secretsmanager_secret.upload_url.id
+  secret_string = jsonencode({ secret = random_password.upload_url.result })
+
+  # NO ignore_changes, unlike the vendor groups: Terraform legitimately owns
+  # this value, so drift here is corruption to fix, not a live credential to
+  # protect.
 }
 
 # --------------------------------------------------------------------------
