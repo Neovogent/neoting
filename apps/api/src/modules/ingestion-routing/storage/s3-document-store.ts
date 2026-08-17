@@ -1,10 +1,18 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { createHash } from 'node:crypto';
+
+import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 import type { Env } from '../../../config/env.js';
 import {
+  contentDisposition,
   type DocumentStore,
   type DocumentStorePutInput,
   documentKey,
+  type PresignedGet,
+  type PresignedPut,
+  type PresignGetInput,
+  type PresignPutInput,
   type StoredDocument,
 } from './document-store.js';
 
@@ -59,4 +67,69 @@ export class S3DocumentStore implements DocumentStore {
     if (response.Body === undefined) throw new Error(`no object body at key ${key}`);
     return Buffer.from(await response.Body.transformToByteArray());
   }
+
+  async sha256(key: string): Promise<string> {
+    const response = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    if (response.Body === undefined) throw new Error(`no object body at key ${key}`);
+    // Chunk by chunk into the hash — peak memory is one chunk, never the object.
+    // In the Node runtime `Body` is a Readable, which is async-iterable; the SDK
+    // types it for three runtimes at once, hence the assertion.
+    const hash = createHash('sha256');
+    for await (const chunk of response.Body as AsyncIterable<Uint8Array>) hash.update(chunk);
+    return hash.digest('hex');
+  }
+
+  async presignPut(input: PresignPutInput): Promise<PresignedPut> {
+    // ContentType and ContentLength are set on the command, so the presigner
+    // folds them into the signature: the client must PUT with exactly this type
+    // and this many bytes, or S3 rejects it. That is the "presigned policy
+    // enforces the cap too" half — the API cap check is the other half.
+    const command = new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: input.key,
+      ContentType: input.contentType,
+      ContentLength: input.byteSize,
+    });
+    const url = await getSignedUrl(this.client, command, {
+      expiresIn: input.expiresInSeconds,
+      signableHeaders: new Set(['content-type', 'content-length']),
+    });
+    return { key: input.key, url, headers: { 'Content-Type': input.contentType } };
+  }
+
+  async presignGet(input: PresignGetInput): Promise<PresignedGet> {
+    // ResponseContentType and ResponseContentDisposition are signed overrides:
+    // S3 applies them to the response, and because they are in the signature a
+    // holder of the URL cannot change them. Pinning the type is what stops a
+    // browser sniffing the bytes and deciding an uploaded file is something
+    // executable; the stored MIME is magic-byte-authoritative by this point.
+    const command = new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: input.key,
+      ResponseContentType: input.contentType,
+      ResponseContentDisposition: contentDisposition(input.filename),
+    });
+    const url = await getSignedUrl(this.client, command, { expiresIn: input.expiresInSeconds });
+    // Computed here rather than read back off the URL: `X-Amz-Expires` is a
+    // duration, and the caller needs the instant.
+    return { url, expiresAt: new Date(Date.now() + input.expiresInSeconds * 1000) };
+  }
+
+  async head(key: string): Promise<{ readonly byteLength: number } | null> {
+    try {
+      const response = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
+      return { byteLength: response.ContentLength ?? 0 };
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  }
+}
+
+/** S3 signals a missing object as 404 / NotFound / NoSuchKey depending on the operation. */
+function isNotFound(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const name = (error as { name?: unknown }).name;
+  const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+  return name === 'NotFound' || name === 'NoSuchKey' || status === 404;
 }

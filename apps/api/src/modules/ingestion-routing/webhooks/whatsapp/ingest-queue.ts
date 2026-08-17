@@ -7,7 +7,7 @@ import type { RoutingDecision } from './routing.js';
  * in apps/api/CLAUDE.md.
  */
 export interface IngestJob {
-  readonly source: 'whatsapp' | 'email';
+  readonly source: 'whatsapp' | 'email' | 'web_upload';
   readonly idempotencyKey: string;
   readonly from: string;
   readonly receivedAtSeconds: number;
@@ -62,6 +62,12 @@ export interface IngestJob {
    * field it reads.
    */
   readonly phoneNumberId?: string;
+  /**
+   * The already-created `Document` (#76 web upload): the API persists the row
+   * synchronously on completion, then enqueues sanitisation referencing it — so
+   * the job does not re-persist, it processes an existing document.
+   */
+  readonly documentId?: string;
 }
 
 /**

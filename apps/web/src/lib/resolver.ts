@@ -80,8 +80,9 @@ const m = defineMessages({
 });
 
 /**
- * Local intent classifier. The server (Gemini) is the primary path; this runs
- * whenever the API is unreachable or unconfigured so the workspace stays usable.
+ * The intent classifier, and the only one. First pattern to match wins; the
+ * `GENERAL` fallback below catches everything else, so a message always gets an
+ * intent and a reply without a model call.
  */
 const PATTERNS: { intent: Intent; test: RegExp; response: MessageDescriptor }[] = [
   {

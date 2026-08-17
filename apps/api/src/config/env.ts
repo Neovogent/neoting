@@ -79,6 +79,16 @@ const EnvSchema = z.object({
   // like the others. ⚠ `fixture` is REFUSED under `NODE_ENV=production` below.
   AUTH_MODE: z.enum(['fixture', 'session']).default('fixture'),
 
+  // Web-upload intent signing (#76). The `uploadId` is a STATELESS HMAC-signed
+  // token (no DocumentUpload table — prisma/ is LAW), and this secret signs it.
+  // Empty default fails CLOSED, exactly like the Meta secrets: signing or
+  // verifying with an empty secret is refused, so an unset secret cannot silently
+  // mint forgeable upload intents.
+  UPLOAD_URL_SECRET: z.string().default(''),
+  // How long a presigned upload intent stays valid. Past it, completion is
+  // `NT-ING-005`. 15 minutes covers a 100 MB batch on a poor connection.
+  UPLOAD_URL_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+
   // The ingest queue (#12). `fixture` = in-memory (default — offline tests and
   // any dev without Redis); `bullmq` = real BullMQ on Redis. Selected by config,
   // not by import, so the webhook controller is identical either way.
@@ -148,6 +158,25 @@ const EnvSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['OBJECT_STORE'],
       message: 'MEDIA_FETCH=graph with OBJECT_STORE=fixture persists rows pointing at in-memory bytes — set OBJECT_STORE=s3 (MinIO locally) before fetching real media',
+    });
+  }
+
+  // Same gate, different failure. An empty UPLOAD_URL_SECRET does fail closed —
+  // `requireSecret` refuses to sign or verify with it, so nothing forgeable is
+  // ever minted. But it fails closed at REQUEST time, which means the process
+  // boots, passes its ALB health check, reports steady state, and then 500s
+  // every upload. That reads as a broken lane rather than a missing variable,
+  // and the deploy that caused it is already green.
+  //
+  // This is where it differs from the Meta secrets, which use the same empty
+  // default: an unset META_APP_SECRET rejects a webhook Meta may never send to
+  // that environment anyway. UPLOAD_URL_SECRET gates the whole web-upload lane,
+  // so a boot failure is the cheaper and louder outcome (found by review of #76).
+  if (env.NODE_ENV === 'production' && env.UPLOAD_URL_SECRET === '') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['UPLOAD_URL_SECRET'],
+      message: 'UPLOAD_URL_SECRET must be set in production — an empty secret cannot sign or verify upload intents, so every upload would 500 (#76)',
     });
   }
 });

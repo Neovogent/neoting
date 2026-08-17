@@ -7,7 +7,7 @@ import { z } from 'zod';
  * producer is us today" is not a reason to trust it tomorrow.
  */
 export const IngestJobPayloadSchema = z.object({
-  source: z.enum(['whatsapp', 'email']),
+  source: z.enum(['whatsapp', 'email', 'web_upload']),
   idempotencyKey: z.string().min(1),
   from: z.string(),
   receivedAtSeconds: z.number(),
@@ -34,6 +34,8 @@ export const IngestJobPayloadSchema = z.object({
   // behind `practiceId`.
   mediaId: z.string().min(1).optional(),
   phoneNumberId: z.string().min(1).optional(),
+  // The already-persisted document a web-upload sanitisation job refers to (#76).
+  documentId: z.string().optional(),
 });
 
 export type IngestJobPayload = z.infer<typeof IngestJobPayloadSchema>;

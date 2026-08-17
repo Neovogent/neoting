@@ -1,6 +1,6 @@
 import { HttpException, type HttpStatus } from '@nestjs/common';
 
-import type { ErrorCode, Problem } from '@neoting/contracts/model';
+import type { ErrorCode, Problem, ProblemErrorsItem } from '@neoting/contracts/model';
 
 /**
  * Build the RFC 7807 `problem+json` body — the only error shape this API
@@ -14,6 +14,7 @@ export function buildProblem(args: {
   title: string;
   traceId: string;
   detail?: string;
+  errors?: readonly ProblemErrorsItem[];
 }): Problem {
   const base: Problem = {
     type: `https://neoting.com/problems/${args.code}`,
@@ -22,8 +23,15 @@ export function buildProblem(args: {
     code: args.code,
     traceId: args.traceId,
   };
-  // exactOptionalPropertyTypes is on: only add `detail` when present.
-  return args.detail === undefined ? base : { ...base, detail: args.detail };
+  // exactOptionalPropertyTypes is on: only add the optional members when present.
+  return {
+    ...base,
+    ...(args.detail === undefined ? {} : { detail: args.detail }),
+    // `errors` is how the contract carries field-level validation detail. A bare
+    // "Validation failed" tells a client nothing about WHICH field it got wrong,
+    // and the spec declares the shape, so we send it rather than make them guess.
+    ...(args.errors === undefined ? {} : { errors: [...args.errors] }),
+  };
 }
 
 /**
@@ -37,6 +45,8 @@ export class AppException extends HttpException {
     status: HttpStatus,
     readonly title: string,
     readonly publicDetail?: string,
+    /** Field-level detail, for validation failures. Rendered into `Problem.errors`. */
+    readonly fieldErrors?: readonly ProblemErrorsItem[],
   ) {
     super(title, status);
   }

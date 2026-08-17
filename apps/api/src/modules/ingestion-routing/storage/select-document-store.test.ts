@@ -14,6 +14,8 @@ function env(overrides: Partial<Env> = {}): Env {
     MEDIA_FETCH: 'fixture',
     WHATSAPP_PRACTICE_MAP: {},
     AUTH_MODE: 'fixture',
+    UPLOAD_URL_SECRET: 'test-secret',
+    UPLOAD_URL_TTL_SECONDS: 900,
     INGEST_QUEUE: 'fixture',
     REDIS_URL: 'redis://localhost:6379',
     OBJECT_STORE: 'fixture', IMAGE_NORMALISER: 'fixture', DOCUMENT_GUARD: 'fixture',
@@ -38,6 +40,18 @@ test('s3 mode builds the real store from config — no S3 client opened in the t
     },
     async get() {
       return Buffer.alloc(0);
+    },
+    async sha256() {
+      return 'y';
+    },
+    async presignPut() {
+      return { key: 'w/x/uploads/z', url: 'https://example.test/put', headers: {} };
+    },
+    async presignGet() {
+      return { url: 'https://example.test/get', expiresAt: new Date(0) };
+    },
+    async head() {
+      return null;
     },
   };
   let called = false;
