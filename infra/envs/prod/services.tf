@@ -74,6 +74,14 @@ locals {
     { name = "S3_BUCKET_RECEIPTS", value = local.bucket_names["receipts"] },
     { name = "S3_BUCKET_EXPORTS", value = local.bucket_names["exports"] },
     { name = "KMS_KEY_ARN", value = module.storage.kms_key_arn },
+
+    # ⚠ REQUIRED FOR BOOT since #84: env.ts refuses AUTH_MODE=fixture (the
+    # default) under NODE_ENV=production — the fixture resolver trusts X-NT-*
+    # headers for identity, which through CloudFront is an auth bypass.
+    # `session` is the resolver S1 implements. Staging found this the hard way
+    # (deploys #90–#107 silently rolled back); prod inherits the fix before
+    # its first deploy can hit it.
+    { name = "AUTH_MODE", value = "session" },
   ]
 
   # ------------------------------------------------------------------------
@@ -97,6 +105,11 @@ locals {
   # ------------------------------------------------------------------------
   injected_secrets = [
     { name = "REDIS_AUTH_TOKEN", valueFrom = "${module.data.redis_secret_arn}:auth_token::" },
+
+    # The second boot gate (#76): env.ts refuses an empty UPLOAD_URL_SECRET
+    # under NODE_ENV=production. Terraform-generated real value (secrets.tf) —
+    # exempt from the placeholder trap above by construction.
+    { name = "UPLOAD_URL_SECRET", valueFrom = "${aws_secretsmanager_secret.upload_url.arn}:secret::" },
   ]
 
   # ⚠ THE RDS MASTER CREDENTIAL GOES TO THE MIGRATION TASK AND NOWHERE ELSE.

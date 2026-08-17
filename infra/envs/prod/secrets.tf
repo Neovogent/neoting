@@ -560,7 +560,10 @@ resource "aws_iam_role_policy" "ecs_execution_app_secrets" {
         # hand-written ARN is unusable and a wildcard broad enough to cover the
         # suffix is also broad enough to cover every future secret in the path,
         # including ones this role should never read.
-        Resource = [for s in aws_secretsmanager_secret.app : s.arn]
+        Resource = concat(
+          [for s in aws_secretsmanager_secret.app : s.arn],
+          [aws_secretsmanager_secret.upload_url.arn],
+        )
       },
       {
         Sid      = "DecryptApplicationSecrets"
@@ -576,6 +579,42 @@ resource "aws_iam_role_policy" "ecs_execution_app_secrets" {
       }
     ]
   })
+}
+
+# --------------------------------------------------------------------------
+# The upload-intent signing key — the value env.ts refuses to boot without
+# under NODE_ENV=production (#76, #92). Mirrors envs/staging/secrets.tf, and
+# the reasoning lives there: app-generated (no vendor group), real from first
+# apply (a placeholder would pass the boot gate and sign forgeable upload
+# intents), random_password because the rotation blast radius is 15 minutes
+# of in-flight upload links, not a log-everyone-out.
+# --------------------------------------------------------------------------
+resource "random_password" "upload_url" {
+  length  = 64
+  special = false # HMAC key material; alphanumeric keeps it inert in URLs and logs
+}
+
+resource "aws_secretsmanager_secret" "upload_url" {
+  name        = "/neoting/${local.env}/upload-url"
+  description = "HMAC signing key for stateless web-upload intents (#76) - app-generated, Terraform-owned"
+  kms_key_id  = aws_kms_key.secrets.arn
+
+  recovery_window_in_days = 7
+
+  tags = {
+    DataClass = "credential"
+    Component = "secrets"
+    Rotation  = "terraform-replace" # `apply -replace=random_password.upload_url`
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "upload_url" {
+  secret_id     = aws_secretsmanager_secret.upload_url.id
+  secret_string = jsonencode({ secret = random_password.upload_url.result })
+
+  # NO ignore_changes, unlike the vendor groups: Terraform legitimately owns
+  # this value, so drift here is corruption to fix, not a live credential to
+  # protect.
 }
 
 output "secrets_kms_key_arn" { value = aws_kms_key.secrets.arn }

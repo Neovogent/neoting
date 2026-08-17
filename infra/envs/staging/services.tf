@@ -64,6 +64,15 @@ locals {
     { name = "S3_BUCKET_RECEIPTS", value = local.bucket_names["receipts"] },
     { name = "S3_BUCKET_EXPORTS", value = local.bucket_names["exports"] },
     { name = "KMS_KEY_ARN", value = module.storage.kms_key_arn },
+
+    # ⚠ REQUIRED FOR BOOT since #84: env.ts refuses AUTH_MODE=fixture (the
+    # default) under NODE_ENV=production, because the fixture resolver trusts
+    # X-NT-* headers for identity — through CloudFront, that would be an auth
+    # bypass. Every deploy from #90 to #107 failed on exactly this and was
+    # silently rolled back by the circuit breaker. `session` is the resolver
+    # S1 implements; until then scoped endpoints answer 401/500 rather than
+    # trusting a header, which is the honest state for a reachable surface.
+    { name = "AUTH_MODE", value = "session" },
   ]
 
   # ------------------------------------------------------------------------
@@ -107,6 +116,14 @@ locals {
     # `META_APP_SECRET` ← `app_secret`, `META_VERIFY_TOKEN` ← `verify_token`.
     { name = "META_APP_SECRET", valueFrom = "${aws_secretsmanager_secret.app["whatsapp"].arn}:app_secret::" },
     { name = "META_VERIFY_TOKEN", valueFrom = "${aws_secretsmanager_secret.app["whatsapp"].arn}:verify_token::" },
+
+    # The second boot gate from the #90–#107 deploy failures: env.ts refuses an
+    # empty UPLOAD_URL_SECRET under NODE_ENV=production, because an empty key
+    # fails closed at REQUEST time — the task passes its health check and then
+    # 500s every upload, with the deploy that caused it already green (#76).
+    # Terraform-generated real value (secrets.tf), never a placeholder: a
+    # guessable signing key mints forgeable upload intents.
+    { name = "UPLOAD_URL_SECRET", valueFrom = "${aws_secretsmanager_secret.upload_url.arn}:secret::" },
   ]
 
   # ⚠ THE RDS MASTER CREDENTIAL GOES TO THE MIGRATION TASK AND NOWHERE ELSE.
