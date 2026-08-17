@@ -9,8 +9,16 @@ and would otherwise drop the bytes — the job then describes a document that
 exists nowhere. This stores the sanitised bytes; the job carries the key.
 
 `DocumentStore.put({ bytes, sha256, contentType, workspaceId, practiceId }) → StoredDocument{ key }`
-· `get(key) → Buffer`. Interface + fixture, the same shape as `VirusScanner` /
-`IngestQueue` / `EmailParser`, so unit tests stay offline.
+· `get(key) → Buffer` · `sha256(key) → hex`. Interface + fixture, the same shape
+as `VirusScanner` / `IngestQueue` / `EmailParser`, so unit tests stay offline.
+
+**`sha256(key)` exists so verification never buffers the object.** The S3
+implementation iterates the `GetObject` body chunk-by-chunk into the hash, so
+peak memory is one chunk; `get()` materialises the whole object in one Buffer
+and must not be used to verify an upload — the web-upload completion path is
+tested to never call it. The streamed path is only exercised against a real
+Body by the MinIO integration test, since the fixture hashes a Buffer it
+already holds.
 
 ## The key layout — and WHY (this is the part that matters)
 

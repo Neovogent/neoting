@@ -38,6 +38,9 @@ test('s3 mode builds the real store from config — no S3 client opened in the t
     async get() {
       return Buffer.alloc(0);
     },
+    async sha256() {
+      return 'y';
+    },
     async presignPut() {
       return { key: 'w/x/uploads/z', url: 'https://example.test/put', headers: {} };
     },

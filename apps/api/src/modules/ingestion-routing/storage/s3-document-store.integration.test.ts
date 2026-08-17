@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { expect, test } from 'vitest';
 
 import { documentKey } from './document-store.js';
@@ -32,4 +34,7 @@ test.skipIf(!enabled)('S3DocumentStore round-trips against MinIO and the key lan
   expect(stored.key).toBe(documentKey({ workspaceId: null, practiceId: 'prac_int', sha256 }));
   expect(stored.key.startsWith('w/')).toBe(true);
   expect((await store.get(stored.key)).equals(bytes)).toBe(true);
+  // The streamed hash against a real S3 Body — the async-iteration path no
+  // fixture exercises, since the fixture hashes a Buffer it already holds.
+  expect(await store.sha256(stored.key)).toBe(createHash('sha256').update(bytes).digest('hex'));
 });

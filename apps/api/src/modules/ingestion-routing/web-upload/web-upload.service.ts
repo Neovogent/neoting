@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 
 import { HttpStatus } from '@nestjs/common';
 import type { z } from 'zod';
@@ -160,8 +160,18 @@ export class WebUploadService {
       // uncoded 4xx (see `ProblemFilter.CODE_BY_STATUS`).
       throw new AppException('NT-VAL-001', HttpStatus.NOT_FOUND, 'No uploaded object was found for this intent');
     }
-    const bytes = await this.store.get(claims.s3Key);
-    const actualHash = createHash('sha256').update(bytes).digest('hex');
+    if (head.byteLength !== claims.byteSize) {
+      // The presigned signature covers Content-Length, so a mismatch should be
+      // unreachable through the URL we minted — this catches the object having
+      // been replaced by some other path. Cheap (the HEAD already happened),
+      // and it fails before the hash pass reads a single byte.
+      throw new AppException('NT-ING-003', HttpStatus.CONFLICT, 'The uploaded bytes do not match the declared size');
+    }
+    // Streamed by the store, NEVER `get()`: completion verifies up to a
+    // channel-cap's worth of bytes (100 MB on the accountant lane), and holding
+    // them in one Buffer per in-flight request is the request-path weight the
+    // presigned two-step exists to avoid.
+    const actualHash = await this.store.sha256(claims.s3Key);
     if (actualHash !== byteHash) {
       // NT-ING-003 is "byte hash mismatch between client and storage" — NT-ING-004
       // is sanitisation rejection, a different failure that happens later.
