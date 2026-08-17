@@ -248,14 +248,6 @@ export function ChaseComposer({ clientIds, missingItemIds }: {
     }))
     .filter((t) => t.items.length > 0);
 
-  if (targets.length === 0) {
-    return (
-      <div className="w-full max-w-xl border border-white/5 rounded-[24px] bg-card p-5 text-sm text-zinc-400">
-        {intl.formatMessage(m.nothingOutstanding)}
-      </div>
-    );
-  }
-
   const totalItems = targets.reduce((n, t) => n + t.items.length, 0);
 
   /**
@@ -272,11 +264,24 @@ export function ChaseComposer({ clientIds, missingItemIds }: {
    * plugin is not installed here yet, so there is nothing to suppress and a
    * disable directive for it is itself a lint error. Tracked with the other
    * missing plugins in eslint.config.js.
+   *
+   * It sits ABOVE the targets-empty return, because a hook after a conditional
+   * return changes the hook count between renders — the exact shape behind
+   * "Rendered fewer hooks than expected" (#87). It is safe with empty targets:
+   * it maps an empty array and its identity-string dep is ''.
    */
   const suggested = useMemo(
     () => targets.map((t) => ({ ...t, sms: composeSms(t.client, t.items, intl) })),
     [targets.map((t) => `${t.client.id}:${t.items.map((i) => i.id).join(',')}`).join('|')],
   );
+
+  if (targets.length === 0) {
+    return (
+      <div className="w-full max-w-xl border border-white/5 rounded-[24px] bg-card p-5 text-sm text-zinc-400">
+        {intl.formatMessage(m.nothingOutstanding)}
+      </div>
+    );
+  }
 
   const drafts = suggested.map((d) => ({ ...d, sms: edited[d.client.id] ?? d.sms }));
 

@@ -68,7 +68,7 @@ Most of the seed weight leaves when the views move onto the generated client. Un
 
 ## Tests
 
-`pnpm test` (vitest, jsdom). **Offline by construction** (Governance §15.1): every suite exercises pure functions and the MSW handler bodies directly, so nothing opens a socket and nothing waits on a timer. Tests sit beside what they test, as `*.test.ts`.
+`pnpm test` (vitest, jsdom). **Offline by construction** (Governance §15.1): every suite either exercises pure functions and the MSW handler bodies directly, or renders the shell against jsdom with the API query disabled — nothing opens a socket and nothing waits on a timer. Tests sit beside what they test, as `*.test.ts(x)`.
 
 What is covered today, and why those:
 
@@ -80,9 +80,10 @@ What is covered today, and why those:
 | `src/lib/tableImport.test.ts` | XLSX date serials, day-first UK dates, totals lines refused rather than booked, signed ledgers where a positive row is a refund. |
 | `src/lib/matching.test.ts` | Whether a transaction is settled or handed to a human, and the merchant bar that keeps Costco off Costa. |
 | `src/lib/dedupe.test.ts` | The two Dext gaps this exists to close: a pair survives a failed extraction, and an invoice matches its receipt twin. |
+| `src/context/AppContext.test.tsx` | The #87 regression: nine rapid route changes with conversation churn interleaved, asserting the tree survives, the address is not yanked back mid-render, and no setState-during-render warning fires. The one suite that renders the whole shell. |
 | `eslint/no-literal-string-in-jsx.test.js` | The one suite that tests a *gate* rather than the product: real copy still fails the literal rule, punctuation still passes. The cases are lifted verbatim from the views. Not under `src/`, because the rule is not application code — which also keeps it out of `tsc`'s include and out of the bundle. |
 
-Component tests are still owed for anything with logic (frontend ten, item 10).
+Component tests are still owed for anything with logic (frontend ten, item 10) — the AppContext suite is the first, not the last.
 
 ## Previews
 

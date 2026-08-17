@@ -696,16 +696,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const routedConversationId = root === 'chat' ? first : undefined;
   const [fallbackConversationId, setFallbackConversationId] = useState<string>('draft-initial');
   const activeConversationId = routedConversationId ?? fallbackConversationId;
-  const setActiveConversationId = useCallback(
-    (next: string | ((current: string) => string)) => {
-      setFallbackConversationId((current) => {
-        const value = typeof next === 'function' ? next(current) : next;
-        navigate(path('chat', value));
-        return value;
-      });
-    },
-    [],
-  );
+  /**
+   * Navigation is a side effect, so it happens here in the callback — never
+   * inside the state updater. React replays updaters during the render phase
+   * (always when another update is already queued, and twice under
+   * StrictMode), so a navigate() in the updater dispatched 'app:navigate'
+   * mid-render: the setState-during-render warning, and the hooks-order crash
+   * under rapid route changes (#87).
+   */
+  const setActiveConversationId = useCallback((value: string) => {
+    setFallbackConversationId(value);
+    navigate(path('chat', value));
+  }, []);
   const [isHistoryVisible, setIsHistoryVisible] = useState(false);
 
   const active = conversations.find((c) => c.id === activeConversationId) ?? conversations[0];
@@ -782,13 +784,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const next = prev.filter((c) => c.id !== id);
         return next.length ? next : [newDraft(['1'])];
       });
-      setActiveConversationId((current) => {
-        if (current !== id) return current;
-        const fallback = conversations.find((c) => c.id !== id);
-        return fallback ? fallback.id : current;
-      });
+      // Only deleting the conversation on screen moves the user; deleting any
+      // other row must not navigate them away from what they are reading.
+      if (activeConversationId !== id) return;
+      const fallback = conversations.find((c) => c.id !== id);
+      if (fallback) setActiveConversationId(fallback.id);
     },
-    [conversations],
+    [conversations, activeConversationId, setActiveConversationId],
   );
 
   const togglePinConversation = useCallback((id: string) => {
