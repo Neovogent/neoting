@@ -221,6 +221,93 @@ success).**
    `createMany({ skipDuplicates })` with a **deterministically ordered pair**, so
    two workers detecting the same pair at once collapse to one row.
 
+### WhatsApp media fetch (issue #79 — this branch)
+
+`queue/media-fetcher.ts` + `queue/graph-media-fetcher.ts` + `queue/select-media-fetcher.ts`
++ `queue/whatsapp-media-intake.ts`, and the wiring in `webhooks/whatsapp/`,
+`queue/ingest-processor.ts`, `queue/document-sink.ts` and `worker/main.ts`. A
+WhatsApp webhook carries a Meta **media id**, not the bytes; until this, those
+jobs were logged and left unpersisted (a silent loss on the only live channel).
+Now the worker resolves the id to bytes and persists through the **same** path
+email takes from the point the bytes are in hand.
+
+- **`MediaFetcher` is interface + fixture, config-selected** (`MEDIA_FETCH=fixture|graph`)
+  — the sixth thing in the house shape, deliberately not a sixth shape.
+  `FixtureMediaFetcher` **never fabricates bytes** for an unseeded id (it throws
+  `not_found`): `fixture` is the default, so a fabricating fixture would turn
+  every real staging receipt into a made-up document that looks ingested.
+- **`GraphMediaFetcher` — two GETs on Node 22's built-in `fetch`, no new
+  dependency.** Metadata → download URL → bytes. Two things carry the weight:
+  an **SSRF allowlist** (the download URL comes from a JSON field and we send a
+  bearer to it, so a non-Meta host is refused *before* the token goes on the
+  wire — dotted-suffix match, `evil-fbcdn.net` does not pass; both GETs also use
+  `redirect: 'manual'` and refuse a 30x, so a bounce cannot steer the bearer past
+  the first, validated hop), and a **stream cap** enforced per-chunk (`Content-Length` is only a hint; the running total
+  breaks out of the `for await`, which cancels the stream). `failureForStatus`
+  is what decides retry-vs-DLQ, so it is the precise part: 401/403→unauthorised,
+  429/5xx→upstream (retryable), 404/400 + Meta code 100 / subcode 33→expired.
+- **`fetchWhatsAppMedia` fetch → `sanitise` → perceptual-hash → `store.put`,
+  then returns; it does not persist.** The processor owns the sink write, so
+  WhatsApp and email converge on one idempotency rule. A fetch failure **throws**
+  (`MediaFetchError`); a sanitisation refusal **returns** `{ok:false, rejection}`
+  to the processor, which then **throws `TerminalJobError`** so the job
+  dead-letters. The shape difference is deliberate — a rejection is a decision
+  about the document, a fetch failure is the world being unavailable, and only
+  the worker knows whether that is a backoff or a dead-letter
+  (`withFetchClassification`: retryable rethrows for BullMQ, terminal →
+  `TerminalJobError` → `UnrecoverableError`). The review of #96 turned the
+  refusal from warn-and-return into a dead-letter: returning null completed the
+  job, so with the wamid replay-blocked and Meta's media id expiring (~30 days)
+  a rejected receipt was one warn line from being unrecoverable. The DLQ entry
+  keeps `job.data` (mediaId, caption, practiceId, traceId) visible and
+  replayable until the s3_key nullability change (#79, G7) lets it become a
+  REJECTED document row.
+- **The caption becomes `documents.description`, STILL WRAPPED** in
+  `<untrusted_content>` (§9.6) — never unwrapped, not even to log it. The
+  unmapped-number warning names the wamid only.
+- **`safe-basename.ts` was EXTRACTED from `email-intake.ts`** (which now imports
+  it) so two channels cannot reduce an attacker-controlled name two ways. A
+  WhatsApp image has no filename and `original_filename` is NOT NULL, so one is
+  synthesised from the sha256 and the **detected** type, never Meta's declared
+  mime.
+
+**Three things raised on the issue for @shakibbinkabir before this can be marked
+complete** (all posted, awaiting his call):
+
+1. **The media-fetch token is a SEPARATE credential.** `META_APP_SECRET` is the
+   webhook HMAC key and `META_VERIFY_TOKEN` the handshake echo; neither
+   authenticates a Graph call. Added `META_MEDIA_ACCESS_TOKEN` (a System User
+   bearer with `whatsapp_business_messaging`) blank in `.env.example`;
+   `MEDIA_FETCH=graph` **refuses to boot** without it. Issuing the real bearer is
+   a secrets change — Shakib's.
+2. **No `practiceId` source exists for a WhatsApp job.** The controller never set
+   one, `Practice` has no phone-number column, nothing in `prisma/` maps a Meta
+   number to a practice. Interim: `WHATSAPP_PRACTICE_MAP` env (JSON
+   `phone_number_id → practiceId`), keyed on the number that RECEIVED the message
+   (never the sender), mirroring how email made `practiceId` a caller-supplied
+   dep — so a future `Practice.whatsappPhoneNumberId` column (`prisma/`, G7)
+   replaces it without touching a call site. Fails **closed and loud**: an
+   unmapped number enqueues (never 4xx's Meta), then dead-letters in the worker.
+3. **Acceptance criterion 3 is unwritable as the schema stands.**
+   `documents.s3_key` (and `byte_hash`/`byte_size`/`mime_type`/`original_filename`)
+   are NOT NULL, and every named fetch/sanitise failure happens *before* bytes
+   are stored — so a REJECTED/FAILED WhatsApp document cannot be written to the
+   Rejected/Failed surface yet. Refused to fabricate five NOT NULL columns.
+   Proposed the exact migration (`ALTER COLUMN s3_key DROP NOT NULL` + a
+   `CHECK (s3_key IS NOT NULL OR state IN ('REJECTED','FAILED'))`) as a **G7
+   contract change**. Until it lands, a rejection is a `logger.warn` with the
+   NT-ING code + traceId **plus a DLQ entry** (review of #96 — see the
+   fetch-vs-refusal bullet above), not a row.
+
+Also corrected two errors in the issue text: `channel: 'whatsapp'` does not exist
+(used `'client'`, which `channels.ts` already documents as WhatsApp intake at
+25 MB), and flagged `MEDIA_FETCH` vs the house-consistent `MEDIA_FETCHER`
+spelling. Tests: unit coverage for all four new units (incl. the offline Graph
+fetcher via a `fetchImpl` seam — SSRF and stream-cap proven), `mediaOf` +
+per-change `phone_number_id`, the controller media/practice path, and a **real-DB
+integration test** (`queue/whatsapp-intake.integration.test.ts`) proving the
+WhatsApp lane persists through `scopedDb` with the caption kept wrapped.
+
 ### Web upload — the first HTTP surface in this lane (issue #76)
 
 `web-upload/` — a lane with its own `CLAUDE.md`; read that before changing it.
@@ -370,7 +457,14 @@ sanitisation tests were ported from `tsx --test` to Vitest and run in the suite.
       Docker is installed as of 16 Aug 2026, so it is now runnable here.
 - [x] #20: worker persists `Document` + `DocumentEvent` through `scopedDb`
       (`queue/document-sink.ts`), idempotent on `idempotencyKey`, proven against a
-      real DB. WhatsApp media fetch (so those jobs persist too) is the next task.
+      real DB.
+- [x] #79: WhatsApp media fetch — `MediaFetcher` (fixture|graph), the two-step
+      Graph fetcher (SSRF allowlist + per-chunk stream cap, no new dep), the
+      intake lane and the worker wiring, so those jobs persist too. Proven against
+      a real DB. **Three items await Shakib** before the PR can be marked done:
+      the `META_MEDIA_ACCESS_TOKEN` secret, the `WHATSAPP_PRACTICE_MAP` → future
+      `Practice.whatsappPhoneNumberId` column (G7), and the `documents.s3_key`
+      nullability migration for the Rejected/Failed surface (G7). All posted on #79.
 - [x] #76: web upload, two-step presign + complete, proven end to end against
       Postgres and MinIO. See `web-upload/CLAUDE.md`. Not yet: auto-split,
       worker-side sanitisation of these jobs, a durable idempotency store.

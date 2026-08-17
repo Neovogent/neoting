@@ -75,6 +75,7 @@ function input(idempotencyKey: string, over: Partial<PersistDocumentInput> = {})
     channel: 'EMAIL',
     originalFilename: 'receipt.png',
     submitterLabel: 'sender@acme.co',
+    description: null,
     routing: { kind: 'unrouted' },
     traceId: 't-int',
     ...over,

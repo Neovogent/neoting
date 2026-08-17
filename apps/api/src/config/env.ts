@@ -24,6 +24,54 @@ const EnvSchema = z.object({
   // webhook to accept anything.
   META_APP_SECRET: z.string().default(''),
   META_VERIFY_TOKEN: z.string().default(''),
+  // The WhatsApp media fetch (#79) is a GRAPH call, and neither secret above
+  // authenticates one: META_APP_SECRET is the webhook HMAC key and
+  // META_VERIFY_TOKEN is the handshake echo. Downloading media needs a separate
+  // bearer with `whatsapp_business_messaging` — a System User token. Blank here
+  // and in `.env.example`; `MEDIA_FETCH=graph` REFUSES TO BOOT without it below,
+  // rather than failing open at fetch time.
+  META_MEDIA_ACCESS_TOKEN: z.string().default(''),
+
+  // WhatsApp media (#79). `fixture` = seeded in-memory bytes (default — offline
+  // tests, and any dev without Meta credentials); `graph` = the real Meta Cloud
+  // API. Selected by config, not by import, like the four switches below.
+  MEDIA_FETCH: z.enum(['fixture', 'graph']).default('fixture'),
+
+  /**
+   * WABA phone-number-id → practice id, as JSON. The tenancy anchor a WhatsApp
+   * document has instead of a business.
+   *
+   * ⚠ INTERIM, and the shape is the point. `documents.practice_id` is the only
+   * anchor an unrouted document has — `documentKey()` throws without one and the
+   * `documents_tenant_anchor` CHECK refuses the row — but nothing in `prisma/`
+   * maps a Meta number to a practice, so there is nowhere to look it up. This is
+   * the same move the email lane made (`email-intake.ts`: the caller supplies
+   * `practiceId`, with the seam written down), keyed by the number that RECEIVED
+   * the message so a future `Practice.whatsappPhoneNumberId` column replaces it
+   * without touching a call site. That column is `prisma/`, so G7 — raised on #79.
+   *
+   * Fails CLOSED: an unmapped number yields no anchor, the worker refuses to
+   * persist and the job lands in the DLQ. It is never a quiet success that wrote
+   * nothing.
+   */
+  WHATSAPP_PRACTICE_MAP: z
+    .string()
+    .default('{}')
+    .transform((raw, ctx): Readonly<Record<string, string>> => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must be a JSON object of {"<phone_number_id>": "<practiceId>"}' });
+        return z.NEVER;
+      }
+      const shape = z.record(z.string().min(1), z.string().min(1)).safeParse(parsed);
+      if (!shape.success) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must be a flat JSON object mapping phone_number_id to a non-empty practice id' });
+        return z.NEVER;
+      }
+      return Object.freeze(shape.data);
+    }),
 
   // The request-context resolver (#75). `fixture` = trust `X-NT-*` dev headers
   // (default — lets endpoints exercise scopedDb before auth exists); `session` =
@@ -86,6 +134,33 @@ const EnvSchema = z.object({
       message: 'AUTH_MODE=fixture trusts X-NT-* request headers and must never run in production — set AUTH_MODE=session (S1)',
     });
   }
+
+  // A media fetcher with no credential cannot fetch anything: every Graph call
+  // would 401 and every WhatsApp document would dead-letter, which looks like
+  // Meta being down rather than a blank variable. Refuse at boot instead, where
+  // the cause is unambiguous (#79).
+  if (env.MEDIA_FETCH === 'graph' && env.META_MEDIA_ACCESS_TOKEN === '') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['META_MEDIA_ACCESS_TOKEN'],
+      message: 'MEDIA_FETCH=graph needs META_MEDIA_ACCESS_TOKEN — a System User bearer with whatsapp_business_messaging, NOT META_APP_SECRET',
+    });
+  }
+
+  // Real fetches into a fixture store is byte loss dressed as success: the
+  // `documents` row persists with an s3_key that names an object in ONE
+  // process's memory, gone on restart and invisible to every other process.
+  // Every later stage (extraction, the presigned original, sanitisation
+  // re-keying) then 404s on a row that looks perfectly healthy. Refuse the
+  // combination at boot, where the cause is unambiguous (#79, review of #96).
+  if (env.MEDIA_FETCH === 'graph' && env.OBJECT_STORE === 'fixture') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['OBJECT_STORE'],
+      message: 'MEDIA_FETCH=graph with OBJECT_STORE=fixture persists rows pointing at in-memory bytes — set OBJECT_STORE=s3 (MinIO locally) before fetching real media',
+    });
+  }
+
   // Same gate, different failure. An empty UPLOAD_URL_SECRET does fail closed —
   // `requireSecret` refuses to sign or verify with it, so nothing forgeable is
   // ever minted. But it fails closed at REQUEST time, which means the process

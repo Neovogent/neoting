@@ -2,6 +2,7 @@ import { wrapUntrusted } from '../../../common/untrusted-content.js';
 // Type-only — erased at runtime, so this lane never loads `sharp` and stays
 // offline-testable. The sharp-backed hasher is injected on the real path.
 import type { PerceptualHasher } from '../lib/dedupe/perceptual-hash.js';
+import { safeBasename } from '../lib/safe-basename.js';
 import { type Channel, type DocumentGuard, type ImageNormaliser, mimeForFormat, sanitise, type SanitisationDeps, type VirusScanner } from '../lib/sanitisation/index.js';
 import { type DocumentStore, InMemoryDocumentStore } from '../storage/document-store.js';
 import type { IngestJob, IngestQueue } from '../webhooks/whatsapp/ingest-queue.js';
@@ -88,16 +89,6 @@ export interface EmailIntakeDeps {
  * Pure library — no S3, no network, no database (persistence is blocked on
  * scopedDb). The S3-event trigger is Terraform (Shakib's).
  */
-/**
- * Reduce an attacker-controlled attachment filename to a bare basename — never a
- * path. `../../etc/passwd` → `passwd`, `C:\evil\x.pdf` → `x.pdf`. Kept for
- * display / metadata only; it is never trusted for the file's type.
- */
-function safeBasename(name: string): string {
-  const base = name.replace(/^.*[\\/]/, '').trim();
-  return base === '' || base === '.' || base === '..' ? 'attachment' : base;
-}
-
 export async function processEmail(email: ParsedEmail, deps: EmailIntakeDeps): Promise<EmailIntakeResult> {
   const routing = decideRouting(email.from, deps.senderMap ?? new Map<string, readonly string[]>());
   const store = deps.store ?? new InMemoryDocumentStore();
