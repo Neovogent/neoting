@@ -97,6 +97,49 @@ still under `w/`, still naming the business, but **not** content-addressed,
 because the sha256 is not known until the bytes land. Re-keying it onto the
 content-addressed path after sanitisation is a follow-up.
 
+## Presigned GET (issue #77)
+
+`presignGet({ key, contentType, filename, expiresInSeconds })` — the read half,
+for `GET /documents/{id}/original`. The API serves a **link**, never the bytes.
+
+**Both `ResponseContentType` and `ResponseContentDisposition` are signed
+overrides**, folded into the signature rather than left to the object's stored
+metadata. A holder of the URL therefore cannot flip either one by editing the
+query string.
+
+- The type pinned on the response is the **stored** MIME — magic-byte
+  authoritative after sanitisation, never the uploader's declared one. That is
+  what stops a browser sniffing the bytes and deciding an uploaded file is
+  something executable.
+- `contentDisposition()` strips the **whole C0/C1 control range plus DEL**, and
+  quote and backslash, out of the filename before it goes in. The filename is
+  uploader-chosen and travels into a response header; a newline splits the header
+  and lets an uploader inject headers of their own into a response served from
+  the bucket's own origin, and an unescaped `"` ends the quoted string early.
+  CR and LF are the pair everyone thinks of, but RFC 7230 §3.2.6 forbids NUL
+  outright and several HTTP parsers truncate a field at the first one — which
+  serves a silently shortened filename rather than failing loudly.
+  **This is defence in depth, said plainly rather than overstated:** Postgres
+  already refuses NUL in a `text` column, so the storage path cannot currently
+  deliver one here. That is not a reason to leave it out — this function is the
+  single point where an uploader-chosen name becomes a header, and it should not
+  depend on a column type three layers away staying as it is.
+  ⚠ Non-ASCII passes through un-encoded. RFC 6266 wants `filename*=UTF-8''…`, so
+  `facture-café.pdf` may render mojibake in the download name — cosmetic, not a
+  safety bug, and the fix is a second `filename*` parameter (see TODO).
+
+**The caller picks the TTL and `documents` picks five minutes** — the URL is
+bearer authority with no session and no RLS behind it, and it lands in an
+`<img src>`, so it ends up in browser history, in a `Referer` if the page links
+out, and in any proxy log on the way. The store does not have an opinion; the
+default is not a safe one to inherit silently, so `ORIGINAL_URL_TTL_SECONDS`
+lives at the call site with the reasoning next to it.
+
+Same fixture caveat as `presignPut`: `InMemoryDocumentStore` returns a
+`https://fixture.local/…` URL nothing fetches, so **no unit test proves this
+signature works**. Only a real MinIO round-trip can, and there is not one for the
+GET path yet (see TODO).
+
 ## TODO
 
 - [x] MinIO integration test — run by Shakib 14 Aug 2026, object confirmed in the
@@ -105,5 +148,13 @@ content-addressed path after sanitisation is a follow-up.
       stale).
 - [ ] Re-key a web-upload object from `w/<biz>/uploads/<nonce>` to
       `w/<biz>/documents/<sha256>` once sanitisation produces the final bytes.
+- [ ] A MinIO round-trip for `presignGet` — fetch the signed URL and assert the
+      `Content-Type` / `Content-Disposition` that come back are the ones signed.
+      The PUT path has one (`web-upload.integration.test.ts`); the GET path is
+      currently proven only against a fixture URL nothing fetches, which is
+      exactly the gap that made the PUT integration test necessary.
+- [ ] RFC 6266-encode a non-ASCII filename (`filename*=UTF-8''…`) alongside the
+      ASCII `filename=` in `contentDisposition`, so `facture-café.pdf` downloads
+      under its own name instead of mojibake.
 - [ ] When the S3 trigger + `scopedDb` land, the worker fetches bytes via
       `get(storageKey)` and the object record is persisted.

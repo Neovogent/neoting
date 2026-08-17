@@ -9,6 +9,7 @@ import type { Document, DocumentUpload } from '@neoting/contracts/model';
 import type { createDocumentUploadBody } from '@neoting/contracts/zod';
 
 import type { PrismaClient } from '../../../common/db/prisma.js';
+import { toDocumentResponse } from '../../../common/documents/document-response.js';
 import type { ScopeContext } from '../../../common/db/scope-context.js';
 import { scopedDb } from '../../../common/db/scoped-db.js';
 import { AppException } from '../../../common/problem/problem.js';
@@ -16,7 +17,6 @@ import { currentTraceId } from '../../../common/trace/trace-context.js';
 import { documentIdFor } from '../queue/document-sink.js';
 import { type DocumentStore, uploadIntentKey } from '../storage/document-store.js';
 import type { IngestJob, IngestQueue } from '../webhooks/whatsapp/ingest-queue.js';
-import { toDocumentResponse } from './document-response.js';
 import { fingerprint, type IdempotencyStore } from './idempotency-store.js';
 import { isAllowedMime, maxBytesForChannel } from './upload-policy.js';
 import { signUploadToken, type UploadClaims, verifyUploadToken } from './upload-token.js';

@@ -44,6 +44,9 @@ test('s3 mode builds the real store from config — no S3 client opened in the t
     async presignPut() {
       return { key: 'w/x/uploads/z', url: 'https://example.test/put', headers: {} };
     },
+    async presignGet() {
+      return { url: 'https://example.test/get', expiresAt: new Date(0) };
+    },
     async head() {
       return null;
     },

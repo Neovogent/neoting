@@ -151,6 +151,7 @@ function countingStore(inner: DocumentStore): { store: DocumentStore; presignPut
         calls += 1;
         return inner.presignPut(input);
       },
+      presignGet: (input) => inner.presignGet(input),
     },
   };
 }

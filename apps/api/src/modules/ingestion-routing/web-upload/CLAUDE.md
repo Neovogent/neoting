@@ -132,6 +132,14 @@ Field errors name the field and never echo the **value**: a body carries
 filenames and free text a client typed, and error responses are logged and
 screenshotted far more freely than request bodies are.
 
+⚠ **`document-response.ts` has MOVED to `common/documents/` (#77).** It is no
+longer in this directory. The read surface projects the same Prisma row onto the
+same contract `Document`, and a module may not reach into another's internals —
+so the choice was move it or copy it, and a second copy is how the write surface
+and the read surface start disagreeing about what a `Document` is. Import it from
+`../../../common/documents/document-response.js`; `toDocumentResponse` behaves
+exactly as it did here.
+
 ## `Idempotency-Key`
 
 Required by the contract on both operations, so a missing header is a 400 rather
