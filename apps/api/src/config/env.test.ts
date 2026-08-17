@@ -63,5 +63,34 @@ test('NODE_ENV=production with the fixture (defaulted) auth mode fails to boot',
 });
 
 test('NODE_ENV=production with AUTH_MODE=session boots', () => {
-  expect(loadEnv({ NODE_ENV: 'production', AUTH_MODE: 'session' } as NodeJS.ProcessEnv).AUTH_MODE).toBe('session');
+  // UPLOAD_URL_SECRET is required in production too (see below), so a
+  // production env that only fixes AUTH_MODE is not a bootable one.
+  const env = loadEnv({ NODE_ENV: 'production', AUTH_MODE: 'session', UPLOAD_URL_SECRET: 's' } as NodeJS.ProcessEnv);
+  expect(env.AUTH_MODE).toBe('session');
+});
+
+// #76: UPLOAD_URL_SECRET. Unlike the Meta secrets it is NOT optional in
+// production. An empty one does fail closed, but at REQUEST time — the process
+// boots, passes its health check, reports steady state, and 500s every upload,
+// which reads as a broken lane rather than a missing variable.
+test('UPLOAD_URL_SECRET is optional outside production', () => {
+  expect(loadEnv({}).UPLOAD_URL_SECRET).toBe('');
+});
+
+test('NODE_ENV=production with an empty UPLOAD_URL_SECRET fails to boot', () => {
+  expect(() => loadEnv({ NODE_ENV: 'production', AUTH_MODE: 'session' } as NodeJS.ProcessEnv))
+    .toThrow(/UPLOAD_URL_SECRET/);
+});
+
+// #79 / review of #96: real Graph fetches must never land in the in-memory
+// store — the row would outlive the bytes, which is loss dressed as success.
+test('MEDIA_FETCH=graph with the fixture object store fails to boot', () => {
+  expect(() =>
+    loadEnv({ MEDIA_FETCH: 'graph', META_MEDIA_ACCESS_TOKEN: 't' } as NodeJS.ProcessEnv),
+  ).toThrow(/OBJECT_STORE/i);
+});
+
+test('MEDIA_FETCH=graph with a real store boots', () => {
+  const env = loadEnv({ MEDIA_FETCH: 'graph', META_MEDIA_ACCESS_TOKEN: 't', OBJECT_STORE: 's3' } as NodeJS.ProcessEnv);
+  expect(env.MEDIA_FETCH).toBe('graph');
 });

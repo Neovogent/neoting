@@ -19,8 +19,9 @@ import { buildProblem } from '../../../../common/problem/problem.js';
 import { wrapUntrusted } from '../../../../common/untrusted-content.js';
 import type { Env } from '../../../../config/env.js';
 import { ENV } from '../../../../config/env.module.js';
+import { safeBasename } from '../../lib/safe-basename.js';
 import type { Clock } from './clock.js';
-import { captionOf, parseEnvelope } from './envelope.js';
+import { captionOf, mediaOf, parseEnvelope } from './envelope.js';
 import type { IngestQueue } from './ingest-queue.js';
 import type { ReplayStore } from './replay-store.js';
 import { decideRouting } from './routing.js';
@@ -114,6 +115,23 @@ export class WhatsAppWebhookController {
       // Meta gives up. Enqueue regardless of age; mark stale for triage.
       const stale = seconds === null || !withinTolerance(seconds, nowMs);
       const caption = captionOf(message);
+      const media = mediaOf(message);
+      const phoneNumberId = message.receivedByPhoneNumberId;
+      // The practice anchor an unrouted document has instead of a business (#79).
+      // Derived from the number that RECEIVED the message, never from the sender.
+      const practiceId = phoneNumberId === null ? undefined : this.env.WHATSAPP_PRACTICE_MAP[phoneNumberId];
+
+      if (media !== null && practiceId === undefined) {
+        // Enqueue ANYWAY. A 4xx here would make Meta retry, then give up, and the
+        // document would be lost to our own misconfiguration — age and config are
+        // never reasons to drop a signed document. The worker refuses to persist
+        // without an anchor and dead-letters the job, so this surfaces as a page
+        // rather than as silence. The wamid is safe to log; the caption is not.
+        this.logger.warn(
+          `no practice mapped for phone_number_id ${phoneNumberId ?? '(absent)'} — wamid ${message.id} will dead-letter (set WHATSAPP_PRACTICE_MAP)`,
+        );
+      }
+
       await this.queue.enqueue({
         source: 'whatsapp',
         idempotencyKey: message.id,
@@ -124,6 +142,11 @@ export class WhatsAppWebhookController {
         // No sender→workspace map exists yet (no DB) → Unrouted, never dropped.
         routing: decideRouting(message.from, new Map()),
         stale,
+        // Conditional spread, not `undefined` — exactOptionalPropertyTypes.
+        ...(media === null ? {} : { mediaId: media.id }),
+        ...(media?.declaredFilename ? { filename: safeBasename(media.declaredFilename) } : {}),
+        ...(phoneNumberId === null ? {} : { phoneNumberId }),
+        ...(practiceId === undefined ? {} : { practiceId }),
       });
     }
     // 200 with no body (contract): acknowledged.

@@ -27,7 +27,7 @@ Read `docs/Source_Of_Truth.md` D37 before assuming anything Next-shaped. The req
 
 MSW is started from `src/main.tsx` behind a **dynamic** `import()`, which is what keeps it and `@faker-js/faker` out of the production bundle. Verified: neither string appears in `dist`. Keep it dynamic.
 
-`VITE_CHAT_PROXY=enabled` is the one remaining escape hatch, and it is **off by default deliberately** — it lets the chat box call `POST /api/chat`, the Gemini-backed classifier in the pre-monorepo frontend's `server.ts`. Gemini sits outside D22/D28 (Bedrock, eu-west-2) and outside D30 (UK-first residency); issue #59 keeps it as a temporary local-development exception whose whole condition is that it goes before the frontend is deployed anywhere that is not a laptop. `server.ts` did not come across in the import, so in this repository the route does not exist and the flag has nothing to reach. **Do not turn it on in any deployed build.**
+There is no chat proxy and no escape hatch. `VITE_CHAT_PROXY` and the `POST /api/chat` call to the pre-monorepo frontend's Gemini classifier were removed with issue #59: `server.ts` never came across in the import, so the route did not exist and the call could not succeed, while the deterministic classifier in `lib/resolver.ts` was already producing the answer. That ends the D22/D28 (Bedrock, eu-west-2) and D30 (UK-first residency) exception structurally rather than resting it on a flag default — chat reaches a model again only through the Bedrock-backed surface, which belongs to `chat-framework`, not to this component. As of that removal there is **no raw `fetch` anywhere in `src/`**, so the "never `fetch` raw in a component" rule above holds with no exception.
 
 ## i18n
 

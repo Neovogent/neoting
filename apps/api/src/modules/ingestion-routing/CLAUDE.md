@@ -84,10 +84,12 @@ the module swaps the provider by config (`INGEST_QUEUE=fixture|bullmq`).
   after `MAX_REPLAYS`. No DB writes (blocked on `scopedDb`).
 - **Fixtures stay** (`FixtureIngestQueue`, `InMemoryProcessedStore`) so tests run
   offline; the real path is config-selected, not import-selected.
-- **Pending my Docker install**: the live `docker compose up` → signed POST →
-  worker-picks-it-up-with-same-traceId proof can't run on this machine yet
-  (no Docker). The logic is unit-tested; the end-to-end capture is the one
-  acceptance item outstanding.
+- **Docker is now installed** (confirmed 16 Aug 2026 during #76 — postgres, redis,
+  minio and mailhog all healthy under `docker compose up -d`), so the old blocker
+  on this item is gone. The live `docker compose up` → signed POST →
+  worker-picks-it-up-with-same-traceId capture has **still not been run**; it is
+  now just an unstarted task rather than an impossible one. The logic remains
+  unit-tested.
 
 ### Email intake (issue #14)
 
@@ -219,6 +221,152 @@ success).**
    `createMany({ skipDuplicates })` with a **deterministically ordered pair**, so
    two workers detecting the same pair at once collapse to one row.
 
+### WhatsApp media fetch (issue #79 — this branch)
+
+`queue/media-fetcher.ts` + `queue/graph-media-fetcher.ts` + `queue/select-media-fetcher.ts`
++ `queue/whatsapp-media-intake.ts`, and the wiring in `webhooks/whatsapp/`,
+`queue/ingest-processor.ts`, `queue/document-sink.ts` and `worker/main.ts`. A
+WhatsApp webhook carries a Meta **media id**, not the bytes; until this, those
+jobs were logged and left unpersisted (a silent loss on the only live channel).
+Now the worker resolves the id to bytes and persists through the **same** path
+email takes from the point the bytes are in hand.
+
+- **`MediaFetcher` is interface + fixture, config-selected** (`MEDIA_FETCH=fixture|graph`)
+  — the sixth thing in the house shape, deliberately not a sixth shape.
+  `FixtureMediaFetcher` **never fabricates bytes** for an unseeded id (it throws
+  `not_found`): `fixture` is the default, so a fabricating fixture would turn
+  every real staging receipt into a made-up document that looks ingested.
+- **`GraphMediaFetcher` — two GETs on Node 22's built-in `fetch`, no new
+  dependency.** Metadata → download URL → bytes. Two things carry the weight:
+  an **SSRF allowlist** (the download URL comes from a JSON field and we send a
+  bearer to it, so a non-Meta host is refused *before* the token goes on the
+  wire — dotted-suffix match, `evil-fbcdn.net` does not pass; both GETs also use
+  `redirect: 'manual'` and refuse a 30x, so a bounce cannot steer the bearer past
+  the first, validated hop), and a **stream cap** enforced per-chunk (`Content-Length` is only a hint; the running total
+  breaks out of the `for await`, which cancels the stream). `failureForStatus`
+  is what decides retry-vs-DLQ, so it is the precise part: 401/403→unauthorised,
+  429/5xx→upstream (retryable), 404/400 + Meta code 100 / subcode 33→expired.
+- **`fetchWhatsAppMedia` fetch → `sanitise` → perceptual-hash → `store.put`,
+  then returns; it does not persist.** The processor owns the sink write, so
+  WhatsApp and email converge on one idempotency rule. A fetch failure **throws**
+  (`MediaFetchError`); a sanitisation refusal **returns** `{ok:false, rejection}`
+  to the processor, which then **throws `TerminalJobError`** so the job
+  dead-letters. The shape difference is deliberate — a rejection is a decision
+  about the document, a fetch failure is the world being unavailable, and only
+  the worker knows whether that is a backoff or a dead-letter
+  (`withFetchClassification`: retryable rethrows for BullMQ, terminal →
+  `TerminalJobError` → `UnrecoverableError`). The review of #96 turned the
+  refusal from warn-and-return into a dead-letter: returning null completed the
+  job, so with the wamid replay-blocked and Meta's media id expiring (~30 days)
+  a rejected receipt was one warn line from being unrecoverable. The DLQ entry
+  keeps `job.data` (mediaId, caption, practiceId, traceId) visible and
+  replayable until the s3_key nullability change (#79, G7) lets it become a
+  REJECTED document row.
+- **The caption becomes `documents.description`, STILL WRAPPED** in
+  `<untrusted_content>` (§9.6) — never unwrapped, not even to log it. The
+  unmapped-number warning names the wamid only.
+- **`safe-basename.ts` was EXTRACTED from `email-intake.ts`** (which now imports
+  it) so two channels cannot reduce an attacker-controlled name two ways. A
+  WhatsApp image has no filename and `original_filename` is NOT NULL, so one is
+  synthesised from the sha256 and the **detected** type, never Meta's declared
+  mime.
+
+**Three things raised on the issue for @shakibbinkabir before this can be marked
+complete** (all posted, awaiting his call):
+
+1. **The media-fetch token is a SEPARATE credential.** `META_APP_SECRET` is the
+   webhook HMAC key and `META_VERIFY_TOKEN` the handshake echo; neither
+   authenticates a Graph call. Added `META_MEDIA_ACCESS_TOKEN` (a System User
+   bearer with `whatsapp_business_messaging`) blank in `.env.example`;
+   `MEDIA_FETCH=graph` **refuses to boot** without it. Issuing the real bearer is
+   a secrets change — Shakib's.
+2. **No `practiceId` source exists for a WhatsApp job.** The controller never set
+   one, `Practice` has no phone-number column, nothing in `prisma/` maps a Meta
+   number to a practice. Interim: `WHATSAPP_PRACTICE_MAP` env (JSON
+   `phone_number_id → practiceId`), keyed on the number that RECEIVED the message
+   (never the sender), mirroring how email made `practiceId` a caller-supplied
+   dep — so a future `Practice.whatsappPhoneNumberId` column (`prisma/`, G7)
+   replaces it without touching a call site. Fails **closed and loud**: an
+   unmapped number enqueues (never 4xx's Meta), then dead-letters in the worker.
+3. **Acceptance criterion 3 is unwritable as the schema stands.**
+   `documents.s3_key` (and `byte_hash`/`byte_size`/`mime_type`/`original_filename`)
+   are NOT NULL, and every named fetch/sanitise failure happens *before* bytes
+   are stored — so a REJECTED/FAILED WhatsApp document cannot be written to the
+   Rejected/Failed surface yet. Refused to fabricate five NOT NULL columns.
+   Proposed the exact migration (`ALTER COLUMN s3_key DROP NOT NULL` + a
+   `CHECK (s3_key IS NOT NULL OR state IN ('REJECTED','FAILED'))`) as a **G7
+   contract change**. Until it lands, a rejection is a `logger.warn` with the
+   NT-ING code + traceId **plus a DLQ entry** (review of #96 — see the
+   fetch-vs-refusal bullet above), not a row.
+
+Also corrected two errors in the issue text: `channel: 'whatsapp'` does not exist
+(used `'client'`, which `channels.ts` already documents as WhatsApp intake at
+25 MB), and flagged `MEDIA_FETCH` vs the house-consistent `MEDIA_FETCHER`
+spelling. Tests: unit coverage for all four new units (incl. the offline Graph
+fetcher via a `fetchImpl` seam — SSRF and stream-cap proven), `mediaOf` +
+per-change `phone_number_id`, the controller media/practice path, and a **real-DB
+integration test** (`queue/whatsapp-intake.integration.test.ts`) proving the
+WhatsApp lane persists through `scopedDb` with the caption kept wrapped.
+
+### Web upload — the first HTTP surface in this lane (issue #76)
+
+`web-upload/` — a lane with its own `CLAUDE.md`; read that before changing it.
+`POST /v1/document-uploads` (presign) then `POST /v1/document-uploads/{id}/complete`
+(verify, persist in `RECEIVED` through `scopedDb`, enqueue sanitisation). **The
+API never touches the bytes** — the client PUTs them straight to storage.
+
+Three things worth knowing from here, without opening that file:
+
+- **`uploadId` is an HMAC-signed stateless token, not a table row.** There is no
+  `DocumentUpload` model, because `prisma/` is LAW and this did not justify a
+  contract-change issue. Completion therefore trusts the *claims*, not the
+  request: filename, business and declared type are inside the signature and are
+  not parameters of step two.
+- **The business is resolved through RLS before anything is signed.** The
+  presigned key is `w/<businessId>/uploads/…` built from the request body, so
+  without that check a caller could mint a write URL into another practice's
+  prefix. `documents_tenant` would still refuse the row at completion — but the
+  bytes would already be in someone else's bucket prefix, and **object storage
+  has no RLS to undo that**. 404, never 403.
+- **This is the first module to import values from `@neoting/contracts/zod`**
+  (unblocked by #88). `common/validation/parseBoundary` is the one place a
+  generated schema meets a request; it renders Zod issues into the contract's
+  `Problem.errors`, expanding `.strict()`'s `unrecognized_keys` so a misspelled
+  field is named instead of reported as `(body)`.
+
+`queue/ingest-queue.module.ts` was added with it: a **shared** `INGEST_QUEUE`
+producer, now that web upload is a second inbound lane in the same process.
+Nest providers are per-module, so a second `selectIngestQueue` factory would mean
+a second Redis connection — invisible under `INGEST_QUEUE=fixture`, real the
+moment it is not. `whatsapp.module.ts` now imports it rather than declaring its
+own.
+
+Proven end to end against Postgres + MinIO (`web-upload.integration.test.ts`),
+including the presigned PUT actually being accepted — the signature covers
+`content-type` and `content-length`, so a fixture URL can never prove it.
+
+### What the documents read surface took out of this lane (issue #77)
+
+**The read surface is NOT in this module.** `GET /documents…` lives in
+`modules/documents/` — read that `CLAUDE.md` before changing anything it touches.
+Two things it changed *here*, and one it deliberately did not:
+
+- **`storage/` gained `presignGet`.** The signed `ResponseContentType` /
+  `ResponseContentDisposition` overrides and the filename-header sanitising are
+  described in `storage/CLAUDE.md`. Nothing about `presignPut` changed.
+- **`web-upload/document-response.ts` moved to `common/documents/`.** Two modules
+  now project the same Prisma row onto the same contract `Document`, and a module
+  may not reach into another's internals — so it moved rather than being copied.
+  A second copy is how the write surface and the read surface start disagreeing
+  about what a `Document` is, which is the drift the generated contract exists to
+  prevent. `web-upload.service.ts` imports it from its new home; behaviour is
+  unchanged.
+- **No `POST /documents/{id}/retry` was added**, and none may be. `retryable` on
+  the summary is *derived* (`state === REJECTED || FAILED`) and is a hint to the
+  UI, not a route. A retry is a `document.reprocess` proposal on the Review →
+  Approve spine (Governance §10). All five read operations are
+  `x-nt-side-effect: none`.
+
 ### Sanitisation pipeline (merged, PR #3)
 
 **Pure library** — `lib/sanitisation/`.
@@ -293,15 +441,40 @@ sanitisation tests were ported from `tsx --test` to Vitest and run in the suite.
       image ships the wrong one and fails at runtime, not at build.
 - [ ] Encrypted Office (OOXML) detection — qpdf does not cover it
 - [ ] Enforce the bank-statement 300-page cap in the PDF-safety step
-- [ ] Await the frozen ingestion endpoints; map `Rejection` → NT-ING wire error
-      at the controller boundary (NT-ING-001/002/004 mirrored in `reasons.ts`)
+- [x] #76: the ingestion endpoints exist (`web-upload/`), and the **upload-time**
+      NT-ING codes are mapped at the controller boundary: NT-ING-001 (over cap),
+      NT-ING-002 (MIME off the allowlist), NT-ING-003 (byte-hash mismatch),
+      NT-ING-005 (intent expired).
+- [ ] The other half of that old TODO was **mis-stated and is recorded here
+      rather than silently dropped**: a sanitisation `Rejection` can never be a
+      wire error on this path. Sanitisation runs in the worker, after the HTTP
+      call has returned `201 RECEIVED`, so NT-ING-004 belongs on the *document*
+      (state + failure code, which the client polls) and not on a response. Doing
+      it as a controller mapping would mean sanitising inline, which Governance §7
+      forbids. Still to do: set it on the document from the worker.
 - [x] #12: BullMQ behind `IngestQueue` + the worker (DLQ, idempotency, traceId),
-      controller unchanged — done; live docker e2e pending a Docker install
+      controller unchanged — done. The live docker e2e is still outstanding, but
+      Docker is installed as of 16 Aug 2026, so it is now runnable here.
 - [x] #20: worker persists `Document` + `DocumentEvent` through `scopedDb`
       (`queue/document-sink.ts`), idempotent on `idempotencyKey`, proven against a
-      real DB. WhatsApp media fetch (so those jobs persist too) is the next task.
+      real DB.
+- [x] #79: WhatsApp media fetch — `MediaFetcher` (fixture|graph), the two-step
+      Graph fetcher (SSRF allowlist + per-chunk stream cap, no new dep), the
+      intake lane and the worker wiring, so those jobs persist too. Proven against
+      a real DB. **Three items await Shakib** before the PR can be marked done:
+      the `META_MEDIA_ACCESS_TOKEN` secret, the `WHATSAPP_PRACTICE_MAP` → future
+      `Practice.whatsappPhoneNumberId` column (G7), and the `documents.s3_key`
+      nullability migration for the Rejected/Failed surface (G7). All posted on #79.
+- [x] #76: web upload, two-step presign + complete, proven end to end against
+      Postgres and MinIO. See `web-upload/CLAUDE.md`. Not yet: auto-split,
+      worker-side sanitisation of these jobs, a durable idempotency store.
 - [x] #40: duplicate detection on byte hash + perceptual hash
       (`lib/dedupe/`, `queue/duplicate-detector.ts`), routed documents only,
       proven against a real DB. Not yet: dedupe on route (so unrouted docs get
       deduped when they gain a business), and the OCR/field nets (need extraction).
+- [x] #77: `storage/presignGet` added and `web-upload/document-response.ts` moved
+      to `common/documents/`. The endpoints themselves are `modules/documents/`,
+      not this lane. Not yet: a MinIO round-trip proving the GET signature, and an
+      HTTP-level test (blocked — needs `@nestjs/testing`/`supertest` added as
+      devDependencies, which needs a human).
 - [ ] Update this file on exit — it is how the next session picks up

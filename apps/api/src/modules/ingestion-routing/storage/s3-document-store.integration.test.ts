@@ -1,16 +1,20 @@
+import { createHash } from 'node:crypto';
+
 import { expect, test } from 'vitest';
 
 import { documentKey } from './document-store.js';
 import { createS3Client, S3DocumentStore } from './s3-document-store.js';
 
 // GUARDED so `pnpm test` stays offline (issue #16). This runs only when it is
-// explicitly enabled AND MinIO is up. Docker is not installed on my machine, so
-// Shakib runs it:
+// explicitly enabled AND MinIO is up:
 //
 //   docker compose up -d
 //   RUN_S3_INTEGRATION=1 pnpm --filter @neoting/api test
 //
 // (MinIO on :9000, credentials + the nt-local-docs bucket from docker-compose.yml.)
+//
+// This used to say Docker was not installed here and that Shakib had to run it.
+// Docker is installed as of 16 Aug 2026 and this test was run locally during #76.
 const enabled = process.env.RUN_S3_INTEGRATION === '1';
 
 test.skipIf(!enabled)('S3DocumentStore round-trips against MinIO and the key lands under w/', async () => {
@@ -30,4 +34,7 @@ test.skipIf(!enabled)('S3DocumentStore round-trips against MinIO and the key lan
   expect(stored.key).toBe(documentKey({ workspaceId: null, practiceId: 'prac_int', sha256 }));
   expect(stored.key.startsWith('w/')).toBe(true);
   expect((await store.get(stored.key)).equals(bytes)).toBe(true);
+  // The streamed hash against a real S3 Body — the async-iteration path no
+  // fixture exercises, since the fixture hashes a Buffer it already holds.
+  expect(await store.sha256(stored.key)).toBe(createHash('sha256').update(bytes).digest('hex'));
 });
