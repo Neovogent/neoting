@@ -406,10 +406,18 @@ CREATE TRIGGER audit_events_no_update
 -- cannot precede review. Enforced in the database so that no code path — including
 -- one written next year by someone who has not read §10 — can bypass it.
 
+-- Anchored like documents (issue #104): business branch first, else a
+-- NULL-business proposal is visible only to `user`-scope actors of its own
+-- practice. The previous policy read `business_id IS NULL OR …`, which made a
+-- NULL-business row world-readable AND world-writable — and NULL business is
+-- the DEFAULT for `document.route`, whose subject is an unrouted document.
+-- `action_proposals_tenant_anchor` (at-least-one CHECK, same shape and same
+-- OR-not-exactly-one semantics as documents_tenant_anchor) guarantees the
+-- predicate always has something to bite on.
 DROP POLICY IF EXISTS action_proposals_tenant ON action_proposals;
 CREATE POLICY action_proposals_tenant ON action_proposals
-  USING (business_id IS NULL OR app_can_access_business(business_id))
-  WITH CHECK (business_id IS NULL OR app_can_access_business(business_id));
+  USING (app_can_access_document(business_id, practice_id))
+  WITH CHECK (app_can_access_document(business_id, practice_id));
 
 CREATE OR REPLACE FUNCTION action_proposals_guard() RETURNS trigger
   LANGUAGE plpgsql AS

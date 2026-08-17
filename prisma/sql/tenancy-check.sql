@@ -289,6 +289,71 @@ BEGIN
   END;
 END $$;
 
+-- === 9. proposals are tenant-scoped, including NULL-business ones ==========
+--
+-- Issue #104. The old policy read `business_id IS NULL OR …`, which made a
+-- NULL-business proposal world-readable and world-writable — and NULL business
+-- is the DEFAULT for `document.route`, whose subject is an unrouted document.
+-- These assertions are the regression: they fail against that policy.
+
+-- Seeded as superuser: a practice-anchored proposal with no business, the
+-- route-kind shape exactly.
+INSERT INTO action_proposals (id, practice_id, kind, payload, payload_hash, expires_at)
+  VALUES ('t_prop_np', 't_prac_a', 'document.route', '{}'::jsonb, 't_ph2', now() + interval '1 hour');
+
+BEGIN;
+  SET LOCAL ROLE nt_app;
+  SET LOCAL app.actor_id = 't_user_a';
+  SET LOCAL app.practice_id = 't_prac_a';
+  SET LOCAL app.session_scope = 'user';
+
+  SELECT assert_eq(count(*), 1, 'practice A sees its own NULL-business proposal')
+    FROM action_proposals WHERE id = 't_prop_np';
+COMMIT;
+
+BEGIN;
+  SET LOCAL ROLE nt_app;
+  SET LOCAL app.actor_id = 't_user_b';
+  SET LOCAL app.practice_id = 't_prac_b';
+  SET LOCAL app.session_scope = 'user';
+
+  SELECT assert_eq(count(*), 0, 'practice B cannot see practice A''s NULL-business proposal')
+    FROM action_proposals WHERE id = 't_prop_np';
+
+  -- Writable was the worse half of the hole: under the old policy this UPDATE
+  -- reached the row. RLS filters it out of the UPDATE's scope now, so it
+  -- writes nothing rather than erroring — assert the rowcount.
+  UPDATE action_proposals SET state = 'EXPIRED' WHERE id = 't_prop_np';
+  SELECT assert_eq(count(*), 0, 'practice B''s UPDATE of that proposal touched no rows')
+    FROM action_proposals WHERE id = 't_prop_np' AND state = 'EXPIRED';
+
+  -- And practice B cannot mint a proposal anchored on practice A: WITH CHECK
+  -- refuses the insert outright.
+  DO $$
+  BEGIN
+    BEGIN
+      INSERT INTO action_proposals (id, practice_id, kind, payload, payload_hash, expires_at)
+        VALUES ('t_prop_forged', 't_prac_a', 'document.route', '{}'::jsonb, 't_ph3', now() + interval '1 hour');
+      RAISE EXCEPTION 'FAIL: practice B inserted a proposal anchored on practice A';
+    EXCEPTION WHEN insufficient_privilege OR check_violation THEN
+      RAISE NOTICE 'pass: cross-practice proposal insert refused (%)', sqlerrm;
+    END;
+  END $$;
+COMMIT;
+
+-- An unanchored proposal (both NULL) is refused by the CHECK before any policy
+-- is consulted — under the old policy it would have been the world-visible row.
+DO $$
+BEGIN
+  BEGIN
+    INSERT INTO action_proposals (id, kind, payload, payload_hash, expires_at)
+      VALUES ('t_prop_orphan', 'document.route', '{}'::jsonb, 't_ph4', now() + interval '1 hour');
+    RAISE EXCEPTION 'FAIL: an unanchored proposal was accepted';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE 'pass: unanchored proposal refused by action_proposals_tenant_anchor (%)', sqlerrm;
+  END;
+END $$;
+
 -- ------------------------------------------------------------- teardown ---
 ALTER TABLE audit_events DISABLE TRIGGER audit_events_no_update;
 DELETE FROM audit_events WHERE id LIKE 't\_%';
