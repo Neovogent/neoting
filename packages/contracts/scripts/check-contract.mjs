@@ -30,7 +30,7 @@ const HTTP_METHODS = ['get', 'post', 'patch', 'put', 'delete'];
 const SIDE_EFFECT_CLASSES = new Set(['none', 'ingest', 'proposal', 'execute']);
 
 /** Enums that must match prisma verbatim. The schema wins; the spec is the bug. */
-const MIRRORED_ENUMS = ['DocumentChannel', 'Inbox', 'DocumentState', 'DocumentType', 'ProposalState'];
+const MIRRORED_ENUMS = ['DocumentChannel', 'Inbox', 'DocumentState', 'DocumentType', 'ProposalState', 'WorkspaceRole'];
 
 const failures = [];
 const fail = (msg) => failures.push(msg);

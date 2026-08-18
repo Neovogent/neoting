@@ -6,10 +6,12 @@
 #   2. Shakib decides how provisioning runs under RLS (prisma/CLAUDE.md), which
 #      is what the auth-tenancy surface in pass 2 depends on.
 #
-# SCOPE OF THIS PASS: ingestion + documents + the Review → Approve spine.
+# SCOPE OF THIS PASS: ingestion + documents + the Review → Approve spine,
+# plus the MINIMAL demo-auth trio (login, logout, /me) pulled forward from
+# pass 2 by METH_MODE Stage 1 (issue #118, pre-approved in METH_MODE §3.1).
 # Deliberately absent, in the order they should land:
-#   pass 2  auth-tenancy — GET /me (the §13.3 persistent context header depends
-#           on it), sessions, memberships
+#   pass 2  auth-tenancy — the REST of it: memberships, invites, session
+#           management beyond the single stateless cookie
 #   pass 3  chase + the OTP portal (including the editable-overlay correction
 #           endpoint — see the open question on ProposalKind below)
 #   pass 4  banking, matching, approvals, publishing, exports, public API
@@ -123,6 +125,11 @@ security:
   - workspaceSession: []
 
 tags:
+  - name: auth
+    description: |
+      Login, logout and the caller's own context. Minimal by design (METH
+      Stage 1): one stateless session cookie, no membership management — the
+      full auth-tenancy surface is contract pass 2.
   - name: documents
     description: |
       The document record and everything hanging off it. Reads only — every
@@ -141,6 +148,110 @@ tags:
     description: Inbound webhooks from third parties. Signature-verified, not session-authenticated.
 
 paths:
+  # ==========================================================================
+  # AUTH — the minimal demo trio (METH Stage 1, issue #118)
+  #
+  # Deliberately small: login issues one stateless HMAC-signed cookie, logout
+  # clears it, /me is the §13.3 context header. No membership management, no
+  # refresh rotation, no device history — that is contract pass 2, post-demo.
+  # ==========================================================================
+
+  /auth/sessions:
+    post:
+      operationId: createSession
+      summary: Log in
+      description: |
+        Verifies email + password + TOTP and issues the workspace session as an
+        HttpOnly `nt_session` cookie (12 h). The response body is empty on
+        purpose — the cookie IS the session, and `GET /me` is the read surface
+        for who you now are.
+
+        Server-side this changes no product state: the session is a stateless
+        signed token, there is no session row, and nothing that Review →
+        Approve governs happens here. That is why the side-effect class is
+        `none` and no `Idempotency-Key` is required — retrying a login simply
+        issues a fresh cookie.
+
+        Every credential failure — unknown email, wrong password, wrong TOTP —
+        returns the same `401 NT-AUTH-003`. Distinguishing them would hand an
+        account-enumeration oracle to whoever is guessing.
+      tags: [auth]
+      x-nt-side-effect: none
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SessionCreateRequest' }
+      responses:
+        '204':
+          description: Logged in. The session travels only as the `nt_session` cookie.
+          headers:
+            Set-Cookie:
+              description: '`nt_session=<signed token>; HttpOnly; SameSite=Lax; Path=/; Expires=<+12h>`'
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: Credentials did not verify — `NT-AUTH-003`, uniformly.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              example:
+                type: https://neoting.com/problems/NT-AUTH-003
+                title: Invalid credentials
+                status: 401
+                code: NT-AUTH-003
+                detail: The email, password or verification code did not match.
+                traceId: 01J8XN2ZQ5R7TQ9E3M4K6P
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /auth/sessions/current:
+    delete:
+      operationId: deleteCurrentSession
+      summary: Log out
+      description: |
+        Clears the session cookie. Idempotent and deliberately tolerant of a
+        missing or expired cookie — the caller's goal, not being logged in, is
+        already true, so the answer is `204` either way. The token is
+        stateless, so invalidation is the cleared cookie plus the token's own
+        expiry; a server-side revocation list waits until sessions are rows.
+      tags: [auth]
+      x-nt-side-effect: none
+      security: []
+      responses:
+        '204':
+          description: Logged out. The cookie is cleared.
+          headers:
+            Set-Cookie:
+              description: 'The clearing header: `nt_session=; Expires=<past>`.'
+              schema: { type: string }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /me:
+    get:
+      operationId: getMe
+      summary: Who am I
+      description: |
+        The persistent context header (SoT §13.3): the signed-in user, the
+        practice they act for (null for a business-only login), the acting
+        workspace role, and the businesses the caller's RLS context can see.
+        Every workspace screen renders from this.
+      tags: [auth]
+      x-nt-side-effect: none
+      responses:
+        '200':
+          description: The caller's identity and scope.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   # ==========================================================================
   # DOCUMENTS
   # ==========================================================================
@@ -1225,6 +1336,10 @@ components:
         - NT-VAL-001   # request failed schema validation
         - NT-AUTH-001  # no valid session
         - NT-AUTH-002  # session expired
+        # ONE code for every login failure — unknown email, wrong password,
+        # wrong TOTP. Splitting them would hand an account-enumeration oracle
+        # to whoever is guessing (same stance as NT-INT-001's single code).
+        - NT-AUTH-003  # login credentials did not verify
         - NT-PRM-001   # actor lacks permission for this action kind
         - NT-IDM-001   # idempotency key reused with a different payload
         - NT-RATE-001  # rate limit exceeded
@@ -1296,6 +1411,15 @@ components:
       type: string
       enum: [CREATED, REVIEWED, APPROVED, EXECUTED, CANCELLED, EXPIRED]
 
+    WorkspaceRole:
+      type: string
+      description: |
+        Mirrors the Prisma `WorkspaceRole` enum exactly (checked mechanically,
+        like the document enums). Roles are always set per account (SoT §3.3);
+        fine-grained permissions are checked at call sites, never inferred
+        from the role name.
+      enum: [PRACTICE_ADMIN, CLIENT_ADMIN, PRACTICE_STANDARD, BUSINESS_ADMIN, USER_ADMIN, BUSINESS_STANDARD]
+
     SplitMode:
       type: string
       description: |
@@ -1315,6 +1439,57 @@ components:
         - HUMAN_CONFIRMED   # a person typed or confirmed it; outranks everything
         - DETERMINISTIC     # a rule or validator produced it
         - AI_SUGGESTED      # a model produced it; always paired with confidence
+
+    # ---- auth (METH Stage 1) ----------------------------------------------
+
+    SessionCreateRequest:
+      type: object
+      required: [email, password, totp]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 1 }
+        totp:
+          type: string
+          pattern: '^[0-9]{6}$'
+          description: |
+            Six digits. Demo builds verify against a fixed code
+            (`OTP_MODE=demo`); real TOTP replaces the verifier, not this shape.
+
+    Me:
+      type: object
+      description: |
+        The context header payload (SoT §13.3). `businesses` is what the
+        caller's RLS context can actually see — the practice's clients for
+        practice staff, the single workspace for a business login.
+      required: [user, practice, role, businesses]
+      properties:
+        user:
+          type: object
+          required: [id, email]
+          properties:
+            id: { type: string }
+            email: { type: string, format: email }
+            firstName: { type: [string, 'null'] }
+            lastName: { type: [string, 'null'] }
+        practice:
+          description: Null for a business-only login — there is no practice above them.
+          oneOf:
+            - type: object
+              required: [id, name]
+              properties:
+                id: { type: string }
+                name: { type: string }
+            - type: 'null'
+        role:
+          $ref: '#/components/schemas/WorkspaceRole'
+        businesses:
+          type: array
+          items:
+            type: object
+            required: [id, name]
+            properties:
+              id: { type: string }
+              name: { type: string }
 
     # ---- documents --------------------------------------------------------
 

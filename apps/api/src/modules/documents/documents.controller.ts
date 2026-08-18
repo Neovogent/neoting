@@ -47,21 +47,21 @@ export class DocumentsController {
     const parsed = parseBoundary(listDocumentsQueryParams, coerceQuery(listDocumentsQueryParams, query), 'query parameters');
     // `require()` resolves the context here, inside Nest's pipeline, so a bad
     // one leaves as a 401 problem+json rather than an Express-level crash (#75).
-    return this.service.listDocuments(this.context.require(), parsed);
+    return this.service.listDocuments(await this.context.require(), parsed);
   }
 
   @Get(':documentId')
   @HttpCode(HttpStatus.OK)
   async get(@Param('documentId') documentId: string) {
     const params = parseBoundary(getDocumentParams, { documentId }, 'documentId');
-    return this.service.getDocument(this.context.require(), params.documentId);
+    return this.service.getDocument(await this.context.require(), params.documentId);
   }
 
   @Get(':documentId/original')
   @HttpCode(HttpStatus.OK)
   async original(@Param('documentId') documentId: string) {
     const params = parseBoundary(getDocumentOriginalParams, { documentId }, 'documentId');
-    return this.service.getDocumentOriginal(this.context.require(), params.documentId);
+    return this.service.getDocumentOriginal(await this.context.require(), params.documentId);
   }
 
   @Get(':documentId/events')
@@ -69,7 +69,7 @@ export class DocumentsController {
   async events(@Param('documentId') documentId: string, @Query() query: unknown) {
     const params = parseBoundary(listDocumentEventsParams, { documentId }, 'documentId');
     const parsed = parseBoundary(listDocumentEventsQueryParams, coerceQuery(listDocumentEventsQueryParams, query), 'query parameters');
-    return this.service.listDocumentEvents(this.context.require(), params.documentId, parsed);
+    return this.service.listDocumentEvents(await this.context.require(), params.documentId, parsed);
   }
 
   @Get(':documentId/extractions')
@@ -77,6 +77,6 @@ export class DocumentsController {
   async extractions(@Param('documentId') documentId: string, @Query() query: unknown) {
     const params = parseBoundary(listDocumentExtractionsParams, { documentId }, 'documentId');
     const parsed = parseBoundary(listDocumentExtractionsQueryParams, coerceQuery(listDocumentExtractionsQueryParams, query), 'query parameters');
-    return this.service.listDocumentExtractions(this.context.require(), params.documentId, parsed);
+    return this.service.listDocumentExtractions(await this.context.require(), params.documentId, parsed);
   }
 }

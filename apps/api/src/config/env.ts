@@ -75,9 +75,26 @@ const EnvSchema = z.object({
 
   // The request-context resolver (#75). `fixture` = trust `X-NT-*` dev headers
   // (default — lets endpoints exercise scopedDb before auth exists); `session` =
-  // the real S1 resolver (not yet implemented). Selected by config, not import,
-  // like the others. ⚠ `fixture` is REFUSED under `NODE_ENV=production` below.
+  // the real S1 resolver (cookie → memberships → ScopeContext, issue #118).
+  // Selected by config, not import, like the others. ⚠ `fixture` is REFUSED
+  // under `NODE_ENV=production` below.
   AUTH_MODE: z.enum(['fixture', 'session']).default('fixture'),
+
+  // Signs the stateless `nt_session` cookie (METH Stage 1, #118) — the same
+  // HMAC pattern as UPLOAD_URL_SECRET. Empty default fails CLOSED: signing or
+  // verifying with an empty secret is refused, so an unset secret cannot mint a
+  // forgeable session. Deliberately NO production boot-refusal (unlike
+  // UPLOAD_URL_SECRET): staging already runs AUTH_MODE=session without this
+  // variable, and a boot gate added here would crash-loop the next staging
+  // deploy — taking /healthz down — instead of leaving session endpoints
+  // failing closed exactly as they do today. The staging value lands with the
+  // Stage 15 env change, not with this code.
+  SESSION_SECRET: z.string().default(''),
+
+  // TOTP verification mode (METH Stage 1). `demo` accepts the literal fixed
+  // code and nothing else — the only value until Twilio Verify replaces it
+  // post-demo. // DEMO-MOCK: Twilio Verify (real TOTP/OTP) replaces this.
+  OTP_MODE: z.enum(['demo']).default('demo'),
 
   // Web-upload intent signing (#76). The `uploadId` is a STATELESS HMAC-signed
   // token (no DocumentUpload table — prisma/ is LAW), and this secret signs it.

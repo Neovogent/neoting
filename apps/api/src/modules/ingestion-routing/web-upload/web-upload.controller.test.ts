@@ -31,7 +31,7 @@ function harness(): { controller: WebUploadController; seen: Seen } {
       return { id: 'doc_1' } as Document;
     },
   } as unknown as WebUploadService;
-  const context: RequestContext = { require: () => CTX };
+  const context: RequestContext = { require: () => Promise.resolve(CTX) };
   return { controller: new WebUploadController(context, service), seen };
 }
 

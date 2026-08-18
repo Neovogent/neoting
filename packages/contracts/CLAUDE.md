@@ -81,13 +81,24 @@ It depends on `js-yaml` and nothing else, on purpose: it has to run before the c
 
 ## Current state
 
-**Pass 1 drafted — NOT frozen.** `openapi.yaml`, 14 operations, 37 schemas, covering:
+**Pass 1 drafted — NOT frozen.** `openapi.yaml`, 17 operations, 40 schemas, covering:
 
 | Surface | Operations |
 |---|---|
 | Documents | list · get · original-url · processing log · extraction history |
 | Ingestion | upload intent · upload complete · WhatsApp webhook verify + receive |
 | Review → Approve | create proposal · get · review · approve · cancel |
+| Auth (minimal, METH Stage 1 #118) | login · logout · `GET /me` |
+
+The auth trio is the demo-spine slice of pass 2, pulled forward under the
+standing approval in METH_MODE §3.1: one stateless cookie session, the §13.3
+context header, and a new `NT-AUTH-003` (one code for every login failure — an
+enumeration oracle otherwise). Login and logout are `x-nt-side-effect: none`
+**deliberately**: a stateless cookie changes no product state and creates no
+record, so they need no `Idempotency-Key` and sit legitimately outside Review →
+Approve. `WorkspaceRole` joined the prisma-mirrored enum list in
+`check-contract.mjs`. The REST of pass 2 (memberships, invites, session
+management) is still to write.
 
 Every shape derives from the applied Prisma schema. Enum values are copied verbatim and drift is checked mechanically, not by eye.
 

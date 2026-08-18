@@ -13,7 +13,7 @@ function env(overrides: Partial<Env> = {}): Env {
     META_MEDIA_ACCESS_TOKEN: '',
     MEDIA_FETCH: 'fixture',
     WHATSAPP_PRACTICE_MAP: {},
-    AUTH_MODE: 'fixture',
+    AUTH_MODE: 'fixture', SESSION_SECRET: 'test-session-secret', OTP_MODE: 'demo',
     UPLOAD_URL_SECRET: 'test-secret',
     UPLOAD_URL_TTL_SECONDS: 900,
     INGEST_QUEUE: 'fixture',

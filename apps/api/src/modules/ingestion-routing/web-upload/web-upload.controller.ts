@@ -51,7 +51,7 @@ export class WebUploadController {
     const request = parseBoundary(createDocumentUploadBody, body, 'request body');
     // `require()` resolves the context here, inside Nest's pipeline, so a bad one
     // leaves as a 401 problem+json rather than an Express-level crash (#75).
-    return this.service.createUpload(this.context.require(), request, key);
+    return this.service.createUpload(await this.context.require(), request, key);
   }
 
   /** Step two — the bytes have landed; verify them and enter the pipeline. */
@@ -65,6 +65,6 @@ export class WebUploadController {
     const key = parseIdempotencyKey(completeDocumentUploadHeader, idempotencyKey);
     const params = parseBoundary(completeDocumentUploadParams, { uploadId }, 'uploadId');
     const { byteHash } = parseBoundary(completeDocumentUploadBody, body, 'request body');
-    return this.service.completeUpload(this.context.require(), params.uploadId, byteHash, key);
+    return this.service.completeUpload(await this.context.require(), params.uploadId, byteHash, key);
   }
 }
