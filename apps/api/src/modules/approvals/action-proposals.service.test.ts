@@ -1,0 +1,273 @@
+import { expect, test } from 'vitest';
+
+import type { ExecutionResult, ExecutorRegistry } from '../validation-dedupe/index.js';
+import { ProposalNotImplementedError } from '../validation-dedupe/index.js';
+import type { PrismaClient } from '../../common/db/prisma.js';
+import { ScopeContextSchema } from '../../common/db/scope-context.js';
+import { InMemoryIdempotencyStore } from '../../common/idempotency/idempotency-store.js';
+import { AppException } from '../../common/problem/problem.js';
+import { ActionProposalsService } from './action-proposals.service.js';
+import { canonicalHash } from './canonical-hash.js';
+
+/**
+ * The gate ladder, against a recording fake — the assertions are on what
+ * reaches the database and on WHETHER THE EXECUTOR RAN, which is the thing
+ * each refusal exists to prevent. The trigger-level enforcement (approve
+ * bypassing this service entirely) is the integration test's half.
+ */
+
+const CTX = ScopeContextSchema.parse({ actorId: 'usr_1', practiceId: 'prac_1' });
+
+interface ProposalRow {
+  id: string;
+  businessId: string | null;
+  practiceId: string | null;
+  kind: string;
+  payload: Record<string, unknown>;
+  payloadHash: string;
+  renderedSummary: Record<string, unknown> | null;
+  renderedSummaryHash: string | null;
+  state: string;
+  createdByUserId: string | null;
+  createdByModel: string | null;
+  createdAt: Date;
+  reviewedAt: Date | null;
+  approvedByUserId: string | null;
+  approvedAt: Date | null;
+  executedAt: Date | null;
+  expiresAt: Date;
+  policyProposalId: string | null;
+  outcome: Record<string, unknown> | null;
+  traceId: string | null;
+}
+
+const ARCHIVE_PAYLOAD = { documentIds: ['doc_1'], archived: true };
+
+function proposal(id: string, over: Partial<ProposalRow> = {}): ProposalRow {
+  return {
+    id,
+    businessId: 'biz_1',
+    practiceId: 'prac_1',
+    kind: 'document.archive',
+    payload: ARCHIVE_PAYLOAD,
+    payloadHash: canonicalHash(ARCHIVE_PAYLOAD),
+    renderedSummary: null,
+    renderedSummaryHash: null,
+    state: 'CREATED',
+    createdByUserId: 'usr_1',
+    createdByModel: null,
+    createdAt: new Date('2026-08-18T09:00:00Z'),
+    reviewedAt: null,
+    approvedByUserId: null,
+    approvedAt: null,
+    executedAt: null,
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    policyProposalId: null,
+    outcome: null,
+    traceId: null,
+    ...over,
+  };
+}
+
+function harness(rows: ProposalRow[] = [], executorResult?: ExecutionResult | Error) {
+  const map = new Map(rows.map((r) => [r.id, r]));
+  const audits: Record<string, unknown>[] = [];
+  const executed: string[] = [];
+  let idSeq = 0;
+
+  const tx = {
+    $executeRaw: async () => 0, // scopedDb's GUCs
+    $queryRaw: async (strings: TemplateStringsArray, ...args: unknown[]) => {
+      const sql = strings.join('?');
+      if (sql.includes('FOR UPDATE')) return map.has(args[0] as string) ? [{ id: args[0] }] : [];
+      return [{}]; // the audit writer's advisory lock
+    },
+    actionProposal: {
+      findUnique: async ({ where }: { where: { id: string } }) => map.get(where.id) ?? null,
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        const row = proposal(`prop_${++idSeq}`, data as Partial<ProposalRow>);
+        map.set(row.id, row);
+        return row;
+      },
+      update: async ({ where, data }: { where: { id: string }; data: Partial<ProposalRow> }) => {
+        const row = map.get(where.id);
+        if (row === undefined) throw new Error('update on missing row');
+        Object.assign(row, data);
+        return row;
+      },
+    },
+    business: {
+      findUnique: async ({ where }: { where: { id: string } }) => (where.id === 'biz_1' ? { id: where.id } : null),
+    },
+    auditEvent: {
+      findFirst: async () => null,
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        audits.push(data);
+        return data;
+      },
+    },
+  };
+  const prisma = { $transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx) } as unknown as PrismaClient;
+
+  const registry = {
+    'document.archive': {
+      kind: 'document.archive',
+      execute: async () => {
+        executed.push('document.archive');
+        if (executorResult instanceof Error) throw executorResult;
+        return executorResult ?? { changed: [{ entity: 'document', id: 'doc_1' }], alreadyApplied: false, followUps: [] };
+      },
+    },
+    'chase.send': {
+      kind: 'chase.send',
+      execute: async () => {
+        throw new ProposalNotImplementedError('chase.send');
+      },
+    },
+  } as unknown as ExecutorRegistry;
+
+  const service = new ActionProposalsService(
+    prisma,
+    registry,
+    { detect: async () => ({ findings: [], candidatesTruncated: false }) },
+    new InMemoryIdempotencyStore(),
+  );
+  return { service, map, audits, executed };
+}
+
+const code = async (p: Promise<unknown>): Promise<string> => {
+  try {
+    await p;
+    return 'no-throw';
+  } catch (e) {
+    return e instanceof AppException ? e.code : `unexpected:${String(e)}`;
+  }
+};
+
+// ---- create -----------------------------------------------------------------
+
+test('create stores the canonical payload hash, the creator, and executes nothing', async () => {
+  const { service, map, executed } = harness();
+  const created = await service.create(CTX, { kind: 'document.archive', businessId: 'biz_1', payload: ARCHIVE_PAYLOAD }, 'key-1');
+  expect(created.state).toBe('CREATED');
+  expect(created.payloadHash).toBe(canonicalHash(ARCHIVE_PAYLOAD));
+  expect(created.createdByUserId).toBe('usr_1');
+  expect(created.reviewedAt).toBeNull();
+  expect(executed).toEqual([]);
+  expect(map.size).toBe(1);
+});
+
+test('create refuses an unreachable business (422, never confirming existence) and an anchorless proposal', async () => {
+  const { service } = harness();
+  expect(await code(service.create(CTX, { kind: 'document.archive', businessId: 'biz_other', payload: ARCHIVE_PAYLOAD }, 'k'))).toBe('NT-PRP-006');
+  const businessScoped = ScopeContextSchema.parse({ actorId: 'usr_2', businessId: 'biz_1' });
+  expect(await code(service.create(businessScoped, { kind: 'document.archive', businessId: null, payload: ARCHIVE_PAYLOAD }, 'k2'))).toBe('NT-PRP-006');
+});
+
+test('a replayed Idempotency-Key returns the original response; a reused one with a different payload is NT-IDM-001', async () => {
+  const { service, map } = harness();
+  const first = await service.create(CTX, { kind: 'document.archive', businessId: 'biz_1', payload: ARCHIVE_PAYLOAD }, 'key-1');
+  const replay = await service.create(CTX, { kind: 'document.archive', businessId: 'biz_1', payload: ARCHIVE_PAYLOAD }, 'key-1');
+  expect(replay).toEqual(first);
+  expect(map.size).toBe(1); // no second proposal
+  expect(await code(service.create(CTX, { kind: 'document.archive', businessId: 'biz_1', payload: { documentIds: ['doc_2'], archived: true } }, 'key-1'))).toBe('NT-IDM-001');
+});
+
+// ---- review -----------------------------------------------------------------
+
+test('review records what was rendered; a second review returns the SAME hash and keeps the first reviewedAt', async () => {
+  const { service } = harness([proposal('prop_a')]);
+  const first = await service.review(CTX, 'prop_a', 'k1');
+  expect(first.renderedSummaryHash).toMatch(/^[a-f0-9]{64}$/);
+  expect(first.proposal.state).toBe('REVIEWED');
+  const second = await service.review(CTX, 'prop_a', 'k2');
+  expect(second.renderedSummaryHash).toBe(first.renderedSummaryHash);
+  expect(second.reviewedAt).toBe(first.reviewedAt);
+});
+
+test('review refuses executed, cancelled and expired proposals; get/review of an invisible proposal is 404', async () => {
+  const { service } = harness([
+    proposal('prop_done', { executedAt: new Date(), state: 'EXECUTED' }),
+    proposal('prop_gone', { state: 'CANCELLED' }),
+    proposal('prop_old', { expiresAt: new Date(Date.now() - 1000) }),
+  ]);
+  expect(await code(service.review(CTX, 'prop_done', 'k'))).toBe('NT-PRP-005');
+  expect(await code(service.review(CTX, 'prop_gone', 'k'))).toBe('NT-PRP-006');
+  expect(await code(service.review(CTX, 'prop_old', 'k'))).toBe('NT-PRP-003');
+  expect(await code(service.review(CTX, 'prop_missing', 'k'))).toBe('NT-VAL-001');
+  expect(await code(service.get(CTX, 'prop_missing'))).toBe('NT-VAL-001');
+});
+
+// ---- approve: the gate ladder ------------------------------------------------
+
+test('approve WITHOUT review is refused NT-PRP-002 and the executor never runs', async () => {
+  const { service, executed } = harness([proposal('prop_a')]);
+  expect(await code(service.approve(CTX, 'prop_a', { renderedSummaryHash: 'f'.repeat(64) }, 'k'))).toBe('NT-PRP-002');
+  expect(executed).toEqual([]);
+});
+
+test('approve with a stale rendered hash is refused NT-PRP-004 and the executor never runs', async () => {
+  const { service, executed } = harness([proposal('prop_a')]);
+  await service.review(CTX, 'prop_a', 'k1');
+  expect(await code(service.approve(CTX, 'prop_a', { renderedSummaryHash: 'f'.repeat(64) }, 'k2'))).toBe('NT-PRP-004');
+  expect(executed).toEqual([]);
+});
+
+test('the full path: review → approve executes exactly once, consumes the proposal, and appends the audit event', async () => {
+  const { service, executed, audits, map } = harness([proposal('prop_a')]);
+  const review = await service.review(CTX, 'prop_a', 'k1');
+  const approved = await service.approve(CTX, 'prop_a', { renderedSummaryHash: review.renderedSummaryHash, comment: 'looks right' }, 'k2');
+
+  expect(executed).toEqual(['document.archive']);
+  expect(approved.state).toBe('EXECUTED');
+  expect(approved.approvedByUserId).toBe('usr_1');
+  expect(approved.executedAt).not.toBeNull();
+  expect(approved.outcome).toMatchObject({ alreadyApplied: false, comment: 'looks right' });
+
+  expect(audits).toHaveLength(1);
+  expect(audits[0]).toMatchObject({
+    businessId: 'biz_1',
+    event: 'action_proposal.executed',
+    proposalId: 'prop_a',
+    payloadHash: map.get('prop_a')?.payloadHash,
+    renderedSummaryHash: review.renderedSummaryHash,
+  });
+
+  // Second approve: the proposal is consumed. Same key → original outcome,
+  // no second execution; different key → NT-PRP-005.
+  const replay = await service.approve(CTX, 'prop_a', { renderedSummaryHash: review.renderedSummaryHash, comment: 'looks right' }, 'k2');
+  expect(replay).toEqual(approved);
+  expect(await code(service.approve(CTX, 'prop_a', { renderedSummaryHash: review.renderedSummaryHash }, 'k3'))).toBe('NT-PRP-005');
+  expect(executed).toEqual(['document.archive']);
+  expect(audits).toHaveLength(1);
+});
+
+test('an unimplemented kind refuses at approval (NT-PRP-006) — after review, before any write', async () => {
+  const chasePayload = { messages: [{ recipientE164: '+447700900001', body: 'x', transactionIds: ['t1'] }] };
+  const { service, audits } = harness([
+    proposal('prop_c', { kind: 'chase.send', payload: chasePayload, payloadHash: canonicalHash(chasePayload) }),
+  ]);
+  const review = await service.review(CTX, 'prop_c', 'k1');
+  expect(await code(service.approve(CTX, 'prop_c', { renderedSummaryHash: review.renderedSummaryHash }, 'k2'))).toBe('NT-PRP-006');
+  expect(audits).toHaveLength(0);
+});
+
+test('a stored payload that no longer parses refuses NT-PRP-006 rather than reaching the executor', async () => {
+  const { service, executed } = harness([
+    proposal('prop_bad', { payload: { documentIds: [], archived: 'yes' } as never, payloadHash: 'deadbeef' }),
+  ]);
+  expect(await code(service.review(CTX, 'prop_bad', 'k'))).toBe('NT-PRP-006');
+  expect(executed).toEqual([]);
+});
+
+// ---- cancel -----------------------------------------------------------------
+
+test('cancel is refused on an executed proposal, idempotent on a cancelled one, and records the reason', async () => {
+  const { service } = harness([proposal('prop_a'), proposal('prop_done', { executedAt: new Date(), state: 'EXECUTED' })]);
+  const cancelled = await service.cancel(CTX, 'prop_a', { reason: 'changed my mind' }, 'k1');
+  expect(cancelled.state).toBe('CANCELLED');
+  expect(cancelled.outcome).toMatchObject({ cancelled: true, reason: 'changed my mind' });
+  const again = await service.cancel(CTX, 'prop_a', { reason: 'changed my mind' }, 'k2');
+  expect(again.state).toBe('CANCELLED');
+  expect(await code(service.cancel(CTX, 'prop_done', {}, 'k3'))).toBe('NT-PRP-005');
+});

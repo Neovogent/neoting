@@ -17,7 +17,7 @@ import { currentTraceId } from '../../../common/trace/trace-context.js';
 import { documentIdFor } from '../queue/document-sink.js';
 import { type DocumentStore, uploadIntentKey } from '../storage/document-store.js';
 import type { IngestJob, IngestQueue } from '../webhooks/whatsapp/ingest-queue.js';
-import { fingerprint, type IdempotencyStore } from './idempotency-store.js';
+import { fingerprint, type IdempotencyStore } from '../../../common/idempotency/idempotency-store.js';
 import { isAllowedMime, maxBytesForChannel } from './upload-policy.js';
 import { signUploadToken, type UploadClaims, verifyUploadToken } from './upload-token.js';
 

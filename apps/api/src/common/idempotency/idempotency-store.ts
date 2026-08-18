@@ -6,6 +6,12 @@ import { createHash } from 'node:crypto';
  * client bug and returns 409 `NT-IDM-001` rather than silently doing the wrong
  * thing to someone's books.
  *
+ * MOVED here from `modules/ingestion-routing/web-upload/` when the proposal
+ * engine (METH S3, issue #122) became its second consumer — the same choice
+ * `document-response.ts` made in #77: one mechanism two modules share lives in
+ * `common/`, because a second copy is how two surfaces start disagreeing about
+ * what a replay is.
+ *
  * In-memory and per-process for now — enough for one API instance and the tests.
  * A durable store (Redis/Postgres) is a follow-up; there is no idempotency table
  * (prisma/ is LAW), so this stays behind an interface to swap later.

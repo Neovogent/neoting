@@ -12,7 +12,7 @@ import { type ScopeContext, ScopeContextSchema } from '../../../common/db/scope-
 import { AppException } from '../../../common/problem/problem.js';
 import { InMemoryDocumentStore } from '../storage/document-store.js';
 import { FixtureIngestQueue } from '../webhooks/whatsapp/ingest-queue.js';
-import { InMemoryIdempotencyStore } from './idempotency-store.js';
+import { InMemoryIdempotencyStore } from '../../../common/idempotency/idempotency-store.js';
 import { signUploadToken, type UploadClaims, verifyUploadToken } from './upload-token.js';
 import { WebUploadService } from './web-upload.service.js';
 

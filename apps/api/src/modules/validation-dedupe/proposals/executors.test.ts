@@ -103,7 +103,6 @@ test('the registry is total over the contract enum, and the holes throw by name'
   }
   const { db } = harness([]);
   for (const kind of [
-    'document.update-coding',
     'document.move-business',
     'document.reprocess',
     'document.reject',

@@ -150,6 +150,11 @@ same key with a different payload is `409 NT-IDM-001`.
 tests. A durable store is a follow-up and stays behind the interface, because
 there is no idempotency table and `prisma/` is LAW.
 
+⚠ **`idempotency-store.ts` MOVED to `common/idempotency/` (METH S3, #122)** —
+the Review → Approve engine became its second consumer, the same
+move-don't-copy choice `document-response.ts` made in #77. Behaviour is
+unchanged; import it from `../../../common/idempotency/idempotency-store.js`.
+
 **The durable guarantee is not that store.** `completeUpload` derives the
 document id from the `uploadId` (`documentIdFor`), so a replayed completion
 finds the existing row instead of creating a second one, and a lost primary-key
