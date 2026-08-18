@@ -30,7 +30,25 @@ const HTTP_METHODS = ['get', 'post', 'patch', 'put', 'delete'];
 const SIDE_EFFECT_CLASSES = new Set(['none', 'ingest', 'proposal', 'execute']);
 
 /** Enums that must match prisma verbatim. The schema wins; the spec is the bug. */
-const MIRRORED_ENUMS = ['DocumentChannel', 'Inbox', 'DocumentState', 'DocumentType', 'ProposalState', 'WorkspaceRole'];
+const MIRRORED_ENUMS = [
+  'DocumentChannel',
+  'Inbox',
+  'DocumentState',
+  'DocumentType',
+  'ProposalState',
+  'WorkspaceRole',
+  // METH Stage 2 (issue #120) — the chase/portal/publish/bank read surfaces.
+  // ProposalKind is deliberately NOT here: `action_proposals.kind` is TEXT in
+  // the schema, so the contract enum is the only registry and there is nothing
+  // in prisma for it to drift from.
+  'ChaseDetectionEngine',
+  'ChaseState',
+  'MatchState',
+  'MatchKind',
+  'PublishMode',
+  'PublishState',
+  'RuleTier',
+];
 
 const failures = [];
 const fail = (msg) => failures.push(msg);

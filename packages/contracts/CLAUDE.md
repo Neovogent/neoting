@@ -81,7 +81,7 @@ It depends on `js-yaml` and nothing else, on purpose: it has to run before the c
 
 ## Current state
 
-**Pass 1 drafted — NOT frozen.** `openapi.yaml`, 17 operations, 40 schemas, covering:
+**Pass 1 drafted — NOT frozen.** `openapi.yaml`, 26 operations, 67 schemas, covering:
 
 | Surface | Operations |
 |---|---|
@@ -89,6 +89,11 @@ It depends on `js-yaml` and nothing else, on purpose: it has to run before the c
 | Ingestion | upload intent · upload complete · WhatsApp webhook verify + receive |
 | Review → Approve | create proposal · get · review · approve · cancel |
 | Auth (minimal, METH Stage 1 #118) | login · logout · `GET /me` |
+| Chases (METH Stage 2 #120) | list · get · SMS outbox (`x-demo: true`) |
+| OTP portal (METH Stage 2 #120) | create session · context · delegated upload intent |
+| Publishing (METH Stage 2 #120) | list publishes |
+| Banking (METH Stage 2 #120) | list bank transactions |
+| Businesses (METH Stage 2 #120) | list with waiting-work counts |
 
 The auth trio is the demo-spine slice of pass 2, pulled forward under the
 standing approval in METH_MODE §3.1: one stateless cookie session, the §13.3
@@ -100,6 +105,33 @@ Approve. `WorkspaceRole` joined the prisma-mirrored enum list in
 `check-contract.mjs`. The REST of pass 2 (memberships, invites, session
 management) is still to write.
 
+**METH Stage 2 (#120) — the demo contract pass.** The demo-spine slices of
+passes 3–4, frozen in one PR so the rest of the push implements against a fixed
+surface. What it decided, beyond the table above:
+
+- **`ProposalKind` gained `chase.send`, `publish.batch`, `bank.confirm-match`
+  and `rule.create` — with NO Prisma migration, deliberately.** METH_MODE §3.2
+  pre-approved "additive enum values", but `action_proposals.kind` is `TEXT`
+  in the schema, not a Postgres enum, so there is nothing in prisma to add to
+  and the checker comment in `check-contract.mjs` records why `ProposalKind`
+  is absent from `MIRRORED_ENUMS`. The enforcement points are the contract
+  enum (`NT-PRP-001` at the boundary) and the executor registry's mapped type
+  in `apps/api`, which is total over the enum — all four kinds are registered
+  there as `ProposalNotImplementedError` stubs until stages 8/10/11/13 land
+  executors. Each kind has a typed payload in the discriminated union.
+- **Seven enums joined `MIRRORED_ENUMS`:** `ChaseDetectionEngine`,
+  `ChaseState`, `MatchState`, `MatchKind`, `PublishMode`, `PublishState`,
+  `RuleTier`.
+- **Portal uploads complete through the existing
+  `/document-uploads/{uploadId}/complete`**, which now also accepts the
+  `portalSession` bearer — one completion path at two trust levels, no second
+  door; RLS keeps a delegated session inside its own grant.
+- **`x-demo: true`** marks demo-only operations (today: `GET /sms-outbox`,
+  the dev "phone screen"). Everything else added is real product surface.
+- **New error codes:** `NT-OTP-001` (portal link/OTP failed, one code — the
+  NT-AUTH-003 stance), `NT-OTP-002` (portal session stale), `NT-PUB-001`
+  (item missing mandatory fields refuses the publish batch).
+
 Every shape derives from the applied Prisma schema. Enum values are copied verbatim and drift is checked mechanically, not by eye.
 
 ### Before this can freeze
@@ -110,8 +142,8 @@ Every shape derives from the applied Prisma schema. Enum values are copied verba
 ### Still to write, in order
 
 - **Pass 2 — auth-tenancy.** `GET /me` first: the §13.3 persistent context header (who am I, what role, which client) is a binding design mandate and no workspace screen is buildable without it. Then sessions and memberships.
-- **Pass 3 — chase + OTP portal.** Includes the open question flagged on `ProposalKind`: whether a client correcting a misread number on their own just-uploaded receipt goes through Read review → Approve. It reads like the wrong application of §8.2 — that pattern governs the accountant workspace, not a client in a car park — but it touches the enforcement path, so it is Shakib's call, not an agent's.
-- **Pass 4 —** banking, matching, approvals, publishing, exports, public API.
+- **Pass 3 — chase + OTP portal, the rest of it:** policy scheduler, item messaging, STOP handling. The demo slice (list/get/outbox, portal session/context/upload) landed with METH Stage 2. Still includes the open question flagged on `ProposalKind`: whether a client correcting a misread number on their own just-uploaded receipt goes through Read review → Approve. It reads like the wrong application of §8.2 — that pattern governs the accountant workspace, not a client in a car park — but it touches the enforcement path, so it is Shakib's call, not an agent's. (For the demo, METH Stage 9 records portal corrections as document events, settling nothing.)
+- **Pass 4 — banking, matching, approvals, publishing, exports, public API, the rest of it:** consent lifecycle, statement upload, partial/batch payments, reference sync, workflow builder, exports. The demo read surfaces and the four proposal kinds landed with METH Stage 2.
 - **Next-best-action surface** (§13.3 mandate 2) needs aggregate endpoints that do not exist yet.
 
 ### Known gap: the mocks are not seed-shaped yet

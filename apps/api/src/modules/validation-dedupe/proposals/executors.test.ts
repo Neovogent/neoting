@@ -95,14 +95,25 @@ const input = <P>(payload: P) => ({ proposalId: 'prop_1', payload, ctx: CTX, tra
 
 // ---- registry --------------------------------------------------------------
 
-test('the registry is total over the contract enum, and the five holes throw by name', async () => {
+test('the registry is total over the contract enum, and the holes throw by name', async () => {
   const registry = buildExecutorRegistry();
   for (const kind of Object.values(ProposalKind)) {
     expect(registry[kind]).toBeDefined();
     expect(registry[kind].kind).toBe(kind);
   }
   const { db } = harness([]);
-  for (const kind of ['document.update-coding', 'document.move-business', 'document.reprocess', 'document.reject', 'document.split'] as const) {
+  for (const kind of [
+    'document.update-coding',
+    'document.move-business',
+    'document.reprocess',
+    'document.reject',
+    'document.split',
+    // METH Stage 2 (#120) — holes until S8/S10/S11/S13 land their executors.
+    'chase.send',
+    'publish.batch',
+    'bank.confirm-match',
+    'rule.create',
+  ] as const) {
     const err = await registry[kind]
       .execute(db, input({} as never))
       .then(() => null)

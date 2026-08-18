@@ -1,10 +1,14 @@
 import type {
   ArchivePayload,
+  BankConfirmMatchPayload,
+  ChaseSendPayload,
   MoveBusinessPayload,
   ProposalKind,
+  PublishBatchPayload,
   RejectPayload,
   ReprocessPayload,
   RoutePayload,
+  RuleCreatePayload,
   SplitPayload,
   UpdateCodingPayload,
 } from '@neoting/contracts/model';
@@ -34,6 +38,10 @@ export interface ProposalPayloadMap {
   'document.reject': RejectPayload;
   'document.split': SplitPayload;
   'document.archive': ArchivePayload;
+  'chase.send': ChaseSendPayload;
+  'publish.batch': PublishBatchPayload;
+  'bank.confirm-match': BankConfirmMatchPayload;
+  'rule.create': RuleCreatePayload;
 }
 
 export interface ExecutionInput<P> {
@@ -106,7 +114,7 @@ export class ProposalExecutionRefused extends Error {
   }
 }
 
-/** The five honest holes (#81): registered, typed, and loudly unbuilt. */
+/** The honest holes (#81, grown by #120): registered, typed, and loudly unbuilt. */
 export class ProposalNotImplementedError extends Error {
   constructor(readonly kind: ProposalKind) {
     super(`${kind}: executor not implemented — registered as an honest hole by issue #81; build it in its own issue before any engine executes this kind`);
