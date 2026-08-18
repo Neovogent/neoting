@@ -40,6 +40,7 @@ import {
 import { autoMatches, DEFAULT_MATCH_SETTINGS, sameMerchant, shortLabel, txnLabel } from '../lib/matching';
 import { completeExtraction, ingestFiles, type IngestOptions } from '../lib/ingest';
 import { analyseSheet, readTable, sheetReadMessage } from '../lib/spreadsheet';
+import { confirmMatchProposal, useBankTransactions } from '../api/bank';
 import { useDocuments } from '../api/documents';
 import { API_ENABLED } from '../api/config';
 import { importSheet, type SheetImport } from '../lib/tableImport';
@@ -532,6 +533,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [accounts, setAccounts] = useState<BankAccount[]>(initial.accounts);
   const [transactions, setTransactions] = useState<BankTransaction[]>(initial.transactions);
   const [matches, setMatches] = useState<Match[]>(initial.matches);
+
+  /**
+   * The bank feed, migrated to the API (METH Stage 11).
+   *
+   * Same arrangement as `documents` above and for the same reason: it fills
+   * the array every existing mutator already writes to, rather than becoming a
+   * second source beside it. With `VITE_API_ENABLED` unset the query never
+   * runs and the seeds stand, so the demo is unchanged until someone asks for
+   * the API.
+   *
+   * ⚠ Server rows carry `matchState` and NOT `matchedDocId` — the contract has
+   * no field for the matched document's id. `isMatched()` is what every screen
+   * asks instead; see `lib/matching.ts`.
+   */
+  const bankQuery = useBankTransactions({ enabled: API_ENABLED, clientNameFor, params: { limit: 100 } });
+  const refetchBank = bankQuery.refetch;
+
+  useEffect(() => {
+    if (!API_ENABLED || bankQuery.transactions.length === 0) return;
+    setTransactions(bankQuery.transactions);
+  }, [bankQuery.transactions]);
   const [statements, setStatements] = useState<Statement[]>(seedStatements);
   const [supplierStatements, setSupplierStatements] = useState<SupplierStatement[]>(seedSupplierStatements);
   const [expenseClaims, setExpenseClaims] = useState<ExpenseClaim[]>(seedExpenseClaims);
@@ -1294,8 +1316,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ]);
 
       if (txn.missingItemId) setMissing((prev) => prev.filter((m) => m.id !== txn.missingItemId));
+
+      // On the API, the match is only real once it is APPROVED (Governance
+      // §10): create the proposal, open the review, approve echoing the hash.
+      // The optimistic local update above stays — it is what makes the click
+      // feel instant — and the refetch below replaces it with server truth
+      // either way, so a refusal corrects the screen rather than leaving a
+      // match that only this browser believes in.
+      if (!API_ENABLED) return;
+      void confirmMatchProposal({
+        businessId: txn.clientId,
+        transactionId: txnId,
+        documentId,
+        kind,
+        confidence,
+      })
+        .catch((error: unknown) => {
+          logAudit({
+            action: 'Match could not be confirmed',
+            scope: `${txnLabel(txn)} — ${error instanceof Error ? error.message : 'unknown error'}`,
+            reviewOpened: true,
+          });
+        })
+        .finally(() => {
+          void refetchBank();
+        });
     },
-    [transactions, documents],
+    // `refetchBank`, not `bankQuery`: the hook returns a fresh object every
+    // render, so depending on the whole thing would rebuild this callback on
+    // every render for no behavioural gain.
+    [transactions, documents, logAudit, refetchBank],
   );
 
   const unmatchTransaction = useCallback(

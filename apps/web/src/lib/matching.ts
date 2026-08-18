@@ -359,6 +359,25 @@ export interface AutoMatch {
 }
 
 /**
+ * Whether a line already has its evidence — the one place the two match
+ * signals are reconciled (METH Stage 11).
+ *
+ * `matchedDocId` is the seeded shape and answers *which* document; `matchState`
+ * is the server's and answers only *whether*. The contract's `BankTransaction`
+ * carries the second and not the first, so an API-sourced row that has been
+ * confirmed has no document id to offer — and inventing one would corrupt
+ * `autoMatches`' `claimed` set, which uses those ids to stop one receipt
+ * answering two lines.
+ *
+ * `SUGGESTED` is deliberately NOT matched. A suggestion is a question waiting
+ * for a human; counting it as evidence would take the line out of the unmatched
+ * total that the whole screen — and the chase list — is about.
+ */
+export function isMatched(txn: BankTransaction): boolean {
+  return txn.matchedDocId !== undefined || txn.matchState === 'CONFIRMED';
+}
+
+/**
  * Every transaction the matcher can settle on its own. Run once over the
  * starting data so the queue only ever contains genuine questions.
  */
@@ -372,7 +391,10 @@ export function autoMatches(
   const result: AutoMatch[] = [];
 
   for (const txn of transactions) {
-    if (txn.matchedDocId) continue;
+    // `isMatched`, not `matchedDocId`: a server-confirmed line has no document
+    // id on the wire, and proposing a fresh auto-match for one would offer the
+    // accountant a decision a human already took.
+    if (isMatched(txn)) continue;
     const verdict = assessTransaction(intl, txn, documents, settings);
     // One document cannot explain two different transactions.
     if (verdict.kind !== 'confident' || !verdict.best || claimed.has(verdict.best.document.id)) continue;

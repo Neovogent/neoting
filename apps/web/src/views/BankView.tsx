@@ -14,7 +14,7 @@ import { fromSlug, slug, useQueryParam, useSegment } from '../lib/router';
 import { StatementModal, downloadBank } from '../components/DynamicComponents/StatementModal';
 import { ChaseModal } from '../components/DynamicComponents/ChaseModal';
 import { currency } from '../lib/resolver';
-import { assessTransaction, txnLabel, type Candidate, type MatchVerdict } from '../lib/matching';
+import { assessTransaction, isMatched, txnLabel, type Candidate, type MatchVerdict } from '../lib/matching';
 import { DocumentPreview } from '../components/DynamicComponents/DocumentPreview';
 import type { BankAccount, BankTransaction, Document, Match, Statement, StatementGap } from '../lib/types';
 import { EXPORT_HINT } from '../lib/exportRules';
@@ -262,7 +262,12 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
   const verdicts = useMemo(() => {
     const map = new Map<string, MatchVerdict>();
     for (const t of transactions) {
-      if (t.matchedDocId) continue;
+      // `isMatched`, not `matchedDocId`, everywhere the question is "does this
+      // line already have its evidence". A server-confirmed row carries
+      // `matchState` and no document id — the contract has no field for one —
+      // so keying on the id alone would show every persisted match as
+      // unmatched the moment the screen ran on real data (METH Stage 11).
+      if (isMatched(t)) continue;
       map.set(t.id, assessTransaction(intl, t, documents, matchSettings));
     }
     return map;
@@ -275,9 +280,9 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
     const q = query.trim().toLowerCase();
     return transactions.filter((t) => {
       if (clientFilter !== 'all' && t.clientId !== clientFilter) return false;
-      if (evidenceFilter === 'needs-you' && (t.matchedDocId || verdicts.get(t.id)?.kind !== 'confused')) return false;
-      if (evidenceFilter === 'unmatched' && t.matchedDocId) return false;
-      if (evidenceFilter === 'matched' && !t.matchedDocId) return false;
+      if (evidenceFilter === 'needs-you' && (isMatched(t) || verdicts.get(t.id)?.kind !== 'confused')) return false;
+      if (evidenceFilter === 'unmatched' && isMatched(t)) return false;
+      if (evidenceFilter === 'matched' && !isMatched(t)) return false;
       if (evidenceFilter === 'credits' && !t.isCredit) return false;
       if (q && !`${t.description} ${t.clientName} ${t.amount}`.toLowerCase().includes(q)) return false;
       return true;
@@ -291,8 +296,11 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
   const scopedGaps = statementGaps.filter((g) => clientFilter === 'all' || g.clientId === clientFilter);
   const scopedAccounts = accounts.filter((a) => clientFilter === 'all' || a.clientId === clientFilter);
 
-  const unmatchedCount = scopedTxns.filter((t) => !t.matchedDocId).length;
-  const unexplained = scopedTxns.filter((t) => !t.matchedDocId).reduce((n, t) => n + Math.abs(t.amount), 0);
+  // The number the whole screen is about, and the one that has to agree with
+  // chase detection: the server's unmatched set is `match_state != CONFIRMED`,
+  // which is exactly what `isMatched` negates.
+  const unmatchedCount = scopedTxns.filter((t) => !isMatched(t)).length;
+  const unexplained = scopedTxns.filter((t) => !isMatched(t)).reduce((n, t) => n + Math.abs(t.amount), 0);
 
   // Counted across the client scope rather than the current filter, so the tab
   // does not read "Needs you (0)" while it is the tab you are looking at.
@@ -301,7 +309,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
       transactions.filter(
         (t) =>
           (clientFilter === 'all' || t.clientId === clientFilter) &&
-          !t.matchedDocId &&
+          !isMatched(t) &&
           verdicts.get(t.id)?.kind === 'confused',
       ).length,
     [transactions, clientFilter, verdicts],
@@ -325,9 +333,9 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
     { key: 'clientName', label: intl.formatMessage(m.columnClient), sortValue: (t) => t.clientName },
     { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (t) => t.date },
     {
-      key: 'evidence', label: intl.formatMessage(m.columnEvidence), sortValue: (t) => (t.matchedDocId ? 1 : 0),
+      key: 'evidence', label: intl.formatMessage(m.columnEvidence), sortValue: (t) => (isMatched(t) ? 1 : 0),
       render: (t) => {
-        if (t.matchedDocId) {
+        if (isMatched(t)) {
           const match = matches.find((x) => x.transactionId === t.id);
           return <Pill tone="green">{intl.formatMessage(match?.auto ? m.matchedByAi : m.matchedByHand)}</Pill>;
         }
@@ -347,13 +355,23 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
     {
       key: 'actions', label: '', align: 'right',
       render: (t) => {
-        if (t.matchedDocId) {
+        if (isMatched(t)) {
+          const match = matches.find((x) => x.transactionId === t.id);
+          // Unmatch is offered ONLY for a locally-matched row.
+          //
+          // `matchState !== undefined` means the row came from the server, and
+          // breaking a confirmed match has no approved path yet — there is no
+          // `bank.unmatch` kind in the contract's `ProposalKind` enum, so the
+          // button could only ever undo the match in this browser while the
+          // database went on saying CONFIRMED. Offering nothing is honest;
+          // offering a button that silently does nothing is not, and that is
+          // what the old `if (!match) return` inside the handler would have
+          // become the moment the screen ran on real data.
+          if (!match || t.matchState !== undefined) return null;
           return (
             <button
               onClick={async (e) => {
                 e.stopPropagation();
-                const match = matches.find((x) => x.transactionId === t.id);
-                if (!match) return;
                 const ok = await confirm({
                   tone: 'red',
                   title: intl.formatMessage(m.unmatchConfirmTitle),
@@ -566,7 +584,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                     label: intl.formatMessage(m.chaseBulkAction),
                     icon: Send,
                     primary: true,
-                    onClick: (sel) => chase([...new Set(sel.filter((t) => !t.matchedDocId).map((t) => t.clientId))]),
+                    onClick: (sel) => chase([...new Set(sel.filter((t) => !isMatched(t)).map((t) => t.clientId))]),
                   },
                   { label: intl.formatMessage(commonActions.exportCsv), icon: Download, minSelected: 2, disabledHint: intl.formatMessage(EXPORT_HINT), onClick: (sel) => exportTxns(sel) },
                 ]}
@@ -1176,7 +1194,7 @@ function NumberField({ label, value, onChange }: { label: string; value: number;
 function exportTxns(rows: BankTransaction[]) {
   const header = 'Client,Description,Date,Amount,Evidence,Type\n';
   const body = rows
-    .map((t) => `"${t.clientName}","${t.description}","${t.date}",${t.amount},"${t.matchedDocId ? 'matched' : 'none'}","${t.isCredit ? 'credit' : 'payment'}"`)
+    .map((t) => `"${t.clientName}","${t.description}","${t.date}",${t.amount},"${isMatched(t) ? 'matched' : 'none'}","${t.isCredit ? 'credit' : 'payment'}"`)
     .join('\n');
   const blob = new Blob([header + body], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);

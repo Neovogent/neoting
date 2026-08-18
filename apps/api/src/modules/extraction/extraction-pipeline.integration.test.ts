@@ -55,10 +55,17 @@ async function runExtract(id: string, businessId: string | null): Promise<void> 
 async function cleanup(): Promise<void> {
   await owner.document.deleteMany({ where: { practiceId: P } });
   await owner.rule.deleteMany({ where: { businessId: B } });
-  await owner.business.deleteMany({ where: { id: { startsWith: 'p4_' } } });
-  await owner.membership.deleteMany({ where: { id: { startsWith: 'p4_' } } });
-  await owner.user.deleteMany({ where: { id: { startsWith: 'p4_' } } });
-  await owner.practice.deleteMany({ where: { id: { startsWith: 'p4_' } } });
+  // Explicit ids, NOT `startsWith`. Prisma compiles `startsWith: 'p4_'` to
+  // `LIKE 'p4_%'` and does not escape the `_`, which is LIKE's single-character
+  // wildcard — so this cleanup also matched `p40_sys` and `p40_mem_sys` and
+  // deleted `duplicate-detector.integration.test.ts`'s fixtures out from under
+  // it. Test files run in parallel workers here, so the two suites interleave
+  // and the collision surfaced as an intermittent foreign-key violation in the
+  // OTHER file's `beforeAll`, which is the worst place to go looking.
+  await owner.business.deleteMany({ where: { id: B } });
+  await owner.membership.deleteMany({ where: { id: 'p4_mem_sys' } });
+  await owner.user.deleteMany({ where: { id: 'p4_sys' } });
+  await owner.practice.deleteMany({ where: { id: P } });
 }
 
 beforeAll(async () => {

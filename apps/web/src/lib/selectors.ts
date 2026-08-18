@@ -1,3 +1,4 @@
+import { isMatched } from './matching';
 import type {
   ApprovalItem,
   BankTransaction,
@@ -92,7 +93,10 @@ export function deriveClientStats(
   const approvals = data.approvals.filter((a) => a.clientName === client.name).length;
   const unverified = miss.filter((m) => !m.chased).reduce((n, m) => n + m.amount, 0);
 
-  const unmatched = data.transactions.filter((t) => t.clientId === client.id && !t.matchedDocId).length;
+  // `isMatched`, not `matchedDocId`: a server-confirmed line carries
+  // `matchState` and no document id, and this count is the one the client card
+  // shows beside the chase list — the two must not disagree (METH Stage 11).
+  const unmatched = data.transactions.filter((t) => t.clientId === client.id && !isMatched(t)).length;
   const gaps = data.statementGaps.filter((g) => g.clientId === client.id).length;
 
   return {

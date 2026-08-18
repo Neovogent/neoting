@@ -236,6 +236,23 @@ export interface BankTransaction {
    * explicit means matching or cash-coding it closes the chase everywhere.
    */
   missingItemId?: string | undefined;
+  /**
+   * The SERVER's match state, present only on rows that came from
+   * `GET /bank-transactions` (METH Stage 11). Seeded rows leave it undefined.
+   *
+   * It exists beside `matchedDocId` rather than replacing it because the two
+   * answer different questions and the contract only carries one of them: the
+   * feed says *whether* a line is matched, not *which* document matched it.
+   * `isMatched()` in `lib/matching.ts` is the one place that difference is
+   * reconciled — read it before branching on either field.
+   */
+  matchState?: 'UNMATCHED' | 'SUGGESTED' | 'CONFIRMED' | 'EXCLUDED' | undefined;
+  /**
+   * A bank-originated line with no paperwork to chase — SERVICE CHARGE, STRIPE
+   * PAYOUT (SoT §4 Stage 7). Suppressed lines never enter chase detection; the
+   * flag is visible so "why isn't this chased" has an answer on the screen.
+   */
+  chaseSuppressed?: boolean | undefined;
 }
 
 export interface BankAccount {

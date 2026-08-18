@@ -1,6 +1,7 @@
 import type { ProposalKind } from '@neoting/contracts/model';
 
 import { archiveDocumentExecutor } from './archive-document.js';
+import { confirmMatchExecutor } from './confirm-match.js';
 import {
   type ExecutorRegistry,
   ProposalNotImplementedError,
@@ -16,13 +17,13 @@ import { updateCodingExecutor } from './update-coding.js';
  * runtime `NT-PRP-001` guard for a wire value outside the enum stays the
  * second line of defence, not the first.
  *
- * Three real executors, eight honest holes: a registry with named
+ * Four real executors, seven honest holes: a registry with named
  * unimplemented kinds beats half-executors, and it means the engine (METH S3,
  * #122) wires against the full enum on day one. Each hole throws
  * `ProposalNotImplementedError` carrying its kind — loudly, before any write.
- * The four METH Stage 2 kinds (issue #120) are holes until their stages land
- * executors: chase.send (S8), publish.batch (S10), bank.confirm-match (S11),
- * rule.create (S13).
+ * The METH Stage 2 kinds (issue #120) are holes until their stages land
+ * executors: chase.send (S8), publish.batch (S10) and rule.create (S13) still
+ * are; `bank.confirm-match` landed with METH S11.
  *
  * A FACTORY, not a Nest provider: the engine module builds it inside its own
  * `useFactory` and keeps the token out of its public providers, so no executor
@@ -40,7 +41,7 @@ export function buildExecutorRegistry(): ExecutorRegistry {
     'document.split': notImplemented('document.split'),
     'chase.send': notImplemented('chase.send'),
     'publish.batch': notImplemented('publish.batch'),
-    'bank.confirm-match': notImplemented('bank.confirm-match'),
+    'bank.confirm-match': confirmMatchExecutor,
     'rule.create': notImplemented('rule.create'),
   };
 }

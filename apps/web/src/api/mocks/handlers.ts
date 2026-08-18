@@ -1,7 +1,7 @@
 import { http, HttpResponse } from 'msw';
 
-import { documentFixtures } from './fixtures';
-import type { DocumentSummary } from '@neoting/contracts/model';
+import { bankTransactionFixtures, documentFixtures } from './fixtures';
+import type { BankTransaction, DocumentSummary } from '@neoting/contracts/model';
 
 /**
  * The mocked API.
@@ -109,7 +109,46 @@ export function filterDocuments(url: URL): { data: DocumentSummary[]; nextCursor
   };
 }
 
+/**
+ * The bank feed's filters, exactly the three the contract documents —
+ * `businessId`, `accountId`, repeatable `matchState` — plus the same
+ * index-as-cursor paging. A mock that ignored them would hide the bug
+ * integration finds, which is this file's whole argument for being hand-written.
+ *
+ * Sorting is not a parameter: `listBankTransactions` declares none and fixes
+ * the answer in prose ("newest booked first"), so the fixture is pre-sorted
+ * and this only pages it.
+ */
+export function filterBankTransactions(url: URL) {
+  const params = url.searchParams;
+  let rows: BankTransaction[] = bankTransactionFixtures;
+
+  const businessId = params.get('businessId');
+  if (businessId) rows = rows.filter((t) => t.businessId === businessId);
+
+  const accountId = params.get('accountId');
+  if (accountId) rows = rows.filter((t) => t.accountId === accountId);
+
+  // Repeat to widen; omitted means every state. An explicitly empty list is
+  // the same as omitted — `in []` matches nothing and reads as an empty feed.
+  const states = params.getAll('matchState');
+  if (states.length > 0) rows = rows.filter((t) => states.includes(t.matchState));
+
+  const limit = Math.min(Number(params.get('limit') ?? 50), 100);
+  const cursor = params.get('cursor');
+  const start = cursor ? Number(atob(cursor)) || 0 : 0;
+  const page = rows.slice(start, start + limit);
+  const end = start + page.length;
+
+  return { data: page, nextCursor: end < rows.length ? btoa(String(end)) : null, hasMore: end < rows.length };
+}
+
 export const handlers = [
+  http.get('*/v1/bank-transactions', ({ request }) => {
+    const { data, nextCursor, hasMore } = filterBankTransactions(new URL(request.url));
+    return HttpResponse.json({ data, pageInfo: { nextCursor, hasMore } });
+  }),
+
   http.get('*/v1/documents', ({ request }) => {
     const { data, nextCursor, hasMore } = filterDocuments(new URL(request.url));
     return HttpResponse.json({ data, pageInfo: { nextCursor, hasMore } });
