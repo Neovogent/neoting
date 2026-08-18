@@ -44,6 +44,7 @@ const m = defineMessages({
 // Client-facing. Nothing behind the portal, approval or registration shells
 // should pull the practice app down with it.
 const BusinessPortal = lazy(() => import('./views/business/BusinessPortal').then((m) => ({ default: m.BusinessPortal })));
+const ChasePortalView = lazy(() => import('./views/business/ChasePortalView').then((m) => ({ default: m.ChasePortalView })));
 const ClientApprovalView = lazy(() => import('./views/business/ClientApprovalView').then((m) => ({ default: m.ClientApprovalView })));
 const UserRegistrationView = lazy(() => import('./views/business/UserRegistrationView').then((m) => ({ default: m.UserRegistrationView })));
 
@@ -191,13 +192,15 @@ export default function App() {
   }
 
   // The business portal replaces the practice shell outright — a client must
-  // never see another client's data sitting behind it. The SMS approval link
-  // is stricter still: no account, no portal, one client's batch only.
+  // never see another client's data sitting behind it. The two SMS link
+  // surfaces are stricter still: no account, no portal. 'approval' is one
+  // client's batch; 'chase-upload' is one chase's outstanding items.
   if (portal !== 'accountant') {
     return (
       <div className="flex h-screen w-screen overflow-hidden bg-ground text-white font-sans selection:bg-brand/30">
         <Suspense fallback={<PortalSkeleton />}>
           {portal === 'approval' ? <ClientApprovalView />
+            : portal === 'chase-upload' ? <ChasePortalView />
             : portal === 'registration' ? <UserRegistrationView />
             : <BusinessPortal />}
         </Suspense>

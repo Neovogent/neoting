@@ -18,7 +18,7 @@ import {
   toPage,
 } from '../../common/pagination/cursor.js';
 import { AppException } from '../../common/problem/problem.js';
-import { toChaseDetail, toChaseSummary, toSmsOutboxMessage } from './chase-projection.js';
+import { chaseItemRefs, toChaseDetail, toChaseSummary, toSmsOutboxMessage } from './chase-projection.js';
 
 type ListChasesQuery = z.infer<typeof listChasesQueryParams>;
 type ListOutboxQuery = z.infer<typeof listSmsOutboxQueryParams>;
@@ -91,7 +91,7 @@ export class ChasesService {
       // caller cannot see is simply absent from the result and the projection
       // drops it, never faking an item for a row RLS withheld. The convenience
       // `transactionId` column backstops a chase whose `itemRefs` is empty.
-      const refs = itemRefsOf(row);
+      const refs = chaseItemRefs(row);
       const transactions =
         refs.length === 0
           ? []
@@ -168,18 +168,6 @@ function buildOutboxFilters(query: ListOutboxQuery): Prisma.SmsLogWhereInput {
   return {
     ...(query.businessId !== undefined ? { businessId: query.businessId } : {}),
   };
-}
-
-/**
- * The stored `itemRefs` as a string array, for the item fetch. Mirrors the
- * projection's own narrowing (a bare `Json` column may hold anything): keep the
- * strings, fall back to the single-transaction column, never trust the shape.
- */
-function itemRefsOf(row: ChaseRow): string[] {
-  const raw = row.itemRefs;
-  const refs = Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string') : [];
-  if (refs.length > 0) return refs;
-  return row.transactionId === null ? [] : [row.transactionId];
 }
 
 /**

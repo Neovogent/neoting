@@ -19,7 +19,7 @@ function env(overrides: Partial<Env> = {}): Env {
     INGEST_QUEUE: 'fixture',
     REDIS_URL: 'redis://localhost:6379',
     OBJECT_STORE: 'fixture', IMAGE_NORMALISER: 'fixture', DOCUMENT_GUARD: 'fixture', EXTRACTOR: 'demo',
-    SMS_SENDER: 'demo', PORTAL_LINK_SECRET: '',
+    SMS_SENDER: 'demo', PORTAL_LINK_SECRET: '', PORTAL_SESSION_SECRET: '',
     EMAIL_SOURCE: 'fixture',
     MAILHOG_API_URL: 'http://localhost:8025',
     S3_BUCKET_RECEIPTS: 'nt-local-receipts',

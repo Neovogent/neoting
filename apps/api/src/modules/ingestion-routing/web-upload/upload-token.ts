@@ -22,6 +22,22 @@ export interface UploadClaims {
   readonly splitMode: string; // contract SplitMode
   readonly description?: string;
   readonly documentOwnerContactId?: string | null;
+  /**
+   * The chased bank transaction the client said this upload answers — the
+   * portal's `PortalUploadRequest.transactionId` (METH Stage 9). Optional and
+   * absent on every other lane.
+   *
+   * **Client-declared and deliberately unverified.** The contract calls it a
+   * hint ("null lets extraction decide — the pipeline compares the extraction
+   * against every open item regardless"), and nothing downstream branches on it:
+   * auto-close compares the extracted supplier + amount + date against every
+   * open chase, so a client who taps the wrong item still gets the right
+   * outcome. It travels in the claims because completion is a separate request
+   * with no body field for it, and it is recorded on the document's event trail
+   * as what the client SAID rather than as a fact. Dropping it silently would
+   * be the one thing this lane's invariant forbids.
+   */
+  readonly chaseTransactionId?: string | null;
   /** The object-storage key the bytes were presigned to. */
   readonly s3Key: string;
   /** Epoch millis after which completion is refused with NT-ING-005. */

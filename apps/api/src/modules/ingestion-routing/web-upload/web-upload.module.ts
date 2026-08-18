@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { getPrismaClient, type PrismaClient } from '../../../common/db/prisma.js';
 import type { Env } from '../../../config/env.js';
 import { ENV } from '../../../config/env.module.js';
+import { PortalModule } from '../../portal/index.js';
 import { IngestQueueModule } from '../queue/ingest-queue.module.js';
 import { INGEST_QUEUE } from '../webhooks/whatsapp/tokens.js';
 import type { IngestQueue } from '../webhooks/whatsapp/ingest-queue.js';
@@ -23,8 +24,15 @@ import { WebUploadService } from './web-upload.service.js';
  * by the service, never constructed inside it; it connects as `nt_app`, so every
  * query still has to go through `scopedDb`.
  */
+/*
+ * `PortalModule` is imported for ONE provider: `PORTAL_SESSION_CONTEXT`, the
+ * resolver `completeDocumentUpload` needs to honour the portal bearer the
+ * contract puts on it (METH Stage 9). The dependency runs one way — the portal
+ * mints its own intents rather than injecting `WebUploadService`, precisely so
+ * these two modules do not become mutually dependent and need a `forwardRef`.
+ */
 @Module({
-  imports: [IngestQueueModule],
+  imports: [IngestQueueModule, PortalModule],
   controllers: [WebUploadController],
   providers: [
     { provide: PRISMA, useFactory: () => getPrismaClient() },
