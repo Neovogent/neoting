@@ -1,5 +1,6 @@
 import type {
   ArchivePayload,
+  ErrorCode,
   BankConfirmMatchPayload,
   ChaseSendPayload,
   MoveBusinessPayload,
@@ -63,12 +64,33 @@ export interface ExecutionInput<P> {
  * day one — the engine's post-commit enqueue switch should be total the same
  * way the registry is (the addition ACKed on #81).
  */
-export type FollowUp = {
-  readonly kind: 'dedupe';
-  readonly documentId: string;
-  readonly businessId: string;
-  readonly practiceId: string;
-};
+export type FollowUp =
+  | {
+      readonly kind: 'dedupe';
+      readonly documentId: string;
+      readonly businessId: string;
+      readonly practiceId: string;
+    }
+  | {
+      /**
+       * The LEDGER call for an approved publish batch (METH Stage 10).
+       *
+       * **An external HTTP call must never hold a tenant transaction open.**
+       * The effect transaction wrote one `publishes` row per item in `QUEUED`
+       * — durable intent, committed atomically with the approval, the same
+       * outbox principle `dedupe` uses — and this follow-up drives the vendor
+       * per item AFTER commit, resolving each row to SUCCEEDED or FAILED in
+       * its own short transaction. A batch is up to 500 items and a real Xero
+       * round trip is someone else's network; inside the effect that is
+       * minutes of held row locks (publishing/CLAUDE.md carries the full
+       * reasoning). Only the proposal is carried: the QUEUED rows are the
+       * work list, so a crash leaves them visible and re-drivable rather than
+       * lost.
+       */
+      readonly kind: 'publish';
+      readonly proposalId: string;
+      readonly businessId: string;
+    };
 
 /** Serialised by the engine into `action_proposals.outcome` (Json?). */
 export interface ExecutionResult {
@@ -108,6 +130,19 @@ export class ProposalExecutionRefused extends Error {
   constructor(
     readonly kind: ProposalKind,
     message: string,
+    /**
+     * The contract `ErrorCode` this refusal should reach the wire as. Omitted →
+     * the engine's generic `NT-PRP-006`, which is right for "this proposal is
+     * not executable" refusals.
+     *
+     * It exists because some refusals are NAMED BY THE CONTRACT and a client is
+     * meant to branch on them: `PublishBatchPayload` says an item short of the
+     * minimum "refuses with `NT-PUB-001`", and `NT-PUB-001` is in the `ErrorCode`
+     * enum for exactly that reason. Folding it into the detail prose leaves the
+     * machine-readable `Problem.code` saying `NT-PRP-006`, so the one client
+     * branch the contract promises cannot be written.
+     */
+    readonly code?: ErrorCode,
   ) {
     super(`${kind}: ${message}`);
     this.name = 'ProposalExecutionRefused';

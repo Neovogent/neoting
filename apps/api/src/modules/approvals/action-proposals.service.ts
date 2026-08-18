@@ -17,7 +17,9 @@ import {
   type FollowUp,
   ProposalExecutionRefused,
   ProposalNotImplementedError,
+  type PublishGateway,
   runDedupeFollowUp,
+  runPublishFollowUp,
 } from '../validation-dedupe/index.js';
 import { appendAuditEvent } from './audit-writer.js';
 import { canonicalHash } from './canonical-hash.js';
@@ -72,6 +74,13 @@ export class ActionProposalsService {
     private readonly prisma: PrismaClient,
     private readonly registry: ExecutorRegistry,
     private readonly dedupeDetection: DedupeDetection,
+    /**
+     * Publishing's seam. The SAME object the registry was built with, so the
+     * executor's re-validation and the follow-up's ledger are one composition:
+     * an engine that queued a batch through one adapter and published it
+     * through another would be two systems wearing one name.
+     */
+    private readonly publishing: PublishGateway,
     private readonly idempotency: IdempotencyStore,
   ) {}
 
@@ -323,7 +332,11 @@ export class ActionProposalsService {
       // Both refusals roll the whole transaction back — approval, execution
       // and audit are one atom, and a refused effect leaves no partial state.
       if (error instanceof ProposalExecutionRefused) {
-        throw conflict('NT-PRP-006', 'Proposal is not executable', error.message);
+        // A refusal the CONTRACT names carries its own code (e.g. publish's
+        // `NT-PUB-001` for an item short of the minimum, which `ErrorCode` lists
+        // precisely so a client can branch on it). Everything else is the
+        // generic "this proposal is not executable".
+        throw conflict(error.code ?? 'NT-PRP-006', 'Proposal is not executable', error.message);
       }
       if (error instanceof ProposalNotImplementedError) {
         throw conflict('NT-PRP-006', 'Action kind not yet executable', `No executor exists for ${proposal.kind} yet.`);
@@ -335,15 +348,24 @@ export class ActionProposalsService {
   private async runFollowUps(ctx: ScopeContext, followUps: readonly FollowUp[], traceId: string): Promise<void> {
     for (const followUp of followUps) {
       try {
-        // The switch is total the way the registry is: `FollowUp` has one
-        // member today, and a second one failing to compile here is the point.
+        // The switch is total the way the registry is — a new `FollowUp`
+        // member that fails to compile here is the point. Two members since
+        // METH S10, and the second is the one that matters most: `publish`
+        // makes the LEDGER call, which must never happen inside the effect
+        // transaction (publishing/CLAUDE.md carries the reasoning).
         switch (followUp.kind) {
           case 'dedupe':
             await runDedupeFollowUp(this.prisma, ctx, followUp, this.dedupeDetection, traceId);
+            break;
+          case 'publish':
+            await runPublishFollowUp(this.prisma, ctx, followUp, this.publishing.ledger, traceId);
+            break;
         }
       } catch (error) {
         // The approval is committed and correct; the deferral marker is
-        // durable and sweepable. Loud log, no 500 for a done action.
+        // durable and sweepable — for publish that is the QUEUED `publishes`
+        // rows, which are visible and re-drivable and never a lie. Loud log,
+        // no 500 for a done action.
         this.logger.warn(
           `post-commit ${followUp.kind} follow-up failed [${traceId}]: ${error instanceof Error ? error.message : String(error)}`,
         );
