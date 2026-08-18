@@ -149,6 +149,22 @@ const EnvSchema = z.object({
   // lands behind the same seam later. Default `demo` so a document actually gets
   // extracted — that is the whole point of the step. Selected by config, not import.
   EXTRACTOR: z.enum(['demo']).default('demo'),
+
+  // The SMS sender (METH Stage 8). `demo` = `DemoSmsSender`, which "sends" by
+  // writing the outbox rows the SMS-outbox screen reads — no Twilio, ever, in
+  // this push. The only value until Twilio Messaging lands behind the same seam
+  // post-demo. Selected by config, not import, exactly like EXTRACTOR / MEDIA_FETCH.
+  // DEMO-MOCK: Twilio Messaging replaces `DemoSmsSender`.
+  SMS_SENDER: z.enum(['demo']).default('demo'),
+
+  // Signs the chase portal-link token (METH Stage 8, SoT §4 Stage 8.3) — the
+  // same HMAC pattern as UPLOAD_URL_SECRET / SESSION_SECRET. Stage 8 mints the
+  // link; Stage 9's OTP portal verifies it. Empty default fails CLOSED: signing
+  // or verifying with an empty secret is refused (`portal-link.ts`), so an unset
+  // secret cannot mint a forgeable link. No production boot-refusal, matching
+  // SESSION_SECRET's stance (the portal endpoints simply fail closed until the
+  // Stage 15 env change sets it, rather than crash-looping /healthz).
+  PORTAL_LINK_SECRET: z.string().default(''),
   S3_ENDPOINT: z.string().default(''), // e.g. http://localhost:9000 for MinIO; empty = AWS default
   S3_REGION: z.string().default('eu-west-2'),
   S3_ACCESS_KEY_ID: z.string().default(''),

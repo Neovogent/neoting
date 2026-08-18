@@ -45,8 +45,25 @@ export interface ExtractionInput {
   readonly traceId: string;
 }
 
+/**
+ * What extraction finished with — the header the auto-close hook (chase, METH
+ * Stage 8) needs to compare against open chases, plus the final state so the
+ * caller runs auto-close ONLY for a document that actually landed (READY /
+ * TO_REVIEW), never a FAILED or skipped one. Money is integer pence; the date is
+ * the stored UTC instant. `null` from `run` means "nothing was extracted this
+ * call" — a FAILED read, a no-op redelivery, or a document already finalised.
+ */
+export interface ExtractionCompletion {
+  readonly documentId: string;
+  readonly businessId: string | null;
+  readonly state: 'READY' | 'TO_REVIEW';
+  readonly supplierName: string | null;
+  readonly totalPence: number | null;
+  readonly documentDate: Date | null;
+}
+
 export interface ExtractionStep {
-  run(input: ExtractionInput): Promise<void>;
+  run(input: ExtractionInput): Promise<ExtractionCompletion | null>;
 }
 
 export interface ExtractionStepLogger {
@@ -97,7 +114,7 @@ export class PrismaExtractionStep implements ExtractionStep {
     this.logger = options.logger ?? NOOP_LOGGER;
   }
 
-  async run(input: ExtractionInput): Promise<void> {
+  async run(input: ExtractionInput): Promise<ExtractionCompletion | null> {
     const systemUserId = await resolveSystemActor(this.prisma, input.practiceId);
     const ctx = systemContext(input.practiceId, systemUserId);
 
@@ -108,15 +125,18 @@ export class PrismaExtractionStep implements ExtractionStep {
     // RECEIVED (fresh) or an already-PROCESSING (a crash between the phases)
     // document proceeds; a finalised one is a no-op.
     const started = await scopedDb(this.prisma, ctx, (db) => this.begin(db, input));
-    if (started === null) return;
+    if (started === null) return null;
 
     // Phase 2 — the read itself. Deliberately OUTSIDE any transaction: a 2–4 s
     // delay must not hold a DB row locked.
     await this.sleep(extractionLatencyMs(started.byteHash));
     const outcome = await this.extractor.extract({ filename: started.filename, byteHash: started.byteHash });
 
-    // Phase 3 — write results and finalise the state, atomically.
-    await scopedDb(this.prisma, ctx, (db) => this.finish(db, input, outcome));
+    // Phase 3 — write results and finalise the state, atomically. The completion
+    // (the header + final state) is what the caller hands the auto-close hook; it
+    // is null for a FAILED read, so a chase never closes on a document we could
+    // not read.
+    return scopedDb(this.prisma, ctx, (db) => this.finish(db, input, outcome));
   }
 
   private async begin(db: ScopedClient, input: ExtractionInput): Promise<{ filename: string; byteHash: string } | null> {
@@ -138,9 +158,9 @@ export class PrismaExtractionStep implements ExtractionStep {
     return identity;
   }
 
-  private async finish(db: ScopedClient, input: ExtractionInput, outcome: ExtractionOutcome): Promise<void> {
+  private async finish(db: ScopedClient, input: ExtractionInput, outcome: ExtractionOutcome): Promise<ExtractionCompletion | null> {
     const doc = await db.document.findUnique({ where: { id: input.documentId }, select: { id: true, state: true } });
-    if (doc === null || doc.state !== 'PROCESSING') return; // a concurrent worker finalised it — no-op
+    if (doc === null || doc.state !== 'PROCESSING') return null; // a concurrent worker finalised it — no-op
     const from = { id: doc.id, state: 'PROCESSING' as const };
 
     if (!outcome.ok) {
@@ -151,7 +171,7 @@ export class PrismaExtractionStep implements ExtractionStep {
         detail: { stage: 'extract' },
       });
       this.logger.warn(`extract: ${input.documentId} FAILED ${outcome.failure.code} (trace=${input.traceId})`);
-      return;
+      return null; // a document we could not read closes no chase
     }
 
     const extracted = outcome.document;
@@ -193,6 +213,18 @@ export class PrismaExtractionStep implements ExtractionStep {
     );
     await transitionDocument(db, from, { to: finalState, traceId: input.traceId, detail: { stage: 'extract', outcome: finalState } });
     this.logger.log(`extract: ${input.documentId} → ${finalState} (trace=${input.traceId})`);
+
+    // The header the auto-close hook compares against open chases. Only a landed
+    // document (READY | TO_REVIEW) returns one — the caller runs auto-close on the
+    // real product data, not on a validator-blocked or failed read.
+    return {
+      documentId: input.documentId,
+      businessId: input.businessId,
+      state: finalState,
+      supplierName: extracted.supplierName,
+      totalPence: extracted.totalPence,
+      documentDate: toStoredDate(extracted.documentDate),
+    };
   }
 
   private async writeExtraction(
@@ -273,11 +305,20 @@ export class PrismaExtractionStep implements ExtractionStep {
   }
 }
 
-/** Offline fixture — records the calls, so the ingest processor stays unit-testable. */
+/**
+ * Offline fixture — records the calls, so the ingest processor stays
+ * unit-testable. Returns a caller-supplied completion (default null) so a
+ * processor test can drive the auto-close branch without a real extraction.
+ */
 export class RecordingExtractionStep implements ExtractionStep {
   readonly runs: ExtractionInput[] = [];
 
-  async run(input: ExtractionInput): Promise<void> {
+  constructor(private readonly completion: ExtractionCompletion | null = null) {}
+
+  async run(input: ExtractionInput): Promise<ExtractionCompletion | null> {
     this.runs.push(input);
+    if (this.completion === null) return null;
+    // Reflect the call's document/business so a test needn't restate them.
+    return { ...this.completion, documentId: input.documentId, businessId: input.businessId };
   }
 }

@@ -40,12 +40,13 @@ decides nothing about whether it may happen.
   on the proposal row and in `outcome`.
 - `canonical-hash.ts` — canonical JSON (sorted keys, dropped undefined) +
   SHA-256. `payload_hash`, the rendered hash and the audit chain all use it.
-- `approvals.module.ts` — builds `buildExecutorRegistry()` and the
-  `PrismaDuplicateDetector` INSIDE the service factory, through the two
-  modules' public seams (`validation-dedupe/index.ts`,
-  `ingestion-routing/index.ts`). **No token ever names an executor** — that is
-  this module's half of the #81 no-bypass promise; `executors.test.ts` pins
-  the controller-import half.
+- `approvals.module.ts` — builds `buildExecutorRegistry(...)` and the
+  `PrismaDuplicateDetector` INSIDE the service factory, through the modules'
+  public seams (`validation-dedupe/index.ts`, `ingestion-routing/index.ts`,
+  and since METH S8 `chase/index.ts` for the config-selected `SmsSender` passed
+  to the registry — `chase.send` "sends" through it). **No token ever names an
+  executor** — that is this module's half of the #81 no-bypass promise;
+  `executors.test.ts` pins the controller-import half.
 
 ## Enforcement is layered, deliberately
 
