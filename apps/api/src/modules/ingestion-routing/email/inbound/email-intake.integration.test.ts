@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
+import { RecordingExtractionStep } from '../../../extraction/index.js';
 import { documentIdFor, PrismaDocumentSink } from '../../queue/document-sink.js';
 import { InMemoryDuplicateDetector } from '../../queue/duplicate-detector.js';
 import { processIngestJob } from '../../queue/ingest-processor.js';
@@ -120,6 +121,8 @@ describe.skipIf(!DATABASE_URL || !OWNER_URL)('email intake against a real databa
       sink,
       detector: new InMemoryDuplicateDetector(),
       media: { fetcher: new FixtureMediaFetcher(), store: new InMemoryDocumentStore() },
+      // No-op: this #78 test asserts the persistence write, not extraction.
+      extractor: new RecordingExtractionStep(),
     });
 
     await processIngestJob(job, workerDeps());

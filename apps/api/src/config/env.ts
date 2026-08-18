@@ -143,6 +143,12 @@ const EnvSchema = z.object({
   // has a known false-negative on incrementally-updated PDFs; `qpdf` = the real
   // one. Defaults to fixture so a machine without the binary still runs tests.
   DOCUMENT_GUARD: z.enum(['fixture', 'qpdf']).default('fixture'),
+
+  // The document extractor (METH Stage 4). `demo` = the deterministic fixture
+  // engine that moves documents out of RECEIVED; Textract + the vision ladder
+  // lands behind the same seam later. Default `demo` so a document actually gets
+  // extracted — that is the whole point of the step. Selected by config, not import.
+  EXTRACTOR: z.enum(['demo']).default('demo'),
   S3_ENDPOINT: z.string().default(''), // e.g. http://localhost:9000 for MinIO; empty = AWS default
   S3_REGION: z.string().default('eu-west-2'),
   S3_ACCESS_KEY_ID: z.string().default(''),

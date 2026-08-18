@@ -5,6 +5,7 @@ import { type Job, UnrecoverableError, Worker } from 'bullmq';
 
 import { getPrismaClient } from '../common/db/prisma.js';
 import { loadEnv } from '../config/env.js';
+import { PrismaExtractionStep, selectExtractor } from '../modules/extraction/index.js';
 import { createSharpPerceptualHasher } from '../modules/ingestion-routing/lib/dedupe/perceptual-hash.js';
 import {
   selectDocumentGuard,
@@ -35,6 +36,11 @@ function bootstrap(): void {
   const deadLetters = new BullmqDeadLetterQueue(connection);
   const sink = new PrismaDocumentSink(getPrismaClient());
   const detector = new PrismaDuplicateDetector(getPrismaClient());
+  // Extraction (METH Stage 4) — the step that moves a document out of RECEIVED.
+  // Config-selected (`EXTRACTOR=demo`), logging through the worker's logger.
+  const extractor = new PrismaExtractionStep(getPrismaClient(), selectExtractor(env), {
+    logger: { log: (message) => logger.log(message), warn: (message) => logger.warn(message) },
+  });
 
   // WhatsApp media (#79). This is the FIRST real call site for the four
   // config-selected seams below — `selectDocumentStore`, `selectImageNormaliser`,
@@ -58,6 +64,7 @@ function bootstrap(): void {
           sink,
           detector,
           media,
+          extractor,
         });
       } catch (error) {
         // A terminal failure — an expired media id, a missing tenancy anchor —
