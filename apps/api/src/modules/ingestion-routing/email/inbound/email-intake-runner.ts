@@ -22,13 +22,20 @@ import type { EmailParser } from '../email-parser.js';
 import type { ParsedEmail } from '../parsed-email.js';
 import type { EmailSource, InboundRawEmail } from './email-source.js';
 import { resolvePracticeFromRecipient } from './recipient-practice.js';
+import type { SenderMapLoader } from './sender-map.js';
 
 export interface EmailIntakeRunnerDeps {
   readonly parser: EmailParser;
   readonly queue: IngestQueue;
   readonly logger: { log(message: string): void; warn(message: string): void };
-  /** Sender→workspace map (none exists yet — empty → everything Unrouted). */
-  readonly senderMap?: ReadonlyMap<string, readonly string[]>;
+  /**
+   * Loads the sender→workspace map for the RESOLVED practice (METH Stage 5).
+   * The map is per-practice — a sender is only recognised against the contacts
+   * of the practice this email was delivered to — so it cannot be resolved until
+   * `practiceId` is known, which is why this is a loader and not a static map.
+   * Absent → an empty map, i.e. today's behaviour: everything Unrouted.
+   */
+  readonly senderMapLoader?: SenderMapLoader;
   readonly store?: DocumentStore;
   readonly scanner?: VirusScanner;
   readonly imageNormaliser?: ImageNormaliser;
@@ -71,6 +78,13 @@ export async function runEmailIntake(raw: InboundRawEmail, deps: EmailIntakeRunn
 
   const traceId = deps.newTraceId?.() ?? randomUUID();
 
+  // Route by sender against THIS practice's contacts. The loader reads the map
+  // now that `practiceId` is known — a sender is recognised only against the
+  // practice the email was delivered to, never across practices. No loader
+  // injected → an empty map, i.e. the pre-Stage-5 behaviour (everything
+  // Unrouted). An unregistered sender simply is not a key, so it stays Unrouted.
+  const senderMap = deps.senderMapLoader ? await deps.senderMapLoader.load(practiceId) : undefined;
+
   // ⚠ EMAIL BODY / SUBJECT ARE UNTRUSTED and stay wrapped inside `processEmail`;
   // nothing here unwraps or logs them. `receivedAtSeconds` comes from the source's
   // real observation time, not the sender's `Date:` header.
@@ -78,7 +92,7 @@ export async function runEmailIntake(raw: InboundRawEmail, deps: EmailIntakeRunn
     queue: deps.queue,
     practiceId,
     receivedAtSeconds: raw.receivedAtSeconds,
-    ...(deps.senderMap ? { senderMap: deps.senderMap } : {}),
+    ...(senderMap ? { senderMap } : {}),
     ...(deps.store ? { store: deps.store } : {}),
     ...(deps.scanner ? { scanner: deps.scanner } : {}),
     ...(deps.imageNormaliser ? { imageNormaliser: deps.imageNormaliser } : {}),

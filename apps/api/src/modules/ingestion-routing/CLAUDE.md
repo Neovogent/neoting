@@ -112,6 +112,15 @@ Shakib's). The idempotency key carries the content sha256 alongside the
 `Message-ID` — the key is the BullMQ `jobId`, a duplicate jobId is dropped
 silently, and a sender-controlled header must not be able to delete a document.
 
+**Routing-by-sender is wired (METH Stage 5).** `email/inbound/sender-map.ts`:
+`buildSenderMap` (PURE) keys a practice's contacts on lower-cased email + E164
+phone → businessIds; `PrismaSenderMapLoader` reads them through `scopedDb` under
+the practice SYSTEM context (same policed path as the sink — `contacts` RLS
+admits the SYSTEM actor via the practice-membership branch). `runEmailIntake`
+loads the map for the RESOLVED practice and hands it to `processEmail`; the
+loader is optional (absent → empty map = prior behaviour). `decideRouting` and
+the schema are untouched. See `email/CLAUDE.md`.
+
 ### Document persistence through `scopedDb` (issue #20)
 
 `queue/document-sink.ts` — the worker now *writes*. `DocumentSink.persist(input)`
@@ -272,6 +281,14 @@ email takes from the point the bytes are in hand.
   WhatsApp image has no filename and `original_filename` is NOT NULL, so one is
   synthesised from the sha256 and the **detected** type, never Meta's declared
   mime.
+- **Demo seed (METH Stage 5).** `FixtureMediaFetcher` throws `not_found` for an
+  unseeded id — which is exactly right for staging, but means the `demo:whatsapp`
+  driver's webhook would dead-letter with no document. `seedDemoMedia(fetcher)`
+  (in `media-fetcher.ts`, marked `// DEMO-MOCK`) pre-seeds the ONE demo media id
+  `DEMO_WHATSAPP_MEDIA_ID = 'demo-media-currys'` with a PNG-signature buffer, and
+  `selectMediaFetcher` calls it on the **fixture branch only**. The graph fetcher
+  is untouched — no real Meta id is ever fabricated (unit + select tests prove
+  both: fixture resolves the demo id to PNG bytes, graph mode does not).
 
 **Three things raised on the issue for @shakibbinkabir before this can be marked
 complete** (all posted, awaiting his call):
