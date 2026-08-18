@@ -369,6 +369,23 @@ Two things it changed *here*, and one it deliberately did not:
   Approve spine (Governance §10). All five read operations are
   `x-nt-side-effect: none`.
 
+### Extraction wiring (METH Stage 4)
+
+The ingest processor (`queue/ingest-processor.ts`) runs extraction for every
+document, routed or not. Two shapes reach it: email/WhatsApp jobs are persisted
+by the processor (`persist()`) and then extracted; a **web-upload** job (#76)
+carries a `documentId` for a document its own service already persisted in
+RECEIVED, so the processor extracts it WITHOUT re-persisting (a dedicated branch
+before `materialise()` — without it, web-upload documents never leave RECEIVED,
+Stage 4 acceptance #1). `ProcessorDeps` gained a REQUIRED `extractor:
+ExtractionStep` — required, not optional, for the same reason `media` is: a
+processor that silently skipped extraction is exactly the bug the step removes. The type comes from
+`modules/extraction`'s public seam; the worker composition root wires the real
+`PrismaExtractionStep`, and the processor's unit tests use a
+`RecordingExtractionStep` fixture. The call is idempotent (it re-reads the
+document's state), so a redelivery or a retry never extracts twice. The
+extraction logic itself lives in `modules/extraction` — see its CLAUDE.md.
+
 ### Sanitisation pipeline (merged, PR #3)
 
 **Pure library** — `lib/sanitisation/`.

@@ -27,13 +27,18 @@ Changing any of those is a contract-change issue approved by Shakib **before** a
 
 Exposes **only** its public providers. No other module reaches into its internals; cross-module work goes through those providers or through domain events on the transactional outbox. Import rules are lint-enforced, because this boundary is also the parallel-agent lane map.
 
-**`index.ts` is the public seam since METH S3 (#122)** — created when the
-Review → Approve engine (`modules/approvals`) became this module's first
-cross-module consumer. It exports the #81 executor contract and nothing else:
-`buildExecutorRegistry`, the executor types and the two error shapes,
-`runDedupeFollowUp` + the `DedupeDetection` structural seam. The individual
-executors are deliberately NOT exported — reaching one around the registry is
-the bypass the registry exists to prevent.
+`index.ts` is the public seam, with **two** cross-module consumers — growing it
+is a boundary decision, and it grew twice:
+
+- The **Review → Approve engine** (`modules/approvals`, METH S3 / #122) takes the
+  #81 executor contract: `buildExecutorRegistry`, the executor types and the two
+  error shapes, `runDedupeFollowUp` + the `DedupeDetection` structural seam. The
+  individual executors are deliberately NOT exported — reaching one around the
+  registry is the bypass the registry exists to prevent.
+- The **extraction lane** (`modules/extraction`, METH Stage 4) takes the state
+  machine (`transitionDocument`, the transition type, `IllegalDocumentTransition`,
+  `StaleDocumentState`) and the readiness rule (`resolveProcessedState`, its
+  input/result types) — the two things extraction-completion drives.
 
 ## Tests
 
@@ -167,8 +172,11 @@ structural) and decides nothing about whether it may happen.
       post-commit. Still open: a periodic sweep over
       `findStaleDedupeFollowUps` (worker concern, tracked on the approvals
       CLAUDE.md too).
-- [ ] Wire the pipeline (extraction completion) onto `resolveProcessedState`
-      when extraction lands; the sink still only creates RECEIVED rows today.
+- [x] Wire the pipeline (extraction completion) onto `resolveProcessedState` —
+      done in METH Stage 4. `modules/extraction`'s `PrismaExtractionStep` drives
+      RECEIVED → PROCESSING → READY|TO_REVIEW|FAILED through `transitionDocument`
+      (consumed via the `index.ts` seam), and is the ONE writer of the
+      denormalised header projection readiness reads.
 - [ ] Confidence gating — arrives with eval calibration, lands in the seam
       marked in `readiness.ts`. Do not invent thresholds.
 - [ ] Update this file on exit — it is how the next session picks up

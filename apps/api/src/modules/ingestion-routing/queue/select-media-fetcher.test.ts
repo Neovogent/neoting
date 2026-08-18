@@ -24,6 +24,7 @@ function env(overrides: Partial<Env> = {}): Env {
     S3_BUCKET_RECEIPTS: 'nt-local-receipts',
     IMAGE_NORMALISER: 'fixture',
     DOCUMENT_GUARD: 'fixture',
+    EXTRACTOR: 'demo',
     S3_ENDPOINT: '',
     S3_REGION: 'eu-west-2',
     S3_ACCESS_KEY_ID: '',

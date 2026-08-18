@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 
+import { RecordingExtractionStep } from '../../extraction/index.js';
 import { InMemoryDocumentStore } from '../storage/document-store.js';
 import { InMemoryDocumentSink } from './document-sink.js';
 import { InMemoryDuplicateDetector } from './duplicate-detector.js';
@@ -19,6 +20,7 @@ function harness(): {
   processed: InMemoryProcessedStore;
   fetcher: FixtureMediaFetcher;
   store: InMemoryDocumentStore;
+  extractor: RecordingExtractionStep;
   deps: Parameters<typeof processIngestJob>[1];
 } {
   const logs: string[] = [];
@@ -28,6 +30,7 @@ function harness(): {
   const processed = new InMemoryProcessedStore();
   const fetcher = new FixtureMediaFetcher();
   const store = new InMemoryDocumentStore();
+  const extractor = new RecordingExtractionStep();
   return {
     logs,
     warns,
@@ -36,12 +39,14 @@ function harness(): {
     processed,
     fetcher,
     store,
+    extractor,
     deps: {
       processed,
       logger: { log: (m) => logs.push(m), warn: (m) => warns.push(m) },
       sink,
       detector,
       media: { fetcher, store },
+      extractor,
     },
   };
 }
@@ -87,6 +92,69 @@ test('an email job — bytes in hand — is persisted through the sink', async (
   await processIngestJob(emailJob, h.deps);
   expect(h.sink.persisted.size).toBe(1);
   expect(h.logs.some((l) => l.includes('persisted document'))).toBe(true);
+});
+
+test('extraction runs after a persisted document, carrying its ids (METH Stage 4)', async () => {
+  const h = harness();
+  await processIngestJob(emailJob, h.deps);
+  expect(h.extractor.runs).toHaveLength(1);
+  const run = h.extractor.runs[0];
+  expect(run?.documentId).toBeTruthy(); // extraction reads filename/byteHash off the row
+  expect(run?.practiceId).toBe('prac_x');
+  expect(run?.businessId).toBeNull(); // unrouted
+  expect(run?.traceId).toBe('trace-email');
+});
+
+test('a routed job hands extraction the business it was routed to', async () => {
+  const h = harness();
+  await processIngestJob({ ...emailJob, routing: { kind: 'matched', businessId: 'biz_1' } }, h.deps);
+  expect(h.extractor.runs[0]?.businessId).toBe('biz_1');
+});
+
+test('a message with nothing to persist does not run extraction', async () => {
+  const h = harness();
+  const { mediaId: _mediaId, ...textOnly } = whatsappJob;
+  await processIngestJob({ ...textOnly, messageType: 'text' }, h.deps);
+  expect(h.sink.persisted.size).toBe(0);
+  expect(h.extractor.runs).toHaveLength(0);
+});
+
+// A web upload persists its own document (in its service), then enqueues a job
+// carrying documentId. Without a branch for it, materialise() finds no bytes and
+// the document never leaves RECEIVED (Stage 4 acceptance #1).
+const webUploadJob = {
+  source: 'web_upload',
+  idempotencyKey: 'doc_web_1',
+  documentId: 'doc_web_1',
+  from: 'biz_1',
+  receivedAtSeconds: 1_700_000_000,
+  messageType: 'web_upload',
+  caption: null,
+  routing: { kind: 'matched', businessId: 'biz_1' },
+  stale: false,
+  storageKey: 'w/biz_1/uploads/xyz',
+  sha256: 'b'.repeat(64),
+  practiceId: 'prac_web',
+  traceId: 'trace-web',
+};
+
+test('a web-upload job extracts the already-persisted document without re-persisting', async () => {
+  const h = harness();
+  await processIngestJob(webUploadJob, h.deps);
+  expect(h.sink.persisted.size).toBe(0); // the upload service already persisted it
+  expect(h.extractor.runs).toHaveLength(1);
+  const run = h.extractor.runs[0];
+  expect(run?.documentId).toBe('doc_web_1');
+  expect(run?.practiceId).toBe('prac_web');
+  expect(run?.businessId).toBe('biz_1');
+});
+
+test('a web-upload job for a standalone business (no practice) is not extracted, and says so', async () => {
+  const h = harness();
+  const { practiceId: _p, ...standalone } = webUploadJob;
+  await processIngestJob(standalone, h.deps);
+  expect(h.extractor.runs).toHaveLength(0);
+  expect(h.logs.some((l) => l.includes('standalone business'))).toBe(true);
 });
 
 test('a text-only whatsapp message is logged, not persisted — and not dropped', async () => {
