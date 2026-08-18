@@ -8,7 +8,7 @@ import { INGEST_QUEUE } from '../webhooks/whatsapp/tokens.js';
 import type { IngestQueue } from '../webhooks/whatsapp/ingest-queue.js';
 import { type DocumentStore } from '../storage/document-store.js';
 import { selectDocumentStore } from '../storage/select-document-store.js';
-import { type IdempotencyStore, InMemoryIdempotencyStore } from './idempotency-store.js';
+import { type IdempotencyStore, InMemoryIdempotencyStore } from '../../../common/idempotency/idempotency-store.js';
 import { DOCUMENT_STORE, IDEMPOTENCY_STORE, PRISMA, WEB_UPLOAD_SERVICE } from './tokens.js';
 import { WebUploadController } from './web-upload.controller.js';
 import { WebUploadService } from './web-upload.service.js';

@@ -10,7 +10,7 @@ import type { AppException } from '../../../common/problem/problem.js';
 import type { DocumentStore } from '../storage/document-store.js';
 import { createS3Client, S3DocumentStore } from '../storage/s3-document-store.js';
 import { FixtureIngestQueue } from '../webhooks/whatsapp/ingest-queue.js';
-import { InMemoryIdempotencyStore } from './idempotency-store.js';
+import { InMemoryIdempotencyStore } from '../../../common/idempotency/idempotency-store.js';
 import { WebUploadService } from './web-upload.service.js';
 
 /**

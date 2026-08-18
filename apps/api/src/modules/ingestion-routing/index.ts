@@ -18,3 +18,12 @@
  */
 export type { DocumentStore } from './storage/document-store.js';
 export { selectDocumentStore } from './storage/select-document-store.js';
+/**
+ * Grown for the Review → Approve engine (METH S3, issue #122): the
+ * `document.route` executor defers dedupe-on-route, and the engine drives the
+ * follow-up post-commit through validation-dedupe's structural
+ * `DedupeDetection` seam — with THIS module's real detector behind it. The
+ * class was already the cross-module composition point in the #81 integration
+ * test; the engine is its first production consumer.
+ */
+export { PrismaDuplicateDetector } from './queue/duplicate-detector.js';

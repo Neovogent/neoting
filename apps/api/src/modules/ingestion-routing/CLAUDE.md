@@ -27,7 +27,7 @@ Changing any of those is a contract-change issue approved by Shakib **before** a
 
 Exposes **only** its public providers. No other module reaches into its internals; cross-module work goes through those providers or through domain events on the transactional outbox. Import rules are lint-enforced, because this boundary is also the parallel-agent lane map.
 
-Concretely: `index.ts` is the public seam — today `DocumentStore` (type) and `selectDocumentStore`, nothing else — and `neoting/no-cross-module-internals` (`apps/api/eslint/`, with its test) fails any other module's import that lands deeper than it. Growing the seam is a boundary decision; read the note in `index.ts` before adding a name. Composition roots (`app.module.ts`, `worker/`) and `*.integration.test.ts` wire internals directly, by design.
+Concretely: `index.ts` is the public seam — today `DocumentStore` (type), `selectDocumentStore`, and `PrismaDuplicateDetector` (grown by METH S3 #122: the Review → Approve engine drives dedupe-on-route follow-ups through validation-dedupe's `DedupeDetection` seam with this module's real detector behind it) — and `neoting/no-cross-module-internals` (`apps/api/eslint/`, with its test) fails any other module's import that lands deeper than it. Growing the seam is a boundary decision; read the note in `index.ts` before adding a name. Composition roots (`app.module.ts`, `worker/`) and `*.integration.test.ts` wire internals directly, by design.
 
 ## Tests
 

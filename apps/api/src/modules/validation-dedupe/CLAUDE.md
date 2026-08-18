@@ -27,6 +27,14 @@ Changing any of those is a contract-change issue approved by Shakib **before** a
 
 Exposes **only** its public providers. No other module reaches into its internals; cross-module work goes through those providers or through domain events on the transactional outbox. Import rules are lint-enforced, because this boundary is also the parallel-agent lane map.
 
+**`index.ts` is the public seam since METH S3 (#122)** — created when the
+Review → Approve engine (`modules/approvals`) became this module's first
+cross-module consumer. It exports the #81 executor contract and nothing else:
+`buildExecutorRegistry`, the executor types and the two error shapes,
+`runDedupeFollowUp` + the `DedupeDetection` structural seam. The individual
+executors are deliberately NOT exported — reaching one around the registry is
+the bypass the registry exists to prevent.
+
 ## Tests
 
 ```bash
@@ -94,14 +102,16 @@ structural) and decides nothing about whether it may happen.
 
 - **`buildExecutorRegistry()`** — total over the contract's `ProposalKind` by
   mapped type: a missing kind is a compile error; the engine's `NT-PRP-001`
-  stays the second line of defence. Two real executors, nine honest holes
-  throwing `ProposalNotImplementedError` by name — the original five (#81)
-  plus the four METH Stage 2 kinds (#120): `chase.send` (METH S8),
-  `publish.batch` (S10), `bank.confirm-match` (S11), `rule.create` (S13),
-  each typed off the generated payload models. **No controller imports the
-  proposals directory** — a test walks every `*.controller.ts` and asserts it;
-  the provider-side half (keep the registry token out of public providers) is
-  S1's to uphold.
+  stays the second line of defence. **Three real executors** (route, archive,
+  update-coding since METH S3 #122), eight honest holes throwing
+  `ProposalNotImplementedError` by name — the remaining #81 four
+  (`move-business`, `reprocess`, `reject`, `split`) plus the METH Stage 2
+  kinds (#120): `chase.send` (METH S8), `publish.batch` (S10),
+  `bank.confirm-match` (S11), `rule.create` (S13), each typed off the
+  generated payload models. **No controller imports the proposals directory**
+  — a test walks every `*.controller.ts` and asserts it; the provider-side
+  half is upheld in `approvals.module.ts` (registry built inside the service
+  factory, no token).
 - **`document.route`** — assigns an Unrouted document a business + inbox.
   Keeps `practice_id` (decision 4; both-set is the normal routed case, #103),
   refuses UNROUTED as a target, refuses moving an already-routed document
@@ -130,17 +140,33 @@ structural) and decides nothing about whether it may happen.
   PUBLISHED restore to readiness's answer while recording
   `publishingDataClearDeferred` — clearing Publish rows is the publishing
   module's seam.
+- **`document.update-coding`** (METH S3, #122) — a human correcting or
+  confirming coding. Two surfaces move atomically: the denormalised header
+  fields (the projection's one write path on the correction side), and a NEW
+  accepted `extractions` row (`extractor_kind: 'human'`, keyed by the
+  approver) carrying the corrections as `HUMAN_CONFIRMED` /
+  `wasCorrected: true` with the proposal cited as `source` — history is
+  append-only, the prior row loses only `is_accepted`. Refuses PUBLISHED and
+  ARCHIVED (locked). Supplying the last missing mandatory field drives
+  TO_REVIEW → READY through the machine; corrections carry values, never
+  deletions, so no demotion path exists. `createRuleFromCorrection` is a
+  recorded seam on the event (`createRuleDeferred`), for `rule.create`
+  (METH S13). Dates land as UTC midnight; the extraction value keeps the
+  contract's `YYYY-MM-DD`.
 
 ## TODO
 
-- [ ] The nine unimplemented executors — the original five (`update-coding`,
-      `move-business`, `reprocess`, `reject`, `split`; each needs its own
+- [ ] The eight unimplemented executors — the remaining #81 four
+      (`move-business`, `reprocess`, `reject`, `split`; each needs its own
       issue) and the four METH kinds (`chase.send` → METH S8, `publish.batch`
       → S10, `bank.confirm-match` → S11, `rule.create` → S13). The registry
-      already types and names them all.
-- [ ] S1 wires the engine: registry via `useFactory` with the token kept out
-      of public providers; follow-ups enqueued post-commit; a periodic sweep
-      over `findStaleDedupeFollowUps`.
+      already types and names them all. `update-coding` landed with the
+      engine (METH S3, #122).
+- [x] The engine is wired (METH S3, #122 — `modules/approvals`): registry via
+      `useFactory`, token kept out of public providers; dedupe follow-ups run
+      post-commit. Still open: a periodic sweep over
+      `findStaleDedupeFollowUps` (worker concern, tracked on the approvals
+      CLAUDE.md too).
 - [ ] Wire the pipeline (extraction completion) onto `resolveProcessedState`
       when extraction lands; the sink still only creates RECEIVED rows today.
 - [ ] Confidence gating — arrives with eval calibration, lands in the seam
