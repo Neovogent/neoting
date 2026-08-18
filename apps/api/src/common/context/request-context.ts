@@ -22,16 +22,20 @@ export type HeaderReader = (name: string) => string | undefined;
 
 /**
  * Turns the current request into a `ScopeContext`, or throws 401. The one seam
- * S1 replaces: today a header-reading fixture, tomorrow a real session resolver.
+ * S1 replaces: a header-reading fixture in dev, the cookie-verifying session
+ * resolver under `AUTH_MODE=session`.
+ *
+ * `resolve` may be async (S1's session resolver loads memberships from the
+ * database); the fixture resolver stays synchronous and the seam accepts both.
  */
 export interface ContextResolver {
-  resolve(headers: HeaderReader): ScopeContext;
+  resolve(headers: HeaderReader): ScopeContext | Promise<ScopeContext>;
 }
 
 /** What a controller injects (via the `REQUEST_CONTEXT` token). */
 export interface RequestContext {
-  /** The `ScopeContext` for the current request, or throws 401 `NT-AUTH-001`. */
-  require(): ScopeContext;
+  /** The `ScopeContext` for the current request, or rejects 401 `NT-AUTH-001`. */
+  require(): Promise<ScopeContext>;
 }
 
 /** The 401 every un-establishable context returns — RFC 7807 `NT-AUTH-001` via `ProblemFilter`. */
@@ -39,9 +43,14 @@ export function unauthenticated(detail: string): AppException {
   return new AppException('NT-AUTH-001', HttpStatus.UNAUTHORIZED, 'Authentication required', detail);
 }
 
+/** A session that WAS valid and ran out — `NT-AUTH-002`, so the UI can say "log in again" rather than "who are you". */
+export function sessionExpired(detail: string): AppException {
+  return new AppException('NT-AUTH-002', HttpStatus.UNAUTHORIZED, 'Session expired', detail);
+}
+
 interface ContextStore {
   readonly headers: HeaderReader;
-  resolved?: ScopeContext;
+  resolved?: Promise<ScopeContext>;
 }
 
 const storage = new AsyncLocalStorage<ContextStore>();
@@ -55,20 +64,25 @@ export function runWithRequestContext<T>(headers: HeaderReader, fn: () => T): T 
  * The real provider. Resolution is LAZY — deferred to `require()`, which runs
  * inside Nest's pipeline where `ProblemFilter` turns a bad context into a 401.
  * Doing it in the middleware would put the throw in Express-land, before the
- * filter can see it. The result is memoized so repeated `require()` calls in one
- * request are a single resolution.
+ * filter can see it. The result is memoized as a promise so repeated
+ * `require()` calls in one request are a single resolution — including a single
+ * membership lookup on the session path.
  */
 export class AlsRequestContext implements RequestContext {
   constructor(private readonly resolver: ContextResolver) {}
 
-  require(): ScopeContext {
+  require(): Promise<ScopeContext> {
     const store = storage.getStore();
     if (store === undefined) {
       // Not "unauthenticated" — the middleware never ran, which is a wiring bug.
       // Fail loud (500) rather than dress a misconfiguration up as an auth outcome.
       throw new Error('RequestContext.require() called outside a request — ContextMiddleware is not wired');
     }
-    store.resolved ??= this.resolver.resolve(store.headers);
+    // A SYNCHRONOUS resolver throw (the fixture path) is deliberately not
+    // memoized — `store.resolved` stays unset and the throw propagates. That is
+    // fine: the same headers produce the same throw on a retry, and an async
+    // rejection IS memoized, which is the case that costs a database round-trip.
+    store.resolved ??= Promise.resolve(this.resolver.resolve(store.headers));
     return store.resolved;
   }
 }

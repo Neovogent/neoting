@@ -52,13 +52,16 @@ audit trail and the GUCs. `resolveSystemActor(prisma, practiceId)` finds the
 practice's `UserKind.SYSTEM` membership and returns its userId, which then feeds
 `systemContext(practiceId, systemUserId)`.
 
-That lookup is the **one** legitimately unscoped query in the codebase — it runs
-`prisma.membership.findFirst` directly, not through `scopedDb`, because it is the
-bootstrap that *produces* the context every other query needs, and there is no
-actor to scope by yet. It is safe only because `users` and `memberships` carry no
-RLS (verified empirically). It **fails loudly** (throws) when a practice has no
-SYSTEM actor, rather than writing a document with a dangling actor — a missing
-system user is a seed bug, not a runtime branch to paper over.
+That lookup is one of exactly **two** legitimately unscoped queries in the
+codebase — the other is `modules/auth-tenancy/session-scope.ts`'s
+`loadScopeForUser` (#118), which does the same job for a logged-in human that
+this does for a worker. Both run against `memberships` directly, not through
+`scopedDb`, because each is the bootstrap that *produces* the context every
+other query needs, and there is no actor to scope by yet. Both are safe only
+because `users` and `memberships` carry no RLS (verified empirically). This one
+**fails loudly** (throws) when a practice has no SYSTEM actor, rather than
+writing a document with a dangling actor — a missing system user is a seed bug,
+not a runtime branch to paper over.
 
 Every worker consumer resolves its actor this way: the `PrismaDocumentSink` (#20)
 and the `PrismaDuplicateDetector` (#40) both call it before opening their
@@ -68,7 +71,10 @@ has a practice-membership branch (see the ingestion-routing CLAUDE.md finding).
 
 ## TODO
 
-- [ ] Request-scoped context from the session, once auth lands — today every caller builds its own.
+- [x] #118: request-scoped context from the session — `AUTH_MODE=session`
+      resolves the `nt_session` cookie into a `ScopeContext` via
+      `common/context` + `modules/auth-tenancy` (`RequestContext.require()` is
+      now async). Fixture headers remain the dev default.
 - [x] #20: `scopedDb` wired into the ingest worker via `queue/PrismaDocumentSink`
       — documents + their first `DocumentEvent` persist in one transaction under
       the practice's `systemContext`. Proven by `queue/document-sink.integration.test.ts`
