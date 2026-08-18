@@ -18,7 +18,7 @@ function env(overrides: Partial<Env> = {}): Env {
     UPLOAD_URL_TTL_SECONDS: 900,
     INGEST_QUEUE: 'fixture',
     REDIS_URL: 'redis://localhost:6379',
-    OBJECT_STORE: 'fixture', IMAGE_NORMALISER: 'fixture', DOCUMENT_GUARD: 'fixture',
+    OBJECT_STORE: 'fixture', IMAGE_NORMALISER: 'fixture', DOCUMENT_GUARD: 'fixture', EXTRACTOR: 'demo',
     EMAIL_SOURCE: 'fixture',
     MAILHOG_API_URL: 'http://localhost:8025',
     S3_BUCKET_RECEIPTS: 'nt-local-receipts',

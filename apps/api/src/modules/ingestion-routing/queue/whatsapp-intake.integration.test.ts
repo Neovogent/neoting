@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
+import { RecordingExtractionStep } from '../../extraction/index.js';
 import { InMemoryDocumentStore } from '../storage/document-store.js';
 import { documentIdFor, PrismaDocumentSink } from './document-sink.js';
 import { InMemoryDuplicateDetector } from './duplicate-detector.js';
@@ -85,6 +86,10 @@ describe.skipIf(!DATABASE_URL || !OWNER_URL)('WhatsApp media intake against a re
       sink: new PrismaDocumentSink(app),
       detector: new InMemoryDuplicateDetector(),
       media: { fetcher, store },
+      // A no-op here: this test is about the #79 persistence/tenancy write, not
+      // extraction (which has its own integration test). Leaving the document in
+      // RECEIVED keeps the assertions below about what the sink wrote.
+      extractor: new RecordingExtractionStep(),
     });
 
     const documentId = documentIdFor(whatsappJob.idempotencyKey);

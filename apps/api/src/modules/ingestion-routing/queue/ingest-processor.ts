@@ -1,3 +1,4 @@
+import type { ExtractionStep } from '../../extraction/index.js';
 import type { DocumentSink } from './document-sink.js';
 import type { DuplicateDetector } from './duplicate-detector.js';
 import { type IngestJobPayload, IngestJobPayloadSchema } from './job-payload.js';
@@ -24,6 +25,14 @@ export interface ProcessorDeps {
    * is the silent loss this issue exists to remove.
    */
   readonly media: MediaIntakeDeps;
+  /**
+   * Extraction (METH Stage 4). REQUIRED for the same reason as `media`: a
+   * processor that quietly skipped extraction is exactly the "documents never
+   * leave RECEIVED" bug this step removes. Runs after the document is persisted;
+   * it is idempotent, so a redelivery or a retry re-reads the state and does
+   * nothing twice.
+   */
+  readonly extractor: ExtractionStep;
 }
 
 /**
@@ -80,9 +89,44 @@ async function handle(payload: IngestJobPayload, deps: ProcessorDeps): Promise<v
     `ingest ${payload.idempotencyKey} from ${payload.from} (${payload.messageType}, ${payload.routing.kind})${staleTag} trace=${payload.traceId}`,
   );
 
+  // A web-upload job (#76) refers to a document its OWN service already persisted
+  // in RECEIVED — the worker must not re-persist it (that would double-create), it
+  // extracts it. This is the only channel that arrives already-persisted, and
+  // without this branch its documents never leave RECEIVED (METH Stage 4
+  // acceptance #1). Extraction reads the filename/byteHash off the row itself.
+  if (payload.documentId !== undefined) {
+    if (payload.practiceId === undefined) {
+      // A standalone business has no practice above it, so there is no
+      // practice-level SYSTEM actor to extract under. Not in the demo cast; a
+      // noted follow-up rather than a silent extraction of an unanchorable row.
+      deps.logger.log(
+        `already-persisted ${payload.idempotencyKey} has no practice anchor — extraction skipped (standalone business, trace=${payload.traceId})`,
+      );
+      return;
+    }
+    await deps.extractor.run({
+      documentId: payload.documentId,
+      practiceId: payload.practiceId,
+      businessId: payload.routing.businessId ?? null,
+      traceId: payload.traceId,
+    });
+    return;
+  }
+
   const materialised = await materialise(payload, deps);
   if (materialised === null) return; // the reason was logged where it was decided
-  await persist(payload, materialised, deps);
+  const { documentId } = await persist(payload, materialised, deps);
+
+  // Extraction (METH Stage 4) — the step that takes the document out of RECEIVED.
+  // It runs for EVERY persisted document, routed or not, and is idempotent: a
+  // redelivery (created=false) or a retry after a mid-job failure re-reads the
+  // document's state and does nothing twice.
+  await deps.extractor.run({
+    documentId,
+    practiceId: materialised.practiceId,
+    businessId: payload.routing.businessId ?? null,
+    traceId: payload.traceId,
+  });
 }
 
 /** A document with its bytes stored, and the practice that anchors it. */
@@ -220,7 +264,7 @@ async function persist(
   payload: IngestJobPayload,
   { practiceId, document }: Materialised,
   deps: ProcessorDeps,
-): Promise<void> {
+): Promise<{ documentId: string }> {
   const businessId = payload.routing.businessId ?? null;
 
   const { documentId, created } = await deps.sink.persist({
@@ -249,7 +293,7 @@ async function persist(
   // runs on every handle, not just `created` ones — a retry after a mid-job
   // failure must still detect, and the write is idempotent (ordered pair +
   // unique index). See the module CLAUDE.md for the unrouted decision.
-  if (businessId === null) return;
+  if (businessId === null) return { documentId };
 
   const { findings, candidatesTruncated } = await deps.detector.detect({
     documentId,
@@ -269,4 +313,6 @@ async function persist(
       `dedupe ${documentId}: perceptual scan hit the candidate cap for business ${businessId} — older images were not compared (trace=${payload.traceId})`,
     );
   }
+
+  return { documentId };
 }

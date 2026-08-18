@@ -27,6 +27,12 @@ Changing any of those is a contract-change issue approved by Shakib **before** a
 
 Exposes **only** its public providers. No other module reaches into its internals; cross-module work goes through those providers or through domain events on the transactional outbox. Import rules are lint-enforced, because this boundary is also the parallel-agent lane map.
 
+`index.ts` is the public seam — created for its first cross-module consumer, the
+extraction lane (METH Stage 4). It exposes the state machine (`transitionDocument`,
+the transition type, `IllegalDocumentTransition`, `StaleDocumentState`) and the
+readiness rule (`resolveProcessedState`, its input/result types) — the two things
+extraction-completion needs, and nothing else. Growing it is a boundary decision.
+
 ## Tests
 
 ```bash
@@ -136,8 +142,11 @@ structural) and decides nothing about whether it may happen.
 - [ ] S1 wires the engine: registry via `useFactory` with the token kept out
       of public providers; follow-ups enqueued post-commit; a periodic sweep
       over `findStaleDedupeFollowUps`.
-- [ ] Wire the pipeline (extraction completion) onto `resolveProcessedState`
-      when extraction lands; the sink still only creates RECEIVED rows today.
+- [x] Wire the pipeline (extraction completion) onto `resolveProcessedState` —
+      done in METH Stage 4. `modules/extraction`'s `PrismaExtractionStep` drives
+      RECEIVED → PROCESSING → READY|TO_REVIEW|FAILED through `transitionDocument`
+      (consumed via the new `index.ts` seam), and is the ONE writer of the
+      denormalised header projection readiness reads.
 - [ ] Confidence gating — arrives with eval calibration, lands in the seam
       marked in `readiness.ts`. Do not invent thresholds.
 - [ ] Update this file on exit — it is how the next session picks up
