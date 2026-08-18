@@ -94,8 +94,11 @@ structural) and decides nothing about whether it may happen.
 
 - **`buildExecutorRegistry()`** — total over the contract's `ProposalKind` by
   mapped type: a missing kind is a compile error; the engine's `NT-PRP-001`
-  stays the second line of defence. Two real executors, five honest holes
-  throwing `ProposalNotImplementedError` by name. **No controller imports the
+  stays the second line of defence. Two real executors, nine honest holes
+  throwing `ProposalNotImplementedError` by name — the original five (#81)
+  plus the four METH Stage 2 kinds (#120): `chase.send` (METH S8),
+  `publish.batch` (S10), `bank.confirm-match` (S11), `rule.create` (S13),
+  each typed off the generated payload models. **No controller imports the
   proposals directory** — a test walks every `*.controller.ts` and asserts it;
   the provider-side half (keep the registry token out of public providers) is
   S1's to uphold.
@@ -130,9 +133,11 @@ structural) and decides nothing about whether it may happen.
 
 ## TODO
 
-- [ ] The five unimplemented executors (`update-coding`, `move-business`,
-      `reprocess`, `reject`, `split`) — each needs its own issue; the registry
-      already types and names them.
+- [ ] The nine unimplemented executors — the original five (`update-coding`,
+      `move-business`, `reprocess`, `reject`, `split`; each needs its own
+      issue) and the four METH kinds (`chase.send` → METH S8, `publish.batch`
+      → S10, `bank.confirm-match` → S11, `rule.create` → S13). The registry
+      already types and names them all.
 - [ ] S1 wires the engine: registry via `useFactory` with the token kept out
       of public providers; follow-ups enqueued post-commit; a periodic sweep
       over `findStaleDedupeFollowUps`.

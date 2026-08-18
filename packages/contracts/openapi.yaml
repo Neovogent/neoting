@@ -8,13 +8,21 @@
 #
 # SCOPE OF THIS PASS: ingestion + documents + the Review → Approve spine,
 # plus the MINIMAL demo-auth trio (login, logout, /me) pulled forward from
-# pass 2 by METH_MODE Stage 1 (issue #118, pre-approved in METH_MODE §3.1).
+# pass 2 by METH_MODE Stage 1 (issue #118, pre-approved in METH_MODE §3.1),
+# plus the demo-spine slices of passes 3–4 pulled forward by METH_MODE Stage 2
+# (issue #120, pre-approved in METH_MODE §3.1): the chase/portal/publish/bank/
+# business read-and-portal surfaces and four new ProposalKind values. Demo-only
+# operations carry `x-demo: true`.
 # Deliberately absent, in the order they should land:
 #   pass 2  auth-tenancy — the REST of it: memberships, invites, session
 #           management beyond the single stateless cookie
-#   pass 3  chase + the OTP portal (including the editable-overlay correction
-#           endpoint — see the open question on ProposalKind below)
-#   pass 4  banking, matching, approvals, publishing, exports, public API
+#   pass 3  chase + the OTP portal, the REST of it: policy scheduler, item
+#           messaging, STOP handling (and the open question on ProposalKind
+#           below stays open — the portal's editable-overlay correction is
+#           recorded as document events for the demo, settling nothing)
+#   pass 4  banking, matching, approvals, publishing, exports, public API —
+#           the REST of it: consent lifecycle, statement upload, partial/batch
+#           payments, reference sync, workflow builder, exports
 #
 # HOW TO READ THIS FILE
 #   Every shape here derives from the applied Prisma schema. Where a field name
@@ -144,6 +152,29 @@ tags:
       The Review → Approve spine (Governance §10). Every state change in the
       product passes through here. Models may create proposals; only a human UI
       action may approve one.
+  - name: chases
+    description: |
+      The chase engine's read surface (SoT Stage 8), including the demo-only
+      SMS outbox. Reads only — a chase is created and sent exclusively through
+      an approved `chase.send` proposal; no send endpoint exists.
+  - name: portal
+    description: |
+      The no-app client journey (SoT Stage 8.3): an SMS link plus an OTP opens
+      a session scoped to exactly the items one chase requested. The RLS
+      delegated-session policies enforce that boundary, never the handlers.
+  - name: banking
+    description: |
+      The normalised bank feed (SoT Stage 7). Reads only — confirming a match
+      is a `bank.confirm-match` proposal, never a PATCH.
+  - name: publishing
+    description: |
+      Publish history (SoT Stage 10). Reads only — publishing is a
+      `publish.batch` proposal, and retrying a failed item is a new proposal,
+      never a replay of the old one.
+  - name: businesses
+    description: |
+      The caller's client workspaces with their waiting-work counts — what the
+      context header, the client switcher and the Clients list render.
   - name: webhooks
     description: Inbound webhooks from third parties. Signature-verified, not session-authenticated.
 
@@ -633,8 +664,17 @@ paths:
         appear as separate documents with `parentDocumentId` set once splitting
         completes, so a caller that sees one document and no children has caught
         the job mid-flight, not lost anything.
+
+        This is also step two for portal uploads (`POST /portal/uploads`),
+        which is why the portal bearer is accepted alongside the workspace
+        session — a delegated session completes the intents it created, and
+        the RLS delegated policies keep it inside its own grant (Governance
+        §5.2). One completion path, two trust levels, no second door.
       tags: [ingestion]
       x-nt-side-effect: ingest
+      security:
+        - workspaceSession: []
+        - portalSession: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -955,6 +995,415 @@ paths:
         '500': { $ref: '#/components/responses/InternalError' }
 
   # ==========================================================================
+  # CHASES — read surface (METH Stage 2, issue #120)
+  #
+  # Sending is `chase.send` on the Review → Approve spine. These endpoints
+  # only ever show what detection found and what an approval caused.
+  # ==========================================================================
+
+  /chases:
+    get:
+      operationId: listChases
+      summary: List chases
+      description: |
+        Every chase the caller's RLS context can see, newest first. One
+        endpoint serves the Chases workspace and the per-client drill-down —
+        they differ only by filter, the same shape as `/documents`.
+
+        A chase is never created here. Detection finds the gap, a human
+        approves a `chase.send` proposal whose review shows every SMS
+        verbatim, and execution creates the chase and its messages. The text
+        shown at review is byte-for-byte the text that sends (SoT §8.2).
+      tags: [chases]
+      x-nt-side-effect: none
+      parameters:
+        - $ref: '#/components/parameters/BusinessIdFilter'
+        - name: state
+          in: query
+          description: Repeat to widen. Omitted means every state.
+          required: false
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/ChaseState' }
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of chases, newest first.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pageInfo]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ChaseSummary' }
+                  pageInfo: { $ref: '#/components/schemas/PageInfo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /chases/{chaseId}:
+    parameters:
+      - $ref: '#/components/parameters/ChaseId'
+    get:
+      operationId: getChase
+      summary: Get one chase
+      description: |
+        The full record: the chased items, every message sent (verbatim), and
+        how it closed. `closedByDocumentId` names the arriving document when
+        the pipeline auto-closed it (SoT Stage 8.5) — the beat where nobody
+        had to do anything.
+      tags: [chases]
+      x-nt-side-effect: none
+      responses:
+        '200':
+          description: The chase.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Chase' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /sms-outbox:
+    get:
+      operationId: listSmsOutbox
+      summary: The demo SMS outbox — the "client's phone"
+      description: |
+        Every SMS the sender recorded, newest first. Demo-only surface
+        (`x-demo`): with `SMS_SENDER=demo` nothing ever leaves the machine,
+        and this list is how a demo shows the phone — each row carries the
+        portal link the real SMS would have carried, extracted so the screen
+        can make it tappable.
+
+        It reads the same rows the real Twilio sender will write, so the
+        surface survives the un-faking; only its audience changes.
+      tags: [chases]
+      x-nt-side-effect: none
+      x-demo: true
+      parameters:
+        - $ref: '#/components/parameters/BusinessIdFilter'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Recorded SMS, newest first.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pageInfo]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/SmsOutboxMessage' }
+                  pageInfo: { $ref: '#/components/schemas/PageInfo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ==========================================================================
+  # OTP PORTAL (SoT Stage 8.3 — the no-app client journey; METH Stage 2 #120)
+  # ==========================================================================
+
+  /portal/sessions:
+    post:
+      operationId: createPortalSession
+      summary: Open a portal session from a chase link
+      description: |
+        Exchanges the SMS link token plus the OTP for a portal session scoped
+        to exactly the items the granting chase requested and nothing else
+        (Governance §5.2). The link is deliberately forwardable to whoever
+        physically holds the paperwork; the audit trail records
+        requested-from separately from uploaded-by-delegated-session.
+
+        The link token is stateless — HMAC over the chase id and expiry, the
+        upload-intent pattern. Verifying it plus the OTP creates the
+        `otp_sessions` row that the RLS delegated policies scope everything
+        else to. Demo builds verify the OTP against a fixed code
+        (`OTP_MODE=demo`); Twilio Verify replaces the verifier, not this
+        shape.
+
+        Every verification failure — unknown token, expired link, wrong OTP —
+        returns the same `401 NT-OTP-001`. Distinguishing them would tell a
+        guesser which links exist (the NT-AUTH-003 stance, applied here).
+      tags: [portal]
+      x-nt-side-effect: ingest
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PortalSessionCreateRequest' }
+      responses:
+        '201':
+          description: The scoped session. Send `token` as a bearer on every portal call.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PortalSession' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: Link token or OTP failed verification — `NT-OTP-001`, uniformly.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              example:
+                type: https://neoting.com/problems/NT-OTP-001
+                title: Verification failed
+                status: 401
+                code: NT-OTP-001
+                detail: The link or verification code did not verify. Request a fresh link if this one has expired.
+                traceId: 01J8XN2ZQ5R7TQ9E3M4K6P
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /portal/context:
+    get:
+      operationId: getPortalContext
+      summary: What this portal session may see
+      description: |
+        The requested items — supplier, amount, date — and the whole of what
+        the session may see. The RLS delegated-session policies enforce the
+        boundary below the handler; this endpoint could not widen it if it
+        tried, which is the point (Governance §5.2).
+      tags: [portal]
+      x-nt-side-effect: none
+      security:
+        - portalSession: []
+      responses:
+        '200':
+          description: The chased items this session exists to collect.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PortalContext' }
+        '401':
+          description: Portal session missing, invalid or expired — `NT-OTP-002`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /portal/uploads:
+    post:
+      operationId: createPortalUpload
+      summary: Start a delegated upload
+      description: |
+        The portal's step one of two — the same intent → presigned `PUT` →
+        complete flow as `/document-uploads`, under the delegated scope. The
+        API never receives the bytes; that is what keeps the lightest surface
+        in the product light on a bad connection in a car park.
+
+        Complete it with `POST /document-uploads/{uploadId}/complete`, which
+        accepts the portal bearer for exactly this reason. The document then
+        runs the full pipeline; extraction is compared against the chased
+        items, a match auto-closes the chase (SoT Stage 8.5), and a mismatch
+        is fed back in the portal naming the difference — never silently
+        accepted, never silently dropped.
+      tags: [portal]
+      x-nt-side-effect: ingest
+      security:
+        - portalSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PortalUploadRequest' }
+      responses:
+        '201':
+          description: Upload intent created. `PUT` the bytes to `upload.url`.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentUpload' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: Portal session missing, invalid or expired — `NT-OTP-002`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '413':
+          description: The declared size exceeds the 25 MB client-channel cap. Client-side compression should have prevented this for camera photos.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '415':
+          description: The declared MIME type is not on the allowlist for this channel.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ==========================================================================
+  # PUBLISHING — read surface (METH Stage 2, issue #120)
+  # ==========================================================================
+
+  /publishes:
+    get:
+      operationId: listPublishes
+      summary: List publish attempts
+      description: |
+        Publish history, newest first. A FAILED row always carries
+        `failureCode` and `failureMessage` and its document lands on the
+        Rejected/Failed surface — a failure with no reason attached is a bug,
+        not a state. Retry is a new `publish.batch` proposal over the failed
+        item; the old attempt is never replayed and never deleted.
+      tags: [publishing]
+      x-nt-side-effect: none
+      parameters:
+        - $ref: '#/components/parameters/BusinessIdFilter'
+        - name: state
+          in: query
+          description: Repeat to widen. Omitted means every state.
+          required: false
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/PublishState' }
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of publish attempts, newest first.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pageInfo]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Publish' }
+                  pageInfo: { $ref: '#/components/schemas/PageInfo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ==========================================================================
+  # BANKING — read surface (METH Stage 2, issue #120)
+  # ==========================================================================
+
+  /bank-transactions:
+    get:
+      operationId: listBankTransactions
+      summary: List bank transactions
+      description: |
+        The normalised feed (SoT Stage 7), newest first. Amounts are signed
+        pence exactly as the feed records them. Confirming a suggested match
+        is a `bank.confirm-match` proposal — nothing here mutates, and the
+        unmatched set this returns is the same set chase detection reads,
+        so the Bank screen and the chase list can never disagree.
+      tags: [banking]
+      x-nt-side-effect: none
+      parameters:
+        - $ref: '#/components/parameters/BusinessIdFilter'
+        - name: accountId
+          in: query
+          description: Restrict to one bank account.
+          required: false
+          schema: { type: string }
+        - name: matchState
+          in: query
+          description: Repeat to widen. Omitted means every state.
+          required: false
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/MatchState' }
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of transactions, newest booked first.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pageInfo]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/BankTransaction' }
+                  pageInfo: { $ref: '#/components/schemas/PageInfo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ==========================================================================
+  # BUSINESSES (METH Stage 2, issue #120)
+  # ==========================================================================
+
+  /businesses:
+    get:
+      operationId: listBusinesses
+      summary: The caller's client workspaces
+      description: |
+        Every workspace the caller's RLS context can see, with waiting-work
+        counts from one cheap aggregate. `GET /me` answers "who am I"; this
+        answers "what is waiting where" — the context header, the client
+        switcher and the Clients list all render from it.
+      tags: [businesses]
+      x-nt-side-effect: none
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of workspaces, alphabetical.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pageInfo]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/BusinessSummary' }
+                  pageInfo: { $ref: '#/components/schemas/PageInfo' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ==========================================================================
   # WEBHOOKS
   # ==========================================================================
 
@@ -1189,6 +1638,12 @@ components:
       required: true
       schema: { type: string }
 
+    ChaseId:
+      name: chaseId
+      in: path
+      required: true
+      schema: { type: string }
+
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -1362,6 +1817,17 @@ components:
         - NT-ING-005   # upload intent expired before completion
         - NT-RTE-001   # document could not be routed and is in the Unrouted queue
         - NT-EXT-001   # extraction failed on every rung of the ladder
+        # Portal auth — the OTP family Governance §13.4 reserves. Same
+        # single-code stance as NT-AUTH-003 and NT-INT-001: a caller who
+        # failed to verify learns nothing about why, so a guesser cannot
+        # learn which links exist. The two codes split on WHEN, not why:
+        # -001 is entry (link + OTP), -002 is an issued session going stale.
+        - NT-OTP-001   # portal link token or OTP failed verification
+        - NT-OTP-002   # portal session missing, invalid or expired
+        # Publishing (PUB family). SoT Stage 10: an item enters a publish
+        # batch only with Total + Supplier + Category present; refusing at
+        # proposal time beats publishing half-coded books.
+        - NT-PUB-001   # document not publishable — mandatory fields missing
         - NT-PRP-001   # unknown action kind
         - NT-PRP-002   # approve attempted before the review was opened
         - NT-PRP-003   # proposal expired
@@ -1439,6 +1905,55 @@ components:
         - HUMAN_CONFIRMED   # a person typed or confirmed it; outranks everything
         - DETERMINISTIC     # a rule or validator produced it
         - AI_SUGGESTED      # a model produced it; always paired with confidence
+
+    ChaseDetectionEngine:
+      type: string
+      description: |
+        The five detection engines of SoT §4 Stage 8, mirrored from the Prisma
+        enum exactly. The demo push implements UNMATCHED_TRANSACTION only; the
+        other four are contract-real and engine-pending.
+      enum: [UNMATCHED_TRANSACTION, SUPPLIER_STATEMENT_GAP, STATEMENT_PERIOD_GAP, LEDGER_TXN_NO_ATTACHMENT, EXPECTED_RECURRING_MISSING]
+
+    ChaseState:
+      type: string
+      description: |
+        Mirrors the Prisma `ChaseState` enum exactly. `CLOSED_RECEIVED` is the
+        auto-close: an arriving document matched the chased items and nobody
+        had to do anything — the beat the product sells.
+      enum: [DETECTED, PROPOSED, APPROVED, SENT, REMINDED, ESCALATED, CLOSED_RECEIVED, CLOSED_UNAVAILABLE, CLOSED_DISMISSED, CLOSED_SUPPRESSED]
+
+    MatchState:
+      type: string
+      description: |
+        Mirrors the Prisma `MatchState` enum exactly. `CONFIRMED` is reachable
+        only through an approved `bank.confirm-match` proposal.
+      enum: [UNMATCHED, SUGGESTED, CONFIRMED, EXCLUDED]
+
+    MatchKind:
+      type: string
+      description: Mirrors the Prisma `MatchKind` enum exactly.
+      enum: [EXACT, PROBABILISTIC, PARTIAL_PAYMENT, BATCH_PAYMENT, CREDIT_NOTE]
+
+    PublishMode:
+      type: string
+      description: Mirrors the Prisma `PublishMode` enum exactly.
+      enum: [MANUAL, AUTO, AI]
+
+    PublishState:
+      type: string
+      description: |
+        Mirrors the Prisma `PublishState` enum exactly. A `FAILED` publish
+        always carries `failureCode` and `failureMessage`; retry is a new
+        `publish.batch` proposal over the failed item, never a replay.
+      enum: [QUEUED, SUCCEEDED, FAILED]
+
+    RuleTier:
+      type: string
+      description: |
+        The four-tier priority ladder (SoT Stage 3): user rules beat
+        payment-method rules beat supplier/customer defaults beat account
+        defaults. Mirrors the Prisma `RuleTier` enum exactly.
+      enum: [USER, PAYMENT_METHOD, SUPPLIER_CUSTOMER, ACCOUNT_DEFAULT]
 
     # ---- auth (METH Stage 1) ----------------------------------------------
 
@@ -1822,8 +2337,11 @@ components:
         kinds (Governance §9.5), and an unknown kind is rejected with
         `NT-PRP-001`.
 
-        Later surfaces add `chase.send`, `publish.execute`, `rule.activate`,
-        `policy.activate` and `setting.change`.
+        METH Stage 2 (issue #120) added the four demo-push kinds — `chase.send`,
+        `publish.batch`, `bank.confirm-match` and `rule.create` — registered as
+        `ProposalNotImplementedError` stubs until their stages land executors.
+        Later surfaces still add `rule.activate`, `policy.activate` and
+        `setting.change`.
 
         **Open question for Shakib — deliberately not decided here.** The OTP
         portal's editable-overlay correction (SoT Stage 8.4) is a client fixing a
@@ -1841,6 +2359,10 @@ components:
         - document.reject         # reject with a visible reason
         - document.split          # re-split a batch by page range
         - document.archive        # archive or unarchive
+        - chase.send              # send composed chase SMS; review shows every message verbatim
+        - publish.batch           # publish reviewed documents to the ledger; review shows the server-computed preview
+        - bank.confirm-match      # confirm a suggested document ↔ transaction match
+        - rule.create             # create a coding rule; it activates only on approval
 
     CreateActionProposalRequest:
       description: |
@@ -1856,6 +2378,10 @@ components:
         - $ref: '#/components/schemas/RejectProposalRequest'
         - $ref: '#/components/schemas/SplitProposalRequest'
         - $ref: '#/components/schemas/ArchiveProposalRequest'
+        - $ref: '#/components/schemas/ChaseSendProposalRequest'
+        - $ref: '#/components/schemas/PublishBatchProposalRequest'
+        - $ref: '#/components/schemas/BankConfirmMatchProposalRequest'
+        - $ref: '#/components/schemas/RuleCreateProposalRequest'
       discriminator:
         propertyName: kind
         mapping:
@@ -1866,6 +2392,10 @@ components:
           document.reject: '#/components/schemas/RejectProposalRequest'
           document.split: '#/components/schemas/SplitProposalRequest'
           document.archive: '#/components/schemas/ArchiveProposalRequest'
+          chase.send: '#/components/schemas/ChaseSendProposalRequest'
+          publish.batch: '#/components/schemas/PublishBatchProposalRequest'
+          bank.confirm-match: '#/components/schemas/BankConfirmMatchProposalRequest'
+          rule.create: '#/components/schemas/RuleCreateProposalRequest'
 
     ProposalRequestBase:
       type: object
@@ -1936,6 +2466,42 @@ components:
           properties:
             kind: { const: document.archive }
             payload: { $ref: '#/components/schemas/ArchivePayload' }
+
+    ChaseSendProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: chase.send }
+            payload: { $ref: '#/components/schemas/ChaseSendPayload' }
+
+    PublishBatchProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: publish.batch }
+            payload: { $ref: '#/components/schemas/PublishBatchPayload' }
+
+    BankConfirmMatchProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: bank.confirm-match }
+            payload: { $ref: '#/components/schemas/BankConfirmMatchPayload' }
+
+    RuleCreateProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: rule.create }
+            payload: { $ref: '#/components/schemas/RuleCreatePayload' }
 
     RoutePayload:
       type: object
@@ -2060,6 +2626,131 @@ components:
             data, because that decides whether it can be republished (SoT
             Stage 11).
 
+    ChaseSendPayload:
+      type: object
+      description: |
+        Everything Read review must show: every SMS byte-for-byte as it will
+        send, and who receives it. If the sent text ever differs from this
+        payload, the Review → Approve guarantee is broken (SoT §8.2).
+        Composition is server-side; this payload is its output, never
+        free-typed by a caller.
+      required: [messages]
+      properties:
+        messages:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            type: object
+            required: [recipientE164, body, transactionIds]
+            properties:
+              recipientContactId:
+                type: [string, 'null']
+                description: The contact being asked, when one is on file. The audit trail records requested-from separately from uploaded-by.
+              recipientE164:
+                type: string
+                pattern: '^\+[1-9][0-9]{6,14}$'
+              body:
+                type: string
+                minLength: 1
+                maxLength: 500
+                description: The exact SMS, portal link included. Shown verbatim at review; sent verbatim on approval.
+              transactionIds:
+                type: array
+                minItems: 1
+                items: { type: string }
+                description: |
+                  The unmatched bank transactions this message chases. They
+                  become the chase's items and the portal session's grant —
+                  one message per client, grouped, not one text per receipt
+                  (SoT Stage 8.2).
+
+    PublishBatchPayload:
+      type: object
+      description: |
+        `preview` is computed by the server at proposal time — item count,
+        gross and VAT in pence — and is exactly what Read review renders
+        ("Publish 43 bills to Xero — gross £84,925, VAT £10,402"). Execution
+        re-validates that each item still meets the minimum (Total + Supplier
+        + Category); an item that no longer does refuses with `NT-PUB-001`
+        rather than publishing half-coded books.
+      required: [documentIds, preview]
+      properties:
+        documentIds:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items: { type: string }
+        integrationId:
+          type: [string, 'null']
+          description: The ledger connection to publish through. Null uses the business's single active integration.
+        preview:
+          type: object
+          required: [itemCount, grossPence, vatPence]
+          properties:
+            itemCount: { type: integer, minimum: 1 }
+            grossPence:
+              type: integer
+              x-nt-money: true
+            vatPence:
+              type: integer
+              x-nt-money: true
+
+    BankConfirmMatchPayload:
+      type: object
+      description: |
+        Confirms a suggested document ↔ transaction match. Execution writes
+        the `matches` row and flips the transaction's `matchState` — integer
+        pence, server-side. Suggestion arithmetic is display-tier and nothing
+        here trusts it.
+      required: [transactionId, documentId, matchKind]
+      properties:
+        transactionId: { type: string }
+        documentId: { type: string }
+        matchKind: { $ref: '#/components/schemas/MatchKind' }
+        confidence:
+          type: [number, 'null']
+          minimum: 0
+          maximum: 1
+          description: |
+            The suggesting engine's score, recorded for display and triage.
+            It never gates execution — the human's approval is the decision
+            (Governance §9.5).
+
+    RuleCreatePayload:
+      type: object
+      description: |
+        Creates a coding rule (SoT Stage 3). The executor writes the `rules`
+        row with this proposal recorded as `actionProposalId` — a rule never
+        activates from an unapproved utterance, however plain-English the
+        request was.
+      required: [tier, sets]
+      properties:
+        tier: { $ref: '#/components/schemas/RuleTier' }
+        scopeKey:
+          type: [string, 'null']
+          description: |
+            What the tier matches on — for SUPPLIER_CUSTOMER, the exact
+            supplier name ("Bidfood"). The demo push honours single-tier
+            exact supplier match; the four-tier engine consumes this same
+            shape.
+        conditions:
+          type: [object, 'null']
+          additionalProperties: true
+          description: |
+            Amount bands, line-item keywords, document type, uploader,
+            project — the richer conditions of the full engine. Null for a
+            plain supplier match.
+        sets:
+          type: object
+          minProperties: 1
+          description: The coding fields this rule sets when it wins.
+          properties:
+            categoryCode: { type: string }
+            vatTreatment: { type: string }
+            description: { type: string }
+          additionalProperties: false
+
     ActionProposal:
       type: object
       required: [id, kind, state, payloadHash, createdAt, expiresAt]
@@ -2159,3 +2850,260 @@ components:
             This pair — payload hash and rendered-summary hash — is what makes
             "what was approved is what was shown" provable rather than asserted.
         reviewedAt: { type: string, format: date-time }
+
+    # ---- chases (SoT Stage 8 — METH Stage 2, issue #120) --------------------
+
+    ChaseItem:
+      type: object
+      description: |
+        One thing being chased — today always an unmatched bank transaction
+        (engine (a)); the shape survives when the other engines land. The same
+        shape serves the accountant's chase detail and the portal's item list,
+        because they are the same facts shown at two trust levels.
+      required: [transactionId, amountPence, bookedAt, received]
+      properties:
+        transactionId: { type: string }
+        merchantName: { type: [string, 'null'] }
+        descriptionRaw:
+          type: [string, 'null']
+          description: The raw bank descriptor — the client's own bank line, safe at both trust levels.
+        amountPence:
+          type: integer
+          x-nt-money: true
+          description: Signed pence, as the feed records it. Negative is money out.
+        bookedAt: { type: string, format: date-time }
+        received:
+          type: boolean
+          description: |
+            A matching document has arrived for this item. When every item is
+            received the chase auto-closes as `CLOSED_RECEIVED`.
+
+    ChaseSummary:
+      type: object
+      description: The row shape for the Chases workspace list.
+      required: [id, businessId, detectionEngine, state, itemCount, createdAt]
+      properties:
+        id: { type: string }
+        businessId: { type: string }
+        detectionEngine: { $ref: '#/components/schemas/ChaseDetectionEngine' }
+        state: { $ref: '#/components/schemas/ChaseState' }
+        recipientContactId: { type: [string, 'null'] }
+        itemCount:
+          type: integer
+          minimum: 1
+          description: How many items this chase covers — grouped per client, never one text per receipt.
+        actionProposalId:
+          type: [string, 'null']
+          description: The approved `chase.send` proposal that created it. Null only for states before PROPOSED.
+        firstSentAt: { type: [string, 'null'], format: date-time }
+        lastSentAt: { type: [string, 'null'], format: date-time }
+        closedAt: { type: [string, 'null'], format: date-time }
+        closedReason: { type: [string, 'null'] }
+        closedByDocumentId:
+          type: [string, 'null']
+          description: The arriving document that auto-closed it, when one did (SoT Stage 8.5).
+        createdAt: { type: string, format: date-time }
+
+    Chase:
+      description: 'The full record: items, messages, closure.'
+      allOf:
+        - $ref: '#/components/schemas/ChaseSummary'
+        - type: object
+          required: [items, messages]
+          properties:
+            items:
+              type: array
+              minItems: 1
+              items: { $ref: '#/components/schemas/ChaseItem' }
+            messages:
+              type: array
+              items: { $ref: '#/components/schemas/ChaseMessage' }
+
+    ChaseMessage:
+      type: object
+      required: [id, chaseId, channel, body, createdAt]
+      properties:
+        id: { type: string }
+        chaseId: { type: string }
+        channel:
+          type: string
+          examples: ['sms']
+        body:
+          type: string
+          description: |
+            The exact text shown at review and the exact text sent. If these
+            ever differ, the Review → Approve guarantee is broken.
+        recipientE164: { type: [string, 'null'] }
+        deliveryState: { type: [string, 'null'] }
+        sentAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+
+    SmsOutboxMessage:
+      type: object
+      description: |
+        One recorded SMS as the demo outbox renders it — the stand-in for the
+        client's phone. Reads from the same rows the real sender will write.
+      required: [id, businessId, toE164, body, sentAt]
+      properties:
+        id: { type: string }
+        businessId: { type: string }
+        toE164: { type: string }
+        body: { type: string }
+        deliveryState: { type: [string, 'null'] }
+        chaseId: { type: [string, 'null'] }
+        portalUrl:
+          type: [string, 'null']
+          description: |
+            The portal link carried in `body`, extracted so the outbox screen
+            can make it tappable. Demo affordance — a real phone taps the text
+            itself.
+        sentAt: { type: string, format: date-time }
+
+    # ---- portal (SoT Stage 8.3 — METH Stage 2, issue #120) ------------------
+
+    PortalSessionCreateRequest:
+      type: object
+      required: [linkToken, otp]
+      properties:
+        linkToken:
+          type: string
+          description: From the SMS link. Stateless — HMAC over the chase id and expiry.
+        otp:
+          type: string
+          pattern: '^[0-9]{6}$'
+          description: |
+            Six digits. Demo builds verify against a fixed code
+            (`OTP_MODE=demo`); real verification replaces the verifier, not
+            this shape.
+
+    PortalSession:
+      type: object
+      required: [token, expiresAt]
+      properties:
+        token:
+          type: string
+          description: 'Send as `Authorization: Bearer …` on every portal call.'
+        expiresAt: { type: string, format: date-time }
+
+    PortalContext:
+      type: object
+      description: |
+        Everything this session may see — and the whole of it. The RLS
+        delegated-session policies enforce the boundary below the handler.
+      required: [businessName, items, expiresAt]
+      properties:
+        businessName:
+          type: string
+          description: Display only — whose books the paperwork belongs to.
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/ChaseItem' }
+        expiresAt: { type: string, format: date-time }
+
+    PortalUploadRequest:
+      type: object
+      required: [filename, mimeType, byteSize]
+      properties:
+        filename: { type: string, maxLength: 255 }
+        mimeType:
+          type: string
+          description: Declared, and treated as a hint only — magic-byte sniffing decides the real type after the bytes land (Governance §11.4).
+        byteSize:
+          type: integer
+          minimum: 1
+          description: Checked against the 25 MB client-channel cap here and again by the presigned policy.
+        transactionId:
+          type: [string, 'null']
+          description: |
+            The chased transaction this upload answers, when the client picked
+            one. Null lets extraction decide — the pipeline compares the
+            extraction against every open item regardless (SoT Stage 8.5).
+
+    # ---- publishing (SoT Stage 10 — METH Stage 2, issue #120) ---------------
+
+    Publish:
+      type: object
+      description: One publish attempt for one document. Batches fan out to one row per item, so per-item failure is visible per item.
+      required: [id, businessId, documentId, mode, state, attachmentSent, createdAt]
+      properties:
+        id: { type: string }
+        businessId: { type: string }
+        documentId: { type: string }
+        integrationId: { type: [string, 'null'] }
+        mode: { $ref: '#/components/schemas/PublishMode' }
+        state: { $ref: '#/components/schemas/PublishState' }
+        externalRef:
+          type: [string, 'null']
+          description: The ledger's own reference — set on success, the proof the books moved.
+        attachmentSent:
+          type: boolean
+          description: The source image travelled with the bill (SoT Stage 10). False on a ledger that refused it, never silently.
+        actionProposalId:
+          type: [string, 'null']
+          description: The `publish.batch` proposal this ran under.
+        failureCode:
+          type: [string, 'null']
+          description: Never null when `state` is `FAILED`.
+        failureMessage: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+        completedAt: { type: [string, 'null'], format: date-time }
+
+    # ---- banking (SoT Stage 7 — METH Stage 2, issue #120) -------------------
+
+    BankTransaction:
+      type: object
+      description: |
+        The provider-agnostic normalised schema (SoT Stage 7). Amounts are
+        signed integer pence exactly as the feed records them.
+      required: [id, businessId, accountId, bookedAt, amountPence, currency, descriptionRaw, matchState, chaseSuppressed]
+      properties:
+        id: { type: string }
+        businessId: { type: string }
+        accountId: { type: string }
+        bookedAt: { type: string, format: date-time }
+        amountPence:
+          type: integer
+          x-nt-money: true
+          description: Signed. Negative is money out.
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        descriptionRaw: { type: string }
+        merchantName: { type: [string, 'null'] }
+        classification: { type: [string, 'null'] }
+        balanceAfterPence:
+          type: [integer, 'null']
+          x-nt-money: true
+        matchState: { $ref: '#/components/schemas/MatchState' }
+        chaseSuppressed:
+          type: boolean
+          description: |
+            Bank-originated lines with no paperwork to chase — SERVICE CHARGE,
+            STRIPE PAYOUT (SoT Stage 7). Suppressed lines never enter chase
+            detection; the flag is visible so "why isn't this chased" has an
+            answer on the screen.
+
+    # ---- businesses (METH Stage 2, issue #120) ------------------------------
+
+    BusinessSummary:
+      type: object
+      description: |
+        What the context header, the client switcher and the Clients list
+        render. `GET /me` answers "who am I"; this answers "what is waiting".
+      required: [id, name, counts]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        tradingName: { type: [string, 'null'] }
+        counts:
+          type: object
+          description: One cheap aggregate over documents, grouped by state. Unrouted documents belong to no business and are counted nowhere here.
+          required: [toReview, ready, failed]
+          properties:
+            toReview: { type: integer, minimum: 0 }
+            ready: { type: integer, minimum: 0 }
+            failed:
+              type: integer
+              minimum: 0
+              description: REJECTED and FAILED together — the Rejected/Failed view's badge.
