@@ -70,10 +70,14 @@ export type FollowUp = {
   readonly practiceId: string;
 };
 
+/** The row kinds an executor may report having changed. Grown for `chase.send`
+ * (METH S8), which creates `chases` rather than touching `documents`. */
+export type ChangedEntity = 'document' | 'chase';
+
 /** Serialised by the engine into `action_proposals.outcome` (Json?). */
 export interface ExecutionResult {
   /** Every row the effect touched — archive is batched, route is not. */
-  readonly changed: readonly { readonly entity: 'document'; readonly id: string }[];
+  readonly changed: readonly { readonly entity: ChangedEntity; readonly id: string }[];
   /** True when the effect was already applied: a retry, not a second effect. */
   readonly alreadyApplied: boolean;
   /** The engine enqueues these AFTER commit; see dedupe-follow-up.ts for why. */

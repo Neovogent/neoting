@@ -403,6 +403,25 @@ processor that silently skipped extraction is exactly the bug the step removes. 
 document's state), so a redelivery or a retry never extracts twice. The
 extraction logic itself lives in `modules/extraction` — see its CLAUDE.md.
 
+### Auto-close on inbound match (chase, METH Stage 8)
+
+`ProcessorDeps` gained a REQUIRED `autoClose: ChaseAutoClose` (from
+`modules/chase`'s public seam — the second chase consumer after the `chase.send`
+executor). After `extractor.run()` returns its `ExtractionCompletion`, the
+processor calls `autoClose.run()` for a document that (a) actually landed — a
+non-null completion, so never a FAILED/skipped read — and (b) is ROUTED (a
+business anchors the chase and the notification). It closes an open chase whose
+transaction the document's supplier + amount (+ date window) match (SoT §4 Stage
+8.5). Three deliberate properties:
+
+- **A chase-close failure never fails the ingest job.** The document is already
+  persisted and extracted; losing it to a chase error would invert this module's
+  "nothing is ever silently dropped" invariant. `runAutoClose` logs and swallows —
+  the chase simply stays open for a human, the safe direction.
+- **Matching nothing is silent and normal**, not an error.
+- Wired the house way: `RecordingChaseAutoClose` keeps the processor unit tests
+  offline; the real `PrismaChaseAutoClose` is composed in `worker/main.ts`.
+
 ### Sanitisation pipeline (merged, PR #3)
 
 **Pure library** — `lib/sanitisation/`.

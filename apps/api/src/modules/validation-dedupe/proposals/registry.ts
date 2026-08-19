@@ -1,6 +1,8 @@
 import type { ProposalKind } from '@neoting/contracts/model';
 
+import { DemoSmsSender, type SmsSender } from '../../chase/index.js';
 import { archiveDocumentExecutor } from './archive-document.js';
+import { chaseSendExecutor } from './chase-send.js';
 import {
   type ExecutorRegistry,
   ProposalNotImplementedError,
@@ -9,6 +11,17 @@ import {
 } from './proposal-executor.js';
 import { routeDocumentExecutor } from './route-document.js';
 import { updateCodingExecutor } from './update-coding.js';
+
+/**
+ * The collaborators the registry's real executors need beyond the DB. Optional
+ * with safe defaults so `buildExecutorRegistry()` still works arg-less (the
+ * engine module and the executor tests both call it that way); the engine may
+ * pass the config-selected sender instead of the demo default.
+ */
+export interface ExecutorRegistryDeps {
+  /** The SMS sender the `chase.send` executor "sends" through (METH S8). */
+  readonly smsSender?: SmsSender;
+}
 
 /**
  * The registry — issue #81. Total over the contract's `ProposalKind` by the
@@ -29,7 +42,7 @@ import { updateCodingExecutor } from './update-coding.js';
  * is reachable from a controller (registry.test.ts asserts the import side of
  * that; the provider side is S1's to keep).
  */
-export function buildExecutorRegistry(): ExecutorRegistry {
+export function buildExecutorRegistry(deps: ExecutorRegistryDeps = {}): ExecutorRegistry {
   return {
     'document.route': routeDocumentExecutor,
     'document.archive': archiveDocumentExecutor,
@@ -38,7 +51,9 @@ export function buildExecutorRegistry(): ExecutorRegistry {
     'document.reprocess': notImplemented('document.reprocess'),
     'document.reject': notImplemented('document.reject'),
     'document.split': notImplemented('document.split'),
-    'chase.send': notImplemented('chase.send'),
+    // chase.send landed with METH S8 (#—): the demo sender writes the outbox; no
+    // Twilio. The engine may inject the config-selected sender.
+    'chase.send': chaseSendExecutor(deps.smsSender ?? new DemoSmsSender()),
     'publish.batch': notImplemented('publish.batch'),
     'bank.confirm-match': notImplemented('bank.confirm-match'),
     'rule.create': notImplemented('rule.create'),

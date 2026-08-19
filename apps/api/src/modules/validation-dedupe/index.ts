@@ -24,7 +24,7 @@
  *    module's own TODO named. The composition roots (`worker/`, `app.module.ts`)
  *    and integration tests wire internals directly and are exempt by location.
  */
-export { buildExecutorRegistry } from './proposals/registry.js';
+export { buildExecutorRegistry, type ExecutorRegistryDeps } from './proposals/registry.js';
 export {
   type ExecutionInput,
   type ExecutionResult,

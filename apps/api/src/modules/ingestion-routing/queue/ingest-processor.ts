@@ -1,4 +1,5 @@
-import type { ExtractionStep } from '../../extraction/index.js';
+import type { ChaseAutoClose } from '../../chase/index.js';
+import type { ExtractionCompletion, ExtractionStep } from '../../extraction/index.js';
 import type { DocumentSink } from './document-sink.js';
 import type { DuplicateDetector } from './duplicate-detector.js';
 import { type IngestJobPayload, IngestJobPayloadSchema } from './job-payload.js';
@@ -33,6 +34,16 @@ export interface ProcessorDeps {
    * nothing twice.
    */
   readonly extractor: ExtractionStep;
+  /**
+   * Auto-close on inbound match (chase, METH Stage 8). Runs AFTER extraction, for
+   * a routed (business-anchored) document that landed READY/TO_REVIEW: if its
+   * supplier + amount (+ date window) match an open chase's transaction, the chase
+   * closes. Matching nothing is the normal case, not an error, and never throws —
+   * a chase failure must not fail the ingest job or lose the document. Idempotent,
+   * like extraction. Injected the house way: `RecordingChaseAutoClose` keeps these
+   * unit tests offline; `PrismaChaseAutoClose` is wired in `worker/main.ts`.
+   */
+  readonly autoClose: ChaseAutoClose;
 }
 
 /**
@@ -104,12 +115,13 @@ async function handle(payload: IngestJobPayload, deps: ProcessorDeps): Promise<v
       );
       return;
     }
-    await deps.extractor.run({
+    const completion = await deps.extractor.run({
       documentId: payload.documentId,
       practiceId: payload.practiceId,
       businessId: payload.routing.businessId ?? null,
       traceId: payload.traceId,
     });
+    await runAutoClose(completion, payload.practiceId, payload.traceId, deps);
     return;
   }
 
@@ -121,12 +133,61 @@ async function handle(payload: IngestJobPayload, deps: ProcessorDeps): Promise<v
   // It runs for EVERY persisted document, routed or not, and is idempotent: a
   // redelivery (created=false) or a retry after a mid-job failure re-reads the
   // document's state and does nothing twice.
-  await deps.extractor.run({
+  const completion = await deps.extractor.run({
     documentId,
     practiceId: materialised.practiceId,
     businessId: payload.routing.businessId ?? null,
     traceId: payload.traceId,
   });
+
+  // Auto-close on inbound match (chase, METH Stage 8) — runs after extraction for
+  // a routed document that landed. See `runAutoClose`.
+  await runAutoClose(completion, materialised.practiceId, payload.traceId, deps);
+}
+
+/**
+ * Run chase auto-close for a document that just finished extraction — the SoT
+ * §4 Stage 8.5 beat: an inbound document that matches a chased transaction closes
+ * the chase, regardless of arrival channel. Guarded three ways:
+ *
+ *  - only when extraction produced a completion (a FAILED/skipped read is null);
+ *  - only for a ROUTED document (a business anchors the chase and the notification);
+ *  - only READY/TO_REVIEW — a landed document, which the completion already is.
+ *
+ * A chase-close failure is NOT allowed to fail the ingest job: the document is
+ * already safely persisted and extracted, and losing that to a chase error would
+ * be the "nothing is ever silently dropped" invariant turned on its head. So a
+ * failure is logged and swallowed here; the chase simply stays open for a human,
+ * which is the safe direction. Matching nothing is silent and normal.
+ */
+async function runAutoClose(
+  completion: ExtractionCompletion | null,
+  practiceId: string,
+  traceId: string,
+  deps: ProcessorDeps,
+): Promise<void> {
+  if (completion === null || completion.businessId === null) return;
+
+  try {
+    const result = await deps.autoClose.run({
+      documentId: completion.documentId,
+      businessId: completion.businessId,
+      practiceId,
+      supplierName: completion.supplierName,
+      totalPence: completion.totalPence,
+      documentDate: completion.documentDate,
+      traceId,
+    });
+    if (result.closedChaseIds.length > 0) {
+      deps.logger.log(
+        `auto-close ${completion.documentId}: closed ${result.closedChaseIds.length} chase(s) trace=${traceId}`,
+      );
+    }
+  } catch (error) {
+    deps.logger.warn(
+      `auto-close ${completion.documentId} failed (chase left open, document is safe): ${String(error)} trace=${traceId}`,
+    );
+  }
 }
 
 /** A document with its bytes stored, and the practice that anchors it. */

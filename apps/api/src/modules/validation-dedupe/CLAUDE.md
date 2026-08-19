@@ -105,18 +105,38 @@ performs exactly one effect inside the engine's open `scopedDb` transaction
 (`ScopedClient` has no `$transaction`, so one-effect-one-transaction is
 structural) and decides nothing about whether it may happen.
 
-- **`buildExecutorRegistry()`** — total over the contract's `ProposalKind` by
-  mapped type: a missing kind is a compile error; the engine's `NT-PRP-001`
-  stays the second line of defence. **Three real executors** (route, archive,
-  update-coding since METH S3 #122), eight honest holes throwing
-  `ProposalNotImplementedError` by name — the remaining #81 four
-  (`move-business`, `reprocess`, `reject`, `split`) plus the METH Stage 2
-  kinds (#120): `chase.send` (METH S8), `publish.batch` (S10),
-  `bank.confirm-match` (S11), `rule.create` (S13), each typed off the
-  generated payload models. **No controller imports the proposals directory**
-  — a test walks every `*.controller.ts` and asserts it; the provider-side
-  half is upheld in `approvals.module.ts` (registry built inside the service
-  factory, no token).
+- **`buildExecutorRegistry(deps?)`** — total over the contract's `ProposalKind`
+  by mapped type: a missing kind is a compile error; the engine's `NT-PRP-001`
+  stays the second line of defence. **Four real executors** (route, archive,
+  update-coding since METH S3 #122, chase.send since METH S8), seven honest holes
+  throwing `ProposalNotImplementedError` by name — the remaining #81 four
+  (`move-business`, `reprocess`, `reject`, `split`) plus the METH Stage 2 kinds
+  (#120) still open: `publish.batch` (S10), `bank.confirm-match` (S11),
+  `rule.create` (S13), each typed off the generated payload models. The factory
+  now takes an optional `ExecutorRegistryDeps` (`{ smsSender? }`) — chase.send
+  needs a collaborator beyond the DB; it defaults to `new DemoSmsSender()` so the
+  arg-less call still works (the executor tests use it), and `approvals.module.ts`
+  passes the config-selected sender. **No controller imports the proposals
+  directory** — a test walks every `*.controller.ts` and asserts it; the
+  provider-side half is upheld in `approvals.module.ts` (registry built inside the
+  service factory, no token).
+
+- **`chase.send`** (METH S8) — the flagship effect, `chase-send.ts`. A factory
+  `chaseSendExecutor(sender)` taking an `SmsSender` from the **chase module's
+  public seam** (`../../chase/index.js`) — the executor's first cross-module
+  dependency. Each grouped payload message (one per client, SoT §8.2) resolves
+  its business FROM the chased transactions THROUGH RLS (an approver cannot chase
+  what they cannot see; a grouped message spanning two clients refuses), then
+  creates one `Chase` (state SENT — approval IS the send; engine (a),
+  `itemRefs` = the transactionIds, stamped with the proposal for idempotency),
+  one `ChaseMessage`, and "sends" through the sender. **The stored body and the
+  sent body are the payload body verbatim** — composition ran at proposal time
+  (`chase/sms-copy.ts`), nothing here rewrites it; that is the Review → Approve
+  guarantee at the effect. A replay (same proposal already stamped) is an applied
+  no-op — it never sends twice. `ExecutionResult.changed` gained a `'chase'`
+  entity (the `ChangedEntity` union on `proposal-executor.ts`) — chase.send
+  creates chases, not documents. Proven end to end through the real engine
+  (`chase-send.integration.test.ts`).
 - **`document.route`** — assigns an Unrouted document a business + inbox.
   Keeps `practice_id` (decision 4; both-set is the normal routed case, #103),
   refuses UNROUTED as a target, refuses moving an already-routed document
@@ -161,12 +181,12 @@ structural) and decides nothing about whether it may happen.
 
 ## TODO
 
-- [ ] The eight unimplemented executors — the remaining #81 four
+- [ ] The seven unimplemented executors — the remaining #81 four
       (`move-business`, `reprocess`, `reject`, `split`; each needs its own
-      issue) and the four METH kinds (`chase.send` → METH S8, `publish.batch`
-      → S10, `bank.confirm-match` → S11, `rule.create` → S13). The registry
-      already types and names them all. `update-coding` landed with the
-      engine (METH S3, #122).
+      issue) and the three still-open METH kinds (`publish.batch` → S10,
+      `bank.confirm-match` → S11, `rule.create` → S13). The registry already
+      types and names them all. `update-coding` landed with the engine (METH
+      S3, #122); `chase.send` landed with METH S8.
 - [x] The engine is wired (METH S3, #122 — `modules/approvals`): registry via
       `useFactory`, token kept out of public providers; dedupe follow-ups run
       post-commit. Still open: a periodic sweep over

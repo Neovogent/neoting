@@ -5,6 +5,7 @@ import { type Job, UnrecoverableError, Worker } from 'bullmq';
 
 import { getPrismaClient } from '../common/db/prisma.js';
 import { loadEnv } from '../config/env.js';
+import { PrismaChaseAutoClose } from '../modules/chase/index.js';
 import { PrismaExtractionStep, selectExtractor } from '../modules/extraction/index.js';
 import { createSharpPerceptualHasher } from '../modules/ingestion-routing/lib/dedupe/perceptual-hash.js';
 import {
@@ -41,6 +42,10 @@ function bootstrap(): void {
   const extractor = new PrismaExtractionStep(getPrismaClient(), selectExtractor(env), {
     logger: { log: (message) => logger.log(message), warn: (message) => logger.warn(message) },
   });
+  // Auto-close on inbound match (chase, METH Stage 8) — runs after extraction for
+  // a routed document; closes an open chase whose transaction the document
+  // matches, writes the chase event + the accountant's notification.
+  const autoClose = new PrismaChaseAutoClose(getPrismaClient());
 
   // WhatsApp media (#79). This is the FIRST real call site for the four
   // config-selected seams below — `selectDocumentStore`, `selectImageNormaliser`,
@@ -65,6 +70,7 @@ function bootstrap(): void {
           detector,
           media,
           extractor,
+          autoClose,
         });
       } catch (error) {
         // A terminal failure — an expired media id, a missing tenancy anchor —

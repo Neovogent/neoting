@@ -64,6 +64,12 @@ vendor, not a fake system.
   **PROCESSING → READY | TO_REVIEW | FAILED** via `resolveProcessedState`.
   Idempotent and re-entrant: a redelivery or crash-retry re-reads the state and
   does nothing twice (guards on state; skips if an accepted extraction exists).
+  **`run` now returns an `ExtractionCompletion | null`** (METH Stage 8): the
+  header (supplier, total pence, document date) + final state for a LANDED
+  document (READY | TO_REVIEW), or `null` for a FAILED read / no-op redelivery.
+  This is what the ingest processor hands the chase auto-close hook — a chase
+  never closes on a document we could not read. `RecordingExtractionStep` takes
+  an optional completion so a processor test can drive that branch offline.
 - **Rule honouring** — before coding, an active single-tier `SUPPLIER_CUSTOMER`
   rule for the routed business + supplier overrides the category, provenance
   DETERMINISTIC, `suggestion.sourceRuleId` recorded. **// DEMO-MOCK: four-tier

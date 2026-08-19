@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
+import { RecordingChaseAutoClose } from '../../chase/index.js';
 import { RecordingExtractionStep } from '../../extraction/index.js';
 import { InMemoryDocumentStore } from '../storage/document-store.js';
 import { documentIdFor, PrismaDocumentSink } from './document-sink.js';
@@ -90,6 +91,8 @@ describe.skipIf(!DATABASE_URL || !OWNER_URL)('WhatsApp media intake against a re
       // extraction (which has its own integration test). Leaving the document in
       // RECEIVED keeps the assertions below about what the sink wrote.
       extractor: new RecordingExtractionStep(),
+      // No-op: extraction returns null, so auto-close is never triggered here.
+      autoClose: new RecordingChaseAutoClose(),
     });
 
     const documentId = documentIdFor(whatsappJob.idempotencyKey);

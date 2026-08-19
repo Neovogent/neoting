@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 
 import { getPrismaClient, type PrismaClient } from '../../common/db/prisma.js';
 import { InMemoryIdempotencyStore } from '../../common/idempotency/idempotency-store.js';
+import type { Env } from '../../config/env.js';
+import { ENV } from '../../config/env.module.js';
+import { selectSmsSender } from '../chase/index.js';
 import { PrismaDuplicateDetector } from '../ingestion-routing/index.js';
 import { buildExecutorRegistry } from '../validation-dedupe/index.js';
 import { ActionProposalsController } from './action-proposals.controller.js';
@@ -30,9 +33,17 @@ import { ACTION_PROPOSALS_SERVICE, PRISMA } from './tokens.js';
     { provide: PRISMA, useFactory: () => getPrismaClient() },
     {
       provide: ACTION_PROPOSALS_SERVICE,
-      useFactory: (prisma: PrismaClient) =>
-        new ActionProposalsService(prisma, buildExecutorRegistry(), new PrismaDuplicateDetector(prisma), new InMemoryIdempotencyStore()),
-      inject: [PRISMA],
+      useFactory: (prisma: PrismaClient, env: Env) =>
+        new ActionProposalsService(
+          prisma,
+          // The chase.send executor "sends" through the config-selected sender
+          // (SMS_SENDER=demo → the outbox writer; no Twilio) — built here, not
+          // given a token, so no executor is reachable from a controller.
+          buildExecutorRegistry({ smsSender: selectSmsSender(env) }),
+          new PrismaDuplicateDetector(prisma),
+          new InMemoryIdempotencyStore(),
+        ),
+      inject: [PRISMA, ENV],
     },
   ],
 })
