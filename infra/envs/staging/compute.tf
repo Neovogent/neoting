@@ -216,6 +216,37 @@ resource "aws_iam_role_policy" "app_runtime" {
         ]
       },
       {
+        # ⚠ THE EXTRACTOR INVOKES AN INFERENCE PROFILE, NOT A FOUNDATION MODEL,
+        # and that needs BOTH ARNs. Measured 20 Aug 2026: invoking
+        # `anthropic.claude-opus-5` directly returns
+        #
+        #   Invocation of model ID ... with on-demand throughput isn't
+        #   supported. Retry your request with the ID or ARN of an inference
+        #   profile that contains this model.
+        #
+        # So the app calls `eu.anthropic.claude-opus-5`. IAM then checks the
+        # profile ARN AND the underlying foundation model in every region the
+        # profile may route to — grant only the profile and it fails with
+        # AccessDenied naming a model nobody wrote down.
+        #
+        # The foundation-model ARN is wildcarded across `eu-*` and NOT across
+        # all regions, deliberately: the `eu.` profile routes within the EU, and
+        # a bare `*` would permit a UK client's receipt to be read in us-east-1.
+        # That is the D30 residency line, expressed where it is enforceable.
+        #
+        # METH Stage 15: this is what makes `EXTRACTOR=bedrock` work — the
+        # vision read of the document image.
+        Sid    = "BedrockEuInferenceProfiles"
+        Effect = "Allow"
+        Action = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream", "bedrock:Converse", "bedrock:ConverseStream"]
+        Resource = [
+          "arn:aws:bedrock:${local.region}:${local.account_id}:inference-profile/eu.anthropic.claude-opus-5",
+          "arn:aws:bedrock:${local.region}:${local.account_id}:inference-profile/eu.anthropic.claude-sonnet-5",
+          "arn:aws:bedrock:eu-*::foundation-model/anthropic.claude-opus-5",
+          "arn:aws:bedrock:eu-*::foundation-model/anthropic.claude-sonnet-5",
+        ]
+      },
+      {
         # W2 calibration candidates only (D28 per-class tier flags: a flip is
         # blocked unless evals pass for that (class, model) pair). Remove the
         # losers from this list when W2 concludes — an unused model grant is

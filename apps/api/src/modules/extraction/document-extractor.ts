@@ -110,6 +110,20 @@ export interface ExtractionRequest {
   readonly filename: string;
   /** Content hash of the sanitised bytes — the deterministic key for a fixture. */
   readonly byteHash: string;
+  /**
+   * Where the sanitised bytes live, so a REAL extractor can read the document.
+   *
+   * Until METH Stage 15 this interface carried identity only — filename and
+   * hash — and that is precisely why extraction was fake: `DemoExtractor` keys
+   * fixture profiles off the filename because it was never given the image.
+   * `BedrockExtractor` fetches these bytes through `DocumentStore`.
+   *
+   * Nullable because the column is: an oddly-ingested row may have neither, and
+   * a real extractor answers `NT-EXT-002` rather than inventing a read.
+   */
+  readonly s3Key: string | null;
+  /** The stored object's content type — selects the image block's `media_type`. */
+  readonly mimeType: string | null;
 }
 
 export interface DocumentExtractor {

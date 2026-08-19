@@ -148,7 +148,22 @@ const EnvSchema = z.object({
   // engine that moves documents out of RECEIVED; Textract + the vision ladder
   // lands behind the same seam later. Default `demo` so a document actually gets
   // extracted — that is the whole point of the step. Selected by config, not import.
-  EXTRACTOR: z.enum(['demo']).default('demo'),
+  // `bedrock` is the REAL one (METH Stage 15): Claude reads the document image
+  // through the same `DocumentExtractor` seam. It is wrapped by
+  // `FallbackExtractor`, so a Bedrock outage degrades to `demo` rather than
+  // failing the pipeline — see fallback-extractor.ts for why that wrapper is a
+  // dated demo concession and not the production answer.
+  EXTRACTOR: z.enum(['demo', 'bedrock']).default('demo'),
+
+  // The Bedrock model the real extractor invokes. An EU inference profile, not a
+  // bare foundation-model id: `anthropic.claude-*` on-demand returns
+  // "Invocation ... with on-demand throughput isn't supported. Retry with an
+  // inference profile", measured 20 Aug 2026. `eu.` keeps inference in-region
+  // (D30 — UK/EU data residency), so do not change this to `global.` casually.
+  BEDROCK_MODEL_ID: z.string().default('eu.anthropic.claude-opus-5'),
+  // Separate from AWS_REGION so extraction can be pinned to a region where the
+  // model is available without moving the rest of the stack.
+  BEDROCK_REGION: z.string().default('eu-west-2'),
 
   // The SMS sender (METH Stage 8). `demo` = `DemoSmsSender`, which "sends" by
   // writing the outbox rows the SMS-outbox screen reads — no Twilio, ever, in
