@@ -6,6 +6,7 @@ import { SessionContextResolver } from '../../common/context/session-context-res
 import { scopedDb } from '../../common/db/scoped-db.js';
 import type { Env } from '../../config/env.js';
 import { AuthService } from './auth.service.js';
+import { BusinessesService } from './businesses.service.js';
 import { SESSION_COOKIE_NAME, signSessionToken, verifySessionCookieHeader } from './session-cookie.js';
 import { loadScopeForUser } from './session-scope.js';
 
@@ -70,6 +71,17 @@ describe.skipIf(DATABASE_URL === undefined || OWNER_URL === undefined)('session 
       data: [
         doc('s1a_doc_mine', { businessId: 's1a_biz_1', practiceId: P_MINE }),
         doc('s1a_doc_other', { businessId: 's1a_biz_other', practiceId: P_OTHER }),
+        // The GET /businesses counts cast (METH Stage 6): two waiting, one
+        // ready, REJECTED and FAILED folding into one `failed`, and an
+        // unrouted document that must be counted NOWHERE (contract wording).
+        // `s1a_cnt_` rather than `s1a_doc_`, so the acceptance test's
+        // startsWith('s1a_doc_') visibility assertion keeps its exact set.
+        doc('s1a_cnt_1', { businessId: 's1a_biz_1', practiceId: P_MINE, state: 'TO_REVIEW' }),
+        doc('s1a_cnt_2', { businessId: 's1a_biz_1', practiceId: P_MINE, state: 'TO_REVIEW' }),
+        doc('s1a_cnt_3', { businessId: 's1a_biz_1', practiceId: P_MINE, state: 'READY' }),
+        doc('s1a_cnt_4', { businessId: 's1a_biz_1', practiceId: P_MINE, state: 'REJECTED', failureCode: 'NT-ING-001', failureMessage: 'refused' }),
+        doc('s1a_cnt_5', { businessId: 's1a_biz_1', practiceId: P_MINE, state: 'FAILED', failureCode: 'NT-EXT-001', failureMessage: 'unreadable' }),
+        doc('s1a_cnt_6', { practiceId: P_MINE, state: 'TO_REVIEW' }),
       ],
     });
   });
@@ -123,6 +135,34 @@ describe.skipIf(DATABASE_URL === undefined || OWNER_URL === undefined)('session 
     expect(me.practice).toEqual({ id: P_MINE, name: 'S1A Mine LLP' });
     expect(me.role).toBe('PRACTICE_ADMIN');
     expect(me.businesses.map((b) => b.id).sort()).toEqual(['s1a_biz_1', 's1a_biz_2']); // never s1a_biz_other
+  });
+
+  test('GET /businesses shape: alphabetical, RLS-scoped, counts folded per the contract', async () => {
+    const scope = await loadScopeForUser(app, U_MINE);
+    expect(scope).not.toBeNull();
+
+    const page = await new BusinessesService(app).listBusinesses(scope!, { limit: 10 });
+    // Alphabetical ("S1A Burger" before "S1A Cosmo"), and the other
+    // practice's business is invisible, not filtered.
+    expect(page.data.map((b) => b.id)).toEqual(['s1a_biz_1', 's1a_biz_2']);
+    // REJECTED and FAILED together are `failed`; the RECEIVED-state document
+    // and the unrouted TO_REVIEW one (s1a_cnt_6, no business) count nowhere.
+    expect(page.data[0]!.counts).toEqual({ toReview: 2, ready: 1, failed: 2 });
+    expect(page.data[1]!.counts).toEqual({ toReview: 0, ready: 0, failed: 0 });
+    expect(page.pageInfo).toEqual({ nextCursor: null, hasMore: false });
+  });
+
+  test('GET /businesses paginates on the alphabetical cursor', async () => {
+    const scope = await loadScopeForUser(app, U_MINE);
+    const service = new BusinessesService(app);
+
+    const first = await service.listBusinesses(scope!, { limit: 1 });
+    expect(first.data.map((b) => b.id)).toEqual(['s1a_biz_1']);
+    expect(first.pageInfo.hasMore).toBe(true);
+
+    const second = await service.listBusinesses(scope!, { limit: 1, cursor: first.pageInfo.nextCursor! });
+    expect(second.data.map((b) => b.id)).toEqual(['s1a_biz_2']);
+    expect(second.pageInfo.hasMore).toBe(false);
   });
 });
 

@@ -23,7 +23,17 @@ Read `docs/Source_Of_Truth.md` D37 before assuming anything Next-shaped. The req
 
 `VITE_API_BASE_URL` (**not** `NEXT_PUBLIC_*` — those are dead in a Vite build and fail silently) sets the API origin; `packages/contracts/src/http-client.ts` appends `/v1`. Unset, it is `http://localhost:3000` — the port the API actually listens on. It said 3001 here until PR #82, which was the same wrong number the spec's `servers` block carried; nothing has ever served 3001, so an unconfigured clone called a closed port.
 
-**Two practice screens read from the API; the rest do not.** `AppContext` is still driven by the synthetic generators in `lib/seed.ts`, `lib/seed2.ts` and `lib/generate.ts` — except `documents` (`src/api/documents.ts`) and, since METH S11, `transactions` (`src/api/bank.ts`). Both fill the array every existing mutator already writes to rather than becoming a second source beside it: the pipeline derives approvals, chases, duplicates and every client statistic from those arrays, so a parallel list would have half the app disagreeing with the other half about what exists. Both are behind `VITE_API_ENABLED`; unset, the query never runs and the seeds stand. Outside `AppContext` entirely, the chase portal (`/p/:linkToken`, METH Stage 9) is fully wired — see *Client-facing surfaces* below. It was deliberately the first full surface: it is the narrowest, its three operations are contracted, and nothing else in the app derives anything from it, so it could move without taking the pipeline's derived state with it.
+**In dev mode the API is on by default and same-origin** (METH S6). `.env.development` — committed, re-included by `apps/web/.gitignore` against the root `.env.*` rule because it carries two public flags and no secret — sets `VITE_API_ENABLED=true` and `VITE_API_BASE_URL=` **empty**: the http-client then builds relative `/v1/...` URLs and the Vite dev proxy (`vite.config.ts`) forwards them to `:3000`, so the session cookie is first-party and no CORS surface has to exist — the API deliberately has none. `NT_DEV_API_ORIGIN` repoints the proxy when `:3000` is taken. Vitest (mode `test`) and `pnpm build` (mode `production`) never load the file, so tests and built bundles stay synthetic unless configured; opt out per-machine with `.env.development.local`. The API side must run `AUTH_MODE=session` or the /me probe fails and the app degrades to seed data with a dev badge rather than showing a login wall nobody can pass.
+
+### The session and the login wall (METH S6)
+
+`src/api/auth.ts` owns the workspace session: `useSession` wraps `GET /me` into a five-state `SessionState`, and **'degraded' is the load-bearing one** — a 401 is "nobody is signed in" and shows `LoginView`; anything else (unreachable API, 5xx, contract drift) renders the workspace on seed data with a dev-only badge, because a login screen against a dead API is a wall nobody can pass (METH_MODE §8: degrade to fixtures, never to blank). `AppContext` reads it at the top of the provider — the address (`portal`) is derived first, because the session query is enabled only for `API_ENABLED && portal === 'accountant'`: a client on an SMS-link surface has no workspace session and their browser must not go asking for the practice's data. The gate itself lives in `App.tsx`, after the portal branch and never covering it. `LoginView` and `ContextHeader` (the §13.3 strip: user, role, scope, user menu with logout) are both lazy — the header additionally mounts only when the session state is not 'off', so synthetic mode never downloads it; that laziness is what holds the worst route under budget (see *Bundle*).
+
+### The hydration architecture (METH S6)
+
+`src/api/slices.ts` is the vocabulary: every slice on the demo route (`documents | chases | proposals | bankTransactions | publishes | businesses`) reports where its data came from — `'api'`, `'seed'` (synthetic mode, or not wired yet), or `'seed-fallback'` (asked and failed; the screen degrades to seeds and `DataSourceBadge` names the failure, dev builds only). `AppContext` exposes the map as `slices`; wired screens (Stages 7/11/12) mount the badge from it rather than letting fixtures impersonate server truth. The API queries are gated on the session being 'authenticated' — before login they would only 401. The `businesses` slice (`src/api/businesses.ts`, reading `GET /businesses` — the server half went in with this stage, `modules/auth-tenancy`) is the proof: unlike `documents`/`transactions` it fills no seed array (nothing mutates a business client-side), so the provider selects between server rows and `deriveBusinessSummaries(clients, documents)` — the same contract shape derived from seeds, pinned by test to still parse as the contract. `src/api/envelope.ts` now holds the shared `unwrapBody` (`bank.ts` imports it; `documents.ts` still predates it — the known bug below stands).
+
+**Three slices read from the API; the rest do not.** `AppContext` is still driven by the synthetic generators in `lib/seed.ts`, `lib/seed2.ts` and `lib/generate.ts` — except `documents` (`src/api/documents.ts`), since METH S11 `transactions` (`src/api/bank.ts`), and since METH S6 `businesses` (`src/api/businesses.ts`). The first two fill the array every existing mutator already writes to rather than becoming a second source beside it: the pipeline derives approvals, chases, duplicates and every client statistic from those arrays, so a parallel list would have half the app disagreeing with the other half about what exists. All are behind `VITE_API_ENABLED` — and, since S6, additionally gated on the session being authenticated (see *The session and the login wall* below); when the gate is shut the query never runs and the seeds stand. Outside `AppContext` entirely, the chase portal (`/p/:linkToken`, METH Stage 9) is fully wired — see *Client-facing surfaces* below. It was deliberately the first full surface: it is the narrowest, its three operations are contracted, and nothing else in the app derives anything from it, so it could move without taking the pipeline's derived state with it.
 
 Three things about the bank slice that will bite the next person:
 
@@ -92,20 +102,20 @@ Before minting a per-component id for a universal word, check `src/i18n/common.t
 
 Gzipped, after the i18n extraction. The budget is **JS** (SoT §14: "initial JS < 250 KB gzipped per route"), so CSS is listed but not counted against it:
 
-| | at import | after i18n | now (METH S9) |
-|---|---|---|---|
-| `index.js` (shared) | 162.6 kB | 182.4 kB | **187.3 kB** |
-| `query.js` (TanStack) | 14.8 kB | 14.8 kB | 14.8 kB |
-| `react.js` | 1.5 kB | 1.5 kB | 1.5 kB |
-| **shared JS floor, every route** | **178.9 kB** | **198.8 kB** | **203.5 kB** |
-| heaviest route on top (`ClientDetailView`) | 32.6 kB | 45.1 kB | **45.2 kB** |
-| **worst route, total JS** | **211.5 kB** | **243.9 kB** | **248.7 kB** |
-| chase portal on top (`ChasePortalView`) | — | — | 7.4 kB → **210.9 kB** |
-| `index.css` (not in the JS budget) | 11.9 kB | 12.4 kB | 13.0 kB |
+| | at import | after i18n | METH S9 | now (METH S6) |
+|---|---|---|---|---|
+| `index.js` (shared, incl. the 0.1 kB entry stub) | 162.6 kB | 182.4 kB | 187.3 kB | **188.3 kB** |
+| `query.js` (TanStack) | 14.8 kB | 14.8 kB | 14.8 kB | 14.7 kB |
+| `react.js` | 1.5 kB | 1.5 kB | 1.5 kB | 1.5 kB |
+| **shared JS floor, every route** | **178.9 kB** | **198.8 kB** | **203.5 kB** | **204.5 kB** |
+| heaviest route on top (`ClientDetailView`) | 32.6 kB | 45.1 kB | 45.2 kB | **45.1 kB** |
+| **worst route, total JS** | **211.5 kB** | **243.9 kB** | **248.7 kB** | **249.6 kB** |
+| chase portal on top (`ChasePortalView`) | — | — | 210.9 kB | 7.5 kB → **212.0 kB** |
+| `index.css` (not in the JS budget) | 11.9 kB | 12.4 kB | 13.0 kB | 13.3 kB |
 
-⚠ **The headroom is about 1.3 kB.** Not 6, and not 25. Re-measured on the METH Stage 9 build: the "now" column above is what `pnpm --filter @neoting/web build` prints today, and the 243.9 kB in the middle column was already stale before Stage 9 touched anything — the shared floor had drifted ~4.5 kB on its own. Stage 9 itself cost **0.17 kB** on the floor (one union member in `AppContext` and one lazy import in `App.tsx`); the rest of the gap was already there and nobody had re-run the build.
+⚠ **The headroom is about 0.45 kB.** METH S6 cost **1.05 kB** on the floor — the session boundary, the businesses slice and the generated auth/businesses client all sit in `AppContext`'s graph and cannot be split out — and that was AFTER moving `ContextHeader` (1.8 kB) and `LoginView` (2.2 kB) into their own lazy chunks; inlined, the worst route measured **250.6 kB, over the line**, which is why the header is lazy with a null fallback and mounts only when a session exists. Numbers above are exact gzip bytes of the built chunks (`gzip -c | wc -c`), baselined against a clean main build the same day.
 
-**Measure before you merge, not after.** A route over budget is a reject (D37), not a warning, and at 1.3 kB the next `import` of anything shared will do it. The portal is the lightest client-facing route by a wide margin (210.9 kB against `BusinessPortal`'s 224 kB), which is what SoT §14 asks of it — keep it that way: no heavy dependency, and nothing it imports may become shared with a practice screen.
+**Measure before you merge, not after.** A route over budget is a reject (D37), not a warning, and at 0.45 kB effectively NOTHING more may join the floor — the next shared import puts `ClientDetailView` over. Stages 7/12 must keep every addition inside lazy route chunks, and the real relief remains the known one: the seed dataset leaves the floor when the views finish moving onto the generated client. The portal is still the lightest client-facing route by a wide margin (212.0 kB against `BusinessPortal`'s 224.8 kB) — keep it that way: no heavy dependency, and nothing it imports may become shared with a practice screen.
 
 Three things drive the floor, all known:
 
@@ -135,6 +145,9 @@ What is covered today, and why those:
 | `src/views/business/ChasePortalView.test.tsx` | The fallback demo path nobody exercises by hand: `/p/<token>` reaches the portal and not the practice app, the six-digit gate is real in the UI, and passing it lands on the item list. |
 | `src/lib/capture.test.ts` | The pure half of the compression path — bytes out of a data URL exactly as they went in (including a JPEG header that is not valid UTF-8), and the `.jpg` renaming. The encode itself needs a canvas, which jsdom has not got. |
 | `src/lib/useEscape.test.tsx` | The Escape stack: with dialogs nested (DuplicateModal → ConfirmStep), one keypress closes the top layer only, a closed-but-mounted viewer does not shadow the layer below, and the handler read is the latest render's. Invisible in manual testing until someone loses two layers to one Escape. |
+| `src/api/auth.test.ts` | The session boundary. 401 and "the API is down" are DIFFERENT states — the first shows LoginView, the second degrades to seed data — and collapsing them turns every transient outage into a lock-out. Plus: a /me body that drifts from the contract never authenticates, login carries `credentials` (the cookie is the whole session), and logout never throws. |
+| `src/api/businesses.test.ts` | The synthetic half of the businesses slice: the counting rules, and — the actual point — that the derived fallback rows still PARSE AS THE CONTRACT, so a screen reading the slice cannot tell the worlds apart. |
+| `src/views/LoginView.test.tsx` | The front door's gate refused BEFORE the network (all three credentials, TOTP exactly six digits), the error state wearing its `NT-` code, and an unreachable API saying so instead of blaming the credentials. |
 | `eslint/no-literal-string-in-jsx.test.js` | The one suite that tests a *gate* rather than the product: real copy still fails the literal rule, punctuation still passes. The cases are lifted verbatim from the views. Not under `src/`, because the rule is not application code — which also keeps it out of `tsc`'s include and out of the bundle. |
 
 Component tests are still owed for anything with logic (frontend ten, item 10) — the AppContext suite is the first, not the last.

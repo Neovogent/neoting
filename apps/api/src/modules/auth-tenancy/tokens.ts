@@ -3,4 +3,5 @@
  * emitted decorator metadata (apps/api house pattern since #9).
  */
 export const AUTH_SERVICE = Symbol('AUTH_SERVICE');
+export const BUSINESSES_SERVICE = Symbol('BUSINESSES_SERVICE');
 export const PRISMA = Symbol('AUTH_TENANCY_PRISMA');

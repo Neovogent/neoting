@@ -66,6 +66,18 @@ const GenericView = lazy(() => import('./views/GenericView').then((m) => ({ defa
 // a client on the portal never opens it and should never pay for it.
 const BusinessPortalLauncher = lazy(() => import('./components/BusinessPortalLauncher').then((m) => ({ default: m.BusinessPortalLauncher })));
 
+// The front door (METH Stage 6). Lazy for the same budget reason as every
+// route — and doubly so here, because in synthetic mode it never renders at
+// all and must never have been paid for.
+const LoginView = lazy(() => import('./views/LoginView').then((m) => ({ default: m.LoginView })));
+
+// The §13.3 context header. Lazy for the budget (the floor sat 0.6 kB over
+// SoT §14's 250 kB on the worst route with it inlined), and mounted only when
+// a session state exists — synthetic mode never downloads it. `fallback` is
+// null rather than a skeleton: an 11 px strip popping in beats a placeholder
+// strip pretending to be one.
+const ContextHeader = lazy(() => import('./components/ContextHeader').then((m) => ({ default: m.ContextHeader })));
+
 /**
  * What a practice screen looks like while its chunk is in flight.
  *
@@ -140,7 +152,7 @@ function PortalSkeleton() {
 }
 
 export default function App() {
-  const { messages, activeTab, setActiveTab, openClientId, openClient, portal, settings } = useAppContext();
+  const { messages, activeTab, setActiveTab, openClientId, openClient, portal, session, settings } = useAppContext();
   const [launcherOpen, setLauncherOpen] = useState(false);
 
   // The theme is a class on <html> so it also covers the body background
@@ -208,6 +220,30 @@ export default function App() {
     );
   }
 
+  // The login wall (METH Stage 6), and only here — the client-facing shells
+  // above have their own credentials (an SMS link is not a login). In
+  // synthetic mode the session is 'off' and none of this exists; 'degraded'
+  // (API enabled but unreachable) falls THROUGH to the workspace on seed
+  // data, because a login screen against a dead API is a wall nobody can
+  // pass — the context header wears the badge instead.
+  if (session.status === 'loading') {
+    return (
+      <div className="flex h-screen w-screen overflow-hidden bg-ground text-white font-sans selection:bg-brand/30">
+        <WorkspaceSkeleton />
+      </div>
+    );
+  }
+
+  if (session.status === 'unauthenticated') {
+    return (
+      <div className="flex h-screen w-screen overflow-hidden bg-ground text-white font-sans selection:bg-brand/30">
+        <Suspense fallback={<PortalSkeleton />}>
+          <LoginView />
+        </Suspense>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-ground text-white font-sans selection:bg-brand/30">
       {/* Suspense sits outside AnimatePresence on purpose: AnimatePresence has
@@ -232,8 +268,17 @@ export default function App() {
         )}
       </AnimatePresence>
       {/* The boundary wraps the content area only, so a tab change swaps the
-          screen without the sidebar flickering out from under the cursor. */}
-      <Suspense fallback={<WorkspaceSkeleton />}>{content}</Suspense>
+          screen without the sidebar flickering out from under the cursor. The
+          context header sits above it and outside it — orientation (SoT
+          §13.3) must not blink out while a route chunk loads. */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {session.status !== 'off' && (
+          <Suspense fallback={null}>
+            <ContextHeader />
+          </Suspense>
+        )}
+        <Suspense fallback={<WorkspaceSkeleton />}>{content}</Suspense>
+      </div>
     </div>
   );
 }

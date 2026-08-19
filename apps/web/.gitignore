@@ -1,0 +1,6 @@
+# Re-include the ONE env file that ships (METH Stage 6): Vite's standard
+# dev-mode defaults. It carries two public VITE_ flags and no secret — real
+# configuration follows the root rule (.env.example is the only one that
+# ships; Guideline R2). Per-machine overrides go in .env.development.local,
+# which stays ignored by the root pattern.
+!.env.development
