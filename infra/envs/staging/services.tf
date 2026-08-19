@@ -106,6 +106,12 @@ locals {
     #   DOCUMENT_GUARD stays `fixture` — qpdf is deliberately not in the image
     #     (apps/api/Dockerfile says why); flipping it is a Dockerfile change.
     # ------------------------------------------------------------------------
+    # The role the APPLICATION connects as — a name, not a credential, so it is
+    # a plain value. Its password is injected separately (see the secrets list).
+    # Stated rather than defaulted in code so that "which role is this task
+    # subject to RLS as?" is answerable from the deployed artefact.
+    { name = "DB_APP_USER", value = "nt_app" },
+
     { name = "INGEST_QUEUE", value = "bullmq" },
     { name = "OBJECT_STORE", value = "s3" },
     { name = "IMAGE_NORMALISER", value = "sharp" },
@@ -231,6 +237,35 @@ locals {
     # Rotating session_secret logs every session out. Staging: fine. The
     # ROTATION banner in secrets.tf is where that trap is written down.
     # ------------------------------------------------------------------------
+    # ------------------------------------------------------------------------
+    # THE APPLICATION'S OWN DATABASE CREDENTIAL — the gap the TODO above named,
+    # now closed. Until this, the api and workers tasks carried DATABASE_HOST /
+    # PORT / NAME and NO CREDENTIAL AT ALL, so Prisma could not connect and every
+    # DB-backed request answered 500 while /healthz stayed green and the deploy
+    # stayed green. Measured against the deployed task on 19 Aug 2026.
+    #
+    # ⚠ `nt_app`, NEVER the migrator. The master credential on RDS carries
+    # `rds_superuser`, which is exempt from row-level security outright, and even
+    # the plain table owner is only constrained because rls.sql sets FORCE ROW
+    # LEVEL SECURITY. Handing either to a long-running service turns every policy
+    # in prisma/ into decoration — silently, because a tenancy leak returns MORE
+    # rows and nothing throws. db-app-role.tf is the whole argument.
+    #
+    # The join happens in-process (config/app-database-url.ts) for the same
+    # reason the migrate task's does: an ECS `secrets` entry cannot be
+    # interpolated into another environment variable, and Prisma reads
+    # `DATABASE_URL`.
+    #
+    # No IAM change: `read_db_app_role_secret` (db-app-role.tf) is already
+    # attached to BOTH the execution role and the task role.
+    #
+    # ⚠ The role must EXIST in the database before a task using it can serve.
+    # Nothing created it until `apps/api/dist/db/app-role.js` — see
+    # docs/runbooks/staging-demo.md §2b. Deploying this without running that
+    # leaves the api unable to authenticate to Postgres.
+    # ------------------------------------------------------------------------
+    { name = "DB_APP_PASSWORD", valueFrom = "${aws_secretsmanager_secret.db_app_role.arn}:password::" },
+
     { name = "SESSION_SECRET", valueFrom = "${aws_secretsmanager_secret.app["auth"].arn}:session_secret::" },
     { name = "PORTAL_LINK_SECRET", valueFrom = "${aws_secretsmanager_secret.app["auth"].arn}:portal_link_secret::" },
     { name = "PORTAL_SESSION_SECRET", valueFrom = "${aws_secretsmanager_secret.app["auth"].arn}:portal_session_secret::" },
