@@ -93,6 +93,11 @@ const m = defineMessages({
       'The copy and its original are removed. A deleted document cannot be matched to a bank line later.',
   },
   deleteAction: { id: 'documents.duplicateModal.deleteAction', defaultMessage: 'Delete the copy' },
+  liveNote: {
+    id: 'documents.duplicateModal.liveNote',
+    defaultMessage:
+      'Resolving a duplicate is coming to Review → Approve — in this build the flag and the comparison are informational.',
+  },
 });
 
 const sideMessages = defineMessages({
@@ -102,7 +107,7 @@ const sideMessages = defineMessages({
 });
 
 export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose: () => void }) {
-  const { documents, resolveDuplicate } = useAppContext();
+  const { documents, resolveDuplicate, documentsSource } = useAppContext();
   const confirm = useConfirm();
   const intl = useIntl();
   const [expanded, setExpanded] = useState<'left' | 'right' | null>(null);
@@ -218,6 +223,13 @@ export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose
           </div>
         )}
 
+        {/* The resolutions below are local writes the live poll reverts —
+            live, the footer says what the flag is instead (METH S14 sweep). */}
+        {documentsSource === 'api' ? (
+          <div className="p-4 bg-raised/50 text-[13px] text-zinc-500 text-center">
+            {intl.formatMessage(m.liveNote)}
+          </div>
+        ) : (
         <div className="p-4 bg-raised/50 flex items-center gap-2 justify-end flex-wrap">
           <button
             onClick={() =>
@@ -263,6 +275,7 @@ export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose
             {intl.formatMessage(m.deleteAction)}
           </button>
         </div>
+        )}
       </motion.div>
     </div>
   );

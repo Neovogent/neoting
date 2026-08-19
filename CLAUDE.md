@@ -16,6 +16,8 @@ Neoting is a **chat-first document-to-bookkeeping platform** for UK accounting p
 
 Conflict rule: the Source of Truth wins on scope, Governance wins on engineering rules and process. Anything not in those files is not a requirement. **A feature not listed in v1 is not in v1** — that scope fence is the contract.
 
+**Time-boxed:** the 18–20 Aug MVP push ran under `METH_MODE.md` (repo root); its outcome is the 21 Aug client-demo runbook, `docs/DEMO_SCRIPT_2026-08-21.md`. Both expire after the demo — every `// DEMO-MOCK` becomes a tracked issue then, and neither file is the roadmap.
+
 ## Before you write code
 
 1. Read the module's own `CLAUDE.md` (every module directory has one) and **update it on exit**. That file is how parallel agents and humans stay coherent across sessions.

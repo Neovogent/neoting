@@ -18,6 +18,7 @@ import { assessTransaction, isMatched, txnLabel, type Candidate, type MatchVerdi
 import { DocumentPreview } from '../components/DynamicComponents/DocumentPreview';
 import type { BankAccount, BankTransaction, Document, Match, Statement, StatementGap } from '../lib/types';
 import { EXPORT_HINT } from '../lib/exportRules';
+import { DataSourceBadge } from '../components/DataSourceBadge';
 
 const TABS = ['Transactions', 'Matches', 'Statements', 'Accounts'] as const;
 type Tab = (typeof TABS)[number];
@@ -53,6 +54,13 @@ const EVIDENCE_FILTER_LABELS = defineMessages({
 
 const m = defineMessages({
   heading: { id: 'bank.bankView.heading', defaultMessage: 'Bank' },
+  bankLoading: { id: 'bank.bankView.loading', defaultMessage: 'Loading the bank feed…' },
+  bankError: { id: 'bank.bankView.loadError', defaultMessage: 'Could not load the bank feed — {error}' },
+  matchesLiveNote: {
+    id: 'bank.bankView.matchesLiveNote',
+    defaultMessage:
+      'Confirmed matches live on the transaction rows in this build — confirm a suggested match and the row flips to Matched, through Review → Approve.',
+  },
   unexplainedSummary: {
     id: 'bank.bankView.unexplainedSummary',
     defaultMessage: '{count} unexplained · {amount} without evidence',
@@ -223,7 +231,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
   const {
     clients, transactions, matches, documents, accounts, statements, statementGaps,
     matchSettings, setMatchSettings, matchTransaction, unmatchTransaction, cashCode,
-    uploadStatement, reauthAccount, logAudit, statsFor,
+    uploadStatement, reauthAccount, logAudit, statsFor, isSameClient, slices,
   } = useAppContext();
   const intl = useIntl();
 
@@ -239,6 +247,13 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
   // Pinned when embedded in a client, so no filter can widen the scope.
   const clientFilter = clientId ?? 'all';
   const scopedToClient = clientId !== undefined;
+  /**
+   * Whether the rows on screen are the server's (METH S11/S14). The synthetic
+   * writers below (cash coding, the chase composer, the seed match cards)
+   * stay off live rows — a write the next poll reverts is worse than absent.
+   */
+  const bankSlice = slices.bankTransactions;
+  const liveBank = bankSlice.source === 'api';
   const [evidenceFilter, setEvidenceFilter] = useState<'all' | 'needs-you' | 'unmatched' | 'matched' | 'credits'>('all');
   const [query, setQuery] = useState('');
   const [matchFor, setMatchFor] = useState<BankTransaction | null>(null);
@@ -279,7 +294,9 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
   const scopedTxns = useMemo(() => {
     const q = query.trim().toLowerCase();
     return transactions.filter((t) => {
-      if (clientFilter !== 'all' && t.clientId !== clientFilter) return false;
+      // Tolerant of both id worlds: server rows carry opaque business ids,
+      // the embedding client detail still keys by seed id (METH S14 bridge).
+      if (clientFilter !== 'all' && !isSameClient(t.clientId, clientFilter)) return false;
       if (evidenceFilter === 'needs-you' && (isMatched(t) || verdicts.get(t.id)?.kind !== 'confused')) return false;
       if (evidenceFilter === 'unmatched' && isMatched(t)) return false;
       if (evidenceFilter === 'matched' && !isMatched(t)) return false;
@@ -287,7 +304,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
       if (q && !`${t.description} ${t.clientName} ${t.amount}`.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [transactions, clientFilter, evidenceFilter, query, verdicts]);
+  }, [transactions, clientFilter, evidenceFilter, query, verdicts, isSameClient]);
 
   const scopedMatches = matches.filter(
     (match) => clientFilter === 'all' || clients.find((c) => c.id === clientFilter)?.name === match.clientName,
@@ -308,11 +325,11 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
     () =>
       transactions.filter(
         (t) =>
-          (clientFilter === 'all' || t.clientId === clientFilter) &&
+          (clientFilter === 'all' || isSameClient(t.clientId, clientFilter)) &&
           !isMatched(t) &&
           verdicts.get(t.id)?.kind === 'confused',
       ).length,
-    [transactions, clientFilter, verdicts],
+    [transactions, clientFilter, verdicts, isSameClient],
   );
 
   /** Composed here — the transaction is already chosen. */
@@ -407,12 +424,16 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                 {intl.formatMessage(m.matchAction)}
               </button>
             )}
-            <button
-              onClick={(e) => { e.stopPropagation(); setCashFor(t); }}
-              className="px-3 py-1.5 rounded-full text-[12px] font-bold text-zinc-400 hover:text-white hover:bg-white/5 border border-white/5 transition-colors"
-            >
-              {intl.formatMessage(m.cashCodeAction)}
-            </button>
+            {/* Cash coding writes a local document nothing persists — off
+                live rows until it has an endpoint (METH S14 sweep). */}
+            {!liveBank && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setCashFor(t); }}
+                className="px-3 py-1.5 rounded-full text-[12px] font-bold text-zinc-400 hover:text-white hover:bg-white/5 border border-white/5 transition-colors"
+              >
+                {intl.formatMessage(m.cashCodeAction)}
+              </button>
+            )}
           </span>
         );
       },
@@ -424,6 +445,22 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
       ? 'flex flex-col min-w-0'
       : 'flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden'}>
       <header className={scopedToClient ? 'pb-5 shrink-0' : 'px-10 pt-8 pb-5 shrink-0'}>
+        {/* Loading and failure are said out loud (METH S14 sweep): seed rows
+            render underneath either way — the standing fallback — but never
+            silently impersonating the feed. */}
+        {bankSlice.loading && (
+          <div className="mb-4 flex items-center gap-3 px-5 py-3 rounded-2xl border bg-white/[0.03] border-white/10 text-zinc-400 text-[13px] font-semibold">
+            <RefreshCw size={15} className="animate-spin" />
+            <span>{intl.formatMessage(m.bankLoading)}</span>
+          </div>
+        )}
+        {bankSlice.error && (
+          <div className="mb-4 flex items-center gap-3 px-5 py-3 rounded-2xl border bg-red-500/10 border-red-500/20 text-red-300 text-[13px] font-semibold">
+            <AlertTriangle size={15} className="shrink-0" />
+            <span className="min-w-0">{intl.formatMessage(m.bankError, { error: bankSlice.error })}</span>
+            <DataSourceBadge slice="bankTransactions" status={bankSlice} />
+          </div>
+        )}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           {/* The client page already names the client, so the embedded copy
               leads with the number that decides whether you act. */}
@@ -580,12 +617,20 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                 selectable
                 emptyMessage={intl.formatMessage(m.transactionsEmpty)}
                 bulkActions={[
-                  {
-                    label: intl.formatMessage(m.chaseBulkAction),
-                    icon: Send,
-                    primary: true,
-                    onClick: (sel) => chase([...new Set(sel.filter((t) => !isMatched(t)).map((t) => t.clientId))]),
-                  },
+                  // The synthetic composer's chase never reaches the live
+                  // board — live chasing is the workspace's chase.send
+                  // proposal (METH S14 sweep).
+                  ...(liveBank
+                    ? []
+                    : [
+                        {
+                          label: intl.formatMessage(m.chaseBulkAction),
+                          icon: Send,
+                          primary: true,
+                          onClick: (sel: BankTransaction[]) =>
+                            chase([...new Set(sel.filter((t) => !isMatched(t)).map((t) => t.clientId))]),
+                        },
+                      ]),
                   { label: intl.formatMessage(commonActions.exportCsv), icon: Download, minSelected: 2, disabledHint: intl.formatMessage(EXPORT_HINT), onClick: (sel) => exportTxns(sel) },
                 ]}
                 footer={intl.formatMessage(m.transactionsFooter, { count: scopedTxns.length, unmatched: unmatchedCount })}
@@ -598,7 +643,14 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
               sideways once this sits inside a client tab. One up on a phone,
               two on a laptop, three on a wide screen. */}
           {tab === 'Matches' && (
-            scopedMatches.length === 0 ? (
+            // The seed match cards point at seed transactions the live rows
+            // replaced — meaningless against the feed. Live, this tab says
+            // where matches actually live (METH S14 sweep).
+            liveBank ? (
+              <div className="border border-white/5 rounded-[32px] bg-card p-10 text-center text-zinc-500 text-[13px] shadow-2xl">
+                {intl.formatMessage(m.matchesLiveNote)}
+              </div>
+            ) : scopedMatches.length === 0 ? (
               <div className="border border-white/5 rounded-[32px] bg-card p-10 text-center text-zinc-500 text-[13px] shadow-2xl">
                 {intl.formatMessage(m.matchesEmpty)}
               </div>
@@ -707,13 +759,17 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                           </div>
                           <div className="text-[12px] text-amber-200/70 mt-0.5">{g.reason}</div>
                         </div>
-                        <button
-                          onClick={() => chase([g.clientId])}
-                          className="flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shrink-0"
-                        >
-                          <Send size={14} />
-                          {intl.formatMessage(m.requestStatementAction)}
-                        </button>
+                        {/* The synthetic composer again — hidden live
+                            (METH S14 sweep). */}
+                        {!liveBank && (
+                          <button
+                            onClick={() => chase([g.clientId])}
+                            className="flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shrink-0"
+                          >
+                            <Send size={14} />
+                            {intl.formatMessage(m.requestStatementAction)}
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>

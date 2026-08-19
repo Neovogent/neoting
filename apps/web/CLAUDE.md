@@ -107,7 +107,7 @@ verbatim.
 
 - **Detail** — `src/api/document-detail.ts`: `useDocumentDetail` reads `GET /documents/{id}` + `/original` + `/events`, maps the accepted extraction to the overlay's shape (per-field confidence + provenance class, §13.3; Category answered from the header with the extract event's `sourceRuleId` as its honest provenance), and polls at 2.5 s while the document is processing. Deliberately NOT in `documents.ts` — that module is on every route's floor and this one is heavy with the strict extraction Zod; it lands on the document screens' chunks. `DocumentPreview` renders it when live: the real original via the presigned URL (no provenance band painted over a real photograph — bounding boxes are not extracted yet), an "open the original" link for non-images, the processing log, and the loading/error states.
 - **Corrections** — a typed edit stages a real `document.update-coding` proposal in a lazy `CodingProposalCard` (the same `ReviewGate`, so Approve cannot mount before Read review here either), via the same three-call create → review → approve-echoing-the-hash shape as `confirmMatchProposal`. `parseCodingDraft` is the pounds→pence boundary for typed money and refuses (by named reason) what the contract would. Fields the contract has no correction path for (e.g. VAT number) lose the edit affordance rather than discovering the refusal on approve; so does a PUBLISHED document (locked server-side).
-- **Uploads** — `src/api/uploads.ts`: drag-drop/file-picker becomes the real intent → presigned `PUT` → complete journey (`runWorkspaceDrop`, shared by `InboxesView` and `ClientInbox`), then the poll shows Processing → Ready live. The inbox-level drop REQUIRES a chosen client in live mode — the API's own rule; guessing at ingest time is the misrouting the product exists to fix. `serverBusinessIdFor` bridges seed client ids to the fixture `biz_` ids; real ids pass through untouched, and the bridge retires when the `businesses` slice reads from `GET /businesses` (METH S6).
+- **Uploads** — `src/api/uploads.ts`: drag-drop/file-picker becomes the real intent → presigned `PUT` → complete journey (`runWorkspaceDrop`, shared by `InboxesView` and `ClientInbox`), then the poll shows Processing → Ready live. The inbox-level drop REQUIRES a chosen client in live mode — the API's own rule; guessing at ingest time is the misrouting the product exists to fix. The business id the views send comes from the context's `serverClientIdFor` since METH S14 (see *The seed↔server id bridge* below); `uploads.ts`'s `serverBusinessIdFor` remains as the fixture convention's home and the bridge's fallback.
 
 Two things about the bank slice that will bite the next person:
 
@@ -115,6 +115,12 @@ Two things about the bank slice that will bite the next person:
 - **Confirming a match goes through Review → Approve, in three calls** (`confirmMatchProposal`): create, review, approve echoing back the review's `renderedSummaryHash`. Approve is unreachable until the review has been opened and that is enforced server-side and again by a database trigger, so the middle call is not a convention that can be skipped. The optimistic local update stays for the click to feel instant; the refetch afterwards replaces it with server truth, so a refusal corrects the screen rather than leaving a match only this browser believes in. The coding correction follows the identical pattern.
 
 The suggestion engine in `lib/matching.ts` stays **display-tier**: its arithmetic is float pounds, it never reaches the server, and nothing server-side applies a tolerance derived from it. Flagged for a post-demo rewrite in pence.
+
+### The seed↔server id bridge, and the live gating sweep (METH S14)
+
+Stage 14's hardening audit found the golden path broke against a **freshly reset** DB, and the reason is worth keeping: the synthetic cast keys clients as `'1'`/`'2'`, the MSW fixtures bridge them as `biz_1`/`biz_2`, and the real seed's businesses are `biz_burger`/`biz_cosmo`/`biz_dental` — earlier stages smoked against a stale shared DB and never met the real ids, so uploads and Unrouted routing were refused server-side and every client-scoped filter (ClientInbox, the embedded BankView) matched nothing after `pnpm demo:reset`. The fix lives in `AppContext`: `serverClientIdFor(clientId)` joins the seed clients to the hydrated `businesses` slice **by normalised name** (case, punctuation and a trailing Ltd/Limited dropped — the name is the only fact both casts share), falling back to the `biz_<id>` fixture convention when the slice has not answered; `isSameClient(rowClientId, clientId)` is the tolerant compare every client-scoped filter now uses (`InboxesView`, `ClientInbox`, `BankView`); and `clientNameFor` answers an opaque id from the hydrated slice before falling through to the id itself. The bridge still retires when the clients list itself reads from `GET /businesses`.
+
+The same sweep enforced the S12 rule everywhere: **a button whose write the next poll reverts is worse than absent.** Live (`documentsSource === 'api'`, or `slices.bankTransactions.source === 'api'` on the bank surface), the local writers are hidden or disabled-with-tooltip pointing at the real path: InboxesView publish / mark-reviewed / move / delete (the publish tooltips name the chat utterance), ClientInbox's `nextStep` and bulk bar (the client-side CSV export stays — it is real either way), BankView's cash-code, synthetic chase composer and Matches tab (live it says where matches actually live), DocumentsView's unarchive/move, and both duplicate-resolution footers (an informational note — the executor ships post-demo). ApprovalsView's fixture summary figures and inert client filter give way to a live count over the queue. BankView, ClientInbox and DocumentsView gained the loading/error banner + `DataSourceBadge` the other wired screens already had. `errorLabel` in `api/slices.ts` is the one failure-label maker now — it keeps the `NT-` code in front of the words (frontend ten, item 5), and `sliceStatus`, the degraded session state, `documentsError` and the outbox error all go through it. `DocumentPreview` lost the handler-less "Enter manually" button and no longer formats `To Review — {note}` with an undefined note, which was a react-intl `console.error` on every live To-Review detail and on the duplicate beat.
 
 MSW is started from `src/main.tsx` behind a **dynamic** `import()`, which is what keeps it and `@faker-js/faker` out of the production bundle. Verified: neither string appears in `dist`. Keep it dynamic.
 
@@ -154,7 +160,7 @@ Five things about it that are decisions, not details:
 - **The mismatch message names what we still need, not what we read.** SoT's beat is *"This looks like a £420 invoice, but we need the £600 Google transaction from 5 Aug."* The second half is contracted (`ChaseItem`); the first half is the extraction, which the portal cannot see. So the copy says the true half. The match itself is the server's answer, never a guess made here: the portal polls `GET /portal/context` and reads `received`, which the same deterministic compare sets that auto-closes the chase.
 - **"Not answered yet" is its own outcome (`pending`), and that is load-bearing.** `received` is false both for a genuine mismatch *and* for a document still being read, and the client cannot tell those apart — so neither may the copy. The review of Stage 9 caught the hook falling through the 12 s poll budget into `unmatched`, which renders *"it does not look like the {merchant} payment…"* plus a **Send a different one** CTA: a client who photographed the *correct* receipt was told it was the wrong one and pushed to re-send. It was not occasional — `INGEST_QUEUE` defaults to `fixture`, whose queue no worker consumes, so against a default-env API **every** upload ended there, including the demo's headline beat. `pending` now says only what is true ("your accountant has it, nothing is lost, not matched yet") and returns to the list. A failure *after* the send is `pending` too, not `failed` — the bytes are in storage by then, and "That did not send" would be a lie that costs a duplicate.
 
-**What the SMS must contain.** The link the chase composes has to be `<web origin>/p/<linkToken>`. The API composes the SMS body (`sms-copy.ts`, marker `Upload securely: `) and today the token is put in bare; whoever wires the demo outbox must build the full URL, or the tap goes nowhere. The link-entry screen accepts either — it keeps the last path segment of whatever is pasted — but that is a fallback for a mangled text, not the design.
+**What the SMS must contain.** The link the chase composes has to be `<web origin>/p/<linkToken>`. The API composes the SMS body (`sms-copy.ts`, marker `Upload securely: `) and today the token is put in bare; whoever wires the demo outbox must build the full URL, or the tap goes nowhere. The link-entry screen accepts either — it keeps the last path segment of whatever is pasted — but that is a fallback for a mangled text, not the design. Until the engine-side compose seam exists (the known gap in `apps/api/src/modules/chase/CLAUDE.md` — no outbox SMS carries a *working* token today), `pnpm demo:portal-link` (`scripts/demo/portal-link.ts`, METH S14) signs a real token for a real chase; the demo script's beat 7 enters the portal through it.
 
 ## i18n
 
@@ -175,15 +181,15 @@ Before minting a per-component id for a universal word, check `src/i18n/common.t
 
 Gzipped, after the i18n extraction. The budget is **JS** (SoT §14: "initial JS < 250 KB gzipped per route"), so CSS is listed but not counted against it:
 
-| | METH S6 | METH S7 | METH S12 | now (METH S13) |
-|---|---|---|---|---|
-| `index.js` (shared, incl. the 0.1 kB entry stub) | 188.3 kB | 188.6 kB | 179.3 kB | **179.4 kB** |
-| `query.js` (TanStack) | 14.7 kB | 14.7 kB | 14.7 kB | 14.7 kB |
-| `react.js` | 1.5 kB | 1.5 kB | 1.5 kB | 1.5 kB |
-| **shared JS floor, every route** | **204.5 kB** | **204.8 kB** | **195.5 kB** | **195.6 kB** |
-| heaviest route on top (`ClientDetailView`) | 45.1 kB | 45.1 kB | 45.2 kB | **45.2 kB** |
-| **worst route, total JS** | **249.6 kB** | **249.9 kB** | **240.7 kB** | **240.8 kB** |
-| `index.css` (not in the JS budget) | 13.3 kB | 13.3 kB | 13.3 kB | 13.3 kB |
+| | METH S6 | METH S7 | METH S12 | METH S13 | now (METH S14) |
+|---|---|---|---|---|---|
+| `index.js` (shared, incl. the 0.1 kB entry stub) | 188.3 kB | 188.6 kB | 179.3 kB | 179.4 kB | **179.6 kB** |
+| `query.js` (TanStack) | 14.7 kB | 14.7 kB | 14.7 kB | 14.7 kB | 14.7 kB |
+| `react.js` | 1.5 kB | 1.5 kB | 1.5 kB | 1.5 kB | 1.5 kB |
+| **shared JS floor, every route** | **204.5 kB** | **204.8 kB** | **195.5 kB** | **195.6 kB** | **195.8 kB** |
+| heaviest route on top (`ClientDetailView`) | 45.1 kB | 45.1 kB | 45.2 kB | 45.2 kB | **45.7 kB** |
+| **worst route, total JS** | **249.6 kB** | **249.9 kB** | **240.7 kB** | **240.8 kB** | **241.5 kB** |
+| `index.css` (not in the JS budget) | 13.3 kB | 13.3 kB | 13.3 kB | 13.3 kB | 13.1 kB |
 
 METH S13's whole surface (the canned table, four live cards,
 `LiveProposalFlow`, the InputRow wiring) cost the floor **+0.1 kB** (the
@@ -192,6 +198,11 @@ AIWorkspaceView chunk, now 32.9 kB — chat + floor = 228.5 kB, under budget.
 `demoIntents.ts` and the cards import only modules already floor-resident
 (`resolver`, `matching`) or lazy-chunk-resident (`proposals.ts`, `chases.ts` —
 shared chunks with the S12 views, per the reachability rule below).
+
+S14's +0.2 kB floor is the id bridge + `errorLabel` in AppContext/slices; the
++0.5 kB on `ClientDetailView` is the gating and banners in the embedded
+BankView/ClientInbox. The chat route is unmoved (AIWorkspaceView 32.9 kB).
+Headroom at the worst route: **8.5 kB**.
 
 **The headroom is ~9.3 kB, and METH S12 is where it came from.** The stage arrived at 0.10 kB of headroom, its own additions initially put the floor +0.5 kB over (the generated action-proposals list exports joining bank.ts's floor-resident module copy, plus six generated Zod schemas hoisted into `index` because the zod barrel is statically reachable from floor modules), and the reclaim that paid for it all is `strip-zod-describe` in `packages/contracts` — orval was copying the spec's design prose into the runtime Zod, ~10 kB gzip of it on the floor. After the strip, S12's whole surface (chases + outbox + proposals queue + unrouted + retry) nets the floor **9.25 kB BELOW** the S7 line. Numbers are exact gzip bytes of the built chunks (`gzip -c | wc -c`) — the S6 convention. ⚠ Measure with a CLEAN environment: sourcing the repo `.env` into the shell before `pnpm build` sets `NODE_ENV` and Vite quietly produces a development-flavoured bundle ~25 % larger, which reads as a regression that is not there.
 

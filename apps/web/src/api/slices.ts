@@ -22,6 +22,7 @@
  * Stage 6 wires `businesses` as the proof; Stages 7/11/12 point the remaining
  * slices' statuses at their own queries as each screen comes online.
  */
+import { NtProblemError } from '@neoting/contracts';
 
 export type SliceSource = 'api' | 'seed' | 'seed-fallback';
 
@@ -47,11 +48,21 @@ export interface SliceQueryLike {
   contractError: string | null;
 }
 
+/**
+ * The failure label every degraded surface renders. Problem+json failures
+ * keep their `NT-` code in front of the words — the code is what a bug
+ * report, a log line and the screen have in common, so a banner that drops
+ * it strands whoever reads all three.
+ */
+export function errorLabel(error: unknown): string | null {
+  if (!error) return null;
+  if (error instanceof NtProblemError) return `${error.code} — ${error.detail ?? error.title}`;
+  return error instanceof Error ? error.message : 'The request failed';
+}
+
 export function sliceStatus(enabled: boolean, query: SliceQueryLike): SliceStatus {
   if (!enabled) return SEED_SLICE;
-  const error =
-    query.contractError ??
-    (query.error instanceof Error ? query.error.message : query.error ? 'The request failed' : null);
+  const error = query.contractError ?? errorLabel(query.error);
   if (error) return { source: 'seed-fallback', loading: false, error };
   return { source: 'api', loading: query.isLoading, error: null };
 }

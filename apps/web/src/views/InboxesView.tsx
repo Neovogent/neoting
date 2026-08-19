@@ -9,7 +9,7 @@ import { defineMessages, useIntl } from 'react-intl';
 import { useQueryClient } from '@tanstack/react-query';
 import { commonActions, commonLabels } from '../i18n/common';
 import { useAppContext } from '../context/AppContext';
-import { refreshDocuments, runWorkspaceDrop, serverBusinessIdFor } from '../api/uploads';
+import { refreshDocuments, runWorkspaceDrop } from '../api/uploads';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { Tooltip } from '../components/DynamicComponents/Tooltip';
 import { blockedReason, describeMissing, partitionByReadiness, readinessOf } from '../lib/readiness';
@@ -128,6 +128,14 @@ const m = defineMessages({
   publishItemsAction: { id: 'inboxes.inboxesView.publishItemsAction', defaultMessage: 'Publish {count} Items' },
   selectedCount: { id: 'inboxes.inboxesView.selectedCount', defaultMessage: '{count} selected' },
   markReviewedAction: { id: 'inboxes.inboxesView.markReviewedAction', defaultMessage: 'Mark reviewed' },
+  markReviewedLiveHint: {
+    id: 'inboxes.inboxesView.markReviewedLiveHint',
+    defaultMessage: 'Open the document and correct or confirm a field — the change goes through Review → Approve.',
+  },
+  publishLiveHint: {
+    id: 'inboxes.inboxesView.publishLiveHint',
+    defaultMessage: 'Publishing is a Review → Approve action — ask the workspace: "Publish all approved costs to Xero".',
+  },
   bulkNoneReadyTitle: { id: 'inboxes.inboxesView.bulkNoneReadyTitle', defaultMessage: 'None of these can move yet' },
   bulkNoneReadyItem: { id: 'inboxes.inboxesView.bulkNoneReadyItem', defaultMessage: '{supplier} — {missing}' },
   bulkMarkReadyTitle: {
@@ -289,6 +297,7 @@ export function InboxesView() {
     mandatoryFields, setMandatoryFields, ingestRejections, updateDocumentStatus,
     documentsSource, documentsLoading, documentsError,
     moveDocuments, deleteDocuments, retryDocument, startConversation, logAudit, publishDocuments,
+    isSameClient, serverClientIdFor,
   } = useAppContext();
   const intl = useIntl();
   const queryClient = useQueryClient();
@@ -393,12 +402,14 @@ export function InboxesView() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return inKind.filter((d) => {
-      if (clientFilter !== 'all' && d.clientId !== clientFilter) return false;
+      // Tolerant of both id worlds (METH S14 bridge): server rows carry
+      // opaque business ids, the filter options still key by seed id.
+      if (clientFilter !== 'all' && !isSameClient(d.clientId, clientFilter)) return false;
       if (channelFilter !== 'all' && d.source !== channelFilter) return false;
       if (q && !`${d.supplier} ${d.clientName} ${d.category} ${d.total}`.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [inKind, clientFilter, channelFilter, query]);
+  }, [inKind, clientFilter, channelFilter, query, isSameClient]);
 
   const rows = useMemo(() => filtered.filter((d) => d.status === statusTab), [filtered, statusTab]);
 
@@ -429,7 +440,7 @@ export function InboxesView() {
     }
     goTo({ inbox: 'cost', status: 'processing' });
 
-    const { sent } = await runWorkspaceDrop(intl, confirm, serverBusinessIdFor(clientFilter), files);
+    const { sent } = await runWorkspaceDrop(intl, confirm, serverClientIdFor(clientFilter), files);
     void refreshDocuments(queryClient);
 
     logAudit({
@@ -727,9 +738,14 @@ export function InboxesView() {
 
               <div className="flex items-center gap-3">
                 <span className="text-[13px] font-bold text-zinc-400">{intl.formatMessage(m.rowCount, { count: rows.length })}</span>
+                {/* Live publishing is a `publish.batch` proposal (METH S10);
+                    this local publish would fake success the next poll
+                    reverts, so live it is disabled and points at the real
+                    path (METH S14 sweep). */}
                 <button
                   onClick={() => requestPublish(selected.length ? selected : rows.map((d) => d.id))}
-                  disabled={statusTab !== 'ready' || rows.length === 0}
+                  disabled={statusTab !== 'ready' || rows.length === 0 || documentsSource === 'api'}
+                  title={documentsSource === 'api' ? intl.formatMessage(m.publishLiveHint) : undefined}
                   className="px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {intl.formatMessage(m.publishItemsAction, { count: selected.length ? selected.length : rows.length })}
@@ -747,7 +763,10 @@ export function InboxesView() {
                 >
                   <div className="flex items-center gap-2 flex-wrap bg-zinc-100 rounded-2xl px-4 py-3">
                     <span className="text-[13px] font-bold text-zinc-700 mr-2">{intl.formatMessage(m.selectedCount, { count: selected.length })}</span>
-                    {statusTab === 'review' && (
+                    {/* Live review happens inside the document via a
+                        `document.update-coding` proposal; a bulk local flip
+                        would revert under the poll (METH S14 sweep). */}
+                    {statusTab === 'review' && documentsSource !== 'api' && (
                       <BulkBtn
                         icon={CheckCircle2}
                         label={intl.formatMessage(m.markReviewedAction)}
@@ -789,6 +808,10 @@ export function InboxesView() {
                         }}
                       />
                     )}
+                    {/* Live moves are the Unrouted queue's `document.route`
+                        proposal; this local move reverts under the poll
+                        (METH S14 sweep). */}
+                    {documentsSource !== 'api' && (
                     <div className="relative">
                       <BulkBtn icon={ArrowRightLeft} label={intl.formatMessage(m.bulkMove)} onClick={() => setMoveOpen((o) => !o)} />
                       <AnimatePresence>
@@ -861,6 +884,7 @@ export function InboxesView() {
                         )}
                       </AnimatePresence>
                     </div>
+                    )}
                     <BulkBtn icon={Sparkles} label={intl.formatMessage(m.bulkAskAi)} onClick={() => {
                       // The bar only renders with a selection, but the rows it
                       // names can go under it — a delete elsewhere leaves ids
@@ -875,7 +899,9 @@ export function InboxesView() {
                         { id: `${Date.now()}-a`, role: 'assistant', content: intl.formatMessage(m.askAiReply), intent: 'REVIEW_DOCUMENT', payload: { documentId: first.id, clientIds: ids, clientNames: names } },
                       ]);
                     }} />
-                    {statusTab === 'ready' && (
+                    {/* Same gate as the header publish: live publishing is a
+                        proposal, not a local flip (METH S14 sweep). */}
+                    {statusTab === 'ready' && documentsSource !== 'api' && (
                       <BulkBtn icon={Send} label={intl.formatMessage(m.publishAction)} onClick={() => requestPublish(selected)} />
                     )}
                     {/* Bulk retry stays synthetic-only: live retries are one
@@ -906,7 +932,10 @@ export function InboxesView() {
                       onClick={() => exportDocs(selectedDocs)}
                     />
                     {/* Was a click-twice-within-4s pattern, which is easy to
-                        trip by accident and says nothing about what goes. */}
+                        trip by accident and says nothing about what goes.
+                        Hidden live: no delete endpoint exists, so the row
+                        would only come back with the next poll (METH S14). */}
+                    {documentsSource !== 'api' && (
                     <BulkBtn
                       icon={Trash2}
                       label={intl.formatMessage(m.bulkDelete)}
@@ -929,6 +958,7 @@ export function InboxesView() {
                         setSelected([]);
                       }}
                     />
+                    )}
                   </div>
                 </motion.div>
               )}
@@ -1046,11 +1076,21 @@ export function InboxesView() {
                                 are trying to stop until it is sorted. */}
                             {doc.status === 'review' && (() => {
                               const verdict = readinessOf(doc, mandatoryFields);
+                              // Live, the review happens inside the document
+                              // via a proposal — the local flip would revert
+                              // under the poll. Disabled-with-tooltip, the
+                              // house pattern (METH S14 sweep).
+                              const live = documentsSource === 'api';
                               return verdict.ready ? (
                                 <button
-                                  onClick={(e) => { e.stopPropagation(); markReviewed(doc); }}
-                                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold bg-zinc-100 text-zinc-700 hover:bg-brand hover:text-white transition-colors"
-                                  title={intl.formatMessage(m.markReviewedTitle)}
+                                  aria-disabled={live}
+                                  onClick={(e) => { e.stopPropagation(); if (live) return; markReviewed(doc); }}
+                                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold transition-colors ${
+                                    live
+                                      ? 'text-zinc-300 border border-zinc-200 cursor-not-allowed'
+                                      : 'bg-zinc-100 text-zinc-700 hover:bg-brand hover:text-white'
+                                  }`}
+                                  title={intl.formatMessage(live ? m.markReviewedLiveHint : m.markReviewedTitle)}
                                 >
                                   <CheckCircle2 size={14} />
                                   {intl.formatMessage(m.markReviewedAction)}
@@ -1133,9 +1173,15 @@ export function InboxesView() {
                             {doc.status === 'ready' && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); requestPublish([doc.id]); }}
-                                disabled={blocked.length > 0}
+                                disabled={blocked.length > 0 || documentsSource === 'api'}
                                 className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold bg-brand text-white hover:bg-brand-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                                title={blocked.length ? intl.formatMessage(m.cannotPublish, { fields: blocked.join(', ') }) : intl.formatMessage(m.publishRowTitle)}
+                                title={
+                                  documentsSource === 'api'
+                                    ? intl.formatMessage(m.publishLiveHint)
+                                    : blocked.length
+                                      ? intl.formatMessage(m.cannotPublish, { fields: blocked.join(', ') })
+                                      : intl.formatMessage(m.publishRowTitle)
+                                }
                               >
                                 <Send size={13} />
                                 {intl.formatMessage(m.publishAction)}

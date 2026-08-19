@@ -45,7 +45,7 @@ import { useDocuments } from '../api/documents';
 import { API_ENABLED } from '../api/config';
 import { logout as apiLogout, useSession, type SessionState } from '../api/auth';
 import { deriveBusinessSummaries, useBusinesses, type BusinessSummary } from '../api/businesses';
-import { SEED_SLICE, sliceStatus, type SliceStatuses } from '../api/slices';
+import { SEED_SLICE, errorLabel, sliceStatus, type SliceStatuses } from '../api/slices';
 import { queryClient } from '../api/queryClient';
 import { importSheet, type SheetImport } from '../lib/tableImport';
 import { buildBusinessAccounts, newBusinessAccount } from '../lib/business';
@@ -362,6 +362,16 @@ interface AppContextType {
    * this instead of letting fixtures impersonate server truth.
    */
   slices: SliceStatuses;
+  /**
+   * The server business id for a client the synthetic side keys by seed id
+   * ('1'). Joined through the hydrated businesses slice by normalised name;
+   * falls back to the fixture convention (`biz_<id>`, api/uploads.ts) when
+   * the slice has not answered. Retires with S6's plan: the clients list
+   * itself reading from GET /businesses.
+   */
+  serverClientIdFor: (clientId: string) => string;
+  /** Whether a row's businessId names the given (possibly seed-id) client. */
+  isSameClient: (rowClientId: string, clientId: string) => boolean;
 
   // Navigation shared across sections
   activeTab: string;
@@ -571,6 +581,49 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [documents, setDocuments] = useState<Document[]>(initial.documents);
 
   /**
+   * The businesses slice (METH Stage 6) — the hydration pattern's proof. It
+   * lives above the other slices because their row mappers resolve client
+   * names through it, and the id bridge below reads it as a dictionary.
+   */
+  const businessesQuery = useBusinesses({ enabled: slicesOn, params: { limit: 100 } });
+
+  /**
+   * The seed↔server client-id bridge (METH S14 hardening).
+   *
+   * The synthetic cast keys everything on its own client ids ('1'); server
+   * rows carry opaque ids ('biz_burger'). Until the clients list itself reads
+   * from GET /businesses (the retirement plan recorded in api/uploads.ts),
+   * the hydrated businesses slice is the dictionary between the two worlds —
+   * joined by normalised name, the only fact both casts share.
+   */
+  const serverIdByClient = useMemo(() => {
+    const map = new Map<string, string>();
+    if (businessesQuery.businesses.length === 0) return map;
+    const normalise = (name: string) =>
+      name.toLowerCase().replace(/\b(ltd|limited)\b/g, '').replace(/[^a-z0-9]/g, '');
+    const byName = new Map(businessesQuery.businesses.map((b) => [normalise(b.name), b.id]));
+    for (const c of clients) {
+      const hit = byName.get(normalise(c.name));
+      if (hit && hit !== c.id) map.set(c.id, hit);
+    }
+    return map;
+  }, [businessesQuery.businesses, clients]);
+
+  const serverClientIdFor = useCallback(
+    (clientId: string) =>
+      serverIdByClient.get(clientId) ??
+      // The MSW fixture convention (api/uploads.ts): seed ids became biz_<id>.
+      (clientId.startsWith('biz_') ? clientId : `biz_${clientId}`),
+    [serverIdByClient],
+  );
+
+  const isSameClient = useCallback(
+    (rowClientId: string, clientId: string) =>
+      rowClientId === clientId || rowClientId === serverClientIdFor(clientId),
+    [serverClientIdFor],
+  );
+
+  /**
    * The documents surface, migrated to the API.
    *
    * The first read path off local state. It fills the same array every mutator
@@ -586,12 +639,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (businessId: string) => {
       const direct = clients.find((c) => c.id === businessId);
       if (direct) return direct.name;
+      // A hydrated server row knows its own name — the businesses slice is
+      // the authority for opaque ids the synthetic cast has never heard of.
+      const hydrated = businessesQuery.businesses.find((b) => b.id === businessId);
+      if (hydrated) return hydrated.name;
       // The mock encodes the seed id as biz_<id>; a real id will not match and
       // falls through to the id itself rather than inventing a name.
       const seeded = clients.find((c) => `biz_${c.id}` === businessId);
       return seeded?.name ?? businessId;
     },
-    [clients],
+    [clients, businessesQuery.businesses],
   );
 
   const documentsQuery = useDocuments({ enabled: slicesOn, clientNameFor, params: { limit: 100 } });
@@ -626,16 +683,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [bankQuery.transactions]);
 
   /**
-   * The businesses slice (METH Stage 6) — the hydration pattern's proof.
-   *
-   * Unlike `documents` and `transactions` it does not fill a seed array,
-   * because nothing mutates a business client-side: the provider simply
-   * selects between the server rows and the same shape derived from the
-   * seeded clients. Either way a consumer gets one list, and `slices` below
-   * says which world it came from.
+   * Unlike `documents` and `transactions` the businesses slice does not fill
+   * a seed array, because nothing mutates a business client-side: the
+   * provider simply selects between the server rows and the same shape
+   * derived from the seeded clients. Either way a consumer gets one list,
+   * and `slices` below says which world it came from.
    */
-  const businessesQuery = useBusinesses({ enabled: slicesOn, params: { limit: 100 } });
-
   const businesses = useMemo(
     () =>
       slicesOn && businessesQuery.businesses.length > 0
@@ -2442,13 +2495,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         sheetImports,
         documentsSource: API_ENABLED ? 'api' : 'seed',
         documentsLoading: documentsQuery.isLoading,
-        documentsError:
-          documentsQuery.contractError ??
-          (documentsQuery.error instanceof Error ? documentsQuery.error.message : null),
+        documentsError: documentsQuery.contractError ?? errorLabel(documentsQuery.error),
         session,
         logout,
         businesses,
         slices,
+        serverClientIdFor,
+        isSameClient,
         statsFor,
         onboardingLinks,
         sendOnboardingLink,

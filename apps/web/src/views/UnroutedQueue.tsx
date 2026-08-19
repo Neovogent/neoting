@@ -4,7 +4,6 @@ import { AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import type { CreateActionProposalRequest, Inbox as ApiInbox } from '@neoting/contracts/model';
 import { useAppContext } from '../context/AppContext';
-import { serverBusinessIdFor } from '../api/uploads';
 import { ProposalFlowModal } from '../components/DynamicComponents/ProposalFlowModal';
 import type { Document } from '../lib/types';
 
@@ -32,7 +31,7 @@ const m = defineMessages({
  */
 export function UnroutedQueue({ documents, onRouted }: { documents: Document[]; onRouted: () => void }) {
   const intl = useIntl();
-  const { clients } = useAppContext();
+  const { clients, serverClientIdFor } = useAppContext();
   const [choices, setChoices] = useState<Record<string, { clientId: string; inbox: ApiInbox }>>({});
   /** Held in state so the modal's request is referentially stable. */
   const [routing, setRouting] = useState<{ request: CreateActionProposalRequest; clientName: string } | null>(null);
@@ -50,7 +49,7 @@ export function UnroutedQueue({ documents, onRouted }: { documents: Document[]; 
         payload: {
           documentId: doc.id,
           inbox: choice.inbox,
-          toBusinessId: serverBusinessIdFor(client.id),
+          toBusinessId: serverClientIdFor(client.id),
         },
       },
       clientName: client.name,

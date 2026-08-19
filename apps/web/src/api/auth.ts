@@ -4,6 +4,7 @@ import { getMeResponse } from '@neoting/contracts/zod';
 import type { Me, SessionCreateRequest } from '@neoting/contracts/model';
 import { NtProblemError } from '@neoting/contracts';
 import { unwrapBody } from './envelope';
+import { errorLabel } from './slices';
 
 /**
  * The workspace session, read from `GET /me` (METH Stage 6).
@@ -51,7 +52,7 @@ export function toSessionState(input: { enabled: boolean; error: unknown; data: 
     }
     return {
       status: 'degraded',
-      error: input.error instanceof Error ? input.error.message : 'The request failed',
+      error: errorLabel(input.error) ?? 'The request failed',
     };
   }
 
