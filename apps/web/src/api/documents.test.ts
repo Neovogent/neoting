@@ -3,7 +3,8 @@ import { DocumentChannel, DocumentState } from '@neoting/contracts/model';
 import type { DocumentSummary } from '@neoting/contracts/model';
 
 import { listDocumentsResponse } from '@neoting/contracts/zod';
-import { fromIsoDate, fromPence, toLocalDocument, unwrapBody } from './documents';
+import { fromIsoDate, fromPence, toLocalDocument } from './documents';
+import { unwrapBody } from './envelope';
 import { documentFixtures, toPence } from './mocks/fixtures';
 import type { DocStatus, SourceChannel } from '../lib/types';
 

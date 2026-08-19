@@ -43,6 +43,10 @@ import { analyseSheet, readTable, sheetReadMessage } from '../lib/spreadsheet';
 import { confirmMatchProposal, useBankTransactions } from '../api/bank';
 import { useDocuments } from '../api/documents';
 import { API_ENABLED } from '../api/config';
+import { logout as apiLogout, useSession, type SessionState } from '../api/auth';
+import { deriveBusinessSummaries, useBusinesses, type BusinessSummary } from '../api/businesses';
+import { SEED_SLICE, sliceStatus, type SliceStatuses } from '../api/slices';
+import { queryClient } from '../api/queryClient';
 import { importSheet, type SheetImport } from '../lib/tableImport';
 import { buildBusinessAccounts, newBusinessAccount } from '../lib/business';
 import { deriveClientStats, type ClientStats } from '../lib/selectors';
@@ -338,6 +342,27 @@ interface AppContextType {
   /** An invited account becomes active the first time it is signed into. */
   activateBusinessAccount: (id: string) => void;
 
+  /**
+   * The workspace session (METH Stage 6). 'off' in synthetic mode — no login
+   * wall, no identity, the app exactly as it was. `App.tsx` gates on it;
+   * the context header renders from it; the API slices wait for it.
+   */
+  session: SessionState;
+  /** Clears the server cookie; the refetched /me returns the app to LoginView. */
+  logout: () => Promise<void>;
+  /**
+   * The businesses slice — who is in scope, with waiting-work counts. From
+   * `GET /businesses` when the session is live, derived from the seeded
+   * clients otherwise. The same shape either way, so the header never cares.
+   */
+  businesses: BusinessSummary[];
+  /**
+   * Where each slice's data actually came from (the hydration architecture,
+   * METH Stage 6). A wired screen renders the dev-only fallback badge from
+   * this instead of letting fixtures impersonate server truth.
+   */
+  slices: SliceStatuses;
+
   // Navigation shared across sections
   activeTab: string;
   setActiveTab: (tab: string) => void;
@@ -509,6 +534,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const [initial] = useState(() => buildInitialPipeline(intl));
 
+  /**
+   * Everything about *where you are* comes from the address bar rather than
+   * from state, so every screen has a link, Back works, and nothing is
+   * reachable that cannot be shared. The setters further down all navigate.
+   *
+   * Read here, above the data layer, because the session and the API slices
+   * key off `portal`: a client on an SMS-link surface has no workspace
+   * session and their browser must not go asking for the practice's data.
+   */
+  const segments = usePath();
+  const [root, first, second] = segments;
+
+  const portal: 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload' =
+    root === 'portal' ? 'business'
+      : root === 'approve' ? 'approval'
+      : root === 'register' ? 'registration'
+      // `/p/<token>`, and one letter on purpose: this address is typed into an
+      // SMS, where every character is billed and re-typed by hand when the link
+      // does not survive the client's phone.
+      : root === 'p' ? 'chase-upload'
+      : 'accountant';
+
+  /**
+   * The workspace session (METH Stage 6). Asked for only where a workspace
+   * exists: API mode, practice shell. The API slices additionally wait for it
+   * to be answered — a query fired before login would only 401, and a query
+   * fired on a portal surface would be someone else's data being asked for
+   * with a credential the visitor does not hold.
+   */
+  const workspaceApiOn = API_ENABLED && portal === 'accountant';
+  const { session } = useSession({ enabled: workspaceApiOn });
+  const slicesOn = workspaceApiOn && session.status === 'authenticated';
+
   const [clients, setClients] = useState<Client[]>(seedClients);
   const [documents, setDocuments] = useState<Document[]>(initial.documents);
 
@@ -536,7 +594,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [clients],
   );
 
-  const documentsQuery = useDocuments({ enabled: API_ENABLED, clientNameFor, params: { limit: 100 } });
+  const documentsQuery = useDocuments({ enabled: slicesOn, clientNameFor, params: { limit: 100 } });
 
   useEffect(() => {
     if (!API_ENABLED || documentsQuery.documents.length === 0) return;
@@ -559,13 +617,58 @@ export function AppProvider({ children }: { children: ReactNode }) {
    * no field for the matched document's id. `isMatched()` is what every screen
    * asks instead; see `lib/matching.ts`.
    */
-  const bankQuery = useBankTransactions({ enabled: API_ENABLED, clientNameFor, params: { limit: 100 } });
+  const bankQuery = useBankTransactions({ enabled: slicesOn, clientNameFor, params: { limit: 100 } });
   const refetchBank = bankQuery.refetch;
 
   useEffect(() => {
     if (!API_ENABLED || bankQuery.transactions.length === 0) return;
     setTransactions(bankQuery.transactions);
   }, [bankQuery.transactions]);
+
+  /**
+   * The businesses slice (METH Stage 6) — the hydration pattern's proof.
+   *
+   * Unlike `documents` and `transactions` it does not fill a seed array,
+   * because nothing mutates a business client-side: the provider simply
+   * selects between the server rows and the same shape derived from the
+   * seeded clients. Either way a consumer gets one list, and `slices` below
+   * says which world it came from.
+   */
+  const businessesQuery = useBusinesses({ enabled: slicesOn, params: { limit: 100 } });
+
+  const businesses = useMemo(
+    () =>
+      slicesOn && businessesQuery.businesses.length > 0
+        ? businessesQuery.businesses
+        : deriveBusinessSummaries(clients, documents),
+    [slicesOn, businessesQuery.businesses, clients, documents],
+  );
+
+  /**
+   * Where each slice's data actually came from. Recomputed every render on
+   * purpose — the inputs are the queries' own observable state, and the
+   * provider's value object is rebuilt per render anyway. Slices not wired
+   * yet are honestly 'seed' until their stage (8/10/12) points them at a
+   * query.
+   */
+  const slices: SliceStatuses = {
+    documents: sliceStatus(slicesOn, documentsQuery),
+    bankTransactions: sliceStatus(slicesOn, bankQuery),
+    businesses: sliceStatus(slicesOn, businessesQuery),
+    chases: SEED_SLICE,
+    proposals: SEED_SLICE,
+    publishes: SEED_SLICE,
+  };
+
+  /**
+   * Ends the workspace session. The cookie clear is best-effort (see
+   * `api/auth.ts`); the invalidation is what matters — /me refetches to a
+   * 401, App returns to LoginView, and the gated slices go quiet with it.
+   */
+  const logout = useCallback(async () => {
+    await apiLogout();
+    await queryClient.invalidateQueries();
+  }, []);
   const [statements, setStatements] = useState<Statement[]>(seedStatements);
   const [supplierStatements, setSupplierStatements] = useState<SupplierStatement[]>(seedSupplierStatements);
   const [expenseClaims, setExpenseClaims] = useState<ExpenseClaim[]>(seedExpenseClaims);
@@ -682,24 +785,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const [onboardingLinks, setOnboardingLinks] = useState<OnboardingLink[]>([]);
   const [businessAccounts, setBusinessAccounts] = useState<BusinessAccount[]>(() => buildBusinessAccounts(seedClients));
-  /**
-   * Everything about *where you are* comes from the address bar rather than
-   * from state, so every screen has a link, Back works, and nothing is
-   * reachable that cannot be shared. The setters below all navigate.
-   */
-  const segments = usePath();
-  const [root, first, second] = segments;
 
-  const portal: 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload' =
-    root === 'portal' ? 'business'
-      : root === 'approve' ? 'approval'
-      : root === 'register' ? 'registration'
-      // `/p/<token>`, and one letter on purpose: this address is typed into an
-      // SMS, where every character is billed and re-typed by hand when the link
-      // does not survive the client's phone.
-      : root === 'p' ? 'chase-upload'
-      : 'accountant';
-
+  // `segments`/`root`/`portal` are read at the top of the provider (the
+  // session and the API slices key off them); everything else the address
+  // carries is derived here, with the setters that navigate.
   const openApprovalRequestId = root === 'approve' ? first ?? null : null;
   const portalLinkToken = root === 'p' ? first ?? null : null;
   const portalAccountId = root === 'portal' ? first ?? null : null;
@@ -2348,6 +2437,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         documentsError:
           documentsQuery.contractError ??
           (documentsQuery.error instanceof Error ? documentsQuery.error.message : null),
+        session,
+        logout,
+        businesses,
+        slices,
         statsFor,
         onboardingLinks,
         sendOnboardingLink,

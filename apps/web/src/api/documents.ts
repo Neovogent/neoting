@@ -2,6 +2,9 @@ import { useMemo } from 'react';
 import { useListDocuments } from '@neoting/contracts/client';
 import { listDocumentsResponse } from '@neoting/contracts/zod';
 import type { DocumentSummary, ListDocumentsParams } from '@neoting/contracts/model';
+// The envelope problem and its one answer live in `envelope.ts` (METH S6);
+// this hook shipped violating it (`query.data.data`) and was fixed in METH S7.
+import { unwrapBody } from './envelope';
 import type { DocKind, Document as LocalDocument, DocStatus, SourceChannel } from '../lib/types';
 
 /**
@@ -36,35 +39,6 @@ import type { DocKind, Document as LocalDocument, DocStatus, SourceChannel } fro
 
 /** Integer pence to the pounds the local shape carries. */
 export const fromPence = (pence: number | null | undefined): number => (pence == null ? 0 : pence / 100);
-
-/**
- * ⚠ The generated response type says `{ status, data }`; the runtime value is
- * the RAW BODY.
- *
- * orval's `httpClient: 'fetch'` types every operation as a status-discriminated
- * envelope, but the configured mutator — `packages/contracts/src/http-client.ts`
- * — returns `await response.json()`, which is the body itself. The two disagree
- * and TypeScript believes the type, so a caller that trusts it reaches one
- * level too deep and hands a Zod schema the wrong object. (This hook did
- * exactly that until METH S7 — `query.data.data` — and every live inbox load
- * reported a contract error instead of rendering.)
- *
- * Unwrapped by SHAPE rather than by type, so this is correct today and still
- * correct if the mutator is ever changed to return the envelope the types
- * describe. One definition; `bank.ts` and the detail hooks import it.
- */
-export function unwrapBody(value: unknown): unknown {
-  if (
-    typeof value === 'object' &&
-    value !== null &&
-    'data' in value &&
-    'status' in value &&
-    typeof (value as { status: unknown }).status === 'number'
-  ) {
-    return (value as { data: unknown }).data;
-  }
-  return value;
-}
 
 const STATE_TO_STATUS: Record<string, DocStatus> = {
   RECEIVED: 'processing',

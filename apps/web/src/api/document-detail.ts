@@ -20,7 +20,8 @@ import { DocumentType, type UpdateCodingPayload } from '@neoting/contracts/model
 import type { QueryClient } from '@tanstack/react-query';
 import type { z } from 'zod';
 import type { ExtractedField as LocalExtractedField, LineItem as LocalLineItem } from '../lib/types';
-import { fromIsoDate, unwrapBody } from './documents';
+import { fromIsoDate } from './documents';
+import { unwrapBody } from './envelope';
 
 /**
  * Pounds back to integer pence, for the values that leave the app. Rounded,

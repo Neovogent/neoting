@@ -3,9 +3,8 @@ import { approveActionProposal, createActionProposal, reviewActionProposal, useL
 import { listBankTransactionsResponse } from '@neoting/contracts/zod';
 import type { BankTransaction as ApiBankTransaction, ListBankTransactionsParams, MatchKind as ApiMatchKind } from '@neoting/contracts/model';
 import type { BankTransaction as LocalBankTransaction, MatchKind as LocalMatchKind } from '../lib/types';
-// `unwrapBody` lived here first (METH S11) and moved to `documents.ts` when
-// METH S7 gave the same envelope problem the same answer — one definition.
-import { fromIsoDate, fromPence, unwrapBody } from './documents';
+import { fromIsoDate, fromPence } from './documents';
+import { unwrapBody } from './envelope';
 
 /**
  * The bank feed, read from the API (METH Stage 11).

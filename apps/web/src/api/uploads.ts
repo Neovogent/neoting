@@ -6,7 +6,7 @@ import { defineMessages, type IntlShape } from 'react-intl';
 import { z } from 'zod';
 import { commonActions } from '../i18n/common';
 import type { ConfirmOptions, ConfirmResult } from '../components/DynamicComponents/ConfirmProvider';
-import { unwrapBody } from './documents';
+import { unwrapBody } from './envelope';
 import { documentUploadShape, putBytes, sha256Hex } from './upload-transport';
 
 /**
