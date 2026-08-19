@@ -122,6 +122,39 @@ Credentials are never in the config: locally via `AWS_PROFILE`, in CI via the `n
 
 **Each directory is its own root module.** There is no `terraform apply` at `infra/` and one should not be invented — run them separately, account first when a change touches both.
 
+### `envs/staging/` — the demo environment, 19 Aug 2026 (METH Stage 15)
+
+Staging carries the demo adapters and the three HMAC signing keys as of #146:
+`SESSION_SECRET`, `PORTAL_LINK_SECRET` and `PORTAL_SESSION_SECRET` injected from
+the existing `/neoting/staging/auth` group, and `EXTRACTOR` / `SMS_SENDER` /
+`OTP_MODE` / `LEDGER_ADAPTER` stated as `demo` rather than left to the app's
+defaults. **`SMS_SENDER=demo` is the line between a staging chase and a real text
+message to a real phone** — it is stated on the task definition so that an
+operator reading the deployed artefact can see it, not infer it from a Zod
+schema.
+
+Two operational facts that are not visible in the config:
+
+- **Secret VALUES are hand-set and Terraform must not own them.**
+  `aws_secretsmanager_secret_version.app` carries `ignore_changes =
+  [secret_string]`, so adding a key to `local.app_secrets` documents a shape and
+  delivers nothing. Deliver with `put-secret-value` writing the **full** group
+  JSON — a partial write deletes the omitted keys — and do it **before** the
+  apply, because a task definition naming a key the secret does not hold fails
+  at task start with `ResourceInitializationError`.
+- **The apply and the stage-9 deploy race on the same push**, and the deploy
+  usually wins. The deploy renders its revision from the family's latest ACTIVE
+  revision, so a deploy that runs first ships the new code with the old
+  environment and looks entirely healthy. Re-run `check` by `workflow_dispatch`
+  after the apply, then compare the **serving** task definition — not
+  `services-stable`, not `/healthz`. That was the #90–#107 lesson and it applies
+  to environment changes exactly as it applied to image changes.
+
+Seeding a deployed environment is `docs/runbooks/staging-demo.md` §3 — a command
+override on the migrate task definition, since that family already holds the only
+credential that may `TRUNCATE`. The same runbook's §5 lists what staging still
+cannot demo: no hosted frontend, no CORS, and the email lane still fixture.
+
 ### `envs/account/` — adopted 15 Aug 2026
 
 Applied. The adoption ran as predicted: **10 imported, 0 added, 6 changed, 0 destroyed**, where five of the six changes were the provider's `default_tags` materialising on resources that carried no tags at all, and the sixth was the documented `neoting-pot-8000` `time_period_start` correction. `Project=neoting` is load-bearing for every cost figure we quote while the account is shared (D36), so those tag updates were the point, not noise.

@@ -109,6 +109,36 @@ locals {
     { name = "INGEST_QUEUE", value = "bullmq" },
     { name = "OBJECT_STORE", value = "s3" },
     { name = "IMAGE_NORMALISER", value = "sharp" },
+
+    # ------------------------------------------------------------------------
+    # The demo adapters (METH_MODE.md §4, Stage 15).
+    #
+    # Every one of these ALREADY defaults to `demo` in `config/env.ts`, and
+    # `demo` is currently the only value each enum accepts. They are stated
+    # anyway, and the redundancy is the point: a deployed task definition is
+    # the artefact an operator reads to answer "what does this environment
+    # actually do when it publishes an invoice?", and "nothing is set, so read
+    # the Zod schema" is a worse answer than four lines. The day a real adapter
+    # lands behind one of these seams, the enum grows a second value and this
+    # is where the choice is made — an absent variable would silently take it.
+    #
+    #   EXTRACTOR=demo       deterministic fixture profiles; no Textract, no
+    #                        Bedrock. Documents leave RECEIVED on staging.
+    #   SMS_SENDER=demo      writes outbox rows. NOTHING LEAVES THE ACCOUNT —
+    #                        this is the variable that stands between a staging
+    #                        chase and a real text message to a real phone.
+    #   OTP_MODE=demo        the portal accepts the fixed code and nothing else.
+    #   LEDGER_ADAPTER=demo  DemoXeroAdapter, fake refs. No client's books are
+    #                        reachable from this environment.
+    #
+    # // DEMO-MOCK: each flips to its real vendor post-demo (Textract + vision
+    # // ladder, Twilio Messaging, Twilio Verify, Xero SDK/OAuth) — a value
+    # // change here plus the adapter behind the existing seam.
+    # ------------------------------------------------------------------------
+    { name = "EXTRACTOR", value = "demo" },
+    { name = "SMS_SENDER", value = "demo" },
+    { name = "OTP_MODE", value = "demo" },
+    { name = "LEDGER_ADAPTER", value = "demo" },
   ]
 
   # ------------------------------------------------------------------------
@@ -127,6 +157,10 @@ locals {
   # TODO when secrets.tf lands (/neoting/${local.env}/<group>), add:
   #   app        DATABASE_URL for the nt_app role (see below), SESSION_SECRET,
   #              the OTP pepper (Gov §11.8)
+  #              — SESSION_SECRET and the two portal keys are DONE (METH Stage
+  #                15, below). DATABASE_URL for nt_app and the OTP pepper are
+  #                still open: nothing reads a pepper yet (OTP_MODE=demo), and
+  #                the app still connects with the migrator's URL shape.
   #   twilio     SMS sending — Gov: chase templates are a stop-and-ask change
   #   meta       WhatsApp Business
   #   xero/qbo   PLATFORM client id + secret only. Per-tenant OAuth tokens
@@ -160,6 +194,46 @@ locals {
     # Terraform-generated real value (secrets.tf), never a placeholder: a
     # guessable signing key mints forgeable upload intents.
     { name = "UPLOAD_URL_SECRET", valueFrom = "${aws_secretsmanager_secret.upload_url.arn}:secret::" },
+
+    # ------------------------------------------------------------------------
+    # The three HMAC signing keys the METH stages added, all from the `auth`
+    # group secrets.tf already creates (METH Stage 15). No IAM change is
+    # needed for these and that is not luck: `ecs_execution_app_secrets`
+    # (secrets.tf) grants the whole `aws_secretsmanager_secret.app` set, so the
+    # ResourceInitializationError trap warned about above does not apply here —
+    # it applies to a secret created OUTSIDE that map.
+    #
+    # ⚠ THE JSON KEYS BEYOND `session_secret` DO NOT EXIST UNTIL THEY ARE PUT.
+    # `aws_secretsmanager_secret_version.app` carries
+    # `ignore_changes = [secret_string]`, so adding a key to `local.app_secrets`
+    # never reaches AWS — secrets.tf says so at length. The two portal keys are
+    # delivered out of band with `put-secret-value` writing the FULL group JSON,
+    # and a task whose `secrets` entry names a key the secret does not hold
+    # fails at start with ResourceInitializationError, not at request time.
+    # Order therefore matters: put the value, then apply. The runbook
+    # (docs/runbooks/staging-demo-seed.md §1) is the procedure.
+    #
+    # Why these are secrets rather than `environment` values, given that
+    # `env.ts` gives all three an empty default and fails CLOSED: an empty
+    # default means the endpoints refuse to sign, which is the safe state; a
+    # PLAINTEXT value in a task definition would be a §11.5 violation and
+    # readable by anything that can call DescribeTaskDefinition. Fail-closed is
+    # the fallback, not the design.
+    #
+    #   SESSION_SECRET         signs the `nt_session` cookie (Stage 1). Without
+    #                          it every scoped endpoint on staging 401s, which
+    #                          is the state staging has been in since #84 set
+    #                          AUTH_MODE=session with no resolver behind it.
+    #   PORTAL_LINK_SECRET     signs the 24 h chase portal link (Stage 8).
+    #   PORTAL_SESSION_SECRET  signs the post-OTP portal bearer (Stage 9).
+    #                          Deliberately a second key — see env.ts.
+    #
+    # Rotating session_secret logs every session out. Staging: fine. The
+    # ROTATION banner in secrets.tf is where that trap is written down.
+    # ------------------------------------------------------------------------
+    { name = "SESSION_SECRET", valueFrom = "${aws_secretsmanager_secret.app["auth"].arn}:session_secret::" },
+    { name = "PORTAL_LINK_SECRET", valueFrom = "${aws_secretsmanager_secret.app["auth"].arn}:portal_link_secret::" },
+    { name = "PORTAL_SESSION_SECRET", valueFrom = "${aws_secretsmanager_secret.app["auth"].arn}:portal_session_secret::" },
   ]
 
   # ⚠ THE RDS MASTER CREDENTIAL GOES TO THE MIGRATION TASK AND NOWHERE ELSE.
