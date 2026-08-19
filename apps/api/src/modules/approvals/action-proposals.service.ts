@@ -1,6 +1,6 @@
 import { HttpStatus, Logger } from '@nestjs/common';
 
-import type { ActionProposal, ErrorCode, ProposalKind, ProposalReview } from '@neoting/contracts/model';
+import type { ActionProposal, ErrorCode, ProposalKind, ProposalReview, PublishBatchPayload } from '@neoting/contracts/model';
 import type { ActionProposal as ActionProposalRow, Prisma } from '@prisma/client';
 
 import type { PrismaClient } from '../../common/db/prisma.js';
@@ -10,6 +10,7 @@ import { fingerprint, type IdempotencyStore } from '../../common/idempotency/ide
 import { AppException } from '../../common/problem/problem.js';
 import { currentTraceId } from '../../common/trace/trace-context.js';
 import {
+  computePublishBatchPayload,
   type DedupeDetection,
   type ExecutionInput,
   type ExecutionResult,
@@ -118,15 +119,43 @@ export class ActionProposalsService {
           );
         }
       }
+      // METH S10, the contract's promise on `PublishBatchPayload.preview`:
+      // the figures Read-review renders are computed by the SERVER at proposal
+      // time, over the same scoped read the executor re-runs at approve —
+      // whatever preview the caller sent is discarded. An item short of the
+      // publish minimum refuses creation with `NT-PUB-001` rather than
+      // waiting for approval to fail.
+      let payload = request.payload;
+      if (request.kind === 'publish.batch') {
+        try {
+          // The controller boundary-parsed the body against the kind's own
+          // generated member schema, so the shape is already proven.
+          payload = (await computePublishBatchPayload(
+            db,
+            this.publishing,
+            request.payload as unknown as PublishBatchPayload,
+          )) as unknown as Record<string, unknown>;
+        } catch (error) {
+          if (error instanceof ProposalExecutionRefused) {
+            throw new AppException(
+              error.code ?? 'NT-PRP-006',
+              HttpStatus.UNPROCESSABLE_ENTITY,
+              'Proposal is not executable',
+              error.message,
+            );
+          }
+          throw error;
+        }
+      }
       return db.actionProposal.create({
         data: {
           businessId,
           practiceId,
           kind: request.kind,
-          payload: request.payload as Prisma.InputJsonObject,
+          payload: payload as Prisma.InputJsonObject,
           // SHA-256 over the canonical payload (Governance §10.4). The guard
           // trigger refuses any later change to it.
-          payloadHash: canonicalHash(request.payload),
+          payloadHash: canonicalHash(payload),
           state: 'CREATED',
           createdByUserId: ctx.actorId,
           expiresAt: new Date(Date.now() + PROPOSAL_TTL_MS),

@@ -5,6 +5,7 @@ import type { PublishBatchPayload } from '@neoting/contracts/model';
 
 import { ScopeContextSchema } from '../../../common/db/scope-context.js';
 import { scopedDb } from '../../../common/db/scoped-db.js';
+import { AppException } from '../../../common/problem/problem.js';
 import { InMemoryIdempotencyStore } from '../../../common/idempotency/idempotency-store.js';
 import { ActionProposalsService } from '../../approvals/action-proposals.service.js';
 import { DemoXeroAdapter, demoExternalRef } from '../../publishing/demo-xero-adapter.js';
@@ -395,5 +396,70 @@ describe.skipIf(!enabled)('publish.batch against a real database', () => {
     expect(row?.actionProposalId).toBe(created.id);
     const document = await owner.document.findUnique({ where: { id: 's10_doc_flow' } });
     expect(document?.state).toBe('ARCHIVED');
+  });
+
+  test('create computes the preview SERVER-side — a caller-sent preview is discarded, never stored', async () => {
+    await seedDocument('s10_doc_svr', { supplierName: 'Adobe Systems', totalPence: 6_199, taxPence: 1_033 });
+    const service = new ActionProposalsService(
+      app,
+      buildExecutorRegistry({ publishing: PUBLISHING }),
+      { detect: async () => ({ findings: [], candidatesTruncated: false }) },
+      PUBLISHING,
+      new InMemoryIdempotencyStore(),
+    );
+
+    // A payload that lies about the figures. If create stored it verbatim, a
+    // human would review 0.01 gross over 9 items — the contract's preview
+    // promise exists to make this impossible.
+    const created = await service.create(
+      STAFF_A,
+      {
+        kind: 'publish.batch',
+        businessId: BIZ,
+        payload: { documentIds: ['s10_doc_svr'], preview: { itemCount: 9, grossPence: 1, vatPence: 0 } },
+      },
+      's10-key-svr-create',
+    );
+
+    const stored = await owner.actionProposal.findUnique({ where: { id: created.id } });
+    const storedPreview = (stored?.payload as { preview: PublishBatchPayload['preview'] }).preview;
+    expect(storedPreview).toEqual(await previewOf(['s10_doc_svr']));
+    expect(storedPreview.grossPence).toBe(6_199);
+
+    // And what Read review renders is those server figures, in pounds.
+    const review = await service.review(STAFF_A, created.id, 's10-key-svr-review');
+    expect(review.renderedSummary.title).toContain('61.99');
+  });
+
+  test('an item short of the minimum refuses at CREATION with NT-PUB-001 — no proposal row is stored', async () => {
+    await seedDocument('s10_doc_nocat_create', { categoryCode: null });
+    const service = new ActionProposalsService(
+      app,
+      buildExecutorRegistry({ publishing: PUBLISHING }),
+      { detect: async () => ({ findings: [], candidatesTruncated: false }) },
+      PUBLISHING,
+      new InMemoryIdempotencyStore(),
+    );
+
+    const error = await service
+      .create(
+        STAFF_A,
+        {
+          kind: 'publish.batch',
+          businessId: BIZ,
+          payload: { documentIds: ['s10_doc_nocat_create'], preview: { itemCount: 1, grossPence: 97_620, vatPence: 16_270 } },
+        },
+        's10-key-nocat-create',
+      )
+      .then(() => null)
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AppException);
+    expect((error as AppException).code).toBe('NT-PUB-001');
+    expect((error as AppException).publicDetail).toContain('s10_doc_nocat_create');
+    expect((error as AppException).publicDetail).toContain('category');
+
+    const rows = await owner.actionProposal.findMany({ where: { kind: 'publish.batch', businessId: BIZ } });
+    expect(rows.some((row) => JSON.stringify(row.payload).includes('s10_doc_nocat_create'))).toBe(false);
   });
 });

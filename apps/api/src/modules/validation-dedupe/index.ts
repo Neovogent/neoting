@@ -39,7 +39,7 @@
  *    unpublishable in the batch.
  */
 export { buildExecutorRegistry, type ExecutorRegistryDeps } from './proposals/registry.js';
-export { type PublishGateway } from './proposals/publish-batch.js';
+export { computePublishBatchPayload, type PublishGateway } from './proposals/publish-batch.js';
 export { runPublishFollowUp } from './proposals/publish-follow-up.js';
 export {
   type ExecutionInput,

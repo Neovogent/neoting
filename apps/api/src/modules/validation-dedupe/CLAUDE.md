@@ -213,6 +213,11 @@ structural) and decides nothing about whether it may happen.
     VENDOR failure is per item — 39 of 40 publish and item 12 lands on the
     Rejected/Failed surface with a reason — because by then the batch is
     approved and committed, and un-approving it is not a thing that exists.
+  - **The preview is the SERVER's number, twice.** At creation the engine calls
+    `computePublishBatchPayload` (exported here) and stores ITS preview in the
+    payload — a caller-sent figure is discarded, and an item short of the
+    minimum refuses creation with `NT-PUB-001` (the contract: "refusing at
+    proposal time beats publishing half-coded books").
   - **The reviewed figures are re-checked.** The payload's server-computed
     preview is what a human approved; if the live totals no longer agree, the
     batch refuses. `NT-PRP-004` cannot catch this — review is idempotent and

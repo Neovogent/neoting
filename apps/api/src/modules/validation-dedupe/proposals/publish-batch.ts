@@ -111,6 +111,38 @@ const DOCUMENT_SELECT = {
   taxPence: true,
 } as const;
 
+/**
+ * The CREATION half of the contract's preview promise: "`preview` is computed
+ * by the server at proposal time … and is exactly what Read review renders."
+ * The engine calls this in `create()` before storing the payload, so the
+ * figures a human reviews are the server's — whatever a caller sent in
+ * `preview` is discarded and replaced. An item short of the publish minimum
+ * refuses HERE with `NT-PUB-001` ("refusing at proposal time beats publishing
+ * half-coded books"); the executor above re-runs the same check at approve
+ * time, which is what catches facts that moved between review and approval.
+ */
+export async function computePublishBatchPayload(
+  db: ScopedClient,
+  publishing: PublishGateway,
+  payload: PublishBatchPayload,
+): Promise<PublishBatchPayload> {
+  const documents = await db.document.findMany({
+    where: { id: { in: [...payload.documentIds] } },
+    select: DOCUMENT_SELECT,
+  });
+  // Same refusal for unreachable, absent and named-twice (404-never-403): a
+  // preview over a partial batch would show a human smaller figures than the
+  // batch claims to contain.
+  if (documents.length !== payload.documentIds.length) {
+    throw new ProposalExecutionRefused('publish.batch', 'one or more documents are not reachable');
+  }
+  const outcome = publishing.previewPublishBatch(documents);
+  if (!outcome.ok) {
+    throw new ProposalExecutionRefused('publish.batch', minimumRefusal(outcome.refusals), PUBLISH_MINIMUM_CODE);
+  }
+  return { ...payload, preview: outcome.preview };
+}
+
 export function createPublishBatchExecutor(publishing: PublishGateway): ProposalExecutor<'publish.batch', PublishBatchPayload> {
   return {
     kind: 'publish.batch',
