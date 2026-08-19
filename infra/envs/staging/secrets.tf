@@ -126,11 +126,26 @@ locals {
     # secret that every plan diff and every state reader can see, and it can
     # then only be rotated by an apply — which is the wrong blast radius for a
     # value that logs every user out when it changes.
+    #
+    # METH Stage 15 added the two portal keys. They are HMAC keys of exactly
+    # the same class as session_secret — app-generated, no vendor, no rotation
+    # ceremony — so they belong in this group rather than in one of their own:
+    # the unit a credential rotates in is "our signing keys", and rotating them
+    # together is the honest ceremony.
+    #
+    # ⚠ ADDING THEM HERE DID NOT DELIVER THEM. `ignore_changes = [secret_string]`
+    # on the version resource below covers the whole attribute, so this map is
+    # the documented SHAPE and nothing more. All four values are set out of band
+    # with a single put-secret-value writing the full JSON — partial writes
+    # DELETE the omitted keys, and a task definition naming a key the secret does
+    # not hold fails at task start with ResourceInitializationError.
     auth = {
-      description = "Session signing secret and OTP pepper - portal OTP path (SoT Stage 5)"
+      description = "App HMAC signing keys - session cookie, portal link, portal bearer - and the OTP pepper"
       values = {
-        session_secret = "PLACEHOLDER_SESSION_SECRET"
-        otp_pepper     = "PLACEHOLDER_OTP_PEPPER"
+        session_secret        = "PLACEHOLDER_SESSION_SECRET"
+        otp_pepper            = "PLACEHOLDER_OTP_PEPPER"
+        portal_link_secret    = "PLACEHOLDER_PORTAL_LINK_SECRET"
+        portal_session_secret = "PLACEHOLDER_PORTAL_SESSION_SECRET"
       }
     }
 
