@@ -86,7 +86,10 @@ async function main() {
   await prisma.practice.create({
     data: {
       id: 'prac_ledgerline',
-      name: 'Ledgerline Accountants',
+      // METH Stage 5 (§7): the demo practice is "Neovogent Accounting". The id
+      // stays prac_ledgerline — tests, demo scripts and the auth memberships all
+      // reference it by id, only the display name changes.
+      name: 'Neovogent Accounting',
       countryCode: 'GB',
       baseCurrency: 'GBP',
       vatRegistered: true,
@@ -106,6 +109,13 @@ async function main() {
     data: [
       { id: 'usr_priya', email: 'priya@ledgerline.test', firstName: 'Priya', lastName: 'Raman', emailVerified: true, totpEnabledAt: daysAgo(120) },
       { id: 'usr_tom', email: 'tom@ledgerline.test', firstName: 'Tom', lastName: 'Whitfield', emailVerified: true },
+
+      // METH Stage 5 (§7) demo login users. Ids and emails MUST match
+      // apps/api/src/modules/auth-tenancy/demo-credentials.ts exactly — the
+      // login mints a cookie for these userIds, and a mismatch resolves to 401
+      // on every request (the coordination contract in that file's header).
+      { id: 'usr_shakib_demo', email: 'shakib@neoting.test', firstName: 'Shakib', lastName: 'Rahman', emailVerified: true },
+      { id: 'usr_abdullah_demo', email: 'abdullah@neoting.test', firstName: 'Abdullah', lastName: 'Karim', emailVerified: true },
       { id: 'usr_dee', email: 'dee@americanburger.test', firstName: 'Dee', lastName: 'Okafor', emailVerified: true },
       { id: 'usr_marco', email: 'marco@cosmorestaurants.test', firstName: 'Marco', lastName: 'Silva', emailVerified: true },
 
@@ -178,6 +188,11 @@ async function main() {
     data: [
       { id: 'mem_priya', userId: 'usr_priya', practiceId: 'prac_ledgerline', role: 'PRACTICE_ADMIN', isOwner: true, permissions: ['publish', 'approve', 'chase', 'connect_bank', 'export', 'delete'] },
       { id: 'mem_tom', userId: 'usr_tom', practiceId: 'prac_ledgerline', role: 'PRACTICE_STANDARD', permissions: ['chase'] },
+
+      // METH Stage 5 (§7) demo login memberships. Practice-WIDE (no businessId)
+      // so pickActingMembership resolves them to the full practice scope.
+      { id: 'mem_shakib_demo', userId: 'usr_shakib_demo', practiceId: 'prac_ledgerline', role: 'PRACTICE_ADMIN', permissions: ['publish', 'approve', 'chase', 'connect_bank', 'export'] },
+      { id: 'mem_abdullah_demo', userId: 'usr_abdullah_demo', practiceId: 'prac_ledgerline', role: 'PRACTICE_STANDARD', permissions: ['chase'] },
       { id: 'mem_tom_burger', userId: 'usr_tom', practiceId: 'prac_ledgerline', businessId: 'biz_burger', role: 'PRACTICE_STANDARD', permissions: ['chase', 'publish'] },
       { id: 'mem_dee', userId: 'usr_dee', businessId: 'biz_burger', role: 'BUSINESS_ADMIN', permissions: ['export'] },
       { id: 'mem_marco', userId: 'usr_marco', businessId: 'biz_cosmo', role: 'BUSINESS_ADMIN' },
@@ -194,7 +209,14 @@ async function main() {
   // without ever being provisioned as users (SoT §3.3).
   await prisma.contact.createMany({
     data: [
-      { id: 'con_dee', businessId: 'biz_burger', userId: 'usr_dee', firstName: 'Dee', lastName: 'Okafor', role: 'Owner', mobileE164: '+447700900123', mobileVerifiedAt: daysAgo(90), email: 'dee@americanburger.test', isPrimary: true },
+      { id: 'con_dee', businessId: 'biz_burger', userId: 'usr_dee', firstName: 'Dee', lastName: 'Okafor', role: 'Owner', mobileE164: '+447700900123', mobileVerifiedAt: daysAgo(90), email: 'dee@americanburger.test', isPrimary: false },
+
+      // METH Stage 5 (§7): the demo routing identity for American Burger. The
+      // email/WhatsApp beats (owner@americanburger.test / +447700900001) route
+      // to biz_burger via sender-identity matching against this contact; the
+      // unregistered sender stranger@example.test has NO contact, so it lands in
+      // the Unrouted queue. isPrimary here (con_dee demoted to keep one primary).
+      { id: 'con_owner_burger', businessId: 'biz_burger', firstName: 'Owner', lastName: 'American Burger', role: 'Owner', mobileE164: '+447700900001', mobileVerifiedAt: daysAgo(30), email: 'owner@americanburger.test', isPrimary: true, receivesChases: true },
       { id: 'con_sam', businessId: 'biz_burger', firstName: 'Sam', lastName: 'Boyd', role: 'Kitchen manager', mobileE164: '+447700900456', mobileVerifiedAt: daysAgo(40) },
       { id: 'con_marco', businessId: 'biz_cosmo', userId: 'usr_marco', firstName: 'Marco', lastName: 'Silva', role: 'Director', mobileE164: '+447700900789', mobileVerifiedAt: daysAgo(60), isPrimary: true },
       { id: 'con_ruth', businessId: 'biz_dental', firstName: 'Ruth', lastName: 'Ellery', role: 'Practice manager', mobileE164: '+447700900321', mobileVerifiedAt: daysAgo(15), isPrimary: true },
@@ -452,14 +474,27 @@ async function main() {
   // receipt that cannot exist (SoT Stage 7).
   const suppressed = ['STRIPE PAYOUT', 'SERVICE CHARGE', 'OD INTEREST', 'SUMUP', 'WORLDPAY'];
 
-  const txSpecs: Array<{ business: string; desc: string; pounds: number; daysOld: number; matchDoc?: string; state: 'UNMATCHED' | 'CONFIRMED' | 'SUGGESTED' | 'EXCLUDED' }> = [
+  // METH Stage 5 (§7 / Stage 4 profiles): the Currys and Google chase targets
+  // carry ABSOLUTE booked dates (not relative), because Stage 4's extractor
+  // profiles and the demo script quote them verbatim — Currys £1,299.00 on
+  // 9 Aug 2026, Google Ads £600.00 on 5 Aug 2026. `bookedAtAbs` overrides the
+  // relative `daysOld` for exactly those rows. Everything else stays relative
+  // so the data never looks stale.
+  const AUG_09_2026 = new Date('2026-08-09T00:00:00.000Z');
+  const AUG_05_2026 = new Date('2026-08-05T00:00:00.000Z');
+  const txSpecs: Array<{ business: string; desc: string; pounds: number; daysOld: number; matchDoc?: string; state: 'UNMATCHED' | 'CONFIRMED' | 'SUGGESTED' | 'EXCLUDED'; merchant?: string; bookedAtAbs?: Date }> = [
     { business: 'biz_burger', desc: 'BIDFOOD LTD', pounds: -1284.5, daysOld: 2, matchDoc: 'doc_001', state: 'CONFIRMED' },
     { business: 'biz_burger', desc: 'BIDFOOD LTD', pounds: -976.2, daysOld: 9, matchDoc: 'doc_002', state: 'CONFIRMED' },
-    { business: 'biz_burger', desc: 'CURRYS 0842', pounds: -1299.0, daysOld: 3, state: 'UNMATCHED' },
+    // Chase target 1 — Currys receipt, unmatched. Aligned to Stage 4 (£1,299 / 9 Aug 2026).
+    { business: 'biz_burger', desc: 'CURRYS', pounds: -1299.0, daysOld: 9, state: 'UNMATCHED', merchant: 'Currys', bookedAtAbs: AUG_09_2026 },
+    // Chase target 2 — Google Ads invoice, unmatched, on biz_burger (§7 moved it
+    // here from Cosmo). Aligned to Stage 4 (£600 / 5 Aug 2026).
+    { business: 'biz_burger', desc: 'GOOGLE ADS', pounds: -600.0, daysOld: 13, state: 'UNMATCHED', merchant: 'Google', bookedAtAbs: AUG_05_2026 },
     { business: 'biz_burger', desc: 'ADOBE SYSTEMS', pounds: -61.99, daysOld: 5, matchDoc: 'doc_005', state: 'CONFIRMED' },
     { business: 'biz_burger', desc: 'AMZNMKTPLACE', pounds: -156.3, daysOld: 4, state: 'SUGGESTED' },
     { business: 'biz_burger', desc: 'SHELL BRISTOL', pounds: -78.4, daysOld: 1, state: 'UNMATCHED' },
     { business: 'biz_burger', desc: 'BRITISH GAS', pounds: -412.66, daysOld: 7, state: 'UNMATCHED' },
+    // Suppression-descriptor lines (§7 / Stage 8): unmatched but never chased.
     { business: 'biz_burger', desc: 'STRIPE PAYOUT', pounds: 2841.55, daysOld: 6, state: 'UNMATCHED' },
     { business: 'biz_burger', desc: 'SERVICE CHARGE', pounds: -18.0, daysOld: 6, state: 'UNMATCHED' },
     { business: 'biz_burger', desc: 'JUST EAT PAYOUT', pounds: 2841.55, daysOld: 6, matchDoc: 'doc_010', state: 'SUGGESTED' },
@@ -467,7 +502,6 @@ async function main() {
     { business: 'biz_burger', desc: 'WOLSELEY UK', pounds: -430.1, daysOld: 1, state: 'UNMATCHED' },
 
     { business: 'biz_cosmo', desc: 'BRAKES BROS', pounds: -2140.75, daysOld: 4, matchDoc: 'doc_017', state: 'CONFIRMED' },
-    { business: 'biz_cosmo', desc: 'GOOGLE ADS', pounds: -600.0, daysOld: 8, state: 'UNMATCHED' },
     { business: 'biz_cosmo', desc: 'BOOKER LTD', pounds: -733.2, daysOld: 10, matchDoc: 'doc_020', state: 'CONFIRMED' },
     { business: 'biz_cosmo', desc: 'THAMES WATER', pounds: -188.9, daysOld: 12, state: 'UNMATCHED' },
     { business: 'biz_cosmo', desc: 'NISBETS PLC', pounds: -2480.0, daysOld: 2, state: 'UNMATCHED' },
@@ -491,11 +525,11 @@ async function main() {
         businessId: t.business,
         accountId: `acc_${t.business}`,
         providerTransactionId: `tl_${id}`,
-        bookedAt: daysAgo(t.daysOld),
+        bookedAt: t.bookedAtAbs ?? daysAgo(t.daysOld),
         amountPence: pounds(t.pounds),
         currency: 'GBP',
         descriptionRaw: t.desc,
-        merchantName: t.desc.split(' ')[0] ?? null,
+        merchantName: t.merchant ?? t.desc.split(' ')[0] ?? null,
         classification: t.pounds > 0 ? 'income' : 'expense',
         matchState: t.state,
         chaseSuppressed: suppressed.some((s) => t.desc.includes(s)),
@@ -531,7 +565,10 @@ async function main() {
       transactionId: 'txn_003',
       recipientContactId: 'con_dee',
       state: 'SENT',
-      itemRefs: [{ transactionId: 'txn_003', descriptor: 'CURRYS 0842', amountPence: pounds(1299), date: daysAgo(3).toISOString().slice(0, 10) }],
+      // Descriptor + date pinned to txn_003 (the Currys bank line: 'CURRYS', 9 Aug
+      // 2026) so the chase card agrees with the transaction it chases and with the
+      // §7 / Stage 4 script ('Currys £1,299.00 on 9 Aug').
+      itemRefs: [{ transactionId: 'txn_003', descriptor: 'CURRYS', amountPence: pounds(1299), date: '2026-08-09' }],
       schedule: { firstAfterHours: 48, reminderDays: 3, secondDays: 7, escalateDays: 10 },
       firstSentAt: daysAgo(2),
       lastSentAt: daysAgo(2),
@@ -539,7 +576,7 @@ async function main() {
         create: {
           id: 'msg_001',
           channel: 'sms',
-          body: 'American Burger Accounts: we are missing the receipt for Currys £1,299.00 on ' + daysAgo(3).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + '. Upload securely: https://neoting.neovogent.com/p/xxxx',
+          body: 'American Burger Accounts: we are missing the receipt for Currys £1,299.00 on 9 Aug. Upload securely: https://neoting.neovogent.com/p/xxxx',
           recipientE164: '+447700900123',
           deliveryState: 'delivered',
           sentAt: daysAgo(2),
@@ -633,7 +670,11 @@ async function main() {
 
   await prisma.rule.createMany({
     data: [
-      { id: 'rul_001', businessId: 'biz_burger', tier: 'SUPPLIER_CUSTOMER', scopeKey: 'Bidfood', sets: { categoryCode: 'Cost of Sales — Food', taxRate: 'standard', autoPublish: true }, createdVia: 'chat', createdByUserId: 'usr_priya', actionProposalId: 'prop_publish_burger' },
+      // METH Stage 5 (§7): NO Bidfood supplier rule may be seeded — Stage 13
+      // creates the Bidfood → Cost of Sales Food rule LIVE in chat (the wow beat),
+      // and a pre-seeded one would steal that moment. Retargeted to Coca-Cola
+      // (an existing biz_burger supplier) so the demo still shows a real rule.
+      { id: 'rul_001', businessId: 'biz_burger', tier: 'SUPPLIER_CUSTOMER', scopeKey: 'Coca-Cola', sets: { categoryCode: 'Cost of Sales — Drink', taxRate: 'standard', autoPublish: true }, createdVia: 'chat', createdByUserId: 'usr_priya', actionProposalId: 'prop_publish_burger' },
       { id: 'rul_002', businessId: 'biz_burger', tier: 'SUPPLIER_CUSTOMER', scopeKey: 'Amazon', conditions: { totalPenceGreaterThan: pounds(500) }, sets: { flagForReview: 'fixed-asset review' }, createdVia: 'chat' },
       { id: 'rul_003', businessId: 'biz_burger', tier: 'SUPPLIER_CUSTOMER', scopeKey: 'Amazon', sets: { categoryCode: 'Office Supplies' }, createdVia: 'correction' },
       { id: 'rul_004', businessId: 'biz_cosmo', tier: 'SUPPLIER_CUSTOMER', scopeKey: 'Brakes', sets: { categoryCode: 'Cost of Sales — Food', taxRate: 'standard' } },
@@ -668,6 +709,34 @@ async function main() {
       { id: 'int_burger_xero', businessId: 'biz_burger', kind: 'XERO', orgRef: 'xero-demo-org-1', health: 'healthy', lastSyncAt: daysAgo(1), tokenExpiresAt: daysAhead(45) },
       { id: 'int_cosmo_qbo', businessId: 'biz_cosmo', kind: 'QUICKBOOKS', orgRef: 'qbo-sandbox-1', health: 'token_expiring', lastSyncAt: daysAgo(3), tokenExpiresAt: daysAhead(4) },
     ],
+  });
+
+  // METH Stage 5 (§7): the "synced" chart of accounts for American Burger's Xero
+  // integration, so category dropdowns show the client's real CoA (SoT Stage 10).
+  // These are the exact categories the Stage 4 extractor profiles / suggestions
+  // code against. The ReferenceSync model holds an arbitrary list in its `payload`
+  // Json (listKind + payload shape) — no schema change needed for the category set.
+  // DEMO-MOCK: real Xero reference-list sync engine (Stage 10 / post-demo) replaces this.
+  await prisma.referenceSync.create({
+    data: {
+      id: 'refsync_burger_coa',
+      integrationId: 'int_burger_xero',
+      listKind: 'chart_of_accounts',
+      syncedAt: daysAgo(1),
+      payload: {
+        provider: 'XERO',
+        categories: [
+          { code: 'OFFICE_EQUIPMENT', name: 'Office Equipment', taxType: 'standard' },
+          { code: 'ADVERTISING', name: 'Advertising', taxType: 'standard' },
+          { code: 'SOFTWARE', name: 'Software', taxType: 'standard' },
+          { code: 'MOTOR_FUEL', name: 'Motor Fuel', taxType: 'standard' },
+          { code: 'SALES_INCOME', name: 'Sales Income', taxType: 'standard' },
+          { code: 'GENERAL_EXPENSES', name: 'General Expenses', taxType: 'standard' },
+          { code: 'CAPITAL_EQUIPMENT', name: 'Capital Equipment', taxType: 'standard' },
+          { code: 'COST_OF_SALES_FOOD', name: 'Cost of Sales — Food', taxType: 'standard' },
+        ],
+      },
+    },
   });
 
   for (const [i, d] of ['doc_002', 'doc_005', 'doc_009', 'doc_011', 'doc_020', 'doc_025', 'doc_028', 'doc_032'].entries()) {

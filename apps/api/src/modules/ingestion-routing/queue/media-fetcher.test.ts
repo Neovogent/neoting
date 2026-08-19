@@ -2,11 +2,13 @@ import { expect, test } from 'vitest';
 
 import { CHANNEL_POLICY } from '../lib/sanitisation/index.js';
 import {
+  DEMO_WHATSAPP_MEDIA_ID,
   FixtureMediaFetcher,
   isRetryable,
   MAX_MEDIA_BYTES,
   MediaFetchError,
   type MediaFetchFailure,
+  seedDemoMedia,
   WHATSAPP_MEDIA_CHANNEL,
 } from './media-fetcher.js';
 
@@ -72,6 +74,19 @@ test('failWith makes exactly that id throw exactly that error', async () => {
   const boom = new MediaFetchError('upstream', 'Meta Graph returned 503', 503);
   fetcher.failWith('media-3', boom);
   await expect(fetcher.fetch('media-3')).rejects.toBe(boom);
+});
+
+test('seedDemoMedia resolves the demo:whatsapp id to real PNG bytes', async () => {
+  // The demo:whatsapp driver (METH Stage 5) posts a webhook naming this id. With
+  // nothing seeded it would fail not_found and dead-letter with no document — the
+  // opposite of the beat. seedDemoMedia is the fixture-only fix.
+  const fetcher = new FixtureMediaFetcher();
+  seedDemoMedia(fetcher);
+
+  const media = await fetcher.fetch(DEMO_WHATSAPP_MEDIA_ID);
+  expect(media.bytes.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  expect(media.declaredMimeType).toBe('image/png');
+  expect(media.declaredFilename).toBe('currys-receipt.png');
 });
 
 test('an unseeded id fails as not_found and NEVER fabricates bytes', async () => {

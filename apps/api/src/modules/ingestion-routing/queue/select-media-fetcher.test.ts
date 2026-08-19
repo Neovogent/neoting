@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import type { Env } from '../../../config/env.js';
-import { FixtureMediaFetcher, type MediaFetcher } from './media-fetcher.js';
+import { DEMO_WHATSAPP_MEDIA_ID, FixtureMediaFetcher, type MediaFetcher } from './media-fetcher.js';
 import { selectMediaFetcher } from './select-media-fetcher.js';
 
 function env(overrides: Partial<Env> = {}): Env {
@@ -53,6 +53,15 @@ test('fixture mode returns the in-memory fetcher and never constructs a graph cl
   expect(called).toBe(false);
 });
 
+test('fixture mode pre-seeds the demo:whatsapp media id so the demo lands a document', async () => {
+  // DEMO-MOCK path: without the seed the demo webhook's media id throws not_found
+  // and the job dead-letters with no document. selectMediaFetcher seeds it on the
+  // fixture branch only.
+  const fetcher = selectMediaFetcher(env({ MEDIA_FETCH: 'fixture' }));
+  const media = await fetcher.fetch(DEMO_WHATSAPP_MEDIA_ID);
+  expect(media.bytes.subarray(0, 4)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+});
+
 test('graph mode builds the fetcher from the seam exactly once — no socket in the test', () => {
   let calls = 0;
   const fetcher = selectMediaFetcher(env({ MEDIA_FETCH: 'graph', META_MEDIA_ACCESS_TOKEN: 'tok_live' }), () => {
@@ -61,6 +70,14 @@ test('graph mode builds the fetcher from the seam exactly once — no socket in 
   });
   expect(fetcher).toBe(stub);
   expect(calls).toBe(1);
+});
+
+test('graph mode is untouched by the demo seed — the demo id does not resolve there', async () => {
+  // The graph fetcher must never carry a fabricated demo id. Proves the seed is
+  // strictly fixture-scoped, so no real Meta media id path is affected.
+  const fetcher = selectMediaFetcher(env({ MEDIA_FETCH: 'graph', META_MEDIA_ACCESS_TOKEN: 'tok_live' }), () => stub);
+  const media = await fetcher.fetch(DEMO_WHATSAPP_MEDIA_ID);
+  expect(media.bytes.byteLength).toBe(0); // the stub, not seeded demo bytes
 });
 
 test('graph mode hands the seam the resolved env, so the token comes from config', () => {
