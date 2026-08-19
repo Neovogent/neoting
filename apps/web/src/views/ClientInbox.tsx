@@ -6,7 +6,7 @@ import {
 import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import { commonActions, commonLabels } from '../i18n/common';
 import { useAppContext } from '../context/AppContext';
-import { runWorkspaceDrop, serverBusinessIdFor } from '../api/uploads';
+import { runWorkspaceDrop } from '../api/uploads';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { SubTabs } from '../components/DynamicComponents/SubTabs';
 import { DuplicateModal } from '../components/DynamicComponents/DuplicateModal';
@@ -355,6 +355,8 @@ const m = defineMessages({
     id: 'analytics.clientInbox.footerProcessing',
     defaultMessage: '{count} extracting · ETA shown per item',
   },
+  documentsLoading: { id: 'analytics.clientInbox.documentsLoading', defaultMessage: 'Loading documents…' },
+  documentsError: { id: 'analytics.clientInbox.documentsError', defaultMessage: 'Could not load documents — {error}' },
 });
 
 export function ClientInbox({ client, kind, onPreview }: {
@@ -364,7 +366,8 @@ export function ClientInbox({ client, kind, onPreview }: {
 }) {
   const {
     documents, duplicates, mandatoryFields, ingest, sheetImports, updateDocumentStatus, retryDocument,
-    deleteDocuments, startConversation, statsFor, documentsSource,
+    deleteDocuments, startConversation, statsFor, documentsSource, documentsLoading, documentsError,
+    isSameClient, serverClientIdFor,
   } = useAppContext();
 
   const confirm = useConfirm();
@@ -387,7 +390,9 @@ export function ClientInbox({ client, kind, onPreview }: {
   /** The upload being read on screen. */
   const [analysing, setAnalysing] = useState<{ docIds: string[]; importIds: string[] } | null>(null);
 
-  const mine = documents.filter((d) => d.clientId === client.id && d.kind === kind);
+  // Tolerant of both id worlds (METH S14 bridge): server rows carry opaque
+  // business ids, the opened client still keys by seed id.
+  const mine = documents.filter((d) => isSameClient(d.clientId, client.id) && d.kind === kind);
   const counts = Object.fromEntries(
     STATUSES.map((st) => [st, mine.filter((d) => d.status === st).length]),
   ) as Record<Status, number>;
@@ -460,7 +465,7 @@ export function ClientInbox({ client, kind, onPreview }: {
       // pipeline move it (the live documents query polls); the analysis is the
       // server's and arrives as extraction rows, not a synthetic panel.
       setStatus('processing');
-      void runWorkspaceDrop(intl, confirm, serverBusinessIdFor(client.id), Array.from(files));
+      void runWorkspaceDrop(intl, confirm, serverClientIdFor(client.id), Array.from(files));
       return;
     }
     const result = ingest(
@@ -686,6 +691,16 @@ export function ClientInbox({ client, kind, onPreview }: {
   const nextStep = (
     d: Document,
   ): { label: string; icon: typeof CheckCircle; run: () => void; blocked?: string } | null => {
+    // Live, the only universal next step is opening the document — every
+    // local flip below reverts under the poll; corrections go through a
+    // Review → Approve proposal and publishing through the workspace
+    // (METH S14 sweep).
+    if (documentsSource === 'api') {
+      if (d.status === 'review') {
+        return { label: intl.formatMessage(m.stepFix), icon: PencilLine, run: () => onPreview(d) };
+      }
+      return null;
+    }
     if (d.status === 'review') {
       // Ready claims every check has passed. A document that cannot make that
       // claim is not offered the move at all — it is offered the fix, because
@@ -882,7 +897,12 @@ export function ClientInbox({ client, kind, onPreview }: {
 
   /* ── bulk actions, per status ───────────────────────────────────────────── */
 
-  const bulkActions =
+  /**
+   * Every writer below is a local flip the live poll reverts — off live rows
+   * (METH S14 sweep). The client-side CSV export is real either way and is
+   * the one bulk action a live Published tab keeps.
+   */
+  const syntheticBulkActions =
     status === 'review'
       ? [
           {
@@ -983,10 +1003,36 @@ export function ClientInbox({ client, kind, onPreview }: {
         ]
       : [];
 
+  const bulkActions =
+    documentsSource === 'api'
+      ? status === 'published'
+        ? [{ label: intl.formatMessage(commonActions.exportCsv), icon: Download, minSelected: 2, disabledHint: intl.formatMessage(EXPORT_HINT), onClick: (sel: Document[]) => exportDocuments(sel, client.name) }]
+        : []
+      : syntheticBulkActions;
+
   const s = statsFor(client.id);
 
   return (
     <div className="flex flex-col gap-5">
+      {/* Loading and failure said out loud, like InboxesView (METH S14 sweep):
+          seed rows may render underneath — the standing fallback — but never
+          silently impersonating the server. */}
+      {documentsSource === 'api' && (documentsLoading || documentsError) && (
+        <div
+          className={`flex items-center gap-3 px-5 py-3 rounded-2xl border text-[13px] font-semibold ${
+            documentsError
+              ? 'bg-red-500/10 border-red-500/20 text-red-300'
+              : 'bg-white/[0.03] border-white/10 text-zinc-400'
+          }`}
+        >
+          <RefreshCw size={15} className={documentsError ? '' : 'animate-spin'} />
+          <span className="min-w-0">
+            {documentsError
+              ? intl.formatMessage(m.documentsError, { error: documentsError })
+              : intl.formatMessage(m.documentsLoading)}
+          </span>
+        </div>
+      )}
       {/* Status tabs carry their own counts. Rendered as a recessed segmented
           control so they never read as a second row of client tabs. */}
       <SubTabs

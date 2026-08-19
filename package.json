@@ -31,6 +31,7 @@
     "demo:reset": "tsx --env-file-if-exists=.env scripts/demo/reset.ts",
     "demo:email": "tsx --env-file-if-exists=.env scripts/demo/email.ts",
     "demo:whatsapp": "tsx --env-file-if-exists=.env scripts/demo/whatsapp.ts",
+    "demo:portal-link": "tsx --env-file-if-exists=.env scripts/demo/portal-link.ts",
     "pr:title": "node scripts/check-pr-title.mjs",
     "prepare": "husky"
   },

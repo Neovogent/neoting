@@ -56,6 +56,11 @@ const m = defineMessages({
     defaultMessage: 'Force a legitimate duplicate through',
   },
   keepBothAction: { id: 'documents.duplicateCompare.keepBothAction', defaultMessage: 'Keep both' },
+  liveNote: {
+    id: 'documents.duplicateCompare.liveNote',
+    defaultMessage:
+      'Resolving a duplicate is coming to Review → Approve — in this build the flag and the comparison are informational.',
+  },
 });
 
 const sideMessages = defineMessages({
@@ -68,7 +73,7 @@ const sideMessages = defineMessages({
  * "keep both — intentional duplicate" escape that Dext lacks.
  */
 export function DuplicateCompare({ pairs }: { pairs: DuplicatePair[] }) {
-  const { resolveDuplicate, logAudit } = useAppContext();
+  const { resolveDuplicate, logAudit, documentsSource } = useAppContext();
   const confirm = useConfirm();
   const intl = useIntl();
 
@@ -115,6 +120,13 @@ export function DuplicateCompare({ pairs }: { pairs: DuplicatePair[] }) {
             </div>
           </div>
 
+          {/* The resolutions below are local writes the live poll reverts —
+              live, the footer says what the flag is instead (METH S14). */}
+          {documentsSource === 'api' ? (
+            <div className="bg-raised/50 p-4 text-[13px] text-zinc-500 text-center">
+              {intl.formatMessage(m.liveNote)}
+            </div>
+          ) : (
           <div className="flex items-center bg-raised/50 p-4 gap-3 flex-wrap">
             <button
               onClick={async () => {
@@ -196,6 +208,7 @@ export function DuplicateCompare({ pairs }: { pairs: DuplicatePair[] }) {
               {intl.formatMessage(m.keepBothAction)}
             </button>
           </div>
+          )}
         </div>
       ))}
     </div>

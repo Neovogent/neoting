@@ -52,6 +52,10 @@ const m = defineMessages({
     defaultMessage: '{count} pending · {total} · {aging} aging over 5 days',
   },
   clientFilterAll: { id: 'approvals.approvalsView.clientFilterAll', defaultMessage: 'All clients' },
+  summaryLive: {
+    id: 'approvals.approvalsView.summaryLive',
+    defaultMessage: '{count} pending — the live Review → Approve queue',
+  },
   newWorkflowAction: { id: 'approvals.approvalsView.newWorkflowAction', defaultMessage: 'New workflow' },
   scopeMine: { id: 'approvals.approvalsView.scopeMine', defaultMessage: 'Waiting on me' },
   scopeAll: { id: 'approvals.approvalsView.scopeAll', defaultMessage: 'All pending' },
@@ -349,20 +353,29 @@ export function ApprovalsView() {
                 {intl.formatMessage(m.heading)}
               </h1>
               <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
-                {intl.formatMessage(m.summary, { count: pending.length, total: currency(totalPending), aging })}
+                {/* The fixture money/aging figures describe the synthetic
+                    board — over the live queue they would be numbers about
+                    rows that are not on screen (METH S14 sweep). */}
+                {liveQueue
+                  ? intl.formatMessage(m.summaryLive, { count: proposalsQuery.proposals.length })
+                  : intl.formatMessage(m.summary, { count: pending.length, total: currency(totalPending), aging })}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
             <DataSourceBadge slice="proposals" status={proposalsStatus} />
-            <select
-              value={clientFilter}
-              onChange={(e) => setClientFilter(e.target.value)}
-              className="bg-card border border-white/5 rounded-full py-2.5 px-4 text-sm font-semibold text-zinc-300 focus:outline-none focus:border-brand shadow-inner"
-            >
-              <option value="all">{intl.formatMessage(m.clientFilterAll)}</option>
-              {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            {/* The filter only narrows the synthetic arrays — over the live
+                queue it is an inert control (METH S14 sweep). */}
+            {!liveQueue && (
+              <select
+                value={clientFilter}
+                onChange={(e) => setClientFilter(e.target.value)}
+                className="bg-card border border-white/5 rounded-full py-2.5 px-4 text-sm font-semibold text-zinc-300 focus:outline-none focus:border-brand shadow-inner"
+              >
+                <option value="all">{intl.formatMessage(m.clientFilterAll)}</option>
+                {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            )}
             {tab === 'Workflows' && (
               <button
                 onClick={() => setEditing(blankWorkflow(intl))}

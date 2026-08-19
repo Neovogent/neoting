@@ -23,14 +23,13 @@ const m = defineMessages({
   clientNoteHeading: { id: 'documents.documentPreview.clientNoteHeading', defaultMessage: 'Note from the client' },
   extractionRunning: {
     id: 'documents.documentPreview.extractionRunning',
-    defaultMessage: 'Extraction running — ETA 2 minutes',
+    defaultMessage: 'Extraction running',
   },
   extractionBypass: {
     id: 'documents.documentPreview.extractionBypass',
     defaultMessage:
-      "You don't have to wait. Use the manual-entry bypass to type the values now; OCR results merge in when they land and anything you typed wins.",
+      'The pipeline is reading this document. Fields, confidence and coding suggestions appear here the moment it finishes — usually within seconds.',
   },
-  enterManually: { id: 'documents.documentPreview.enterManually', defaultMessage: 'Enter manually' },
   noFields: { id: 'documents.documentPreview.noFields', defaultMessage: 'No fields extracted' },
   originalImmutable: { id: 'documents.documentPreview.originalImmutable', defaultMessage: 'Original — immutable' },
   extractedFields: { id: 'documents.documentPreview.extractedFields', defaultMessage: 'Extracted fields' },
@@ -70,6 +69,7 @@ const draftProblemMessages = defineMessages({
 const statusMessages = defineMessages({
   ready: { id: 'documents.statusPill.ready', defaultMessage: 'Ready' },
   review: { id: 'documents.statusPill.review', defaultMessage: 'To Review — {note}' },
+  reviewPlain: { id: 'documents.statusPill.reviewPlain', defaultMessage: 'To Review' },
   rejected: { id: 'documents.statusPill.rejected', defaultMessage: 'Rejected' },
   published: { id: 'documents.statusPill.published', defaultMessage: 'Published' },
   processing: { id: 'documents.statusPill.processing', defaultMessage: 'Processing' },
@@ -186,10 +186,9 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
             <p className="font-semibold text-white mb-1">{intl.formatMessage(m.extractionRunning)}</p>
             <p className="text-[13px] leading-relaxed">{intl.formatMessage(m.extractionBypass)}</p>
           </div>
-          <button className="self-start flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white bg-brand rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft">
-            <PencilLine size={16} />
-            {intl.formatMessage(m.enterManually)}
-          </button>
+          {/* The manual-entry bypass button lived here with no handler — a dead
+              control on the golden path (METH S14 sweep). It returns when the
+              bypass exists. */}
         </div>
       ) : live && detail.isLoading ? (
         // The loading state, per screen rule 5: skeleton rows, no spinner.
@@ -432,7 +431,16 @@ function StatusPill({ doc }: { doc: Document }) {
 
   if (doc.status === 'ready') return <Pill tone="green">{intl.formatMessage(statusMessages.ready)}</Pill>;
   if (doc.status === 'review') {
-    return <Pill tone="amber">{intl.formatMessage(statusMessages.review, { note: doc.statusNote })}</Pill>;
+    // API To-Review rows carry no note (the contract reserves failureMessage
+    // for REJECTED/FAILED) — formatting {note} with undefined is a
+    // console.error from react-intl and a garbled pill (METH S14 sweep).
+    return (
+      <Pill tone="amber">
+        {doc.statusNote
+          ? intl.formatMessage(statusMessages.review, { note: doc.statusNote })
+          : intl.formatMessage(statusMessages.reviewPlain)}
+      </Pill>
+    );
   }
   if (doc.status === 'rejected') return <Pill tone="red">{intl.formatMessage(statusMessages.rejected)}</Pill>;
   if (doc.status === 'published') return <Pill tone="blue">{intl.formatMessage(statusMessages.published)}</Pill>;

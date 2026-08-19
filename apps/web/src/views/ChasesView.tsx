@@ -8,7 +8,7 @@ import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
 import { API_ENABLED } from '../api/config';
 import { useChases, useSmsOutbox } from '../api/chases';
-import { sliceStatus } from '../api/slices';
+import { errorLabel, sliceStatus } from '../api/slices';
 import { DataSourceBadge } from '../components/DataSourceBadge';
 import { ChasesLiveBoard } from './ChasesLiveBoard';
 import { cooldownFor, describeAge, formatWait, SmsCooldownNotice } from '../components/DynamicComponents/SmsCooldown';
@@ -130,10 +130,7 @@ export function ChasesView() {
         chases={live.chases}
         loading={status.loading}
         outbox={outbox.messages}
-        outboxError={
-          outbox.contractError ??
-          (outbox.error instanceof Error ? outbox.error.message : outbox.error ? 'The request failed' : null)
-        }
+        outboxError={outbox.contractError ?? errorLabel(outbox.error)}
       />
     );
   }

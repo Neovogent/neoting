@@ -16,6 +16,7 @@ import { PRACTICE_NAME } from '../lib/seed2';
 import type { Document, VaultDocument } from '../lib/types';
 import { EXPORT_HINT } from '../lib/exportRules';
 import { commonActions, commonLabels } from '../i18n/common';
+import { DataSourceBadge } from '../components/DataSourceBadge';
 
 const TABS = ['Archive', 'Vault'] as const;
 type Tab = (typeof TABS)[number];
@@ -48,6 +49,8 @@ const VAULT_CATEGORY_LABEL: Record<VaultDocument['category'], MessageDescriptor>
 
 const m = defineMessages({
   heading: { id: 'documents.documentsView.heading', defaultMessage: 'Documents' },
+  documentsLoading: { id: 'documents.documentsView.loading', defaultMessage: 'Loading documents…' },
+  documentsError: { id: 'documents.documentsView.loadError', defaultMessage: 'Could not load documents — {error}' },
   summary: {
     id: 'documents.documentsView.summary',
     defaultMessage: '{archived} archived · {vault} in vault · {expiring} expiring',
@@ -171,6 +174,7 @@ export function DocumentsView() {
   const {
     documents, vault, clients, updateDocumentStatus, moveDocuments, addVaultDocument,
     updateVaultDocument, deleteVaultDocument, moveVaultDocument, logAudit,
+    documentsSource, documentsLoading, documentsError, slices,
   } = useAppContext();
 
   const [tab, setTab] = useState<Tab>('Archive');
@@ -296,7 +300,12 @@ export function DocumentsView() {
     { key: 'total', label: intl.formatMessage(commonLabels.total), align: 'right', sortValue: (d) => d.total, render: (d) => <span className="text-white font-bold tabular-nums">{currency(d.total)}</span> },
   ];
 
-  const archiveActions = [
+  /**
+   * Unarchive and move are local flips the live poll reverts — off live rows
+   * (METH S14 sweep); a published document is locked server-side anyway. The
+   * client-side export is real either way.
+   */
+  const syntheticArchiveActions = [
     {
       label: intl.formatMessage(m.unarchiveAction),
       icon: Archive,
@@ -318,12 +327,35 @@ export function DocumentsView() {
       },
     },
     { label: intl.formatMessage(m.moveToClientAction), icon: ArrowRightLeft, onClick: (sel: Document[]) => setMoveTarget({ ids: sel.map((d) => d.id), kind: 'doc' as const }) },
-    { label: intl.formatMessage(commonActions.exportCsv), icon: Download, primary: true, minSelected: 2, disabledHint: intl.formatMessage(EXPORT_HINT), onClick: (sel: Document[]) => exportDocs(sel) },
   ];
+
+  const exportAction = { label: intl.formatMessage(commonActions.exportCsv), icon: Download, primary: true, minSelected: 2, disabledHint: intl.formatMessage(EXPORT_HINT), onClick: (sel: Document[]) => exportDocs(sel) };
+
+  const archiveActions =
+    documentsSource === 'api' ? [exportAction] : [...syntheticArchiveActions, exportAction];
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden">
       <header className="px-10 pt-8 pb-5 shrink-0">
+        {/* Loading and failure said out loud (METH S14 sweep): seed rows may
+            render underneath — the standing fallback — never silently. */}
+        {documentsSource === 'api' && (documentsLoading || documentsError) && (
+          <div
+            className={`mb-4 flex items-center gap-3 px-5 py-3 rounded-2xl border text-[13px] font-semibold ${
+              documentsError
+                ? 'bg-red-500/10 border-red-500/20 text-red-300'
+                : 'bg-white/[0.03] border-white/10 text-zinc-400'
+            }`}
+          >
+            <AlertTriangle size={15} className="shrink-0" />
+            <span className="min-w-0">
+              {documentsError
+                ? intl.formatMessage(m.documentsError, { error: documentsError })
+                : intl.formatMessage(m.documentsLoading)}
+            </span>
+            <DataSourceBadge slice="documents" status={slices.documents} />
+          </div>
+        )}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-2xl bg-raised flex items-center justify-center text-white border border-white/5 shadow-inner">
