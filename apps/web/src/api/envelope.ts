@@ -11,8 +11,9 @@
  * Unwrapped by SHAPE rather than by type, so this is correct today and still
  * correct if the mutator is ever changed to return the envelope the types
  * describe. Every api-layer module that parses a generated call's result goes
- * through this before the Zod parse; `api/documents.ts` predates it and reads
- * `query.data.data` on the typed assumption instead — see `apps/web/CLAUDE.md`.
+ * through this before the Zod parse — including `api/documents.ts`, which
+ * shipped reading `query.data.data` on the typed assumption and was fixed in
+ * METH S7 (the both-shapes pin lives in `documents.test.ts`).
  */
 export function unwrapBody(value: unknown): unknown {
   if (

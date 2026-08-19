@@ -6,6 +6,7 @@ import {
 import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import { commonActions, commonLabels } from '../i18n/common';
 import { useAppContext } from '../context/AppContext';
+import { runWorkspaceDrop, serverBusinessIdFor } from '../api/uploads';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { SubTabs } from '../components/DynamicComponents/SubTabs';
 import { DuplicateModal } from '../components/DynamicComponents/DuplicateModal';
@@ -363,7 +364,7 @@ export function ClientInbox({ client, kind, onPreview }: {
 }) {
   const {
     documents, duplicates, mandatoryFields, ingest, sheetImports, updateDocumentStatus, retryDocument,
-    deleteDocuments, startConversation, statsFor,
+    deleteDocuments, startConversation, statsFor, documentsSource,
   } = useAppContext();
 
   const confirm = useConfirm();
@@ -452,6 +453,16 @@ export function ClientInbox({ client, kind, onPreview }: {
    */
   const upload = (files: FileList | null) => {
     if (!files?.length) return;
+    if (documentsSource === 'api') {
+      // The real journey (METH S7): intent → presigned PUT → complete, per
+      // file (`api/uploads.ts`), into THIS client — the one place an upload's
+      // workspace is never ambiguous. The Processing tab then watches the
+      // pipeline move it (the live documents query polls); the analysis is the
+      // server's and arrives as extraction rows, not a synthetic panel.
+      setStatus('processing');
+      void runWorkspaceDrop(intl, confirm, serverBusinessIdFor(client.id), Array.from(files));
+      return;
+    }
     const result = ingest(
       Array.from(files).map((f) => ({ name: f.name, size: f.size, raw: f })),
       client.id,

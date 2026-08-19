@@ -6,8 +6,10 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
+import { useQueryClient } from '@tanstack/react-query';
 import { commonActions, commonLabels } from '../i18n/common';
 import { useAppContext } from '../context/AppContext';
+import { refreshDocuments, runWorkspaceDrop, serverBusinessIdFor } from '../api/uploads';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { Tooltip } from '../components/DynamicComponents/Tooltip';
 import { blockedReason, describeMissing, partitionByReadiness, readinessOf } from '../lib/readiness';
@@ -32,6 +34,15 @@ const m = defineMessages({
   uploadAuditScope: {
     id: 'inboxes.inboxesView.uploadAuditScope',
     defaultMessage: '{count} document(s) from {files} file(s)',
+  },
+  uploadNeedsClientTitle: {
+    id: 'inboxes.inboxesView.uploadNeedsClientTitle',
+    defaultMessage: 'Choose a client before uploading',
+  },
+  uploadNeedsClientDetail: {
+    id: 'inboxes.inboxesView.uploadNeedsClientDetail',
+    defaultMessage:
+      'Every document is filed under a named client — pick one in the client filter, or upload from inside that client’s inbox. Guessing at upload time is how paperwork lands in the wrong books.',
   },
   publishAudit: { id: 'inboxes.inboxesView.publishAudit', defaultMessage: 'Published documents' },
   publishAuditScope: {
@@ -272,6 +283,7 @@ export function InboxesView() {
     moveDocuments, deleteDocuments, retryDocument, startConversation, logAudit, publishDocuments,
   } = useAppContext();
   const intl = useIntl();
+  const queryClient = useQueryClient();
 
   /**
    * /inboxes/:inbox/:status — both rows of tabs live in the address.
@@ -353,8 +365,43 @@ export function InboxesView() {
   const selectedDocs = documents.filter((d) => selected.includes(d.id));
   const allSelected = rows.length > 0 && rows.every((d) => selected.includes(d.id));
 
+  /**
+   * The real upload journey (METH S7): intent → presigned PUT → complete, one
+   * document per file (`api/uploads.ts`), then the Processing tab watches the
+   * pipeline move it.
+   *
+   * The API requires a named workspace per document (guessing at ingest time
+   * is the misrouting this product exists to fix), so an upload with no client
+   * filter chosen is refused with instructions, not routed somewhere hopeful.
+   */
+  const uploadLive = async (files: File[]) => {
+    if (clientFilter === 'all') {
+      await confirm({
+        tone: 'red',
+        title: intl.formatMessage(m.uploadNeedsClientTitle),
+        detail: intl.formatMessage(m.uploadNeedsClientDetail),
+        confirmLabel: intl.formatMessage(commonActions.close),
+      });
+      return;
+    }
+    goTo({ inbox: 'cost', status: 'processing' });
+
+    const { sent } = await runWorkspaceDrop(intl, confirm, serverBusinessIdFor(clientFilter), files);
+    void refreshDocuments(queryClient);
+
+    logAudit({
+      action: intl.formatMessage(m.uploadAudit),
+      scope: intl.formatMessage(m.uploadAuditScope, { count: sent, files: files.length }),
+      reviewOpened: true,
+    });
+  };
+
   const handleFiles = (files: FileList | null) => {
     if (!files?.length) return;
+    if (documentsSource === 'api') {
+      void uploadLive(Array.from(files));
+      return;
+    }
     const list = Array.from(files).map((f) => ({ name: f.name, size: f.size, raw: f }));
     const result = ingest(list, clientFilter === 'all' ? undefined : clientFilter, 'web');
 

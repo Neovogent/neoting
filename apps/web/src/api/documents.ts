@@ -2,6 +2,9 @@ import { useMemo } from 'react';
 import { useListDocuments } from '@neoting/contracts/client';
 import { listDocumentsResponse } from '@neoting/contracts/zod';
 import type { DocumentSummary, ListDocumentsParams } from '@neoting/contracts/model';
+// The envelope problem and its one answer live in `envelope.ts` (METH S6);
+// this hook shipped violating it (`query.data.data`) and was fixed in METH S7.
+import { unwrapBody } from './envelope';
 import type { DocKind, Document as LocalDocument, DocStatus, SourceChannel } from '../lib/types';
 
 /**
@@ -113,21 +116,30 @@ export interface UseDocumentsOptions {
  * The inbox, from `GET /documents`.
  *
  * The response is parsed through the generated Zod schema before anything
- * touches it. TypeScript is not a runtime gate — the types describe what the
- * server promised, and this checks what it actually sent. A contract drift
- * then surfaces here, at the boundary, with the field named, instead of as
- * `undefined is not an object` three components deep.
+ * touches it — read as the RAW BODY through `unwrapBody`, because the
+ * generated envelope type does not exist at runtime (this hook shipped
+ * reaching one level too deep, and every live inbox load reported a contract
+ * error instead of rendering; fixed in METH S7 and pinned in the test).
+ *
+ * While enabled it also POLLS, every 5 seconds. Documents arrive from outside
+ * this browser — WhatsApp, email, the OTP portal, a worker finishing an
+ * extraction — and the inbox is the screen on which they are watched landing
+ * (METH S7; SoT Stage 5's live pipeline states). TanStack's structural sharing
+ * keeps an unchanged response the same object, so an idle poll re-renders
+ * nothing. Push (SSE/websocket) replaces this post-demo; polling is honest and
+ * boring, not a mock. Off entirely when `enabled` is false, which is what keeps
+ * the test suite and synthetic mode timer-free.
  */
 export function useDocuments({ enabled, params, clientNameFor }: UseDocumentsOptions) {
   const query = useListDocuments(params, {
-    query: { enabled },
+    query: { enabled, refetchInterval: enabled && 5_000 },
   });
 
   const parsed = useMemo(() => {
-    const empty = { documents: [] as LocalDocument[], invalid: null as string | null, pageInfo: null as { nextCursor?: string | null; hasMore: boolean } | null };
+    const empty = { documents: [] as LocalDocument[], invalid: null as string | null, pageInfo: null as { nextCursor?: string | null | undefined; hasMore: boolean } | null };
     if (!query.data) return empty;
 
-    const result = listDocumentsResponse.safeParse(query.data.data);
+    const result = listDocumentsResponse.safeParse(unwrapBody(query.data));
     if (!result.success) {
       return {
         ...empty,

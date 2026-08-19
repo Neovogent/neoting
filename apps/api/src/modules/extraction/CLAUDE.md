@@ -88,10 +88,15 @@ validator-fail → TO_REVIEW; unreadable → FAILED with reason; rule override.
 
 **Known gaps, flagged not hidden:** line items ride in the existing `fields`
 jsonb (METH §3.2: existing jsonb + note) — the `Extraction` row has no line-item
-column though the contract carries `Extraction.lineItems`, and the read
-projection (`toExtraction`) does not surface them yet (Stage 7 / a follow-up).
-The confidence seam stays empty (eval-calibrated, does not exist yet) — To-Review
-is driven by a missing field or a failed validator, never an invented threshold.
+column though the contract carries `Extraction.lineItems`. **The read projection
+(`toExtraction` in `common/documents/`) SEPARATES the smuggled key since METH
+S7 (#137)**: it serves the contracted optional `Extraction.lineItems` array and
+strips the key from `fields` — necessary, not cosmetic, because the generated
+client parses `fields` as a STRICT map of `ExtractedField`, so the array left
+in place failed every extracted `GET /documents/{id}` in the browser. The
+persisted home is still the jsonb (a schema/contract call). The confidence seam
+stays empty (eval-calibrated, does not exist yet) — To-Review is driven by a
+missing field or a failed validator, never an invented threshold.
 
 ## TODO
 
@@ -100,7 +105,8 @@ is driven by a missing field or a failed validator, never an invented threshold.
 - [ ] Textract + the vision escalation ladder behind `DocumentExtractor`, `EXTRACTOR=textract`.
 - [ ] Real `packages/validators` verdicts (VAT arithmetic, VRN, dates) replacing
       the pre-computed demo ones.
-- [ ] Surface `Extraction.lineItems` on the read projection (and decide their
-      persisted home — a schema/contract call, currently the `fields` jsonb).
+- [x] Surface `Extraction.lineItems` on the read projection — METH S7 (#137),
+      `toExtraction` separates the smuggled key. Still open: their persisted
+      home (a schema/contract call, currently the `fields` jsonb).
 - [ ] Confidence gating when eval calibration lands (the seam in validation-dedupe/readiness.ts).
 - [ ] Update this file on exit — it is how the next session picks up.

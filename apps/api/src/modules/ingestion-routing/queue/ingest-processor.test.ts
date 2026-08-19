@@ -229,6 +229,28 @@ test('a web-upload job for a standalone business (no practice) is not extracted,
   expect(h.logs.some((l) => l.includes('standalone business'))).toBe(true);
 });
 
+// METH S7: the already-persisted branch bypasses persist() by design, which
+// also bypassed the detector — so the same receipt dropped twice in the browser
+// was the ONE arrival channel with no `duplicates` row behind the compare.
+test('a web-upload job runs duplicate detection on the already-persisted document', async () => {
+  const h = harness();
+  await processIngestJob(webUploadJob, h.deps);
+  expect(h.detector.seen).toHaveLength(1);
+  expect(h.detector.seen[0]?.documentId).toBe('doc_web_1');
+  expect(h.detector.seen[0]?.businessId).toBe('biz_1');
+  expect(h.detector.seen[0]?.byteHash).toBe('b'.repeat(64));
+  expect(h.detector.seen[0]?.perceptualHash).toBeNull(); // web uploads carry none today
+  expect(h.logs.some((l) => l.includes('dedupe doc_web_1'))).toBe(true);
+});
+
+test('a web-upload job with no byte hash skips detection rather than keying on nothing', async () => {
+  const h = harness();
+  const { sha256: _sha, ...hashless } = webUploadJob;
+  await processIngestJob(hashless, h.deps);
+  expect(h.detector.seen).toHaveLength(0);
+  expect(h.extractor.runs).toHaveLength(1); // extraction still runs — dedupe is a net, not a gate
+});
+
 test('a text-only whatsapp message is logged, not persisted — and not dropped', async () => {
   const h = harness();
   const { mediaId: _mediaId, ...textOnly } = whatsappJob;

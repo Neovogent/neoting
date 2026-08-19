@@ -16,8 +16,16 @@ import type { BankTransaction as LocalBankTransaction, Document as LocalDocument
  * happens here first, against data we can eyeball.
  */
 
-/** Money is integer pence in the contract; the local seed is in pounds. */
-export const toPence = (pounds: number): number => Math.round(pounds * 100);
+/**
+ * Money is integer pence in the contract; the local seed is in pounds. The
+ * definition moved to `../document-detail` when METH S7 needed the same
+ * conversion on a production path (a typed correction leaving the app) —
+ * re-exported here so the fixtures and their tests keep one import. Mocks may
+ * import production code; never the other way around.
+ */
+import { toPence } from '../document-detail';
+
+export { toPence };
 
 const STATE: Record<LocalDocument['status'], DocumentState> = {
   processing: DocumentState.PROCESSING,
