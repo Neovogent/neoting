@@ -118,9 +118,8 @@ test('the registry is total over the contract enum, and the holes throw by name'
     'document.reprocess',
     'document.reject',
     'document.split',
-    // METH Stage 2 (#120) — holes until S8/S11/S13 land their executors.
-    // `publish.batch` left this list in METH S10.
-    'chase.send',
+    // METH Stage 2 (#120) — holes until S11/S13 land their executors.
+    // `chase.send` left this list in METH S8, `publish.batch` in METH S10.
     'bank.confirm-match',
     'rule.create',
   ] as const) {

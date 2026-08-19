@@ -279,10 +279,22 @@ interface AppContextType {
   businessAccounts: BusinessAccount[];
   /** 'accountant' is the practice shell; 'business' is the client-facing one. */
   /** 'approval' is the SMS link surface — no login, no portal account. */
-  portal: 'accountant' | 'business' | 'approval' | 'registration';
+  /**
+   * 'chase-upload' is the other SMS link surface, and the stricter of the two:
+   * `/p/<linkToken>`, opened by a chase text, scoped to the items that one
+   * chase asked for. No account and no browsing — a delegated session that may
+   * add documents to those items and see nothing else (METH Stage 9).
+   */
+  portal: 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload';
   /** The approval session the SMS link opened, when portal === 'approval'. */
   openApprovalRequestId: string | null;
   openApprovalLink: (requestId: string) => void;
+  /**
+   * The signed link token out of the chase SMS, when portal === 'chase-upload'.
+   * Held in the address rather than in state so the text message is the whole
+   * of what opens the page — which is what a forwardable link means.
+   */
+  portalLinkToken: string | null;
   /** Which business account the portal is signed into. */
   portalAccountId: string | null;
   /** Signing in with no id lands on the sign-up / invite screen. */
@@ -656,13 +668,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const segments = usePath();
   const [root, first, second] = segments;
 
-  const portal: 'accountant' | 'business' | 'approval' | 'registration' =
+  const portal: 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload' =
     root === 'portal' ? 'business'
       : root === 'approve' ? 'approval'
       : root === 'register' ? 'registration'
+      // `/p/<token>`, and one letter on purpose: this address is typed into an
+      // SMS, where every character is billed and re-typed by hand when the link
+      // does not survive the client's phone.
+      : root === 'p' ? 'chase-upload'
       : 'accountant';
 
   const openApprovalRequestId = root === 'approve' ? first ?? null : null;
+  const portalLinkToken = root === 'p' ? first ?? null : null;
   const portalAccountId = root === 'portal' ? first ?? null : null;
   const openRegistrationFor =
     root === 'register' && first && second ? { accountId: first, memberId: second } : null;
@@ -2288,6 +2305,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         completeOnboardingTask,
         businessAccounts,
         portal,
+        portalLinkToken,
         portalAccountId,
         openBusinessPortal,
         exitBusinessPortal,

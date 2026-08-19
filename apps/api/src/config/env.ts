@@ -150,6 +150,34 @@ const EnvSchema = z.object({
   // extracted — that is the whole point of the step. Selected by config, not import.
   EXTRACTOR: z.enum(['demo']).default('demo'),
 
+  // The SMS sender (METH Stage 8). `demo` = `DemoSmsSender`, which "sends" by
+  // writing the outbox rows the SMS-outbox screen reads — no Twilio, ever, in
+  // this push. The only value until Twilio Messaging lands behind the same seam
+  // post-demo. Selected by config, not import, exactly like EXTRACTOR / MEDIA_FETCH.
+  // DEMO-MOCK: Twilio Messaging replaces `DemoSmsSender`.
+  SMS_SENDER: z.enum(['demo']).default('demo'),
+
+  // Signs the chase portal-link token (METH Stage 8, SoT §4 Stage 8.3) — the
+  // same HMAC pattern as UPLOAD_URL_SECRET / SESSION_SECRET. Stage 8 mints the
+  // link; Stage 9's OTP portal verifies it. Empty default fails CLOSED: signing
+  // or verifying with an empty secret is refused (`portal-link.ts`), so an unset
+  // secret cannot mint a forgeable link. No production boot-refusal, matching
+  // SESSION_SECRET's stance (the portal endpoints simply fail closed until the
+  // Stage 15 env change sets it, rather than crash-looping /healthz).
+  PORTAL_LINK_SECRET: z.string().default(''),
+
+  // Signs the portal SESSION bearer (METH Stage 9) — what `POST
+  // /v1/portal/sessions` returns and every later portal call sends as
+  // `Authorization: Bearer …`. Deliberately a SECOND secret rather than a reuse
+  // of PORTAL_LINK_SECRET: the link is a 24 h public URL handed to whoever holds
+  // the paperwork, the bearer is a short-lived credential that has already
+  // passed the OTP, and one rotation must not be forced to invalidate the other.
+  // Same empty-default fail-closed stance as SESSION_SECRET / PORTAL_LINK_SECRET
+  // (`portal-session-token.ts` refuses to sign or verify with it), and the same
+  // deliberate absence of a production boot-refusal — an unset secret leaves the
+  // portal endpoints failing closed rather than crash-looping /healthz.
+  PORTAL_SESSION_SECRET: z.string().default(''),
+
   // The ledger adapter (METH Stage 10). `demo` = DemoXeroAdapter — deterministic
   // XERO-INV-#### refs, a simulated per-item delay and one scripted
   // failure-then-retry; the real Xero SDK + OAuth lands behind the same seam.

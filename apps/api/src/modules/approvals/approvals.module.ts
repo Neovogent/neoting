@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 
 import { getPrismaClient, type PrismaClient } from '../../common/db/prisma.js';
 import { InMemoryIdempotencyStore } from '../../common/idempotency/idempotency-store.js';
+import type { Env } from '../../config/env.js';
+import { ENV } from '../../config/env.module.js';
+import { selectSmsSender } from '../chase/index.js';
 import { PrismaDuplicateDetector } from '../ingestion-routing/index.js';
 import { LEDGER_ADAPTER, type LedgerAdapter, previewPublishBatch, PublishingModule } from '../publishing/index.js';
 import { buildExecutorRegistry, type PublishGateway } from '../validation-dedupe/index.js';
@@ -44,19 +47,22 @@ import { ACTION_PROPOSALS_SERVICE, PRISMA } from './tokens.js';
     { provide: PRISMA, useFactory: () => getPrismaClient() },
     {
       provide: ACTION_PROPOSALS_SERVICE,
-      useFactory: (prisma: PrismaClient, ledger: LedgerAdapter) => {
+      useFactory: (prisma: PrismaClient, env: Env, ledger: LedgerAdapter) => {
         // ONE gateway object for both halves: the executor re-validates the
         // batch with it and the post-commit follow-up publishes through it.
         const publishing: PublishGateway = { ledger, previewPublishBatch };
         return new ActionProposalsService(
           prisma,
-          buildExecutorRegistry({ publishing }),
+          // The chase.send executor "sends" through the config-selected sender
+          // (SMS_SENDER=demo → the outbox writer; no Twilio) — built here, not
+          // given a token, so no executor is reachable from a controller.
+          buildExecutorRegistry({ smsSender: selectSmsSender(env), publishing }),
           new PrismaDuplicateDetector(prisma),
           publishing,
           new InMemoryIdempotencyStore(),
         );
       },
-      inject: [PRISMA, LEDGER_ADAPTER],
+      inject: [PRISMA, ENV, LEDGER_ADAPTER],
     },
   ],
 })

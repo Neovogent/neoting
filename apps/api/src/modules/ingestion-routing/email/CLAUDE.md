@@ -99,12 +99,52 @@ lands UNROUTED for a human to review, so a misdirected email surfaces in a queue
 rather than granting access. The real fix is the SES receipt rules encoding the
 mapping (#17), after which the parser is a fallback.
 
+## Sender map — routing-by-sender is now wired (METH Stage 5)
+
+`decideRouting` was always pure over a supplied map, and until Stage 5 that map
+was **always empty** — so every email landed Unrouted. `inbound/sender-map.ts`
+fills it from the recipient practice's own contacts, without touching
+`decideRouting` or the schema.
+
+- **`buildSenderMap(rows)` is PURE** — `{email|null, mobileE164|null, businessId}[]`
+  in, `ReadonlyMap<string, readonly string[]>` out. Keys on BOTH the **lower-cased**
+  email AND the E164 phone (the phone is a canonical token, not lower-cased); a
+  duplicate identity on one business collapses to ONE businessId, because a
+  repeated id would make `decideRouting` see `length > 1` and raise a spurious
+  "Which company?". One identity across two businesses lists both — that IS the
+  multiple case. **Case-insensitivity takes BOTH halves**: the key is lower-cased
+  here, and `processEmail` lower-cases `email.from` before the look-up (postal-mime
+  carries `from` in the sender's own casing), so a differently-cased sender matches
+  rather than silently landing Unrouted. The phone is keyed both with and without a
+  leading `+`, because Meta's `wa_id`/`from` arrives without it.
+- **`SenderMapLoader` is the seam.** `PrismaSenderMapLoader(prisma)` reads the
+  practice's contacts through `scopedDb` under `systemContext(practiceId,
+  resolveSystemActor)` — the SAME privileged-but-policed path the sink and
+  duplicate detector use. `contacts` RLS is `app_can_access_business(business_id)`,
+  whose practice-membership branch admits the SYSTEM actor, so a practice-only
+  context sees exactly this practice's contacts; RLS filters by practice, not a
+  hand-written WHERE. `EmptySenderMapLoader` is the offline fixture (every
+  practice → empty map = today's behaviour).
+- **`runEmailIntake` loads the map AFTER it resolves `practiceId`** and passes it
+  into `processEmail`. The map is per-practice — a sender is recognised only
+  against the practice the email was delivered to, never across practices — which
+  is why it is a loader, resolved once the practice is known, not a static dep.
+  `senderMapLoader` is **optional** on `EmailIntakeRunnerDeps`: absent → empty
+  map, so every pre-existing email test is unchanged. `worker/email-intake-main.ts`
+  injects `PrismaSenderMapLoader(getPrismaClient())`.
+- The demo cast contact `con_owner_burger` (owner@americanburger.test /
+  +447700900001 on `biz_burger`) is what routes the `demo:email` beat to American
+  Burger; `stranger@example.test` is not a key, so it stays Unrouted.
+
 ## Invariants
 
 - Nothing silently dropped — unknown sender → Unrouted; a bad attachment → a
   visible rejection with a plain-English reason and NT-ING code.
 - Untrusted content wrapped before it can reach a model.
-- No Prisma, no DB writes (persistence blocked on `scopedDb`).
+- `processEmail` itself stays pure — no Prisma, no DB writes. The one DB READ in
+  this lane is `PrismaSenderMapLoader` (Stage 5), and it goes through `scopedDb`
+  under the practice SYSTEM context like every other query; the pure `processEmail`
+  receives the resolved map, never a client.
 - **Nothing the sender controls may be the whole idempotency key.** The key is
   the BullMQ `jobId` and a duplicate jobId is discarded silently, so a key made
   only of `Message-ID` would let a forged header delete a real document with no
@@ -130,6 +170,12 @@ pnpm --filter @neoting/api test
       `createSharpPerceptualHasher()`. Proven against a real DB. **Still Shakib's:**
       the S3→SQS/EventBridge event notification (polling stands in until then) and
       the `ListBucket`/`DeleteObject` IAM for `receipts/inbound/*` — both on #78.
+- [x] METH Stage 5: routing-by-sender wired — `inbound/sender-map.ts`
+      (`buildSenderMap` pure, `SenderMapLoader` / `PrismaSenderMapLoader` /
+      `EmptySenderMapLoader`), loaded per resolved practice in `runEmailIntake`,
+      injected in `worker/email-intake-main.ts`. A registered contact routes
+      matched; an unregistered sender stays Unrouted. `decideRouting` and the
+      schema untouched.
 - [ ] Recipient→practice via SES receipt rules (`doc+<practice>@`), issue #17 —
       the parser in `inbound/recipient-practice.ts` is the interim fallback.
 - [x] Store sanitised bytes to object storage (#16) — `storage/`, `w/` keys.

@@ -40,10 +40,12 @@ decides nothing about whether it may happen.
   on the proposal row and in `outcome`.
 - `canonical-hash.ts` — canonical JSON (sorted keys, dropped undefined) +
   SHA-256. `payload_hash`, the rendered hash and the audit chain all use it.
-- `approvals.module.ts` — builds `buildExecutorRegistry({ publishing })`, the
+- `approvals.module.ts` — builds `buildExecutorRegistry(...)`, the
   `PrismaDuplicateDetector` and the `PublishGateway` INSIDE the service
-  factory, through three modules' public seams (`validation-dedupe/index.ts`,
-  `ingestion-routing/index.ts`, `publishing/index.ts`). **No token ever names
+  factory, through the modules' public seams (`validation-dedupe/index.ts`,
+  `ingestion-routing/index.ts`, since METH S8 `chase/index.ts` for the
+  config-selected `SmsSender` passed to the registry — `chase.send` "sends"
+  through it — and since METH S10 `publishing/index.ts`). **No token ever names
   an executor** — that is this module's half of the #81 no-bypass promise;
   `executors.test.ts` pins the controller-import half.
   **Why publishing arrives in two pieces** (METH S10): the `LedgerAdapter` is

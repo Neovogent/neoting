@@ -1,6 +1,6 @@
 # ingestion-routing / web-upload
 
-**Source of Truth:** SoT §4 Stage 1 · **Added by:** issue #76 · **Contract:** `POST /v1/document-uploads`, `POST /v1/document-uploads/{uploadId}/complete`
+**Source of Truth:** SoT §4 Stage 1 (+ §4 Stage 8.4 for the delegated half) · **Added by:** issue #76, extended by METH Stage 9 · **Contract:** `POST /v1/document-uploads`, `POST /v1/document-uploads/{uploadId}/complete`
 
 ## Purpose
 
@@ -41,6 +41,65 @@ edited token fails verification and is a 400.
 
 Expiry lives in the claims as well as in the presigned URL, so an expired intent
 is `410 NT-ING-005` with a plain reason rather than an opaque storage error.
+
+## Step two has TWO callers: the workspace, and the OTP portal (METH Stage 9)
+
+`openapi.yaml` puts `completeDocumentUpload` under **both** `workspaceSession`
+and `portalSession`, and says why: *"a delegated session completes the intents it
+created, and the RLS delegated policies keep it inside its own grant. One
+completion path, two trust levels, no second door."* `POST /v1/portal/uploads`
+(`modules/portal`) mints the intent; this endpoint finishes it.
+
+**How the branch is taken.** `workspaceSession` is a cookie (`nt_session`), so on
+*this operation* an `Authorization` header can only be the portal bearer — the
+controller branches on its presence and nothing else. No header → the workspace
+path, unchanged, and the portal resolver is never asked.
+
+**Two contexts, because the delegated policies cover exactly two tables.**
+
+| Write | Context | Why |
+|---|---|---|
+| the `documents` row | **delegated** (`delegatedScopeFor`) | `documents_delegated_upload` USING `id = ANY(app_granted_item_ids())` + WITH CHECK `business_id = app_business_id()` is what ADMITS it. The handler compares nothing. |
+| the `document_events` row | practice **SYSTEM** (`systemScopeFor`) | `document_events` has **no delegated branch** — it reaches its tenant through `app_can_access_document`, which begins `app_session_scope() = 'user'`. A delegated context inserting one is refused by Postgres. |
+| the `notifications` row | practice **SYSTEM** (inside `PortalUploadNotifier`) | same reason, same policy shape. |
+
+That split is why `persistDocument` skips its own event write on the delegated
+path and `recordDelegatedProvenance` runs after the transaction. It is best
+effort **and the row does not depend on it**: `documents.submitter_label` carries
+`uploaded-by-delegated-session` too, so a failure loses the timeline entry, not
+the provenance. Failing the request instead would be worse — the document is
+persisted by then, and a retry finds `created: false`, skips the enqueue, and
+strands it in RECEIVED.
+
+**Three guards on the delegated path, in order:**
+
+1. `verifyUploadToken` — the same signature as any other intent (`UPLOAD_URL_SECRET`
+   is shared; a portal-specific key would mint intents nothing could complete).
+2. `assertGranted` — the derived `documentIdFor(uploadId)` must be in the
+   session's grant. A session may complete only the intents it started; **404,
+   never 403**. Without it the failure is still closed (Postgres refuses the
+   INSERT's RETURNING) but arrives as a 500 on a phone, and a second session in
+   the *same* business could complete another's intent.
+3. Postgres. Proven, not assumed:
+   `portal/portal-delegated-upload.integration.test.ts` forces the grant open to
+   a foreign business's document id and asserts the refusal message is
+   Postgres's own `row-level security` one.
+
+**The replay store is namespaced per session** on this path
+(`portal-complete:<otpSessionId>:<key>`). It is a flat map keyed by a
+client-generated UUID; two sessions reusing one key must miss, never be handed
+each other's document. Workspace keys are unchanged.
+
+**The accountant's notification travels as a closure**, not as a service on
+`WebUploadService`. `DelegatedCompletion.notifyUploadReceived` is built by
+`delegated-completion.ts` (which already reaches the portal seam), so this module
+never learns what a `notifications` row is and the service keeps its five
+constructor dependencies.
+
+**The enqueued job is identical to a web upload's** — `source: 'web_upload'`,
+`documentId`, `practiceId`, `routing: {kind: 'matched', businessId}` — which is
+exactly what the worker's already-persisted branch needs, so extraction and
+Stage 8's auto-close run for a portal document with no second code path.
 
 ## The tenancy check that is easy to miss
 
@@ -190,6 +249,14 @@ so this is mechanical rather than a promise in prose.
 
 ## Wiring
 
+`WebUploadModule` imports `PortalModule` for two providers —
+`PORTAL_SESSION_CONTEXT` (resolve the bearer) and `PORTAL_UPLOAD_NOTIFIER` (tell
+the practice). **The dependency runs one way and must stay that way:** the portal
+mints its own intents from ingestion-routing's *mechanisms*
+(`signUploadToken`, `uploadIntentKey`, `documentIdFor`, the cap and the
+allowlist, all through `ingestion-routing/index.ts`) rather than injecting
+`WebUploadService`, precisely so the two modules never need a `forwardRef`.
+
 `WebUploadModule` imports `IngestQueueModule` — a **shared** producer. Nest
 providers are per-module, so giving this lane its own `selectIngestQueue` factory
 would open a second Redis connection the moment `INGEST_QUEUE=bullmq`. Invisible
@@ -257,6 +324,21 @@ review of #76:
 - **Auth.** The request context comes from `common/context` (#75); real sessions
   are `auth-tenancy`.
 
+## Out of scope (METH Stage 9, the delegated half)
+
+- **`createUpload` is NOT reachable with a portal bearer.** Step one for the
+  portal is `POST /v1/portal/uploads`, which is a different operation with a
+  different body — this one takes a `businessId` from the caller, and a portal
+  caller must never name a business.
+- **The portal's mismatch feedback and status poll** live in `modules/portal`
+  (`chase-verdict.ts`, `portal-upload-status.service.ts`). This lane creates the
+  document and enqueues; everything said back to the client about it is read
+  from there.
+- **Auto-close stays Stage 8's**, in the worker's ingest hook. A portal document
+  is business-anchored and carries a practice, so it closes a matching chase
+  through the same path an email or WhatsApp arrival does — there is no second
+  close here, and there must not be one.
+
 ## TODO
 
 - [ ] Durable `IdempotencyStore` (Redis) — the in-memory one is per-instance, so
@@ -270,6 +352,12 @@ review of #76:
 - [ ] Worker-side sanitisation for `source: 'web_upload'` jobs, then map the
       pipeline's `Rejection` onto `NT-ING-004` on the document, not on a response
       (by then the HTTP call is long finished).
+- [ ] The delegated document's `document_events` row and its `notifications` row
+      are written in **separate transactions** from the document itself, because
+      neither table has a delegated RLS branch. Both are idempotent-ish and both
+      are best effort; the durable fix is a delegated branch on `document_events`
+      (a `prisma/sql/rls.sql` change, therefore G7) so the event can go back
+      inside the document's own transaction.
 - [ ] Re-key the object from `w/<biz>/uploads/<nonce>` to the content-addressed
       `w/<biz>/documents/<sha256>` once sanitisation has the final bytes. The
       intent key cannot be content-addressed — the sha256 is not known until the

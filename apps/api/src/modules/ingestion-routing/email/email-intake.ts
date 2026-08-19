@@ -96,7 +96,11 @@ export interface EmailIntakeDeps {
  * scopedDb). The S3-event trigger is Terraform (Shakib's).
  */
 export async function processEmail(email: ParsedEmail, deps: EmailIntakeDeps): Promise<EmailIntakeResult> {
-  const routing = decideRouting(email.from, deps.senderMap ?? new Map<string, readonly string[]>());
+  // Lower-case the sender before the lookup: the sender map keys emails
+  // lower-cased (an email header's casing is not significant), so an MUA that
+  // writes `Owner@Acme.test` must still match the `owner@acme.test` key rather
+  // than silently landing Unrouted. `toLowerCase()` is safe on the empty string.
+  const routing = decideRouting(email.from.toLowerCase(), deps.senderMap ?? new Map<string, readonly string[]>());
   const store = deps.store ?? new InMemoryDocumentStore();
   // Every attachment of one email shares its routing, so one workspace for all.
   const workspaceId = routing.kind === 'matched' ? routing.businessId : null;

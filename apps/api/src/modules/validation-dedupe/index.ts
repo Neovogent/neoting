@@ -38,7 +38,7 @@
  *    the question its own way is how a document ends up Ready on the inbox and
  *    unpublishable in the batch.
  */
-export { buildExecutorRegistry, type ExecutorDependencies } from './proposals/registry.js';
+export { buildExecutorRegistry, type ExecutorRegistryDeps } from './proposals/registry.js';
 export { type PublishGateway } from './proposals/publish-batch.js';
 export { runPublishFollowUp } from './proposals/publish-follow-up.js';
 export {

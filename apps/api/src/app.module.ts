@@ -8,14 +8,28 @@ import { TraceMiddleware } from './common/trace/trace.middleware.js';
 import { EnvModule } from './config/env.module.js';
 import { ApprovalsModule } from './modules/approvals/approvals.module.js';
 import { AuthTenancyModule } from './modules/auth-tenancy/auth-tenancy.module.js';
+import { ChaseModule } from './modules/chase/chase.module.js';
 import { DocumentsModule } from './modules/documents/documents.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { WebUploadModule } from './modules/ingestion-routing/web-upload/web-upload.module.js';
 import { WhatsAppWebhookModule } from './modules/ingestion-routing/webhooks/whatsapp/whatsapp.module.js';
+import { PortalModule } from './modules/portal/portal.module.js';
 import { PublishingModule } from './modules/publishing/publishing.module.js';
 
 @Module({
-  imports: [EnvModule, ContextModule, ApprovalsModule, AuthTenancyModule, DocumentsModule, HealthModule, PublishingModule, WebUploadModule, WhatsAppWebhookModule],
+  imports: [
+    EnvModule,
+    ContextModule,
+    ApprovalsModule,
+    AuthTenancyModule,
+    ChaseModule,
+    DocumentsModule,
+    HealthModule,
+    PortalModule,
+    PublishingModule,
+    WebUploadModule,
+    WhatsAppWebhookModule,
+  ],
   providers: [{ provide: APP_FILTER, useClass: ProblemFilter }],
 })
 export class AppModule implements NestModule {

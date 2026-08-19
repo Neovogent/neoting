@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
+import { RecordingChaseAutoClose } from '../../../chase/index.js';
 import { RecordingExtractionStep } from '../../../extraction/index.js';
 import { documentIdFor, PrismaDocumentSink } from '../../queue/document-sink.js';
 import { InMemoryDuplicateDetector } from '../../queue/duplicate-detector.js';
@@ -123,6 +124,8 @@ describe.skipIf(!DATABASE_URL || !OWNER_URL)('email intake against a real databa
       media: { fetcher: new FixtureMediaFetcher(), store: new InMemoryDocumentStore() },
       // No-op: this #78 test asserts the persistence write, not extraction.
       extractor: new RecordingExtractionStep(),
+      // No-op: extraction returns null here, so auto-close is never triggered.
+      autoClose: new RecordingChaseAutoClose(),
     });
 
     await processIngestJob(job, workerDeps());
