@@ -114,13 +114,13 @@ test('the registry is total over the contract enum, and the holes throw by name'
   }
   const { db } = harness([]);
   for (const kind of [
+    // The remaining #81 four. The METH Stage 2 kinds (#120) have all left this
+    // list: `chase.send` in METH S8, `publish.batch` in S10, `bank.confirm-match`
+    // in S11, `rule.create` in S13 (its own suite: rule-create.test.ts).
     'document.move-business',
     'document.reprocess',
     'document.reject',
     'document.split',
-    // METH Stage 2 (#120) — the hole until S13 lands its executor. `chase.send`
-    // left this list in METH S8, `publish.batch` in S10, `bank.confirm-match` in S11.
-    'rule.create',
   ] as const) {
     const err = await registry[kind]
       .execute(db, input({} as never))

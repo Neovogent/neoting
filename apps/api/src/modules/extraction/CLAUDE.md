@@ -73,7 +73,10 @@ vendor, not a fake system.
 - **Rule honouring** — before coding, an active single-tier `SUPPLIER_CUSTOMER`
   rule for the routed business + supplier overrides the category, provenance
   DETERMINISTIC, `suggestion.sourceRuleId` recorded. **// DEMO-MOCK: four-tier
-  priority engine.** Proven under RLS (the SYSTEM actor's practice-membership
+  priority engine.** Since METH S13 (#142) the `rule.create` executor writes
+  rows this consumes (chat → Review → Approve → rule → next upload pre-coded);
+  the match is EXACT on `scopeKey` = the profile's `supplierName`, so a rule's
+  scope key must be the supplier name verbatim ("Bidfood"). Proven under RLS (the SYSTEM actor's practice-membership
   branch reaches the business's rules — same mechanism as #40 dedupe).
 - Consumes `validation-dedupe`'s **public seam** (`index.ts`, created for this —
   its first cross-module consumer): `transitionDocument`, `resolveProcessedState`.

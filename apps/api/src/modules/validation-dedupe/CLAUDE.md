@@ -113,13 +113,12 @@ structural) and decides nothing about whether it may happen.
 
 - **`buildExecutorRegistry(deps)`** — total over the contract's `ProposalKind`
   by mapped type: a missing kind is a compile error; the engine's `NT-PRP-001`
-  stays the second line of defence. **Six real executors** (route, archive,
+  stays the second line of defence. **Seven real executors** (route, archive,
   update-coding since METH S3 #122, chase.send since METH S8, publish.batch
-  since S10, bank.confirm-match since S11), five honest holes throwing
-  `ProposalNotImplementedError` by name — the remaining #81 four
-  (`move-business`, `reprocess`, `reject`, `split`) plus the last METH Stage 2
-  kind (#120) still open: `rule.create` (S13), each typed off the generated
-  payload models. The `deps`
+  since S10, bank.confirm-match since S11, rule.create since S13 #142), four
+  honest holes throwing `ProposalNotImplementedError` by name — the remaining
+  #81 four (`move-business`, `reprocess`, `reject`, `split`), each typed off
+  the generated payload models. The `deps`
   argument (`ExecutorRegistryDeps`) is **required since S10**: `publishing` has
   no safe default, and a registry that quietly degraded a built executor back
   to a hole because a call site forgot an argument is the failure the mapped
@@ -250,6 +249,22 @@ structural) and decides nothing about whether it may happen.
     one), which is the only way "deterministic failure" and "retry succeeds
     second time" both hold, and it needs nothing from `prisma/seed.ts`.
 
+- **`rule.create`** (METH S13, #142) — the chat's rule beat: one `rules` row,
+  active from birth (approval IS the activation — no `rule.activate` kind
+  exists in this pass), `createdVia: 'chat'`, `actionProposalId` stamped so no
+  rule exists without the proposal that activated it (the schema's own words).
+  The payload carries no business — the PROPOSAL row is the anchor, read back
+  by `proposalId` and refused when null (`rules.business_id` is required; a
+  practice-level rule has no home in the schema). The business is re-resolved
+  through RLS before the write (the route/chase.send guard). Richer
+  `conditions` are stored verbatim for the four-tier engine; nothing evaluates
+  them yet — the extraction pipeline honours the single-tier exact
+  SUPPLIER_CUSTOMER match. `ChangedEntity` grew `'rule'`. Idempotent replay by
+  the proposal stamp. Proven end to end through the REAL engine against a real
+  DB (`rule-create.integration.test.ts`): create → review (fields/tier/scope
+  named) → approve → the NEXT Bidfood document through `PrismaExtractionStep`
+  arrives pre-coded with the rule's id as suggestion provenance — the demo's
+  wow beat, server-side.
 - **`bank.confirm-match`** (METH S11) — a human confirms that a document is the
   evidence for a bank transaction. **Two rows move or neither does:** the
   `matches` row AND the transaction's `match_state`. Writing the match without
@@ -270,12 +285,12 @@ structural) and decides nothing about whether it may happen.
 
 ## TODO
 
-- [ ] The seven unimplemented executors — the remaining #81 four
+- [ ] The four unimplemented executors — the remaining #81 four
       (`move-business`, `reprocess`, `reject`, `split`; each needs its own
-      issue) and the one still-open METH kind (`rule.create` → S13). The
-      registry already types and names them all. `update-coding` landed with
-      the engine (METH S3, #122); `chase.send` in METH S8; `publish.batch` in
-      METH S10; `bank.confirm-match` in METH S11.
+      issue). The registry already types and names them all. `update-coding`
+      landed with the engine (METH S3, #122); `chase.send` in METH S8;
+      `publish.batch` in METH S10; `bank.confirm-match` in METH S11;
+      `rule.create` in METH S13 (#142) — every METH Stage 2 kind now executes.
 - [x] The engine is wired (METH S3, #122 — `modules/approvals`): registry via
       `useFactory`, token kept out of public providers; dedupe follow-ups run
       post-commit. Still open: a periodic sweep over

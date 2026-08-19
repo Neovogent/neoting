@@ -5,7 +5,7 @@ import { useConfirm } from './ConfirmProvider';
 import { describeMissing, partitionByReadiness } from '../../lib/readiness';
 import { currency } from '../../lib/resolver';
 import { DataTable, Pill } from './DataTable';
-import type { ApprovalItem, AuditEntry, Document, MissingItem } from '../../lib/types';
+import type { ApprovalItem, AuditEntry, DocStatus, Document, MissingItem } from '../../lib/types';
 import { EXPORT_HINT } from '../../lib/exportRules';
 import { commonActions, commonLabels } from '../../i18n/common';
 
@@ -84,12 +84,23 @@ const inbox = defineMessages({
 });
 
 /** Costs / Sales inbox with the three-state model (PRD stage 5). */
-export function InboxTable({ clientIds, clientNames }: { clientIds: string[]; clientNames: string[] }) {
+export function InboxTable({
+  clientIds,
+  clientNames,
+  statusFilter,
+}: {
+  clientIds: string[];
+  clientNames: string[];
+  /** Narrows to one status — "show everything to review" (METH Stage 13). */
+  statusFilter?: DocStatus | undefined;
+}) {
   const { documents, addMessage, updateDocumentStatus, mandatoryFields } = useAppContext();
   const intl = useIntl();
   const confirm = useConfirm();
   const rows = documents.filter(
-    (d) => (clientIds.length ? clientIds.includes(d.clientId) : true) && d.status !== 'rejected',
+    (d) =>
+      (clientIds.length ? clientIds.includes(d.clientId) : true) &&
+      (statusFilter !== undefined ? d.status === statusFilter : d.status !== 'rejected'),
   );
 
   return (
