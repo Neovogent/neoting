@@ -148,3 +148,42 @@ export class FixtureMediaFetcher implements MediaFetcher {
     return media;
   }
 }
+
+/**
+ * The media id the `demo:whatsapp` driver (METH Stage 5, §7) references.
+ *
+ * The demo webhook carries this id; with nothing seeded behind it the fixture
+ * fetcher throws `not_found` (above) and the job dead-letters with no document,
+ * which is the opposite of the beat we are demoing.
+ */
+export const DEMO_WHATSAPP_MEDIA_ID = 'demo-media-currys';
+
+/**
+ * A real, minimal 1x1 PNG (a single transparent pixel, ~68 bytes). It is a full
+ * decodable image — not just the 8-byte signature — so the demo document survives
+ * BOTH normalisers: the fixture passthrough (default local demo) AND
+ * `IMAGE_NORMALISER=sharp` (staging/prod), where sharp would reject a truncated
+ * signature-only buffer and the job would dead-letter. `sniff()` still classifies
+ * it as PNG, and no real image asset has to live in the tree.
+ */
+const DEMO_PNG_1X1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+/**
+ * Pre-seed the ONE demo media id so `demo:whatsapp` lands a document instead of
+ * dead-lettering.
+ *
+ * // DEMO-MOCK: Meta Graph media fetch (GraphMediaFetcher) resolves real ids in
+ * staging/prod. This only ever touches the fixture fetcher — `selectMediaFetcher`
+ * calls it on the `fixture` branch alone, so the graph path is untouched and no
+ * real receipt id is ever fabricated.
+ */
+export function seedDemoMedia(fetcher: FixtureMediaFetcher): void {
+  fetcher.put(DEMO_WHATSAPP_MEDIA_ID, {
+    bytes: DEMO_PNG_1X1,
+    declaredMimeType: 'image/png',
+    declaredFilename: 'currys-receipt.png',
+  });
+}

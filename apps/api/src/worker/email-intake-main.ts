@@ -2,9 +2,11 @@ import 'reflect-metadata';
 
 import { Logger } from '@nestjs/common';
 
+import { getPrismaClient } from '../common/db/prisma.js';
 import { loadEnv } from '../config/env.js';
 import { drainEmailSource } from '../modules/ingestion-routing/email/inbound/email-intake-runner.js';
 import { selectEmailSource } from '../modules/ingestion-routing/email/inbound/select-email-source.js';
+import { PrismaSenderMapLoader } from '../modules/ingestion-routing/email/inbound/sender-map.js';
 import { PostalMimeEmailParser } from '../modules/ingestion-routing/email/postal-mime-email-parser.js';
 import { createSharpPerceptualHasher } from '../modules/ingestion-routing/lib/dedupe/perceptual-hash.js';
 import { selectDocumentGuard, selectImageNormaliser } from '../modules/ingestion-routing/lib/sanitisation/index.js';
@@ -41,6 +43,10 @@ async function bootstrap(): Promise<void> {
     imageNormaliser: selectImageNormaliser(env.IMAGE_NORMALISER),
     documentGuard: selectDocumentGuard(env.DOCUMENT_GUARD),
     perceptualHasher: createSharpPerceptualHasher(),
+    // Route by sender against the practice's own contacts (METH Stage 5). Reads
+    // through `scopedDb` under the practice SYSTEM context per email — the same
+    // policed path the sink uses — so an unregistered sender stays Unrouted.
+    senderMapLoader: new PrismaSenderMapLoader(getPrismaClient()),
     // Warned-once set persists across polls, so a stuck email does not re-warn.
     warned: new Set<string>(),
   };
