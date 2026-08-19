@@ -40,12 +40,24 @@ decides nothing about whether it may happen.
   on the proposal row and in `outcome`.
 - `canonical-hash.ts` — canonical JSON (sorted keys, dropped undefined) +
   SHA-256. `payload_hash`, the rendered hash and the audit chain all use it.
-- `approvals.module.ts` — builds `buildExecutorRegistry()` and the
-  `PrismaDuplicateDetector` INSIDE the service factory, through the two
-  modules' public seams (`validation-dedupe/index.ts`,
-  `ingestion-routing/index.ts`). **No token ever names an executor** — that is
-  this module's half of the #81 no-bypass promise; `executors.test.ts` pins
-  the controller-import half.
+- `approvals.module.ts` — builds `buildExecutorRegistry(...)`, the
+  `PrismaDuplicateDetector` and the `PublishGateway` INSIDE the service
+  factory, through the modules' public seams (`validation-dedupe/index.ts`,
+  `ingestion-routing/index.ts`, since METH S8 `chase/index.ts` for the
+  config-selected `SmsSender` passed to the registry — `chase.send` "sends"
+  through it — and since METH S10 `publishing/index.ts`). **No token ever names
+  an executor** — that is this module's half of the #81 no-bypass promise;
+  `executors.test.ts` pins the controller-import half.
+  **Why publishing arrives in two pieces** (METH S10): the `LedgerAdapter` is
+  config-selected, so it comes through DI (`imports: [PublishingModule]`,
+  `inject: [LEDGER_ADAPTER]`); `previewPublishBatch` is a pure function with no
+  configuration to choose, so it is imported. Both go to the executor as ONE
+  `PublishGateway` — the same object the service keeps — because an engine that
+  queued a batch through one adapter and published it through another would be
+  two systems wearing one name. It is handed over rather than imported by the
+  executor because publishing imports validation-dedupe, and a runtime import
+  back would close a cycle between two public seams. The composition root is
+  the place allowed to know both.
 
 ## Enforcement is layered, deliberately
 
@@ -70,11 +82,28 @@ implemented) · `NT-IDM-001` idempotency-key reuse with a different payload ·
 
 ## Post-commit follow-ups
 
+`FollowUp` is a discriminated union and `runFollowUps`' switch is total over
+it, the way the registry is total over `ProposalKind` — a new member that fails
+to compile there is the point. **Two members.**
+
 `document.route`'s deferred dedupe runs AFTER commit via
 `runDedupeFollowUp` + the real detector; a failure is a loud log, never a 500
 for a committed approval — the in-transaction deferral event keeps it
 sweepable. The periodic sweep over `findStaleDedupeFollowUps` is **not wired
 yet** (see TODO).
+
+`publish.batch`'s ledger call (METH S10) runs AFTER commit via
+`runPublishFollowUp` + the injected `LedgerAdapter`, and this one is not a
+convenience — ⚠ **an external HTTP call must never hold a tenant transaction
+open.** A batch is up to 500 items and a real Xero round trip lasts as long as
+someone else's network decides. The executor commits `publishes` rows in
+QUEUED (durable intent, atomic with the approval) and this drives the vendor
+per item, each resolution in its own short transaction. A failure here is the
+same loud log: the QUEUED rows are visible, truthful and re-drivable by calling
+the runner again. **Approve therefore blocks for the publish** (~2.4 s for the
+demo's three items) instead of returning instantly — the accepted cost, and the
+exact seam a BullMQ enqueue replaces post-demo, with no call-site changes.
+`modules/publishing/CLAUDE.md` carries the full reasoning.
 
 ## Tests
 
@@ -95,6 +124,11 @@ pnpm --filter @neoting/api test -- approvals            # unit, offline
   idempotent and returns the stored render, so facts-moved detection is only
   as strong as the render being payload-pure — kinds whose reviews must read
   live state (publish preview) put those facts IN the payload at creation.
+  METH S10 closed the other half of that: `publish.batch`'s executor
+  re-computes the preview from live rows and refuses if it no longer matches
+  the payload's. `NT-PRP-004` structurally cannot see that drift, so the
+  executor is the only place it is visible — a pattern any future kind whose
+  payload carries live facts should copy.
 - The `Idempotency-Key` store is the shared in-memory one
   (`common/idempotency/` — moved there from web-upload when this module became
   its second consumer). Durable store remains the known follow-up, same as
@@ -108,7 +142,11 @@ pnpm --filter @neoting/api test -- approvals            # unit, offline
       approve-permission are not yet distinct — `assertCan` matrix is
       explicitly out of METH S3 scope. The workspaceSession/CSRF requirement on
       approve likewise awaits the auth hardening pass.
-- [ ] Periodic sweep over `findStaleDedupeFollowUps` (worker concern).
+- [ ] Periodic sweep over `findStaleDedupeFollowUps` (worker concern), and the
+      same sweep for QUEUED `publishes` rows whose `runPublishFollowUp` never
+      completed. One worker, both follow-ups.
+- [ ] Move the publish follow-up onto BullMQ so approve stops blocking for the
+      ledger. The runner is already the single call site; nothing else changes.
 - [ ] Durable idempotency store (with web-upload, one change).
 - [ ] `audit_events.practice_id` (G7 contract change) — today the
       NULL-business chain is one global chain, world-readable under the

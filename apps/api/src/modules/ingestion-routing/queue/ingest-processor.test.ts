@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 
-import { RecordingExtractionStep } from '../../extraction/index.js';
+import { RecordingChaseAutoClose } from '../../chase/index.js';
+import { type ExtractionCompletion, RecordingExtractionStep } from '../../extraction/index.js';
 import { InMemoryDocumentStore } from '../storage/document-store.js';
 import { InMemoryDocumentSink } from './document-sink.js';
 import { InMemoryDuplicateDetector } from './duplicate-detector.js';
@@ -12,7 +13,7 @@ import { InMemoryProcessedStore } from './processed-store.js';
  *  normaliser is a passthrough — so these ARE valid PNG bytes for this pipeline. */
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01, 0x02]);
 
-function harness(): {
+function harness(completion: ExtractionCompletion | null = null): {
   logs: string[];
   warns: string[];
   sink: InMemoryDocumentSink;
@@ -21,6 +22,7 @@ function harness(): {
   fetcher: FixtureMediaFetcher;
   store: InMemoryDocumentStore;
   extractor: RecordingExtractionStep;
+  autoClose: RecordingChaseAutoClose;
   deps: Parameters<typeof processIngestJob>[1];
 } {
   const logs: string[] = [];
@@ -30,7 +32,8 @@ function harness(): {
   const processed = new InMemoryProcessedStore();
   const fetcher = new FixtureMediaFetcher();
   const store = new InMemoryDocumentStore();
-  const extractor = new RecordingExtractionStep();
+  const extractor = new RecordingExtractionStep(completion);
+  const autoClose = new RecordingChaseAutoClose();
   return {
     logs,
     warns,
@@ -40,6 +43,7 @@ function harness(): {
     fetcher,
     store,
     extractor,
+    autoClose,
     deps: {
       processed,
       logger: { log: (m) => logs.push(m), warn: (m) => warns.push(m) },
@@ -47,6 +51,7 @@ function harness(): {
       detector,
       media: { fetcher, store },
       extractor,
+      autoClose,
     },
   };
 }
@@ -109,6 +114,73 @@ test('a routed job hands extraction the business it was routed to', async () => 
   const h = harness();
   await processIngestJob({ ...emailJob, routing: { kind: 'matched', businessId: 'biz_1' } }, h.deps);
   expect(h.extractor.runs[0]?.businessId).toBe('biz_1');
+});
+
+// ── Auto-close on inbound match (chase, METH Stage 8) ────────────────────────
+
+/** A landed extraction completion — the header the auto-close hook receives. */
+const READY_COMPLETION: ExtractionCompletion = {
+  documentId: 'unused', // the RecordingExtractionStep overwrites it with the real id
+  businessId: null, // ditto — reflected from the run's businessId
+  state: 'READY',
+  supplierName: 'Currys',
+  totalPence: 129_900,
+  documentDate: new Date('2026-08-09T00:00:00.000Z'),
+};
+
+test('a routed, landed document runs auto-close with its extracted header (METH Stage 8)', async () => {
+  const h = harness(READY_COMPLETION);
+  await processIngestJob({ ...emailJob, routing: { kind: 'matched', businessId: 'biz_1' } }, h.deps);
+
+  expect(h.autoClose.runs).toHaveLength(1);
+  const run = h.autoClose.runs[0];
+  expect(run?.businessId).toBe('biz_1');
+  expect(run?.practiceId).toBe('prac_x');
+  expect(run?.supplierName).toBe('Currys');
+  expect(run?.totalPence).toBe(129_900);
+  expect(run?.traceId).toBe('trace-email');
+});
+
+test('an unrouted document does not run auto-close (no business to anchor a chase)', async () => {
+  // Even with a landed completion, an unrouted document (businessId null) has no
+  // business to hold an open chase — auto-close is skipped.
+  const h = harness({ ...READY_COMPLETION, businessId: null });
+  await processIngestJob(emailJob, h.deps); // routing.kind === 'unrouted'
+  expect(h.autoClose.runs).toHaveLength(0);
+});
+
+test('a document that did not land (FAILED/skipped extraction) does not run auto-close', async () => {
+  // A null completion is a FAILED read or a no-op redelivery — a chase must never
+  // close on a document we could not read.
+  const h = harness(null);
+  await processIngestJob({ ...emailJob, routing: { kind: 'matched', businessId: 'biz_1' } }, h.deps);
+  expect(h.autoClose.runs).toHaveLength(0);
+});
+
+test('a web-upload document runs auto-close too, carrying the upload business', async () => {
+  const h = harness(READY_COMPLETION);
+  await processIngestJob(webUploadJob, h.deps);
+  expect(h.autoClose.runs).toHaveLength(1);
+  expect(h.autoClose.runs[0]?.businessId).toBe('biz_1');
+  expect(h.autoClose.runs[0]?.practiceId).toBe('prac_web');
+});
+
+test('an auto-close failure is swallowed — the document is safe, the job succeeds', async () => {
+  const h = harness(READY_COMPLETION);
+  const failing = {
+    ...h.deps,
+    autoClose: {
+      run: async () => {
+        throw new Error('chase engine down');
+      },
+    },
+  };
+  // The job must NOT throw: the document is already persisted and extracted, and
+  // a chase-close error is not allowed to lose it.
+  await expect(
+    processIngestJob({ ...emailJob, routing: { kind: 'matched', businessId: 'biz_1' } }, failing),
+  ).resolves.toBeUndefined();
+  expect(h.warns.some((w) => w.includes('auto-close') && w.includes('chase engine down'))).toBe(true);
 });
 
 test('a message with nothing to persist does not run extraction', async () => {

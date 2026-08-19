@@ -7,6 +7,12 @@ import type { EmailParser } from '../email-parser.js';
 import type { ParsedEmail } from '../parsed-email.js';
 import { drainEmailSource, type EmailIntakeRunnerDeps, runEmailIntake } from './email-intake-runner.js';
 import { type EmailSource, FixtureEmailSource, type InboundRawEmail } from './email-source.js';
+import type { SenderMapLoader } from './sender-map.js';
+
+/** A fake loader (no DB): the practice's map is whatever we hand it. */
+function fakeLoader(map: ReadonlyMap<string, readonly string[]>): SenderMapLoader {
+  return { load: async () => map };
+}
 
 /** A PNG signature is all the sniffer reads; the fixture normaliser is a passthrough. */
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01, 0x02]);
@@ -278,4 +284,58 @@ test('every rejected attachment is logged with its filename, code and reason bef
   expect(summary.processed).toBe(1);
   expect(source.acked).toEqual(['ok-1']);
   expect(warns.some((w) => w.includes('evil.exe') && w.includes('NT-ING-'))).toBe(true);
+});
+
+test('a registered sender (in this practice’s map) routes MATCHED to its business', async () => {
+  // The Stage 5 beat: the sender identity is a contact on American Burger, so the
+  // document routes to that workspace instead of Unrouted. The loader is asked
+  // for THIS resolved practice; a fake stands in for the DB.
+  const { deps, queue } = baseDeps({
+    parser: stubParser(parsedEmail({ from: 'owner@americanburger.test' })),
+    senderMapLoader: fakeLoader(new Map([['owner@americanburger.test', ['biz_burger']]])),
+  });
+
+  const outcome = await runEmailIntake(rawEmail(), deps);
+  if (outcome.status !== 'processed') throw new Error('expected processed');
+  expect(outcome.result.routing).toEqual({ kind: 'matched', businessId: 'biz_burger' });
+  const job = queue.enqueued[0];
+  expect(job?.routing).toEqual({ kind: 'matched', businessId: 'biz_burger' });
+  // A matched document is stored under its business prefix, not `_unrouted`.
+  expect(job?.storageKey).toContain('w/biz_burger/documents/');
+});
+
+test('an unregistered sender stays UNROUTED even with a populated map', async () => {
+  const { deps, queue } = baseDeps({
+    parser: stubParser(parsedEmail({ from: 'stranger@example.test' })),
+    senderMapLoader: fakeLoader(new Map([['owner@americanburger.test', ['biz_burger']]])),
+  });
+
+  const outcome = await runEmailIntake(rawEmail(), deps);
+  if (outcome.status !== 'processed') throw new Error('expected processed');
+  expect(outcome.result.routing.kind).toBe('unrouted');
+  expect(queue.enqueued[0]?.storageKey).toContain('w/_unrouted/prac_x/documents/');
+});
+
+test('a mixed-case From still routes MATCHED — the lookup lower-cases too', async () => {
+  // The map keys are lower-cased; processEmail lower-cases email.from before the
+  // lookup, so an MUA that capitalises the address does not silently fall to
+  // Unrouted. Without the call-site lower-casing this routes unrouted.
+  const { deps } = baseDeps({
+    parser: stubParser(parsedEmail({ from: 'Owner@AmericanBurger.test' })),
+    senderMapLoader: fakeLoader(new Map([['owner@americanburger.test', ['biz_burger']]])),
+  });
+
+  const outcome = await runEmailIntake(rawEmail(), deps);
+  if (outcome.status !== 'processed') throw new Error('expected processed');
+  expect(outcome.result.routing).toEqual({ kind: 'matched', businessId: 'biz_burger' });
+});
+
+test('with NO loader injected, behaviour is unchanged: everything Unrouted', async () => {
+  // The optionality contract — the existing tests all run without a loader and
+  // must keep landing Unrouted. This pins it explicitly for a registered-looking
+  // sender that has no map to be found in.
+  const { deps } = baseDeps({ parser: stubParser(parsedEmail({ from: 'owner@americanburger.test' })) });
+  const outcome = await runEmailIntake(rawEmail(), deps);
+  if (outcome.status !== 'processed') throw new Error('expected processed');
+  expect(outcome.result.routing.kind).toBe('unrouted');
 });

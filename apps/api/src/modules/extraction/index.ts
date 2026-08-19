@@ -9,6 +9,7 @@
  */
 export type { DocumentExtractor } from './document-extractor.js';
 export {
+  type ExtractionCompletion,
   type ExtractionInput,
   type ExtractionStep,
   PrismaExtractionStep,

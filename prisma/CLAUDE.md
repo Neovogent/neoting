@@ -108,3 +108,20 @@ No `SECURITY DEFINER` function, no second connection, no loosened policy. If a f
 2. **Extraction fields as `Json`.** Per-field value + confidence + provenance in one column. Flexible and matches the "fields jsonb" of §15 — but it cannot be indexed per field, so any future "find every document where the VAT number came from a low-confidence read" query needs a GIN index or promoted columns. Fine for v1; worth knowing.
 3. **`documents` carries denormalised header fields** (supplier, total, date) alongside `extractions`. Deliberate: inbox lists and search would otherwise reach into JSON on every row. The accepted extraction is the source of truth and these are a projection — they must be written by one code path only.
 4. **`audit_events.seq`** is `BigInt` per business for the hash chain. Allocation needs a per-business sequence or advisory lock; decide before the audit service is written.
+
+## `seed.ts` — the METH Stage 5 demo cast (§7)
+
+Additive-only, no schema change. `prac_ledgerline`'s display name is
+"Neovogent Accounting" (id unchanged). Two demo login users
+(`usr_shakib_demo` / `shakib@neoting.test` → PRACTICE_ADMIN,
+`usr_abdullah_demo` / `abdullah@neoting.test` → PRACTICE_STANDARD, both
+practice-wide on `prac_ledgerline`) — **ids/emails are pinned by
+`apps/api/src/modules/auth-tenancy/demo-credentials.ts`; a mismatch 401s every
+request.** `con_owner_burger` (owner@americanburger.test / +447700900001) is the
+routing identity for American Burger's email/WhatsApp beats. Chase targets on
+`biz_burger` carry ABSOLUTE dates (`bookedAtAbs`): Currys −129900p / 9 Aug 2026,
+Google −60000p / 5 Aug 2026 (Google was moved here from Cosmo). `refsync_burger_coa`
+seeds the Xero chart-of-accounts categories the Stage 4 profiles use. **No Bidfood
+rule is seeded** — Stage 13 creates it live. `txn_NNN` ids are position-derived,
+so the chase/proposal references (`txn_003`, `txn_017`, `txn_023`, `txn_026`) were
+re-verified after the row-order change.

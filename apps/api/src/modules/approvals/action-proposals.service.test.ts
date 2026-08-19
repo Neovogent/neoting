@@ -130,6 +130,12 @@ function harness(rows: ProposalRow[] = [], executorResult?: ExecutionResult | Er
     prisma,
     registry,
     { detect: async () => ({ findings: [], candidatesTruncated: false }) },
+    // No publish proposals here, so the ledger is never reached; a stub keeps
+    // the gate-ladder assertions independent of METH S10's wiring.
+    {
+      ledger: { publishBill: async () => ({ ok: true, externalRef: 'STUB', attachmentSent: false }) },
+      previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0 } }),
+    },
     new InMemoryIdempotencyStore(),
   );
   return { service, map, audits, executed };

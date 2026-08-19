@@ -38,6 +38,21 @@ Every job carries the `traceId` of its origin. The per-document processing log r
 
 See `src/modules/*/CLAUDE.md`. Read the module's file on entry, update it on exit.
 
+## Tests run FILE-SERIALLY — the shared-DB reason (METH Stage 8 gate)
+
+`vitest.config.ts` sets `fileParallelism: false`. Every `*.integration.test.ts`
+suite owns a disjoint id namespace (`p4_`, `p40_`, `pac_`, …) and tears it down
+with `deleteMany` in `beforeAll`/`afterAll` against the ONE shared local Postgres.
+Run in parallel worker threads (the vitest default), those concurrent parent
+DELETEs (`businesses`, `documents`) race on FK-constraint validation and row
+locks against another suite's in-flight children — `documents_business_id_fkey` /
+`duplicates_document_aid_fkey` tripped intermittently, red ~1 run in 2, with no
+source fault. Serialising files removes the contention; the suite is DB-bound and
+runs in the same wall-clock either way, so there is no speed traded. **Do not
+re-enable file parallelism without first giving each worker its own database (or
+a txn-rollback harness)** — tracked as post-demo work. A new integration suite
+must keep the disjoint-prefix + full-teardown discipline the existing ones use.
+
 ## Build and container
 
 `pnpm --filter @neoting/api build` runs `tsc -p tsconfig.build.json` and emits `dist/`.

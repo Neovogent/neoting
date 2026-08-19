@@ -146,7 +146,9 @@ describe.skipIf(!enabled)('proposal executors against a real database', () => {
     expect(stale.some((s) => s.documentId === 'p81_doc_new')).toBe(true);
 
     // What the engine does post-commit, with the REAL detector.
-    if (followUp === undefined) throw new Error('unreachable');
+    // `FollowUp` is a union since METH S10 (`dedupe` | `publish`); narrow on
+    // the discriminant, which is also what the engine's switch does.
+    if (followUp?.kind !== 'dedupe') throw new Error('unreachable');
     await runDedupeFollowUp(app, STAFF_A, followUp, new PrismaDuplicateDetector(app), 'trace-81');
 
     const pairs = await owner.duplicate.findMany({ where: { businessId: BIZ_A } });

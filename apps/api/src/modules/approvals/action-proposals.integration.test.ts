@@ -6,9 +6,19 @@ import { approveActionProposalResponse } from '@neoting/contracts/zod';
 import { ScopeContextSchema } from '../../common/db/scope-context.js';
 import { InMemoryIdempotencyStore } from '../../common/idempotency/idempotency-store.js';
 import { AppException } from '../../common/problem/problem.js';
-import { buildExecutorRegistry } from '../validation-dedupe/index.js';
+import { previewPublishBatch } from '../publishing/index.js';
+import { buildExecutorRegistry, type PublishGateway } from '../validation-dedupe/index.js';
 import { ActionProposalsService } from './action-proposals.service.js';
 import { canonicalStringify, sha256Hex } from './canonical-hash.js';
+
+/**
+ * The REAL preview (it is pure), a stub ledger (this file proposes no publish
+ * batches). `publish-batch.integration.test.ts` is where the real adapter runs.
+ */
+const PUBLISHING: PublishGateway = {
+  ledger: { publishBill: async () => ({ ok: true, externalRef: 'STUB', attachmentSent: false }) },
+  previewPublishBatch,
+};
 
 /**
  * The METH S3 acceptance (issue #122), against a REAL database as `nt_app`:
@@ -41,10 +51,11 @@ const STAFF_B = ScopeContextSchema.parse({ actorId: 'p122_user_b', practiceId: P
 function service(): ActionProposalsService {
   return new ActionProposalsService(
     app,
-    buildExecutorRegistry(),
+    buildExecutorRegistry({ publishing: PUBLISHING }),
     // No route proposals here, so no follow-up ever runs; a stub keeps the
     // test independent of the detector's SYSTEM-actor seeding.
     { detect: async () => ({ findings: [], candidatesTruncated: false }) },
+    PUBLISHING,
     new InMemoryIdempotencyStore(),
   );
 }
