@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "pnpm --filter @neoting/contracts build && pnpm --filter @neoting/web build",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "outputDirectory": "apps/web/dist",
+  "framework": null,
+  "rewrites": [
+    { "source": "/v1/:path*", "destination": "https://api.neoting.neovogent.com/v1/:path*" },
+    { "source": "/healthz", "destination": "https://api.neoting.neovogent.com/healthz" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
