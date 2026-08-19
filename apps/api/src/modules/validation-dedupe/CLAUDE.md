@@ -27,8 +27,8 @@ Changing any of those is a contract-change issue approved by Shakib **before** a
 
 Exposes **only** its public providers. No other module reaches into its internals; cross-module work goes through those providers or through domain events on the transactional outbox. Import rules are lint-enforced, because this boundary is also the parallel-agent lane map.
 
-`index.ts` is the public seam, with **two** cross-module consumers — growing it
-is a boundary decision, and it grew twice:
+`index.ts` is the public seam, with **three** cross-module consumers — growing it
+is a boundary decision, and it grew three times:
 
 - The **Review → Approve engine** (`modules/approvals`, METH S3 / #122) takes the
   #81 executor contract: `buildExecutorRegistry`, the executor types and the two
@@ -39,6 +39,12 @@ is a boundary decision, and it grew twice:
   machine (`transitionDocument`, the transition type, `IllegalDocumentTransition`,
   `StaleDocumentState`) and the readiness rule (`resolveProcessedState`, its
   input/result types) — the two things extraction-completion drives.
+- The **publishing lane** (`modules/publishing`, METH Stage 10) widened the
+  readiness export to `evaluateReadiness` + `ReadinessField`. The publish
+  minimum (Total + Supplier + Category) is not a second rule — it is THIS one,
+  and `NT-PUB-001` has to name the fields that are missing, which only
+  `evaluateReadiness` returns. Publishing re-stating the rule its own way is
+  how a document ends up Ready on the inbox and unpublishable in the batch.
 
 ## Tests
 
@@ -105,21 +111,23 @@ performs exactly one effect inside the engine's open `scopedDb` transaction
 (`ScopedClient` has no `$transaction`, so one-effect-one-transaction is
 structural) and decides nothing about whether it may happen.
 
-- **`buildExecutorRegistry(deps?)`** — total over the contract's `ProposalKind`
+- **`buildExecutorRegistry(deps)`** — total over the contract's `ProposalKind`
   by mapped type: a missing kind is a compile error; the engine's `NT-PRP-001`
-  stays the second line of defence. **Four real executors** (route, archive,
-  update-coding since METH S3 #122, chase.send since METH S8), seven honest holes
-  throwing `ProposalNotImplementedError` by name — the remaining #81 four
-  (`move-business`, `reprocess`, `reject`, `split`) plus the METH Stage 2 kinds
-  (#120) still open: `publish.batch` (S10), `bank.confirm-match` (S11),
-  `rule.create` (S13), each typed off the generated payload models. The factory
-  now takes an optional `ExecutorRegistryDeps` (`{ smsSender? }`) — chase.send
-  needs a collaborator beyond the DB; it defaults to `new DemoSmsSender()` so the
-  arg-less call still works (the executor tests use it), and `approvals.module.ts`
-  passes the config-selected sender. **No controller imports the proposals
-  directory** — a test walks every `*.controller.ts` and asserts it; the
-  provider-side half is upheld in `approvals.module.ts` (registry built inside the
-  service factory, no token).
+  stays the second line of defence. **Five real executors** (route, archive,
+  update-coding since METH S3 #122, chase.send since METH S8, publish.batch
+  since S10), six honest holes throwing `ProposalNotImplementedError` by name —
+  the remaining #81 four (`move-business`, `reprocess`, `reject`, `split`) plus
+  the METH Stage 2 kinds (#120) still open: `bank.confirm-match` (S11),
+  `rule.create` (S13), each typed off the generated payload models. The `deps`
+  argument (`ExecutorRegistryDeps`) is **required since S10**: `publishing` has
+  no safe default, and a registry that quietly degraded a built executor back
+  to a hole because a call site forgot an argument is the failure the mapped
+  type exists to prevent, moved one level out. `smsSender` stays optional —
+  `DemoSmsSender` is a true safe default (the only mode in this push) and
+  `approvals.module.ts` passes the config-selected sender. **No controller
+  imports the proposals directory** — a test walks every `*.controller.ts` and
+  asserts it; the provider-side half is upheld in `approvals.module.ts`
+  (registry built inside the service factory, no token).
 
 - **`chase.send`** (METH S8) — the flagship effect, `chase-send.ts`. A factory
   `chaseSendExecutor(sender)` taking an `SmsSender` from the **chase module's
@@ -178,20 +186,90 @@ structural) and decides nothing about whether it may happen.
   recorded seam on the event (`createRuleDeferred`), for `rule.create`
   (METH S13). Dates land as UTC midnight; the extraction value keeps the
   contract's `YYYY-MM-DD`.
+- **`publish.batch`** (METH S10) — `publish-batch.ts` + `publish-follow-up.ts`,
+  split across the engine's commit, and the split is the whole design.
+
+  ⚠ **An external HTTP call must never hold a tenant transaction open.** A
+  batch is up to 500 items (the contract) and a real Xero round trip lasts as
+  long as someone else's network decides; inside the effect that is minutes of
+  held row locks. So the EFFECT writes one `publishes` row per item in
+  **QUEUED** — durable intent, committed atomically with the approval, which is
+  what that state is for — and returns a `publish` `FollowUp`; the RUNNER calls
+  the ledger post-commit, per item, resolving each row in its own short scoped
+  transaction. `modules/publishing/CLAUDE.md` carries the full reasoning and
+  the option that was rejected. If a later edit moves `publishBill` into the
+  executor it will look tidier and will be wrong.
+
+  - **The only executor built as a FACTORY.** `createPublishBatchExecutor(gateway)`.
+    Publishing imports THIS module (the publish minimum IS `evaluateReadiness`),
+    so importing publishing back would close a cycle between two public seams.
+    The shapes come in as `import type` (erased, no cycle); the adapter and
+    `previewPublishBatch` are handed over as one `PublishGateway`, composed by
+    `approvals.module.ts` — the `DedupeDetection` precedent, applied.
+  - **All-or-nothing pre-flight, per-item post-commit.** One item short of
+    Total + Supplier + Category refuses the WHOLE batch with `NT-PUB-001`
+    naming every missing field (the contract: "refuses … rather than publishing
+    half-coded books"; archive is all-or-nothing for the same reason). A
+    VENDOR failure is per item — 39 of 40 publish and item 12 lands on the
+    Rejected/Failed surface with a reason — because by then the batch is
+    approved and committed, and un-approving it is not a thing that exists.
+  - **The preview is the SERVER's number, twice.** At creation the engine calls
+    `computePublishBatchPayload` (exported here) and stores ITS preview in the
+    payload — a caller-sent figure is discarded, and an item short of the
+    minimum refuses creation with `NT-PUB-001` (the contract: "refusing at
+    proposal time beats publishing half-coded books").
+  - **The reviewed figures are re-checked.** The payload's server-computed
+    preview is what a human approved; if the live totals no longer agree, the
+    batch refuses. `NT-PRP-004` cannot catch this — review is idempotent and
+    the render is payload-pure — so this is the only place the drift is visible.
+  - **Failure lands as REJECTED, not FAILED**, because `LEGAL_TRANSITIONS`
+    gives READY exactly one failure exit and that is REJECTED; both render on
+    the same Rejected/Failed surface, and FAILED is our pipeline breaking while
+    a ledger declining a bill is something refusing it. Retry is a NEW proposal
+    over the failed item (never a replay), and it takes REJECTED → PROCESSING →
+    READY in the effect transaction: PROCESSING is the machine's only exit from
+    REJECTED and the only edge that clears the reason, and a document that
+    publishes on the second attempt must not still claim the ledger refused it.
+  - **Auto-archive REUSES `archiveDocumentExecutor.execute`**, called with the
+    same `ScopedClient` — not a second implementation of archiving. That
+    executor already owns the parts that are easy to get subtly wrong (`state`
+    AND `archivedAt` together, the pre-archive state recorded on the event so an
+    unarchive can restore it, the idempotent skip), and it takes a
+    `ScopedClient` precisely so another effect can compose it.
+  - **Idempotent.** `publishes.idempotency_key` is `<proposalId>:<documentId>`
+    — globally unique per the schema, one row per item per proposal. A replay
+    sees its own rows and returns `alreadyApplied` with no second row, no
+    second follow-up and therefore **no second vendor call**; the unique index
+    is the database-level backstop that turns a concurrent double-execute into
+    a rolled-back transaction rather than a double post.
+  - The integration is resolved, never guessed: `integrationId: null` means the
+    business's **single** active connection, and a client with none — or with
+    two — refuses rather than picking. The demo's scripted failure is keyed on
+    the **attempt** (the count of that document's `publishes` rows up to this
+    one), which is the only way "deterministic failure" and "retry succeeds
+    second time" both hold, and it needs nothing from `prisma/seed.ts`.
 
 ## TODO
 
 - [ ] The seven unimplemented executors — the remaining #81 four
       (`move-business`, `reprocess`, `reject`, `split`; each needs its own
-      issue) and the three still-open METH kinds (`publish.batch` → S10,
-      `bank.confirm-match` → S11, `rule.create` → S13). The registry already
-      types and names them all. `update-coding` landed with the engine (METH
-      S3, #122); `chase.send` landed with METH S8.
+      issue) and the two still-open METH kinds (`bank.confirm-match` → S11,
+      `rule.create` → S13). The registry already types and names them all.
+      `update-coding` landed with the engine (METH S3, #122); `chase.send`
+      landed with METH S8; `publish.batch` in METH S10.
 - [x] The engine is wired (METH S3, #122 — `modules/approvals`): registry via
       `useFactory`, token kept out of public providers; dedupe follow-ups run
       post-commit. Still open: a periodic sweep over
       `findStaleDedupeFollowUps` (worker concern, tracked on the approvals
       CLAUDE.md too).
+- [ ] The same sweep for **QUEUED `publishes` rows** whose follow-up never
+      completed. `runPublishFollowUp` re-drives them from the proposal id and
+      resolved rows are skipped, so it is safe to call repeatedly — but nothing
+      periodic calls it yet. One worker, both sweeps.
+- [ ] `document.reprocess` (still a hole) will want to look at
+      `publish-batch.ts`'s `admitForPublish`: the REJECTED → PROCESSING → READY
+      re-arm written there is the same edge, and when the reprocess executor
+      lands the two should not be two implementations of it.
 - [x] Wire the pipeline (extraction completion) onto `resolveProcessedState` —
       done in METH Stage 4. `modules/extraction`'s `PrismaExtractionStep` drives
       RECEIVED → PROCESSING → READY|TO_REVIEW|FAILED through `transitionDocument`

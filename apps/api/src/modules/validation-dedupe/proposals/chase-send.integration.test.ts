@@ -6,6 +6,7 @@ import { InMemoryIdempotencyStore } from '../../../common/idempotency/idempotenc
 import { AppException } from '../../../common/problem/problem.js';
 import { composeChaseSms, DemoSmsSender, signPortalLink, verifyPortalLink } from '../../chase/index.js';
 import { ActionProposalsService } from '../../approvals/action-proposals.service.js';
+import type { PublishGateway } from './publish-batch.js';
 import { buildExecutorRegistry } from './registry.js';
 
 /**
@@ -34,11 +35,20 @@ let app: PrismaClient;
 
 const STAFF = ScopeContextSchema.parse({ actorId: 'p8_user', practiceId: P });
 
+// publish.batch is out of frame here: the stub satisfies the registry's
+// required `publishing` dep and the service's follow-up seam, nothing more
+// (the real gateway is exercised in publish-batch.integration.test.ts).
+const STUB_PUBLISHING: PublishGateway = {
+  ledger: { publishBill: async () => ({ ok: true, externalRef: 'STUB', attachmentSent: false }) },
+  previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0 } }),
+};
+
 function service(): ActionProposalsService {
   return new ActionProposalsService(
     app,
-    buildExecutorRegistry({ smsSender: new DemoSmsSender() }),
+    buildExecutorRegistry({ smsSender: new DemoSmsSender(), publishing: STUB_PUBLISHING }),
     { detect: async () => ({ findings: [], candidatesTruncated: false }) },
+    STUB_PUBLISHING,
     new InMemoryIdempotencyStore(),
   );
 }

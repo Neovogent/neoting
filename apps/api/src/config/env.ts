@@ -178,6 +178,13 @@ const EnvSchema = z.object({
   // portal endpoints failing closed rather than crash-looping /healthz.
   PORTAL_SESSION_SECRET: z.string().default(''),
 
+  // The ledger adapter (METH Stage 10). `demo` = DemoXeroAdapter — deterministic
+  // XERO-INV-#### refs, a simulated per-item delay and one scripted
+  // failure-then-retry; the real Xero SDK + OAuth lands behind the same seam.
+  // Default `demo` and, today, the ONLY value: a real bill posting into a real
+  // client's books is not something an unset variable may cause. Selected by
+  // config, not import, like the switches above.
+  LEDGER_ADAPTER: z.enum(['demo']).default('demo'),
   S3_ENDPOINT: z.string().default(''), // e.g. http://localhost:9000 for MinIO; empty = AWS default
   S3_REGION: z.string().default('eu-west-2'),
   S3_ACCESS_KEY_ID: z.string().default(''),

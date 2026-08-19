@@ -10,8 +10,19 @@ import { ScopeContextSchema } from '../../../common/db/scope-context.js';
 import type { ScopedClient } from '../../../common/db/scoped-db.js';
 import { archiveDocumentExecutor } from './archive-document.js';
 import { ProposalExecutionRefused, ProposalNotImplementedError } from './proposal-executor.js';
+import type { PublishGateway } from './publish-batch.js';
 import { buildExecutorRegistry } from './registry.js';
 import { routeDocumentExecutor } from './route-document.js';
+
+/**
+ * The registry now takes a dependency (METH S10). This stub is enough for the
+ * totality assertion — `publish-batch.test.ts` is where the gateway is
+ * exercised, and `publish-batch.integration.test.ts` wires the real one.
+ */
+const STUB_PUBLISHING: PublishGateway = {
+  ledger: { publishBill: async () => ({ ok: true, externalRef: 'STUB', attachmentSent: false }) },
+  previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0 } }),
+};
 
 const CTX: ScopeContext = ScopeContextSchema.parse({ actorId: 'usr_1', practiceId: 'prac_1' });
 
@@ -96,7 +107,7 @@ const input = <P>(payload: P) => ({ proposalId: 'prop_1', payload, ctx: CTX, tra
 // ---- registry --------------------------------------------------------------
 
 test('the registry is total over the contract enum, and the holes throw by name', async () => {
-  const registry = buildExecutorRegistry();
+  const registry = buildExecutorRegistry({ publishing: STUB_PUBLISHING });
   for (const kind of Object.values(ProposalKind)) {
     expect(registry[kind]).toBeDefined();
     expect(registry[kind].kind).toBe(kind);
@@ -107,9 +118,8 @@ test('the registry is total over the contract enum, and the holes throw by name'
     'document.reprocess',
     'document.reject',
     'document.split',
-    // METH Stage 2 (#120) — holes until their stages land executors. chase.send
-    // is now real (METH S8), so it is no longer in this list.
-    'publish.batch',
+    // METH Stage 2 (#120) — holes until S11/S13 land their executors.
+    // `chase.send` left this list in METH S8, `publish.batch` in METH S10.
     'bank.confirm-match',
     'rule.create',
   ] as const) {

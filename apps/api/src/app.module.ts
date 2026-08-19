@@ -14,6 +14,7 @@ import { HealthModule } from './modules/health/health.module.js';
 import { WebUploadModule } from './modules/ingestion-routing/web-upload/web-upload.module.js';
 import { WhatsAppWebhookModule } from './modules/ingestion-routing/webhooks/whatsapp/whatsapp.module.js';
 import { PortalModule } from './modules/portal/portal.module.js';
+import { PublishingModule } from './modules/publishing/publishing.module.js';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { PortalModule } from './modules/portal/portal.module.js';
     DocumentsModule,
     HealthModule,
     PortalModule,
+    PublishingModule,
     WebUploadModule,
     WhatsAppWebhookModule,
   ],
