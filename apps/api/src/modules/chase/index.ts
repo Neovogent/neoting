@@ -21,6 +21,19 @@
  *    does not yet implement.
  */
 
+// The chased-item projection, for the OTP portal (METH Stage 9). `GET
+// /portal/context` shows the client the SAME items the accountant sees on the
+// chase detail — supplier, signed integer pence, booked date, and whether the
+// paperwork has arrived — so it projects through THIS function rather than
+// growing a second opinion about what a chased item is. `chaseItemRefs` narrows
+// the bare `Json` column the executor writes; `isChaseReceivedClose` is the
+// chase-level half of `received`.
+//
+// ⚠ `toChaseItem` returns the CONTRACT's `ChaseItem` (`@neoting/contracts/model`),
+// which is not the `ChaseItem` this seam exports below from `sms-copy.js` — that
+// one is composition's input. Import the contract type from the contract.
+export { chaseItemRefs, isChaseReceivedClose, toChaseItem } from './chase-projection.js';
+
 // Detection engine (a) — the unmatched, non-suppressed transactions a chase
 // covers, and the suppression predicate + list the read applies.
 export {

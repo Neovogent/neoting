@@ -44,7 +44,7 @@ export function toChaseSummary(row: ChaseRow): ChaseSummary {
     detectionEngine: row.detectionEngine,
     state: row.state,
     recipientContactId: row.recipientContactId,
-    itemCount: Math.max(1, readItemRefs(row).length),
+    itemCount: Math.max(1, chaseItemRefs(row).length),
     actionProposalId: row.actionProposalId,
     firstSentAt: toIso(row.firstSentAt),
     lastSentAt: toIso(row.lastSentAt),
@@ -72,8 +72,8 @@ export function toChaseDetail(
   messages: readonly ChaseMessageRow[],
 ): Chase {
   const byId = new Map(transactions.map((t) => [t.id, t]));
-  const refs = readItemRefs(row);
-  const closed = isReceivedClose(row.state);
+  const refs = chaseItemRefs(row);
+  const closed = isChaseReceivedClose(row.state);
 
   return {
     ...toChaseSummary(row),
@@ -95,13 +95,20 @@ export function toChaseDetail(
  * One chased item — today always an unmatched bank transaction (engine (a)).
  *
  * `received` answers "has a matching document arrived for this item". It is
- * derived, not stored: the chase auto-closes as `CLOSED_RECEIVED` when every
- * item is received (SoT §8.5), so a closed-received chase means all its items
- * are received, and a transaction that is no longer `UNMATCHED` has had its
- * paperwork attached. Either signal counts it received — deterministic product
- * logic over the two facts the read can see. // DEMO-MOCK: per-item receipt
- * tracking replaces this coarse chase-level derivation when engines (b)–(e) and
- * partial closure land.
+ * derived, not stored, from the two facts the read can see: this transaction is
+ * no longer `UNMATCHED` (its paperwork is attached — true whichever channel
+ * brought it), OR the caller says the chase-level close credits THIS item.
+ *
+ * ⚠ `chaseReceived` is a per-ITEM claim, not "the chase is closed". Stage 8's
+ * auto-close closes the whole chase on the FIRST matching document, so a
+ * grouped chase ("one text, many receipts", SoT §8.2) goes `CLOSED_RECEIVED`
+ * with its other lines still outstanding. A caller that passes
+ * `isChaseReceivedClose(chase.state)` for every ref therefore marks all of them
+ * received off one upload — which told a portal client the receipt we were
+ * still asking for had already arrived. Pass true only for the ref the close
+ * actually matched (`chase.transactionId`); see `portal-context.service.ts`.
+ * // DEMO-MOCK: per-item receipt tracking replaces this derivation when engines
+ * (b)–(e) and partial closure land.
  */
 export function toChaseItem(txn: BankTransactionRow, chaseReceived: boolean): ChaseItem {
   return {
@@ -187,16 +194,27 @@ export function extractPortalUrl(body: string): string | null {
  * non-string in it, yields the strings it can and drops the rest. A row with no
  * usable refs falls back to the single-transaction convenience column so the
  * count and item list are never emptier than the chase truly is.
+ *
+ * Exported (and taking only the two columns it reads) because THREE readers now
+ * need the same narrowing — this projection, `chases.service`'s item fetch, and
+ * the OTP portal's `GET /portal/context` (METH Stage 9). Three copies of "what
+ * counts as an item ref" is how the accountant's chase detail and the client's
+ * portal list start disagreeing about what is being chased.
  */
-function readItemRefs(row: ChaseRow): string[] {
+export function chaseItemRefs(row: Pick<ChaseRow, 'itemRefs' | 'transactionId'>): string[] {
   const raw = row.itemRefs;
   const refs = Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string') : [];
   if (refs.length > 0) return refs;
   return row.transactionId === null ? [] : [row.transactionId];
 }
 
-/** `CLOSED_RECEIVED` is the auto-close every-item-received state (SoT §8.5). */
-function isReceivedClose(state: ChaseRow['state']): boolean {
+/**
+ * `CLOSED_RECEIVED` is the auto-close every-item-received state (SoT §8.5), and
+ * therefore the chase-level half of `ChaseItem.received`. Exported for the same
+ * reason as `chaseItemRefs`: the portal renders the same `received` flag to the
+ * client that the accountant sees, and it must be the same predicate.
+ */
+export function isChaseReceivedClose(state: ChaseRow['state']): boolean {
   return state === 'CLOSED_RECEIVED';
 }
 

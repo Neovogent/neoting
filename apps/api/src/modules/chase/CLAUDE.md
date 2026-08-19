@@ -114,7 +114,16 @@ that spine can hide on it (the documents-surface discipline, applied to chases).
   `exactOptionalPropertyTypes`: a present key must carry a non-undefined value).
   `ChaseItem.received` is DERIVED — a `CLOSED_RECEIVED` chase means every item is
   received (SoT §8.5), and a non-`UNMATCHED` transaction has its paperwork; either
-  counts it received (// DEMO-MOCK: per-item receipt tracking). `SmsOutboxMessage.portalUrl`
+  counts it received (// DEMO-MOCK: per-item receipt tracking).
+  ⚠ **Three of its functions are now on the public seam** (METH S9): `toChaseItem`,
+  `chaseItemRefs` and `isChaseReceivedClose`. `GET /v1/portal/context` shows the
+  CLIENT the same items this shows the accountant — the contract makes that
+  explicit, one `ChaseItem` schema serving both "at two trust levels" — so the
+  portal projects through these rather than growing a second opinion about what a
+  chased item is or when it counts as received. The `itemRefs` narrowing that
+  `chases.service.ts` kept privately (`itemRefsOf`) was folded into
+  `chaseItemRefs` in the same change: one narrowing, three readers, no drift.
+  `SmsOutboxMessage.portalUrl`
   is the link pulled out of the composed body's own `Upload securely: ` marker
   (`extractPortalUrl`) so the phone screen can tap it — it never signs or verifies,
   so it cannot mint or leak authority.
@@ -193,6 +202,17 @@ S8, `auto-close.ts` behind the `index.ts` seam, wired into the ingest processor)
 - [x] Read controllers: `GET /v1/chases`, `/chases/{id}`, `/sms-outbox` (METH S8)
       — thin `ChasesController` + `ChasesService`, all through `scopedDb`, keyset
       paginated, proven against real Postgres RLS.
+- [x] **Consumed by METH Stage 9** (`modules/portal`): `verifyPortalLink` is the
+      portal session's first gate, unchanged, and `GET /v1/portal/context`
+      projects the client's item list through this module's `toChaseItem` /
+      `chaseItemRefs` / `isChaseReceivedClose`, all three added to `index.ts`.
+      Three things Stage 9 recorded that belong here — (1) the portal SESSION bearer is signed with a **separate**
+      `PORTAL_SESSION_SECRET`, so rotating the link secret does not invalidate
+      live sessions; (2) the link token carries only `{chaseId, exp}`, so the
+      portal must SWEEP practices to find the chase's tenant before any context
+      exists. Giving `PortalLinkClaims` a `practiceId` (a change to this
+      module's format and to the `chase.send` executor's mint call) collapses
+      that sweep to one lookup — post-demo, and it is a chase-module decision.
 - [ ] Engines (b)–(e), per-client suppression descriptors (G7 schema).
 - [ ] Policy scheduler, reminders, escalation, quiet hours, STOP, item messaging.
 - [ ] Update this file on exit — it is how the next session picks up.

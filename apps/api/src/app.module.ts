@@ -13,9 +13,21 @@ import { DocumentsModule } from './modules/documents/documents.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { WebUploadModule } from './modules/ingestion-routing/web-upload/web-upload.module.js';
 import { WhatsAppWebhookModule } from './modules/ingestion-routing/webhooks/whatsapp/whatsapp.module.js';
+import { PortalModule } from './modules/portal/portal.module.js';
 
 @Module({
-  imports: [EnvModule, ContextModule, ApprovalsModule, AuthTenancyModule, ChaseModule, DocumentsModule, HealthModule, WebUploadModule, WhatsAppWebhookModule],
+  imports: [
+    EnvModule,
+    ContextModule,
+    ApprovalsModule,
+    AuthTenancyModule,
+    ChaseModule,
+    DocumentsModule,
+    HealthModule,
+    PortalModule,
+    WebUploadModule,
+    WhatsAppWebhookModule,
+  ],
   providers: [{ provide: APP_FILTER, useClass: ProblemFilter }],
 })
 export class AppModule implements NestModule {

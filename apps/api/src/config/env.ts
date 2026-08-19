@@ -165,6 +165,19 @@ const EnvSchema = z.object({
   // SESSION_SECRET's stance (the portal endpoints simply fail closed until the
   // Stage 15 env change sets it, rather than crash-looping /healthz).
   PORTAL_LINK_SECRET: z.string().default(''),
+
+  // Signs the portal SESSION bearer (METH Stage 9) — what `POST
+  // /v1/portal/sessions` returns and every later portal call sends as
+  // `Authorization: Bearer …`. Deliberately a SECOND secret rather than a reuse
+  // of PORTAL_LINK_SECRET: the link is a 24 h public URL handed to whoever holds
+  // the paperwork, the bearer is a short-lived credential that has already
+  // passed the OTP, and one rotation must not be forced to invalidate the other.
+  // Same empty-default fail-closed stance as SESSION_SECRET / PORTAL_LINK_SECRET
+  // (`portal-session-token.ts` refuses to sign or verify with it), and the same
+  // deliberate absence of a production boot-refusal — an unset secret leaves the
+  // portal endpoints failing closed rather than crash-looping /healthz.
+  PORTAL_SESSION_SECRET: z.string().default(''),
+
   S3_ENDPOINT: z.string().default(''), // e.g. http://localhost:9000 for MinIO; empty = AWS default
   S3_REGION: z.string().default('eu-west-2'),
   S3_ACCESS_KEY_ID: z.string().default(''),

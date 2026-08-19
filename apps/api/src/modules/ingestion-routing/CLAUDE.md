@@ -29,6 +29,22 @@ Exposes **only** its public providers. No other module reaches into its internal
 
 Concretely: `index.ts` is the public seam — today `DocumentStore` (type), `selectDocumentStore`, and `PrismaDuplicateDetector` (grown by METH S3 #122: the Review → Approve engine drives dedupe-on-route follow-ups through validation-dedupe's `DedupeDetection` seam with this module's real detector behind it) — and `neoting/no-cross-module-internals` (`apps/api/eslint/`, with its test) fails any other module's import that lands deeper than it. Growing the seam is a boundary decision; read the note in `index.ts` before adding a name. Composition roots (`app.module.ts`, `worker/`) and `*.integration.test.ts` wire internals directly, by design.
 
+**Grown again by METH Stage 9 for the OTP portal's delegated upload:**
+`documentIdFor`, `uploadIntentKey`, `isAllowedMime`, `maxBytesForChannel`,
+`signUploadToken` + `UploadClaims`. `POST /v1/portal/uploads` is the same intent
+→ presigned `PUT` → complete flow under a delegated scope, and the contract makes
+`completeDocumentUpload` accept the portal bearer — so both halves have to agree
+on the cap, the allowlist, the object key, the token format and the derived
+document id. **They agree by being the same code**; every name above is a
+mechanism the portal reuses rather than re-derives.
+
+⚠ **`WebUploadService` is deliberately NOT on the seam, and the dependency runs
+one way: `web-upload` → `portal`.** `WebUploadModule` imports `PortalModule` to
+resolve the bearer and to notify the accountant; the portal mints its intents
+from the mechanisms instead of injecting the service, so the two modules never
+become mutually dependent. Inverting that would need a `forwardRef` and would put
+a Nest cycle on the demo's critical path.
+
 ## Tests
 
 ```bash
@@ -402,6 +418,28 @@ processor that silently skipped extraction is exactly the bug the step removes. 
 `RecordingExtractionStep` fixture. The call is idempotent (it re-reads the
 document's state), so a redelivery or a retry never extracts twice. The
 extraction logic itself lives in `modules/extraction` — see its CLAUDE.md.
+
+### The OTP portal's delegated upload (METH Stage 9)
+
+`web-upload/delegated-completion.ts` + the delegated branch in
+`web-upload.service.ts`. `POST /document-uploads/{uploadId}/complete` now accepts
+the **portal bearer** alongside the workspace cookie, because the contract puts
+both security schemes on it: a portal session completes the intents it created.
+Read `web-upload/CLAUDE.md` before changing it — the whole of the reasoning is
+there. Three things worth knowing from here:
+
+- **The document row is written under the DELEGATED scope**, so
+  `documents_delegated_upload` — not the handler — is what admits it. The
+  session's grant (`otp_sessions.granted_item_ids`) is populated at *intent*
+  time with `documentIdFor(uploadId)`, which is what makes the write legal.
+- **`document_events` and `notifications` have no delegated policy**, so the
+  provenance row (`uploaded-by-delegated-session`) and the accountant's
+  notification are written under the practice SYSTEM context, immediately after.
+  The label is also on `documents.submitter_label`, so the provenance does not
+  depend on that second write landing.
+- **The enqueued job is byte-for-byte a web-upload job**, so extraction and
+  Stage 8's auto-close run for a portal document through the processor's
+  existing already-persisted branch. No new worker path exists, and none should.
 
 ### Auto-close on inbound match (chase, METH Stage 8)
 

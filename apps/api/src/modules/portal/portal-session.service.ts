@@ -1,0 +1,339 @@
+import { createHash } from 'node:crypto';
+
+import { HttpStatus, Logger } from '@nestjs/common';
+
+import type { PrismaClient } from '../../common/db/prisma.js';
+import { systemContext } from '../../common/db/scope-context.js';
+import { type ScopedClient, scopedDb } from '../../common/db/scoped-db.js';
+import { AppException } from '../../common/problem/problem.js';
+import type { Env } from '../../config/env.js';
+import { verifyPortalLink } from '../chase/index.js';
+import type { PortalSessionFacts } from './portal-session-context.js';
+import { PORTAL_SESSION_TTL_MS, signPortalSessionToken } from './portal-session-token.js';
+
+/**
+ * `POST /v1/portal/sessions` — the SMS link plus the OTP become a scoped portal
+ * session (METH Stage 9, SoT §4 Stage 8.3).
+ *
+ * The journey this serves: an accountant approves a chase, `DemoSmsSender`
+ * writes the text, the client taps the link on a phone, types six digits, and
+ * gets a session that can see exactly the chased items and upload against them
+ * — no app, no password, no account.
+ *
+ * **Every failure is the same `401 NT-OTP-001`.** Unknown token, forged token,
+ * expired link, wrong OTP, chase deleted: one code, one detail string, the one
+ * the contract publishes. Distinguishing them would tell a guesser which links
+ * exist (the NT-AUTH-003 stance, applied here per `openapi.yaml`).
+ *
+ * **It writes, and it is legitimately outside Review → Approve.** The contract
+ * marks it `x-nt-side-effect: ingest` — the same standing as web upload:
+ * submitting evidence creates a new record and changes no existing one. No
+ * chase moves state here; that happens on the auto-close path (Stage 8) when a
+ * matching document actually arrives.
+ */
+
+/** The fixed demo verification code (METH_MODE §7, shared with auth-tenancy's TOTP). */
+const DEMO_OTP_CODE = '000000';
+
+export interface PortalSessionConfig {
+  readonly portalLinkSecret: string;
+  readonly portalSessionSecret: string;
+  readonly otpMode: Env['OTP_MODE'];
+}
+
+export interface CreatePortalSessionInput {
+  /** The token from the SMS link. Stateless — HMAC over the chase id and expiry (`chase/portal-link.ts`). */
+  readonly linkToken: string;
+  /** Six digits, already shape-checked by the generated Zod schema at the controller. */
+  readonly otp: string;
+}
+
+export interface IssuedPortalSession {
+  readonly token: string;
+  readonly expiresAt: Date;
+}
+
+/** What the practice-scoped bootstrap read out of the chase before any session existed. */
+interface ResolvedChase {
+  readonly practiceId: string;
+  readonly systemUserId: string;
+  readonly chaseId: string;
+  readonly businessId: string;
+  /** Who we texted. Recorded as `requested_from`, separately from who uploads (SoT Stage 8.3). */
+  readonly requestedFromContactId: string | null;
+  /** That contact's provisioned user, when the row genuinely exists. Null for a phone-number-only contact. */
+  readonly delegatedUserId: string | null;
+}
+
+export class PortalSessionService {
+  private readonly logger = new Logger(PortalSessionService.name);
+
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly config: PortalSessionConfig,
+  ) {}
+
+  async createSession(input: CreatePortalSessionInput, nowMs: number = Date.now()): Promise<IssuedPortalSession> {
+    // BOTH checks always run before the branch. Short-circuiting on the link
+    // would make a wrong-OTP attempt measurably different from a bad-link one
+    // and leak which half failed — the single NT-OTP-001 exists to hide exactly
+    // that. (An empty PORTAL_LINK_SECRET throws here rather than returning a
+    // verdict: fail closed and loud, the house stance for an unset secret.)
+    const link = verifyPortalLink(input.linkToken, this.config.portalLinkSecret, nowMs);
+    const otpValid = this.verifyOtp(input.otp);
+    if (!link.ok || !otpValid) throw verificationFailed();
+
+    const resolved = await this.resolveChase(link.chaseId);
+    // A signed link naming a chase that is gone (or whose business has no
+    // practice, so no SYSTEM actor can reach it). Same 401 as everything else.
+    if (resolved === null) throw verificationFailed();
+
+    const expiresAt = new Date(nowMs + PORTAL_SESSION_TTL_MS);
+    const otpSessionId = await this.recordSession(resolved, hashLinkToken(input.linkToken), expiresAt, new Date(nowMs));
+
+    // Governance §11: the session is logged, the credential is not. No link
+    // token, no OTP, no bearer — the two ids are what an incident needs.
+    this.logger.log(`portal session ${otpSessionId} opened · chase=${resolved.chaseId} business=${resolved.businessId}`);
+
+    return {
+      token: signPortalSessionToken(
+        {
+          otpSessionId,
+          businessId: resolved.businessId,
+          practiceId: resolved.practiceId,
+          expiresAtMs: expiresAt.getTime(),
+        },
+        this.config.portalSessionSecret,
+      ),
+      expiresAt,
+    };
+  }
+
+  /**
+   * Add document ids to the session's grant — the ONLY thing that widens what a
+   * portal session may touch.
+   *
+   * The upload path derives the document id from its own signed intent
+   * (`documentIdFor(uploadId)`) and appends it here BEFORE completion, because
+   * `documents_delegated_upload` keys on `id = ANY(app_granted_item_ids())`:
+   * without the grant the delegated context can neither write the row nor read
+   * it back. Written with Prisma's scalar-list `push` so two uploads in flight
+   * cannot clobber each other's grant with a stale whole-array write; a
+   * duplicate id from a race grants nothing extra.
+   */
+  async grantItems(facts: PortalSessionFacts, itemIds: readonly string[]): Promise<readonly string[]> {
+    const missing = itemIds.filter((id) => !facts.grantedItemIds.includes(id));
+    if (missing.length === 0) return facts.grantedItemIds;
+
+    await scopedDb(this.prisma, systemContext(facts.practiceId, facts.systemUserId), (db) =>
+      db.otpSession.update({
+        where: { id: facts.otpSessionId },
+        data: { grantedItemIds: { push: missing } },
+        select: { id: true },
+      }),
+    );
+    return [...facts.grantedItemIds, ...missing];
+  }
+
+  // DEMO-MOCK: Twilio Verify (SoT §15 — "Twilio … Verify for OTP") replaces this
+  // fixed-code check. The mode switch stays explicit so the real verifier lands
+  // as a new branch on OTP_MODE, not a rewrite of the callers — the same shape
+  // auth-tenancy's TOTP check uses, and the same fixed code.
+  private verifyOtp(otp: string): boolean {
+    return this.config.otpMode === 'demo' && otp === DEMO_OTP_CODE;
+  }
+
+  /**
+   * chaseId → the chase, its business, its practice and its recipient.
+   *
+   * ⚠ **THE BOOTSTRAP, and why it looks like this.** This runs BEFORE any
+   * session exists, so it cannot be scoped by one. `chases` is a tenant table
+   * whose policy is `app_can_access_business(business_id)`, which begins
+   * `app_session_scope() = 'user'` — so the read needs a practice-scoped actor,
+   * and the practice is precisely what the chase would have told us. The link
+   * token carries only `{chaseId, exp}` (Stage 8's format, minted before this
+   * stage existed and deliberately not changed here), so the practice has to be
+   * found rather than read.
+   *
+   * It is found the way the workers do it: `resolveSystemActor`'s own tables.
+   * ONE unscoped query over `memberships` (joined to `users`) — the sanctioned
+   * exemption, safe for the same stated reason as `resolveSystemActor` (#20)
+   * and `session-scope.ts`: neither table carries RLS — yields every practice's
+   * SYSTEM actor, and each candidate context is asked whether it can see this
+   * chase. The first that can, owns it.
+   *
+   * This is a sweep, and it is honest about being one: it costs one scoped
+   * lookup per practice until the chase is found. Acceptable because a portal
+   * session is created once per client per chase, never on a hot path — and
+   * because the alternative (a practice claim on the LINK token) is a change to
+   * Stage 8's minted format and its call site, which is not this stage's to
+   * make. The follow-up is recorded in this module's CLAUDE.md.
+   *
+   * It cannot widen anything: the chase id came out of an HMAC we signed, it
+   * names exactly one chase, and only that chase's own business travels back.
+   */
+  private async resolveChase(chaseId: string): Promise<ResolvedChase | null> {
+    for (const candidate of await this.systemActorsByPractice()) {
+      const found = await scopedDb(this.prisma, systemContext(candidate.practiceId, candidate.systemUserId), async (db) => {
+        const chase = await db.chase.findUnique({
+          where: { id: chaseId },
+          select: {
+            id: true,
+            businessId: true,
+            recipientContactId: true,
+            recipient: { select: { userId: true } },
+          },
+        });
+        // Invisible under this practice's context is indistinguishable from
+        // absent, which is the point — RLS answers the question, not a filter.
+        if (chase === null) return null;
+        return {
+          practiceId: candidate.practiceId,
+          systemUserId: candidate.systemUserId,
+          chaseId: chase.id,
+          businessId: chase.businessId,
+          requestedFromContactId: chase.recipientContactId,
+          delegatedUserId: await this.resolveDelegatedActor(db, chase.recipient?.userId ?? null),
+        };
+      });
+      if (found !== null) return found;
+    }
+    return null;
+  }
+
+  /**
+   * Who a delegated write is attributed to — the decision, written down.
+   *
+   * `documents.submitter_user_id` is a foreign key to `users`, and every policy
+   * begins `app_actor_id() IS NOT NULL`, so the actor of a delegated context
+   * MUST be a real user row. A contact id is not one, and inventing an id is
+   * not an option.
+   *
+   * So: the recipient contact's provisioned user when that user genuinely
+   * exists, and the practice SYSTEM actor otherwise. `Contact.userId` is a bare
+   * column with NO foreign key (`prisma/schema.prisma`), so it is checked
+   * against `users` rather than trusted — an id naming no row would fail the
+   * document FK at upload time, hours later, as a 500 on the client's phone.
+   *
+   * The honest caveat, stated because the link is deliberately forwardable
+   * (SoT Stage 8.3): this names the person we ASKED, who may not be the person
+   * holding the phone. That is exactly why the audit trail keeps the two apart
+   * — `otp_sessions.requested_from_contact_id` records who was asked, and the
+   * session row itself is the uploaded-by-delegated-session record.
+   * `otp_sessions.contact_id` is deliberately left NULL: we do not know who
+   * forwarded the link to whom, and a guess written into an audit column is
+   * worse than an absence.
+   *
+   * The common case is the SYSTEM actor anyway — SoT §3.3's phone-number-only
+   * contacts "can receive chases and upload through OTP links without ever
+   * being provisioned as users" — which is the same actor every WhatsApp and
+   * email document already carries.
+   */
+  private async resolveDelegatedActor(db: ScopedClient, contactUserId: string | null): Promise<string | null> {
+    if (contactUserId === null) return null;
+    const user = await db.user.findUnique({ where: { id: contactUserId }, select: { id: true } });
+    return user === null ? null : user.id;
+  }
+
+  /**
+   * Every practice's SYSTEM actor, one query, deduplicated.
+   *
+   * Unscoped on purpose and on the record: `memberships` and `users` carry no
+   * RLS (they are the actor tables the policies themselves read), which is the
+   * exemption `common/db/resolve-system-actor.ts` states and this reuses rather
+   * than inventing a second one. It is `resolveSystemActor` with the practice
+   * unknown instead of given.
+   */
+  private async systemActorsByPractice(): Promise<readonly { practiceId: string; systemUserId: string }[]> {
+    const rows = await this.prisma.membership.findMany({
+      where: { practiceId: { not: null }, user: { kind: 'SYSTEM' } },
+      select: { practiceId: true, userId: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const byPractice = new Map<string, string>();
+    for (const row of rows) {
+      if (row.practiceId !== null && !byPractice.has(row.practiceId)) byPractice.set(row.practiceId, row.userId);
+    }
+    return [...byPractice].map(([practiceId, systemUserId]) => ({ practiceId, systemUserId }));
+  }
+
+  /**
+   * Create the `otp_sessions` row, or re-verify the one this link already has.
+   *
+   * `link_token_hash` is `@unique`, so a client who taps the same link twice —
+   * a bookmark, a back button, a forward to a colleague who verifies again —
+   * must resolve to the SAME row rather than collide on the constraint. That
+   * makes this an upsert keyed on the hash: a re-verification refreshes
+   * `verified_at` and `expires_at` and leaves `granted_item_ids` alone, so a
+   * document already uploaded in this session stays readable to it.
+   *
+   * The P2002 catch covers the genuine race — two verifications of one link
+   * arriving together, both finding nothing and both inserting. The loser
+   * re-reads and updates.
+   *
+   * The hash is a plain SHA-256: the link token is 256 bits of HMAC output, not
+   * a guessable secret, so it needs a lookup key that does not store the
+   * credential — not a password KDF.
+   */
+  private async recordSession(
+    resolved: ResolvedChase,
+    linkTokenHash: string,
+    expiresAt: Date,
+    verifiedAt: Date,
+  ): Promise<string> {
+    const shared = {
+      businessId: resolved.businessId,
+      chaseId: resolved.chaseId,
+      requestedFromContactId: resolved.requestedFromContactId,
+      userId: resolved.delegatedUserId,
+      verifiedAt,
+      expiresAt,
+    };
+
+    return scopedDb(this.prisma, systemContext(resolved.practiceId, resolved.systemUserId), async (db) => {
+      try {
+        const row = await db.otpSession.upsert({
+          where: { linkTokenHash },
+          // `contactId` is deliberately absent — see `resolveDelegatedActor`.
+          // `grantedItemIds` starts empty and is widened by `grantItems` per
+          // upload; `ScopeContextSchema` refuses a delegated context until then,
+          // which is the intended state, not a bug.
+          create: { ...shared, linkTokenHash, scope: 'DELEGATED_UPLOAD' },
+          update: shared,
+          select: { id: true },
+        });
+        return row.id;
+      } catch (error) {
+        if (!isUniqueViolation(error)) throw error;
+        const existing = await db.otpSession.findUnique({ where: { linkTokenHash }, select: { id: true } });
+        if (existing === null) throw error; // not our race after all — surface it
+        const row = await db.otpSession.update({ where: { id: existing.id }, data: shared, select: { id: true } });
+        return row.id;
+      }
+    });
+  }
+}
+
+/**
+ * The one 401 this endpoint returns, for every reason it could return one. The
+ * title and detail are the contract's own published example, verbatim — a
+ * client that special-cases the string keeps working.
+ */
+function verificationFailed(): AppException {
+  return new AppException(
+    'NT-OTP-001',
+    HttpStatus.UNAUTHORIZED,
+    'Verification failed',
+    'The link or verification code did not verify. Request a fresh link if this one has expired.',
+  );
+}
+
+function hashLinkToken(linkToken: string): string {
+  return createHash('sha256').update(linkToken).digest('hex');
+}
+
+/** Prisma's unique-constraint error (P2002), duck-typed so no value import of Prisma is needed. */
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && (error as { code: unknown }).code === 'P2002';
+}

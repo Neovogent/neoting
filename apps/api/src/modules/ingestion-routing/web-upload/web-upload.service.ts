@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { HttpStatus } from '@nestjs/common';
+import { HttpStatus, Logger } from '@nestjs/common';
 import type { z } from 'zod';
 
 import type { Document as DocumentRow } from '@prisma/client';
@@ -42,12 +42,84 @@ export interface WebUploadConfig {
 export type UploadIntentRequest = z.infer<typeof createDocumentUploadBody>;
 
 /**
+ * A completion arriving from the OTP portal instead of the workspace (METH
+ * Stage 9, SoT §4 Stage 8.4) — `completeDocumentUpload` accepts the portal
+ * bearer alongside the workspace session, and the contract says why: "a
+ * delegated session completes the intents it created, and the RLS delegated
+ * policies keep it inside its own grant. One completion path, two trust levels,
+ * no second door."
+ *
+ * Two contexts, because the delegated policies cover exactly two tables:
+ *
+ *  - `context` is the DELEGATED scope the document row is written under.
+ *    `documents_delegated_upload`'s WITH CHECK (`business_id =
+ *    app_business_id()`) and USING (`id = ANY(app_granted_item_ids())`) are what
+ *    ALLOW the write — not this handler, which never compares a business to
+ *    anything. That is the point of routing the portal through RLS rather than
+ *    through a trusted flag.
+ *  - `eventsContext` is the practice SYSTEM scope, and it is needed because
+ *    `document_events` has **no delegated branch**: its policy reaches its
+ *    tenant through `app_can_access_document`, which begins
+ *    `app_session_scope() = 'user'`. A delegated context inserting an event row
+ *    is refused by Postgres. So the provenance row is written immediately after,
+ *    under the same actor the workers use.
+ */
+export interface DelegatedCompletion {
+  /** The delegated `ScopeContext` — built from the `otp_sessions` row by the portal seam. */
+  readonly context: ScopeContext;
+  /** The practice SYSTEM `ScopeContext`, for the one write the delegated scope cannot make. */
+  readonly eventsContext: ScopeContext;
+  /** The `otp_sessions` row behind this completion. Recorded, so an audit can name the session. */
+  readonly otpSessionId: string;
+  /** The chase the session exists to answer, when it has one. */
+  readonly chaseId: string | null;
+  /**
+   * Tell the practice that a client uploaded (SoT §4 Stage 8.8 — "notify the
+   * accountant when a client uploads", the 45-vote gap).
+   *
+   * A CLOSURE rather than an injected service, deliberately. This module has no
+   * business knowing what a portal notification is, and `WebUploadService` would
+   * otherwise grow a constructor dependency on another module for a call it
+   * makes on one branch. `delegatedCompletionFor` — which already resolves the
+   * session and already reaches the portal seam — closes over both.
+   *
+   * Called exactly once, on the completion that CREATED the document: notifying
+   * at intent time would announce bytes that may never arrive, and notifying on
+   * a replay would double-toast.
+   */
+  readonly notifyUploadReceived: (documentId: string) => Promise<void>;
+}
+
+/**
+ * What `documents.submitter_label` and the document's own event carry for a
+ * portal upload. **The exact string the SoT asks the audit trail to record**
+ * (§4 Stage 8.3: "the audit trail records *requested-from* vs
+ * *uploaded-by-delegated-session*"), so it is a constant rather than prose
+ * retyped in two places.
+ *
+ * `submitter_user_id` cannot say this: it is a foreign key to `users` and a
+ * delegated session is not a user — it is a grant held by whoever the link was
+ * forwarded to. The actor there is the recipient contact's provisioned user if
+ * one exists and the practice SYSTEM actor otherwise (`portal-session.service.ts`
+ * decides it once, at session creation). The *label* is what says the upload
+ * came in through a delegated session rather than from that actor at a keyboard.
+ * Who we ASKED lives on the session row (`requested_from_contact_id`).
+ */
+export const DELEGATED_SUBMITTER_LABEL = 'uploaded-by-delegated-session';
+
+/**
  * Web upload (issue #76), two steps because the API never touches the bytes:
  * `createUpload` presigns a direct PUT and hands back a stateless signed
  * `uploadId`; `completeUpload` verifies what landed, persists the `Document` in
  * RECEIVED through `scopedDb`, and enqueues sanitisation.
+ *
+ * `completeDelegatedUpload` is the same step two under a portal session (METH
+ * Stage 9): same token, same storage checks, same derived id, same job — a
+ * different scope context and one extra provenance row.
  */
 export class WebUploadService {
+  private readonly logger = new Logger(WebUploadService.name);
+
   constructor(
     private readonly prisma: PrismaClient,
     private readonly store: DocumentStore,
@@ -57,7 +129,7 @@ export class WebUploadService {
   ) {}
 
   async createUpload(ctx: ScopeContext, request: UploadIntentRequest, idempotencyKey?: string): Promise<DocumentUpload> {
-    const replay = await this.replayed<DocumentUpload>(idempotencyKey, request);
+    const replay = await this.replayed<DocumentUpload>(null, idempotencyKey, request);
     if (replay !== null) return replay;
 
     if (!Number.isInteger(request.byteSize) || request.byteSize < 1) {
@@ -134,12 +206,43 @@ export class WebUploadService {
       expiresAt: new Date(expiresAtMs).toISOString(),
       maxBytes,
     };
-    await this.remember(idempotencyKey, request, response);
+    await this.remember(null, idempotencyKey, request, response);
     return response;
   }
 
+  /** Step two, from the workspace: the caller's own `ScopeContext` writes the document and its event. */
   async completeUpload(ctx: ScopeContext, uploadId: string, byteHash: string, idempotencyKey?: string): Promise<Document> {
-    const replay = await this.replayed<Document>(idempotencyKey, { uploadId, byteHash });
+    return this.complete(ctx, null, uploadId, byteHash, idempotencyKey);
+  }
+
+  /**
+   * Step two, from the OTP portal. Same verification, same storage checks, same
+   * derived document id, same enqueued job — the document is simply written
+   * under the DELEGATED context, so the RLS delegated policies are what admit
+   * it, and its provenance is recorded (see {@link DelegatedCompletion}).
+   *
+   * The replay namespace is per-session for the same reason the portal's intent
+   * store is: `Idempotency-Key` is a client-generated UUID over a shared map,
+   * and one session must never be handed another session's response.
+   */
+  async completeDelegatedUpload(
+    caller: DelegatedCompletion,
+    uploadId: string,
+    byteHash: string,
+    idempotencyKey?: string,
+  ): Promise<Document> {
+    return this.complete(caller.context, caller, uploadId, byteHash, idempotencyKey);
+  }
+
+  private async complete(
+    ctx: ScopeContext,
+    delegated: DelegatedCompletion | null,
+    uploadId: string,
+    byteHash: string,
+    idempotencyKey?: string,
+  ): Promise<Document> {
+    const replayScope = delegated === null ? null : `portal-complete:${delegated.otpSessionId}`;
+    const replay = await this.replayed<Document>(replayScope, idempotencyKey, { uploadId, byteHash });
     if (replay !== null) return replay;
 
     const verified = verifyUploadToken(uploadId, this.config.uploadSecret);
@@ -150,6 +253,7 @@ export class WebUploadService {
     if (claims.expiresAtMs < this.now()) {
       throw new AppException('NT-ING-005', HttpStatus.GONE, 'This upload intent has expired — start a new upload');
     }
+    if (delegated !== null) this.assertGranted(delegated, uploadId);
 
     // Verify the bytes actually landed and match the client's declared hash. The
     // declared hash is not trusted — it is checked against what is in storage.
@@ -178,7 +282,8 @@ export class WebUploadService {
       throw new AppException('NT-ING-003', HttpStatus.CONFLICT, 'The uploaded bytes do not match the declared hash');
     }
 
-    const { row, created } = await this.persistDocument(ctx, uploadId, claims, byteHash);
+    const { row, created } = await this.persistDocument(ctx, uploadId, claims, byteHash, delegated);
+    if (delegated !== null && created) await this.afterDelegatedCreate(delegated, row.id, claims);
     // Only the completion that actually CREATED the document enqueues. A second
     // completion of the same intent — a replay with a different Idempotency-Key,
     // or none at all — finds the existing row and must not enqueue again:
@@ -190,8 +295,101 @@ export class WebUploadService {
     if (created) await this.enqueueSanitisation(row.id, claims, byteHash);
 
     const response = toDocumentResponse(row);
-    await this.remember(idempotencyKey, { uploadId, byteHash }, response);
+    await this.remember(replayScope, idempotencyKey, { uploadId, byteHash }, response);
     return response;
+  }
+
+  /**
+   * A portal session may only complete the intents IT created.
+   *
+   * The grant is the proof: `createPortalUpload` derives `documentIdFor(uploadId)`
+   * at intent time and appends it to `otp_sessions.granted_item_ids`, so an
+   * `uploadId` whose derived id is not in this session's grant is one this
+   * session never asked for. Without the check the failure is still closed —
+   * Postgres refuses the INSERT's RETURNING under
+   * `documents_delegated_upload`'s USING clause — but it arrives as a 500 on a
+   * phone, and only for a foreign business; a second session inside the SAME
+   * business would otherwise be able to complete another's intent.
+   *
+   * **404, not 403.** An intent this session cannot reach is one that, as far as
+   * it is concerned, does not exist (`packages/contracts/CLAUDE.md`).
+   */
+  private assertGranted(delegated: DelegatedCompletion, uploadId: string): void {
+    if (delegated.context.grantedItemIds.includes(documentIdFor(uploadId))) return;
+    throw new AppException(
+      'NT-VAL-001',
+      HttpStatus.NOT_FOUND,
+      'No such upload intent',
+      'This upload was not started by this portal session.',
+    );
+  }
+
+  /**
+   * The two things a delegated creation owes the rest of the product: the
+   * provenance row on the document's timeline, and the practice being told a
+   * client uploaded.
+   *
+   * **Neither may fail the request.** By this point the document is persisted
+   * and the bytes are in storage; a failure here would return a 5xx, and the
+   * client's retry would find `created: false`, skip the enqueue, and leave the
+   * document in RECEIVED forever — the "nothing is ever silently dropped"
+   * invariant inverted by a toast. Same stance, same reason, as the ingest
+   * processor's auto-close hook: log it, and let the safe direction win.
+   */
+  private async afterDelegatedCreate(delegated: DelegatedCompletion, documentId: string, claims: UploadClaims): Promise<void> {
+    await this.recordDelegatedProvenance(delegated, documentId, claims);
+    try {
+      await delegated.notifyUploadReceived(documentId);
+    } catch (error) {
+      this.logger.warn(`portal upload notification for ${documentId} failed (the document is safe): ${String(error)}`);
+    }
+  }
+
+  /**
+   * The delegated provenance row — SoT §4 Stage 8.3's "the audit trail records
+   * *requested-from* vs *uploaded-by-delegated-session*", written where a human
+   * will see it: the document's own event timeline (`GET /documents/{id}/events`).
+   *
+   * Written under the practice SYSTEM context, in its own transaction, because
+   * `document_events` has no delegated policy (see {@link DelegatedCompletion}).
+   * That splits it from the document's own INSERT, so it is best-effort and
+   * says so: **the row already carries the label** in `submitter_label`, so a
+   * failure here loses the timeline entry, not the provenance. Failing the
+   * request instead would be worse than that trade — the document is persisted
+   * by this point, and a client retry would find `created: false`, skip the
+   * enqueue, and leave the document in RECEIVED forever. Same stance, same
+   * reason, as the ingest processor's auto-close hook.
+   */
+  private async recordDelegatedProvenance(
+    delegated: DelegatedCompletion,
+    documentId: string,
+    claims: UploadClaims,
+  ): Promise<void> {
+    try {
+      await scopedDb(this.prisma, delegated.eventsContext, (db) =>
+        db.documentEvent.create({
+          data: {
+            documentId,
+            stage: 'upload',
+            outcome: DELEGATED_SUBMITTER_LABEL,
+            traceId: currentTraceId() ?? null,
+            detail: {
+              otpSessionId: delegated.otpSessionId,
+              chaseId: delegated.chaseId,
+              channel: claims.channel,
+              // What the client SAID this answers, never a verified fact — see
+              // `UploadClaims.chaseTransactionId`. Auto-close compares the
+              // extraction against every open chase regardless.
+              declaredTransactionId: claims.chaseTransactionId ?? null,
+            },
+          },
+        }),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `delegated provenance event for ${documentId} failed (submitter_label still records it): ${String(error)}`,
+      );
+    }
   }
 
   /**
@@ -204,6 +402,7 @@ export class WebUploadService {
     uploadId: string,
     claims: UploadClaims,
     byteHash: string,
+    delegated: DelegatedCompletion | null,
   ): Promise<{ row: DocumentRow; created: boolean }> {
     const id = documentIdFor(uploadId);
     const outcome = await scopedDb(this.prisma, ctx, async (db) => {
@@ -224,11 +423,20 @@ export class WebUploadService {
             inbox: 'COSTS', // business is known — routed, Costs by default
             state: 'RECEIVED',
             submitterUserId: ctx.actorId,
+            // The provenance that survives even if the event write below (or its
+            // delegated equivalent) never lands — it is on the row itself.
+            ...(delegated === null ? {} : { submitterLabel: DELEGATED_SUBMITTER_LABEL }),
           },
         });
-        await db.documentEvent.create({
-          data: { documentId: id, stage: 'upload', outcome: 'received', traceId: currentTraceId() ?? null },
-        });
+        // A delegated context CANNOT write this: `document_events` reaches its
+        // tenant through `app_can_access_document`, which requires session scope
+        // `user`. `recordDelegatedProvenance` writes the portal's event under the
+        // practice SYSTEM context immediately after this transaction commits.
+        if (delegated === null) {
+          await db.documentEvent.create({
+            data: { documentId: id, stage: 'upload', outcome: 'received', traceId: currentTraceId() ?? null },
+          });
+        }
         return { row: created, created: true };
       } catch (error) {
         if (isUniqueViolation(error)) return null; // concurrent completion won the race
@@ -268,9 +476,20 @@ export class WebUploadService {
     return Date.now();
   }
 
-  private async replayed<T>(idempotencyKey: string | undefined, request: unknown): Promise<T | null> {
+  /**
+   * The replay store is a flat map keyed by a CLIENT-generated UUID, so a
+   * delegated completion namespaces its keys by session (`scope`). Two portal
+   * sessions in two businesses reusing one key must miss, not be handed each
+   * other's document. The workspace path passes `null` and its keys are
+   * unchanged.
+   */
+  private storeKey(scope: string | null, idempotencyKey: string): string {
+    return scope === null ? idempotencyKey : `${scope}:${idempotencyKey}`;
+  }
+
+  private async replayed<T>(scope: string | null, idempotencyKey: string | undefined, request: unknown): Promise<T | null> {
     if (idempotencyKey === undefined) return null;
-    const record = await this.idempotency.get(idempotencyKey);
+    const record = await this.idempotency.get(this.storeKey(scope, idempotencyKey));
     if (record === null) return null;
     if (record.requestHash !== fingerprint(request)) {
       throw new AppException('NT-IDM-001', HttpStatus.CONFLICT, 'This Idempotency-Key was already used with a different payload');
@@ -278,9 +497,9 @@ export class WebUploadService {
     return record.response as T;
   }
 
-  private async remember(idempotencyKey: string | undefined, request: unknown, response: unknown): Promise<void> {
+  private async remember(scope: string | null, idempotencyKey: string | undefined, request: unknown, response: unknown): Promise<void> {
     if (idempotencyKey === undefined) return;
-    await this.idempotency.put(idempotencyKey, { requestHash: fingerprint(request), response });
+    await this.idempotency.put(this.storeKey(scope, idempotencyKey), { requestHash: fingerprint(request), response });
   }
 }
 
