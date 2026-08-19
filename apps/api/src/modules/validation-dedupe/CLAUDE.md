@@ -113,12 +113,13 @@ structural) and decides nothing about whether it may happen.
 
 - **`buildExecutorRegistry(deps)`** — total over the contract's `ProposalKind`
   by mapped type: a missing kind is a compile error; the engine's `NT-PRP-001`
-  stays the second line of defence. **Five real executors** (route, archive,
+  stays the second line of defence. **Six real executors** (route, archive,
   update-coding since METH S3 #122, chase.send since METH S8, publish.batch
-  since S10), six honest holes throwing `ProposalNotImplementedError` by name —
-  the remaining #81 four (`move-business`, `reprocess`, `reject`, `split`) plus
-  the METH Stage 2 kinds (#120) still open: `bank.confirm-match` (S11),
-  `rule.create` (S13), each typed off the generated payload models. The `deps`
+  since S10, bank.confirm-match since S11), five honest holes throwing
+  `ProposalNotImplementedError` by name — the remaining #81 four
+  (`move-business`, `reprocess`, `reject`, `split`) plus the last METH Stage 2
+  kind (#120) still open: `rule.create` (S13), each typed off the generated
+  payload models. The `deps`
   argument (`ExecutorRegistryDeps`) is **required since S10**: `publishing` has
   no safe default, and a registry that quietly degraded a built executor back
   to a hole because a call site forgot an argument is the failure the mapped
@@ -249,14 +250,32 @@ structural) and decides nothing about whether it may happen.
     one), which is the only way "deterministic failure" and "retry succeeds
     second time" both hold, and it needs nothing from `prisma/seed.ts`.
 
+- **`bank.confirm-match`** (METH S11) — a human confirms that a document is the
+  evidence for a bank transaction. **Two rows move or neither does:** the
+  `matches` row AND the transaction's `match_state`. Writing the match without
+  the flip would leave the line in the unmatched set chase detection reads, and
+  the client would be chased by SMS for the receipt just filed — the
+  disagreement the contract explicitly forbids. Refuses a cross-workspace pair
+  (both rows individually visible to a practice-scoped approver does NOT make
+  them the same client's, and `matches.business_id` holds only one of the two),
+  an ARCHIVED or REJECTED document, and a transaction already CONFIRMED against
+  a different document — there is no `bank.unmatch` kind, so overwriting one
+  would be that missing path's bypass. An existing SUGGESTED row is
+  **promoted**, not duplicated: `matches` has no unique constraint on
+  (document_id, transaction_id). **It reads and writes no money column at all**
+  — the suggestion arithmetic is display-tier float pounds in `apps/web`, and
+  `confidence` is recorded for triage and gates nothing (a score is not an
+  authorisation, Governance §9.5). A test pins the absence of any `Pence` field
+  in everything it writes.
+
 ## TODO
 
 - [ ] The seven unimplemented executors — the remaining #81 four
       (`move-business`, `reprocess`, `reject`, `split`; each needs its own
-      issue) and the two still-open METH kinds (`bank.confirm-match` → S11,
-      `rule.create` → S13). The registry already types and names them all.
-      `update-coding` landed with the engine (METH S3, #122); `chase.send`
-      landed with METH S8; `publish.batch` in METH S10.
+      issue) and the one still-open METH kind (`rule.create` → S13). The
+      registry already types and names them all. `update-coding` landed with
+      the engine (METH S3, #122); `chase.send` in METH S8; `publish.batch` in
+      METH S10; `bank.confirm-match` in METH S11.
 - [x] The engine is wired (METH S3, #122 — `modules/approvals`): registry via
       `useFactory`, token kept out of public providers; dedupe follow-ups run
       post-commit. Still open: a periodic sweep over

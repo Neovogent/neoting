@@ -3,6 +3,7 @@ import type { ProposalKind } from '@neoting/contracts/model';
 import { DemoSmsSender, type SmsSender } from '../../chase/index.js';
 import { archiveDocumentExecutor } from './archive-document.js';
 import { chaseSendExecutor } from './chase-send.js';
+import { confirmMatchExecutor } from './confirm-match.js';
 import {
   type ExecutorRegistry,
   ProposalNotImplementedError,
@@ -38,13 +39,13 @@ export interface ExecutorRegistryDeps {
  * runtime `NT-PRP-001` guard for a wire value outside the enum stays the
  * second line of defence, not the first.
  *
- * Five real executors, six honest holes: a registry with named
+ * Six real executors, five honest holes: a registry with named
  * unimplemented kinds beats half-executors, and it means the engine (METH S3,
  * #122) wires against the full enum on day one. Each hole throws
  * `ProposalNotImplementedError` carrying its kind — loudly, before any write.
- * The remaining METH Stage 2 kinds (issue #120) are holes until their stages
- * land executors: bank.confirm-match (S11), rule.create (S13). `chase.send`
- * left the list in METH S8, `publish.batch` in METH S10.
+ * The last METH Stage 2 kind (issue #120) is a hole until its stage lands the
+ * executor: rule.create (S13). `chase.send` left the list in METH S8,
+ * `publish.batch` in METH S10, `bank.confirm-match` in METH S11.
  *
  * A FACTORY, not a Nest provider: the engine module builds it inside its own
  * `useFactory` and keeps the token out of its public providers, so no executor
@@ -68,7 +69,7 @@ export function buildExecutorRegistry(deps: ExecutorRegistryDeps): ExecutorRegis
     // chase.send landed with METH S8 (#129): the demo sender writes the outbox; no
     // Twilio. The engine may inject the config-selected sender.
     'chase.send': chaseSendExecutor(deps.smsSender ?? new DemoSmsSender()),
-    'bank.confirm-match': notImplemented('bank.confirm-match'),
+    'bank.confirm-match': confirmMatchExecutor,
     'rule.create': notImplemented('rule.create'),
   };
 }

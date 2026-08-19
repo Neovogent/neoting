@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { listDocumentsResponse } from '@neoting/contracts/zod';
+import { listBankTransactionsResponse, listDocumentsResponse } from '@neoting/contracts/zod';
 import type { DocumentSummary } from '@neoting/contracts/model';
 
-import { documentFixtures } from './fixtures';
-import { filterDocuments } from './handlers';
+import { bankTransactionFixtures, documentFixtures } from './fixtures';
+import { filterBankTransactions, filterDocuments } from './handlers';
 
 /**
  * The inbox is ONE endpoint serving four screens purely through query
@@ -43,6 +43,70 @@ describe('filterDocuments — no filter', () => {
 
     // The failure message matters more than the boolean when this breaks.
     expect(parsed.success ? null : parsed.error.issues).toBeNull();
+  });
+});
+
+describe('filterBankTransactions — the bank feed (METH S11)', () => {
+  const askBank = (q: string) => filterBankTransactions(new URL(`http://localhost/v1/bank-transactions${q}`));
+
+  it('answers with a body the contract actually accepts', () => {
+    const { data, nextCursor, hasMore } = askBank('');
+    const parsed = listBankTransactionsResponse.safeParse({ data, pageInfo: { nextCursor, hasMore } });
+
+    expect(parsed.success ? null : parsed.error.issues).toBeNull();
+  });
+
+  it('is newest booked first — the sort the contract fixes in prose', () => {
+    const booked = askBank('').data.map((t) => t.bookedAt);
+
+    expect(booked).toEqual([...booked].sort((a, b) => b.localeCompare(a)));
+  });
+
+  it('signs money out as NEGATIVE pence, which is the opposite of the local seed', () => {
+    // The fixture negates on the way out and `api/bank.ts` negates back. If
+    // only one side ever changes, the round trip still looks right and both
+    // halves are wrong — so the wire value is asserted directly.
+    const spend = bankTransactionFixtures.find((t) => t.classification === 'expense');
+    expect(spend?.amountPence).toBeLessThan(0);
+    expect(Number.isInteger(spend?.amountPence)).toBe(true);
+
+    const credit = bankTransactionFixtures.find((t) => t.classification === 'income');
+    expect(credit?.amountPence).toBeGreaterThan(0);
+  });
+
+  it('narrows by business, by account, and by repeated matchState', () => {
+    const one = bankTransactionFixtures[0];
+    expect(one).toBeDefined();
+    if (!one) return;
+
+    expect(askBank(`?businessId=${one.businessId}`).data.every((t) => t.businessId === one.businessId)).toBe(true);
+    expect(askBank(`?accountId=${one.accountId}`).data.every((t) => t.accountId === one.accountId)).toBe(true);
+
+    const widened = askBank('?matchState=UNMATCHED&matchState=CONFIRMED').data;
+    expect(widened.every((t) => t.matchState === 'UNMATCHED' || t.matchState === 'CONFIRMED')).toBe(true);
+    expect(askBank('?matchState=UNMATCHED').data.every((t) => t.matchState === 'UNMATCHED')).toBe(true);
+  });
+
+  it('an unreachable business is an empty page, not an error', () => {
+    // RLS is what makes this true on the real endpoint: the rows were already
+    // invisible, so the filter matches none and nothing confirms existence.
+    expect(askBank('?businessId=biz_not_yours').data).toEqual([]);
+  });
+
+  it('pages with a cursor and stops minting one at the end', () => {
+    const first = askBank('?limit=2');
+    expect(first.data).toHaveLength(Math.min(2, bankTransactionFixtures.length));
+
+    if (bankTransactionFixtures.length > 2) {
+      expect(first.hasMore).toBe(true);
+      const second = askBank(`?limit=2&cursor=${first.nextCursor ?? ''}`);
+      // Never skips or repeats a row — the acceptance criterion offsets cannot meet.
+      expect(second.data.map((t) => t.id)).not.toEqual(first.data.map((t) => t.id));
+    }
+
+    const all = askBank('?limit=100');
+    expect(all.hasMore).toBe(false);
+    expect(all.nextCursor).toBeNull();
   });
 });
 

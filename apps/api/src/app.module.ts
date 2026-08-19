@@ -8,6 +8,7 @@ import { TraceMiddleware } from './common/trace/trace.middleware.js';
 import { EnvModule } from './config/env.module.js';
 import { ApprovalsModule } from './modules/approvals/approvals.module.js';
 import { AuthTenancyModule } from './modules/auth-tenancy/auth-tenancy.module.js';
+import { BankingMatchingModule } from './modules/banking-matching/banking-matching.module.js';
 import { ChaseModule } from './modules/chase/chase.module.js';
 import { DocumentsModule } from './modules/documents/documents.module.js';
 import { HealthModule } from './modules/health/health.module.js';
@@ -22,6 +23,7 @@ import { PublishingModule } from './modules/publishing/publishing.module.js';
     ContextModule,
     ApprovalsModule,
     AuthTenancyModule,
+    BankingMatchingModule,
     ChaseModule,
     DocumentsModule,
     HealthModule,

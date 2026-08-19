@@ -118,9 +118,8 @@ test('the registry is total over the contract enum, and the holes throw by name'
     'document.reprocess',
     'document.reject',
     'document.split',
-    // METH Stage 2 (#120) — holes until S11/S13 land their executors.
-    // `chase.send` left this list in METH S8, `publish.batch` in METH S10.
-    'bank.confirm-match',
+    // METH Stage 2 (#120) — the hole until S13 lands its executor. `chase.send`
+    // left this list in METH S8, `publish.batch` in S10, `bank.confirm-match` in S11.
     'rule.create',
   ] as const) {
     const err = await registry[kind]

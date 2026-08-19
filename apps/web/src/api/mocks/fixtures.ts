@@ -1,7 +1,7 @@
-import { seedClients, seedDocuments, seedDuplicateCopies, seedExpenseDocuments } from '../../lib/seed';
-import type { DocumentSummary } from '@neoting/contracts/model';
+import { seedClients, seedDocuments, seedDuplicateCopies, seedExpenseDocuments, seedTransactions } from '../../lib/seed';
+import type { BankTransaction as ApiBankTransaction, DocumentSummary } from '@neoting/contracts/model';
 import { DocumentChannel, DocumentState, DocumentType, Inbox } from '@neoting/contracts/model';
-import type { Document as LocalDocument } from '../../lib/types';
+import type { BankTransaction as LocalBankTransaction, Document as LocalDocument } from '../../lib/types';
 
 /**
  * The demo dataset, expressed in the contract's shapes.
@@ -119,3 +119,43 @@ export const documentFixtures: DocumentSummary[] = [
 
 /** So a mocked response can be filtered exactly as the contract describes. */
 export const businessIdsInFixtures = seedClients.map((c) => businessId(c.id));
+
+/**
+ * The seeded bank feed, in the contract's shape (METH S11).
+ *
+ * ⚠ **The sign flips here, and it is not a typo.** The contract is a bank
+ * feed's convention — negative pence is money OUT — while the local seed is a
+ * ledger's, where an ordinary supplier payment is positive and a refund is
+ * negative. So `amountPence` is the NEGATION of the local amount, and
+ * `src/api/bank.ts` negates it back on the way in. Getting this wrong in the
+ * fixture would make the round trip look correct while both halves were wrong.
+ *
+ * `matchState` is derived from `matchedDocId` because that is what the seed
+ * records; the contract carries no document id, which is the gap `bank.ts`
+ * documents. `chaseSuppressed` uses the SoT Stage 7 descriptors so the mocked
+ * feed answers "why isn't this chased" the same way the database does.
+ */
+const SUPPRESSED_DESCRIPTORS = ['SERVICE CHARGE', 'COMMISSION', 'CHG', 'CHAPS', 'UNPAID', 'OD INTEREST', 'SUMUP', 'WORLDPAY', 'STRIPE PAYOUT'];
+
+export function toBankTransactionFixture(txn: LocalBankTransaction): ApiBankTransaction {
+  const iso = toIsoDate(txn.date);
+  return {
+    id: txn.id,
+    businessId: businessId(txn.clientId),
+    accountId: txn.accountId,
+    bookedAt: `${iso ?? '2026-08-01'}T00:00:00.000Z`,
+    amountPence: -toPence(txn.amount),
+    currency: 'GBP',
+    descriptionRaw: txn.description,
+    merchantName: txn.description.split(' ')[0] ?? null,
+    classification: txn.isCredit ? 'income' : 'expense',
+    balanceAfterPence: null,
+    matchState: txn.matchedDocId === undefined ? 'UNMATCHED' : 'CONFIRMED',
+    chaseSuppressed: SUPPRESSED_DESCRIPTORS.some((d) => txn.description.toUpperCase().includes(d)),
+  };
+}
+
+/** Every seeded transaction, in contract shape, newest booked first. */
+export const bankTransactionFixtures: ApiBankTransaction[] = seedTransactions
+  .map(toBankTransactionFixture)
+  .sort((a, b) => b.bookedAt.localeCompare(a.bookedAt));
