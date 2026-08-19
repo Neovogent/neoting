@@ -37,9 +37,15 @@ function bootstrap(): void {
   const deadLetters = new BullmqDeadLetterQueue(connection);
   const sink = new PrismaDocumentSink(getPrismaClient());
   const detector = new PrismaDuplicateDetector(getPrismaClient());
-  // Extraction (METH Stage 4) — the step that moves a document out of RECEIVED.
-  // Config-selected (`EXTRACTOR=demo`), logging through the worker's logger.
-  const extractor = new PrismaExtractionStep(getPrismaClient(), selectExtractor(env), {
+  // The object store, built ONCE and shared: the ingest pipeline persists through
+  // it and — since METH Stage 15 — `EXTRACTOR=bedrock` reads the bytes back
+  // through it to send the image to Claude. Two instances would be two clients
+  // against the same bucket for no reason.
+  const documentStore = selectDocumentStore(env);
+  // Extraction (METH Stage 4, real since Stage 15) — the step that moves a
+  // document out of RECEIVED. Config-selected: `EXTRACTOR=demo` is fixture
+  // profiles, `bedrock` actually reads the image. Logs through the worker's logger.
+  const extractor = new PrismaExtractionStep(getPrismaClient(), selectExtractor(env, documentStore), {
     logger: { log: (message) => logger.log(message), warn: (message) => logger.warn(message) },
   });
   // Auto-close on inbound match (chase, METH Stage 8) — runs after extraction for
@@ -53,7 +59,7 @@ function bootstrap(): void {
   // them, which is how a switch quietly stops being wired to anything.
   const media: MediaIntakeDeps = {
     fetcher: selectMediaFetcher(env),
-    store: selectDocumentStore(env),
+    store: documentStore,
     perceptualHasher: createSharpPerceptualHasher(),
     imageNormaliser: selectImageNormaliser(env.IMAGE_NORMALISER),
     documentGuard: selectDocumentGuard(env.DOCUMENT_GUARD),

@@ -30,6 +30,7 @@ import {
   type DocumentExtractor,
   type ExtractedDocument,
   type ExtractionOutcome,
+  type ExtractionRequest,
 } from './document-extractor.js';
 
 export interface ExtractionInput {
@@ -130,7 +131,7 @@ export class PrismaExtractionStep implements ExtractionStep {
     // Phase 2 — the read itself. Deliberately OUTSIDE any transaction: a 2–4 s
     // delay must not hold a DB row locked.
     await this.sleep(extractionLatencyMs(started.byteHash));
-    const outcome = await this.extractor.extract({ filename: started.filename, byteHash: started.byteHash });
+    const outcome = await this.extractor.extract(started);
 
     // Phase 3 — write results and finalise the state, atomically. The completion
     // (the header + final state) is what the caller hands the auto-close hook; it
@@ -139,16 +140,23 @@ export class PrismaExtractionStep implements ExtractionStep {
     return scopedDb(this.prisma, ctx, (db) => this.finish(db, input, outcome));
   }
 
-  private async begin(db: ScopedClient, input: ExtractionInput): Promise<{ filename: string; byteHash: string } | null> {
+  private async begin(db: ScopedClient, input: ExtractionInput): Promise<ExtractionRequest | null> {
     const doc = await db.document.findUnique({
       where: { id: input.documentId },
-      select: { id: true, state: true, originalFilename: true, byteHash: true },
+      // s3Key and mimeType are what a REAL extractor needs — the bytes, not just
+      // their identity (METH Stage 15). DemoExtractor ignores both.
+      select: { id: true, state: true, originalFilename: true, byteHash: true, s3Key: true, mimeType: true },
     });
     if (doc === null) {
       this.logger.warn(`extract: document ${input.documentId} not visible — skipping (trace=${input.traceId})`);
       return null;
     }
-    const identity = { filename: doc.originalFilename, byteHash: doc.byteHash };
+    const identity: ExtractionRequest = {
+      filename: doc.originalFilename,
+      byteHash: doc.byteHash,
+      s3Key: doc.s3Key,
+      mimeType: doc.mimeType,
+    };
     if (doc.state === 'PROCESSING') return identity; // re-entrant: a prior attempt got this far
     if (doc.state !== 'RECEIVED') {
       this.logger.log(`extract: ${input.documentId} already ${doc.state} — skipping (idempotent, trace=${input.traceId})`);
