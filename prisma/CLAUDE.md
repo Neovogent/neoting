@@ -125,3 +125,11 @@ seeds the Xero chart-of-accounts categories the Stage 4 profiles use. **No Bidfo
 rule is seeded** — Stage 13 creates it live. `txn_NNN` ids are position-derived,
 so the chase/proposal references (`txn_003`, `txn_017`, `txn_023`, `txn_026`) were
 re-verified after the row-order change.
+
+**The two seeded proposals follow the contract since METH S12** (issue #140):
+`prop_chase_dental` is `chase.send` with a real `ChaseSendPayload` (its
+pre-contract `chase-send`/`{chases:[…]}` shape made `POST …/review` refuse it
+with `NT-PRP-001` — a landmine on the live approval queue, not history), and
+`prop_publish_burger` is `publish.batch`. Their hashes are real SHA-256 hex via
+the in-file `fixtureHash` helper, because the contract patterns every hash
+`^[a-f0-9]{64}$` and a `sha256:` prefix fails the generated parse of the queue.

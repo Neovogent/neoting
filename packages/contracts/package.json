@@ -26,7 +26,7 @@
     }
   },
   "scripts": {
-    "generate": "orval --config ./orval.config.ts && node ./scripts/enforce-money-int.mjs && node ./scripts/add-js-extensions.mjs && node ./scripts/check-contract.mjs",
+    "generate": "orval --config ./orval.config.ts && node ./scripts/enforce-money-int.mjs && node ./scripts/strip-zod-describe.mjs && node ./scripts/add-js-extensions.mjs && node ./scripts/check-contract.mjs",
     "build": "pnpm run generate && tsc -p tsconfig.build.json",
     "check:contract": "node ./scripts/check-contract.mjs",
     "typecheck": "tsc --noEmit",

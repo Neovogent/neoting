@@ -94,6 +94,7 @@ export function toLocalDocument(row: DocumentSummary, clientNameFor: (businessId
     // The contract guarantees a reason on REJECTED and FAILED, so it is shown
     // as-is rather than replaced with a generic line.
     statusNote: row.failureMessage ?? undefined,
+    failureCode: row.failureCode ?? undefined,
     source: CHANNEL_TO_SOURCE[row.channel] ?? 'web',
     uploader: row.originalFilename,
     currency: row.currency ?? 'GBP',
@@ -101,7 +102,11 @@ export function toLocalDocument(row: DocumentSummary, clientNameFor: (businessId
     fields: [],
     lineItems: [],
     splitFrom: row.parentDocumentId ? row.originalFilename : undefined,
-    publishFailed: row.state === 'FAILED' ? true : undefined,
+    // A failed PUBLISH is `REJECTED` + an NT-PUB code (the follow-up's only
+    // failure exit from READY); `FAILED` is extraction. This flag said
+    // `state === 'FAILED'` until METH S12, which branded every unreadable
+    // photo a publish failure.
+    publishFailed: row.failureCode?.startsWith('NT-PUB') ? true : undefined,
   };
 }
 

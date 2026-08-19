@@ -718,6 +718,61 @@ paths:
   # ==========================================================================
 
   /action-proposals:
+    get:
+      operationId: listActionProposals
+      summary: List proposals — the approval queue
+      description: |
+        Every proposal the caller's RLS context can see, newest first. One
+        endpoint serves the live approval queue (`state=CREATED&state=REVIEWED`)
+        and the decided history — they differ only by filter, the same shape
+        as `/documents` (METH Stage 12, issue #140).
+
+        Reading the list is not reviewing: `[Approve]` stays unreachable until
+        `POST .../review` has recorded what was actually rendered.
+      tags: [action-proposals]
+      x-nt-side-effect: none
+      parameters:
+        - $ref: '#/components/parameters/BusinessIdFilter'
+        - name: state
+          in: query
+          description: Repeat to widen. Omitted means every state.
+          required: false
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/ProposalState' }
+          style: form
+          explode: true
+        - name: kind
+          in: query
+          description: Repeat to widen. Omitted means every kind.
+          required: false
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/ProposalKind' }
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of proposals, newest first.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pageInfo]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ActionProposal' }
+                  pageInfo: { $ref: '#/components/schemas/PageInfo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
     post:
       operationId: createActionProposal
       summary: Propose a state change

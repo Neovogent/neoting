@@ -647,9 +647,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   /**
    * Where each slice's data actually came from. Recomputed every render on
    * purpose — the inputs are the queries' own observable state, and the
-   * provider's value object is rebuilt per render anyway. Slices not wired
-   * yet are honestly 'seed' until their stage (8/10/12) points them at a
-   * query.
+   * provider's value object is rebuilt per render anyway.
+   *
+   * `chases` and `proposals` stayed 'seed' HERE when METH S12 wired their
+   * screens, and that is a statement about these arrays, not those screens:
+   * the live queries live in the view chunks (`api/chases.ts`,
+   * `api/proposals.ts` — ChasesView, ApprovalsView, InboxesView), because a
+   * fill effect in this file would put their generated clients on the bundle
+   * floor, which has no headroom (apps/web/CLAUDE.md, Bundle). The wired
+   * views compute their own `sliceStatus` and wear their own badge; the
+   * synthetic `chases`/`approvals` arrays keep feeding everything else.
+   * `publishes` has no reading screen yet.
    */
   const slices: SliceStatuses = {
     documents: sliceStatus(slicesOn, documentsQuery),

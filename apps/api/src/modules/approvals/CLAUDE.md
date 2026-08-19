@@ -1,6 +1,6 @@
 # approvals — the Review → Approve engine
 
-**Lane H** · **Source of Truth:** SoT §4 Stage 9, Governance §10 · **Built by:** METH S3 (issue #122) · **Contract:** the five `/v1/action-proposals` operations
+**Lane H** · **Source of Truth:** SoT §4 Stage 9, Governance §10 · **Built by:** METH S3 (issue #122), list added METH S12 (issue #140) · **Contract:** the six `/v1/action-proposals` operations
 
 ## Purpose
 
@@ -18,8 +18,14 @@ execution, the audit write, the `outcome` record, and idempotency. An executor
 performs exactly one effect inside the transaction this module opens, and
 decides nothing about whether it may happen.
 
-- `action-proposals.controller.ts` / `.service.ts` — the five ops. Approve runs
-  gate-ladder → executor → proposal consumption → audit append in **one**
+- `action-proposals.controller.ts` / `.service.ts` — the five engine ops, plus
+  `GET /v1/action-proposals` (METH S12, issue #140 — the contract delta the
+  TODO below deferred, signed off by Shakib on the issue). The list is the
+  approval queue's read surface: keyset on `createdAt desc` (the chases-surface
+  shape), `businessId`/`state`/`kind` as user FILTERS on the RLS-scoped set,
+  no default state exclusion. Reading the list is NOT reviewing — nothing on
+  it writes, and `[Approve]` stays server-gated on `POST .../review`. Approve
+  runs gate-ladder → executor → proposal consumption → audit append in **one**
   `scopedDb` transaction; a refusal anywhere rolls the whole atom back.
 - `proposal-body.ts` — boundary parsing. **Read its header before touching it**:
   two measured orval gaps mean the generated `createActionProposalBody` union
@@ -151,7 +157,11 @@ pnpm --filter @neoting/api test -- approvals            # unit, offline
 - [ ] `audit_events.practice_id` (G7 contract change) — today the
       NULL-business chain is one global chain, world-readable under the
       shipped RLS read policy. Recorded in audit-writer.ts.
+- [x] Proposal list endpoint — decided in METH S12 (issue #140): a contracted
+      `GET /v1/action-proposals` with `businessId`/`state`/`kind` filters,
+      approved by Shakib on the issue. Unit-tested (filters/order/projection)
+      and integration-tested (own practice sees its pending row, the other
+      practice's page is empty; reading never touches `reviewedAt`).
 - [ ] Approval *workflows* (multi-stage/branching), expiry sweep, pseudonym
-      map, proposal list endpoint (none is contracted yet — Stage 12 reads the
-      queue somehow; decide there).
+      map.
 - [ ] Update this file on exit — it is how the next session picks up.

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Send, Play, X, Check, MessageSquare, Clock, ShieldOff, Ban, Wand2, FileSearch, PencilLine,
   Link2, ChevronRight, SlidersHorizontal, Undo2, Upload, LucideIcon,
@@ -6,6 +6,11 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
+import { API_ENABLED } from '../api/config';
+import { useChases, useSmsOutbox } from '../api/chases';
+import { sliceStatus } from '../api/slices';
+import { DataSourceBadge } from '../components/DataSourceBadge';
+import { ChasesLiveBoard } from './ChasesLiveBoard';
 import { cooldownFor, describeAge, formatWait, SmsCooldownNotice } from '../components/DynamicComponents/SmsCooldown';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { Tooltip } from '../components/DynamicComponents/Tooltip';
@@ -93,7 +98,49 @@ const m = defineMessages({
   },
 });
 
+/**
+ * The Chases surface (METH Stage 12). Two boards behind one route:
+ *
+ *   LIVE — `ChasesLiveBoard`, when the API is on and the session answered:
+ *   the server's chases and the demo SMS outbox, both polled. The synthetic
+ *   composer below is NOT mapped onto server rows, because its actions
+ *   (reminders, staging, policy) have no contract yet and buttons whose
+ *   writes the next poll reverts are worse than absent.
+ *
+ *   SYNTHETIC — everything below, exactly as it always ran; also the
+ *   fallback when the live query fails, wearing the dev-only badge
+ *   (METH_MODE §8: degrade to fixtures, never to blank).
+ *
+ * The context `chases` array stays seed-driven either way — hydrating it
+ * would put the chases client on the bundle floor, which has no headroom
+ * (apps/web/CLAUDE.md, Bundle); `slices.chases` in AppContext says 'seed'
+ * about exactly that array, and THIS view's own query status is the live
+ * surface's truth.
+ */
 export function ChasesView() {
+  const { session } = useAppContext();
+  const liveOn = API_ENABLED && session.status === 'authenticated';
+  const live = useChases({ enabled: liveOn });
+  const outbox = useSmsOutbox({ enabled: liveOn });
+  const status = sliceStatus(liveOn, live);
+
+  if (status.source === 'api') {
+    return (
+      <ChasesLiveBoard
+        chases={live.chases}
+        loading={status.loading}
+        outbox={outbox.messages}
+        outboxError={
+          outbox.contractError ??
+          (outbox.error instanceof Error ? outbox.error.message : outbox.error ? 'The request failed' : null)
+        }
+      />
+    );
+  }
+  return <SyntheticChasesBoard badge={<DataSourceBadge slice="chases" status={status} />} />;
+}
+
+function SyntheticChasesBoard({ badge }: { badge?: ReactNode }) {
   const intl = useIntl();
   const {
     clients, chases, missing, statsFor, chasePolicy, setChasePolicy, itemMessages,
@@ -160,6 +207,7 @@ export function ChasesView() {
             <p className="text-zinc-400 mt-2">{intl.formatMessage(m.subheading)}</p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
+            {badge}
             <button
               onClick={() => setMessagesOpen(true)}
               className="flex items-center gap-2 px-5 py-3 text-sm font-bold text-zinc-300 bg-card border border-white/10 rounded-full hover:bg-white/5 transition-all shadow-lg"

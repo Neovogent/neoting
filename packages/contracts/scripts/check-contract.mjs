@@ -217,6 +217,30 @@ if (existsSync(ZOD_DIR)) {
         `Did scripts/enforce-money-int.mjs run? First few: ${unguarded.slice(0, 3).join(', ')}`,
     );
   }
+
+  // The generated Zod also ships to the browser, and orval copies every spec
+  // description into it as `.describe('…')` — ~10 kB gzip of contract prose on
+  // apps/web's bundle floor when METH S12 measured it. Nothing reads Zod's
+  // description metadata, so scripts/strip-zod-describe.mjs removes them after
+  // generation; this is what notices if that hook is removed or reordered.
+  const described = [];
+  const describeStack = [ZOD_DIR];
+  while (describeStack.length) {
+    const dir = describeStack.pop();
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = resolvePath(dir, entry.name);
+      if (entry.isDirectory()) describeStack.push(full);
+      else if (entry.name.endsWith('.ts') && readFileSync(full, 'utf8').includes('.describe(')) {
+        described.push(entry.name);
+      }
+    }
+  }
+  if (described.length) {
+    fail(
+      `bundle — ${described.length} generated Zod file(s) still carry .describe() prose. ` +
+        `Did scripts/strip-zod-describe.mjs run? First few: ${described.slice(0, 3).join(', ')}`,
+    );
+  }
 }
 
 // --- 7. every generated relative import can be resolved by Node -------------

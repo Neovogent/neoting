@@ -277,4 +277,21 @@ describe.skipIf(!enabled)('the Review → Approve engine against a real database
     const still = await svc.get(STAFF_A, created.id);
     expect(still.state).toBe('CREATED');
   });
+
+  test('the list (METH S12) serves the queue under RLS: own practice sees pending, the other sees an empty page', async () => {
+    const svc = service();
+    const created = await svc.create(
+      STAFF_A,
+      { kind: 'document.archive', businessId: BIZ, payload: { documentIds: ['p122_doc_1'], archived: false } },
+      'p122-key-list',
+    );
+
+    const mine = await svc.list(STAFF_A, { state: ['CREATED', 'REVIEWED'], limit: 50 } as never);
+    expect(mine.data.map((p) => p.id)).toContain(created.id);
+    // Reading the queue is not reviewing — the row is untouched.
+    expect(mine.data.find((p) => p.id === created.id)?.reviewedAt).toBeNull();
+
+    const theirs = await svc.list(STAFF_B, { limit: 50 } as never);
+    expect(theirs.data.map((p) => p.id)).not.toContain(created.id);
+  });
 });

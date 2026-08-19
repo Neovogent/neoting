@@ -137,9 +137,21 @@ describe('state mapping', () => {
     expect(toLocalDocument(row({ state: state as DocumentState }), nameFor).status).toBe(status);
   });
 
-  it('flags a failed publish so the Ready pill can show it went wrong', () => {
-    expect(toLocalDocument(row({ state: 'FAILED' }), nameFor).publishFailed).toBe(true);
+  it('flags a failed publish by its NT-PUB code, never by FAILED — that state is extraction', () => {
+    // Corrected in METH S12: this used to pin `FAILED → publishFailed`, but on
+    // the server FAILED is an extraction failure, and a failed publish is
+    // REJECTED carrying the follow-up's NT-PUB code.
+    expect(
+      toLocalDocument(row({ state: 'REJECTED', failureCode: 'NT-PUB-0003', failureMessage: 'Xero refused it' }), nameFor)
+        .publishFailed,
+    ).toBe(true);
+    expect(toLocalDocument(row({ state: 'FAILED', failureCode: 'NT-EXT-0004' }), nameFor).publishFailed).toBeUndefined();
     expect(toLocalDocument(row({ state: 'READY' }), nameFor).publishFailed).toBeUndefined();
+  });
+
+  it('carries the stable failure code through, so screens can tell the stages apart', () => {
+    expect(toLocalDocument(row({ state: 'FAILED', failureCode: 'NT-EXT-0004' }), nameFor).failureCode).toBe('NT-EXT-0004');
+    expect(toLocalDocument(row({ state: 'READY' }), nameFor).failureCode).toBeUndefined();
   });
 
   it('shows the server’s own reason rather than a generic line', () => {

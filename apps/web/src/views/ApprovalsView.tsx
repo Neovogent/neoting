@@ -7,6 +7,11 @@ import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl, type IntlShape, type MessageDescriptor } from 'react-intl';
 import { commonActions, commonLabels } from '../i18n/common';
 import { useAppContext } from '../context/AppContext';
+import { API_ENABLED } from '../api/config';
+import { usePendingProposals } from '../api/proposals';
+import { sliceStatus } from '../api/slices';
+import { DataSourceBadge } from '../components/DataSourceBadge';
+import { ApprovalsLiveQueue } from './ApprovalsLiveQueue';
 import { fromSlug, slug, useSegment } from '../lib/router';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { currency } from '../lib/resolver';
@@ -169,7 +174,19 @@ export function ApprovalsView() {
   const {
     approvals, approvalWorkflows, clients, saveWorkflow, deleteWorkflow,
     advanceApproval, rejectApproval, startConversation, logAudit, documents,
+    session,
   } = useAppContext();
+
+  /**
+   * The live approval queue (METH Stage 12): with the API on and a session
+   * answered, the Queue tab is pending `action-proposals` from the real
+   * engine. The Workflows builder and History stay fixtures, and a failed
+   * fetch degrades the queue to the fixtures too, wearing the dev badge.
+   */
+  const liveOn = API_ENABLED && session.status === 'authenticated';
+  const proposalsQuery = usePendingProposals({ enabled: liveOn });
+  const proposalsStatus = sliceStatus(liveOn, proposalsQuery);
+  const liveQueue = proposalsStatus.source === 'api';
 
   /** The document an approver is looking at before deciding. */
   const [preview, setPreview] = useState<Document | null>(null);
@@ -225,6 +242,7 @@ export function ApprovalsView() {
   const history = approvals.filter((a) => a.state !== 'pending');
   const totalPending = pending.reduce((n, a) => n + a.total, 0);
   const aging = pending.filter((a) => a.waitingDays >= 5).length;
+  const queueCount = liveQueue ? proposalsQuery.proposals.length : pending.length;
 
   const bulkApprove = (rows: ApprovalItem[]) => {
     const ids = [...new Set(rows.map((r) => r.clientId))];
@@ -336,6 +354,7 @@ export function ApprovalsView() {
             </div>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
+            <DataSourceBadge slice="proposals" status={proposalsStatus} />
             <select
               value={clientFilter}
               onChange={(e) => setClientFilter(e.target.value)}
@@ -369,14 +388,21 @@ export function ApprovalsView() {
             }`}
           >
             {intl.formatMessage(TAB_LABEL[t])}
-            {t === 'Queue' && pending.length > 0 && <span className="ml-2 opacity-60">{pending.length}</span>}
+            {t === 'Queue' && queueCount > 0 && <span className="ml-2 opacity-60">{queueCount}</span>}
           </button>
         ))}
       </div>
 
       <div className="flex-1 overflow-y-auto px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-          {tab === 'Queue' && (
+          {tab === 'Queue' && liveQueue && (
+            <ApprovalsLiveQueue
+              proposals={proposalsQuery.proposals}
+              loading={proposalsStatus.loading}
+              onSettled={() => void proposalsQuery.refetch()}
+            />
+          )}
+          {tab === 'Queue' && !liveQueue && (
             <>
               <div className="flex items-center gap-3 mb-5 flex-wrap">
                 {/* Screen 12 opens on my own queue, not the practice's. */}
