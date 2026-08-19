@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Inject, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Inject, Param, Post, Query } from '@nestjs/common';
 
 import type { ActionProposal, ProposalReview } from '@neoting/contracts/model';
 import {
@@ -10,6 +10,7 @@ import {
   cancelActionProposalParams,
   createActionProposalHeader,
   getActionProposalParams,
+  listActionProposalsQueryParams,
   reviewActionProposalHeader,
   reviewActionProposalParams,
 } from '@neoting/contracts/zod';
@@ -18,6 +19,7 @@ import { REQUEST_CONTEXT } from '../../common/context/context.module.js';
 import type { RequestContext } from '../../common/context/request-context.js';
 import { AppException } from '../../common/problem/problem.js';
 import { parseBoundary, parseIdempotencyKey } from '../../common/validation/parse-boundary.js';
+import { coerceQuery } from '../../common/validation/query-coercion.js';
 import type { ActionProposalsService } from './action-proposals.service.js';
 import { knownProposalKind, parseCreateProposalBody } from './proposal-body.js';
 import { ACTION_PROPOSALS_SERVICE } from './tokens.js';
@@ -60,6 +62,18 @@ export class ActionProposalsController {
     }
     const request = parseCreateProposalBody(kind, body as Record<string, unknown>);
     return this.service.create(await this.context.require(), { kind, ...request }, key);
+  }
+
+  /** The approval queue and its history — a read, so no `Idempotency-Key` (METH S12, issue #140). */
+  @Get()
+  @HttpCode(HttpStatus.OK)
+  async list(@Query() query: unknown) {
+    const parsed = parseBoundary(
+      listActionProposalsQueryParams,
+      coerceQuery(listActionProposalsQueryParams, query),
+      'query parameters',
+    );
+    return this.service.list(await this.context.require(), parsed);
   }
 
   @Get(':proposalId')

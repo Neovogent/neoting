@@ -21,6 +21,9 @@ import { navigate, path, usePath, useQueryParam } from '../lib/router';
 import { EXPORT_HINT, EXPORT_MIN_ROWS } from '../lib/exportRules';
 import { failureOf, reasonText, retryMeaning } from '../lib/failures';
 import { AnalysisModal } from '../components/DynamicComponents/AnalysisModal';
+import { ProposalFlowModal } from '../components/DynamicComponents/ProposalFlowModal';
+import { UnroutedQueue } from './UnroutedQueue';
+import type { CreateActionProposalRequest } from '@neoting/contracts/model';
 import type { DocKind, DocStatus, Document, DuplicatePair } from '../lib/types';
 
 const STATUS_TABS = ['review', 'ready', 'processing', 'published', 'rejected'] as const;
@@ -232,6 +235,11 @@ const m = defineMessages({
     id: 'inboxes.inboxesView.retryUnlikelyTitle',
     defaultMessage: 'Unlikely to help — {reason}. {meaning}',
   },
+  retryChaseInstead: {
+    id: 'inboxes.inboxesView.retryChaseInstead',
+    defaultMessage:
+      'Re-reading the same file is not built yet — re-request it from the client instead: the chase engine (Chases) asks for a fresh copy by SMS.',
+  },
   publishRowTitle: { id: 'inboxes.inboxesView.publishRowTitle', defaultMessage: 'Publish this item' },
   viewTitle: {
     id: 'inboxes.inboxesView.viewTitle',
@@ -319,6 +327,29 @@ export function InboxesView() {
   /** The failed document a replacement file is being chosen for, if any. */
   const replaceRef = useRef<HTMLInputElement>(null);
   const [replacing, setReplacing] = useState<Document | null>(null);
+  /**
+   * A live publish retry (METH Stage 12): a NEW `publish.batch` proposal over
+   * the one failed document — Stage 10's retry path. Held in state so the
+   * modal's request object stays referentially stable.
+   */
+  const [publishRetry, setPublishRetry] = useState<{ request: CreateActionProposalRequest; clientName: string } | null>(null);
+
+  const openPublishRetry = (doc: Document) => {
+    setPublishRetry({
+      request: {
+        kind: 'publish.batch',
+        businessId: doc.clientId,
+        payload: {
+          documentIds: [doc.id],
+          integrationId: null,
+          // The shape requires a preview; the SERVER recomputes and stores its
+          // own at creation, and Read-review renders that one (METH S10).
+          preview: { itemCount: 1, grossPence: 0, vatPence: 0 },
+        },
+      },
+      clientName: doc.clientName,
+    });
+  };
 
   /**
    * The pair each flagged document belongs to, not just the fact that it is
@@ -341,8 +372,20 @@ export function InboxesView() {
     [transactions],
   );
 
+  /**
+   * Unrouted documents (METH Stage 12): the contract projects "no business
+   * yet" as an empty `businessId`, which the mapper passes through as an
+   * empty `clientId`. They get their own queue above the tabs and stay OUT of
+   * the client inbox lists — in synthetic mode no document ever carries an
+   * empty client id, so both lines are inert there.
+   */
+  const unrouted = useMemo(
+    () => (documentsSource === 'api' ? documents.filter((d) => d.clientId === '') : []),
+    [documents, documentsSource],
+  );
+
   const inKind = useMemo(
-    () => documents.filter((d) => d.kind === inbox),
+    () => documents.filter((d) => d.kind === inbox && d.clientId !== ''),
     [documents, inbox],
   );
 
@@ -624,6 +667,10 @@ export function InboxesView() {
           </div>
         )}
 
+        {unrouted.length > 0 && (
+          <UnroutedQueue documents={unrouted} onRouted={() => void refreshDocuments(queryClient)} />
+        )}
+
         {ingestRejections.length > 0 && (
           <div className="w-full mb-4 flex flex-col gap-2">
             {ingestRejections.slice(0, 3).map((r, i) => (
@@ -831,7 +878,10 @@ export function InboxesView() {
                     {statusTab === 'ready' && (
                       <BulkBtn icon={Send} label={intl.formatMessage(m.publishAction)} onClick={() => requestPublish(selected)} />
                     )}
-                    {statusTab === 'rejected' && (
+                    {/* Bulk retry stays synthetic-only: live retries are one
+                        proposal per failed publish (METH S12), and a bulk
+                        card is Stage 10's post-demo shape. */}
+                    {statusTab === 'rejected' && documentsSource !== 'api' && (
                       <BulkBtn
                         icon={RefreshCw}
                         label={intl.formatMessage(commonActions.retry)}
@@ -1023,9 +1073,22 @@ export function InboxesView() {
                             {doc.status === 'rejected' && (() => {
                               const failure = failureOf(doc);
                               if (!failure) return null;
+                              const live = documentsSource === 'api';
+                              /**
+                               * Live mode wires exactly what is real (METH
+                               * S12): a publish failure retries through a NEW
+                               * `publish.batch` proposal; an extraction
+                               * failure has no reprocess executor yet, so its
+                               * Retry explains that the chase engine — not a
+                               * re-read — is what gets a fresh copy. The
+                               * replace-file fix stays synthetic-only: its
+                               * delete-and-reingest writes local state a poll
+                               * would silently revert.
+                               */
+                              const liveExtraction = live && failure.stage === 'extraction';
                               return (
                                 <>
-                                  {failure.fix !== 'retry' && (
+                                  {failure.fix !== 'retry' && !(live && failure.fix === 'replace-file') && (
                                     <button
                                       onClick={(e) => { e.stopPropagation(); runFix(doc); }}
                                       className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
@@ -1036,19 +1099,29 @@ export function InboxesView() {
                                     </button>
                                   )}
                                   <button
-                                    onClick={(e) => { e.stopPropagation(); askRetry(doc); }}
+                                    aria-disabled={liveExtraction}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (liveExtraction) return;
+                                      if (live) { openPublishRetry(doc); return; }
+                                      void askRetry(doc);
+                                    }}
                                     className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold transition-colors ${
-                                      failure.retryHelps
-                                        ? 'bg-zinc-100 text-zinc-700 hover:bg-brand hover:text-white'
-                                        : 'text-zinc-400 border border-zinc-200 hover:text-zinc-600'
+                                      liveExtraction
+                                        ? 'text-zinc-300 border border-zinc-200 cursor-not-allowed'
+                                        : failure.retryHelps
+                                          ? 'bg-zinc-100 text-zinc-700 hover:bg-brand hover:text-white'
+                                          : 'text-zinc-400 border border-zinc-200 hover:text-zinc-600'
                                     }`}
                                     title={
-                                      failure.retryHelps
-                                        ? intl.formatMessage(retryMeaning(failure))
-                                        : intl.formatMessage(m.retryUnlikelyTitle, {
-                                            reason: reasonText(failure, intl).toLowerCase(),
-                                            meaning: intl.formatMessage(retryMeaning(failure)),
-                                          })
+                                      liveExtraction
+                                        ? intl.formatMessage(m.retryChaseInstead)
+                                        : failure.retryHelps
+                                          ? intl.formatMessage(retryMeaning(failure))
+                                          : intl.formatMessage(m.retryUnlikelyTitle, {
+                                              reason: reasonText(failure, intl).toLowerCase(),
+                                              meaning: intl.formatMessage(retryMeaning(failure)),
+                                            })
                                     }
                                   >
                                     <RefreshCw size={13} />
@@ -1108,6 +1181,18 @@ export function InboxesView() {
               <p className="text-[13px] text-zinc-500 mt-1">{intl.formatMessage(m.dropDetail)}</p>
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* A live publish retry — the Review → Approve card over a fresh proposal. */}
+      <AnimatePresence>
+        {publishRetry && (
+          <ProposalFlowModal
+            request={publishRetry.request}
+            clientName={publishRetry.clientName}
+            onExecuted={() => void refreshDocuments(queryClient)}
+            onClose={() => setPublishRetry(null)}
+          />
         )}
       </AnimatePresence>
 

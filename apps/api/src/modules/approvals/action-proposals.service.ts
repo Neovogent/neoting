@@ -1,12 +1,22 @@
 import { HttpStatus, Logger } from '@nestjs/common';
 
 import type { ActionProposal, ErrorCode, ProposalKind, ProposalReview, PublishBatchPayload } from '@neoting/contracts/model';
+import type { listActionProposalsQueryParams } from '@neoting/contracts/zod';
 import type { ActionProposal as ActionProposalRow, Prisma } from '@prisma/client';
+import type { z } from 'zod';
 
 import type { PrismaClient } from '../../common/db/prisma.js';
 import type { ScopeContext } from '../../common/db/scope-context.js';
 import { scopedDb, type ScopedClient } from '../../common/db/scoped-db.js';
 import { fingerprint, type IdempotencyStore } from '../../common/idempotency/idempotency-store.js';
+import {
+  dateField,
+  type Page,
+  type PageRequest,
+  pageQuery,
+  type SortField,
+  toPage,
+} from '../../common/pagination/cursor.js';
 import { AppException } from '../../common/problem/problem.js';
 import { currentTraceId } from '../../common/trace/trace-context.js';
 import {
@@ -27,6 +37,8 @@ import { canonicalHash } from './canonical-hash.js';
 import { knownProposalKind, parseStoredProposalPayload } from './proposal-body.js';
 import { renderSummary } from './render-summary.js';
 import { toActionProposal } from './to-action-proposal.js';
+
+type ListProposalsQuery = z.infer<typeof listActionProposalsQueryParams>;
 
 /** Already boundary-parsed by the controller against the kind's own generated member schema. */
 export interface CreateProposalRequest {
@@ -173,6 +185,39 @@ export class ActionProposalsService {
     const row = await scopedDb(this.prisma, ctx, (db) => db.actionProposal.findUnique({ where: { id: proposalId } }));
     if (row === null) throw notFound();
     return toActionProposal(row);
+  }
+
+  /**
+   * `GET /action-proposals` — the approval queue and its history, newest first,
+   * keyset-paginated (METH S12, issue #140 — the contract delta the module's
+   * TODO deferred to Stage 12). A read like `getActionProposal`: listing is not
+   * reviewing, and nothing here writes. `businessId`/`state`/`kind` are user
+   * FILTERS on the RLS-scoped set, never a tenancy guard — a foreign
+   * `businessId` yields an empty page (the chases-surface rule).
+   */
+  async list(ctx: ScopeContext, query: ListProposalsQuery): Promise<Page<ActionProposal>> {
+    const request: PageRequest<ActionProposalRow> = {
+      sort: PROPOSAL_SORT,
+      order: 'desc',
+      limit: query.limit,
+      cursor: query.cursor,
+      // The fingerprint covers what identifies the LIST (its filters), never
+      // the caller's position in it — the documents page-2 regression shape.
+      query: { businessId: query.businessId, state: query.state, kind: query.kind },
+    };
+    const seek = pageQuery(request);
+    const filters = buildProposalFilters(query);
+
+    const rows = await scopedDb(this.prisma, ctx, async (db) =>
+      db.actionProposal.findMany({
+        where: seek.where === undefined ? filters : { AND: [filters, seek.where] },
+        orderBy: seek.orderBy as Prisma.ActionProposalOrderByWithRelationInput[],
+        take: seek.take,
+      }),
+    );
+
+    const page = toPage(rows, request);
+    return { data: page.data.map(toActionProposal), pageInfo: page.pageInfo };
   }
 
   /**
@@ -467,6 +512,32 @@ function toProposalReview(row: ActionProposalRow): ProposalReview {
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Proposals sort newest-first on `createdAt` (required, `@default(now())`, so
+ * NOT nullable — a `nulls` clause on a required column 500s the list). The
+ * unique id is the tie-break the cursor helper appends.
+ */
+const PROPOSAL_SORT: SortField<ActionProposalRow> = dateField<ActionProposalRow>(
+  'createdAt',
+  (r) => r.createdAt,
+  false,
+);
+
+/**
+ * The user-facing filters, applied ON TOP of what RLS already narrowed to.
+ * Nothing here is a security boundary — a `businessId` the caller cannot reach
+ * matches rows that were already invisible, so the page is simply empty.
+ * `state` and `kind` are the contract's repeatable widen filters; there is no
+ * default exclusion — decided history is part of the record.
+ */
+function buildProposalFilters(query: ListProposalsQuery): Prisma.ActionProposalWhereInput {
+  return {
+    ...(query.businessId !== undefined ? { businessId: query.businessId } : {}),
+    ...(query.state !== undefined && query.state.length > 0 ? { state: { in: query.state } } : {}),
+    ...(query.kind !== undefined && query.kind.length > 0 ? { kind: { in: query.kind } } : {}),
+  };
 }
 
 function notFound(): AppException {

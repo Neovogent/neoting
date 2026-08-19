@@ -21,6 +21,8 @@
  *   provisioning needs — see prisma/CLAUDE.md. It is NOT a licence to give the
  *   application role the same power.
  */
+import { createHash } from 'node:crypto';
+
 import { PrismaClient, Prisma } from '@prisma/client';
 
 /**
@@ -55,6 +57,14 @@ const daysAhead = (n: number) => new Date(now.getTime() + n * DAY);
 // --- money ------------------------------------------------------------------
 /** £12.34 -> 1234. The only place a decimal is allowed anywhere near money. */
 const pounds = (p: number) => Math.round(p * 100);
+
+/**
+ * A contract-shaped fixture hash (`^[a-f0-9]{64}$`). SHA-256 over the
+ * stringified value — NOT the engine's canonical hash (sorted keys), which
+ * lives in apps/api and is not imported here. Nothing recomputes a seeded
+ * row's hash; it only has to be honest about being a hash and parse as one.
+ */
+const fixtureHash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 /** VAT-inclusive gross -> { totalPence, taxPence } at the given rate. */
 const withVat = (grossPounds: number, rate = 0.2) => {
   const totalPence = pounds(grossPounds);
@@ -615,50 +625,77 @@ async function main() {
     },
   });
 
-  // A chase proposed but NOT yet approved — this is what makes the
-  // Review → Approve card have something real to render on a fresh clone.
+  // A chase proposed but NOT yet approved — this is what makes the live
+  // approval queue (METH S12) and its Review → Approve card real on a fresh
+  // clone. Kind and payload follow the CONTRACT (`chase.send` /
+  // `ChaseSendPayload`): the pre-contract shape this row used to carry made
+  // `POST .../review` refuse it with NT-PRP-001, which is a demo landmine, not
+  // history. `renderedSummary` is deliberately absent — the review endpoint
+  // renders and stores it the first time [Read review] is opened.
+  const chaseDentalPayload = {
+    messages: [
+      {
+        recipientContactId: null,
+        recipientE164: '+447700900321',
+        body: "Harbourview Dental Accounts: we're missing the receipts for Npower £264.15 and Amazon £74.99. Upload securely: https://neoting.neovogent.com/p/yyyy",
+        transactionIds: ['txn_023', 'txn_026'],
+      },
+    ],
+  };
   await prisma.actionProposal.create({
     data: {
       id: 'prop_chase_dental',
       businessId: 'biz_dental',
       practiceId: 'prac_ledgerline',
-      kind: 'chase-send',
+      kind: 'chase.send',
       state: 'CREATED',
       createdByModel: 'anthropic.claude-sonnet-4-6',
-      payloadHash: 'sha256:chase-dental-0001',
+      payloadHash: fixtureHash(chaseDentalPayload),
       expiresAt: daysAhead(2),
-      payload: {
-        chases: [
-          {
-            businessId: 'biz_dental',
-            recipient: '+447700900321',
-            body: 'Harbourview Dental: we are missing paperwork for Npower £264.15 and Amazon £74.99. Upload securely: https://neoting.neovogent.com/p/yyyy',
-            items: ['txn_023', 'txn_026'],
-          },
-        ],
-      },
-      renderedSummary: { title: 'Chase 1 client for 2 missing documents', clientCount: 1, itemCount: 2 },
+      payload: chaseDentalPayload,
     },
   });
 
   // And one that completed the full path, so history shows a real approval.
+  // Contract kind (`publish.batch`) and payload shape; the hashes are real
+  // SHA-256 hex because the contract patterns them `^[a-f0-9]{64}$` — a
+  // `sha256:` prefix fails every generated parse of the list response.
+  const publishBurgerPayload = {
+    documentIds: ['doc_002', 'doc_005', 'doc_009'],
+    integrationId: 'int_burger_xero',
+    preview: { itemCount: 3, grossPence: pounds(1382.29), vatPence: pounds(230.38) },
+  };
+  const publishBurgerSummary = {
+    title: 'Publish 3 documents — gross £1,382.29, VAT £230.38',
+    sections: [
+      {
+        heading: 'Server-computed preview',
+        entries: [
+          { label: 'Items', value: '3' },
+          { label: 'Gross', value: '£1,382.29' },
+          { label: 'VAT', value: '£230.38' },
+        ],
+      },
+    ],
+    warnings: [],
+  };
   await prisma.actionProposal.create({
     data: {
       id: 'prop_publish_burger',
       businessId: 'biz_burger',
       practiceId: 'prac_ledgerline',
-      kind: 'publish',
+      kind: 'publish.batch',
       state: 'EXECUTED',
       createdByUserId: 'usr_priya',
       approvedByUserId: 'usr_priya',
-      payloadHash: 'sha256:publish-burger-0001',
-      renderedSummaryHash: 'sha256:publish-burger-summary',
+      payloadHash: fixtureHash(publishBurgerPayload),
+      renderedSummaryHash: fixtureHash(publishBurgerSummary),
       expiresAt: daysAhead(1),
       reviewedAt: daysAgo(5),
       approvedAt: daysAgo(5),
       executedAt: daysAgo(5),
-      payload: { documentIds: ['doc_002', 'doc_005', 'doc_009'], destination: 'XERO' },
-      renderedSummary: { title: 'Publish 3 bills to Xero', grossPence: pounds(1382.29), vatPence: pounds(230.38) },
+      payload: publishBurgerPayload,
+      renderedSummary: publishBurgerSummary,
       outcome: { published: 3, failed: 0 },
     },
   });

@@ -184,6 +184,12 @@ export interface Document {
   category: string;
   status: DocStatus;
   statusNote?: string | undefined;
+  /**
+   * The API's stable failure code (`NT-EXT-*`, `NT-PUB-*`, `NT-ING-*`) when
+   * the document failed. Only live rows carry one — it is what tells a publish
+   * failure from an extraction failure without parsing prose (METH S12).
+   */
+  failureCode?: string | undefined;
   source: SourceChannel;
   uploader: string;
   currency: string;

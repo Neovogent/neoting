@@ -238,7 +238,18 @@ export function failureOf(doc: Document): Failure | null {
   if (doc.status !== 'rejected' && !doc.publishFailed) return null;
 
   const note = doc.statusNote ?? '';
-  const stage: FailureStage = doc.fields.length === 0 ? 'extraction' : 'publish';
+  // A live row names its stage in the stable code (NT-PUB-* is the publish
+  // follow-up's; everything else failed before the ledger). The field-count
+  // heuristic stays for synthetic rows — an API row always has `fields: []`,
+  // which read as "never extracted" and called every publish failure an
+  // extraction failure (METH S12).
+  const stage: FailureStage = doc.failureCode
+    ? doc.failureCode.startsWith('NT-PUB')
+      ? 'publish'
+      : 'extraction'
+    : doc.fields.length === 0
+      ? 'extraction'
+      : 'publish';
   const cause = CAUSES.find((c) => c.stage === stage && c.match.test(note));
 
   if (cause) {

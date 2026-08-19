@@ -47,8 +47,10 @@ SoT §13.3 makes the provenance class **visible by default** — human-confirmed
 ```
 openapi.yaml ──orval──┬─> src/generated/client/   TanStack Query hooks + MSW handlers   -> apps/web
                       ├─> src/generated/model/    TypeScript types for every DTO        -> both
-                      └─> src/generated/zod/      strict Zod schemas                    -> apps/api
+                      └─> src/generated/zod/      strict Zod schemas                    -> apps/api + apps/web
 ```
+
+The generate script chains four post-steps, each verified by `check-contract.mjs` so none can be skipped silently: `enforce-money-int` (`.int()` on `*Pence`), `strip-zod-describe` (spec prose out of the browser bundle — see the bit list below), `add-js-extensions` (Node-resolvable specifiers), then the checker itself.
 
 Import by subpath — `@neoting/contracts/zod`, `/model`, `/client` — so `apps/api` never drags React Query and MSW in behind the schemas it actually wants.
 
@@ -61,6 +63,10 @@ Import by subpath — `@neoting/contracts/zod`, `/model`, `/client` — so `apps
 **`exactOptionalPropertyTypes` is off in this package, and only here.** orval's MSW fixture generator emits `{ min: undefined, max: undefined }` and assigns `T | undefined` into required-but-nullable properties. The base config turns the flag on deliberately, so this is a real loss, confined to a package whose hand-written surface is about 150 lines. **`apps/web` will meet the same wall** when it imports the handlers as workspace source: decide it there — match this setting, or exclude `**/*.msw.ts` from its typecheck and keep the flag on for its own code. Do not inherit it silently.
 
 **`query.signal` is off.** It is shaped for orval's axios client, where the second argument is a config object carrying `signal`. With `httpClient: 'fetch'` orval emits `getThing(id, signal)` against a mutator whose second parameter is a `RequestInit`, and the generated file does not typecheck. Callers wanting cancellation pass `{ signal }` as the options argument; `ntFetch` spreads it onto the request.
+
+**orval copies every spec `description` into the generated Zod as `.describe('…')`, unconditionally.** No option turns it off (measured on v7.21). The descriptions are this contract's design prose — multi-paragraph notes on `ProposalKind` and friends — and Zod stores them as metadata nothing in this repo reads, while `apps/web` ships the schemas it parses responses with: METH S12 measured ~10 kB gzip of spec prose sitting on the bundle floor of every route. `pnpm generate` therefore chains `scripts/strip-zod-describe.mjs`, and `check-contract.mjs` fails the build if any generated Zod file still carries a `.describe(`. The prose survives where it is read — `openapi.yaml` itself and the JSDoc on `model/`.
+
+**`allOf` + `.strict()` emits an intersection that rejects every input.** Both halves are `.strict()`, so each rejects the other's keys — the generated whole-schema parse can never succeed for a composed type. Known consumers work around it by parsing the halves separately: `apps/api/src/modules/approvals/proposal-body.ts` (the original discovery, for `CreateActionProposalRequest`) and `apps/web/src/api/chases.ts` (`Chase = ChaseSummary & {items, messages}`, hit in METH S12). Both pin the gap with a test so an orval fix surfaces as a deletable workaround, not a mystery.
 
 ## The contract checker
 
@@ -87,7 +93,7 @@ It depends on `js-yaml` and nothing else, on purpose: it has to run before the c
 |---|---|
 | Documents | list · get · original-url · processing log · extraction history |
 | Ingestion | upload intent · upload complete · WhatsApp webhook verify + receive |
-| Review → Approve | create proposal · get · review · approve · cancel |
+| Review → Approve | create proposal · get · review · approve · cancel · **list** (METH S12 #140 — the approval queue; sign-off recorded on the issue) |
 | Auth (minimal, METH Stage 1 #118) | login · logout · `GET /me` |
 | Chases (METH Stage 2 #120) | list · get · SMS outbox (`x-demo: true`) |
 | OTP portal (METH Stage 2 #120) | create session · context · delegated upload intent |
@@ -142,7 +148,7 @@ Every shape derives from the applied Prisma schema. Enum values are copied verba
 ### Still to write, in order
 
 - **Pass 2 — auth-tenancy.** `GET /me` first: the §13.3 persistent context header (who am I, what role, which client) is a binding design mandate and no workspace screen is buildable without it. Then sessions and memberships.
-- **Pass 3 — chase + OTP portal, the rest of it:** policy scheduler, item messaging, STOP handling. The demo slice (list/get/outbox, portal session/context/upload) landed with METH Stage 2. Still includes the open question flagged on `ProposalKind`: whether a client correcting a misread number on their own just-uploaded receipt goes through Read review → Approve. It reads like the wrong application of §8.2 — that pattern governs the accountant workspace, not a client in a car park — but it touches the enforcement path, so it is Shakib's call, not an agent's. (For the demo, METH Stage 9 records portal corrections as document events, settling nothing.)
+- **Pass 3 — chase + OTP portal, the rest of it:** policy scheduler, item messaging, STOP handling. The demo slice (list/get/outbox, portal session/context/upload) landed with METH Stage 2. Add to the list: **`Chase.items` requires `minItems: 1`, but the projection can legitimately serve zero items** — a chase whose refs resolve to no transaction (seeded `chs_003`), and structurally any chase whose every item RLS withheld. The server currently emits a body its own contract refuses; the web degrades that row to its summary (METH S12). Either the constraint relaxes or the projection must never emit an item-less chase — Shakib's call. Still includes the open question flagged on `ProposalKind`: whether a client correcting a misread number on their own just-uploaded receipt goes through Read review → Approve. It reads like the wrong application of §8.2 — that pattern governs the accountant workspace, not a client in a car park — but it touches the enforcement path, so it is Shakib's call, not an agent's. (For the demo, METH Stage 9 records portal corrections as document events, settling nothing.)
 - **Pass 4 — banking, matching, approvals, publishing, exports, public API, the rest of it:** consent lifecycle, statement upload, partial/batch payments, reference sync, workflow builder, exports. The demo read surfaces and the four proposal kinds landed with METH Stage 2.
 - **Next-best-action surface** (§13.3 mandate 2) needs aggregate endpoints that do not exist yet.
 

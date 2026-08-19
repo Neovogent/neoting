@@ -73,6 +73,7 @@ function harness(rows: ProposalRow[] = [], executorResult?: ExecutionResult | Er
   const map = new Map(rows.map((r) => [r.id, r]));
   const audits: Record<string, unknown>[] = [];
   const executed: string[] = [];
+  const listCalls: { where?: unknown; orderBy?: unknown; take?: number }[] = [];
   let idSeq = 0;
 
   const tx = {
@@ -83,6 +84,10 @@ function harness(rows: ProposalRow[] = [], executorResult?: ExecutionResult | Er
       return [{}]; // the audit writer's advisory lock
     },
     actionProposal: {
+      findMany: async (args: { where?: unknown; orderBy?: unknown; take?: number }) => {
+        listCalls.push(args);
+        return [...map.values()];
+      },
       findUnique: async ({ where }: { where: { id: string } }) => map.get(where.id) ?? null,
       create: async ({ data }: { data: Record<string, unknown> }) => {
         const row = proposal(`prop_${++idSeq}`, data as Partial<ProposalRow>);
@@ -138,7 +143,7 @@ function harness(rows: ProposalRow[] = [], executorResult?: ExecutionResult | Er
     },
     new InMemoryIdempotencyStore(),
   );
-  return { service, map, audits, executed };
+  return { service, map, audits, executed, listCalls };
 }
 
 const code = async (p: Promise<unknown>): Promise<string> => {
@@ -276,4 +281,49 @@ test('cancel is refused on an executed proposal, idempotent on a cancelled one, 
   const again = await service.cancel(CTX, 'prop_a', { reason: 'changed my mind' }, 'k2');
   expect(again.state).toBe('CANCELLED');
   expect(await code(service.cancel(CTX, 'prop_done', {}, 'k3'))).toBe('NT-PRP-005');
+});
+
+// ---- list (METH S12, issue #140) ---------------------------------------------
+
+test('list returns the contract envelope, newest first, asking for limit + 1', async () => {
+  const { service, listCalls } = harness([proposal('prop_a')]);
+  const page = await service.list(CTX, { limit: 2 } as never);
+
+  expect(page.data).toHaveLength(1);
+  expect(page.pageInfo).toEqual({ hasMore: false, nextCursor: null });
+  const [call] = listCalls;
+  expect(call?.take).toBe(3); // the probe row, not a second COUNT
+  expect(call?.orderBy).toEqual([{ createdAt: 'desc' }, { id: 'desc' }]);
+});
+
+test('list filters are ANDed in; a businessId is a filter, not a second tenancy guard', async () => {
+  const { service, listCalls } = harness();
+  await service.list(CTX, {
+    limit: 50,
+    businessId: 'biz_9',
+    state: ['CREATED', 'REVIEWED'],
+    kind: ['chase.send'],
+  } as never);
+  expect(listCalls[0]?.where).toEqual({
+    businessId: 'biz_9',
+    state: { in: ['CREATED', 'REVIEWED'] },
+    kind: { in: ['chase.send'] },
+  });
+});
+
+test('list with no filter sends an empty where — RLS is the only tenancy mechanism, and no state is excluded', async () => {
+  const { service, listCalls } = harness();
+  await service.list(CTX, { limit: 50 } as never);
+  expect(listCalls[0]?.where).toEqual({});
+});
+
+test('list projects onto the contract shape and never renders — reading the queue is not reviewing', async () => {
+  const { service } = harness([proposal('prop_a')]);
+  const page = await service.list(CTX, { limit: 50 } as never);
+  const [row] = page.data;
+  expect(row?.id).toBe('prop_a');
+  expect(row?.state).toBe('CREATED');
+  expect(row?.createdAt).toBe('2026-08-18T09:00:00.000Z');
+  expect(row?.reviewedAt).toBeNull(); // untouched — only POST .../review writes it
+  expect(row?.renderedSummaryHash).toBeNull();
 });
