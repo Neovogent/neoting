@@ -143,11 +143,16 @@ read_surface '/v1/action-proposals?limit=50'  'd.data.length' 'action proposals'
 
 # --------------------------------------------------------------------------
 step '6 · propose a state change (nothing executes)'
-call GET '/v1/documents?limit=1' >/dev/null
-DOC=$(field 'd.data[0].id')
-BIZ=$(field 'd.data[0].businessId')
+# The FIRST document is not good enough: the newest may be UNROUTED, and an
+# unrouted document has no businessId — proposing against it is correctly
+# refused with 422 NT-PRP-006 ("a referenced record is not reachable"), which
+# reads as a product bug when it is the product working. Pick the newest
+# document that actually belongs to a business.
+call GET '/v1/documents?limit=50' >/dev/null
+DOC=$(field 'd.data.find(x => x.businessId).id')
+BIZ=$(field 'd.data.find(x => x.businessId).businessId')
 if [ -z "$DOC" ]; then
-  bad 'no document to act on — cannot exercise the proposal path'
+  bad 'no ROUTED document to act on — cannot exercise the proposal path'
   printf '\n%s%d passed, %d failed%s\n' "$D" "$pass" "$fail" "$Z"
   exit 1
 fi
@@ -160,6 +165,16 @@ if [ "$code" = 201 ] && [ -n "$PROP" ]; then
   ok "proposal $PROP created, state $(field 'd.state')"
 else
   bad "create expected 201, got $code"
+  # Everything below acts on $PROP. Without it the remaining steps each 404 on
+  # an empty path segment and step 11 announces a document left archived that
+  # was never archived — six misleading failures for one cause.
+  printf '
+%sNo proposal to exercise. Skipping steps 7-11.%s
+' "$D" "$Z"
+  printf '
+%s%d passed, %d failed%s — %s
+' "$R" "$pass" "$fail" "$Z" "$BASE"
+  exit 1
 fi
 
 # --------------------------------------------------------------------------

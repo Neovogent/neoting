@@ -120,6 +120,44 @@ The `image` tag is a commit SHA (ECR tags are immutable — `compute.tf`), so
 
 ---
 
+## 2b. Create the application's database role — ONCE, before the api can serve
+
+⚠ **Do this before believing a green deploy.** Until 19 Aug 2026 the `nt_app`
+role did not exist in the staging database and the api task carried no database
+credential at all, so every DB-backed request answered 500 while `/healthz`
+returned 200 and CI stayed green. `db-app-role.tf` generates the password and
+says "the migration step consumes it" — no migration step ever did.
+
+```bash
+netcfg=$(aws ecs describe-services --cluster nt-staging --services nt-staging-api \
+           --query 'services[0].networkConfiguration' --output json)
+
+task=$(aws ecs run-task --cluster nt-staging \
+  --task-definition nt-staging-migrate --launch-type FARGATE \
+  --network-configuration "$netcfg" --started-by "app-role" \
+  --overrides '{"containerOverrides":[{"name":"migrate","command":["node","apps/api/dist/db/app-role.js"]}]}' \
+  --query 'tasks[0].taskArn' --output text)
+
+aws ecs wait tasks-stopped --cluster nt-staging --tasks "$task"
+aws ecs describe-tasks --cluster nt-staging --tasks "$task" \
+  --query 'tasks[0].containers[0].exitCode'          # must be 0
+```
+
+Idempotent — re-run it after a migration adds tables, and to repair the role.
+
+The script asserts in SQL that the role holds neither `SUPERUSER` nor
+`BYPASSRLS` and `RAISE EXCEPTION`s if it does, because either grant makes every
+policy in `prisma/` inert *silently* — a tenancy leak returns more rows, it does
+not throw. `prisma db execute` returns no rows, so a non-zero exit is the only
+channel that assertion has.
+
+**Follow-up worth doing after the demo:** this belongs in the deploy pipeline
+between `migrate` and the service update, exactly as CI's stage 4a2 does it for
+the test database. It is an operator step today only because changing the deploy
+path two days before a client demo is the riskier of the two options.
+
+---
+
 ## 3. Seed the demo cast
 
 `prisma/seed.ts` opens with `TRUNCATE ... RESTART IDENTITY CASCADE`, so it is
