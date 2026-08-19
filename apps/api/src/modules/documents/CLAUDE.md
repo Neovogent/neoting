@@ -191,6 +191,16 @@ for callers without admin rights", but `ScopeContext` carries no role today, so
 there is nothing to branch on. Every caller who can see the document sees its
 full detail. Said out loud here rather than left to be assumed — see TODO.
 
+**`toExtraction` separates the smuggled `lineItems` key (METH S7, #137).** The
+extraction lane stores line items INSIDE the `fields` jsonb (the no-schema-change
+rule), but the contract types `fields` as a strict map of `ExtractedField` and
+gives line items their own optional `Extraction.lineItems` — the generated
+client enforces that strictly, so serving the jsonb unchanged failed every
+extracted `GET /documents/{id}` in the browser. The projection now surfaces the
+array under its contracted name (omitted, never nulled, when absent) and strips
+the key from `fields` either way. Pinned in `common/documents/
+document-response.test.ts`, including the malformed-value refusals.
+
 ## Tests
 
 ```bash

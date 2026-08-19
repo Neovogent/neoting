@@ -115,6 +115,32 @@ async function handle(payload: IngestJobPayload, deps: ProcessorDeps): Promise<v
       );
       return;
     }
+
+    // Duplicate detection (#40) for the already-persisted lane too (METH S7).
+    // This branch bypasses `persist()` by design — which meant it also bypassed
+    // the detector, so web upload was the ONE channel whose documents never got
+    // a `duplicates` row and the same receipt dropped twice in the browser was
+    // flagged nowhere. Same guards as `persist()`: a routed document (the row
+    // needs a business to anchor on) and a byte hash to key on; the write is
+    // idempotent (ordered pair + unique index), so a redelivery detects again
+    // and writes nothing twice.
+    const routedBusinessId = payload.routing.businessId ?? null;
+    if (routedBusinessId !== null && payload.sha256 !== undefined) {
+      const { findings, candidatesTruncated } = await deps.detector.detect({
+        documentId: payload.documentId,
+        practiceId: payload.practiceId,
+        businessId: routedBusinessId,
+        byteHash: payload.sha256,
+        perceptualHash: payload.perceptualHash ?? null,
+      });
+      deps.logger.log(`dedupe ${payload.documentId}: ${findings.length} match(es) trace=${payload.traceId}`);
+      if (candidatesTruncated) {
+        deps.logger.warn(
+          `dedupe ${payload.documentId}: perceptual scan hit the candidate cap for business ${routedBusinessId} — older images were not compared (trace=${payload.traceId})`,
+        );
+      }
+    }
+
     const completion = await deps.extractor.run({
       documentId: payload.documentId,
       practiceId: payload.practiceId,

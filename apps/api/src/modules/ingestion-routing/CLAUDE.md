@@ -402,6 +402,19 @@ Two things it changed *here*, and one it deliberately did not:
   Approve spine (Governance §10). All five read operations are
   `x-nt-side-effect: none`.
 
+### Web-upload dedupe (METH Stage 7)
+
+The already-persisted branch in `ingest-processor.ts` now runs the duplicate
+detector before extraction. It bypasses `persist()` by design — which meant it
+also bypassed the detector, so **web upload was the one channel whose documents
+never got a `duplicates` row**: the same receipt dropped twice in the browser
+was flagged nowhere, while the identical bytes arriving by email were. Same
+guards as `persist()` (a routed document, a byte hash to key on; a hashless or
+unrouted job skips detection but still extracts), same idempotent write.
+Verified live against the demo stack: the byte-identical twin produced
+`byteHash` findings at score 1. Web-upload jobs carry no `perceptualHash`
+today, so the perceptual net stays email/WhatsApp-only — a note, not a secret.
+
 ### Extraction wiring (METH Stage 4)
 
 The ingest processor (`queue/ingest-processor.ts`) runs extraction for every

@@ -134,17 +134,31 @@ export function toDocumentEvent(row: DocumentEventRow): DocumentEvent {
 }
 
 export function toExtraction(row: ExtractionRow): Extraction {
+  // `fields` is `Json` in Prisma — which includes arrays and scalars — while
+  // the contract promises an object of `ExtractedField`. The compiler is right
+  // that those do not overlap, so the narrowing is done rather than asserted:
+  // a non-object lands as `{}` instead of an array being served where a client
+  // generated from the spec expects a map, which would fail in the browser at
+  // the point it is least debuggable. The extraction lane (#79) owns the shape
+  // on write; this is the read surface refusing to pass on a broken one.
+  //
+  // `lineItems` rides INSIDE that jsonb on write (METH S4 stores it there under
+  // the no-schema-change rule; METH S3's update-coding executor copies it
+  // forward) — but the contract types `fields` as a map of `ExtractedField` and
+  // the generated client parses it STRICTLY, so an array left under that key
+  // fails every `GET /documents/{id}` in the browser the moment a document has
+  // been extracted. The contract also already has the honest home for it:
+  // `Extraction.lineItems`, optional. So the smuggled key is separated here —
+  // surfaced as the contracted array when it holds one, omitted (never nulled)
+  // otherwise, and stripped from `fields` either way (METH S7, #137).
+  const raw: Record<string, unknown> = isJsonObject(row.fields) ? row.fields : {};
+  const { lineItems, ...fields } = raw;
+
   return {
     id: row.id,
     documentId: row.documentId,
-    // `fields` is `Json` in Prisma — which includes arrays and scalars — while
-    // the contract promises an object of `ExtractedField`. The compiler is right
-    // that those do not overlap, so the narrowing is done rather than asserted:
-    // a non-object lands as `{}` instead of an array being served where a client
-    // generated from the spec expects a map, which would fail in the browser at
-    // the point it is least debuggable. The extraction lane (#79) owns the shape
-    // on write; this is the read surface refusing to pass on a broken one.
-    fields: (isJsonObject(row.fields) ? row.fields : {}) as unknown as Extraction['fields'],
+    fields: fields as unknown as Extraction['fields'],
+    ...(Array.isArray(lineItems) ? { lineItems: lineItems as unknown as NonNullable<Extraction['lineItems']> } : {}),
     extractorKind: row.extractorKind,
     ladderRung: row.ladderRung,
     modelVersion: row.modelVersion,

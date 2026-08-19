@@ -37,6 +37,35 @@ import type { DocKind, Document as LocalDocument, DocStatus, SourceChannel } fro
 /** Integer pence to the pounds the local shape carries. */
 export const fromPence = (pence: number | null | undefined): number => (pence == null ? 0 : pence / 100);
 
+/**
+ * ⚠ The generated response type says `{ status, data }`; the runtime value is
+ * the RAW BODY.
+ *
+ * orval's `httpClient: 'fetch'` types every operation as a status-discriminated
+ * envelope, but the configured mutator — `packages/contracts/src/http-client.ts`
+ * — returns `await response.json()`, which is the body itself. The two disagree
+ * and TypeScript believes the type, so a caller that trusts it reaches one
+ * level too deep and hands a Zod schema the wrong object. (This hook did
+ * exactly that until METH S7 — `query.data.data` — and every live inbox load
+ * reported a contract error instead of rendering.)
+ *
+ * Unwrapped by SHAPE rather than by type, so this is correct today and still
+ * correct if the mutator is ever changed to return the envelope the types
+ * describe. One definition; `bank.ts` and the detail hooks import it.
+ */
+export function unwrapBody(value: unknown): unknown {
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    'data' in value &&
+    'status' in value &&
+    typeof (value as { status: unknown }).status === 'number'
+  ) {
+    return (value as { data: unknown }).data;
+  }
+  return value;
+}
+
 const STATE_TO_STATUS: Record<string, DocStatus> = {
   RECEIVED: 'processing',
   PROCESSING: 'processing',
@@ -113,21 +142,30 @@ export interface UseDocumentsOptions {
  * The inbox, from `GET /documents`.
  *
  * The response is parsed through the generated Zod schema before anything
- * touches it. TypeScript is not a runtime gate — the types describe what the
- * server promised, and this checks what it actually sent. A contract drift
- * then surfaces here, at the boundary, with the field named, instead of as
- * `undefined is not an object` three components deep.
+ * touches it — read as the RAW BODY through `unwrapBody`, because the
+ * generated envelope type does not exist at runtime (this hook shipped
+ * reaching one level too deep, and every live inbox load reported a contract
+ * error instead of rendering; fixed in METH S7 and pinned in the test).
+ *
+ * While enabled it also POLLS, every 5 seconds. Documents arrive from outside
+ * this browser — WhatsApp, email, the OTP portal, a worker finishing an
+ * extraction — and the inbox is the screen on which they are watched landing
+ * (METH S7; SoT Stage 5's live pipeline states). TanStack's structural sharing
+ * keeps an unchanged response the same object, so an idle poll re-renders
+ * nothing. Push (SSE/websocket) replaces this post-demo; polling is honest and
+ * boring, not a mock. Off entirely when `enabled` is false, which is what keeps
+ * the test suite and synthetic mode timer-free.
  */
 export function useDocuments({ enabled, params, clientNameFor }: UseDocumentsOptions) {
   const query = useListDocuments(params, {
-    query: { enabled },
+    query: { enabled, refetchInterval: enabled && 5_000 },
   });
 
   const parsed = useMemo(() => {
-    const empty = { documents: [] as LocalDocument[], invalid: null as string | null, pageInfo: null as { nextCursor?: string | null; hasMore: boolean } | null };
+    const empty = { documents: [] as LocalDocument[], invalid: null as string | null, pageInfo: null as { nextCursor?: string | null | undefined; hasMore: boolean } | null };
     if (!query.data) return empty;
 
-    const result = listDocumentsResponse.safeParse(query.data.data);
+    const result = listDocumentsResponse.safeParse(unwrapBody(query.data));
     if (!result.success) {
       return {
         ...empty,

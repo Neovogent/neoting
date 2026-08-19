@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { DocumentChannel, DocumentState } from '@neoting/contracts/model';
 import type { DocumentSummary } from '@neoting/contracts/model';
 
-import { fromIsoDate, fromPence, toLocalDocument } from './documents';
+import { listDocumentsResponse } from '@neoting/contracts/zod';
+import { fromIsoDate, fromPence, toLocalDocument, unwrapBody } from './documents';
 import { documentFixtures, toPence } from './mocks/fixtures';
 import type { DocStatus, SourceChannel } from '../lib/types';
 
@@ -216,5 +217,42 @@ describe('the rest of the row', () => {
 
     expect(mapped.map((d) => d.id)).toEqual(documentFixtures.map((d) => d.id));
     expect(mapped.every((d) => d.total >= 0 && d.supplier.length > 0)).toBe(true);
+  });
+});
+
+/**
+ * The hook's parse, owed since the bank slice found the envelope problem
+ * (apps/web/CLAUDE.md): the generated type promises `{ status, data }`, the
+ * runtime value is the raw body, and this hook shipped reading one level too
+ * deep — so with the API enabled every inbox load reported a contract error.
+ * The hook's exact composition — `listDocumentsResponse` over `unwrapBody` —
+ * must accept both shapes, so the fix survives the mutator ever changing.
+ */
+describe('the list parse and the envelope that does not exist', () => {
+  const page = { data: [row()], pageInfo: { nextCursor: null, hasMore: false } };
+  const parse = (value: unknown) => listDocumentsResponse.safeParse(unwrapBody(value));
+
+  it('reads the raw body the mutator actually returns', () => {
+    const parsed = parse(page);
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.data).toHaveLength(1);
+  });
+
+  it('reads the enveloped shape the generated types describe, should it ever become real', () => {
+    expect(parse({ status: 200, data: page }).success).toBe(true);
+  });
+
+  it('does not unwrap a body whose own fields merely look like an envelope', () => {
+    // `status` here is a string, not an HTTP code — the shape test must not
+    // strip a legitimate body that happens to carry `data` and `status` keys.
+    expect(unwrapBody({ data: [], status: 'READY' })).toEqual({ data: [], status: 'READY' });
+  });
+
+  it('names the field when the server answer does not match the contract', () => {
+    const parsed = parse({ data: [{ ...row(), state: 'MISFILED' }], pageInfo: page.pageInfo });
+
+    expect(parsed.success).toBe(false);
+    expect(!parsed.success && parsed.error.issues.some((i) => i.path.join('.').includes('state'))).toBe(true);
   });
 });
