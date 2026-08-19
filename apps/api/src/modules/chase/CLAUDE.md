@@ -185,7 +185,16 @@ a re-run is idempotent).
 **Known gaps, flagged not hidden:** the portal-link token names a `chaseId`, but
 `chase.send` creates the chase at approve time — so composition and the executor
 coordinate on chase identity (Stage 9 owns that reconciliation when it consumes
-the token). Per-client suppression descriptors, engines (b)–(e), the policy
+the token). ⚠ **Sharpened by METH S13:** no HTTP surface runs `composeChaseSms` +
+`signPortalLink` at proposal time, so the chat's chase beat composes the SoT copy
+client-side with a TOKENLESS portal path in the body (`<origin>/p/` — the outbox
+renders no tap target rather than a dead one). The demo-script hop from the
+chat-created chase's SMS into the portal (beat 6 → 7) does not work until a
+server compose seam exists — either the engine composing `chase.send` payloads at
+creation (the publish.batch recompute precedent) with the executor adopting the
+token's chase id, or a dedicated compose endpoint. That touches the chase
+template and the Review → Approve path, so it is Shakib's call, flagged on the
+S13 PR (#142) — not something a stage session may slip in. Per-client suppression descriptors, engines (b)–(e), the policy
 scheduler / reminders / quiet hours / STOP / item messaging remain out of this
 stage. The read controllers landed (METH S8, see above); auto-close landed (METH
 S8, `auto-close.ts` behind the `index.ts` seam, wired into the ingest processor).

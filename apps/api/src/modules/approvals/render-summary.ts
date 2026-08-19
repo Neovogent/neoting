@@ -103,10 +103,40 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
         { heading: 'Documents', entries: ids.map((id, i) => ({ label: `Document ${i + 1}`, value: id })) },
       ]);
     }
+    case 'rule.create': {
+      // The rule the approval activates — fields, tier and scope spelled out
+      // (METH S13): a reviewer must see exactly what will start coding their
+      // client's documents, not a JSON blob of it.
+      const scopeKey = typeof payload['scopeKey'] === 'string' ? payload['scopeKey'] : null;
+      const sets = isObject(payload['sets']) ? payload['sets'] : {};
+      const conditions = isObject(payload['conditions']) ? payload['conditions'] : null;
+      const setEntries = Object.entries(sets)
+        .filter(([, v]) => v !== undefined)
+        .map(([label, value]) => ({ label, value: text(value) }));
+      return summary(`Create rule: ${scopeKey ?? text(payload['tier'])} → ${setEntries.map((e) => `${e.label} ${e.value}`).join(', ')}`, [
+        {
+          heading: 'Rule that will be created',
+          entries: [
+            { label: 'Tier', value: text(payload['tier']) },
+            { label: 'Matches', value: scopeKey ?? 'Every document in scope' },
+            {
+              label: 'Conditions',
+              value:
+                conditions === null
+                  ? 'Always'
+                  : Object.entries(conditions)
+                      .map(([k, v]) => `${k}: ${text(v)}`)
+                      .join(' · '),
+            },
+          ],
+        },
+        { heading: 'Fields this rule sets', entries: setEntries },
+      ]);
+    }
     default:
       // Honest generic rendering for the kinds whose stages have not shaped a
       // richer card yet (move-business, reprocess, reject, split,
-      // bank.confirm-match, rule.create): every payload member, named.
+      // bank.confirm-match): every payload member, named.
       return summary(`${kind}`, [
         {
           heading: 'Proposed action',

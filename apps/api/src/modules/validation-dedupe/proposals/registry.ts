@@ -12,6 +12,7 @@ import {
 } from './proposal-executor.js';
 import { createPublishBatchExecutor, type PublishGateway } from './publish-batch.js';
 import { routeDocumentExecutor } from './route-document.js';
+import { ruleCreateExecutor } from './rule-create.js';
 import { updateCodingExecutor } from './update-coding.js';
 
 /**
@@ -39,13 +40,15 @@ export interface ExecutorRegistryDeps {
  * runtime `NT-PRP-001` guard for a wire value outside the enum stays the
  * second line of defence, not the first.
  *
- * Six real executors, five honest holes: a registry with named
+ * Seven real executors, four honest holes: a registry with named
  * unimplemented kinds beats half-executors, and it means the engine (METH S3,
  * #122) wires against the full enum on day one. Each hole throws
  * `ProposalNotImplementedError` carrying its kind — loudly, before any write.
- * The last METH Stage 2 kind (issue #120) is a hole until its stage lands the
- * executor: rule.create (S13). `chase.send` left the list in METH S8,
- * `publish.batch` in METH S10, `bank.confirm-match` in METH S11.
+ * All four METH Stage 2 kinds (issue #120) now have executors: `chase.send`
+ * left the hole list in METH S8, `publish.batch` in METH S10,
+ * `bank.confirm-match` in METH S11 and `rule.create` in METH S13 (#142); the
+ * remaining #81 four (`move-business`, `reprocess`, `reject`, `split`) each
+ * need their own issue.
  *
  * A FACTORY, not a Nest provider: the engine module builds it inside its own
  * `useFactory` and keeps the token out of its public providers, so no executor
@@ -70,7 +73,9 @@ export function buildExecutorRegistry(deps: ExecutorRegistryDeps): ExecutorRegis
     // Twilio. The engine may inject the config-selected sender.
     'chase.send': chaseSendExecutor(deps.smsSender ?? new DemoSmsSender()),
     'bank.confirm-match': confirmMatchExecutor,
-    'rule.create': notImplemented('rule.create'),
+    // rule.create landed with METH S13 (#142): the chat's rule beat, activated
+    // only by the approved proposal it records as `actionProposalId`.
+    'rule.create': ruleCreateExecutor,
   };
 }
 

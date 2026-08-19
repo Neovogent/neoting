@@ -818,7 +818,14 @@ export type Intent =
   | 'INVITE_USER'
   | 'SHOW_ANALYTICS'
   | 'SHOW_AUDIT'
-  | 'SHOW_MISSING_TABLE';
+  | 'SHOW_MISSING_TABLE'
+  // The METH Stage 13 golden paths — emitted only by the canned demo table
+  // when the workspace session is live, rendered by the LIVE cards whose
+  // state changes go through the real proposal engine.
+  | 'LIVE_MISSING'
+  | 'LIVE_CHASE'
+  | 'LIVE_RULE'
+  | 'LIVE_PUBLISH';
 
 /** Read-only intents render instantly with no review step (PRD section 8). */
 export const READ_ONLY_INTENTS: Intent[] = [
@@ -833,6 +840,7 @@ export const READ_ONLY_INTENTS: Intent[] = [
   'SHOW_ANALYTICS',
   'SHOW_AUDIT',
   'SHOW_MISSING_TABLE',
+  'LIVE_MISSING',
 ];
 
 /**
@@ -863,6 +871,25 @@ export interface MessagePayload {
   missingItemIds?: string[] | undefined;
   documentId?: string | undefined;
   documentIds?: string[] | undefined;
+  /**
+   * The SERVER business the live intents act on (METH Stage 13) — an id from
+   * `GET /businesses`, never a synthetic client id: it goes into proposal
+   * payloads the API resolves through RLS. Absent when the utterance named no
+   * client; the live cards then offer a picker rather than guessing.
+   */
+  businessId?: string | undefined;
+  businessName?: string | undefined;
+  /** The canned parse of a rule utterance (`// DEMO-MOCK: Opus via Bedrock`). */
+  ruleDraft?:
+    | {
+        scopeKey: string;
+        categoryCode: string;
+        categoryName: string;
+        vatTreatment: string | undefined;
+      }
+    | undefined;
+  /** Narrows the inbox table a navigation intent renders ("everything to review"). */
+  statusFilter?: DocStatus | undefined;
 }
 
 export interface Message {

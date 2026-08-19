@@ -36,8 +36,12 @@ decides nothing about whether it may happen.
   test fails and this file collapses to one `parseBoundary`.
 - `render-summary.ts` — deterministic, pure render of what `[Read review]`
   shows; `rendered_summary_hash` is `canonicalHash` over it. `chase.send`
-  renders every SMS byte-for-byte (the contract's words). Kinds without a
-  shaped card yet fall back to naming every payload member.
+  renders every SMS byte-for-byte (the contract's words); `rule.create`
+  (METH S13, #142) renders the rule in full — tier, scope, conditions and
+  every field it sets — because a reviewer must see what will start coding
+  their client's documents, not a JSON blob. Kinds without a shaped card yet
+  (`move-business`, `reprocess`, `reject`, `split`, `bank.confirm-match`)
+  fall back to naming every payload member.
 - `audit-writer.ts` — the minimal hash chain: `sha256(prev_hash +
   canonical_payload)`, seq per business allocated under a transaction-scoped
   advisory lock (the decision prisma/CLAUDE.md's open question 4 asked for —

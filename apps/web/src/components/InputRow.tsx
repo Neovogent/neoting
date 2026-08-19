@@ -3,13 +3,15 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom';
 import { useAppContext } from '../context/AppContext';
 import { motion, AnimatePresence } from 'motion/react';
+import { API_ENABLED } from '../api/config';
 import { classifyLocally, extractClientName, resolveScope } from '../lib/resolver';
+import { matchDemoIntent } from '../lib/demoIntents';
 import { useSpeech } from '../lib/useSpeech';
 import { suggestPrompts } from '../lib/promptSuggestions';
 import { TypedPlaceholder } from './DynamicComponents/TypedPlaceholder';
 import { DocumentFormats, VoiceIcon } from './DynamicComponents/InputAffordances';
 import { defineMessages, useIntl } from 'react-intl';
-import type { Intent } from '../lib/types';
+import type { Intent, MessagePayload } from '../lib/types';
 
 const m = defineMessages({
   listeningPlaceholder: {
@@ -76,7 +78,7 @@ export function InputRow() {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const { addMessage, clients, messages, attachedClients, attachClient, detachClient, ingest, missing, chases, approvals, documents } = useAppContext();
+  const { addMessage, clients, messages, attachedClients, attachClient, detachClient, ingest, missing, chases, approvals, documents, businesses, session } = useAppContext();
   const intl = useIntl();
 
   /**
@@ -165,6 +167,28 @@ export function InputRow() {
     // below: an upload makes the answer about the ingest, not about the text.
     let response = intl.formatMessage(local.response);
 
+    // The live golden paths (METH Stage 13): with a real session, the canned
+    // demo table runs AHEAD of the regex classifier — its intents render real
+    // components and stage real proposals. Anything it does not recognise
+    // falls through to `classifyLocally`, whose GENERAL fallback is the
+    // graceful "here's what I can do" card. // DEMO-MOCK: Opus via Bedrock.
+    let livePayload: Partial<MessagePayload> = {};
+    if (API_ENABLED && session.status === 'authenticated') {
+      const demo = matchDemoIntent(userMessage, { businesses, documents });
+      if (demo) {
+        intent = demo.intent;
+        response = intl.formatMessage(demo.response);
+        livePayload = demo.payload;
+        // Live rows key on the SERVER business id, so a named business also
+        // becomes the scope the tables filter on — the synthetic client ids in
+        // `scope` cannot match a live row.
+        if (demo.payload.businessId !== undefined) {
+          scope.clientIds = [demo.payload.businessId];
+          scope.clientNames = demo.payload.businessName === undefined ? [] : [demo.payload.businessName];
+        }
+      }
+    }
+
     // Attachments really enter the pipeline — they appear in the Inboxes
     // section and move the client's counts, not just this conversation.
     let ingestedId: string | undefined;
@@ -199,7 +223,10 @@ export function InputRow() {
       intent,
       payload: {
         ...scope,
-        documentId: ingestedId,
+        ...livePayload,
+        // The ingest answer wins over a live match — an attached file makes
+        // the message about the upload, and its id must not be shadowed.
+        ...(ingestedId === undefined ? {} : { documentId: ingestedId }),
         clientName: intent === 'ADD_CLIENT' ? extractClientName(userMessage) : undefined,
       },
     });

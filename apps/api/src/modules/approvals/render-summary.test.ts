@@ -60,6 +60,34 @@ test('update-coding names every field being set', () => {
   expect(summary.sections[0]?.entries.map((e) => e.label)).toEqual(['Document', 'categoryCode', 'totalPence']);
 });
 
+test('rule.create renders the rule in full — fields, tier, scope — not a JSON blob (METH S13)', () => {
+  const summary = renderSummary('rule.create', {
+    tier: 'SUPPLIER_CUSTOMER',
+    scopeKey: 'Bidfood',
+    conditions: null,
+    sets: { categoryCode: 'COST_OF_SALES_FOOD', vatTreatment: 'standard' },
+  });
+  expect(summary.title).toBe('Create rule: Bidfood → categoryCode COST_OF_SALES_FOOD, vatTreatment standard');
+  const rule = summary.sections.find((s) => s.heading === 'Rule that will be created');
+  expect(rule?.entries).toEqual([
+    { label: 'Tier', value: 'SUPPLIER_CUSTOMER' },
+    { label: 'Matches', value: 'Bidfood' },
+    { label: 'Conditions', value: 'Always' },
+  ]);
+  const sets = summary.sections.find((s) => s.heading === 'Fields this rule sets');
+  expect(sets?.entries.map((e) => e.label)).toEqual(['categoryCode', 'vatTreatment']);
+
+  // A scopeless tier says so, and richer conditions are named rather than hidden.
+  const accountDefault = renderSummary('rule.create', {
+    tier: 'ACCOUNT_DEFAULT',
+    scopeKey: null,
+    conditions: { totalPenceGreaterThan: 200000 },
+    sets: { vatTreatment: 'exempt' },
+  });
+  expect(accountDefault.sections[0]?.entries).toContainEqual({ label: 'Matches', value: 'Every document in scope' });
+  expect(accountDefault.sections[0]?.entries).toContainEqual({ label: 'Conditions', value: 'totalPenceGreaterThan: 200000' });
+});
+
 test('unshaped kinds fall back to naming every payload member, and warnings default empty', () => {
   const summary = renderSummary('bank.confirm-match', { transactionId: 'txn_1', documentId: 'doc_1', matchKind: 'EXACT' });
   expect(summary.title).toBe('bank.confirm-match');

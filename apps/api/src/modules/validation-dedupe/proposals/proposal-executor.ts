@@ -93,8 +93,9 @@ export type FollowUp =
     };
 
 /** The row kinds an executor may report having changed. Grown for `chase.send`
- * (METH S8), which creates `chases` rather than touching `documents`. */
-export type ChangedEntity = 'document' | 'chase';
+ * (METH S8), which creates `chases` rather than touching `documents`, and for
+ * `rule.create` (METH S13), which creates `rules`. */
+export type ChangedEntity = 'document' | 'chase' | 'rule';
 
 /** Serialised by the engine into `action_proposals.outcome` (Json?). */
 export interface ExecutionResult {

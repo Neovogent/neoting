@@ -5,6 +5,10 @@ import { ChaseComposer } from './ChaseComposer';
 import { ClientIntakeForm } from './ClientIntakeForm';
 import { DocumentPreview } from './DocumentPreview';
 import { DuplicateCompare } from './DuplicateCompare';
+import { LiveChaseComposerCard } from './LiveChaseComposerCard';
+import { LiveMissingCard } from './LiveMissingCard';
+import { LivePublishCard } from './LivePublishCard';
+import { LiveRuleCard } from './LiveRuleCard';
 import { MatchCard } from './MatchCard';
 import { PipelineStats } from './PipelineStats';
 import { PublishCard } from './PublishCard';
@@ -44,7 +48,23 @@ export function IntentRenderer({ message }: { message: Message }) {
       return <ChaseComposer clientIds={clientIds} />;
 
     case 'SHOW_INBOX':
-      return <InboxTable clientIds={clientIds} clientNames={clientNames} />;
+      return <InboxTable clientIds={clientIds} clientNames={clientNames} statusFilter={payload.statusFilter} />;
+
+    // The METH Stage 13 golden paths — real data, and every state change
+    // through the real proposal engine (the cards say how).
+    case 'LIVE_MISSING':
+      return <LiveMissingCard businessId={payload.businessId} businessName={payload.businessName} />;
+
+    case 'LIVE_CHASE':
+      return <LiveChaseComposerCard businessId={payload.businessId} businessName={payload.businessName} />;
+
+    case 'LIVE_RULE':
+      return payload.ruleDraft ? (
+        <LiveRuleCard draft={payload.ruleDraft} businessId={payload.businessId} businessName={payload.businessName} />
+      ) : null;
+
+    case 'LIVE_PUBLISH':
+      return <LivePublishCard businessId={payload.businessId} businessName={payload.businessName} />;
 
     case 'SHOW_REJECTED':
       return <RejectedTable clientIds={clientIds} clientNames={clientNames} />;

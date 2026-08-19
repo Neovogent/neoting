@@ -46,6 +46,63 @@ Read `docs/Source_Of_Truth.md` D37 before assuming anything Next-shaped. The req
 - ⚠ `getChaseResponse` is orval's strict-intersection `allOf` gap (see `packages/contracts/CLAUDE.md`): the generated schema rejects every valid `Chase`. `chases.ts` parses the two halves separately (`parseChaseDetail`), pinned by test; a detail that still fails degrades to its list-validated summary with items/messages withheld rather than felling the board (known case: seeded `chs_003` serves `items: []` against the contract's `minItems: 1` — flagged as a pass-3 contract question).
 - The outbox panel builds the tappable link with `portalPathFrom` — last path segment of whatever followed `Upload securely: `, re-homed as `/p/<token>` — and opens it in a phone-sized window (the demo's "client's phone" beat). The first two fill the array every existing mutator already writes to rather than becoming a second source beside it: the pipeline derives approvals, chases, duplicates and every client statistic from those arrays, so a parallel list would have half the app disagreeing with the other half about what exists. All are behind `VITE_API_ENABLED` — and, since S6, additionally gated on the session being authenticated (see *The session and the login wall* above); when the gate is shut the query never runs and the seeds stand. Outside `AppContext` entirely, the chase portal (`/p/:linkToken`, METH Stage 9) is fully wired — see *Client-facing surfaces* below. It was deliberately the first full surface: it is the narrowest, its three operations are contracted, and nothing else in the app derives anything from it, so it could move without taking the pipeline's derived state with it.
 
+### The chat golden paths (METH S13, #142)
+
+The chat drives the demo: with a live session, `matchDemoIntent` in
+`src/lib/demoIntents.ts` (`// DEMO-MOCK: Opus via Bedrock`) runs AHEAD of the
+regex classifier in `InputRow` and routes the five scripted utterances onto
+LIVE intents; anything it does not recognise falls through to
+`classifyLocally`, whose GENERAL card is the graceful fallback. Synthetic mode
+never runs the table, so the seeded demo is exactly what it was. What each
+does, and the decisions inside:
+
+- **`LIVE_MISSING`** (`LiveMissingCard`) — read-only, instant (SoT §8.2): the
+  unmatched, non-suppressed transactions from the live bank slice (the same
+  set server-side detection reads — `isMatched` + `chaseSuppressed`, never a
+  re-derivation) plus the open chases from `useChases`, drillable into the
+  Chases board.
+- **`LIVE_CHASE`** (`LiveChaseComposerCard`) — item checkboxes over the same
+  unmatched set, an editable E.164 recipient (prefilled from the synthetic
+  namesake client; there is no /v1/contacts read surface), a client-side
+  draft in the SoT §8.2 copy shape, then `LiveProposalFlow` stages a real
+  `chase.send` proposal. ⚠ Composition belongs SERVER-SIDE ("never free-typed
+  by a caller", the contract's words) and the portal link cannot be signed
+  here, so the body carries a tokenless `/p/` path — the S8/S9 compose-seam
+  gap, sharpened in `apps/api/src/modules/chase/CLAUDE.md` and on the PR:
+  the outbox tap into the portal (demo beat 6 → 7) needs that seam.
+- **`LIVE_RULE`** (`LiveRuleCard`) — the wow beat. `parseDemoRule` produces a
+  contract-ready draft (scopeKey title-cased to match the extractor's
+  supplierName EXACTLY; spoken category → the seeded CoA code via a canned
+  table); staging creates a real `rule.create` proposal, approval writes the
+  `rules` row the DemoExtractor honours on the next matching upload.
+- **`LIVE_PUBLISH`** (`LivePublishCard`) — Ready costs for the picked
+  business, pre-filtered by a courtesy mirror of the publish minimum (the
+  server refuses `NT-PUB-001` regardless), placeholder preview the engine
+  DISCARDS — Read review renders the server-computed totals (METH S10).
+- **Navigation intents** reuse existing surfaces: "show everything to review"
+  → `SHOW_INBOX` + `statusFilter` (a new optional prop on `InboxTable`);
+  "open the Currys receipt" → `REVIEW_DOCUMENT` with the supplier-resolved
+  `documentId` (in-review copy preferred).
+
+**`LiveProposalFlow` stages on an EXPLICIT click, never on mount** — a chat
+message remounts every time its conversation is reopened, and
+`ProposalFlowModal`'s create-on-mount pattern would mint a proposal per visit.
+A card remounted after staging shows its draft again; the staged proposal is
+pending in the Approvals queue, which is the point of having one. Approve
+still cannot mount before Read review — the flow hands off to
+`LiveProposalCard`, which renders only the server's own review.
+
+When the canned table names a business, `InputRow` also rewrites the message
+scope to the SERVER business id — live rows key on `biz_*` ids, which the
+synthetic-client scope from `resolveScope` can never match.
+
+`demoIntents.test.ts` pins the demo script: the five utterances land with
+their payloads (the Bidfood draft byte-exact), dictated variants land too,
+unknown input returns null, and the SMS draft copy/money/day formatting and
+E.164 normalisation are exact. Browser-smoked against the real API: all five
+utterances end-to-end, Approve absent pre-review, chase approve → outbox body
+verbatim.
+
 **The documents surface went deep in METH Stage 7 (#137).** Beyond the hydrated list (whose parse is FIXED — it read `query.data.data` and failed on every live load; see the envelope note below — and which now POLLS every 5 s while live, because documents arrive from WhatsApp/email/portal/workers and the inbox is where they are watched landing; TanStack structural sharing makes an idle poll re-render nothing, and `enabled: false` keeps tests timer-free):
 
 - **Detail** — `src/api/document-detail.ts`: `useDocumentDetail` reads `GET /documents/{id}` + `/original` + `/events`, maps the accepted extraction to the overlay's shape (per-field confidence + provenance class, §13.3; Category answered from the header with the extract event's `sourceRuleId` as its honest provenance), and polls at 2.5 s while the document is processing. Deliberately NOT in `documents.ts` — that module is on every route's floor and this one is heavy with the strict extraction Zod; it lands on the document screens' chunks. `DocumentPreview` renders it when live: the real original via the presigned URL (no provenance band painted over a real photograph — bounding boxes are not extracted yet), an "open the original" link for non-images, the processing log, and the loading/error states.
@@ -118,15 +175,23 @@ Before minting a per-component id for a universal word, check `src/i18n/common.t
 
 Gzipped, after the i18n extraction. The budget is **JS** (SoT §14: "initial JS < 250 KB gzipped per route"), so CSS is listed but not counted against it:
 
-| | METH S9 | METH S6 | METH S7 | now (METH S12) |
+| | METH S6 | METH S7 | METH S12 | now (METH S13) |
 |---|---|---|---|---|
-| `index.js` (shared, incl. the 0.1 kB entry stub) | 187.3 kB | 188.3 kB | 188.6 kB | **179.3 kB** |
-| `query.js` (TanStack) | 14.8 kB | 14.7 kB | 14.7 kB | 14.7 kB |
+| `index.js` (shared, incl. the 0.1 kB entry stub) | 188.3 kB | 188.6 kB | 179.3 kB | **179.4 kB** |
+| `query.js` (TanStack) | 14.7 kB | 14.7 kB | 14.7 kB | 14.7 kB |
 | `react.js` | 1.5 kB | 1.5 kB | 1.5 kB | 1.5 kB |
-| **shared JS floor, every route** | **203.5 kB** | **204.5 kB** | **204.8 kB** | **195.5 kB** |
-| heaviest route on top (`ClientDetailView`) | 45.2 kB | 45.1 kB | 45.1 kB | **45.2 kB** |
-| **worst route, total JS** | **248.7 kB** | **249.6 kB** | **249.9 kB** | **240.7 kB** |
-| `index.css` (not in the JS budget) | 13.0 kB | 13.3 kB | 13.3 kB | 13.3 kB |
+| **shared JS floor, every route** | **204.5 kB** | **204.8 kB** | **195.5 kB** | **195.6 kB** |
+| heaviest route on top (`ClientDetailView`) | 45.1 kB | 45.1 kB | 45.2 kB | **45.2 kB** |
+| **worst route, total JS** | **249.6 kB** | **249.9 kB** | **240.7 kB** | **240.8 kB** |
+| `index.css` (not in the JS budget) | 13.3 kB | 13.3 kB | 13.3 kB | 13.3 kB |
+
+METH S13's whole surface (the canned table, four live cards,
+`LiveProposalFlow`, the InputRow wiring) cost the floor **+0.1 kB** (the
+`READ_ONLY_INTENTS` addition in the floor-resident types) and landed on the
+AIWorkspaceView chunk, now 32.9 kB — chat + floor = 228.5 kB, under budget.
+`demoIntents.ts` and the cards import only modules already floor-resident
+(`resolver`, `matching`) or lazy-chunk-resident (`proposals.ts`, `chases.ts` —
+shared chunks with the S12 views, per the reachability rule below).
 
 **The headroom is ~9.3 kB, and METH S12 is where it came from.** The stage arrived at 0.10 kB of headroom, its own additions initially put the floor +0.5 kB over (the generated action-proposals list exports joining bank.ts's floor-resident module copy, plus six generated Zod schemas hoisted into `index` because the zod barrel is statically reachable from floor modules), and the reclaim that paid for it all is `strip-zod-describe` in `packages/contracts` — orval was copying the spec's design prose into the runtime Zod, ~10 kB gzip of it on the floor. After the strip, S12's whole surface (chases + outbox + proposals queue + unrouted + retry) nets the floor **9.25 kB BELOW** the S7 line. Numbers are exact gzip bytes of the built chunks (`gzip -c | wc -c`) — the S6 convention. ⚠ Measure with a CLEAN environment: sourcing the repo `.env` into the shell before `pnpm build` sets `NODE_ENV` and Vite quietly produces a development-flavoured bundle ~25 % larger, which reads as a regression that is not there.
 
@@ -160,6 +225,7 @@ What is covered today, and why those:
 | `src/api/bank.test.ts` | The contract's **signed** pence becoming the unsigned pounds the screen renders with the direction in `isCredit` — a sign convention that looks right in a demo and silently files every refund as a payment. Plus `isMatched`: `SUGGESTED` is a question and not evidence, and a server row never invents a `matchedDocId`. |
 | `src/api/chases.test.ts` | The chase boundary (METH S12): the strict-intersection pin (`getChaseResponse` refuses a VALID body — when orval fixes it this fails and the halves workaround gets deleted), the open/closed split pinned against the contract's `ChaseState`, signed pence → unsigned display pounds, Europe/London instants, and `portalPathFrom` re-homing whatever the SMS carried as `/p/<token>`. |
 | `src/api/proposals.test.ts` | The queue boundary (METH S12), recorder-fetch style: `KIND_LABEL` total over the contract's `ProposalKind`; [Read review] returning the sections and the hash; a section the card cannot render failing the WHOLE review (no Approve out of a half-read card); approve echoing the hash verbatim; create parsed by the contract schema with drift named. |
+| `src/lib/demoIntents.test.ts` | The demo script itself (METH S13): the five scripted utterances land on their live intents with the right payloads — the Bidfood rule draft byte-exact against what the extractor honours — dictated variants land too, and unknown input falls through to the graceful card. Plus the SMS draft's copy shape, money/day formatting and E.164 normalisation. |
 | `src/lib/spreadsheet.test.ts` | Money parsing (`2.000,00` is two thousand), quoted CSV fields, and the Net·VAT·Total column race. |
 | `src/lib/tableImport.test.ts` | XLSX date serials, day-first UK dates, totals lines refused rather than booked, signed ledgers where a positive row is a refund. |
 | `src/lib/matching.test.ts` | Whether a transaction is settled or handed to a human, and the merchant bar that keeps Costco off Costa. |
