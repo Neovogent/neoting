@@ -4,6 +4,7 @@ import { listBankTransactionsResponse } from '@neoting/contracts/zod';
 import type { BankTransaction as ApiBankTransaction, ListBankTransactionsParams, MatchKind as ApiMatchKind } from '@neoting/contracts/model';
 import type { BankTransaction as LocalBankTransaction, MatchKind as LocalMatchKind } from '../lib/types';
 import { fromIsoDate, fromPence } from './documents';
+import { unwrapBody } from './envelope';
 
 /**
  * The bank feed, read from the API (METH Stage 11).
@@ -87,34 +88,6 @@ export function toLocalTransaction(
     matchState: row.matchState,
     chaseSuppressed: row.chaseSuppressed,
   };
-}
-
-/**
- * ⚠ The generated response type says `{ status, data }`; the runtime value is
- * the RAW BODY.
- *
- * orval's `httpClient: 'fetch'` types every operation as a status-discriminated
- * envelope, but the configured mutator — `packages/contracts/src/http-client.ts`
- * — returns `await response.json()`, which is the body itself. The two
- * disagree and TypeScript believes the type, so a caller that trusts it reaches
- * one level too deep and hands a Zod schema the wrong object.
- *
- * Unwrapped by SHAPE rather than by type, so this is correct today and still
- * correct if the mutator is ever changed to return the envelope the types
- * describe. Flagged, not papered over: `api/documents.ts` reads
- * `query.data.data` on the same assumption — see `apps/web/CLAUDE.md`.
- */
-function unwrapBody(value: unknown): unknown {
-  if (
-    typeof value === 'object' &&
-    value !== null &&
-    'data' in value &&
-    'status' in value &&
-    typeof (value as { status: unknown }).status === 'number'
-  ) {
-    return (value as { data: unknown }).data;
-  }
-  return value;
 }
 
 export interface UseBankTransactionsOptions {

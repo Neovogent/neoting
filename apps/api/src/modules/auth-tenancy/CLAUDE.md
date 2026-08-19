@@ -89,6 +89,22 @@ from the seam rule.
 `x-nt-side-effect: none` — a stateless cookie changes no product state and no
 record exists to propose over. `lastLoginAt` is deliberately not written.
 
+### GET /v1/businesses — the workspaces read surface (built with METH Stage 6)
+
+Contracted in Stage 2 (#120) but assigned to no stage's build list; built here
+with Stage 6 because its web slice and context header are Stage 6's, and
+because businesses are this module's nouns. `businesses.controller.ts` (thin,
+one GET, `x-nt-side-effect: none`) + `businesses.service.ts`: one page of
+RLS-visible businesses, alphabetical on the shared cursor helper, plus ONE
+`groupBy (businessId, state)` aggregate for the header counts — `toReview`,
+`ready`, and `failed` (REJECTED + FAILED together, the contract's own words).
+Unrouted documents have no `businessId` and are counted nowhere. No write
+exists on the class and none may be added — a business is created by
+onboarding (post-demo), through Review → Approve like everything else.
+`foldCounts` is exported for its offline test; the RLS/pagination proof lives
+in `auth-session.integration.test.ts` (note its two id namespaces: `s1a_doc_*`
+is the visibility assertion's exact set, `s1a_cnt_*` is the counts cast).
+
 ## Tests
 
 ```bash

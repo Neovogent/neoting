@@ -5,7 +5,9 @@ import type { Env } from '../../config/env.js';
 import { ENV } from '../../config/env.module.js';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
-import { AUTH_SERVICE, PRISMA } from './tokens.js';
+import { BusinessesController } from './businesses.controller.js';
+import { BusinessesService } from './businesses.service.js';
+import { AUTH_SERVICE, BUSINESSES_SERVICE, PRISMA } from './tokens.js';
 
 /**
  * The demo-auth surface (METH Stage 1, issue #118). The Prisma client is the
@@ -19,13 +21,22 @@ import { AUTH_SERVICE, PRISMA } from './tokens.js';
  * owns the assembly.
  */
 @Module({
-  controllers: [AuthController],
+  controllers: [AuthController, BusinessesController],
   providers: [
     { provide: PRISMA, useFactory: () => getPrismaClient() },
     {
       provide: AUTH_SERVICE,
       useFactory: (prisma: PrismaClient, env: Env) => new AuthService(prisma, env),
       inject: [PRISMA, ENV],
+    },
+    {
+      // The businesses read surface (`GET /v1/businesses`) lives in this
+      // module because businesses ARE this module's nouns ("practices,
+      // businesses, users, memberships" — its stated purpose), and the list
+      // is the same RLS-visible set `/me` reports, from the same context.
+      provide: BUSINESSES_SERVICE,
+      useFactory: (prisma: PrismaClient) => new BusinessesService(prisma),
+      inject: [PRISMA],
     },
   ],
 })

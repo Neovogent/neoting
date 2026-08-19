@@ -43,6 +43,20 @@ export default defineConfig({
 
   server: {
     port: 5173,
+    /**
+     * Dev proxy (METH Stage 6): `/v1` is forwarded to the API on :3000, so the
+     * session cookie is first-party and no CORS surface has to exist — the API
+     * deliberately has none. Active when `VITE_API_BASE_URL` is the EMPTY
+     * string (`.env.development` sets it so): the http-client then builds
+     * relative `/v1/...` URLs, which land here. A non-empty base URL bypasses
+     * the proxy entirely, which is what pointing the app at staging means.
+     */
+    proxy: {
+      // `NT_DEV_API_ORIGIN` (a plain env var — not VITE_*, it never reaches
+      // client code) repoints the proxy when :3000 is taken, which on a
+      // machine running concurrent sessions it sometimes is.
+      '/v1': { target: process.env.NT_DEV_API_ORIGIN ?? 'http://localhost:3000', changeOrigin: false },
+    },
   },
 
   test: {
