@@ -4,8 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "echo \"typecheck: no sources yet (S0 scaffold)\"",
-    "lint": "echo \"lint: not configured yet (S0)\"",
-    "test": "echo \"test: no tests yet (S0)\""
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "echo \"lint: covered by the root eslint config\"",
+    "test": "echo \"test: the eval suite runs under test:eval, not under unit tests\"",
+    "test:eval": "tsx src/run-chat-evals.ts"
+  },
+  "devDependencies": {
+    "@neoting/contracts": "workspace:*",
+    "@types/node": "^22.7.4",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
   }
 }

@@ -10,6 +10,7 @@ import { ApprovalsModule } from './modules/approvals/approvals.module.js';
 import { AuthTenancyModule } from './modules/auth-tenancy/auth-tenancy.module.js';
 import { BankingMatchingModule } from './modules/banking-matching/banking-matching.module.js';
 import { ChaseModule } from './modules/chase/chase.module.js';
+import { ChatFrameworkModule } from './modules/chat-framework/chat.module.js';
 import { DocumentsModule } from './modules/documents/documents.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { WebUploadModule } from './modules/ingestion-routing/web-upload/web-upload.module.js';
@@ -25,6 +26,7 @@ import { PublishingModule } from './modules/publishing/publishing.module.js';
     AuthTenancyModule,
     BankingMatchingModule,
     ChaseModule,
+    ChatFrameworkModule,
     DocumentsModule,
     HealthModule,
     PortalModule,

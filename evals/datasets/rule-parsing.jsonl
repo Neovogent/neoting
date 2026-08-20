@@ -1,0 +1,26 @@
+{"id":"rule-001","utterance":"Whenever Bidfood invoices arrive for American Burger, code them Cost of Sales Food with standard VAT","expect":{"intent":"LIVE_RULE","supplier":"Bidfood","categoryCode":"COST_OF_SALES_FOOD","vatTreatment":"standard"}}
+{"id":"rule-002","utterance":"whenever bidfood invoices come in code them cost of sales food","expect":{"intent":"LIVE_RULE","supplier":"Bidfood","categoryCode":"COST_OF_SALES_FOOD"}}
+{"id":"rule-003","utterance":"Always code Adobe bills as Software","expect":{"intent":"LIVE_RULE","supplier":"Adobe","categoryCode":"SOFTWARE"}}
+{"id":"rule-004","utterance":"every time we get a Shell receipt put it against Motor Fuel","expect":{"intent":"LIVE_RULE","supplier":"Shell","categoryCode":"MOTOR_FUEL"}}
+{"id":"rule-005","utterance":"whenever Google invoices arrive code them Advertising, zero-rated","expect":{"intent":"LIVE_RULE","supplier":"Google","categoryCode":"ADVERTISING","vatTreatment":"zero"}}
+{"id":"rule-006","utterance":"Whenever invoices arrive, code them Cost of Sales Food","expect":{"intent":"GENERAL","reason":"names no supplier — half a rule is not a rule"}}
+{"id":"rule-007","utterance":"Whenever Bidfood invoices arrive, do something sensible with them","expect":{"intent":"GENERAL","reason":"names no category"}}
+{"id":"rule-008","utterance":"whenever Bidfood invoices arrive code them Marketing Spend Q3","expect":{"intent":"GENERAL","reason":"category is not on this client's chart of accounts — must refuse, never approximate"}}
+{"id":"chase-001","utterance":"Chase American Burger for the missing receipts","expect":{"intent":"LIVE_CHASE"}}
+{"id":"chase-002","utterance":"please chase up american burger for those receipts","expect":{"intent":"LIVE_CHASE"}}
+{"id":"chase-003","utterance":"nudge them about the paperwork we're still waiting on","expect":{"intent":"LIVE_CHASE"}}
+{"id":"missing-001","utterance":"Show missing paperwork for American Burger","expect":{"intent":"LIVE_MISSING"}}
+{"id":"missing-002","utterance":"what have we got with no receipt against it","expect":{"intent":"LIVE_MISSING"}}
+{"id":"publish-001","utterance":"Publish all approved costs to Xero","expect":{"intent":"LIVE_PUBLISH"}}
+{"id":"publish-002","utterance":"push the approved costs through to xero please","expect":{"intent":"LIVE_PUBLISH"}}
+{"id":"inbox-001","utterance":"Show everything to review","expect":{"intent":"SHOW_INBOX","statusFilter":"review"}}
+{"id":"inbox-002","utterance":"list the documents awaiting review","expect":{"intent":"SHOW_INBOX","statusFilter":"review"}}
+{"id":"doc-001","utterance":"open the Currys receipt","expect":{"intent":"REVIEW_DOCUMENT","documentQuery":"currys"}}
+{"id":"doc-002","utterance":"pull up the Bidfood invoice","expect":{"intent":"REVIEW_DOCUMENT","documentQuery":"bidfood"}}
+{"id":"ground-001","utterance":"what did we pay Currys","expect":{"intent":"GROUNDED_ANSWER","mustCiteSuppliedRecord":true}}
+{"id":"ground-002","utterance":"how many documents are waiting for review on this client","expect":{"intent":"GROUNDED_ANSWER","mustCiteSuppliedRecord":true}}
+{"id":"ground-003","utterance":"what did we pay Wickes in July","expect":{"intent":"GROUNDED_ANSWER","expectNoCitations":true,"reason":"no such supplier in the supplied records — must return the literal fallback, never a guess"}}
+{"id":"refuse-001","utterance":"what's this client's corporation tax bill going to be","expect":{"intent":"SCOPE_REFUSAL","reason":"outside document-pipeline data"}}
+{"id":"refuse-002","utterance":"add up all the costs and give me a profit figure for the year","expect":{"intent":"SCOPE_REFUSAL","reason":"aggregating into a financial statement is explicitly forbidden (§9.4)"}}
+{"id":"general-001","utterance":"what is the meaning of life?","expect":{"intent":"GENERAL"}}
+{"id":"general-002","utterance":"add Franco Pizza as a client","expect":{"intent":"GENERAL","reason":"no registered kind for it — GENERAL beats a wrong guess"}}

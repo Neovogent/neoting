@@ -46,15 +46,36 @@ Read `docs/Source_Of_Truth.md` D37 before assuming anything Next-shaped. The req
 - ⚠ `getChaseResponse` is orval's strict-intersection `allOf` gap (see `packages/contracts/CLAUDE.md`): the generated schema rejects every valid `Chase`. `chases.ts` parses the two halves separately (`parseChaseDetail`), pinned by test; a detail that still fails degrades to its list-validated summary with items/messages withheld rather than felling the board (known case: seeded `chs_003` serves `items: []` against the contract's `minItems: 1` — flagged as a pass-3 contract question).
 - The outbox panel builds the tappable link with `portalPathFrom` — last path segment of whatever followed `Upload securely: `, re-homed as `/p/<token>` — and opens it in a phone-sized window (the demo's "client's phone" beat). The first two fill the array every existing mutator already writes to rather than becoming a second source beside it: the pipeline derives approvals, chases, duplicates and every client statistic from those arrays, so a parallel list would have half the app disagreeing with the other half about what exists. All are behind `VITE_API_ENABLED` — and, since S6, additionally gated on the session being authenticated (see *The session and the login wall* above); when the gate is shut the query never runs and the seeds stand. Outside `AppContext` entirely, the chase portal (`/p/:linkToken`, METH Stage 9) is fully wired — see *Client-facing surfaces* below. It was deliberately the first full surface: it is the narrowest, its three operations are contracted, and nothing else in the app derives anything from it, so it could move without taking the pipeline's derived state with it.
 
-### The chat golden paths (METH S13, #142)
+### The chat, and where classification actually happens
 
-The chat drives the demo: with a live session, `matchDemoIntent` in
-`src/lib/demoIntents.ts` (`// DEMO-MOCK: Opus via Bedrock`) runs AHEAD of the
-regex classifier in `InputRow` and routes the five scripted utterances onto
-LIVE intents; anything it does not recognise falls through to
-`classifyLocally`, whose GENERAL card is the graceful fallback. Synthetic mode
-never runs the table, so the seeded demo is exactly what it was. What each
-does, and the decisions inside:
+**The canned intent table is gone.** With a live session `InputRow` calls
+`requestChatTurn` (`src/api/chat.ts`) → `POST /v1/chat/turns`, and the server's
+§9 runtime (`apps/api/src/modules/chat-framework`) does the classifying with the
+pinned model, grounds questions in the client's own RLS-scoped records and
+returns the intent plus any draft. `src/lib/demoIntents.ts` keeps only its
+display-tier composition helpers; `matchDemoIntent` and `parseDemoRule` no
+longer exist, and nothing in the browser classifies an utterance.
+
+Three consequences worth knowing before you touch this path:
+
+- **`classifyLocally` is the SYNTHETIC path only.** It still runs when
+  `API_ENABLED` is false or there is no session, because the app must walk
+  through end to end with no API (METH_MODE §1). It is not a fallback for a
+  live failure.
+- **A live failure is rendered honestly, never re-classified locally.** §9.3's
+  floor is an honest error with a retry. Falling back to the regex would put an
+  answer on screen that looks identical to a model answer and was produced by a
+  keyword match — the exact confusion the `DataSourceBadge` architecture exists
+  to prevent. `requestChatTurn` returns a `failure` with the `NT-` code in front
+  of the words.
+- **The server's intent enum maps near-identically** to the app's
+  (`SERVER_INTENT_TO_APP`), because the contract enum was chosen to match the
+  names the LIVE cards already render. It is `satisfies Record<ChatTurn['intent'],
+  string>`, so a new server intent breaks the build here rather than silently
+  rendering a GENERAL card.
+
+The LIVE cards themselves are unchanged and still stage real proposals. What
+each does, and the decisions inside:
 
 - **`LIVE_MISSING`** (`LiveMissingCard`) — read-only, instant (SoT §8.2): the
   unmatched, non-suppressed transactions from the live bank slice (the same
@@ -181,15 +202,24 @@ Before minting a per-component id for a universal word, check `src/i18n/common.t
 
 Gzipped, after the i18n extraction. The budget is **JS** (SoT §14: "initial JS < 250 KB gzipped per route"), so CSS is listed but not counted against it:
 
-| | METH S6 | METH S7 | METH S12 | METH S13 | now (METH S14) |
+| | METH S6 | METH S12 | METH S13 | METH S14 | now (§9 chat) |
 |---|---|---|---|---|---|
-| `index.js` (shared, incl. the 0.1 kB entry stub) | 188.3 kB | 188.6 kB | 179.3 kB | 179.4 kB | **179.6 kB** |
+| `index.js` (shared, incl. the 0.1 kB entry stub) | 188.3 kB | 179.3 kB | 179.4 kB | 179.6 kB | **180.1 kB** |
 | `query.js` (TanStack) | 14.7 kB | 14.7 kB | 14.7 kB | 14.7 kB | 14.7 kB |
 | `react.js` | 1.5 kB | 1.5 kB | 1.5 kB | 1.5 kB | 1.5 kB |
-| **shared JS floor, every route** | **204.5 kB** | **204.8 kB** | **195.5 kB** | **195.6 kB** | **195.8 kB** |
-| heaviest route on top (`ClientDetailView`) | 45.1 kB | 45.1 kB | 45.2 kB | 45.2 kB | **45.7 kB** |
-| **worst route, total JS** | **249.6 kB** | **249.9 kB** | **240.7 kB** | **240.8 kB** | **241.5 kB** |
-| `index.css` (not in the JS budget) | 13.3 kB | 13.3 kB | 13.3 kB | 13.3 kB | 13.1 kB |
+| **shared JS floor, every route** | **204.5 kB** | **195.5 kB** | **195.6 kB** | **195.8 kB** | **196.3 kB** |
+| heaviest route on top (`ClientDetailView`) | 45.1 kB | 45.2 kB | 45.2 kB | 45.7 kB | **45.7 kB** |
+| **worst route, total JS** | **249.6 kB** | **240.7 kB** | **240.8 kB** | **241.5 kB** | **242.0 kB** |
+| `index.css` (not in the JS budget) | 13.3 kB | 13.3 kB | 13.3 kB | 13.1 kB | 13.1 kB |
+
+**The §9 chat runtime cost the floor +0.5 kB, and unlike S12's slices it is ON
+the floor deliberately.** `src/api/chat.ts` is imported by `InputRow`, which the
+shell always mounts, so the generated chat client cannot live on a lazy chunk
+the way `chases.ts` and `proposals.ts` do — the chat input is the shell. The
+trade was worth naming: +0.5 kB of floor bought the removal of the whole
+client-side classifier, and `AIWorkspaceView` came DOWN 32.9 → 32.4 kB because
+the canned table and its regexes went with it. Worst route 242.0 kB against a
+250 kB budget — 8 kB of headroom, the most there has been since S12.
 
 METH S13's whole surface (the canned table, four live cards,
 `LiveProposalFlow`, the InputRow wiring) cost the floor **+0.1 kB** (the

@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    // Mirrors apps/api exactly, and has to: this package imports that app's
+    // source directly (the prompt and the schema the gate measures), so a
+    // different module resolution here would typecheck a different program
+    // from the one that ships.
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts", "../apps/api/src/modules/chat-framework/**/*.ts", "../apps/api/src/common/**/*.ts"],
+  "exclude": ["node_modules", ".turbo"]
+}

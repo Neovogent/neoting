@@ -64,9 +64,33 @@ test('NODE_ENV=production with the fixture (defaulted) auth mode fails to boot',
 
 test('NODE_ENV=production with AUTH_MODE=session boots', () => {
   // UPLOAD_URL_SECRET is required in production too (see below), so a
-  // production env that only fixes AUTH_MODE is not a bootable one.
-  const env = loadEnv({ NODE_ENV: 'production', AUTH_MODE: 'session', UPLOAD_URL_SECRET: 's' } as NodeJS.ProcessEnv);
+  // production env that only fixes AUTH_MODE is not a bootable one. AI_CHAT
+  // joined that list with the chat runtime — see the block below.
+  const env = loadEnv({
+    NODE_ENV: 'production',
+    AUTH_MODE: 'session',
+    UPLOAD_URL_SECRET: 's',
+    AI_CHAT: 'bedrock',
+  } as NodeJS.ProcessEnv);
   expect(env.AUTH_MODE).toBe('session');
+});
+
+// Governance §9.1. Every other `demo` switch degrades something a user can SEE
+// — no SMS arrives, no bill reaches Xero. This one degrades the JUDGEMENT while
+// the screen looks identical: same cards, same confident wording, same
+// Review → Approve path behind it. Hence a boot refusal rather than a safe
+// default.
+test('NODE_ENV=production with AI_CHAT=demo fails to boot', () => {
+  expect(() =>
+    loadEnv({ NODE_ENV: 'production', AUTH_MODE: 'session', UPLOAD_URL_SECRET: 's' } as NodeJS.ProcessEnv),
+  ).toThrow(/AI_CHAT/);
+});
+
+test('AI_CHAT defaults to demo outside production, so a cold clone runs offline', () => {
+  const env = loadEnv({});
+  expect(env.AI_CHAT).toBe('demo');
+  expect(env.BEDROCK_REGION).toBe('eu-west-2');
+  expect(env.AI_DAILY_BUDGET_PENCE).toBe(500);
 });
 
 // #76: UPLOAD_URL_SECRET. Unlike the Meta secrets it is NOT optional in
