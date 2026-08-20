@@ -185,6 +185,32 @@ const EnvSchema = z.object({
   // client's books is not something an unset variable may cause. Selected by
   // config, not import, like the switches above.
   LEDGER_ADAPTER: z.enum(['demo']).default('demo'),
+
+  // The chat model runtime (Governance §9). `bedrock` = the real thing —
+  // Amazon Bedrock, eu-west-2, IAM via the task role, model IDs pinned in
+  // `modules/chat-framework/models.ts`. `demo` = a deterministic offline
+  // stand-in so unit tests never open a socket and a laptop with no AWS
+  // credentials still runs.
+  //
+  // Defaults to `demo` for the same reason every other switch here does: a
+  // fresh clone and CI must work with nothing configured. Unlike the others,
+  // `demo` is REFUSED under NODE_ENV=production below — a stand-in classifier
+  // answering a real accountant is a different class of wrong from a fixture
+  // queue, because the answer looks exactly as authoritative either way.
+  AI_CHAT: z.enum(['demo', 'bedrock']).default('demo'),
+
+  // The Bedrock region. Pinned to eu-west-2 by D30/ADR 0001 (UK residency) and
+  // stated rather than defaulted from AWS_REGION so that "where does client
+  // document text get processed" is answerable from configuration, not from
+  // whatever the container happened to inherit.
+  BEDROCK_REGION: z.string().default('eu-west-2'),
+
+  // Per-practice daily AI spend ceiling in integer pence (§9.7). Warn at 80%,
+  // hard stop at 100%. £5/day/practice is a demo-scale number chosen to be
+  // noticeable rather than punitive; it is a config value precisely so it can
+  // be raised without a deploy argument.
+  AI_DAILY_BUDGET_PENCE: z.coerce.number().int().positive().default(500),
+
   S3_ENDPOINT: z.string().default(''), // e.g. http://localhost:9000 for MinIO; empty = AWS default
   S3_REGION: z.string().default('eu-west-2'),
   S3_ACCESS_KEY_ID: z.string().default(''),
@@ -204,6 +230,21 @@ const EnvSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['AUTH_MODE'],
       message: 'AUTH_MODE=fixture trusts X-NT-* request headers and must never run in production — set AUTH_MODE=session (S1)',
+    });
+  }
+
+  // A stand-in classifier is indistinguishable from the real one on screen —
+  // same cards, same confident wording, same Review → Approve path behind it.
+  // Every other `demo` switch in this file degrades something a user can SEE
+  // (no SMS arrives, no bill reaches Xero); this one degrades the judgement
+  // itself while looking identical, which is why it is the one that refuses to
+  // boot rather than merely defaulting safely (Governance §9.1).
+  if (env.NODE_ENV === 'production' && env.AI_CHAT === 'demo') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['AI_CHAT'],
+      message:
+        'AI_CHAT=demo is a deterministic stand-in and must never answer a real accountant — set AI_CHAT=bedrock (Governance §9.1)',
     });
   }
 

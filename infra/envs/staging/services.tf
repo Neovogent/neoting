@@ -145,6 +145,31 @@ locals {
     { name = "SMS_SENDER", value = "demo" },
     { name = "OTP_MODE", value = "demo" },
     { name = "LEDGER_ADAPTER", value = "demo" },
+
+    # ------------------------------------------------------------------------
+    # The AI workspace (Governance §9), and the one adapter above that is NOT
+    # a demo stand-in.
+    #
+    #   AI_CHAT=bedrock  the real model. `config/env.ts` REFUSES `demo` under
+    #                    NODE_ENV=production, so this line is load-bearing for
+    #                    boot, not decorative — omit it and the task exits 1
+    #                    with the env-validation error, exactly like the
+    #                    AUTH_MODE gate above.
+    #
+    # No credential is injected for it. The task role already carries
+    # bedrock:InvokeModel on the four region-pinned foundation-model ARNs
+    # (compute.tf) and no inference-profile ARN, which is what makes D30
+    # residency enforceable rather than merely stated: a cross-region call
+    # returns AccessDenied. The SDK finds the role through the default
+    # credential chain.
+    #
+    # BEDROCK_REGION is stated rather than inherited from AWS_REGION so that
+    # "where does client document text get processed" is answerable from the
+    # deployed task definition alone.
+    # ------------------------------------------------------------------------
+    { name = "AI_CHAT", value = "bedrock" },
+    { name = "BEDROCK_REGION", value = local.region },
+    { name = "AI_DAILY_BUDGET_PENCE", value = "500" },
   ]
 
   # ------------------------------------------------------------------------

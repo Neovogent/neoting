@@ -5,7 +5,7 @@ import { useAppContext } from '../context/AppContext';
 import { motion, AnimatePresence } from 'motion/react';
 import { API_ENABLED } from '../api/config';
 import { classifyLocally, extractClientName, resolveScope } from '../lib/resolver';
-import { matchDemoIntent } from '../lib/demoIntents';
+import { mapTurnToPayload, requestChatTurn, SERVER_INTENT_TO_APP } from '../api/chat';
 import { useSpeech } from '../lib/useSpeech';
 import { suggestPrompts } from '../lib/promptSuggestions';
 import { TypedPlaceholder } from './DynamicComponents/TypedPlaceholder';
@@ -78,7 +78,7 @@ export function InputRow() {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const { addMessage, clients, messages, attachedClients, attachClient, detachClient, ingest, missing, chases, approvals, documents, businesses, session } = useAppContext();
+  const { addMessage, clients, messages, attachedClients, attachClient, detachClient, ingest, missing, chases, approvals, documents, businesses, session, serverClientIdFor } = useAppContext();
   const intl = useIntl();
 
   /**
@@ -167,24 +167,47 @@ export function InputRow() {
     // below: an upload makes the answer about the ingest, not about the text.
     let response = intl.formatMessage(local.response);
 
-    // The live golden paths (METH Stage 13): with a real session, the canned
-    // demo table runs AHEAD of the regex classifier — its intents render real
-    // components and stage real proposals. Anything it does not recognise
-    // falls through to `classifyLocally`, whose GENERAL fallback is the
-    // graceful "here's what I can do" card. // DEMO-MOCK: Opus via Bedrock.
+    // The AI workspace (Governance §9). With a real session the utterance goes
+    // to the server, which classifies it with the pinned model, grounds any
+    // question in the client's own RLS-scoped records and drafts the action.
+    // `classifyLocally` above stays as the SYNTHETIC path only — the app must
+    // still walk through end to end with no API (METH_MODE §1), and that is
+    // the one job it has left.
+    //
+    // Nothing here changes state. A `draft` is rendered as a card; creating the
+    // proposal is the card's own call, and approving it is a human action after
+    // that (§9.5).
     let livePayload: Partial<MessagePayload> = {};
     if (API_ENABLED && session.status === 'authenticated') {
-      const demo = matchDemoIntent(userMessage, { businesses, documents });
-      if (demo) {
-        intent = demo.intent;
-        response = intl.formatMessage(demo.response);
-        livePayload = demo.payload;
-        // Live rows key on the SERVER business id, so a named business also
-        // becomes the scope the tables filter on — the synthetic client ids in
-        // `scope` cannot match a live row.
-        if (demo.payload.businessId !== undefined) {
-          scope.clientIds = [demo.payload.businessId];
-          scope.clientNames = demo.payload.businessName === undefined ? [] : [demo.payload.businessName];
+      // The attached client, as a SERVER id — live rows key on `biz_*` and the
+      // synthetic client ids can never match one (the S14 id bridge).
+      const attachedServerId = attachedClients[0] === undefined ? undefined : serverClientIdFor(attachedClients[0].id);
+
+      const turn = await requestChatTurn({
+        utterance: userMessage,
+        ...(attachedServerId === undefined ? {} : { businessId: attachedServerId }),
+        // Oldest first, capped at the contract's 10. The server caps it again —
+        // this is a courtesy, not the enforcement (§9.5).
+        history: messages.slice(-10).map((msg) => ({ role: msg.role, content: msg.content })),
+      });
+
+      if (turn.kind === 'failure') {
+        // §9.3's floor, rendered honestly: say what happened and let them try
+        // again. Never silently fall back to the local classifier — an answer
+        // that looks the same but was produced by a regex is exactly the
+        // confusion the badge architecture exists to prevent.
+        intent = 'GENERAL';
+        response = turn.retryable ? `${turn.message} Try that again in a moment.` : turn.message;
+      } else {
+        intent = SERVER_INTENT_TO_APP[turn.intent] as Intent;
+        response = turn.reply;
+        livePayload = mapTurnToPayload(turn, businesses, userMessage);
+
+        const businessId = turn.navigation?.businessId;
+        if (businessId !== undefined) {
+          scope.clientIds = [businessId];
+          const named = businesses.find((b) => b.id === businessId);
+          scope.clientNames = named === undefined ? [] : [named.name];
         }
       }
     }

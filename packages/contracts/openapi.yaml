@@ -175,6 +175,14 @@ tags:
     description: |
       The caller's client workspaces with their waiting-work counts — what the
       context header, the client switcher and the Clients list render.
+  - name: chat
+    description: |
+      The AI workspace's interpretation surface (Governance §9). One operation,
+      and it is `x-nt-side-effect: none` on purpose: the model reads, classifies
+      and *drafts*, and every state change it proposes is created by the caller
+      through `POST /action-proposals` like any other. The chat surface is
+      therefore structurally incapable of changing state — there is no second
+      door to close.
   - name: webhooks
     description: Inbound webhooks from third parties. Signature-verified, not session-authenticated.
 
@@ -1459,6 +1467,87 @@ paths:
         '500': { $ref: '#/components/responses/InternalError' }
 
   # ==========================================================================
+  # CHAT — the AI workspace's one operation (Governance §9)
+  # ==========================================================================
+
+  /chat/turns:
+    post:
+      operationId: createChatTurn
+      summary: Interpret one workspace utterance
+      description: |
+        The accountant says something; this answers with a structured turn —
+        what they meant, the words to show them, and where relevant a **draft**
+        of the action they described.
+
+        **It executes nothing and proposes nothing.** A draft in the response is
+        a suggestion the UI renders into a card; creating the `ActionProposal` is
+        a separate call the caller makes to `POST /action-proposals`, and
+        approving it is a separate human action after that. That is why this
+        operation is `x-nt-side-effect: none` despite being a `POST` — it writes
+        no domain state, so there is no second side-effect door for the Review →
+        Approve architectural test to have to reason about (Governance §10.6).
+
+        `draft.kind` is drawn from `ProposalKind` and nothing else. The registry
+        is the model's entire tool surface (Governance §9.5): a kind that is not
+        in the enum cannot be expressed in this response, so a model that invents
+        one fails the schema rather than reaching a handler.
+
+        **Grounding (§9.4).** When the utterance is a question about a client's
+        records rather than an instruction, the answer comes exclusively from
+        that client's pipeline records read through the same RLS-scoped services
+        the UI uses, and carries `references` so the answer can be linked and
+        audited. If the records do not contain the facts, `intent` is
+        `GROUNDED_ANSWER` and `reply` is the literal, unembellished
+        `Information not available in this client's records.` The surface never
+        invents a number, never aggregates into a financial statement, and
+        answers nothing outside document-pipeline data — those get
+        `SCOPE_REFUSAL`, not an attempt.
+
+        **History is client-supplied and treated as such.** `history` is capped
+        server-side at the §9.5 turn limit and every user-authored string in it
+        is wrapped as untrusted content before any model sees it, exactly like a
+        document body. A conversation is not a trust boundary.
+      tags: [chat]
+      x-nt-side-effect: none
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChatTurnRequest' }
+      responses:
+        '200':
+          description: The interpreted turn.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatTurn' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429':
+          description: |
+            Rate limited (`NT-RATE-001`), or the practice's daily AI budget is
+            spent (`NT-MDL-002`). The budget case is a hard stop with a plain
+            user-facing message, not a silent degrade (Governance §9.7).
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503':
+          description: |
+            Every tier of the model chain failed (`NT-MDL-001`), the model's
+            output failed its schema twice (`NT-MDL-003`), or the agent loop hit
+            a cap (`NT-MDL-004`). Governance §9.3: chat degrades to an honest
+            error with a retry, never to a guess.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+  # ==========================================================================
   # WEBHOOKS
   # ==========================================================================
 
@@ -1889,6 +1978,168 @@ components:
         - NT-PRP-004   # rendered summary hash no longer matches
         - NT-PRP-005   # proposal already executed
         - NT-PRP-006   # payload not executable against current state
+        # The model runtime (MDL family, Governance §9). Deliberately NOT `CHS`
+        # or a `CHAT` family: these fire when the MODEL failed, not when the
+        # chase engine or the chat feature did, and an alert that cannot tell
+        # "Bedrock is down" from "a chase failed to send" is two incidents
+        # sharing one pager. §9.3 is explicit that chat degrades to an honest
+        # error rather than a guess, so each of these is a real response a user
+        # will read, not an internal-only condition.
+        - NT-MDL-001   # every tier of the model chain failed or the breaker is open
+        - NT-MDL-002   # the practice's daily AI budget is spent
+        - NT-MDL-003   # model output failed its schema twice (§9.2 retry exhausted)
+        - NT-MDL-004   # agent loop hit a turn/time cap, or oscillated (§9.5)
+
+    # ---- chat (Governance §9) ---------------------------------------------
+
+    ChatIntent:
+      type: string
+      description: |
+        What the model decided the utterance was. This is the model's entire
+        expressive range on this surface — an intent outside the enum fails the
+        response schema, which is the §9.5 allow-list applied to interpretation
+        the same way `ProposalKind` applies it to action.
+      enum:
+        - GENERAL          # understood nothing actionable — the honest "here's what I can do"
+        - LIVE_MISSING     # show unmatched transactions with no paperwork
+        - LIVE_CHASE       # draft a chase for the missing items
+        - LIVE_RULE        # parse a coding rule
+        - LIVE_PUBLISH     # draft a publish batch
+        - SHOW_INBOX       # navigation — the inbox, optionally narrowed
+        - REVIEW_DOCUMENT  # navigation — one named document
+        - GROUNDED_ANSWER  # a question answered from this client's records (§9.4)
+        - SCOPE_REFUSAL    # outside document-pipeline data — refused, not attempted (§9.4)
+
+    ChatHistoryTurn:
+      type: object
+      required: [role, content]
+      properties:
+        role: { type: string, enum: [user, assistant] }
+        content:
+          type: string
+          maxLength: 4000
+          description: |
+            Verbatim prior turn. The server wraps every `user` turn as untrusted
+            content before it reaches a model (§9.6) — a conversation carries no
+            more authority than a document body does.
+
+    ChatTurnRequest:
+      type: object
+      required: [utterance]
+      properties:
+        utterance:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: What the accountant typed or dictated.
+        businessId:
+          type: string
+          description: |
+            The client workspace in scope, when one is attached. Grounding and
+            every draft resolve against this and nothing else; RLS decides
+            whether the caller may see it at all.
+        history:
+          type: array
+          maxItems: 10
+          items: { $ref: '#/components/schemas/ChatHistoryTurn' }
+          description: |
+            Recent conversation, oldest first. Capped here **and** server-side at
+            the §9.5 turn limit — the cap is not a client courtesy.
+
+    ChatNavigation:
+      type: object
+      description: Where the UI should go, for the navigation intents.
+      properties:
+        businessId: { type: string }
+        documentId: { type: string }
+        statusFilter:
+          type: string
+          description: A document status to narrow the inbox to.
+
+    ChatRecordReference:
+      type: object
+      required: [type, id, label]
+      description: |
+        One record a grounded answer stood on (§9.4). Present so the UI can link
+        it and the audit log can reconstruct what the answer was derived from —
+        an answer whose sources cannot be named is not a grounded answer.
+      properties:
+        type:
+          type: string
+          enum: [document, chase, bankTransaction, publish, extraction]
+        id: { type: string }
+        label:
+          type: string
+          description: Human-readable, already client-scoped — e.g. "Currys receipt, 9 Aug".
+
+    ChatUsage:
+      type: object
+      required: [model, tier, inputTokens, outputTokens, latencyMs]
+      description: |
+        What this turn cost and what served it (§9.7). Returned rather than only
+        logged because the budget warning is a thing the user must be able to
+        see coming, and because "which tier answered me" is the honest signal
+        when a degrade has happened mid-conversation (§9.3).
+      properties:
+        model:
+          type: string
+          description: The pinned model ID that actually served the turn.
+        tier:
+          type: string
+          enum: [judgment, workhorse, mechanical]
+        inputTokens: { type: integer }
+        outputTokens: { type: integer }
+        cachedInputTokens:
+          type: integer
+          description: Prompt-cache hits on the stable prefix. Zero means the cache missed.
+        latencyMs: { type: integer }
+        degraded:
+          type: boolean
+          description: True when the judgment tier failed and a lower tier answered.
+        budgetRemainingPence:
+          type: integer
+          x-nt-money: true
+          description: What is left of the practice's daily AI budget after this turn.
+        budgetWarning:
+          type: boolean
+          description: True from 80% of the daily budget onward (§9.7).
+
+    ChatTurn:
+      type: object
+      required: [intent, reply, usage, modelVersion, promptVersion]
+      description: |
+        One interpreted turn. `draft` is the only field that can lead to a state
+        change, and only by the caller taking it to `POST /action-proposals` —
+        nothing here has changed anything.
+      properties:
+        intent: { $ref: '#/components/schemas/ChatIntent' }
+        reply:
+          type: string
+          description: |
+            The words to show. For `GROUNDED_ANSWER` with no supporting records
+            this is exactly `Information not available in this client's records.`
+            and nothing else (§9.4).
+        draft:
+          allOf:
+            - $ref: '#/components/schemas/CreateActionProposalRequest'
+          description: |
+            A ready-to-send proposal request the UI renders as a card. Typed as
+            the real request body on purpose: the model cannot draft something
+            `POST /action-proposals` would reject, because there is no shape
+            here that endpoint does not already accept.
+        navigation: { $ref: '#/components/schemas/ChatNavigation' }
+        references:
+          type: array
+          items: { $ref: '#/components/schemas/ChatRecordReference' }
+        usage: { $ref: '#/components/schemas/ChatUsage' }
+        modelVersion:
+          type: string
+          description: |
+            Pinned model ID plus config revision. Recorded on every turn so a
+            historical answer is reproducible (§9.8).
+        promptVersion:
+          type: string
+          description: The system prompt's version, from the repo — never a dashboard value (§9.8).
 
     # ---- pagination -------------------------------------------------------
 
