@@ -85,14 +85,39 @@ function baseUrl(): string {
       ? (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_API_BASE_URL
       : undefined;
   const fromNode = typeof process !== 'undefined' ? process.env?.API_BASE_URL : undefined;
-  // 3000 is the port the API listens on — `PORT` in apps/api/src/config/env.ts,
+
+  // ⚠ THE FALLBACK IS PER-RUNTIME, AND THAT IS THE WHOLE POINT.
+  //
+  // A browser with nothing configured talks to its OWN ORIGIN — a relative
+  // `/v1/...`. A Node process with nothing configured talks to localhost.
+  //
+  // It used to be `http://localhost:3000` for both, and that shipped: the
+  // Vercel deploy called `http://localhost:3000/v1/me` from every visitor's
+  // browser, meaning THEIR machine. Nothing was listening, the request failed
+  // as a transport error rather than a 401, and `useSession` correctly read
+  // that as 'degraded' and rendered the workspace on seed data — a demo
+  // running entirely on fixtures with no visible marker in a production build.
+  // Measured 21 Aug 2026 from the deployed site's own network log.
+  //
+  // Dev never caught it because `apps/web/.env.development` sets
+  // `VITE_API_BASE_URL=` — an EMPTY STRING, which is not `undefined`, so `??`
+  // never reached the fallback and requests were relative all along. The
+  // hosting runbook then said "do not set VITE_API_BASE_URL" on Vercel, which
+  // is correct as an instruction and was fatal against this default.
+  //
+  // A shipped browser bundle pointing at the visitor's own localhost is never
+  // right — not as a default, not as a degraded mode. Same-origin is the only
+  // sane answer there, and it is what makes the Vercel `/v1/*` rewrite work and
+  // the session cookie first-party.
+  //
+  // The Node fallback keeps 3000: `PORT` in apps/api/src/config/env.ts,
   // `EXPOSE` in its Dockerfile, `local.app_port` in the ALB config and
-  // `containerPort` on the ECS task all carry the same number. This default
-  // used to be 3001, copied from the spec's `servers` block, which was itself
-  // wrong: nothing has ever served 3001, so an unconfigured clone called a
-  // closed port and every request failed as a transport error (issue #63).
-  // This value and the spec's `servers` block move together or not at all.
-  const origin = fromVite ?? fromNode ?? 'http://localhost:3000';
+  // `containerPort` on the ECS task all carry the same number. It used to be
+  // 3001, copied from the spec's `servers` block, which was itself wrong —
+  // nothing has ever served 3001 (issue #63). That value and the spec's
+  // `servers` block move together or not at all.
+  const sameOriginIsAvailable = typeof window !== 'undefined';
+  const origin = fromVite ?? fromNode ?? (sameOriginIsAvailable ? '' : 'http://localhost:3000');
   return `${origin.replace(/\/$/, '')}/v1`;
 }
 
