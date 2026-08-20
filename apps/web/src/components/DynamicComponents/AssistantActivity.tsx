@@ -88,11 +88,27 @@ export function AssistantPending({ businessName }: { businessName: string | null
 
   return (
     <div className="flex flex-col gap-2" role="status" aria-live="polite" aria-label={intl.formatMessage(m.busy)}>
-      <div className="flex items-center gap-3">
+      {/*
+        A CONTAINED bubble, not dots loose on the column.
+
+        The first cut rendered the indicator as text in the bare assistant
+        column, which is how every other assistant message renders — so the one
+        thing on screen that means "something is happening" looked exactly like
+        a message that had already happened. It read as a short reply, not as a
+        wait. Giving it a surface of its own is the whole affordance: it mirrors
+        the user bubble opposite (same glass, same radius, mirrored corner) so
+        it is unmistakably a turn in progress rather than a turn that landed.
+      */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+        className="inline-flex items-center gap-3 px-5 py-3.5 bg-white/5 backdrop-blur-xl border border-white/10 rounded-[24px] rounded-tl-sm shadow-lg"
+      >
         <Dots reduced={reduced} />
-        <span className="text-[15px] leading-relaxed text-zinc-400">{label}</span>
-      </div>
-      {slow && <span className="text-[12px] text-zinc-500">{intl.formatMessage(m.stillWorking)}</span>}
+        <span className="text-[14px] leading-none text-zinc-400">{label}</span>
+      </motion.div>
+      {slow && <span className="text-[12px] text-zinc-500 pl-1">{intl.formatMessage(m.stillWorking)}</span>}
     </div>
   );
 }
