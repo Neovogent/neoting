@@ -91,11 +91,18 @@ each does, and the decisions inside:
   here, so the body carries a tokenless `/p/` path — the S8/S9 compose-seam
   gap, sharpened in `apps/api/src/modules/chase/CLAUDE.md` and on the PR:
   the outbox tap into the portal (demo beat 6 → 7) needs that seam.
-- **`LIVE_RULE`** (`LiveRuleCard`) — the wow beat. `parseDemoRule` produces a
-  contract-ready draft (scopeKey title-cased to match the extractor's
-  supplierName EXACTLY; spoken category → the seeded CoA code via a canned
-  table); staging creates a real `rule.create` proposal, approval writes the
-  `rules` row the DemoExtractor honours on the next matching upload.
+- **`LIVE_RULE`** (`LiveRuleCard`) — the wow beat. The draft now arrives from
+  the SERVER, already contract-ready: `drafts.ts` in `chat-framework` re-cases
+  the supplier from the client's own documents (the single-tier match compares
+  `scopeKey` against `extraction.supplierName` exactly, so "bidfood" typed in
+  chat must become "Bidfood" or the rule fires never) and refuses any category
+  not on that client's synced chart of accounts — refuses, never fuzzy-matches,
+  because a near-miss is how food costs quietly become drink costs. Staging
+  creates a real `rule.create` proposal; approval writes the `rules` row the
+  extractor honours on the next matching upload. `categoryName` in the card's
+  payload carries the CODE: the human-readable rendering is the server's, at
+  Read review, and a prettier label invented here would be a second description
+  of the same rule that could disagree with it.
 - **`LIVE_PUBLISH`** (`LivePublishCard`) — Ready costs for the picked
   business, pre-filtered by a courtesy mirror of the publish minimum (the
   server refuses `NT-PUB-001` regardless), placeholder preview the engine
@@ -113,16 +120,19 @@ pending in the Approvals queue, which is the point of having one. Approve
 still cannot mount before Read review — the flow hands off to
 `LiveProposalCard`, which renders only the server's own review.
 
-When the canned table names a business, `InputRow` also rewrites the message
-scope to the SERVER business id — live rows key on `biz_*` ids, which the
+When the server's turn carries `navigation.businessId`, `InputRow` rewrites the
+message scope to that SERVER id — live rows key on `biz_*` ids, which the
 synthetic-client scope from `resolveScope` can never match.
 
-`demoIntents.test.ts` pins the demo script: the five utterances land with
-their payloads (the Bidfood draft byte-exact), dictated variants land too,
-unknown input returns null, and the SMS draft copy/money/day formatting and
-E.164 normalisation are exact. Browser-smoked against the real API: all five
-utterances end-to-end, Approve absent pre-review, chase approve → outbox body
-verbatim.
+**Utterance → intent is no longer pinned here, and that is the point.** It is
+measured in `evals/` against the real model, which is the only place an
+accuracy claim about a model means anything — a regex pinned in a browser unit
+test measured the regex. `demoIntents.test.ts` keeps only the display-tier SMS
+copy, money/day formatting and E.164 normalisation. Last live calibration
+(`anthropic.claude-opus-4-6-v1`, eu-west-2, 21 Aug 2026): intent 92.3%, field
+100%, zero injection leaks. Verified end-to-end against deployed staging: the
+Bidfood rule beat returns a complete `rule.create` draft, and a grounded
+question answers from real seeded records with citations.
 
 **The documents surface went deep in METH Stage 7 (#137).** Beyond the hydrated list (whose parse is FIXED — it read `query.data.data` and failed on every live load; see the envelope note below — and which now POLLS every 5 s while live, because documents arrive from WhatsApp/email/portal/workers and the inbox is where they are watched landing; TanStack structural sharing makes an idle poll re-render nothing, and `enabled: false` keeps tests timer-free):
 
