@@ -15,8 +15,9 @@ import { BedrockModelProvider } from '../../apps/api/src/modules/chat-framework/
 import { CircuitBreaker } from '../../apps/api/src/modules/chat-framework/provider/circuit-breaker.js';
 import { DemoModelProvider } from '../../apps/api/src/modules/chat-framework/provider/demo-provider.js';
 import type { ModelProvider } from '../../apps/api/src/modules/chat-framework/provider/model-provider.js';
-import { modelVersionOf } from '../../apps/api/src/modules/chat-framework/models.js';
+import { MODELS, modelVersionOf } from '../../apps/api/src/modules/chat-framework/models.js';
 import { FIXTURE_CATEGORIES, fixtureRecords } from './fixture-client.js';
+import { RecordingModelProvider, ReplayModelProvider } from './replay-provider.js';
 
 /**
  * `pnpm test:eval` — the §9.8 merge gate for the chat runtime.
@@ -36,12 +37,24 @@ import { FIXTURE_CATEGORIES, fixtureRecords } from './fixture-client.js';
  * of the prompt measures a prompt nobody ships, and would stay green through
  * exactly the change §9.8 exists to gate. The coupling is the feature.
  *
- * ## It refuses to be a green tick from a stand-in
+ * ## Three modes, and only one of them is the merge gate
  *
- * `EVAL_PROVIDER=bedrock` is the gate. Running against the deterministic demo
- * provider is allowed for harness development, prints a loud banner, and always
- * exits non-zero — a passing eval that never called a model is worse than no
- * eval, because it is indistinguishable from a real one in CI output.
+ * | `EVAL_PROVIDER` | What runs | When |
+ * |---|---|---|
+ * | `replay` (default) | The recorded corpus in `recordings/` | **The merge gate.** CI |
+ * | `bedrock` | Live calls to the pinned model | Calibration, and re-recording |
+ * | `demo` | The offline stand-in | Harness development only — always fails |
+ *
+ * `check.yml` requires the gate to be deterministic and to spend no Bedrock
+ * tokens per PR (§9.7, §13.5), so replay is the default and CI needs no
+ * credentials. The recording holds what the REAL model actually said, so the
+ * gate still measures the model rather than someone's expectation of it — and
+ * because the replay key hashes the prompt and tool schema, editing either one
+ * misses every key and fails the run demanding a re-record. That is §9.8's
+ * "any prompt change must pass the evals" expressed as a cache key.
+ *
+ * Re-record with:
+ *   AWS_PROFILE=<profile> EVAL_PROVIDER=bedrock EVAL_RECORD=1 pnpm test:eval
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -233,28 +246,57 @@ async function runInjectionCorpus(provider: ModelProvider, breaker: CircuitBreak
   return { total: cases.length, leaks };
 }
 
-async function main(): Promise<void> {
-  const mode = process.env.EVAL_PROVIDER ?? 'demo';
-  const isGate = mode === 'bedrock';
+const RECORDING_PATH = join(HERE, '..', 'recordings', 'chat-turns.json');
 
-  const provider: ModelProvider = isGate
-    ? BedrockModelProvider.fromRegion(process.env.BEDROCK_REGION ?? 'eu-west-2')
-    : new DemoModelProvider();
+async function main(): Promise<void> {
+  const mode = process.env.EVAL_PROVIDER ?? 'replay';
+  const shouldRecord = process.env.EVAL_RECORD === '1';
+
+  let provider: ModelProvider;
+  let recorder: RecordingModelProvider | null = null;
+  let source: string;
+
+  if (mode === 'bedrock') {
+    const live = BedrockModelProvider.fromRegion(process.env.BEDROCK_REGION ?? 'eu-west-2');
+    if (shouldRecord) {
+      recorder = new RecordingModelProvider(live, {
+        model: MODELS.judgment,
+        promptVersion: PROMPT_VERSION,
+        recordedAt: new Date().toISOString().slice(0, 10),
+      });
+    }
+    provider = recorder ?? live;
+    source = shouldRecord ? 'live bedrock (recording)' : 'live bedrock';
+  } else if (mode === 'replay') {
+    const replay = ReplayModelProvider.load(RECORDING_PATH);
+    provider = replay;
+    source = `replay — ${replay.describe()}`;
+  } else {
+    provider = new DemoModelProvider();
+    source = 'offline stand-in';
+  }
+
+  // Replay and live both measure the real model; only the stand-in cannot.
+  const isGate = mode === 'replay' || mode === 'bedrock';
   const breaker = new CircuitBreaker();
 
   console.log(`\nneoting evals — chat runtime`);
   console.log(`  prompt   ${PROMPT_VERSION}`);
   console.log(`  model    ${modelVersionOf('judgment')}`);
-  console.log(`  provider ${provider.name}\n`);
+  console.log(`  source   ${source}\n`);
 
   if (!isGate) {
-    console.log('  ⚠ NOT A GATE. Running against the deterministic stand-in, which cannot');
-    console.log('    measure a model. Set EVAL_PROVIDER=bedrock with AWS credentials for');
-    console.log('    eu-west-2 to run the real thing. Exiting non-zero regardless.\n');
+    console.log('  ⚠ NOT A GATE. The stand-in cannot measure a model. Exiting non-zero');
+    console.log('    regardless — a green tick from a keyword table is worse than no tick.\n');
   }
 
   const rules = await runRuleParsing(provider, breaker);
   const injection = await runInjectionCorpus(provider, breaker);
+
+  if (recorder !== null) {
+    const count = recorder.save(RECORDING_PATH);
+    console.log(`recorded ${count} turn(s) → recordings/chat-turns.json — commit this\n`);
+  }
 
   console.log(`rule parsing — ${rules.total} cases`);
   console.log(`  intent accuracy ${(rules.intentAccuracy * 100).toFixed(1)}% (threshold ${INTENT_ACCURACY_THRESHOLD * 100}%)`);

@@ -101,9 +101,21 @@ schema by relative path, deliberately: an eval with its own copy would measure a
 prompt nobody ships and stay green through exactly the change §9.8 exists to
 gate.
 
-`EVAL_PROVIDER=bedrock` is the gate. Running against the stand-in prints a
-banner and always exits non-zero — a passing eval that never called a model is
-worse than no eval, because CI output cannot tell them apart.
+**The gate replays a recording, it does not call the model.** `check.yml`
+requires stage 7 to be deterministic and to spend no Bedrock tokens per PR, so
+`pnpm test:eval` defaults to replaying `evals/recordings/chat-turns.json` — the
+real model's answers from a live calibration run. Free, offline, and still a
+measurement of the model rather than of an author's expectation.
+
+The replay key hashes the prompt and the tool schema, so **editing either misses
+every key and fails the run**, demanding a re-record. Changing this module's
+prompt therefore cannot merge without someone re-running against the real model
+and committing the diff — §9.8 as a cache key rather than as a promise.
+
+```bash
+pnpm test:eval                                                     # the gate
+AWS_PROFILE=nt EVAL_PROVIDER=bedrock EVAL_RECORD=1 pnpm test:eval  # re-record
+```
 
 ## Tests
 
