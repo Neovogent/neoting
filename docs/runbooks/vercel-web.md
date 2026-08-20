@@ -75,9 +75,20 @@ a public, cacheable route, unaffected by any of this.
    is deliberate in the repo ("tests and built bundles stay synthetic unless
    told otherwise"), and it is the single most likely thing to waste an hour.
 
-   Do **not** set `VITE_API_BASE_URL`. Unset means empty, which means relative
-   `/v1/...` requests, which is what hits the rewrite. A value here bypasses the
-   proxy and puts you back on the CORS path.
+   Do **not** set `VITE_API_BASE_URL`. Unset means same-origin, which means
+   relative `/v1/...` requests, which is what hits the rewrite. A value here
+   bypasses the proxy and puts you back on the CORS path.
+
+   ⚠ This instruction was correct and, until 21 Aug 2026, fatal. `http-client.ts`
+   fell back to `http://localhost:3000` when the variable was undefined, so
+   following this line produced a deploy where every visitor's browser called
+   *their own machine*. It failed as a transport error rather than a 401, so the
+   app degraded to seed data instead of showing a login wall — a hosted demo
+   running entirely on fixtures with no visible marker. The fallback is now
+   per-runtime (same-origin in a browser, localhost in Node) and pinned by
+   `apps/web/src/api/http-base-url.test.ts`. If you ever see the app load
+   straight into a workspace with no login prompt, open the network tab and look
+   at where `/v1/me` actually went — that is the whole diagnosis.
 
    Do **not** set `VITE_API_MOCKING=enabled` — that starts the MSW worker.
 
