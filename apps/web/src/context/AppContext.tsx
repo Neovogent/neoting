@@ -389,6 +389,16 @@ interface AppContextType {
   /** Opens the AI workspace on a fresh conversation scoped to these clients. */
   startConversation: (clientIds: string[], seed?: Message[]) => void;
 
+  /**
+   * Set while a server-answered reply is in flight, so the transcript can show
+   * that something is coming instead of a silent gap. Null when nothing is
+   * pending. `businessName` is the client whose records the server is reading,
+   * when one is in scope — it is shown to the user, so it must be a real
+   * attached client and never a guess.
+   */
+  assistantPending: { businessName: string | null } | null;
+  setAssistantPending: (pending: { businessName: string | null } | null) => void;
+
   // Conversation actions
   addMessage: (msg: Message) => void;
   setMessages: (msgs: Message[]) => void;
@@ -911,6 +921,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const patch = useCallback((id: string, fn: (c: Conversation) => Conversation) => {
     setConversations((prev) => prev.map((c) => (c.id === id ? fn(c) : c)));
   }, []);
+
+  /**
+   * Transient and deliberately NOT persisted onto the conversation: a reload
+   * mid-flight must not restore a spinner for a request nobody is waiting on.
+   */
+  const [assistantPending, setAssistantPending] = useState<{ businessName: string | null } | null>(null);
 
   const addMessage = useCallback(
     (msg: Message) => {
@@ -2535,6 +2551,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         messages,
         attachedClients,
         startConversation,
+        assistantPending,
+        setAssistantPending,
         addMessage,
         setMessages,
         newConversation: startFresh,

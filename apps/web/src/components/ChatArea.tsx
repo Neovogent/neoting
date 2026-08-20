@@ -2,6 +2,7 @@ import { ReactNode, useEffect, useRef } from 'react';
 import { Mic, Paperclip } from 'lucide-react';
 import { defineMessages, useIntl } from 'react-intl';
 import { IntentRenderer } from './DynamicComponents/IntentRenderer';
+import { AssistantMetaLine, AssistantPending } from './DynamicComponents/AssistantActivity';
 import { useAppContext } from '../context/AppContext';
 import { motion } from 'motion/react';
 import logo from '../assets/logo.png';
@@ -22,19 +23,22 @@ const m = defineMessages({
 });
 
 export function ChatArea() {
-  const { messages } = useAppContext();
+  const { messages, assistantPending } = useAppContext();
   const intl = useIntl();
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // Also on `assistantPending`: the bubble appears BELOW the last message, so
+  // without this the one thing the user is waiting for is the one thing off
+  // screen.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, assistantPending]);
 
   return (
     <div className={`flex-1 overflow-y-auto px-6 py-8 flex flex-col gap-8 max-w-4xl w-full mx-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden`}>
       
       {messages.map((msg) => (
-        <Message key={msg.id} role={msg.role}>
+        <Message key={msg.id} from={msg.role}>
           <p className={`text-[15px] leading-relaxed mb-4 ${msg.role === 'user' ? 'text-white' : 'text-zinc-300'}`}>
             {msg.content}
           </p>
@@ -63,17 +67,32 @@ export function ChatArea() {
           )}
 
           {msg.role === 'assistant' && <IntentRenderer message={msg} />}
+
+          {/* Provenance, and only when a model really answered (§13.3). */}
+          {msg.role === 'assistant' && msg.meta !== undefined && <AssistantMetaLine meta={msg.meta} />}
         </Message>
       ))}
+
+      {assistantPending !== null && (
+        <Message from="assistant">
+          <AssistantPending businessName={assistantPending.businessName} />
+        </Message>
+      )}
 
       <div ref={bottomRef} className="h-4 shrink-0" /> {/* Bottom padding */}
     </div>
   );
 }
 
-function Message({ role, children }: { role: 'user' | 'assistant', children: ReactNode }) {
+/**
+ * `from`, not `role` — a prop named `role` on a component that sets no ARIA
+ * role trips `jsx-a11y/aria-role` the moment anyone passes a literal, and the
+ * linter is right to be suspicious. The existing call site only ever escaped
+ * because `msg.role` is a dynamic expression the rule cannot evaluate.
+ */
+function Message({ from, children }: { from: 'user' | 'assistant'; children: ReactNode }) {
   const intl = useIntl();
-  const isUser = role === 'user';
+  const isUser = from === 'user';
 
   return (
     <motion.div 
