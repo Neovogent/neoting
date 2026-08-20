@@ -8,8 +8,22 @@ test('creates the role when absent and resets the password when present', () => 
   expect(sql).toContain("ALTER ROLE %I LOGIN PASSWORD %L");
 });
 
-test('strips the two grants that would make RLS inert, every run', () => {
-  expect(buildAppRoleSql('nt_app', 'secret')).toContain('ALTER ROLE nt_app NOSUPERUSER NOBYPASSRLS');
+test('no ALTER ROLE touches SUPERUSER or BYPASSRLS — neither granting nor clearing', () => {
+  // Granting either makes RLS inert. CLEARING either is refused by RDS:
+  //   ERROR: permission denied to alter role
+  //   DETAIL: Only roles with the SUPERUSER attribute may change it.
+  // The master holds rds_superuser, which is a role, not that attribute.
+  // Measured against nt-staging, 20 Aug 2026.
+  const offending = buildAppRoleSql('nt_app', 'secret')
+    .split(/\r?\n/)
+    .filter((line) => /ALTER ROLE/i.test(line) && /SUPERUSER|BYPASSRLS/i.test(line));
+  expect(offending).toEqual([]);
+});
+
+test('tolerates a refused NOCREATEDB/NOCREATEROLE rather than aborting', () => {
+  const sql = buildAppRoleSql('nt_app', 'secret');
+  expect(sql).toContain('NOCREATEDB NOCREATEROLE');
+  expect(sql).toContain('EXCEPTION WHEN insufficient_privilege');
 });
 
 test('grants on existing AND future tables — the next migration must not lock the app out', () => {
