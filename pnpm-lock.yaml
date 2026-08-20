@@ -210,6 +210,9 @@ importers:
 
   evals:
     devDependencies:
+      '@neoting/contracts':
+        specifier: workspace:*
+        version: link:../packages/contracts
       '@types/node':
         specifier: ^22.7.4
         version: 22.20.1
