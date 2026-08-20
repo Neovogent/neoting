@@ -11,7 +11,7 @@ import { suggestPrompts } from '../lib/promptSuggestions';
 import { TypedPlaceholder } from './DynamicComponents/TypedPlaceholder';
 import { DocumentFormats, VoiceIcon } from './DynamicComponents/InputAffordances';
 import { defineMessages, useIntl } from 'react-intl';
-import type { Intent, MessagePayload } from '../lib/types';
+import type { AssistantMeta, Intent, MessagePayload } from '../lib/types';
 
 const m = defineMessages({
   listeningPlaceholder: {
@@ -78,7 +78,7 @@ export function InputRow() {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const { addMessage, clients, messages, attachedClients, attachClient, detachClient, ingest, missing, chases, approvals, documents, businesses, session, serverClientIdFor } = useAppContext();
+  const { addMessage, clients, messages, attachedClients, attachClient, detachClient, ingest, missing, chases, approvals, documents, businesses, session, serverClientIdFor, setAssistantPending } = useAppContext();
   const intl = useIntl();
 
   /**
@@ -158,102 +158,134 @@ export function InputRow() {
     });
     setIsLoading(true);
 
-    const scope = resolveScope(userMessage, clients, attachedClients.map((c) => c.id));
-    const local = classifyLocally(userMessage);
+    // try/finally, because two pieces of transient UI state now depend on
+    // reaching the end of this function: the button spinner and the pending
+    // bubble in the transcript. An unexpected throw anywhere below used to
+    // strand the spinner; it would now also strand a bubble that animates
+    // forever, which reads as a hung assistant rather than a failed send.
+    try {
+      const scope = resolveScope(userMessage, clients, attachedClients.map((c) => c.id));
+      const local = classifyLocally(userMessage);
 
-    let intent: Intent = local.intent;
-    // The classifier is module scope and hands back a catalogue entry; this is
-    // where it becomes words. `let`, because an attached file replaces both
-    // below: an upload makes the answer about the ingest, not about the text.
-    let response = intl.formatMessage(local.response);
+      let intent: Intent = local.intent;
+      // The classifier is module scope and hands back a catalogue entry; this is
+      // where it becomes words. `let`, because an attached file replaces both
+      // below: an upload makes the answer about the ingest, not about the text.
+      let response = intl.formatMessage(local.response);
 
-    // The AI workspace (Governance §9). With a real session the utterance goes
-    // to the server, which classifies it with the pinned model, grounds any
-    // question in the client's own RLS-scoped records and drafts the action.
-    // `classifyLocally` above stays as the SYNTHETIC path only — the app must
-    // still walk through end to end with no API (METH_MODE §1), and that is
-    // the one job it has left.
-    //
-    // Nothing here changes state. A `draft` is rendered as a card; creating the
-    // proposal is the card's own call, and approving it is a human action after
-    // that (§9.5).
-    let livePayload: Partial<MessagePayload> = {};
-    if (API_ENABLED && session.status === 'authenticated') {
-      // The attached client, as a SERVER id — live rows key on `biz_*` and the
-      // synthetic client ids can never match one (the S14 id bridge).
-      const attachedServerId = attachedClients[0] === undefined ? undefined : serverClientIdFor(attachedClients[0].id);
+      // The AI workspace (Governance §9). With a real session the utterance goes
+      // to the server, which classifies it with the pinned model, grounds any
+      // question in the client's own RLS-scoped records and drafts the action.
+      // `classifyLocally` above stays as the SYNTHETIC path only — the app must
+      // still walk through end to end with no API (METH_MODE §1), and that is
+      // the one job it has left.
+      //
+      // Nothing here changes state. A `draft` is rendered as a card; creating the
+      // proposal is the card's own call, and approving it is a human action after
+      // that (§9.5).
+      let livePayload: Partial<MessagePayload> = {};
+      let meta: AssistantMeta | undefined;
+      if (API_ENABLED && session.status === 'authenticated') {
+        // The attached client, as a SERVER id — live rows key on `biz_*` and the
+        // synthetic client ids can never match one (the S14 id bridge).
+        const attachedServerId = attachedClients[0] === undefined ? undefined : serverClientIdFor(attachedClients[0].id);
 
-      const turn = await requestChatTurn({
-        utterance: userMessage,
-        ...(attachedServerId === undefined ? {} : { businessId: attachedServerId }),
-        // Oldest first, capped at the contract's 10. The server caps it again —
-        // this is a courtesy, not the enforcement (§9.5).
-        history: messages.slice(-10).map((msg) => ({ role: msg.role, content: msg.content })),
-      });
+        // The transcript shows a pending bubble from here until the reply lands.
+        // The name comes from the ATTACHED client rather than from anything the
+        // server returns, because it is displayed before the server has said
+        // anything — it must be a fact we already hold.
+        setAssistantPending({ businessName: attachedClients[0]?.name ?? null });
 
-      if (turn.kind === 'failure') {
-        // §9.3's floor, rendered honestly: say what happened and let them try
-        // again. Never silently fall back to the local classifier — an answer
-        // that looks the same but was produced by a regex is exactly the
-        // confusion the badge architecture exists to prevent.
-        intent = 'GENERAL';
-        response = turn.retryable ? `${turn.message} Try that again in a moment.` : turn.message;
-      } else {
-        intent = SERVER_INTENT_TO_APP[turn.intent] as Intent;
-        response = turn.reply;
-        livePayload = mapTurnToPayload(turn, businesses, userMessage);
+        const turn = await requestChatTurn({
+          utterance: userMessage,
+          ...(attachedServerId === undefined ? {} : { businessId: attachedServerId }),
+          // Oldest first, capped at the contract's 10. The server caps it again —
+          // this is a courtesy, not the enforcement (§9.5).
+          history: messages.slice(-10).map((msg) => ({ role: msg.role, content: msg.content })),
+        });
 
-        const businessId = turn.navigation?.businessId;
-        if (businessId !== undefined) {
-          scope.clientIds = [businessId];
-          const named = businesses.find((b) => b.id === businessId);
-          scope.clientNames = named === undefined ? [] : [named.name];
+        if (turn.kind === 'failure') {
+          // §9.3's floor, rendered honestly: say what happened and let them try
+          // again. Never silently fall back to the local classifier — an answer
+          // that looks the same but was produced by a regex is exactly the
+          // confusion the badge architecture exists to prevent.
+          intent = 'GENERAL';
+          response = turn.retryable ? `${turn.message} Try that again in a moment.` : turn.message;
+        } else {
+          intent = SERVER_INTENT_TO_APP[turn.intent] as Intent;
+          response = turn.reply;
+          livePayload = mapTurnToPayload(turn, businesses, userMessage);
+          meta = {
+            model: turn.usage.model,
+            tier: turn.usage.tier,
+            latencyMs: turn.usage.latencyMs,
+            degraded: turn.usage.degraded ?? false,
+            budgetWarning: turn.usage.budgetWarning ?? false,
+          };
+
+          const businessId = turn.navigation?.businessId;
+          if (businessId !== undefined) {
+            scope.clientIds = [businessId];
+            const named = businesses.find((b) => b.id === businessId);
+            scope.clientNames = named === undefined ? [] : [named.name];
+          }
         }
       }
-    }
 
-    // Attachments really enter the pipeline — they appear in the Inboxes
-    // section and move the client's counts, not just this conversation.
-    let ingestedId: string | undefined;
-    if (attachments.length > 0) {
-      const result = ingest(attachments, scope.clientIds[0], 'chat');
-      ingestedId = result.documents[0]?.id;
+      // Attachments really enter the pipeline — they appear in the Inboxes
+      // section and move the client's counts, not just this conversation.
+      let ingestedId: string | undefined;
+      if (attachments.length > 0) {
+        const result = ingest(attachments, scope.clientIds[0], 'chat');
+        ingestedId = result.documents[0]?.id;
 
-      if (result.documents.length) {
-        intent = 'SHOW_INBOX';
-        response =
-          result.documents.length > attachments.length
-            ? intl.formatMessage(m.ingestedSplit, {
-                fileCount: attachments.length,
-                documentCount: result.documents.length,
-              })
-            : intl.formatMessage(m.ingested, { documentCount: result.documents.length });
-      } else if (result.rejected.length) {
-        // Nothing sits in a queue waiting to be routed — a file either becomes
-        // a document or it was refused at the door, and the reason is said.
-        intent = 'GENERAL';
-        response = intl.formatMessage(m.rejected, {
-          count: result.rejected.length,
-          reasons: result.rejected.map((r) => `${r.fileName} — ${r.reason.toLowerCase()}`).join('; '),
-        });
+        if (result.documents.length) {
+          intent = 'SHOW_INBOX';
+          response =
+            result.documents.length > attachments.length
+              ? intl.formatMessage(m.ingestedSplit, {
+                  fileCount: attachments.length,
+                  documentCount: result.documents.length,
+                })
+              : intl.formatMessage(m.ingested, { documentCount: result.documents.length });
+        } else if (result.rejected.length) {
+          // Nothing sits in a queue waiting to be routed — a file either becomes
+          // a document or it was refused at the door, and the reason is said.
+          intent = 'GENERAL';
+          response = intl.formatMessage(m.rejected, {
+            count: result.rejected.length,
+            reasons: result.rejected.map((r) => `${r.fileName} — ${r.reason.toLowerCase()}`).join('; '),
+          });
+        }
       }
-    }
 
-    addMessage({
-      id: (Date.now() + 1).toString(),
-      role: 'assistant',
-      content: response,
-      intent,
-      payload: {
-        ...scope,
-        ...livePayload,
-        // The ingest answer wins over a live match — an attached file makes
-        // the message about the upload, and its id must not be shadowed.
-        ...(ingestedId === undefined ? {} : { documentId: ingestedId }),
-        clientName: intent === 'ADD_CLIENT' ? extractClientName(userMessage) : undefined,
-      },
-    });
-    setIsLoading(false);
+      // Cleared immediately before the reply is appended, so the pending bubble
+      // and the answer never render together for a frame.
+      setAssistantPending(null);
+
+      addMessage({
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: response,
+        intent,
+        payload: {
+          ...scope,
+          ...livePayload,
+          // The ingest answer wins over a live match — an attached file makes
+          // the message about the upload, and its id must not be shadowed.
+          ...(ingestedId === undefined ? {} : { documentId: ingestedId }),
+          clientName: intent === 'ADD_CLIENT' ? extractClientName(userMessage) : undefined,
+        },
+        // Only when a model actually answered. An undefined meta is the honest
+        // statement that this reply came from somewhere else.
+        ...(meta === undefined ? {} : { meta }),
+      });
+    } finally {
+      // Belt to the explicit clear above: whatever happened, the transcript
+      // must not be left claiming a reply is still coming.
+      setIsLoading(false);
+      setAssistantPending(null);
+    }
   };
 
   const handleSubmit = () => submitMessage(input);
