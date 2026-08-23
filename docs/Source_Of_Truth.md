@@ -68,7 +68,7 @@ This document and its companion, **NEOTING-Engineering-Governance-v1.4.md**, are
 | D38 | **Design palette: the implemented identity (supersedes the palette half of D5 and §14).** The colour values in §14 v1.4 — ground `#041310`, panel `#0a241d`, mint `#7eefd6`, ink `#f5efe8` — are **retired unused**. The palette of record is the one the frontend already implements: **mint `#14e3c4`** (brand), **`#0fcbaf`** (brand hover, identical in both themes), **ground `#0a0a0c`**, **card surface `#16161a`**, **raised surface `#202026`**, **`#00806d`** (brand ink, light theme). Reason: 1,016 inline colour literals across 84 files, with light mode implemented as ~60 override rules keyed to exact hex strings — retheming is real work that buys the product no capability, and the built palette is coherent and shipping. **Adopted on measurement, not preference.** Every foreground/background pair was checked against §12.5's WCAG 2.2 AA requirement before this decision was written: mint on ground **12.07:1**, mint on card **11.01:1**, mint on raised **9.89:1**, brand hover on ground **9.59:1**, white on card **18.04:1**, and the light theme's brand ink on white **4.87:1** — the tightest pair, and still above the 4.5:1 floor. **What does NOT change:** colour semantics (amber = needs you, teal = data in motion, **red reserved exclusively for irreversibility**), the ≥ 4.5:1 contrast floor, dark and light from v1, the 4 px grid, the motion spec, and D15's rule that design tokens are a Sprint-0 contract. This decision changes the values, **not the discipline**: `packages/tokens` encodes these values, and the 1,016 inline literals still move behind tokens — an arbitrary hex in a component remains a reject (Guideline R8). |
 | **D39** | **Initial Delivery (ID) is a named release that precedes v1 completion.** ID is the first paid client delivery, scoped to one continuous spine: manual bank statement → extracted transactions → missing-evidence list → super-admin-authorised SMS chase → identity-gated client upload (portal / registered email / registered WhatsApp) → AI categorisation into Sales/Cost and sub-accounts → accountant field-level review → **Ready** → super-admin **Published** → **export** into the accountant's own software with the source document reachable from it. Everything ID removes from v1 is **deferred with its v1 commitment intact**, never dropped; **§2's scope fence still governs v1 and ID does not widen it.** **Reason:** the first client can be served completely without any third-party integration, and every integration ID removes would have gated delivery on someone else's approval clock — TrueLayer commercial review, Xero app certification, Meta verification. **Honest caveat:** ID ships a product whose bank data is only as good as an uploaded PDF. That is a real quality exposure, and it is why D41 attaches hard gates rather than best-effort parsing. |
 | **D40** | **Bank input in ID is manual statement upload only — supersedes D4 for the ID release.** Accepted inputs: **PDF, CSV, XLSX** and comparable tabular formats; upload is available to accountant and client, per client, per period. The AI reads the statement and produces every transaction on it; transactions land in the **Bank tab inside the client** and are reachable from the **AI chat**. TrueLayer is **deferred, not dropped** — D4's sole-provider commitment stands for v1, and the provider-agnostic interface is still built, now with exactly one implementation behind it. **What is given up:** continuous transaction arrival, and with it the ability to notice a missing document within hours of the spend. ID notices it whenever the next statement is uploaded — a slower loop the client must be told about rather than left to discover. **Re-opens when:** TrueLayer production access is granted and a client asks for a live feed. |
-| **D41** | **Statement extraction is gated on provable completeness, not on confidence alone.** Because D40 makes upload the only path, a silently dropped transaction is a document that is never chased and an entry that never reaches the ledger. Every statement extraction must pass and record: **(a) balance continuity** — opening balance + Σ(signed transactions) = closing balance, to the penny; **(b) page accounting** — every page of the source accounted for; **(c) date monotonicity and range** — rows inside the statement period and not running backwards across a page break; **(d) in-statement duplicate-row detection**; **(e) period-gap detection** against prior statements for the same account. A statement failing (a) is **never silently accepted** — it enters a visible reconciliation state showing the discrepancy amount and the candidate rows, exactly as a document failure surfaces today. **Rationale:** balance continuity is a genuine mathematical proof of completeness and it is free; holding the data and not checking it would be negligent. |
+| **D41** | **Statement extraction is gated on provable completeness, not on confidence alone.** Because D40 makes upload the only path, a silently dropped transaction is a document that is never chased. **The gates exist because of a measured failure mode, not a theoretical one:** on long documents the dominant extraction failure is **silent truncation** — schema-valid JSON containing a fraction of the rows, with no error signal — and **structured outputs do not fix it**, since a valid thirty-item array is still valid when the page held forty rows. **Hard gates, blocking commit to the Bank tab:** **(G1) statement balance** — opening + Σcredits − Σdebits = closing, in **integer pence, zero tolerance**; **(G2) row-level balance chain** — `balance[n−1] + signed_amount[n] = balance[n]`, permitting reordering within a same-date group before failing, since banks print same-day rows out of balance order; **(G3) page accounting** — every page between the first and last transaction page yields at least one row, because a zero-row middle page is a stitching failure and not a blank page; **(G4) page-boundary continuity** — the last row of page N chains to the first row of page N+1; **(G5) printed totals** — the statement's own summary box and transaction count, read as scalars, agree with the computed sums; **(G6) date containment and monotonicity**; **(G7) amount coverage** — every currency-like token in a cheap raw-OCR pass over the table region appears in some extracted row, **which is the anti-truncation gate and the cheapest insurance available**; **(G8) duplicate and overlap detection**, fingerprinting on account, date, signed pence, normalised description **and running balance** — the balance is what distinguishes a genuine repeat purchase from a true duplicate. **Soft gates, committing but flagging:** intra-statement date gaps, sub-threshold field confidence, statement-to-statement chaining (`closing[N] = opening[N+1]`), and coverage-grid gaps. **The running balance is load-bearing and no vendor supplies it** — every prebuilt bank-statement model omits it — so ID defines the column in its own schema. **Where a statement genuinely has none, G2 and G4 are unavailable: that ingest is marked reduced-assurance, G5 and G7 become mandatory, and human-review sampling rises.** A statement failing a hard gate is never silently accepted — it enters a visible reconciliation state showing the discrepancy and the candidate rows. |
 | **D42** | **No ledger API integration and no auto-publish in ID — supersedes D6 and Stage 10's adapter path for the ID release.** In ID, **"Published" is an internal state meaning approved and released for export.** It does not assert that anything was written into a ledger, and **no ID surface may imply that it does.** **Export is the sole egress**, in bulk and singly, and the Ready → Published transition is **super-admin only** (D44). **What is given up:** the attachment-travels-with-the-bill guarantee the Xero and QBO APIs provide natively — which is exactly why D43 exists. **Consequence for the prototype:** every "Send to Xero" string, the `xeroConnected` publish destination, the connection-health surfaces and the tour's five Xero steps are wrong for ID and must be reworked to export language before delivery. |
 | **D43** | **Every exported transaction carries a resolvable link to its source document, and the requirement is on the outcome, not the mechanism.** The accountant must be able to get from a line in their accounting software to the document that line came from. **Verified for the primary target (24.3):** VT Transaction+ has a real, documented, column-mapped bulk CSV import (the Universal Input Sheet), a competitor already ships a VT-shaped export, and **VT cannot attach files at all** — confirmed by exhaustive absence across its published help corpus. **Whether VT renders a URL as a *clickable* hyperlink is unconfirmed, and the working assumption is that it does not.** ID therefore does not bet on clicking: it ships **all four rungs at once**, because together they cost almost nothing. (1) the link in **`Entry details`**, the field VT designates for per-line detail; (2) the link as a **short, typable capability URL** — six to eight URL-safe characters, designed to be retyped or copy-pasted rather than clicked, which is why it is a short link and never a presigned S3 URL; (3) code and full URL repeated in **`Transaction notes`** with an `Imported from Neoting` provenance tag; (4) a **companion index file and document bundle** whose filenames carry the same code — which mirrors VT's own documented practice of writing the reference on the paperwork and filing by it. **Rung 1 is confirmed by a ten-minute test in the client's own VT in the first days of the release**, and **whichever rung is live is stated to the accountant** — silently shipping rung 3 while the client believes they bought rung 1 breaks a promise. **Binding security constraint:** these URLs leave our control the moment they enter someone's ledger, so they are **capability URLs** — unguessable, per-document, view-only, individually revocable, access-logged, expiry configurable per practice. A ledger file is not a secret store and must never be treated as one. |
 | **D44** | **Composition and release are separate authorities in ID.** Accountants and their team members may **compose and edit** — chase message text, document coding, every extracted field. Only the **accounting firm's super admin** may **release**: authorise a chase SMS to send, and move an item from Ready to Published. Enforced **server-side** as a role condition layered on §8.2's Review → Approve, not as a UI affordance. **Reason:** ID's two irreversible outward acts are a text message to a client and a released export; both deserve a named accountable person, and the practice principal is that person. |
@@ -761,6 +761,9 @@ Removed from the old plan's week 0 (out of scope now): HMRC MTD production appro
 | p95 < 5 min latency target missed under load | Med | Queue-first architecture with per-stage timing in the processing log; manual-entry bypass keeps humans unblocked; k6 ingestion soak at 10× expected volume in W12. |
 | **ID: statement extraction drops a transaction** (D40 makes upload the only bank input) | High | D41's gates make completeness **provable, not hoped for** — balance continuity to the penny, page accounting, date monotonicity, in-statement dedupe. A statement failing continuity enters a visible reconciliation state rather than being accepted; the accountant sees the discrepancy and the candidate rows. The honest residual: a statement whose arithmetic balances can still have a mis-read *description*, which degrades matching rather than losing the row. |
 | **ID: VT cannot render a clickable source-document link** (D43) | High | The requirement is written on the **outcome**, with a four-rung fallback ladder specified in advance. Rung 1 is proven or eliminated **in the client's own VT installation in the first days of the release**, not at the end — the whole export lane is built against whichever rung survives. If every rung fails, the accountant still gets the document bundle plus an index file, and we tell the client plainly what clicking does and does not do. |
+| **ID: an extractor silently drops rows** — the measured dominant failure on long statements | High | This is the risk D41 exists for, and it is *measured*, not theoretical: recall on long documents collapses while output stays schema-valid, so nothing looks wrong. Mitigated structurally — never a single whole-document pass; bounded page windows with overlap; **G7's raw-OCR amount-coverage check as an independent oracle the model cannot influence**; and the balance chain localising any break to a row. **Vendor accuracy claims are not evidence** — the leading public table benchmark was found to contain ground-truth files byte-identical to the sponsoring vendor's own output. Our number comes from our own UK corpus or we do not have one. |
+| **ID: a statement has no running-balance column**, removing the strongest oracle | Med | Some UK banks and many card statements omit it. Such ingests are a **distinct reduced-assurance class**: G2 and G4 are unavailable, G5 and G7 become mandatory, review sampling rises, and onboarding asks for CSV in preference for those banks. |
+| **ID: password-protected statement PDFs** | Low | Several UK banks issue them by default and **every cloud extractor rejects encrypted PDFs**. Intake decrypts before anything else, prompts the client for the password in plain language, and **never stores it**. A solved problem, but a silent hard failure if unhandled. |
 | **ID: the first client runs VT Cash Book, not VT Transaction+** | High | **VT Cash Book — the free tier — has no transaction import at all.** Bulk import is a VT Transaction+ (£90+VAT/yr) or Accounts Suite (£175+VAT/yr) feature. If the client is on Cash Book the export does not work for them in any form. **This is an onboarding question to settle before the export lane starts**, not a discovery for delivery week; a practice filing as agent is on the £175 tier anyway. |
 | **ID: VT cannot take a split analysis, so line items do not survive into VT** | Med | VT's import accepts **one nominal per row** — a documented, hard constraint. A document spanning several nominals either collapses to one line or emits its primary line with the remainder flagged for manual entry. Either way the accountant is **shown what did not travel**; silent truncation is the failure mode to design against, given D17 makes line-item extraction a headline capability. |
 | **ID: capability URLs leak** — document links deliberately leave our control and sit inside a third party's software | Med | Unguessable per-document tokens, view-only scope, revocable, access-logged, expiry configurable per practice. **A ledger file is not a secret store** and must not be treated as one: no URL may authorise anything but viewing one document, and a leaked URL must be revocable without breaking the rest of the export. §18 carries this as a named exposure class rather than leaving it implicit. |
@@ -837,6 +840,116 @@ paperwork is missing and getting it out of the client.
 | **9 Approve** | Accountant reviews every submitted document; **every field editable** in the preview surface. Approval sets **Ready**. |
 | **10 Publish / Export** | **Rewritten — see §24.3.** *Published* is an internal state meaning approved and released for export (D42); it asserts nothing about a ledger, and no ID surface may imply otherwise. **Super admin only**, bulk and single. **Export is the sole egress.** |
 | **11 Archive** | Unchanged. |
+
+
+#### 24.2.1 Statement extraction — the ladder, and why the gates are not optional
+
+**The finding that shapes this whole subsection:** on long documents the dominant
+extraction failure is **silent truncation, not hallucination**. Frontier models return
+immaculate, schema-valid JSON containing a third of the rows, with no error signal —
+measured recall on 50-page-plus documents collapses to roughly a quarter to a half, and on
+tables beyond a thousand rows it approaches nothing. **Structured outputs do not fix this:
+a valid thirty-item array is still valid when the page held forty rows.**
+
+For a product whose next action is *chase the client for the missing document*, a silently
+dropped row is not a data-quality blemish. It is a document that is never asked for. This
+is why D41's gates are hard gates.
+
+**No prebuilt bank-statement model is usable here**, and all three fail differently:
+AWS's Analyze Lending classification returns **header fields only — zero transactions**;
+Azure's prebuilt model is **`en-US` locale only** and carries **no running-balance field**;
+Google's caps at 30 pages and processes only the first statement in a file. **None of the
+three returns a per-transaction running balance** — the single strongest completeness
+oracle available — so ID defines that column itself in its own schema.
+
+**The extraction ladder.** Stop at the first rung that passes every gate:
+
+| Rung | Method | When |
+|---|---|---|
+| **0** | **Deterministic per-bank template** — column x-positions on a native-text PDF; saved, versioned, named per bank and layout | Known bank, known layout. Free, fast, auditable and reproducible; the top UK banks should live here |
+| **A** | **CSV / XLSX / OFX with a saved mapping template**, matched on header-tuple and filename | Whenever the client can supply it — near-free and near-exact. **Onboarding should steer clients here.** |
+| **1** | **Bedrock Data Automation**, in-region in eu-west-2 | Unknown or new layout. Its table entities **span pages**, which is the specific thing Textract does not do |
+| **2** | **BDA custom blueprint** with a typed transaction table including **`Balance`** | Ambiguous table shape, or normalised typed fields with per-field confidence needed |
+| **3** | **Textract TABLES + QUERIES + LAYOUT, then Claude structuring over a sliding page window with overlap** | Earlier rungs fail a gate. Textract supplies geometry and the scalar header fields; the model does row assembly and continuation stitching. **Never the whole PDF in one call** |
+| **4** | **Page-by-page vision with balance-chain repair** — each page seeded with the prior page's closing balance, any page whose chain breaks re-prompted | Last automated resort. Bounded output per call is what defeats truncation |
+| **5** | **Human review** | Anything still failing a hard gate |
+
+**Two structural traps to design against, both verified.** **Textract tables are
+page-scoped** — there is no cross-page merge, so a twelve-page statement returns twelve
+disconnected tables that must be stitched, and naive stitching is the leading cause of
+dropped rows on AWS. And **every cloud extractor rejects password-protected PDFs**, which
+several UK banks issue by default — so intake decrypts before anything else, and never
+stores the password.
+
+**Cost is not the constraint; correctness is.** A year of statements for one client sits in
+the low single-digit dollars on any rung. **The money saved by choosing a cheaper extractor
+is rounding error against one missed transaction**, and ID should spend freely on
+validation and escalation.
+
+**UK residency binds the model choice here exactly as D28 found.** Only the in-region
+Claude Sonnet tier runs inside eu-west-2; the larger models are reachable only through the
+EU geo profile, which keeps data in the EEA and therefore **leaves the UK**. Under D30 that
+is not a residency-preserving option, and the extraction lane must not quietly reach for it
+because a bigger model would read tables better.
+
+#### 24.2.2 UK statement reality
+
+Three findings that are product constraints rather than parsing details:
+
+- **UK bank transaction codes are not standardised and actively conflict.** Barclays uses
+  `DDR` for direct debit and `STO` for standing order where others use `DD`/`SO`;
+  Nationwide's `BD` means direct debit and its `CR` means *credit by cash*, not a generic
+  credit; NatWest publishes two mutually inconsistent official lists, and NatWest and RBS
+  differ from each other. **Codes are a hint, never a classifier** — per-bank tables, with
+  the narrative text as the fallback.
+- **Descriptions are truncated at source.** At least one major UK bank hard-truncates
+  narrative to 18 characters. Supplier matching must work on prefixes and on amount + date
+  + card last-4, and must never require full-string equality.
+- **Date, sign and column order vary by bank** — money-in before money-out at some banks
+  and after at others, debit/credit split across two columns or carried as one signed
+  column, dates printed once per day-group leaving later rows blank. A filter as innocent
+  as *"a row must have a date"* silently deletes transactions.
+
+
+#### 24.2.3 Missing evidence, and not over-asking
+
+**ID's detection is structurally better than the incumbent's, and this is worth stating.**
+The market leader's missing-paperwork report works off **transactions already in the
+accounting software** that lack an attachment — so a transaction never entered into the
+ledger is invisible to it. ID works off **the bank line itself**, which means it sees
+exactly the spend the ledger has not yet caught. That is the differentiator, and it is a
+consequence of D40 rather than a feature bolted on top of it.
+
+**Over-chasing is the failure mode, not under-chasing.** A client who is asked every month
+for a receipt that cannot exist stops reading the messages, and then the chase that matters
+is ignored too. Suppression is therefore a first-class part of the engine, not a filter
+bolted on:
+
+- **Suppress where no document can exist:** bank charges and fees, interest, transfers
+  between the client's own accounts (**both legs**), refunds and reversals (netted against
+  the original rather than chased), and internal FX moves.
+- **Redirect rather than suppress**, because a *different* document is the evidence:
+  card-processor settlements (the processor's statement), wages (the payroll run), HMRC
+  payments (the return), pensions (the provider schedule), loans, leases and rent (the
+  agreement and schedule — chased **once**, not per payment).
+- **Cash withdrawals are a special case and must not be blanket-suppressed.** No receipt
+  exists for the withdrawal itself, but the *spend* still needs evidence — so it becomes a
+  different question: what was this cash spent on?
+- **Suppression is learned per supplier per client.** When a client answers "no receipt
+  exists for this", that answer is remembered and never asked again. **Re-asking an
+  answered question is the single biggest cause of chase fatigue.**
+
+**Every chase shows the bank narrative verbatim** — the client recognises their own
+statement line, not our category — and every reply has an escape hatch that *writes a
+suppression rule*: receipt attached · no receipt exists · this was personal · transfer
+between my accounts · lost, and here is what it was for.
+
+**Statement coverage is a grid, not a flag.** Per account, per month, four states —
+reconciled · statement present but not reconciled · transactions without a statement ·
+missing. Gaps are detected by period adjacency **and** by balance chaining across uploads
+(`closing[N] = opening[N+1]`), which catches a missing statement even when the dates happen
+to abut, and catches a statement uploaded against the wrong account.
+
 
 ### 24.3 Export — the sole egress
 
@@ -994,7 +1107,16 @@ needs to know which one fired:
    the client is told so in the portal immediately.
 2. **Is it acceptable evidence?** — legibility, and whether it meets UK VAT-invoice
    requirements where VAT is being reclaimed. A till receipt that cannot support a VAT
-   reclaim is a *quality* flag, not a rejection.
+   reclaim is a *quality* flag, not a rejection. **This is a liability surface, not a UX
+   nicety:** a bank statement alone generally does not support an input-VAT claim, because
+   it does not evidence the VAT component — HMRC has discretion to accept alternative
+   evidence, but it is discretion, not entitlement. Two thresholds drive the rule and
+   **both are configurable rather than hard-coded, and both are verified against the
+   current VAT notice before they ship**: a **simplified (less-detailed) VAT invoice is
+   acceptable up to £250 gross**, above which full-invoice requirements apply; and a
+   **no-receipt concession exists around £25** for unattended supplies such as parking,
+   tolls and vending. **For a VAT-registered client the default is to chase everything** —
+   amount-based de-prioritisation applies only to those specific categories.
 3. **Is it plausible for this business?** — against the business-type profile. This is the
    weakest signal of the three and must be labelled as such: it is a **prompt to look**,
    never a verdict.
