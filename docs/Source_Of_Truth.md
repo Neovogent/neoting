@@ -1,11 +1,12 @@
 # NEOTING — Product & Technical Source of Truth
 
-**Version 1.5 · 15 August 2026 · Confidential**
+**Version 1.6 · 24 August 2026 · Confidential**
 *Changelog v1.0 → v1.1: locked the AI vendor layer (D19–D22: Textract, Opus-led with effort map, Bedrock route, Transcribe), infrastructure hosting (D23), observability (D24), WhatsApp route (D25), billing deferral (D26), SMS allowance working default (D27); cost guardrail revised £0.02 → £0.05/document; W2 milestone changed from bake-off to calibration.*
 *Changelog v1.1 → v1.2: D28 supersedes D21 — three-tier model strategy (Haiku mechanical · Sonnet workhorse · Opus judgment) with dynamic effort per task class; extraction vision escalation ladder; per-class tier flags; cost guardrail restored to £0.02/document (pipeline), chat under per-firm budgets.*
 *Changelog v1.2 → v1.3: kickoff-review feedback (11–12 Aug) folded in — D29 locks kickoff = 13 Aug 2026 and ratifies the bootstrap G-log by reference; D30 UK-first data residency made explicit; D31 support & SLA framework; D32 self-serve offboarding incl. trial end; D33 central third-party cost & usage monitoring; new §13.3 orientation/transparency design mandates; §21 gains the surprise-bill risk row; §22 open decision #1 marked decided.*
 *Changelog v1.3 → v1.4: W0 execution findings folded in (13 Aug, all measured in eu-west-2, not assumed) — **D28 model IDs amended** after Bedrock verification (judgment Opus 4.6, mechanical Nova Lite; tier structure, effort map and eval gates unchanged) so that **D30 survives intact**; **D30's SES fallback retired** — verification 8.2 found inbound receiving available in-region, leaving one named exception (the DR backup target); D34 legal entity named; D35 AWS spend envelope; D36 AWS account topology and its compensating controls; §15/§18 per-workspace-KMS wording corrected to what S3 can actually enforce; §16 model names and cost composition updated; §17.2 Bedrock row updated; §21 gains the shared-account risk row; §22 open decisions #2 and #4 marked decided.*
 *Changelog v1.4 → v1.5: the frontend, built outside the monorepo and audited on 15 Aug, arrived on a different framework and a different palette from the ones this file locked — both reconciled here rather than left as a silent divergence. **D37 supersedes the Next.js half of D2 and §15**: the practice application is a Vite SPA; server components are given up, and the two requirements the framework was chosen to satisfy (per-route budgets, a featherweight portal) become build configuration and review discipline instead. **D38 supersedes the palette half of D5 and §14**: the implemented identity replaces the specified one, measured against §12.5's contrast requirement before adoption rather than after. §14 and §15 rewritten to match; nothing in scope (§2), the pipeline (§4) or the quality bars moves.*
+*Changelog v1.5 → v1.6: the first paid client delivery is scoped as a named release ahead of v1 completion, and the decisions it changes are superseded rather than quietly ignored. **D39 defines Initial Delivery (ID)**; **D40 supersedes D4 for ID** (bank input is manual statement upload only — TrueLayer deferred with its v1 commitment intact) and **D41** attaches hard completeness gates to statement extraction, because upload being the *only* path makes a dropped transaction a document that is never chased; **D42 supersedes D6 for ID** (no ledger API, no auto-publish — *Published* becomes an internal state and **export** the sole egress) and **D43** makes the source document reachable from inside the accountant's software, on an outcome requirement with a specified fallback ladder rather than an assumed mechanism; **D44** separates composition from release (only the practice super admin may send a chase or publish); **D45** identity-gates every intake channel and records that **ID has no Unrouted queue**, a real conflict with §4 Stage 1 resolved in the prototype's favour; **D46** flags unacceptable documents without ever blocking the client; **D47 amends §5.1/§6** to request no bank or ledger connection at intake; **D48 supersedes D26 for ID** with a €8.50/month client-paid subscription, which puts billing on the critical path for the first time; **D49** names the now-public prototype repository as ID's design source of record. §2's scope fence is not widened anywhere — ID only narrows or resequences.*
 Product: **Neoting**, by Neovogent. Pre-launch domain `neoting.neovogent.com`; production domain `neoting.com` at publish.
 
 ---
@@ -30,9 +31,9 @@ This document and its companion, **NEOTING-Engineering-Governance-v1.4.md**, are
 | D1 | Product = the Document Workflow Edition scope: a practice-first document-to-bookkeeping pipeline. The internal double-entry ledger, all financial statements/reports, and pricing design are **dropped**. The client's accounting software remains the ledger of record. |
 | D2 | Stack = the NestJS modular-monolith plan (§15), minus the mobile app. **· Frontend half superseded by D37 (v1.5, 15 Aug 2026):** the web client is a Vite SPA, not Next.js App Router. The backend half — NestJS modular monolith — is unchanged and remains locked. |
 | D3 | **Fully app-free.** No native mobile apps in v1. Accountant surface = responsive web (works in mobile browsers). Client surface = SMS + OTP links, WhatsApp inbound, email. Native apps are deferred, not planned. |
-| D4 | Bank data: **TrueLayer only.** No second provider is planned. The integration sits behind a provider-agnostic interface as an engineering hedge, and statement upload (PDF/CSV/XLSX) is the universal fallback, but TrueLayer is the sole feed commitment. |
+| D4 | Bank data: **TrueLayer only.** No second provider is planned. The integration sits behind a provider-agnostic interface as an engineering hedge, and statement upload (PDF/CSV/XLSX) is the universal fallback, but TrueLayer is the sole feed commitment. **· ID superseded by D40 (v1.6, 24 Aug 2026):** manual bank statement upload is the sole bank input for the Initial Delivery release; TrueLayer remains the v1 commitment and the provider-agnostic interface is still built. |
 | D5 | Brand: product **Neoting**, company Neovogent. Domain `neoting.neovogent.com` now, `neoting.com` at publish. Platform intake address `doc@neoting.com` (production) / `doc@neoting.neovogent.com` (pre-launch); both route identically through the cutover. SMS sender ID: `Neoting`. Design system = the Neovogent identity (§14). **· Palette superseded by D38 (v1.5, 15 Aug 2026)** — the product, company, domain, intake addresses and SMS sender ID in this decision are unchanged; only the colour values in §14 move. |
-| D6 | Ledger adapters: **Xero + QuickBooks Online in v1; Sage Accounting + FreeAgent in v1.1.** No further adapters planned; everything else reaches the product through export or the public API. |
+| D6 | Ledger adapters: **Xero + QuickBooks Online in v1; Sage Accounting + FreeAgent in v1.1.** No further adapters planned; everything else reaches the product through export or the public API. **· ID superseded by D42 (v1.6, 24 Aug 2026):** no ledger API adapter ships in Initial Delivery; egress is by export only. This decision stands unchanged for v1. |
 | D7 | Auth: TOTP 2FA ships in v1 (mandatory for privileged roles); SSO (Microsoft Entra ID, Okta) ships in v1.1. |
 | D8 | Vault cloud sync (Dropbox / Google Drive / OneDrive) ships in v1.1. Vault core ships in v1. |
 | D9 | A public Zapier app is a v1.x fast-follow built on the v1 public API. |
@@ -52,7 +53,7 @@ This document and its companion, **NEOTING-Engineering-Governance-v1.4.md**, are
 | D23 | Hosting: **ECS Fargate** (api, web, workers) behind **CloudFront + AWS WAF** (tightest rules on the public OTP portal); **ElastiCache Redis** (BullMQ + cache); RDS Postgres 16; S3/KMS; **self-hosted Unleash**; all eu-west-2, all Terraform. |
 | D24 | Observability: OpenTelemetry → **Amazon Managed Prometheus + Managed Grafana**; CloudWatch logs; **Sentry (EU region)** for errors. |
 | D25 | WhatsApp intake via **direct Meta Cloud API** (inbound service messages are free — fits inbound-only) on a **dedicated UK virtual number**; Twilio-hosted WhatsApp is contingency only if Meta verification stalls. |
-| D26 | SaaS billing is **deferred**: the pilot is free/manually invoiced; Stripe (or equivalent) is evaluated when pricing lands. Nothing in v1 blocks on a billing system. |
+| D26 | SaaS billing is **deferred**: the pilot is free/manually invoiced; Stripe (or equivalent) is evaluated when pricing lands. Nothing in v1 blocks on a billing system. **· ID superseded by D48 (v1.6, 24 Aug 2026):** billing is no longer deferred — the client is asked to subscribe at the end of their own onboarding, so a payment path is a delivery gate. |
 | D27 | SMS allowance working default: **200 SMS/firm/month included, warn at 80%**, overage metered — a placeholder the pricing owner (CEO) confirms. |
 | D28 | **Three-tier model strategy + dynamic effort (supersedes D21).** **Haiku 4.5** = mechanical tier: doc-type triage, addressee shortlisting, dedupe text-assist. **Sonnet 4.6** = volume workhorse: per-document coding suggestions (the cost lever), chase composition + validation, addressee escalation, vault summaries, first vision rung. **Opus 4.8** = judgment tier: the chat workspace (always — one model, one voice), NL rule parsing + conflict resolution, cross-client analysis, final vision rung. Effort/thinking budget set per task class where the model supports it; full task→(model, effort) map pinned in `models.ts`. **Extraction vision escalation ladder:** Textract → Sonnet-vision → Opus-vision → human, each rung firing only below threshold; the middle rung is kept only if W2 calibration proves it earns its cost. **Per-class tier flags** (up or down, blocked unless evals pass for that class-model pair) replace the single demotion flag; **judgment surfaces are exempt from cost-driven demotion**. Availability degradation walks one tier down and bottoms out in deterministic behaviour + human queues — never a worse guess. **Cost guardrail restored to < £0.02 blended per document (pipeline);** chat-workspace spend is governed by per-firm daily budgets, not the per-document figure. **· Model IDs amended 13 Aug 2026 (ADR 0001, verification 8.1):** measurement found Opus 4.8 and Haiku 4.5 reachable in eu-west-2 **only via `eu.*` cross-region inference profiles**, which process outside the UK and are not a D30 named fallback. The tiers are therefore **judgment = `anthropic.claude-opus-4-6-v1` · workhorse = `anthropic.claude-sonnet-4-6` · mechanical = `amazon.nova-lite-v1:0`**, all in-region on-demand. **Everything else in this decision stands unchanged** — three tiers, dynamic effort, per-class flags gated on evals, judgment surfaces exempt from cost-driven demotion, degradation to deterministic behaviour rather than a worse guess. Enforcement is structural: the application role may invoke only region-pinned eu-west-2 model ARNs and **no inference-profile ARN is granted**, so a cross-region call fails closed. Honest caveat: Opus 4.6 is a generation behind 4.8 and the chat workspace is where accountant trust is won — W2 measures it, and a shortfall reopens this decision rather than being absorbed silently. |
 | D29 | **Kickoff = Thursday 13 August 2026** (resolves §22 open decision #1; folded from the Sprint 1 Execution Plan v1.0). All W0–W14 milestones restate from this date. The bootstrap **G-log (Team Engineering Guideline §0, G1–G10)** is ratified into this log by reference — bootstrap-phase rules that expire at Infra Week per G8. |
@@ -65,6 +66,17 @@ This document and its companion, **NEOTING-Engineering-Governance-v1.4.md**, are
 | D36 | **AWS account topology: shared now, isolated when the payer allows.** Neoting runs inside the existing Neovogent account `252959251643`, a member of a **consolidated-billing** organisation whose management account belongs to the reseller (Cloudvisor). Two consequences follow and both are accepted knowingly: **(a) Service Control Policies are unavailable** in a consolidated-billing organisation, so D30's region guardrail is enforced by an IAM policy attached to every Neoting principal — real, but removable by an account admin, where an SCP would not be; **(b) the account also hosts unrelated Neovogent products**, so six other administrators exist alongside us. Compensating controls: dedicated KMS key and buckets whose policies carry an **explicit Deny** for any principal outside `role/nt-*`, an organisation CloudTrail and GuardDuty that did not previously exist in the account, and everything defined in Terraform so that moving to dedicated accounts is a variable change rather than a rebuild. **This is mitigation, not isolation — the DPIA must describe the account as shared** until dedicated `neoting-dev/staging/prod` accounts (requested from the payer at kickoff) are provisioned. |
 | D37 | **Frontend framework: Vite SPA (supersedes the Next.js half of D2 and §15).** The practice application and the client-facing surfaces are a **Vite + React SPA**, not Next.js App Router. Reason, recorded honestly: the frontend was built outside the monorepo and arrived on 15 Aug 2026 as a working application — 84 source files, 27,472 lines, covering most of §2's screen inventory, including a chat workspace and a Review→Approve card that already implements §8.2's gating correctly (Approve is not *mounted* until the review is expanded, not merely disabled). Porting that to App Router would consume the remaining Sprint-1 capacity and ship no capability the product does not already have. **What is given up: React Server Components.** Nothing else in §15's web row changes — TypeScript strict, Tailwind, the motion library and TanStack Query all stand. **The two requirements the framework was chosen to satisfy survive, but stop being free.** Per-route JS budgets (§14: < 250 KB gzipped) were a property of App Router's route groups; they are now produced by route-level lazy loading and enforced at review. The portal being *"the lightest surface in the product"* was a property of the `(portal)` route group; it is now a separate build entry, and the practice application must not ship inside it. **Both are therefore review conditions from this version on, not aspirations** — a route over budget is a reject, exactly as an unscoped query is. Consequences: client env vars move from `NEXT_PUBLIC_*` to `VITE_*`; **next-intl is Next.js-only and is retired** — Governance §12.6 keeps every i18n rule and reopens only the library. Honest caveat: server rendering would have helped the accountant table screens at real data volume. If that becomes measurable rather than theoretical, this decision is re-opened with a versioned amendment — not worked around. |
 | D38 | **Design palette: the implemented identity (supersedes the palette half of D5 and §14).** The colour values in §14 v1.4 — ground `#041310`, panel `#0a241d`, mint `#7eefd6`, ink `#f5efe8` — are **retired unused**. The palette of record is the one the frontend already implements: **mint `#14e3c4`** (brand), **`#0fcbaf`** (brand hover, identical in both themes), **ground `#0a0a0c`**, **card surface `#16161a`**, **raised surface `#202026`**, **`#00806d`** (brand ink, light theme). Reason: 1,016 inline colour literals across 84 files, with light mode implemented as ~60 override rules keyed to exact hex strings — retheming is real work that buys the product no capability, and the built palette is coherent and shipping. **Adopted on measurement, not preference.** Every foreground/background pair was checked against §12.5's WCAG 2.2 AA requirement before this decision was written: mint on ground **12.07:1**, mint on card **11.01:1**, mint on raised **9.89:1**, brand hover on ground **9.59:1**, white on card **18.04:1**, and the light theme's brand ink on white **4.87:1** — the tightest pair, and still above the 4.5:1 floor. **What does NOT change:** colour semantics (amber = needs you, teal = data in motion, **red reserved exclusively for irreversibility**), the ≥ 4.5:1 contrast floor, dark and light from v1, the 4 px grid, the motion spec, and D15's rule that design tokens are a Sprint-0 contract. This decision changes the values, **not the discipline**: `packages/tokens` encodes these values, and the 1,016 inline literals still move behind tokens — an arbitrary hex in a component remains a reject (Guideline R8). |
+| **D39** | **Initial Delivery (ID) is a named release that precedes v1 completion.** ID is the first paid client delivery, scoped to one continuous spine: manual bank statement → extracted transactions → missing-evidence list → super-admin-authorised SMS chase → identity-gated client upload (portal / registered email / registered WhatsApp) → AI categorisation into Sales/Cost and sub-accounts → accountant field-level review → **Ready** → super-admin **Published** → **export** into the accountant's own software with the source document reachable from it. Everything ID removes from v1 is **deferred with its v1 commitment intact**, never dropped; **§2's scope fence still governs v1 and ID does not widen it.** **Reason:** the first client can be served completely without any third-party integration, and every integration ID removes would have gated delivery on someone else's approval clock — TrueLayer commercial review, Xero app certification, Meta verification. **Honest caveat:** ID ships a product whose bank data is only as good as an uploaded PDF. That is a real quality exposure, and it is why D41 attaches hard gates rather than best-effort parsing. |
+| **D40** | **Bank input in ID is manual statement upload only — supersedes D4 for the ID release.** Accepted inputs: **PDF, CSV, XLSX** and comparable tabular formats; upload is available to accountant and client, per client, per period. The AI reads the statement and produces every transaction on it; transactions land in the **Bank tab inside the client** and are reachable from the **AI chat**. TrueLayer is **deferred, not dropped** — D4's sole-provider commitment stands for v1, and the provider-agnostic interface is still built, now with exactly one implementation behind it. **What is given up:** continuous transaction arrival, and with it the ability to notice a missing document within hours of the spend. ID notices it whenever the next statement is uploaded — a slower loop the client must be told about rather than left to discover. **Re-opens when:** TrueLayer production access is granted and a client asks for a live feed. |
+| **D41** | **Statement extraction is gated on provable completeness, not on confidence alone.** Because D40 makes upload the only path, a silently dropped transaction is a document that is never chased and an entry that never reaches the ledger. Every statement extraction must pass and record: **(a) balance continuity** — opening balance + Σ(signed transactions) = closing balance, to the penny; **(b) page accounting** — every page of the source accounted for; **(c) date monotonicity and range** — rows inside the statement period and not running backwards across a page break; **(d) in-statement duplicate-row detection**; **(e) period-gap detection** against prior statements for the same account. A statement failing (a) is **never silently accepted** — it enters a visible reconciliation state showing the discrepancy amount and the candidate rows, exactly as a document failure surfaces today. **Rationale:** balance continuity is a genuine mathematical proof of completeness and it is free; holding the data and not checking it would be negligent. |
+| **D42** | **No ledger API integration and no auto-publish in ID — supersedes D6 and Stage 10's adapter path for the ID release.** In ID, **"Published" is an internal state meaning approved and released for export.** It does not assert that anything was written into a ledger, and **no ID surface may imply that it does.** **Export is the sole egress**, in bulk and singly, and the Ready → Published transition is **super-admin only** (D44). **What is given up:** the attachment-travels-with-the-bill guarantee the Xero and QBO APIs provide natively — which is exactly why D43 exists. **Consequence for the prototype:** every "Send to Xero" string, the `xeroConnected` publish destination, the connection-health surfaces and the tour's five Xero steps are wrong for ID and must be reworked to export language before delivery. |
+| **D43** | **Every exported transaction carries a resolvable link to its source document, and the requirement is on the outcome, not the mechanism.** The accountant must be able to get from a line in their accounting software to the document that line came from. **Primary mechanism:** a stable HTTPS URL in a column the target imports and renders as a clickable cell. Where a target cannot render one, the **fallback ladder is specified in advance and is part of the deliverable, not a discovered surprise**: (1) clickable URL in a native field; (2) a short, human-typable URL in a reference/memo field; (3) a stable document reference code in the memo plus an exported document bundle whose filenames carry that code; (4) a side-by-side index file mapping every reference to its document. **At least one rung must be proven working in the client's own VT installation before ID ships**, and which rung is in use must be visible to the accountant rather than assumed. **Binding security constraint:** these URLs leave our control the moment they enter someone's ledger, so they are **capability URLs** — unguessable, per-document, revocable, access-logged, expiry configurable per practice; never a naked S3 path, and never authorising anything beyond viewing one document. |
+| **D44** | **Composition and release are separate authorities in ID.** Accountants and their team members may **compose and edit** — chase message text, document coding, every extracted field. Only the **accounting firm's super admin** may **release**: authorise a chase SMS to send, and move an item from Ready to Published. Enforced **server-side** as a role condition layered on §8.2's Review → Approve, not as a UI affordance. **Reason:** ID's two irreversible outward acts are a text message to a client and a released export; both deserve a named accountable person, and the practice principal is that person. |
+| **D45** | **Identity-gated intake — every ID channel accepts only known senders.** Client portal: phone number + OTP to the **registered** number; only that number and **team members the client has added** may upload, by device camera capture or file upload, in any format (images, HEIC, PDF, XLSX, CSV, screenshots). Email: **only mail forwarded from a registered address**. WhatsApp: **only messages from a registered number**. **Consequence, recorded because it is a real reversal: ID has no Unrouted queue** — an unregistered sender is rejected with a reason rather than queued for triage. The prototype removed the queue (instructions #9 and #59). This **conflicts with §4 Stage 1**, which mandates the queue as the guarantee that nothing is silently dropped; the guarantee survives in a different shape — rejection is **visible and reasoned** in the Rejected/Failed view, and the sender is told. **Honest caveat:** identity-gating trades recoverable ambiguity for hard rejection. A supplier emailing a client's invoice directly to us — the exact case AI addressee detection exists for — is refused in ID. Acceptable only because ID's document sources are the client and their own team, and **it must be re-opened before any channel is opened to third parties.** |
+| **D46** | **Unacceptable documents are flagged, never blocked.** The AI separates every uploaded file **individually** — a batch is never treated as one document — and evaluates each against what is expected for that client's business category and against what makes it valid evidence. Where a document is not the one requested, or not acceptable for the business category, a flag is raised **in the accountant portal and shown to the client in the client portal at the moment of upload**. **The client may upload it anyway; the upload is never blocked.** The flag persists on the document, with its reason, for the accountant. **Reason:** blocking a client mid-upload teaches them to stop sending things. The cost of junk is an accountant's glance; the cost of silence is a missing document at year end. |
+| **D47** | **Client onboarding in ID requests no connections — amends §5.1 and §6 for the ID release.** Adding a client asks for **neither a bank connection nor an accounting-software connection**; both steps are skipped. First contact is the **client-registration SMS** (already the channel of record in the prototype's `channels.ts`) telling the client their accountant has registered them, carrying a **short setup link**, with the **company general email** as the documented setup route. **Either the accountant completes setup on the client's behalf, or the client does** — both paths supported, neither blocking. **Consequence:** the business-context questionnaire (§5.1) becomes materially more important, because it is now the **only** source of the business-type context that D46's flagging and the categorisation ruleset depend on — there is no ledger-synced chart of accounts to lean on. |
+| **D48** | **Subscription: €8.50 per month per client business, paid by the client — supersedes D26 for the ID release.** D26 deferred billing because nothing in v1 blocked on it; **ID blocks on it**, since the client is asked to subscribe at the end of their own onboarding. Flat per-business price, no per-user component, charged to the **client business** rather than the practice. **Open and owned by the CEO (§22):** the payment provider, whether a practice may pay on a client's behalf, what happens to a practice's other clients when one lapses, VAT treatment on a EUR price billed by a UK entity, and **whether EUR is right at all for a UK-first product serving UK practices** — this decision fixes the amount and the payer, and deliberately fixes nothing else. |
+| **D49** | **The prototype UI repository is ID's design source of record.** `MubasshirrKan/ai-accounting-operations-platform` (public; 72 commits, 89 logged instructions in its `TASKS.md`) is the implemented reference for ID's surfaces. It is a **reference, not a contract** — `packages/component-grammar` and `packages/tokens` remain LAW (D15), and where prototype and contract disagree, **the contract wins**. **Recorded because it is load-bearing:** this repository is where D37 and D38 came from, and several of its standing rulings contradict this document as written — no Unrouted queue (#9/#59), no global Bank tab (#17), the accountant cannot connect ledger or bank (#8), Inboxes out of the sidebar (#7). **ID resolves each in the prototype's favour** (D45, D47), and every divergence is listed in the ID amendment body so that none of them stays silent. |
 
 ---
 
@@ -85,6 +97,8 @@ Neoting is a **chat-first document-to-bookkeeping platform** for accounting prac
 ---
 
 ## 2. Scope
+
+> **Initial Delivery (ID) narrows this table without widening it — see §24 and D39.** The scope fence below still governs v1. ID ships a subset and defers the rest with their v1 commitments intact; it adds exactly two things this table did not carry: **subscription billing** (D48) and **the export engine with source-document linking** (D42/D43).
 
 | ✅ IN SCOPE (v1 unless marked v1.1) | ❌ OUT — dropped or deferred |
 |---|---|
@@ -247,6 +261,8 @@ Three inbox states, plus the failure surface incumbents lack:
 
 ### Stage 7 — Bank Match
 
+> **ID: upload only — see §24.2 and D40.** TrueLayer, the consent lifecycle and the 90-day reconfirmation are deferred; the normalised transaction schema below **stays**, because it is what the statement extractor targets, and keeping it is what makes a live feed a later addition rather than a later rewrite.
+
 **Feeds:** TrueLayer only (D4) — regulated read-only AIS; no screen-scraping; bank credentials never stored. ~98% UK coverage including business accounts. Historical import 12–24 months where the bank allows. **Consent lifecycle:** in-app reconfirmation every 90 days — one-tap prompt from day 80 (web + email), stale-feed banner on lapse, data access stops until reconfirmed. Every consent event (granted, reconfirmed, lapsed, revoked) is audit-logged and visible. The consent module is isolated so UK payments-law changes are config, not surgery. **Fallback that always works:** statement upload (PDF extraction, CSV/XLSX with saved mapping templates) — books never stall.
 
 **Normalised transaction schema (provider-agnostic):** `transaction_id · account_id · timestamp (booked/pending) · amount (signed, pence) · currency · description (raw) · merchant_name (enriched) · classification · balance_after · counterparty · standing-order/direct-debit linkage · import_batch · match_state (unmatched / suggested / confirmed / excluded)`. Raw provider payloads retained (encrypted) for reprocessing.
@@ -288,6 +304,8 @@ Three inbox states, plus the failure surface incumbents lack:
 - Approval cards actionable directly in chat, with full audit.
 
 ### Stage 10 — Publish / Export
+
+> **ID: export only — see §24.3 and D42/D43.** No adapter, no API, no auto-publish. *Published* becomes an internal state meaning approved and released for export, and every exported line must carry a resolvable link to its source document.
 
 - **Adapter architecture over a canonical internal model:** `Supplier · Invoice/Bill · CreditNote · LedgerAccount · TaxCode · Payment · BankTransaction · TrackingDimension · Attachment`. Adapter priority: **Xero → QuickBooks Online (v1) → Sage Accounting → FreeAgent (v1.1)** (D6). Enterprise/custom ERPs via export.
 - **Two-way sync of reference lists** so category dropdowns always show the client's real chart of accounts: chart of accounts, suppliers/customers, tax rates, tracking categories/classes, bank accounts, products & services.
@@ -331,6 +349,8 @@ Tabs: Overview, AI, Costs, Sales, Bank, Supplier Statements, Expense Claims, App
 ---
 
 ## 6. Client onboarding — SMS + OTP, no app required
+
+> **ID: no connections requested at intake — see §24.5 and D47.** Steps 3 and 4 below (connect accounting software, connect bank) are skipped entirely, and the client is asked to subscribe at the end of setup (D48).
 
 1. The accountant completes onboarding themselves **or** sends the invite. The client's mobile number is the required contact key; the durable identity is an internal immutable user ID; email + optional passkey are secondary factors.
 2. Client receives SMS: *"Your accountant has invited you to complete setup for American Burger Ltd — secure link: […]"*. Signed short-lived URL + OTP challenge + rate limiting + session logging.
@@ -668,6 +688,8 @@ Removed from the old plan's week 0 (out of scope now): HMRC MTD production appro
 
 ## 19. Build plan
 
+> **ID resequences this plan — see §24.** The v1 W0–W14 timeline below stands as the v1 plan. Initial Delivery is a narrower release taken first, and its critical path is **not** the largest lane: it is the export lane, because D43's source-document link is the only requirement whose feasibility depends on a third party we cannot change and have not yet tested.
+
 ### 19.1 Approach
 1. **Contracts before code (D15).** Sprint 0 produces four artefacts treated as law: the OpenAPI spec, the DB schema + RLS policies, the design tokens, and the chat component grammar (+ versioned validator config). Changing a contract is a PR that regenerates every consumer.
 2. **Modular monolith, parallel agent lanes.** Each module boundary is a lane owned by a Claude Code agent in its own git worktree; lanes communicate only through the contracts. Every module carries a `CLAUDE.md` (purpose, invariants, tests, current state) read on entry and updated on exit.
@@ -737,6 +759,12 @@ Removed from the old plan's week 0 (out of scope now): HMRC MTD production appro
 | **Shared AWS account (D36)** — client documents sit in an account that also hosts three unrelated Neovogent products, with six other administrators, under a reseller-owned consolidated-billing org where **SCPs are unavailable** | High | Dedicated KMS key and buckets carry an **explicit Deny** for any principal outside `role/nt-*`, so casual and accidental access is blocked outright; the region guardrail is an IAM policy on every Neoting principal in place of the SCP; organisation CloudTrail and GuardDuty were enabled on day one (neither existed before), so a deliberate policy rewrite is at least recorded. Dedicated `neoting-*` member accounts requested from the payer — until they land, **the DPIA states the account is shared** and the pen-test scope must say so. Everything is Terraform, so the migration is a variable change. |
 | Duplicate / fraud abuse | Med | Multi-signal dedupe with cross-type and cross-uploader coverage; supplier-bank-detail extraction powers fraud checks; approval tiers; immutable audit trail names every actor. |
 | p95 < 5 min latency target missed under load | Med | Queue-first architecture with per-stage timing in the processing log; manual-entry bypass keeps humans unblocked; k6 ingestion soak at 10× expected volume in W12. |
+| **ID: statement extraction drops a transaction** (D40 makes upload the only bank input) | High | D41's gates make completeness **provable, not hoped for** — balance continuity to the penny, page accounting, date monotonicity, in-statement dedupe. A statement failing continuity enters a visible reconciliation state rather than being accepted; the accountant sees the discrepancy and the candidate rows. The honest residual: a statement whose arithmetic balances can still have a mis-read *description*, which degrades matching rather than losing the row. |
+| **ID: VT cannot render a clickable source-document link** (D43) | High | The requirement is written on the **outcome**, with a four-rung fallback ladder specified in advance. Rung 1 is proven or eliminated **in the client's own VT installation in the first days of the release**, not at the end — the whole export lane is built against whichever rung survives. If every rung fails, the accountant still gets the document bundle plus an index file, and we tell the client plainly what clicking does and does not do. |
+| **ID: capability URLs leak** — document links deliberately leave our control and sit inside a third party's software | Med | Unguessable per-document tokens, view-only scope, revocable, access-logged, expiry configurable per practice. **A ledger file is not a secret store** and must not be treated as one: no URL may authorise anything but viewing one document, and a leaked URL must be revocable without breaking the rest of the export. §18 carries this as a named exposure class rather than leaving it implicit. |
+| **ID: scope captured by one client** — VT is the first client's software, not the market's | Med | The export engine is built as a **canonical model plus per-target emitters**, so VT is one emitter and not the architecture. Xero, Sage and a generic CSV ship alongside it in ID precisely so the second client is not a rebuild. |
+| **ID: billing becomes the delivery gate** (D48 reverses D26) | Med | The smallest lane, but the one that can stop onboarding dead. The provider decision sits with the CEO and is on §22 as an open decision with the currency question attached; the lane cannot start until it lands, so it is sequenced first among the small lanes rather than last. |
+| **ID: identity-gating rejects a document a client legitimately sent** (D45, no Unrouted queue) | Med | Every rejection is **visible and reasoned** in the Rejected/Failed view and the sender is told — the §4 Stage 1 guarantee survives in a different shape. Registered addresses and numbers are self-service to add. Re-opened before any channel is opened to third-party senders, where the queue's absence would genuinely lose documents. |
 | Domain cutover breaks email intake | Low | Both `doc@` addresses live and routed identically through cutover (D5); DKIM/SPF/DMARC on both; cutover is a config change, rehearsed in staging. |
 
 ---
@@ -752,6 +780,9 @@ Removed from the old plan's week 0 (out of scope now): HMRC MTD production appro
 7. **`neoting.com` acquisition + cutover date** (D5).
 8. **Default SMS allowance** — working default set in v1.1 (D27: 200/firm/month, warn at 80%); the pricing owner (CEO) confirms or amends.
 9. ~~STT vendor~~ — **decided in v1.1 (D22: Amazon Transcribe).**
+10. **ID payment provider, and the currency question** (D48) — the amount (€8.50/month) and the payer (the client business) are decided; nothing else is. Provider, whether a practice may pay on a client's behalf, what a lapsed subscription does to a practice's other clients, and VAT treatment on a EUR price billed by a UK entity are all open. **The currency itself is the real question:** a UK-first product (D30), a UK legal entity (D34), UK practices and UK clients — billed in euros. Owner: CEO, before ID onboarding is built.
+11. **Which rung of D43's ladder VT actually supports** — must be settled by hand-importing a file into the first client's own VT installation and clicking the cell. Owner: engineering, with the client's accountant, in the first days of ID. This is a test, not a discussion, and it gates the export lane.
+12. **Whether ID's identity-gating survives contact with a real client** (D45) — the first client's suppliers will email invoices directly, and ID rejects them. Owner: the accountant partner (§22 #5), reviewed after the first month of live use.
 
 ---
 
@@ -760,3 +791,129 @@ Removed from the old plan's week 0 (out of scope now): HMRC MTD production appro
 Compiled 11 August 2026 from: the Document Workflow Edition PRD v2 (11 Aug 2026, competitor facts verified against official documentation and six review platforms on that date), the Neovogent technical implementation plan (10 Aug 2026), and provider documentation (developer.xero.com, developer.intuit.com, developer.sage.com, dev.freeagent.com, docs.truelayer.com, HMRC developer hub, Companies House developer hub, Twilio, Meta WhatsApp Business Platform). A product and planning document, not legal or tax advice. API terms, rate limits, and platform pricing change — re-verify against primary sources during build; the decision log (§0.1) records what was true and decided on this date.
 
 *— End of Source of Truth v1.4 —*
+---
+
+## 24. Initial Delivery (ID) — the first client release
+
+*Added v1.6. Governed by D39–D49. This section **narrows** §2 and resequences §19; it does
+not widen the scope fence. Where ID is silent, the v1 text above stands.*
+
+### 24.1 What ID is
+
+ID is the first release put in front of a paying client. It is not v1 with pieces
+missing — it is a narrower product with a **complete spine**:
+
+> manual bank statement → every transaction → the documents that are missing →
+> a chase the super admin releases → the client uploads, from a phone or their own
+> email or WhatsApp → the AI categorises and reads out every field →
+> the accountant corrects and approves → **Ready** → the super admin publishes →
+> **export**, imported into the accountant's own software, with the source document
+> reachable from it.
+
+The first client uses **VT Software (VT Transaction+)**. VT is therefore the primary
+export target, not an afterthought, and the one that gates the release.
+
+**What ID gives up, and why it is worth it.** No bank feed, no ledger API, no
+auto-publish, no Vault, no voice. Every one of those carries a dependency on a third
+party's approval clock — TrueLayer's commercial review, Xero's app certification,
+Meta's business verification. A first client can be served completely without any of
+them. What ID does *not* give up is the thing the product is actually for: knowing what
+paperwork is missing and getting it out of the client.
+
+### 24.2 Stage-by-stage delta against §4
+
+| Stage | ID |
+|---|---|
+| **1 Ingest** | Four channels, **all identity-gated (D45)**: client portal (OTP to the registered mobile; camera capture or file upload; images, HEIC, PDF, XLSX, CSV, screenshots — anything), **email forwarded from a registered address only**, **WhatsApp from a registered number only**, and accountant web upload. **No Unrouted queue** — an unregistered sender is rejected with a visible, stated reason. Every file in a batch is separated and handled **individually (D46)**. |
+| **2 Extract** | Documents as v1. **Bank statements become a first-class extractor** with the completeness gates of **D41** — balance continuity to the penny, page accounting, date monotonicity, in-statement dedupe, cross-statement period-gap detection. |
+| **3 Rules** | As v1, but **there is no ledger-synced chart of accounts in ID**. Rules and coding run against a platform-side COA seeded from the business-type profile captured at intake. This is a real reduction in available context and §24.4 is how it is compensated for. |
+| **4 AI suggestions** | As v1, plus **document acceptability (D46)** as a new task: is this the document that was asked for, and is it acceptable evidence for this business category? |
+| **5 Validate** | Unchanged — Processing / To Review / Ready / Rejected-Failed, mandatory fields, the Rejected/Failed view. |
+| **6 Deduplicate** | Unchanged. |
+| **7 Bank** | **Rewritten.** Upload only (D40). No consent lifecycle, no 90-day reconfirmation, no feed normalisation. The **normalised transaction schema stays** — it is what the statement extractor targets, and keeping it is what makes TrueLayer a later addition rather than a later rewrite. Transactions live in the **client's Bank tab** and are reachable from **chat**. The chase-suppression descriptor list stays and matters *more*, because there is no feed metadata to lean on. |
+| **8 Chase** | Three detection engines: unmatched transaction, statement period gap, expected-recurring-document not arrived. *(The fourth — ledger transaction without an attachment — needs a connection ID does not have.)* AI drafts the SMS; **the accountant or their team edit it; only the super admin releases it (D44).** Everything else stands: grouped per client, verbatim in review, OTP portal, forwardable link with *requested-from* vs *uploaded-by* recorded, editable extraction overlay, auto-close on any inbound channel. |
+| **9 Approve** | Accountant reviews every submitted document; **every field editable** in the preview surface. Approval sets **Ready**. |
+| **10 Publish / Export** | **Rewritten — see §24.3.** *Published* is an internal state meaning approved and released for export (D42); it asserts nothing about a ledger, and no ID surface may imply otherwise. **Super admin only**, bulk and single. **Export is the sole egress.** |
+| **11 Archive** | Unchanged. |
+
+### 24.3 Export — the sole egress
+
+**The canonical model comes first.** One internal representation; one emitter per target.
+VT is an emitter, not the architecture — otherwise the second client is a rebuild.
+
+Targets in ID: **VT Transaction+ (primary)**, **Xero**, **Sage**, **generic CSV**.
+
+**The source-document requirement (D43) is the acceptance test for ID.** The accountant
+must be able to get from a line in their software to the document that line came from.
+The mechanism is whatever survives contact with VT; the outcome is not negotiable. The
+ladder, in order, with rung 1 proven or eliminated *in the client's own VT installation
+in the first days of the release*:
+
+1. **Clickable URL in a native field** — a cell the target renders as a hyperlink.
+2. **A short, typable URL** in a reference or memo field — not clickable, but a person can
+   read it across to a browser without transcription errors.
+3. **A stable document reference code** in the memo, plus an exported **document bundle**
+   whose filenames carry the same code.
+4. **A side-by-side index file** mapping every reference to its document.
+
+Whichever rung is live must be **stated to the accountant**, not assumed. A product that
+silently ships rung 3 while the client believes they bought rung 1 has broken a promise.
+
+**Capability URLs (binding).** These links leave our control the moment they enter
+someone's ledger. Therefore: unguessable per-document tokens; **view-only**, authorising
+nothing beyond one document; revocable individually; access-logged; expiry configurable
+per practice. A ledger file is not a secret store and must never be treated as one.
+
+### 24.4 The AI context pack
+
+ID asks the AI to categorise into Sales/Cost and the sub-accounts beneath them **without
+a ledger-synced chart of accounts**. That context has to come from somewhere, and
+guessing is not a plan. Every categorisation call is given, as structured context:
+
+- **The client's chart of accounts** — platform-side, seeded from the business-type
+  profile captured at intake (§5.1), and refined by the accountant's own corrections.
+- **The business-type profile** — what the business sells, its revenue streams, typical
+  suppliers, expected spend categories, and what would be *anomalous* for it. This is
+  what makes D46's "not acceptable for your business category" flag possible at all.
+- **Supplier history for this client** — how this supplier's documents were coded before.
+  Deterministic per-supplier rules absorb the head of the distribution before any model
+  call is made; rules beat model calls, and they are cheaper and auditable.
+- **UK VAT evidence rules** — what makes an invoice valid, and when a receipt is not
+  enough to reclaim.
+- **The authority order, unchanged from §4 Stage 4 and absolute:** accountant rules →
+  practice defaults → client context → learned history → AI inference.
+
+This pack is a **named deliverable of lane D**, versioned and evaluated like a prompt, not
+assembled ad hoc at call time.
+
+### 24.5 Onboarding and subscription
+
+No bank connection. No accounting-software connection. Both skipped entirely (D47).
+
+1. The accountant adds the client — identity, tax details, primary contact, and the
+   **business-context questionnaire**, which in ID is **required**, because it is the only
+   source of the context §24.4 depends on.
+2. The client receives the **registration SMS**: their accountant has registered them,
+   with a **short setup link** and the **company general email** as the setup route.
+3. **Either party completes setup.** The accountant may do it on the client's behalf; the
+   client may do it themselves. Neither path blocks the other.
+4. The client is asked to **subscribe — €8.50 per month, flat, paid by the client** (D48).
+
+### 24.6 What ID does not ship
+
+Deferred to v1 with their commitments intact: TrueLayer bank feeds · Xero, QuickBooks,
+Sage and FreeAgent adapters · auto-publish · two-way reference sync · integration health ·
+public API and webhooks · Vault · voice · supplier-statement fetch · full operational
+analytics.
+
+### 24.7 Definition of done
+
+ID is done when, for the first client, an accountant can: upload a real statement in PDF,
+CSV or XLSX and see **every** transaction with the balance proof shown · see what is
+missing · have the AI draft the chase, edit it, and have the super admin release it ·
+watch the client sign in by OTP and upload from a phone camera, a registered email and
+WhatsApp · see junk flagged in both portals without the client being blocked · correct
+every field · move Ready → Published as super admin, singly and in bulk · export, import
+into **VT**, and **click through from a VT entry to the source document**.
+
+That last clause is the acceptance test. Everything before it is table stakes.
