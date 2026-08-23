@@ -762,6 +762,7 @@ Removed from the old plan's week 0 (out of scope now): HMRC MTD production appro
 | **ID: statement extraction drops a transaction** (D40 makes upload the only bank input) | High | D41's gates make completeness **provable, not hoped for** — balance continuity to the penny, page accounting, date monotonicity, in-statement dedupe. A statement failing continuity enters a visible reconciliation state rather than being accepted; the accountant sees the discrepancy and the candidate rows. The honest residual: a statement whose arithmetic balances can still have a mis-read *description*, which degrades matching rather than losing the row. |
 | **ID: VT cannot render a clickable source-document link** (D43) | High | The requirement is written on the **outcome**, with a four-rung fallback ladder specified in advance. Rung 1 is proven or eliminated **in the client's own VT installation in the first days of the release**, not at the end — the whole export lane is built against whichever rung survives. If every rung fails, the accountant still gets the document bundle plus an index file, and we tell the client plainly what clicking does and does not do. |
 | **ID: an extractor silently drops rows** — the measured dominant failure on long statements | High | This is the risk D41 exists for, and it is *measured*, not theoretical: recall on long documents collapses while output stays schema-valid, so nothing looks wrong. Mitigated structurally — never a single whole-document pass; bounded page windows with overlap; **G7's raw-OCR amount-coverage check as an independent oracle the model cannot influence**; and the balance chain localising any break to a row. **Vendor accuracy claims are not evidence** — the leading public table benchmark was found to contain ground-truth files byte-identical to the sponsoring vendor's own output. Our number comes from our own UK corpus or we do not have one. |
+| **ID: cold start** — categorisation accuracy collapses on a new client, which is exactly when the product is being judged | High | Published evidence is unambiguous: category accuracy runs ~79% where the category already exists in that client's history and **~21% where it does not**, and an incumbent's own research puts its shipping model at ~62% top-1 overall — against a market that advertises 99%. Supplier memory does nearly all the work, so **a new supplier is always-review regardless of model confidence**, the intake questionnaire and the accountant's early corrections are the fastest route out of cold start, and every suggestion offers a second choice because top-2 beats top-1 by enough to matter. **We plan against ~80–85% document-level and claim nothing above it.** |
 | **ID: a statement has no running-balance column**, removing the strongest oracle | Med | Some UK banks and many card statements omit it. Such ingests are a **distinct reduced-assurance class**: G2 and G4 are unavailable, G5 and G7 become mandatory, review sampling rises, and onboarding asks for CSV in preference for those banks. |
 | **ID: password-protected statement PDFs** | Low | Several UK banks issue them by default and **every cloud extractor rejects encrypted PDFs**. Intake decrypts before anything else, prompts the client for the password in plain language, and **never stores it**. A solved problem, but a silent hard failure if unhandled. |
 | **ID: the first client runs VT Cash Book, not VT Transaction+** | High | **VT Cash Book — the free tier — has no transaction import at all.** Bulk import is a VT Transaction+ (£90+VAT/yr) or Accounts Suite (£175+VAT/yr) feature. If the client is on Cash Book the export does not work for them in any form. **This is an onboarding question to settle before the export lane starts**, not a discovery for delivery week; a practice filing as agent is on the £175 tier anyway. |
@@ -1126,7 +1127,7 @@ prompt versions already are (§16). It is not assembled ad hoc at call time.
 |---|---|---|
 | **Chart of accounts** | The client's account list in the shape the export target expects — for VT, ledger-prefixed as `Expenses: Motor expenses` — plus which accounts are in and out of VAT scope, and **which carry a tax consequence** (disallowable, capital, VAT-atypical — see 24.4.6) | Platform-side, seeded from the business-type profile at intake and **owned and edited by the accountant thereafter**. There is **no mandated UK chart of accounts** and every package ships a different default, so the seed is a starting point, never a claim of correctness |
 | **Business-type profile** | What the business sells, revenue streams, typical suppliers, expected spend categories, **and what would be anomalous for it** | The §5.1 questionnaire — **required in ID** (D47), because it is now the only source |
-| **Supplier history** | How *this* supplier's documents were coded for *this* client before, with the confirmed coding and who confirmed it | The client's own prior decisions |
+| **Supplier history** | How *this* supplier's documents were coded for *this* client before, with the confirmed coding and who confirmed it. **A new supplier is stated as such in the context and is always-review** — see 24.4.7, where accuracy on an unseen category falls to roughly a fifth of its seen-category level | The client's own prior decisions |
 | **Deterministic rules** | The four-tier rule set (§4 Stage 3) already matching this document | The rules engine, applied **before** any model call |
 | **VAT evidence rules** | What makes a UK invoice valid, and when a receipt is not enough to reclaim | Static reference, versioned with the pack |
 | **The chased request** | If this upload answers a chase: the transaction it was chased for — supplier, amount, date | The chase record |
@@ -1249,6 +1250,93 @@ different ranges and different conventions, one of them with no numeric codes at
 the seeded chart of accounts is **a sensible starting point the accountant owns and edits**,
 never a claim of correctness, and the export maps into the destination's own accounts
 rather than imposing ours.
+
+
+#### 24.4.7 What accuracy is actually achievable — and what we may therefore claim
+
+**The published evidence and the marketed numbers are not the same thing, and ID plans
+against the evidence.**
+
+The one hard datapoint comes from an incumbent's own research publication rather than its
+marketing: **their shipping transaction-categorisation model achieves roughly 62% top-1
+accuracy** against a very large chart of accounts. Every vendor in this market advertises
+"99%". One of them footnotes the definition, and the footnote decodes the whole category —
+the figure is **precision on the subset the system already judged high-confidence**, not
+accuracy across all documents. A separate real deployment is on record at **97.6% per-field
+extraction accuracy producing 35% automation**, which is the arithmetic working exactly as
+it must: thirty fields at 97% each is a document-level "everything correct" rate near 40%.
+
+**The finding that shapes the architecture** is the split beneath that 62%:
+
+| Situation | Accuracy |
+|---|---|
+| Category **already seen** in this client's own history | ~79% |
+| Category **not** seen before | **~21%** — and near **zero** for pure nearest-neighbour matching |
+
+**Supplier and category memory does nearly all of the work.** Every product in this market
+is, underneath, a mechanism for converting a hard prediction problem into a lookup. It works
+superbly on repeat suppliers and collapses on first contact — **which is exactly the state
+of a new client during onboarding, when the product is being judged.** ID must therefore:
+
+- treat **a new supplier as always-review**, regardless of model confidence, until it has a
+  few consistent postings — the confidence number is not trustworthy in that regime;
+- make the **business-context questionnaire and the accountant's early corrections the
+  fastest possible path out of the cold-start**, since every correction converts a future
+  document from "unseen" to "seen";
+- **always offer a second-choice category**, because top-2 runs materially above top-1 and
+  a two-option pick is far cheaper for a reviewer than a search box.
+
+**Targets ID plans against — and these are what may be said to a client:**
+
+| Task | Realistic |
+|---|---|
+| Field extraction, known supplier | 95–98% per field |
+| **Document-level, every mandatory field correct** | **~80–85%** |
+| Line-item extraction | ~76% |
+| Category, repeat supplier | ~90%+ *(rules and memory, not the model)* |
+| Category, genuinely new supplier | ~60–70% top-1 |
+| Straight-through rate at maturity | 60–75%, **materially lower in month one** |
+
+**No number above 85% document-level is to be claimed to a client, in the product, or in a
+demo.** The honest architecture — and the one the market leader itself markets on — spends
+confidence on deciding **which** documents can skip review, never on claiming they all can.
+§20's metric stands unchanged and remains the real one: **reviewer correction rate must
+trend down month over month.**
+
+**A gap worth knowing about:** there is **no published study of how often two competent
+bookkeepers agree** on expense categorisation. Vendors claiming to beat human accuracy have
+no human baseline to beat. It is entirely plausible that a meaningful share of the ~30%
+"errors" in the published figures are cases where two accountants would also disagree —
+and measuring that on our own data would be a genuine differentiator rather than a marketing
+claim.
+
+#### 24.4.8 Documents that are never posted, and one that is worth money
+
+**Three document classes are extracted, linked and never posted**, because posting them
+double-counts:
+
+- **Supplier statements** — a summary of invoices, not evidence of a transaction. Posting
+  the statement *and* the invoices it summarises double-counts the cost. Reconcile against
+  it; never post it.
+- **Pro-forma invoices** — cannot support a VAT reclaim even when they carry every field a
+  proper invoice would, and have no place in the books of either party. Never post; request
+  the real invoice.
+- **Delivery notes, quotes, order confirmations and remittance advices.**
+
+**And one finding that turns a chase into a quantified argument.** HMRC's own guidance on
+capital versus revenue says that where an invoice reads simply "building works £100,000",
+an itemised breakdown allowing part to be identified as repairs is deductible — but
+**"where the records kept do not allow for such an apportionment to be identified then all
+the expenditure will be treated as capital."**
+
+**An unitemised invoice is therefore worth materially less to the client than the identical
+job itemised.** That makes "ask the supplier for a breakdown" not a tidiness request but a
+money argument, and ID should make it **at upload time, with the number attached** —
+*"without an itemised invoice this whole amount is treated as capital."* It is a
+differentiated, defensible flag, and it is grounded in HMRC's words rather than ours.
+
+**Every flag carries its authority.** "HMRC's capital-versus-revenue guidance says" persuades
+an accountant; "our AI thinks" does not.
 
 ### 24.5 Onboarding and subscription
 
