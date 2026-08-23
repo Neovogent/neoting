@@ -1124,7 +1124,7 @@ prompt versions already are (§16). It is not assembled ad hoc at call time.
 
 | Layer | Contents | Where it comes from |
 |---|---|---|
-| **Chart of accounts** | The client's account list with ledger prefixes in the shape the export target expects — for VT, `Expenses: Motor expenses` — plus which accounts are in and out of VAT scope | Platform-side, seeded from the business-type profile at intake, then corrected by the accountant's own edits |
+| **Chart of accounts** | The client's account list in the shape the export target expects — for VT, ledger-prefixed as `Expenses: Motor expenses` — plus which accounts are in and out of VAT scope, and **which carry a tax consequence** (disallowable, capital, VAT-atypical — see 24.4.6) | Platform-side, seeded from the business-type profile at intake and **owned and edited by the accountant thereafter**. There is **no mandated UK chart of accounts** and every package ships a different default, so the seed is a starting point, never a claim of correctness |
 | **Business-type profile** | What the business sells, revenue streams, typical suppliers, expected spend categories, **and what would be anomalous for it** | The §5.1 questionnaire — **required in ID** (D47), because it is now the only source |
 | **Supplier history** | How *this* supplier's documents were coded for *this* client before, with the confirmed coding and who confirmed it | The client's own prior decisions |
 | **Deterministic rules** | The four-tier rule set (§4 Stage 3) already matching this document | The rules engine, applied **before** any model call |
@@ -1189,6 +1189,66 @@ and, where it recurs for a supplier, **a deterministic rule** — never a model 
 metric that matters is unchanged and is the one to watch through the first client:
 **reviewer correction rate must trend down month over month.** If it does not, the context
 pack is wrong and no amount of model tier will fix it.
+
+
+#### 24.4.6 What a coding error actually costs — the hierarchy that ranks review
+
+**Not all miscodings are equal, and treating them as equal is what makes a review queue
+exhausting.** UK law constrains the *statutory presentation*, not the internal ledger, so
+the severity of an error depends entirely on whether it crosses a line the outside world
+enforces. Four tiers, and the AI's confidence gating, the review queue's ordering and the
+flags shown to the accountant should all be driven by them:
+
+| Tier | Error | What it costs |
+|---|---|---|
+| **0 — cosmetic** | Cost moved between two overhead codes (telephone posted to electricity) | **Nothing statutory and nothing in tax.** Both land in the same statutory line and both are allowable. Management reporting suffers; the filing does not |
+| **1 — capital vs revenue** | An expense coded as a fixed asset, or an asset expensed | Wrong deduction, wrong capital allowances, misstated net assets. This is the repairs-versus-improvements judgement, and it is genuinely hard |
+| **2 — disallowable** | Entertaining, political donations, fines and penalties, depreciation, private-use items coded as ordinary expenses | **Must be separately identifiable for the corporation-tax add-back.** Getting this wrong understates tax |
+| **3 — VAT** | Wrong rate or wrong treatment — reduced-rate supplies, exempt items, reverse charge, blocked input tax | Wrong VAT return. Directly a liability |
+
+**The design conclusion, and it is the one that should shape the chart of accounts we seed:
+a UK small-business chart of accounts is organised not by *what kind of thing is this* but
+by *what the number has to do next*** — feed a statutory line, get added back in the tax
+computation, or drive a VAT rate. The overhead codes can be as coarse or as fine as the
+practice likes. **The disallowables, the capital items and the VAT-atypical items must each
+have their own code**, because those are the only distinctions anyone outside the business
+enforces. This is visible in every major package: they all ship separate codes for
+business versus staff entertaining, for charitable versus political donations, and for
+depreciation, and they attach a default VAT rate or an allowable-for-tax flag to the
+account itself.
+
+**Two practitioner rules ID adopts as product behaviour:**
+
+- **Classify by what a document *is*, not what it was *for*.** It should be possible to
+  code from the face of the invoice, objectively. A rule that requires knowing why the
+  spend happened is a rule only one person in the practice can apply.
+- **Consistency beats theoretical correctness.** This is not folklore — it is rooted in
+  the statutory requirement to use the same format and the same policies year to year. So
+  where this client has coded this supplier before, that prior treatment is a **strong**
+  input, and a change of treatment is itself worth surfacing.
+
+**Two things to avoid, both learned from how these systems fail in practice:**
+
+- **A catch-all "sundry" code is where misclassification hides.** ID should resist offering
+  it as an easy default: an uncertain document belongs in To Review, where it is visible,
+  not in a bucket that looks coded.
+- **Codes drift between versions of the same package** — the same number means different
+  things in different releases, and the surrounding numbers move with it. **Account
+  matching is on name plus type, never on code alone**, and the export maps to whatever the
+  destination org actually has configured rather than to a number we assumed.
+
+**Materiality needs a stated policy, not a guess.** Capital-versus-revenue is Tier 1, and
+the practical answer practices use is an explicit capitalisation threshold. That threshold
+is a **per-practice setting** in ID, and it is what drives the fixed-asset-review flag —
+never a hard-coded number.
+
+**One caution about what the platform-side chart of accounts can claim.** There is **no
+mandated UK chart of accounts** — the statutory formats constrain the accounts that get
+filed, not the ledger beneath them, and every major package ships a different default with
+different ranges and different conventions, one of them with no numeric codes at all. So
+the seeded chart of accounts is **a sensible starting point the accountant owns and edits**,
+never a claim of correctness, and the export maps into the destination's own accounts
+rather than imposing ours.
 
 ### 24.5 Onboarding and subscription
 
