@@ -850,13 +850,32 @@ resource "aws_cloudwatch_metric_alarm" "log_errors" {
   tags = { Component = "observability" }
 }
 
+locals {
+  # "10.20.0.0/16" -> "10.20." — CloudWatch flow-log filter patterns match strings,
+  # not CIDRs, so the source scope has to be a textual prefix. Derived rather than
+  # written out so it cannot drift from the CIDR the VPC is actually built with.
+  # Assumes the /16 that modules/network/variables.tf documents for both envs.
+  vpc_addr_prefix = "${split(".", local.vpc_cidr)[0]}.${split(".", local.vpc_cidr)[1]}."
+}
+
 # Flow logs are REJECT-only (network.tf), and the app subnets are public with no
 # NAT, so total rejects are dominated by internet background scanning — alarming
-# on that count would be pure noise. Rejects aimed at 5432/6379 are different:
-# the data tier has no route to the internet and its security group only admits
-# the app security group, so a rejected connection attempt to Postgres or Redis
-# means something inside the VPC is reaching for the database that should not be.
-# That is a real signal with real data today.
+# on that count would be pure noise. Rejects aimed at 5432/6379 *from inside the
+# VPC* are different: the data tier has no route to the internet and its security
+# group only admits the app security group, so an internal connection attempt to
+# Postgres or Redis that gets refused means something is reaching for the database
+# that should not be. That is a real signal.
+#
+# ⚠ The `srcaddr` scope below is load-bearing, and it was missing until 25 Aug 2026.
+# The port filter alone does NOT mean "inside the VPC". Flow logs cover EVERY ENI
+# in the VPC — including the ALB's public nodes — and mass scanners probe 5432 and
+# 6379 against any public IP they find. Without the srcaddr clause this filter
+# counted that scan traffic, and between 17 and 25 Aug it fired the alarm 54 times
+# with zero real events: every source was external (Chinese and Google Cloud ranges,
+# assorted hosting), every destination was an nt-staging-alb ENI, and the security
+# group was correctly refusing all of it. The alarm was measuring the internet, not
+# us — and 54 false pages on the channel that carries the real ones is how a real
+# one gets ignored.
 resource "aws_cloudwatch_log_metric_filter" "data_tier_rejects" {
   name           = "nt-${local.env}-data-tier-rejects"
   log_group_name = module.network.flow_log_group_name
@@ -864,7 +883,7 @@ resource "aws_cloudwatch_log_metric_filter" "data_tier_rejects" {
   # Default flow-log format, positionally matched. The action = "REJECT" clause
   # is redundant while traffic_type is REJECT and is kept so the filter stays
   # correct if network.tf ever switches to ALL.
-  pattern = "[version, account_id, interface_id, srcaddr, dstaddr, srcport, dstport = 5432 || dstport = 6379, protocol, packets, bytes, start, end, action = \"REJECT\", log_status]"
+  pattern = "[version, account_id, interface_id, srcaddr = \"${local.vpc_addr_prefix}*\", dstaddr, srcport, dstport = 5432 || dstport = 6379, protocol, packets, bytes, start, end, action = \"REJECT\", log_status]"
 
   metric_transformation {
     name          = "vpc.rejects.data_tier"
@@ -877,7 +896,7 @@ resource "aws_cloudwatch_log_metric_filter" "data_tier_rejects" {
 
 resource "aws_cloudwatch_metric_alarm" "data_tier_rejects" {
   alarm_name          = "nt-${local.env}-data-tier-rejects"
-  alarm_description   = "Connections to Postgres/Redis rejected at the security group - something in the VPC is reaching for the data tier without permission"
+  alarm_description   = "Connections to Postgres/Redis rejected at the security group from a source INSIDE the VPC - something is reaching for the data tier without permission. External scan traffic is excluded by the filter's srcaddr scope and is not this alarm's business."
   namespace           = local.ns_logs
   metric_name         = "vpc.rejects.data_tier"
   statistic           = "Sum"
@@ -888,6 +907,10 @@ resource "aws_cloudwatch_metric_alarm" "data_tier_rejects" {
   treat_missing_data  = "notBreaching"
 
   alarm_actions = [aws_sns_topic.alerts.arn]
+  # Every other alarm in this file pairs these. This one did not, which is why it
+  # only ever sent ALARM mail and never a recovery — 43 one-way messages in one
+  # thread, with no way to tell from the inbox whether it had cleared.
+  ok_actions = [aws_sns_topic.alerts.arn]
 
   tags = { Component = "observability" }
 }
