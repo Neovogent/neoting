@@ -127,6 +127,19 @@ export interface ExtractionRequest {
 }
 
 export interface DocumentExtractor {
+  /**
+   * What gets stamped on `extractions.extractorKind` and `.modelVersion`.
+   *
+   * Carried on the INTERFACE rather than read from config at the write site,
+   * because those two columns are the audit answer to "which reader produced
+   * this value" — §9.7 spend attribution, eval calibration, and any
+   * model-recall sweep all start there. The pipeline used to hardcode the demo
+   * constants, so a genuine model read was persisted, and logged to
+   * `document_events`, labelled as the fixture extractor. An extractor is the
+   * only thing that knows what it is; asking it is the fix.
+   */
+  readonly kind: string;
+  readonly modelVersion: string;
   extract(request: ExtractionRequest): Promise<ExtractionOutcome>;
 }
 

@@ -15,7 +15,7 @@ const env: Env = Object.freeze({
   INGEST_QUEUE: 'fixture', REDIS_URL: 'redis://localhost:6379',
   OBJECT_STORE: 'fixture', EMAIL_SOURCE: 'fixture', MAILHOG_API_URL: 'http://localhost:8025', S3_BUCKET_RECEIPTS: 'nt-local-receipts',
   IMAGE_NORMALISER: 'fixture', DOCUMENT_GUARD: 'fixture', EXTRACTOR: 'demo',
-  BEDROCK_MODEL_ID: 'eu.anthropic.claude-opus-5', BEDROCK_REGION: 'eu-west-2',
+  BEDROCK_REGION: 'eu-west-2',
   LEDGER_ADAPTER: 'demo', AI_CHAT: 'demo', AI_DAILY_BUDGET_PENCE: 500, SMS_SENDER: 'demo', PORTAL_LINK_SECRET: '', PORTAL_SESSION_SECRET: '', S3_ENDPOINT: '', S3_REGION: 'eu-west-2',
   S3_ACCESS_KEY_ID: '', S3_SECRET_ACCESS_KEY: '', S3_FORCE_PATH_STYLE: false, S3_BUCKET_DOCUMENTS: 'nt-local-docs',
 });

@@ -25,7 +25,6 @@ function env(overrides: Partial<Env> = {}): Env {
     IMAGE_NORMALISER: 'fixture',
     DOCUMENT_GUARD: 'fixture',
     EXTRACTOR: 'demo',
-    BEDROCK_MODEL_ID: 'eu.anthropic.claude-opus-5',
     BEDROCK_REGION: 'eu-west-2',
     SMS_SENDER: 'demo',
     PORTAL_LINK_SECRET: '',

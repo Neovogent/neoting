@@ -7,10 +7,19 @@
  * // DEMO-MOCK: Textract + the Sonnet→Opus→human vision ladder replaces this.
  */
 
-import { type DocumentExtractor, type ExtractionOutcome, type ExtractionRequest } from './document-extractor.js';
+import {
+  DEMO_EXTRACTOR_KIND,
+  DEMO_MODEL_VERSION,
+  type DocumentExtractor,
+  type ExtractionOutcome,
+  type ExtractionRequest,
+} from './document-extractor.js';
 import { DEMO_PROFILES, FAILURE_KEYWORDS, genericProfile } from './demo-profiles.js';
 
 export class DemoExtractor implements DocumentExtractor {
+  readonly kind = DEMO_EXTRACTOR_KIND;
+  readonly modelVersion = DEMO_MODEL_VERSION;
+
   async extract(request: ExtractionRequest): Promise<ExtractionOutcome> {
     // Match keywords against whole filename TOKENS, not raw substrings: a substring
     // match mis-codes real uploads — `shell` would fire on `shellfish-invoice`,

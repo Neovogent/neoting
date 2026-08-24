@@ -25,8 +25,6 @@ import { systemContext } from '../../common/db/scope-context.js';
 import { scopedDb, type ScopedClient } from '../../common/db/scoped-db.js';
 import { resolveProcessedState, transitionDocument } from '../validation-dedupe/index.js';
 import {
-  DEMO_EXTRACTOR_KIND,
-  DEMO_MODEL_VERSION,
   type DocumentExtractor,
   type ExtractedDocument,
   type ExtractionOutcome,
@@ -253,8 +251,12 @@ export class PrismaExtractionStep implements ExtractionStep {
       data: {
         documentId: input.documentId,
         fields,
-        extractorKind: DEMO_EXTRACTOR_KIND,
-        modelVersion: DEMO_MODEL_VERSION,
+        // The extractor names itself (document-extractor.ts). Hardcoding the
+        // demo constants here made every EXTRACTOR=bedrock read claim to be the
+        // fixture one in the column you query to answer "which model produced
+        // this value".
+        extractorKind: this.extractor.kind,
+        modelVersion: this.extractor.modelVersion,
         overallConfidence: extracted.overallConfidence,
         validatorResults: extracted.validatorResults as unknown as Prisma.InputJsonValue,
         isAccepted: true,
@@ -274,7 +276,7 @@ export class PrismaExtractionStep implements ExtractionStep {
             ? `Coded by an active supplier rule for ${extracted.supplierName ?? 'this supplier'}.`
             : suggestion.reasoning,
           ...(ruleWon ? { sourceRuleId } : {}),
-          modelVersion: DEMO_MODEL_VERSION,
+          modelVersion: this.extractor.modelVersion,
         };
       }),
     });
@@ -304,8 +306,8 @@ export class PrismaExtractionStep implements ExtractionStep {
         outcome: 'extracted',
         traceId: input.traceId,
         detail: {
-          extractorKind: DEMO_EXTRACTOR_KIND,
-          modelVersion: DEMO_MODEL_VERSION,
+          extractorKind: this.extractor.kind,
+          modelVersion: this.extractor.modelVersion,
           ...(sourceRuleId === null ? {} : { sourceRuleId }),
         } as Prisma.InputJsonValue,
       },

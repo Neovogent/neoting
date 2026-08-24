@@ -19,7 +19,7 @@ function env(overrides: Partial<Env> = {}): Env {
     INGEST_QUEUE: 'fixture',
     REDIS_URL: 'redis://localhost:6379',
     OBJECT_STORE: 'fixture', IMAGE_NORMALISER: 'fixture', DOCUMENT_GUARD: 'fixture', EXTRACTOR: 'demo',
-    BEDROCK_MODEL_ID: 'eu.anthropic.claude-opus-5', BEDROCK_REGION: 'eu-west-2',
+    BEDROCK_REGION: 'eu-west-2',
     LEDGER_ADAPTER: 'demo', AI_CHAT: 'demo', AI_DAILY_BUDGET_PENCE: 500,
     SMS_SENDER: 'demo', PORTAL_LINK_SECRET: '', PORTAL_SESSION_SECRET: '',
     EMAIL_SOURCE: 'fixture',
