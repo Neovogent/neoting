@@ -9,6 +9,14 @@ session that can see exactly the chased items and upload against them — no app
 no account, no password. Everything a portal endpoint needs to know *who is
 asking and what they may touch* lives here.
 
+## ⚠ Initial Delivery (ID) — read this before the sections below
+
+**The portal is an identity gate in ID, and D45 makes that a server rule.** OTP goes to the **registered** number, and only that number — plus **team members the client has added** — may upload. Anything else is refused.
+
+- **Accept anything a phone can produce:** device camera capture or file upload; images, HEIC, PDF, XLSX, CSV, screenshots. The client should never have to convert a file to be heard.
+- **Unacceptable documents are flagged, never blocked** (D46). The client is not stopped at the door because the AI doubts a file; the flag travels with the document and a human decides. A batch is **separated per file** and each is judged individually — never treated as one document.
+- **Every rejection is visible and reasoned** (SoT §21): a legitimately-sent document that identity-gating refuses must show up on the Rejected/Failed view with a reason, and the sender must be told. A silent drop is the failure mode D45 is most likely to cause, and the one §4 Stage 1’s guarantee forbids.
+
 ## Contracts it must honour
 
 - `packages/contracts/openapi.yaml` — `createPortalSession`, `getPortalContext`,

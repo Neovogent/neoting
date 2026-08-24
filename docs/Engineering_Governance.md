@@ -1,13 +1,14 @@
 # NEOTING — Engineering Governance
 
-**Version 1.5 · 15 August 2026 · Confidential**
+**Version 1.6 · 25 August 2026 · Confidential**
 *Changelog v1.0 → v1.1: model config rewritten Opus-led with task→effort map (D21); Bedrock/Transcribe/Textract routes (D20/D22); infra concretised — ECS Fargate, ElastiCache, CloudFront + WAF, Managed Grafana/Prometheus, Sentry EU (D23/D24); cost guardrail £0.02 → £0.05/document; explicit no-fine-tuning clause (D19).*
 *Changelog v1.1 → v1.2: three-tier model config with task→(model, effort) map and degradation chain (D28); pipeline guardrail restored to £0.02/document; per-class tier flags.*
 *Changelog v1.2 → v1.3: kickoff-review feedback (11–12 Aug) folded in — §12.1 UK-first residency made explicit with the named-fallback rule (D30) and no-ticket offboarding incl. trial end (D32); new §13.5 cost & usage telemetry for every metered vendor (D33); §13.2 alert list and §13.3 SLA linkage extended accordingly.*
 *Changelog v1.3 → v1.4: brought level with Source of Truth v1.4 after W0 measurement — §9.1 `MODELS` repinned to the in-region tiers (D28 as amended) with the access-route bullet updated now verification 8.1 is closed; **"temperature 0" reworded to be model-family-aware** (Opus 4.8 rejects the parameter outright, so a flat rule was unenforceable); §5.2 per-workspace KMS encryption context corrected to the request-time gating that S3 can actually enforce (ADR 0008); §1.1 stack line updated; §12.1 residency exceptions reduced from two to one after verification 8.2; §13.5 records the controls now live and the shared-account caveat (D36); §9.1 "week-2 bake-off" corrected to calibration per D20.*
 *Changelog v1.4 → v1.5: brought level with Source of Truth v1.5 — §1.1 and §1.2 rewritten for **D37** (the web client is a Vite SPA, not Next.js App Router; two build entries, no server components); §12.6 keeps every internationalisation rule and drops the library name, because **next-intl is Next.js-only and cannot be used** — the replacement is an implementation choice, the rules are not; §1.5 Definition of Done reworded accordingly; §12.5 gains the measured-contrast obligation that D38 introduces. No security, tenancy, AI-runtime or Review→Approve rule changes in this version.*
+*Changelog v1.5 → v1.6: brought level with Source of Truth v1.6 and its **Initial Delivery (ID)** release (§24, D39–D49). No security, tenancy, AI-runtime or Review→Approve rule is weakened — ID **narrows** what runs, it does not relax how it runs. §1.1 gains the ID delivery fence; §10.5 records that **no standing auto-publish policy may be approved in ID** (D42 removes the ledger call it would automate); §11.2 makes the propose/approve split concrete — **release is super-admin-only** (D44) and identity-gated intake (D45) is an authorization rule, not a UI rule; §12.x integration rules for TrueLayer and the ledger adapters are marked **dormant in ID** rather than deleted, because D40 and D42 supersede D4 and D6 for ID only and both stand unchanged for v1; the third-party monitoring surface gains the ID payment provider (D48).*
 
-Companion to **NEOTING-Source-of-Truth-v1.5.md**. Together these two files are the **only source of truth**. This file governs *how the product is built and operated*: architecture rules, security enforcement, AI runtime rules, compliance operations, testing, and process — for every engineer and every AI coding agent working in the repository.
+Companion to **NEOTING-Source-of-Truth-v1.6.md**. Together these two files are the **only source of truth**. This file governs *how the product is built and operated*: architecture rules, security enforcement, AI runtime rules, compliance operations, testing, and process — for every engineer and every AI coding agent working in the repository.
 
 **Conflict rule:** the Source of Truth wins on product scope and requirements; this file wins on engineering rules, security enforcement, and process. Where a rule here can be enforced by ESLint, CI, or a pre-commit hook, it lives there too — the tooling is the rule's teeth, this file is its record.
 
@@ -20,6 +21,10 @@ Companion to **NEOTING-Source-of-Truth-v1.5.md**. Together these two files are t
 **Vite** · React · TypeScript (strict) · Node 22+ · (D37 — the web client is a Vite SPA; App Router was retired in SoT v1.5) **NestJS modular monolith** · Prisma + PostgreSQL 16 (RDS, RLS) · **ElastiCache Redis + BullMQ** · S3 (KMS) · **ECS Fargate behind CloudFront + AWS WAF** (D23) · **Amazon Bedrock (Claude Opus 4.6 / Claude Sonnet 4.6 / Amazon Nova Lite)** · **Amazon Textract** · **Amazon Transcribe** · next-intl · Zod · Unleash (self-hosted) · Terraform · GitHub Actions · OTel → Managed Prometheus/Grafana + Sentry EU (D24). All eu-west-2.
 
 **Package manager: `pnpm` only. Never `npm` or `yarn`.**
+
+**The delivery fence: you are building Initial Delivery (ID), not v1** (SoT §24, D39–D49). Three things follow for anyone writing code against this file. **The bank has no feed** — manual statement upload (PDF/CSV/XLSX) is the only input (D40), so the statement extractor is a first-class component and its completeness gates (D41) are hard gates, not warnings. **Nothing this product writes reaches a ledger** — there is no adapter and no auto-publish (D42); *Published* is an internal state meaning approved-and-released-for-export, and **no ID surface, string or API field may imply a ledger was written to**. **Export is the sole egress**, and every exported transaction must carry a resolvable link back to its source document (D43) — that link is the release's acceptance test, not a nice-to-have.
+
+The v1 rules in this file for TrueLayer, the ledger adapters, webhooks and the public API are **dormant in ID, not deleted**. D40 and D42 supersede D4 and D6 *for the ID release only*; both stand unchanged for v1, and the code seams they describe stay in place so that adding TrueLayer or Xero later is an addition rather than a rewrite.
 
 ### 1.2 Repository layout (monorepo: pnpm + Turborepo)
 
@@ -185,7 +190,7 @@ Never drop or rename a column in a single step. Destructive phases require expli
 - Any work > 5 s, any retryable external call, every ingest/extract/publish/chase/export runs through the queue — never inline in a request.
 - Handlers are **idempotent** (keyed by `idempotencyKey`), validate payloads with Zod, use exponential backoff with a capped retry count.
 - Exhausted retries land in a **dead-letter queue that pages on-call**; DLQ items are replayable after fix; poison messages auto-quarantine after 3 replays.
-- Per-connection **rate-limit queues** and **token-refresh mutexes** for every ledger integration (Xero 60/min, QBO 500/min, Sage/FreeAgent per their regimes).
+- Per-connection **rate-limit queues** and **token-refresh mutexes** for every ledger integration (Xero 60/min, QBO 500/min, Sage/FreeAgent per their regimes). **Dormant in ID** (D42: no ledger adapter ships); the rule stands for v1.
 - Every job carries the `traceId` of its origin; the per-document processing log records every stage (tool, duration, outcome) for replay.
 
 ---
@@ -302,7 +307,7 @@ The universal pattern (Source of Truth §8.2) is enforced **server-side**, not i
 2. Opening **[Read review]** calls a server endpoint that records `reviewed_at` and the hash of exactly what was rendered.
 3. **[Approve]** is a separate authenticated human request (CSRF-protected, fresh session) that the server accepts **only if** `reviewed_at` is set, within the proposal TTL, by an actor holding the permission for that `kind`. Voice and chat can create proposals; **only a human UI action can approve**.
 4. Execution consumes the proposal **exactly once** (idempotent; replays return the original outcome). The audit event stores who, when, `payload_hash`, and `rendered_summary_hash` — what was approved is provably what was shown.
-5. **Standing automations** (auto-publish rules, auto-chase schedules) execute without per-item proposals only under a **policy** that was itself approved through this contract; every policy change re-enters it. Automated executions record the policy ID they ran under.
+5. **Standing automations** (auto-publish rules, auto-chase schedules) execute without per-item proposals only under a **policy** that was itself approved through this contract; **in ID no auto-publish policy may be approved at all** — D42 removes the ledger call such a policy would automate, and *Published* there is an internal state a **super admin** sets by hand (D44), never a schedule; every policy change re-enters it. Automated executions record the policy ID they ran under.
 6. Read-only operations never create proposals. **No endpoint with side effects may exist outside this contract** — verified by an architectural test that walks the route table.
 
 ---
@@ -321,6 +326,8 @@ The universal pattern (Source of Truth §8.2) is enforced **server-side**, not i
 
 - Roles per Source of Truth §3.3, stored per workspace membership; fine-grained permissions derive from role + per-permission toggles. **Check permissions, not roles, at call sites**: `assertCan(actor, action, resource)` in the service layer. Middleware is defense-in-depth; services are the source of truth.
 - The ActionProposal contract (§10) is the second gate: permission to *propose* and permission to *approve* are checked independently.
+- **ID makes that split concrete, and it is a server rule (D44).** Accountants and their team members may **compose and edit** — chase message text, document coding, every extracted field. Only the accounting firm's **super admin** may **release**: Ready → Published, singly or in bulk. `assertCan(actor, 'publish.release', resource)` is the check; a UI that merely hides the button is not an implementation of this.
+- **Intake is identity-gated, and that is authorization, not filtering (D45).** Every ID channel accepts known senders only — portal by OTP to the *registered* mobile plus team members the client has added, email from a registered address, WhatsApp from a registered number. A rejected sender is told, and the rejection is visible and reasoned on the Rejected/Failed surface; it is never a silent drop.
 
 ### 11.3 Input validation
 
@@ -443,7 +450,7 @@ The customer-facing SLA (Source of Truth §18, D31) is always set at or below th
 
 A surprising bill is an alerting failure, not a billing surprise. §9.7 governs AI spend; this section generalises the same discipline to **every** metered third party:
 
-- **One surface:** per-service Grafana dashboards (usage + computed spend, daily and month-to-date) for Bedrock, Textract, Transcribe, Twilio (SMS + Verify), SES, TrueLayer, and the AWS accounts themselves — attributed per firm wherever the meter allows (AI tokens and SMS already are).
+- **One surface:** per-service Grafana dashboards (usage + computed spend, daily and month-to-date) for Bedrock, Textract, Transcribe, Twilio (SMS + Verify), SES, TrueLayer, **the ID payment provider (D48 — provider undecided, SoT §22 open decision 10; the dashboard row is owed the day it is chosen)**, and the AWS accounts themselves — attributed per firm wherever the meter allows (AI tokens and SMS already are).
 - **Budgets everywhere:** AWS Budgets at organisation and per-account level (dev / staging / prod), alerting at 50 / 80 / 100%; a per-service monthly budget envelope in config for each external vendor — warn at 80%, page at 100%. Envelope values are reviewed with pilot data.
 - **Anomaly alerts:** usage > 3× the 7-day baseline pages for any metered dimension — SMS count, Textract pages, Transcribe minutes, SES sends, TrueLayer calls — the same rule as AI token spend (§9.7).
 - **Go-live gate:** no paid service is enabled without its budget line, usage metric, and alert wired — checked in the go-live review alongside the DPA (§12.1). Provider-side spend triggers (e.g. Twilio's) are enabled as belt-and-braces wherever offered.

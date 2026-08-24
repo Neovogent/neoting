@@ -6,6 +6,14 @@
 
 Client intake, the client list and cards, client-scoped AI grounding, team management, document-workflow tasks, and the full settings inventory.
 
+## ⚠ Initial Delivery (ID) — read this before the sections below
+
+**Client onboarding in ID asks for no connections at all** (D47, amending §5.1 and §6 for this release). Adding a client asks for **neither a bank connection nor an accounting-software connection** — both steps are skipped, because D40 and D42 mean neither exists yet. What intake must capture instead is the **business-type profile**, because §24.4 makes it the substitute for the chart of accounts this release does not have.
+
+- **Two authorities, not one (D44).** Accountants and their team members compose and edit; only the accounting firm’s **super admin** releases. Team management must model that distinction, and it is enforced server-side (Governance §11.2).
+- **A client may add their own team members** (D45), and those people may upload — but only they, and only through identity-gated channels.
+- **Subscription is part of intake now, not deferred** (D48 supersedes D26): **€8.50 per month plus VAT, per client business, paid by the client**, asked for at the end of the client’s own onboarding. The price is quoted and stored **exclusive of VAT**; VAT is added at the prevailing rate and the displayed price must say which it is. **Money is integer pence — the VAT-exclusive figure is what is stored.** The payment provider is an open decision (SoT §22 item 10) and the currency question rides with it.
+
 ## Contracts it must honour
 
 - `packages/contracts` — endpoints, DTOs and error codes (**LAW**, G7)
@@ -40,6 +48,11 @@ pnpm --filter @neoting/api test -- clients-team-settings
 ## TODO
 
 - [ ] Await the frozen OpenAPI contract for this module's endpoints
+- [ ] **ID-critical** — intake without connection steps (D47) + the business-type profile
+      that §24.4 grounds coding on
+- [ ] **ID-critical** — subscription at intake (D48). Needs a subscription model on
+      `prisma/` and super-admin authority on `Membership` — both **LAW**, both needing
+      their own contract-change issue before any PR opens
 - [ ] Service + repository skeleton with Zod DTOs
 - [ ] Unit tests for the logic above
 - [ ] Update this file on exit — it is how the next session picks up

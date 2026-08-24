@@ -6,6 +6,16 @@
 
 CSV/XLSX/PDF/ZIP exports, admin-defined custom mappings, the public REST API, and signed webhooks.
 
+## ⚠ Initial Delivery (ID) — read this before the sections below
+
+**In ID this module is the ONLY way data leaves the product** (D42, SoT §24.3). There is no ledger adapter and no auto-publish, so the export is not a convenience feature here — it is the delivery.
+
+- **The first client uses VT Software (VT Transaction+), so VT is the primary emitter and it gates the release** — not an afterthought, and not a generic CSV someone maps by hand. Build the export as a **canonical model plus per-target emitters** so VT is one emitter and not the architecture.
+- **D43 is the acceptance test for the whole release:** every exported transaction carries a **resolvable link to its source document**, and the requirement is written on the *outcome*, not the mechanism. The accountant must get from a line in their accounting software to the document. SoT §24.3.2 specifies a four-rung fallback ladder in advance — read it before choosing an approach.
+- **Known constraints, already researched — do not rediscover them the hard way:** VT’s import accepts **one nominal per row**, so a document spanning several nominals either collapses or splits; decide deliberately. Target reference fields are short and **truncate without warning** (one clips at 30 characters, another at ~25), so a link must survive that budget. Three of the five export targets cannot accept line items at all.
+- **The public REST API and signed webhooks are v1, NOT ID** (SoT §24.6). Do not build them into the ID lane.
+- **Capability URLs leave our control by design** — they sit inside a third party’s software. Unguessable per-document tokens, view-only scope, revocable, access-logged, expiry configurable per practice (SoT §21).
+
 ## Contracts it must honour
 
 - `packages/contracts` — endpoints, DTOs and error codes (**LAW**, G7)
@@ -39,7 +49,10 @@ pnpm --filter @neoting/api test -- exports-public-api
 
 ## TODO
 
-- [ ] Await the frozen OpenAPI contract for this module's endpoints
+- [ ] Await the frozen OpenAPI contract for this module's endpoints (SoT §24 names four
+      missing OpenAPI surfaces this release needs — a LAW change, contract-change issue first)
+- [ ] **ID-critical** — the canonical export model + the **VT Transaction+ emitter**
+- [ ] **ID-critical** — the source-document link (D43) and its fallback ladder (SoT §24.3.2)
 - [ ] Service + repository skeleton with Zod DTOs
 - [ ] Unit tests for the logic above
 - [ ] Update this file on exit — it is how the next session picks up
