@@ -6,6 +6,17 @@
 
 The canonical model, Xero and QuickBooks adapters, two-way reference sync, idempotent publish, and the integration health surface.
 
+## ⚠ Initial Delivery (ID) — read this before the sections below
+
+**D42 supersedes D6 and this module’s whole adapter path for ID** (SoT §24.3). No ledger API integration and no auto-publish ships in the first client release. Concretely:
+
+- **`Published` is an internal state meaning approved and released for export.** It asserts nothing about a ledger. No ID surface, no string, no API field and no audit line may imply a bill was posted to Xero, QuickBooks or anything else — that would be a lie to the accountant about the state of their books, and it is the single most damaging thing this module could get wrong.
+- **Export is the sole egress** (`modules/exports-public-api`, SoT §24.3). Ready → Published is what makes a document *exportable*; the export carries it out.
+- **Only the accounting firm’s super admin may release** Ready → Published, singly or in bulk (D44). Accountants compose and edit; they do not release. This is a server check, not a hidden button.
+- **Everything else in this file stands and is still correct** — the `LedgerAdapter` seam, `publishes` rows, idempotency keys, the QUEUED → SUCCEEDED/FAILED lifecycle, the post-commit follow-up. Keeping the seam is exactly what makes a real Xero adapter a later *addition* rather than a later rewrite. It simply has no real implementation behind it in ID, and `LEDGER_ADAPTER=demo` remains the only admitted value.
+
+D6 stands unchanged for v1. Nothing here is deleted; it is dormant.
+
 ## Contracts it must honour
 
 - `packages/contracts` — endpoints, DTOs and error codes (**LAW**, G7)
@@ -262,12 +273,17 @@ sketched 1–2 s; 800 ms is deliberately under it, because the number multiplies
       generated Zod at the boundary, `PublishingModule` and `app.module.ts` wire it.
       Unit-tested offline + an RLS integration test (`p10_`) proving another practice
       sees none of them.
-- [ ] The real Xero adapter behind `LedgerAdapter` (`LEDGER_ADAPTER=xero`): OAuth token
-      storage on `integrations`, Zod-parsed HTTP responses, retryable/non-retryable
-      mapped from status codes, and the follow-up runner moved onto BullMQ.
+- [ ] **v1, NOT ID** (D42) — the real Xero adapter behind `LedgerAdapter`
+      (`LEDGER_ADAPTER=xero`): OAuth token storage on `integrations`, Zod-parsed HTTP
+      responses, retryable/non-retryable mapped from status codes, and the follow-up
+      runner moved onto BullMQ. Deliberately out of the first client release.
 - [ ] Reference-list sync (`ReferenceSync`) — the seeded chart of accounts stands in for
       it in the demo, presented as synced. Out of Stage 10's scope on purpose.
-- [ ] Integration health logic, webhooks, exports, canonical-model completeness.
+- [ ] Integration health logic and webhooks — **v1, not ID** (D42). Canonical-model
+      completeness IS ID work: it is what the export emitters read from.
+- [ ] Release authority (D44): `Ready → Published` gated on the firm’s **super admin**,
+      singly and in bulk. Not built — the `assertCan` matrix does not yet distinguish it
+      (see `modules/approvals` TODO, Governance §11.2).
 - [ ] `clearPublishingData` on unarchiving a PUBLISHED document — `document.archive`
       records `publishingDataClearDeferred` and leaves the `publishes` rows for this
       module (the seam agreed on #81). Still unbuilt.

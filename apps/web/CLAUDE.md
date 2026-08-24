@@ -4,6 +4,16 @@
 
 Read `docs/Source_Of_Truth.md` D37 before assuming anything Next-shaped. The requirements that route groups used to satisfy for free did **not** go away; they became build configuration plus review conditions, and the notes in `vite.config.ts` say which is which.
 
+## ⚠ Initial Delivery (ID) — what the UI may and may not say
+
+SoT v1.6 §24 scopes the first paid client release. Five of its decisions land squarely on this app, because they are about **what a screen is allowed to claim**.
+
+- **Never imply a ledger was written to (D42).** In ID there is no Xero, no QuickBooks and no auto-publish. *Published* is an internal state meaning **approved and released for export** — nothing more. No label, tooltip, empty state, toast, status chip or activity line may say or suggest "posted", "synced", "sent to Xero" or anything of that shape. Getting this wrong tells an accountant their books are in a state they are not, which is the worst lie this product can tell.
+- **Export is the visible endpoint of the journey (D42/D43)**, and the accountant must be able to reach the **source document from an exported line**. The export surface is not a settings-page afterthought in ID; it is where the release is judged.
+- **Two authorities, and the UI must not be the enforcement (D44).** Accountants and their team compose and edit — chase text, coding, every extracted field. Only the firm's **super admin** releases Ready → Published, singly or in bulk. Hiding a button is presentation; the server check is the rule, and the screen must degrade honestly for a user who lacks the permission rather than pretending the action does not exist.
+- **Flag, never block (D46).** A document the AI judges unacceptable still uploads, in both the practice app and the client portal. The flag is information for a human, not a gate — and a batch is shown as the individual documents it actually contains.
+- **D49: the prototype UI repo is ID's design source of record** — `MubasshirrKan/ai-accounting-operations-platform`. Check it before inventing a surface that already has an implemented reference.
+
 ## The frontend ten (Guideline §7.4)
 
 1. **Split at the route.** Every screen is `lazy()`-loaded from `App.tsx` so opening one downloads one. This replaced "Server Components by default", and it inherits that rule's job: keeping per-route weight down. (Guideline v1.2 §7.4.)
