@@ -892,6 +892,31 @@ export interface MessagePayload {
   statusFilter?: DocStatus | undefined;
 }
 
+/**
+ * What actually answered, recorded on the message it answered with.
+ *
+ * Present ONLY on replies that came from the server's model runtime. Its
+ * absence is meaningful and must stay meaningful: a synthetic reply has no
+ * meta, and a surface that invented one would be claiming a model spoke when
+ * none did. Never default these values.
+ *
+ * Deliberately NOT a "thought process". The chat runtime runs with thinking
+ * OFF — `temperature: 0` and a forced tool call, chosen for determinism, the
+ * output-schema guarantee and reproducible evals — so there is no chain of
+ * reasoning to show. Rendering a plausible-looking one would be inventing the
+ * single thing this product exists to not invent.
+ */
+export interface AssistantMeta {
+  /** The pinned model id that served the turn, e.g. `anthropic.claude-opus-4-6-v1`. */
+  model: string;
+  tier: 'judgment' | 'workhorse' | 'mechanical';
+  latencyMs: number;
+  /** True when the intended tier failed and a lower one answered (Governance §9.3). */
+  degraded: boolean;
+  /** True from 80% of the practice's daily AI budget onward (§9.7). */
+  budgetWarning: boolean;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -901,4 +926,6 @@ export interface Message {
   payload?: MessagePayload | undefined;
   attachments?: { name: string; size: number }[];
   viaVoice?: boolean | undefined;
+  /** Set only on a server-answered assistant turn. See {@link AssistantMeta}. */
+  meta?: AssistantMeta | undefined;
 }

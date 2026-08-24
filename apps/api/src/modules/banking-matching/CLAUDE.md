@@ -6,6 +6,16 @@
 
 TrueLayer feeds, statement import, the normalised transaction schema, the match engine, cash coding, and chase-suppression descriptors.
 
+## ⚠ Initial Delivery (ID) — read this before the sections below
+
+**D40 supersedes D4 for ID: manual statement upload is the ONLY bank input** (SoT §24.2 Stage 7). No TrueLayer, no consent lifecycle, no 90-day reconfirmation, no feed normalisation in the first client release.
+
+- **Statement import is not the fallback here — it is the product.** The invariant below still reads “statement upload is the fallback that means books never stall”. In ID it is the *only* path, which raises the stakes on everything downstream: a transaction the extractor drops is a document that is never chased, and nothing else will catch it.
+- **D41 makes that a hard gate, not a confidence score.** Statement extraction must prove completeness: balance continuity to the penny, page accounting, date monotonicity, in-statement dedupe, and cross-statement period-gap detection. A statement with no running-balance column is a **distinct reduced-assurance class**, not a silent pass. Accepted formats are PDF, CSV and XLSX, uploadable by accountant *and* client, per client, per period.
+- **The normalised `bank_transactions` schema stays exactly as it is.** It is what the statement extractor targets, and keeping it is precisely what makes TrueLayer a later addition rather than a later rewrite.
+
+D4 stands unchanged for v1.
+
 **Built today: the read surface only.** One GET over the normalised
 `bank_transactions` schema. The *write* half of matching lives on the Review →
 Approve spine as the `bank.confirm-match` executor — in
@@ -131,7 +141,8 @@ executor writes `matches` and `bank_transactions` through the engine's
       server rows and answers "is this matched" from `matchState` instead.
 - [ ] `bank.unmatch` has no `ProposalKind`, so breaking a confirmed match has
       no approved path. The executor refuses rather than overwriting.
-- [ ] Statement upload wiring, cash coding, partial/batch payments
+- [ ] **ID-critical** (D40/D41) — statement upload wiring with the completeness gates,
+      cash coding, partial/batch payments
       server-side, consent lifecycle and configurable match windows — all
       explicitly out of METH S11's scope.
 - [ ] Update this file on exit — it is how the next session picks up.

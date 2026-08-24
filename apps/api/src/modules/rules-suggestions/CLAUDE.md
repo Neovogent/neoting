@@ -6,6 +6,15 @@
 
 Four-tier rule engine, multiple conditional rules per supplier, natural-language rule parsing into Review-Approve cards, and AI coding suggestions with confidence and reasoning.
 
+## ⚠ Initial Delivery (ID) — read this before the sections below
+
+**There is no ledger-synced chart of accounts in ID** (SoT §24.2 Stage 3). D42 means nothing syncs a COA in, so rules and coding run against a **platform-side COA seeded from the business-type profile captured at intake**. That is a real reduction in available context, and §24.4 — the AI context pack — is the whole answer to it. Read §24.4 before writing coding logic; it is not background reading, it is the specification.
+
+- **Rules run first, and they are not a fallback** (§24.4.2). The authority order below is unchanged and still absolute; ID leans on it harder, because the AI has less to go on.
+- **Cold start is the named risk** (SoT §21): published evidence puts category accuracy around 79% where the category already exists, and it collapses on a brand-new client — which is exactly when the product is being judged. §24.4.7 states what accuracy is achievable and therefore **what may be claimed**; do not promise past it in UI copy.
+- **§24.4.6 ranks what a coding error actually costs.** Review effort follows that hierarchy rather than treating every field as equally risky.
+- **Document acceptability is a new task in this lane** (D46): is this the document that was asked for, and is it acceptable evidence for this business category? Flagged, **never blocked** — and every file in a batch is judged **individually**, because a batch is never one document.
+
 ## Contracts it must honour
 
 - `packages/contracts` — endpoints, DTOs and error codes (**LAW**, G7)

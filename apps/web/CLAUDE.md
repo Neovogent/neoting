@@ -4,6 +4,16 @@
 
 Read `docs/Source_Of_Truth.md` D37 before assuming anything Next-shaped. The requirements that route groups used to satisfy for free did **not** go away; they became build configuration plus review conditions, and the notes in `vite.config.ts` say which is which.
 
+## ⚠ Initial Delivery (ID) — what the UI may and may not say
+
+SoT v1.6 §24 scopes the first paid client release. Five of its decisions land squarely on this app, because they are about **what a screen is allowed to claim**.
+
+- **Never imply a ledger was written to (D42).** In ID there is no Xero, no QuickBooks and no auto-publish. *Published* is an internal state meaning **approved and released for export** — nothing more. No label, tooltip, empty state, toast, status chip or activity line may say or suggest "posted", "synced", "sent to Xero" or anything of that shape. Getting this wrong tells an accountant their books are in a state they are not, which is the worst lie this product can tell.
+- **Export is the visible endpoint of the journey (D42/D43)**, and the accountant must be able to reach the **source document from an exported line**. The export surface is not a settings-page afterthought in ID; it is where the release is judged.
+- **Two authorities, and the UI must not be the enforcement (D44).** Accountants and their team compose and edit — chase text, coding, every extracted field. Only the firm's **super admin** releases Ready → Published, singly or in bulk. Hiding a button is presentation; the server check is the rule, and the screen must degrade honestly for a user who lacks the permission rather than pretending the action does not exist.
+- **Flag, never block (D46).** A document the AI judges unacceptable still uploads, in both the practice app and the client portal. The flag is information for a human, not a gate — and a batch is shown as the individual documents it actually contains.
+- **D49: the prototype UI repo is ID's design source of record** — `MubasshirrKan/ai-accounting-operations-platform`. Check it before inventing a surface that already has an implemented reference.
+
 ## The frontend ten (Guideline §7.4)
 
 1. **Split at the route.** Every screen is `lazy()`-loaded from `App.tsx` so opening one downloads one. This replaced "Server Components by default", and it inherits that rule's job: keeping per-route weight down. (Guideline v1.2 §7.4.)
@@ -21,7 +31,7 @@ Read `docs/Source_Of_Truth.md` D37 before assuming anything Next-shaped. The req
 
 `packages/contracts` generates the typed client and the MSW handlers. **Never hand-write an API type; never `fetch` raw in a component.** Data flows through the generated client and TanStack Query.
 
-`VITE_API_BASE_URL` (**not** `NEXT_PUBLIC_*` — those are dead in a Vite build and fail silently) sets the API origin; `packages/contracts/src/http-client.ts` appends `/v1`. Unset, it is `http://localhost:3000` — the port the API actually listens on. It said 3001 here until PR #82, which was the same wrong number the spec's `servers` block carried; nothing has ever served 3001, so an unconfigured clone called a closed port.
+`VITE_API_BASE_URL` (**not** `NEXT_PUBLIC_*` — those are dead in a Vite build and fail silently) sets the API origin; `packages/contracts/src/http-client.ts` appends `/v1`. **Unset in a browser it is now SAME-ORIGIN — a relative `/v1/...`** — and unset in Node it is `http://localhost:3000`, the port the API actually listens on. That split is new, and it is a bug fix: the fallback used to be localhost for both, so the Vercel build called `http://localhost:3000/v1/me` from every *visitor's* browser. The request failed as a transport error rather than a 401, `useSession` read that as 'degraded', and the hosted app served seed data with the badge suppressed in a production build. Dev never caught it because `.env.development` sets `VITE_API_BASE_URL=` to the EMPTY STRING, which is not `undefined`, so `??` never reached the fallback. Pinned by `src/api/http-base-url.test.ts` — that test fails against the old default. (The Node value said 3001 until PR #82, copied from the spec's `servers` block, which was itself wrong; nothing has ever served 3001.)
 
 **In dev mode the API is on by default and same-origin** (METH S6). `.env.development` — committed, re-included by `apps/web/.gitignore` against the root `.env.*` rule because it carries two public flags and no secret — sets `VITE_API_ENABLED=true` and `VITE_API_BASE_URL=` **empty**: the http-client then builds relative `/v1/...` URLs and the Vite dev proxy (`vite.config.ts`) forwards them to `:3000`, so the session cookie is first-party and no CORS surface has to exist — the API deliberately has none. `NT_DEV_API_ORIGIN` repoints the proxy when `:3000` is taken. Vitest (mode `test`) and `pnpm build` (mode `production`) never load the file, so tests and built bundles stay synthetic unless configured; opt out per-machine with `.env.development.local`. The API side must run `AUTH_MODE=session` or the /me probe fails and the app degrades to seed data with a dev badge rather than showing a login wall nobody can pass.
 
@@ -46,15 +56,36 @@ Read `docs/Source_Of_Truth.md` D37 before assuming anything Next-shaped. The req
 - ⚠ `getChaseResponse` is orval's strict-intersection `allOf` gap (see `packages/contracts/CLAUDE.md`): the generated schema rejects every valid `Chase`. `chases.ts` parses the two halves separately (`parseChaseDetail`), pinned by test; a detail that still fails degrades to its list-validated summary with items/messages withheld rather than felling the board (known case: seeded `chs_003` serves `items: []` against the contract's `minItems: 1` — flagged as a pass-3 contract question).
 - The outbox panel builds the tappable link with `portalPathFrom` — last path segment of whatever followed `Upload securely: `, re-homed as `/p/<token>` — and opens it in a phone-sized window (the demo's "client's phone" beat). The first two fill the array every existing mutator already writes to rather than becoming a second source beside it: the pipeline derives approvals, chases, duplicates and every client statistic from those arrays, so a parallel list would have half the app disagreeing with the other half about what exists. All are behind `VITE_API_ENABLED` — and, since S6, additionally gated on the session being authenticated (see *The session and the login wall* above); when the gate is shut the query never runs and the seeds stand. Outside `AppContext` entirely, the chase portal (`/p/:linkToken`, METH Stage 9) is fully wired — see *Client-facing surfaces* below. It was deliberately the first full surface: it is the narrowest, its three operations are contracted, and nothing else in the app derives anything from it, so it could move without taking the pipeline's derived state with it.
 
-### The chat golden paths (METH S13, #142)
+### The chat, and where classification actually happens
 
-The chat drives the demo: with a live session, `matchDemoIntent` in
-`src/lib/demoIntents.ts` (`// DEMO-MOCK: Opus via Bedrock`) runs AHEAD of the
-regex classifier in `InputRow` and routes the five scripted utterances onto
-LIVE intents; anything it does not recognise falls through to
-`classifyLocally`, whose GENERAL card is the graceful fallback. Synthetic mode
-never runs the table, so the seeded demo is exactly what it was. What each
-does, and the decisions inside:
+**The canned intent table is gone.** With a live session `InputRow` calls
+`requestChatTurn` (`src/api/chat.ts`) → `POST /v1/chat/turns`, and the server's
+§9 runtime (`apps/api/src/modules/chat-framework`) does the classifying with the
+pinned model, grounds questions in the client's own RLS-scoped records and
+returns the intent plus any draft. `src/lib/demoIntents.ts` keeps only its
+display-tier composition helpers; `matchDemoIntent` and `parseDemoRule` no
+longer exist, and nothing in the browser classifies an utterance.
+
+Three consequences worth knowing before you touch this path:
+
+- **`classifyLocally` is the SYNTHETIC path only.** It still runs when
+  `API_ENABLED` is false or there is no session, because the app must walk
+  through end to end with no API (METH_MODE §1). It is not a fallback for a
+  live failure.
+- **A live failure is rendered honestly, never re-classified locally.** §9.3's
+  floor is an honest error with a retry. Falling back to the regex would put an
+  answer on screen that looks identical to a model answer and was produced by a
+  keyword match — the exact confusion the `DataSourceBadge` architecture exists
+  to prevent. `requestChatTurn` returns a `failure` with the `NT-` code in front
+  of the words.
+- **The server's intent enum maps near-identically** to the app's
+  (`SERVER_INTENT_TO_APP`), because the contract enum was chosen to match the
+  names the LIVE cards already render. It is `satisfies Record<ChatTurn['intent'],
+  string>`, so a new server intent breaks the build here rather than silently
+  rendering a GENERAL card.
+
+The LIVE cards themselves are unchanged and still stage real proposals. What
+each does, and the decisions inside:
 
 - **`LIVE_MISSING`** (`LiveMissingCard`) — read-only, instant (SoT §8.2): the
   unmatched, non-suppressed transactions from the live bank slice (the same
@@ -70,11 +101,18 @@ does, and the decisions inside:
   here, so the body carries a tokenless `/p/` path — the S8/S9 compose-seam
   gap, sharpened in `apps/api/src/modules/chase/CLAUDE.md` and on the PR:
   the outbox tap into the portal (demo beat 6 → 7) needs that seam.
-- **`LIVE_RULE`** (`LiveRuleCard`) — the wow beat. `parseDemoRule` produces a
-  contract-ready draft (scopeKey title-cased to match the extractor's
-  supplierName EXACTLY; spoken category → the seeded CoA code via a canned
-  table); staging creates a real `rule.create` proposal, approval writes the
-  `rules` row the DemoExtractor honours on the next matching upload.
+- **`LIVE_RULE`** (`LiveRuleCard`) — the wow beat. The draft now arrives from
+  the SERVER, already contract-ready: `drafts.ts` in `chat-framework` re-cases
+  the supplier from the client's own documents (the single-tier match compares
+  `scopeKey` against `extraction.supplierName` exactly, so "bidfood" typed in
+  chat must become "Bidfood" or the rule fires never) and refuses any category
+  not on that client's synced chart of accounts — refuses, never fuzzy-matches,
+  because a near-miss is how food costs quietly become drink costs. Staging
+  creates a real `rule.create` proposal; approval writes the `rules` row the
+  extractor honours on the next matching upload. `categoryName` in the card's
+  payload carries the CODE: the human-readable rendering is the server's, at
+  Read review, and a prettier label invented here would be a second description
+  of the same rule that could disagree with it.
 - **`LIVE_PUBLISH`** (`LivePublishCard`) — Ready costs for the picked
   business, pre-filtered by a courtesy mirror of the publish minimum (the
   server refuses `NT-PUB-001` regardless), placeholder preview the engine
@@ -92,16 +130,19 @@ pending in the Approvals queue, which is the point of having one. Approve
 still cannot mount before Read review — the flow hands off to
 `LiveProposalCard`, which renders only the server's own review.
 
-When the canned table names a business, `InputRow` also rewrites the message
-scope to the SERVER business id — live rows key on `biz_*` ids, which the
+When the server's turn carries `navigation.businessId`, `InputRow` rewrites the
+message scope to that SERVER id — live rows key on `biz_*` ids, which the
 synthetic-client scope from `resolveScope` can never match.
 
-`demoIntents.test.ts` pins the demo script: the five utterances land with
-their payloads (the Bidfood draft byte-exact), dictated variants land too,
-unknown input returns null, and the SMS draft copy/money/day formatting and
-E.164 normalisation are exact. Browser-smoked against the real API: all five
-utterances end-to-end, Approve absent pre-review, chase approve → outbox body
-verbatim.
+**Utterance → intent is no longer pinned here, and that is the point.** It is
+measured in `evals/` against the real model, which is the only place an
+accuracy claim about a model means anything — a regex pinned in a browser unit
+test measured the regex. `demoIntents.test.ts` keeps only the display-tier SMS
+copy, money/day formatting and E.164 normalisation. Last live calibration
+(`anthropic.claude-opus-4-6-v1`, eu-west-2, 21 Aug 2026): intent 92.3%, field
+100%, zero injection leaks. Verified end-to-end against deployed staging: the
+Bidfood rule beat returns a complete `rule.create` draft, and a grounded
+question answers from real seeded records with citations.
 
 **The documents surface went deep in METH Stage 7 (#137).** Beyond the hydrated list (whose parse is FIXED — it read `query.data.data` and failed on every live load; see the envelope note below — and which now POLLS every 5 s while live, because documents arrive from WhatsApp/email/portal/workers and the inbox is where they are watched landing; TanStack structural sharing makes an idle poll re-render nothing, and `enabled: false` keeps tests timer-free):
 
@@ -181,15 +222,24 @@ Before minting a per-component id for a universal word, check `src/i18n/common.t
 
 Gzipped, after the i18n extraction. The budget is **JS** (SoT §14: "initial JS < 250 KB gzipped per route"), so CSS is listed but not counted against it:
 
-| | METH S6 | METH S7 | METH S12 | METH S13 | now (METH S14) |
+| | METH S6 | METH S12 | METH S13 | METH S14 | now (§9 chat) |
 |---|---|---|---|---|---|
-| `index.js` (shared, incl. the 0.1 kB entry stub) | 188.3 kB | 188.6 kB | 179.3 kB | 179.4 kB | **179.6 kB** |
+| `index.js` (shared, incl. the 0.1 kB entry stub) | 188.3 kB | 179.3 kB | 179.4 kB | 179.6 kB | **180.1 kB** |
 | `query.js` (TanStack) | 14.7 kB | 14.7 kB | 14.7 kB | 14.7 kB | 14.7 kB |
 | `react.js` | 1.5 kB | 1.5 kB | 1.5 kB | 1.5 kB | 1.5 kB |
-| **shared JS floor, every route** | **204.5 kB** | **204.8 kB** | **195.5 kB** | **195.6 kB** | **195.8 kB** |
-| heaviest route on top (`ClientDetailView`) | 45.1 kB | 45.1 kB | 45.2 kB | 45.2 kB | **45.7 kB** |
-| **worst route, total JS** | **249.6 kB** | **249.9 kB** | **240.7 kB** | **240.8 kB** | **241.5 kB** |
-| `index.css` (not in the JS budget) | 13.3 kB | 13.3 kB | 13.3 kB | 13.3 kB | 13.1 kB |
+| **shared JS floor, every route** | **204.5 kB** | **195.5 kB** | **195.6 kB** | **195.8 kB** | **196.3 kB** |
+| heaviest route on top (`ClientDetailView`) | 45.1 kB | 45.2 kB | 45.2 kB | 45.7 kB | **45.7 kB** |
+| **worst route, total JS** | **249.6 kB** | **240.7 kB** | **240.8 kB** | **241.5 kB** | **242.0 kB** |
+| `index.css` (not in the JS budget) | 13.3 kB | 13.3 kB | 13.3 kB | 13.1 kB | 13.1 kB |
+
+**The §9 chat runtime cost the floor +0.5 kB, and unlike S12's slices it is ON
+the floor deliberately.** `src/api/chat.ts` is imported by `InputRow`, which the
+shell always mounts, so the generated chat client cannot live on a lazy chunk
+the way `chases.ts` and `proposals.ts` do — the chat input is the shell. The
+trade was worth naming: +0.5 kB of floor bought the removal of the whole
+client-side classifier, and `AIWorkspaceView` came DOWN 32.9 → 32.4 kB because
+the canned table and its regexes went with it. Worst route 242.0 kB against a
+250 kB budget — 8 kB of headroom, the most there has been since S12.
 
 METH S13's whole surface (the canned table, four live cards,
 `LiveProposalFlow`, the InputRow wiring) cost the floor **+0.1 kB** (the

@@ -6,6 +6,15 @@
 
 The five detection engines, chase composition, SMS with OTP secure links, the upload portal endpoints, the policy scheduler, and auto-close on matching inbound.
 
+## ⚠ Initial Delivery (ID) — read this before the sections below
+
+**ID ships THREE of the five detection engines** (SoT §24.2 Stage 8), and the omissions are worth knowing rather than guessing at:
+
+- **In:** (a) bank transaction with no matched document · (c) bank-statement period gap · (e) expected recurring document not arrived.
+- **Out, and for different reasons:** (d) *accounting-software transaction without an attachment* has nothing to read in ID — D42 means there is no ledger connection to read it from. (b) is out on scope, not on principle.
+- **Composition and release are separate authorities (D44).** Accountants and their team members may compose and edit chase message text; only the firm’s **super admin** releases it. The existing “every SMS is shown verbatim in review before sending” invariant is unchanged and still absolute — D44 adds *who may press send*, it does not relax *what they are shown*.
+- **Every inbound channel is identity-gated (D45)** — portal by OTP to the registered mobile, email from a registered address, WhatsApp from a registered number. A chase can still be closed by a reply through any of them; it simply cannot be closed by a stranger.
+
 ## Contracts it must honour
 
 - `packages/contracts` — endpoints, DTOs and error codes (**LAW**, G7)

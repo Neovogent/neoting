@@ -28,11 +28,25 @@ function literal(value: string): string {
  * policy in `prisma/` into decoration, silently, because a tenancy leak returns
  * more rows rather than throwing.
  *
- * The final block therefore does not trust the `ALTER ROLE` above it: it reads
- * the catalogue back and `RAISE EXCEPTION`s if either flag is set, so a script
- * that cannot deliver the property fails loudly instead of reporting success.
- * That check lives in SQL rather than in the caller because `prisma db execute`
- * returns no rows — a non-zero exit is the only channel it has.
+ * ⚠ THIS ASSERTS THE PROPERTY, IT DOES NOT COMMAND IT — and on RDS it cannot.
+ * An earlier revision issued `ALTER ROLE … NOSUPERUSER NOBYPASSRLS`, which is
+ * what `prisma/sql/app-role.sql` does on a laptop where the migration role is a
+ * real superuser. Against RDS that fails outright:
+ *
+ *   ERROR: permission denied to alter role
+ *   DETAIL: Only roles with the SUPERUSER attribute may change the SUPERUSER
+ *           attribute.
+ *
+ * The RDS master user holds `rds_superuser`, which is a ROLE, not the SUPERUSER
+ * attribute — it may not set or clear that attribute on anyone. Measured against
+ * nt-staging on 20 Aug 2026.
+ *
+ * That turns out to be the better design and not merely the possible one. A
+ * freshly created role has neither attribute, nothing here grants them, and the
+ * final block reads `pg_roles` back and `RAISE EXCEPTION`s if either is set. A
+ * command can be silently overridden later; an assertion catches that. The check
+ * lives in SQL rather than in the caller because `prisma db execute` returns no
+ * rows — a non-zero exit is the only channel it has.
  */
 export function buildAppRoleSql(user: string, password: string): string {
   if (!ROLE_NAME.test(user)) {
@@ -55,7 +69,16 @@ BEGIN
   END IF;
 END $$;
 
-ALTER ROLE ${user} NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+-- Hygiene, not the security control, and TOLERATED IF REFUSED: the same RDS
+-- privilege boundary that blocks clearing the superuser attribute can block
+-- these too, depending on the platform. They are belt to the assertion's braces, so a refusal must not
+-- abort a script whose actual guarantee is checked at the end.
+DO $$
+BEGIN
+  EXECUTE format('ALTER ROLE %I NOCREATEDB NOCREATEROLE', ${name});
+EXCEPTION WHEN insufficient_privilege THEN
+  RAISE NOTICE 'could not set NOCREATEDB/NOCREATEROLE on % (platform-restricted); the assertion below still applies', ${name};
+END $$;
 
 GRANT USAGE ON SCHEMA public TO ${user};
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${user};

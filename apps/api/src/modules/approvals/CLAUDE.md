@@ -148,8 +148,8 @@ pnpm --filter @neoting/api test -- approvals            # unit, offline
 
 ## TODO
 
-- [ ] Approve-permission split (Governance §11.2): propose-permission and
-      approve-permission are not yet distinct — `assertCan` matrix is
+- [ ] **ID-critical, and now specified** (D44, Governance §11.2): propose-permission
+      and approve-permission are not yet distinct — `assertCan` matrix is
       explicitly out of METH S3 scope. The workspaceSession/CSRF requirement on
       approve likewise awaits the auth hardening pass.
 - [ ] Periodic sweep over `findStaleDedupeFollowUps` (worker concern), and the

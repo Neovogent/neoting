@@ -31,6 +31,8 @@ function env(overrides: Partial<Env> = {}): Env {
     PORTAL_LINK_SECRET: '',
     PORTAL_SESSION_SECRET: '',
     LEDGER_ADAPTER: 'demo',
+    AI_CHAT: 'demo',
+    AI_DAILY_BUDGET_PENCE: 500,
     S3_ENDPOINT: '',
     S3_REGION: 'eu-west-2',
     S3_ACCESS_KEY_ID: '',

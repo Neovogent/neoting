@@ -42,8 +42,8 @@ importers:
   apps/api:
     dependencies:
       '@anthropic-ai/bedrock-sdk':
-        specifier: ^0.33.0
-        version: 0.33.0(zod@3.25.76)
+        specifier: ^0.33.1
+        version: 0.33.1(zod@3.25.76)
       '@aws-sdk/client-s3':
         specifier: 3.1110.0
         version: 3.1110.0
@@ -208,7 +208,20 @@ importers:
 
   e2e: {}
 
-  evals: {}
+  evals:
+    devDependencies:
+      '@neoting/contracts':
+        specifier: workspace:*
+        version: link:../packages/contracts
+      '@types/node':
+        specifier: ^22.7.4
+        version: 22.20.1
+      tsx:
+        specifier: ^4.19.1
+        version: 4.23.12
+      typescript:
+        specifier: ^5.6.2
+        version: 5.9.3
 
   packages/component-grammar: {}
 
@@ -253,11 +266,11 @@ packages:
   '@adobe/css-tools@4.5.0':
     resolution: {integrity: sha512-6OzddxPio9UiWTCemp4N8cYLV2ZN1ncRnV1cVGtve7dhPOtRkleRyx32GQCYSwDYgaHU3USMm84tNsvKzRCa1Q==}
 
-  '@anthropic-ai/bedrock-sdk@0.33.0':
-    resolution: {integrity: sha512-Id5AlMbv3thfGrnY7DsvYAqG5bjYY4DHDJswLzStkuXwX2RdII5E7WMEeCL24bKYVc8Qtqo3ceCptG1jBBcjAA==}
+  '@anthropic-ai/bedrock-sdk@0.33.1':
+    resolution: {integrity: sha512-il6T/c8xIhgovFrYj68j7VDJQcyUN8UR/NAOyo2SCc4IiashtCIJrmnYFJs4bAXWNy43uHuE68wHFx40OlW/UQ==}
 
-  '@anthropic-ai/sdk@0.119.0':
-    resolution: {integrity: sha512-a2nOe1LyccBB+cGaOeUP0KClWmdqYPxKMsQq9milU1YoCNA9HB7Xd6Sx853WI/BpqmvHYsFiUgt1p7ZP8pZonA==}
+  '@anthropic-ai/sdk@0.120.0':
+    resolution: {integrity: sha512-ZlvmNFT/iIF6JD13rxbbMWD8nvGR0RaUp6yMQnoc+4Af0YjVVe/bIdW1XSQQsoxXAtg1NaT6Vak0LKFlJ4d37Q==}
     hasBin: true
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
@@ -303,8 +316,8 @@ packages:
     resolution: {integrity: sha512-insWOqKKNUrbN/dohEG7BJ0U5GkyqhjbMb/NHNaLUtq+7my2M8C4EnZZZoxMmXRqCC+P9dEr+KyJA2JGGzoKLg==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/client-bedrock-runtime@3.1113.0':
-    resolution: {integrity: sha512-yksECclekh+RPC4t5oS4RnLBGArt8g9if5b/2QQJSr8InX4r3LutS3VPHeEFlEKkwJ+qckKkPZCF2Cmv6hT1wA==}
+  '@aws-sdk/client-bedrock-runtime@3.1115.0':
+    resolution: {integrity: sha512-nenJKAe6OB0R13xaHpogadyqJ6rogFZk++ahWNdlJDf5sM4a6KFsXU5Zh3l3ox2Y+8YZp4l4msz+IYWFiQ7Bzg==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/client-s3@3.1110.0':
@@ -387,8 +400,8 @@ packages:
     resolution: {integrity: sha512-YPN6uoGDgjjjeVFZrcOeCJqmB6zpXoeeNgIjqe+DexJaWqdjVfCCe+VAZwli9Z2h8KhFW8oxkO39emQ1tyz/Mw==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/credential-providers@3.1113.0':
-    resolution: {integrity: sha512-cbX7to3ZN2/H1vFMpMMCJclp+cu+ZEYo6VVL2OwFlSn0nSzkj1o+wNKk6ShO9vh4eCucdYOg4Em22kBeBuwK6g==}
+  '@aws-sdk/credential-providers@3.1115.0':
+    resolution: {integrity: sha512-hIhHMt0lqgOr42FfUPh+sNviapX8AfpNEJRoyBq/iMh4deq3BqE2KMpvhLAsLvTHQb4+5yJ1EalRO6yFl0wwPQ==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/eventstream-handler-node@3.972.33':
@@ -435,8 +448,8 @@ packages:
     resolution: {integrity: sha512-JfljgoVtl+s3Qy21n9a7Z48uCQaOXcN74KJ3TEQfPoB293GrXFSt6HSQJF1sTZ8c/5QedEvd3NjJQMO4u9qa5A==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/token-providers@3.1113.0':
-    resolution: {integrity: sha512-E34rqSrdHq0AWi7B8R85GE9UvyzTyBWQLpGbIw5B3BBmJEDbitumoArDCqoeecp1z81EFLoH7KETFOD6CkMedg==}
+  '@aws-sdk/token-providers@3.1115.0':
+    resolution: {integrity: sha512-ZQ9LMRuMbaZTTX6SJE8c7uP0PHSxerzs2wHBF0URQLB8hLQbPqi8RUoD3/ZaBqwIUue3RIPnCTvZKaE2MInX5Q==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/types@3.974.3':
@@ -4968,12 +4981,12 @@ snapshots:
 
   '@adobe/css-tools@4.5.0': {}
 
-  '@anthropic-ai/bedrock-sdk@0.33.0(zod@3.25.76)':
+  '@anthropic-ai/bedrock-sdk@0.33.1(zod@3.25.76)':
     dependencies:
-      '@anthropic-ai/sdk': 0.119.0(zod@3.25.76)
+      '@anthropic-ai/sdk': 0.120.0(zod@3.25.76)
       '@aws-crypto/sha256-js': 4.0.0
-      '@aws-sdk/client-bedrock-runtime': 3.1113.0
-      '@aws-sdk/credential-providers': 3.1113.0
+      '@aws-sdk/client-bedrock-runtime': 3.1115.0
+      '@aws-sdk/credential-providers': 3.1115.0
       '@smithy/eventstream-serde-node': 2.2.0
       '@smithy/fetch-http-handler': 5.7.0
       '@smithy/protocol-http': 3.3.0
@@ -4984,7 +4997,7 @@ snapshots:
     transitivePeerDependencies:
       - zod
 
-  '@anthropic-ai/sdk@0.119.0(zod@3.25.76)':
+  '@anthropic-ai/sdk@0.120.0(zod@3.25.76)':
     dependencies:
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.0.0
@@ -5054,14 +5067,14 @@ snapshots:
       '@smithy/types': 4.17.0
       tslib: 2.8.1
 
-  '@aws-sdk/client-bedrock-runtime@3.1113.0':
+  '@aws-sdk/client-bedrock-runtime@3.1115.0':
     dependencies:
       '@aws-sdk/core': 3.977.8
       '@aws-sdk/credential-provider-node': 3.972.80
       '@aws-sdk/eventstream-handler-node': 3.972.33
       '@aws-sdk/middleware-eventstream': 3.972.28
       '@aws-sdk/middleware-websocket': 3.972.51
-      '@aws-sdk/token-providers': 3.1113.0
+      '@aws-sdk/token-providers': 3.1115.0
       '@aws-sdk/types': 3.974.4
       '@smithy/core': 3.33.0
       '@smithy/fetch-http-handler': 5.7.0
@@ -5281,7 +5294,7 @@ snapshots:
       '@smithy/types': 4.17.0
       tslib: 2.8.1
 
-  '@aws-sdk/credential-providers@3.1113.0':
+  '@aws-sdk/credential-providers@3.1115.0':
     dependencies:
       '@aws-sdk/core': 3.977.8
       '@aws-sdk/credential-provider-cognito-identity': 3.972.68
@@ -5396,7 +5409,7 @@ snapshots:
       '@smithy/types': 4.17.0
       tslib: 2.8.1
 
-  '@aws-sdk/token-providers@3.1113.0':
+  '@aws-sdk/token-providers@3.1115.0':
     dependencies:
       '@aws-sdk/core': 3.977.8
       '@aws-sdk/nested-clients': 3.997.43
