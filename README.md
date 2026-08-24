@@ -21,7 +21,7 @@ No cloud credentials are needed for core development. Extraction and AI default 
 ## Repository map
 
 ```
-apps/web              Next.js — (workspace) practice app · (portal) public OTP portal
+apps/web              Vite + React SPA (D37) — two build entries: (workspace) practice app · (portal) public OTP portal
 apps/api              NestJS modular monolith
 packages/contracts            LAW  OpenAPI spec + generated client + Zod schemas
 packages/component-grammar    LAW  chat card schemas incl. Review → Approve
