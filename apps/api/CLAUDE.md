@@ -92,6 +92,8 @@ Consequently staging sets `EXTRACTOR=bedrock`, `OTP_MODE=totp` and `DOCUMENT_GUA
 
 ⚠ `infra/envs/prod/services.tf` sets none of these and does not set `AI_CHAT` either, so it already described an environment that could not boot before S1 — prod was destroyed on 25 Aug 2026 and its rebuild has to reconcile more than this stage. Do not read it as a working example.
 
+**Launch stage S4 added `BILLING=demo` to that stated set.** `DemoStripeClient` mints hosted-session URLs on the reserved `.invalid` TLD, so **no card can be charged from staging**; entitlement is read from `businesses.subscription_status` either way, so `demo` never means "free".
+
 **Seeding a deployed environment** — `docs/runbooks/staging-demo.md` §3. `src/db/seed-environment.ts` is the guard, and it is worth reading before touching it: `prisma/seed.ts` refuses under `NODE_ENV=production`, which staging sets for build parity, so the wrapper asserts the real property (`NEOTING_ENV` is in an allow-list of synthetic-data environments) and only then relaxes `NODE_ENV` for the child process. Assert, *then* relax — in that order, or the seed can reach production.
 
 ⚠ Workers has no load balancer and no container health check, so ECS steady state proves the task **started**, not that it reached Redis. A worker that connects and then silently stops consuming looks identical to an idle one.

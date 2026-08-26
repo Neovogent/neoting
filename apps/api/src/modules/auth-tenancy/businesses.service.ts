@@ -8,6 +8,7 @@ import type { PrismaClient } from '../../common/db/prisma.js';
 import type { ScopeContext } from '../../common/db/scope-context.js';
 import { scopedDb } from '../../common/db/scoped-db.js';
 import { type Page, type PageRequest, pageQuery, scalarField, toPage } from '../../common/pagination/cursor.js';
+import { toBusinessSubscription } from '../billing/index.js';
 
 type ListQuery = z.infer<typeof listBusinessesQueryParams>;
 
@@ -100,6 +101,14 @@ export class BusinessesService {
         name: row.name,
         tradingName: row.tradingName,
         counts: counts.get(row.id) ?? { toReview: 0, ready: 0, failed: 0 },
+        // The D48 projection, from the four columns already on the row — no
+        // second query and no second round-trip. `error-codes.md` asks for it
+        // by name under NT-BIL-002: the subscribe call-to-action must not
+        // render for a business that already has a subscription, and a lapsed
+        // client should show in the switcher rather than being discovered at
+        // the next upload. Null for a business that has never been to
+        // checkout, which is what the contract says the field means.
+        subscription: toBusinessSubscription(row),
       })),
       pageInfo: page.pageInfo,
     };

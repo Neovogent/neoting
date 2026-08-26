@@ -33,6 +33,8 @@ function env(overrides: Partial<Env> = {}): Env {
     LEDGER_ADAPTER: 'demo',
     AI_CHAT: 'demo',
     AI_DAILY_BUDGET_PENCE: 500,
+    BILLING: 'demo', STRIPE_SECRET_KEY: '', STRIPE_WEBHOOK_SECRET: '', STRIPE_PRICE_ID: '',
+    STRIPE_TAX: 'rate', STRIPE_TAX_RATE_ID: '', BILLING_RETURN_ORIGINS: '',
     S3_ENDPOINT: '',
     S3_REGION: 'eu-west-2',
     S3_ACCESS_KEY_ID: '',

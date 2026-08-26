@@ -9,6 +9,7 @@ import { EnvModule } from './config/env.module.js';
 import { ApprovalsModule } from './modules/approvals/approvals.module.js';
 import { AuthTenancyModule } from './modules/auth-tenancy/auth-tenancy.module.js';
 import { BankingMatchingModule } from './modules/banking-matching/banking-matching.module.js';
+import { BillingModule } from './modules/billing/billing.module.js';
 import { ChaseModule } from './modules/chase/chase.module.js';
 import { ChatFrameworkModule } from './modules/chat-framework/chat.module.js';
 import { ClientsTeamSettingsModule } from './modules/clients-team-settings/clients-team-settings.module.js';
@@ -35,6 +36,7 @@ import { PublishingModule } from './modules/publishing/publishing.module.js';
     // `exports-public-api/links/capability-link.service.ts` before changing
     // anything about it. `config/routing.ts` keeps it off the `/v1` prefix.
     CapabilityLinkModule,
+    BillingModule,
     ChaseModule,
     ChatFrameworkModule,
     ClientsTeamSettingsModule,

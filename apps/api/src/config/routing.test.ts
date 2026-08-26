@@ -142,3 +142,22 @@ test('the excluded webhook path still matches the controller that serves it', ()
 test('health routes are not accidentally versioned by a stray prefix', () => {
   expect(UNVERSIONED_ROUTES.some((r) => r.path.startsWith(API_PREFIX))).toBe(false);
 });
+
+test('the STRIPE webhook is deliberately NOT excluded — it stays under /v1', () => {
+  // Meta's is excluded because Meta holds that URL in its own configuration and
+  // does not follow redirects. Stripe's endpoint URL is ours to choose and is
+  // set once in the Stripe dashboard against whatever we register, so it goes
+  // where the contract puts it. Asserted rather than assumed, because "the
+  // other webhook is excluded" is exactly the reasoning that would move it.
+  const controller = readFileSync(
+    fileURLToPath(new URL('../modules/billing/stripe-webhook.controller.ts', import.meta.url)),
+    'utf8',
+  );
+  const declared = /@Controller\('([^']+)'\)/.exec(controller)?.[1];
+
+  expect(declared).toBe('webhooks/stripe');
+  expect(UNVERSIONED_ROUTES.map((r) => r.path)).not.toContain(declared);
+  // And the contract agrees: it declares no root-origin `servers` override for
+  // this path, so `/v1/webhooks/stripe` is the published URL.
+  expect(SPEC).toContain('  /webhooks/stripe:');
+});

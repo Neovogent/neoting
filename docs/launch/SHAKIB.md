@@ -378,6 +378,59 @@ plan-change UI, a cancellation flow or an invoice renderer.
 Full gate. PR.
 ```
 
+### ✅ Done — `apps/api/src/modules/billing/`, `docs/runbooks/stripe-billing.md` (27 Aug 2026)
+
+Two endpoints, one webhook, one entitlement rule. **No new dependency** —
+the surface is three form-encoded `POST`s and one HMAC, so it is `fetch` and
+`node:crypto` rather than the Stripe SDK (`CLAUDE.md`: adding a dependency is a
+human decision, and this one did not need to be made).
+
+**The VAT is proved, not asserted.** Product, price and a 20% GB rate were
+created through the Stripe CLI, and the checkout session was posted against the
+real API: **subtotal 850, tax 170, total 1020** — £8.50 net, £1.70 VAT, £10.20
+gross. `docs/runbooks/stripe-billing.md` §4 is that probe, written down so it
+can be re-run after any change to the price or the parameters.
+
+**Five things to know before the next stage:**
+
+1. **The Stripe CLI here is signed in to a personal account**
+   (`mubasshirkhan231@gmail.com`, `acct_1RQtbxGMdHp4NCWv`) that already holds
+   another project's products — and it has a **live** context. The objects
+   above are in its sandbox, which is fine for proving the integration and
+   wrong for launch: live mode needs the Neoting company account, because that
+   is what the company verification, the VAT registration number and the payout
+   details attach to. Runbook §0.
+2. **`GET /v1/tax/registrations` is EMPTY, so `STRIPE_TAX` defaults to `rate`**
+   (an explicit 20% GB rate), not to Stripe Tax. Stripe Tax collects nothing
+   and reports no error until a registration is active — it looks exactly like
+   a working integration while the VAT line reads £0.00. Flip to `automatic`
+   only once that call shows GB collecting.
+3. **Entitlement is enforced, and it bites.** `ACTIVE` or `TRIALING` may upload;
+   `PAST_DUE`, `CANCELED` and *never subscribed* may not — 402 `NT-BIL-001` on
+   both `POST /v1/document-uploads` and `POST /v1/portal/uploads`. Reading,
+   reviewing, approving and **exporting** are untouched (D32). The three seeded
+   client businesses gained `subscriptionStatus: 'ACTIVE'` so the demo still
+   works; that is the one `prisma/` edit in this stage and you approved it.
+4. **Staging stays on `BILLING=demo`, stated explicitly in `services.tf`.**
+   Demo hosted-session URLs are on the reserved `.invalid` TLD, so no card can
+   be charged from staging and a leaked link provably resolves to nothing.
+   `BILLING=stripe` refuses to boot without all four secrets — which cannot
+   crash-loop staging precisely because staging is not on it.
+5. **One contract drift, flagged not hidden:** `createPortalUpload` declares no
+   `402` while `createDocumentUpload` does. The behaviour is contracted (the
+   webhook's own text says new uploads stop at a lapse); the missing response
+   needs a contract-change issue. LAW, so not edited here.
+
+Proved end to end against real Stripe events (`stripe listen` + a real
+subscription): signature verified, unhandled types 200-ignored, an event with
+no tenant metadata **refused** rather than guessed, and
+`biz_burger → INCOMPLETE → INCOMPLETE_EXPIRED` written through `scopedDb`. The
+local database was reverted afterwards.
+
+**Still yours before a real card:** the company Stripe account, live-mode
+activation, and the **VAT registration number** — `9286810564` is the company
+tax ID, not that. Runbook §8 is the checklist.
+
 ---
 
 ## S5 · Real extraction, on

@@ -369,6 +369,61 @@ const EnvSchema = z.object({
   // govern once S5 wires extraction to it — not what it governs today.
   AI_DAILY_BUDGET_PENCE: z.coerce.number().int().positive().default(2500),
 
+  // ---- Billing (D48, launch stage S4) --------------------------------------
+  //
+  // The Stripe seam. `demo` = `DemoStripeClient`, which mints hosted-session
+  // URLs on the reserved `.invalid` TLD (RFC 2606) so a demo checkout link
+  // provably cannot resolve to anything; `stripe` = the real hosted Checkout
+  // and customer portal. Selected by config, not by import, like every switch
+  // above.
+  //
+  // ⚠ NO production boot-refusal for `demo`, and that is deliberate — the same
+  // stance SESSION_SECRET takes and for the same reason. Staging sets
+  // NODE_ENV=production for build parity, so a gate here would crash-loop the
+  // next staging deploy and take /healthz down before the Stripe secrets are in
+  // Secrets Manager. It is also the cheaper failure to leave un-gated: a demo
+  // billing client degrades something a user can SEE (the checkout link goes
+  // nowhere), unlike AI_CHAT=demo, which degrades the judgement itself while
+  // looking identical. Entitlement is enforced from the database either way, so
+  // `demo` never means "everything is free".
+  BILLING: z.enum(['demo', 'stripe']).default('demo'),
+
+  // Prefer a RESTRICTED key (`rk_…`) over a secret key (`sk_…`): this
+  // integration writes customers, checkout sessions and portal sessions and
+  // reads nothing else, so a full secret key grants far more than the blast
+  // radius needs. Empty default fails CLOSED, like the Meta secrets —
+  // `BILLING=stripe` refuses to boot without it below rather than 500ing at the
+  // first subscribe.
+  STRIPE_SECRET_KEY: z.string().default(''),
+  // Signs `POST /v1/webhooks/stripe`. Verified against the RAW body before
+  // anything is parsed. Empty = every webhook 401s (fails closed).
+  STRIPE_WEBHOOK_SECRET: z.string().default(''),
+  // The ONE price: "Neo Accounting", GBP 8.50/month recurring, per client
+  // business, `tax_behavior=exclusive` (D48 — the price is quoted NET of VAT).
+  // A Stripe identifier, so it is configuration and never an enum here.
+  STRIPE_PRICE_ID: z.string().default(''),
+
+  // How VAT is added on top of that net price.
+  //
+  // ⚠ `automatic` (Stripe Tax) collects NOTHING and reports no error until an
+  // ACTIVE UK registration exists in the Stripe dashboard — the single most
+  // common Stripe Tax mistake, and it looks exactly like a working integration.
+  // `rate` attaches an explicit 20% GB rate via `default_tax_rates`, which
+  // works with no registration and no VAT number, so it is the default until
+  // the VAT registration number exists (docs/runbooks/stripe-billing.md).
+  STRIPE_TAX: z.enum(['rate', 'automatic']).default('rate'),
+  // The `txr_…` id of that 20% GB VAT rate. Required when STRIPE_TAX=rate.
+  STRIPE_TAX_RATE_ID: z.string().default(''),
+
+  // The origins `successUrl` / `cancelUrl` / `returnUrl` may point at, comma
+  // separated (e.g. `https://app.neoting.neovogent.com,http://localhost:5173`).
+  //
+  // ⚠ NOT a convenience. Those three are caller-supplied on AUTHENTICATED
+  // endpoints, so an unvalidated one is an open redirect with a session
+  // attached to it. Empty means no origin is allowed and every checkout is a
+  // 400 — closed, not open.
+  BILLING_RETURN_ORIGINS: z.string().default(''),
+
   S3_ENDPOINT: z.string().default(''), // e.g. http://localhost:9000 for MinIO; empty = AWS default
   S3_REGION: z.string().default('eu-west-2'),
   S3_ACCESS_KEY_ID: z.string().default(''),
@@ -596,6 +651,56 @@ const EnvSchema = z.object({
       message:
         'EMAIL_SOURCE=s3 polls real SES mail and deletes it after processing — it needs INGEST_QUEUE=bullmq and OBJECT_STORE=s3, or a restart destroys everything in flight',
     });
+  }
+
+  // `BILLING=stripe` is an operator saying "take real money". Every one of these
+  // is unreachable-at-boot rather than 500-at-checkout for the UPLOAD_URL_SECRET
+  // reason: an empty value fails closed at REQUEST time, which means the process
+  // boots, passes its health check, reports steady state, and then breaks the one
+  // screen that turns a trial into a customer — while the deploy that caused it
+  // is already green. This cannot crash-loop staging, because staging stays on
+  // `BILLING=demo` until the secrets are actually in Secrets Manager (S4).
+  if (env.BILLING === 'stripe') {
+    if (env.STRIPE_SECRET_KEY === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['STRIPE_SECRET_KEY'],
+        message: 'BILLING=stripe needs STRIPE_SECRET_KEY — prefer a restricted key (rk_…) scoped to customers, checkout sessions and billing portal sessions',
+      });
+    }
+    if (env.STRIPE_WEBHOOK_SECRET === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['STRIPE_WEBHOOK_SECRET'],
+        message: 'BILLING=stripe needs STRIPE_WEBHOOK_SECRET — without it every Stripe event 401s and no subscription ever becomes ACTIVE, which reads as "the card was declined"',
+      });
+    }
+    if (env.STRIPE_PRICE_ID === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['STRIPE_PRICE_ID'],
+        message: 'BILLING=stripe needs STRIPE_PRICE_ID — the one GBP 8.50/month tax-EXCLUSIVE price (D48)',
+      });
+    }
+    if (env.BILLING_RETURN_ORIGINS === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['BILLING_RETURN_ORIGINS'],
+        message: 'BILLING=stripe needs BILLING_RETURN_ORIGINS — the allowlist successUrl/cancelUrl/returnUrl are checked against; empty admits no origin and refuses every checkout',
+      });
+    }
+    // ⚠ The VAT trap, made structural. `STRIPE_TAX=rate` with no rate id does
+    // not fail — it charges 8.50 with no VAT line, which HMRC treats as
+    // VAT-INCLUSIVE, so we would absorb the VAT and receive £7.08 per client
+    // per month. There is no error and no alert; the only symptom is a smaller
+    // number on a Stripe invoice nobody re-reads.
+    if (env.STRIPE_TAX === 'rate' && env.STRIPE_TAX_RATE_ID === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['STRIPE_TAX_RATE_ID'],
+        message: 'STRIPE_TAX=rate needs STRIPE_TAX_RATE_ID (the 20% GB VAT txr_… id) — without it the net price is charged with no VAT added, which means absorbing the VAT',
+      });
+    }
   }
 });
 

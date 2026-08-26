@@ -293,3 +293,67 @@ test('AI_DAILY_BUDGET_PENCE is £25/day, in integer pence', () => {
   expect(value).toBe(2500);
   expect(Number.isInteger(value)).toBe(true);
 });
+
+// ---- Billing (D48, launch stage S4) ---------------------------------------
+
+test('BILLING defaults to the offline stand-in, and demo is NOT refused in production', () => {
+  // Deliberate, and the reason is written out in env.ts: staging sets
+  // NODE_ENV=production for build parity, so a gate here would crash-loop the
+  // next staging deploy and take /healthz down before the secrets exist.
+  expect(loadEnv({}).BILLING).toBe('demo');
+  // S1's own PRODUCTION fixture, not a hand-built one: it is the environment
+  // the gates above already agree boots, so a pass here means BILLING was not
+  // gated rather than that something else threw first.
+  expect(loadEnv(PRODUCTION).BILLING).toBe('demo');
+});
+
+test('BILLING=stripe refuses to boot without each of the four values it needs', () => {
+  const base = { BILLING: 'stripe' } as NodeJS.ProcessEnv;
+  // Each is unreachable-at-boot rather than 500-at-checkout: an empty value
+  // fails closed at REQUEST time, which means the process boots green and then
+  // breaks the one screen that turns a trial into a customer.
+  expect(() => loadEnv(base)).toThrow(/STRIPE_SECRET_KEY/);
+  expect(() => loadEnv({ ...base, STRIPE_SECRET_KEY: 'rk_test' } as NodeJS.ProcessEnv)).toThrow(/STRIPE_WEBHOOK_SECRET/);
+  expect(() =>
+    loadEnv({ ...base, STRIPE_SECRET_KEY: 'rk_test', STRIPE_WEBHOOK_SECRET: 'whsec' } as NodeJS.ProcessEnv),
+  ).toThrow(/STRIPE_PRICE_ID/);
+  expect(() =>
+    loadEnv({ ...base, STRIPE_SECRET_KEY: 'rk_test', STRIPE_WEBHOOK_SECRET: 'whsec', STRIPE_PRICE_ID: 'price_1' } as NodeJS.ProcessEnv),
+  ).toThrow(/BILLING_RETURN_ORIGINS/);
+});
+
+test('THE VAT GATE: STRIPE_TAX=rate with no rate id refuses to boot', () => {
+  // Without it the net price is charged with no VAT line, which HMRC reads as
+  // VAT-INCLUSIVE — so we absorb the VAT and receive 7.08 instead of 8.50.
+  // There is no error and no alert; the only symptom is a smaller number on an
+  // invoice nobody re-reads. Hence a boot refusal rather than a runtime check.
+  expect(() =>
+    loadEnv({
+      BILLING: 'stripe',
+      STRIPE_SECRET_KEY: 'rk_test',
+      STRIPE_WEBHOOK_SECRET: 'whsec',
+      STRIPE_PRICE_ID: 'price_1',
+      BILLING_RETURN_ORIGINS: 'https://app.example',
+    } as NodeJS.ProcessEnv),
+  ).toThrow(/STRIPE_TAX_RATE_ID/);
+});
+
+test('BILLING=stripe boots with the full set, in either tax mode', () => {
+  const base = {
+    BILLING: 'stripe',
+    STRIPE_SECRET_KEY: 'rk_test',
+    STRIPE_WEBHOOK_SECRET: 'whsec',
+    STRIPE_PRICE_ID: 'price_1',
+    BILLING_RETURN_ORIGINS: 'https://app.example',
+  };
+  expect(loadEnv({ ...base, STRIPE_TAX_RATE_ID: 'txr_1' } as NodeJS.ProcessEnv).STRIPE_TAX).toBe('rate');
+  // `automatic` needs no rate id — Stripe Tax computes it — but see the runbook:
+  // it collects nothing until there is an ACTIVE registration.
+  expect(loadEnv({ ...base, STRIPE_TAX: 'automatic' } as NodeJS.ProcessEnv).STRIPE_TAX).toBe('automatic');
+});
+
+test('BILLING=demo ignores the Stripe values entirely, so a laptop needs none of them', () => {
+  const env = loadEnv({ STRIPE_TAX: 'rate' } as NodeJS.ProcessEnv);
+  expect(env.BILLING).toBe('demo');
+  expect(env.STRIPE_SECRET_KEY).toBe('');
+});

@@ -73,7 +73,7 @@ function fakeStore(): { store: DocumentStore; presigned: StoreCall[] } {
 
 interface Fixture {
   /** null simulates a business RLS does not return — the real policy does the same by returning no row. */
-  readonly business: { id: string; practiceId: string | null } | null;
+  readonly business: { id: string; practiceId: string | null; subscriptionStatus: string | null } | null;
   readonly grants: string[];
 }
 
@@ -96,7 +96,13 @@ function fakePrisma(fixture: Fixture): PrismaClient {
 }
 
 function harness(
-  business: { id: string; practiceId: string | null } | null = { id: BIZ, practiceId: PRACTICE },
+  // Entitlement (D48) gates the portal intent too — the client is the payer,
+  // so the surface the client uploads through is where the rule has to bite.
+  business: { id: string; practiceId: string | null; subscriptionStatus: string | null } | null = {
+    id: BIZ,
+    practiceId: PRACTICE,
+    subscriptionStatus: 'ACTIVE',
+  },
 ): { service: PrismaPortalUploadService; presigned: StoreCall[]; grants: string[] } {
   const fixture: Fixture = { business, grants: [] };
   const prisma = fakePrisma(fixture);
@@ -256,6 +262,22 @@ test('a session whose business is no longer reachable is 401 NT-OTP-002, and not
 
   expect(err.getStatus()).toBe(HttpStatus.UNAUTHORIZED);
   expect(err.code).toBe('NT-OTP-002');
+  expect(presigned).toHaveLength(0);
+  expect(grants).toHaveLength(0);
+});
+
+test('ENTITLEMENT: a lapsed client business is 402 NT-BIL-001, and nothing is signed or granted', async () => {
+  // D48 charges the CLIENT, so the surface the client uploads through is where
+  // the rule has to bite — gating only the accountant's own upload would leave
+  // the main ID path open. (The contract declares no 402 on this operation; the
+  // drift is flagged in `portal-upload.service.ts` and belongs to a contract
+  // change, not to this stage.)
+  const { service, presigned, grants } = harness({ id: BIZ, practiceId: PRACTICE, subscriptionStatus: 'PAST_DUE' });
+
+  const err = await grab(() => service.createPortalUpload(FACTS, request(), randomUUID()));
+
+  expect(err.code).toBe('NT-BIL-001');
+  expect(err.getStatus()).toBe(HttpStatus.PAYMENT_REQUIRED);
   expect(presigned).toHaveLength(0);
   expect(grants).toHaveLength(0);
 });
