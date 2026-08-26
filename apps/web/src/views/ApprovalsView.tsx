@@ -13,7 +13,7 @@ import { useAppContext } from '../context/AppContext';
 import { API_ENABLED } from '../api/config';
 import { usePendingProposals } from '../api/proposals';
 import { sliceStatus } from '../api/slices';
-import { DataSourceBadge } from '../components/DataSourceBadge';
+import { DataSourceBadge, SliceLoadError } from '../components/DataSourceBadge';
 import { ApprovalsLiveQueue } from './ApprovalsLiveQueue';
 import { fromSlug, slug, useSegment } from '../lib/router';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
@@ -58,6 +58,10 @@ const m = defineMessages({
   summaryLive: {
     id: 'approvals.approvalsView.summaryLive',
     defaultMessage: '{count} pending — the live Review → Approve queue',
+  },
+  queueLoadError: {
+    id: 'approvals.approvalsView.queueLoadError',
+    defaultMessage: 'The approval queue could not be loaded',
   },
   newWorkflowAction: { id: 'approvals.approvalsView.newWorkflowAction', defaultMessage: 'New workflow' },
   scopeMine: { id: 'approvals.approvalsView.scopeMine', defaultMessage: 'Waiting on me' },
@@ -185,15 +189,17 @@ export function ApprovalsView() {
   } = useAppContext();
 
   /**
-   * The live approval queue (METH Stage 12): with the API on and a session
-   * answered, the Queue tab is pending `action-proposals` from the real
-   * engine. The Workflows builder and History stay fixtures, and a failed
-   * fetch degrades the queue to the fixtures too, wearing the dev badge.
+   * The live approval queue (METH Stage 12, hardened by launch M2): with the
+   * API on and a session answered, the Queue tab is pending
+   * `action-proposals` from the real engine. A failed fetch is said out loud
+   * with a retry — it never degrades to the fixtures, which are invented
+   * approvals an accountant cannot tell from real ones.
    */
   const liveOn = API_ENABLED && session.status === 'authenticated';
   const proposalsQuery = usePendingProposals({ enabled: liveOn });
   const proposalsStatus = sliceStatus(liveOn, proposalsQuery);
   const liveQueue = proposalsStatus.source === 'api';
+  const liveError = proposalsStatus.source === 'error';
 
   /** The document an approver is looking at before deciding. */
   const [preview, setPreview] = useState<Document | null>(null);
@@ -257,7 +263,9 @@ export function ApprovalsView() {
   const history = approvals.filter((a) => a.state !== 'pending');
   const totalPending = pending.reduce((n, a) => n + a.total, 0);
   const aging = pending.filter((a) => a.waitingDays >= 5).length;
-  const queueCount = liveQueue ? proposalsQuery.proposals.length : pending.length;
+  // On a load failure the count is unknown — a fixture figure would be a
+  // claim about rows that are not on screen.
+  const queueCount = liveQueue ? proposalsQuery.proposals.length : liveError ? 0 : pending.length;
 
   const bulkApprove = (rows: ApprovalItem[]) => {
     const ids = [...new Set(rows.map((r) => r.clientId))];
@@ -363,21 +371,28 @@ export function ApprovalsView() {
               <h1 className="font-sans text-2xl md:text-3xl font-semibold text-white tracking-tight">
                 {intl.formatMessage(m.heading)}
               </h1>
-              <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
-                {/* The fixture money/aging figures describe the synthetic
-                    board — over the live queue they would be numbers about
-                    rows that are not on screen (METH S14 sweep). */}
-                {liveQueue
-                  ? intl.formatMessage(m.summaryLive, { count: proposalsQuery.proposals.length })
-                  : intl.formatMessage(m.summary, { count: pending.length, total: currency(totalPending), aging })}
-              </p>
+              {/* The fixture money/aging figures describe the synthetic
+                  board — over the live queue they would be numbers about
+                  rows that are not on screen (METH S14 sweep), and on a load
+                  failure any figure at all would be an invention (M2). */}
+              {!liveError && (
+                <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
+                  {liveQueue
+                    ? intl.formatMessage(m.summaryLive, { count: proposalsQuery.proposals.length })
+                    : intl.formatMessage(m.summary, { count: pending.length, total: currency(totalPending), aging })}
+                </p>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            <DataSourceBadge slice="proposals" status={proposalsStatus} />
+            <DataSourceBadge
+              slice="proposals"
+              status={proposalsStatus}
+              onRetry={() => void proposalsQuery.refetch()}
+            />
             {/* The filter only narrows the synthetic arrays — over the live
                 queue it is an inert control (METH S14 sweep). */}
-            {!liveQueue && (
+            {!liveQueue && !liveError && (
               <select
                 value={clientFilter}
                 onChange={(e) => setClientFilter(e.target.value)}
@@ -427,7 +442,16 @@ export function ApprovalsView() {
               onSettled={() => void proposalsQuery.refetch()}
             />
           )}
-          {tab === 'Queue' && !liveQueue && (
+          {/* A failed live fetch is an honest error with a retry, never the
+              fixture queue standing in for the real one (launch M2). */}
+          {tab === 'Queue' && liveError && (
+            <SliceLoadError
+              heading={intl.formatMessage(m.queueLoadError)}
+              error={proposalsStatus.error}
+              onRetry={() => void proposalsQuery.refetch()}
+            />
+          )}
+          {tab === 'Queue' && !liveQueue && !liveError && (
             <>
               <div className="flex items-center gap-3 mb-5 flex-wrap">
                 {/* Screen 12 opens on my own queue, not the practice's. */}

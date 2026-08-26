@@ -232,9 +232,10 @@ export default function App() {
   // The login wall (METH Stage 6), and only here — the client-facing shells
   // above have their own credentials (an SMS link is not a login). In
   // synthetic mode the session is 'off' and none of this exists; 'degraded'
-  // (API enabled but unreachable) falls THROUGH to the workspace on seed
-  // data, because a login screen against a dead API is a wall nobody can
-  // pass — the context header wears the badge instead.
+  // (API enabled but unreachable) falls THROUGH to the workspace — empty,
+  // never on seed data presented as real (launch M2) — because a login
+  // screen against a dead API is a wall nobody can pass. The context header
+  // wears the failure badge instead.
   if (session.status === 'loading') {
     return (
       <div className="flex flex-col md:flex-row h-dvh w-full overflow-hidden bg-ground text-white font-sans selection:bg-brand/30">

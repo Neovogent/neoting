@@ -215,10 +215,10 @@ export function ContextBar() {
             chrome is a product decision nobody made. Shakib kept the tour in
             scope; this keeps it where it tells the truth.
 
-          NOT deleted, and not unreachable when the API is on: `/demo` (and
-          `/demo?step=n`) still starts it — TourProvider owns that address —
-          which is the deliberate door for anyone who wants the walkthrough
-          over live data and knows what they are looking at. */}
+          `/demo` (and `/demo?step=n`) carries the SAME gate since launch M2
+          — TourProvider owns that address, and with the API on it is only a
+          redirect home. A scripted story walking across a real firm's
+          screens was the one door left open, and M2 closed it. */}
       {documentsSource !== 'api' && (
         <button
           onClick={() => tour.start(0)}
