@@ -11,6 +11,7 @@ import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { DocumentPreview } from '../components/DynamicComponents/DocumentPreview';
 import { Modal } from './ApprovalsView';
+import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
 import { currency } from '../lib/resolver';
 import { PRACTICE_NAME } from '../lib/seed2';
 import type { Document, VaultDocument } from '../lib/types';
@@ -178,6 +179,7 @@ export function DocumentsView() {
   } = useAppContext();
 
   const [tab, setTab] = useState<Tab>('Archive');
+  const tabStripRef = useScrollActiveIntoView<HTMLDivElement>(tab);
   const confirm = useConfirm();
   const intl = useIntl();
   const [query, setQuery] = useState('');
@@ -336,7 +338,7 @@ export function DocumentsView() {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden">
-      <header className="px-10 pt-8 pb-5 shrink-0">
+      <header className="px-4 md:px-10 pt-4 md:pt-8 pb-4 md:pb-5 shrink-0">
         {/* Loading and failure said out loud (METH S14 sweep): seed rows may
             render underneath — the standing fallback — never silently. */}
         {documentsSource === 'api' && (documentsLoading || documentsError) && (
@@ -362,7 +364,7 @@ export function DocumentsView() {
               <FileText size={22} />
             </div>
             <div>
-              <h1 className="font-sans text-3xl font-semibold text-white tracking-tight">{intl.formatMessage(m.heading)}</h1>
+              <h1 className="font-sans text-2xl md:text-3xl font-semibold text-white tracking-tight">{intl.formatMessage(m.heading)}</h1>
               <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
                 {intl.formatMessage(m.summary, {
                   archived: archived.length,
@@ -374,13 +376,13 @@ export function DocumentsView() {
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
-            <div className="relative">
+            <div className="relative w-full sm:w-auto">
               <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={intl.formatMessage(tab === 'Archive' ? m.searchArchive : m.searchVault)}
-                className="w-72 bg-card border border-white/5 rounded-full py-2.5 pl-11 pr-4 text-sm focus:outline-none focus:border-brand placeholder:text-zinc-600 text-white font-medium shadow-inner"
+                className="w-full sm:w-72 bg-card border border-white/5 rounded-full py-2.5 pl-11 pr-4 text-sm focus:outline-none focus:border-brand placeholder:text-zinc-600 text-white font-medium shadow-inner"
               />
             </div>
             {tab === 'Vault' && (
@@ -412,10 +414,11 @@ export function DocumentsView() {
         </div>
       </header>
 
-      <div className="px-10 pb-4 flex items-center gap-2 shrink-0">
+      <div ref={tabStripRef} data-tour="documents-tabs" className="px-4 md:px-10 pb-4 flex items-center gap-2 shrink-0 scroll-x [&>button]:shrink-0 [&>button]:whitespace-nowrap">
         {TABS.map((t) => (
           <button
             key={t}
+            aria-current={tab === t ? 'page' : undefined}
             onClick={() => setTab(t)}
             className={`px-4 py-2 rounded-full text-[13px] font-bold transition-all border ${
               tab === t
@@ -430,7 +433,7 @@ export function DocumentsView() {
 
       {/* Filters. Every file is filed under a client, so that one is always
           offered; the rest follow whichever shelf you are looking at. */}
-      <div className="px-10 pb-5 flex items-center gap-2 flex-wrap shrink-0">
+      <div className="px-4 md:px-10 pb-5 flex items-center gap-2 flex-wrap shrink-0">
         <FilterSelect
           value={clientFilter}
           onChange={setClientFilter}
@@ -532,7 +535,7 @@ export function DocumentsView() {
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex-1 overflow-y-auto px-4 md:px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           {tab === 'Archive' && !groupByClient && (
             <DataTable<Document>
@@ -588,7 +591,7 @@ export function DocumentsView() {
                 );
               })}
               {archiveByClient.size === 0 && (
-                <div className="border border-white/5 rounded-[32px] bg-card p-10 text-center text-zinc-500">
+                <div className="border border-white/5 rounded-[32px] bg-card p-4 md:p-10 text-center text-zinc-500">
                   {intl.formatMessage(query || filtersActive ? m.archiveEmptyFiltered : m.archiveEmpty)}
                 </div>
               )}
@@ -650,7 +653,7 @@ export function DocumentsView() {
               })}
 
               {grouped.size === 0 && (
-                <div className="border border-white/5 rounded-[32px] bg-card p-10 text-center text-zinc-500">
+                <div className="border border-white/5 rounded-[32px] bg-card p-4 md:p-10 text-center text-zinc-500">
                   {intl.formatMessage(m.vaultEmptyFiltered)}
                 </div>
               )}
@@ -957,7 +960,7 @@ function VaultPreview({
           </div>
         </div>
       ) : (
-        <div className="p-4 bg-raised/50 flex items-center gap-3 justify-end flex-wrap">
+        <div className="p-4 bg-raised/50 flex items-center gap-2 sm:gap-3 justify-end flex-wrap [&>button]:flex-1 [&>button]:basis-[8rem] sm:[&>button]:flex-none sm:[&>button]:basis-auto [&>button]:justify-center">
           <div className="relative mr-auto">
             <button
               onClick={() => setMenuOpen((o) => !o)}

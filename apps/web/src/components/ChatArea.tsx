@@ -35,7 +35,7 @@ export function ChatArea() {
   }, [messages, assistantPending]);
 
   return (
-    <div className={`flex-1 overflow-y-auto px-6 py-8 flex flex-col gap-8 max-w-4xl w-full mx-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden`}>
+    <div className={`flex-1 overflow-y-auto px-3 sm:px-6 py-6 sm:py-8 flex flex-col gap-6 sm:gap-8 max-w-4xl w-full mx-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden`}>
       
       {messages.map((msg) => (
         <Message key={msg.id} from={msg.role}>
@@ -119,19 +119,19 @@ function Message({ from, children }: { from: 'user' | 'assistant'; children: Rea
       }}
       className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'}`}
     >
-      <div className={`flex gap-4 w-full max-w-[90%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+      <div className={`flex gap-3 sm:gap-4 w-full max-w-full sm:max-w-[90%] min-w-0 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
         <motion.div 
           initial={{ scale: 0, rotate: isUser ? 45 : -45 }}
           animate={{ scale: 1, rotate: 0 }}
           transition={{ type: 'spring', stiffness: 300, damping: 20, delay: isUser ? 0.1 : 0.2 }}
-          className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 mt-1 shadow-lg overflow-hidden ${
+          className={`hidden sm:flex w-10 h-10 rounded-2xl items-center justify-center shrink-0 mt-1 shadow-lg overflow-hidden ${
           isUser ? 'bg-white/10 text-white border border-white/10 backdrop-blur-md' : ''
         }`}>
           {isUser ? intl.formatMessage(m.userInitial) : <img src={logo} alt="" className="w-full h-full object-cover" />}
         </motion.div>
-        <div className={`flex flex-col w-full ${isUser ? 'items-end' : 'items-start'}`}>
+        <div className={`flex flex-col w-full min-w-0 ${isUser ? 'items-end' : 'items-start'}`}>
           {isUser ? (
-            <div className="px-6 py-4 bg-white/10 backdrop-blur-xl text-white border border-white/10 rounded-[24px] rounded-tr-sm inline-block shadow-2xl">
+            <div className="px-4 sm:px-6 py-3 sm:py-4 bg-white/10 backdrop-blur-xl text-white border border-white/10 rounded-[24px] rounded-tr-sm inline-block shadow-2xl">
               {children}
             </div>
           ) : (
@@ -139,6 +139,7 @@ function Message({ from, children }: { from: 'user' | 'assistant'; children: Rea
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3, duration: 0.4 }}
+              data-tour="chat-card"
               className="py-2 w-full max-w-full text-zinc-300"
             >
               {children}

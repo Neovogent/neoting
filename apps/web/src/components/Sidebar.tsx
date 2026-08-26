@@ -23,7 +23,7 @@ import {
  * descriptor rather than a translation of `tab` — translating the tab value
  * would rewrite every address in the app.
  */
-const m = defineMessages({
+export const shellNav = defineMessages({
   aiWorkspace: { id: 'shell.sidebar.aiWorkspace', defaultMessage: 'AI Workspace' },
   clients: { id: 'shell.sidebar.clients', defaultMessage: 'Clients' },
   inboxes: { id: 'shell.sidebar.inboxes', defaultMessage: 'Inboxes' },
@@ -36,23 +36,20 @@ const m = defineMessages({
   businessPortal: { id: 'shell.sidebar.businessPortal', defaultMessage: 'Business portal' },
   darkMode: { id: 'shell.sidebar.darkMode', defaultMessage: 'Dark mode' },
   lightMode: { id: 'shell.sidebar.lightMode', defaultMessage: 'Light mode' },
-  logoAlt: {
-    id: 'shell.sidebar.logoAlt',
-    defaultMessage: 'Migrate Properly',
-    description: 'Alt text for the product mark. A company name — leave untranslated.',
-  },
+  collapse: { id: 'shell.sidebar.collapse', defaultMessage: 'Collapse navigation' },
+  expand: { id: 'shell.sidebar.expand', defaultMessage: 'Expand navigation' },
 });
 
 const navItems = [
-  { icon: Bot, tab: 'AI Workspace', label: m.aiWorkspace },
-  { icon: Users, tab: 'Clients', label: m.clients },
-  { icon: Inbox, tab: 'Inboxes', label: m.inboxes },
-  { icon: Send, tab: 'Chases', label: m.chases },
-  { icon: CheckCircle, tab: 'Approvals', label: m.approvals },
-  { icon: FileText, tab: 'Documents', label: m.documents },
-  { icon: BarChart2, tab: 'Analytics', label: m.analytics },
-  { icon: Shield, tab: 'Team', label: m.team },
-  { icon: Settings, tab: 'Settings', label: m.settings },
+  { icon: Bot, tab: 'AI Workspace', label: shellNav.aiWorkspace },
+  { icon: Users, tab: 'Clients', label: shellNav.clients },
+  { icon: Inbox, tab: 'Inboxes', label: shellNav.inboxes },
+  { icon: Send, tab: 'Chases', label: shellNav.chases },
+  { icon: CheckCircle, tab: 'Approvals', label: shellNav.approvals },
+  { icon: FileText, tab: 'Documents', label: shellNav.documents },
+  { icon: BarChart2, tab: 'Analytics', label: shellNav.analytics },
+  { icon: Shield, tab: 'Team', label: shellNav.team },
+  { icon: Settings, tab: 'Settings', label: shellNav.settings },
 ];
 
 const RAIL_COLLAPSED = 80;
@@ -94,14 +91,26 @@ export function Sidebar({ activeTab, setActiveTab, onOpenBusinessPortal }: Sideb
       className="h-full flex flex-col py-6 border-r border-white/5 bg-card shrink-0 gap-8 z-20 overflow-hidden"
     >
       <div className="flex items-center gap-3 px-4 shrink-0">
-        {/* The mark already carries its own plate and rounded corners. */}
-        <img
-          src={logo}
-          alt={intl.formatMessage(m.logoAlt)}
-          className="w-12 h-12 rounded-2xl shrink-0 object-cover shadow-glow-logo"
-        />
+        {/* The mark already carries its own plate and rounded corners. On a
+            tablet there is no hover to widen the rail, so the mark is also the
+            toggle. The image is decorative once the button is labelled —
+            alt text here would announce the product name in front of the
+            control's own words. */}
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          aria-label={intl.formatMessage(expanded ? shellNav.collapse : shellNav.expand)}
+          aria-expanded={expanded}
+          className="rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
+        >
+          <img
+            src={logo}
+            alt=""
+            className="w-12 h-12 rounded-2xl shrink-0 object-cover shadow-glow-logo"
+          />
+        </button>
       </div>
-      <nav className="flex flex-col gap-1.5 w-full px-4">
+      <nav data-tour="nav" className="flex flex-col gap-1.5 w-full px-4">
         {navItems.map((item) => (
           <DockItem
             key={item.tab}
@@ -119,7 +128,7 @@ export function Sidebar({ activeTab, setActiveTab, onOpenBusinessPortal }: Sideb
       <div className="mt-auto w-full px-4 pt-4 border-t border-white/5">
         <DockItem
           icon={Store}
-          label={intl.formatMessage(m.businessPortal)}
+          label={intl.formatMessage(shellNav.businessPortal)}
           isActive={false}
           expanded={expanded}
           mouseY={mouseY}
@@ -127,7 +136,7 @@ export function Sidebar({ activeTab, setActiveTab, onOpenBusinessPortal }: Sideb
         />
         <DockItem
           icon={isLight ? Moon : Sun}
-          label={intl.formatMessage(isLight ? m.darkMode : m.lightMode)}
+          label={intl.formatMessage(isLight ? shellNav.darkMode : shellNav.lightMode)}
           isActive={false}
           expanded={expanded}
           mouseY={mouseY}

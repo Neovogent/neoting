@@ -93,7 +93,7 @@ export function StatementModal({ statement, onClose }: {
     // The backdrop is not a button — role="presentation" says so; keyboard
     // dismissal is Escape (useEscape above).
     <div
-      className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-3 sm:p-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       onClick={onClose}
       role="presentation"
     >
@@ -123,12 +123,12 @@ export function StatementModal({ statement, onClose }: {
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors shrink-0" aria-label={intl.formatMessage(commonActions.close)}>
+          <button onClick={onClose} className="p-2 -m-2 rounded-full text-zinc-500 hover:text-white hover:bg-white/5 transition-colors shrink-0" aria-label={intl.formatMessage(commonActions.close)}>
             <X size={20} />
           </button>
         </div>
 
-        <div className="p-6 flex flex-col gap-5 max-h-[60vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="p-6 flex flex-col gap-5 max-h-[60dvh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {isBank ? <BankBody s={data as Statement} /> : <SupplierBody s={data as SupplierStatement} />}
         </div>
 

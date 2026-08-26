@@ -12,6 +12,7 @@ import { useAppContext } from '../context/AppContext';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { DocumentPreview } from '../components/DynamicComponents/DocumentPreview';
 import { Modal, WorkflowCard, WorkflowEditor, blankWorkflow } from './ApprovalsView';
+import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
 import { RolePicker } from '../components/DynamicComponents/RolePicker';
 import { ClientInbox } from './ClientInbox';
 import { ChaseComposer } from '../components/DynamicComponents/ChaseComposer';
@@ -34,6 +35,8 @@ import type { ApprovalWorkflow, BusinessMemberRole, Client, ClientDetailChange, 
  * inserted clause — see the note at the head of ActionCard for why.
  */
 const m = defineMessages({
+  starClient: { id: 'clients.clientDetailView.starClient', defaultMessage: 'Star client' },
+  unstarClient: { id: 'clients.clientDetailView.unstarClient', defaultMessage: 'Unstar client' },
   // ── Status column ───────────────────────────────────────────────────────
   statusToReview: { id: 'clients.clientDetailView.statusToReview', defaultMessage: 'To review' },
   statusReady: { id: 'clients.clientDetailView.statusReady', defaultMessage: 'Ready' },
@@ -555,6 +558,9 @@ export function ClientDetailView() {
   // and Back steps between them.
   const [tabSlug, setTabSlug] = useSegment(2);
   const tab: Tab = fromSlug(tabSlug, TABS) ?? 'Overview';
+  // Fourteen tabs do not fit a phone: the strip scrolls, so the active one
+  // has to be scrolled back into view when a deep link picks a later tab.
+  const tabStripRef = useScrollActiveIntoView<HTMLDivElement>(tab);
   const setTab = (next: Tab) => setTabSlug(next === 'Overview' ? null : slug(next));
 
   // ?doc=<id> — a preview is a layer over wherever you already were, so it
@@ -710,16 +716,16 @@ export function ClientDetailView() {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden">
-      <header className="px-10 pt-8 pb-5 shrink-0">
+      <header className="px-4 md:px-10 pt-4 md:pt-8 pb-4 md:pb-5 shrink-0">
         <button
           onClick={() => openClient(null)}
-          className="flex items-center gap-2 text-[13px] font-bold text-zinc-500 hover:text-white transition-colors mb-5"
+          className="flex items-center gap-2 text-[13px] font-bold text-zinc-500 hover:text-white transition-colors mb-4 md:mb-5 py-2 -my-2"
         >
           <ArrowLeft size={15} />
           {intl.formatMessage(m.backToClients)}
         </button>
 
-        <div className="flex items-start justify-between gap-6 flex-wrap">
+        <div data-tour="client-header" className="flex items-start justify-between gap-6 flex-wrap">
           <div className="flex items-center gap-5 min-w-0">
             <div className="w-16 h-16 rounded-3xl bg-raised flex items-center justify-center font-sans text-3xl font-bold text-white border border-white/5 shadow-inner shrink-0 overflow-hidden">
               {client.logoDataUrl ? (
@@ -730,10 +736,11 @@ export function ClientDetailView() {
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-3">
-                <h1 className="font-sans text-3xl font-semibold text-white tracking-tight truncate">{client.name}</h1>
+                <h1 className="font-sans text-2xl md:text-3xl font-semibold text-white tracking-tight truncate">{client.name}</h1>
                 <button
                   onClick={() => toggleStarClient(client.id)}
-                  className={starredClientIds.includes(client.id) ? 'text-brand' : 'text-zinc-700 hover:text-zinc-400'}
+                  aria-label={intl.formatMessage(starredClientIds.includes(client.id) ? m.unstarClient : m.starClient)}
+                  className={`hit-area shrink-0 ${starredClientIds.includes(client.id) ? 'text-brand' : 'text-zinc-700 hover:text-zinc-400'}`}
                 >
                   <Star size={18} fill={starredClientIds.includes(client.id) ? 'currentColor' : 'none'} />
                 </button>
@@ -756,7 +763,7 @@ export function ClientDetailView() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 md:gap-3 flex-wrap w-full md:w-auto">
             <button
               onClick={() => startConversation([client.id])}
               className="flex items-center gap-2 px-5 py-2.5 bg-brand/10 text-brand border border-brand/20 text-sm font-bold rounded-full hover:bg-brand/20 transition-all"
@@ -778,10 +785,11 @@ export function ClientDetailView() {
         </div>
       </header>
 
-      <div className="px-10 pb-5 flex items-center gap-2 shrink-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div ref={tabStripRef} data-tour="client-tabs" className="px-4 md:px-10 pb-5 flex items-center gap-2 shrink-0 scroll-x">
         {TABS.map((t) => (
           <button
             key={t}
+            aria-current={tab === t ? 'page' : undefined}
             onClick={() => setTab(t)}
             className={`px-4 py-2 rounded-full text-[13px] font-bold transition-all border whitespace-nowrap ${
               tab === t
@@ -794,13 +802,13 @@ export function ClientDetailView() {
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex-1 overflow-y-auto px-4 md:px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           {tab === 'Overview' && (
             <div className="flex flex-col gap-6">
               {/* Wireframe's pipeline snapshot — the same seven figures, in the
                   same order, each one drilling to the tab that can act on it. */}
-              <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-4">
+              <div data-tour="client-kpis" className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-4">
                 <Tile label={intl.formatMessage(m.tileInProcessing)} value={s.processing} hint={intl.formatMessage(m.tileInProcessingHint)} onClick={() => setTab('Costs')} />
                 <Tile label={intl.formatMessage(m.tileToReview)} value={s.toReview} onClick={() => setTab('Costs')} />
                 <Tile label={intl.formatMessage(m.tileReady)} value={s.ready} onClick={() => setTab('Costs')} />
@@ -977,7 +985,7 @@ export function ClientDetailView() {
               client." The chat is the full workspace, so this tab is the way
               in and the record of what has already been asked. */}
           {tab === 'AI' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div data-tour="client-ai" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Panel title={intl.formatMessage(m.panelAskAboutClient)} icon={Bot}>
                 <p className="text-[13px] text-zinc-500 leading-relaxed mb-5">
                   {intl.formatMessage(m.askIntro, { client: client.name })}
@@ -1102,6 +1110,7 @@ export function ClientDetailView() {
                   {intl.formatMessage(m.tasksIntro, { client: client.name })}
                 </p>
                 <button
+                  data-tour="add-task"
                   onClick={() => setAddingTask(true)}
                   className="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-glow-btn"
                 >
@@ -1127,7 +1136,8 @@ export function ClientDetailView() {
                               ? intl.formatMessage(m.taskWaitingOn, { title: blocker?.title })
                               : intl.formatMessage(open ? m.taskMarkComplete : m.taskReopen)
                           }
-                          className={`shrink-0 transition-colors ${
+                          aria-label={intl.formatMessage(open ? m.taskMarkComplete : m.taskReopen)}
+                          className={`hit-area shrink-0 transition-colors ${
                             !open ? 'text-brand' : blocked ? 'text-zinc-700 cursor-not-allowed' : 'text-zinc-600 hover:text-white'
                           }`}
                         >
@@ -1156,7 +1166,7 @@ export function ClientDetailView() {
           )}
 
           {tab === 'Approvals' && (
-            <div className="flex flex-col gap-6">
+            <div data-tour="client-approvals" className="flex flex-col gap-6">
               {/* Items on a client-side stage. Nobody in the practice can clear
                   these — the only move is getting the SMS link to the approver
                   and, if they go quiet, chasing it. */}
@@ -1439,7 +1449,7 @@ export function ClientDetailView() {
           )}
 
           {tab === 'Users' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div data-tour="client-users" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Panel title={intl.formatMessage(m.panelBusinessUsers)} icon={Users}>
                 <p className="text-[13px] text-zinc-500 leading-relaxed mb-5">
                   {intl.formatMessage(m.businessUsersIntro, { client: client.name })}
@@ -1476,7 +1486,7 @@ export function ClientDetailView() {
                             : member.email || member.mobile || intl.formatMessage(m.memberNoContact)}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                      <div className="flex items-center gap-2 flex-wrap justify-start sm:justify-end w-full sm:w-auto">
                         <Pill tone={member.role === 'Owner' ? 'blue' : 'neutral'}>{member.role}</Pill>
                         {member.status === 'pending-client-approval'
                           ? <Pill tone="amber">{intl.formatMessage(m.pillWaitingClientApproval)}</Pill>
@@ -1499,6 +1509,7 @@ export function ClientDetailView() {
                   ))}
 
                   <button
+                    data-tour="add-user"
                     onClick={() => setInviting(true)}
                     className="flex items-center justify-center gap-2 p-3.5 rounded-2xl border border-dashed border-white/10 text-[13px] font-bold text-zinc-400 hover:text-white hover:border-white/25 transition-colors"
                   >
@@ -1529,7 +1540,7 @@ export function ClientDetailView() {
           )}
 
           {tab === 'Integrations' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div data-tour="integrations" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Panel title={intl.formatMessage(m.panelConnections)} icon={Link2}>
                 <div className="flex flex-col gap-3">
                   <ConnectionRow
@@ -1637,7 +1648,7 @@ export function ClientDetailView() {
           )}
 
           {tab === 'Settings' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div data-tour="client-settings" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <ClientDetailsPanel
                 client={client}
                 pending={pendingChanges}
@@ -2114,7 +2125,7 @@ function AddTaskForm({ client, colleagues, existing, onAdd, onClose }: {
           {problem && <p className="text-[13px] text-amber-400 font-semibold">{problem}</p>}
         </div>
 
-        <div className="p-4 bg-raised/50 flex items-center gap-3 justify-end">
+        <div className="p-4 bg-raised/50 flex items-center gap-2 sm:gap-3 justify-end flex-wrap [&>button]:flex-1 [&>button]:basis-[8rem] sm:[&>button]:flex-none sm:[&>button]:basis-auto [&>button]:justify-center">
           <button onClick={onClose} className="px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 hover:text-white transition-colors">
             {intl.formatMessage(commonActions.cancel)}
           </button>
@@ -2275,7 +2286,7 @@ function InviteBusinessUser({ clientName, onSend, onClose }: {
             )}
           />
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field
               label={intl.formatMessage(inviteMessages.fieldName)}
               value={name}
@@ -2334,7 +2345,7 @@ function InviteBusinessUser({ clientName, onSend, onClose }: {
           {problem && <p className="text-[13px] text-amber-400 font-semibold">{problem}</p>}
         </div>
 
-        <div className="p-4 bg-raised/50 flex items-center gap-3 justify-end">
+        <div className="p-4 bg-raised/50 flex items-center gap-2 sm:gap-3 justify-end flex-wrap [&>button]:flex-1 [&>button]:basis-[8rem] sm:[&>button]:flex-none sm:[&>button]:basis-auto [&>button]:justify-center">
           <button onClick={onClose} className="px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 hover:text-white transition-colors">
             {intl.formatMessage(commonActions.cancel)}
           </button>

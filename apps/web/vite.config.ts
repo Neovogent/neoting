@@ -64,5 +64,28 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./vitest.setup.ts'],
     exclude: ['**/node_modules/**', '**/dist/**'],
+
+    /**
+     * A wall-clock budget for transform contention, not for slow assertions.
+     *
+     * Several suites wait on a dynamic `import()` — either `React.lazy` route
+     * chunks (`ChasePortalView.test.tsx` renders the real `App`) or a deliberate
+     * `await import('./ChatArea')` that lands after the context mock. Under a
+     * 24-file parallel run, vite has to transform that graph on demand, and on a
+     * loaded machine a single chunk has been measured taking well over five
+     * seconds while the suite reports 60-113s of aggregate import time.
+     *
+     * That raced vitest's 5s default and failed roughly one run in three — on
+     * `origin/main`, with no application change in sight, so this is harness
+     * marginality rather than anything a product change introduced. Every one of
+     * these files passes deterministically in isolation in about a second.
+     *
+     * Raising the ceiling costs a green run nothing: a test that resolves in
+     * 40ms still resolves in 40ms. It only stops the harness abandoning a chunk
+     * that was always going to arrive. A genuinely broken component still fails,
+     * just later — the assertions are untouched.
+     */
+    testTimeout: 20000,
+    hookTimeout: 20000,
   },
 });

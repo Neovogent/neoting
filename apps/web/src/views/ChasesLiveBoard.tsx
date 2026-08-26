@@ -129,10 +129,10 @@ export function ChasesLiveBoard({
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      <div className="px-10 py-8 shrink-0">
+      <div className="px-4 md:px-10 py-4 md:py-8 shrink-0">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="font-sans text-3xl font-semibold text-white tracking-tight">{intl.formatMessage(m.heading)}</h1>
+            <h1 className="font-sans text-2xl md:text-3xl font-semibold text-white tracking-tight">{intl.formatMessage(m.heading)}</h1>
             <p className="text-zinc-400 mt-2">{intl.formatMessage(m.subheading)}</p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
@@ -147,9 +147,9 @@ export function ChasesLiveBoard({
         </div>
       </div>
 
-      <div className="flex-1 px-4 pb-4 flex flex-col xl:flex-row gap-4 min-h-0">
+      <div className="flex-1 px-2 md:px-4 pb-4 flex flex-col xl:flex-row gap-4 min-h-0">
         {/* The chase table */}
-        <div className="flex-1 bg-white rounded-[40px] p-8 shadow-2xl border border-white/10 overflow-y-auto">
+        <div className="flex-1 bg-white rounded-[28px] md:rounded-[40px] p-3 md:p-8 shadow-2xl border border-white/10 overflow-y-auto">
           {loading && (
             <div className="flex flex-col gap-3" aria-hidden>
               {[0, 1, 2].map((i) => (
@@ -160,8 +160,55 @@ export function ChasesLiveBoard({
           {!loading && chases.length === 0 && (
             <p className="px-4 py-16 text-center text-zinc-400 font-medium">{intl.formatMessage(m.empty)}</p>
           )}
+          {/* Phones: a card per chase carrying the same facts and the same
+              action, because the table's Action column clips well before
+              360px — exactly what ChasesView fixes for the synthetic board. */}
           {!loading && chases.length > 0 && (
-            <table className="w-full text-left text-sm whitespace-nowrap">
+            <div className="md:hidden -mx-1 divide-y divide-zinc-100">
+              {[...open, ...closed].map((chase) => {
+                const first = chase.items[0];
+                return (
+                  <div key={chase.id} className="px-3 py-4 flex flex-col gap-2.5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-bold text-zinc-900 text-[15px] truncate">{nameFor(chase.businessId)}</div>
+                        <div className="text-[12px] text-zinc-500 font-medium">
+                          {chase.state === 'CLOSED_RECEIVED' && chase.closedReason
+                            ? intl.formatMessage(m.autoClosed, { reason: chase.closedReason })
+                            : chase.lastSentAt ?? '—'}
+                        </div>
+                      </div>
+                      <span className={`inline-flex px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide shrink-0 ${stateTone(chase.state)}`}>
+                        {intl.formatMessage(STATE_LABEL[chase.state])}
+                      </span>
+                    </div>
+                    <div className="text-[13px] font-semibold text-zinc-700 break-words">
+                      {first
+                        ? intl.formatMessage(m.itemsSummary, {
+                            first: `${first.supplier} ${currency(first.amount)}`,
+                            rest: chase.items.length - 1,
+                          })
+                        : '—'}
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="inline-flex px-2.5 py-1 rounded-full text-[10.5px] font-bold uppercase tracking-wide bg-zinc-100 text-zinc-500">
+                        {intl.formatMessage(ENGINE_LABEL[chase.engine])}
+                      </span>
+                      <button
+                        onClick={() => setOpenId(chase.id)}
+                        className="ml-auto text-sm font-bold text-zinc-700 px-4 py-2.5 rounded-full bg-zinc-100 hover:bg-zinc-200 transition-colors inline-flex items-center gap-1"
+                      >
+                        {intl.formatMessage(m.openAction)}
+                        <ChevronRight size={14} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {!loading && chases.length > 0 && (
+            <table className="hidden md:table w-full text-left text-sm whitespace-nowrap">
               <thead className="text-[11px] uppercase tracking-widest font-bold text-zinc-400">
                 <tr>
                   <th className="px-4 py-4">{intl.formatMessage(m.columnClient)}</th>
@@ -277,7 +324,7 @@ export function ChasesLiveBoard({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => setOpenId(null)}
-            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 md:p-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             <motion.div
               initial={{ opacity: 0, y: 24, scale: 0.97 }}

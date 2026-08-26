@@ -233,14 +233,16 @@ function HistoryItem({
         <span className="truncate">{title}</span>
       </div>
       <div className="flex items-center gap-1 shrink-0 ml-2">
-        <span className="text-[11px] text-zinc-600 font-medium group-hover:hidden">{date}</span>
+        {/* Hover reveals the two buttons on a mouse; on touch there is no hover,
+            so they are always out and the timestamp they would overlap is not. */}
+        <span className="text-[11px] text-zinc-600 font-medium group-hover:hidden pointer-coarse:hidden">{date}</span>
         <button
           onClick={(e) => {
             e.stopPropagation();
             onPin();
           }}
           title={intl.formatMessage(pinned ? historyMessages.unpin : historyMessages.pin)}
-          className={`p-1 rounded-lg hover:bg-white/10 transition-colors ${pinned ? 'text-brand' : 'text-zinc-600 hidden group-hover:block'}`}
+          className={`p-1 rounded-lg hover:bg-white/10 transition-colors ${pinned ? 'text-brand' : 'text-zinc-600 hidden group-hover:block pointer-coarse:block'}`}
         >
           {pinned ? <Pin size={13} /> : <PinOff size={13} />}
         </button>
@@ -250,7 +252,7 @@ function HistoryItem({
             onDelete();
           }}
           title={intl.formatMessage(historyMessages.delete)}
-          className="p-1 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-white/10 transition-colors hidden group-hover:block"
+          className="p-1 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-white/10 transition-colors hidden group-hover:block pointer-coarse:block"
         >
           <Trash2 size={13} />
         </button>

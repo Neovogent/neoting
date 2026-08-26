@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
 import {
   Search, Plus, Sparkles, Send, ExternalLink, Activity, LayoutGrid, Rows3,
-  Star, Columns3, Download, X, Check, LucideIcon,
+  Star, Columns3, Download, Check, LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Modal } from '../components/DynamicComponents/Modal';
+import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
 import { defineMessages, useIntl, type IntlShape, type MessageDescriptor } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
 import { commonActions, commonLabels } from '../i18n/common';
@@ -131,6 +133,7 @@ export function ClientsView() {
   } = useAppContext();
 
   const [tab, setTab] = useState<Tab>('All');
+  const tabStripRef = useScrollActiveIntoView<HTMLDivElement>(tab);
   const [view, setView] = useState<'cards' | 'table'>('cards');
   const [query, setQuery] = useState('');
   // ?add=1 — the intake modal is a link, so it can be sent to a colleague.
@@ -230,21 +233,21 @@ export function ClientsView() {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden">
-      <header className="px-10 pt-8 pb-5 flex items-center justify-between gap-4 shrink-0 flex-wrap">
+      <header data-tour="clients-header" className="px-4 md:px-10 pt-4 md:pt-8 pb-4 md:pb-5 flex items-center justify-between gap-4 shrink-0 flex-wrap">
         <div className="flex items-baseline gap-4">
-          <h1 className="font-sans text-3xl font-semibold text-white tracking-tight">{intl.formatMessage(m.heading)}</h1>
+          <h1 className="font-sans text-2xl md:text-3xl font-semibold text-white tracking-tight">{intl.formatMessage(m.heading)}</h1>
           <span className="text-sm font-semibold text-zinc-500">
             {intl.formatMessage(m.countOfTotal, { shown: visible.length, total: clients.length })}
           </span>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={intl.formatMessage(m.searchPlaceholder)}
-              className="w-64 bg-card border border-white/5 rounded-full py-2.5 pl-11 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-brand transition-all placeholder:text-zinc-600 text-white font-medium shadow-inner"
+              className="w-full sm:w-64 bg-card border border-white/5 rounded-full py-2.5 pl-11 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-brand transition-all placeholder:text-zinc-600 text-white font-medium shadow-inner"
             />
           </div>
 
@@ -288,6 +291,7 @@ export function ClientsView() {
           )}
 
           <button
+            data-tour="clients-add"
             onClick={() => setAdding(true)}
             className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
           >
@@ -297,10 +301,11 @@ export function ClientsView() {
         </div>
       </header>
 
-      <div className="px-10 pb-5 flex items-center gap-2 shrink-0">
+      <div ref={tabStripRef} className="px-4 md:px-10 pb-5 flex items-center gap-2 shrink-0 scroll-x [&>button]:shrink-0 [&>button]:whitespace-nowrap">
         {TABS.map((t) => (
           <button
             key={t}
+            aria-current={tab === t ? 'page' : undefined}
             onClick={() => setTab(t)}
             className={`px-4 py-2 rounded-full text-[13px] font-bold transition-all border ${
               tab === t
@@ -313,16 +318,17 @@ export function ClientsView() {
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex-1 overflow-y-auto px-4 md:px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {visible.length === 0 ? (
-          <div className="border border-white/5 rounded-[32px] bg-card p-10 text-center text-zinc-500">
+          <div className="border border-white/5 rounded-[32px] bg-card p-4 md:p-10 text-center text-zinc-500">
             {intl.formatMessage(m.emptyFiltered)}
           </div>
         ) : view === 'cards' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {visible.map((client) => (
+            {visible.map((client, i) => (
               <ClientCard
                 key={client.id}
+                {...(i === 0 ? { tourKey: 'client-card' } : {})}
                 client={client}
                 starred={starredClientIds.includes(client.id)}
                 onStar={() => toggleStarClient(client.id)}
@@ -359,31 +365,10 @@ export function ClientsView() {
           />
         )}
         {adding && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            onClick={() => setAdding(false)}
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 24, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 24, scale: 0.97 }}
-              transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-              onClick={(e) => e.stopPropagation()}
-              className="relative"
-            >
-              <button
-                onClick={() => setAdding(false)}
-                className="absolute -top-3 -right-3 z-10 p-2 bg-card hover:bg-raised text-zinc-400 hover:text-white rounded-full border border-white/10 transition-colors shadow-lg"
-              >
-                <X size={18} />
-              </button>
-              {/* Same intake component the chat renders — one service, two entry points. */}
-              <ClientIntakeForm />
-            </motion.div>
-          </motion.div>
+          <Modal onClose={() => setAdding(false)} width="max-w-xl" label={intl.formatMessage(m.addClient)}>
+            {/* Same intake component the chat renders — one service, two entry points. */}
+            <ClientIntakeForm />
+          </Modal>
         )}
       </AnimatePresence>
     </div>
@@ -479,9 +464,11 @@ const mCard = defineMessages({
 });
 
 function ClientCard({
-  client, starred, onStar, onOpen, onAskAI, onChase,
+  client, starred, onStar, onOpen, onAskAI, onChase, tourKey,
 }: {
   client: Client;
+  /** Set on the first card only, so the tour has one place to point. */
+  tourKey?: string;
   starred: boolean;
   onStar: () => void;
   onOpen: () => void;
@@ -493,7 +480,7 @@ function ClientCard({
   const s = statsFor(client.id);
 
   return (
-    <div className="border border-white/5 rounded-[32px] bg-card p-6 flex flex-col justify-between shadow-2xl group hover:border-white/10 transition-all hover:-translate-y-1 relative overflow-hidden">
+    <div data-tour={tourKey} className="border border-white/5 rounded-[32px] bg-card p-6 flex flex-col justify-between shadow-2xl group hover:border-white/10 transition-all hover:-translate-y-1 relative overflow-hidden">
       <div className="flex justify-between items-start mb-6">
         <button
           onClick={onOpen}

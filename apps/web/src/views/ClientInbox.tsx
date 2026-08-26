@@ -965,7 +965,11 @@ export function ClientInbox({ client, kind, onPreview }: {
               if (ok) sel.forEach((d) => updateDocumentStatus(d.id, 'review'));
             },
           },
-          { label: intl.formatMessage(m.bulkPublish), icon: Send, primary: true, onClick: publish },
+          // `tourKey`, not a slugified label: the frame this was ported from
+          // derived the anchor from the English button text, which under
+          // react-intl would move with the locale and strand the step in every
+          // language but one. The tour's `costs-ready-publish` step targets this.
+          { label: intl.formatMessage(m.bulkPublish), icon: Send, primary: true, tourKey: 'bulk-publish-selected', onClick: publish },
         ]
       : status === 'published'
       ? [
@@ -1049,7 +1053,7 @@ export function ClientInbox({ client, kind, onPreview }: {
       {status === 'duplicates' ? (
         <div className="flex flex-col gap-3">
           {clientPairs.length === 0 ? (
-            <div className="border border-white/5 rounded-[32px] bg-card p-10 text-center shadow-2xl">
+            <div className="border border-white/5 rounded-[32px] bg-card p-4 md:p-10 text-center shadow-2xl">
               <p className="text-[13px] text-zinc-500 leading-relaxed max-w-md mx-auto">
                 {intl.formatMessage(m.duplicatesEmpty)}
               </p>
@@ -1094,6 +1098,7 @@ export function ClientInbox({ client, kind, onPreview }: {
         toolbar={
           <>
             <button
+              data-tour="inbox-upload"
               onClick={() => fileRef.current?.click()}
               className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-colors shadow-glow-btn-soft"
             >

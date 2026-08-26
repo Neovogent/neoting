@@ -75,9 +75,9 @@ export function MatchCard({ matches }: { matches: Match[] }) {
               isProbable ? 'border-amber-500/30 border-dashed' : 'border-white/5'
             }`}
           >
-            <div className="p-5 flex items-center justify-between gap-3 border-b border-white/5">
+            <div className="p-4 sm:p-5 flex items-center justify-between gap-3 border-b border-white/5 flex-wrap">
               <Pill tone={kind.tone}>{intl.formatMessage(kind.label)}</Pill>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 min-w-0">
                 <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">
                   {intl.formatMessage(m.confidence, { percent: Math.round(match.confidence * 100) })}
                 </span>

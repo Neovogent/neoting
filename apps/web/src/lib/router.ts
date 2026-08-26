@@ -43,11 +43,22 @@ export function useHref(): string {
 }
 
 /**
+ * While the demo tour is running nothing may leave the screen it is showing:
+ * tabs, row clicks, deep-link buttons all still respond, but the address does
+ * not change. The tour itself moves with `force`.
+ */
+let navigationLocked = false;
+export function lockNavigation(locked: boolean) {
+  navigationLocked = locked;
+}
+
+/**
  * Go somewhere. `replace` swaps the current entry instead of adding one — used
  * for redirects and for state the user should not have to press Back through,
  * like normalising a URL on load.
  */
-export function navigate(to: string, options: { replace?: boolean } = {}) {
+export function navigate(to: string, options: { replace?: boolean; force?: boolean } = {}) {
+  if (navigationLocked && !options.force) return;
   if (to === currentHref()) return;
   window.history[options.replace ? 'replaceState' : 'pushState']({}, '', to);
   window.dispatchEvent(new Event(EVENT));

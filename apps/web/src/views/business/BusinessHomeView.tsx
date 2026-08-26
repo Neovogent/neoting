@@ -291,7 +291,7 @@ export function BusinessHomeView({
   const firstName = account.contactName.split(' ')[0];
 
   return (
-    <div className="p-8 max-w-5xl mx-auto flex flex-col gap-6">
+    <div className="p-4 md:p-8 max-w-5xl mx-auto flex flex-col gap-6">
       <div>
         <h1 className="font-sans text-2xl font-bold text-white tracking-tight">
           {firstName
@@ -305,7 +305,7 @@ export function BusinessHomeView({
         </p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div data-tour="portal-home" className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Stat icon={AlertCircle} label={intl.formatMessage(m.statRequested)} value={requests.length} tone={requests.length ? 'amber' : 'zinc'} />
         <Stat icon={Upload} label={intl.formatMessage(m.statSent)} value={sent} tone="zinc" />
         <Stat icon={Clock} label={intl.formatMessage(m.statProcessing)} value={processing} tone="zinc" />
@@ -643,7 +643,7 @@ export function BusinessHomeView({
         // role="presentation" says so on both; keyboard dismissal is Escape
         // (useEscape above) and the visible Close button below.
         <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto p-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto p-3 sm:p-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           onClick={() => setPreviewId(null)}
           role="presentation"
         >

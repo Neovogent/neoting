@@ -11,6 +11,7 @@ import { fromSlug, slug, useSegment } from '../lib/router';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { Modal, Field, Toggle } from './ApprovalsView';
+import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
 import type { Colleague, ColleagueRole, Team, WorkflowTask } from '../lib/types';
 
 /**
@@ -191,6 +192,7 @@ export function TeamView() {
   const confirm = useConfirm();
   const [tabSlug, setTabSlug] = useSegment(1);
   const tab: Tab = fromSlug(tabSlug, TABS) ?? 'Colleagues';
+  const tabStripRef = useScrollActiveIntoView<HTMLDivElement>(tab);
   const setTab = (next: Tab) => setTabSlug(next === 'Colleagues' ? null : slug(next));
   const [editing, setEditing] = useState<Colleague | null>(null);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
@@ -281,14 +283,14 @@ export function TeamView() {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden">
-      <header className="px-10 pt-8 pb-5 shrink-0">
+      <header data-tour="team-header" className="px-4 md:px-10 pt-4 md:pt-8 pb-4 md:pb-5 shrink-0">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-2xl bg-raised flex items-center justify-center text-white border border-white/5 shadow-inner">
               <Shield size={22} />
             </div>
             <div>
-              <h1 className="font-sans text-3xl font-semibold text-white tracking-tight">{intl.formatMessage(m.heading)}</h1>
+              <h1 className="font-sans text-2xl md:text-3xl font-semibold text-white tracking-tight">{intl.formatMessage(m.heading)}</h1>
               <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
                 {intl.formatMessage(m.subtitle, {
                   active: colleagues.filter((c) => c.active).length,
@@ -338,10 +340,11 @@ export function TeamView() {
         </div>
       </header>
 
-      <div className="px-10 pb-5 flex items-center gap-2 shrink-0">
+      <div ref={tabStripRef} className="px-4 md:px-10 pb-5 flex items-center gap-2 shrink-0 scroll-x [&>button]:shrink-0 [&>button]:whitespace-nowrap">
         {TABS.map((t) => (
           <button
             key={t}
+            aria-current={tab === t ? 'page' : undefined}
             onClick={() => setTab(t)}
             className={`px-4 py-2 rounded-full text-[13px] font-bold transition-all border ${
               tab === t
@@ -354,7 +357,7 @@ export function TeamView() {
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex-1 overflow-y-auto px-4 md:px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           {tab === 'Colleagues' && (
             <DataTable<Colleague>
@@ -417,7 +420,7 @@ export function TeamView() {
               ))}
 
               {teams.length === 0 && (
-                <div className="border border-white/5 rounded-[32px] bg-card p-10 text-center text-zinc-500 lg:col-span-2">
+                <div className="border border-white/5 rounded-[32px] bg-card p-4 md:p-10 text-center text-zinc-500 lg:col-span-2">
                   {intl.formatMessage(m.teamsEmpty)}
                 </div>
               )}
@@ -682,7 +685,7 @@ function TeamEditor({ team, onSave, onRemove, onClose }: {
           </p>
         </div>
 
-        <div className="p-6 flex flex-col gap-5 max-h-[55vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="p-6 flex flex-col gap-5 max-h-[55dvh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <Field
             label={intl.formatMessage(teamEditorM.nameLabel)}
             value={draft.name}
@@ -1002,13 +1005,13 @@ function ColleagueEditor({ colleague, onSave, onRemove, onResetPassword, onClose
           </p>
         </div>
 
-        <div className="p-6 flex flex-col gap-5 max-h-[55vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="p-6 flex flex-col gap-5 max-h-[55dvh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <AvatarPicker
             value={draft.avatarDataUrl ?? ''}
             name={draft.name}
             onChange={(v) => set('avatarDataUrl', v || undefined)}
           />
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field
               label={intl.formatMessage(colleagueEditorM.nameLabel)}
               value={draft.name}
@@ -1022,7 +1025,7 @@ function ColleagueEditor({ colleague, onSave, onRemove, onResetPassword, onClose
               placeholder={intl.formatMessage(colleagueEditorM.emailPlaceholder)}
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field
               label={intl.formatMessage(colleagueEditorM.jobTitleLabel)}
               value={draft.jobTitle ?? ''}

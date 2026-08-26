@@ -1,9 +1,10 @@
 import { useMemo, useRef, useState } from 'react';
 import {
   Landmark, Search, Link2, Unlink, Send, UploadCloud, SlidersHorizontal,
-  AlertTriangle, RefreshCw, X, Check, FileText, Wand2, Download, Eye, Plus,
+  AlertTriangle, RefreshCw, Check, FileText, Wand2, Download, Eye, Plus,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Modal } from '../components/DynamicComponents/Modal';
 import { defineMessages, useIntl } from 'react-intl';
 import { commonActions, commonLabels } from '../i18n/common';
 import { useAppContext } from '../context/AppContext';
@@ -444,7 +445,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
     <div className={scopedToClient
       ? 'flex flex-col min-w-0'
       : 'flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden'}>
-      <header className={scopedToClient ? 'pb-5 shrink-0' : 'px-10 pt-8 pb-5 shrink-0'}>
+      <header className={scopedToClient ? 'pb-5 shrink-0' : 'px-4 md:px-10 pt-4 md:pt-8 pb-4 md:pb-5 shrink-0'}>
         {/* Loading and failure are said out loud (METH S14 sweep): seed rows
             render underneath either way — the standing fallback — but never
             silently impersonating the feed. */}
@@ -461,7 +462,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
             <DataSourceBadge slice="bankTransactions" status={bankSlice} />
           </div>
         )}
-        <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div data-tour="bank-header" className="flex items-start justify-between gap-4 flex-wrap">
           {/* The client page already names the client, so the embedded copy
               leads with the number that decides whether you act. */}
           {scopedToClient ? (
@@ -474,7 +475,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                 <Landmark size={22} />
               </div>
               <div>
-                <h1 className="font-sans text-3xl font-semibold text-white tracking-tight">
+                <h1 className="font-sans text-2xl md:text-3xl font-semibold text-white tracking-tight">
                   {intl.formatMessage(m.heading)}
                 </h1>
                 <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
@@ -531,7 +532,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
       {/* Inside a client these sit directly under the client tab rail, so they
           take the recessed segmented treatment to keep the two levels apart.
           Standalone, the page has no rail above them and pills read fine. */}
-      <div className={`${scopedToClient ? '' : 'px-10'} pb-5 shrink-0`}>
+      <div className={`${scopedToClient ? '' : 'px-4 md:px-10'} pb-5 shrink-0`}>
         {scopedToClient ? (
           <SubTabs
             tabs={TABS.map((t) => ({
@@ -578,18 +579,18 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
 
       <div className={scopedToClient
         ? ''
-        : 'flex-1 overflow-y-auto px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'}>
+        : 'flex-1 overflow-y-auto px-4 md:px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'}>
         <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           {tab === 'Transactions' && (
             <>
               <div className="flex items-center gap-3 mb-5 flex-wrap">
-                <div className="relative">
+                <div className="relative w-full sm:w-auto">
                   <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
                   <input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder={intl.formatMessage(m.searchPlaceholder)}
-                    className="w-64 bg-card border border-white/5 rounded-full py-2.5 pl-11 pr-4 text-sm focus:outline-none focus:border-brand placeholder:text-zinc-600 text-white font-medium shadow-inner"
+                    className="w-full sm:w-64 bg-card border border-white/5 rounded-full py-2.5 pl-11 pr-4 text-sm focus:outline-none focus:border-brand placeholder:text-zinc-600 text-white font-medium shadow-inner"
                   />
                 </div>
                 {(['all', 'needs-you', 'unmatched', 'matched', 'credits'] as const).map((f) => (
@@ -647,11 +648,11 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
             // replaced — meaningless against the feed. Live, this tab says
             // where matches actually live (METH S14 sweep).
             liveBank ? (
-              <div className="border border-white/5 rounded-[32px] bg-card p-10 text-center text-zinc-500 text-[13px] shadow-2xl">
+              <div className="border border-white/5 rounded-[32px] bg-card p-4 md:p-10 text-center text-zinc-500 text-[13px] shadow-2xl">
                 {intl.formatMessage(m.matchesLiveNote)}
               </div>
             ) : scopedMatches.length === 0 ? (
-              <div className="border border-white/5 rounded-[32px] bg-card p-10 text-center text-zinc-500 text-[13px] shadow-2xl">
+              <div className="border border-white/5 rounded-[32px] bg-card p-4 md:p-10 text-center text-zinc-500 text-[13px] shadow-2xl">
                 {intl.formatMessage(m.matchesEmpty)}
               </div>
             ) : (
@@ -701,7 +702,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                       {match.reason && <p className="text-[12px] text-zinc-500 leading-relaxed">{match.reason}</p>}
                     </div>
 
-                    <div className="p-4 bg-raised/50 flex items-center justify-between gap-3">
+                    <div className="p-4 bg-raised/50 flex items-center justify-between gap-2 sm:gap-3 flex-wrap">
                       <span className="text-[13px] font-bold text-white tabular-nums">{currency(Math.abs(match.amount))}</span>
                       <button
                         onClick={async () => {
@@ -1186,27 +1187,6 @@ function CashCodePanel({ txn, customCategories, onAddCategory, onConfirm }: {
         </button>
       </div>
     </div>
-  );
-}
-
-function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      onClick={onClose}
-      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-    >
-      <motion.div
-        initial={{ opacity: 0, y: 24, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 24, scale: 0.97 }}
-        onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-2xl flex justify-center"
-      >
-        <button onClick={onClose} className="absolute -top-3 -right-3 z-10 p-2 bg-card hover:bg-raised text-zinc-400 hover:text-white rounded-full border border-white/10 transition-colors shadow-lg">
-          <X size={18} />
-        </button>
-        {children}
-      </motion.div>
-    </motion.div>
   );
 }
 
