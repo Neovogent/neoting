@@ -1,9 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   CheckCircle, X, GitBranch, Plus, Trash2, ShieldCheck, Lock, Clock, Search, Send, Download,
   Smartphone, Sparkles, Check, MessageSquare, Eye, FileWarning,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Modal } from '../components/DynamicComponents/Modal';
+import { useTourAction } from '../tour/bus';
+import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
 import { defineMessages, useIntl, type IntlShape, type MessageDescriptor } from 'react-intl';
 import { commonActions, commonLabels } from '../i18n/common';
 import { useAppContext } from '../context/AppContext';
@@ -199,12 +202,20 @@ export function ApprovalsView() {
   // The sub-tab is the second path segment, so every one has a link.
   const [tabSlug, setTabSlug] = useSegment(1);
   const tab: Tab = fromSlug(tabSlug, TABS) ?? 'Queue';
+  // A deep link into a later tab must not land on a strip scrolled past it.
+  const tabStripRef = useScrollActiveIntoView<HTMLDivElement>(tab);
   const setTab = (next: Tab) => setTabSlug(next === 'Queue' ? null : slug(next));
   const [scope, setScope] = useState<'mine' | 'all'>('mine');
   const [clientFilter, setClientFilter] = useState('all');
   const [query, setQuery] = useState('');
   const [detail, setDetail] = useState<ApprovalItem | null>(null);
   const [noteFor, setNoteFor] = useState<ApprovalItem | null>(null);
+  // The demo tour opens the first pending approval and closes it again.
+  useTourAction('approvals:open-detail', useCallback(() => {
+    const first = approvals.find((a) => a.state === 'pending');
+    if (first) setDetail(first);
+  }, [approvals]));
+  useTourAction('tour:reset', useCallback(() => { setDetail(null); setNoteFor(null); }, []));
   const confirm = useConfirm();
   const [editing, setEditing] = useState<ApprovalWorkflow | null>(null);
 
@@ -342,14 +353,14 @@ export function ApprovalsView() {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden">
-      <header className="px-10 pt-8 pb-5 shrink-0">
+      <header className="px-4 md:px-10 pt-4 md:pt-8 pb-4 md:pb-5 shrink-0">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-2xl bg-raised flex items-center justify-center text-white border border-white/5 shadow-inner">
               <CheckCircle size={22} />
             </div>
             <div>
-              <h1 className="font-sans text-3xl font-semibold text-white tracking-tight">
+              <h1 className="font-sans text-2xl md:text-3xl font-semibold text-white tracking-tight">
                 {intl.formatMessage(m.heading)}
               </h1>
               <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
@@ -389,10 +400,11 @@ export function ApprovalsView() {
         </div>
       </header>
 
-      <div className="px-10 pb-5 flex items-center gap-2 shrink-0">
+      <div ref={tabStripRef} className="px-4 md:px-10 pb-5 flex items-center gap-2 shrink-0 scroll-x [&>button]:shrink-0 [&>button]:whitespace-nowrap">
         {TABS.map((t) => (
           <button
             key={t}
+            aria-current={tab === t ? 'page' : undefined}
             onClick={() => setTab(t)}
             className={`px-4 py-2 rounded-full text-[13px] font-bold transition-all border ${
               tab === t
@@ -406,7 +418,7 @@ export function ApprovalsView() {
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex-1 overflow-y-auto px-4 md:px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           {tab === 'Queue' && liveQueue && (
             <ApprovalsLiveQueue
@@ -419,7 +431,7 @@ export function ApprovalsView() {
             <>
               <div className="flex items-center gap-3 mb-5 flex-wrap">
                 {/* Screen 12 opens on my own queue, not the practice's. */}
-                <div className="flex items-center bg-card border border-white/5 rounded-full p-1 shadow-inner">
+                <div data-tour="approvals-scope" className="flex items-center bg-card border border-white/5 rounded-full p-1 shadow-inner">
                   <ScopePill
                     active={scope === 'mine'}
                     onClick={() => setScope('mine')}
@@ -433,7 +445,7 @@ export function ApprovalsView() {
                     count={practicePending.length}
                   />
                 </div>
-                <div className="relative w-72">
+                <div className="relative w-full sm:w-72">
                   <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
                   <input
                     value={query}
@@ -469,7 +481,7 @@ export function ApprovalsView() {
           )}
 
           {tab === 'Workflows' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div data-tour="workflows" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {approvalWorkflows.map((w) => (
                 <WorkflowCard
                   key={w.id}
@@ -617,7 +629,7 @@ export function ApprovalsView() {
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             onClick={() => setPreview(null)}
-            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 md:p-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             <motion.div
               initial={{ opacity: 0, y: 24, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 24, scale: 0.97 }}
@@ -1053,7 +1065,7 @@ function ApprovalDetail({ item, workflow, onApprove, onReject, onEdit, onClose }
 
   return (
     <Modal onClose={onClose}>
-      <div className="w-full max-w-2xl border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
+      <div data-tour="approval-detail" className="w-full max-w-2xl border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
         <div className="p-6 flex items-start justify-between gap-4 border-b border-white/5">
           <div className="min-w-0">
             <h3 className="font-sans font-bold text-xl text-white tracking-tight truncate">{item.supplier}</h3>
@@ -1066,7 +1078,7 @@ function ApprovalDetail({ item, workflow, onApprove, onReject, onEdit, onClose }
             : <Pill tone="amber">{item.stage}</Pill>}
         </div>
 
-        <div className="p-6 flex flex-col gap-6 max-h-[55vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="p-6 flex flex-col gap-6 max-h-[55dvh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div>
             <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-3">
               {workflow
@@ -1145,7 +1157,7 @@ function ApprovalDetail({ item, workflow, onApprove, onReject, onEdit, onClose }
         </div>
 
         {item.state === 'pending' && (
-          <div className="p-4 bg-raised/50 flex items-center gap-3 justify-end flex-wrap">
+          <div className="p-4 bg-raised/50 flex items-center gap-2 sm:gap-3 justify-end flex-wrap [&>button]:flex-1 [&>button]:basis-[8rem] sm:[&>button]:flex-none sm:[&>button]:basis-auto [&>button]:justify-center">
             {/* Screen 12's per-stage can-edit toggle: whether this approver may
                 correct the coding, or only pass and reject, is the workflow
                 author's call — so the button reflects the stage, not the role. */}
@@ -1343,6 +1355,10 @@ const mEditor = defineMessages({
     defaultMessage: 'No client selected — nothing will pause for approval until one is.',
   },
   stagesHeading: { id: 'approvals.workflowEditor.stagesHeading', defaultMessage: 'Stages' },
+  stageNameLabel: { id: 'approvals.workflowEditor.stageNameLabel', defaultMessage: 'Stage name' },
+  approverLabel: { id: 'approvals.workflowEditor.approverLabel', defaultMessage: 'Approver' },
+  thresholdLabel: { id: 'approvals.workflowEditor.thresholdLabel', defaultMessage: 'Threshold above' },
+  removeLabel: { id: 'approvals.workflowEditor.removeLabel', defaultMessage: 'Remove' },
   addStageAction: { id: 'approvals.workflowEditor.addStageAction', defaultMessage: '+ Add stage' },
   // The name a freshly added stage carries. It is pushed into state and lands
   // straight in the editable name field, so it is read before it is changed —
@@ -1542,8 +1558,8 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
           </div>
         )}
 
-        <div className="p-6 flex flex-col gap-5 max-h-[55vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <div className="grid grid-cols-2 gap-4">
+        <div className="p-6 flex flex-col gap-5 max-h-[55dvh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label={intl.formatMessage(mEditor.nameLabel)} value={draft.name} onChange={(v) => set('name', v)} />
             <Field label={intl.formatMessage(mEditor.appliesToLabel)} value={draft.appliesTo} onChange={(v) => set('appliesTo', v)} />
           </div>
@@ -1605,23 +1621,27 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
             </div>
             <div className="flex flex-col gap-2">
               {draft.stages.map((s, i) => (
-                <div key={i} className="flex items-center gap-2 p-3 rounded-2xl bg-ground/60 border border-white/5">
+                <div key={i} className="flex items-center gap-2 p-3 rounded-2xl bg-ground/60 border border-white/5 flex-wrap">
                   <input
                     value={s.name}
+                    aria-label={intl.formatMessage(mEditor.stageNameLabel)}
                     onChange={(e) => set('stages', draft.stages.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
-                    className="flex-1 bg-transparent text-[13px] font-bold text-white focus:outline-none min-w-0"
+                    className="flex-1 basis-full sm:basis-auto min-w-[8rem] bg-transparent text-[13px] font-bold text-white focus:outline-none py-1"
                   />
                   <input
                     value={s.approver}
+                    aria-label={intl.formatMessage(mEditor.approverLabel)}
                     onChange={(e) => set('stages', draft.stages.map((x, j) => (j === i ? { ...x, approver: e.target.value } : x)))}
-                    className="w-32 bg-card border border-white/5 rounded-lg px-2 py-1 text-[12px] text-zinc-300 focus:outline-none focus:border-brand"
+                    className="flex-1 sm:flex-none min-w-0 sm:w-32 bg-card border border-white/5 rounded-lg px-2 py-1.5 text-[12px] text-zinc-300 focus:outline-none focus:border-brand"
                   />
                   <input
                     type="number"
+                    inputMode="decimal"
+                    aria-label={intl.formatMessage(mEditor.thresholdLabel)}
                     placeholder={intl.formatMessage(mEditor.thresholdPlaceholder)}
                     value={s.thresholdAbove ?? ''}
                     onChange={(e) => set('stages', draft.stages.map((x, j) => (j === i ? { ...x, thresholdAbove: e.target.value ? Number(e.target.value) : undefined } : x)))}
-                    className="w-24 bg-card border border-white/5 rounded-lg px-2 py-1 text-[12px] text-zinc-300 focus:outline-none focus:border-brand"
+                    className="w-24 bg-card border border-white/5 rounded-lg px-2 py-1.5 text-[12px] text-zinc-300 focus:outline-none focus:border-brand"
                   />
                   {/* Whether this stage leaves the practice. A client-side
                       stage is delivered by SMS + OTP, so it can never edit. */}
@@ -1654,7 +1674,8 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
                   </button>
                   <button
                     onClick={() => set('stages', draft.stages.filter((_, j) => j !== i))}
-                    className="p-1.5 rounded-lg text-zinc-600 hover:text-red-400 transition-colors shrink-0"
+                    aria-label={intl.formatMessage(mEditor.removeLabel)}
+                    className="hit-area p-1.5 rounded-lg text-zinc-600 hover:text-red-400 transition-colors shrink-0"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -1698,7 +1719,8 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
                   />
                   <button
                     onClick={() => set('branches', draft.branches.filter((_, j) => j !== i))}
-                    className="p-1.5 rounded-lg text-zinc-600 hover:text-red-400 transition-colors shrink-0"
+                    aria-label={intl.formatMessage(mEditor.removeLabel)}
+                    className="hit-area p-1.5 rounded-lg text-zinc-600 hover:text-red-400 transition-colors shrink-0"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -1788,26 +1810,8 @@ function exportApprovals(rows: ApprovalItem[]) {
   URL.revokeObjectURL(url);
 }
 
-export function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      onClick={onClose}
-      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-    >
-      <motion.div
-        initial={{ opacity: 0, y: 24, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 24, scale: 0.97 }}
-        onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-2xl flex justify-center"
-      >
-        <button onClick={onClose} className="absolute -top-3 -right-3 z-10 p-2 bg-card hover:bg-raised text-zinc-400 hover:text-white rounded-full border border-white/10 transition-colors shadow-lg">
-          <X size={18} />
-        </button>
-        {children}
-      </motion.div>
-    </motion.div>
-  );
-}
+/** Re-exported so existing importers keep working; the frame itself lives in DynamicComponents/Modal. */
+export { Modal };
 
 export function Field({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
   return (

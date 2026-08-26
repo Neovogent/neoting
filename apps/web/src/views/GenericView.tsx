@@ -19,7 +19,7 @@ export function GenericView({ title }: { title: string }) {
   const intl = useIntl();
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center bg-ground text-center p-10">
+    <div className="flex-1 flex flex-col items-center justify-center bg-ground text-center p-4 md:p-10">
       <div className="w-24 h-24 bg-card border border-white/5 rounded-[32px] flex items-center justify-center text-zinc-600 mb-8 shadow-2xl">
          <Construction size={48} />
       </div>

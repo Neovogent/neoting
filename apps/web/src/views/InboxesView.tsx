@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Search, AlertCircle, CheckCircle2, UploadCloud, Eye, PencilLine, X, Copy, Link2,
   ShieldAlert, Sparkles, Send, Trash2, RefreshCw, Download, ArrowRightLeft, Check, SlidersHorizontal,
@@ -10,6 +10,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { commonActions, commonLabels } from '../i18n/common';
 import { useAppContext } from '../context/AppContext';
 import { refreshDocuments, runWorkspaceDrop } from '../api/uploads';
+import { useTourAction } from '../tour/bus';
+import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { Tooltip } from '../components/DynamicComponents/Tooltip';
 import { blockedReason, describeMissing, partitionByReadiness, readinessOf } from '../lib/readiness';
@@ -22,7 +24,6 @@ import { EXPORT_HINT, EXPORT_MIN_ROWS } from '../lib/exportRules';
 import { failureOf, reasonText, retryMeaning } from '../lib/failures';
 import { AnalysisModal } from '../components/DynamicComponents/AnalysisModal';
 import { ProposalFlowModal } from '../components/DynamicComponents/ProposalFlowModal';
-import { UnroutedQueue } from './UnroutedQueue';
 import type { CreateActionProposalRequest } from '@neoting/contracts/model';
 import type { DocKind, DocStatus, Document, DuplicatePair } from '../lib/types';
 
@@ -153,6 +154,24 @@ const m = defineMessages({
   bulkMarkReadyConfirm: { id: 'inboxes.inboxesView.bulkMarkReadyConfirm', defaultMessage: 'Yes, mark them Ready' },
   bulkMove: { id: 'inboxes.inboxesView.bulkMove', defaultMessage: 'Move to client' },
   moveMenuHeading: { id: 'inboxes.inboxesView.moveMenuHeading', defaultMessage: 'Move to' },
+  // The Unrouted card is gone (SoT #158) and routing now happens here, so
+  // the two things it said have to be said here or they are lost: which
+  // inbox the document lands in, and that assigning one is a state change.
+  routeMenuHeading: { id: 'inboxes.inboxesView.routeMenuHeading', defaultMessage: 'Route to client' },
+  routeInbox: { id: 'inboxes.inboxesView.routeInbox', defaultMessage: 'Inbox: {inbox}' },
+  routeProposalNote: {
+    id: 'inboxes.inboxesView.routeProposalNote',
+    defaultMessage:
+      'Assigning one is a state change — it goes through Review \u2192 Approve like everything else.',
+  },
+  cardEmpty: {
+    id: 'inboxes.inboxesView.cardEmpty',
+    defaultMessage: 'Nothing in this view. Upload from the button above to ingest files.',
+  },
+  cardFieldMissing: {
+    id: 'inboxes.inboxesView.cardFieldMissing',
+    defaultMessage: 'Missing — required before publishing',
+  },
   teachSenderLabel: { id: 'inboxes.inboxesView.teachSenderLabel', defaultMessage: 'Always route this sender here' },
   teachSenderFallback: {
     id: 'inboxes.inboxesView.teachSenderFallback',
@@ -313,6 +332,9 @@ export function InboxesView() {
   const segments = usePath();
   const inbox = (INBOXES.find((i) => i === segments[1]) ?? 'cost') as Inbox;
   const statusTab = (STATUS_TABS.find((st) => st === segments[2]) ?? 'review') as StatusTab;
+  // Five status tabs do not fit a phone: the strip scrolls, so the active
+  // one is scrolled back into view when a deep link picks a later tab.
+  const tabStripRef = useScrollActiveIntoView<HTMLDivElement>(statusTab);
 
   /** Both tabs move together so a queued pair of calls cannot half-navigate. */
   const goTo = (next: { inbox?: Inbox; status?: StatusTab }) =>
@@ -333,6 +355,17 @@ export function InboxesView() {
   const confirm = useConfirm();
   const [confirmPublish, setConfirmPublish] = useState<string[] | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  /**
+   * A live route (SoT #158): the bulk "Move to client" action is where the
+   * retired Unrouted card's `document.route` proposal now lives. One proposal
+   * per document, walked one at a time, because a proposal names one document
+   * and routing is a state change like any other — Review → Approve, never a
+   * local write. Held in state so the modal's `request` stays referentially
+   * stable across renders.
+   */
+  const [routing, setRouting] = useState<
+    { request: CreateActionProposalRequest; clientId: string; clientName: string; remaining: string[] } | null
+  >(null);
   /** The failed document a replacement file is being chosen for, if any. */
   const replaceRef = useRef<HTMLInputElement>(null);
   const [replacing, setReplacing] = useState<Document | null>(null);
@@ -384,17 +417,15 @@ export function InboxesView() {
   /**
    * Unrouted documents (METH Stage 12): the contract projects "no business
    * yet" as an empty `businessId`, which the mapper passes through as an
-   * empty `clientId`. They get their own queue above the tabs and stay OUT of
-   * the client inbox lists — in synthetic mode no document ever carries an
-   * empty client id, so both lines are inert there.
+   * empty `clientId`. They used to be held back for a separate Unrouted card;
+   * that card is gone (SoT #158), so they list here like any other document
+   * and are routed through the bulk "Move to client" action — which in live
+   * mode opens a `document.route` proposal. Holding them back now would leave
+   * live mode with no way to route anything at all. In synthetic mode no
+   * document carries an empty client id, so this reads the same as before.
    */
-  const unrouted = useMemo(
-    () => (documentsSource === 'api' ? documents.filter((d) => d.clientId === '') : []),
-    [documents, documentsSource],
-  );
-
   const inKind = useMemo(
-    () => documents.filter((d) => d.kind === inbox && d.clientId !== ''),
+    () => documents.filter((d) => d.kind === inbox),
     [documents, inbox],
   );
 
@@ -412,6 +443,44 @@ export function InboxesView() {
   }, [inKind, clientFilter, channelFilter, query, isSameClient]);
 
   const rows = useMemo(() => filtered.filter((d) => d.status === statusTab), [filtered, statusTab]);
+
+  // The demo tour opens the first document and asks to publish; every step
+  // change fires `tour:reset`, which closes whatever the tour opened.
+  useTourAction('inboxes:open-preview', useCallback(() => { if (rows[0]) setPreview(rows[0]); }, [rows]));
+  useTourAction('inboxes:request-publish', useCallback(() => { if (rows.length) setConfirmPublish(rows.map((d) => d.id)); }, [rows]));
+  useTourAction('tour:reset', useCallback(() => { setPreview(null); setConfirmPublish(null); setFieldsOpen(false); }, []));
+
+  /**
+   * One `document.route` proposal per document, walked one at a time. The
+   * inbox is the one being looked at, so the routed document lands where the
+   * person doing the routing is already standing.
+   */
+  const routeRequestFor = (documentId: string, clientId: string): CreateActionProposalRequest => ({
+    kind: 'document.route',
+    businessId: null,
+    payload: {
+      documentId,
+      inbox: inbox === 'sales' ? 'SALES' : 'COSTS',
+      toBusinessId: serverClientIdFor(clientId),
+    },
+  });
+
+  const startRouting = (clientId: string, ids: string[]) => {
+    const [head, ...remaining] = ids;
+    const client = clients.find((c) => c.id === clientId);
+    if (!head || !client) return;
+    setRouting({ request: routeRequestFor(head, clientId), clientId, clientName: client.name, remaining });
+  };
+
+  /** Decided or dismissed — move to the next selected document, or finish. */
+  const advanceRouting = () => {
+    setRouting((prev) => {
+      if (!prev) return null;
+      const [head, ...remaining] = prev.remaining;
+      if (!head) return null;
+      return { ...prev, request: routeRequestFor(head, prev.clientId), remaining };
+    });
+  };
 
   // Tab counts track the active filters so they always agree with the table.
   const counts = (s: DocStatus) => filtered.filter((d) => d.status === s).length;
@@ -602,6 +671,179 @@ export function InboxesView() {
     });
   };
 
+  /** Selection is a toggle in three places now — card, checkbox, row. */
+  const toggleSelected = (id: string) =>
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  /**
+   * The flags and the verbs, lifted out of the table cells so the phone cards
+   * below render exactly the same ones. A phone offering fewer actions than a
+   * desktop is how the Action column came to be off-screen in the first place.
+   */
+  const renderFlags = (doc: Document, blocked: string[]) => (
+              <span className="flex items-center gap-1.5">
+                {pairFor.has(doc.id) && (
+                  <FlagIcon
+                    icon={Copy}
+                    tone="amber"
+                    title={intl.formatMessage(m.flagDuplicate)}
+                    detail={intl.formatMessage(m.flagDuplicateDetail)}
+                    onClick={() => setComparing(pairFor.get(doc.id)!)}
+                  />
+                )}
+                {matchedIds.has(doc.id) && (
+                  <FlagIcon
+                    icon={Link2}
+                    tone="blue"
+                    title={intl.formatMessage(m.flagMatched)}
+                    detail={intl.formatMessage(m.flagMatchedDetail)}
+                  />
+                )}
+                {doc.status === 'ready' && blocked.length > 0 && (
+                  <FlagIcon
+                    icon={ShieldAlert}
+                    tone="red"
+                    title={intl.formatMessage(m.cannotPublish, { fields: blocked.join(', ') })}
+                    detail={intl.formatMessage(m.flagBlockedDetail)}
+                  />
+                )}
+              </span>
+  );
+
+  const renderActions = (doc: Document, blocked: string[]) => (
+              <div className="flex items-center justify-end gap-2">
+                {/* A document with anything outstanding is offered
+                    the fix, not the move — moving it on is what we
+                    are trying to stop until it is sorted. */}
+                {doc.status === 'review' && (() => {
+                  const verdict = readinessOf(doc, mandatoryFields);
+                  // Live, the review happens inside the document
+                  // via a proposal — the local flip would revert
+                  // under the poll. Disabled-with-tooltip, the
+                  // house pattern (METH S14 sweep).
+                  const live = documentsSource === 'api';
+                  return verdict.ready ? (
+                    <button
+                      aria-disabled={live}
+                      onClick={(e) => { e.stopPropagation(); if (live) return; markReviewed(doc); }}
+                      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold transition-colors ${
+                        live
+                          ? 'text-zinc-300 border border-zinc-200 cursor-not-allowed'
+                          : 'bg-zinc-100 text-zinc-700 hover:bg-brand hover:text-white'
+                      }`}
+                      title={intl.formatMessage(live ? m.markReviewedLiveHint : m.markReviewedTitle)}
+                    >
+                      <CheckCircle2 size={14} />
+                      {intl.formatMessage(m.markReviewedAction)}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setPreview(doc); }}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
+                      title={intl.formatMessage(m.fixTitle, { reason: blockedReason(verdict, intl) })}
+                    >
+                      <PencilLine size={14} />
+                      {intl.formatMessage(m.fixAction)}
+                    </button>
+                  );
+                })()}
+                {/* A failed row used to offer nothing but View.
+                    It now offers whatever actually clears this
+                    failure, with Retry beside it — and Retry says
+                    so when it cannot help. */}
+                {doc.status === 'rejected' && (() => {
+                  const failure = failureOf(doc);
+                  if (!failure) return null;
+                  const live = documentsSource === 'api';
+                  /**
+                   * Live mode wires exactly what is real (METH
+                   * S12): a publish failure retries through a NEW
+                   * `publish.batch` proposal; an extraction
+                   * failure has no reprocess executor yet, so its
+                   * Retry explains that the chase engine — not a
+                   * re-read — is what gets a fresh copy. The
+                   * replace-file fix stays synthetic-only: its
+                   * delete-and-reingest writes local state a poll
+                   * would silently revert.
+                   */
+                  const liveExtraction = live && failure.stage === 'extraction';
+                  return (
+                    <>
+                      {failure.fix !== 'retry' && !(live && failure.fix === 'replace-file') && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); runFix(doc); }}
+                          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
+                          title={intl.formatMessage(failure.detail)}
+                        >
+                          {failure.fix === 'replace-file' ? <UploadCloud size={14} /> : failure.fix === 'reconnect-ledger' ? <Link2 size={14} /> : <PencilLine size={14} />}
+                          {intl.formatMessage(failure.fixLabel)}
+                        </button>
+                      )}
+                      <button
+                        aria-disabled={liveExtraction}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (liveExtraction) return;
+                          if (live) { openPublishRetry(doc); return; }
+                          void askRetry(doc);
+                        }}
+                        className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold transition-colors ${
+                          liveExtraction
+                            ? 'text-zinc-300 border border-zinc-200 cursor-not-allowed'
+                            : failure.retryHelps
+                              ? 'bg-zinc-100 text-zinc-700 hover:bg-brand hover:text-white'
+                              : 'text-zinc-400 border border-zinc-200 hover:text-zinc-600'
+                        }`}
+                        title={
+                          liveExtraction
+                            ? intl.formatMessage(m.retryChaseInstead)
+                            : failure.retryHelps
+                              ? intl.formatMessage(retryMeaning(failure))
+                              : intl.formatMessage(m.retryUnlikelyTitle, {
+                                  reason: reasonText(failure, intl).toLowerCase(),
+                                  meaning: intl.formatMessage(retryMeaning(failure)),
+                                })
+                        }
+                      >
+                        <RefreshCw size={13} />
+                        {intl.formatMessage(commonActions.retry)}
+                      </button>
+                    </>
+                  );
+                })()}
+                {doc.status === 'ready' && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); requestPublish([doc.id]); }}
+                    disabled={blocked.length > 0 || documentsSource === 'api'}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold bg-brand text-white hover:bg-brand-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    title={
+                      documentsSource === 'api'
+                        ? intl.formatMessage(m.publishLiveHint)
+                        : blocked.length
+                          ? intl.formatMessage(m.cannotPublish, { fields: blocked.join(', ') })
+                          : intl.formatMessage(m.publishRowTitle)
+                    }
+                  >
+                    <Send size={13} />
+                    {intl.formatMessage(m.publishAction)}
+                  </button>
+                )}
+                {/* An eye, not an overflow menu: this opens the
+                    document, it does not reveal more actions. It
+                    also stays visible rather than appearing on
+                    hover — a control you cannot see is one nobody
+                    knows is there. */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); setPreview(doc); }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-bold text-zinc-500 border border-zinc-200 hover:text-black hover:border-zinc-300 transition-colors"
+                  title={intl.formatMessage(m.viewTitle)}
+                >
+                  <Eye size={14} />
+                  {intl.formatMessage(m.viewAction)}
+                </button>
+              </div>
+  );
+
   return (
     <div
       className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-y-auto relative [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -609,18 +851,19 @@ export function InboxesView() {
       onDragLeave={() => setDragging(false)}
       onDrop={(e) => { e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer.files); }}
     >
-      <header className="px-10 py-8 shrink-0 flex flex-col items-center">
+      <header className="px-4 md:px-10 py-4 md:py-8 shrink-0 flex flex-col items-center">
         <div className="flex items-center justify-between w-full mb-6 gap-4 flex-wrap">
           <div className="flex items-center gap-5">
-            <h1 className="font-sans text-3xl font-semibold text-white tracking-tight">{intl.formatMessage(m.heading)}</h1>
+            <h1 className="font-sans text-2xl md:text-3xl font-semibold text-white tracking-tight">{intl.formatMessage(m.heading)}</h1>
             <div className="flex items-center gap-2">
               <InboxPill active={inbox === 'cost'} onClick={() => { setInbox('cost'); setSelected([]); }} label={intl.formatMessage(m.inboxCosts)} />
               <InboxPill active={inbox === 'sales'} onClick={() => { setInbox('sales'); setSelected([]); }} label={intl.formatMessage(m.inboxSales)} />
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <button
+              data-tour="inboxes-required-fields"
               onClick={() => setFieldsOpen(true)}
               className="flex items-center gap-2 px-5 py-3 text-sm font-bold text-zinc-300 bg-card border border-white/10 rounded-full hover:bg-white/5 shadow-lg transition-all"
               title={intl.formatMessage(m.requiredFieldsTitle)}
@@ -632,6 +875,7 @@ export function InboxesView() {
               )}
             </button>
             <button
+              data-tour="inboxes-upload"
               onClick={() => fileRef.current?.click()}
               className="flex items-center gap-2 px-6 py-3 text-sm font-bold text-white bg-card border border-white/10 rounded-full hover:bg-white/5 shadow-lg transition-all"
             >
@@ -678,10 +922,6 @@ export function InboxesView() {
           </div>
         )}
 
-        {unrouted.length > 0 && (
-          <UnroutedQueue documents={unrouted} onRouted={() => void refreshDocuments(queryClient)} />
-        )}
-
         {ingestRejections.length > 0 && (
           <div className="w-full mb-4 flex flex-col gap-2">
             {ingestRejections.slice(0, 3).map((r, i) => (
@@ -696,7 +936,7 @@ export function InboxesView() {
         )}
 
         {(
-          <div className="flex items-center gap-2 bg-card p-1.5 rounded-full border border-white/5 shadow-2xl relative z-10 -mb-16">
+          <div ref={tabStripRef} data-tour="inboxes-tabs" className="flex items-center gap-2 bg-card p-1.5 rounded-full border border-white/5 shadow-2xl relative z-10 md:-mb-16 max-w-full scroll-x [&>button]:shrink-0">
             <TabButton active={statusTab === 'review'} onClick={() => switchTab('review')} label={intl.formatMessage(m.tabReview)} count={counts('review')} />
             <TabButton active={statusTab === 'ready'} onClick={() => switchTab('ready')} label={intl.formatMessage(m.tabReady)} count={counts('ready')} />
             <TabButton active={statusTab === 'processing'} onClick={() => switchTab('processing')} label={intl.formatMessage(m.tabProcessing)} count={counts('processing')} />
@@ -706,18 +946,18 @@ export function InboxesView() {
         )}
       </header>
 
-      <div className="flex-1 bg-white rounded-t-[40px] m-4 mt-8 pt-16 p-8 shadow-2xl flex flex-col overflow-hidden border border-white/10">
+      <div className="flex-1 bg-white rounded-t-[28px] md:rounded-t-[40px] m-2 md:m-4 mt-4 md:mt-8 pt-6 md:pt-16 p-3 md:p-8 shadow-2xl flex flex-col overflow-hidden border border-white/10">
         {(
           <>
             <div className="flex items-center justify-between shrink-0 mb-6 px-2 gap-4 flex-wrap">
               <div className="flex items-center gap-3 flex-wrap">
-                <div className="relative">
+                <div className="relative w-full sm:w-auto">
                   <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" />
                   <input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder={intl.formatMessage(m.searchPlaceholder)}
-                    className="w-64 bg-zinc-100 border-none rounded-full py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder:text-zinc-500 font-medium"
+                    className="w-full sm:w-64 bg-zinc-100 border-none rounded-full py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder:text-zinc-500 font-medium"
                   />
                 </div>
                 <LightSelect value={clientFilter} onChange={setClientFilter} options={[{ value: 'all', label: intl.formatMessage(m.filterAllClients) }, ...clients.map((c) => ({ value: c.id, label: c.name }))]} />
@@ -808,10 +1048,12 @@ export function InboxesView() {
                         }}
                       />
                     )}
-                    {/* Live moves are the Unrouted queue's `document.route`
-                        proposal; this local move reverts under the poll
-                        (METH S14 sweep). */}
-                    {documentsSource !== 'api' && (
+                    {/* Routing lives here now that the Unrouted card is gone
+                        (SoT #158). On seed data this is the local move it has
+                        always been; against the API it opens a
+                        `document.route` proposal per document, which lands
+                        through Review → Approve like everything else — never a
+                        local write that the next poll would revert. */}
                     <div className="relative">
                       <BulkBtn icon={ArrowRightLeft} label={intl.formatMessage(m.bulkMove)} onClick={() => setMoveOpen((o) => !o)} />
                       <AnimatePresence>
@@ -822,7 +1064,21 @@ export function InboxesView() {
                             exit={{ opacity: 0, y: -6 }}
                             className="absolute top-full left-0 mt-2 w-72 bg-white border border-zinc-200 rounded-2xl shadow-2xl z-50 p-2"
                           >
-                            <div className="px-3 py-2 text-[11px] font-bold text-zinc-400 uppercase tracking-widest">{intl.formatMessage(m.moveMenuHeading)}</div>
+                            <div className="px-3 py-2 text-[11px] font-bold text-zinc-400 uppercase tracking-widest">
+                              {intl.formatMessage(documentsSource === 'api' ? m.routeMenuHeading : m.moveMenuHeading)}
+                            </div>
+                            {documentsSource === 'api' && (
+                              <div className="px-3 pb-2 flex flex-col gap-1">
+                                <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest">
+                                  {intl.formatMessage(m.routeInbox, {
+                                    inbox: intl.formatMessage(inbox === 'sales' ? m.inboxSales : m.inboxCosts),
+                                  })}
+                                </span>
+                                <span className="text-[11px] font-medium text-zinc-500 leading-snug">
+                                  {intl.formatMessage(m.routeProposalNote)}
+                                </span>
+                              </div>
+                            )}
                             {/* The taught-sender tick from the old unrouted
                                 card, kept where the routing decision now
                                 happens: correcting an addressee once should
@@ -847,6 +1103,17 @@ export function InboxesView() {
                                 <button
                                   key={c.id}
                                   onClick={async () => {
+                                    if (documentsSource === 'api') {
+                                      // Review → Approve is the confirmation;
+                                      // a second local dialog in front of it
+                                      // would only be theatre.
+                                      const ids = [...selected];
+                                      setMoveOpen(false);
+                                      setTeachSender(false);
+                                      setSelected([]);
+                                      startRouting(c.id, ids);
+                                      return;
+                                    }
                                     const ok = await confirm({
                                       title: intl.formatMessage(m.moveTitle, { count: selected.length, client: c.name }),
                                       detail: selectedDocs.map((d) => d.supplier).slice(0, 4).join(' · '),
@@ -884,7 +1151,6 @@ export function InboxesView() {
                         )}
                       </AnimatePresence>
                     </div>
-                    )}
                     <BulkBtn icon={Sparkles} label={intl.formatMessage(m.bulkAskAi)} onClick={() => {
                       // The bar only renders with a selection, but the rows it
                       // names can go under it — a delete elsewhere leaves ids
@@ -964,7 +1230,80 @@ export function InboxesView() {
               )}
             </AnimatePresence>
 
-            <div className="flex-1 overflow-auto px-2">
+            {/* Phones: a card per document. Same selection, same flags, same
+                verbs; just stacked so the Action column is never off-screen. */}
+            <div className="flex-1 overflow-y-auto md:hidden -mx-1 divide-y divide-zinc-100 pb-safe">
+              {rows.length === 0 && (
+                <div className="px-4 py-12 text-center text-zinc-400 font-medium">
+                  {intl.formatMessage(m.cardEmpty)}
+                </div>
+              )}
+              {rows.map((doc) => {
+                const isSel = selected.includes(doc.id);
+                const blocked = missingMandatory(doc, mandatoryFields);
+                return (
+                  <div
+                    key={doc.id}
+                    // The whole card selects, the way the whole row does on a
+                    // desktop. It cannot be a <button> — the verbs below are
+                    // buttons and buttons do not nest — so it carries the
+                    // keyboard activation by hand, and only when the key
+                    // landed on the card rather than on one of those verbs.
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={isSel}
+                    onClick={() => toggleSelected(doc.id)}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key !== 'Enter' && e.key !== ' ') return;
+                      e.preventDefault();
+                      toggleSelected(doc.id);
+                    }}
+                    className={`px-3 py-4 flex gap-3 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 ${isSel ? 'bg-brand/[0.06]' : ''}`}
+                  >
+                    <div className="pt-0.5 shrink-0">
+                      <LightCheckbox checked={isSel} onChange={() => toggleSelected(doc.id)} />
+                    </div>
+                    <div className="flex-1 min-w-0 flex flex-col gap-2.5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="font-bold text-zinc-900 text-[15px] leading-tight break-words">{doc.supplier}</div>
+                          {doc.splitFrom && <div className="text-[11px] font-medium text-zinc-400">{doc.splitFrom}</div>}
+                          <div className="text-[12px] text-zinc-500 font-medium mt-0.5">{doc.clientName} · {doc.date}</div>
+                        </div>
+                        <div className="font-bold text-zinc-900 text-[15px] tabular-nums shrink-0">{currency(doc.total)}</div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold tracking-wide uppercase ${doc.category === '—' ? 'bg-amber-100 text-amber-700' : 'bg-zinc-100 text-zinc-600'}`}>
+                          {doc.category}
+                        </span>
+                        <StatusBadge doc={doc} blocked={blocked} />
+                        {renderFlags(doc, blocked)}
+                      </div>
+                      {mandatoryFields.length > 0 && (
+                        <dl className="grid grid-cols-2 gap-x-4 gap-y-1">
+                          {mandatoryFields.map((label) => {
+                            const value = doc.fields.find((f) => f.label.toLowerCase() === label.toLowerCase())?.value;
+                            const filled = value && value !== '—';
+                            return (
+                              <div key={label} className="min-w-0">
+                                <dt className="text-[10px] uppercase tracking-widest font-bold text-zinc-400">{label}</dt>
+                                <dd className={`text-[13px] font-semibold break-words ${filled ? 'text-zinc-700' : 'text-amber-600'}`}>
+                                  {filled ? value : intl.formatMessage(m.cardFieldMissing)}
+                                </dd>
+                              </div>
+                            );
+                          })}
+                        </dl>
+                      )}
+                      <div className="[&>div]:justify-start [&>div]:flex-wrap">{renderActions(doc, blocked)}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="hidden md:block flex-1 overflow-auto px-2">
               <table className="w-full text-left text-sm whitespace-nowrap">
                 <thead className="text-[11px] uppercase tracking-widest font-bold text-zinc-400 border-b border-zinc-100">
                   <tr>
@@ -1038,169 +1377,13 @@ export function InboxesView() {
                           );
                         })}
                         <td className="px-4 py-5">
-                          <span className="flex items-center gap-1.5">
-                            {pairFor.has(doc.id) && (
-                              <FlagIcon
-                                icon={Copy}
-                                tone="amber"
-                                title={intl.formatMessage(m.flagDuplicate)}
-                                detail={intl.formatMessage(m.flagDuplicateDetail)}
-                                onClick={() => setComparing(pairFor.get(doc.id)!)}
-                              />
-                            )}
-                            {matchedIds.has(doc.id) && (
-                              <FlagIcon
-                                icon={Link2}
-                                tone="blue"
-                                title={intl.formatMessage(m.flagMatched)}
-                                detail={intl.formatMessage(m.flagMatchedDetail)}
-                              />
-                            )}
-                            {doc.status === 'ready' && blocked.length > 0 && (
-                              <FlagIcon
-                                icon={ShieldAlert}
-                                tone="red"
-                                title={intl.formatMessage(m.cannotPublish, { fields: blocked.join(', ') })}
-                                detail={intl.formatMessage(m.flagBlockedDetail)}
-                              />
-                            )}
-                          </span>
+                          {renderFlags(doc, blocked)}
                         </td>
                         <td className="px-4 py-5 text-right">
                           <StatusBadge doc={doc} blocked={blocked} />
                         </td>
                         <td className="px-4 py-5 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {/* A document with anything outstanding is offered
-                                the fix, not the move — moving it on is what we
-                                are trying to stop until it is sorted. */}
-                            {doc.status === 'review' && (() => {
-                              const verdict = readinessOf(doc, mandatoryFields);
-                              // Live, the review happens inside the document
-                              // via a proposal — the local flip would revert
-                              // under the poll. Disabled-with-tooltip, the
-                              // house pattern (METH S14 sweep).
-                              const live = documentsSource === 'api';
-                              return verdict.ready ? (
-                                <button
-                                  aria-disabled={live}
-                                  onClick={(e) => { e.stopPropagation(); if (live) return; markReviewed(doc); }}
-                                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold transition-colors ${
-                                    live
-                                      ? 'text-zinc-300 border border-zinc-200 cursor-not-allowed'
-                                      : 'bg-zinc-100 text-zinc-700 hover:bg-brand hover:text-white'
-                                  }`}
-                                  title={intl.formatMessage(live ? m.markReviewedLiveHint : m.markReviewedTitle)}
-                                >
-                                  <CheckCircle2 size={14} />
-                                  {intl.formatMessage(m.markReviewedAction)}
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); setPreview(doc); }}
-                                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
-                                  title={intl.formatMessage(m.fixTitle, { reason: blockedReason(verdict, intl) })}
-                                >
-                                  <PencilLine size={14} />
-                                  {intl.formatMessage(m.fixAction)}
-                                </button>
-                              );
-                            })()}
-                            {/* A failed row used to offer nothing but View.
-                                It now offers whatever actually clears this
-                                failure, with Retry beside it — and Retry says
-                                so when it cannot help. */}
-                            {doc.status === 'rejected' && (() => {
-                              const failure = failureOf(doc);
-                              if (!failure) return null;
-                              const live = documentsSource === 'api';
-                              /**
-                               * Live mode wires exactly what is real (METH
-                               * S12): a publish failure retries through a NEW
-                               * `publish.batch` proposal; an extraction
-                               * failure has no reprocess executor yet, so its
-                               * Retry explains that the chase engine — not a
-                               * re-read — is what gets a fresh copy. The
-                               * replace-file fix stays synthetic-only: its
-                               * delete-and-reingest writes local state a poll
-                               * would silently revert.
-                               */
-                              const liveExtraction = live && failure.stage === 'extraction';
-                              return (
-                                <>
-                                  {failure.fix !== 'retry' && !(live && failure.fix === 'replace-file') && (
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); runFix(doc); }}
-                                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
-                                      title={intl.formatMessage(failure.detail)}
-                                    >
-                                      {failure.fix === 'replace-file' ? <UploadCloud size={14} /> : failure.fix === 'reconnect-ledger' ? <Link2 size={14} /> : <PencilLine size={14} />}
-                                      {intl.formatMessage(failure.fixLabel)}
-                                    </button>
-                                  )}
-                                  <button
-                                    aria-disabled={liveExtraction}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (liveExtraction) return;
-                                      if (live) { openPublishRetry(doc); return; }
-                                      void askRetry(doc);
-                                    }}
-                                    className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold transition-colors ${
-                                      liveExtraction
-                                        ? 'text-zinc-300 border border-zinc-200 cursor-not-allowed'
-                                        : failure.retryHelps
-                                          ? 'bg-zinc-100 text-zinc-700 hover:bg-brand hover:text-white'
-                                          : 'text-zinc-400 border border-zinc-200 hover:text-zinc-600'
-                                    }`}
-                                    title={
-                                      liveExtraction
-                                        ? intl.formatMessage(m.retryChaseInstead)
-                                        : failure.retryHelps
-                                          ? intl.formatMessage(retryMeaning(failure))
-                                          : intl.formatMessage(m.retryUnlikelyTitle, {
-                                              reason: reasonText(failure, intl).toLowerCase(),
-                                              meaning: intl.formatMessage(retryMeaning(failure)),
-                                            })
-                                    }
-                                  >
-                                    <RefreshCw size={13} />
-                                    {intl.formatMessage(commonActions.retry)}
-                                  </button>
-                                </>
-                              );
-                            })()}
-                            {doc.status === 'ready' && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); requestPublish([doc.id]); }}
-                                disabled={blocked.length > 0 || documentsSource === 'api'}
-                                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold bg-brand text-white hover:bg-brand-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                                title={
-                                  documentsSource === 'api'
-                                    ? intl.formatMessage(m.publishLiveHint)
-                                    : blocked.length
-                                      ? intl.formatMessage(m.cannotPublish, { fields: blocked.join(', ') })
-                                      : intl.formatMessage(m.publishRowTitle)
-                                }
-                              >
-                                <Send size={13} />
-                                {intl.formatMessage(m.publishAction)}
-                              </button>
-                            )}
-                            {/* An eye, not an overflow menu: this opens the
-                                document, it does not reveal more actions. It
-                                also stays visible rather than appearing on
-                                hover — a control you cannot see is one nobody
-                                knows is there. */}
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setPreview(doc); }}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-bold text-zinc-500 border border-zinc-200 hover:text-black hover:border-zinc-300 transition-colors"
-                              title={intl.formatMessage(m.viewTitle)}
-                            >
-                              <Eye size={14} />
-                              {intl.formatMessage(m.viewAction)}
-                            </button>
-                          </div>
+                          {renderActions(doc, blocked)}
                         </td>
                       </tr>
                     );
@@ -1221,12 +1404,24 @@ export function InboxesView() {
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-[60] bg-brand/20 backdrop-blur-sm border-4 border-dashed border-brand flex items-center justify-center pointer-events-none"
           >
-            <div className="bg-card border border-white/10 rounded-[32px] px-10 py-8 text-center shadow-2xl">
+            <div className="bg-card border border-white/10 rounded-[32px] px-4 md:px-10 py-8 text-center shadow-2xl">
               <UploadCloud size={40} className="text-brand mx-auto mb-4" />
               <p className="text-xl font-bold text-white">{intl.formatMessage(m.dropHeading)}</p>
               <p className="text-[13px] text-zinc-500 mt-1">{intl.formatMessage(m.dropDetail)}</p>
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* A live route — one Review → Approve card per selected document. */}
+      <AnimatePresence>
+        {routing && (
+          <ProposalFlowModal
+            request={routing.request}
+            clientName={routing.clientName}
+            onExecuted={() => void refreshDocuments(queryClient)}
+            onClose={advanceRouting}
+          />
         )}
       </AnimatePresence>
 
@@ -1248,11 +1443,12 @@ export function InboxesView() {
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             onClick={() => setPreview(null)}
-            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 md:p-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             <motion.div
               initial={{ opacity: 0, y: 24, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 24, scale: 0.97 }}
               onClick={(e) => e.stopPropagation()}
+              data-tour="document-preview"
               className="relative w-full max-w-3xl"
             >
               <button onClick={() => setPreview(null)} className="absolute -top-3 -right-3 z-10 p-2 bg-card hover:bg-raised text-zinc-400 hover:text-white rounded-full border border-white/10 transition-colors shadow-lg">
@@ -1306,12 +1502,13 @@ export function InboxesView() {
             <motion.div
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => setConfirmPublish(null)}
-              className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-10"
+              className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 md:p-10"
             >
               <motion.div
                 initial={{ opacity: 0, y: 20, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.97 }}
                 onClick={(e) => e.stopPropagation()}
-                className="w-full max-w-md border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden"
+                data-tour="publish-confirm"
+                className="w-full max-w-md border border-white/5 rounded-t-[28px] sm:rounded-[32px] bg-card shadow-2xl overflow-hidden pb-safe sm:pb-0"
               >
                 <div className="p-6 border-b border-white/5">
                   <h3 className="font-sans font-bold text-xl text-white tracking-tight">
@@ -1370,12 +1567,12 @@ export function InboxesView() {
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             onClick={() => setFieldsOpen(false)}
-            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-10"
+            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 md:p-10"
           >
             <motion.div
               initial={{ opacity: 0, y: 20, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.97 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden"
+              className="w-full max-w-md border border-white/5 rounded-t-[28px] sm:rounded-[32px] bg-card shadow-2xl overflow-hidden pb-safe sm:pb-0"
             >
               <div className="p-6 border-b border-white/5">
                 <h3 className="font-sans font-bold text-xl text-white tracking-tight">{intl.formatMessage(m.fieldsHeading)}</h3>
@@ -1578,7 +1775,8 @@ function TabButton({ active, onClick, label, count }: { active: boolean; onClick
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm transition-all duration-300 ${
+      aria-pressed={active}
+      className={`flex items-center gap-2 px-4 md:px-5 py-2.5 rounded-full text-sm transition-all duration-300 whitespace-nowrap ${
         active
           ? 'bg-brand text-white font-bold shadow-glow-tab'
           : 'text-zinc-400 font-semibold hover:text-white hover:bg-white/5'

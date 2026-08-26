@@ -61,7 +61,7 @@ export function ApprovalsLiveQueue({
       )}
 
       {!loading && cards.length === 0 && (
-        <div className="border border-dashed border-white/10 rounded-[32px] p-10 text-center">
+        <div className="border border-dashed border-white/10 rounded-[32px] p-4 md:p-10 text-center">
           <p className="text-[13px] text-zinc-500 leading-relaxed">{intl.formatMessage(m.empty)}</p>
         </div>
       )}

@@ -165,17 +165,17 @@ export function ClientSupplierStatements({ client }: { client: Client }) {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
+      <div data-tour="ss-header" className="flex items-center justify-between gap-4 flex-wrap">
         <p className="text-[13px] text-zinc-500 leading-relaxed max-w-2xl">
           {intl.formatMessage(gapCount > 0 ? m.introGaps : m.intro, { count: gapCount })}
         </p>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
           <input
             value={supplier}
             onChange={(e) => setSupplier(e.target.value)}
             placeholder={intl.formatMessage(m.supplierPlaceholder)}
             aria-label={intl.formatMessage(m.supplierPlaceholder)}
-            className="w-44 bg-card border border-white/5 rounded-full py-2.5 px-4 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand shadow-inner"
+            className="w-full sm:w-44 bg-card border border-white/5 rounded-full py-2.5 px-4 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand shadow-inner"
           />
           <button
             onClick={() => fileRef.current?.click()}
@@ -204,7 +204,7 @@ export function ClientSupplierStatements({ client }: { client: Client }) {
       </div>
 
       {mine.length === 0 ? (
-        <div className="border border-white/5 rounded-[32px] bg-card p-10 text-center shadow-2xl">
+        <div className="border border-white/5 rounded-[32px] bg-card p-4 md:p-10 text-center shadow-2xl">
           <p className="text-[13px] text-zinc-500 leading-relaxed max-w-md mx-auto">
             {intl.formatMessage(m.empty)}
           </p>
@@ -328,7 +328,7 @@ export function ClientSupplierStatements({ client }: { client: Client }) {
                         {st.lines.map((l) => (
                           <div
                             key={l.reference}
-                            className="flex items-center gap-3 p-3.5 rounded-2xl bg-ground/60 border border-white/5"
+                            className="flex items-center gap-3 p-3.5 rounded-2xl bg-ground/60 border border-white/5 flex-wrap"
                           >
                             <span
                               className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
@@ -346,7 +346,7 @@ export function ClientSupplierStatements({ client }: { client: Client }) {
                             <span className="text-[13px] font-bold text-white tabular-nums shrink-0">
                               {currency(l.total)}
                             </span>
-                            <span className="shrink-0 w-32 text-right">
+                            <span className="shrink-0 sm:w-32 text-right basis-full sm:basis-auto pl-10 sm:pl-0 flex sm:block">
                               {l.documentId ? (
                                 <Pill tone="green">{intl.formatMessage(m.lineOnFile)}</Pill>
                               ) : (
