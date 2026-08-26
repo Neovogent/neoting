@@ -36,6 +36,7 @@
     "bullmq": "^6.1.1",
     "heic-decode": "2.1.0",
     "ioredis": "^6.0.0",
+    "otplib": "^13.5.0",
     "postal-mime": "3.0.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",

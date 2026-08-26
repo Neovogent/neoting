@@ -10,6 +10,7 @@ import type { Env } from '../../config/env.js';
 import { ENV } from '../../config/env.module.js';
 import type { AuthService } from './auth.service.js';
 import { SESSION_COOKIE_NAME } from './session-cookie.js';
+import { RateLimitedException, SIGN_IN_MAX_FAILURES } from './sign-in-throttle.js';
 import { AUTH_SERVICE } from './tokens.js';
 
 /**
@@ -35,8 +36,28 @@ export class AuthController {
   // so login reads the user row. It still writes nothing.
   async login(@Body() body: unknown, @Res({ passthrough: true }) res: Response): Promise<void> {
     const parsed = parseBoundary(createSessionBody, body, 'request body');
-    const session = await this.service.login(parsed);
+    let session;
+    try {
+      session = await this.service.login(parsed);
+    } catch (error) {
+      // The contract declares `Retry-After` and the three `RateLimit-*` headers
+      // on its `429`, and the global `ProblemFilter` renders only the body — it
+      // lives in `common/`, is shared by every module, and teaching it about
+      // per-exception headers is a change A2 does not own. Setting them here
+      // costs four lines and keeps the response the contract describes.
+      // `passthrough: true` means these survive the filter's own `res.status().send()`.
+      if (error instanceof RateLimitedException) this.rateLimitHeaders(res, error.retryAfterSeconds);
+      throw error;
+    }
     res.cookie(SESSION_COOKIE_NAME, session.token, { ...this.cookieOptions(), expires: session.expiresAt });
+  }
+
+  /** `RateLimited` (`openapi.yaml`, `components.responses`) — seconds, as integers. */
+  private rateLimitHeaders(res: Response, retryAfterSeconds: number): void {
+    res.setHeader('Retry-After', String(retryAfterSeconds));
+    res.setHeader('RateLimit-Limit', String(SIGN_IN_MAX_FAILURES));
+    res.setHeader('RateLimit-Remaining', '0');
+    res.setHeader('RateLimit-Reset', String(retryAfterSeconds));
   }
 
   @Delete('auth/sessions/current')

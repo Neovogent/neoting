@@ -1,29 +1,28 @@
 import type { CanonicalBankStatementLine, CanonicalTransactionDocument } from '../../canonical/canonical-row.js';
+import { formatPenceDecimal } from '../../canonical/money.js';
 
 import { VtEmitterError } from './vt-safety.js';
 
 /**
- * Where integer pence become a decimal string, and where a calendar date
- * becomes UK d/m/y. **This file is the emitter boundary in the sense rule 1
- * means it** — the only place in the export lane a money value stops being an
- * integer, and it stops being one by string construction rather than by
- * division into a float.
+ * Where VT's cells are shaped: the sign convention on an amount, and a calendar
+ * date as UK d/m/y. **This file is the emitter boundary in the sense rule 1
+ * means it** — the point a money value stops being an integer. The digits
+ * themselves are produced by `canonical/money.ts`, which is shared with the D43
+ * manifest so that two output boundaries cannot render one number two ways.
  */
 
 /**
  * Signed integer pence → VT's amount cell.
  *
- * Two things it does, both required:
+ * **The result is always positive.** §24.3.1: *all positive — VT derives debit
+ * and credit from `Type`.* The canonical model stores debit-positive /
+ * credit-negative (§24.3.4) precisely so each target can derive its own
+ * convention; emitting our sign as well as VT's `Type` would post the reversal
+ * twice. The sign is dropped **here**, in VT's emitter, and nowhere earlier.
  *
- * 1. **The result is always positive.** §24.3.1: *all positive — VT derives
- *    debit and credit from `Type`.* The canonical model stores debit-positive /
- *    credit-negative (§24.3.4) precisely so each target can derive its own
- *    convention; emitting our sign as well as VT's `Type` would post the
- *    reversal twice.
- * 2. **No float exists at any point.** `pence / 100` in floating point is where
- *    `1234` becomes `12.340000000000001`, and `toFixed(2)` then launders it
- *    into something that looks right and is not. Integer division for the
- *    pounds, integer remainder for the pence, string concatenation for the dot.
+ * The integer guard is repeated rather than delegated because the message
+ * differs: a float reaching a VT cell is a `VtEmitterError` like every other
+ * refusal in this emitter, so a caller catching one catches all of them.
  */
 export function formatVtAmount(signedPence: number): string {
   if (!Number.isInteger(signedPence)) {
@@ -32,11 +31,7 @@ export function formatVtAmount(signedPence: number): string {
     );
   }
 
-  const absolute = Math.abs(signedPence);
-  const pounds = Math.trunc(absolute / 100);
-  const remainder = absolute % 100;
-
-  return `${pounds}.${String(remainder).padStart(2, '0')}`;
+  return formatPenceDecimal(Math.abs(signedPence));
 }
 
 /**

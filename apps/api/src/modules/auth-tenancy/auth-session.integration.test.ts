@@ -6,6 +6,7 @@ import { SessionContextResolver } from '../../common/context/session-context-res
 import { scopedDb } from '../../common/db/scoped-db.js';
 import type { Env } from '../../config/env.js';
 import { AuthService } from './auth.service.js';
+import { InMemorySignInThrottle } from './sign-in-throttle.js';
 import { BusinessesService } from './businesses.service.js';
 import { SESSION_COOKIE_NAME, signSessionToken, verifySessionCookieHeader } from './session-cookie.js';
 import { loadScopeForUser } from './session-scope.js';
@@ -130,7 +131,7 @@ describe.skipIf(DATABASE_URL === undefined || OWNER_URL === undefined)('session 
   test('GET /me shape: practice cast + RLS-visible businesses, from the practice context', async () => {
     const scope = await loadScopeForUser(app, U_MINE);
     expect(scope).not.toBeNull();
-    const me = await new AuthService(app, { SESSION_SECRET: SECRET, OTP_MODE: 'demo' } as Env).me(scope!);
+    const me = await new AuthService(app, { SESSION_SECRET: SECRET, OTP_MODE: 'demo' } as Env, new InMemorySignInThrottle()).me(scope!);
     expect(me.user.id).toBe(U_MINE);
     expect(me.practice).toEqual({ id: P_MINE, name: 'S1A Mine LLP' });
     expect(me.role).toBe('PRACTICE_ADMIN');

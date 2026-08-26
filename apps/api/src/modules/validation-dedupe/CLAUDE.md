@@ -120,12 +120,13 @@ structural) and decides nothing about whether it may happen.
 
 - **`buildExecutorRegistry(deps)`** — total over the contract's `ProposalKind`
   by mapped type: a missing kind is a compile error; the engine's `NT-PRP-001`
-  stays the second line of defence. **Nine real executors** (route, archive,
+  stays the second line of defence. **Ten real executors** (route, archive,
   update-coding since METH S3 #122, chase.send since METH S8, publish.batch
-  since S10, bank.confirm-match since S11, rule.create since S13 #142, reprocess
-  and reject since launch stage A12), three
-  honest holes throwing `ProposalNotImplementedError` by name — `move-business`,
-  `split` and `revoke-link` (A8's lane), each typed off
+  since S10, bank.confirm-match since S11, rule.create since S13 #142,
+  document.revoke-link since launch stage A8, reprocess and reject since launch
+  stage A12), **two**
+  honest holes throwing `ProposalNotImplementedError` by name — `move-business`
+  and `split`, each typed off
   the generated payload models. The `deps`
   argument (`ExecutorRegistryDeps`) is **required since S10**: `publishing` has
   no safe default, and a registry that quietly degraded a built executor back
@@ -368,6 +369,31 @@ structural) and decides nothing about whether it may happen.
   named) → approve → the NEXT Bidfood document through `PrismaExtractionStep`
   arrives pre-coded with the rule's id as suggestion provenance — the demo's
   wow beat, server-side.
+- **`document.revoke-link`** (launch stage A8) — `revoke-link.ts`. Kills D43
+  capability URLs that are already sitting inside an accountant's ledger file,
+  turning a working entry into a `410`. **It is a proposal and not a `DELETE`
+  for exactly that reason**, and there is no revoke endpoint anywhere — the
+  capability lane (`modules/exports-public-api/links/`) publishes precisely one
+  route, `GET /d/{code}`, and it is a read.
+
+  ⚠ **This is the one executor whose LANE lives in another module**, and the
+  file's header records why: putting it in `exports-public-api` would close a
+  runtime cycle between two public seams (`validation-dedupe/index.ts` →
+  `registry.ts` → `exports-public-api/index.ts` → back, for the
+  `ProposalExecutionRefused` class the engine matches with `instanceof`) — the
+  same hazard `publish-batch.ts` documents. It costs nothing to keep here:
+  revoking needs **nothing** from that module, it is one guarded `UPDATE`.
+
+  All-or-nothing (an unreachable id refuses the batch — the archive rule),
+  compare-and-swap shaped (`updateMany` guarded on `revokedAt: null`, so two
+  overlapping batches cannot rewrite each other's timestamp), and idempotent (a
+  replay is `alreadyApplied` with no second event; the original `revoked_at`
+  survives, because *when* a link died answers "when did my January export stop
+  working"). **It mints no replacement** — the schema says so on the model, and
+  a test asserts the absence. `changed` names the affected **documents**, since
+  `ChangedEntity` has no `document-link` member and "these documents stopped
+  being reachable" is the sentence the outcome should read as anyway.
+
 - **`bank.confirm-match`** (METH S11) — a human confirms that a document is the
   evidence for a bank transaction. **Two rows move or neither does:** the
   `matches` row AND the transaction's `match_state`. Writing the match without
@@ -388,12 +414,14 @@ structural) and decides nothing about whether it may happen.
 
 ## TODO
 
-- [ ] The three unimplemented executors — `move-business`, `split` and
-      `revoke-link` (A8's lane); each needs its own issue. The registry already
+- [ ] The **two** unimplemented executors — `move-business` and `split`; each
+      needs its own issue. The registry already
       types and names them all. `update-coding` landed with the engine (METH S3,
       #122); `chase.send` in METH S8; `publish.batch` in METH S10;
       `bank.confirm-match` in METH S11; `rule.create` in METH S13 (#142);
-      `reprocess` and `reject` in launch stage A12.
+      `document.revoke-link` in launch stage A8; `reprocess` and `reject` in
+      launch stage A12 — every METH Stage 2 kind and every ID LAW kind now
+      executes.
 - [ ] ⚠ **Reprocess does not re-read the document.** It re-arms the state and
       re-decides readiness; running the extractor again needs a post-commit
       follow-up that ENQUEUES an ingest job, and the queue producer

@@ -24,7 +24,9 @@ import { AppProvider, useAppContext } from './AppContext';
  * opens a socket, and nothing waits on a timer; everything flushes via act().
  */
 
-const ROUTES = ['/', '/clients', '/inboxes', '/chases', '/approvals', '/documents', '/analytics', '/team', '/settings'];
+// '/app', not '/': the workspace root moved there when M3 gave `/` to the
+// public landing page, and this loop is about the WORKSPACE under churn.
+const ROUTES = ['/app', '/clients', '/inboxes', '/chases', '/approvals', '/documents', '/analytics', '/team', '/settings'];
 
 /** Grabs the live context so the test can do what the workspace buttons do. */
 let ctx!: ReturnType<typeof useAppContext>;
@@ -36,7 +38,7 @@ function Probe() {
 describe('AppProvider under rapid navigation (#87)', () => {
   it('survives the nine-route loop with conversation changes interleaved', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-    window.history.replaceState({}, '', '/');
+    window.history.replaceState({}, '', '/app');
 
     const { container, unmount } = render(
       <StrictMode>
