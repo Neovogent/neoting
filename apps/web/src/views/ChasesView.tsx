@@ -1,9 +1,9 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  Send, Play, X, Check, MessageSquare, Clock, ShieldOff, Ban, Wand2, FileSearch, PencilLine,
+  Send, Play, Check, MessageSquare, Clock, ShieldOff, Ban, Wand2, FileSearch, PencilLine,
   Link2, ChevronRight, SlidersHorizontal, Undo2, Upload, LucideIcon,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
 import { API_ENABLED } from '../api/config';
@@ -17,6 +17,7 @@ import { Tooltip } from '../components/DynamicComponents/Tooltip';
 import { detectionOf } from '../lib/detection';
 import { MessageEditor } from '../components/DynamicComponents/ChaseComposer';
 import { ChaseModal } from '../components/DynamicComponents/ChaseModal';
+import { Modal } from '../components/DynamicComponents/Modal';
 import { currency } from '../lib/resolver';
 import { clampLinkTtl, LINK_TTL_PRESETS, MAX_LINK_TTL_HOURS, MIN_LINK_TTL_HOURS } from '../lib/generate';
 import type { Chase, ChaseItem, ChaseItemStatus, ChasePolicy } from '../lib/types';
@@ -88,6 +89,15 @@ const m = defineMessages({
     defaultMessage: 'Nothing overdue — every chase is inside its policy window.',
   },
   noChaseSent: { id: 'chase.chasesView.noChaseSent', defaultMessage: 'No chase sent' },
+  cardLastUpload: { id: 'chase.chasesView.cardLastUpload', defaultMessage: 'Last upload {date}' },
+  cardOverdue: {
+    id: 'chase.chasesView.cardOverdue',
+    defaultMessage: '{count, plural, one {# overdue} other {# overdue}}',
+  },
+  cardNothingToChase: {
+    id: 'chase.chasesView.cardNothingToChase',
+    defaultMessage: 'Nothing missing for this client, so there is nothing to chase.',
+  },
   standardPolicy: { id: 'chase.chasesView.standardPolicy', defaultMessage: 'Standard ({first}/{second} days)' },
   openAction: { id: 'chase.chasesView.openAction', defaultMessage: 'Open' },
   reviewAndChaseAction: { id: 'chase.chasesView.reviewAndChaseAction', defaultMessage: 'Review & Chase' },
@@ -197,10 +207,10 @@ function SyntheticChasesBoard({ badge }: { badge?: ReactNode }) {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      <div className="px-10 py-8 shrink-0">
+      <div className="px-4 md:px-10 py-4 md:py-8 shrink-0">
         <div className="flex items-start justify-between mb-8 gap-4 flex-wrap">
           <div>
-            <h1 className="font-sans text-3xl font-semibold text-white tracking-tight">{intl.formatMessage(m.heading)}</h1>
+            <h1 className="font-sans text-2xl md:text-3xl font-semibold text-white tracking-tight">{intl.formatMessage(m.heading)}</h1>
             <p className="text-zinc-400 mt-2">{intl.formatMessage(m.subheading)}</p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
@@ -214,6 +224,7 @@ function SyntheticChasesBoard({ badge }: { badge?: ReactNode }) {
               {itemMessages.length > 0 && <span className="px-2 py-0.5 rounded-full bg-brand text-white text-[11px]">{itemMessages.length}</span>}
             </button>
             <button
+              data-tour="chases-policy"
               onClick={() => setPolicyOpen(true)}
               className="flex items-center gap-2 px-5 py-3 text-sm font-bold text-zinc-300 bg-card border border-white/10 rounded-full hover:bg-white/5 transition-all shadow-lg"
             >
@@ -221,6 +232,7 @@ function SyntheticChasesBoard({ badge }: { badge?: ReactNode }) {
               {intl.formatMessage(m.policyAction)}
             </button>
             <button
+              data-tour="chases-run"
               onClick={runEngine}
               disabled={totalMissing === 0}
               className="flex items-center gap-2 px-6 py-3 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-cta-soft disabled:opacity-40"
@@ -231,7 +243,7 @@ function SyntheticChasesBoard({ badge }: { badge?: ReactNode }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div data-tour="chases-kpis" className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <StatCard
             title={intl.formatMessage(m.statMissingTitle)}
             value={String(totalMissing)}
@@ -261,7 +273,7 @@ function SyntheticChasesBoard({ badge }: { badge?: ReactNode }) {
         </div>
       </div>
 
-      <div className="flex-1 bg-white rounded-t-[40px] m-4 mt-0 p-8 shadow-2xl flex flex-col overflow-hidden border border-white/10">
+      <div className="flex-1 bg-white rounded-t-[28px] md:rounded-t-[40px] m-2 md:m-4 mt-0 p-3 md:p-8 shadow-2xl flex flex-col overflow-hidden border border-white/10">
         <div className="px-2 py-4 flex items-center justify-between mb-4 gap-4 flex-wrap">
           <h3 className="font-sans text-xl font-bold text-zinc-900 tracking-tight">{intl.formatMessage(m.tableHeading)}</h3>
           <div className="flex items-center gap-2 bg-pale p-1.5 rounded-full">
@@ -280,7 +292,89 @@ function SyntheticChasesBoard({ badge }: { badge?: ReactNode }) {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        {/* Phones: one card per client with the same facts and the same two
+            actions. The table below it was clipping its Action column on
+            anything under ~1000px, which made chasing impossible from a phone. */}
+        <div className="flex-1 overflow-y-auto md:hidden -mx-1 divide-y divide-zinc-100">
+          {rows.length === 0 && (
+            <div className="px-4 py-12 text-center text-zinc-400 font-medium">
+              {intl.formatMessage(m.emptyRows)}
+            </div>
+          )}
+          {rows.map(({ client, stats, chase }) => (
+            <div key={client.id} className="px-3 py-4 flex flex-col gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-zinc-100 flex items-center justify-center font-bold text-zinc-900 border border-zinc-200 shrink-0">
+                  {client.name.charAt(0)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-zinc-900 font-bold text-[15px] truncate">{client.name}</div>
+                  <div className="text-[12px] text-zinc-500 font-medium">
+                    {intl.formatMessage(m.cardLastUpload, { date: chase?.lastUpload ?? '\u2014' })}
+                  </div>
+                </div>
+                {stats.overdue > 0 && (
+                  <span className="bg-brand text-white px-3 py-1 rounded-full text-xs font-bold shrink-0">
+                    {intl.formatMessage(m.cardOverdue, { count: stats.overdue })}
+                  </span>
+                )}
+              </div>
+              <dl className="grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-xl bg-zinc-50 border border-zinc-100 py-2">
+                  <dt className="text-[10px] uppercase tracking-widest font-bold text-zinc-400">{intl.formatMessage(m.columnMissing)}</dt>
+                  <dd className="text-[15px] font-bold text-zinc-900 tabular-nums">{stats.missing}</dd>
+                </div>
+                <div className="rounded-xl bg-zinc-50 border border-zinc-100 py-2">
+                  <dt className="text-[10px] uppercase tracking-widest font-bold text-zinc-400">{intl.formatMessage(m.columnRequested)}</dt>
+                  <dd className="text-[15px] font-bold text-zinc-700 tabular-nums">{stats.requested}</dd>
+                </div>
+                <div className="rounded-xl bg-zinc-50 border border-zinc-100 py-2">
+                  <dt className="text-[10px] uppercase tracking-widest font-bold text-zinc-400">{intl.formatMessage(m.columnOverdue)}</dt>
+                  <dd className="text-[15px] font-bold text-zinc-900 tabular-nums">{stats.overdue}</dd>
+                </div>
+              </dl>
+              <div className="flex items-center gap-2 flex-wrap">
+                {chase ? (
+                  <span className={`inline-flex px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide ${STAGE_LABEL[chase.stage].light}`}>
+                    {intl.formatMessage(STAGE_LABEL[chase.stage].label)}
+                  </span>
+                ) : (
+                  <span className="text-zinc-400 text-[12px] font-medium">{intl.formatMessage(m.noChaseSent)}</span>
+                )}
+                <span className="inline-flex px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide bg-zinc-900 text-white">
+                  {chase?.policy ??
+                    intl.formatMessage(m.standardPolicy, {
+                      first: chasePolicy.reminderOneDays,
+                      second: chasePolicy.reminderTwoDays,
+                    })}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {chase && (
+                  <button
+                    onClick={() => setOpenChase(chase.id)}
+                    className="text-sm font-bold text-zinc-700 px-4 py-2.5 rounded-full bg-zinc-100 hover:bg-zinc-200 transition-colors inline-flex items-center gap-1"
+                  >
+                    {intl.formatMessage(m.openAction)}
+                    <ChevronRight size={14} />
+                  </button>
+                )}
+                <button
+                  onClick={() => chaseOne(client.id)}
+                  disabled={stats.missing === 0}
+                  className="flex-1 text-sm font-bold text-white bg-zinc-900 hover:bg-black px-4 py-2.5 rounded-full transition-colors shadow-md disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  {intl.formatMessage(m.reviewAndChaseAction)}
+                </button>
+              </div>
+              {stats.missing === 0 && (
+                <p className="text-[12px] text-zinc-400 font-medium -mt-1">{intl.formatMessage(m.cardNothingToChase)}</p>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="hidden md:block flex-1 overflow-y-auto overflow-x-auto">
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="text-[11px] uppercase tracking-widest font-bold text-zinc-400">
               <tr>
@@ -629,7 +723,7 @@ function ChaseDetail({ chase, onClose }: { chase: Chase; onClose: () => void }) 
   const outstanding = chase.items.filter((i) => i.status === 'requested');
 
   return (
-    <Modal onClose={attemptClose}>
+    <Modal onClose={attemptClose} width="max-w-3xl">
       <div className="w-full max-w-3xl border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
         <input
           ref={fileRef}
@@ -656,7 +750,7 @@ function ChaseDetail({ chase, onClose }: { chase: Chase; onClose: () => void }) 
           </span>
         </div>
 
-        <div className="p-6 flex flex-col gap-6 max-h-[60vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="p-6 flex flex-col gap-6 max-h-[60dvh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <Section title={intl.formatMessage(mDetail.messageSection)}>
             <div className="bg-ground/60 border border-white/5 rounded-2xl p-4 text-[13px] text-zinc-300 font-mono leading-relaxed shadow-inner whitespace-pre-wrap">
               {chase.message}
@@ -980,8 +1074,8 @@ function PolicyPanel({ policy, onChange, onClose }: { policy: ChasePolicy; onCha
             {intl.formatMessage(mPolicy.subheading)}
           </p>
         </div>
-        <div className="p-6 flex flex-col gap-5 max-h-[60vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <div className="grid grid-cols-2 gap-4">
+        <div className="p-6 flex flex-col gap-5 max-h-[60dvh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Num label={intl.formatMessage(mPolicy.firstChase)} value={draft.firstChaseAfterHours} onChange={(v) => set('firstChaseAfterHours', v)} />
             <Num label={intl.formatMessage(mPolicy.reminderOne)} value={draft.reminderOneDays} onChange={(v) => set('reminderOneDays', v)} />
             <Num label={intl.formatMessage(mPolicy.reminderTwo)} value={draft.reminderTwoDays} onChange={(v) => set('reminderTwoDays', v)} />
@@ -1068,7 +1162,7 @@ function ItemMessagesPanel({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="p-6 flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Select label={intl.formatMessage(commonLabels.client)} value={clientId} onChange={(v) => { setClientId(v); setDocLabel(''); }} options={clients.map((c) => ({ value: c.id, label: c.name }))} />
             <Select
               label={intl.formatMessage(mItems.documentLabel)}
@@ -1243,26 +1337,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      onClick={onClose}
-      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-    >
-      <motion.div
-        initial={{ opacity: 0, y: 24, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 24, scale: 0.97 }}
-        onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-3xl flex justify-center"
-      >
-        <button onClick={onClose} className="absolute -top-3 -right-3 z-10 p-2 bg-card hover:bg-raised text-zinc-400 hover:text-white rounded-full border border-white/10 transition-colors shadow-lg">
-          <X size={18} />
-        </button>
-        {children}
-      </motion.div>
-    </motion.div>
-  );
-}
 
 const mTtl = defineMessages({
   label: { id: 'chase.linkTtlField.label', defaultMessage: 'Secure link expires after' },

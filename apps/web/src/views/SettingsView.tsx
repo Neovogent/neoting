@@ -5,6 +5,7 @@ import {
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
+import { SectionStrip } from '../components/DynamicComponents/SectionStrip';
 import { fromSlug, slug, useSegment } from '../lib/router';
 import { Field, Toggle } from './ApprovalsView';
 import { LinkTtlField } from './ChasesView';
@@ -400,8 +401,8 @@ export function SettingsView() {
   };
 
   return (
-    <div className="flex-1 flex min-w-0 bg-ground h-full overflow-hidden">
-      <aside className="w-64 shrink-0 border-r border-white/5 flex flex-col py-8 px-4 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="flex-1 flex flex-col md:flex-row min-w-0 bg-ground h-full overflow-hidden">
+      <aside data-tour="settings-nav" className="hidden md:flex w-64 shrink-0 border-r border-white/5 flex-col py-8 px-4 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div className="px-4 mb-6 flex items-center gap-3">
           <SettingsIcon size={20} className="text-zinc-400" />
           <h1 className="font-sans text-xl font-semibold text-white tracking-tight">{intl.formatMessage(m.title)}</h1>
@@ -420,13 +421,25 @@ export function SettingsView() {
             </button>
           ))}
         </nav>
-        <p className="px-4 mt-8 text-[11px] text-zinc-600 leading-relaxed">
-          {intl.formatMessage(m.scopeNote)}
-        </p>
       </aside>
 
-      <div className="flex-1 overflow-y-auto p-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <motion.div key={section} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="max-w-2xl flex flex-col gap-6">
+      {/* Under 768px the side list has no room; the same sections run as a
+          strip the thumb can flick through, with the active one kept in view. */}
+      <div className="md:hidden shrink-0 border-b border-white/5">
+        <div className="px-4 pt-4 pb-2 flex items-center gap-3">
+          <SettingsIcon size={18} className="text-zinc-400" />
+          <h1 className="font-sans text-lg font-semibold text-white tracking-tight">{intl.formatMessage(m.title)}</h1>
+        </div>
+        <SectionStrip
+          tourKey="settings-nav"
+          items={SECTIONS.map((s) => ({ key: s.key, icon: s.icon, label: intl.formatMessage(s.label) }))}
+          active={section}
+          onSelect={(k) => setSection(k as Section)}
+        />
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 md:p-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <motion.div key={section} data-tour="settings-panel" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="max-w-2xl flex flex-col gap-6">
           {section === 'Profile' && (
             <>
               <Panel title={intl.formatMessage(m.practiceProfileTitle)} subtitle={intl.formatMessage(m.practiceProfileSubtitle)}>
@@ -741,6 +754,12 @@ export function SettingsView() {
               </p>
             </Panel>
           )}
+
+          {/* Moved out of the side list: the horizontal strip has no room for
+              a paragraph, and on a phone this scope note would simply vanish. */}
+          <p className="text-[11px] text-zinc-600 leading-relaxed">
+            {intl.formatMessage(m.scopeNote)}
+          </p>
         </motion.div>
       </div>
     </div>

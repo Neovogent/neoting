@@ -212,20 +212,20 @@ export function AnalyticsView() {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden">
-      <header className="px-10 pt-8 pb-5 shrink-0">
+      <header className="px-4 md:px-10 pt-4 md:pt-8 pb-4 md:pb-5 shrink-0">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-2xl bg-raised flex items-center justify-center text-white border border-white/5 shadow-inner">
               <BarChart2 size={22} />
             </div>
             <div>
-              <h1 className="font-sans text-3xl font-semibold text-white tracking-tight">{intl.formatMessage(m.heading)}</h1>
+              <h1 className="font-sans text-2xl md:text-3xl font-semibold text-white tracking-tight">{intl.formatMessage(m.heading)}</h1>
               <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
                 {intl.formatMessage(m.subheading)}
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <select
               value={scope}
               onChange={(e) => setScope(e.target.value)}
@@ -245,9 +245,9 @@ export function AnalyticsView() {
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex-1 overflow-y-auto px-4 md:px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <motion.div key={scope} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6">
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+          <div data-tour="analytics-kpis" className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
             <Tile label={intl.formatMessage(m.tileProcessed)} value={String(metrics.processed)} sub={intl.formatMessage(m.tileProcessedSub)} />
             <Tile label={intl.formatMessage(m.tileCorrectionRate)} value={intl.formatMessage(m.percent, { value: metrics.correctionRate })} sub={intl.formatMessage(m.tileCorrectionRateSub)} />
             <Tile label={intl.formatMessage(m.tilePublished)} value={intl.formatMessage(m.percent, { value: metrics.autoPublishedPct })} sub={intl.formatMessage(m.tilePublishedSub, { count: metrics.published })} />

@@ -237,7 +237,7 @@ export function ClientExpenseClaims({ client, onPreview }: {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
+      <div data-tour="ec-header" className="flex items-center justify-between gap-4 flex-wrap">
         <p className="text-[13px] text-zinc-500 leading-relaxed max-w-2xl">
           {intl.formatMessage(owed > 0 ? (awaitingUs > 0 ? m.introOwedWaiting : m.introOwed) : m.intro, {
             amount: currency(owed),
@@ -254,7 +254,7 @@ export function ClientExpenseClaims({ client, onPreview }: {
       </div>
 
       {mine.length === 0 ? (
-        <div className="border border-white/5 rounded-[32px] bg-card p-10 text-center shadow-2xl">
+        <div className="border border-white/5 rounded-[32px] bg-card p-4 md:p-10 text-center shadow-2xl">
           <p className="text-[13px] text-zinc-500 leading-relaxed max-w-md mx-auto">
             {intl.formatMessage(m.empty, { client: client.name })}
           </p>
@@ -568,6 +568,8 @@ const mEditor = defineMessages({
   // translatable rather than typed into the markup.
   totalPlaceholder: { id: 'analytics.claimEditor.totalPlaceholder', defaultMessage: '0.00' },
   removeLine: { id: 'analytics.claimEditor.removeLine', defaultMessage: 'Remove line' },
+  categoryLabel: { id: 'analytics.claimEditor.categoryLabel', defaultMessage: 'Category' },
+  amountLabel: { id: 'analytics.claimEditor.amountLabel', defaultMessage: 'Amount' },
   receiptsHeading: { id: 'analytics.claimEditor.receiptsHeading', defaultMessage: 'Receipts' },
   receiptsHint: {
     id: 'analytics.claimEditor.receiptsHint',
@@ -643,8 +645,8 @@ function ClaimEditor({ claim, onSave, onClose, onAttach }: {
           </p>
         </div>
 
-        <div className="p-6 flex flex-col gap-5 max-h-[55vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <div className="grid grid-cols-2 gap-4">
+        <div className="p-6 flex flex-col gap-5 max-h-[55dvh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label={intl.formatMessage(mEditor.claimantLabel)} value={draft.claimant} onChange={(v) => setDraft({ ...draft, claimant: v })} placeholder={intl.formatMessage(commonPlaceholders.personName)} />
             <Field label={intl.formatMessage(mEditor.periodLabel)} value={draft.period} onChange={(v) => setDraft({ ...draft, period: v })} placeholder={intl.formatMessage(mEditor.periodPlaceholder)} />
           </div>
@@ -658,28 +660,31 @@ function ClaimEditor({ claim, onSave, onClose, onAttach }: {
             </div>
             <div className="flex flex-col gap-2">
               {draft.items.map((i) => (
-                <div key={i.id} className="flex items-center gap-2 p-3 rounded-2xl bg-ground/60 border border-white/5">
+                <div key={i.id} className="flex items-center gap-2 p-3 rounded-2xl bg-ground/60 border border-white/5 flex-wrap">
                   <input
                     value={i.description}
                     onChange={(e) => setItem(i.id, { description: e.target.value })}
                     placeholder={intl.formatMessage(mEditor.descriptionPlaceholder)}
-                    className="flex-1 min-w-0 bg-transparent text-[13px] font-semibold text-white placeholder:text-zinc-600 focus:outline-none"
+                    className="flex-1 min-w-[10rem] basis-full sm:basis-auto bg-transparent text-[13px] font-semibold text-white placeholder:text-zinc-600 focus:outline-none py-1"
                   />
                   <input
                     value={i.category}
+                    aria-label={intl.formatMessage(mEditor.categoryLabel)}
                     onChange={(e) => setItem(i.id, { category: e.target.value })}
-                    className="w-28 bg-card border border-white/5 rounded-lg px-2 py-1 text-[12px] text-zinc-300 focus:outline-none focus:border-brand"
+                    className="flex-1 sm:flex-none min-w-0 sm:w-28 bg-card border border-white/5 rounded-lg px-2 py-1.5 text-[12px] text-zinc-300 focus:outline-none focus:border-brand"
                   />
                   <input
                     type="number"
                     value={i.total || ''}
                     onChange={(e) => setItem(i.id, { total: Number(e.target.value) })}
                     placeholder={intl.formatMessage(mEditor.totalPlaceholder)}
-                    className="w-24 bg-card border border-white/5 rounded-lg px-2 py-1 text-[12px] text-white text-right tabular-nums focus:outline-none focus:border-brand"
+                    inputMode="decimal"
+                    aria-label={intl.formatMessage(mEditor.amountLabel)}
+                    className="w-24 bg-card border border-white/5 rounded-lg px-2 py-1.5 text-[12px] text-white text-right tabular-nums focus:outline-none focus:border-brand"
                   />
                   <button
                     onClick={() => setDraft({ ...draft, items: draft.items.filter((x) => x.id !== i.id) })}
-                    className="p-1.5 rounded-lg text-zinc-600 hover:text-red-400 transition-colors shrink-0"
+                    className="hit-area p-1.5 rounded-lg text-zinc-600 hover:text-red-400 transition-colors shrink-0"
                     aria-label={intl.formatMessage(mEditor.removeLine)}
                   >
                     <Trash2 size={14} />
@@ -721,7 +726,7 @@ function ClaimEditor({ claim, onSave, onClose, onAttach }: {
           {problem && <p className="text-[13px] text-amber-400 font-semibold">{problem}</p>}
         </div>
 
-        <div className="p-4 bg-raised/50 flex items-center gap-3 justify-end">
+        <div className="p-4 bg-raised/50 flex items-center gap-2 sm:gap-3 justify-end flex-wrap [&>button]:flex-1 [&>button]:basis-[8rem] sm:[&>button]:flex-none sm:[&>button]:basis-auto [&>button]:justify-center">
           <button onClick={onClose} className="px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 hover:text-white transition-colors">
             {intl.formatMessage(commonActions.cancel)}
           </button>
