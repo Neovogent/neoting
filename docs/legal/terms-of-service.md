@@ -107,7 +107,7 @@ sign up.
 
 - **NEOVOGENT AI SOLUTIONS UK LTD**, a company registered in
   England and Wales, company number
-  15946429, VAT registration number **9286810564**, whose
+  15946429, tax ID **9286810564**, VAT registration number [PLACEHOLDER: UK VAT registration number. 9286810564 is the company TAX ID, not the VAT number — the VAT registration number is a separate nine-digit reference and must be obtained before any invoice is issued], whose
   registered office is in Birmingham at Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham B15 1NP
   ("**Neovogent**", "**we**", "**us**", "**our**"); and
 - the accounting practice named on the account ("**you**", "**your**", "**the
@@ -619,7 +619,8 @@ Registered in England and Wales, company number
 **15946429**
 Registered office: Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham B15 1NP, Birmingham,
 [PLACEHOLDER: postcode]
-VAT registration number: **9286810564**
+Tax ID: **9286810564**
+VAT registration number: [PLACEHOLDER: UK VAT registration number. 9286810564 is the company TAX ID, not the VAT number — the VAT registration number is a separate nine-digit reference and must be obtained before any invoice is issued]
 
 **Support and general enquiries:** support@neovogent.com
 **Response time:** within 24 hours, 06:00–18:00 UK time

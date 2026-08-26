@@ -24,21 +24,37 @@ still in it — an unfinished legal page is worse than a missing one.
 
 The ones that need a decision rather than a lookup:
 
-### 1. The VAT number may be wrong
+### 1. The VAT registration number is still missing
 
-The tax ID supplied is `9286810564` — **ten digits. A UK VAT registration number is
-normally nine** (twelve for branch traders). Confirm it before it appears on a published
-page or a Stripe invoice. If it is a different kind of tax reference, the VAT number still
-has to be found.
+`9286810564` is the company **tax ID**, not the VAT registration number — confirmed
+26 Aug 2026. The documents now say so.
 
-### 2. Staff access from Bangladesh is an international transfer
+**The VAT registration number is a separate nine-digit reference and it is still needed.**
+It has to appear on every invoice, on the website, and in Stripe's tax-ID field, which
+expects a `gb_vat` value. Putting the tax ID there produces invoices with the wrong number
+on them, and a VAT invoice with the wrong registration number is not a valid VAT invoice.
 
-The team is in Bangladesh; the data is UK client financial records in `eu-west-2`. Staff
-access from outside the UK is a **restricted transfer** under UK GDPR and needs an
-International Data Transfer Agreement or the UK Addendum, plus a transfer risk assessment.
+This blocks switching Stripe to live mode.
 
-This is not a paperwork detail — it is the single largest unaddressed compliance item, and
-it applies from the first customer.
+### 2. Access from outside the UK — decided: it does not happen
+
+**Policy, set 26 Aug 2026: personal data in Neo Accounting is not accessed from outside the
+United Kingdom.** The team works from Bangladesh; client documents stay in `eu-west-2` and
+are not opened, exported or supported from outside the UK.
+
+That removes the restricted-transfer problem — but only for as long as it is true, and a
+policy that lives only in someone's head is not a control. Two things make it real, and
+both are cheap:
+
+- **Say it in the documents.** The privacy notice and the processing terms now state it.
+  Once stated, it is a contractual commitment to every practice that signs.
+- **Enforce it where it is enforceable.** Access to production data is an AWS IAM question,
+  not an honour question. A condition on the app role, or IP-restricted console access, is
+  what turns the policy into something you could evidence if a client asked.
+
+If the policy ever has to bend — a production incident nobody in the UK can reach — that is
+the moment it needs an International Data Transfer Agreement and a transfer risk
+assessment, not the moment after.
 
 ### 3. Backups may leave the UK
 

@@ -70,7 +70,7 @@ You are an accounting practice. When you use Neo Accounting, you upload your cli
 
 **1.1** These terms are between:
 
-- **Neovogent** — full registered name **[PLACEHOLDER: confirm the exact registered company name, e.g. "NEOVOGENT AI SOLUTIONS UK LTD", against the Companies House register]**, a company registered in England and Wales, company number **[PLACEHOLDER: confirm company number]**, registered office **[PLACEHOLDER: confirm full registered-office address, Birmingham]**, VAT registration number **9286810564** ("**we**", "**us**", "**Neovogent**"); and
+- **Neovogent** — full registered name **[PLACEHOLDER: confirm the exact registered company name, e.g. "NEOVOGENT AI SOLUTIONS UK LTD", against the Companies House register]**, a company registered in England and Wales, company number **[PLACEHOLDER: confirm company number]**, registered office **[PLACEHOLDER: confirm full registered-office address, Birmingham]**, tax ID **9286810564**, VAT registration number [PLACEHOLDER: UK VAT registration number. 9286810564 is the company TAX ID, not the VAT number — the VAT registration number is a separate nine-digit reference and must be obtained before any invoice is issued] ("**we**", "**us**", "**Neovogent**"); and
 - **you**, the accounting practice that has an account for the Neo Accounting service at https://neoacc.neovogent.com ("**you**", "**your practice**").
 
 **1.2** "Neo Accounting" is a trading name of the company named in clause 1.1. **[PLACEHOLDER: confirm whether "Neovogent" and "Neo Accounting" are registered trading names of that company, and add any business-names disclosure required by the Companies (Trading Disclosures) Regulations 2008.]**
@@ -193,7 +193,13 @@ You are an accounting practice. When you use Neo Accounting, you upload your cli
 
 **11.3 Backups.** **[PLACEHOLDER: confirm whether disaster-recovery backups are replicated to a region outside the UK. Neovogent's internal residency decision records one named exception — a cross-region disaster-recovery backup target — because the UK has only one AWS region. If that exception is live, it must be stated here, the destination region named, and a transfer mechanism identified. If it is not live, say backups stay in the UK.]**
 
-**11.4 Access from outside the UK.** Our support and engineering team is based in **Bangladesh** and may access Personal Data remotely in order to run and support the service. Bangladesh is not covered by UK adequacy regulations, so this is a restricted transfer under the UK GDPR. **[PLACEHOLDER: confirm the safeguard relied on — most likely the ICO's International Data Transfer Agreement or the UK Addendum to the EU SCCs, supported by a transfer risk assessment — and name it here. This is a launch blocker: it must be resolved before any real client data is processed.]**
+**11.4 Access from outside the UK.** Our support and engineering team is based in **Bangladesh**. Bangladesh is not covered by UK adequacy regulations.
+
+**Neovogent's policy is that Personal Data processed under these terms is not accessed from outside the United Kingdom.** Personal Data remains in the UK region and is not opened, exported, downloaded or supported from outside the UK. On that basis no restricted transfer occurs under Article 44.
+
+If a restricted transfer becomes necessary — for example an incident that cannot be resolved from within the UK — Neovogent will put an appropriate transfer mechanism in place first (the ICO's International Data Transfer Agreement or the UK Addendum to the EU SCCs), complete a transfer risk assessment, and notify the Controller before the transfer occurs.
+
+**[NOTE FOR THE REVIEWING SOLICITOR: this clause states a policy rather than a transfer safeguard. It is only true while it is enforced. It should be backed by technical access controls — an IAM condition or IP restriction on production data — so it can be evidenced if a Controller audits it under clause 14.]**
 
 **11.5** Except as set out in this clause and Annex B, we do not transfer Personal Data outside the UK.
 

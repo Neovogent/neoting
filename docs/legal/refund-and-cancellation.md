@@ -142,7 +142,8 @@ DRAFTING MAP — which parts are fixed by law, and which are our own commercial 
 
 - Company number: 15946429
 - Registered office: Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham B15 1NP, Birmingham, United Kingdom
-- VAT registration number: 9286810564 [PLACEHOLDER: confirm — this is 10 digits; UK VAT registration numbers are normally 9]
+- Tax ID: 9286810564
+- VAT registration number: [PLACEHOLDER: UK VAT registration number. 9286810564 is the company TAX ID, not the VAT number — the VAT registration number is a separate nine-digit reference and must be obtained before any invoice is issued]
 - Support and billing: **support@neovogent.com** — replies within 24 hours, 06:00–18:00 UK time
 - Related documents: Terms of Service [PLACEHOLDER: link] · Privacy Notice [PLACEHOLDER: link] · Data Processing Agreement [PLACEHOLDER: link]
 

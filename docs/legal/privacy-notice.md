@@ -69,7 +69,8 @@ CONTROLLER parts of this notice.
 | Registered name | NEOVOGENT AI SOLUTIONS UK LTD |
 | Company number | [PLACEHOLDER: company number. SoT D34 records **15946429** — confirm] |
 | Registered office | Birmingham, United Kingdom — Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham B15 1NP |
-| VAT registration number | 9286810564 — [PLACEHOLDER: confirm. A UK VAT number is normally nine digits; the number supplied has ten] |
+| Tax ID | 9286810564 |
+| VAT registration number | [PLACEHOLDER: UK VAT registration number. 9286810564 is the company TAX ID, not the VAT number — the VAT registration number is a separate nine-digit reference and must be obtained before any invoice is issued] |
 | ICO registration number | [PLACEHOLDER: ICO data protection fee registration number] |
 | Product | Neo Accounting — https://neoacc.neovogent.com (the app is at /app) |
 
@@ -191,7 +192,11 @@ We use a small number of suppliers to run the service. This is the complete list
 
 **7.2 Suppliers based outside the UK.** Stripe, Cloudflare and Google are international companies, and data handled by them may be processed outside the UK. [PLACEHOLDER: for each of Stripe, Cloudflare and Google, state the transfer safeguard actually in place — the UK International Data Transfer Agreement, or the UK Addendum to the EU Standard Contractual Clauses — and link each supplier's privacy policy. Do not publish this clause until each one is checked.]
 
-**7.3 Our team is in Bangladesh.** Our staff work from Bangladesh. Bangladesh does not have UK adequacy status. Where a member of our team looks at data in order to support you, that is a transfer of data outside the UK, even though the data itself stays on servers in London. [PLACEHOLDER: state the safeguard for staff access from Bangladesh — an International Data Transfer Agreement or UK Addendum with the employing entity or contractors, plus a transfer risk assessment. This must be resolved before the notice is published; it is a real transfer and cannot be left unaddressed.]
+**7.3 Our team is in Bangladesh, and does not access your data.** Our staff work from Bangladesh. Bangladesh does not have UK adequacy status, so if our team looked at your data it would be a transfer outside the UK — even though the data itself stays on servers in London.
+
+**They do not.** It is our policy that personal data held in Neo Accounting is not accessed from outside the United Kingdom. Client documents are not opened, exported or supported from outside the UK, and our support team answers questions about the service without reading the documents in your account.
+
+If that ever has to change — for example a technical fault that cannot be fixed any other way — we will put an International Data Transfer Agreement and a transfer risk assessment in place first, and we will tell you before it happens.
 
 **7.4 Backups.** [PLACEHOLDER: confirm whether backups are held in a second region and, if so, where — the internal source of truth names a cross-region disaster-recovery target because the UK has only one AWS region. If any copy leaves the UK, say so here.]
 

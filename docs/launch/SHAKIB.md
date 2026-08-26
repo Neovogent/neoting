@@ -197,7 +197,12 @@ No tiers, no add-ons, no coupon.
 behaviour set is treated by HMRC as VAT-INCLUSIVE — meaning you absorb the VAT and receive
 £7.08. The price must be created as TAX-EXCLUSIVE, with either Stripe Tax enabled or an
 explicit 20% GB tax rate via default_tax_rates. Also set: the account tax ID
-(GB 9286810564), a required billing address at checkout, and invoice PDFs on.
+the UK VAT registration number, a required billing address at checkout, and invoice
+PDFs on.
+   ⚠ 9286810564 is the company TAX ID, not the VAT registration number. Stripe's tax-ID
+   field for a UK business expects a `gb_vat` value — the nine-digit VAT registration
+   reference. Putting the tax ID there produces invoices with the wrong number on them.
+   Get the VAT registration number before switching to live mode.
 
 TWO ENDPOINTS:
 - POST /v1/billing/checkout-sessions (authenticated) -> { url }
