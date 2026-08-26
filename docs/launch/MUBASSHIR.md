@@ -15,13 +15,32 @@ Two rules that will save you the most trouble, because nothing in CI catches eit
   with a proper `domain.component.purpose` id — including `aria-label`, `title`,
   `placeholder` and `alt`, which are all copy.
 
-**Stages that can run at the same time:** M1 · M2 · M3 · M6 (disjoint paths). Fan out.
+**Start with M2 and M5, together.** They are the only two of yours that need nothing at
+all, and they touch different files.
+
+**Then M1, and not before M5 is merged.** M1 renames user-facing strings; M5 deletes a
+large number of user-facing strings. Running them at once means renaming copy that is
+about to be deleted, and a merge conflict in every view you both opened. M5 first is
+maybe twenty minutes of waiting and it removes the conflict entirely.
+
+The rest unlock as their `Needs` land: M3 after M1 · M4 after M3 · M6 once Shakib's S2
+is up · M7 once Abdullah's A11 is up · M8 last, after every stage that writes copy.
+
+**Who owns the tour.** Three stages reach into it, so split it explicitly: **M2 owns tour
+*behaviour*** (`TourProvider.tsx`, the `/demo` route, the gating). **M5 then M1 own tour
+*prose*** (the step text). Do not edit the other's half.
 
 ---
 
 ## M1 · Neoting becomes Neo Accounting
 
-**Needs:** nothing. **Owns:** user-facing strings, `apps/web/index.html`, `apps/web/src/assets/`.
+**Needs:** M5 — see below, this is not optional ordering.
+**Owns:** user-facing strings, `apps/web/index.html`, `apps/web/src/assets/`, tour step prose.
+
+> **Wait for M5 to merge.** M5 deletes the Xero and bank-connection copy across the client
+> and settings views and rewrites the publish surfaces. If you rename in parallel you will
+> rename strings that no longer exist by the time you merge, and you will conflict with
+> yourself in six files. Do M5, merge it, then rename what survived.
 
 ```
 Rename the product from "Neoting" to "Neo Accounting" in USER-FACING STRINGS ONLY, and
@@ -63,7 +82,8 @@ orphaned. Full gate. PR.
 
 ## M2 · Stop showing customers fake data
 
-**Needs:** nothing. **Owns:** `apps/web/src/api/slices.ts`, `context/AppContext.tsx`, `components/DataSourceBadge.tsx`, `tour/`.
+**Needs:** nothing — start here.
+**Owns:** `apps/web/src/api/slices.ts`, `context/AppContext.tsx`, `components/DataSourceBadge.tsx`, and tour **behaviour** (`tour/TourProvider.tsx`, the `/demo` route). Not the tour's prose — that is M5's then M1's.
 **Blocker.** This is the one that would embarrass you in front of a paying accountant.
 
 ```
@@ -170,7 +190,10 @@ Full gate. PR.
 
 ## M5 · The Xero purge
 
-**Needs:** nothing. **Owns:** `apps/web/src/lib/types.ts`, the client and settings views.
+**Needs:** nothing — start here, alongside M2. **M1 is waiting on this one**, so it is
+worth more than its size suggests.
+**Owns:** `apps/web/src/lib/types.ts`, `apps/web/src/api/proposals.ts`, the client and
+settings views, and the tour prose covering publish and connections.
 
 ```
 Read D42, D47 and D40. This is a mechanical pass, not a redesign — resist improving the
@@ -190,6 +213,14 @@ the field and the surfaces follow.
   "connection health", no "the reference Xero gave it".
 - Use "Export for VT" / "Download VT import file". NEVER "Send to VT" — that implies
   transmission and D42 forbids it just as much as Xero did.
+
+⚠ TWO EXACT STRINGS, handed over from Abdullah's S0 review. Both say "Publish to the
+  ledger", which is the one phrase D42 forbids in as many words — and both are the label a
+  user reads at the moment they approve, so they are the worst two in the app:
+  • apps/web/src/api/proposals.ts:45  — the publish.batch proposal kind label
+  • apps/web/src/tour/steps.ts:173     — inboxesPublishTitle
+  Grep "Publish to the ledger" and "ledger" across apps/web/src before you call M5 done;
+  the count should be zero outside comments. Published asserts nothing about a ledger.
 - Drop the five Xero steps from tour/steps.ts and the "connect their own Xero and bank"
   line from the client-add copy.
 - ChaseComposer.tsx builds its SMS preview with a literal fake domain and a random suffix.
@@ -273,7 +304,11 @@ react-intl for every string, design tokens for colour, no hex literals. Full gat
 
 ## M8 · The last honest-copy pass
 
-**Needs:** M1, M5. **Owns:** copy across `apps/web/src`.
+**Needs:** M1, M3, M4, M5 — every stage that writes user-facing copy. This one is last.
+**Owns:** copy across `apps/web/src`.
+
+> It was listed as needing only M1 and M5. It cannot be: it sweeps *all* copy, and M3 and
+> M4 both add pages full of it. Sweeping before they land means sweeping twice.
 
 ```
 A sweep for copy that is now wrong. Small, but these are what a customer notices first.

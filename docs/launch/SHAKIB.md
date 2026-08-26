@@ -223,6 +223,27 @@ TWO ENDPOINTS:
 - POST /v1/billing/checkout-sessions (authenticated) -> { url }
 - POST /v1/webhooks/stripe -> verify signature, update the business
 
+ALREADY DONE, do not redo: the Stripe CLI is installed and logged in, against the
+Exambinary account acct_1RQtbxGMdHp4NCWv. `stripe login` is not a step you need.
+
+⚠ THE SIGNING SECRET FROM `stripe listen` IS NOT THE ONE IN THE DASHBOARD. They are
+different values for the same account, and this is the single most common hour lost in a
+Stripe integration. `stripe listen --forward-to localhost:3000/v1/webhooks/stripe` prints
+its own `whsec_...` on startup; that is the one STRIPE_WEBHOOK_SECRET must hold LOCALLY.
+The dashboard endpoint's `whsec_...` is the one staging must hold. Cross them and every
+event fails signature verification with a 400 that says nothing useful, while the Stripe
+dashboard cheerfully shows the event as sent.
+
+Test the webhook with `stripe trigger`, not with a card. You need at least:
+  stripe trigger checkout.session.completed      → subscription becomes active
+  stripe trigger customer.subscription.deleted   → cancellation, and D32 still lets them export
+  stripe trigger invoice.payment_failed          → dunning; Stripe retries, we do not
+
+Both keys are secrets. STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are new env vars, so
+they are yours to add — follow S1's pattern and gate BOTH in the production superRefine
+block. An empty webhook secret does not fail loudly; it accepts unsigned events, which
+means anyone who can reach the endpoint can mark any business subscribed.
+
 PERSISTENCE: the four additive columns from S0. Do NOT create a subscriptions table.
 
 ⚠ THE WEBHOOK RUNS WITH NO SESSION and RLS fails CLOSED AND SILENT — an unscoped read

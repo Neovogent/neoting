@@ -1,5 +1,23 @@
+> ### ⚠ CONTRACTING ENTITY IS TEMPORARY — READ BEFORE PUBLISHING
+>
+> For the **first customer only**, the contracting entity and merchant of record is
+> **Exambinary Holding Ltd**, because that is the company holding the live Stripe account
+> (`acct_1RQtbxGMdHp4NCWv`). Decision taken 26 Aug 2026.
+>
+> This matters and is not cosmetic:
+> - The customer's **card statement** will read Exambinary. If the contract named a
+>   different company, an accountant who does not recognise the name raises a chargeback.
+> - The **VAT invoice comes from Exambinary's VAT registration**, because HMRC requires the
+>   invoice to come from the entity that made the supply. Neovogent's VAT number is not the
+>   one that belongs on it.
+>
+> So every reference below names Exambinary. **When Stripe moves to
+> NEOVOGENT AI SOLUTIONS UK LTD** (company no. 15946429, registered office Suite 5,
+> The Cloisters, 11–12 George Road, Edgbaston, Birmingham B15 1NP), these documents change
+> back in the same commit as the Stripe migration — not before, and not after.
+
 > ⚠ **DRAFTING AID — NOT LEGAL ADVICE. REMOVE THIS BANNER BEFORE PUBLICATION.**
-> This document was drafted from the product's own documented behaviour and from the facts supplied by Neovogent. It has not been reviewed by a lawyer. It must be reviewed and approved by a qualified UK solicitor before it is published, signed, or relied on. Every `[PLACEHOLDER: ...]` marks something that could not be established from the facts and must be filled in or removed — do not publish with a placeholder still in the text. The Annex B footnote about the support mailbox is an internal action item, not customer-facing copy.
+> This document was drafted from the product's own documented behaviour and from the facts supplied by Exambinary. It has not been reviewed by a lawyer. It must be reviewed and approved by a qualified UK solicitor before it is published, signed, or relied on. Every `[PLACEHOLDER: ...]` marks something that could not be established from the facts and must be filled in or removed — do not publish with a placeholder still in the text. The Annex B footnote about the support mailbox is an internal action item, not customer-facing copy.
 
 ---
 
@@ -70,10 +88,10 @@ You are an accounting practice. When you use Neo Accounting, you upload your cli
 
 **1.1** These terms are between:
 
-- **Neovogent** — full registered name **[PLACEHOLDER: confirm the exact registered company name, e.g. "NEOVOGENT AI SOLUTIONS UK LTD", against the Companies House register]**, a company registered in England and Wales, company number **[PLACEHOLDER: confirm company number]**, registered office **[PLACEHOLDER: confirm full registered-office address, Birmingham]**, tax ID **9286810564**, VAT registration number [PLACEHOLDER: UK VAT registration number. 9286810564 is the company TAX ID, not the VAT number — the VAT registration number is a separate nine-digit reference and must be obtained before any invoice is issued] ("**we**", "**us**", "**Neovogent**"); and
+- **Exambinary** — full registered name **[PLACEHOLDER: confirm the exact registered company name, e.g. "Exambinary Holding Ltd", against the Companies House register]**, a company registered in England and Wales, company number **[PLACEHOLDER: confirm company number]**, registered office **[PLACEHOLDER: confirm full registered-office address, Birmingham]**, tax ID **9286810564**, VAT registration number [PLACEHOLDER: UK VAT registration number. 9286810564 is the company TAX ID, not the VAT number — the VAT registration number is a separate nine-digit reference and must be obtained before any invoice is issued] ("**we**", "**us**", "**Exambinary**"); and
 - **you**, the accounting practice that has an account for the Neo Accounting service at https://neoacc.neovogent.com ("**you**", "**your practice**").
 
-**1.2** "Neo Accounting" is a trading name of the company named in clause 1.1. **[PLACEHOLDER: confirm whether "Neovogent" and "Neo Accounting" are registered trading names of that company, and add any business-names disclosure required by the Companies (Trading Disclosures) Regulations 2008.]**
+**1.2** "Neo Accounting" is a trading name of the company named in clause 1.1. **[PLACEHOLDER: confirm whether "Exambinary" and "Neo Accounting" are registered trading names of that company, and add any business-names disclosure required by the Companies (Trading Disclosures) Regulations 2008.]**
 
 ## 2. What these terms are, and how they fit with the rest of your contract
 
@@ -191,13 +209,13 @@ You are an accounting practice. When you use Neo Accounting, you upload your cli
 
 **11.2 The AI model.** The model that reads document images runs in the same UK region. It is pinned to that region and we hold no permission that would let a request be served from anywhere else, so a call outside the region fails rather than silently succeeding elsewhere.
 
-**11.3 Backups.** **[PLACEHOLDER: confirm whether disaster-recovery backups are replicated to a region outside the UK. Neovogent's internal residency decision records one named exception — a cross-region disaster-recovery backup target — because the UK has only one AWS region. If that exception is live, it must be stated here, the destination region named, and a transfer mechanism identified. If it is not live, say backups stay in the UK.]**
+**11.3 Backups.** **[PLACEHOLDER: confirm whether disaster-recovery backups are replicated to a region outside the UK. Exambinary's internal residency decision records one named exception — a cross-region disaster-recovery backup target — because the UK has only one AWS region. If that exception is live, it must be stated here, the destination region named, and a transfer mechanism identified. If it is not live, say backups stay in the UK.]**
 
 **11.4 Access from outside the UK.** Our support and engineering team is based in **Bangladesh**. Bangladesh is not covered by UK adequacy regulations.
 
-**Neovogent's policy is that Personal Data processed under these terms is not accessed from outside the United Kingdom.** Personal Data remains in the UK region and is not opened, exported, downloaded or supported from outside the UK. On that basis no restricted transfer occurs under Article 44.
+**Exambinary's policy is that Personal Data processed under these terms is not accessed from outside the United Kingdom.** Personal Data remains in the UK region and is not opened, exported, downloaded or supported from outside the UK. On that basis no restricted transfer occurs under Article 44.
 
-If a restricted transfer becomes necessary — for example an incident that cannot be resolved from within the UK — Neovogent will put an appropriate transfer mechanism in place first (the ICO's International Data Transfer Agreement or the UK Addendum to the EU SCCs), complete a transfer risk assessment, and notify the Controller before the transfer occurs.
+If a restricted transfer becomes necessary — for example an incident that cannot be resolved from within the UK — Exambinary will put an appropriate transfer mechanism in place first (the ICO's International Data Transfer Agreement or the UK Addendum to the EU SCCs), complete a transfer risk assessment, and notify the Controller before the transfer occurs.
 
 **[NOTE FOR THE REVIEWING SOLICITOR: this clause states a policy rather than a transfer safeguard. It is only true while it is enforced. It should be backed by technical access controls — an IAM condition or IP restriction on production data — so it can be evidenced if a Controller audits it under clause 14.]**
 
@@ -237,7 +255,7 @@ If a restricted transfer becomes necessary — for example an incident that cann
 
 **15.2 On cancellation or the end of a trial.** The service offers you export and deletion at that point. Deletion through those tools is your instruction to us to delete.
 
-**15.3 If you do nothing.** If you have neither exported nor deleted, we will keep the data for **[PLACEHOLDER: confirm the post-termination retention window in days — Neovogent's internal offboarding decision refers to a 90-day post-termination window; confirm the number and that the product enforces it]** after your subscription ends, so that you can still get it out. After that we will delete it.
+**15.3 If you do nothing.** If you have neither exported nor deleted, we will keep the data for **[PLACEHOLDER: confirm the post-termination retention window in days — Exambinary's internal offboarding decision refers to a 90-day post-termination window; confirm the number and that the product enforces it]** after your subscription ends, so that you can still get it out. After that we will delete it.
 
 **15.4 Choice at the end.** At the end of the Terms you may tell us in writing whether you want the Personal Data returned or deleted. If you tell us nothing, clause 15.3 applies.
 
@@ -318,9 +336,9 @@ If a restricted transfer becomes necessary — for example an incident that cann
 
 | # | Sub-processor | What it does for us | Where it processes | Data protection contract |
 |---|---|---|---|---|
-| 1 | **Amazon Web Services** | Hosting, file storage and the database — where your documents and records live | UK — `eu-west-2` (London) | AWS Data Processing Addendum. **[PLACEHOLDER: confirm the DPA is in force and which Neovogent entity is the AWS customer of record.]** |
+| 1 | **Amazon Web Services** | Hosting, file storage and the database — where your documents and records live | UK — `eu-west-2` (London) | AWS Data Processing Addendum. **[PLACEHOLDER: confirm the DPA is in force and which Exambinary entity is the AWS customer of record.]** |
 | 2 | **Amazon Bedrock** (an AWS service) | Runs the AI model that reads document images | UK — `eu-west-2` (London), region-pinned; no cross-region inference permission is granted | Covered by the AWS Data Processing Addendum. **[PLACEHOLDER: confirm the AWS commitment that model inputs and outputs are not stored by AWS and are not used to train models.]** |
-| 3 | **Stripe** | Card payment processing for your subscription. Checkout is hosted by Stripe; **card details never reach Neovogent systems.** Stripe processes your practice's billing details, not your clients' documents. | **[PLACEHOLDER: confirm the Stripe entity that contracts with us and where it processes data.]** | Stripe Data Processing Agreement. **[PLACEHOLDER: confirm it is accepted, and confirm with the reviewing solicitor where Stripe acts as an independent controller rather than as our processor.]** |
+| 3 | **Stripe** | Card payment processing for your subscription. Checkout is hosted by Stripe; **card details never reach Exambinary systems.** Stripe processes your practice's billing details, not your clients' documents. | **[PLACEHOLDER: confirm the Stripe entity that contracts with us and where it processes data.]** | Stripe Data Processing Agreement. **[PLACEHOLDER: confirm it is accepted, and confirm with the reviewing solicitor where Stripe acts as an independent controller rather than as our processor.]** |
 | 4 | **Cloudflare** | Email routing for our support address | **[PLACEHOLDER: confirm processing location.]** | **[PLACEHOLDER: confirm Cloudflare DPA accepted.]** |
 | 5 | **Google (Gmail)** | The mailbox that our support address forwards to. Handles support correspondence — which may contain personal data if you send us a document or a client's details by email. | **[PLACEHOLDER: confirm processing location.]** | ⚠ **See the note below — this is not yet in place.** |
 
