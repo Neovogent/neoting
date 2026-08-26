@@ -639,7 +639,12 @@ function Result({
 function Shell({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   const intl = useIntl();
   return (
-    <div className="flex-1 flex flex-col min-w-0 h-full bg-ground overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    // The safe-area insets go on the scroll container, which carries no padding
+    // of its own, so they compose with the inner column's `px-5 py-10` instead
+    // of overriding it. This screen is only ever opened from an SMS on a phone:
+    // without them the heading sits under the notch and the last item under the
+    // home indicator. The 16px input floor arrives from index.css.
+    <div className="flex-1 flex flex-col min-w-0 h-full bg-ground overflow-y-auto pt-safe pb-safe px-safe [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <div className="w-full max-w-md mx-auto px-5 py-10 flex flex-col gap-5">
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 rounded-2xl bg-brand flex items-center justify-center text-white shrink-0 shadow-glow-tile">

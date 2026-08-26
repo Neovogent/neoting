@@ -358,7 +358,7 @@ function ApprovalCard({
 
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full bg-ground overflow-hidden">
-      <header className="shrink-0 border-b border-white/5 bg-card px-5 py-4 flex items-center justify-between gap-3">
+      <header className="shrink-0 border-b border-white/5 bg-card px-5 py-4 pt-safe flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="font-sans font-bold text-[15px] text-white tracking-tight truncate">{clientName}</div>
           <div className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider">
@@ -524,7 +524,7 @@ function ApprovalCard({
       </div>
 
       {/* Thumb-reach action bar — the client side is mobile-first by mandate. */}
-      <div className="shrink-0 border-t border-white/5 bg-card px-5 py-4">
+      <div className="shrink-0 border-t border-white/5 bg-card px-5 pt-3 pb-safe-4 sm:py-4">
         <div className="w-full max-w-md mx-auto flex flex-col gap-2">
           {rejecting ? (
             <>
@@ -610,7 +610,7 @@ function ApprovalCard({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto p-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto p-3 sm:p-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             onClick={() => setViewingDoc(false)}
           >
             {/* Not a button, a click-containment wrapper — role="presentation"

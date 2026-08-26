@@ -7,6 +7,7 @@ import { useAppContext } from '../../context/AppContext';
 import { Pill } from '../../components/DynamicComponents/DataTable';
 import { newMember } from '../../lib/business';
 import { RolePicker } from '../../components/DynamicComponents/RolePicker';
+import { SectionStrip } from '../../components/DynamicComponents/SectionStrip';
 import { useConfirm } from '../../components/DynamicComponents/ConfirmProvider';
 import { useEscape } from '../../lib/useEscape';
 import type { BusinessAccount, BusinessMember } from '../../lib/types';
@@ -354,8 +355,11 @@ export function BusinessSettingsView({ account }: { account: BusinessAccount }) 
   };
 
   return (
-    <div className="flex min-w-0 h-full">
-      <aside className="w-56 shrink-0 border-r border-white/5 py-8 px-3 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="flex flex-col md:flex-row min-w-0 h-full">
+      <aside
+        data-tour="portal-settings"
+        className="hidden md:block w-56 shrink-0 border-r border-white/5 py-8 px-3 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
         <nav className="flex flex-col gap-1">
           {SECTIONS.map((s) => (
             <button
@@ -374,7 +378,16 @@ export function BusinessSettingsView({ account }: { account: BusinessAccount }) 
         </nav>
       </aside>
 
-      <div className="flex-1 min-w-0 overflow-y-auto p-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="md:hidden shrink-0 border-b border-white/5 pt-2">
+        <SectionStrip
+          tourKey="portal-settings"
+          items={SECTIONS.map((sec) => ({ key: sec.key, icon: sec.icon, label: intl.formatMessage(sec.label) }))}
+          active={section}
+          onSelect={(k) => setSection(k as Section)}
+        />
+      </div>
+
+      <div className="flex-1 min-w-0 overflow-y-auto p-4 md:p-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <motion.div key={section} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="max-w-2xl flex flex-col gap-5">
           {section === 'Business' && (
             <>
@@ -667,7 +680,7 @@ function MemberEditor({ member, existing, onSave, onRemove, onClose }: {
     // dismissal is Escape (useEscape above). The dialog is named by its own
     // heading rather than a duplicated label expression.
     <div
-      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 md:p-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       onClick={onClose}
       role="presentation"
     >
@@ -690,7 +703,7 @@ function MemberEditor({ member, existing, onSave, onRemove, onClose }: {
         </div>
 
         <div className="p-6 flex flex-col gap-5">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field
               label={intl.formatMessage(m.editorNameLabel)}
               value={draft.name}
@@ -737,7 +750,7 @@ function MemberEditor({ member, existing, onSave, onRemove, onClose }: {
           {problem && <p className="text-[13px] text-amber-400 font-semibold">{problem}</p>}
         </div>
 
-        <div className="p-4 bg-raised/50 flex items-center gap-3 justify-end flex-wrap">
+        <div className="p-4 bg-raised/50 flex items-center gap-2 sm:gap-3 justify-end flex-wrap [&>button]:flex-1 [&>button]:basis-[8rem] sm:[&>button]:flex-none sm:[&>button]:basis-auto [&>button]:justify-center">
           {!isNew && (
             <button
               onClick={onRemove}

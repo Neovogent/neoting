@@ -20,6 +20,17 @@ const m = defineMessages({
     id: 'portal.businessUploadView.dropHeading',
     defaultMessage: 'Drop files here, or click to choose',
   },
+  // A finger cannot drag and drop. The `pointer-coarse` variant swaps the
+  // sentence, so this is a second string with its own id — not a shortening
+  // of the first, and not the same message under a different id.
+  dropHeadingTouch: {
+    id: 'portal.businessUploadView.dropHeadingTouch',
+    defaultMessage: 'Tap to choose files or take a photo',
+  },
+  dismissRejected: {
+    id: 'portal.businessUploadView.dismissRejected',
+    defaultMessage: 'Dismiss',
+  },
   dropDetail: {
     id: 'portal.businessUploadView.dropDetail',
     defaultMessage:
@@ -119,7 +130,7 @@ export function BusinessUploadView({ account }: { account: BusinessAccount }) {
   const portalDocs = documents.filter((d) => d.clientId === account.clientId && d.source === 'portal').slice(0, 6);
 
   return (
-    <div className="p-8 max-w-3xl mx-auto flex flex-col gap-6">
+    <div className="p-4 md:p-8 max-w-3xl mx-auto flex flex-col gap-6">
       <div>
         <h1 className="font-sans text-2xl font-bold text-white tracking-tight">{intl.formatMessage(m.title)}</h1>
         <p className="text-[13px] text-zinc-500 mt-1">{intl.formatMessage(m.subtitle)}</p>
@@ -146,14 +157,18 @@ export function BusinessUploadView({ account }: { account: BusinessAccount }) {
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
         onClick={() => inputRef.current?.click()}
-        className={`rounded-[28px] border-2 border-dashed p-12 flex flex-col items-center justify-center text-center cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 ${
+        data-tour="portal-upload"
+        className={`rounded-[28px] border-2 border-dashed p-6 sm:p-12 flex flex-col items-center justify-center text-center cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 ${
           dragging ? 'border-brand bg-brand/5' : 'border-white/10 bg-card hover:border-white/20'
         }`}
       >
         <div className="w-14 h-14 rounded-2xl bg-raised border border-white/5 flex items-center justify-center text-zinc-300">
           <UploadCloud size={24} />
         </div>
-        <p className="text-sm font-bold text-white mt-4">{intl.formatMessage(m.dropHeading)}</p>
+        <p className="text-sm font-bold text-white mt-4">
+          <span className="pointer-coarse:hidden">{intl.formatMessage(m.dropHeading)}</span>
+          <span className="hidden pointer-coarse:inline">{intl.formatMessage(m.dropHeadingTouch)}</span>
+        </p>
         <p className="text-[12px] text-zinc-500 mt-1.5 max-w-sm leading-relaxed">
           {intl.formatMessage(m.dropDetail, { limit: Math.round(PORTAL_UPLOAD_LIMIT / 1024 / 1024) })}
         </p>
@@ -194,7 +209,11 @@ export function BusinessUploadView({ account }: { account: BusinessAccount }) {
                 <AlertTriangle size={15} />
                 {intl.formatMessage(m.rejectedHeading, { count: rejected.length })}
               </span>
-              <button onClick={() => setRejected([])} className="text-zinc-500 hover:text-white">
+              <button
+                onClick={() => setRejected([])}
+                aria-label={intl.formatMessage(m.dismissRejected)}
+                className="text-zinc-500 hover:text-white"
+              >
                 <X size={15} />
               </button>
             </div>

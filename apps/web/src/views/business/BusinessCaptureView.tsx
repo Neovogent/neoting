@@ -224,7 +224,7 @@ export function BusinessCaptureView({ account }: { account: BusinessAccount }) {
   const overLimit = totalMb * 1024 * 1024 > PORTAL_UPLOAD_LIMIT;
 
   return (
-    <div className="p-8 max-w-3xl mx-auto flex flex-col gap-6">
+    <div className="p-4 md:p-8 max-w-3xl mx-auto flex flex-col gap-6">
       <div>
         <h1 className="font-sans text-2xl font-bold text-white tracking-tight">{intl.formatMessage(m.title)}</h1>
         <p className="text-[13px] text-zinc-500 mt-1">
@@ -234,7 +234,10 @@ export function BusinessCaptureView({ account }: { account: BusinessAccount }) {
         </p>
       </div>
 
-      <div className="relative rounded-[28px] overflow-hidden border border-white/5 bg-black aspect-[4/3] flex items-center justify-center">
+      <div
+        data-tour="portal-capture"
+        className="relative rounded-[28px] overflow-hidden border border-white/5 bg-black aspect-[3/4] sm:aspect-[4/3] max-h-[70dvh] mx-auto w-full flex items-center justify-center"
+      >
         <video
           ref={videoRef}
           playsInline
@@ -263,7 +266,7 @@ export function BusinessCaptureView({ account }: { account: BusinessAccount }) {
         </AnimatePresence>
 
         {state !== 'live' && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-4 md:p-8">
             <div className="w-14 h-14 rounded-2xl bg-raised border border-white/5 flex items-center justify-center text-zinc-300">
               {state === 'error' ? <CameraOff size={24} /> : <Camera size={24} />}
             </div>
@@ -400,7 +403,7 @@ export function BusinessCaptureView({ account }: { account: BusinessAccount }) {
                 </span>
                 <button
                   onClick={() => setPages((prev) => prev.filter((x) => x.id !== p.id))}
-                  className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/70 text-zinc-300 hover:text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute top-1.5 right-1.5 w-8 h-8 rounded-full bg-black/70 text-zinc-200 hover:text-white flex items-center justify-center transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
                   aria-label={intl.formatMessage(m.deletePageLabel, { index: i + 1 })}
                 >
                   <Trash2 size={13} />
@@ -426,11 +429,11 @@ export function BusinessCaptureView({ account }: { account: BusinessAccount }) {
             </p>
           )}
 
-          <div className="flex items-center gap-2 mt-5">
+          <div className="flex items-center gap-2 mt-5 flex-wrap">
             <button
               onClick={() => send()}
               disabled={overLimit}
-              className="flex items-center gap-2 px-6 py-3 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-glow-btn-strong"
+              className="flex-1 sm:flex-none justify-center flex items-center gap-2 px-6 py-3 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-glow-btn-strong"
             >
               <Send size={15} strokeWidth={2.5} />
               {intl.formatMessage(m.sendAction)}
