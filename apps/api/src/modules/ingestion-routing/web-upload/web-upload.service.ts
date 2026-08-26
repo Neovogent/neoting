@@ -289,8 +289,10 @@ export class WebUploadService {
     // or none at all — finds the existing row and must not enqueue again:
     // `BullmqIngestQueue` sets `removeOnComplete: true`, so jobId dedupe lasts
     // only while the job is in the queue, and a re-enqueue after the first job
-    // finished is accepted. Harmless today (the worker no-ops on a job with a
-    // documentId), a double-sanitisation the moment that TODO lands.
+    // finished is accepted. This mattered more once sanitisation landed (Stage
+    // A3) — a second job would re-read, re-decode and re-store the bytes — so
+    // the step is idempotent on the document's state as well: only a RECEIVED
+    // document is sanitised. Two gates, because this one is check-then-act.
     // Same `{ row, created }` shape as `PrismaDocumentSink` (#20), for the same reason.
     if (created) await this.enqueueSanitisation(row.id, claims, byteHash);
 
@@ -416,7 +418,16 @@ export class WebUploadService {
             practiceId: claims.practiceId,
             s3Key: claims.s3Key,
             originalFilename: claims.filename,
-            mimeType: claims.mimeType, // declared; sniffing overwrites during sanitisation
+            // ⚠ THE BROWSER'S CLAIM, and it is only ever a placeholder. The
+            // worker's sanitisation step (Stage A3) sniffs the bytes and
+            // overwrites this column, along with `s3_key`, `byte_hash`,
+            // `byte_size` and `perceptual_hash`, before extraction reads any of
+            // them. It has to be written now because the column is NOT NULL and
+            // the row exists before the bytes have ever been looked at; nothing
+            // downstream may treat it as authoritative until sanitisation has
+            // run. This comment said "sniffing overwrites during sanitisation"
+            // when no such step existed — now it does.
+            mimeType: claims.mimeType,
             byteSize: claims.byteSize,
             byteHash,
             channel: claims.channel as DocumentRow['channel'],
@@ -452,9 +463,10 @@ export class WebUploadService {
 
   private async enqueueSanitisation(documentId: string, claims: UploadClaims, byteHash: string): Promise<void> {
     // A sanitisation job for an ALREADY-persisted document. It carries no
-    // filename/mimeType/byteSize, so the current worker's persist path does not
-    // fire on it (it would double-create) — the worker's web-upload sanitisation
-    // step is a follow-up; today the acceptance is the document + the job.
+    // filename/mimeType/byteSize, so the worker's persist path does not fire on
+    // it (it would double-create) — the `documentId` sends it down the
+    // already-persisted branch, which since Stage A3 sanitises the bytes, points
+    // the row at the cleaned object, and only then dedupes and extracts.
     const job: IngestJob = {
       source: 'web_upload',
       idempotencyKey: documentId,

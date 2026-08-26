@@ -85,13 +85,21 @@ Terraform change to the ARNs in both envs, and an eval run — not a drive-by.
 |---|---|---|
 | `AI_CHAT` | `demo` | `bedrock` is the real model. **Refused under `NODE_ENV=production`** — see below |
 | `BEDROCK_REGION` | `eu-west-2` | Pinned by D30. Changing it is a residency decision |
-| `AI_DAILY_BUDGET_PENCE` | `500` | Per practice, per UTC day |
+| `AI_DAILY_BUDGET_PENCE` | `2500` | Per practice, per UTC day. £25, raised from £5 by S1 — it is a hard stop, not a warning, and £5 was 250 documents at the £0.02/document guardrail. **Extraction does not count against it yet** (S5 item 3) |
 
-`AI_CHAT=demo` is the only demo switch in `env.ts` that refuses to boot in
-production. The others degrade something a user can see — no SMS arrives, no
-bill reaches Xero. This one degrades the *judgement* while the screen looks
-identical: same cards, same confident wording, same Review → Approve path. A
-stand-in classifier answering a real accountant is a different class of wrong.
+`AI_CHAT=demo` refuses to boot in production. Some demo switches degrade
+something a user can see — no SMS arrives, no bill reaches a ledger. This one
+degrades the *judgement* while the screen looks identical: same cards, same
+confident wording, same Review → Approve path. A stand-in classifier answering
+a real accountant is a different class of wrong.
+
+It used to be the **only** switch here that refused to boot. S1 gave the same
+treatment to `EXTRACTOR=demo`, which is the same failure with more of the
+product behind it — DemoExtractor derives supplier, date, total, tax and a VAT
+number from a hash of the filename at 0.8 confidence, and `resolveProcessedState`
+reads 0.8 as Ready. `OTP_MODE`, `IMAGE_NORMALISER`, `DOCUMENT_GUARD` and the
+three HMAC signing keys are gated too; `apps/api/src/config/env.ts` carries the
+argument for each.
 
 ## Evals are the merge gate (§9.8)
 

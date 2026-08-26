@@ -6,6 +6,7 @@ import { RecordingExtractionStep } from '../../../extraction/index.js';
 import { documentIdFor, PrismaDocumentSink } from '../../queue/document-sink.js';
 import { InMemoryDuplicateDetector } from '../../queue/duplicate-detector.js';
 import { processIngestJob } from '../../queue/ingest-processor.js';
+import { RecordingUploadSanitisation } from '../../web-upload/upload-sanitisation.js';
 import { FixtureMediaFetcher } from '../../queue/media-fetcher.js';
 import { InMemoryProcessedStore } from '../../queue/processed-store.js';
 import { InMemoryDocumentStore } from '../../storage/document-store.js';
@@ -122,6 +123,9 @@ describe.skipIf(!DATABASE_URL || !OWNER_URL)('email intake against a real databa
       sink,
       detector: new InMemoryDuplicateDetector(),
       media: { fetcher: new FixtureMediaFetcher(), store: new InMemoryDocumentStore() },
+      // Never consulted: an email job carries no `documentId`, so it does not
+      // take the already-persisted branch sanitisation lives on (Stage A3).
+      uploadSanitiser: new RecordingUploadSanitisation(),
       // No-op: this #78 test asserts the persistence write, not extraction.
       extractor: new RecordingExtractionStep(),
       // No-op: extraction returns null here, so auto-close is never triggered.

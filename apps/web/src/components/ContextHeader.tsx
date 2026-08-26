@@ -4,6 +4,7 @@ import { ChevronDown, LogOut, UserRound } from 'lucide-react';
 import type { WorkspaceRole } from '@neoting/contracts/model';
 import { useAppContext } from '../context/AppContext';
 import { useEscape } from '../lib/useEscape';
+import { Wordmark } from '../assets/Wordmark';
 import { DataSourceBadge } from './DataSourceBadge';
 
 /**
@@ -22,6 +23,11 @@ const m = defineMessages({
     defaultMessage: '{count, plural, one {# client in scope} other {# clients in scope}}',
   },
   userMenu: { id: 'shell.contextHeader.userMenu', defaultMessage: 'Account menu' },
+  brand: {
+    id: 'shell.contextHeader.brand',
+    defaultMessage: 'Neo Accounting',
+    description: 'Accessible name for the product wordmark in the header. A product name — leave untranslated.',
+  },
   logout: { id: 'shell.contextHeader.logout', defaultMessage: 'Log out' },
   sessionSlice: {
     id: 'shell.contextHeader.sessionSlice',
@@ -78,7 +84,8 @@ export function ContextHeader() {
   if (session.status !== 'authenticated') {
     // 'degraded': no identity to show, but the badges must still be visible.
     return (
-      <header className="shrink-0 flex items-center justify-end gap-2 px-10 h-11 border-b border-white/5 bg-card">
+      <header className="shrink-0 flex items-center justify-between gap-2 px-10 h-11 border-b border-white/5 bg-card">
+        <Wordmark title={intl.formatMessage(m.brand)} size={13} className="text-white shrink-0" />
         {badges}
       </header>
     );
@@ -90,6 +97,7 @@ export function ContextHeader() {
   return (
     <header className="shrink-0 flex items-center justify-between gap-4 px-10 h-11 border-b border-white/5 bg-card">
       <span className="flex items-center gap-3 min-w-0">
+        <Wordmark title={intl.formatMessage(m.brand)} size={13} className="text-white shrink-0" />
         {practice && (
           <span className="text-[12.5px] font-bold text-white truncate">{practice.name}</span>
         )}

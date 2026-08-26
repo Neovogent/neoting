@@ -1,19 +1,33 @@
-import { scryptSync, timingSafeEqual } from 'node:crypto';
+import type { Env } from '../../config/env.js';
+import { burnPasswordHash, verifyPasswordHash } from './password.js';
 
 /**
  * The demo credential table (METH Stage 1, issue #118).
  *
- * // DEMO-MOCK: replace with Argon2 + the `users.password_hash` column at
- * // S1-real. For the 21 Aug demo the credential set is FIXED (METH_MODE §7),
- * // so it lives in-file: no schema change, no seed coupling for verification,
- * // and the passwords below are PUBLISHED demo fixtures (METH_MODE §3.5 —
- * // documented in METH_MODE §7), not secrets in the diff.
+ * // DEMO-MOCK: the real credential store is `users.password_hash`, written by
+ * // practice signup (launch stage A1, `practice-signup.service.ts`) and read by
+ * // `auth.service.ts`. This table is now the FALLBACK, not the system: it exists
+ * // so a laptop with a seeded database keeps its two known logins. The passwords
+ * // below are PUBLISHED demo fixtures (METH_MODE §7), not secrets in the diff.
  *
- * ⚠ COORDINATION CONTRACT WITH STAGE 5 (seed v2, Abdullah): the seed must
- * create users with EXACTLY these ids and emails, holding the §7 memberships
- * (Shakib-demo → Practice Admin, Abdullah-demo → Standard User). Login mints a
- * cookie for the userId below; a seed that picks different ids produces valid
- * logins with no memberships, which resolve to 401 on every request.
+ * ⚠ **PRODUCTION REFUSES THIS TABLE**, the way `config/env.ts` refuses
+ * `AUTH_MODE=fixture`. `verifyDemoPassword` takes `NODE_ENV` as a REQUIRED
+ * argument and answers `null` under `production` before it looks at anything —
+ * so the refusal is not a call-site convention a future caller can forget, it is
+ * the function's signature. A published password minting a real session against
+ * a real practice's books is the failure this closes.
+ *
+ * It is a request-time refusal rather than a boot gate because, unlike
+ * `AUTH_MODE`, there is no configuration to refuse: the table is compiled in.
+ * The gate therefore has to live where the table is read.
+ *
+ * ⚠ COORDINATION CONTRACT WITH THE SEED: the seed must create users with
+ * EXACTLY these ids and emails, holding the §7 memberships (Shakib-demo →
+ * Practice Admin, Abdullah-demo → Standard User) and `emailVerified: true`.
+ * Since A1, a demo login is ALSO gated on the `users` row being present,
+ * verified and active — see `auth.service.ts`. It always was in effect (a
+ * session with no membership 401s on every later request); now it fails at the
+ * login, where the cause is legible.
  */
 
 export interface DemoCredential {
@@ -35,30 +49,25 @@ export const DEMO_CREDENTIALS: Readonly<Record<string, DemoCredential>> = Object
 });
 
 /**
- * Burned for unknown emails so "no such user" and "wrong password" cost the
- * same scrypt — a timing probe cannot enumerate the credential table. The
- * password behind it is random bytes discarded at generation time; nothing
- * verifies against it.
- */
-const DUMMY_HASH = 'scrypt$AAAAAAAAAAAAAAAAAAAAAA$JnPnyLDmgAY-Ozn4bF7BxT0ymVvSyq0Ff-Rc4z3n7dE';
-
-/**
- * Verify an email + password against the table. Returns the userId on success,
- * null on ANY failure — the caller maps every miss to the one `NT-AUTH-003`.
+ * Verify an email + password against the fixture table. Returns the userId on
+ * success, null on ANY failure — the caller maps every miss to the one
+ * `NT-AUTH-003`.
  *
- * `scryptSync` blocks the event loop for ~50 ms per attempt. Acceptable for a
- * two-user demo table; the S1-real replacement (Argon2, async) removes it.
+ * `nodeEnv` is required, not optional and not defaulted: an omitted argument
+ * must not be able to mean "allow". Under `production` this returns null
+ * without burning a scrypt, because in production there is nothing here to hide
+ * — the table is not consulted at all, so there is no membership of it to leak
+ * through timing.
  */
-export function verifyDemoPassword(email: string, password: string): string | null {
-  const credential = DEMO_CREDENTIALS[email.toLowerCase()];
-  const matched = verifyScrypt(password, credential?.scryptHash ?? DUMMY_HASH);
-  return matched && credential !== undefined ? credential.userId : null;
-}
+export function verifyDemoPassword(email: string, password: string, nodeEnv: Env['NODE_ENV']): string | null {
+  if (nodeEnv === 'production') return null;
 
-function verifyScrypt(password: string, stored: string): boolean {
-  const [scheme, salt, hash] = stored.split('$');
-  if (scheme !== 'scrypt' || !salt || !hash) return false;
-  const expected = Buffer.from(hash, 'base64url');
-  const actual = scryptSync(password, salt, expected.length);
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
+  const credential = DEMO_CREDENTIALS[email.toLowerCase()];
+  if (credential === undefined) {
+    // Burn the same scrypt an existing entry would cost, so a timing probe
+    // cannot enumerate the (published, but still) table.
+    burnPasswordHash(password);
+    return null;
+  }
+  return verifyPasswordHash(password, credential.scryptHash) ? credential.userId : null;
 }

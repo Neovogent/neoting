@@ -415,6 +415,81 @@ Verified live against the demo stack: the byte-identical twin produced
 `byteHash` findings at score 1. Web-upload jobs carry no `perceptualHash`
 today, so the perceptual net stays email/WhatsApp-only — a note, not a secret.
 
+### Web + portal uploads are SANITISED — Stage A3 (26 Aug 2026)
+
+`web-upload/upload-sanitisation.ts` (pure) + `web-upload/prisma-upload-sanitisation.ts`
+(the real step) + a new REQUIRED `uploadSanitiser` on `ProcessorDeps`, wired in
+`worker/main.ts`. **Until this, web and portal uploads skipped sanitisation
+entirely** — the service persisted the document straight from the browser's
+signed claims and the processor's already-persisted branch went to dedupe and
+extract. Three live consequences, now closed:
+
+- **HEIC stayed HEIC**, so "upload a receipt from your phone" (a named §24.7
+  step) was an instant `NT-EXT-003` under `EXTRACTOR=bedrock`.
+- **EXIF was never stripped**, so we kept clients' GPS coordinates while the
+  privacy notice said we strip them.
+- **`documents.mime_type` was the browser's claim**, so magic-byte sniffing —
+  the thing that decides what a file actually is — never ran on this path.
+
+**It is the SAME `sanitise()` the WhatsApp lane uses, not a second one.** The
+step reads the bytes back through `DocumentStore.get`, runs the §11.4 pipeline,
+and repoints the row: `s3_key`, `byte_hash`, `byte_size`, `mime_type`,
+`perceptual_hash`. Five things worth knowing before changing it:
+
+- ⚠ **The pipeline's `detectedType` describes the INPUT, not the output.**
+  `pipeline.ts` returns `accepted(bytes, detected)` where `detected` was sniffed
+  at step 1 and `bytes` are what step 5 produced — and step 5 re-encodes every
+  image to JPEG. So a converted HEIC comes back labelled `heic` carrying JPEG
+  bytes, and `mimeForFormat(detectedType)` writes `image/heic` onto a row whose
+  object is a JPEG — which re-creates `NT-EXT-003` on the exact format this
+  stage exists to fix. `effectiveFormat()` **re-sniffs the stored bytes**; that
+  is not defensive tidiness, it is the difference between the fix working and
+  not. ⚠ **The same latent mismatch is in `whatsapp-media-intake.ts`**, which
+  still does `mimeForFormat(result.document.detectedType)` — a HEIC arriving by
+  WhatsApp is stored as `image/heic` with JPEG bytes. Not fixed here (that file
+  was outside A3's owned paths); raised on the PR.
+- **Sanitisation is NOT a state transition.** The document stays in RECEIVED —
+  extraction is what moves it — so it writes its own `document_events` row
+  (stage `sanitise`) rather than borrowing the state machine for a move that
+  does not happen. ⚠ **That is also why the state alone cannot make it
+  idempotent**: "still RECEIVED?" answers yes both before and after the work.
+  The durable marker is that `sanitise` event, plus a compare-and-swap
+  `updateMany` guarded on the `s3Key` read in phase 1 (the winner has already
+  moved it off `uploads/<nonce>`, which is what tells two racing workers apart).
+- **A refusal is a REJECTED document, not a DLQ entry.** Unlike WhatsApp — which
+  has no row yet and must dead-letter — this lane already has one, so the
+  `Rejection` lands as `failure_code`/`failure_message` on the Rejected/Failed
+  surface, retryable through a `document.reprocess` proposal. That closes the
+  old "NT-ING-004 belongs on the document, not on a response" TODO.
+- **Dedupe now keys on the SANITISED hash**, and web uploads finally carry a
+  `perceptual_hash` — the near-duplicate net did not cover this lane at all
+  before, because nothing ever decoded the image.
+- **No filename is passed to `sanitise()`**, exactly as the email and WhatsApp
+  lanes do. The bytes decide the type; `extensionContradicts` would turn a PNG
+  someone saved as `photo.jpg` into a rejection for a mistake with no security
+  content, and the declared MIME was already allowlisted at the door as a cheap
+  pre-filter.
+
+⚠ **The ORIGINAL object at `w/<biz>/uploads/<nonce>` is not deleted, so the
+un-stripped EXIF still exists in the bucket.** `DocumentStore` has no `delete`,
+and `storage/` was outside this stage's owned paths. Until that lands, the
+honest statement is that the *document* we serve and process carries no EXIF,
+while an orphaned intent object does. An S3 lifecycle rule expiring
+`w/*/uploads/*` would close it without any code (infra — Shakib's).
+
+⚠ **The step buffers the whole object** (`get()` materialises it, up to 100 MB
+on the accountant lane, at concurrency 8). That is the price of sanitising at
+all — sniffing, decoding and re-encoding cannot be done on a stream — and it is
+why this runs in the worker rather than on the request path.
+
+Proven against a real database (`web-upload/upload-sanitisation.integration.test.ts`,
+prefix `a3u_`, cleanup by explicit id list): a HEIC upload lands as
+`image/jpeg` re-keyed to `w/<biz>/documents/<sha256>` with a perceptual hash; the
+object the row points at carries **no EXIF** (read back and checked, not merely
+returned); a browser declaring `image/jpeg` over PDF bytes is stored as
+`application/pdf`; a password-protected file is REJECTED with `NT-ING-004` and
+its intent key untouched; a second run is an idempotent no-op.
+
 ### Extraction wiring (METH Stage 4)
 
 The ingest processor (`queue/ingest-processor.ts`) runs extraction for every
@@ -516,6 +591,14 @@ Two things worth knowing before changing it:
 bytes a stranger emailed us, and a malicious PDF must cost one failed document
 rather than the worker. Selected by `DOCUMENT_GUARD=fixture|qpdf`.
 
+**And it is the only one a real environment may run** (S1). `config/env.ts`
+refuses `DOCUMENT_GUARD=fixture` under `NODE_ENV=production`, and
+`apps/api/Dockerfile` installs the binary — the two halves of the same change,
+because the gate without the binary is a crash-loop and the binary without the
+gate is an option nobody takes. `fixture` remains the default so a laptop and
+CI still run the suite offline: the guard's unit tests drive a fake runner, so
+the decision logic is covered everywhere rather than only where qpdf exists.
+
 - **Encryption** via `--is-encrypted`, which walks the xref chain. This is what
   the shim got wrong: it greps the first and last 8 KB for `/Encrypt` and misses
   a mid-file trailer in an incrementally-updated PDF — anything signed,
@@ -551,13 +634,15 @@ sanitisation tests were ported from `tsx --test` to Vitest and run in the suite.
       NT-ING codes are mapped at the controller boundary: NT-ING-001 (over cap),
       NT-ING-002 (MIME off the allowlist), NT-ING-003 (byte-hash mismatch),
       NT-ING-005 (intent expired).
-- [ ] The other half of that old TODO was **mis-stated and is recorded here
+- [x] The other half of that old TODO was **mis-stated and is recorded here
       rather than silently dropped**: a sanitisation `Rejection` can never be a
       wire error on this path. Sanitisation runs in the worker, after the HTTP
       call has returned `201 RECEIVED`, so NT-ING-004 belongs on the *document*
       (state + failure code, which the client polls) and not on a response. Doing
       it as a controller mapping would mean sanitising inline, which Governance §7
-      forbids. Still to do: set it on the document from the worker.
+      forbids. **Done in Stage A3**: `PrismaUploadSanitisationStep` drives
+      RECEIVED → REJECTED through `transitionDocument` with the NT-ING code and
+      the plain-English reason on the row.
 - [x] #12: BullMQ behind `IngestQueue` + the worker (DLQ, idempotency, traceId),
       controller unchanged — done. The live docker e2e is still outstanding, but
       Docker is installed as of 16 Aug 2026, so it is now runnable here.
@@ -572,8 +657,18 @@ sanitisation tests were ported from `tsx --test` to Vitest and run in the suite.
       `Practice.whatsappPhoneNumberId` column (G7), and the `documents.s3_key`
       nullability migration for the Rejected/Failed surface (G7). All posted on #79.
 - [x] #76: web upload, two-step presign + complete, proven end to end against
-      Postgres and MinIO. See `web-upload/CLAUDE.md`. Not yet: auto-split,
-      worker-side sanitisation of these jobs, a durable idempotency store.
+      Postgres and MinIO. See `web-upload/CLAUDE.md`. Worker-side sanitisation
+      landed in Stage A3. Not yet: auto-split, a durable idempotency store.
+- [ ] Delete the ORIGINAL upload object once sanitisation has re-keyed the
+      document. `DocumentStore` has no `delete(key)` and `storage/` was outside
+      Stage A3's owned paths, so `w/<biz>/uploads/<nonce>` still holds the
+      un-stripped bytes (EXIF included). An S3 lifecycle rule on `w/*/uploads/*`
+      closes it without code; a `delete` on the store closes it properly.
+- [ ] `whatsapp-media-intake.ts` labels its output with the pipeline's
+      `detectedType`, which describes the INPUT — so a HEIC arriving by WhatsApp
+      is stored as `image/heic` carrying JPEG bytes. `web-upload/upload-sanitisation.ts`
+      has the fix (`effectiveFormat`, a re-sniff of the stored bytes); the two
+      lanes should share it rather than diverge.
 - [x] #40: duplicate detection on byte hash + perceptual hash
       (`lib/dedupe/`, `queue/duplicate-detector.ts`), routed documents only,
       proven against a real DB. Not yet: dedupe on route (so unrouted docs get
