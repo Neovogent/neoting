@@ -447,6 +447,9 @@ const EnvSchema = z.object({
       path: ['EMAIL_RATE_LIMIT'],
       message:
         'EMAIL_RATE_LIMIT=memory counts per process, and production runs several — the per-address and per-IP ceilings would be multiplied by the task count. Set EMAIL_RATE_LIMIT=redis (S2)',
+    });
+  }
+
   // The three HMAC signing keys, gated together.
   //
   // All three already fail closed at REQUEST time: the signers refuse to sign
