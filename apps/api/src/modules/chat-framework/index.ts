@@ -22,5 +22,20 @@
  * the chat runtime, and the two have no reason to be coupled.
  */
 
-export { MODELS, TASKS, DEGRADE_CHAIN } from './models.js';
+export { MODELS, TASKS, DEGRADE_CHAIN, costPence } from './models.js';
 export type { Tier, Effort, TaskConfig, TaskName } from './models.js';
+
+/**
+ * ⚠ `costPence` IS CONFIGURATION, and it is on this seam for the same reason
+ * the model pin is (S5, 27 Aug 2026). It is a pure function over
+ * `TIER_RATES_PENCE_PER_MTOK` — no client, no connection, no I/O — and
+ * `models.ts` calls that table "the one place the rates live". Extraction now
+ * meters its own spend against the same per-firm ceiling as chat, and the
+ * alternative was a second copy of Bedrock's price list inside `extraction`:
+ * two files that can disagree about what a token costs, which is the same class
+ * of drift §9.1 forbids for the model id itself.
+ *
+ * The ledger those pence are written to is NOT here — it is
+ * `common/ai-budget.ts`, precisely because it is behaviour rather than
+ * configuration. See the note at the top of that file.
+ */

@@ -120,20 +120,20 @@ import {
  *
  * ⚠ **D44 — THE RELEASE GATE IS NOT HERE, AND MUST NOT BE.** Only the
  * practice's **super admin** may release Ready → Published; accountants
- * compose and edit. That check is **stage A12**, and it attaches on the
- * ENGINE's approve path (`modules/approvals/action-proposals.service.ts`,
- * `assertCan(actor, 'publish.release', resource)` before the executor is
- * called) — not in this file. The reason is the executor contract itself: the
+ * compose and edit. That check is **stage A12, and it has landed** — on the
+ * ENGINE's approve path (`modules/approvals/assert-can.ts`, called from
+ * `action-proposals.service.ts` as
+ * `assertCan(actor, 'publish.release', resource)` before this executor is
+ * entered) — not in this file. The reason is the executor contract itself: the
  * engine owns authorisation, the review gate, the shown-hash check and the
  * audit write, and *an executor performs exactly one effect and decides
  * nothing about whether it may happen* (`proposal-executor.ts`). Putting the
  * permission check here would be a second authorisation mechanism beside the
  * engine's, and the more permissive of two mechanisms wins exactly when it
- * matters. What this file DOES leave A12 is the fact it needs: every
- * `publishes` row records `publishedByUserId = ctx.actorId`, so who released
- * what is on the row whether or not the gate is in place yet.
- * **A12 has not merged. Until it does, any authenticated member of the
- * practice can approve a release.**
+ * matters. **Do not add one here when this file next changes.**
+ *
+ * What this file leaves the gate is the fact it needs: every `publishes` row
+ * records `publishedByUserId = ctx.actorId`, so who released what is on the row.
  */
 
 /**

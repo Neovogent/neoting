@@ -42,8 +42,9 @@
 
 import { AnthropicBedrock } from '@anthropic-ai/bedrock-sdk';
 
+import type { AiBudget } from '../../common/ai-budget.js';
 import { wrapUntrusted } from '../../common/untrusted-content.js';
-import { MODELS, TASKS } from '../chat-framework/index.js';
+import { costPence, MODELS, TASKS } from '../chat-framework/index.js';
 import type { DocumentStore } from '../ingestion-routing/index.js';
 import {
   type DocumentExtractor,
@@ -173,11 +174,78 @@ const MAX_PDF_BYTES = 15 * 1024 * 1024;
 /** Per-call ceiling. See the call site for why the SDK default is unusable here. */
 const EXTRACTION_TIMEOUT_MS = 90_000;
 
+/**
+ * The tier whose price list this read is billed at, resolved from the SAME task
+ * entry that picks the model — so the meter can never bill one tier's rate for
+ * another tier's call. Changing `TASKS.extractionVisionFirst` moves both.
+ */
+const EXTRACTION_TIER = TASKS.extractionVisionFirst.model;
+
 export interface BedrockExtractorDeps {
   readonly store: DocumentStore;
   readonly region: string;
+  /**
+   * The per-firm daily spend ceiling (§9.7, S5). **Required, deliberately.**
+   *
+   * It is not optional for the same reason `store` is not: an extractor built
+   * without one is a wiring bug, and this particular wiring bug is invisible —
+   * it does not fail, it just spends. Until S5, `BedrockExtractor` constructed
+   * `AnthropicBedrock` directly and never touched the budget the chat runtime
+   * has always honoured, so `EXTRACTOR=bedrock` on staging meant real model
+   * spend with no ceiling, no warning and no daily number. Making this a
+   * constructor argument means the unmetered extractor can no longer be built.
+   */
+  readonly budget: AiBudget;
   /** Injected in tests; the real client is built once per instance. */
   readonly client?: Pick<AnthropicBedrock, 'messages'>;
+}
+
+/**
+ * What `messages.create` threw, sorted into "this document is finished" and
+ * "try again later" (S5 item 2).
+ *
+ * ⚠ THE DEFAULT IS RETHROW, AND THAT IS THE SAFE DIRECTION. A rethrow costs a
+ * BullMQ retry and, at worst, a DLQ entry an operator sees. Converting an error
+ * to a typed failure costs the client a document marked unreadable — and
+ * `document.reprocess` re-arms the document WITHOUT re-reading the bytes, so a
+ * transient throttle burned to FAILED never gets a second real read. Only
+ * classify terminal what genuinely cannot succeed on a retry.
+ *
+ * Read structurally off `status` rather than with `instanceof` against the SDK's
+ * error classes: the same reasoning the response narrowing already uses in this
+ * file, and it does not break if the SDK reshapes its exports.
+ */
+function classifyThrow(error: unknown): ExtractionOutcome | null {
+  const status = (error as { status?: unknown } | null)?.status;
+  if (typeof status !== 'number') return null; // connection reset, socket timeout — retry
+
+  // 400: the request itself is unacceptable and will be unacceptable again. The
+  // known live case is a PDF past the API's own page ceiling — we cannot count
+  // pages without a parser (a dependency decision this stage did not make), so
+  // the API is the thing that counts them, and this is where its answer becomes
+  // a FAILED document with a reason instead of a job crash.
+  if (status === 400) {
+    return failure(
+      'NT-EXT-009',
+      'This document could not be read — the reader would not accept the file. A PDF with very many pages is the usual cause; sending just the pages carrying the invoice will work.',
+    );
+  }
+  // 413: too big for the wire. Our own guards catch this first for anything they
+  // can measure; this is the backstop for what they could not.
+  if (status === 413) {
+    return failure(
+      'NT-EXT-007',
+      'This document is too large to read automatically. A smaller photo, or splitting the PDF, will work.',
+    );
+  }
+  // 401/403 are OURS, not the document's — an expired credential or a missing
+  // IAM grant fails EVERY document identically. Telling a client their receipt
+  // is unreadable would be a lie, and it would quietly burn the whole queue to
+  // FAILED while the real fault sat in a task role. Rethrow: the DLQ and the
+  // alarm are the correct destination for an operator problem.
+  // 429 and 5xx are the moment, not the document — that is what the retry ladder
+  // is for. Everything else is unknown, and unknown means retry.
+  return null;
 }
 
 export class BedrockExtractor implements DocumentExtractor {
@@ -210,6 +278,20 @@ export class BedrockExtractor implements DocumentExtractor {
       return failure('NT-EXT-003', `Cannot read a ${request.mimeType} document yet — images and PDFs only.`);
     }
 
+    // ⚠ THE CEILING IS CHECKED BEFORE THE S3 GET, not just before the model
+    // call. Over the ceiling we are not going to send this document anywhere, so
+    // fetching up to 15 MB out of object storage to then refuse it is spend on
+    // top of spend. The cost is that a document which ALSO breaks a size guard
+    // reports the budget first; it reports the size on tomorrow's retry, and a
+    // ceiling that is being enforced is the more useful thing to say today.
+    const before = await this.deps.budget.check(request.practiceId);
+    if (!before.allowed) {
+      return failure(
+        'NT-EXT-008',
+        'Automatic reading is paused — this practice has reached its daily limit for reading documents automatically. It resumes at midnight UTC, and this document can be retried then.',
+      );
+    }
+
     const bytes = await this.deps.store.get(request.s3Key);
     if (isImage && bytes.byteLength > MAX_IMAGE_BYTES) {
       return failure(
@@ -224,7 +306,9 @@ export class BedrockExtractor implements DocumentExtractor {
       );
     }
 
-    const response = await this.client.messages.create({
+    let response;
+    try {
+      response = await this.client.messages.create({
       model: EXTRACTION_MODEL_ID,
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
@@ -265,7 +349,26 @@ export class BedrockExtractor implements DocumentExtractor {
       // error and no alarm. A document read that has not answered in 90s is not
       // going to.
       { timeout: EXTRACTION_TIMEOUT_MS },
-    );
+      );
+    } catch (error) {
+      // Until S5 this call was unguarded, and a throw travelled all the way out
+      // of the worker. The document had already been claimed into PROCESSING by
+      // `PrismaExtractionStep`, and nothing moved it out: after five retries the
+      // job dead-lettered and the document sat in PROCESSING for ever — not
+      // FAILED, so no reason on any screen, and `document.reprocess` REFUSES a
+      // processing document, so the Retry button was not offered either. A
+      // 400 from an over-long PDF was enough to do it.
+      const classified = classifyThrow(error);
+      if (classified === null) throw error; // transient or ours — let the retry ladder have it
+      return classified;
+    }
+
+    // ⚠ RECORD THE SPEND HERE, BEFORE THE ANSWER IS JUDGED. A refusal, an empty
+    // reply and an unparseable one cost exactly what a good read costs — the
+    // tokens are burned at the call, not at the parse. Metering only successful
+    // reads would under-count precisely on the days something is going wrong,
+    // which are the days a ceiling is worth having.
+    await this.record(request.practiceId, response);
 
     // A refusal is a legitimate answer, not a crash: it means the model declined
     // to read this image. Surfacing it as FAILED with a reason is honest, and it
@@ -293,6 +396,38 @@ export class BedrockExtractor implements DocumentExtractor {
     }
 
     return { ok: true, document: toExtractedDocument(parsed.data) };
+  }
+
+  /**
+   * Convert this read's tokens to pence and write them to the firm's daily
+   * ledger (§9.7).
+   *
+   * `costPence` comes from `chat-framework`'s seam rather than from a rate table
+   * of our own — `models.ts` owns the price list, and a second copy here would
+   * be two files that can disagree about what a token costs. It rounds UP, so
+   * the meter never under-counts.
+   *
+   * **Check-then-spend, so a firm can overshoot by at most the reads already in
+   * flight.** The worker runs `concurrency: 8`, so the real overshoot bound is
+   * eight documents — about 13p at the measured per-document cost, against a
+   * £25 ceiling. Holding a reservation across a 90-second model call would mean
+   * a crashed worker leaks budget until the key expires, which is worse.
+   *
+   * Usage missing is treated as zero rather than as an error: this is a meter,
+   * not a boundary, and failing a successfully-read document because we could
+   * not bill it would be the wrong trade. It cannot pass silently either — a
+   * response with no usage means the SDK reshaped its answer, so it is the kind
+   * of thing the next person needs to find. There is no logger on this class;
+   * `extractorKind`/`modelVersion` on the row are the audit trail, and a
+   * zero-cost read against a non-zero token count is visible as a budget that
+   * stops moving.
+   */
+  private async record(practiceId: string, response: unknown): Promise<void> {
+    const usage = (response as { usage?: { input_tokens?: unknown; output_tokens?: unknown } } | null)?.usage;
+    const input = typeof usage?.input_tokens === 'number' ? usage.input_tokens : 0;
+    const output = typeof usage?.output_tokens === 'number' ? usage.output_tokens : 0;
+    if (input === 0 && output === 0) return;
+    await this.deps.budget.record(practiceId, costPence(EXTRACTION_TIER, input, output));
   }
 }
 

@@ -3,7 +3,7 @@ import { Module } from '@nestjs/common';
 import { getPrismaClient, type PrismaClient } from '../../common/db/prisma.js';
 import type { Env } from '../../config/env.js';
 import { ENV } from '../../config/env.module.js';
-import { type AiBudget, InMemoryAiBudget, RedisAiBudget } from './budget.js';
+import { type AiBudget, InMemoryAiBudget, RedisAiBudget } from '../../common/ai-budget.js';
 import { ChatController } from './chat.controller.js';
 import { ChatService } from './chat.service.js';
 import { CircuitBreaker } from './provider/circuit-breaker.js';

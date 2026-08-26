@@ -11,6 +11,8 @@ import {
   type ProposalPayloadMap,
 } from './proposal-executor.js';
 import { createPublishBatchExecutor, type PublishGateway } from './publish-batch.js';
+import { rejectDocumentExecutor } from './reject-document.js';
+import { reprocessDocumentExecutor } from './reprocess-document.js';
 import { revokeLinkExecutor } from './revoke-link.js';
 import { routeDocumentExecutor } from './route-document.js';
 import { ruleCreateExecutor } from './rule-create.js';
@@ -41,15 +43,16 @@ export interface ExecutorRegistryDeps {
  * runtime `NT-PRP-001` guard for a wire value outside the enum stays the
  * second line of defence, not the first.
  *
- * Eight real executors, four honest holes: a registry with named
+ * Ten real executors, two honest holes: a registry with named
  * unimplemented kinds beats half-executors, and it means the engine (METH S3,
  * #122) wires against the full enum on day one. Each hole throws
  * `ProposalNotImplementedError` carrying its kind — loudly, before any write.
  * All four METH Stage 2 kinds (issue #120) now have executors: `chase.send`
  * left the hole list in METH S8, `publish.batch` in METH S10,
- * `bank.confirm-match` in METH S11, `rule.create` in METH S13 (#142) and
- * `document.revoke-link` in launch stage A8; the remaining #81 four
- * (`move-business`, `reprocess`, `reject`, `split`) each need their own issue.
+ * `bank.confirm-match` in METH S11 and `rule.create` in METH S13 (#142);
+ * `document.revoke-link` left it in launch stage A8, and `document.reprocess`
+ * and `document.reject` in launch stage A12. The **two** still open are
+ * `move-business` and `split`, each of which needs its own issue.
  *
  * A FACTORY, not a Nest provider: the engine module builds it inside its own
  * `useFactory` and keeps the token out of its public providers, so no executor
@@ -67,8 +70,13 @@ export function buildExecutorRegistry(deps: ExecutorRegistryDeps): ExecutorRegis
     // (publish-batch.ts's header has the full reasoning).
     'publish.batch': createPublishBatchExecutor(deps.publishing),
     'document.move-business': notImplemented('document.move-business'),
-    'document.reprocess': notImplemented('document.reprocess'),
-    'document.reject': notImplemented('document.reject'),
+    // reprocess and reject landed with stage A12. Both were day-one needs the
+    // read surface already advertised — `documents.retryable` offers a Retry
+    // that had no executor, and the Rejected view had no way to put a document
+    // in it. Neither is a release: both are internal and each undoes the other,
+    // so any member of the practice may approve them (D44's compose half).
+    'document.reprocess': reprocessDocumentExecutor,
+    'document.reject': rejectDocumentExecutor,
     'document.split': notImplemented('document.split'),
     // chase.send landed with METH S8 (#129): the demo sender writes the outbox; no
     // Twilio. The engine may inject the config-selected sender.

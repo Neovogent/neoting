@@ -54,6 +54,18 @@ export interface ProcessorDeps {
    * unit tests offline; `PrismaChaseAutoClose` is wired in `worker/main.ts`.
    */
   readonly autoClose: ChaseAutoClose;
+  /**
+   * Whether this is the job's LAST attempt (S5). Per-job, unlike everything else
+   * on this interface — the worker rebuilds this object per job, which is what
+   * makes that safe.
+   *
+   * Extraction needs it because it claims the document into PROCESSING and is
+   * the only thing that can move it out: with retries left a throw should leave
+   * the document PROCESSING for the next attempt, but on the last attempt it has
+   * to become FAILED with a reason, or the document is stranded in PROCESSING
+   * for ever. See `PrismaExtractionStep.runExtractor`.
+   */
+  readonly finalAttempt: boolean;
 }
 
 /**
@@ -200,6 +212,7 @@ async function handle(payload: IngestJobPayload, deps: ProcessorDeps): Promise<v
       practiceId: payload.practiceId,
       businessId: payload.routing.businessId ?? null,
       traceId: payload.traceId,
+      finalAttempt: deps.finalAttempt,
     });
     await runAutoClose(completion, payload.practiceId, payload.traceId, deps);
     return;
@@ -218,6 +231,7 @@ async function handle(payload: IngestJobPayload, deps: ProcessorDeps): Promise<v
     practiceId: materialised.practiceId,
     businessId: payload.routing.businessId ?? null,
     traceId: payload.traceId,
+    finalAttempt: deps.finalAttempt,
   });
 
   // Auto-close on inbound match (chase, METH Stage 8) — runs after extraction for

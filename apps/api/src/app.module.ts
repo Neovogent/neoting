@@ -21,6 +21,7 @@ import { WhatsAppWebhookModule } from './modules/ingestion-routing/webhooks/what
 import { NotificationsModule } from './modules/notifications/notifications.module.js';
 import { PortalModule } from './modules/portal/portal.module.js';
 import { PublishingModule } from './modules/publishing/publishing.module.js';
+import { RulesSuggestionsModule } from './modules/rules-suggestions/rules-suggestions.module.js';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { PublishingModule } from './modules/publishing/publishing.module.js';
     NotificationsModule,
     PortalModule,
     PublishingModule,
+    RulesSuggestionsModule,
     WebUploadModule,
     WhatsAppWebhookModule,
   ],

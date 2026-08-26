@@ -39,9 +39,15 @@ decides nothing about whether it may happen.
   renders every SMS byte-for-byte (the contract's words); `rule.create`
   (METH S13, #142) renders the rule in full — tier, scope, conditions and
   every field it sets — because a reviewer must see what will start coding
-  their client's documents, not a JSON blob. Kinds without a shaped card yet
-  (`move-business`, `reprocess`, `reject`, `split`, `bank.confirm-match`)
+  their client's documents, not a JSON blob. A12 shaped two more: `reject`
+  shows the reason **verbatim** (the contract's word for it), and `reprocess`
+  states what it does *not* do — *"Reads the document again: No"* — because
+  Review → Approve promises that what was shown is what happens, so a shortfall
+  belongs on the card rather than in a source file nobody opens. Kinds without a
+  shaped card yet (`move-business`, `split`, `revoke-link`, `bank.confirm-match`)
   fall back to naming every payload member.
+- `assert-can.ts` — **the release gate** (A12, D44, Governance §11.2). See the
+  section below; the file's own header carries the full reasoning.
 - `audit-writer.ts` — the minimal hash chain: `sha256(prev_hash +
   canonical_payload)`, seq per business allocated under a transaction-scoped
   advisory lock (the decision prisma/CLAUDE.md's open question 4 asked for —
@@ -69,6 +75,62 @@ decides nothing about whether it may happen.
   back would close a cycle between two public seams. The composition root is
   the place allowed to know both.
 
+## The release gate — D44, stage A12
+
+`assert-can.ts`, called from `action-proposals.service.ts` on the **approve**
+path. Read its header before changing anything here; the short version:
+
+- **Only the firm's super admin may release.** `mayRelease(actor)` is
+  `canRelease(role) && isOwner` — the role half imported from A11's public seam
+  (`clients-team-settings/index.ts`), never re-derived, so "which role" is
+  written once. The `isOwner` half is the narrowing A11's `team-authority.ts`
+  explicitly handed to this stage: D44 says *the* firm's super admin, singular,
+  and `PRACTICE_ADMIN` alone reads as *any* admin. Today the two rules select the
+  same person in any real practice — signup mints exactly one `PRACTICE_ADMIN`
+  and sets `isOwner` on the same row, and `POST /businesses/{id}/members` refuses
+  every practice-level role — so this costs nothing now and prevents a silent
+  widening on the day an invite path for a second admin lands.
+- **Two kinds are gated: `publish.batch` and `chase.send`** — D44's two, and the
+  only two acts that reach outside the product and cannot be taken back.
+  `RELEASE_KINDS` is a **total** record over `ProposalKind`, the way the executor
+  registry is: a new kind that fails to compile there has to answer "is this an
+  irreversible outward act?" rather than inherit a default. `document.revoke-link`
+  is deliberately `false` — it *is* outward, but revoking is a **containment**
+  action and a rule that lets only one person stop a leaked link makes the leak
+  last longer. A8 may revisit with that surface in front of it.
+- **Where it sits in the ladder: after the RLS lookup, before everything else.**
+  A proposal the caller cannot see is `404 NT-VAL-001` (RLS decided first, and
+  the answer never confirms it exists). A proposal they can see but may not
+  release is `403 NT-PRM-001` — a **permission** refusal, not a visibility one,
+  and it discloses nothing, because every fact it implies is already on
+  `GET /action-proposals/{id}` for that same caller. It is ordered above the
+  review/TTL/hash gates so a refused releaser cannot use approve as an oracle for
+  a proposal's state.
+- **The executor never runs.** That is the assertion, and
+  `release-gate.integration.test.ts` makes it against a real database: document
+  still READY, no `publishes` row, no audit row, proposal **not consumed** — then
+  the owner approves the very same proposal and it releases.
+- **The membership read is lazy.** Only a gated kind resolves an actor, so the
+  ordinary compose-and-edit approvals every accountant does all day cost no extra
+  query. `memberships` carries no RLS (it is a table the policies read), so the
+  `userId` + `practiceId` + `businessId: null` filter **is** the boundary there;
+  `ctx.actorId` comes from the verified session.
+
+⚠ **A seeded database has nobody who can release.** `prisma/seed.ts` gives
+`mem_priya` `isOwner: true` but she has no demo credential, while the login-able
+`mem_shakib_demo` is a `PRACTICE_ADMIN` with the flag unset. So on a seeded
+laptop the account you can sign in as composes but cannot release. Real practices
+are unaffected (signup writes the owner), and the §24.7 walkthrough starts from
+signup — but `prisma/` is LAW, so the one-word fix is a contract-change issue.
+See the TODO.
+
+⚠ **The UI is not the gate, and must not pretend the action does not exist.**
+Governance §11.2 says so in as many words. What the server provides for honest
+degradation is the fact (`BusinessMember.role` / `.scope` / `.isOwner`, A11) and
+a refusal whose `detail` is written to be read by the person who pressed the
+button — *"Only your practice's super admin can release documents for export. Ask
+them to approve it."* Hiding the button instead would be a different lie.
+
 ## Enforcement is layered, deliberately
 
 Every service refusal is ALSO enforced by `action_proposals_guard()` in the
@@ -87,8 +149,22 @@ expired (TTL 24 h, checked at review/approve; the EXPIRED-state sweep is
 deliberately unbuilt) · `NT-PRP-004` echoed hash ≠ stored hash · `NT-PRP-005`
 already executed · `NT-PRP-006` not executable (unreachable referenced record,
 executor refusal, cancelled, stored payload no longer parses, executor not yet
-implemented) · `NT-IDM-001` idempotency-key reuse with a different payload ·
-404s carry `NT-VAL-001` (no NT-NOT code exists), never confirming existence.
+implemented) · `NT-IDM-001` idempotency-key reuse with a different payload, or
+the **same key from a different actor** (A12 — see below) · **`NT-PRM-001` (403)
+the actor may not release this kind** (A12; runbook page in
+`docs/runbooks/error-codes.md`) · 404s carry `NT-VAL-001` (no NT-NOT code
+exists), never confirming existence.
+
+**The idempotency fingerprint is actor-scoped since A12.** The store is a
+process-wide map keyed by a *caller-chosen* string, and a replay returns its
+stored response **before** any scoped query runs — so without the actor in the
+fingerprint, presenting somebody else's `Idempotency-Key` with a matching body
+replayed their response past RLS and past the release gate. Nothing executed
+twice (the row is consumed and the DB guard is what makes that true), so it was a
+disclosure hole rather than an effect one — but on approve the thing disclosed is
+the outcome of an approval the caller was refused. `fingerprintFor(ctx, request)`
+narrows it; it does **not** close the class, because the store itself is neither
+durable nor tenant-scoped. Same change as the durable-store TODO.
 
 ## Post-commit follow-ups
 
@@ -122,6 +198,11 @@ pnpm --filter @neoting/api test -- approvals            # unit, offline
 # integration (needs docker compose up + .env): the METH S3 acceptance —
 # create→review→approve archives + audit chain recomputed; the DB guard
 # refused raw; double-approve exactly-once; cross-practice 404.
+# Since A12, `release-gate.integration.test.ts` (prefix `a12g-`, teardown by
+# EXPLICIT id list) proves the refusal has NO effect: a non-owner
+# PRACTICE_ADMIN approving a publish.batch gets 403 NT-PRM-001 while the
+# document stays READY, `publishes` stays empty, no audit row is written and
+# the proposal is not consumed — then the owner approves the same proposal.
 ```
 
 ## Decisions a future session should know
@@ -148,10 +229,30 @@ pnpm --filter @neoting/api test -- approvals            # unit, offline
 
 ## TODO
 
-- [ ] **ID-critical, and now specified** (D44, Governance §11.2): propose-permission
-      and approve-permission are not yet distinct — `assertCan` matrix is
-      explicitly out of METH S3 scope. The workspaceSession/CSRF requirement on
-      approve likewise awaits the auth hardening pass.
+- [x] **The release gate** (D44, Governance §11.2) — landed in launch stage A12.
+      `assertCan(actor, 'publish.release', resource)` on the approve path, before
+      the executor, for `publish.batch` and `chase.send`. Propose-permission and
+      approve-permission are now distinct for those two kinds; every other kind is
+      still propose-anything/approve-anything within the practice, which is D44's
+      compose half and is intended. **Still open:** the workspaceSession/CSRF
+      requirement on approve awaits the auth hardening pass.
+- [ ] ⚠ **`prisma/seed.ts` leaves the only login-able demo admin unable to
+      release.** `mem_shakib_demo` is a `PRACTICE_ADMIN` with no `isOwner`, and
+      `mem_priya` (who has it) has no demo credential. One word — `isOwner: true`
+      on that seed row — but `prisma/` is LAW, so it needs a contract-change issue
+      (G7). Real practices are unaffected: signup writes the owner.
+- [ ] **No ownership TRANSFER operation exists in the contract.** With release
+      authority narrowed to `isOwner`, a practice whose owner leaves cannot
+      release until a DBA moves the flag. The bus factor is identical today under
+      any reading (only signup mints a `PRACTICE_ADMIN`), so this is not urgent —
+      but it becomes urgent the moment a second admin can be invited, and it is
+      the thing to build alongside that invite path.
+- [ ] **`memberships.permissions` is not consulted by the gate.** Governance
+      §11.1 describes per-permission toggles and `prisma/seed.ts` fills the array,
+      but `practice-signup.service.ts` leaves it `[]` — so requiring a `publish`
+      string would mean nobody could ever release, and defaulting empty to
+      "allowed" would make the field decorative. Role + ownership is the whole
+      rule until a grant surface exists to fill it.
 - [ ] Periodic sweep over `findStaleDedupeFollowUps` (worker concern), and the
       same sweep for QUEUED `publishes` rows whose `runPublishFollowUp` never
       completed. One worker, both follow-ups.

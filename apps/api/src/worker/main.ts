@@ -3,6 +3,7 @@ import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { type Job, UnrecoverableError, Worker } from 'bullmq';
 
+import { InMemoryAiBudget, RedisAiBudget } from '../common/ai-budget.js';
 import { getPrismaClient } from '../common/db/prisma.js';
 import { loadEnv } from '../config/env.js';
 import { PrismaChaseAutoClose } from '../modules/chase/index.js';
@@ -43,10 +44,24 @@ function bootstrap(): void {
   // through it to send the image to Claude. Two instances would be two clients
   // against the same bucket for no reason.
   const documentStore = selectDocumentStore(env);
+  // The per-firm daily AI spend ceiling (§9.7, S5). Built with the SAME
+  // selection rule as `chat-framework/chat.module.ts` — Redis where there is
+  // one, an in-process ledger otherwise — because it is the SAME ledger: one
+  // firm, one daily number, whether the spend came from chat or from reading a
+  // document. Redis is what makes it one number across the two processes; the
+  // in-memory fallback still enforces a ceiling rather than silently having none.
+  //
+  // ⚠ This is why extraction is metered at all. `BedrockExtractor` built its own
+  // Bedrock client and answered to no budget, so `EXTRACTOR=bedrock` on staging
+  // was unbounded model spend on a live environment.
+  const aiBudget =
+    env.INGEST_QUEUE === 'bullmq'
+      ? RedisAiBudget.fromUrl(env.REDIS_URL, env.AI_DAILY_BUDGET_PENCE)
+      : new InMemoryAiBudget(env.AI_DAILY_BUDGET_PENCE);
   // Extraction (METH Stage 4, real since Stage 15) — the step that moves a
   // document out of RECEIVED. Config-selected: `EXTRACTOR=demo` is fixture
   // profiles, `bedrock` actually reads the image. Logs through the worker's logger.
-  const extractor = new PrismaExtractionStep(getPrismaClient(), selectExtractor(env, documentStore), {
+  const extractor = new PrismaExtractionStep(getPrismaClient(), selectExtractor(env, documentStore, aiBudget), {
     logger: { log: (message) => logger.log(message), warn: (message) => logger.warn(message) },
   });
   // Auto-close on inbound match (chase, METH Stage 8) — runs after extraction for
@@ -97,6 +112,18 @@ function bootstrap(): void {
           uploadSanitiser,
           extractor,
           autoClose,
+          // Extraction claims the document into PROCESSING and is the only thing
+          // that moves it out, so it has to know whether anyone will call it
+          // again: with retries left a throw stays PROCESSING for the next
+          // attempt, on the last one it becomes FAILED with a visible reason
+          // rather than stranding the document (S5).
+          //
+          // ⚠ Mirrors BullMQ's OWN predicate, inverted. `Job.shouldRetryJob`
+          // retries while `attemptsMade + 1 < opts.attempts` (bullmq@6.1.1), and
+          // `attemptsMade` counts PREVIOUS attempts — it is 0 during the first
+          // run. Writing the same arithmetic here rather than a guess at the
+          // semantics is what keeps the off-by-one honest.
+          finalAttempt: job.attemptsMade + 1 >= (job.opts.attempts ?? 1),
         });
       } catch (error) {
         // A terminal failure — an expired media id, a missing tenancy anchor —

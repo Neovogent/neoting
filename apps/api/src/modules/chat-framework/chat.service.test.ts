@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import type { PrismaClient } from '../../common/db/prisma.js';
 import type { ScopeContext } from '../../common/db/scope-context.js';
-import { InMemoryAiBudget } from './budget.js';
+import { InMemoryAiBudget } from '../../common/ai-budget.js';
 import { buildMessages, ChatService } from './chat.service.js';
 import type { CategoryOption, GroundedRecord } from './grounding.js';
 import { CircuitBreaker } from './provider/circuit-breaker.js';

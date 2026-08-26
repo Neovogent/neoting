@@ -32,6 +32,7 @@ import {
   runDedupeFollowUp,
   runPublishFollowUp,
 } from '../validation-dedupe/index.js';
+import { assertCan, requiresReleaseAuthority, resolveActor } from './assert-can.js';
 import { appendAuditEvent } from './audit-writer.js';
 import { canonicalHash } from './canonical-hash.js';
 import { knownProposalKind, parseStoredProposalPayload } from './proposal-body.js';
@@ -98,7 +99,7 @@ export class ActionProposalsService {
   ) {}
 
   async create(ctx: ScopeContext, request: CreateProposalRequest, idempotencyKey: string): Promise<ActionProposal> {
-    const replay = await this.replayed<ActionProposal>(idempotencyKey, request);
+    const replay = await this.replayed<ActionProposal>(ctx, idempotencyKey, request);
     if (replay !== null) return replay;
 
     const businessId = request.businessId;
@@ -177,7 +178,7 @@ export class ActionProposalsService {
     });
 
     const response = toActionProposal(row);
-    await this.remember(idempotencyKey, request, response);
+    await this.remember(ctx, idempotencyKey, request, response);
     return response;
   }
 
@@ -227,7 +228,7 @@ export class ActionProposalsService {
    * keeps its first value (the contract's words).
    */
   async review(ctx: ScopeContext, proposalId: string, idempotencyKey: string): Promise<ProposalReview> {
-    const replay = await this.replayed<ProposalReview>(idempotencyKey, { proposalId });
+    const replay = await this.replayed<ProposalReview>(ctx, idempotencyKey, { proposalId });
     if (replay !== null) return replay;
 
     const response = await scopedDb(this.prisma, ctx, async (db) => {
@@ -256,7 +257,7 @@ export class ActionProposalsService {
       return toProposalReview(updated);
     });
 
-    await this.remember(idempotencyKey, { proposalId }, response);
+    await this.remember(ctx, idempotencyKey, { proposalId }, response);
     return response;
   }
 
@@ -271,7 +272,7 @@ export class ActionProposalsService {
     body: { renderedSummaryHash: string; comment?: string | undefined },
     idempotencyKey: string,
   ): Promise<ActionProposal> {
-    const replay = await this.replayed<ActionProposal>(idempotencyKey, { proposalId, ...body });
+    const replay = await this.replayed<ActionProposal>(ctx, idempotencyKey, { proposalId, ...body });
     if (replay !== null) return replay;
 
     const traceId = currentTraceId() ?? 'no-trace';
@@ -287,6 +288,36 @@ export class ActionProposalsService {
 
       const proposal = await db.actionProposal.findUnique({ where: { id: proposalId } });
       if (proposal === null) throw notFound();
+
+      // ---- THE RELEASE GATE (A12, D44, Governance §11.2) --------------------
+      //
+      // FIRST gate after visibility, and BEFORE the executor — the hook point
+      // `publish-batch.ts`'s header names. The engine owns authorisation; an
+      // executor decides nothing about whether an effect may happen, so a
+      // second check beside this one would be two mechanisms free to disagree.
+      //
+      // Ordered here, not lower down, because authorisation precedes every
+      // other question about the action: an actor who may not release learns
+      // nothing about whether this proposal was reviewed, whether it expired,
+      // or whether their echoed hash was stale. And it is ordered AFTER the
+      // RLS lookup above, so a proposal the caller cannot see is still a 404 —
+      // visibility and authority are different refusals and `assert-can.ts`
+      // carries the reasoning for giving them different answers.
+      //
+      // The membership read is LAZY: only a release kind pays for it, so the
+      // ordinary compose-and-edit approvals every accountant does all day take
+      // no extra query.
+      // `knownProposalKind` rather than a cast: a column value outside the enum
+      // is refused `NT-PRP-001` a few lines below by `parseStoredPayload`, and
+      // nothing it could name is a release, so it never reaches an effect.
+      const kind = knownProposalKind(proposal.kind);
+      if (kind !== null && requiresReleaseAuthority(kind)) {
+        assertCan(await resolveActor(db, ctx), 'publish.release', {
+          kind,
+          proposalId: proposal.id,
+          businessId: proposal.businessId,
+        });
+      }
 
       this.refuseTerminal(proposal);
       if (proposal.reviewedAt === null || proposal.renderedSummaryHash === null) {
@@ -347,7 +378,7 @@ export class ActionProposalsService {
     await this.runFollowUps(ctx, followUps, traceId);
 
     const response = toActionProposal(row);
-    await this.remember(idempotencyKey, { proposalId, ...body }, response);
+    await this.remember(ctx, idempotencyKey, { proposalId, ...body }, response);
     return response;
   }
 
@@ -357,7 +388,7 @@ export class ActionProposalsService {
     body: { reason?: string | undefined },
     idempotencyKey: string,
   ): Promise<ActionProposal> {
-    const replay = await this.replayed<ActionProposal>(idempotencyKey, { proposalId, ...body });
+    const replay = await this.replayed<ActionProposal>(ctx, idempotencyKey, { proposalId, ...body });
     if (replay !== null) return replay;
 
     const response = await scopedDb(this.prisma, ctx, async (db) => {
@@ -380,7 +411,7 @@ export class ActionProposalsService {
       return toActionProposal(updated);
     });
 
-    await this.remember(idempotencyKey, { proposalId, ...body }, response);
+    await this.remember(ctx, idempotencyKey, { proposalId, ...body }, response);
     return response;
   }
 
@@ -460,17 +491,42 @@ export class ActionProposalsService {
     }
   }
 
-  private async replayed<T>(idempotencyKey: string, request: unknown): Promise<T | null> {
+  private async replayed<T>(ctx: ScopeContext, idempotencyKey: string, request: unknown): Promise<T | null> {
     const record = await this.idempotency.get(idempotencyKey);
     if (record === null) return null;
-    if (record.requestHash !== fingerprint(request)) {
+    if (record.requestHash !== this.fingerprintFor(ctx, request)) {
       throw new AppException('NT-IDM-001', HttpStatus.CONFLICT, 'This Idempotency-Key was already used with a different payload');
     }
     return record.response as T;
   }
 
-  private async remember(idempotencyKey: string, request: unknown, response: unknown): Promise<void> {
-    await this.idempotency.put(idempotencyKey, { requestHash: fingerprint(request), response });
+  private async remember(ctx: ScopeContext, idempotencyKey: string, request: unknown, response: unknown): Promise<void> {
+    await this.idempotency.put(idempotencyKey, { requestHash: this.fingerprintFor(ctx, request), response });
+  }
+
+  /**
+   * The replay fingerprint is scoped to the ACTOR, not just the request (A12).
+   *
+   * The store is a process-wide map keyed by a CALLER-CHOSEN string, and a
+   * replay returns its stored response **before** any scoped query runs — so
+   * without the actor in the fingerprint, presenting somebody else's
+   * `Idempotency-Key` with a matching body replays their response, past RLS and
+   * past the release gate above. Nothing executes twice (the proposal row is
+   * consumed and the database guard is what makes that true), so this is a
+   * disclosure hole rather than an effect one — but on the approve path the
+   * thing disclosed is the outcome of an approval the caller was refused.
+   *
+   * Two callers colliding on a key now get `NT-IDM-001`, which is what the
+   * contract already says about a key used for a different request. It is a
+   * different request: a different person made it.
+   *
+   * ⚠ This narrows the hole, it does not close the class. The store itself is
+   * `common/idempotency/`'s in-memory one, shared with web-upload and
+   * clients-team-settings, and it is neither durable nor tenant-scoped. The
+   * durable-store follow-up in this module's TODO is the same change.
+   */
+  private fingerprintFor(ctx: ScopeContext, request: unknown): string {
+    return fingerprint({ actorId: ctx.actorId, request });
   }
 }
 

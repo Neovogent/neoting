@@ -328,7 +328,16 @@ Full gate. PR.
 
 ## A10 · The round trip — manual, on Windows
 
-**Needs:** A9. **Owns:** nothing.
+> ### ⚠ REASSIGNED TO SHAKIB — 26 Aug 2026. Do not start this.
+>
+> This stage is a human sitting in front of VT Transaction+ importing a real file.
+> **Abdullah does not have VT installed**, and a licence plus install is not the
+> shape of work this stage is. Shakib runs it.
+>
+> **What Abdullah still owes A10:** A9 merged and green. A10 cannot begin until it
+> is, so A9 is now on someone else's critical path — finish it before A13.
+
+**Needs:** A9. **Owner: Shakib** (was Abdullah). **Owns:** nothing.
 **Do this as early as A9 allows.** It can invalidate A7's design, and finding that out at
 the end is fatal.
 
