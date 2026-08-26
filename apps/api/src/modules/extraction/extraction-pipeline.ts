@@ -25,11 +25,10 @@ import { systemContext } from '../../common/db/scope-context.js';
 import { scopedDb, type ScopedClient } from '../../common/db/scoped-db.js';
 import { resolveProcessedState, transitionDocument } from '../validation-dedupe/index.js';
 import {
-  DEMO_EXTRACTOR_KIND,
-  DEMO_MODEL_VERSION,
   type DocumentExtractor,
   type ExtractedDocument,
   type ExtractionOutcome,
+  type ExtractionRequest,
 } from './document-extractor.js';
 
 export interface ExtractionInput {
@@ -130,7 +129,7 @@ export class PrismaExtractionStep implements ExtractionStep {
     // Phase 2 — the read itself. Deliberately OUTSIDE any transaction: a 2–4 s
     // delay must not hold a DB row locked.
     await this.sleep(extractionLatencyMs(started.byteHash));
-    const outcome = await this.extractor.extract({ filename: started.filename, byteHash: started.byteHash });
+    const outcome = await this.extractor.extract(started);
 
     // Phase 3 — write results and finalise the state, atomically. The completion
     // (the header + final state) is what the caller hands the auto-close hook; it
@@ -139,16 +138,23 @@ export class PrismaExtractionStep implements ExtractionStep {
     return scopedDb(this.prisma, ctx, (db) => this.finish(db, input, outcome));
   }
 
-  private async begin(db: ScopedClient, input: ExtractionInput): Promise<{ filename: string; byteHash: string } | null> {
+  private async begin(db: ScopedClient, input: ExtractionInput): Promise<ExtractionRequest | null> {
     const doc = await db.document.findUnique({
       where: { id: input.documentId },
-      select: { id: true, state: true, originalFilename: true, byteHash: true },
+      // s3Key and mimeType are what a REAL extractor needs — the bytes, not just
+      // their identity (METH Stage 15). DemoExtractor ignores both.
+      select: { id: true, state: true, originalFilename: true, byteHash: true, s3Key: true, mimeType: true },
     });
     if (doc === null) {
       this.logger.warn(`extract: document ${input.documentId} not visible — skipping (trace=${input.traceId})`);
       return null;
     }
-    const identity = { filename: doc.originalFilename, byteHash: doc.byteHash };
+    const identity: ExtractionRequest = {
+      filename: doc.originalFilename,
+      byteHash: doc.byteHash,
+      s3Key: doc.s3Key,
+      mimeType: doc.mimeType,
+    };
     if (doc.state === 'PROCESSING') return identity; // re-entrant: a prior attempt got this far
     if (doc.state !== 'RECEIVED') {
       this.logger.log(`extract: ${input.documentId} already ${doc.state} — skipping (idempotent, trace=${input.traceId})`);
@@ -245,8 +251,12 @@ export class PrismaExtractionStep implements ExtractionStep {
       data: {
         documentId: input.documentId,
         fields,
-        extractorKind: DEMO_EXTRACTOR_KIND,
-        modelVersion: DEMO_MODEL_VERSION,
+        // The extractor names itself (document-extractor.ts). Hardcoding the
+        // demo constants here made every EXTRACTOR=bedrock read claim to be the
+        // fixture one in the column you query to answer "which model produced
+        // this value".
+        extractorKind: this.extractor.kind,
+        modelVersion: this.extractor.modelVersion,
         overallConfidence: extracted.overallConfidence,
         validatorResults: extracted.validatorResults as unknown as Prisma.InputJsonValue,
         isAccepted: true,
@@ -266,7 +276,7 @@ export class PrismaExtractionStep implements ExtractionStep {
             ? `Coded by an active supplier rule for ${extracted.supplierName ?? 'this supplier'}.`
             : suggestion.reasoning,
           ...(ruleWon ? { sourceRuleId } : {}),
-          modelVersion: DEMO_MODEL_VERSION,
+          modelVersion: this.extractor.modelVersion,
         };
       }),
     });
@@ -296,8 +306,8 @@ export class PrismaExtractionStep implements ExtractionStep {
         outcome: 'extracted',
         traceId: input.traceId,
         detail: {
-          extractorKind: DEMO_EXTRACTOR_KIND,
-          modelVersion: DEMO_MODEL_VERSION,
+          extractorKind: this.extractor.kind,
+          modelVersion: this.extractor.modelVersion,
           ...(sourceRuleId === null ? {} : { sourceRuleId }),
         } as Prisma.InputJsonValue,
       },

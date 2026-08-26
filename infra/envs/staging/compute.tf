@@ -215,6 +215,32 @@ resource "aws_iam_role_policy" "app_runtime" {
           "arn:aws:bedrock:${local.region}::foundation-model/amazon.nova-micro-v1:0",
         ]
       },
+      # ⚠ NO INFERENCE-PROFILE ARN IS GRANTED, AND THAT IS THE CONTROL.
+      #
+      # A "BedrockEuInferenceProfiles" statement briefly stood here, granting
+      # `inference-profile/eu.anthropic.claude-opus-5` and `...-sonnet-5` plus
+      # `arn:aws:bedrock:eu-*::foundation-model/...` — a wildcard across every
+      # eu region — directly beneath the statement above whose whole point is
+      # that every ARN is pinned to ${local.region}. It was removed on 25 Aug
+      # 2026 without ever being applied.
+      #
+      # It is not untidiness, it is the residency line. D28-as-amended (ADR
+      # 0001) states the enforcement verbatim: the application role may invoke
+      # only region-pinned eu-west-2 model ARNs and NO inference-profile ARN, so
+      # a cross-region call fails closed. AWS_Foundation_Runbook.md §315 is
+      # explicit that an `eu.anthropic.*` profile "routes requests across
+      # multiple EU regions, not the UK. Under D30 that is processing outside
+      # the UK and is not one of the two named fallbacks — so it is a versioned
+      # amendment to the SoT, a CEO/legal decision, not an engineering config
+      # choice." `chat-framework/models.ts` relies on this too: an `eu.` or
+      # `global.` id there returns AccessDenied rather than quietly sending UK
+      # client documents abroad, and that guard is only real while this file
+      # grants no profile.
+      #
+      # Terraform auto-applies staging on merge, so a grant added here lands
+      # whether or not any app config ever selects it. If the newest generation
+      # is genuinely wanted, the route is a contract-change issue amending
+      # D28/D30 — not a statement in a feature PR.
       {
         # W2 calibration candidates only (D28 per-class tier flags: a flip is
         # blocked unless evals pass for that (class, model) pair). Remove the

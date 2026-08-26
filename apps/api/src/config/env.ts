@@ -148,7 +148,42 @@ const EnvSchema = z.object({
   // engine that moves documents out of RECEIVED; Textract + the vision ladder
   // lands behind the same seam later. Default `demo` so a document actually gets
   // extracted — that is the whole point of the step. Selected by config, not import.
-  EXTRACTOR: z.enum(['demo']).default('demo'),
+  //
+  // `bedrock` is the REAL one: Claude reads the document image through the same
+  // `DocumentExtractor` seam.
+  //
+  // ⚠ `bedrock` DOES NOT DEGRADE TO `demo`. A `FallbackExtractor` wrapped it
+  // until 25 Aug 2026, catching a throw and answering with fixture data for the
+  // same real client document — which meant an invented supplier, total, tax and
+  // VAT number stamped onto someone's books at 0.8 confidence and marked Ready,
+  // triggered by nothing worse than a throttle. It is deleted. A failed read is
+  // a FAILED document with a visible reason, retryable through a reprocess
+  // proposal (select-extractor.ts).
+  EXTRACTOR: z.enum(['demo', 'bedrock']).default('demo'),
+
+  // NO BEDROCK_MODEL_ID, deliberately. The model is pinned in
+  // `modules/chat-framework/models.ts` and imported — never configured
+  // (Governance §9.1: "a model upgrade is a PR that changes this file AND
+  // passes the full eval suite; it is never a silent swap"). An env var here
+  // meant the extraction model could be swapped by editing an ECS task
+  // definition, with no PR and no eval run, and it disagreed with models.ts
+  // about which model generation Neoting runs.
+  //
+  // The measurement that motivated the old default still stands and is worth
+  // keeping: a bare `anthropic.claude-*` id for the NEWEST generation returns
+  // "Invocation ... with on-demand throughput isn't supported. Retry with an
+  // inference profile" (20 Aug 2026). That is an argument for a D28/D30
+  // amendment and an IAM change, made deliberately — not for an env override.
+  // Until then the extractor runs the same region-pinned model the chat runtime
+  // already proves works on-demand in eu-west-2.
+
+  // The Bedrock region, shared by the extractor above and the chat runtime
+  // below. Separate from AWS_REGION on two counts: it lets Bedrock be pinned to
+  // a region where the model is actually available without moving the rest of
+  // the stack, and — pinned to eu-west-2 by D30/ADR 0001 (UK residency) — it
+  // makes "where does client document text get processed" answerable from
+  // configuration rather than from whatever the container happened to inherit.
+  BEDROCK_REGION: z.string().default('eu-west-2'),
 
   // The SMS sender (METH Stage 8). `demo` = `DemoSmsSender`, which "sends" by
   // writing the outbox rows the SMS-outbox screen reads — no Twilio, ever, in
@@ -199,11 +234,9 @@ const EnvSchema = z.object({
   // queue, because the answer looks exactly as authoritative either way.
   AI_CHAT: z.enum(['demo', 'bedrock']).default('demo'),
 
-  // The Bedrock region. Pinned to eu-west-2 by D30/ADR 0001 (UK residency) and
-  // stated rather than defaulted from AWS_REGION so that "where does client
-  // document text get processed" is answerable from configuration, not from
-  // whatever the container happened to inherit.
-  BEDROCK_REGION: z.string().default('eu-west-2'),
+  // The region this runtime talks to is BEDROCK_REGION, declared with
+  // BEDROCK_REGION above — one knob for both Bedrock callers, not two. The
+  // MODEL each runs is pinned in chat-framework/models.ts, not configured.
 
   // Per-practice daily AI spend ceiling in integer pence (§9.7). Warn at 80%,
   // hard stop at 100%. £5/day/practice is a demo-scale number chosen to be

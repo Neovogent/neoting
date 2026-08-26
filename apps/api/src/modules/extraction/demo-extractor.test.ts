@@ -6,7 +6,9 @@ const extractor = new DemoExtractor();
 const HASH = 'f'.repeat(64);
 
 async function extract(filename: string) {
-  return extractor.extract({ filename, byteHash: HASH });
+  // s3Key/mimeType are null here on purpose: DemoExtractor reads the FILENAME,
+  // never the bytes, and this test pins that it still does not need them.
+  return extractor.extract({ filename, byteHash: HASH, s3Key: null, mimeType: null });
 }
 
 test('the Currys profile reads a confident receipt in pence, coded for review-to-ready', async () => {
@@ -52,8 +54,8 @@ test('an unreadable document is a FAILURE outcome with a reason and a stable cod
 });
 
 test('an unknown filename gets a deterministic hash-derived generic profile', async () => {
-  const a = await extractor.extract({ filename: 'mystery.pdf', byteHash: HASH });
-  const b = await extractor.extract({ filename: 'mystery.pdf', byteHash: HASH });
+  const a = await extractor.extract({ filename: 'mystery.pdf', byteHash: HASH, s3Key: null, mimeType: null });
+  const b = await extractor.extract({ filename: 'mystery.pdf', byteHash: HASH, s3Key: null, mimeType: null });
   if (!a.ok || !b.ok) throw new Error('expected ok');
   // Same bytes → same read, every time (the mocking doctrine's determinism).
   expect(a.document).toEqual(b.document);
@@ -62,8 +64,8 @@ test('an unknown filename gets a deterministic hash-derived generic profile', as
 });
 
 test('a different hash yields a different generic supplier and total', async () => {
-  const a = await extractor.extract({ filename: 'mystery.pdf', byteHash: 'a'.repeat(64) });
-  const b = await extractor.extract({ filename: 'mystery.pdf', byteHash: 'b'.repeat(64) });
+  const a = await extractor.extract({ filename: 'mystery.pdf', byteHash: 'a'.repeat(64), s3Key: null, mimeType: null });
+  const b = await extractor.extract({ filename: 'mystery.pdf', byteHash: 'b'.repeat(64), s3Key: null, mimeType: null });
   if (!a.ok || !b.ok) throw new Error('expected ok');
   expect(a.document.supplierName).not.toBe(b.document.supplierName);
 });

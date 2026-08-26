@@ -110,9 +110,36 @@ export interface ExtractionRequest {
   readonly filename: string;
   /** Content hash of the sanitised bytes — the deterministic key for a fixture. */
   readonly byteHash: string;
+  /**
+   * Where the sanitised bytes live, so a REAL extractor can read the document.
+   *
+   * Until METH Stage 15 this interface carried identity only — filename and
+   * hash — and that is precisely why extraction was fake: `DemoExtractor` keys
+   * fixture profiles off the filename because it was never given the image.
+   * `BedrockExtractor` fetches these bytes through `DocumentStore`.
+   *
+   * Nullable because the column is: an oddly-ingested row may have neither, and
+   * a real extractor answers `NT-EXT-002` rather than inventing a read.
+   */
+  readonly s3Key: string | null;
+  /** The stored object's content type — selects the image block's `media_type`. */
+  readonly mimeType: string | null;
 }
 
 export interface DocumentExtractor {
+  /**
+   * What gets stamped on `extractions.extractorKind` and `.modelVersion`.
+   *
+   * Carried on the INTERFACE rather than read from config at the write site,
+   * because those two columns are the audit answer to "which reader produced
+   * this value" — §9.7 spend attribution, eval calibration, and any
+   * model-recall sweep all start there. The pipeline used to hardcode the demo
+   * constants, so a genuine model read was persisted, and logged to
+   * `document_events`, labelled as the fixture extractor. An extractor is the
+   * only thing that knows what it is; asking it is the fix.
+   */
+  readonly kind: string;
+  readonly modelVersion: string;
   extract(request: ExtractionRequest): Promise<ExtractionOutcome>;
 }
 
