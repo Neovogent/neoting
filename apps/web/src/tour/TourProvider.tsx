@@ -1,5 +1,4 @@
 import { Suspense, createContext, lazy, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useIntl } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
 import { lockNavigation, navigate, usePath } from '../lib/router';
 import { useEscape } from '../lib/useEscape';
@@ -47,13 +46,13 @@ const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
  * view to open something. Mounted inside AppProvider so it spans the practice
  * shell and the business portal alike. `/demo` starts it.
  *
- * The seeded conversations are copy, so `TourCtx` carries a `t` rather than
- * the strings themselves: `steps.ts` holds descriptors, and this is the
- * component that has an `intl` to resolve them with.
+ * `TourCtx` used to carry a `t` so this component could resolve the script's
+ * MessageDescriptors with its own `intl`. The script is English-only now (see
+ * the header of `steps.ts` for the decision), so the strings arrive resolved
+ * and the hook is gone with the field it existed for.
  */
 export function TourProvider({ children }: { children: ReactNode }) {
   const { clients, startConversation, setMessages, businessAccounts } = useAppContext();
-  const intl = useIntl();
   const path = usePath();
   const [index, setIndex] = useState<number | null>(null);
   // A step that is still preparing (navigating, seeding) should not be
@@ -79,9 +78,8 @@ export function TourProvider({ children }: { children: ReactNode }) {
       clients,
       startConversation,
       portalAccountId: businessAccounts[0]?.id ?? null,
-      t: (descriptor) => intl.formatMessage(descriptor),
     }),
-    [clients, startConversation, businessAccounts, intl],
+    [clients, startConversation, businessAccounts],
   );
 
   const goTo = useCallback(
@@ -95,7 +93,18 @@ export function TourProvider({ children }: { children: ReactNode }) {
       // Only the tour moves the address while it is running. Its own moves
       // (and the conversations it seeds, which navigate internally) go through
       // with the lock lifted for the moment it takes.
+      //
+      // ⚠ THE LOCK MUST NOT SURVIVE A FAILURE. `navigationLocked` is a
+      // module-global in `lib/router.ts`, so re-arming it in a bare `finally`
+      // meant that a throw out of `startConversation` or a step's `setup`
+      // re-locked the router AND skipped `setIndex(i)` — leaving the app with
+      // no tour on screen, no overlay to leave from, and every navigation in
+      // the product silently dead until a reload. The lock therefore goes back
+      // on only once the step has actually been prepared; if preparing it
+      // throws, the router is left open and the error propagates loudly rather
+      // than stranding the app quietly.
       lockNavigation(false);
+      let prepared = false;
       try {
         // A "/" step wants the empty workspace, not whichever seeded chat was
         // last open — the shell (rail, history) only shows when the chat is
@@ -107,8 +116,9 @@ export function TourProvider({ children }: { children: ReactNode }) {
           const to = typeof step.route === 'function' ? step.route(ctx) : step.route;
           navigate(to, { replace: true, force: true });
         }
+        prepared = true;
       } finally {
-        lockNavigation(true);
+        lockNavigation(prepared);
       }
       setIndex(i);
 

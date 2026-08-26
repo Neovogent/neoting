@@ -113,10 +113,16 @@ export function LoginView() {
         ? intl.formatMessage(m.faultRefused)
         : intl.formatMessage(m.faultUnreachable);
 
+  // h-vv, not min-h-vv: index.css registers @utility h-vv and max-h-vv only,
+  // so min-h-vv compiles to nothing and this column collapses to content
+  // height on a phone with the URL bar showing.
+  //
+  // ⚠ A plain `//` comment, ABOVE the return — not a `{/* */}` one below it.
+  // A JSX comment is an expression container, so as the first thing inside
+  // `return (` it is a second child of nothing and the file stops parsing:
+  // `TS1005: ')' expected`. That is how it landed here, and it took the whole
+  // app's typecheck down with it.
   return (
-    {/* h-vv, not min-h-vv: index.css registers @utility h-vv and max-h-vv only,
-        so min-h-vv compiles to nothing and this column collapses to content
-        height on a phone with the URL bar showing. */}
     <div className="flex-1 flex flex-col min-w-0 h-vv bg-ground overflow-y-auto px-safe">
       <div className="w-full max-w-sm mx-auto px-5 pt-10 pb-safe-6 my-auto flex flex-col gap-5">
         <div className="flex items-center gap-3">

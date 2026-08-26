@@ -454,7 +454,7 @@ export function InboxesView() {
   // change fires `tour:reset`, which closes whatever the tour opened.
   useTourAction('inboxes:open-preview', useCallback(() => { if (rows[0]) setPreview(rows[0]); }, [rows]));
   // ⚠ The live guard is on the BUTTONS (the row action, the header publish and
-  // the bulk bar all carry a `documentsSource === api` check), not inside
+  // the bulk bar all carry a `documentsSource === 'api'` check), not inside
   // requestPublish — which needs none, because it is only reachable from them.
   // A tour action reaches setConfirmPublish without passing any of them, so the
   // guard has to be restated here or the tour can drive a publish on live data
