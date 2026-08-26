@@ -139,10 +139,10 @@ export function ActionCard({ clientIds, period }: { clientIds: string[]; period?
           </div>
         </div>
       </div>
-      <div className="flex items-center bg-raised/50 p-4 gap-3">
+      <div className="flex items-center bg-raised/50 p-3 sm:p-4 gap-2 sm:gap-3 flex-wrap">
         <button
           onClick={() => post(intl.formatMessage(m.chaseReply), 'CHASE_MISSING')}
-          className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold text-white bg-brand rounded-2xl hover:bg-brand-hover transition-all shadow-glow-btn-soft"
+          className="flex-1 min-w-[10rem] flex items-center justify-center gap-2 py-3 px-3 text-sm font-bold text-white bg-brand rounded-2xl hover:bg-brand-hover transition-all shadow-glow-btn-soft"
         >
           {intl.formatMessage(m.chaseAction)}
           <ArrowRight size={16} strokeWidth={2.5} />
@@ -151,6 +151,7 @@ export function ActionCard({ clientIds, period }: { clientIds: string[]; period?
           onClick={() => post(intl.formatMessage(m.reviewReply), 'SHOW_MISSING_TABLE')}
           className="px-4 py-3 text-zinc-400 hover:text-white hover:bg-white/5 rounded-2xl transition-colors border border-white/5 bg-card shadow-inner"
           title={intl.formatMessage(m.reviewAction)}
+          aria-label={intl.formatMessage(m.reviewAction)}
         >
           <Eye size={20} />
         </button>
@@ -158,6 +159,7 @@ export function ActionCard({ clientIds, period }: { clientIds: string[]; period?
           onClick={() => downloadCsv(items)}
           className="px-4 py-3 text-zinc-400 hover:text-white hover:bg-white/5 rounded-2xl transition-colors border border-white/5 bg-card shadow-inner"
           title={intl.formatMessage(commonActions.exportCsv)}
+          aria-label={intl.formatMessage(commonActions.exportCsv)}
         >
           <Download size={20} />
         </button>

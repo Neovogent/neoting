@@ -17,8 +17,11 @@ import { createPortal } from 'react-dom';
  * amount of width or wrapping fixes that — the box has to leave the container,
  * which means fixed coordinates measured from the trigger.
  *
- * Deliberately a hover/focus affordance and nothing more: anything that needs
- * a click belongs in a button.
+ * Hover and focus open it on a desktop. On a touch screen there is no hover,
+ * so a tap on the anchor toggles it and the next tap anywhere else closes it;
+ * the tap still reaches the anchor'''s own onClick, so a flag that opens a
+ * comparison keeps doing that. Anything that needs a click of its own still
+ * belongs in a button.
  */
 
 /** Breathing room between the tooltip and the icon, and from the window edge. */
@@ -60,33 +63,58 @@ export function Tooltip({ label, detail, children, side = 'top' }: {
     const top = below ? anchor.bottom + GAP : anchor.top - height - GAP;
     const left = Math.min(
       Math.max(MARGIN, anchor.left + anchor.width / 2 - WIDTH / 2),
-      window.innerWidth - WIDTH - MARGIN,
+      // The outer Math.max is what stops a 360px screen from computing a
+      // negative left and pushing the box off the side.
+      Math.max(MARGIN, window.innerWidth - WIDTH - MARGIN),
     );
     setPos({ top: Math.max(MARGIN, top), left });
   }, [open, side, label, detail]);
 
   // Fixed coordinates are measured once, so a scroll underneath would leave
   // the box floating away from its icon. Closing is the honest response —
-  // the pointer has left the thing it was describing anyway.
+  // the pointer has left the thing it was describing anyway. A tap outside
+  // closes it for the same reason.
+  //
+  // The outside listener is capture-phase so it runs before the app'''s own
+  // handlers, and it only calls setOpen (no stopPropagation, no
+  // preventDefault) — a modal'''s click-away scrim and ConfirmStep'''s own
+  // dismissal still receive the event exactly as they did.
   useLayoutEffect(() => {
     if (!open) return;
     const close = () => setOpen(false);
+    const onPointerDown = (e: PointerEvent) => {
+      if (anchorRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
     window.addEventListener('scroll', close, true);
     window.addEventListener('resize', close);
+    document.addEventListener('pointerdown', onPointerDown, true);
     return () => {
       window.removeEventListener('scroll', close, true);
       window.removeEventListener('resize', close);
+      document.removeEventListener('pointerdown', onPointerDown, true);
     };
   }, [open]);
+
+  // Touch: the enter/leave pair never fires, so the tap itself toggles. The
+  // ref then suppresses the synthesised mouse events that follow a tap, which
+  // would otherwise re-open the box the tap just closed.
+  const touchedRef = useRef(false);
+  const onPointerDownAnchor = (e: React.PointerEvent) => {
+    if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
+    touchedRef.current = true;
+    setOpen((o) => !o);
+  };
 
   return (
     <>
       <span
         ref={anchorRef}
         className="relative inline-flex"
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
-        onFocus={() => setOpen(true)}
+        onPointerDown={onPointerDownAnchor}
+        onMouseEnter={() => { if (!touchedRef.current) setOpen(true); }}
+        onMouseLeave={() => { if (!touchedRef.current) setOpen(false); touchedRef.current = false; }}
+        onFocus={() => { if (!touchedRef.current) setOpen(true); }}
         onBlur={() => setOpen(false)}
       >
         {children}
@@ -99,7 +127,7 @@ export function Tooltip({ label, detail, children, side = 'top' }: {
             role="tooltip"
             style={{
               position: 'fixed',
-              width: WIDTH,
+              width: Math.min(WIDTH, window.innerWidth - MARGIN * 2),
               top: pos?.top ?? -9999,
               left: pos?.left ?? -9999,
               // Hidden for the single frame before it has been measured,

@@ -43,7 +43,7 @@ export function ConfirmStep({ title, detail, consequence, confirmLabel, altLabel
     // The backdrop is not a button — role="presentation" says so; the keyboard
     // dismissal is Escape above.
     <div
-      className="fixed inset-0 z-[60] bg-black/75 backdrop-blur-sm flex items-center justify-center p-6"
+      className="fixed inset-0 z-[60] bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6"
       onClick={onCancel}
       role="presentation"
     >
@@ -78,7 +78,7 @@ export function ConfirmStep({ title, detail, consequence, confirmLabel, altLabel
           )}
         </div>
 
-        <div className="p-4 bg-raised/50 flex items-center gap-3 justify-end">
+        <div className="p-4 bg-raised/50 flex items-center gap-2 sm:gap-3 justify-end flex-wrap [&>button]:flex-1 [&>button]:basis-[8rem] sm:[&>button]:flex-none sm:[&>button]:basis-auto [&>button]:justify-center">
           <button
             onClick={onCancel}
             className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 hover:text-white transition-colors"

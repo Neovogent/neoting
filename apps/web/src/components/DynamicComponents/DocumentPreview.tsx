@@ -34,6 +34,10 @@ const m = defineMessages({
   originalImmutable: { id: 'documents.documentPreview.originalImmutable', defaultMessage: 'Original — immutable' },
   extractedFields: { id: 'documents.documentPreview.extractedFields', defaultMessage: 'Extracted fields' },
   correctHint: { id: 'documents.documentPreview.correctHint', defaultMessage: 'click any value to correct' },
+  // The same instruction for a finger. A second id rather than a reuse: the
+  // verb is the difference, and "click" is wrong on the device where most of
+  // these arrive.
+  correctHintTouch: { id: 'documents.documentPreview.correctHintTouch', defaultMessage: 'tap any value to correct' },
   confidence: { id: 'documents.documentPreview.confidence', defaultMessage: '{percent}% confident' },
   lineItemsHeading: {
     id: 'documents.documentPreview.lineItemsHeading',
@@ -296,7 +300,10 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
               <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">
                 {intl.formatMessage(m.extractedFields)}
               </span>
-              <span className="text-[11px] font-semibold text-zinc-600">{intl.formatMessage(m.correctHint)}</span>
+              <span className="text-[11px] font-semibold text-zinc-600">
+                <span className="pointer-coarse:hidden">{intl.formatMessage(m.correctHint)}</span>
+                <span className="hidden pointer-coarse:inline">{intl.formatMessage(m.correctHintTouch)}</span>
+              </span>
             </div>
             <div className="flex flex-col">
               {fields.map((f, i) => (
@@ -304,7 +311,7 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                   key={f.label}
                   onMouseEnter={() => setHovered(f.label)}
                   onMouseLeave={() => setHovered(null)}
-                  className={`py-3 flex items-center justify-between gap-3 ${
+                  className={`py-3 flex items-center justify-between gap-3 flex-wrap ${
                     i < fields.length - 1 ? 'border-b border-white/5' : ''
                   }`}
                 >
@@ -358,11 +365,11 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                   ) : canEdit(f.label) ? (
                     <button
                       onClick={() => startEdit(f)}
-                      className={`shrink-0 group flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-bold transition-all border border-transparent hover:border-white/10 hover:bg-white/5 ${
+                      className={`shrink-0 max-w-full group flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-bold transition-all border border-transparent hover:border-white/10 hover:bg-white/5 ${
                         f.confidence < 0.6 ? 'text-amber-400' : 'text-white'
                       }`}
                     >
-                      {f.value}
+                      <span className="min-w-0 truncate">{f.value}</span>
                       <PencilLine size={13} className="text-zinc-600 group-hover:text-brand transition-colors" />
                     </button>
                   ) : (

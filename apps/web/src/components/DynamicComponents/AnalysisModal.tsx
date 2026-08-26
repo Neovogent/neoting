@@ -189,7 +189,7 @@ export function AnalysisModal({ docIds, importIds = [], onClose, lockedClientId 
 
   return (
     <div
-      className="fixed inset-0 z-[60] bg-black/75 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="fixed inset-0 z-[60] bg-black/75 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-3 sm:p-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       role="dialog"
       aria-modal="true"
       aria-label={intl.formatMessage(m.dialogLabel)}
@@ -204,7 +204,7 @@ export function AnalysisModal({ docIds, importIds = [], onClose, lockedClientId 
             <motion.div
               key="scanning"
               exit={{ opacity: 0, scale: 0.98 }}
-              className="rounded-[32px] border border-white/10 bg-card p-10 shadow-2xl"
+              className="rounded-[32px] border border-white/10 bg-card p-4 md:p-10 shadow-2xl"
             >
               <div className="flex items-center gap-3 mb-8">
                 <span className="relative flex items-center justify-center w-11 h-11 rounded-2xl bg-brand/15">
@@ -473,7 +473,7 @@ function SheetResult({ sheet, onDone }: { sheet: SheetImport; onDone: () => void
 
       {!failed && (
         <>
-          <div className="grid grid-cols-3 gap-2 mt-5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-5">
             <Count label={intl.formatMessage(sheetMessages.countCosts)} value={cost} />
             <Count label={intl.formatMessage(sheetMessages.countSales)} value={sales} />
             <Count label={intl.formatMessage(sheetMessages.countBankLines)} value={transactions} />

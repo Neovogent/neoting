@@ -120,7 +120,7 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6"
+      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6"
       onClick={onClose}
     >
       <motion.div
@@ -128,14 +128,18 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.97 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-xl max-h-[80vh] rounded-[32px] border border-white/5 bg-card shadow-2xl flex flex-col overflow-hidden"
+        className="w-full max-w-xl max-h-[88dvh] rounded-[32px] border border-white/5 bg-card shadow-2xl flex flex-col overflow-hidden"
       >
         <div className="p-6 border-b border-white/5 flex items-start justify-between gap-4">
           <div>
             <h2 className="font-sans font-bold text-xl text-white tracking-tight">{intl.formatMessage(m.heading)}</h2>
             <p className="text-[12px] text-zinc-500 mt-1">{intl.formatMessage(m.subheading)}</p>
           </div>
-          <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors shrink-0">
+          <button
+            onClick={onClose}
+            aria-label={intl.formatMessage(commonActions.close)}
+            className="p-2 -m-2 rounded-full text-zinc-500 hover:text-white hover:bg-white/5 transition-colors shrink-0"
+          >
             <X size={18} />
           </button>
         </div>
@@ -187,9 +191,9 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
                 return (
                   <div
                     key={c.id}
-                    className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-ground/60 border border-white/5"
+                    className="flex items-center justify-between gap-3 p-4 rounded-2xl bg-ground/60 border border-white/5 flex-wrap"
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex items-center gap-3 min-w-0 flex-1 basis-48">
                       <div className="w-10 h-10 rounded-xl bg-raised border border-white/5 flex items-center justify-center text-zinc-400 shrink-0">
                         <Building2 size={16} />
                       </div>
