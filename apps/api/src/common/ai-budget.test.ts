@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { budgetKey, InMemoryAiBudget } from './budget.js';
+import { budgetKey, InMemoryAiBudget } from './ai-budget.js';
 
 const AT = () => new Date('2026-08-21T14:00:00.000Z');
 

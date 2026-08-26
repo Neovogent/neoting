@@ -6,7 +6,7 @@ import { scopedDb, type ScopedClient } from '../../common/db/scoped-db.js';
 import { AppException } from '../../common/problem/problem.js';
 import { currentTraceId } from '../../common/trace/trace-context.js';
 import { wrapUntrusted } from '../../common/untrusted-content.js';
-import type { AiBudget } from './budget.js';
+import type { AiBudget } from '../../common/ai-budget.js';
 import { buildRuleDraft } from './drafts.js';
 import {
   type CategoryOption,

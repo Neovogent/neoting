@@ -156,7 +156,7 @@ describe.skipIf(!enabled)('rule.create end to end through the engine', () => {
 
     // No-op sleep — the 2–4 s demo latency must not slow the suite.
     const step = new PrismaExtractionStep(app, new DemoExtractor(), { sleep: async () => {} });
-    await step.run({ documentId, practiceId: P, businessId: BIZ, traceId: 'trace-p13' });
+    await step.run({ documentId, practiceId: P, businessId: BIZ, traceId: 'trace-p13', finalAttempt: false });
 
     const row = await owner.document.findUnique({ where: { id: documentId } });
     // The chat-created rule beat the profile's default (GENERAL_EXPENSES).

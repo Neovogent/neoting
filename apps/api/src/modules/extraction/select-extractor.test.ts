@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 
+import { type AiBudget, InMemoryAiBudget } from '../../common/ai-budget.js';
 import type { DocumentStore } from '../ingestion-routing/index.js';
 import { BedrockExtractor } from './bedrock-extractor.js';
 import { DemoExtractor } from './demo-extractor.js';
@@ -12,6 +13,9 @@ const ENV = {
 
 /** Never called in these tests — selection must not touch the store. */
 const store = {} as DocumentStore;
+
+/** Likewise never metered here; selection must not spend anything either. */
+const budget = (): AiBudget => new InMemoryAiBudget(1000);
 
 test('demo mode returns the deterministic fixture extractor', () => {
   expect(selectExtractor(ENV)).toBeInstanceOf(DemoExtractor);
@@ -28,7 +32,7 @@ test('bedrock mode returns the real extractor UNWRAPPED — a failed read must n
   // supplier, total, tax and VAT number, every field non-null, which makes
   // `resolveProcessedState` return READY. A throttle was enough to trigger it.
   // If anything ever wraps this again, that failure mode comes back.
-  const extractor = selectExtractor({ ...ENV, EXTRACTOR: 'bedrock' }, store);
+  const extractor = selectExtractor({ ...ENV, EXTRACTOR: 'bedrock' }, store, budget());
   expect(extractor).toBeInstanceOf(BedrockExtractor);
 });
 
@@ -43,8 +47,23 @@ test('the extractor names itself, so the audit columns cannot claim to be the fi
   // reader produced this value". The pipeline used to hardcode the demo
   // constants, so a genuine model read was persisted labelled `demo`.
   expect(selectExtractor(ENV).kind).toBe('demo');
-  expect(selectExtractor({ ...ENV, EXTRACTOR: 'bedrock' }, store).kind).toBe('bedrock');
+  expect(selectExtractor({ ...ENV, EXTRACTOR: 'bedrock' }, store, budget()).kind).toBe('bedrock');
   // Pinned in chat-framework/models.ts, never from env — no `eu.`/`global.`
   // prefix, because an inference profile routes outside the UK (D30/ADR 0001).
-  expect(selectExtractor({ ...ENV, EXTRACTOR: 'bedrock' }, store).modelVersion).toMatch(/^anthropic\./);
+  expect(selectExtractor({ ...ENV, EXTRACTOR: 'bedrock' }, store, budget()).modelVersion).toMatch(/^anthropic\./);
+});
+
+test('bedrock without a budget fails at construction — real extraction may not run unmetered', () => {
+  // The store and the budget are both required, but they fail differently and
+  // that is why this test exists separately. A missing store fails LOUDLY on the
+  // first document. A missing ceiling fails SILENTLY and for ever: it reads
+  // every document perfectly and simply spends without limit, which is what
+  // `EXTRACTOR=bedrock` did on staging between S1 and S5. The only defence
+  // against a hazard nobody can see is to make the unmetered object impossible
+  // to construct.
+  expect(() => selectExtractor({ ...ENV, EXTRACTOR: 'bedrock' }, store)).toThrow(/spend ceiling/);
+});
+
+test('demo mode needs no budget — a fixture spends nothing', () => {
+  expect(selectExtractor(ENV)).toBeInstanceOf(DemoExtractor);
 });

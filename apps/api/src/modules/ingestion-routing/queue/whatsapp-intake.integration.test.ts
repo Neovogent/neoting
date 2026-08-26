@@ -97,6 +97,7 @@ describe.skipIf(!DATABASE_URL || !OWNER_URL)('WhatsApp media intake against a re
       extractor: new RecordingExtractionStep(),
       // No-op: extraction returns null, so auto-close is never triggered here.
       autoClose: new RecordingChaseAutoClose(),
+      finalAttempt: false,
     });
 
     const documentId = documentIdFor(whatsappJob.idempotencyKey);

@@ -130,6 +130,7 @@ describe.skipIf(!DATABASE_URL || !OWNER_URL)('email intake against a real databa
       extractor: new RecordingExtractionStep(),
       // No-op: extraction returns null here, so auto-close is never triggered.
       autoClose: new RecordingChaseAutoClose(),
+      finalAttempt: false,
     });
 
     await processIngestJob(job, workerDeps());

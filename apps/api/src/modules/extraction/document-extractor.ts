@@ -124,6 +124,20 @@ export interface ExtractionRequest {
   readonly s3Key: string | null;
   /** The stored object's content type — selects the image block's `media_type`. */
   readonly mimeType: string | null;
+  /**
+   * The practice whose daily AI ceiling this read spends against (§9.7, S5).
+   *
+   * Extraction is metered per FIRM, not per document or per client, so the
+   * spender has to be named on the request — the extractor has no session and
+   * cannot read it for itself. `DemoExtractor` ignores it, exactly as it ignores
+   * `s3Key`: a fixture spends nothing.
+   *
+   * Before this field existed `BedrockExtractor` constructed its own Bedrock
+   * client and called it with no ceiling of any kind, so a staging environment
+   * running `EXTRACTOR=bedrock` had UNMETERED model spend — the one number
+   * nobody notices until the invoice.
+   */
+  readonly practiceId: string;
 }
 
 export interface DocumentExtractor {
