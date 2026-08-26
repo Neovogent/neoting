@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
 import { DemoExtractor } from './demo-extractor.js';
+import type { DocumentExtractor } from './document-extractor.js';
 import { PrismaExtractionStep } from './extraction-pipeline.js';
 
 /**
@@ -29,6 +30,23 @@ function step(): PrismaExtractionStep {
   return new PrismaExtractionStep(app, new DemoExtractor(), { sleep: async () => {} });
 }
 
+/**
+ * An extractor that throws rather than answering — a Bedrock throttle, an
+ * expired credential, a 400 on an over-long PDF, a socket reset. Before S5 this
+ * was the shape that stranded a document in PROCESSING for ever.
+ */
+class ThrowingExtractor implements DocumentExtractor {
+  readonly kind = 'bedrock';
+  readonly modelVersion = 'anthropic.test';
+  extract(): Promise<never> {
+    return Promise.reject(new Error('bedrock is unreachable'));
+  }
+}
+
+function throwingStep(): PrismaExtractionStep {
+  return new PrismaExtractionStep(app, new ThrowingExtractor(), { sleep: async () => {} });
+}
+
 async function seedReceived(id: string, opts: { businessId: string | null; byteHash: string; filename: string }): Promise<void> {
   await owner.document.create({
     data: {
@@ -49,7 +67,7 @@ async function seedReceived(id: string, opts: { businessId: string | null; byteH
 
 async function runExtract(id: string, businessId: string | null): Promise<void> {
   // filename + byteHash come off the row now, so the caller only supplies scope.
-  await step().run({ documentId: id, practiceId: P, businessId, traceId: `trace-${id}` });
+  await step().run({ documentId: id, practiceId: P, businessId, traceId: `trace-${id}`, finalAttempt: false });
 }
 
 async function cleanup(): Promise<void> {
@@ -197,5 +215,94 @@ describe.skipIf(!DATABASE_URL || !OWNER_URL)('extraction pipeline against a real
     expect(row?.categoryCode).toBe('CAPITAL_EQUIPMENT');
     const categorySuggestion = await owner.suggestion.findFirst({ where: { documentId: id, field: 'categoryCode' } });
     expect(categorySuggestion?.sourceRuleId).toBe('p4_rule_currys');
+  });
+  // ───────────────────────────────────────────────────────────────────────────
+  // S5 · a throw must never strand a document in PROCESSING
+  //
+  // `run` is the only thing that moves a document out of PROCESSING, so it is
+  // the only thing that can promise PROCESSING is never permanent. Before S5 a
+  // throw travelled out to BullMQ, the retries ran, the job dead-lettered — and
+  // the document stayed PROCESSING for ever: no failure code, nothing on the
+  // Rejected/Failed view, and `document.reprocess` REFUSES a processing
+  // document, so no Retry button either. A stuck document is worse than a failed
+  // one, because a failed one is visible.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  test('the simulated Processing delay is fixture-only — a real read is not padded', async () => {
+    // The 2-4 s sleep exists so PROCESSING renders truthfully when extraction is
+    // instant fixture data. Staging runs `EXTRACTOR=bedrock`, where a real read
+    // takes seconds on its own, so leaving it unconditional added 2-4 s of pure
+    // latency to every real document. Keyed on the extractor's own `kind`.
+    const slept: number[] = [];
+    const sleep = async (ms: number): Promise<void> => {
+      slept.push(ms);
+    };
+
+    const real = 'p4_realtimed';
+    await seedReceived(real, { businessId: null, byteHash: 'c1'.repeat(32), filename: 'receipt.jpg' });
+    await expect(
+      new PrismaExtractionStep(app, new ThrowingExtractor(), { sleep }).run({
+        documentId: real,
+        practiceId: P,
+        businessId: null,
+        traceId: 'trace-realtimed',
+        finalAttempt: false,
+      }),
+    ).rejects.toThrow();
+    expect(slept).toEqual([]);
+
+    const fixture = 'p4_demotimed';
+    await seedReceived(fixture, { businessId: null, byteHash: 'd1'.repeat(32), filename: 'currys-receipt.jpg' });
+    await new PrismaExtractionStep(app, new DemoExtractor(), { sleep }).run({
+      documentId: fixture,
+      practiceId: P,
+      businessId: null,
+      traceId: 'trace-demotimed',
+      finalAttempt: false,
+    });
+    expect(slept).toHaveLength(1);
+    expect(slept[0]).toBeGreaterThanOrEqual(2000);
+  });
+
+  test('a throw with retries left leaves the document PROCESSING for the next attempt', async () => {
+    const id = 'p4_throttled';
+    await seedReceived(id, { businessId: null, byteHash: 'a1'.repeat(32), filename: 'receipt.jpg' });
+
+    await expect(
+      throwingStep().run({ documentId: id, practiceId: P, businessId: null, traceId: 'trace-throttled', finalAttempt: false }),
+    ).rejects.toThrow('bedrock is unreachable');
+
+    // Deliberately still PROCESSING: the retry ladder is the right tool for a
+    // throttle, and `begin()` is re-entrant on PROCESSING so the next attempt
+    // resumes cleanly. Burning it to FAILED here would be worse than it sounds —
+    // `document.reprocess` re-arms a document WITHOUT re-reading the bytes, so a
+    // transient failure converted to FAILED never gets a second real read.
+    const row = await owner.document.findUnique({ where: { id } });
+    expect(row?.state).toBe('PROCESSING');
+    expect(row?.failureCode).toBeNull();
+  });
+
+  test('a throw on the FINAL attempt lands FAILED with a reason, and still raises', async () => {
+    const id = 'p4_exhausted';
+    await seedReceived(id, { businessId: null, byteHash: 'b1'.repeat(32), filename: 'receipt.jpg' });
+
+    // Both halves matter. The throw still propagates, so the job reaches the DLQ
+    // and an operator learns Bedrock is refusing; the document still lands
+    // FAILED, so the client sees a reason and gets a Retry.
+    await expect(
+      throwingStep().run({ documentId: id, practiceId: P, businessId: null, traceId: 'trace-exhausted', finalAttempt: true }),
+    ).rejects.toThrow('bedrock is unreachable');
+
+    const row = await owner.document.findUnique({ where: { id } });
+    expect(row?.state).toBe('FAILED');
+    expect(row?.failureCode).toBe('NT-EXT-010');
+    expect(row?.failureMessage).toBeTruthy();
+    // The SDK's own words never reach the client.
+    expect(row?.failureMessage).not.toMatch(/bedrock is unreachable/);
+    // FAILED is one of the two states `document.reprocess` accepts, which is
+    // what makes this document retryable at all.
+    expect(['FAILED', 'REJECTED']).toContain(row?.state);
+    // Nothing was invented on the way past.
+    expect(await owner.extraction.count({ where: { documentId: id } })).toBe(0);
   });
 });

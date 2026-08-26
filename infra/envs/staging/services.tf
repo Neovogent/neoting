@@ -146,16 +146,23 @@ locals {
     #                        landed in a real accountant's queue with a
     #                        fabricated supplier on it.
     #
-    #                        ⚠ WHAT THIS COSTS UNTIL A4 MERGES, stated plainly:
-    #                        BedrockExtractor accepts png/jpeg/webp/gif only,
-    #                        while ingestion accepts PDF, HEIC and docx, and
-    #                        select-extractor.ts has NO FALLBACK by design. So
-    #                        a PDF invoice on staging now fails with NT-EXT-003
-    #                        rather than being invented. That is the trade S1
-    #                        chose: a loud, retryable FAILED document instead of
-    #                        a quiet, confident, wrong one. A4 adds the PDF
-    #                        content block and the downscale; S5 adds the cost
-    #                        ceiling and measures spend against £0.02/document.
+    #                        A4 (merged) added the PDF `document` block and the
+    #                        downscale, so a PDF invoice and a 48MP phone photo
+    #                        both read here now — the NT-EXT-003 / NT-EXT-007
+    #                        gap this comment used to describe is closed.
+    #                        select-extractor.ts still has NO FALLBACK by
+    #                        design: a read we cannot make is a loud, retryable
+    #                        FAILED document, never a quiet invented one.
+    #
+    #                        ⚠ S5 CLOSED THE TWO THINGS THE FLIP LEFT OPEN.
+    #                        Extraction is now metered against
+    #                        AI_DAILY_BUDGET_PENCE below (it was not, and that
+    #                        was unbounded spend on this environment), and a
+    #                        throw from Bedrock now lands the document FAILED
+    #                        with a reason on the job's last attempt instead of
+    #                        stranding it in PROCESSING for ever. Measured at
+    #                        1.3p/document against the £0.02 guardrail —
+    #                        `pnpm tsx scripts/measure/extraction-cost.ts`.
     #
     #   OTP_MODE=totp        the real RFC 6238 verifier. `demo` accepts ONE
     #                        fixed six-digit code on every account in every
@@ -235,11 +242,24 @@ locals {
     # a launch target. £5 was 250 documents at the £0.02/document guardrail —
     # one month-end afternoon.
     #
-    # ⚠ EXTRACTION DOES NOT COUNT AGAINST IT YET. BedrockExtractor constructs
-    # AnthropicBedrock directly and never consults the chat runtime's budget,
-    # so flipping EXTRACTOR to `bedrock` above put UNMETERED spend on this
-    # environment. Wiring the two together is S5 item 3, and it matters more
-    # now than it did when that stage was written.
+    # ⚠ IT IS ONE METER FOR TWO SPENDERS SINCE S5, AND THAT COUPLING IS
+    # DELIBERATE. Extraction used to construct AnthropicBedrock directly and
+    # consult no budget at all, so flipping EXTRACTOR to `bedrock` above put
+    # UNMETERED spend on this environment; it now writes to the same
+    # per-practice daily ledger the chat runtime has always used
+    # (`common/ai-budget.ts`). §9.7 defines a per-FIRM budget, and a firm asking
+    # what it spent on AI today must get ONE number.
+    #
+    # The consequence, stated rather than discovered: a practice that exhausts
+    # the ceiling in chat will see that day's documents land FAILED
+    # (NT-EXT-008, retryable), and a document flood will make chat return its
+    # budget error. Both refusals are visible and neither invents data.
+    #
+    # £25 is ~1,900 documents/day at the measured 1.3p, or ~1,250 at the 2p the
+    # meter actually charges — `costPence` rounds UP per call, so a ~1.3p read
+    # bills 2p. The meter over-states extraction by roughly half at this token
+    # scale. That is the safe direction for a ceiling and it is why the headline
+    # number is quoted from the per-100 figure, not the per-call one.
     { name = "AI_DAILY_BUDGET_PENCE", value = "2500" },
 
     # ------------------------------------------------------------------------

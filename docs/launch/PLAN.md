@@ -132,6 +132,32 @@ everyone downstream, because each would otherwise be discovered the hard way:
   proposal kind all exist in the contract already.** Build against them; if you find
   a field they do not cover, stop and say so rather than editing a LAW path.
 
+### Where it stands — end of day, 26 Aug 2026
+
+**21 of 29 merged.** Done: S0 S1 S2 S3 S4 · A1 A2 A3 A4 A5 A6 A7 A8 A11 A12 · M1 M2 M3 M4 M5.
+Staging is live on `neoacc.neovogent.com` with a valid certificate, the API is deployed and
+the frontend is published.
+
+| Who | Owes | When |
+|---|---|---|
+| **Abdullah** | A9, A13 | overnight — A9 first, it blocks A10 |
+| **Mubasshir** | M6, M7, M8 (+M9 if agreed) | by lunch, 27 Aug |
+| **Shakib** | **S5**, A10, S6, S7 | A10 after A9; S7 evening, 27 Aug |
+
+**A10 moved from Abdullah to Shakib** — Abdullah has no VT Transaction+ install, and the
+stage is a person importing a real file into VT.
+
+**Two things are not on anyone's schedule:**
+
+1. **S5 — real extraction.** The 26 Aug plan listed A10, S6 and S7 for Shakib and omitted
+   S5. `EXTRACTOR=demo` is still live, so `DemoExtractor` fabricates supplier, date and
+   total from a filename hash and marks them READY. A3 and A4 are merged, so nothing blocks
+   it and it is one Terraform value. It must precede A10 — importing fabricated data into
+   VT proves nothing.
+2. **The practice signup screen.** `POST /v1/practices` works; nothing in `apps/web/src`
+   calls it, and no M stage builds it. **No accountant can create an account in a browser
+   today**, and S7's walkthrough begins with signing up.
+
 ### How many stages can run at once
 
 Computed from every `Needs:` line, not estimated. S0 was the only true global blocker and

@@ -42,6 +42,10 @@ interface ProposalRow {
 }
 
 const ARCHIVE_PAYLOAD = { documentIds: ['doc_1'], archived: true };
+const PUBLISH_PAYLOAD = { documentIds: ['doc_1'], preview: { itemCount: 1, grossPence: 12_000, vatPence: 2_000 } };
+
+/** The firm's super admin: the release role AND the ownership flag (A12, D44). */
+const OWNER_MEMBERSHIP = { role: 'PRACTICE_ADMIN', isOwner: true };
 
 function proposal(id: string, over: Partial<ProposalRow> = {}): ProposalRow {
   return {
@@ -69,11 +73,21 @@ function proposal(id: string, over: Partial<ProposalRow> = {}): ProposalRow {
   };
 }
 
-function harness(rows: ProposalRow[] = [], executorResult?: ExecutionResult | Error) {
+function harness(
+  rows: ProposalRow[] = [],
+  executorResult?: ExecutionResult | Error,
+  /**
+   * The acting membership the release gate reads (A12). `null` is a caller with
+   * no practice-wide membership at all; the default is the firm's super admin,
+   * so every pre-existing test keeps its old meaning.
+   */
+  membership: { role: string; isOwner: boolean } | null = OWNER_MEMBERSHIP,
+) {
   const map = new Map(rows.map((r) => [r.id, r]));
   const audits: Record<string, unknown>[] = [];
   const executed: string[] = [];
   const listCalls: { where?: unknown; orderBy?: unknown; take?: number }[] = [];
+  const membershipQueries: Record<string, unknown>[] = [];
   let idSeq = 0;
 
   const tx = {
@@ -104,6 +118,12 @@ function harness(rows: ProposalRow[] = [], executorResult?: ExecutionResult | Er
     business: {
       findUnique: async ({ where }: { where: { id: string } }) => (where.id === 'biz_1' ? { id: where.id } : null),
     },
+    membership: {
+      findFirst: async ({ where }: { where: Record<string, unknown> }) => {
+        membershipQueries.push(where);
+        return membership;
+      },
+    },
     auditEvent: {
       findFirst: async () => null,
       create: async ({ data }: { data: Record<string, unknown> }) => {
@@ -126,7 +146,17 @@ function harness(rows: ProposalRow[] = [], executorResult?: ExecutionResult | Er
     'chase.send': {
       kind: 'chase.send',
       execute: async () => {
+        executed.push('chase.send');
         throw new ProposalNotImplementedError('chase.send');
+      },
+    },
+    // A recording executor for the OTHER gated kind (A12), so a refusal can be
+    // told apart from an effect that ran and was rolled back.
+    'publish.batch': {
+      kind: 'publish.batch',
+      execute: async () => {
+        executed.push('publish.batch');
+        return { changed: [{ entity: 'document', id: 'doc_1' }], alreadyApplied: false, followUps: [] };
       },
     },
   } as unknown as ExecutorRegistry;
@@ -143,7 +173,7 @@ function harness(rows: ProposalRow[] = [], executorResult?: ExecutionResult | Er
     },
     new InMemoryIdempotencyStore(),
   );
-  return { service, map, audits, executed, listCalls };
+  return { service, map, audits, executed, listCalls, membershipQueries };
 }
 
 const code = async (p: Promise<unknown>): Promise<string> => {
@@ -269,6 +299,115 @@ test('a stored payload that no longer parses refuses NT-PRP-006 rather than reac
   ]);
   expect(await code(service.review(CTX, 'prop_bad', 'k'))).toBe('NT-PRP-006');
   expect(executed).toEqual([]);
+});
+
+// ---- approve: the RELEASE GATE (A12, D44, Governance §11.2) ------------------
+
+function publishProposal(id: string, over: Partial<ProposalRow> = {}): ProposalRow {
+  return proposal(id, { kind: 'publish.batch', payload: PUBLISH_PAYLOAD, payloadHash: canonicalHash(PUBLISH_PAYLOAD), ...over });
+}
+
+test('a member who is not the super admin cannot release: NT-PRM-001, and THE EXECUTOR NEVER RUNS', async () => {
+  // A PRACTICE_ADMIN who is not the owner — the widest role short of the firm's
+  // super admin, so this is the narrowing D44 asks for, not a role typo.
+  const { service, executed, audits, map } = harness([publishProposal('prop_p')], undefined, {
+    role: 'PRACTICE_ADMIN',
+    isOwner: false,
+  });
+  const review = await service.review(CTX, 'prop_p', 'k1');
+  expect(await code(service.approve(CTX, 'prop_p', { renderedSummaryHash: review.renderedSummaryHash }, 'k2'))).toBe('NT-PRM-001');
+
+  // No effect at all: the executor was never entered, no audit row was written,
+  // and the proposal is NOT consumed — the super admin can still approve it.
+  expect(executed).toEqual([]);
+  expect(audits).toEqual([]);
+  const row = map.get('prop_p');
+  expect(row?.state).toBe('REVIEWED');
+  expect(row?.executedAt).toBeNull();
+  expect(row?.approvedByUserId).toBeNull();
+});
+
+test('the same refusal for chase.send — the other irreversible outward act', async () => {
+  const chasePayload = { messages: [{ recipientE164: '+447700900001', body: 'Please send the receipt', transactionIds: ['t1'] }] };
+  const { service, executed } = harness(
+    [proposal('prop_c', { kind: 'chase.send', payload: chasePayload, payloadHash: canonicalHash(chasePayload) })],
+    undefined,
+    { role: 'PRACTICE_STANDARD', isOwner: false },
+  );
+  const review = await service.review(CTX, 'prop_c', 'k1');
+  expect(await code(service.approve(CTX, 'prop_c', { renderedSummaryHash: review.renderedSummaryHash }, 'k2'))).toBe('NT-PRM-001');
+  expect(executed).toEqual([]);
+});
+
+test('the super admin releases: same proposal, same review, executes and audits', async () => {
+  const { service, executed, audits } = harness([publishProposal('prop_p')]);
+  const review = await service.review(CTX, 'prop_p', 'k1');
+  const approved = await service.approve(CTX, 'prop_p', { renderedSummaryHash: review.renderedSummaryHash }, 'k2');
+  expect(approved.state).toBe('EXECUTED');
+  expect(executed).toEqual(['publish.batch']);
+  expect(audits).toHaveLength(1);
+});
+
+test('authority is decided BEFORE every other gate — a refused releaser learns nothing about the proposal', async () => {
+  // Unreviewed, expired and hash-mismatched all answer NT-PRM-001 rather than
+  // NT-PRP-002 / -003 / -004: those are answers to a question this caller was
+  // not allowed to ask, and the approve endpoint must not become an oracle.
+  const { service, executed } = harness(
+    [publishProposal('prop_new'), publishProposal('prop_old', { expiresAt: new Date(Date.now() - 1000) })],
+    undefined,
+    null,
+  );
+  expect(await code(service.approve(CTX, 'prop_new', { renderedSummaryHash: 'f'.repeat(64) }, 'k1'))).toBe('NT-PRM-001');
+  expect(await code(service.approve(CTX, 'prop_old', { renderedSummaryHash: 'f'.repeat(64) }, 'k2'))).toBe('NT-PRM-001');
+  expect(executed).toEqual([]);
+});
+
+test('a proposal the caller cannot SEE is still 404, never 403 — visibility is not authority', async () => {
+  // RLS returns nothing for an invisible row, so the lookup fails before the
+  // gate is reached and the answer never confirms the proposal exists.
+  const { service } = harness([], undefined, null);
+  expect(await code(service.approve(CTX, 'prop_invisible', { renderedSummaryHash: 'f'.repeat(64) }, 'k'))).toBe('NT-VAL-001');
+});
+
+test('composing and editing is ungated, and costs no membership read at all', async () => {
+  const { service, executed, membershipQueries } = harness([proposal('prop_a')], undefined, null);
+  const review = await service.review(CTX, 'prop_a', 'k1');
+  const approved = await service.approve(CTX, 'prop_a', { renderedSummaryHash: review.renderedSummaryHash }, 'k2');
+  expect(approved.state).toBe('EXECUTED');
+  expect(executed).toEqual(['document.archive']);
+  // D44's first half: every member composes and edits. The gate is lazy, so the
+  // ordinary path pays nothing for it.
+  expect(membershipQueries).toEqual([]);
+});
+
+test('a release gate refusal rolls back cleanly: the super admin can approve the very same proposal afterwards', async () => {
+  const { service, executed } = harness([publishProposal('prop_p')], undefined, { role: 'PRACTICE_STANDARD', isOwner: false });
+  const review = await service.review(CTX, 'prop_p', 'k1');
+  expect(await code(service.approve(CTX, 'prop_p', { renderedSummaryHash: review.renderedSummaryHash }, 'k2'))).toBe('NT-PRM-001');
+
+  // Same fake, same rows — now with the owner acting.
+  const owner = harness([publishProposal('prop_p')]);
+  const ownerReview = await owner.service.review(CTX, 'prop_p', 'k3');
+  await owner.service.approve(CTX, 'prop_p', { renderedSummaryHash: ownerReview.renderedSummaryHash }, 'k4');
+  expect(owner.executed).toEqual(['publish.batch']);
+  expect(executed).toEqual([]);
+});
+
+test('the replay fingerprint is scoped to the actor — another person cannot replay a key past the gate', async () => {
+  const { service, executed } = harness([publishProposal('prop_p')]);
+  const review = await service.review(CTX, 'prop_p', 'k1');
+  await service.approve(CTX, 'prop_p', { renderedSummaryHash: review.renderedSummaryHash }, 'shared-key');
+  expect(executed).toEqual(['publish.batch']);
+
+  // The SAME key and the SAME body, a different person: NT-IDM-001, not the
+  // stored response. The idempotency store runs before RLS and before the gate,
+  // so without the actor in the fingerprint this replays somebody else's answer.
+  const other = ScopeContextSchema.parse({ actorId: 'usr_2', practiceId: 'prac_1' });
+  expect(await code(service.approve(other, 'prop_p', { renderedSummaryHash: review.renderedSummaryHash }, 'shared-key'))).toBe('NT-IDM-001');
+  // The original caller still replays their own.
+  const replay = await service.approve(CTX, 'prop_p', { renderedSummaryHash: review.renderedSummaryHash }, 'shared-key');
+  expect(replay.state).toBe('EXECUTED');
+  expect(executed).toEqual(['publish.batch']);
 });
 
 // ---- cancel -----------------------------------------------------------------

@@ -64,6 +64,11 @@ function harness(
       uploadSanitiser,
       extractor,
       autoClose,
+      // These unit tests drive the processor directly, with no BullMQ job above
+      // them, so "is this the last attempt" has no real answer. `false` is the
+      // one that changes nothing: extraction rethrows and stays PROCESSING,
+      // which is what these tests already assert.
+      finalAttempt: false,
     },
   };
 }

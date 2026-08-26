@@ -80,7 +80,13 @@ beforeAll(async () => {
   await owner.practice.create({ data: { id: P, name: 'P8' } });
   await owner.business.create({ data: { id: BIZ, practiceId: P, name: 'American Burger' } });
   await owner.user.create({ data: { id: 'p8_user', email: 'p8@example.test' } });
-  await owner.membership.create({ data: { id: 'p8_mem', userId: 'p8_user', practiceId: P, role: 'PRACTICE_ADMIN' } });
+  // ⚠ `isOwner` matters since stage A12: `chase.send` is a RELEASE (D44 — "a
+  // text to somebody else's client"), so the engine's approve path requires the
+  // firm's super admin. Without the flag this suite's approvals refuse
+  // `NT-PRM-001` before the executor is entered.
+  await owner.membership.create({
+    data: { id: 'p8_mem', userId: 'p8_user', practiceId: P, role: 'PRACTICE_ADMIN', isOwner: true },
+  });
   await owner.contact.create({ data: { id: 'p8_contact', businessId: BIZ, mobileE164: '+447700900001', isPrimary: true } });
   const account = await owner.bankAccount.create({ data: { id: 'p8_acct', businessId: BIZ, displayName: 'Current' } });
   await owner.bankTransaction.create({

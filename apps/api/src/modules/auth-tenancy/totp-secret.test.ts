@@ -23,9 +23,29 @@ test('REFUSAL: a tampered ciphertext, a wrong key, a foreign scheme and rubbish 
   const ref = wrapTotpMaterial(MATERIAL, SECRET);
   const [scheme, iv, tag, body] = ref.split('.') as [string, string, string, string];
 
-  // GCM's auth tag is what catches this: flipping one character of the
-  // ciphertext must not yield a decrypted-but-wrong seed.
-  const tampered = [scheme, iv, tag, `${body.slice(0, -1)}${body.endsWith('A') ? 'B' : 'A'}`].join('.');
+  // GCM's auth tag is what catches this: altering the ciphertext must not yield
+  // a decrypted-but-wrong seed.
+  //
+  // ⚠ TAMPER THE BYTES, NOT THE BASE64 TEXT. This used to swap the final
+  // base64url character between 'A' and 'B', and it was flaky about 1 run in 16.
+  // The plaintext is 182 bytes and 182 % 3 == 2, so the last base64url character
+  // carries four SIGNIFICANT bits and two PADDING bits, and the padding bits are
+  // discarded on decode. 'A' and 'B' differ only in the low bit — so whenever the
+  // body happened to end in 'A', 'B', 'C' or 'D', the "tampered" string decoded
+  // to byte-identical ciphertext, nothing had actually been tampered with, GCM
+  // correctly authenticated it, and the assertion failed. The crypto was never
+  // wrong; the test's premise was.
+  //
+  // Flipping every bit of a decoded byte is a real modification at any length.
+  // `readUInt8`/`writeUInt8` rather than `bodyBytes[0] ^= 0xff`: this package
+  // runs with `noUncheckedIndexedAccess`, so an index read is `number |
+  // undefined` and compound-assigning to it does not typecheck.
+  const bodyBytes = Buffer.from(body, 'base64url');
+  bodyBytes.writeUInt8(bodyBytes.readUInt8(0) ^ 0xff, 0);
+  const tampered = [scheme, iv, tag, bodyBytes.toString('base64url')].join('.');
+  // The premise, asserted rather than assumed — if this ever holds, the test
+  // above is vacuous again and would pass without proving anything.
+  expect(bodyBytes.toString('base64url')).not.toBe(body);
 
   for (const candidate of [tampered, ref.replace('ntotp1', 'ntotp9'), 'not-an-envelope', '', null]) {
     expect(unwrapTotpMaterial(candidate, SECRET)).toBeNull();

@@ -27,7 +27,7 @@ test('the simulated latency is deterministic in the byte hash and inside the 2â€
 
 test('RecordingExtractionStep records each run for the processor tests', async () => {
   const step = new RecordingExtractionStep();
-  await step.run({ documentId: 'd1', practiceId: 'p1', businessId: null, traceId: 't' });
+  await step.run({ documentId: 'd1', practiceId: 'p1', businessId: null, traceId: 't', finalAttempt: false });
   expect(step.runs).toHaveLength(1);
   expect(step.runs[0]?.documentId).toBe('d1');
 });

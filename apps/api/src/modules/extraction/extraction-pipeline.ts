@@ -25,6 +25,7 @@ import { systemContext } from '../../common/db/scope-context.js';
 import { scopedDb, type ScopedClient } from '../../common/db/scoped-db.js';
 import { resolveProcessedState, transitionDocument } from '../validation-dedupe/index.js';
 import {
+  DEMO_EXTRACTOR_KIND,
   type DocumentExtractor,
   type ExtractedDocument,
   type ExtractionOutcome,
@@ -42,6 +43,23 @@ export interface ExtractionInput {
   /** The routed business, or null while Unrouted — the scope for rule honouring. */
   readonly businessId: string | null;
   readonly traceId: string;
+  /**
+   * Whether the job carrying this document has any retries left (S5).
+   *
+   * **Required, not optional with a default.** This step is the only thing that
+   * moves a document out of PROCESSING, so it is the only thing that can promise
+   * PROCESSING is never permanent — and it cannot keep that promise without
+   * knowing whether anyone will call it again. A caller that forgets to answer
+   * would re-create exactly the bug this field exists to close, so the type
+   * makes forgetting impossible rather than defaulting to one of the two wrong
+   * answers.
+   *
+   * BullMQ decides a retry with `attemptsMade + 1 < opts.attempts` (verified
+   * against bullmq@6.1.1, `Job.shouldRetryJob`), so the final attempt is
+   * `attemptsMade + 1 >= attempts`. `worker/main.ts` computes it there, where
+   * the job actually is.
+   */
+  readonly finalAttempt: boolean;
 }
 
 /**
@@ -126,16 +144,115 @@ export class PrismaExtractionStep implements ExtractionStep {
     const started = await scopedDb(this.prisma, ctx, (db) => this.begin(db, input));
     if (started === null) return null;
 
-    // Phase 2 — the read itself. Deliberately OUTSIDE any transaction: a 2–4 s
-    // delay must not hold a DB row locked.
-    await this.sleep(extractionLatencyMs(started.byteHash));
-    const outcome = await this.extractor.extract(started);
+    // Phase 2 — the read itself. Deliberately OUTSIDE any transaction: the read
+    // must not hold a DB row locked for its whole duration.
+    //
+    // ⚠ THE SIMULATED DELAY IS FIXTURE-ONLY SINCE S5. It exists so PROCESSING
+    // renders truthfully when extraction is instant fixture data; a real read
+    // takes seconds on its own and needs no help looking like work. Staging runs
+    // `EXTRACTOR=bedrock`, so leaving it unconditional added 2–4 s of pure
+    // latency to every real document — this file's own header called that out as
+    // the thing to remove "when `bedrock` becomes the default", which the S5 flip
+    // is. Keyed on the extractor's `kind`, the same self-description the audit
+    // columns use, so a future fixture extractor gets it and a future real one
+    // does not, without anyone editing this line.
+    if (this.extractor.kind === DEMO_EXTRACTOR_KIND) {
+      await this.sleep(extractionLatencyMs(started.byteHash));
+    }
+
+    const outcome = await this.runExtractor(started, input);
+    // A retryable throw on a job with attempts left: leave the document in
+    // PROCESSING and let BullMQ come back. `begin()` treats PROCESSING as
+    // re-entrant precisely so the next attempt picks up here.
+    if (outcome === null) return null;
 
     // Phase 3 — write results and finalise the state, atomically. The completion
     // (the header + final state) is what the caller hands the auto-close hook; it
     // is null for a FAILED read, so a chase never closes on a document we could
     // not read.
     return scopedDb(this.prisma, ctx, (db) => this.finish(db, input, outcome));
+  }
+
+  /**
+   * Run the extractor, and make sure a throw can never strand the document (S5).
+   *
+   * ## The bug this closes
+   *
+   * `run` transitions RECEIVED → PROCESSING and is the ONLY thing that moves a
+   * document out again. The extractor call used to be unguarded, so any throw —
+   * a Bedrock throttle, an expired credential, a 400 from an over-long PDF, a
+   * socket reset — travelled out through the processor to BullMQ. The retries
+   * ran, the job dead-lettered, and the document stayed PROCESSING **for ever**:
+   * no `failure_code`, no reason on any screen, and `document.reprocess` refuses
+   * a processing document, so the Rejected/Failed view never even offered Retry.
+   * A stuck document is worse than a failed one, because a failed one is visible.
+   *
+   * ## The two answers, and why it is not one answer
+   *
+   * - **Retries left → rethrow, stay PROCESSING.** The retry ladder is the right
+   *   tool for a throttle, and `begin()` is re-entrant on PROCESSING so the next
+   *   attempt resumes cleanly. Burning the document to FAILED on the first blip
+   *   would be worse than it sounds: `document.reprocess` re-arms a document
+   *   WITHOUT re-reading the bytes, so a transient failure converted to FAILED
+   *   never gets a second real read — a human presses Retry and gets an empty
+   *   document in To Review.
+   * - **Last attempt → FAILED, then rethrow.** Both halves are load-bearing. The
+   *   FAILED transition gives the client a visible reason and a Retry button;
+   *   the rethrow still lets the job reach the DLQ, which is what tells an
+   *   operator that Bedrock is refusing. Swallowing the throw here would trade a
+   *   silent document for a silent incident.
+   *
+   * Returning `null` means "handled, stop" — used only for the FAILED path,
+   * where `finish` must not also run.
+   */
+  private async runExtractor(request: ExtractionRequest, input: ExtractionInput): Promise<ExtractionOutcome | null> {
+    try {
+      return await this.extractor.extract(request);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      if (!input.finalAttempt) {
+        this.logger.warn(
+          `extract: ${input.documentId} threw, retries remain — staying PROCESSING (${reason}, trace=${input.traceId})`,
+        );
+        throw error;
+      }
+
+      // The last attempt. Land it FAILED so it is visible and retryable, then
+      // rethrow so the job still dead-letters for whoever is on call.
+      const systemUserId = await resolveSystemActor(this.prisma, input.practiceId);
+      const ctx = systemContext(input.practiceId, systemUserId);
+      await scopedDb(this.prisma, ctx, (db) =>
+        this.failStranded(db, input, {
+          code: 'NT-EXT-010',
+          // Deliberately not `reason`: an SDK error string is an internal detail
+          // and may carry request ids or ARNs. The client gets what they can act
+          // on; the operator gets the real thing from the log line and the DLQ.
+          message:
+            'This document could not be read — the reader did not respond after several attempts. Retrying it is worth doing; if it fails again the file may need to be sent another way.',
+        }),
+      );
+      this.logger.warn(
+        `extract: ${input.documentId} FAILED NT-EXT-010 after the final attempt (${reason}, trace=${input.traceId})`,
+      );
+      throw error;
+    }
+  }
+
+  /** PROCESSING → FAILED for a document whose read threw on its last attempt. */
+  private async failStranded(
+    db: ScopedClient,
+    input: ExtractionInput,
+    failure: { code: string; message: string },
+  ): Promise<void> {
+    const doc = await db.document.findUnique({ where: { id: input.documentId }, select: { id: true, state: true } });
+    // Only from PROCESSING. A concurrent worker may have finalised it, and this
+    // path must never overwrite a real outcome with a failure.
+    if (doc === null || doc.state !== 'PROCESSING') return;
+    await transitionDocument(
+      db,
+      { id: doc.id, state: 'PROCESSING' },
+      { to: 'FAILED', failure, traceId: input.traceId, detail: { stage: 'extract', exhausted: true } },
+    );
   }
 
   private async begin(db: ScopedClient, input: ExtractionInput): Promise<ExtractionRequest | null> {
@@ -154,6 +271,9 @@ export class PrismaExtractionStep implements ExtractionStep {
       byteHash: doc.byteHash,
       s3Key: doc.s3Key,
       mimeType: doc.mimeType,
+      // Named on the request because the extractor meters its spend against the
+      // firm's daily ceiling (§9.7) and has no session to read it from.
+      practiceId: input.practiceId,
     };
     if (doc.state === 'PROCESSING') return identity; // re-entrant: a prior attempt got this far
     if (doc.state !== 'RECEIVED') {
