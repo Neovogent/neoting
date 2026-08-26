@@ -278,7 +278,8 @@ locals {
     { name = "EMAIL_FROM_ADDRESS", value = "no-reply@${local.domain}" },
     { name = "EMAIL_REPLY_TO_ADDRESS", value = "support@neovogent.com" },
     { name = "EMAIL_CONFIGURATION_SET", value = aws_sesv2_configuration_set.primary.configuration_set_name },
-    { name = "EMAIL_RATE_LIMIT", value = "redis" },  ]
+    { name = "EMAIL_RATE_LIMIT", value = "redis" },
+  ]
 
   # ------------------------------------------------------------------------
   # Secrets — injected by the ECS agent at task start from Secrets Manager,
