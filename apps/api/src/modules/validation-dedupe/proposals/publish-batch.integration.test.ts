@@ -123,8 +123,13 @@ beforeAll(async () => {
   });
   await owner.membership.createMany({
     data: [
-      { id: 's10_mem_a', userId: 's10_user_a', practiceId: P_A, role: 'PRACTICE_ADMIN' },
-      { id: 's10_mem_b', userId: 's10_user_b', practiceId: P_B, role: 'PRACTICE_ADMIN' },
+      // ⚠ `isOwner` matters since stage A12: `publish.batch` is a RELEASE, and
+      // the gate on the engine's approve path requires the firm's super admin —
+      // the release role AND the ownership flag. Without it every approval in
+      // this suite refuses `NT-PRM-001` and the executor never runs. That is the
+      // gate working, not the fixture being fussy.
+      { id: 's10_mem_a', userId: 's10_user_a', practiceId: P_A, role: 'PRACTICE_ADMIN', isOwner: true },
+      { id: 's10_mem_b', userId: 's10_user_b', practiceId: P_B, role: 'PRACTICE_ADMIN', isOwner: true },
     ],
   });
   // ⚠ This row is what A11 (client intake) creates for every new client. Until

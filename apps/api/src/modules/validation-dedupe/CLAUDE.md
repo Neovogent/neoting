@@ -50,7 +50,14 @@ is a boundary decision, and it grew three times:
 
 ```bash
 pnpm --filter @neoting/api test -- validation-dedupe
+pnpm --filter @neoting/api test -- proposals   # the executors, unit + integration
 ```
+
+Integration suites here own disjoint id namespaces: `p81_` (executors), `p8_`
+(chase.send), `s10_` (publish.batch), `p13_` (rule.create) and — since A12 —
+**`a12x-`** (`reprocess-reject.integration.test.ts`, torn down by EXPLICIT id
+list rather than `startsWith`, whose unescaped `LIKE` treats `_` as a wildcard
+into a neighbour's fixtures).
 
 ## Current state
 
@@ -113,11 +120,12 @@ structural) and decides nothing about whether it may happen.
 
 - **`buildExecutorRegistry(deps)`** — total over the contract's `ProposalKind`
   by mapped type: a missing kind is a compile error; the engine's `NT-PRP-001`
-  stays the second line of defence. **Seven real executors** (route, archive,
+  stays the second line of defence. **Nine real executors** (route, archive,
   update-coding since METH S3 #122, chase.send since METH S8, publish.batch
-  since S10, bank.confirm-match since S11, rule.create since S13 #142), four
-  honest holes throwing `ProposalNotImplementedError` by name — the remaining
-  #81 four (`move-business`, `reprocess`, `reject`, `split`), each typed off
+  since S10, bank.confirm-match since S11, rule.create since S13 #142, reprocess
+  and reject since launch stage A12), three
+  honest holes throwing `ProposalNotImplementedError` by name — `move-business`,
+  `split` and `revoke-link` (A8's lane), each typed off
   the generated payload models. The `deps`
   argument (`ExecutorRegistryDeps`) is **required since S10**: `publishing` has
   no safe default, and a registry that quietly degraded a built executor back
@@ -233,14 +241,14 @@ structural) and decides nothing about whether it may happen.
     nothing travelled. The link back to the source is A8's D43 capability code,
     not a vendor id.
   - **⚠ D44 — the release gate is NOT here and must not be.** Only the
-    practice super admin may release. That is **stage A12**, and it attaches on
-    the ENGINE's approve path (`modules/approvals/action-proposals.service.ts`,
-    `assertCan(actor, 'publish.release', …)` before the executor runs), because
-    the engine owns authorisation and *an executor decides nothing about
-    whether an effect may happen*. **A12 has not merged: any authenticated
-    member of the practice can approve a release today.** What this executor
-    leaves A12 is the evidence — every row records
-    `publishedByUserId = ctx.actorId`.
+    practice super admin may release. That is **stage A12, and it has landed**
+    on the ENGINE's approve path (`modules/approvals/assert-can.ts`, called from
+    `action-proposals.service.ts` before this executor is entered), because the
+    engine owns authorisation and *an executor decides nothing about whether an
+    effect may happen*. A second check here would be two mechanisms free to
+    disagree, and the more permissive one wins exactly when it matters — **do
+    not add one.** What this executor contributes is the evidence: every row
+    records `publishedByUserId = ctx.actorId`.
 
   Everything below survived A5 unchanged:
 
@@ -279,6 +287,71 @@ structural) and decides nothing about whether it may happen.
     QUEUED guard stays for the dormant ledger lane and for rows an older
     release of this code left behind.
 
+- **`document.reject`** (stage A12) — `reject-document.ts`. A human marking a
+  document as one these books should not carry: a personal receipt in the
+  business pile, a supplier statement mistaken for an invoice. Before A12 the
+  only way out of the inbox was `document.archive`, which says *filed*, not
+  *wrong*, and which the Rejected view cannot show.
+
+  - **The reason is stored verbatim** as `failure_message`, the way `chase.send`
+    stores the composed SMS verbatim — the reviewer read those words and nothing
+    here rewrites them. The review card renders it as its own entry.
+  - **`failure_code` is `NT-DOC-001`**, a NEW family for document-lifecycle
+    decisions taken by a human. Every other writer of that column names a
+    subsystem that failed (`NT-ING-004` sanitisation, `NT-EXT-001` extraction);
+    borrowing one would tell the Rejected surface the pipeline broke on a
+    document it read perfectly. `Document.failureCode` is a free `string` in the
+    contract, so this is a documentation decision, not a LAW change — its
+    runbook page is in `docs/runbooks/error-codes.md` (Governance §13.4 requires
+    one before a new code passes review).
+  - **Refuses ARCHIVED even though `LEGAL_TRANSITIONS` allows the edge.** That
+    edge exists for the unarchive RESTORE, and taking it from here would clear
+    `archived_at` — silently unarchiving a document as a side effect of
+    rejecting it. Two acts, two proposals. Everything else defers to
+    `isLegalTransition` rather than restating the table, so PUBLISHED (already
+    released) and FAILED (the pipeline's own verdict, undone by reprocess not by
+    rejection) refuse because the machine says so.
+  - Batched, all-or-nothing, idempotent per document — an already-REJECTED one
+    is skipped and the FIRST rejection's words stand.
+  - ⚠ **`RejectPayload` declares no `maxItems`** while every sibling batch
+    declares 500. `MAX_REJECT_BATCH` applies the house number here, because an
+    unbounded all-or-nothing effect is the unbounded load Governance §5.1
+    forbids and would hit `scopedDb`'s 10 s timeout as a 500 rather than a
+    refusal. Recorded as a contract gap in the TODO.
+
+- **`document.reprocess`** (stage A12) — `reprocess-document.ts`. The Retry
+  behind the Rejected/Failed view. Five files across the pipeline already told
+  users their failed document was *"retryable through a reprocess proposal"*,
+  and `documents.service.ts` refuses to grow a `POST /documents/{id}/retry`
+  because this is where retry belongs — and approving one threw
+  `ProposalNotImplementedError`.
+
+  - **Accepts exactly what the read surface marks `retryable`** (REJECTED and
+    FAILED), so the affordance and the effect are the same set by construction.
+  - **Two edges through the machine:** → PROCESSING (the only exit from either
+    failure state, and the only edge that CLEARS
+    `failure_code`/`failure_message` — `document-state.ts` does that, this
+    executor relies on it) → `resolveProcessedState`'s answer, READY or
+    TO_REVIEW. So a human rejection over well-coded data is a clean undo back to
+    READY, and a failed extraction lands in TO_REVIEW **in front of a human**
+    instead of parked where nobody can act on it.
+  - Same edge as `publish-batch.ts`'s `admitForRelease`, which the TODO below
+    asked for. They are not two implementations of the legality or the
+    reason-clearing — both go through `transitionDocument`. They stay two call
+    sites because `admitForRelease` additionally demands a prior FAILED
+    `publishes` row and lands on READY unconditionally, which is only correct
+    because the batch already proved the publish minimum.
+  - ⚠ **IT DOES NOT RE-READ THE DOCUMENT, AND THE REVIEW CARD SAYS SO.** Re-running
+    extraction means enqueuing an ingest job, and the queue producer is not on
+    `ingestion-routing`'s public seam; an executor may not make an external call
+    anyway (it runs inside the engine's transaction). The correct shape is a
+    post-commit follow-up that enqueues — one BullMQ push, not a 500-document
+    synchronous Bedrock loop on the approve request. `PrismaExtractionStep.begin()`
+    already treats a PROCESSING document as re-entrant, so the day that enqueue
+    exists this executor needs no change. `fromStage` is recorded on the event and
+    the outcome rather than honoured, for the same reason — never silently
+    dropped, never silently honoured.
+
 - **`rule.create`** (METH S13, #142) — the chat's rule beat: one `rules` row,
   active from birth (approval IS the activation — no `rule.activate` kind
   exists in this pass), `createdVia: 'chat'`, `actionProposalId` stamped so no
@@ -315,12 +388,26 @@ structural) and decides nothing about whether it may happen.
 
 ## TODO
 
-- [ ] The four unimplemented executors — the remaining #81 four
-      (`move-business`, `reprocess`, `reject`, `split`; each needs its own
-      issue). The registry already types and names them all. `update-coding`
-      landed with the engine (METH S3, #122); `chase.send` in METH S8;
-      `publish.batch` in METH S10; `bank.confirm-match` in METH S11;
-      `rule.create` in METH S13 (#142) — every METH Stage 2 kind now executes.
+- [ ] The three unimplemented executors — `move-business`, `split` and
+      `revoke-link` (A8's lane); each needs its own issue. The registry already
+      types and names them all. `update-coding` landed with the engine (METH S3,
+      #122); `chase.send` in METH S8; `publish.batch` in METH S10;
+      `bank.confirm-match` in METH S11; `rule.create` in METH S13 (#142);
+      `reprocess` and `reject` in launch stage A12.
+- [ ] ⚠ **Reprocess does not re-read the document.** It re-arms the state and
+      re-decides readiness; running the extractor again needs a post-commit
+      follow-up that ENQUEUES an ingest job, and the queue producer
+      (`INGEST_QUEUE`, `ingestion-routing/queue/`) is not on that module's public
+      seam. Growing that seam is a boundary decision in another lane, so A12
+      stopped at the fence and put the limitation on the review card instead.
+      Shape when it lands: a `reprocess` `FollowUp` member + a structural
+      dispatch seam (the `DedupeDetection` precedent), composed in
+      `approvals.module.ts`. One BullMQ push per document — never a synchronous
+      extractor loop on the approve request.
+- [ ] **`RejectPayload` has no `maxItems`** while `ArchivePayload` and
+      `ReprocessPayload` both declare 500. `reject-document.ts` applies the house
+      cap so an unbounded all-or-nothing transaction cannot be proposed; the
+      contract should say it (G7, a one-line change).
 - [x] The engine is wired (METH S3, #122 — `modules/approvals`): registry via
       `useFactory`, token kept out of public providers; dedupe follow-ups run
       post-commit. Still open: a periodic sweep over
@@ -331,13 +418,18 @@ structural) and decides nothing about whether it may happen.
       this executor cannot leave a QUEUED row behind (the row is created and
       resolved in the same transaction as the document's transition). It comes
       back with the v1 ledger lane, alongside `findStaleDedupeFollowUps`.
-- [ ] `document.reprocess` (still a hole) will want to look at
-      `publish-batch.ts`'s `admitForRelease`: the REJECTED → PROCESSING → READY
-      re-arm written there is the same edge, and when the reprocess executor
-      lands the two should not be two implementations of it.
-- [ ] **A12 (D44)** — `assertCan(actor, 'publish.release', …)` on the engine's
-      approve path. Not built. Until it is, any authenticated member of the
-      practice can approve a `publish.batch`, which is the release.
+- [x] `document.reprocess` and `admitForRelease` share the edge rather than
+      re-implementing it — both drive REJECTED/FAILED → PROCESSING → READY
+      through `transitionDocument`, which owns the legality and the
+      reason-clearing. They stay two call sites for the reason written in the
+      reprocess section above.
+- [x] **A12 (D44)** — `assertCan(actor, 'publish.release', …)` is on the
+      engine's approve path (`approvals/assert-can.ts`), before the executor.
+      `publish.batch` and `chase.send` now require the firm's super admin
+      (`canRelease(role) && isOwner`). ⚠ **Two integration suites here seed
+      `isOwner: true`** (`publish-batch`, `chase-send`) because their approvals
+      are releases; without it they refuse `NT-PRM-001` and the executor never
+      runs, which is the gate working rather than the fixture being fussy.
 - [ ] **A11** — client intake must create the client's `VT` (or `MANUAL`)
       `Integration` row so the release records a destination. The executor no
       longer needs it, so this is a nice-to-have, not a blocker.

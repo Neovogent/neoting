@@ -167,6 +167,91 @@ can know that without a second request.
 
 ---
 
+## `NT-PRM-001` — actor lacks permission for this action kind
+
+**Status:** `403` · **Surface:** `POST /v1/action-proposals/{id}/approve` · **Added by:** stage A12
+
+**Symptom.** A member of the practice approves a `publish.batch` or a
+`chase.send` and is told only the practice's super admin can.
+
+**What it means.** D44, enforced where Governance §11.2 says it must be:
+`assertCan(actor, 'publish.release', resource)` on the engine's approve path,
+before the executor runs. Accountants and their team **compose and edit**; only
+the firm's **super admin** releases — authorises a chase to send, or moves an
+item Ready → Published. The check is `canRelease(role) && memberships.is_owner`
+on the actor's **practice-wide** membership.
+
+**This is not a tenancy refusal.** A proposal the caller cannot see is `404`
+with `NT-VAL-001` and always was; RLS decides that first, and the caller never
+reaches this code. A `403` means the proposal is theirs and the authority is
+not — which discloses nothing, because every fact it implies is already on
+`GET /v1/action-proposals/{id}` for that same caller.
+
+**Diagnose.**
+
+```sql
+-- Who may release in this practice? Expect exactly one row.
+SELECT u.email, m.role, m.is_owner
+  FROM memberships m JOIN users u ON u.id = m.user_id
+ WHERE m.practice_id = :practiceId AND m.business_id IS NULL
+   AND m.role = 'PRACTICE_ADMIN' AND m.is_owner = true;
+```
+
+**Fix.** Ask the person that query returns to approve it. Nothing is lost by the
+refusal: the proposal is not consumed, so the same reviewed proposal is still
+approvable by them.
+
+**⚠ If that query returns NO rows**, the practice has no one who can release.
+Two known causes:
+
+1. **A seeded demo database.** `prisma/seed.ts` gives `mem_priya` `is_owner`
+   and the *login-able* demo admin `mem_shakib_demo` none, so on a seeded
+   laptop the account you can sign in as composes but cannot release. Adding
+   `isOwner: true` to that seed row is a `prisma/` change and therefore a
+   contract-change issue (G7) — tracked in `apps/api/src/modules/approvals/CLAUDE.md`.
+2. **An owner who has left.** There is no ownership-**transfer** operation in
+   the contract yet. Until there is, the repair is a DBA `UPDATE` on
+   `memberships.is_owner`, done deliberately and recorded — not a code change.
+
+**Prevention.** A UI that hides the button is not an implementation of this
+(Governance §11.2, in as many words), and hiding it alone would also be dishonest
+— the action exists, the user simply may not take it. `BusinessMember` carries
+`role`, `scope` and `isOwner` precisely so a screen can show who may release, and
+this refusal carries a detail written to be shown to the person who read it.
+
+---
+
+## `NT-DOC-001` — rejected by a reviewer
+
+**Status:** not a wire error · **Surface:** `documents.failure_code` · **Added by:** stage A12
+
+**Symptom.** A document sits on the Rejected/Failed surface with this code and a
+plain-English reason a colleague wrote.
+
+**What it means.** **Nothing failed.** A human approved a `document.reject`
+proposal, and the reason on the row is their words, verbatim — the contract
+requires it (*"a rejection without a reason is not a rejection"*). This is the
+only entry in this file that is not an incident, and it exists so that triage can
+tell a decision apart from a defect: `NT-ING-004` means sanitisation refused the
+bytes and `NT-EXT-001` means we could not read them, while this means we read it
+fine and a person said it does not belong in these books.
+
+**Why a new `DOC` family.** Every other document failure code names a subsystem
+that failed. Reusing one here would tell an operator — and a runbook reader —
+that the pipeline broke on a document it handled perfectly, and would make an
+`NT-ING-*` alert ambiguous between "our sanitiser is refusing things" and "the
+client's bookkeeper is busy". `Document.failureCode` is a free `string` in
+`openapi.yaml`, so this code is a documentation decision, not a LAW change; it is
+**not** in the `ErrorCode` enum and never reaches the wire as one.
+
+**Fix.** None is needed. If the rejection was a mistake, `document.reprocess`
+clears the code and the reason and returns the document to Ready or To Review —
+reject and reprocess undo each other, which is why neither needs the super admin.
+
+**Prevention.** Not applicable, deliberately. Do not alert on this code.
+
+---
+
 ## A note on codes this file does not add
 
 **Stripe webhook signature failures are `NT-INT-001`, not a new code.** The

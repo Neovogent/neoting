@@ -94,3 +94,29 @@ test('unshaped kinds fall back to naming every payload member, and warnings defa
   expect(summary.sections[0]?.entries.map((e) => e.label)).toEqual(['transactionId', 'documentId', 'matchKind']);
   expect(summary.warnings).toEqual([]);
 });
+
+test('reject shows the reason verbatim — a reviewer agrees to the words, not to a summary of them', () => {
+  const summary = renderSummary('document.reject', {
+    documentIds: ['doc_1', 'doc_2'],
+    reason: 'Personal receipt — not a business cost',
+  });
+  expect(summary.title).toBe('Reject 2 documents');
+  expect(summary.sections[0]?.entries).toEqual([{ label: 'Reason', value: 'Personal receipt — not a business cost' }]);
+  expect(summary.sections[1]?.entries).toEqual([
+    { label: 'Document 1', value: 'doc_1' },
+    { label: 'Document 2', value: 'doc_2' },
+  ]);
+});
+
+test('reprocess states what it does NOT do — the card is where the limit belongs, not a source file', () => {
+  const summary = renderSummary('document.reprocess', { documentIds: ['doc_1'] });
+  expect(summary.title).toBe('Retry 1 document');
+  const entries = summary.sections[0]?.entries ?? [];
+  expect(entries).toContainEqual({ label: 'Reads the document again', value: 'No — extraction is not re-run' });
+  expect(entries).toContainEqual({ label: 'Clears the failure reason', value: 'Yes' });
+  // `fromStage` is shown only when it was asked for — recorded, never invented.
+  expect(entries.map((e) => e.label)).not.toContain('Requested from stage');
+  expect(
+    renderSummary('document.reprocess', { documentIds: ['doc_1'], fromStage: 'extract' }).sections[0]?.entries,
+  ).toContainEqual({ label: 'Requested from stage', value: 'extract' });
+});
