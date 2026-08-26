@@ -187,33 +187,76 @@ structural) and decides nothing about whether it may happen.
   recorded seam on the event (`createRuleDeferred`), for `rule.create`
   (METH S13). Dates land as UTC midnight; the extraction value keeps the
   contract's `YYYY-MM-DD`.
-- **`publish.batch`** (METH S10) — `publish-batch.ts` + `publish-follow-up.ts`,
-  split across the engine's commit, and the split is the whole design.
+- **`publish.batch`** (METH S10, rebuilt for **Initial Delivery** by **D42**,
+  launch stage A5) — `publish-batch.ts`. It **releases documents for export**.
 
-  ⚠ **An external HTTP call must never hold a tenant transaction open.** A
-  batch is up to 500 items (the contract) and a real Xero round trip lasts as
-  long as someone else's network decides; inside the effect that is minutes of
-  held row locks. So the EFFECT writes one `publishes` row per item in
-  **QUEUED** — durable intent, committed atomically with the approval, which is
-  what that state is for — and returns a `publish` `FollowUp`; the RUNNER calls
-  the ledger post-commit, per item, resolving each row in its own short scoped
-  transaction. `modules/publishing/CLAUDE.md` carries the full reasoning and
-  the option that was rejected. If a later edit moves `publishBill` into the
-  executor it will look tidier and will be wrong.
+  ⚠ ***Published* is an INTERNAL state meaning approved and released for
+  export.** It asserts nothing about a ledger. Nothing was posted, synced or
+  sent to VT — VT is where the *accountant* imports the file this release makes
+  exportable. Every refusal, every `DocumentEvent` detail and the stored
+  execution `detail` say **released-for-export**; a future edit that puts
+  "posted" or "sent" back into this file is a D42 defect, not a copy
+  preference.
+
+  **What A5 changed, and why it had to.** The executor used to demand an active
+  ledger connection (`resolveIntegration`) and refuse without one. There is no
+  OAuth flow, no endpoint, no `integration.create` outside `prisma/seed.ts`,
+  and D47 forbids intake from asking for a connection — so **nothing could ever
+  reach PUBLISHED**, documents stopped at READY forever, and the export (ID's
+  only egress) had nothing to export. Now:
+
+  - **The export destination is OPTIONAL.** `VT`/`MANUAL` (S0's enum values,
+    vocabulary in `publishing/export-destination.ts`) mean "this client exports
+    rather than connects". A client with one records it on the `publishes` row;
+    **a client with none still releases**, and `integration_id` is null — the
+    schema's own nullability, used for what it is for. A dormant ledger-vendor
+    row (XERO/…) is never adopted, and naming one refuses: stamping a vendor on
+    a release would put its name on an act that never touched it.
+  - **No follow-up, and the reason the split existed went with the vendor.**
+    The post-commit `publish` `FollowUp` was there for one sentence — *an
+    external HTTP call must never hold a tenant transaction open*. Releasing
+    for export calls nothing, so the whole effect commits atomically with the
+    approval and the READY-in-inbox/QUEUED-in-`publishes` window is gone.
+    `publish-follow-up.ts`, the `FollowUp` variant, `PublishGateway.ledger` and
+    the `LedgerAdapter` are **kept and untouched** for v1 (D6) — dormant, not
+    deleted, which is what makes a real Xero adapter a later addition rather
+    than a rewrite. Nothing returns that follow-up today.
+  - ⚠ **AUTO-ARCHIVE IS GONE, AND THAT IS LOAD-BEARING.** The ledger follow-up
+    archived on the vendor's confirmation, which was right when PUBLISHED meant
+    "the books have it". `POST /v1/exports` says **"Only `PUBLISHED` documents
+    are exported"** — so an archive on the way out would move every document
+    past the only state the export can see, and `NT-EXP-001` would be the
+    permanent answer. Archiving stays a `document.archive` proposal.
+  - **`QUEUED → SUCCEEDED` stays**, both writes in the one transaction:
+    `publishes` remains a truthful audit of a lifecycle, and it is the shape a
+    v1 ledger follow-up would resolve in its own transaction. `external_ref`
+    stays NULL and `attachment_sent` FALSE — nothing external was reached and
+    nothing travelled. The link back to the source is A8's D43 capability code,
+    not a vendor id.
+  - **⚠ D44 — the release gate is NOT here and must not be.** Only the
+    practice super admin may release. That is **stage A12**, and it attaches on
+    the ENGINE's approve path (`modules/approvals/action-proposals.service.ts`,
+    `assertCan(actor, 'publish.release', …)` before the executor runs), because
+    the engine owns authorisation and *an executor decides nothing about
+    whether an effect may happen*. **A12 has not merged: any authenticated
+    member of the practice can approve a release today.** What this executor
+    leaves A12 is the evidence — every row records
+    `publishedByUserId = ctx.actorId`.
+
+  Everything below survived A5 unchanged:
 
   - **The only executor built as a FACTORY.** `createPublishBatchExecutor(gateway)`.
     Publishing imports THIS module (the publish minimum IS `evaluateReadiness`),
     so importing publishing back would close a cycle between two public seams.
-    The shapes come in as `import type` (erased, no cycle); the adapter and
-    `previewPublishBatch` are handed over as one `PublishGateway`, composed by
-    `approvals.module.ts` — the `DedupeDetection` precedent, applied.
-  - **All-or-nothing pre-flight, per-item post-commit.** One item short of
-    Total + Supplier + Category refuses the WHOLE batch with `NT-PUB-001`
-    naming every missing field (the contract: "refuses … rather than publishing
-    half-coded books"; archive is all-or-nothing for the same reason). A
-    VENDOR failure is per item — 39 of 40 publish and item 12 lands on the
-    Rejected/Failed surface with a reason — because by then the batch is
-    approved and committed, and un-approving it is not a thing that exists.
+    The shapes come in as `import type` (erased, no cycle); the destination
+    vocabulary and `previewPublishBatch` are handed over or imported as values
+    from the seam, composed by `approvals.module.ts` — the `DedupeDetection`
+    precedent, applied.
+  - **All-or-nothing.** One item short of Total + Supplier + Category refuses
+    the WHOLE batch with `NT-PUB-001` naming every missing field (the contract:
+    "refuses … rather than publishing half-coded books"; archive is
+    all-or-nothing for the same reason). With the vendor gone so is the old
+    per-item post-commit asymmetry — there is no post-commit step left.
   - **The preview is the SERVER's number, twice.** At creation the engine calls
     `computePublishBatchPayload` (exported here) and stores ITS preview in the
     payload — a caller-sent figure is discarded, and an item short of the
@@ -223,32 +266,19 @@ structural) and decides nothing about whether it may happen.
     preview is what a human approved; if the live totals no longer agree, the
     batch refuses. `NT-PRP-004` cannot catch this — review is idempotent and
     the render is payload-pure — so this is the only place the drift is visible.
-  - **Failure lands as REJECTED, not FAILED**, because `LEGAL_TRANSITIONS`
-    gives READY exactly one failure exit and that is REJECTED; both render on
-    the same Rejected/Failed surface, and FAILED is our pipeline breaking while
-    a ledger declining a bill is something refusing it. Retry is a NEW proposal
-    over the failed item (never a replay), and it takes REJECTED → PROCESSING →
-    READY in the effect transaction: PROCESSING is the machine's only exit from
-    REJECTED and the only edge that clears the reason, and a document that
-    publishes on the second attempt must not still claim the ledger refused it.
-  - **Auto-archive REUSES `archiveDocumentExecutor.execute`**, called with the
-    same `ScopedClient` — not a second implementation of archiving. That
-    executor already owns the parts that are easy to get subtly wrong (`state`
-    AND `archivedAt` together, the pre-archive state recorded on the event so an
-    unarchive can restore it, the idempotent skip), and it takes a
-    `ScopedClient` precisely so another effect can compose it.
+  - **The retry edge.** A document sitting REJECTED with a failed attempt
+    (today only from the dormant ledger lane) re-enters through REJECTED →
+    PROCESSING → READY in the effect transaction: PROCESSING is the machine's
+    only exit from REJECTED and the only edge that clears the reason, and a
+    released document must not still carry why its last attempt failed. Retry
+    is a NEW proposal over the failed item, never a replay.
   - **Idempotent.** `publishes.idempotency_key` is `<proposalId>:<documentId>`
     — globally unique per the schema, one row per item per proposal. A replay
-    sees its own rows and returns `alreadyApplied` with no second row, no
-    second follow-up and therefore **no second vendor call**; the unique index
-    is the database-level backstop that turns a concurrent double-execute into
-    a rolled-back transaction rather than a double post.
-  - The integration is resolved, never guessed: `integrationId: null` means the
-    business's **single** active connection, and a client with none — or with
-    two — refuses rather than picking. The demo's scripted failure is keyed on
-    the **attempt** (the count of that document's `publishes` rows up to this
-    one), which is the only way "deterministic failure" and "retry succeeds
-    second time" both hold, and it needs nothing from `prisma/seed.ts`.
+    sees its own rows and returns `alreadyApplied` with no second row and no
+    second release; the unique index is the database-level backstop that turns
+    a concurrent double-execute into a rolled-back transaction. The in-flight
+    QUEUED guard stays for the dormant ledger lane and for rows an older
+    release of this code left behind.
 
 - **`rule.create`** (METH S13, #142) — the chat's rule beat: one `rules` row,
   active from birth (approval IS the activation — no `rule.activate` kind
@@ -323,14 +353,21 @@ structural) and decides nothing about whether it may happen.
       post-commit. Still open: a periodic sweep over
       `findStaleDedupeFollowUps` (worker concern, tracked on the approvals
       CLAUDE.md too).
-- [ ] The same sweep for **QUEUED `publishes` rows** whose follow-up never
-      completed. `runPublishFollowUp` re-drives them from the proposal id and
-      resolved rows are skipped, so it is safe to call repeatedly — but nothing
-      periodic calls it yet. One worker, both sweeps.
+- [x] The sweep for **QUEUED `publishes` rows** whose follow-up never completed
+      is **no longer needed for ID** — A5 removed the publish follow-up, so
+      this executor cannot leave a QUEUED row behind (the row is created and
+      resolved in the same transaction as the document's transition). It comes
+      back with the v1 ledger lane, alongside `findStaleDedupeFollowUps`.
 - [ ] `document.reprocess` (still a hole) will want to look at
-      `publish-batch.ts`'s `admitForPublish`: the REJECTED → PROCESSING → READY
+      `publish-batch.ts`'s `admitForRelease`: the REJECTED → PROCESSING → READY
       re-arm written there is the same edge, and when the reprocess executor
       lands the two should not be two implementations of it.
+- [ ] **A12 (D44)** — `assertCan(actor, 'publish.release', …)` on the engine's
+      approve path. Not built. Until it is, any authenticated member of the
+      practice can approve a `publish.batch`, which is the release.
+- [ ] **A11** — client intake must create the client's `VT` (or `MANUAL`)
+      `Integration` row so the release records a destination. The executor no
+      longer needs it, so this is a nice-to-have, not a blocker.
 - [x] Wire the pipeline (extraction completion) onto `resolveProcessedState` —
       done in METH Stage 4. `modules/extraction`'s `PrismaExtractionStep` drives
       RECEIVED → PROCESSING → READY|TO_REVIEW|FAILED through `transitionDocument`

@@ -22,6 +22,7 @@ import { createRedisConnection } from '../modules/ingestion-routing/queue/redis-
 import { selectMediaFetcher } from '../modules/ingestion-routing/queue/select-media-fetcher.js';
 import type { MediaIntakeDeps } from '../modules/ingestion-routing/queue/whatsapp-media-intake.js';
 import { selectDocumentStore } from '../modules/ingestion-routing/storage/select-document-store.js';
+import { PrismaUploadSanitisationStep } from '../modules/ingestion-routing/web-upload/prisma-upload-sanitisation.js';
 
 /**
  * The ingest worker — a SEPARATE process from the API (staging scales them
@@ -65,6 +66,24 @@ function bootstrap(): void {
     documentGuard: selectDocumentGuard(env.DOCUMENT_GUARD),
   };
 
+  // Web + portal uploads (Stage A3). ⚠ THE SAME normaliser and guard the
+  // WhatsApp path above gets — the two are built from the same selectors on the
+  // same env, because "wire the same sanitisation" is the whole of this stage
+  // and two differently-configured pipelines would be the bug in a new costume.
+  // Until this existed, `imageNormaliser` and `documentGuard` were handed to the
+  // WhatsApp media path ONLY, which is why an uploaded iPhone photo kept its
+  // HEIC encoding and its GPS coordinates all the way into extraction.
+  const uploadSanitiser = new PrismaUploadSanitisationStep(
+    getPrismaClient(),
+    {
+      store: documentStore,
+      perceptualHasher: createSharpPerceptualHasher(),
+      imageNormaliser: selectImageNormaliser(env.IMAGE_NORMALISER),
+      documentGuard: selectDocumentGuard(env.DOCUMENT_GUARD),
+    },
+    { logger: { log: (message) => logger.log(message), warn: (message) => logger.warn(message) } },
+  );
+
   const worker = new Worker(
     INGEST_QUEUE_NAME,
     async (job: Job) => {
@@ -75,6 +94,7 @@ function bootstrap(): void {
           sink,
           detector,
           media,
+          uploadSanitiser,
           extractor,
           autoClose,
         });

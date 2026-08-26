@@ -101,6 +101,63 @@ constructor dependencies.
 exactly what the worker's already-persisted branch needs, so extraction and
 Stage 8's auto-close run for a portal document with no second code path.
 
+## Sanitisation — Stage A3, and where it lives
+
+`upload-sanitisation.ts` (pure) + `prisma-upload-sanitisation.ts` (the step the
+worker wires). **This lane skipped sanitisation entirely until 26 Aug 2026.** The
+service persists the document from the signed claims, so the row's `mime_type`
+was the browser's word for it, the EXIF (and its GPS) was never stripped, and an
+iPhone HEIC reached extraction still a HEIC — `NT-EXT-003` on the most common
+phone format, on a named §24.7 step.
+
+The step is the WhatsApp lane's shape applied to bytes we already hold, and it is
+deliberately **the same `sanitise()`** — magic-byte sniff, allowlist, channel
+cap, virus hook, EXIF/orientation + HEIC→JPEG, PDF safety, ZIP caps. Three
+phases: read the row under the practice SYSTEM actor, do the work outside any
+transaction (sharp decodes, qpdf is a subprocess), then one short transaction to
+make the row describe the bytes that now exist.
+
+| Thing | Where it lands |
+|---|---|
+| the sanitised bytes | `store.put` → `w/<biz>/documents/<sha256>` (off the intent key at last) |
+| the row | `s3_key`, `byte_hash`, `byte_size`, `mime_type`, `perceptual_hash` |
+| the record | a `document_events` row, stage `sanitise` |
+| a refusal | `state = REJECTED` + `failure_code`/`failure_message`, through `transitionDocument` |
+
+**Five things that are easy to get wrong here, and are not:**
+
+1. ⚠ **The pipeline's `detectedType` describes the INPUT.** `pipeline.ts` returns
+   the bytes step 5 produced alongside the type step 1 sniffed, and step 5
+   re-encodes every image to JPEG — so a converted HEIC comes back labelled
+   `heic`. Writing `mimeForFormat(detectedType)` would put `image/heic` on a row
+   whose object is a JPEG, and `BedrockExtractor` reads that column: the fix
+   would have failed on the exact format it was for. `effectiveFormat()`
+   re-sniffs the **stored** bytes. Do not "simplify" it away.
+2. **Sanitisation is not a state transition** — the document stays RECEIVED and
+   extraction moves it. So the state cannot be the idempotency marker: "still
+   RECEIVED?" is true before AND after. The marker is the `sanitise` event, and
+   the row write is compare-and-swap on the `s3Key` read in phase 1.
+3. **A rejection is a REJECTED document, not a DLQ entry.** WhatsApp has to
+   dead-letter because it has no row yet; this lane has one, so the reason lands
+   where a human already looks and a `document.reprocess` proposal can retry it.
+4. **No filename goes into `sanitise()`**, matching the email and WhatsApp lanes.
+   The bytes decide the type. `extensionContradicts` would reject a PNG someone
+   saved as `photo.jpg` — a mistake with no security content — and the declared
+   MIME was already allowlisted at the door as a cheap pre-filter.
+5. **The whole object is buffered** (`get()`, up to the 100 MB accountant cap, at
+   worker concurrency 8). Sniffing, decoding and re-encoding cannot be streamed;
+   this is why it is not on the request path.
+
+⚠ **The original object is NOT deleted.** `DocumentStore` has no `delete(key)`,
+so `w/<biz>/uploads/<nonce>` still holds the pre-sanitisation bytes, EXIF
+included. The document we serve and process is clean; an orphaned intent object
+is not. See the TODO.
+
+`capChannelFor` is exported from `upload-policy.ts` so the door and the worker
+read the cap from one map. Two opinions about which cap a web upload falls under
+would mean presigning a file the worker then refuses, after the client has
+already spent the upload.
+
 ## The tenancy check that is easy to miss
 
 `createUpload` resolves the business through `scopedDb` **before anything is
@@ -315,10 +372,10 @@ review of #76:
 - **Auto-split.** `splitMode` is accepted, carried in the claims and stored, but
   nothing splits yet. A caller passing `AUTO_SPLIT` gets the parent document, as
   the contract already documents.
-- **Sanitisation of web uploads.** The job is enqueued with `documentId` set, so
-  the worker's persist path deliberately does *not* fire on it (that would
-  double-create). The worker-side sanitisation step for an already-persisted
-  document is the follow-up; today the acceptance is the document plus the job.
+- ~~**Sanitisation of web uploads.**~~ **Done — Stage A3**, see the section
+  above. The job is still enqueued with `documentId` set (the worker's persist
+  path must not fire on it — that would double-create); the already-persisted
+  branch now sanitises before it dedupes and extracts.
 - **Duplicate detection on this lane** — runs in the worker (#40), after the
   document exists.
 - **Auth.** The request context comes from `common/context` (#75); real sessions
@@ -349,9 +406,19 @@ review of #76:
 - [ ] Contract change (Shakib, G7): declare `410` on `completeDocumentUpload`,
       and `404` on `createDocumentUpload` — where the `403` it currently declares
       looks wrong against the contracts package's own "404, never 403" rule.
-- [ ] Worker-side sanitisation for `source: 'web_upload'` jobs, then map the
+- [x] Worker-side sanitisation for `source: 'web_upload'` jobs, then map the
       pipeline's `Rejection` onto `NT-ING-004` on the document, not on a response
-      (by then the HTTP call is long finished).
+      (by then the HTTP call is long finished) — **Stage A3**.
+- [ ] **Delete the original upload object** once sanitisation has re-keyed the
+      document. `DocumentStore` has no `delete(key)` and `storage/` was outside
+      Stage A3's owned paths, so `w/<biz>/uploads/<nonce>` still holds the
+      un-stripped bytes. An S3 lifecycle rule on `w/*/uploads/*` closes the
+      exposure without code; a `delete` on the store closes it properly. Until
+      one of the two lands, "we strip EXIF" is true of the document we keep and
+      not of everything in the bucket.
+- [ ] Share `effectiveFormat` with `whatsapp-media-intake.ts`, which still
+      labels its output with the pipeline's input-side `detectedType` — a HEIC
+      arriving by WhatsApp is stored as `image/heic` carrying JPEG bytes.
 - [ ] The delegated document's `document_events` row and its `notifications` row
       are written in **separate transactions** from the document itself, because
       neither table has a delegated RLS branch. Both are idempotent-ish and both

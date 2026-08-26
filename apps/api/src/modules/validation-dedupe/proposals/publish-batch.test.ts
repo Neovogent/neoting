@@ -11,11 +11,20 @@ import { createPublishBatchExecutor, publishIdempotencyKey, type PublishGateway 
 
 /**
  * The `publish.batch` EFFECT, offline — every refusal it makes before a row is
- * written, plus the shape of what it writes. The ledger is never reached from
- * here by design (that is the post-commit follow-up's job, and
- * `publish-batch.integration.test.ts` proves the pair against a real database),
- * so the adapter in the gateway is a tripwire: if this executor ever calls it,
- * these tests fail.
+ * written, and the shape of the release it performs when it does not refuse.
+ *
+ * ⚠ **D42 is what most of these tests are actually about.** *Published* is an
+ * internal state meaning approved and released for export; nothing here talks
+ * to a ledger, and the adapter on the gateway is a TRIPWIRE — if this executor
+ * ever calls it, every test in this file fails. The three properties that used
+ * to be impossible and are now pinned:
+ *
+ * - a client with **no** integration row releases (that refusal is why nothing
+ *   could ever reach Published);
+ * - a dormant ledger-vendor row is never adopted as an export destination, and
+ *   naming one refuses;
+ * - a released document stays **PUBLISHED** — it does not auto-archive, because
+ *   `POST /v1/exports` exports only PUBLISHED documents.
  */
 
 const CTX: ScopeContext = ScopeContextSchema.parse({ actorId: 'usr_1', practiceId: 'prac_1' });
@@ -31,6 +40,7 @@ interface DocRow {
 }
 
 interface PublishRow {
+  id?: string;
   documentId: string;
   state: string;
   actionProposalId: string | null;
@@ -54,14 +64,18 @@ interface IntegrationRow {
   id: string;
   businessId: string;
   kind: string;
-  orgRef: string | null;
   isActive: boolean;
 }
 
-function harness(rows: DocRow[], integrations: IntegrationRow[] = [{ id: 'int_1', businessId: 'biz_1', kind: 'XERO', orgRef: 'org', isActive: true }], publishes: PublishRow[] = []) {
+/** The default: one VT export destination, which is what A11's client intake creates. */
+const VT_DESTINATION: IntegrationRow[] = [{ id: 'int_vt', businessId: 'biz_1', kind: 'VT', isActive: true }];
+
+function harness(rows: DocRow[], integrations: IntegrationRow[] = VT_DESTINATION, publishes: PublishRow[] = []) {
   const map = new Map(rows.map((r) => [r.id, r]));
   const created: Record<string, unknown>[] = [];
   const events: Record<string, unknown>[] = [];
+  const store = new Map<string, PublishRow>();
+  let seq = 0;
   const db = {
     document: {
       findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
@@ -90,8 +104,17 @@ function harness(rows: DocRow[], integrations: IntegrationRow[] = [{ id: 'int_1'
       count: async ({ where }: { where: { documentId: string; state: string } }) =>
         publishes.filter((p) => p.documentId === where.documentId && p.state === where.state).length,
       create: async ({ data }: { data: Record<string, unknown> }) => {
-        created.push(data);
-        return data;
+        seq += 1;
+        const row = { id: `pub_${seq}`, ...data } as unknown as PublishRow;
+        created.push(row);
+        store.set(row.id ?? '', row);
+        return { id: row.id };
+      },
+      update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+        const row = store.get(where.id);
+        if (row === undefined) throw new Error(`no publish row ${where.id}`);
+        Object.assign(row, data);
+        return row;
       },
     },
   } as unknown as ScopedClient;
@@ -102,7 +125,7 @@ function harness(rows: DocRow[], integrations: IntegrationRow[] = [{ id: 'int_1'
 const PUBLISHING: PublishGateway = {
   ledger: {
     publishBill: async () => {
-      throw new Error('the effect transaction must never call the ledger — that is what the post-commit follow-up is for');
+      throw new Error('D42: releasing a document for export must never reach a ledger — the adapter is dormant, not a dependency');
     },
   },
   previewPublishBatch,
@@ -112,7 +135,7 @@ const executor = createPublishBatchExecutor(PUBLISHING);
 const input = (payload: PublishBatchPayload, proposalId = 'prop_1') => ({ proposalId, payload, ctx: CTX, traceId: 'trace-10' });
 const preview = (itemCount: number, grossPence: number, vatPence: number) => ({ itemCount, grossPence, vatPence });
 
-test('the effect writes QUEUED rows and a publish follow-up — it does not touch the ledger', async () => {
+test('the effect releases for export: SUCCEEDED rows, the documents reach PUBLISHED, no ledger and no follow-up', async () => {
   const { db, created, map } = harness([doc('doc_1'), doc('doc_2')]);
   const result = await executor.execute(db, input({ documentIds: ['doc_1', 'doc_2'], preview: preview(2, 195_240, 32_540) }));
 
@@ -120,18 +143,46 @@ test('the effect writes QUEUED rows and a publish follow-up — it does not touc
   expect(created[0]).toMatchObject({
     businessId: 'biz_1',
     documentId: 'doc_1',
-    integrationId: 'int_1',
+    integrationId: 'int_vt',
     mode: 'MANUAL',
-    state: 'QUEUED',
+    // Born QUEUED, resolved in the same transaction — there is no vendor to wait for.
+    state: 'SUCCEEDED',
     idempotencyKey: 'prop_1:doc_1',
     actionProposalId: 'prop_1',
     publishedByUserId: 'usr_1',
   });
-  expect(result.followUps).toEqual([{ kind: 'publish', proposalId: 'prop_1', businessId: 'biz_1' }]);
+  expect(created[0]?.['completedAt']).toBeInstanceOf(Date);
+  // Nothing was reached, so there is no reference to record and nothing travelled.
+  expect(created[0]?.['externalRef']).toBeUndefined();
+  expect(created[0]?.['attachmentSent']).toBeUndefined();
+
+  // No follow-up: releasing for export calls nothing, so there is no work that
+  // must not run inside the effect transaction.
+  expect(result.followUps).toEqual([]);
   expect(result.alreadyApplied).toBe(false);
-  expect(result.detail).toMatchObject({ queued: 2, integrationId: 'int_1' });
-  // Nothing moved state: the documents are still READY until the ledger answers.
-  expect(map.get('doc_1')?.state).toBe('READY');
+  expect(result.detail).toMatchObject({ released: 2, releasedForExport: true, exportDestinationId: 'int_vt', exportDestinationKind: 'VT' });
+
+  // PUBLISHED, and it STAYS published: `POST /v1/exports` exports only
+  // PUBLISHED documents, so auto-archiving here would hide every one of them.
+  expect(map.get('doc_1')?.state).toBe('PUBLISHED');
+  expect(map.get('doc_2')?.state).toBe('PUBLISHED');
+});
+
+test('the audit trail says released-for-export, never posted or sent', async () => {
+  const { db, events } = harness([doc('doc_1')]);
+  await executor.execute(db, input({ documentIds: ['doc_1'], preview: preview(1, 97_620, 16_270) }));
+
+  const published = events.find((event) => event['outcome'] === 'PUBLISHED');
+  expect(published).toBeDefined();
+  const detail = published?.['detail'] as Record<string, unknown>;
+  expect(detail['via']).toBe('release-for-export');
+  expect(detail['releasedForExport']).toBe(true);
+  expect(detail['exportDestinationKind']).toBe('VT');
+  // D42: no surface, no string and no audit line may imply a ledger was written to.
+  const wording = JSON.stringify(events).toLowerCase();
+  for (const forbidden of ['posted', 'synced', 'sent to', 'xero']) {
+    expect(wording).not.toContain(forbidden);
+  }
 });
 
 test('the idempotency key is proposal + document, so a replay collides and a retry does not', () => {
@@ -139,12 +190,13 @@ test('the idempotency key is proposal + document, so a replay collides and a ret
   expect(publishIdempotencyKey('prop_2', 'doc_1')).not.toBe(publishIdempotencyKey('prop_1', 'doc_1'));
 });
 
-test('a replay of the same proposal is alreadyApplied, with no second row and no second follow-up', async () => {
+test('a replay of the same proposal is alreadyApplied, with no second row and no second release', async () => {
   const { db, created } = harness([doc('doc_1')], undefined, [
-    { documentId: 'doc_1', state: 'QUEUED', actionProposalId: 'prop_1' },
+    { documentId: 'doc_1', state: 'SUCCEEDED', actionProposalId: 'prop_1' },
   ]);
   const result = await executor.execute(db, input({ documentIds: ['doc_1'], preview: preview(1, 97_620, 16_270) }));
   expect(result.alreadyApplied).toBe(true);
+  expect(result.detail).toMatchObject({ released: 0, alreadyReleased: 1 });
   expect(result.followUps).toEqual([]);
   expect(created).toHaveLength(0);
 });
@@ -160,7 +212,7 @@ test('one item short of the minimum refuses the WHOLE batch with NT-PUB-001, nam
   expect((error as Error).message).toContain('NT-PUB-001');
   expect((error as Error).message).toContain('supplier, category');
   expect((error as Error).message).toContain('half-coded books');
-  expect(created).toHaveLength(0); // all-or-nothing: doc_1 did not publish either
+  expect(created).toHaveLength(0); // all-or-nothing: doc_1 was not released either
 });
 
 test('an unreachable document refuses the batch without saying whether it exists', async () => {
@@ -177,55 +229,86 @@ test('figures that no longer match the reviewed preview refuse — the drift NT-
   ).rejects.toThrow('no longer matches the figures that were reviewed');
 });
 
-test('a batch spanning two businesses refuses — there is no single ledger to publish it through', async () => {
+test('a batch spanning two clients refuses — one export file belongs to one client', async () => {
   const { db } = harness([doc('doc_1'), doc('doc_2', { businessId: 'biz_2' })]);
   await expect(
     executor.execute(db, input({ documentIds: ['doc_1', 'doc_2'], preview: preview(2, 195_240, 32_540) })),
-  ).rejects.toThrow('one business');
+  ).rejects.toThrow('one client');
 });
 
-test('the integration is resolved, never guessed: none, several, wrong client and disconnected all refuse', async () => {
+test('D42/D47: a client with NO integration row still releases — the refusal that stranded every document is gone', async () => {
+  // This is the whole stage. `resolveIntegration` used to throw "this client
+  // has no active ledger connection", `integration.create` existed only in
+  // prisma/seed.ts, and D47 forbids intake from asking for a connection — so
+  // nothing could ever reach PUBLISHED and the export had nothing to export.
+  const { db, created, map } = harness([doc('doc_1')], []);
+  const result = await executor.execute(db, input({ documentIds: ['doc_1'], preview: preview(1, 97_620, 16_270) }));
+
+  expect(map.get('doc_1')?.state).toBe('PUBLISHED');
+  // Null, not invented: the schema makes `publishes.integration_id` nullable
+  // for exactly this.
+  expect(created[0]).toMatchObject({ integrationId: null, state: 'SUCCEEDED' });
+  expect(result.detail).not.toHaveProperty('exportDestinationId');
+  expect(result.detail).toMatchObject({ released: 1, releasedForExport: true });
+});
+
+test('a dormant ledger-vendor row is never adopted as an export destination', async () => {
+  // prisma/seed.ts has seeded XERO rows since long before D42. Recording one
+  // against a release would put a vendor's name on an act that never touched a
+  // vendor.
+  const { db, created, map } = harness([doc('doc_1')], [{ id: 'int_xero', businessId: 'biz_1', kind: 'XERO', isActive: true }]);
+  await executor.execute(db, input({ documentIds: ['doc_1'], preview: preview(1, 97_620, 16_270) }));
+
+  expect(created[0]).toMatchObject({ integrationId: null });
+  expect(map.get('doc_1')?.state).toBe('PUBLISHED');
+});
+
+test('the export destination is resolved, never guessed: two, wrong client, switched off and a ledger vendor all refuse', async () => {
   const payload: PublishBatchPayload = { documentIds: ['doc_1'], preview: preview(1, 97_620, 16_270) };
 
-  const none = harness([doc('doc_1')], []);
-  await expect(none.db && executor.execute(none.db, input(payload))).rejects.toThrow('no active ledger connection');
-
+  // `@@unique([businessId, kind])` permits VT *and* MANUAL. A11 creates one, so
+  // this is unreachable in practice — and stays a refusal rather than a coin toss.
   const several = harness([doc('doc_1')], [
-    { id: 'int_1', businessId: 'biz_1', kind: 'XERO', orgRef: null, isActive: true },
-    { id: 'int_2', businessId: 'biz_1', kind: 'QUICKBOOKS', orgRef: null, isActive: true },
+    { id: 'int_vt', businessId: 'biz_1', kind: 'VT', isActive: true },
+    { id: 'int_man', businessId: 'biz_1', kind: 'MANUAL', isActive: true },
   ]);
-  await expect(executor.execute(several.db, input(payload))).rejects.toThrow('more than one active ledger connection');
+  await expect(executor.execute(several.db, input(payload))).rejects.toThrow('more than one export destination');
 
-  const foreign = harness([doc('doc_1')], [{ id: 'int_x', businessId: 'biz_other', kind: 'XERO', orgRef: null, isActive: true }]);
+  const foreign = harness([doc('doc_1')], [{ id: 'int_x', businessId: 'biz_other', kind: 'VT', isActive: true }]);
   await expect(
     executor.execute(foreign.db, input({ ...payload, integrationId: 'int_x' })),
   ).rejects.toThrow('not reachable for this batch');
 
-  const off = harness([doc('doc_1')], [{ id: 'int_1', businessId: 'biz_1', kind: 'XERO', orgRef: null, isActive: false }]);
-  await expect(executor.execute(off.db, input({ ...payload, integrationId: 'int_1' }))).rejects.toThrow('disconnected');
+  const off = harness([doc('doc_1')], [{ id: 'int_vt', businessId: 'biz_1', kind: 'VT', isActive: false }]);
+  await expect(executor.execute(off.db, input({ ...payload, integrationId: 'int_vt' }))).rejects.toThrow('switched off');
+
+  const vendor = harness([doc('doc_1')], [{ id: 'int_xero', businessId: 'biz_1', kind: 'XERO', isActive: true }]);
+  await expect(
+    executor.execute(vendor.db, input({ ...payload, integrationId: 'int_xero' })),
+  ).rejects.toThrow('does not write to accounting software');
 });
 
-test('only READY, or a document whose last publish FAILED, may enter a batch', async () => {
+test('only READY, or a document whose last release FAILED, may enter a batch', async () => {
   const payload: PublishBatchPayload = { documentIds: ['doc_1'], preview: preview(1, 97_620, 16_270) };
 
   for (const state of ['TO_REVIEW', 'PUBLISHED', 'ARCHIVED', 'PROCESSING'] as const) {
     const { db, created } = harness([doc('doc_1', { state })]);
-    await expect(executor.execute(db, input(payload))).rejects.toThrow('cannot be published');
+    await expect(executor.execute(db, input(payload))).rejects.toThrow('cannot be released');
     expect(created).toHaveLength(0);
   }
 
-  // Rejected for something other than a failed publish: proposing a publish is
+  // Rejected for something other than a failed release: proposing a release is
   // not how a human rejection gets undone.
   const rejected = harness([doc('doc_1', { state: 'REJECTED' })]);
-  await expect(executor.execute(rejected.db, input(payload))).rejects.toThrow('other than a failed publish');
+  await expect(executor.execute(rejected.db, input(payload))).rejects.toThrow('other than a failed release');
 });
 
-test('a document with a publish already IN FLIGHT is refused — the double-post the key cannot catch', async () => {
-  // The window this closes: the happy path leaves the document READY until the
-  // post-commit follow-up hears back, so a READY document can already be QUEUED
-  // in `publishes`. A SECOND proposal has a different id, so
-  // `<proposalId>:<documentId>` is a different idempotency key and the unique
-  // constraint never fires — the same bill posts to the ledger twice.
+test('a document with a release already IN FLIGHT is refused — the guard the dormant ledger lane still needs', async () => {
+  // This executor cannot leave a QUEUED row behind (the row is created and
+  // resolved in the same transaction as the transition). The guard stays for
+  // rows written by the v1 ledger lane, and for rows an older release of this
+  // code left behind: `<proposalId>:<documentId>` cannot catch them, because a
+  // different proposal is a different key.
   const { db, created } = harness([doc('doc_1', { state: 'READY' })], undefined, [
     { documentId: 'doc_1', state: 'QUEUED', actionProposalId: 'prop_first' },
   ]);
@@ -236,19 +319,19 @@ test('a document with a publish already IN FLIGHT is refused — the double-post
   expect(created).toHaveLength(0);
 });
 
-test('a SUCCEEDED publish does not block a later batch through this gate — the state machine already refuses it', async () => {
+test('a SUCCEEDED release does not block a later batch through this gate — the state machine already refuses it', async () => {
   // Guard the guard: it keys on QUEUED only, so it cannot swallow the retry path
-  // (FAILED) or duplicate the state gate's job (a succeeded publish leaves the
-  // document PUBLISHED/ARCHIVED, which `cannot be published` already refuses).
+  // (FAILED) or duplicate the state gate's job (a released document is
+  // PUBLISHED, which `cannot be released` already refuses).
   const { db } = harness([doc('doc_1', { state: 'PUBLISHED' })], undefined, [
     { documentId: 'doc_1', state: 'SUCCEEDED', actionProposalId: 'prop_first' },
   ]);
   await expect(
     executor.execute(db, input({ documentIds: ['doc_1'], preview: preview(1, 97_620, 16_270) }, 'prop_second')),
-  ).rejects.toThrow('cannot be published');
+  ).rejects.toThrow('cannot be released');
 });
 
-test('a retry re-arms the failed document REJECTED → PROCESSING → READY, both edges logged', async () => {
+test('a retry re-arms the failed document REJECTED → PROCESSING → READY, both edges logged, then releases', async () => {
   const { db, created, events, map } = harness([doc('doc_1', { state: 'REJECTED' })], undefined, [
     { documentId: 'doc_1', state: 'FAILED', actionProposalId: 'prop_0' },
   ]);
@@ -258,18 +341,18 @@ test('a retry re-arms the failed document REJECTED → PROCESSING → READY, bot
   );
 
   // PROCESSING is the machine's only exit from REJECTED, and the only edge
-  // that clears the reason — a document that publishes must not still claim
-  // the ledger refused it.
-  expect(events.map((e) => e['outcome'])).toEqual(['PROCESSING', 'READY']);
-  expect(map.get('doc_1')?.state).toBe('READY');
+  // that clears the reason — a released document must not still carry the
+  // reason its last attempt failed.
+  expect(events.map((e) => e['outcome'])).toEqual(['PROCESSING', 'READY', 'PUBLISHED']);
+  expect(map.get('doc_1')?.state).toBe('PUBLISHED');
   expect(created).toHaveLength(1);
   expect(created[0]).toMatchObject({ idempotencyKey: 'prop_retry:doc_1' });
-  expect(result.followUps).toEqual([{ kind: 'publish', proposalId: 'prop_retry', businessId: 'biz_1' }]);
+  expect(result.followUps).toEqual([]);
 });
 
-test('an unrouted document has no client books to publish into', async () => {
+test('an unrouted document has no client to release it for', async () => {
   const { db } = harness([doc('doc_1', { businessId: null })]);
   await expect(
     executor.execute(db, input({ documentIds: ['doc_1'], preview: preview(1, 97_620, 16_270) })),
-  ).rejects.toThrow('no client books');
+  ).rejects.toThrow('no client to release it for');
 });

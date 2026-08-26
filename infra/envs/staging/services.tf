@@ -99,12 +99,19 @@ locals {
     #                          worker already constructs the sharp perceptual
     #                          hasher unconditionally at boot).
     #
+    #   DOCUMENT_GUARD=qpdf    the real PDF guard, added by S1 along with the
+    #                          qpdf binary in apps/api/Dockerfile. The fixture
+    #                          greps 8 KB for /Encrypt and reports CLEAN on an
+    #                          incrementally-updated encrypted PDF — most signed
+    #                          or form-filled accounting paperwork — so on a
+    #                          launch target it is a password check that passes
+    #                          files the pipeline then cannot read. env.ts now
+    #                          refuses `fixture` under NODE_ENV=production.
+    #
     # NOT flipped, deliberately:
     #   EMAIL_SOURCE stays `fixture` — the s3 poller is a separate process
     #     (worker/email-intake-main.ts) with no ECS service yet, and env.ts
     #     refuses EMAIL_SOURCE=s3 combined with fixture stores anyway.
-    #   DOCUMENT_GUARD stays `fixture` — qpdf is deliberately not in the image
-    #     (apps/api/Dockerfile says why); flipping it is a Dockerfile change.
     # ------------------------------------------------------------------------
     # The role the APPLICATION connects as — a name, not a credential, so it is
     # a plain value. Its password is injected separately (see the secrets list).
@@ -115,35 +122,71 @@ locals {
     { name = "INGEST_QUEUE", value = "bullmq" },
     { name = "OBJECT_STORE", value = "s3" },
     { name = "IMAGE_NORMALISER", value = "sharp" },
+    { name = "DOCUMENT_GUARD", value = "qpdf" },
 
     # ------------------------------------------------------------------------
-    # The demo adapters (METH_MODE.md §4, Stage 15).
+    # The adapters that used to be demo stand-ins (METH_MODE.md §4, Stage 15),
+    # and the two that S1 stopped allowing to be.
     #
-    # Every one of these ALREADY defaults to `demo` in `config/env.ts`, and
-    # `demo` is currently the only value each enum accepts. They are stated
-    # anyway, and the redundancy is the point: a deployed task definition is
-    # the artefact an operator reads to answer "what does this environment
-    # actually do when it publishes an invoice?", and "nothing is set, so read
-    # the Zod schema" is a worse answer than four lines. The day a real adapter
-    # lands behind one of these seams, the enum grows a second value and this
-    # is where the choice is made — an absent variable would silently take it.
+    # Stating them was always the point: a deployed task definition is the
+    # artefact an operator reads to answer "what does this environment actually
+    # do when it reads an invoice?", and "nothing is set, so read the Zod
+    # schema" is a worse answer than four lines. Two of the four are now load-
+    # bearing for BOOT rather than merely informative, exactly like AUTH_MODE
+    # and AI_CHAT above — omit either and the task exits 1 on env validation.
     #
-    #   EXTRACTOR=demo       deterministic fixture profiles; no Textract, no
-    #                        Bedrock. Documents leave RECEIVED on staging.
+    #   EXTRACTOR=bedrock    Claude reads the document. `demo` is REFUSED under
+    #                        NODE_ENV=production by config/env.ts (S1), because
+    #                        DemoExtractor does not degrade the read — it
+    #                        INVENTS it, deriving supplier, date, total, tax and
+    #                        a VAT number from a hash of the filename at 0.8
+    #                        confidence, which resolveProcessedState reads as
+    #                        Ready. Staging is the launch target (docs/launch/
+    #                        PLAN.md), so a real client's document would have
+    #                        landed in a real accountant's queue with a
+    #                        fabricated supplier on it.
+    #
+    #                        ⚠ WHAT THIS COSTS UNTIL A4 MERGES, stated plainly:
+    #                        BedrockExtractor accepts png/jpeg/webp/gif only,
+    #                        while ingestion accepts PDF, HEIC and docx, and
+    #                        select-extractor.ts has NO FALLBACK by design. So
+    #                        a PDF invoice on staging now fails with NT-EXT-003
+    #                        rather than being invented. That is the trade S1
+    #                        chose: a loud, retryable FAILED document instead of
+    #                        a quiet, confident, wrong one. A4 adds the PDF
+    #                        content block and the downscale; S5 adds the cost
+    #                        ceiling and measures spend against £0.02/document.
+    #
+    #   OTP_MODE=totp        the real RFC 6238 verifier. `demo` accepts ONE
+    #                        fixed six-digit code on every account in every
+    #                        practice and on every portal session, and it is
+    #                        published in the source and the seed — a universal
+    #                        second factor is a longer password field, not a
+    #                        second factor. REFUSED in production by env.ts (S1).
+    #
+    #                        ⚠ NOBODY CAN SIGN IN TO STAGING UNTIL A2 MERGES.
+    #                        auth.service.ts:verifyTotp and portal-session.
+    #                        service.ts:verifyOtp both read
+    #                        `mode === 'demo' && code === <fixed>`, so `totp`
+    #                        makes every second factor return false. That is
+    #                        fail-CLOSED and it is the intended intermediate
+    #                        state: A2 lands otplib enrolment, verify and
+    #                        recovery codes behind this same switch.
+    #
     #   SMS_SENDER=demo      writes outbox rows. NOTHING LEAVES THE ACCOUNT —
     #                        this is the variable that stands between a staging
-    #                        chase and a real text message to a real phone.
-    #   OTP_MODE=demo        the portal accepts the fixed code and nothing else.
+    #                        chase and a real text message to a real phone. SMS
+    #                        is cut for Initial Delivery (D40/§24), so this one
+    #                        is not on anybody's path to a real vendor.
     #   LEDGER_ADAPTER=demo  DemoXeroAdapter, fake refs. No client's books are
-    #                        reachable from this environment.
-    #
-    # // DEMO-MOCK: each flips to its real vendor post-demo (Textract + vision
-    # // ladder, Twilio Messaging, Twilio Verify, Xero SDK/OAuth) — a value
-    # // change here plus the adapter behind the existing seam.
+    #                        reachable from this environment — and under D42
+    #                        there is no ledger API in Initial Delivery at all,
+    #                        so this stays `demo` on purpose rather than by
+    #                        omission. Export is the only egress.
     # ------------------------------------------------------------------------
-    { name = "EXTRACTOR", value = "demo" },
+    { name = "EXTRACTOR", value = "bedrock" },
     { name = "SMS_SENDER", value = "demo" },
-    { name = "OTP_MODE", value = "demo" },
+    { name = "OTP_MODE", value = "totp" },
     { name = "LEDGER_ADAPTER", value = "demo" },
 
     # ------------------------------------------------------------------------
@@ -169,7 +212,19 @@ locals {
     # ------------------------------------------------------------------------
     { name = "AI_CHAT", value = "bedrock" },
     { name = "BEDROCK_REGION", value = local.region },
-    { name = "AI_DAILY_BUDGET_PENCE", value = "500" },
+
+    # £25/day/practice, raised from £5 by S1 along with the code default. This
+    # is a HARD STOP, not a warning: the day it bites is a day the practice's
+    # documents stop being read, so a demo-scale number is the wrong shape for
+    # a launch target. £5 was 250 documents at the £0.02/document guardrail —
+    # one month-end afternoon.
+    #
+    # ⚠ EXTRACTION DOES NOT COUNT AGAINST IT YET. BedrockExtractor constructs
+    # AnthropicBedrock directly and never consults the chat runtime's budget,
+    # so flipping EXTRACTOR to `bedrock` above put UNMETERED spend on this
+    # environment. Wiring the two together is S5 item 3, and it matters more
+    # now than it did when that stage was written.
+    { name = "AI_DAILY_BUDGET_PENCE", value = "2500" },
 
     # ------------------------------------------------------------------------
     # Outbound email (S2) — the second adapter above that is NOT a demo
