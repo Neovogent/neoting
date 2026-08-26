@@ -116,7 +116,7 @@ describe('sameMerchant', () => {
 
 describe('matchCandidates', () => {
   it('never reaches into another client’s documents', () => {
-    const other = txn({ clientId: '2', clientName: 'Cosmo Restaurants' });
+    const other = txn({ clientId: '2', clientName: 'Ananda Group' });
 
     expect(matchCandidates(intl, other, seedDocuments, DEFAULT_MATCH_SETTINGS)).toEqual([]);
   });

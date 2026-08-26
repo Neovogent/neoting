@@ -157,14 +157,14 @@ describe('importSheet — a purchase listing', () => {
   });
 });
 
-describe('importSheet — a signed ledger', () => {
+describe('importSheet — a signed sheet', () => {
   const csv = [
     'Date,Supplier,Category,Amount',
     '01/08/2026,Bidfood UK,Cost of Sales Food,-1420.50',
     '02/08/2026,Bidfood UK,Cost of Sales Food,212.40',
   ].join('\n');
 
-  const result = importSheet(sheet(csv), 'ledger.csv', client, 'csv', 'shakib@practice.co.uk');
+  const result = importSheet(sheet(csv), 'transactions.csv', client, 'csv', 'shakib@practice.co.uk');
 
   it('reads a positive line in a signed sheet as money in, not another cost', () => {
     expect(result.documents.map((d) => d.kind)).toEqual(['cost', 'sales']);

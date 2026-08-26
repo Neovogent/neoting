@@ -42,7 +42,7 @@ export const KIND_LABEL: Record<ProposalKind, MessageDescriptor> = defineMessage
   'document.split': { id: 'proposals.kindLabel.documentSplit', defaultMessage: 'Split a document' },
   'document.archive': { id: 'proposals.kindLabel.documentArchive', defaultMessage: 'Archive documents' },
   'chase.send': { id: 'proposals.kindLabel.chaseSend', defaultMessage: 'Send chase SMS' },
-  'publish.batch': { id: 'proposals.kindLabel.publishBatch', defaultMessage: 'Publish to the ledger' },
+  'publish.batch': { id: 'proposals.kindLabel.publishBatch', defaultMessage: 'Release for export' },
   'bank.confirm-match': { id: 'proposals.kindLabel.bankConfirmMatch', defaultMessage: 'Confirm a bank match' },
   'rule.create': { id: 'proposals.kindLabel.ruleCreate', defaultMessage: 'Create a rule' },
   'document.revoke-link': { id: 'proposals.kindLabel.documentRevokeLink', defaultMessage: 'Revoke document links' },

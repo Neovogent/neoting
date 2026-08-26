@@ -7,9 +7,9 @@ import { ReviewGate, ReviewRows, ReviewSection } from './ReviewGate';
 import { Pill } from './DataTable';
 
 /**
- * "Xero" and "QuickBooks Online" stay literals: they are product names, they
- * are not translated, and `destination` is also the identity of where the batch
- * goes. Every message that names one takes it as an argument instead.
+ * Released, never "posted" or "sent" (D42): Published means approved and
+ * released for export, and the destination is always the VT import file the
+ * accountant downloads — nothing is transmitted anywhere.
  *
  * `heldBack` keeps the bold count and the explanation in one message, joined by
  * a rich text tag, because they are one sentence — splitting at the `</span>`
@@ -21,17 +21,18 @@ import { Pill } from './DataTable';
 const m = defineMessages({
   nothingReady: {
     id: 'shell.publishCard.nothingReady',
-    defaultMessage: 'Nothing ready to publish for this scope.',
+    defaultMessage: 'Nothing ready to release for this scope.',
   },
-  previewSection: { id: 'shell.publishCard.previewSection', defaultMessage: 'Publish preview' },
+  previewSection: { id: 'shell.publishCard.previewSection', defaultMessage: 'Release preview' },
   destination: { id: 'shell.publishCard.destination', defaultMessage: 'Destination' },
+  destinationValue: { id: 'shell.publishCard.destinationValue', defaultMessage: 'VT Transaction+ import file' },
   items: { id: 'shell.publishCard.items', defaultMessage: 'Items' },
   grossTotal: { id: 'shell.publishCard.grossTotal', defaultMessage: 'Gross total' },
   vatTotal: { id: 'shell.publishCard.vatTotal', defaultMessage: 'VAT total' },
-  sends: { id: 'shell.publishCard.sends', defaultMessage: 'Sends' },
+  sends: { id: 'shell.publishCard.sends', defaultMessage: 'Each line carries' },
   sendsValue: {
     id: 'shell.publishCard.sendsValue',
-    defaultMessage: 'Extracted data + the original document image',
+    defaultMessage: 'Extracted data + a link back to the source document',
   },
   itemisedSection: { id: 'shell.publishCard.itemisedSection', defaultMessage: 'Itemised' },
   itemisedRow: { id: 'shell.publishCard.itemisedRow', defaultMessage: '{supplier} · {category}' },
@@ -39,35 +40,34 @@ const m = defineMessages({
   heldBack: {
     id: 'shell.publishCard.heldBack',
     defaultMessage:
-      '<strong>{count, plural, one {# item held back} other {# items held back}}</strong> — mandatory fields are missing, so they cannot publish:',
+      '<strong>{count, plural, one {# item held back} other {# items held back}}</strong> — mandatory fields are missing, so they cannot be released:',
   },
   heldRow: { id: 'shell.publishCard.heldRow', defaultMessage: '{supplier} — missing {fields}' },
   heldMore: { id: 'shell.publishCard.heldMore', defaultMessage: '…and {count} more' },
-  approvalsPill: { id: 'shell.publishCard.approvalsPill', defaultMessage: 'Approvals override auto-publish' },
   archivePill: { id: 'shell.publishCard.archivePill', defaultMessage: 'Published items auto-archive' },
   title: {
     id: 'shell.publishCard.title',
     defaultMessage:
-      '{count, plural, one {Publish # item to {destination}} other {Publish # items to {destination}}}',
+      '{count, plural, one {Release # item for export} other {Release # items for export}}',
   },
   subtitle: { id: 'shell.publishCard.subtitle', defaultMessage: 'gross {gross} • VAT {vat}' },
-  approveLabel: { id: 'shell.publishCard.approveLabel', defaultMessage: 'Approve & publish' },
+  approveLabel: { id: 'shell.publishCard.approveLabel', defaultMessage: 'Approve & release' },
   successMessage: {
     id: 'shell.publishCard.successMessage',
     defaultMessage:
-      '{count, plural, one {# item published to {destination} and archived.} other {# items published to {destination} and archived.}}',
+      '{count, plural, one {# item released for export and archived.} other {# items released for export and archived.}}',
   },
-  auditAction: { id: 'shell.publishCard.auditAction', defaultMessage: 'Published to {destination}' },
+  auditAction: { id: 'shell.publishCard.auditAction', defaultMessage: 'Released for export' },
   auditScope: { id: 'shell.publishCard.auditScope', defaultMessage: '{count} items, gross {gross}' },
 });
 
 /**
- * Publish preview (PRD stage 10). Counts plus gross/VAT totals are always shown
- * before a bulk push, and items failing mandatory-field configuration are held
- * back rather than failing silently at the destination.
+ * Release preview (PRD stage 10). Counts plus gross/VAT totals are always shown
+ * before a bulk release, and items failing mandatory-field configuration are
+ * held back rather than failing silently in the export.
  */
 export function PublishCard({ clientIds }: { clientIds: string[] }) {
-  const { documents, clients, publishDocuments, mandatoryFields } = useAppContext();
+  const { documents, publishDocuments, mandatoryFields } = useAppContext();
   const intl = useIntl();
 
   const scoped = documents.filter(
@@ -79,7 +79,6 @@ export function PublishCard({ clientIds }: { clientIds: string[] }) {
     .filter((d) => !isPublishable(d, mandatoryFields))
     .map((d) => ({ ...d, blockedBy: missingMandatory(d, mandatoryFields) }));
 
-  const destination = clients.find((c) => clientIds.includes(c.id))?.xeroConnected ? 'Xero' : 'QuickBooks Online';
   const gross = publishable.reduce((n, d) => n + d.total, 0);
   const vat = publishable.reduce((n, d) => n + d.total * 0.2, 0);
 
@@ -96,7 +95,7 @@ export function PublishCard({ clientIds }: { clientIds: string[] }) {
       <ReviewSection title={intl.formatMessage(m.previewSection)}>
         <ReviewRows
           rows={[
-            { label: intl.formatMessage(m.destination), value: destination },
+            { label: intl.formatMessage(m.destination), value: intl.formatMessage(m.destinationValue) },
             { label: intl.formatMessage(m.items), value: `${publishable.length}` },
             { label: intl.formatMessage(m.grossTotal), value: currency(gross) },
             { label: intl.formatMessage(m.vatTotal), value: currency(vat) },
@@ -144,7 +143,6 @@ export function PublishCard({ clientIds }: { clientIds: string[] }) {
       )}
 
       <div className="flex flex-wrap gap-2">
-        <Pill tone="blue">{intl.formatMessage(m.approvalsPill)}</Pill>
         <Pill>{intl.formatMessage(m.archivePill)}</Pill>
       </div>
     </>
@@ -153,12 +151,12 @@ export function PublishCard({ clientIds }: { clientIds: string[] }) {
   return (
     <ReviewGate
       icon={UploadCloud}
-      title={intl.formatMessage(m.title, { count: publishable.length, destination })}
+      title={intl.formatMessage(m.title, { count: publishable.length })}
       subtitle={intl.formatMessage(m.subtitle, { gross: currency(gross), vat: currency(vat) })}
       detail={detail}
       approveLabel={intl.formatMessage(m.approveLabel)}
-      successMessage={intl.formatMessage(m.successMessage, { count: publishable.length, destination })}
-      auditAction={intl.formatMessage(m.auditAction, { destination })}
+      successMessage={intl.formatMessage(m.successMessage, { count: publishable.length })}
+      auditAction={intl.formatMessage(m.auditAction)}
       auditScope={intl.formatMessage(m.auditScope, { count: publishable.length, gross: currency(gross) })}
       onApprove={() => publishDocuments(publishable.map((d) => d.id))}
     />

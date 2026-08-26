@@ -80,7 +80,9 @@ const mEngine = defineMessages({
   UNMATCHED_TRANSACTION: { id: 'chase.liveEngine.unmatchedTransaction', defaultMessage: 'Bank transaction' },
   SUPPLIER_STATEMENT_GAP: { id: 'chase.liveEngine.supplierStatementGap', defaultMessage: 'Supplier statement' },
   STATEMENT_PERIOD_GAP: { id: 'chase.liveEngine.statementPeriodGap', defaultMessage: 'Statement gap' },
-  LEDGER_TXN_NO_ATTACHMENT: { id: 'chase.liveEngine.ledgerTxnNoAttachment', defaultMessage: 'Ledger attachment' },
+  // The enum value is the contract's (LAW) and cannot be renamed here; the
+  // label carries the ID-honest reading — an entry with no supporting document.
+  LEDGER_TXN_NO_ATTACHMENT: { id: 'chase.liveEngine.entryNoAttachment', defaultMessage: 'Entry with no document' },
   EXPECTED_RECURRING_MISSING: { id: 'chase.liveEngine.expectedRecurringMissing', defaultMessage: 'Recurring bill' },
 });
 

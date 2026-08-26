@@ -27,16 +27,16 @@ import type { Document } from './types';
 const m = defineMessages({
   // The two headings, decided by the stage rather than the cause.
   extractionTitle: { id: 'pipeline.failures.extractionTitle', defaultMessage: 'Could not read this document' },
-  publishTitle: { id: 'pipeline.failures.publishTitle', defaultMessage: 'The ledger refused this' },
+  publishTitle: { id: 'pipeline.failures.publishTitle', defaultMessage: 'Could not be released for export' },
 
   // The way out. Shared across causes where the words are the same word —
   // three different ids for "Replace file" would hand a translator one phrase
   // three times with no way to see they must agree.
   fixReplaceFile: { id: 'pipeline.failures.fixReplaceFile', defaultMessage: 'Replace file' },
   fixMapping: { id: 'pipeline.failures.fixMapping', defaultMessage: 'Fix mapping' },
-  fixChangeDate: { id: 'pipeline.failures.fixChangeDate', defaultMessage: 'Change the date' },
-  fixReconnectLedger: { id: 'pipeline.failures.fixReconnectLedger', defaultMessage: 'Reconnect ledger' },
-  fixPublishAgain: { id: 'pipeline.failures.fixPublishAgain', defaultMessage: 'Publish again' },
+  fixPublishAgain: { id: 'pipeline.failures.fixPublishAgain', defaultMessage: 'Release again' },
+  // fixChangeDate and the reconnect/closed-period causes retired with the
+  // ledger API (D42) — a release has no filed periods and no connection to drop.
   fixReadAgain: { id: 'pipeline.failures.fixReadAgain', defaultMessage: 'Read it again' },
 
   passwordReason: { id: 'pipeline.failures.passwordReason', defaultMessage: 'The file is password-protected' },
@@ -61,39 +61,19 @@ const m = defineMessages({
 
   unmappedReason: {
     id: 'pipeline.failures.unmappedReason',
-    defaultMessage: 'The ledger has nothing to post this to',
+    defaultMessage: 'Nothing to code this to',
   },
   unmappedDetail: {
     id: 'pipeline.failures.unmappedDetail',
     defaultMessage:
-      'The tax rate or account on this document does not exist in the client’s chart of accounts, so the same publish will be refused again. Set the mapping on the document first, then publish.',
+      'The tax rate or category on this document does not exist in the client’s chart of accounts, so the same release will be refused again. Set the mapping on the document first, then release it.',
   },
 
-  closedPeriodReason: {
-    id: 'pipeline.failures.closedPeriodReason',
-    defaultMessage: 'That accounting period is closed',
-  },
-  closedPeriodDetail: {
-    id: 'pipeline.failures.closedPeriodDetail',
+  serviceSilentReason: { id: 'pipeline.failures.serviceSilentReason', defaultMessage: 'The service did not respond' },
+  serviceSilentDetail: {
+    id: 'pipeline.failures.serviceSilentDetail',
     defaultMessage:
-      'The ledger will not accept a posting into a filed period. Move the date into an open period, or have the period reopened, before publishing.',
-  },
-
-  disconnectedReason: {
-    id: 'pipeline.failures.disconnectedReason',
-    defaultMessage: 'The ledger connection has dropped',
-  },
-  disconnectedDetail: {
-    id: 'pipeline.failures.disconnectedDetail',
-    defaultMessage:
-      'The client’s accounting software needs reconnecting before anything can be posted. Once it is back, this publishes as normal.',
-  },
-
-  ledgerSilentReason: { id: 'pipeline.failures.ledgerSilentReason', defaultMessage: 'The ledger did not respond' },
-  ledgerSilentDetail: {
-    id: 'pipeline.failures.ledgerSilentDetail',
-    defaultMessage:
-      'Nothing was wrong with the document — the other end was down or busy. Publishing again usually works.',
+      'Nothing was wrong with the document — the service was down or busy. Releasing it again usually works.',
   },
 
   // The two unrecognised-note fallbacks.
@@ -106,11 +86,11 @@ const m = defineMessages({
     defaultMessage:
       'Nothing was extracted from the file. Reading it again is worth one attempt before replacing it.',
   },
-  publishRejectedReason: { id: 'pipeline.failures.publishRejectedReason', defaultMessage: 'Publish was rejected' },
+  publishRejectedReason: { id: 'pipeline.failures.publishRejectedReason', defaultMessage: 'Release was refused' },
   publishRejectedDetail: {
     id: 'pipeline.failures.publishRejectedDetail',
     defaultMessage:
-      'Everything read off the document is still here. It goes back to Ready so it can be published again.',
+      'Everything read off the document is still here. It goes back to Ready so it can be released again.',
   },
 
   retryMeaningExtraction: {
@@ -119,14 +99,14 @@ const m = defineMessages({
   },
   retryMeaningPublish: {
     id: 'pipeline.failures.retryMeaningPublish',
-    defaultMessage: 'Puts it back to Ready with every figure intact, so it can be published again.',
+    defaultMessage: 'Puts it back to Ready with every figure intact, so it can be released again.',
   },
 });
 
 export type FailureStage = 'extraction' | 'publish';
 
 /** What the row should offer as the way out. */
-export type FailureFix = 'retry' | 'replace-file' | 'open-document' | 'reconnect-ledger';
+export type FailureFix = 'retry' | 'replace-file' | 'open-document';
 
 export interface Failure {
   stage: FailureStage;
@@ -201,27 +181,9 @@ const CAUSES: {
   },
   {
     stage: 'publish',
-    match: /locked period|period is closed|closed period|filed/i,
-    reason: m.closedPeriodReason,
-    detail: m.closedPeriodDetail,
-    fix: 'open-document',
-    fixLabel: m.fixChangeDate,
-    retryHelps: false,
-  },
-  {
-    stage: 'publish',
-    match: /disconnect|not connected|token|auth|unauthori[sz]ed|expired|reconnect/i,
-    reason: m.disconnectedReason,
-    detail: m.disconnectedDetail,
-    fix: 'reconnect-ledger',
-    fixLabel: m.fixReconnectLedger,
-    retryHelps: false,
-  },
-  {
-    stage: 'publish',
     match: /timeout|timed out|unavailable|5\d\d|rate limit|try again/i,
-    reason: m.ledgerSilentReason,
-    detail: m.ledgerSilentDetail,
+    reason: m.serviceSilentReason,
+    detail: m.serviceSilentDetail,
     fix: 'retry',
     fixLabel: m.fixPublishAgain,
     retryHelps: true,
@@ -238,8 +200,8 @@ export function failureOf(doc: Document): Failure | null {
   if (doc.status !== 'rejected' && !doc.publishFailed) return null;
 
   const note = doc.statusNote ?? '';
-  // A live row names its stage in the stable code (NT-PUB-* is the publish
-  // follow-up's; everything else failed before the ledger). The field-count
+  // A live row names its stage in the stable code (NT-PUB-* is the release
+  // follow-up's; everything else failed before release). The field-count
   // heuristic stays for synthetic rows — an API row always has `fields: []`,
   // which read as "never extracted" and called every publish failure an
   // extraction failure (METH S12).

@@ -78,7 +78,7 @@ const m = defineMessages({
   },
   unarchiveConsequence: {
     id: 'documents.documentsView.unarchiveConsequence',
-    defaultMessage: 'Their publishing data is cleared — the ledger keeps whatever was already posted.',
+    defaultMessage: 'Their release history is cleared — an import file you already downloaded is unaffected.',
   },
   unarchiveConfirm: { id: 'documents.documentsView.unarchiveConfirm', defaultMessage: 'Yes, unarchive' },
   unarchiveAudit: { id: 'documents.documentsView.unarchiveAudit', defaultMessage: 'Unarchived documents' },

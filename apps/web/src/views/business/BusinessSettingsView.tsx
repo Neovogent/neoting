@@ -17,7 +17,7 @@ const m = defineMessages({
   sectionSending: { id: 'portal.businessSettingsView.sectionSending', defaultMessage: 'Sending' },
   sectionNotifications: { id: 'portal.businessSettingsView.sectionNotifications', defaultMessage: 'Notifications' },
   sectionPeople: { id: 'portal.businessSettingsView.sectionPeople', defaultMessage: 'People' },
-  sectionConnections: { id: 'portal.businessSettingsView.sectionConnections', defaultMessage: 'Connections' },
+  sectionConnections: { id: 'portal.businessSettingsView.sectionSetup', defaultMessage: 'Setup' },
   sectionSecurity: { id: 'portal.businessSettingsView.sectionSecurity', defaultMessage: 'Security' },
 
   accountantTitle: { id: 'portal.businessSettingsView.accountantTitle', defaultMessage: 'Your accountant' },
@@ -99,12 +99,12 @@ const m = defineMessages({
   },
 
   connectionsTitle: {
-    id: 'portal.businessSettingsView.connectionsTitle',
-    defaultMessage: 'Connections your accountant asked for',
+    id: 'portal.businessSettingsView.setupTitle',
+    defaultMessage: 'Setup your accountant asked for',
   },
   connectionsSubtitle: {
-    id: 'portal.businessSettingsView.connectionsSubtitle',
-    defaultMessage: 'Only you can do these — they need your own login, which your accountant never sees',
+    id: 'portal.businessSettingsView.setupSubtitle',
+    defaultMessage: 'Only you can do this — your accountant cannot register your details for you',
   },
   companyDetailsName: { id: 'portal.businessSettingsView.companyDetailsName', defaultMessage: 'Company details' },
   companyDetailsDetail: {
@@ -113,26 +113,11 @@ const m = defineMessages({
   },
   companyDetailsAction: { id: 'portal.businessSettingsView.companyDetailsAction', defaultMessage: 'Register' },
   companyDetailsDone: { id: 'portal.businessSettingsView.companyDetailsDone', defaultMessage: 'Registered' },
-  ledgerName: { id: 'portal.businessSettingsView.ledgerName', defaultMessage: 'Accounting software' },
-  ledgerDetail: {
-    id: 'portal.businessSettingsView.ledgerDetail',
-    defaultMessage: 'Xero, QuickBooks, Sage or FreeAgent',
-  },
-  bankFeedName: { id: 'portal.businessSettingsView.bankFeedName', defaultMessage: 'Bank feed' },
-  bankFeedDetail: {
-    id: 'portal.businessSettingsView.bankFeedDetail',
-    defaultMessage: 'Read-only open banking — no payments can be made',
-  },
-  connectionsNote: {
-    id: 'portal.businessSettingsView.connectionsNote',
-    defaultMessage:
-      'A live bank feed is what lets your accountant spot a payment with no receipt — it is the reason most chases exist. Connecting it means fewer texts asking you for paperwork.',
-  },
 
   bankTitle: { id: 'portal.businessSettingsView.bankTitle', defaultMessage: 'Bank accounts on file' },
   bankSubtitle: {
     id: 'portal.businessSettingsView.bankSubtitle',
-    defaultMessage: 'Kept in sync once the feed is connected',
+    defaultMessage: 'From the statements you upload',
   },
   bankAccountLabel: { id: 'portal.businessSettingsView.bankAccountLabel', defaultMessage: '{bankName} ••{last4}' },
   bankLive: { id: 'portal.businessSettingsView.bankLive', defaultMessage: 'Live · {days}d left' },
@@ -521,14 +506,15 @@ export function BusinessSettingsView({ account }: { account: BusinessAccount }) 
 
           {section === 'Connections' && (
             <>
-              <Panel
-                title={intl.formatMessage(m.connectionsTitle)}
-                subtitle={intl.formatMessage(m.connectionsSubtitle)}
-              >
-                <div className="flex flex-col gap-2">
-                  {/* Only on records the accountant opened with an invite —
-                      elsewhere they keyed the company in themselves. */}
-                  {client?.awaitingRegistration && (
+              {/* Only on records the accountant opened with an invite —
+                  elsewhere they keyed the company in themselves. D47: nothing
+                  here ever asks for a connection. */}
+              {client?.awaitingRegistration && (
+                <Panel
+                  title={intl.formatMessage(m.connectionsTitle)}
+                  subtitle={intl.formatMessage(m.connectionsSubtitle)}
+                >
+                  <div className="flex flex-col gap-2">
                     <ConnectRow
                       name={intl.formatMessage(m.companyDetailsName)}
                       detail={intl.formatMessage(m.companyDetailsDetail)}
@@ -537,24 +523,9 @@ export function BusinessSettingsView({ account }: { account: BusinessAccount }) 
                       actionLabel={intl.formatMessage(m.companyDetailsAction)}
                       doneLabel={intl.formatMessage(m.companyDetailsDone)}
                     />
-                  )}
-                  <ConnectRow
-                    name={intl.formatMessage(m.ledgerName)}
-                    detail={intl.formatMessage(m.ledgerDetail)}
-                    connected={client?.xeroConnected ?? false}
-                    onConnect={() => completeOnboardingTask(account.clientId, 'ledger')}
-                  />
-                  <ConnectRow
-                    name={intl.formatMessage(m.bankFeedName)}
-                    detail={intl.formatMessage(m.bankFeedDetail)}
-                    connected={client?.bankConnected ?? false}
-                    onConnect={() => completeOnboardingTask(account.clientId, 'bank')}
-                  />
-                </div>
-                <p className="text-[12px] text-zinc-500 leading-relaxed mt-4">
-                  {intl.formatMessage(m.connectionsNote)}
-                </p>
-              </Panel>
+                  </div>
+                </Panel>
+              )}
 
               {bank.length > 0 && (
                 <Panel title={intl.formatMessage(m.bankTitle)} subtitle={intl.formatMessage(m.bankSubtitle)}>

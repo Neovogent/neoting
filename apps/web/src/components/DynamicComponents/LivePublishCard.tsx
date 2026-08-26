@@ -11,7 +11,7 @@ import { Pill } from './DataTable';
 const m = defineMessages({
   title: {
     id: 'shell.livePublishCard.title',
-    defaultMessage: '{count, plural, one {Publish # item to Xero} other {Publish # items to Xero}}',
+    defaultMessage: '{count, plural, one {Release # item for export} other {Release # items for export}}',
   },
   subtitle: {
     id: 'shell.livePublishCard.subtitle',
@@ -22,7 +22,7 @@ const m = defineMessages({
   itemRow: { id: 'shell.livePublishCard.itemRow', defaultMessage: '{supplier} · {category}' },
   nothingReady: {
     id: 'shell.livePublishCard.nothingReady',
-    defaultMessage: 'Nothing is Ready to publish for this client yet.',
+    defaultMessage: 'Nothing is Ready to release for this client yet.',
   },
   heldBack: {
     id: 'shell.livePublishCard.heldBack',
@@ -34,12 +34,12 @@ const m = defineMessages({
     id: 'shell.livePublishCard.serverNote',
     defaultMessage: 'Read review renders the item count, gross and VAT the SERVER computed at proposal time — never these draft figures.',
   },
-  lockPill: { id: 'shell.livePublishCard.lockPill', defaultMessage: 'Publishing locks and archives each item' },
+  lockPill: { id: 'shell.livePublishCard.lockPill', defaultMessage: 'Releasing locks and archives each item' },
   stage: { id: 'shell.livePublishCard.stage', defaultMessage: 'Stage for review' },
 });
 
 /**
- * "Publish all approved costs to Xero" (METH Stage 13, utterance 4) — the
+ * "Publish all approved costs" (METH Stage 13, utterance 4) — the
  * batch over REAL documents: every Ready cost for the client that carries the
  * publish minimum client-side. Staging creates a real `publish.batch`
  * proposal; the engine DISCARDS the placeholder preview below and stores its

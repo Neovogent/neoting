@@ -1,5 +1,5 @@
 import {
-  Settings as SettingsIcon, Link2, ScanLine, Wand2, Send, CheckCircle, Download,
+  Settings as SettingsIcon, ScanLine, Wand2, Send, CheckCircle, Download,
   List, Sparkles, MessageSquare, ShieldCheck, Building2, Sun, Moon,
 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -15,7 +15,6 @@ import { OPTIONAL_MANDATORY } from '../lib/selectors';
 const m = defineMessages({
   title: { id: 'settings.settingsView.title', defaultMessage: 'Settings' },
   sectionProfile: { id: 'settings.settingsView.sectionProfile', defaultMessage: 'Profile' },
-  sectionConnections: { id: 'settings.settingsView.sectionConnections', defaultMessage: 'Connections' },
   sectionExtraction: { id: 'settings.settingsView.sectionExtraction', defaultMessage: 'Extraction' },
   sectionAutomation: { id: 'settings.settingsView.sectionAutomation', defaultMessage: 'Automation' },
   sectionChasing: { id: 'settings.settingsView.sectionChasing', defaultMessage: 'Chasing' },
@@ -27,7 +26,7 @@ const m = defineMessages({
   sectionSecurity: { id: 'settings.settingsView.sectionSecurity', defaultMessage: 'Security' },
   scopeNote: {
     id: 'settings.settingsView.scopeNote',
-    defaultMessage: 'No mileage, no subscription pricing and no ledger Data Health — all out of scope for this edition.',
+    defaultMessage: 'No mileage, no subscription pricing and no accounts Data Health — all out of scope for this edition.',
   },
 
   practiceProfileTitle: { id: 'settings.settingsView.practiceProfileTitle', defaultMessage: 'Practice profile' },
@@ -46,34 +45,6 @@ const m = defineMessages({
   appearanceNote: {
     id: 'settings.settingsView.appearanceNote',
     defaultMessage: 'Light mode is also on the sidebar, at the bottom. The business portal follows the same choice.',
-  },
-
-  accountingTitle: { id: 'settings.settingsView.accountingTitle', defaultMessage: 'Accounting software' },
-  accountingSubtitle: {
-    id: 'settings.settingsView.accountingSubtitle',
-    defaultMessage: 'Adapter priority: Xero → QuickBooks → Sage → FreeAgent',
-  },
-  xeroConnected: { id: 'settings.settingsView.xeroConnected', defaultMessage: 'Xero connected' },
-  notConnected: { id: 'settings.settingsView.notConnected', defaultMessage: 'Not connected' },
-  bankFeedsTitle: { id: 'settings.settingsView.bankFeedsTitle', defaultMessage: 'Bank feeds' },
-  bankFeedsSubtitle: { id: 'settings.settingsView.bankFeedsSubtitle', defaultMessage: 'Consent expiry and fallback' },
-  bankAccount: { id: 'settings.settingsView.bankAccount', defaultMessage: '{client} — {bank} ••{last4}' },
-  reauthDaysLeft: { id: 'settings.settingsView.reauthDaysLeft', defaultMessage: '{days}d left' },
-  credentialError: { id: 'settings.settingsView.credentialError', defaultMessage: 'Credential error' },
-  statements: { id: 'settings.settingsView.statements', defaultMessage: 'Statements' },
-  manageInBankTab: {
-    id: 'settings.settingsView.manageInBankTab',
-    defaultMessage: "Manage in the client's Bank tab →",
-  },
-  notForUsTitle: { id: 'settings.settingsView.notForUsTitle', defaultMessage: 'Not for us' },
-  notForUsSubtitle: {
-    id: 'settings.settingsView.notForUsSubtitle',
-    defaultMessage: 'Deliberately excluded, not deferred',
-  },
-  notForUsBody: {
-    id: 'settings.settingsView.notForUsBody',
-    defaultMessage:
-      'E-commerce sales connectors — Square, eBay, Etsy, Shopify, PayPal, WooCommerce, Amazon — are excluded from this product. Clients who sell online still get their sales documents in through email, upload or WhatsApp.',
   },
 
   emailRoutingTitle: { id: 'settings.settingsView.emailRoutingTitle', defaultMessage: 'Email routing' },
@@ -216,14 +187,14 @@ const m = defineMessages({
   listsTitle: { id: 'settings.settingsView.listsTitle', defaultMessage: 'Lists' },
   listsSubtitle: {
     id: 'settings.settingsView.listsSubtitle',
-    defaultMessage: "Synced two-way from the client's chart of accounts",
+    defaultMessage: "From the client's chart of accounts, seeded at intake",
   },
   listCategories: { id: 'settings.settingsView.listCategories', defaultMessage: 'Categories' },
   listTaxRates: { id: 'settings.settingsView.listTaxRates', defaultMessage: 'Tax rates' },
   listPaymentMethods: { id: 'settings.settingsView.listPaymentMethods', defaultMessage: 'Payment methods' },
   listProjects: { id: 'settings.settingsView.listProjects', defaultMessage: 'Projects / tracking' },
   listSupplierRules: { id: 'settings.settingsView.listSupplierRules', defaultMessage: 'Supplier rules' },
-  syncedFromLedger: { id: 'settings.settingsView.syncedFromLedger', defaultMessage: 'Synced from ledger' },
+  fromChartOfAccounts: { id: 'settings.settingsView.fromChartOfAccounts', defaultMessage: 'From the chart of accounts' },
   configuredCount: { id: 'settings.settingsView.configuredCount', defaultMessage: '{count} configured' },
   activeCount: { id: 'settings.settingsView.activeCount', defaultMessage: '{count} active' },
 
@@ -357,7 +328,6 @@ const m = defineMessages({
 // call site, because a hook cannot run at module scope.
 const SECTIONS = [
   { key: 'Profile', icon: Building2, label: m.sectionProfile },
-  { key: 'Connections', icon: Link2, label: m.sectionConnections },
   { key: 'Extraction', icon: ScanLine, label: m.sectionExtraction },
   { key: 'Automation', icon: Wand2, label: m.sectionAutomation },
   { key: 'Chasing', icon: Send, label: m.sectionChasing },
@@ -381,7 +351,7 @@ const AUTHORITY_ORDER = [
 
 export function SettingsView() {
   const {
-    settings, updateSettings, clients, accounts, rules, chasePolicy, setChasePolicy,
+    settings, updateSettings, rules, chasePolicy, setChasePolicy,
     matchSettings, setMatchSettings, mandatoryFields, setMandatoryFields,
     approvalWorkflows, routingRules, setActiveTab, logAudit,
   } = useAppContext();
@@ -479,39 +449,6 @@ export function SettingsView() {
                 </div>
                 <p className="text-[12px] text-zinc-500 leading-relaxed mt-4">
                   {intl.formatMessage(m.appearanceNote)}
-                </p>
-              </Panel>
-            </>
-          )}
-
-          {section === 'Connections' && (
-            <>
-              <Panel title={intl.formatMessage(m.accountingTitle)} subtitle={intl.formatMessage(m.accountingSubtitle)}>
-                <div className="flex flex-col gap-2">
-                  {clients.map((c) => (
-                    <Row key={c.id} label={c.name} value={c.xeroConnected ? <Pill tone="green">{intl.formatMessage(m.xeroConnected)}</Pill> : <Pill tone="red">{intl.formatMessage(m.notConnected)}</Pill>} />
-                  ))}
-                </div>
-              </Panel>
-              <Panel title={intl.formatMessage(m.bankFeedsTitle)} subtitle={intl.formatMessage(m.bankFeedsSubtitle)}>
-                <div className="flex flex-col gap-2">
-                  {accounts.slice(0, 6).map((a) => (
-                    <Row
-                      key={a.id}
-                      label={intl.formatMessage(m.bankAccount, { client: a.clientName, bank: a.bankName, last4: a.last4 })}
-                      value={a.status === 'live' ? <Pill tone="green">{intl.formatMessage(m.reauthDaysLeft, { days: a.reauthDays })}</Pill> : a.status === 'error' ? <Pill tone="red">{intl.formatMessage(m.credentialError)}</Pill> : <Pill tone="amber">{intl.formatMessage(m.statements)}</Pill>}
-                    />
-                  ))}
-                </div>
-                {/* Bank data is always one client's, so the way in is the
-                    client — there is no practice-wide Bank to send them to. */}
-                <button onClick={() => setActiveTab('Clients')} className="mt-4 text-[13px] font-bold text-brand hover:underline">
-                  {intl.formatMessage(m.manageInBankTab)}
-                </button>
-              </Panel>
-              <Panel title={intl.formatMessage(m.notForUsTitle)} subtitle={intl.formatMessage(m.notForUsSubtitle)}>
-                <p className="text-[13px] text-zinc-500 leading-relaxed">
-                  {intl.formatMessage(m.notForUsBody)}
                 </p>
               </Panel>
             </>
@@ -688,10 +625,10 @@ export function SettingsView() {
           {section === 'Lists' && (
             <Panel title={intl.formatMessage(m.listsTitle)} subtitle={intl.formatMessage(m.listsSubtitle)}>
               <div className="flex flex-col gap-2">
-                <Row label={intl.formatMessage(m.listCategories)} value={<Pill>{intl.formatMessage(m.syncedFromLedger)}</Pill>} />
-                <Row label={intl.formatMessage(m.listTaxRates)} value={<Pill>{intl.formatMessage(m.syncedFromLedger)}</Pill>} />
+                <Row label={intl.formatMessage(m.listCategories)} value={<Pill>{intl.formatMessage(m.fromChartOfAccounts)}</Pill>} />
+                <Row label={intl.formatMessage(m.listTaxRates)} value={<Pill>{intl.formatMessage(m.fromChartOfAccounts)}</Pill>} />
                 <Row label={intl.formatMessage(m.listPaymentMethods)} value={<Pill>{intl.formatMessage(m.configuredCount, { count: 4 })}</Pill>} />
-                <Row label={intl.formatMessage(m.listProjects)} value={<Pill>{intl.formatMessage(m.syncedFromLedger)}</Pill>} />
+                <Row label={intl.formatMessage(m.listProjects)} value={<Pill>{intl.formatMessage(m.fromChartOfAccounts)}</Pill>} />
                 <Row label={intl.formatMessage(m.listSupplierRules)} value={<Pill>{intl.formatMessage(m.activeCount, { count: rules.length })}</Pill>} />
               </div>
             </Panel>

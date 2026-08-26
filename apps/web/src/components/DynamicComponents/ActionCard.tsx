@@ -69,7 +69,6 @@ const ENGINE_LABEL: Record<MissingItem['detectedBy'], string> = {
   'bank-transaction': 'bank gaps',
   'supplier-statement': 'supplier stmts',
   'statement-gap': 'statement gaps',
-  'ledger-attachment': 'ledger gaps',
   recurring: 'recurring missing',
 };
 

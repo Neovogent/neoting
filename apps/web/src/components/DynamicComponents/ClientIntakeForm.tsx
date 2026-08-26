@@ -87,13 +87,13 @@ const m = defineMessages({
     defaultMessage: 'Best when you already hold the paperwork',
   },
   modeChooserConnectionsHeading: {
-    id: 'clients.modeChooser.connectionsHeading',
-    defaultMessage: 'Either way, the client connects the accounting software and the bank',
+    id: 'clients.modeChooser.noConnectionsHeading',
+    defaultMessage: 'No connections are asked for, either way',
   },
   modeChooserConnectionsBody: {
-    id: 'clients.modeChooser.connectionsBody',
+    id: 'clients.modeChooser.noConnectionsBody',
     defaultMessage:
-      'Both need their own login at the provider, which the practice never holds. One SMS link covers whatever is outstanding.',
+      'Intake asks for no bank connection and no accounting-software connection. Documents come in by upload, email and the portal.',
   },
 
   // InviteIntake — three fields and an SMS.
@@ -143,7 +143,7 @@ const m = defineMessages({
   inviteSmsLinkBody: {
     id: 'clients.inviteIntake.smsLinkBody',
     defaultMessage:
-      'It asks them to register the company, then connect their accounting software and bank. Opens in any phone browser, expires in 72 hours, and never shares their credentials with you.',
+      'It asks them to register the company details — no connections and no logins. Opens in any phone browser and expires in 72 hours.',
   },
   // The three names of what is still empty. They are joined with ', ' at the
   // call site, exactly as before — `formatList` would render "a, b and c" and
@@ -204,22 +204,10 @@ const m = defineMessages({
     id: 'clients.inviteIntake.clientRegisters',
     defaultMessage: 'Client registers',
   },
-  inviteAccountingSoftwareLabel: {
-    id: 'clients.inviteIntake.accountingSoftwareLabel',
-    defaultMessage: 'Accounting software',
-  },
-  inviteBankFeedLabel: {
-    id: 'clients.inviteIntake.bankFeedLabel',
-    defaultMessage: 'Bank feed',
-  },
-  inviteClientConnects: {
-    id: 'clients.inviteIntake.clientConnects',
-    defaultMessage: 'Client connects',
-  },
   inviteApprovalNote: {
     id: 'clients.inviteIntake.approvalNote',
     defaultMessage:
-      'Approving creates the record and queues the SMS — it does not register or connect anything. The client shows as awaiting registration until they finish.',
+      'Approving creates the record and queues the SMS — it does not register anything. The client shows as awaiting registration until they finish.',
   },
   inviteApproveLabel: {
     id: 'clients.inviteIntake.approveLabel',
@@ -228,7 +216,7 @@ const m = defineMessages({
   inviteSuccessMessage: {
     id: 'clients.inviteIntake.successMessage',
     defaultMessage:
-      '{name} created and one setup SMS queued to {mobile} — they register the company and connect their accounting software and bank themselves.',
+      '{name} created and one setup SMS queued to {mobile} — they register the company details themselves.',
   },
   inviteAuditAction: {
     id: 'clients.inviteIntake.auditAction',
@@ -263,10 +251,6 @@ const m = defineMessages({
   practiceStepContext: {
     id: 'clients.practiceIntake.stepContext',
     defaultMessage: 'Context',
-  },
-  practiceStepClientSetup: {
-    id: 'clients.practiceIntake.stepClientSetup',
-    defaultMessage: 'Client setup',
   },
   practiceLegalNameLabel: {
     id: 'clients.practiceIntake.legalNameLabel',
@@ -437,43 +421,6 @@ const m = defineMessages({
     id: 'clients.practiceIntake.unusualPlaceholder',
     defaultMessage: 'Quarterly equipment leases',
   },
-  practiceSetupIntro: {
-    id: 'clients.practiceIntake.setupIntro',
-    defaultMessage:
-      "You can key in everything above yourself. These two you cannot — both need the client's own login at the provider, which the practice never holds. They go out on one SMS link.",
-  },
-  practiceAccountingSoftwareName: {
-    id: 'clients.practiceIntake.accountingSoftwareName',
-    defaultMessage: 'Accounting software',
-  },
-  practiceAccountingSoftwareDetail: {
-    id: 'clients.practiceIntake.accountingSoftwareDetail',
-    defaultMessage: 'Xero, QuickBooks, Sage or FreeAgent — chart of accounts and tax rates sync both ways',
-  },
-  practiceBankFeedName: {
-    id: 'clients.practiceIntake.bankFeedName',
-    defaultMessage: 'Bank feed (open banking)',
-  },
-  practiceBankFeedDetail: {
-    id: 'clients.practiceIntake.bankFeedDetail',
-    defaultMessage: 'Read-only — until it is live the client is on the statement-upload fallback',
-  },
-  practiceSmsLinkTo: {
-    id: 'clients.practiceIntake.smsLinkTo',
-    defaultMessage: 'One SMS link to {mobile}',
-  },
-  practiceSmsLinkToClient: {
-    id: 'clients.practiceIntake.smsLinkToClient',
-    defaultMessage: 'One SMS link to the client',
-  },
-  practiceSmsLinkBody: {
-    id: 'clients.practiceIntake.smsLinkBody',
-    defaultMessage: 'Opens in any phone browser, expires in 72 hours, and never shares their credentials with you.',
-  },
-  practiceNoMobileWarning: {
-    id: 'clients.practiceIntake.noMobileWarning',
-    defaultMessage: 'No mobile number yet — add one on the Contact step or the setup link cannot be sent.',
-  },
   practiceBack: {
     id: 'clients.practiceIntake.back',
     defaultMessage: 'Back',
@@ -505,10 +452,6 @@ const m = defineMessages({
   practiceContactSection: {
     id: 'clients.practiceIntake.contactSection',
     defaultMessage: 'Primary contact',
-  },
-  practiceSetupSection: {
-    id: 'clients.practiceIntake.setupSection',
-    defaultMessage: 'Client setup — one SMS link',
   },
   practiceLogoLabel: {
     id: 'clients.practiceIntake.logoLabel',
@@ -554,34 +497,9 @@ const m = defineMessages({
     id: 'clients.practiceIntake.whatsappOff',
     defaultMessage: 'Off',
   },
-  practiceBankFeedRowLabel: {
-    id: 'clients.practiceIntake.bankFeedRowLabel',
-    defaultMessage: 'Bank feed',
-  },
-  practiceLinkGoesToLabel: {
-    id: 'clients.practiceIntake.linkGoesToLabel',
-    defaultMessage: 'Link goes to',
-  },
-  practiceLinkExpiresLabel: {
-    id: 'clients.practiceIntake.linkExpiresLabel',
-    defaultMessage: 'Link expires',
-  },
-  practiceLinkExpiresValue: {
-    id: 'clients.practiceIntake.linkExpiresValue',
-    defaultMessage: 'in 72 hours',
-  },
-  practiceClientConnects: {
-    id: 'clients.practiceIntake.clientConnects',
-    defaultMessage: 'Client connects',
-  },
-  practiceSetupNote: {
-    id: 'clients.practiceIntake.setupNote',
-    defaultMessage:
-      "Nothing is connected on approval. Both connections need the client's own login at the provider, so they stay disconnected until the client completes the link.",
-  },
   practiceNoMobileReviewWarning: {
     id: 'clients.practiceIntake.noMobileReviewWarning',
-    defaultMessage: 'No mobile number — the setup link and SMS chasing will not work until one is added.',
+    defaultMessage: 'No mobile number — SMS chasing will not work until one is added.',
   },
   practiceApproveLabel: {
     id: 'clients.practiceIntake.approveLabel',
@@ -589,19 +507,12 @@ const m = defineMessages({
   },
   practiceSuccessMessage: {
     id: 'clients.practiceIntake.successMessage',
-    defaultMessage:
-      '{name} created. One setup SMS queued to {mobile} — they connect the accounting software and bank themselves.',
+    defaultMessage: '{name} created and ready to use.',
   },
-  // The two nouns the success line falls back to when a field is still empty.
-  // They fill a slot rather than adding a clause, so one sentence still covers
-  // all four states.
+  // The noun the success line falls back to when the name is still empty.
   practiceSuccessFallbackName: {
     id: 'clients.practiceIntake.successFallbackName',
     defaultMessage: 'Client',
-  },
-  practiceSuccessFallbackMobile: {
-    id: 'clients.practiceIntake.successFallbackMobile',
-    defaultMessage: 'their mobile',
   },
   practiceAuditAction: {
     id: 'clients.practiceIntake.auditAction',
@@ -610,12 +521,6 @@ const m = defineMessages({
   practiceAuditScopeUnnamed: {
     id: 'clients.practiceIntake.auditScopeUnnamed',
     defaultMessage: 'unnamed client',
-  },
-
-  // SetupRequest — the badge on a connection only the client can make.
-  setupRequestClientConnects: {
-    id: 'clients.setupRequest.clientConnects',
-    defaultMessage: 'Client connects',
   },
 
   // LogoPicker.
@@ -657,19 +562,17 @@ const STEPS: [MessageDescriptor, ...MessageDescriptor[]] = [
   m.practiceStepContact,
   m.practiceStepBookkeeping,
   m.practiceStepContext,
-  m.practiceStepClientSetup,
 ];
 
 /**
- * Who fills the record in. Either way the client connects the accounting
- * software and the bank themselves — those need their own login at the
- * provider, which the practice never holds.
+ * Who fills the record in. The practice path keys everything in itself; the
+ * invite path sends one SMS link and the client registers their own details.
+ * Neither path asks for a connection of any kind (D47).
  */
 type IntakeMode = 'invite' | 'practice';
 
-/** Both paths send the same link; the invite path just asks for more on it. */
-const PRACTICE_TASKS: SetupTask[] = ['ledger', 'bank'];
-const INVITE_TASKS: SetupTask[] = ['profile', 'ledger', 'bank'];
+/** The invite path's link asks for the company record and nothing else. */
+const INVITE_TASKS: SetupTask[] = ['profile'];
 
 /**
  * A picker's options. Typed non-empty because the form takes its defaults off
@@ -948,14 +851,6 @@ function InviteIntake({ defaultName, onBack }: { defaultName: string; onBack: ()
                         label: intl.formatMessage(m.inviteCompanyDetailsLabel),
                         value: <Pill tone="amber">{intl.formatMessage(m.inviteClientRegisters)}</Pill>,
                       },
-                      {
-                        label: intl.formatMessage(m.inviteAccountingSoftwareLabel),
-                        value: <Pill tone="amber">{intl.formatMessage(m.inviteClientConnects)}</Pill>,
-                      },
-                      {
-                        label: intl.formatMessage(m.inviteBankFeedLabel),
-                        value: <Pill tone="amber">{intl.formatMessage(m.inviteClientConnects)}</Pill>,
-                      },
                     ]}
                   />
                   <p className="text-[12px] text-zinc-500 leading-relaxed mt-3">
@@ -978,7 +873,6 @@ function InviteIntake({ defaultName, onBack }: { defaultName: string; onBack: ()
                 missingDocs: 0,
                 toReview: 0,
                 deadline: '—',
-                xeroConnected: false,
                 bankConnected: false,
                 contactName,
                 mobile,
@@ -994,9 +888,9 @@ function InviteIntake({ defaultName, onBack }: { defaultName: string; onBack: ()
   );
 }
 
-/** The full six-step record, keyed in by the practice. */
+/** The full five-step record, keyed in by the practice. */
 function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: () => void }) {
-  const { addClient, sendOnboardingLink } = useAppContext();
+  const { addClient } = useAppContext();
   const [step, setStep] = useState(0);
   const intl = useIntl();
 
@@ -1032,7 +926,6 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
 
   const isLast = step === STEPS.length - 1;
 
-  const hasMobile = form.mobile.trim().length > 0;
 
   return (
     <Shell
@@ -1265,41 +1158,6 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
             </>
           )}
 
-          {step === 5 && (
-            <>
-              <p className="text-[13px] text-zinc-500 leading-relaxed">
-                {intl.formatMessage(m.practiceSetupIntro)}
-              </p>
-              <SetupRequest
-                name={intl.formatMessage(m.practiceAccountingSoftwareName)}
-                detail={intl.formatMessage(m.practiceAccountingSoftwareDetail)}
-              />
-              <SetupRequest
-                name={intl.formatMessage(m.practiceBankFeedName)}
-                detail={intl.formatMessage(m.practiceBankFeedDetail)}
-              />
-
-              <div className="flex items-start gap-3 p-4 rounded-2xl border border-white/5 bg-ground/60 shadow-inner">
-                <Smartphone size={16} className="text-zinc-500 mt-0.5 shrink-0" />
-                <div className="min-w-0">
-                  <div className="text-[13px] font-bold text-white">
-                    {hasMobile
-                      ? intl.formatMessage(m.practiceSmsLinkTo, { mobile: form.mobile.trim() })
-                      : intl.formatMessage(m.practiceSmsLinkToClient)}
-                  </div>
-                  <p className="text-[12px] text-zinc-500 mt-1 leading-relaxed">
-                    {intl.formatMessage(m.practiceSmsLinkBody)}
-                  </p>
-                </div>
-              </div>
-
-              {!hasMobile && (
-                <p className="text-[13px] text-amber-400 font-semibold">
-                  {intl.formatMessage(m.practiceNoMobileWarning)}
-                </p>
-              )}
-            </>
-          )}
         </motion.div>
       </div>
 
@@ -1399,28 +1257,6 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
                     ]}
                   />
                 </ReviewSection>
-                <ReviewSection title={intl.formatMessage(m.practiceSetupSection)}>
-                  <ReviewRows
-                    rows={[
-                      {
-                        label: intl.formatMessage(m.practiceAccountingSoftwareName),
-                        value: <Pill tone="amber">{intl.formatMessage(m.practiceClientConnects)}</Pill>,
-                      },
-                      {
-                        label: intl.formatMessage(m.practiceBankFeedRowLabel),
-                        value: <Pill tone="amber">{intl.formatMessage(m.practiceClientConnects)}</Pill>,
-                      },
-                      { label: intl.formatMessage(m.practiceLinkGoesToLabel), value: form.mobile.trim() || '—' },
-                      {
-                        label: intl.formatMessage(m.practiceLinkExpiresLabel),
-                        value: intl.formatMessage(m.practiceLinkExpiresValue),
-                      },
-                    ]}
-                  />
-                  <p className="text-[12px] text-zinc-500 leading-relaxed mt-3">
-                    {intl.formatMessage(m.practiceSetupNote)}
-                  </p>
-                </ReviewSection>
                 {!form.mobile.trim() && (
                   <p className="text-[13px] text-amber-400 font-semibold">
                     {intl.formatMessage(m.practiceNoMobileReviewWarning)}
@@ -1431,7 +1267,6 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
             approveLabel={intl.formatMessage(m.practiceApproveLabel)}
             successMessage={intl.formatMessage(m.practiceSuccessMessage, {
               name: form.name.trim() || intl.formatMessage(m.practiceSuccessFallbackName),
-              mobile: form.mobile.trim() || intl.formatMessage(m.practiceSuccessFallbackMobile),
             })}
             auditAction={intl.formatMessage(m.practiceAuditAction)}
             auditScope={form.name.trim() || intl.formatMessage(m.practiceAuditScopeUnnamed)}
@@ -1444,8 +1279,7 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
                 missingDocs: 0,
                 toReview: 0,
                 deadline: form.deadline.trim() || '—',
-                // Always false at creation: the practice cannot connect these.
-                xeroConnected: false,
+                // Always false at creation: statements are the only bank input.
                 bankConnected: false,
                 contactName: form.contactName.trim(),
                 mobile: form.mobile.trim(),
@@ -1454,7 +1288,6 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
                 logoDataUrl: form.logoDataUrl || undefined,
               };
               addClient(client);
-              sendOnboardingLink(client, PRACTICE_TASKS);
             }}
           />
         </div>
@@ -1543,32 +1376,6 @@ function Toggle({
         <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${value ? 'left-6' : 'left-1'}`} />
       </div>
     </button>
-  );
-}
-
-/**
- * A connection only the client can make. Deliberately not a toggle: the
- * practice has no credentials at either provider, so "skip" would only ever
- * mean "ask later" — and the record would still be unusable until it happened.
- */
-function SetupRequest({ name, detail }: { name: string; detail: string }) {
-  const intl = useIntl();
-
-  return (
-    <div className="flex items-center justify-between gap-4 p-4 border border-white/5 rounded-2xl bg-ground/60 shadow-inner">
-      <div className="flex items-center gap-3 min-w-0">
-        <div className="w-9 h-9 rounded-xl bg-raised border border-white/5 flex items-center justify-center text-zinc-400 shrink-0">
-          <Link2 size={16} />
-        </div>
-        <div className="min-w-0">
-          <div className="text-sm font-bold text-white">{name}</div>
-          <div className="text-[12px] text-zinc-500 truncate">{detail}</div>
-        </div>
-      </div>
-      <span className="shrink-0 px-4 py-2 rounded-full text-[12px] font-bold text-brand bg-brand/10 border border-brand/20">
-        {intl.formatMessage(m.setupRequestClientConnects)}
-      </span>
-    </div>
   );
 }
 

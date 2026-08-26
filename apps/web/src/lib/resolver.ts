@@ -62,7 +62,7 @@ const m = defineMessages({
   },
   showAnalytics: {
     id: 'pipeline.resolver.showAnalytics',
-    defaultMessage: 'Here are the document-pipeline metrics. (Ledger reporting is out of scope for this product.)',
+    defaultMessage: 'Here are the document-pipeline metrics. (Accounts reporting is out of scope for this product.)',
   },
   reviewDocument: {
     id: 'pipeline.resolver.reviewDocument',
@@ -132,7 +132,7 @@ const PATTERNS: { intent: Intent; test: RegExp; response: MessageDescriptor }[] 
   },
   {
     intent: 'PUBLISH',
-    test: /\b(publish|push|send to (xero|quickbooks|qbo|sage|freeagent))\b/i,
+    test: /\b(publish|push|release|export)\b/i,
     response: m.publish,
   },
   {

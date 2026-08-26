@@ -143,7 +143,6 @@ export function BusinessSignInView() {
       missingDocs: 0,
       toReview: 0,
       deadline: '—',
-      xeroConnected: false,
       bankConnected: false,
       contactName: form.contactName.trim(),
       mobile: form.mobile.trim(),

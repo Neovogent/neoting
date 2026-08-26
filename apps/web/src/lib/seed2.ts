@@ -18,7 +18,7 @@ import type {
  * self-approval, auto-publish, and one workflow switched off.
  *
  * Client scope is the load-bearing part. American Burger has opted in and has
- * five; Cosmo Restaurants has one narrow rule for capital spend and nothing
+ * five; Ananda Group has one narrow rule for capital spend and nothing
  * else, so its routine invoices publish without pausing — which is the
  * wireframe's "opt-in, default OFF" made visible rather than asserted.
  */
@@ -119,7 +119,7 @@ export const seedWorkflows: ApprovalWorkflow[] = [
   },
   {
     /**
-     * Cosmo's only rule beyond capital spend. Deliberately narrow: they asked
+     * Ananda's only rule beyond capital spend. Deliberately narrow: they asked
      * for eyes on the two wholesalers they buy from and nothing else, so the
      * rest of their invoices publish without pausing. The queue therefore has
      * both clients in it while their opt-in levels stay visibly different.

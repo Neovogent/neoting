@@ -15,10 +15,10 @@ import { useEscape } from '../../lib/useEscape';
  * The "are you sure" that sits in front of an approval step.
  *
  * Approving is not reversible in any way the person can see — the item moves
- * on, and at the final stage it locks and publishes to the ledger — so the
+ * on, and at the final stage it locks and is released for export — so the
  * confirmation names what is about to happen rather than asking a generic
  * question. "Are you sure?" on its own tells nobody anything; "This is the
- * last stage — approving locks it and publishes to Xero" does.
+ * last stage — approving locks it and releases it for export" does.
  */
 export function ConfirmStep({ title, detail, consequence, confirmLabel, altLabel, tone = 'brand', onConfirm, onCancel, onAlt }: {
   title: string;
