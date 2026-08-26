@@ -7,10 +7,19 @@ import type { TourStep } from './steps';
 
 /**
  * The visible half of the tour: a spotlight ring around the target and the
- * explanation box. The overlay itself lets pointer events through — the page
- * underneath still scrolls and hovers — and TourProvider's guard swallows
- * clicks and keystrokes outside the box, so everything is touchable and
- * nothing actually fires while the tour is on.
+ * explanation box.
+ *
+ * ⚠ WHAT IS AND IS NOT BLOCKED WHILE THE TOUR IS ON. The overlay lets pointer
+ * events through — `pointer-events-none` on the root, re-enabled only on the
+ * box — so the page underneath still scrolls, hovers AND RESPONDS TO CLICKS.
+ * Nothing swallows them. The only guard is `lockNavigation` in `lib/router.ts`,
+ * and it is narrower than it sounds: a tab, a row or a deep-link button still
+ * runs its handler and still changes local state, it just cannot move the
+ * ADDRESS, so the tour keeps the screen it is describing. Keystrokes are not
+ * swallowed either — TourProvider adds arrow/Enter/Escape handlers on top of
+ * whatever the page already listens for, and skips them while a field has
+ * focus. (This paragraph replaces one that claimed the opposite. Read the
+ * router before trusting a comment about what the tour blocks.)
  *
  * Desktop: the box floats beside the target — right, left, below, above,
  * whichever has room. Phone: the box is a sheet at the bottom, and moves to
@@ -18,9 +27,13 @@ import type { TourStep } from './steps';
  * is talking about. Before measuring, the target is scrolled clear of the
  * band the box will occupy.
  *
- * The step's own words arrive as MessageDescriptors from `steps.ts` and are
- * resolved here — the tour is the only place they are read, so it is the only
- * place that needs `useIntl`.
+ * The step's own words arrive from `steps.ts` as PLAIN ENGLISH STRINGS and are
+ * rendered as variables — `{step.title}`, never a literal, which is why
+ * `neoting/no-literal-string-in-jsx` has nothing to say about them. The tour's
+ * own chrome below is a different thing and keeps its `defineMessages`: those
+ * are buttons and a counter, ordinary UI copy, and un-wrapping them would be a
+ * lint error as well as a regression. See the header of `steps.ts` for the
+ * decision that split the two.
  */
 
 const m = defineMessages({
@@ -231,8 +244,8 @@ export function TourOverlay({
         <div className="p-5 pb-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <div className="text-[11px] font-bold uppercase tracking-widest text-brand">{intl.formatMessage(step.section)}</div>
-              <h2 id="tour-title" className="font-sans text-[17px] font-bold tracking-tight text-white mt-1 leading-snug">{intl.formatMessage(step.title)}</h2>
+              <div className="text-[11px] font-bold uppercase tracking-widest text-brand">{step.section}</div>
+              <h2 id="tour-title" className="font-sans text-[17px] font-bold tracking-tight text-white mt-1 leading-snug">{step.title}</h2>
             </div>
             <button
               onClick={onStop}
@@ -243,14 +256,14 @@ export function TourOverlay({
               <X size={16} />
             </button>
           </div>
-          <p className="text-[13.5px] leading-relaxed text-zinc-400 mt-2.5">{intl.formatMessage(step.body)}</p>
+          <p className="text-[13.5px] leading-relaxed text-zinc-400 mt-2.5">{step.body}</p>
           {step.ask && (
             <div className="mt-3 flex items-start gap-2 rounded-xl bg-ground/60 border border-white/5 px-3 py-2">
               <MessageSquare size={13} className="text-brand mt-0.5 shrink-0" />
               <div className="min-w-0 text-[12.5px] leading-snug">
                 <span className="text-zinc-500 font-semibold"><FormattedMessage {...m.orJustAsk} /></span>
                 <span className="text-zinc-200 font-medium">
-                  <FormattedMessage {...m.askQuoted} values={{ ask: intl.formatMessage(step.ask) }} />
+                  <FormattedMessage {...m.askQuoted} values={{ ask: step.ask }} />
                 </span>
               </div>
             </div>

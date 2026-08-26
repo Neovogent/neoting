@@ -30,7 +30,7 @@ const m = defineMessages({
  * clients can be attached at once for cross-client questions (PRD section 5.4).
  */
 export function ContextBar() {
-  const { isHistoryVisible, toggleHistory, clients, attachedClients, attachClient, detachClient } = useAppContext();
+  const { isHistoryVisible, toggleHistory, clients, attachedClients, attachClient, detachClient, documentsSource } = useAppContext();
   const intl = useIntl();
   const tour = useTour();
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -190,16 +190,46 @@ export function ContextBar() {
       </div>
 
       {/* Top right: the guided tour. It walks every screen and keeps coming
-          back to the point that the chat can do all of it. */}
-      <button
-        onClick={() => tour.start(0)}
-        data-tour="tour-button"
-        className="shrink-0 flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full text-[13px] font-bold text-brand bg-brand/10 border border-brand/30 hover:bg-brand/20 transition-colors whitespace-nowrap"
-      >
-        <Sparkles size={15} />
-        <span className="hidden sm:inline">{intl.formatMessage(m.tourButton)}</span>
-        <span className="sm:hidden">{intl.formatMessage(m.tourButtonShort)}</span>
-      </button>
+          back to the point that the chat can do all of it.
+
+          KEYED TO `documentsSource !== 'api'` — the app's existing
+          demo-vs-live signal, the same one the S14 gating sweep used to hide
+          every local writer whose change a live poll would revert. It is
+          `API_ENABLED ? 'api' : 'seed'` in AppContext, so this reads exactly
+          as "the synthetic dataset is what is on screen".
+
+          Why the tour belongs behind it rather than in every header:
+
+          - the script is WRITTEN AGAINST the synthetic cast. It routes to
+            `/clients/1`, narrates American Burger by name, and seeds
+            conversations whose assistant turns are canned (`steps.ts`,
+            DEMO-MOCK). Against a real firm's data it points at the wrong
+            rows and says things that are not true of them;
+          - two of its anchors only exist in synthetic mode.
+            `bulk-publish-selected` is a DataTable bulk action, and live
+            `ClientInbox` drops the whole synthetic bulk set — so the
+            costs-ready-publish step degrades to a centred card with an amber
+            "not on screen" line. Gating the entrance is what makes that step
+            honest instead of broken;
+          - a demo surface sitting permanently in a working accountant's
+            chrome is a product decision nobody made. Shakib kept the tour in
+            scope; this keeps it where it tells the truth.
+
+          NOT deleted, and not unreachable when the API is on: `/demo` (and
+          `/demo?step=n`) still starts it — TourProvider owns that address —
+          which is the deliberate door for anyone who wants the walkthrough
+          over live data and knows what they are looking at. */}
+      {documentsSource !== 'api' && (
+        <button
+          onClick={() => tour.start(0)}
+          data-tour="tour-button"
+          className="shrink-0 flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full text-[13px] font-bold text-brand bg-brand/10 border border-brand/30 hover:bg-brand/20 transition-colors whitespace-nowrap"
+        >
+          <Sparkles size={15} />
+          <span className="hidden sm:inline">{intl.formatMessage(m.tourButton)}</span>
+          <span className="sm:hidden">{intl.formatMessage(m.tourButtonShort)}</span>
+        </button>
+      )}
 
       {/* The connection chips are gone from here.
           Both said the same thing on every conversation regardless of subject,

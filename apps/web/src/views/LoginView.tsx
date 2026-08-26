@@ -116,6 +116,13 @@ export function LoginView() {
   // h-vv, not min-h-vv: index.css registers `@utility h-vv` and
   // `@utility max-h-vv` only, so `min-h-vv` compiled to nothing and this column
   // collapsed to content height on a phone with the URL bar showing.
+  //
+  // A plain `//` comment, ABOVE the return — not a `{/* … */}` one below it.
+  // A JSX comment is an expression container, so as the first thing inside
+  // `return (` it is a second child of nothing and the file stops parsing:
+  // `TS1005: ) expected`. It shipped that way once and took `tsc`, `vite` and
+  // this view's whole test suite — which never ran, and so reported nothing
+  // missing — down with it.
   return (
     <div className="flex-1 flex flex-col min-w-0 h-vv bg-ground overflow-y-auto px-safe">
       <div className="w-full max-w-sm mx-auto px-5 pt-10 pb-safe-6 my-auto flex flex-col gap-5">

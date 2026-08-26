@@ -1,5 +1,3 @@
-import type { MessageDescriptor } from 'react-intl';
-import { defineMessages } from 'react-intl';
 import type { Client, Intent, Message, MessagePayload } from '../lib/types';
 import { resolveScope } from '../lib/resolver';
 
@@ -12,242 +10,252 @@ import { resolveScope } from '../lib/resolver';
  * answer cards, and every later step carries an "Or just ask" sentence, the
  * prompt that would do the same thing from the composer.
  *
- * Every user-visible string here is a MessageDescriptor, not a literal.
- * Governance §12.6 applies to a .ts data file exactly as it does to markup —
- * and this is the file where it would go unnoticed, because
- * `no-literal-string-in-jsx` only ever looks at JSX. The descriptors are
- * resolved by TourOverlay through `useIntl`, and by TourProvider (which owns
- * the `t` on TourCtx) for the sentences seeded into a conversation.
+ * ⚠ THIS FILE IS ENGLISH-ONLY, ON PURPOSE. Shakib decided it on 26 Aug 2026,
+ * told that carrying the tour through react-intl costs +206 catalogue keys —
+ * ~190 of them prose paragraphs — for a surface that exists to demonstrate the
+ * product rather than to run a practice on. "Yeah English only" was the call.
+ * So the three blocks below are plain string constants, not `defineMessages`,
+ * and TourStep carries strings rather than MessageDescriptors. Do not re-i18n
+ * them without a decision that reverses that one.
+ *
+ * What this is NOT licence to do: the tour's own CHROME — leave / back / next /
+ * finish / the progress counter / "Or just ask" — stays internationalised in
+ * `TourOverlay.tsx`, which keeps its own `defineMessages`. That is ordinary UI
+ * copy on a button, it is rendered as a JSX literal would be, and
+ * `neoting/no-literal-string-in-jsx` is an ERROR on it. The step prose escapes
+ * that rule only because TourOverlay renders it as a VARIABLE —
+ * `{step.title}`, never a literal — which the rule does not and cannot see.
  */
 
 /** Section headings, shared across the steps that sit under them. */
-const s = defineMessages({
-  welcome: { id: 'tour.section.welcome', defaultMessage: 'Welcome' },
-  aiWorkspace: { id: 'tour.section.aiWorkspace', defaultMessage: 'AI Workspace' },
-  fromTheChat: { id: 'tour.section.fromTheChat', defaultMessage: 'From the chat' },
-  navigation: { id: 'tour.section.navigation', defaultMessage: 'Navigation' },
-  clients: { id: 'tour.section.clients', defaultMessage: 'Clients' },
-  clientRecord: { id: 'tour.section.clientRecord', defaultMessage: 'Client record' },
-  inboxes: { id: 'tour.section.inboxes', defaultMessage: 'Inboxes' },
-  chases: { id: 'tour.section.chases', defaultMessage: 'Chases' },
-  approvals: { id: 'tour.section.approvals', defaultMessage: 'Approvals' },
-  documents: { id: 'tour.section.documents', defaultMessage: 'Documents' },
-  analytics: { id: 'tour.section.analytics', defaultMessage: 'Analytics' },
-  team: { id: 'tour.section.team', defaultMessage: 'Team' },
-  settings: { id: 'tour.section.settings', defaultMessage: 'Settings' },
-  businessPortal: { id: 'tour.section.businessPortal', defaultMessage: 'Business portal' },
-  done: { id: 'tour.section.done', defaultMessage: 'Done' },
-});
+const s = {
+  welcome: 'Welcome',
+  aiWorkspace: 'AI Workspace',
+  fromTheChat: 'From the chat',
+  navigation: 'Navigation',
+  clients: 'Clients',
+  clientRecord: 'Client record',
+  inboxes: 'Inboxes',
+  chases: 'Chases',
+  approvals: 'Approvals',
+  documents: 'Documents',
+  analytics: 'Analytics',
+  team: 'Team',
+  settings: 'Settings',
+  businessPortal: 'Business portal',
+  done: 'Done',
+};
 
 /**
- * Step copy. One id per step per field, so a translator sees the title, the
- * body and the "or just ask" prompt of a step as three separate strings —
- * which is what they are: a heading, a paragraph, and a sentence a user is
- * meant to be able to type back into the composer.
+ * Step copy: a heading, a paragraph, and — where the same thing can be had
+ * from the composer — the sentence a user is meant to be able to type back
+ * into the chat. Three fields per step, because they are three different
+ * kinds of writing, not one blob.
  */
-const m = defineMessages({
-  welcomeTitle: { id: 'tour.steps.welcome.title', defaultMessage: 'A quick tour of the whole practice' },
-  welcomeBody: { id: 'tour.steps.welcome.body', defaultMessage: 'In about five minutes you will see every screen — clients, inboxes, chasing, approvals, publishing to Xero, and the portal your clients use. One idea runs through all of it: anything you can click, you can also just ask for in the chat.' },
-  composerTitle: { id: 'tour.steps.composer.title', defaultMessage: 'Start by asking' },
-  composerBody: { id: 'tour.steps.composer.body', defaultMessage: 'This box is the front door. Type what you need in plain English — "what is missing for Ananda?", "publish the ready items", "add a client" — and the answer comes back as something you can act on, not a paragraph.' },
-  attachClientTitle: { id: 'tour.steps.attachClient.title', defaultMessage: 'Scope a conversation to a client' },
-  attachClientBody: { id: 'tour.steps.attachClient.body', defaultMessage: 'Attach one or more clients and every answer is about them. Leave it empty and questions span the whole practice.' },
-  composerDocumentsTitle: { id: 'tour.steps.composerDocuments.title', defaultMessage: 'Drop documents straight into the chat' },
-  composerDocumentsBody: { id: 'tour.steps.composerDocuments.body', defaultMessage: 'PDF, photos, HEIC, CSV and XLSX. They are read, classified into Costs or Sales, and filed to the right client — a spreadsheet is read row by row rather than OCR-ed.' },
-  composerVoiceTitle: { id: 'tour.steps.composerVoice.title', defaultMessage: 'Or say it' },
-  composerVoiceBody: { id: 'tour.steps.composerVoice.body', defaultMessage: 'Push to talk. You see the transcript and confirm it before anything runs.' },
-  historyTitle: { id: 'tour.steps.history.title', defaultMessage: 'Every conversation is kept' },
-  historyBody: { id: 'tour.steps.history.body', defaultMessage: 'Pinned clients and recent conversations live here. Each chat has its own address, so a link in a message lands exactly where you were.' },
-  chatMissingTitle: { id: 'tour.steps.chatMissing.title', defaultMessage: 'Ask what is missing' },
-  chatMissingBody: { id: 'tour.steps.chatMissing.body', defaultMessage: 'The answer is a working card: how many documents are outstanding, for whom, and the next move — chase them, review the list, or export it. Nothing to find in a menu.' },
-  chatMissingAsk: { id: 'tour.steps.chatMissing.ask', defaultMessage: "What's missing for American Burger?" },
-  chatApproveTitle: { id: 'tour.steps.chatApprove.title', defaultMessage: 'Approve a batch' },
-  chatApproveBody: { id: 'tour.steps.chatApprove.body', defaultMessage: 'Approvals come back with a review gate: read what is in the batch, who signed off, and what the rules passed — then approve. The same gate the Approvals screen uses, inside the conversation.' },
-  chatApproveAsk: { id: 'tour.steps.chatApprove.ask', defaultMessage: 'Approve the pending items for American Burger' },
-  chatPublishTitle: { id: 'tour.steps.chatPublish.title', defaultMessage: 'Send it to Xero' },
-  chatPublishBody: { id: 'tour.steps.chatPublish.body', defaultMessage: 'Ask to publish and the Ready items are bundled with what will be sent — extracted data plus the original image — and what is held back and why. Approve here and it goes to the ledger. That is the whole "send to Xero" flow, from a sentence.' },
-  chatPublishAsk: { id: 'tour.steps.chatPublish.ask', defaultMessage: 'Publish the ready items for American Burger to Xero' },
-  chatMatchesTitle: { id: 'tour.steps.chatMatches.title', defaultMessage: 'Reconcile the bank' },
-  chatMatchesBody: { id: 'tour.steps.chatMatches.body', defaultMessage: 'Bank lines are matched to documents with a confidence score. Confirmed matches are evidence; probable ones say what is missing. Unmatch from the card if the AI got one wrong.' },
-  chatMatchesAsk: { id: 'tour.steps.chatMatches.ask', defaultMessage: 'Match the bank feed for American Burger' },
-  chatRuleTitle: { id: 'tour.steps.chatRule.title', defaultMessage: 'Teach it a rule' },
-  chatRuleBody: { id: 'tour.steps.chatRule.body', defaultMessage: 'Describe a rule in words — supplier, conditions, what to code it to — and it is built for you, with any conflict called out. Choose whether it also applies to what is already in the inbox.' },
-  chatRuleAsk: { id: 'tour.steps.chatRule.ask', defaultMessage: 'Always code Shell receipts for American Burger to Motor expenses' },
-  chatInviteTitle: { id: 'tour.steps.chatInvite.title', defaultMessage: 'Bring a colleague in' },
-  chatInviteBody: { id: 'tour.steps.chatInvite.body', defaultMessage: 'Inviting someone is a form in the chat: role, permissions, which clients. Everything people-related — colleagues, teams, client users — can start here.' },
-  chatInviteAsk: { id: 'tour.steps.chatInvite.ask', defaultMessage: 'Invite Sam as a standard user with access to American Burger' },
-  chatAnalyticsTitle: { id: 'tour.steps.chatAnalytics.title', defaultMessage: 'Ask how things are going' },
-  chatAnalyticsBody: { id: 'tour.steps.chatAnalytics.body', defaultMessage: 'Pipeline health, correction rate, chase response times — as tiles and a chart, scoped to whoever is attached.' },
-  chatAnalyticsAsk: { id: 'tour.steps.chatAnalytics.ask', defaultMessage: 'How is the pipeline doing?' },
-  chatAddClientTitle: { id: 'tour.steps.chatAddClient.title', defaultMessage: 'Even onboarding a client' },
-  chatAddClientBody: { id: 'tour.steps.chatAddClient.body', defaultMessage: 'Two paths: send the client a registration link (they connect their own Xero and bank), or register them yourself. The same intake the Clients screen uses.' },
-  chatAddClientAsk: { id: 'tour.steps.chatAddClient.ask', defaultMessage: 'Add a new client called Harbour Cafe' },
-  navTitle: { id: 'tour.steps.nav.title', defaultMessage: 'The screens, when you want them' },
-  navBody: { id: 'tour.steps.nav.body', defaultMessage: 'Everything the chat can do also has a screen, for when you want to browse rather than ask. On a phone the rail becomes this bar; the rest sits under More.' },
-  clientsTitle: { id: 'tour.steps.clients.title', defaultMessage: 'Your client list' },
-  clientsBody: { id: 'tour.steps.clients.body', defaultMessage: 'Every business you look after, with what is outstanding on each. Switch between cards and a sortable table; star the ones you are working on this week.' },
-  clientsAsk: { id: 'tour.steps.clients.ask', defaultMessage: 'Show me my clients' },
-  clientsAddTitle: { id: 'tour.steps.clientsAdd.title', defaultMessage: 'Add a client' },
-  clientsAddBody: { id: 'tour.steps.clientsAdd.body', defaultMessage: 'Send them a registration link by SMS — they add their own details and connect their ledger and bank — or register them on their behalf.' },
-  clientsAddAsk: { id: 'tour.steps.clientsAdd.ask', defaultMessage: 'Add a new client' },
-  clientsCardTitle: { id: 'tour.steps.clientsCard.title', defaultMessage: 'A client at a glance' },
-  clientsCardBody: { id: 'tour.steps.clientsCard.body', defaultMessage: 'Missing documents and items to review, straight on the card. Open, ask the AI about them, or chase from here.' },
-  clientsCardAsk: { id: 'tour.steps.clientsCard.ask', defaultMessage: 'How is American Burger doing?' },
-  clientHeaderTitle: { id: 'tour.steps.clientHeader.title', defaultMessage: 'The client record' },
-  clientHeaderBody: { id: 'tour.steps.clientHeader.body', defaultMessage: 'Ledger, bank, health and deadlines in the header; Ask AI and Chase always one tap away.' },
-  clientHeaderAsk: { id: 'tour.steps.clientHeader.ask', defaultMessage: 'Tell me about American Burger' },
-  clientTabsTitle: { id: 'tour.steps.clientTabs.title', defaultMessage: 'Fourteen tabs, one pipeline' },
-  clientTabsBody: { id: 'tour.steps.clientTabs.body', defaultMessage: 'Overview, then the two inboxes (Costs and Sales), Bank, statements and claims, Approvals, Documents, Chases, Tasks, Integrations, Users, Settings and the client-scoped AI chat. They scroll sideways on a phone.' },
-  clientKpisTitle: { id: 'tour.steps.clientKpis.title', defaultMessage: 'Overview' },
-  clientKpisBody: { id: 'tour.steps.clientKpis.body', defaultMessage: 'Seven live numbers. Each tile is a shortcut into the tab that explains it; Missing docs carries its own Chase button.' },
-  clientKpisAsk: { id: 'tour.steps.clientKpis.ask', defaultMessage: "What's the status of American Burger?" },
-  costsReviewTitle: { id: 'tour.steps.costsReview.title', defaultMessage: 'Costs — To Review' },
-  costsReviewBody: { id: 'tour.steps.costsReview.body', defaultMessage: 'Purchase documents in pipeline order: Processing, To Review, Ready, Published, Rejected, Duplicates. Each row shows the next move — Fix if something is missing, otherwise Move to Ready.' },
-  costsReviewAsk: { id: 'tour.steps.costsReview.ask', defaultMessage: 'Show me the cost inbox for American Burger' },
-  costsUploadTitle: { id: 'tour.steps.costsUpload.title', defaultMessage: 'Upload into the pipeline' },
-  costsUploadBody: { id: 'tour.steps.costsUpload.body', defaultMessage: 'Upload here or drop files in the chat. An analysis animation shows what was read, then the document is filed where the AI decided — changeable if it got it wrong.' },
-  costsUploadAsk: { id: 'tour.steps.costsUpload.ask', defaultMessage: 'Upload these receipts for American Burger' },
-  costsReadyPublishTitle: { id: 'tour.steps.costsReadyPublish.title', defaultMessage: 'Ready → Xero' },
-  costsReadyPublishBody: { id: 'tour.steps.costsReadyPublish.body', defaultMessage: 'Select the Ready rows and publish. Extracted data and the original image go to the ledger together; anything blocked by a required field stays behind and says why.' },
-  costsReadyPublishAsk: { id: 'tour.steps.costsReadyPublish.ask', defaultMessage: 'Publish the ready items for American Burger' },
-  costsPublishedTitle: { id: 'tour.steps.costsPublished.title', defaultMessage: 'Published' },
-  costsPublishedBody: { id: 'tour.steps.costsPublished.body', defaultMessage: 'What is in the ledger, with the reference Xero gave it. Unpublish is here if something has to come back.' },
-  costsPublishedAsk: { id: 'tour.steps.costsPublished.ask', defaultMessage: 'What did we publish for American Burger this month?' },
-  salesTitle: { id: 'tour.steps.sales.title', defaultMessage: 'Sales' },
-  salesBody: { id: 'tour.steps.sales.body', defaultMessage: 'The same pipeline for money in. The AI decides Costs or Sales on upload — nobody has to choose.' },
-  salesAsk: { id: 'tour.steps.sales.ask', defaultMessage: 'Show me sales invoices for American Burger' },
-  bankTransactionsTitle: { id: 'tour.steps.bankTransactions.title', defaultMessage: 'Bank — Transactions' },
-  bankTransactionsBody: { id: 'tour.steps.bankTransactions.body', defaultMessage: 'The feed, with evidence status per line. Chase for evidence, cash-code what will never have a receipt, or export.' },
-  bankTransactionsAsk: { id: 'tour.steps.bankTransactions.ask', defaultMessage: 'Which bank transactions have no receipt for American Burger?' },
-  bankMatchesTitle: { id: 'tour.steps.bankMatches.title', defaultMessage: 'Bank — Matches' },
-  bankMatchesBody: { id: 'tour.steps.bankMatches.body', defaultMessage: 'Document-to-transaction matches with confidence. Match rules (date and amount tolerances) are configurable, not fixed.' },
-  bankMatchesAsk: { id: 'tour.steps.bankMatches.ask', defaultMessage: 'Match the bank feed for American Burger' },
-  bankStatementsTitle: { id: 'tour.steps.bankStatements.title', defaultMessage: 'Bank — Statements' },
-  bankStatementsBody: { id: 'tour.steps.bankStatements.body', defaultMessage: 'Upload statements, see gaps between them, and request the missing period from the client.' },
-  bankStatementsAsk: { id: 'tour.steps.bankStatements.ask', defaultMessage: 'Are there any statement gaps for American Burger?' },
-  bankAccountsTitle: { id: 'tour.steps.bankAccounts.title', defaultMessage: 'Bank — Accounts' },
-  bankAccountsBody: { id: 'tour.steps.bankAccounts.body', defaultMessage: 'Each connected account, consent expiry, and re-authorisation. The client connects the feed; you see its health.' },
-  supplierStatementsTitle: { id: 'tour.steps.supplierStatements.title', defaultMessage: 'Supplier statements' },
-  supplierStatementsBody: { id: 'tour.steps.supplierStatements.body', defaultMessage: 'Upload a supplier statement and every line is matched to a document. Lines with no document can be chased in one go.' },
-  supplierStatementsAsk: { id: 'tour.steps.supplierStatements.ask', defaultMessage: 'Reconcile the Brakes statement for American Burger' },
-  expenseClaimsTitle: { id: 'tour.steps.expenseClaims.title', defaultMessage: 'Expense claims' },
-  expenseClaimsBody: { id: 'tour.steps.expenseClaims.body', defaultMessage: 'Employees capture their own receipts; a manager or owner approves before anything reaches you. Every receipt is read and categorised by the AI.' },
-  expenseClaimsAsk: { id: 'tour.steps.expenseClaims.ask', defaultMessage: 'Show expense claims waiting for American Burger' },
-  clientApprovalsTitle: { id: 'tour.steps.clientApprovals.title', defaultMessage: 'Approvals for this client' },
-  clientApprovalsBody: { id: 'tour.steps.clientApprovals.body', defaultMessage: 'Pending items with approve, edit and reject on each row, and the workflows that route them — including client-side stages approved by SMS.' },
-  clientApprovalsAsk: { id: 'tour.steps.clientApprovals.ask', defaultMessage: "What's waiting for approval at American Burger?" },
-  clientDocumentsTitle: { id: 'tour.steps.clientDocuments.title', defaultMessage: 'Documents' },
-  clientDocumentsBody: { id: 'tour.steps.clientDocuments.body', defaultMessage: 'Every document for the client, whatever channel it came in by, with preview, download and retry.' },
-  clientDocumentsAsk: { id: 'tour.steps.clientDocuments.ask', defaultMessage: 'Find the Sysco invoice from July for American Burger' },
-  clientChasesTitle: { id: 'tour.steps.clientChases.title', defaultMessage: 'Chases' },
-  clientChasesBody: { id: 'tour.steps.clientChases.body', defaultMessage: 'What has been requested from the client, how it was detected, and where each chase stands. Chase again from the row.' },
-  clientChasesAsk: { id: 'tour.steps.clientChases.ask', defaultMessage: 'Chase the missing documents for American Burger' },
-  clientTasksTitle: { id: 'tour.steps.clientTasks.title', defaultMessage: 'Tasks' },
-  clientTasksBody: { id: 'tour.steps.clientTasks.body', defaultMessage: 'Workflow tasks the AI raised plus anything you add by hand, assigned to a team member, with blockers shown.' },
-  clientTasksAsk: { id: 'tour.steps.clientTasks.ask', defaultMessage: 'Add a task to check the VAT return for American Burger' },
-  integrationsTitle: { id: 'tour.steps.integrations.title', defaultMessage: 'Integrations' },
-  integrationsBody: { id: 'tour.steps.integrations.body', defaultMessage: 'Xero connection health, bank feed consent, and the setup link you send the client so they connect both themselves.' },
-  integrationsAsk: { id: 'tour.steps.integrations.ask', defaultMessage: 'Is American Burger still connected to Xero?' },
-  clientUsersTitle: { id: 'tour.steps.clientUsers.title', defaultMessage: 'Users' },
-  clientUsersBody: { id: 'tour.steps.clientUsers.body', defaultMessage: 'Who at the business can send documents. Add a user here and the business owner approves them from their portal.' },
-  clientUsersAsk: { id: 'tour.steps.clientUsers.ask', defaultMessage: 'Add a user for American Burger' },
-  clientSettingsTitle: { id: 'tour.steps.clientSettings.title', defaultMessage: 'Settings' },
-  clientSettingsBody: { id: 'tour.steps.clientSettings.body', defaultMessage: 'Client details. Edits go to the client for approval rather than changing silently.' },
-  clientAiTitle: { id: 'tour.steps.clientAi.title', defaultMessage: 'AI, scoped to the client' },
-  clientAiBody: { id: 'tour.steps.clientAi.body', defaultMessage: 'Suggested questions and this client\'s past conversations. Same chat, already attached.' },
-  inboxesTitle: { id: 'tour.steps.inboxes.title', defaultMessage: 'All clients, one inbox' },
-  inboxesBody: { id: 'tour.steps.inboxes.body', defaultMessage: 'Costs and Sales across the practice, by status. Filter by client or channel — email, WhatsApp, web upload, the portal, spreadsheets.' },
-  inboxesAsk: { id: 'tour.steps.inboxes.ask', defaultMessage: "What's in the cost inbox?" },
-  inboxesRequiredTitle: { id: 'tour.steps.inboxesRequired.title', defaultMessage: 'Required fields' },
-  inboxesRequiredBody: { id: 'tour.steps.inboxesRequired.body', defaultMessage: 'Switch on a field and it becomes a column; nothing publishes without it and the row says which field is missing.' },
-  inboxesPreviewTitle: { id: 'tour.steps.inboxesPreview.title', defaultMessage: 'The document, read' },
-  inboxesPreviewBody: { id: 'tour.steps.inboxesPreview.body', defaultMessage: 'The original beside every field the AI extracted, with confidence and where on the page it came from. Tap a value to correct it; the original is never changed.' },
-  inboxesPreviewAsk: { id: 'tour.steps.inboxesPreview.ask', defaultMessage: 'Open the latest document for review' },
-  inboxesPublishTitle: { id: 'tour.steps.inboxesPublish.title', defaultMessage: 'Publish to the ledger' },
-  inboxesPublishBody: { id: 'tour.steps.inboxesPublish.body', defaultMessage: 'Publishing asks first and shows exactly what goes and what is held back. Approve, and the documents are in Xero with their images attached.' },
-  inboxesPublishAsk: { id: 'tour.steps.inboxesPublish.ask', defaultMessage: 'Publish everything that is ready' },
-  chasesTitle: { id: 'tour.steps.chases.title', defaultMessage: 'Missing evidence, practice-wide' },
-  chasesBody: { id: 'tour.steps.chases.body', defaultMessage: 'How much is missing, how many chases are live, and what is overdue. Chasing is by SMS, with quiet hours and a cooldown between messages.' },
-  chasesAsk: { id: 'tour.steps.chases.ask', defaultMessage: 'What is overdue across all clients?' },
-  chasesRunTitle: { id: 'tour.steps.chasesRun.title', defaultMessage: 'Run the chase engine' },
-  chasesRunBody: { id: 'tour.steps.chasesRun.body', defaultMessage: 'Review the message per client, edit the wording, and send. Every chase carries an upload link the client can use without an account.' },
-  chasesRunAsk: { id: 'tour.steps.chasesRun.ask', defaultMessage: 'Chase everyone who owes documents' },
-  chasesPolicyTitle: { id: 'tour.steps.chasesPolicy.title', defaultMessage: 'Chase policy' },
-  chasesPolicyBody: { id: 'tour.steps.chasesPolicy.body', defaultMessage: 'First chase after, reminders, escalation, quiet hours, link lifetime. The AI follows this schedule automatically when auto-chase is on.' },
-  approvalsTitle: { id: 'tour.steps.approvals.title', defaultMessage: 'The approval queue' },
-  approvalsBody: { id: 'tour.steps.approvals.body', defaultMessage: 'Waiting on me, or everything pending. Each row shows the stage, who approves next and how long it has waited.' },
-  approvalsAsk: { id: 'tour.steps.approvals.ask', defaultMessage: 'What needs my approval?' },
-  approvalsDetailTitle: { id: 'tour.steps.approvalsDetail.title', defaultMessage: 'Approve or reject' },
-  approvalsDetailBody: { id: 'tour.steps.approvalsDetail.body', defaultMessage: 'The stage chain, the document, and a note. Pass the stage, send it back with a reason, or correct it in the chat if the stage allows edits. Every step asks "are you sure".' },
-  approvalsDetailAsk: { id: 'tour.steps.approvalsDetail.ask', defaultMessage: 'Approve the Sysco invoice' },
-  workflowsTitle: { id: 'tour.steps.workflows.title', defaultMessage: 'Workflows' },
-  workflowsBody: { id: 'tour.steps.workflows.body', defaultMessage: 'Multi-stage, conditional, with client-side stages approved by SMS. Describe a workflow in words and it is built for you — then edit by hand.' },
-  workflowsAsk: { id: 'tour.steps.workflows.ask', defaultMessage: 'Create a workflow: anything over £500 needs the owner' },
-  approvalsHistoryTitle: { id: 'tour.steps.approvalsHistory.title', defaultMessage: 'History' },
-  approvalsHistoryBody: { id: 'tour.steps.approvalsHistory.body', defaultMessage: 'Every outcome, locked once published, with the rejection note readable from the row.' },
-  documentsTitle: { id: 'tour.steps.documents.title', defaultMessage: 'Archive and vault' },
-  documentsBody: { id: 'tour.steps.documents.body', defaultMessage: 'The archive is everything published, grouped by client. The vault holds what is not a transaction — contracts, certificates — by firm, client and year, with expiry.' },
-  documentsAsk: { id: 'tour.steps.documents.ask', defaultMessage: 'Find the lease for Ananda Group' },
-  analyticsTitle: { id: 'tour.steps.analytics.title', defaultMessage: 'How the practice is running' },
-  analyticsBody: { id: 'tour.steps.analytics.body', defaultMessage: 'Documents processed, correction rate, missing and overdue, per-client health. Scope to one client or the whole practice; export as CSV.' },
-  analyticsAsk: { id: 'tour.steps.analytics.ask', defaultMessage: 'How is the pipeline doing this month?' },
-  teamTitle: { id: 'tour.steps.team.title', defaultMessage: 'Colleagues and teams' },
-  teamBody: { id: 'tour.steps.team.body', defaultMessage: 'Roles, permissions, client access, and whether finance fields are hidden. Teams group people around a set of clients.' },
-  teamAsk: { id: 'tour.steps.team.ask', defaultMessage: 'Invite a colleague' },
-  teamTasksTitle: { id: 'tour.steps.teamTasks.title', defaultMessage: 'Tasks' },
-  teamTasksBody: { id: 'tour.steps.teamTasks.body', defaultMessage: 'Workflow tasks across every client, assignable from the row. Ask the AI about workload and it balances them.' },
-  teamTasksAsk: { id: 'tour.steps.teamTasks.ask', defaultMessage: 'Who has the most open tasks?' },
-  settingsTitle: { id: 'tour.steps.settings.title', defaultMessage: 'Practice settings' },
-  settingsBody: { id: 'tour.steps.settings.body', defaultMessage: 'Profile, connections, extraction, automation, chasing, approvals, exports, lists, AI guidance, communication, security.' },
-  settingsConnectionsTitle: { id: 'tour.steps.settingsConnections.title', defaultMessage: 'Connections' },
-  settingsConnectionsBody: { id: 'tour.steps.settingsConnections.body', defaultMessage: 'Ledger adapters in priority order — Xero first, then QuickBooks, Sage and FreeAgent — and bank feed consent per client. Clients connect; you see health.' },
-  settingsConnectionsAsk: { id: 'tour.steps.settingsConnections.ask', defaultMessage: 'Which clients are not connected to Xero?' },
-  settingsAutomationTitle: { id: 'tour.steps.settingsAutomation.title', defaultMessage: 'Automation' },
-  settingsAutomationBody: { id: 'tour.steps.settingsAutomation.body', defaultMessage: 'Auto-categorisation, whether AI suggestions apply themselves, archiving after publish, and the bank-match tolerances.' },
-  portalHomeTitle: { id: 'tour.steps.portalHome.title', defaultMessage: 'What your client sees' },
-  portalHomeBody: { id: 'tour.steps.portalHome.body', defaultMessage: 'A separate, phone-first portal. What their accountant is waiting for, what they have sent, and anything that needs their approval — including users you proposed.' },
-  portalCaptureTitle: { id: 'tour.steps.portalCapture.title', defaultMessage: 'Capture' },
-  portalCaptureBody: { id: 'tour.steps.portalCapture.body', defaultMessage: 'Point the phone at the receipt. Multi-page, with review before sending, or send as they shoot. Everything lands in your inbox already classified.' },
-  portalUploadTitle: { id: 'tour.steps.portalUpload.title', defaultMessage: 'Upload' },
-  portalUploadBody: { id: 'tour.steps.portalUpload.body', defaultMessage: 'Files from their computer or phone — PDFs, photos, spreadsheets — with a note if they want to explain.' },
-  portalSettingsTitle: { id: 'tour.steps.portalSettings.title', defaultMessage: 'Their settings' },
-  portalSettingsBody: { id: 'tour.steps.portalSettings.body', defaultMessage: 'Business details, notifications, their people, and the connections they own: accounting software and bank feed.' },
-  doneTitle: { id: 'tour.steps.done.title', defaultMessage: 'That is the whole loop' },
-  doneBody: { id: 'tour.steps.done.body', defaultMessage: 'Capture → extract → review → approve → publish to Xero → reconcile the bank → chase what is missing. Every screen you just saw is a shortcut; the chat can do all of it. Try asking something.' },
-});
+const m = {
+  welcomeTitle: 'A quick tour of the whole practice',
+  welcomeBody: 'In about five minutes you will see every screen — clients, inboxes, chasing, approvals, publishing to Xero, and the portal your clients use. One idea runs through all of it: anything you can click, you can also just ask for in the chat.',
+  composerTitle: 'Start by asking',
+  composerBody: 'This box is the front door. Type what you need in plain English — "what is missing for Ananda?", "publish the ready items", "add a client" — and the answer comes back as something you can act on, not a paragraph.',
+  attachClientTitle: 'Scope a conversation to a client',
+  attachClientBody: 'Attach one or more clients and every answer is about them. Leave it empty and questions span the whole practice.',
+  composerDocumentsTitle: 'Drop documents straight into the chat',
+  composerDocumentsBody: 'PDF, photos, HEIC, CSV and XLSX. They are read, classified into Costs or Sales, and filed to the right client — a spreadsheet is read row by row rather than OCR-ed.',
+  composerVoiceTitle: 'Or say it',
+  composerVoiceBody: 'Push to talk. You see the transcript and confirm it before anything runs.',
+  historyTitle: 'Every conversation is kept',
+  historyBody: 'Pinned clients and recent conversations live here. Each chat has its own address, so a link in a message lands exactly where you were.',
+  chatMissingTitle: 'Ask what is missing',
+  chatMissingBody: 'The answer is a working card: how many documents are outstanding, for whom, and the next move — chase them, review the list, or export it. Nothing to find in a menu.',
+  chatMissingAsk: "What's missing for American Burger?",
+  chatApproveTitle: 'Approve a batch',
+  chatApproveBody: 'Approvals come back with a review gate: read what is in the batch, who signed off, and what the rules passed — then approve. The same gate the Approvals screen uses, inside the conversation.',
+  chatApproveAsk: 'Approve the pending items for American Burger',
+  chatPublishTitle: 'Send it to Xero',
+  chatPublishBody: 'Ask to publish and the Ready items are bundled with what will be sent — extracted data plus the original image — and what is held back and why. Approve here and it goes to the ledger. That is the whole "send to Xero" flow, from a sentence.',
+  chatPublishAsk: 'Publish the ready items for American Burger to Xero',
+  chatMatchesTitle: 'Reconcile the bank',
+  chatMatchesBody: 'Bank lines are matched to documents with a confidence score. Confirmed matches are evidence; probable ones say what is missing. Unmatch from the card if the AI got one wrong.',
+  chatMatchesAsk: 'Match the bank feed for American Burger',
+  chatRuleTitle: 'Teach it a rule',
+  chatRuleBody: 'Describe a rule in words — supplier, conditions, what to code it to — and it is built for you, with any conflict called out. Choose whether it also applies to what is already in the inbox.',
+  chatRuleAsk: 'Always code Shell receipts for American Burger to Motor expenses',
+  chatInviteTitle: 'Bring a colleague in',
+  chatInviteBody: 'Inviting someone is a form in the chat: role, permissions, which clients. Everything people-related — colleagues, teams, client users — can start here.',
+  chatInviteAsk: 'Invite Sam as a standard user with access to American Burger',
+  chatAnalyticsTitle: 'Ask how things are going',
+  chatAnalyticsBody: 'Pipeline health, correction rate, chase response times — as tiles and a chart, scoped to whoever is attached.',
+  chatAnalyticsAsk: 'How is the pipeline doing?',
+  chatAddClientTitle: 'Even onboarding a client',
+  chatAddClientBody: 'Two paths: send the client a registration link (they connect their own Xero and bank), or register them yourself. The same intake the Clients screen uses.',
+  chatAddClientAsk: 'Add a new client called Harbour Cafe',
+  navTitle: 'The screens, when you want them',
+  navBody: 'Everything the chat can do also has a screen, for when you want to browse rather than ask. On a phone the rail becomes this bar; the rest sits under More.',
+  clientsTitle: 'Your client list',
+  clientsBody: 'Every business you look after, with what is outstanding on each. Switch between cards and a sortable table; star the ones you are working on this week.',
+  clientsAsk: 'Show me my clients',
+  clientsAddTitle: 'Add a client',
+  clientsAddBody: 'Send them a registration link by SMS — they add their own details and connect their ledger and bank — or register them on their behalf.',
+  clientsAddAsk: 'Add a new client',
+  clientsCardTitle: 'A client at a glance',
+  clientsCardBody: 'Missing documents and items to review, straight on the card. Open, ask the AI about them, or chase from here.',
+  clientsCardAsk: 'How is American Burger doing?',
+  clientHeaderTitle: 'The client record',
+  clientHeaderBody: 'Ledger, bank, health and deadlines in the header; Ask AI and Chase always one tap away.',
+  clientHeaderAsk: 'Tell me about American Burger',
+  clientTabsTitle: 'Fourteen tabs, one pipeline',
+  clientTabsBody: 'Overview, then the two inboxes (Costs and Sales), Bank, statements and claims, Approvals, Documents, Chases, Tasks, Integrations, Users, Settings and the client-scoped AI chat. They scroll sideways on a phone.',
+  clientKpisTitle: 'Overview',
+  clientKpisBody: 'Seven live numbers. Each tile is a shortcut into the tab that explains it; Missing docs carries its own Chase button.',
+  clientKpisAsk: "What's the status of American Burger?",
+  costsReviewTitle: 'Costs — To Review',
+  costsReviewBody: 'Purchase documents in pipeline order: Processing, To Review, Ready, Published, Rejected, Duplicates. Each row shows the next move — Fix if something is missing, otherwise Move to Ready.',
+  costsReviewAsk: 'Show me the cost inbox for American Burger',
+  costsUploadTitle: 'Upload into the pipeline',
+  costsUploadBody: 'Upload here or drop files in the chat. An analysis animation shows what was read, then the document is filed where the AI decided — changeable if it got it wrong.',
+  costsUploadAsk: 'Upload these receipts for American Burger',
+  costsReadyPublishTitle: 'Ready → Xero',
+  costsReadyPublishBody: 'Select the Ready rows and publish. Extracted data and the original image go to the ledger together; anything blocked by a required field stays behind and says why.',
+  costsReadyPublishAsk: 'Publish the ready items for American Burger',
+  costsPublishedTitle: 'Published',
+  costsPublishedBody: 'What is in the ledger, with the reference Xero gave it. Unpublish is here if something has to come back.',
+  costsPublishedAsk: 'What did we publish for American Burger this month?',
+  salesTitle: 'Sales',
+  salesBody: 'The same pipeline for money in. The AI decides Costs or Sales on upload — nobody has to choose.',
+  salesAsk: 'Show me sales invoices for American Burger',
+  bankTransactionsTitle: 'Bank — Transactions',
+  bankTransactionsBody: 'The feed, with evidence status per line. Chase for evidence, cash-code what will never have a receipt, or export.',
+  bankTransactionsAsk: 'Which bank transactions have no receipt for American Burger?',
+  bankMatchesTitle: 'Bank — Matches',
+  bankMatchesBody: 'Document-to-transaction matches with confidence. Match rules (date and amount tolerances) are configurable, not fixed.',
+  bankMatchesAsk: 'Match the bank feed for American Burger',
+  bankStatementsTitle: 'Bank — Statements',
+  bankStatementsBody: 'Upload statements, see gaps between them, and request the missing period from the client.',
+  bankStatementsAsk: 'Are there any statement gaps for American Burger?',
+  bankAccountsTitle: 'Bank — Accounts',
+  bankAccountsBody: 'Each connected account, consent expiry, and re-authorisation. The client connects the feed; you see its health.',
+  supplierStatementsTitle: 'Supplier statements',
+  supplierStatementsBody: 'Upload a supplier statement and every line is matched to a document. Lines with no document can be chased in one go.',
+  supplierStatementsAsk: 'Reconcile the Brakes statement for American Burger',
+  expenseClaimsTitle: 'Expense claims',
+  expenseClaimsBody: 'Employees capture their own receipts; a manager or owner approves before anything reaches you. Every receipt is read and categorised by the AI.',
+  expenseClaimsAsk: 'Show expense claims waiting for American Burger',
+  clientApprovalsTitle: 'Approvals for this client',
+  clientApprovalsBody: 'Pending items with approve, edit and reject on each row, and the workflows that route them — including client-side stages approved by SMS.',
+  clientApprovalsAsk: "What's waiting for approval at American Burger?",
+  clientDocumentsTitle: 'Documents',
+  clientDocumentsBody: 'Every document for the client, whatever channel it came in by, with preview, download and retry.',
+  clientDocumentsAsk: 'Find the Sysco invoice from July for American Burger',
+  clientChasesTitle: 'Chases',
+  clientChasesBody: 'What has been requested from the client, how it was detected, and where each chase stands. Chase again from the row.',
+  clientChasesAsk: 'Chase the missing documents for American Burger',
+  clientTasksTitle: 'Tasks',
+  clientTasksBody: 'Workflow tasks the AI raised plus anything you add by hand, assigned to a team member, with blockers shown.',
+  clientTasksAsk: 'Add a task to check the VAT return for American Burger',
+  integrationsTitle: 'Integrations',
+  integrationsBody: 'Xero connection health, bank feed consent, and the setup link you send the client so they connect both themselves.',
+  integrationsAsk: 'Is American Burger still connected to Xero?',
+  clientUsersTitle: 'Users',
+  clientUsersBody: 'Who at the business can send documents. Add a user here and the business owner approves them from their portal.',
+  clientUsersAsk: 'Add a user for American Burger',
+  clientSettingsTitle: 'Settings',
+  clientSettingsBody: 'Client details. Edits go to the client for approval rather than changing silently.',
+  clientAiTitle: 'AI, scoped to the client',
+  clientAiBody: 'Suggested questions and this client\'s past conversations. Same chat, already attached.',
+  inboxesTitle: 'All clients, one inbox',
+  inboxesBody: 'Costs and Sales across the practice, by status. Filter by client or channel — email, WhatsApp, web upload, the portal, spreadsheets.',
+  inboxesAsk: "What's in the cost inbox?",
+  inboxesRequiredTitle: 'Required fields',
+  inboxesRequiredBody: 'Switch on a field and it becomes a column; nothing publishes without it and the row says which field is missing.',
+  inboxesPreviewTitle: 'The document, read',
+  inboxesPreviewBody: 'The original beside every field the AI extracted, with confidence and where on the page it came from. Tap a value to correct it; the original is never changed.',
+  inboxesPreviewAsk: 'Open the latest document for review',
+  inboxesPublishTitle: 'Publish to the ledger',
+  inboxesPublishBody: 'Publishing asks first and shows exactly what goes and what is held back. Approve, and the documents are in Xero with their images attached.',
+  inboxesPublishAsk: 'Publish everything that is ready',
+  chasesTitle: 'Missing evidence, practice-wide',
+  chasesBody: 'How much is missing, how many chases are live, and what is overdue. Chasing is by SMS, with quiet hours and a cooldown between messages.',
+  chasesAsk: 'What is overdue across all clients?',
+  chasesRunTitle: 'Run the chase engine',
+  chasesRunBody: 'Review the message per client, edit the wording, and send. Every chase carries an upload link the client can use without an account.',
+  chasesRunAsk: 'Chase everyone who owes documents',
+  chasesPolicyTitle: 'Chase policy',
+  chasesPolicyBody: 'First chase after, reminders, escalation, quiet hours, link lifetime. The AI follows this schedule automatically when auto-chase is on.',
+  approvalsTitle: 'The approval queue',
+  approvalsBody: 'Waiting on me, or everything pending. Each row shows the stage, who approves next and how long it has waited.',
+  approvalsAsk: 'What needs my approval?',
+  approvalsDetailTitle: 'Approve or reject',
+  approvalsDetailBody: 'The stage chain, the document, and a note. Pass the stage, send it back with a reason, or correct it in the chat if the stage allows edits. Every step asks "are you sure".',
+  approvalsDetailAsk: 'Approve the Sysco invoice',
+  workflowsTitle: 'Workflows',
+  workflowsBody: 'Multi-stage, conditional, with client-side stages approved by SMS. Describe a workflow in words and it is built for you — then edit by hand.',
+  workflowsAsk: 'Create a workflow: anything over £500 needs the owner',
+  approvalsHistoryTitle: 'History',
+  approvalsHistoryBody: 'Every outcome, locked once published, with the rejection note readable from the row.',
+  documentsTitle: 'Archive and vault',
+  documentsBody: 'The archive is everything published, grouped by client. The vault holds what is not a transaction — contracts, certificates — by firm, client and year, with expiry.',
+  documentsAsk: 'Find the lease for Ananda Group',
+  analyticsTitle: 'How the practice is running',
+  analyticsBody: 'Documents processed, correction rate, missing and overdue, per-client health. Scope to one client or the whole practice; export as CSV.',
+  analyticsAsk: 'How is the pipeline doing this month?',
+  teamTitle: 'Colleagues and teams',
+  teamBody: 'Roles, permissions, client access, and whether finance fields are hidden. Teams group people around a set of clients.',
+  teamAsk: 'Invite a colleague',
+  teamTasksTitle: 'Tasks',
+  teamTasksBody: 'Workflow tasks across every client, assignable from the row. Ask the AI about workload and it balances them.',
+  teamTasksAsk: 'Who has the most open tasks?',
+  settingsTitle: 'Practice settings',
+  settingsBody: 'Profile, connections, extraction, automation, chasing, approvals, exports, lists, AI guidance, communication, security.',
+  settingsConnectionsTitle: 'Connections',
+  settingsConnectionsBody: 'Ledger adapters in priority order — Xero first, then QuickBooks, Sage and FreeAgent — and bank feed consent per client. Clients connect; you see health.',
+  settingsConnectionsAsk: 'Which clients are not connected to Xero?',
+  settingsAutomationTitle: 'Automation',
+  settingsAutomationBody: 'Auto-categorisation, whether AI suggestions apply themselves, archiving after publish, and the bank-match tolerances.',
+  portalHomeTitle: 'What your client sees',
+  portalHomeBody: 'A separate, phone-first portal. What their accountant is waiting for, what they have sent, and anything that needs their approval — including users you proposed.',
+  portalCaptureTitle: 'Capture',
+  portalCaptureBody: 'Point the phone at the receipt. Multi-page, with review before sending, or send as they shoot. Everything lands in your inbox already classified.',
+  portalUploadTitle: 'Upload',
+  portalUploadBody: 'Files from their computer or phone — PDFs, photos, spreadsheets — with a note if they want to explain.',
+  portalSettingsTitle: 'Their settings',
+  portalSettingsBody: 'Business details, notifications, their people, and the connections they own: accounting software and bank feed.',
+  doneTitle: 'That is the whole loop',
+  doneBody: 'Capture → extract → review → approve → publish to Xero → reconcile the bank → chase what is missing. Every screen you just saw is a shortcut; the chat can do all of it. Try asking something.',
+};
 
 /**
- * The assistant's seeded answer for each demo intent. These are messages a
- * user reads in the transcript, so they are copy like anything else.
+ * DEMO-MOCK: the assistant's line for each seeded demo conversation. Every one
+ * of these is CANNED — written here by hand, picked by `replyFor` off the
+ * intent the step already decided, with no model called and nothing sent to
+ * `POST /v1/chat/turns`. Read `seedChat` below before touching them.
  */
-const replies = defineMessages({
-  showMissing: { id: 'tour.chatReply.showMissing', defaultMessage: "Here's what's still missing. You can chase it from here." },
-  approveItems: { id: 'tour.chatReply.approveItems', defaultMessage: 'These are waiting on you. Read the review, then approve the batch.' },
-  publish: { id: 'tour.chatReply.publish', defaultMessage: 'Everything marked Ready, checked and bundled. Approve to send it to the ledger.' },
-  showMatches: { id: 'tour.chatReply.showMatches', defaultMessage: 'Bank lines matched to documents. Anything marked probable needs a look.' },
-  createRule: { id: 'tour.chatReply.createRule', defaultMessage: "Here's the rule as I understood it. Approve it and it applies from now on." },
-  inviteUser: { id: 'tour.chatReply.inviteUser', defaultMessage: 'Fill in who they are and what they can do, and I will send the invite.' },
-  showAnalytics: { id: 'tour.chatReply.showAnalytics', defaultMessage: 'The pipeline at a glance.' },
-  addClient: { id: 'tour.chatReply.addClient', defaultMessage: 'Two ways to add them — send a registration link, or set them up yourself.' },
-  general: { id: 'tour.chatReply.general', defaultMessage: 'Done.' },
-});
+const replies = {
+  showMissing: "Here's what's still missing. You can chase it from here.",
+  approveItems: 'These are waiting on you. Read the review, then approve the batch.',
+  publish: 'Everything marked Ready, checked and bundled. Approve to send it to the ledger.',
+  showMatches: 'Bank lines matched to documents. Anything marked probable needs a look.',
+  createRule: "Here's the rule as I understood it. Approve it and it applies from now on.",
+  inviteUser: 'Fill in who they are and what they can do, and I will send the invite.',
+  showAnalytics: 'The pipeline at a glance.',
+  addClient: 'Two ways to add them — send a registration link, or set them up yourself.',
+  general: 'Done.',
+};
 
 export interface TourCtx {
   clients: Client[];
   startConversation: (clientIds: string[], seed?: Message[]) => void;
   /** The first seeded business account, for the portal section. */
   portalAccountId: string | null;
-  /** Resolves a descriptor in the active locale. Supplied by TourProvider. */
-  t: (descriptor: MessageDescriptor) => string;
 }
 
 export interface TourStep {
   id: string;
-  section: MessageDescriptor;
-  title: MessageDescriptor;
-  body: MessageDescriptor;
+  /** English prose, already resolved — see the English-only note at the top. */
+  section: string;
+  title: string;
+  body: string;
   /** The prompt that does the same thing from the chat. */
-  ask?: MessageDescriptor;
+  ask?: string;
   /** Navigate here before looking for the target. Omit to stay put. */
   route?: string | ((ctx: TourCtx) => string);
   /** data-tour key. Omit for a centred card with no spotlight. */
@@ -262,17 +270,35 @@ export interface TourStep {
 
 const CLIENT = '1'; // American Burger Ltd, the starred demo client
 
-/** Build a seeded two-message conversation that renders one answer card. */
-function seedChat(ctx: TourCtx, prompt: MessageDescriptor, intent: Intent, extra: Partial<MessagePayload> = {}) {
-  const text = ctx.t(prompt);
-  const scope = resolveScope(text, ctx.clients, [CLIENT]);
+/**
+ * Build a seeded two-message conversation that renders one answer card.
+ *
+ * // DEMO-MOCK: THE ASSISTANT TURN THIS WRITES IS FABRICATED. The reply text is
+ * a canned string from `replies` above, the intent is whichever one the step
+ * declared, and the payload is hand-assembled from `resolveScope` — no model
+ * was called, nothing went to `POST /v1/chat/turns`, and the §9 chat runtime
+ * (`apps/api/src/modules/chat-framework`) never saw the utterance. It is a
+ * scripted illustration of what an answer LOOKS like, not an answer. This is
+ * legitimate for a tour, and it is the only place in the app that writes an
+ * assistant message the runtime did not produce — everywhere else a live
+ * failure is rendered honestly rather than answered locally (see
+ * `apps/web/CLAUDE.md`, "The chat, and where classification actually happens").
+ *
+ * Root `CLAUDE.md` owes every `// DEMO-MOCK` a tracked issue. **This one is not
+ * filed yet** — deliberately said out loud rather than left implied. What it
+ * must cover: either drive these steps through the real runtime, or keep the
+ * canned turns and mark them in the TRANSCRIPT so a viewer can see which turns
+ * were scripted, which the current UI does not do.
+ */
+function seedChat(ctx: TourCtx, prompt: string, intent: Intent, extra: Partial<MessagePayload> = {}) {
+  const scope = resolveScope(prompt, ctx.clients, [CLIENT]);
   const now = Date.now();
   const seed: Message[] = [
-    { id: `tour-u-${now}`, role: 'user', content: text },
+    { id: `tour-u-${now}`, role: 'user', content: prompt },
     {
       id: `tour-a-${now}`,
       role: 'assistant',
-      content: ctx.t(replyFor(intent)),
+      content: replyFor(intent),
       intent,
       payload: { ...scope, ...extra },
     },
@@ -280,7 +306,8 @@ function seedChat(ctx: TourCtx, prompt: MessageDescriptor, intent: Intent, extra
   ctx.startConversation(scope.clientIds.length ? scope.clientIds : [CLIENT], seed);
 }
 
-function replyFor(intent: Intent): MessageDescriptor {
+/** DEMO-MOCK, see `seedChat`: picks a canned line, never calls a model. */
+function replyFor(intent: Intent): string {
   switch (intent) {
     case 'SHOW_MISSING': return replies.showMissing;
     case 'APPROVE_ITEMS': return replies.approveItems;
