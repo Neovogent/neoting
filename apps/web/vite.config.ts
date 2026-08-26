@@ -1,6 +1,45 @@
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
-import { defineConfig } from 'vitest/config';
+import { defineConfig, type Plugin } from 'vitest/config';
+import { renderLegalMarkdown } from './src/views/legal/markdown';
+
+/**
+ * The legal pack (launch stage M4): `docs/legal/*.md` imports become
+ * pre-rendered HTML modules at BUILD time. The transform itself lives in
+ * `src/views/legal/markdown.ts` (tested there like any other module); doing
+ * it here rather than at runtime means no markdown parser in any chunk, and —
+ * the real point — the drafting-aid banners and solicitor-facing HTML
+ * comments those files carry are stripped from the shipped bytes, not merely
+ * not displayed. Scoped to docs/legal so no other markdown import changes
+ * meaning, and the README (never imported) is excluded by not being imported.
+ *
+ * The warning below is M4's contract: a page with an unresolved
+ * `[PLACEHOLDER…]` must not go live. The build stays green — resolving the
+ * placeholders is S6's work, not this plugin's — but every build says so out
+ * loud until they are gone.
+ */
+function legalDocs(): Plugin {
+  return {
+    name: 'neoting-legal-docs',
+    transform(source, id) {
+      if (!/docs\/legal\/[^/]+\.md$/.test(id)) return null;
+      const doc = renderLegalMarkdown(source);
+      if (doc.placeholderCount > 0) {
+        this.warn(
+          `${doc.placeholderCount} unresolved [PLACEHOLDER] markers remain — ` +
+            'this page must not be deployed until S6 resolves them (docs/legal/README.md).',
+        );
+      }
+      return {
+        code:
+          `export const html = ${JSON.stringify(doc.html)};\n` +
+          `export const title = ${JSON.stringify(doc.title)};\n` +
+          `export const placeholderCount = ${JSON.stringify(doc.placeholderCount)};\n`,
+        map: null,
+      };
+    },
+  };
+}
 
 /**
  * `defineConfig` comes from `vitest/config`, not `vite` — vite's own type does
@@ -25,7 +64,7 @@ import { defineConfig } from 'vitest/config';
  * that is its own change.
  */
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), legalDocs()],
 
   build: {
     // Raised from Vite's 500 kB default so the warning fires near the number we

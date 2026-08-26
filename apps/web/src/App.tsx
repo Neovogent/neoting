@@ -78,6 +78,11 @@ const LoginView = lazy(() => import('./views/LoginView').then((m) => ({ default:
 // download the workspace, and the workspace must not carry a marketing page.
 const LandingView = lazy(() => import('./views/LandingView').then((m) => ({ default: m.LandingView })));
 
+// The legal pages at `/legal/*` (launch stage M4) — the other public surface.
+// The view is one chunk; each document is a further chunk of its own, fetched
+// only when that document is opened.
+const LegalView = lazy(() => import('./views/legal/LegalView').then((m) => ({ default: m.LegalView })));
+
 // The §13.3 context header. Lazy for the budget (the floor sat 0.6 kB over
 // SoT §14's 250 kB on the worst route with it inlined), and mounted only when
 // a session state exists — synthetic mode never downloads it. `fallback` is
@@ -225,6 +230,17 @@ export default function App() {
     return (
       <Suspense fallback={null}>
         <LandingView />
+      </Suspense>
+    );
+  }
+
+  // The legal pages (M4), public for the same reason and with the same `null`
+  // fallback: the chunk arrives onto its own background, not over a skeleton
+  // borrowed from a shell the reader never asked for.
+  if (portal === 'legal') {
+    return (
+      <Suspense fallback={null}>
+        <LegalView />
       </Suspense>
     );
   }
