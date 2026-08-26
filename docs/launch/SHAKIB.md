@@ -433,6 +433,37 @@ tax ID, not that. Runbook §8 is the checklist.
 
 ---
 
+## Where this stands — 26 Aug 2026, end of day
+
+Twenty-one of twenty-nine stages are merged. **Yours to run: S5, S6, A10, S7.**
+
+**A10 came to you** because Abdullah has no VT Transaction+ install, and this stage is a
+human importing a real file into VT. It is gated on A9, which Abdullah still owes — you
+cannot start until that merges.
+
+**⚠ S5 IS NOT IN ANYONE'S SCHEDULE, AND IT IS THE MOST URGENT THING LEFT.** The 26 Aug
+plan named A10, S6 and S7 as yours and did not mention S5. Until it flips, `EXTRACTOR=demo`
+is live on staging and `DemoExtractor` invents supplier, date, total and VAT number from a
+filename hash, at 0.8 confidence — which makes `resolveProcessedState` return READY. A
+fabricated invoice is shown to an accountant as ready to post. A3 and A4 both merged, so
+the safety condition the stage waits on is already met and it is one Terraform value.
+Do it before A10: A10 imports what extraction produced, and importing fabricated data into
+VT proves nothing about the round trip.
+
+**⚠ NOBODY OWNS THE PRACTICE SIGNUP SCREEN.** A1 shipped `POST /v1/practices` and it works
+in production. Nothing in `apps/web/src` calls it — no `createPractice`, no
+`/v1/practices`, and the landing page's only buttons are `#pricing` anchors and a
+`mailto:`. None of M1–M8 builds it. **So today no accountant can create an account in a
+browser**, and S7's walkthrough starts with signing up. Either it becomes M9 for Mubasshir
+tomorrow morning, or S7 cannot run end to end. Decide this first thing.
+
+**Ordering that follows from the above:** S5 now → A9 (Abdullah) → A10 → S6 → S7 last.
+S6 is not cosmetic: `/legal/terms` and `/legal/privacy` already return 200, behind a draft
+banner, with 87 `[PLACEHOLDER…]` markers still in the four documents — four of them the
+Exambinary identity fields that block the pack going live at all.
+
+---
+
 ## S5 · Real extraction, on
 
 **Needs:** S1, A4 (formats), A3 (sanitisation). **Owns:** `infra/envs/*/services.tf`.
