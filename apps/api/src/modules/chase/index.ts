@@ -34,9 +34,14 @@
 // one is composition's input. Import the contract type from the contract.
 export { chaseItemRefs, isChaseReceivedClose, toChaseItem } from './chase-projection.js';
 
-// Detection engine (a) — the unmatched, non-suppressed transactions a chase
-// covers, and the suppression predicate + list the read applies.
+// Detection engine (a) — the unmatched, non-suppressed, not-already-chased
+// transactions a chase covers, and the suppression predicates the read applies.
+// `alreadyChasedTransactionIds` is the DO-NOT-OVER-ASK set (launch stage A13),
+// exported so a composer can show why a line is absent without rebuilding the
+// rule; `isChaseSuppressed` is the descriptor half.
 export {
+  alreadyChasedTransactionIds,
+  type ChaseCoverageRow,
   detectUnmatchedChases,
   type UnmatchedTransaction,
 } from './detection.js';
@@ -62,15 +67,27 @@ export {
   verifyPortalLink,
 } from './portal-link.js';
 
-// The SMS sender seam and its config selector — the `chase.send` executor and
-// the worker composition roots wire the selected sender.
+// The chase sender seam and its config selector — the `chase.send` executor and
+// the worker composition roots wire the selected sender. ONE seam, two
+// transports: `DemoSmsSender` writes the outbox and sends nothing;
+// `EmailChaseSender` (launch stage A13) delivers by email through the S2
+// notifications transport, carrying the REVIEWED body byte-for-byte. Which one
+// is chosen by `SMS_SENDER`, config and never import — so the executor, and
+// every call site, is identical either way.
 export {
   DemoSmsSender,
   type OutboundSms,
   type SentSms,
   type SmsSender,
 } from './sms-sender.js';
-export { selectSmsSender } from './select-sms-sender.js';
+export {
+  CHASE_EMAIL_CHANNEL,
+  CHASE_EMAIL_SUBJECT,
+  type ChaseEmailTransport,
+  type ChaseEmailTransportFactory,
+  EmailChaseSender,
+} from './email-chase-sender.js';
+export { type ChaseSenderEnv, selectSmsSender } from './select-sms-sender.js';
 
 // Auto-close on inbound match (SoT §4 Stage 8.5 / METH Stage 8): when an
 // ingested document matches an open chase's transaction (supplier + amount + a
