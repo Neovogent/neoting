@@ -18,6 +18,12 @@ import { motion } from 'motion/react';
  * with an optional clause, for the reason ActionCard gives: a translator handed
  * a conditional has to reason about both branches at once, and word order
  * around an inserted clause is exactly what differs between languages.
+ *
+ * `bulkHint` is a seventh, and it is not `selectHint` reused. `selectHint`
+ * hangs off the button as a hover title, so it can say "select more rows" and
+ * let the button say which action it means. The amber line stands away from
+ * every button and has to name the one it is about, which is a different
+ * sentence, not the same sentence in a different place.
  */
 const m = defineMessages({
   empty: { id: 'shell.dataTable.empty', defaultMessage: 'Nothing here.' },
@@ -31,6 +37,10 @@ const m = defineMessages({
   footerCount: {
     id: 'shell.dataTable.footerCount',
     defaultMessage: '{count, plural, one {# item} other {# items}}',
+  },
+  bulkHint: {
+    id: 'shell.dataTable.bulkHint',
+    defaultMessage: '{action} needs {count, plural, one {# row} other {# rows}} selected',
   },
 });
 
@@ -49,6 +59,13 @@ export interface Column<T> {
   render?: (row: T) => ReactNode;
   sortValue?: (row: T) => string | number;
   width?: string;
+  /**
+   * How the card layout (narrow containers) treats this column. Omit for the
+   * default: the first column becomes the card title, a column with an empty
+   * label is an action group and goes to the card's foot, anything else is a
+   * label/value pair. `hidden` drops it from cards altogether.
+   */
+  card?: 'title' | 'field' | 'actions' | 'hidden';
 }
 
 export interface BulkAction<T> {
@@ -63,6 +80,13 @@ export interface BulkAction<T> {
   minSelected?: number;
   /** Shown on hover when the selection is too small. */
   disabledHint?: string;
+  /**
+   * Stable `data-tour` anchor. Explicit rather than derived from `label`,
+   * which the frame this came from did: `label` is translated copy here, so a
+   * derived key would be a different key in every locale and the tour would
+   * find nothing outside English.
+   */
+  tourKey?: string;
   onClick: (rows: T[]) => void;
 }
 
@@ -92,7 +116,15 @@ interface DataTableProps<T> {
   className?: string;
 }
 
-/** Sortable, bulk-selectable table (PRD section 8: "Tables"). */
+/**
+ * Sortable, bulk-selectable table (PRD section 8: "Tables").
+ *
+ * Two layouts, chosen by CONTAINER width rather than viewport width: below the
+ * `@3xl` container breakpoint each row is a card, above it the table. The
+ * container query is the point — the same table renders inside a chat card
+ * about half the width of the page, so a viewport media query would give a
+ * phone layout to a wide screen's chat column and a table to neither.
+ */
 export function DataTable<T>({
   title,
   subtitle,
@@ -144,6 +176,32 @@ export function DataTable<T>({
   const toggleOne = (id: string) =>
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
+  const emptyText = emptyMessage ?? intl.formatMessage(m.empty);
+
+  /** The hover title on a disabled action: the button says which action. */
+  const hoverHint = (a: BulkAction<T>) => {
+    const need = a.minSelected ?? 1;
+    return (
+      a.disabledHint ?? intl.formatMessage(need > 1 ? m.selectHintGroup : m.selectHint, { count: need })
+    );
+  };
+
+  // A hover title is invisible on a phone — there is nothing to hover with —
+  // so once the user has started selecting, the reason an action is still off
+  // is written under the bar where a thumb can read it. It names the action,
+  // because unlike the title it is not attached to the button.
+  const shortAction =
+    selectable && selected.length > 0
+      ? bulkActions.find((a) => selected.length < (a.minSelected ?? 1))
+      : undefined;
+  const shortHint = shortAction
+    ? shortAction.disabledHint ??
+      intl.formatMessage(m.bulkHint, {
+        action: shortAction.label,
+        count: shortAction.minSelected ?? 1,
+      })
+    : undefined;
+
   /** One definition, rendered above and/or below the rows. */
   const actionButtons = bulkActions.map((a) => {
     const need = a.minSelected ?? 1;
@@ -151,13 +209,9 @@ export function DataTable<T>({
     return (
       <button
         key={a.label}
+        {...(a.tourKey === undefined ? {} : { 'data-tour': a.tourKey })}
         disabled={short}
-        title={
-          short
-            ? a.disabledHint ??
-              intl.formatMessage(need > 1 ? m.selectHintGroup : m.selectHint, { count: need })
-            : undefined
-        }
+        title={short ? hoverHint(a) : undefined}
         onClick={() => a.onClick(selectable ? selectedRows : rows)}
         className={`flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-bold rounded-2xl transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
           a.primary
@@ -171,8 +225,30 @@ export function DataTable<T>({
     );
   });
 
+  /**
+   * Which card slot a column falls into. Read once per render rather than once
+   * per row — it depends on the column set, not on the data.
+   */
+  const kindOf = (c: Column<T>, i: number): NonNullable<Column<T>['card']> =>
+    c.card ?? (i === 0 ? 'title' : c.label.trim() === '' ? 'actions' : 'field');
+  const titleCols = columns.filter((c, i) => kindOf(c, i) === 'title');
+  const fieldCols = columns.filter((c, i) => kindOf(c, i) === 'field');
+  const actionCols = columns.filter((c, i) => kindOf(c, i) === 'actions');
+
+  // No `render` means "just show the field named by `key`". `key` is a plain
+  // string rather than `keyof T`, so this read cannot be checked — see the
+  // note on `Column.key`.
+  const cell = (c: Column<T>, row: T) =>
+    c.render ? c.render(row) : String((row as Record<string, unknown>)[c.key] ?? '');
+
   return (
-    <div className={`w-full ${className} border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden flex flex-col`}>
+    // `@container` establishes the query context both layouts below read, and
+    // `overflow-clip` rather than `overflow-hidden` because the latter makes a
+    // scroll container, which would break the sticky bulk bar inside it.
+    <div
+      data-tour="datatable"
+      className={`@container w-full ${className} border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-clip flex flex-col`}
+    >
       {title && (
         <div className="p-6 pb-4 flex items-start justify-between gap-4 border-b border-white/5">
           <div>
@@ -207,7 +283,76 @@ export function DataTable<T>({
         </div>
       )}
 
-      <div className="overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+      {/* Narrow containers (a phone, or a card in the chat) get one card per
+          row: the first column as the title, the rest as label/value pairs,
+          and any action column at the foot where a thumb can reach it. */}
+      <div className="@3xl:hidden flex flex-col divide-y divide-white/5">
+        {sorted.length === 0 && <div className="px-5 py-8 text-center text-zinc-500 text-sm">{emptyText}</div>}
+        {sorted.map((row) => {
+          const id = rowId(row);
+          const isSel = selected.includes(id);
+          const activate = onRowClick ? () => onRowClick(row) : selectable ? () => toggleOne(id) : undefined;
+          return (
+            <div
+              key={id}
+              // A card that responds to a click has to respond to a key, and
+              // it cannot be a <button> because the checkbox and the action
+              // column nest inside it — the same shape, and the same answer,
+              // as LeftPanel's history row.
+              {...(activate === undefined
+                ? {}
+                : {
+                    role: 'button',
+                    tabIndex: 0,
+                    onClick: activate,
+                    onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => {
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key !== 'Enter' && e.key !== ' ') return;
+                      e.preventDefault();
+                      activate();
+                    },
+                  })}
+              className={`flex gap-3 p-4 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-brand/60 ${
+                activate ? 'cursor-pointer' : ''
+              } ${isSel ? 'bg-brand/[0.07]' : ''}`}
+            >
+              {selectable && (
+                <div className="pt-0.5 shrink-0">
+                  <Checkbox checked={isSel} onChange={() => toggleOne(id)} />
+                </div>
+              )}
+              <div className="flex-1 min-w-0 flex flex-col gap-2.5">
+                {titleCols.map((c) => (
+                  <div key={c.key} className="text-sm font-semibold text-white min-w-0 break-words [&_*]:whitespace-normal">
+                    {cell(c, row)}
+                  </div>
+                ))}
+                {fieldCols.length > 0 && (
+                  <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
+                    {fieldCols.map((c) => (
+                      <div key={c.key} className="min-w-0">
+                        <dt className="text-[10.5px] font-bold uppercase tracking-widest text-zinc-500">{c.label}</dt>
+                        <dd className="text-[13px] text-zinc-300 break-words [&_*]:whitespace-normal">{cell(c, row)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+                {actionCols.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 pt-0.5 [&>*]:flex-wrap [&>*]:justify-start">
+                    {actionCols.map((c) => (
+                      <div key={c.key} className="contents">
+                        {cell(c, row)}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="hidden @3xl:block overflow-x-auto overscroll-x-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="border-b border-white/5">
@@ -246,7 +391,7 @@ export function DataTable<T>({
             {sorted.length === 0 && (
               <tr>
                 <td colSpan={columns.length + (selectable ? 1 : 0)} className="px-5 py-8 text-center text-zinc-500 text-sm">
-                  {emptyMessage ?? intl.formatMessage(m.empty)}
+                  {emptyText}
                 </td>
               </tr>
             )}
@@ -276,10 +421,7 @@ export function DataTable<T>({
                         c.align === 'right' ? 'text-right' : 'text-left'
                       }`}
                     >
-                      {/* No `render` means "just show the field named by `key`".
-                          `key` is a plain string rather than `keyof T`, so this
-                          read cannot be checked — see the note on `Column.key`. */}
-                      {c.render ? c.render(row) : String((row as Record<string, unknown>)[c.key] ?? '')}
+                      {cell(c, row)}
                     </td>
                   ))}
                 </motion.tr>
@@ -290,11 +432,18 @@ export function DataTable<T>({
       </div>
 
       {(bulkActions.length > 0 || footer) && (
-        <div className="flex items-center justify-between gap-3 bg-raised/50 p-4 flex-wrap">
-          <div className="text-[12px] text-zinc-500 font-semibold px-2">
-            {footer ?? intl.formatMessage(m.footerCount, { count: rows.length })}
+        <div data-tour="bulk-bar" className="@max-3xl:sticky @max-3xl:bottom-0 z-10 bg-card border-t border-white/5">
+          <div className="flex items-center justify-between gap-3 bg-raised/50 p-3 @3xl:p-4 flex-wrap">
+            <div className="text-[12px] text-zinc-500 font-semibold px-2 min-w-0">
+              {footer ?? intl.formatMessage(m.footerCount, { count: rows.length })}
+            </div>
+            <div className="flex items-center gap-2 @3xl:gap-3 flex-wrap w-full @3xl:w-auto [&>button]:flex-1 @3xl:[&>button]:flex-none">
+              {actionButtons}
+            </div>
           </div>
-          <div className="flex items-center gap-3 flex-wrap">{actionButtons}</div>
+          {shortHint && (
+            <div className="px-5 pb-3 -mt-1 text-[12px] text-amber-400 font-semibold">{shortHint}</div>
+          )}
         </div>
       )}
     </div>
@@ -308,7 +457,8 @@ function Checkbox({ checked, onChange }: { checked: boolean; onChange: () => voi
         e.stopPropagation();
         onChange();
       }}
-      className={`w-[18px] h-[18px] rounded-md border flex items-center justify-center transition-all ${
+      aria-pressed={checked}
+      className={`hit-area w-[18px] h-[18px] rounded-md border flex items-center justify-center transition-all ${
         checked ? 'bg-brand border-brand shadow-glow-check' : 'border-white/20 hover:border-white/40'
       }`}
     >
