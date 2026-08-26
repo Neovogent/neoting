@@ -36,6 +36,8 @@ DELETE FROM audit_events WHERE id LIKE 't\_%';
 ALTER TABLE audit_events ENABLE TRIGGER audit_events_no_update;
 
 DELETE FROM action_proposals WHERE id LIKE 't\_%';
+DELETE FROM document_links   WHERE id LIKE 't\_%';
+DELETE FROM otp_sessions     WHERE id LIKE 't\_%';
 DELETE FROM documents        WHERE id LIKE 't\_%';
 DELETE FROM memberships      WHERE id LIKE 't\_%';
 DELETE FROM users            WHERE id LIKE 't\_%';
@@ -86,6 +88,24 @@ INSERT INTO documents (id, practice_id, business_id, s3_key, original_filename,
 -- documents, so this row is the one that catches the cascade being missed.
 INSERT INTO extractions (id, document_id, fields, extractor_kind) VALUES
   ('t_ext_unrouted', 't_doc_unrouted', '{}'::jsonb, 'fixture');
+
+-- An ONBOARDING OTP session: practice-anchored, no business yet (D47). This is
+-- what a client invited to complete their own setup looks like BEFORE anyone
+-- has decided which workspace they belong to, and it is the row the old NOT
+-- NULL business_id made unwritable.
+INSERT INTO otp_sessions (id, practice_id, business_id, scope, link_token_hash, expires_at) VALUES
+  ('t_otp_onboarding', 't_prac_a', NULL, 'ONBOARDING', 't_lth1', now() + interval '1 day');
+
+-- And an ordinary delegated one, business-anchored, so section 10 proves the
+-- policy did not simply stop working for the case that already worked.
+INSERT INTO otp_sessions (id, practice_id, business_id, scope, link_token_hash, expires_at) VALUES
+  ('t_otp_delegated', 't_prac_a', 't_biz_a1', 'DELEGATED_UPLOAD', 't_lth2', now() + interval '1 day');
+
+-- A capability URL onto one of practice A's documents (D43).
+INSERT INTO document_links (id, document_id, business_id, code) VALUES
+  ('t_link_live',    't_doc_a1_1', 't_biz_a1', 't-Live01'),
+  ('t_link_revoked', 't_doc_a1_2', 't_biz_a1', 't-Revk02');
+UPDATE document_links SET revoked_at = now() WHERE id = 't_link_revoked';
 
 CREATE OR REPLACE FUNCTION assert_eq(actual bigint, expected bigint, label text)
   RETURNS void LANGUAGE plpgsql AS $$
@@ -354,12 +374,133 @@ BEGIN
   END;
 END $$;
 
+-- === 10. otp_sessions: the nullable business anchor (ID LAW batch) =========
+--
+-- `business_id` became nullable so ONBOARDING sessions have somewhere to live.
+-- That is the exact shape of the #104 bug in reverse, so it gets the same
+-- regression treatment: this section fails against the old single-column
+-- `app_can_access_business(business_id)` policy, where a NULL-business row was
+-- invisible to EVERYONE — including the practice that minted it.
+
+BEGIN;
+  SET LOCAL ROLE nt_app;
+  SET LOCAL app.actor_id = 't_user_a';
+  SET LOCAL app.practice_id = 't_prac_a';
+  SET LOCAL app.session_scope = 'user';
+
+  SELECT assert_eq(count(*), 1, 'practice A sees its own ONBOARDING otp_session')
+    FROM otp_sessions WHERE id = 't_otp_onboarding';
+
+  SELECT assert_eq(count(*), 1, 'practice A still sees its delegated otp_session')
+    FROM otp_sessions WHERE id = 't_otp_delegated';
+COMMIT;
+
+BEGIN;
+  SET LOCAL ROLE nt_app;
+  SET LOCAL app.actor_id = 't_user_b';
+  SET LOCAL app.practice_id = 't_prac_b';
+  SET LOCAL app.session_scope = 'user';
+
+  SELECT assert_eq(count(*), 0, 'practice B cannot see practice A''s ONBOARDING otp_session')
+    FROM otp_sessions WHERE id = 't_otp_onboarding';
+
+  UPDATE otp_sessions SET attempts = 99 WHERE id = 't_otp_onboarding';
+  SELECT assert_eq(count(*), 0, 'practice B''s UPDATE of that session touched no rows')
+    FROM otp_sessions WHERE id = 't_otp_onboarding' AND attempts = 99;
+COMMIT;
+
+-- A delegated portal session must not be able to read session rows at all —
+-- its own included. app_can_access_document() carries the scope = 'user' guard
+-- that invites_tenant/guidance_tenant only spell out inside their business
+-- branch, which is why this table uses the predicate rather than that shape.
+BEGIN;
+  SET LOCAL ROLE nt_app;
+  SET LOCAL app.actor_id = 't_user_client';
+  SET LOCAL app.business_id = 't_biz_a1';
+  SET LOCAL app.session_scope = 'delegated_upload';
+  SET LOCAL app.granted_item_ids = 't_doc_a1_1';
+
+  SELECT assert_eq(count(*), 0, 'a delegated session reads no otp_sessions rows')
+    FROM otp_sessions;
+COMMIT;
+
+-- Both anchors NULL is refused by the CHECK before any policy is consulted.
+DO $$
+BEGIN
+  BEGIN
+    INSERT INTO otp_sessions (id, scope, link_token_hash, expires_at)
+      VALUES ('t_otp_orphan', 'ONBOARDING', 't_lth9', now() + interval '1 day');
+    RAISE EXCEPTION 'FAIL: an unanchored otp_session was accepted';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE 'pass: unanchored otp_session refused by otp_sessions_tenant_anchor (%)', sqlerrm;
+  END;
+END $$;
+
+-- === 11. document_links and the capability resolver (D43) ==================
+--
+-- The table is policed like any other business-anchored table. The ONE
+-- sanctioned bypass is app_resolve_document_link(), and this section pins both
+-- halves: the table is NOT readable without a context, and the function IS.
+
+BEGIN;
+  SET LOCAL ROLE nt_app;
+  SET LOCAL app.actor_id = 't_user_a';
+  SET LOCAL app.practice_id = 't_prac_a';
+  SET LOCAL app.session_scope = 'user';
+
+  SELECT assert_eq(count(*), 2, 'practice A sees its own document_links')
+    FROM document_links WHERE id LIKE 't\_link\_%';
+COMMIT;
+
+BEGIN;
+  SET LOCAL ROLE nt_app;
+  SET LOCAL app.actor_id = 't_user_b';
+  SET LOCAL app.practice_id = 't_prac_b';
+  SET LOCAL app.session_scope = 'user';
+
+  SELECT assert_eq(count(*), 0, 'practice B cannot see practice A''s document_links')
+    FROM document_links WHERE id LIKE 't\_link\_%';
+COMMIT;
+
+-- No context at all — the state `GET /d/{code}` actually runs in. The table
+-- itself must be empty here, or the capability route would not need a resolver
+-- and this whole design would be unnecessary.
+BEGIN;
+  SET LOCAL ROLE nt_app;
+
+  SELECT assert_eq(count(*), 0, 'document_links is unreadable with no scope context')
+    FROM document_links WHERE id LIKE 't\_link\_%';
+
+  SELECT assert_eq(count(*), 1, 'the resolver finds a live link with no scope context')
+    FROM app_resolve_document_link('t-Live01') WHERE NOT revoked AND NOT expired;
+
+  -- Revoked links come back WITH their state rather than vanishing, so the
+  -- route can answer 410 Gone instead of 404 and the accountant is told the
+  -- link was revoked rather than left thinking they mistyped it.
+  SELECT assert_eq(count(*), 1, 'the resolver reports a revoked link as revoked')
+    FROM app_resolve_document_link('t-Revk02') WHERE revoked;
+
+  SELECT assert_eq(count(*), 0, 'the resolver returns nothing for an unknown code')
+    FROM app_resolve_document_link('t-Nope99');
+
+  -- It returns ids and state, never content. Pinned as a COUNT of its OUT
+  -- parameters: if a future edit widens the bypass to carry document data, this
+  -- fails rather than quietly shipping. (proallargtypes is the IN arg plus the
+  -- six OUT columns, hence the -1.)
+  SELECT assert_eq(
+    (SELECT array_length(proallargtypes, 1) - 1 FROM pg_proc WHERE proname = 'app_resolve_document_link'),
+    6,
+    'the resolver still returns exactly six columns, all of them ids or state');
+COMMIT;
+
 -- ------------------------------------------------------------- teardown ---
 ALTER TABLE audit_events DISABLE TRIGGER audit_events_no_update;
 DELETE FROM audit_events WHERE id LIKE 't\_%';
 ALTER TABLE audit_events ENABLE TRIGGER audit_events_no_update;
 
 DELETE FROM action_proposals WHERE id LIKE 't\_%';
+DELETE FROM document_links   WHERE id LIKE 't\_%';
+DELETE FROM otp_sessions     WHERE id LIKE 't\_%';
 DELETE FROM documents        WHERE id LIKE 't\_%';
 DELETE FROM memberships      WHERE id LIKE 't\_%';
 DELETE FROM users            WHERE id LIKE 't\_%';

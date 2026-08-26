@@ -47,6 +47,23 @@ export const UNVERSIONED_ROUTES = [
   // Meta's handshake is a GET, delivery is a POST. Both must stay put.
   { path: 'webhooks/whatsapp', method: RequestMethod.GET },
   { path: 'webhooks/whatsapp', method: RequestMethod.POST },
+  //   d/:code  The D43 capability URL. Declared in the ID LAW batch AHEAD of
+  //            its controller, because the exclusion is what makes the route
+  //            exist where the contract says it does — without it Nest mounts
+  //            the controller at `/v1/d/:code` and the link an accountant typed
+  //            out of their ledger 404s.
+  //
+  //            The three characters are the whole reason. This URL has to
+  //            survive a reference field that truncates SILENTLY at 30 and ~25
+  //            characters (SoT §24.3.2), and `https://` plus a host has already
+  //            spent most of that budget. `/d/A7K2M9` fits; `/v1/d/A7K2M9` is
+  //            three characters closer to a link that looks correct and
+  //            resolves to nothing.
+  //
+  //            An exclusion for a route no controller serves yet is a no-op, so
+  //            declaring it now costs nothing and removes a silent failure from
+  //            the lane that builds it. routing.test.ts couples the two.
+  { path: 'd/:code', method: RequestMethod.GET },
   // Not `as const`: setGlobalPrefix's `exclude` takes a mutable
   // (string | RouteInfo)[], and a readonly tuple is not assignable to it.
 ];

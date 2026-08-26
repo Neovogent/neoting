@@ -76,6 +76,15 @@ export function buildExecutorRegistry(deps: ExecutorRegistryDeps): ExecutorRegis
     // rule.create landed with METH S13 (#142): the chat's rule beat, activated
     // only by the approved proposal it records as `actionProposalId`.
     'rule.create': ruleCreateExecutor,
+    // document.revoke-link arrived with the ID LAW batch (S0) ahead of its
+    // executor, the same way the METH Stage 2 kinds did. It is a hole on
+    // purpose: A8 owns the capability-URL lane, and the alternative was a
+    // second LAW change later for one enum value on a kind whose surface is
+    // already contracted. Revoking is a real outward act — it turns a working
+    // entry inside someone's ledger into a 410 — so it belongs on the proposal
+    // spine rather than behind a DELETE, and this line is where its executor
+    // attaches.
+    'document.revoke-link': notImplemented('document.revoke-link'),
   };
 }
 

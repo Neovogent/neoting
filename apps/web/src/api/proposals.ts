@@ -45,6 +45,7 @@ export const KIND_LABEL: Record<ProposalKind, MessageDescriptor> = defineMessage
   'publish.batch': { id: 'proposals.kindLabel.publishBatch', defaultMessage: 'Publish to the ledger' },
   'bank.confirm-match': { id: 'proposals.kindLabel.bankConfirmMatch', defaultMessage: 'Confirm a bank match' },
   'rule.create': { id: 'proposals.kindLabel.ruleCreate', defaultMessage: 'Create a rule' },
+  'document.revoke-link': { id: 'proposals.kindLabel.documentRevokeLink', defaultMessage: 'Revoke document links' },
 });
 
 export interface UsePendingProposalsOptions {

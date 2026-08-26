@@ -8,6 +8,7 @@ import type {
   PublishBatchPayload,
   RejectPayload,
   ReprocessPayload,
+  RevokeLinkPayload,
   RoutePayload,
   RuleCreatePayload,
   SplitPayload,
@@ -43,6 +44,7 @@ export interface ProposalPayloadMap {
   'publish.batch': PublishBatchPayload;
   'bank.confirm-match': BankConfirmMatchPayload;
   'rule.create': RuleCreatePayload;
+  'document.revoke-link': RevokeLinkPayload;
 }
 
 export interface ExecutionInput<P> {

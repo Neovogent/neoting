@@ -44,6 +44,7 @@ const KIND_ORDER: readonly ProposalKind[] = [
   'publish.batch',
   'bank.confirm-match',
   'rule.create',
+  'document.revoke-link',
 ];
 
 const KNOWN_KINDS = new Set<string>(Object.values(ProposalKind));

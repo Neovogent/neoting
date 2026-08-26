@@ -1,3 +1,166 @@
+-- ===========================================================================
+-- Initial Delivery — the LAW batch (docs/launch/SHAKIB.md stage S0)
+-- ===========================================================================
+--
+-- ONE migration, because three people block on it and four separate approvals
+-- would have cost four separate blocks. Additive throughout, expand-contract
+-- (Governance §5.3): every new column is nullable or defaulted, one NOT NULL is
+-- DROPPED rather than added, and nothing is renamed or removed.
+--
+-- What is here and why, in the order it appears:
+--
+--   1. businesses += four subscription columns (D48). Reuses the existing
+--      businesses_tenant RLS policy — there is no new policy to get wrong.
+--   2. exports += target, period bounds and row_count. The Export MODEL already
+--      existed; this extends it rather than adding a second one.
+--   3. IntegrationKind += VT, MANUAL. ⚠ THE BLOCKER. publish-batch.ts refuses
+--      without an active Integration, resolveIntegration is the only door, and
+--      the enum held only ledger vendors D42 removed from this release — so
+--      NOTHING COULD EVER REACH PUBLISHED and the VT export had nothing to
+--      export. SoT §24.7 could not run.
+--   4. otp_sessions.business_id becomes NULLABLE and gains a practice anchor,
+--      so OtpSessionScope.ONBOARDING finally has somewhere to live (D47).
+--   5. document_links — the D43 capability URL. New table.
+--   6. practices.document_link_ttl_days — D43's per-practice expiry.
+--   7. prisma/sql/rls.sql, re-appended in full, as every migration that touches
+--      a tenant table must.
+--
+-- The contract-change issue: #164 (G7 — approved BEFORE this PR opened).
+
+-- ---------------------------------------------------------------------------
+-- 1-2. New enums
+-- ---------------------------------------------------------------------------
+
+-- CreateEnum
+CREATE TYPE "ExportTarget" AS ENUM ('VT_TRANSACTION_PLUS', 'GENERIC_CSV');
+
+-- CreateEnum
+CREATE TYPE "SubscriptionStatus" AS ENUM ('INCOMPLETE', 'INCOMPLETE_EXPIRED', 'TRIALING', 'ACTIVE', 'PAST_DUE', 'CANCELED', 'UNPAID', 'PAUSED');
+
+-- ---------------------------------------------------------------------------
+-- 3. IntegrationKind += VT, MANUAL — the publish blocker
+-- ---------------------------------------------------------------------------
+--
+-- Two ADD VALUEs in one migration. Safe on PostgreSQL 12+ (this project pins
+-- postgres:16), where ALTER TYPE ... ADD VALUE runs inside a transaction block
+-- provided the new value is not USED in the same transaction. Nothing below
+-- writes an Integration row, so it is not.
+--
+-- IF NOT EXISTS so a re-run against a partially applied database is a no-op
+-- rather than a hard failure on a LAW migration.
+
+-- AlterEnum
+ALTER TYPE "IntegrationKind" ADD VALUE IF NOT EXISTS 'VT';
+ALTER TYPE "IntegrationKind" ADD VALUE IF NOT EXISTS 'MANUAL';
+
+-- ---------------------------------------------------------------------------
+-- 4. Columns
+-- ---------------------------------------------------------------------------
+
+-- AlterTable
+ALTER TABLE "businesses" ADD COLUMN     "plan" TEXT,
+ADD COLUMN     "stripe_customer_id" TEXT,
+ADD COLUMN     "subscription_current_period_end" TIMESTAMP(3),
+ADD COLUMN     "subscription_status" "SubscriptionStatus";
+
+-- AlterTable
+ALTER TABLE "exports" ADD COLUMN     "period_end" TIMESTAMP(3),
+ADD COLUMN     "period_start" TIMESTAMP(3),
+ADD COLUMN     "row_count" INTEGER,
+ADD COLUMN     "target" "ExportTarget";
+
+-- AlterTable
+ALTER TABLE "otp_sessions" ADD COLUMN     "practice_id" TEXT,
+ALTER COLUMN "business_id" DROP NOT NULL;
+
+-- AlterTable
+ALTER TABLE "practices" ADD COLUMN     "document_link_ttl_days" INTEGER;
+
+-- ---------------------------------------------------------------------------
+-- 5. document_links — the D43 capability URL
+-- ---------------------------------------------------------------------------
+
+-- CreateTable
+CREATE TABLE "document_links" (
+    "id" TEXT NOT NULL,
+    "document_id" TEXT NOT NULL,
+    "business_id" TEXT NOT NULL,
+    "code" TEXT NOT NULL,
+    "created_by_user_id" TEXT,
+    "expires_at" TIMESTAMP(3),
+    "revoked_at" TIMESTAMP(3),
+    "access_count" INTEGER NOT NULL DEFAULT 0,
+    "last_accessed_at" TIMESTAMP(3),
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "document_links_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "document_links_code_key" ON "document_links"("code");
+
+-- CreateIndex
+CREATE INDEX "document_links_business_id_idx" ON "document_links"("business_id");
+
+-- CreateIndex
+CREATE INDEX "document_links_document_id_revoked_at_idx" ON "document_links"("document_id", "revoked_at");
+
+-- CreateIndex
+--
+-- UNIQUE, and it is load-bearing rather than tidy. POST /v1/webhooks/stripe
+-- runs with NO session, so it cannot lean on RLS to find the tenant: it
+-- resolves one from the Stripe customer id and must assert it matched exactly
+-- one row. This index is what makes that assertion structural. A subscription
+-- written to the wrong tenant would be invisible, because RLS fails closed and
+-- silent — a wrong query returns nothing rather than erroring.
+CREATE UNIQUE INDEX "businesses_stripe_customer_id_key" ON "businesses"("stripe_customer_id");
+
+-- CreateIndex
+CREATE INDEX "exports_business_id_target_period_end_idx" ON "exports"("business_id", "target", "period_end");
+
+-- CreateIndex
+CREATE INDEX "otp_sessions_practice_id_idx" ON "otp_sessions"("practice_id");
+
+-- AddForeignKey
+ALTER TABLE "otp_sessions" ADD CONSTRAINT "otp_sessions_practice_id_fkey" FOREIGN KEY ("practice_id") REFERENCES "practices"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "document_links" ADD CONSTRAINT "document_links_document_id_fkey" FOREIGN KEY ("document_id") REFERENCES "documents"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "document_links" ADD CONSTRAINT "document_links_business_id_fkey" FOREIGN KEY ("business_id") REFERENCES "businesses"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- ---------------------------------------------------------------------------
+-- 6. Backfill: every existing OTP session takes the practice of its business
+-- ---------------------------------------------------------------------------
+--
+-- Runs BEFORE the CHECK constraint below. Every row written under the old NOT
+-- NULL business_id already satisfies the constraint on business_id alone, so
+-- this is not what makes them legal — it is what makes the practice branch of
+-- the policy able to see them, and it leaves a standalone business's sessions
+-- with practice_id NULL, which is exactly the shape the constraint permits.
+
+UPDATE "otp_sessions" o
+   SET "practice_id" = b."practice_id"
+  FROM "businesses" b
+ WHERE b."id" = o."business_id"
+   AND o."practice_id" IS NULL;
+
+-- ---------------------------------------------------------------------------
+-- 7. The tenancy anchor
+-- ---------------------------------------------------------------------------
+--
+-- Prisma cannot express a CHECK constraint, so it lives here and must be
+-- carried forward by hand if this table is ever rebuilt. Same shape and same
+-- semantics as documents_tenant_anchor and action_proposals_tenant_anchor: AT
+-- LEAST ONE, not exactly one. A row with neither anchor would be owned by
+-- nobody and visible to nobody — and an OTP session nobody can see is a client
+-- who cannot sign in, with nothing reporting why.
+
+ALTER TABLE "otp_sessions"
+  ADD CONSTRAINT "otp_sessions_tenant_anchor"
+  CHECK ("practice_id" IS NOT NULL OR "business_id" IS NOT NULL);
+
 -- NEOTING — row-level security policies (Sprint-0 contract, LAW per G7/D15)
 --
 -- Governance §5.2. This file is the tenancy guarantee. Prisma cannot express
