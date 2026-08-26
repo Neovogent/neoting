@@ -52,10 +52,19 @@ FROM node:22-slim AS base
 # ca-certificates is for the same class of reason: TLS to RDS (force_ssl=1),
 # ElastiCache (transit encryption on) and every AWS endpoint.
 #
-# qpdf is deliberately NOT installed yet: DOCUMENT_GUARD defaults to `fixture`
-# and staging does not set it. It belongs here the moment that flips.
+# qpdf is the PDF guard's real implementation, and it is installed here rather
+# than left optional because `config/env.ts` now REFUSES DOCUMENT_GUARD=fixture
+# under NODE_ENV=production (S1). The fixture greps the first and last 8 KB for
+# `/Encrypt` and misses a mid-file trailer in an incrementally-updated PDF —
+# which is most signed or form-filled accounting paperwork — so in a real
+# environment it is a password check that reports clean on files the pipeline
+# then cannot read.
+#
+# It goes in `base` rather than `runtime` so the build stage has it too: the
+# guard's unit tests drive a fake runner and need no binary, but anything that
+# later shells out during a build step would find it. ~2 MB installed.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && apt-get install -y --no-install-recommends openssl ca-certificates qpdf \
   && rm -rf /var/lib/apt/lists/*
 
 # corepack ships with Node 22 and pins pnpm from packageManager in the root

@@ -214,7 +214,7 @@ jobs:
           # deployed api enqueues to Redis and workers actually consume it.
           # What a green stage 9 still does NOT prove: the email lane
           # (EMAIL_SOURCE stays `fixture` until the s3 poller has a service)
-          # and qpdf PDF hardening (not in the image). The deploy summary
+          # only (EMAIL_SOURCE). The deploy summary
           # carries the honest remainder.
           # ------------------------------------------------------------------
           deploy=yes
@@ -277,7 +277,7 @@ jobs:
           [ "$n_eval" -gt 0 ]  || echo "::warning title=Stage 7 not implemented::No \`test:eval\` script exists — extraction thresholds and the adversarial injection corpus (§15.5) are not gating merges."
           [ "$lint_rules" = yes ] || echo "::warning title=Stage 3 incomplete::No ESLint config in the repo — a11y, i18n-literal, money-type, module-boundary and unscoped-query (§14.3) are unenforced."
           if [ "$deploy" = yes ]; then
-            echo "::notice title=Stage 9 deploys the real ingest lane::Migrations, api and workers deploy; INGEST_QUEUE=bullmq and OBJECT_STORE=s3 are set on the task definitions, so ingested documents survive a restart. Still fixture-mode by design: the email lane (EMAIL_SOURCE — the s3 poller has no ECS service yet) and qpdf PDF hardening (not in the image)."
+            echo "::notice title=Stage 9 deploys the real ingest lane::Migrations, api and workers deploy; INGEST_QUEUE=bullmq, OBJECT_STORE=s3, IMAGE_NORMALISER=sharp and DOCUMENT_GUARD=qpdf are set on the task definitions, so ingested documents survive a restart and PDFs are really checked. Still fixture-mode by design: the email lane (EMAIL_SOURCE — the s3 poller has no ECS service yet)."
           else
             echo "::warning title=Stage 9 not implemented::No deploy path exists yet. See the DEPLOY_READY block in check.yml."
           fi
@@ -778,7 +778,7 @@ jobs:
   # the task definitions (services.tf), so the deployed api enqueues to Redis,
   # workers consume it, and sanitised bytes persist to S3. The remaining
   # fixture-mode lanes are the email poller (EMAIL_SOURCE — no ECS service for
-  # worker/email-intake-main.js yet) and qpdf (not in the image); the summary
+  # worker/email-intake-main.js yet); the summary
   # at the end of this job names them until they land.
   #
   # Production promote (§14.9 "one-click promote") is a GitHub Environment with
@@ -1170,7 +1170,10 @@ jobs:
             echo "- **Email intake**: \`EMAIL_SOURCE\` stays \`fixture\` — the s3 poller"
             echo "  (\`worker/email-intake-main.js\`) has no ECS service yet, and env.ts refuses"
             echo "  \`EMAIL_SOURCE=s3\` against fixture stores anyway."
-            echo "- **PDF hardening**: \`DOCUMENT_GUARD\` stays \`fixture\` — qpdf is not in the image."
+            echo "- **Second factor**: \`OTP_MODE=totp\` — the real verifier lands in A2, so"
+            echo "  every second factor fails CLOSED until then and nobody can sign in."
+            echo "- **Extraction**: \`EXTRACTOR=bedrock\` — BedrockExtractor is images-only until"
+            echo "  A4, so a PDF fails with NT-EXT-003 rather than being invented."
             echo
             echo "Workers has no load balancer and no container health check, so steady state"
             echo "proves the task started, not that it reached Redis (the revision assertion"

@@ -591,6 +591,14 @@ Two things worth knowing before changing it:
 bytes a stranger emailed us, and a malicious PDF must cost one failed document
 rather than the worker. Selected by `DOCUMENT_GUARD=fixture|qpdf`.
 
+**And it is the only one a real environment may run** (S1). `config/env.ts`
+refuses `DOCUMENT_GUARD=fixture` under `NODE_ENV=production`, and
+`apps/api/Dockerfile` installs the binary — the two halves of the same change,
+because the gate without the binary is a crash-loop and the binary without the
+gate is an option nobody takes. `fixture` remains the default so a laptop and
+CI still run the suite offline: the guard's unit tests drive a fake runner, so
+the decision logic is covered everywhere rather than only where qpdf exists.
+
 - **Encryption** via `--is-encrypted`, which walks the xref chain. This is what
   the shim got wrong: it greps the first and last 8 KB for `/Encrypt` and misses
   a mid-file trailer in an incrementally-updated PDF — anything signed,
