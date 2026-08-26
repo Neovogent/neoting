@@ -1,0 +1,59 @@
+import { Module } from '@nestjs/common';
+
+import { getPrismaClient, type PrismaClient } from '../../../common/db/prisma.js';
+import { InMemoryIdempotencyStore, type IdempotencyStore } from '../../../common/idempotency/idempotency-store.js';
+import type { Env } from '../../../config/env.js';
+import { ENV } from '../../../config/env.module.js';
+import { selectDocumentStore, type DocumentStore } from '../../ingestion-routing/index.js';
+import { CapabilityLinkModule } from '../links/capability-link.module.js';
+import type { DocumentLinkService } from '../links/document-link.service.js';
+import { DOCUMENT_LINK_SERVICE } from '../links/tokens.js';
+
+import { ExportsController } from './exports.controller.js';
+import { ExportsService } from './exports.service.js';
+import { DOCUMENT_STORE, EXPORTS_SERVICE, IDEMPOTENCY_STORE, PRISMA } from './tokens.js';
+
+/**
+ * The export surface (D42, stage A9): `GET`+`POST /v1/exports`.
+ *
+ * It imports `CapabilityLinkModule` rather than constructing a second
+ * `DocumentLinkService`, and that is not tidiness. The minter reuses a
+ * document's live link instead of issuing a new one — *"the same document
+ * re-exported next month must carry the SAME code, or the accountant's saved VT
+ * conversion table stops matching and every import goes manual again"* — so two
+ * instances would be two things holding one invariant, and the failure would
+ * surface as a customer's import going manual, months later.
+ *
+ * The store is config-selected (`OBJECT_STORE`), never import-selected, so
+ * `pnpm dev` and `pnpm test` run this lane against the in-memory fixture while
+ * staging signs real S3 URLs through the same code.
+ *
+ * ⚠ The idempotency store is `InMemory`, per-process, and there is no durable
+ * one anywhere in this repo yet (`common/idempotency/idempotency-store.ts` says
+ * so, and there is no table because `prisma/` is LAW). Behind more than one API
+ * task a replayed key can therefore land on a task that never saw it and
+ * generate the file a second time. That fails in the safe direction here —
+ * generating an export twice writes a second `exports` row and changes no
+ * document state — which is exactly why this surface can live with the gap that
+ * a publish could not.
+ */
+@Module({
+  imports: [CapabilityLinkModule],
+  controllers: [ExportsController],
+  providers: [
+    { provide: PRISMA, useFactory: () => getPrismaClient() },
+    { provide: DOCUMENT_STORE, useFactory: (env: Env) => selectDocumentStore(env), inject: [ENV] },
+    { provide: IDEMPOTENCY_STORE, useFactory: () => new InMemoryIdempotencyStore() },
+    {
+      provide: EXPORTS_SERVICE,
+      useFactory: (
+        prisma: PrismaClient,
+        store: DocumentStore,
+        links: DocumentLinkService,
+        idempotency: IdempotencyStore,
+      ) => new ExportsService(prisma, store, links, idempotency),
+      inject: [PRISMA, DOCUMENT_STORE, DOCUMENT_LINK_SERVICE, IDEMPOTENCY_STORE],
+    },
+  ],
+})
+export class ExportsApiModule {}

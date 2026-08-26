@@ -45,12 +45,22 @@ pnpm --filter @neoting/api test -- exports-public-api
 
 ## Current state
 
-**A7 (the canonical model + the VT emitter) and A8 (the source-document link) have both
-landed.** A7 is pure domain code. A8 added the module's first Prisma access, its first
-NestJS module and its **only** controller — `GET /d/{code}`, the one route in this API
-outside the session wall.
+**A7 (the canonical model + the VT emitter), A8 (the source-document link) and A9 (the
+HTTP surface) have all landed.** A7 is pure domain code. A8 added the module's first
+Prisma access, its first NestJS module and `GET /d/{code}`, the one route in this API
+outside the session wall. A9 added `GET`+`POST /v1/exports` — the contract surface the
+whole release is delivered through — and is the first thing here that WRITES a row of its
+own (`exports`).
 
 ```
+api/document-to-canonical.ts     a `documents` row → one canonical row, or a NAMED refusal
+api/export-record.ts             the `exports` row → contract `Export`, + the `filters` record
+api/exports.service.ts           list + create. The cap, the refusals, the idempotency
+api/exports.controller.ts        `GET`+`POST /v1/exports`, thin
+api/exports.module.ts            the wiring; imports CapabilityLinkModule for the ONE minter
+api/tokens.ts                    its own DI symbols — deliberately not `links/tokens.ts`'s
+
+
 canonical/canonical-row.ts       the model — two record families, signed integer pence
 canonical/money.ts               integer pence → 2dp, shared by the VT cells and the manifest
 emitters/export-emitter.ts       the seam: one emitter per target
@@ -74,7 +84,7 @@ bundle/source-document-bundle.ts rung 4 assembled: manifest + originals named by
 index.ts                         the public seam
 ```
 
-`pnpm --filter @neoting/api test -- exports` → 16 files, 201 tests (14 of them
+`pnpm --filter @neoting/api test -- exports` → 20 files, 251 tests (22 of them
 integration, skipped without a database).
 
 ## ⚠ A8 — `GET /d/{code}`, the one route outside the session wall
@@ -168,16 +178,104 @@ machine**. Neither produces a stack trace we would ever see.
    defect in the minting, not customer data. An empty cell is allowed. The canonical
    schema refuses a letterless code as well, so there are two locks on that door.
 
-## Where A9 attaches — the seam A8 left filled
+## ⚠ A9 — `GET`+`POST /v1/exports`, the sole egress
 
-`CanonicalSourceLink { code, url }` in `canonical/canonical-row.ts` was A7's seam and A8
-fills it. **A9's only job on this axis is to call one method and put the answer on the
-row:**
+**Nothing on this lane transmits anything.** `POST /exports` returns bytes behind a
+short-lived link. There is no ledger client, no vendor, no outbound call, and *Published*
+is an INTERNAL state meaning approved and released for export. The operation is
+**"Export for VT"**; the contract calls a string implying transmission a D42 defect rather
+than a copy preference, and `apps/web/src/views/ExportView.test.tsx` reads the rendered DOM
+and fails on the forbidden vocabulary rather than trusting a review to catch it.
+
+### The lifecycle is deliberately fake, and the cap is what pays for it
+
+Generation is **synchronous in the request**: no `QUEUED` state on this lane, no BullMQ job,
+no worker, no progress polling. `exports.state` goes straight to `succeeded`, because the
+bytes exist before the row does — so the row is never a promise about work that has not
+happened. `apps/api/CLAUDE.md`'s async spine is the shape this returns to when a real queue
+is worth its cost.
+
+**The batch cap is `MAX_EXPORT_DOCUMENTS`, and it is `MAX_LINKS_PER_CALL` (500) imported,
+not restated.** The contract caps `ExportRequest.documentIds` at 500, A8's minter refuses
+beyond 500 with the same `NT-EXP-003`, and a third ceiling would mean a request that passes
+the body schema, passes the service check and then fails inside the minter with a different
+message. The period query takes `cap + 1` as a probe row (Governance §5.1 forbids an
+unbounded load), and over the cap the answer names the number — **never a truncated file**.
+
+### This operation READS. It changes the state of nothing
+
+`x-nt-side-effect: ingest` — one new `Export` record, and **no document moves**. That is
+why there is no `ActionProposal`: the human authorisation already happened at Ready →
+Published, the super-admin act (D44). ⚠ **Nothing in `api/` writes to `documents`, and in
+particular nothing archives them.** A5 removed auto-archive on release precisely because
+ARCHIVED is past the only state this query can see, so an export that archived its own input
+would make the *second* export of the same month silently empty. The unit harness's fake
+transaction has no document writer at all, so a refactor that adds one fails there; the
+integration test re-reads the row and asserts `PUBLISHED` + `archivedAt IS NULL`.
+
+### Refusals, and which status each is
+
+| Condition | Answer |
+|---|---|
+| Business RLS cannot reach | **404** `NT-VAL-001`. Never 403 — that would confirm it exists |
+| Nothing Published in the period, or nothing exportable | 422 `NT-EXP-001`, naming the period in UK d/m/y |
+| More than the cap | 422 `NT-EXP-003`, naming the cap |
+| A named `documentId` that is not this client's / not Published / outside the period | **400** `NT-VAL-001` with one `errors` entry per id, and **nothing is written**. The contract's own rule: *"refused rather than silently skipped — a short export file that looked complete is the failure this whole surface is designed against"* |
+| `periodEnd` before `periodStart` | 400, before anything is read |
+| Same `Idempotency-Key`, different payload | 409 `NT-IDM-001` |
+
+The three reasons a named id is refused are **not** distinguished in the message, on
+purpose: telling them apart would answer "does this id exist somewhere else".
+
+### What did not travel is reported, never dropped
+
+Three sources of `ExportWarning` are merged onto the response and stored on the row:
+`document-to-canonical.ts`'s refusals (a document missing a date, a total, a counterparty
+or a category — none of which should reach PUBLISHED, and all of which are reported rather
+than assumed away), the emitter's own (`analysis-collapsed`, `source-link-missing`,
+`long-numeric-token-broken`, `analysis-account-unprefixed`), and the bundle's
+(`source-document-unreadable`, `source-document-hash-mismatch`). A document with no link
+keeps its row and is left out of the bundle; it is **not** warned about twice, because the
+emitter has already raised `source-link-missing` for the same fact.
+
+### ⚠ Three compromises `prisma/` forced, written down rather than hidden
+
+`exports` is LAW and A9 does not open a contract-change issue for it, so:
+
+1. **`documentCount` and `warnings` have no columns** and live in `exports.filters`, with
+   `bundleS3Key` beside them because `s3_key` is singular and an export produces **two**
+   artefacts. `ExportFiltersRecordSchema` parses it on the way out and a row that does not
+   parse degrades to "nothing extra recorded" rather than felling a page of history.
+2. **`file` and `bundle` are `null` on `GET /exports`.** `FileAccess.expiresAt` is "minutes
+   away, not hours" by contract, so a row from last week has no live URL and inventing one
+   that 403s at the storage host is worse than the honest null. Re-downloading is a new
+   `POST` over the same period, which reuses the same capability codes and therefore
+   produces a file the accountant's saved VT conversion table still matches.
+3. **The two artefacts land under `w/<businessId>/documents/<sha256>`**, because
+   `DocumentStore.put` derives the key itself and has no `putAt(key, bytes)` —
+   `ingestion-routing/storage/` was outside A9's owned paths. Still under `w/` (the staging
+   IAM policy grants nothing else), still naming the business, still content-addressed.
+
+**The idempotency store is `InMemory` and per-process** (there is no durable one anywhere,
+and no table, because `prisma/` is LAW). Behind more than one API task a replayed key can
+land on a task that never saw it and generate the file twice. That fails in the safe
+direction *here* — a second `exports` row and no document state change — which is exactly
+why this surface can live with a gap a publish could not.
+
+## The seam A8 left filled, and how A9 uses it
+
+`CanonicalSourceLink { code, url }` in `canonical/canonical-row.ts` was A7's seam, A8 fills
+it and A9 calls it once per batch:
 
 ```ts
 const links = await documentLinkService.linksFor(ctx, documentIds); // Map<documentId, link>
 const rows = documents.map((d) => ({ ...canonicalRow(d), sourceLink: links.get(d.id) ?? null }));
 ```
+
+⚠ **`ExportsApiModule` imports `CapabilityLinkModule` rather than building a second
+`DocumentLinkService`**, and that is not tidiness: the minter reuses a document's live link
+instead of issuing a new one, so two instances would be two things holding one invariant and
+the failure would surface as a customer's import going manual, months later.
 
 - **`code` → `Entry details`**, in `entryDetailsCell()`. Schema-enforced: contains a
   letter, at most 20 characters (targets truncate silently at 30 and ~25).
@@ -236,8 +334,25 @@ does. `capability-url.test.ts` pins the measurement.
 - [ ] A per-IP **miss** counter on `/d/{code}` (a third scope in `link-rate-limit.ts`).
       Legitimate traffic almost never 404s and a brute force is 100% misses, so it is the
       sharper control. Not load-bearing at 40 bits; worth having if the code ever shortens.
-- [ ] **A9** — the HTTP surface (`listExports`, `createExport`) and the export screen.
-      Only `CapabilityLinkModule` is registered in `app.module.ts` so far.
+- [x] **A9** — the HTTP surface (`listExports`, `createExport`) in `api/`, plus the export
+      screen in `apps/web/src/views/ExportView.tsx`. `app.module.ts` registers
+      `ExportsApiModule` beside `CapabilityLinkModule`. Synchronous generation, capped at
+      500, no worker and no `QUEUED`. Proven against a real database
+      (`api/exports.integration.test.ts`, prefix `a9x_`, cleanup by explicit id list).
+- [ ] **A9 left the screen UNREACHABLE, and it is one line in four of Mubasshir's files.**
+      `ExportView` is written, tested and under 5 kB gzip on its own chunk, but `App.tsx`,
+      `AppContext.tsx` (`SIDEBAR_TABS`), `Sidebar.tsx` and `BottomNav.tsx` are the shell and
+      were outside A9's owned paths while he had open PRs in them. Until those four lines
+      land the view is dead code and `/export` resolves to the AI Workspace. The exact diff
+      is on the A9 PR.
+- [ ] **Three columns on `exports` would retire the `filters` compromise** —
+      `document_count`, `warnings jsonb`, and a second key for the bundle (or an
+      `export_artefacts` child). A contract-change candidate, not taken here.
+- [ ] **A dedicated `exports/` object prefix.** `DocumentStore` has no `putAt(key, bytes)`,
+      so an export CSV and its ZIP land under the business's `documents/` prefix. Harmless
+      (content-addressed, still under `w/`), but it is not what that prefix means.
+- [ ] **A durable idempotency store.** The in-memory one is per-process; see the note above
+      for why this surface can live with that and a publish could not.
 - [ ] **A10** — settle the two constants above against a real VT on Windows, and confirm
       the click-through. If the URL is inert, rung 4 becomes the primary route.
 - [ ] Bank lines still ride the general UIS layout. §24.3.1 notes VT has a dedicated

@@ -13,7 +13,9 @@
  * - **the capability-URL lane** (A8, D43) — `DocumentLinkService` mints the
  *   link A9 puts on every row, and `CapabilityLinkModule` serves `GET /d/{code}`,
  * - **the source-document bundle** (D43 rung 4) — the manifest CSV zipped with
- *   the originals, each named by its code.
+ *   the originals, each named by its code,
+ * - **the export surface itself** (A9) — `ExportsApiModule`, which `app.module.ts`
+ *   registers to serve `GET`+`POST /v1/exports`.
  *
  * `vtTransactionPlusEmitter` is not exported by name on purpose. A caller that
  * names the VT emitter directly is a caller that has to be changed when the
@@ -86,3 +88,13 @@ export {
   buildSourceDocumentBundle,
 } from './bundle/source-document-bundle.js';
 export { ZipError, buildZipArchive, type ZipEntry } from './bundle/zip.js';
+
+// ── The export surface (D42, stage A9) ──────────────────────────────────────
+//
+// Only the Nest module and the two constants a reader outside this directory
+// could legitimately need. `ExportsService` is deliberately not exported: it is
+// reachable through one controller and one contract operation, and a second
+// in-process caller of "produce an export" would be a second way to write an
+// `exports` row without the `Idempotency-Key` the contract makes mandatory.
+export { ExportsApiModule } from './api/exports.module.js';
+export { EXPORT_URL_TTL_SECONDS, MAX_EXPORT_DOCUMENTS } from './api/exports.service.js';
