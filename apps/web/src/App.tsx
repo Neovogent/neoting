@@ -73,6 +73,11 @@ const BusinessPortalLauncher = lazy(() => import('./components/BusinessPortalLau
 // all and must never have been paid for.
 const LoginView = lazy(() => import('./views/LoginView').then((m) => ({ default: m.LoginView })));
 
+// The public landing page at `/` (launch stage M3). Its own chunk for the
+// same reason in both directions: a visitor reading the pricing must not
+// download the workspace, and the workspace must not carry a marketing page.
+const LandingView = lazy(() => import('./views/LandingView').then((m) => ({ default: m.LandingView })));
+
 // The §13.3 context header. Lazy for the budget (the floor sat 0.6 kB over
 // SoT §14's 250 kB on the worst route with it inlined), and mounted only when
 // a session state exists — synthetic mode never downloads it. `fallback` is
@@ -210,6 +215,18 @@ export default function App() {
     default:
       content = <GenericView title={activeTab} />;
       break;
+  }
+
+  // The landing page, before every wall: it is the one public address, so it
+  // renders outside the login gate and outside every shell. `null` fallback
+  // rather than a skeleton — the body is already `bg-ground`, so the chunk
+  // arriving is a page appearing on its own background, not a flash.
+  if (portal === 'landing') {
+    return (
+      <Suspense fallback={null}>
+        <LandingView />
+      </Suspense>
+    );
   }
 
   // The business portal replaces the practice shell outright — a client must

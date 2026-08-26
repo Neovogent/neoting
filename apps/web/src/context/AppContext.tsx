@@ -290,7 +290,13 @@ interface AppContextType {
    * chase asked for. No account and no browsing — a delegated session that may
    * add documents to those items and see nothing else (METH Stage 9).
    */
-  portal: 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload';
+  /**
+   * 'landing' is the public front page at `/` (launch stage M3) — the one
+   * address with no login wall and no session probe. The practice workspace
+   * root moved to `/app`; the tab addresses (`/clients`, `/chat/…`) are
+   * unchanged.
+   */
+  portal: 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload' | 'landing';
   /** The approval session the SMS link opened, when portal === 'approval'. */
   openApprovalRequestId: string | null;
   openApprovalLink: (requestId: string) => void;
@@ -566,8 +572,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const segments = usePath();
   const [root, first, second] = segments;
 
-  const portal: 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload' =
-    root === 'portal' ? 'business'
+  const portal: 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload' | 'landing' =
+    // Bare `/` is the public landing page (launch stage M3), so the session
+    // probe below never fires for a visitor who has not asked for the app —
+    // the workspace root is `/app`.
+    root === undefined ? 'landing'
+      : root === 'portal' ? 'business'
       : root === 'approve' ? 'approval'
       : root === 'register' ? 'registration'
       // `/p/<token>`, and one letter on purpose: this address is typed into an
@@ -866,11 +876,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const openRegistrationFor =
     root === 'register' && first && second ? { accountId: first, memberId: second } : null;
 
-  const activeTab = root === undefined ? 'AI Workspace' : (fromSlug(root, SIDEBAR_TABS) ?? 'AI Workspace');
+  // `/app` is the workspace root — `/` belongs to the landing page (M3). The
+  // `undefined` arm is unreachable while the landing renders first in App.tsx;
+  // it states the fallback rather than leaving the expression partial.
+  const activeTab = root === 'app' || root === undefined ? 'AI Workspace' : (fromSlug(root, SIDEBAR_TABS) ?? 'AI Workspace');
   const openClientId = root === 'clients' ? first ?? null : null;
 
   const setActiveTab = useCallback((tab: string) => {
-    navigate(tab === 'AI Workspace' ? '/' : path(slug(tab)));
+    navigate(tab === 'AI Workspace' ? '/app' : path(slug(tab)));
   }, []);
 
   const openClient = useCallback((id: string | null) => {

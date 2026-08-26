@@ -32,8 +32,9 @@ const BAR = { name: 'Primary' } as const;
 
 function renderShell() {
   // The practice shell, not one of the client-facing portals — those replace
-  // it outright and have no rail or bar of their own.
-  window.history.replaceState({}, '', '/');
+  // it outright and have no rail or bar of their own. Its root is `/app`
+  // since M3 gave `/` to the public landing page.
+  window.history.replaceState({}, '', '/app');
   return render(
     <AppIntlProvider>
       <QueryClientProvider client={queryClient}>
