@@ -467,6 +467,82 @@ Then:
 Full gate. PR.
 ```
 
+### ✅ Done — `common/ai-budget.ts`, `extraction/`, `scripts/measure/` (27 Aug 2026)
+
+Item 1 was already done by S1. The other three are, and **two of them were live
+defects on staging, not tidying** — real extraction had been reading documents
+since S1 with no spend ceiling and no handling for a throw.
+
+**Item 3 — extraction is metered.** `BedrockExtractor` built its own
+`AnthropicBedrock` and consulted no budget, so staging had unbounded model spend.
+It now checks and records against the **same per-practice daily ledger the chat
+runtime has always used**, which meant moving `budget.ts` out of `chat-framework`
+into `common/ai-budget.ts`: two modules share it now, the boundary lint forbids
+extraction reaching into chat's internals, and re-exporting a Redis-backed ledger
+through chat's seam would have broken that seam's own written rule (it carries
+configuration, not behaviour). The budget is a **required** constructor argument
+and `selectExtractor` throws without one — a missing store fails loudly on the
+first document, a missing ceiling fails silently for ever, so the unmetered
+object is now impossible to construct.
+
+**Item 2 — the FAILED path did not exist, and that is the more serious find.**
+`messages.create` was unguarded. A throttle, an expired credential, a socket
+reset or a 400 on an over-long PDF travelled out to BullMQ; the retries ran, the
+job dead-lettered, and the document **stayed PROCESSING for ever** — no failure
+code, nothing on the Rejected/Failed view, and `document.reprocess` refuses a
+processing document, so no Retry either. Now: the extractor classifies terminal
+rejections (400 → `NT-EXT-009`, the PDF page-ceiling case a module TODO had open;
+413 → `NT-EXT-007`), everything else rethrows for the retry ladder, and the
+pipeline lands the document FAILED with `NT-EXT-010` on the job's **last**
+attempt and rethrows anyway — so the client gets a visible retryable document and
+you still get the DLQ entry. Proven against a real database, both branches.
+
+**Item 4 — measured, and repeatable rather than quoted.**
+`pnpm tsx scripts/measure/extraction-cost.ts` runs the real extractor against a
+1568 px receipt JPEG and a born-digital PDF invoice. On the pinned
+`anthropic.claude-sonnet-4-6`: **1.24–1.34p/document, 5–10 s**, every field
+correct including UK d/m/y → ISO and integer pence. The old "~7 s / ~$0.016" in
+the module doc was taken on a different, unpinned model and is replaced.
+
+**Five things to know before the next stage:**
+
+1. **⚠ THE £0.02 GUARDRAIL IS BLENDED AND WE ARE MEASURING ONE RUNG.** §16's
+   stated composition is Textract ~0.8p/page + Nova Lite triage + a Sonnet coding
+   call + amortised Opus. **None of those four exists.** D20 commits to Textract
+   as the *committed primary* with Claude vision as the fallback lane; what runs
+   is the vision rung used directly. That gap predates this stage and is a
+   tracked TODO, but the honest reading is that today's blend has one component,
+   so 1.3p is the whole AI cost of a document — and **adding Textract in front
+   pushes the blend to ~2.1p if nearly everything escalates**, which is over the
+   ceiling. That escalation rate is exactly what W2 calibration was for, and D28
+   already conditions the middle rung on it. Worth a decision before anyone
+   quotes 1.3p as the product's cost.
+2. **One meter, two spenders — a deliberate coupling with a visible cost.** A
+   practice that exhausts the ceiling in chat will see that day's documents land
+   FAILED (`NT-EXT-008`, retryable tomorrow), and a document flood makes chat
+   return its budget error. §9.7 defines a per-*firm* budget and a firm must get
+   one number. Say so if it ever surprises someone; separating them is a second
+   key segment, not a second implementation.
+3. **The meter charges 2p for a 1.3p read.** `costPence` rounds UP per call and
+   at ~3,500 tokens the rounding is about half the number, so £25/day is ~1,250
+   documents metered against ~1,900 actual. Safe direction for a ceiling —
+   but quote the per-100 figure in any pricing conversation, never the per-call.
+4. **`scripts/measure/` is neither typechecked nor linted**, because there is no
+   root tsconfig and `scripts/` belongs to no package — the same gap
+   `scripts/demo/*.ts` has. This one imports `apps/api` internals, so a change to
+   `BedrockExtractorDeps` breaks it silently until someone runs it. It runs
+   correctly today; giving `scripts/` a tsconfig would fix the class, and that is
+   a repo-wide call rather than this stage's.
+5. **The simulated 2–4 s Processing delay is now fixture-only.** It existed to
+   make PROCESSING render for instant fixture data; on staging it was adding
+   2–4 s to every real read. The module doc had flagged it as owed "when
+   `bedrock` becomes the default", which the S1 flip made true.
+
+Full gate green: typecheck, lint, 1,637 API tests + 30 web files, build,
+`terraform fmt`. `infra/envs/staging/services.tf` is comment-only in this diff —
+`EXTRACTOR=bedrock` was already set by S1, and its two ⚠ blocks now describe what
+is true rather than what was pending.
+
 ---
 
 ## S6 · Publish the legal pack

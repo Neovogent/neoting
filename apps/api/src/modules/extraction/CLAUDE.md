@@ -174,16 +174,120 @@ those ARNs — plus a `bedrock:eu-*` foundation-model wildcard — briefly stood
 a model only reachable through a profile is a contract-change issue amending
 D28/D30, not a line in a feature PR.
 
-Measured end to end against a real receipt image (on the newest generation,
-before the model was repinned): supplier, date (UK d/m/y → ISO), integer-pence
-totals, VAT number, reference and 3 line items all correct; ~7 s;
-~$0.016/document. **That figure is not a claim about the pinned model** — it has
-not been re-measured since, and it should be before anyone quotes it.
+### S5 (27 Aug 2026) — the ceiling, the throw, and a real cost number
 
-**Known gap:** `extractionLatencyMs` still sleeps a simulated 2–4 s before the
-call, which made Processing render truthfully when extraction was instant
-fixture data. With a real ~7 s read that is 9–11 s of Processing. Harmless for
-`EXTRACTOR=demo`; worth removing when `bedrock` becomes the default.
+The flip to `EXTRACTOR=bedrock` happened in S1. S5 is the three things that flip
+left open, and two of them were live defects on staging.
+
+**1 · Extraction is metered. It was not, and that was unbounded spend.**
+`BedrockExtractor` built its own `AnthropicBedrock` and consulted no budget, so
+a live environment read documents with no ceiling of any kind. It now checks and
+records against the **same per-firm daily ledger the chat runtime has always
+used** (§9.7) — moved to `common/ai-budget.ts` for the purpose, because two
+modules now share it and `chat-framework`'s seam carries configuration, not
+behaviour.
+
+- **The budget is a REQUIRED constructor dep**, and `selectExtractor` throws
+  without one. A missing store fails loudly on the first document; a missing
+  ceiling fails *silently and for ever* — it reads perfectly and simply spends.
+  The only defence against a hazard nobody can see is to make the unmetered
+  object impossible to build.
+- **Checked before the S3 GET**, not just before the model call: over the ceiling
+  we are not sending the document anywhere, so fetching up to 15 MB to refuse it
+  is spend on top of spend. Over-budget is `NT-EXT-008` — FAILED, visible,
+  retryable tomorrow.
+- **Recorded BEFORE the answer is judged.** A refusal, an empty reply and an
+  unparseable one cost exactly what a good read costs. Metering only successes
+  would under-count precisely on the days something is wrong.
+- ⚠ **One meter, two spenders.** A practice that exhausts the ceiling in chat
+  will see that day's documents land FAILED, and vice versa. Deliberate — §9.7 is
+  a per-*firm* budget and a firm must get one number — and both refusals are
+  visible and neither invents data. If they ever need separate ceilings that is a
+  second key segment, not a second implementation.
+
+**2 · A throw no longer strands the document in PROCESSING.** This was the worse
+of the two. `messages.create` was unguarded, so a throttle, an expired
+credential, a socket reset or a 400 on an over-long PDF travelled out to BullMQ;
+the retries ran, the job dead-lettered, and the document stayed **PROCESSING for
+ever** — no `failure_code`, nothing on the Rejected/Failed view, and
+`document.reprocess` REFUSES a processing document, so no Retry button either. A
+stuck document is worse than a failed one, because a failed one is visible.
+
+Two halves, in two files:
+
+- `bedrock-extractor.ts` **classifies** what it caught. `400` → `NT-EXT-009`
+  (terminal; this is the PDF page-ceiling case the old TODO asked for — the API
+  counts the pages we cannot), `413` → `NT-EXT-007`. ⚠ **Everything else
+  rethrows, and the default direction is rethrow.** `429`, 5xx and a status-less
+  socket error are the moment, not the document. `401`/`403` are *ours* — an
+  expired credential fails every document identically, and telling a client their
+  receipt is unreadable would be a lie that quietly burned the whole queue.
+- `extraction-pipeline.ts` **backstops** it. `run` claims PROCESSING, so it is the
+  only thing that can promise PROCESSING is not permanent — and it cannot without
+  knowing whether anyone will call again. `ExtractionInput.finalAttempt` (required,
+  computed in `worker/main.ts` as BullMQ's own `attemptsMade + 1 >= attempts`,
+  verified against bullmq@6.1.1) decides: retries left → rethrow and stay
+  PROCESSING for the re-entrant next attempt; last attempt → **FAILED with
+  `NT-EXT-010`, then rethrow anyway**, so the client gets a visible retryable
+  document *and* the operator gets the DLQ entry.
+
+⚠ Why not just convert every throw to FAILED: `document.reprocess` re-arms a
+document **without re-reading the bytes**. A transient throttle burned to FAILED
+would never get a second real read — a human presses Retry and gets an empty
+document in To Review.
+
+**3 · The simulated 2–4 s Processing delay is now fixture-only.** It existed so
+PROCESSING rendered truthfully when extraction was instant fixture data; a real
+read takes seconds unaided. Keyed on `extractor.kind`, so a future fixture gets
+it and a future real one does not.
+
+**4 · Cost, measured against the PINNED model, and repeatable.**
+`scripts/measure/extraction-cost.ts` runs the real extractor — real system
+prompt, real forced tool call, real model — against a 1568 px receipt JPEG and a
+born-digital PDF invoice. Run it with `AWS_PROFILE=nt pnpm tsx
+scripts/measure/extraction-cost.ts` whenever `TASKS.extractionVisionFirst`,
+`MODELS`, the system prompt or the tool schema changes.
+
+Measured 27 Aug 2026 on `anthropic.claude-sonnet-4-6`, eu-west-2:
+
+| Document | Tokens | Latency | Cost (vision rung only) |
+|---|---|---|---|
+| Receipt photo, 1568 px JPEG, 90 KB | 3,122 in + 424 out | 9.6 s | **1.26p** |
+| Supplier invoice, born-digital PDF, 2 KB | 3,427 in + 429 out | 6.1 s | **1.34p** |
+
+Every field was correct on both: supplier, UK d/m/y → ISO (`04/08/2026` →
+`2026-08-04`), integer-pence total and VAT, reference, VAT number, 3 line items.
+
+⚠ **READ THAT AGAINST WHAT IS ACTUALLY BUILT, NOT AGAINST D20.** The £0.02
+guardrail is a **blended pipeline** figure, and SoT §16 states its intended
+composition: Textract `AnalyzeExpense` ~0.8p/page · Nova Lite triage ~0.1–0.2p ·
+a Sonnet coding-suggestion call ~0.6–1.0p · amortised Opus ~0.2–0.5p. **None of
+those four rungs exists.** What runs is the Sonnet vision rung used *directly*:
+Textract is not in the path, there is no Nova Lite triage, there is no
+Sonnet→Opus→human escalation, and coding is not done here at all (`categoryCode`
+stays null and `rules-suggestions` codes deterministically). So the blend
+currently has exactly one component, which is why one measurement is the whole
+AI cost of a document today — and why comparing it to the blended ceiling
+flatters it.
+
+⚠ **Adding Textract in front (D20) will not simply reduce this.** Textract is a
+per-page charge on EVERY document, and the vision rung then fires only for the
+fraction that falls below threshold. At 0.8p/page plus a 1.3p escalation, the
+blend is ~0.9p if 10% escalate and ~2.1p — **over the guardrail** — if nearly
+all do. That escalation rate is exactly what W2 calibration was scheduled to
+measure, and D28 already says the middle rung "is kept only if W2 calibration
+proves it earns its cost". These numbers are an input to that decision, not a
+substitute for it.
+
+⚠ **The meter charges 2p for a 1.3p read.** `costPence` rounds UP per call
+(a budget must never under-count), and at ~3,500 tokens the rounding is roughly
+half the number. So £25/day is ~1,250 documents by the meter and ~1,900 by the
+invoice. Safe direction for a ceiling — but quote the per-100 figure, never the
+per-call one, in any pricing conversation.
+
+⚠ Latency is now **6–10 s**, not the ~7 s this file used to claim, and the image
+path is the slower one. `EXTRACTION_TIMEOUT_MS` (90 s) has ample margin for a
+single document; it is still unmeasured against a large multi-page PDF.
 
 ### DemoExtractor + the extraction pipeline (METH Stage 4)
 
@@ -202,13 +306,13 @@ vendor, not a fake system.
   arithmetic validator) and a **Failed** profile (unreadable → `NT-EXT-001`).
   Money is integer pence; VAT computed integer-only (R5).
 - **`extraction-pipeline.ts`** — `PrismaExtractionStep`, wired into the worker.
-  `ExtractionInput` is just `{ documentId, practiceId, businessId, traceId }` —
-  filename and byteHash are read off the ROW, so it works for every channel
+  `ExtractionInput` is `{ documentId, practiceId, businessId, traceId,
+  finalAttempt }` — filename and byteHash are read off the ROW, so it works for every channel
   including web upload (whose job carries only a `documentId`, its bytes never
   having passed through the worker). Per document, under the practice SYSTEM actor
   through `scopedDb` (same as the sink): **RECEIVED → PROCESSING**, then the extractor
-  runs OUTSIDE any transaction (a deterministic 2–4 s latency from the byte hash,
-  so Processing renders), then one transaction writes the accepted `Extraction`,
+  runs OUTSIDE any transaction (a deterministic 2–4 s latency from the byte hash
+  so Processing renders — **fixture extractors only since S5**), then one transaction writes the accepted `Extraction`,
   the coding `Suggestion`s, the denormalised header projection (THE one writer —
   prisma/CLAUDE.md open q3) and a `document_events` row, and drives
   **PROCESSING → READY | TO_REVIEW | FAILED** via `resolveProcessedState`.
@@ -264,19 +368,25 @@ missing field or a failed validator, never an invented threshold.
       of refused. **Not done, and owed to someone:** `ingestion-routing/CLAUDE.md`
       needs a line about the normaliser's new downscale — that file was outside
       A4's `Owns` fence while the A3 agent held the lane.
-- [ ] Page-count refusal for PDFs. We cannot count pages without a parser, so a
-      PDF past the API's page ceiling still 400s out of `messages.create` and
-      surfaces as a job failure rather than a FAILED document with a reason.
-      Needs either a parser (a dependency decision) or catching and classifying
-      the SDK's `BadRequestError` here.
+- [x] Page-count refusal for PDFs — S5 (27 Aug 2026), by the second route that
+      TODO named. We still cannot count pages without a parser, so the API counts
+      them and `classifyThrow` turns its 400 into `NT-EXT-009`: a FAILED document
+      with a reason, not a job failure. A parser would let us refuse before
+      spending the call; that is still open and still a dependency decision.
 - [ ] Re-check `EXTRACTION_TIMEOUT_MS` (90 s) against a real multi-page PDF read.
-      It was measured for a single image.
-- [ ] Re-measure latency and cost against the pinned model. The ~7 s /
-      ~$0.016 figures above were taken on a different, unpinned one.
+      S5 measured 6.1 s for a one-page born-digital PDF and 9.6 s for an image —
+      ample margin, but a 30-page scanned PDF is still unmeasured.
+- [x] Re-measure latency and cost against the pinned model — S5 (27 Aug 2026):
+      1.26p image / 1.34p PDF, 6–10 s, inside the £0.02 guardrail. Repeatable
+      via `scripts/measure/extraction-cost.ts`; re-run it when the pin moves.
 - [ ] Real `packages/validators` verdicts (VAT arithmetic, VRN, dates) replacing
       the pre-computed demo ones.
 - [x] Surface `Extraction.lineItems` on the read projection — METH S7 (#137),
       `toExtraction` separates the smuggled key. Still open: their persisted
       home (a schema/contract call, currently the `fields` jsonb).
 - [ ] Confidence gating when eval calibration lands (the seam in validation-dedupe/readiness.ts).
+- [ ] A per-document spend row. The budget is a per-practice daily counter, so
+      "what did THIS document cost" is not answerable from the data — only from
+      the aggregate. Fine for a ceiling, not enough for per-client unit
+      economics if that is ever wanted.
 - [ ] Update this file on exit — it is how the next session picks up.

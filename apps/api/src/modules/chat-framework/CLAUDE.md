@@ -20,7 +20,7 @@ no second door to close.
 | File | §  | What it owns |
 |---|---|---|
 | `models.ts` | 9.1 | **Governance names this path.** Pinned Bedrock IDs, the task→(model, effort) map, per-family decoding params, task budgets, tier rates, the config revision |
-| `budget.ts` | 9.7 | Per-practice daily ceiling in Redis. Warn 80%, hard stop 100% |
+| `../../common/ai-budget.ts` | 9.7 | Per-practice daily ceiling in Redis. Warn 80%, hard stop 100%. **Moved out of this module by S5 (27 Aug 2026)** — `modules/extraction` is now a second spender, `no-cross-module-internals` forbids it reaching in here, and re-exporting a Redis-backed ledger through this module's seam would break that seam's own rule (it carries configuration, not behaviour). `common/` is the one place both may import from |
 | `chat.service.ts` | — | The orchestrator. Loop caps, retrieval, assembly, citation checks, draft building |
 | `grounding.ts` | 9.4 | RLS-scoped retrieval, the client's chart of accounts, **citation verification** |
 | `prompts/system-prompt.ts` | 9.6, 9.8 | The versioned prompt. A byte-stable cache prefix |
@@ -85,7 +85,7 @@ Terraform change to the ARNs in both envs, and an eval run — not a drive-by.
 |---|---|---|
 | `AI_CHAT` | `demo` | `bedrock` is the real model. **Refused under `NODE_ENV=production`** — see below |
 | `BEDROCK_REGION` | `eu-west-2` | Pinned by D30. Changing it is a residency decision |
-| `AI_DAILY_BUDGET_PENCE` | `2500` | Per practice, per UTC day. £25, raised from £5 by S1 — it is a hard stop, not a warning, and £5 was 250 documents at the £0.02/document guardrail. **Extraction does not count against it yet** (S5 item 3) |
+| `AI_DAILY_BUDGET_PENCE` | `2500` | Per practice, per UTC day. £25, raised from £5 by S1 — it is a hard stop, not a warning, and £5 was 250 documents at the £0.02/document guardrail. **Extraction counts against it since S5** (27 Aug 2026): one meter, two spenders, so a practice that exhausts the ceiling in chat will see that day's documents land FAILED and vice versa. Deliberate — §9.7 is a per-*firm* budget — and both refusals are visible. Measured at ~1.3p/document, so £25 is ~1,250 documents/day as the meter counts them |
 
 `AI_CHAT=demo` refuses to boot in production. Some demo switches degrade
 something a user can see — no SMS arrives, no bill reaches a ledger. This one

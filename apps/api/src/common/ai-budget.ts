@@ -4,6 +4,27 @@ import IORedis, { type Redis } from 'ioredis';
  * Per-firm daily token budgets (Governance §9.7): warn at 80%, hard-stop at
  * 100% with a clear user-facing message.
  *
+ * ⚠ IT LIVES IN `common/`, NOT IN `chat-framework/`, SINCE S5 (27 Aug 2026).
+ * It sat inside the chat module while chat was the only thing that spent money.
+ * `BedrockExtractor` is now the second spender — and the bigger one by volume —
+ * so the meter has two consumers in two different modules. `common/` is where
+ * this codebase keeps shared infrastructure (`common/db/`,
+ * `common/untrusted-content.ts`) and is the one place both may import from:
+ * `no-cross-module-internals` deliberately does not police `common/`, whereas
+ * reaching into `chat-framework/budget.js` from `extraction` would be a lint
+ * error and re-exporting it through that module's seam would have broken the
+ * seam's own stated rule — it carries CONFIGURATION, NOT BEHAVIOUR, and a
+ * ledger with a Redis connection is behaviour.
+ *
+ * ⚠ ONE METER, TWO SPENDERS, AND THAT COUPLING IS DELIBERATE. §9.7 defines a
+ * per-FIRM daily budget, and a firm that wants to know what it spent on AI today
+ * must get one number, not two. The consequence is real and worth stating: a
+ * practice that exhausts the ceiling in chat will see that day's documents land
+ * FAILED, and a document flood will make chat return its honest budget error.
+ * Both refusals are visible and neither invents data, which is the property that
+ * matters — but if the two ever need separate ceilings, this is the file, and it
+ * is a second key segment rather than a second implementation.
+ *
  * The key is §9.7's, verbatim: `nt:{practiceId}:_:ai:budget:{date}`. The `_`
  * segment is the business slot — AI spend is a practice-level meter, not a
  * per-client one, and writing the placeholder keeps the key shape identical to
