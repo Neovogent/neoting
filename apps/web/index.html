@@ -4,9 +4,26 @@
 <html lang="en" class="light">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- `viewport-fit=cover` is what makes env(safe-area-inset-*) non-zero, so
+         every pb-safe / pt-safe utility in index.css is inert without it.
+         `interactive-widget=resizes-content` asks the browser to shrink the
+         layout when the on-screen keyboard opens rather than scrolling the
+         page under it; useVisualViewport() covers the engines that ignore it. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="color-scheme" content="light dark" />
+    <!-- Installable on a home screen: standalone shell, icon, and a status bar that
+         blends with the app rather than sitting as a white band on top of it. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Neoting" />
     <link rel="icon" type="image/png" href="/favicon.png" />
-    <meta name="theme-color" content="#14e3c4" />
+    <!-- Two theme colours rather than one brand colour: the bar above the app
+         should be the page ground it sits on, in whichever theme is showing. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f5f7" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0a0c" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&display=swap" rel="stylesheet">
@@ -17,4 +34,3 @@
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

@@ -6,6 +6,8 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { defineMessages, useIntl } from 'react-intl';
 import { Sidebar } from './components/Sidebar';
+import { BottomNav } from './components/BottomNav';
+import { useViewport, useVisualViewport } from './lib/useViewport';
 import { useAppContext } from './context/AppContext';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -154,6 +156,13 @@ function PortalSkeleton() {
 export default function App() {
   const { messages, activeTab, setActiveTab, openClientId, openClient, portal, session, settings } = useAppContext();
   const [launcherOpen, setLauncherOpen] = useState(false);
+  // The one place the layout mode is read in JS rather than in CSS: on a phone
+  // the rail is not a narrower rail, it is a different component. Everything
+  // that only changes size stays a Tailwind breakpoint.
+  const { phone } = useViewport();
+  // Mounted once, here: it keeps `--vvh` honest when the iOS keyboard opens,
+  // which is what every `h-vv` in the app is sized against.
+  useVisualViewport();
 
   // The theme is a class on <html> so it also covers the body background
   // behind the app shell.
@@ -209,7 +218,7 @@ export default function App() {
   // client's batch; 'chase-upload' is one chase's outstanding items.
   if (portal !== 'accountant') {
     return (
-      <div className="flex h-screen w-screen overflow-hidden bg-ground text-white font-sans selection:bg-brand/30">
+      <div className="flex flex-col md:flex-row h-dvh w-full overflow-hidden bg-ground text-white font-sans selection:bg-brand/30">
         <Suspense fallback={<PortalSkeleton />}>
           {portal === 'approval' ? <ClientApprovalView />
             : portal === 'chase-upload' ? <ChasePortalView />
@@ -228,7 +237,7 @@ export default function App() {
   // pass — the context header wears the badge instead.
   if (session.status === 'loading') {
     return (
-      <div className="flex h-screen w-screen overflow-hidden bg-ground text-white font-sans selection:bg-brand/30">
+      <div className="flex flex-col md:flex-row h-dvh w-full overflow-hidden bg-ground text-white font-sans selection:bg-brand/30">
         <WorkspaceSkeleton />
       </div>
     );
@@ -236,7 +245,7 @@ export default function App() {
 
   if (session.status === 'unauthenticated') {
     return (
-      <div className="flex h-screen w-screen overflow-hidden bg-ground text-white font-sans selection:bg-brand/30">
+      <div className="flex flex-col md:flex-row h-dvh w-full overflow-hidden bg-ground text-white font-sans selection:bg-brand/30">
         <Suspense fallback={<PortalSkeleton />}>
           <LoginView />
         </Suspense>
@@ -245,7 +254,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-ground text-white font-sans selection:bg-brand/30">
+    <div className="flex flex-col md:flex-row h-dvh w-full overflow-hidden bg-ground text-white font-sans selection:bg-brand/30">
       {/* Suspense sits outside AnimatePresence on purpose: AnimatePresence has
           to keep the motion element as its own direct child or it cannot hold
           the launcher on screen long enough to run its exit animation. */}
@@ -254,8 +263,11 @@ export default function App() {
           {launcherOpen && <BusinessPortalLauncher onClose={() => setLauncherOpen(false)} />}
         </AnimatePresence>
       </Suspense>
+      {/* On a phone the rail becomes the bottom tab bar below: the shell
+          stacks vertically and the content keeps its own scroll area above
+          the bar, so nothing ever hides behind it. */}
       <AnimatePresence initial={false}>
-        {!isChatFocusMode && (
+        {!isChatFocusMode && !phone && (
           <motion.div
             initial={{ width: 0, opacity: 0, x: -50 }}
             animate={{ width: 'auto', opacity: 1, x: 0 }}
@@ -271,7 +283,7 @@ export default function App() {
           screen without the sidebar flickering out from under the cursor. The
           context header sits above it and outside it — orientation (SoT
           §13.3) must not blink out while a route chunk loads. */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
         {session.status !== 'off' && (
           <Suspense fallback={null}>
             <ContextHeader />
@@ -279,6 +291,9 @@ export default function App() {
         )}
         <Suspense fallback={<WorkspaceSkeleton />}>{content}</Suspense>
       </div>
+      {phone && !isChatFocusMode && (
+        <BottomNav activeTab={activeTab} setActiveTab={goToTab} onOpenBusinessPortal={() => setLauncherOpen(true)} />
+      )}
     </div>
   );
 }

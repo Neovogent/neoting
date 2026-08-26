@@ -7,6 +7,7 @@ import { AppProvider } from './context/AppContext';
 import { ConfirmProvider } from './components/DynamicComponents/ConfirmProvider';
 import { queryClient } from './api/queryClient';
 import { AppIntlProvider } from './i18n/AppIntlProvider';
+import { TourProvider } from './tour/TourProvider';
 
 /**
  * The mocked API starts before React does.
@@ -33,7 +34,12 @@ async function bootstrap() {
       {/* Outside App so the dialog covers every shell — practice, business
           portal, and the two SMS links. */}
       <ConfirmProvider>
-        <App />
+        {/* The demo tour spans every shell too, and reads app state. Inside
+            ConfirmProvider so a step that opens a confirm dialog still has
+            one, and inside AppIntlProvider because its script is copy. */}
+        <TourProvider>
+          <App />
+        </TourProvider>
       </ConfirmProvider>
     </AppProvider>
     </QueryClientProvider>

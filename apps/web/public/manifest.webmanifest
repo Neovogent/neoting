@@ -1,0 +1,13 @@
+{
+  "name": "Neoting — AI Accounting Operations",
+  "short_name": "Neoting",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f4f5f7",
+  "theme_color": "#14e3c4",
+  "icons": [
+    { "src": "/favicon.png", "sizes": "any", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
