@@ -44,7 +44,8 @@ const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
  * Owns the tour: which step is open, moving between steps, and the work each
  * step needs before it can be shown — seed a conversation, navigate, ask a
  * view to open something. Mounted inside AppProvider so it spans the practice
- * shell and the business portal alike. `/demo` starts it.
+ * shell and the business portal alike. `/demo` starts it, in synthetic mode
+ * only (launch M2).
  *
  * `TourCtx` used to carry a `t` so this component could resolve the script's
  * MessageDescriptors with its own `intl`. The script is English-only now (see
@@ -52,7 +53,7 @@ const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
  * and the hook is gone with the field it existed for.
  */
 export function TourProvider({ children }: { children: ReactNode }) {
-  const { clients, startConversation, setMessages, businessAccounts } = useAppContext();
+  const { clients, startConversation, setMessages, businessAccounts, documentsSource } = useAppContext();
   const path = usePath();
   const [index, setIndex] = useState<number | null>(null);
   // A step that is still preparing (navigating, seeding) should not be
@@ -160,8 +161,18 @@ export function TourProvider({ children }: { children: ReactNode }) {
   // /demo is the tour's own address; /demo?step=12 opens a particular step.
   // Starting replaces it with the step's own screen, so Back from the tour
   // never lands on an empty "demo" page.
+  //
+  // GATED TO SYNTHETIC MODE, the same way the ContextBar button is (launch
+  // M2): the script narrates the synthetic cast by name and seeds canned
+  // assistant turns, so over live data it walks a scripted story across a
+  // real firm's screens. Live, the address is only a redirect home.
   useEffect(() => {
-    if (path[0] === 'demo' && index === null) {
+    if (path[0] !== 'demo') return;
+    if (documentsSource === 'api') {
+      navigate('/', { replace: true, force: true });
+      return;
+    }
+    if (index === null) {
       const wanted = Number(new URLSearchParams(window.location.search).get('step'));
       // The script is not loaded yet, so a ?step= out of range is clamped by
       // goTo (which bails on a missing step) rather than checked here.
@@ -169,7 +180,7 @@ export function TourProvider({ children }: { children: ReactNode }) {
       navigate('/', { replace: true, force: true });
       start(at);
     }
-  }, [path, index, start]);
+  }, [path, index, start, documentsSource]);
 
   useEffect(() => () => lockNavigation(false), []);
 

@@ -233,6 +233,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
     clients, transactions, matches, documents, accounts, statements, statementGaps,
     matchSettings, setMatchSettings, matchTransaction, unmatchTransaction, cashCode,
     uploadStatement, reauthAccount, logAudit, statsFor, isSameClient, slices,
+    refetchBank,
   } = useAppContext();
   const intl = useIntl();
 
@@ -446,9 +447,9 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
       ? 'flex flex-col min-w-0'
       : 'flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden'}>
       <header className={scopedToClient ? 'pb-5 shrink-0' : 'px-4 md:px-10 pt-4 md:pt-8 pb-4 md:pb-5 shrink-0'}>
-        {/* Loading and failure are said out loud (METH S14 sweep): seed rows
-            render underneath either way — the standing fallback — but never
-            silently impersonating the feed. */}
+        {/* Loading and failure are said out loud (METH S14 sweep, hardened by
+            launch M2): a failed load shows what is really known — nothing —
+            with a retry, never seed rows impersonating the feed. */}
         {bankSlice.loading && (
           <div className="mb-4 flex items-center gap-3 px-5 py-3 rounded-2xl border bg-white/[0.03] border-white/10 text-zinc-400 text-[13px] font-semibold">
             <RefreshCw size={15} className="animate-spin" />
@@ -459,7 +460,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
           <div className="mb-4 flex items-center gap-3 px-5 py-3 rounded-2xl border bg-red-500/10 border-red-500/20 text-red-300 text-[13px] font-semibold">
             <AlertTriangle size={15} className="shrink-0" />
             <span className="min-w-0">{intl.formatMessage(m.bankError, { error: bankSlice.error })}</span>
-            <DataSourceBadge slice="bankTransactions" status={bankSlice} />
+            <DataSourceBadge slice="bankTransactions" status={bankSlice} onRetry={refetchBank} />
           </div>
         )}
         <div data-tour="bank-header" className="flex items-start justify-between gap-4 flex-wrap">

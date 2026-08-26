@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   Send, Play, Check, MessageSquare, Clock, ShieldOff, Ban, Wand2, FileSearch, PencilLine,
   Link2, ChevronRight, SlidersHorizontal, Undo2, Upload, LucideIcon,
@@ -9,7 +9,7 @@ import { useAppContext } from '../context/AppContext';
 import { API_ENABLED } from '../api/config';
 import { useChases, useSmsOutbox } from '../api/chases';
 import { errorLabel, sliceStatus } from '../api/slices';
-import { DataSourceBadge } from '../components/DataSourceBadge';
+import { SliceLoadError } from '../components/DataSourceBadge';
 import { ChasesLiveBoard } from './ChasesLiveBoard';
 import { cooldownFor, describeAge, formatWait, SmsCooldownNotice } from '../components/DynamicComponents/SmsCooldown';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
@@ -106,10 +106,12 @@ const m = defineMessages({
     id: 'chase.chasesView.policyAuditScope',
     defaultMessage: '{first}/{second} days, escalate {escalate}d',
   },
+  loadError: { id: 'chase.chasesView.loadError', defaultMessage: 'Chases could not be loaded' },
 });
 
 /**
- * The Chases surface (METH Stage 12). Two boards behind one route:
+ * The Chases surface (METH Stage 12, hardened by launch M2). Two boards and
+ * an error state behind one route:
  *
  *   LIVE — `ChasesLiveBoard`, when the API is on and the session answered:
  *   the server's chases and the demo SMS outbox, both polled. The synthetic
@@ -117,9 +119,13 @@ const m = defineMessages({
  *   (reminders, staging, policy) have no contract yet and buttons whose
  *   writes the next poll reverts are worse than absent.
  *
- *   SYNTHETIC — everything below, exactly as it always ran; also the
- *   fallback when the live query fails, wearing the dev-only badge
- *   (METH_MODE §8: degrade to fixtures, never to blank).
+ *   ERROR — the live query failed. Said out loud with a retry, NEVER the
+ *   synthetic board: fixture chases presented where the real ones should be
+ *   are invented data an accountant cannot tell from truth (launch M2 —
+ *   this replaced METH_MODE §8's degrade-to-fixtures).
+ *
+ *   SYNTHETIC — everything below, exactly as it always ran, when the API
+ *   was never asked.
  *
  * The context `chases` array stays seed-driven either way — hydrating it
  * would put the chases client on the bundle floor, which has no headroom
@@ -128,6 +134,7 @@ const m = defineMessages({
  * surface's truth.
  */
 export function ChasesView() {
+  const intl = useIntl();
   const { session } = useAppContext();
   const liveOn = API_ENABLED && session.status === 'authenticated';
   const live = useChases({ enabled: liveOn });
@@ -144,10 +151,21 @@ export function ChasesView() {
       />
     );
   }
-  return <SyntheticChasesBoard badge={<DataSourceBadge slice="chases" status={status} />} />;
+  if (status.source === 'error') {
+    return (
+      <div className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden p-4 md:p-10">
+        <SliceLoadError
+          heading={intl.formatMessage(m.loadError)}
+          error={status.error}
+          onRetry={() => void live.refetch()}
+        />
+      </div>
+    );
+  }
+  return <SyntheticChasesBoard />;
 }
 
-function SyntheticChasesBoard({ badge }: { badge?: ReactNode }) {
+function SyntheticChasesBoard() {
   const intl = useIntl();
   const {
     clients, chases, missing, statsFor, chasePolicy, setChasePolicy, itemMessages,
@@ -214,7 +232,6 @@ function SyntheticChasesBoard({ badge }: { badge?: ReactNode }) {
             <p className="text-zinc-400 mt-2">{intl.formatMessage(m.subheading)}</p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            {badge}
             <button
               onClick={() => setMessagesOpen(true)}
               className="flex items-center gap-2 px-5 py-3 text-sm font-bold text-zinc-300 bg-card border border-white/10 rounded-full hover:bg-white/5 transition-all shadow-lg"

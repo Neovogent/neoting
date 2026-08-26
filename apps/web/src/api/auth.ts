@@ -24,9 +24,10 @@ import { errorLabel } from './slices';
  *   'degraded'        — the API is enabled but unreachable, answered with
  *                       something other than 401, or broke the contract. A
  *                       login screen against a dead API is a wall nobody can
- *                       pass, so the app renders on synthetic data instead —
- *                       the METH_MODE §8 fallback: degrade to fixtures, never
- *                       to blank — and the context header wears the badge.
+ *                       pass, so the app renders the workspace shell instead —
+ *                       EMPTY, never on fixtures impersonating real records
+ *                       (launch M2) — and the context header wears the
+ *                       failure badge, visible in every build.
  *   'authenticated'   — /me parsed. `me` carries user, practice, role, scope.
  */
 export type SessionState =

@@ -1,0 +1,321 @@
+# NEOTING — build apps/web and publish it to the staging CloudFront origin.
+#
+# This is the deploy half of launch stage S3. infra/envs/staging/web.tf builds
+# the distribution, the private bucket and the DNS; this file is what puts
+# bytes in the bucket. Neither is useful without the other, and terraform.yml
+# deliberately does not do it: an SPA deploy has nothing to do with the state
+# file, must not queue behind an infra apply, and must not be able to change
+# infrastructure.
+#
+# AUTHENTICATION is GitHub OIDC into nt-staging-ci-deploy, the same role
+# terraform.yml applies with. That role is trusted for exactly ONE subject —
+# "repo:neovogent/neoting:ref:refs/heads/main" — so a PR branch cannot assume
+# it and therefore cannot publish to the live front end. That trust condition,
+# not the `if:` below, is the security boundary. There are NO static AWS keys
+# in this repository and none may be added.
+#
+# The role holds PowerUserAccess, which is more than a static-site deploy
+# needs. A scoped role (s3:PutObject/DeleteObject on nt-staging-web-*,
+# cloudfront:CreateInvalidation on the one distribution, ssm:GetParameter on
+# /neoting/staging/web/*) is the right end state and is tracked with the rest
+# of the least-privilege work; reusing the existing role now avoids adding an
+# IAM resource to a stage that is otherwise pure edge configuration.
+
+name: deploy-web
+
+# ⚠ THIS RUNS AFTER `check`, NOT ON PUSH, AND THAT IS THE WHOLE POINT.
+#
+# The obvious trigger is `push: branches: [main]` with a path filter on
+# apps/web. It is wrong, for the reason check.yml's own deploy job spells out
+# at length: a push-triggered publish ships whatever landed on main whether or
+# not typecheck, lint, test, build and the security stage passed. That is how
+# "main is always deployable" (Governance §14) quietly becomes "main is always
+# deployed". The backend deploy refuses to do it and the front end must not
+# either — it is the half a customer actually looks at.
+#
+# `workflow_run` gives us check's verdict for a specific commit. The
+# conclusion check below is the gate; without it this fires on FAILED runs too,
+# which is the classic mistake with this trigger.
+#
+# TWO CONSEQUENCES, both deliberate:
+#
+#   1. NO PATH FILTER IS POSSIBLE — workflow_run does not support one. So the
+#      SPA republishes on every green main run, even a backend-only commit.
+#      The sync is idempotent and costs seconds, and the upside is real: the
+#      published bundle and the deployed API always come from the same commit,
+#      which is exactly the drift a path filter would let in.
+#   2. THIS WILL NOT RUN FROM A PR. GitHub reads workflow_run triggers only
+#      from the default branch, so nothing happens until this file is on main.
+#      Expect the first real run to be the merge commit.
+on:
+  workflow_run:
+    workflows: [check]
+    types: [completed]
+    branches: [main]
+  # Re-publish without a commit — a rollback is this, run from the tag or
+  # commit you want live. Note this bypasses the check gate by design: a
+  # rollback target is a commit that was already green once.
+  workflow_dispatch:
+
+# One publisher at a time. Two overlapping syncs can interleave a half-written
+# index.html with the other run's assets, which is a white screen served with a
+# 200 and no error anywhere. cancel-in-progress is false for the same reason:
+# killing a sync mid-flight leaves exactly that state in the bucket.
+concurrency:
+  group: deploy-web-staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # OIDC, and nothing else.
+
+env:
+  AWS_REGION: eu-west-2
+  # web.tf publishes both of these. Reading them beats hardcoding: the bucket
+  # name is deterministic but the distribution ID is minted by AWS, and a
+  # stale ID does not fail — it invalidates a distribution nobody uses and
+  # reports success while the site does not change.
+  SSM_BUCKET: /neoting/staging/web/bucket
+  SSM_DISTRIBUTION: /neoting/staging/web/distribution-id
+
+jobs:
+  deploy:
+    name: build and publish apps/web
+    # THE GATE. A workflow_run trigger fires on completion regardless of
+    # outcome, so without this line a red `check` publishes to production
+    # anyway — the exact failure the trigger was chosen to prevent.
+    # workflow_dispatch carries no workflow_run payload, so the second clause
+    # is what keeps a manual rollback possible.
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch'
+          || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+
+    steps:
+      # ⚠ REF IS EXPLICIT. A workflow_run job checks out the DEFAULT BRANCH
+      # HEAD by default, not the commit whose check run just passed. On a busy
+      # main those differ, and the difference is that you publish a commit
+      # nothing has verified — silently, because the build still succeeds.
+      # `|| github.sha` covers the workflow_dispatch case, where there is no
+      # workflow_run payload to read.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Pinned literally, matching check.yml's four jobs. The build that
+          # ships to users and the build CI gates on must not be able to drift
+          # apart because one reads .nvmrc and the other does not.
+          node-version: 22
+          cache: pnpm
+
+      - name: install
+        run: pnpm install --frozen-lockfile
+        env:
+          # Stops the root `prepare` script installing git hooks in CI. Same
+          # reason docs/runbooks/vercel-web.md sets it on Vercel.
+          HUSKY: "0"
+
+      # apps/web depends on @neoting/contracts as a workspace package and its
+      # dist/ is untracked, so this is not optional — without it the web build
+      # fails to resolve the generated types.
+      - name: build @neoting/contracts
+        run: pnpm --filter @neoting/contracts build
+
+      - name: build apps/web
+        run: pnpm --filter @neoting/web build
+        env:
+          # ⚠ THE SINGLE MOST EXPENSIVE VARIABLE IN THIS FILE. apps/web only
+          # calls the API when this is true. It is set in
+          # apps/web/.env.development, and Vite loads that file in DEV MODE
+          # ONLY — `pnpm build` runs in production mode, so without this line
+          # the workflow succeeds, publishes, and serves a perfectly working
+          # SYNTHETIC app that never contacts the API and shows seeded demo
+          # data to whoever opens it. That is the failure the launch plan
+          # names outright ("the web app silently substitutes seeded demo data
+          # when the API fails"). See docs/runbooks/vercel-web.md, which paid
+          # for this lesson once already.
+          VITE_API_ENABLED: "true"
+          # VITE_API_BASE_URL is deliberately UNSET. Unset means same-origin,
+          # which means relative /v1/... requests, which is what the
+          # distribution's /v1/* behaviour forwards to the ALB with the session
+          # cookie attached. Any value here bypasses that and puts the browser
+          # on a cross-origin path the API has no CORS for.
+          #
+          # VITE_API_MOCKING is deliberately UNSET too — `enabled` starts the
+          # MSW service worker and the app answers itself.
+          NODE_ENV: production
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::252959251643:role/nt-staging-ci-deploy
+          role-session-name: gha-deploy-web-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: resolve the bucket and distribution
+        id: target
+        run: |
+          set -euo pipefail
+
+          bucket="$(aws ssm get-parameter --name "$SSM_BUCKET" \
+            --query 'Parameter.Value' --output text)"
+          distribution="$(aws ssm get-parameter --name "$SSM_DISTRIBUTION" \
+            --query 'Parameter.Value' --output text)"
+
+          # `aws ssm get-parameter` exits non-zero on a missing parameter, so
+          # set -e covers absence. This covers the emptier failure: a parameter
+          # that exists holding "" or the literal "None", which would sync to
+          # nothing and invalidate nothing, both silently.
+          if [ -z "$bucket" ] || [ "$bucket" = "None" ]; then
+            echo "::error::$SSM_BUCKET is empty. Has infra/envs/staging been applied since web.tf landed?"
+            exit 1
+          fi
+          if [ -z "$distribution" ] || [ "$distribution" = "None" ]; then
+            echo "::error::$SSM_DISTRIBUTION is empty. Has infra/envs/staging been applied since web.tf landed?"
+            exit 1
+          fi
+
+          echo "bucket=$bucket" >> "$GITHUB_OUTPUT"
+          echo "distribution=$distribution" >> "$GITHUB_OUTPUT"
+          echo "Publishing to s3://$bucket, invalidating $distribution"
+
+      # ---- the upload is two passes, and the ORDER is load-bearing ---------
+      #
+      # Assets first, shell second. Vite writes content-hashed filenames into
+      # assets/, so the new bundle never collides with the old one and both can
+      # sit in the bucket at once. Uploading assets first means every asset the
+      # new index.html references already exists at the moment index.html
+      # starts being served. The reverse order leaves a window — small, but it
+      # is exactly the window a user's first request lands in — where the shell
+      # asks for a chunk that is not there yet and the app white-screens.
+      #
+      # For the same reason NEITHER pass deletes. A --delete here would remove
+      # the OLD chunks while browsers mid-session still have the old shell
+      # cached and are still requesting them. The bucket's lifecycle rule
+      # expires noncurrent versions after 7 days; stale current-version assets
+      # are a few hundred KB and are not worth breaking a live session over.
+      - name: upload hashed assets (immutable, one year)
+        run: |
+          set -euo pipefail
+          aws s3 sync apps/web/dist "s3://${{ steps.target.outputs.bucket }}" \
+            --exclude "index.html" \
+            --exclude "*.webmanifest" \
+            --exclude "mockServiceWorker.js" \
+            --cache-control "public, max-age=31536000, immutable" \
+            --no-progress
+
+      # index.html carries no hash, so it is the one file whose caching decides
+      # whether a deploy is visible. no-cache does NOT mean "do not store" — it
+      # means revalidate before use, so the edge keeps a copy and answers most
+      # requests with a 304. The manifest gets the same treatment for the same
+      # reason.
+      #
+      # mockServiceWorker.js is excluded from BOTH passes on purpose. It is
+      # msw's worker, published by apps/web/public, and it only activates when
+      # VITE_API_MOCKING=enabled, which this build does not set. Not uploading
+      # it means a stray ?msw request 404s rather than registering a service
+      # worker that answers the API from fixtures — a failure that would
+      # survive a hard refresh and look like the API is lying.
+      - name: upload the shell (revalidate every time)
+        run: |
+          set -euo pipefail
+          aws s3 cp apps/web/dist/index.html \
+            "s3://${{ steps.target.outputs.bucket }}/index.html" \
+            --cache-control "no-cache" \
+            --content-type "text/html; charset=utf-8" \
+            --no-progress
+
+          if [ -f apps/web/dist/manifest.webmanifest ]; then
+            aws s3 cp apps/web/dist/manifest.webmanifest \
+              "s3://${{ steps.target.outputs.bucket }}/manifest.webmanifest" \
+              --cache-control "no-cache" \
+              --content-type "application/manifest+json" \
+              --no-progress
+          fi
+
+      # `/*` counts as ONE path against the 1000-free-paths-per-month
+      # allowance, so this is free at any plausible deploy rate and there is no
+      # reason to be clever about which paths changed.
+      #
+      # The Cache-Control headers above already make a deploy visible without
+      # this; the invalidation is what makes it visible NOW rather than at the
+      # next revalidation, and what clears the CloudFront Function's cached
+      # rewrites of /index.html for every client-side route.
+      - name: invalidate the edge
+        id: invalidate
+        run: |
+          set -euo pipefail
+          id="$(aws cloudfront create-invalidation \
+            --distribution-id "${{ steps.target.outputs.distribution }}" \
+            --paths '/*' \
+            --query 'Invalidation.Id' --output text)"
+          echo "invalidation=$id" >> "$GITHUB_OUTPUT"
+          echo "Invalidation $id created."
+
+          # Wait for it. Without this the job goes green while the edge is
+          # still serving the previous bundle, and the next step's smoke check
+          # would test the old deploy and pass.
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "${{ steps.target.outputs.distribution }}" \
+            --id "$id"
+
+      # ---- prove it actually serves ---------------------------------------
+      #
+      # Three assertions, each covering a different half of the design, because
+      # each can fail while the other two pass:
+      #
+      #   1. / returns HTML          the bucket, OAC and the bucket policy
+      #   2. /healthz returns ok     the ALB behaviour, the origin verify
+      #                              header and the ALB listener rule
+      #   3. a deep link returns     the CloudFront Function — the thing that
+      #      HTML, not 404           replaces Vercel's catch-all rewrite
+      #
+      # Assertion 2 is the one that catches the expensive mistake: if the
+      # custom_header on the ALB origin is wrong, the SPA loads perfectly and
+      # every API call 403s, which reads as an auth bug for hours.
+      - name: smoke the deployed origin
+        run: |
+          set -euo pipefail
+          host="https://app.neoting.neovogent.com"
+
+          echo "--- 1. the shell"
+          root_type="$(curl -sS -o /dev/null -w '%{content_type}' "$host/")"
+          case "$root_type" in
+            text/html*) echo "ok: $root_type" ;;
+            *) echo "::error::$host/ served '$root_type', expected text/html. Check the bucket policy and OAC."; exit 1 ;;
+          esac
+
+          echo "--- 2. the API path reaches the ALB"
+          health="$(curl -sS "$host/healthz")"
+          case "$health" in
+            *'"ok"'*) echo "ok: $health" ;;
+            *) echo "::error::$host/healthz returned '$health'. A 403 here means the ALB origin custom_header does not match aws_lb_listener_rule.api_origin_verified."; exit 1 ;;
+          esac
+
+          echo "--- 3. a client-side route is rewritten to the shell"
+          deep="$(curl -sS -o /dev/null -w '%{http_code}' "$host/app")"
+          if [ "$deep" != "200" ]; then
+            echo "::error::$host/app returned $deep, expected 200. The CloudFront Function nt-staging-web-spa-router is not attached or not publishing."
+            exit 1
+          fi
+          echo "ok: 200"
+
+      - name: summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "### deploy-web — staging"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Commit | \`${{ github.event.workflow_run.head_sha || github.sha }}\` |"
+            echo "| Bucket | \`${{ steps.target.outputs.bucket }}\` |"
+            echo "| Distribution | \`${{ steps.target.outputs.distribution }}\` |"
+            echo "| Invalidation | \`${{ steps.invalidate.outputs.invalidation }}\` |"
+            echo "| URL | https://app.neoting.neovogent.com |"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -18,7 +18,7 @@ commitments:
 
 ## Before any of these go live
 
-**84 `[PLACEHOLDER: …]` markers remain.** Grep for them. Each one is a fact the drafters
+**105 `[PLACEHOLDER: …]` markers remain** across the four documents. Grep for them. Each one is a fact the drafters
 refused to invent, and most explain the risk of guessing. Do not publish a page with one
 still in it — an unfinished legal page is worse than a missing one.
 
@@ -83,7 +83,31 @@ The data-protection fee (£40–60/year) is not registered.
 `docs/Kickoff_Requirements.md` §1.2 marks it blocking **before any real customer data**.
 The registration number goes in the privacy notice.
 
-### 7. Who contracts with whom
+### 7. The contracting entity is Exambinary, and it is temporary
+
+Decided 26 Aug 2026. For the **first customer only**, the contracting entity and merchant
+of record in all four documents is **Exambinary Holding Ltd**, not
+NEOVOGENT AI SOLUTIONS UK LTD.
+
+The reason is that Exambinary holds the live Stripe account (`acct_1RQtbxGMdHp4NCWv`), and
+the entity that takes the money is the entity that makes the supply:
+
+- The customer's **card statement** will read Exambinary. A contract naming a company the
+  accountant has never heard of is how a legitimate charge becomes a chargeback.
+- The **VAT invoice comes from Exambinary's VAT registration**, because HMRC requires the
+  invoice to come from the supplier. Neovogent's number cannot go on it.
+
+**Three things are still missing and each blocks publication:** Exambinary's exact
+registered name at Companies House, its company number, and its VAT registration number.
+They are marked `[PLACEHOLDER: Exambinary …]` in every document.
+
+**Reverting is a single commit, and it must be the same commit as the Stripe migration** —
+not before it, and not after. Publishing terms naming Neovogent while Stripe still charges
+as Exambinary reintroduces exactly the mismatch this decision avoids.
+
+---
+
+### 8. Who contracts with whom
 
 The terms assume **the practice** holds the account. SoT §22 open decision #10 records the
 payer as **the client business**. Those are different contracts with different parties, and

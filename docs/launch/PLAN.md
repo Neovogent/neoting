@@ -95,28 +95,30 @@ why it is larger than "build the missing features". The five that reshaped it:
 Not a schedule — a partial order. Anything with satisfied `Needs` can start.
 
 ```
-S0  contracts + prisma (LAW)          ← DONE, #164 / PR #165
+S0  contracts + prisma (LAW)   ← DONE, #164 / PR #165
  │
- ├─ S1 secrets & boot gates ──────────┐
- ├─ S2 email transport ───────┐       │
- ├─ S3 frontend to AWS        │       │
- │                            │       │
- ├─ A1 accountant signup ─────┼───────┤
- ├─ A3 upload sanitisation    │       │
- ├─ A4 extractor formats ─────┼──┐    │
- ├─ A5 publish without ledger │  │    │
- ├─ A7 VT emitter ────────────┼──┼──┐ │
- │                            │  │  │ │
- │   S4 Stripe ───────────────┘  │  │ │
- │   S6 EXTRACTOR=bedrock ───────┘  │ │
- │   A9 export screen ──────────────┘ │
- │   A2 TOTP + lockout ───────────────┘
- │
- └─ M1 rename ─ M2 kill demo data ─ M3 landing ─ M5 Xero purge ─ …
-```
+ ├─ S1 secrets & boot gates
+ ├─ S2 email transport ──┬── A13 chase by email
+ │                       └── M6 sign in by email
+ ├─ S3 frontend to AWS ───── S4 Stripe
+ ├─ A1 signup ──────────── A2 TOTP + lockout   (+S1)
+ ├─ A3 upload sanitisation ─┐
+ ├─ A4 extractor formats ───┴── S5 real extraction ON   (+S1)
+ ├─ A5 publish w/o ledger ──┬── A6 chart of accounts
+ │                          └── A12 release gate   (+A11)
+ ├─ A7 VT emitter ── A8 source link ── A9 export ── A10 round trip
+ └─ A11 client intake ───── M7 intake screen
 
-**S0 is the only true global blocker.** After it, three streams run independently and each
-person can fan out across several agents.
+NEVER NEEDED S0 — these could have started on day one, and still can:
+
+  S6 legal pack (Shakib)  ·  M2 kill demo data (Mubasshir)  ·  M5 Xero purge (Mubasshir)
+                                                                     │
+                                                     M1 rename  ←────┘
+                                                      └── M3 landing ── M4 legal pages  (+S6)
+
+  M8 honest-copy pass      ← M1, M3, M4, M5 — genuinely last
+  S7 deploy + walkthrough  ← everything
+```
 
 **S0 landed on 26 Aug 2026** — contract-change issue #164, PR #165. Three notes for
 everyone downstream, because each would otherwise be discovered the hard way:
@@ -129,6 +131,28 @@ everyone downstream, because each would otherwise be discovered the hard way:
 - **A9's export surface, A8's `document_links` table and a `document.revoke-link`
   proposal kind all exist in the contract already.** Build against them; if you find
   a field they do not cover, stop and say so rather than editing a LAW path.
+
+### How many stages can run at once
+
+Computed from every `Needs:` line, not estimated. S0 was the only true global blocker and
+it is now done, so this is the live picture rather than a forecast:
+
+| When | Runnable in parallel | What they are |
+|---|---|---|
+| Before S0 — *history* | 3 | S6 · M2 · M5 |
+| **Now, S0 has landed** | **12** | S1 S2 S3 S6 · A1 A3 A4 A5 A7 A11 · M2 M5 |
+| Those land | **10** | S4 S5 · A2 A6 A8 A12 A13 · M1 M6 M7 |
+| Then | 2 | A9 · M3 |
+| Then | 2 | A10 · M4 |
+| Then | 1 | M8 |
+| Last | 1 | S7 |
+
+**Twelve stages are runnable right now**, split 4 / 6 / 2 across Shakib, Abdullah and
+Mubasshir. Nobody is waiting on anybody. If you are idle, you are idle by choice — open
+`Needs: S0` in your own file and start.
+
+The tail is narrow and that is fine: A9→A10 and M3→M4→M8→S7 are verification and sweep,
+not build. They are fast because the work is already done.
 
 ---
 

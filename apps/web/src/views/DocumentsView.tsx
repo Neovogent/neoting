@@ -175,7 +175,7 @@ export function DocumentsView() {
   const {
     documents, vault, clients, updateDocumentStatus, moveDocuments, addVaultDocument,
     updateVaultDocument, deleteVaultDocument, moveVaultDocument, logAudit,
-    documentsSource, documentsLoading, documentsError, slices,
+    documentsSource, documentsLoading, documentsError, refetchDocuments, slices,
   } = useAppContext();
 
   const [tab, setTab] = useState<Tab>('Archive');
@@ -339,8 +339,9 @@ export function DocumentsView() {
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden">
       <header className="px-4 md:px-10 pt-4 md:pt-8 pb-4 md:pb-5 shrink-0">
-        {/* Loading and failure said out loud (METH S14 sweep): seed rows may
-            render underneath — the standing fallback — never silently. */}
+        {/* Loading and failure said out loud (METH S14 sweep, hardened by
+            launch M2): a failed load shows what is really known — nothing —
+            with a retry, never seed rows impersonating the archive. */}
         {documentsSource === 'api' && (documentsLoading || documentsError) && (
           <div
             className={`mb-4 flex items-center gap-3 px-5 py-3 rounded-2xl border text-[13px] font-semibold ${
@@ -355,7 +356,7 @@ export function DocumentsView() {
                 ? intl.formatMessage(m.documentsError, { error: documentsError })
                 : intl.formatMessage(m.documentsLoading)}
             </span>
-            <DataSourceBadge slice="documents" status={slices.documents} />
+            <DataSourceBadge slice="documents" status={slices.documents} onRetry={refetchDocuments} />
           </div>
         )}
         <div className="flex items-start justify-between gap-4 flex-wrap">

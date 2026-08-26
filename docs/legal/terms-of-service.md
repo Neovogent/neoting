@@ -1,7 +1,25 @@
+> ### ⚠ CONTRACTING ENTITY IS TEMPORARY — READ BEFORE PUBLISHING
+>
+> For the **first customer only**, the contracting entity and merchant of record is
+> **Exambinary Holding Ltd**, because that is the company holding the live Stripe account
+> (`acct_1RQtbxGMdHp4NCWv`). Decision taken 26 Aug 2026.
+>
+> This matters and is not cosmetic:
+> - The customer's **card statement** will read Exambinary. If the contract named a
+>   different company, an accountant who does not recognise the name raises a chargeback.
+> - The **VAT invoice comes from Exambinary's VAT registration**, because HMRC requires the
+>   invoice to come from the entity that made the supply. Neovogent's VAT number is not the
+>   one that belongs on it.
+>
+> So every reference below names Exambinary. **When Stripe moves to
+> NEOVOGENT AI SOLUTIONS UK LTD** (company no. 15946429, registered office Suite 5,
+> The Cloisters, 11–12 George Road, Edgbaston, Birmingham B15 1NP), these documents change
+> back in the same commit as the Stripe migration — not before, and not after.
+
 > ### ⚠ NOT PART OF THE PUBLISHED DOCUMENT — REMOVE THIS BLOCK BEFORE PUBLICATION
 >
 > This is a **drafting aid**, not legal advice. It was prepared from the product's own
-> documented behaviour and from the facts supplied by Neovogent. It has **not** been
+> documented behaviour and from the facts supplied by Exambinary. It has **not** been
 > reviewed by a qualified lawyer. It **must be reviewed and approved by a qualified UK
 > solicitor before it is published, linked from the website, or presented to any
 > customer**. Every `[PLACEHOLDER: ...]` must be resolved or deleted first — a published
@@ -57,7 +75,7 @@
 
 ## In plain English, before the formal wording
 
-This document is the contract between your accounting practice and Neovogent for the use
+This document is the contract between your accounting practice and Exambinary for the use
 of Neo Accounting. Neo Accounting collects your clients' business documents — receipts,
 supplier invoices, bank statements — reads them, suggests how each one should be coded,
 and produces an import file for VT Transaction+. **It reads documents using AI, and AI
@@ -105,11 +123,11 @@ sign up.
 
 1.1 This agreement is between:
 
-- **NEOVOGENT AI SOLUTIONS UK LTD**, a company registered in
+- **Exambinary Holding Ltd** [PLACEHOLDER: confirm the exact registered name at Companies House], a company registered in England and Wales, company number [PLACEHOLDER: Exambinary company number], registered office [PLACEHOLDER: Exambinary registered office], VAT registration number [PLACEHOLDER: Exambinary VAT number], a company registered in
   England and Wales, company number
-  15946429, tax ID **9286810564**, VAT registration number [PLACEHOLDER: UK VAT registration number. 9286810564 is the company TAX ID, not the VAT number — the VAT registration number is a separate nine-digit reference and must be obtained before any invoice is issued], whose
-  registered office is in Birmingham at Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham B15 1NP
-  ("**Neovogent**", "**we**", "**us**", "**our**"); and
+  [PLACEHOLDER: Exambinary company number], tax ID **9286810564**, VAT registration number [PLACEHOLDER: UK VAT registration number. 9286810564 is the company TAX ID, not the VAT number — the VAT registration number is a separate nine-digit reference and must be obtained before any invoice is issued], whose
+  registered office is in Birmingham at [PLACEHOLDER: Exambinary registered office]
+  ("**Exambinary**", "**we**", "**us**", "**our**"); and
 - the accounting practice named on the account ("**you**", "**your**", "**the
   practice**").
 
@@ -284,7 +302,7 @@ account.
 shown separately on the invoice.
 
 9.3 Payment is by card, taken by **Stripe**, our payment processor. Checkout is hosted by
-Stripe. **Card details never reach Neovogent's systems and we do not store them.** Your
+Stripe. **Card details never reach Exambinary's systems and we do not store them.** Your
 use of Stripe's checkout is also subject to Stripe's own terms.
 
 9.4 Billing is monthly in advance. [PLACEHOLDER: confirm the billing cycle mechanics —
@@ -614,10 +632,10 @@ You can save and print this page at any time.
 
 ## 24. Who we are, and how to contact us
 
-**NEOVOGENT AI SOLUTIONS UK LTD**
+**Exambinary Holding Ltd** [PLACEHOLDER: confirm the exact registered name at Companies House], a company registered in England and Wales, company number [PLACEHOLDER: Exambinary company number], registered office [PLACEHOLDER: Exambinary registered office], VAT registration number [PLACEHOLDER: Exambinary VAT number]
 Registered in England and Wales, company number
-**15946429**
-Registered office: Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham B15 1NP, Birmingham,
+**[PLACEHOLDER: Exambinary company number]**
+Registered office: [PLACEHOLDER: Exambinary registered office], Birmingham,
 [PLACEHOLDER: postcode]
 Tax ID: **9286810564**
 VAT registration number: [PLACEHOLDER: UK VAT registration number. 9286810564 is the company TAX ID, not the VAT number — the VAT registration number is a separate nine-digit reference and must be obtained before any invoice is issued]
