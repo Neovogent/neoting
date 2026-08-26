@@ -9,9 +9,11 @@
  * Two consumers are in view, and the surface is cut to exactly what they need:
  *
  *  - The **`publish.batch` executor** (`validation-dedupe/proposals/`, METH
- *    Stage 10) — the adapter interface to type its dependency against, the
- *    result and request shapes, and the preview + minimum-check functions it
- *    re-runs at execution time (the contract requires that re-validation).
+ *    Stage 10) — the export-destination vocabulary it resolves a release
+ *    against, the preview + minimum-check functions it re-runs at execution
+ *    time (the contract requires that re-validation), and the adapter
+ *    interface, which is on the seam for the dormant v1 ledger lane rather
+ *    than for the release path (D42 — see `export-destination.ts`).
  *  - The **`GET /v1/publishes` read surface** and the proposal-creation path —
  *    the same preview functions, so the number Read review renders and the
  *    number execution re-computes come from one implementation.
@@ -21,6 +23,12 @@
  * obtained, which is what keeps the adapter choice in config where the real
  * Xero client will replace it without touching a call site.
  */
+export {
+  EXPORT_DESTINATION_KINDS,
+  type ExportDestination,
+  type ExportDestinationKind,
+  isExportDestination,
+} from './export-destination.js';
 export {
   LEDGER_REJECTED,
   type LedgerAdapter,
