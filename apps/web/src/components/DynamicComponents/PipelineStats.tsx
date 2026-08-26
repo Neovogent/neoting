@@ -53,11 +53,14 @@ export function PipelineStats({ scopeName }: { scopeName: string }) {
       </div>
 
       {/* Stat tiles — the right form for a single headline number. */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 divide-x divide-y divide-white/5 border-b border-white/5">
+      {/* gap-px over a hairline background rather than divide-x/divide-y: once
+          the grid reflows to two columns, divide-* draws its borders against the
+          old three-column flow and puts lines where the cells no longer are. */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-px bg-white/5 border-b border-white/5">
         {seedAnalytics.stats.map((s) => (
-          <div key={s.label} className="p-5">
+          <div key={s.label} className="p-4 sm:p-5 bg-card min-w-0">
             <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">{s.label}</div>
-            <div className="mt-2 text-2xl font-bold text-white tracking-tight tabular-nums">{s.value}</div>
+            <div className="mt-2 text-xl sm:text-2xl font-bold text-white tracking-tight tabular-nums break-words">{s.value}</div>
             <div className="text-[11px] text-zinc-600 font-semibold mt-0.5">{s.sub}</div>
           </div>
         ))}

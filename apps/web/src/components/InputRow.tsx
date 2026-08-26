@@ -38,6 +38,14 @@ const m = defineMessages({
     id: 'shell.inputRow.voiceUnsupported',
     defaultMessage: 'Voice not supported in this browser',
   },
+  // The visible version of the line above. A disabled button'''s title never
+  // appears on touch — and a phone is where the browser choice is a real
+  // choice — so the reason is written under the toolbar instead. It names the
+  // way out, which a tooltip on an unhoverable control cannot.
+  voiceUnsupportedHint: {
+    id: 'shell.inputRow.voiceUnsupportedHint',
+    defaultMessage: 'Voice needs Safari on iPhone (with Dictation on) or Chrome on Android.',
+  },
   stop: { id: 'shell.inputRow.stop', defaultMessage: 'Stop' },
   voice: { id: 'shell.inputRow.voice', defaultMessage: 'Voice' },
   generate: { id: 'shell.inputRow.generate', defaultMessage: 'Generate' },
@@ -291,7 +299,7 @@ export function InputRow() {
   const handleSubmit = () => submitMessage(input);
 
   return (
-    <div className={`p-6 ${isEmpty ? 'pb-2' : 'pb-12'} shrink-0 max-w-4xl w-full mx-auto`}>
+    <div className={`p-3 sm:p-6 ${isEmpty ? 'pb-2' : 'pb-safe-4 sm:pb-12'} shrink-0 max-w-4xl w-full mx-auto`}>
       {/* A light travelling the border, slowly.
           Two arcs on opposite sides of one conic gradient, turning once every
           22 seconds — slow enough to read as a drift rather than a spinner,
@@ -300,7 +308,7 @@ export function InputRow() {
       <div className="relative rounded-[34px] p-[1.5px] overflow-hidden isolate motion-reduce:p-0">
         <motion.span
           aria-hidden="true"
-          className="absolute left-1/2 top-1/2 -z-10 w-[180%] aspect-square -translate-x-1/2 -translate-y-1/2 motion-reduce:hidden"
+          className="hidden sm:block absolute left-1/2 top-1/2 -z-10 w-[180%] aspect-square -translate-x-1/2 -translate-y-1/2 motion-reduce:hidden"
           // The one gradient that cannot be a utility class: a conic sweep with
           // eight stops. It reads the brand from the token rather than repeating
           // the hex, so it follows the palette like everything else (R8).
@@ -311,7 +319,7 @@ export function InputRow() {
           animate={{ rotate: 360 }}
           transition={{ duration: 22, repeat: Infinity, ease: 'linear' }}
         />
-        <div className="relative bg-white/90 backdrop-blur-2xl border border-white/60 shadow-composer rounded-[32px] flex flex-col transition-all overflow-hidden focus-within:shadow-composer-focus focus-within:border-white">
+        <div data-tour="composer" className="relative bg-white/90 backdrop-blur-2xl border border-white/60 shadow-composer rounded-[32px] flex flex-col transition-all overflow-hidden focus-within:shadow-composer-focus focus-within:border-white">
         {/* Only on the launcher. Once a conversation is running the person
             has already said what they want and is mid-thought — a box that
             starts typing its own sentences underneath their reply competes
@@ -329,7 +337,7 @@ export function InputRow() {
 
         <textarea
           placeholder={speech.listening ? intl.formatMessage(m.listeningPlaceholder) : ''}
-          className="w-full bg-transparent resize-none p-6 pb-4 text-[16px] focus:outline-none placeholder:text-zinc-400 text-zinc-800 min-h-[100px] max-h-40 font-medium [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+          className="w-full bg-transparent resize-none p-4 pb-3 sm:p-6 sm:pb-4 text-[16px] focus:outline-none placeholder:text-zinc-400 text-zinc-800 min-h-[72px] sm:min-h-[100px] max-h-40 font-medium [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
           rows={2}
           value={input}
           onChange={(e) => {
@@ -376,7 +384,7 @@ export function InputRow() {
           </div>
         )}
 
-        <div className="px-5 pb-5 flex items-center justify-between gap-3">
+        <div className="px-3 pb-3 sm:px-5 sm:pb-5 flex items-center justify-between gap-2 sm:gap-3 flex-wrap">
           <div className="flex items-center flex-wrap gap-2">
             <div>
               <button
@@ -405,7 +413,7 @@ export function InputRow() {
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 8, scale: 0.97 }}
                       style={{ bottom: anchor.bottom, left: anchor.left }}
-                      className="fixed w-64 max-h-[60vh] overflow-y-auto bg-white border border-zinc-200 rounded-2xl shadow-2xl z-[100] p-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                      className="fixed w-64 max-h-[60dvh] overflow-y-auto bg-white border border-zinc-200 rounded-2xl shadow-2xl z-[100] p-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                     >
                       {clients.map((c) => {
                         const attached = attachedClients.some((a) => a.id === c.id);
@@ -435,6 +443,7 @@ export function InputRow() {
             >
               <button
                 ref={docsRef}
+                data-tour="composer-documents"
                 onClick={() => fileRef.current?.click()}
                 onFocus={() => { setDocsAnchor(docsRef.current?.getBoundingClientRect() ?? null); setDocsHover(true); }}
                 onBlur={() => setDocsHover(false)}
@@ -460,6 +469,7 @@ export function InputRow() {
             {/* No positioning wrapper: the arcs live inside the icon's own
                 box, so nothing here can overlap the controls either side. */}
             <button
+              data-tour="composer-voice"
               onClick={speech.toggle}
               onMouseEnter={() => setVoiceHover(true)}
               onMouseLeave={() => setVoiceHover(false)}
@@ -478,6 +488,11 @@ export function InputRow() {
                 : <VoiceIcon active={voiceHover && speech.supported} />}
               {intl.formatMessage(speech.listening ? m.stop : m.voice)}
             </button>
+            {!speech.supported && (
+              <span className="text-[11px] font-semibold text-zinc-400 basis-full">
+                {intl.formatMessage(m.voiceUnsupportedHint)}
+              </span>
+            )}
           </div>
 
           {/* Brand fill rather than the near-black plate: on light the plate
@@ -485,6 +500,7 @@ export function InputRow() {
               mint carries the logo's dark ink from the brand rule in
               index.css, so it reads in both themes. */}
           <button
+            data-tour="composer-generate"
             onClick={handleSubmit}
             disabled={isLoading || !input.trim()}
             className="px-6 py-2.5 bg-brand text-white hover:bg-brand-hover rounded-full transition-all shadow-lg disabled:opacity-50 disabled:shadow-none flex items-center gap-2 font-semibold text-[14px] shrink-0"

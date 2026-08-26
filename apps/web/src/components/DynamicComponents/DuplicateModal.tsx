@@ -140,7 +140,7 @@ export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose
     // dismissal is Escape (useEscape above). The dialog semantics live on the
     // panel, which is what actually holds the content.
     <div
-      className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-3 sm:p-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       onClick={onClose}
       role="presentation"
     >
@@ -168,7 +168,7 @@ export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors shrink-0" aria-label={intl.formatMessage(commonActions.close)}>
+          <button onClick={onClose} className="p-2 -m-2 rounded-full text-zinc-500 hover:text-white hover:bg-white/5 transition-colors shrink-0" aria-label={intl.formatMessage(commonActions.close)}>
             <X size={20} />
           </button>
         </div>

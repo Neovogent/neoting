@@ -103,20 +103,20 @@ export function ReviewGate({
   return (
     <div className="w-full max-w-xl border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden flex flex-col">
       {/* Header — scope only. No Approve button exists at this point. */}
-      <div className="p-6 flex items-center justify-between gap-4 border-b border-white/5">
-        <div className="flex items-center gap-4 min-w-0">
-          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border shadow-inner ${accentBg}`}>
+      <div className="p-4 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 border-b border-white/5">
+        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+          <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center shrink-0 border shadow-inner ${accentBg}`}>
             <Icon size={20} />
           </div>
           <div className="min-w-0">
-            <h3 className="font-sans font-bold text-xl text-white tracking-tight truncate">{title}</h3>
+            <h3 className="font-sans font-bold text-lg sm:text-xl text-white tracking-tight break-words sm:truncate">{title}</h3>
             <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">{subtitle}</p>
           </div>
         </div>
         {!isExpanded && (
           <button
             onClick={() => setIsExpanded(true)}
-            className="shrink-0 flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-white bg-brand rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
+            className="shrink-0 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold text-white bg-brand rounded-full w-full sm:w-auto hover:bg-brand-hover transition-all shadow-glow-btn-soft"
           >
             {intl.formatMessage(m.readReview)}
             <ChevronDown size={16} strokeWidth={2.5} />
@@ -178,14 +178,14 @@ export function ReviewSection({ title, children }: { title: string; children: Re
 
 export function ReviewRows({ rows }: { rows: { label: string; value: ReactNode }[] }) {
   return (
-    <div className="bg-card border border-white/5 rounded-2xl p-4 text-sm text-zinc-300 flex flex-col gap-3 shadow-inner">
+    <div className="@container bg-card border border-white/5 rounded-2xl p-4 text-sm text-zinc-300 flex flex-col gap-3 shadow-inner">
       {rows.map((r, i) => (
         <div
           key={r.label}
-          className={`flex justify-between items-center gap-4 ${i < rows.length - 1 ? 'pb-3 border-b border-white/5' : ''}`}
+          className={`flex flex-col @sm:flex-row @sm:justify-between @sm:items-center gap-1 @sm:gap-4 ${i < rows.length - 1 ? 'pb-3 border-b border-white/5' : ''}`}
         >
           <span className="text-zinc-500 font-medium shrink-0">{r.label}</span>
-          <span className="font-bold text-white text-right">{r.value}</span>
+          <span className="font-bold text-white @sm:text-right break-words min-w-0">{r.value}</span>
         </div>
       ))}
     </div>

@@ -22,6 +22,10 @@ import type { SetupTask } from '../../lib/types';
  */
 const m = defineMessages({
   // Shell — the chrome all three screens share.
+  shellStepLabel: {
+    id: 'clients.shell.stepLabel',
+    defaultMessage: 'Step {number}: {name}',
+  },
   shellChangeTitle: {
     id: 'clients.shell.changeTitle',
     defaultMessage: 'Choose a different way to add this client',
@@ -1045,10 +1049,18 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
         {STEPS.map((s, i) => (
           <button
             key={s.id}
+            type="button"
             onClick={() => setStep(i)}
             title={intl.formatMessage(s)}
-            className={`h-1 flex-1 rounded-full transition-all ${i <= step ? 'bg-brand' : 'bg-white/10 hover:bg-white/20'}`}
-          />
+            aria-label={intl.formatMessage(m.shellStepLabel, { number: i + 1, name: intl.formatMessage(s) })}
+            {...(i === step ? { 'aria-current': 'step' as const } : {})}
+            className="flex-1 py-3 -my-3 group"
+          >
+            {/* The bar is 4px; the button around it is 24px. A 4px tap target
+                is unhittable with a thumb, and growing the bar would make the
+                progress rail look like a scrubber. */}
+            <span className={`block h-1 rounded-full transition-all ${i <= step ? 'bg-brand' : 'bg-white/10 group-hover:bg-white/20'}`} />
+          </button>
         ))}
       </div>
 
@@ -1063,7 +1075,7 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
                 onChange={(v) => set('name', v)}
                 placeholder={intl.formatMessage(m.practiceLegalNamePlaceholder)}
               />
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field
                   label={intl.formatMessage(m.practiceTradingNameLabel)}
                   value={form.tradingName}
@@ -1084,7 +1096,7 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
                 onChange={(v) => set('companyType', v)}
                 options={COMPANY_TYPES}
               />
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Select
                   label={intl.formatMessage(m.practiceIndustryLabel)}
                   value={form.industry}
@@ -1098,7 +1110,7 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
                   placeholder={intl.formatMessage(m.practiceYearEndPlaceholder)}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field
                   label={intl.formatMessage(m.practiceCountryLabel)}
                   value={form.country}
@@ -1124,7 +1136,7 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
                 onChange={(v) => set('vatRegistered', v)}
               />
               {form.vatRegistered && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Field
                     label={intl.formatMessage(commonLabels.vatNumber)}
                     value={form.vatNumber}
@@ -1153,7 +1165,7 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
               <p className="text-[13px] text-zinc-500 leading-relaxed">
                 {intl.formatMessage(m.practiceContactIntro)}
               </p>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field
                   label={intl.formatMessage(m.practiceContactNameLabel)}
                   value={form.contactName}
@@ -1190,7 +1202,7 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
 
           {step === 3 && (
             <>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Select
                   label={intl.formatMessage(m.practiceManagedByLabel)}
                   value={form.managedBy}
@@ -1204,7 +1216,7 @@ function PracticeIntake({ defaultName, onBack }: { defaultName: string; onBack: 
                   options={FREQUENCIES}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field
                   label={intl.formatMessage(m.practiceDeadlineLabel)}
                   value={form.deadline}

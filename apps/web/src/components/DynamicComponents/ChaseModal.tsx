@@ -38,7 +38,7 @@ export function ChaseModal({ clientIds, missingItemIds, note, onClose }: {
     // The backdrop is not a button — role="presentation" says so, and the
     // keyboard path is Escape (useEscape above), not a phantom Enter target.
     <div
-      className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-3 sm:p-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       onClick={onClose}
       role="presentation"
     >
