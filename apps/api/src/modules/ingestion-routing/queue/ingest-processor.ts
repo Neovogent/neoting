@@ -5,6 +5,7 @@ import type { DuplicateDetector } from './duplicate-detector.js';
 import { type IngestJobPayload, IngestJobPayloadSchema } from './job-payload.js';
 import { MediaFetchError } from './media-fetcher.js';
 import type { ProcessedStore } from './processed-store.js';
+import type { UploadSanitisationStep } from '../web-upload/upload-sanitisation.js';
 import { fetchWhatsAppMedia, type MediaIntakeDeps, type MaterialisedDocument } from './whatsapp-media-intake.js';
 
 /** Minimal logger surface the processor needs — kept narrow so tests inject a fake. */
@@ -26,6 +27,15 @@ export interface ProcessorDeps {
    * is the silent loss this issue exists to remove.
    */
   readonly media: MediaIntakeDeps;
+  /**
+   * Sanitisation for an ALREADY-PERSISTED upload — web and portal (Stage A3).
+   * REQUIRED, for the third time and the same reason as `media` and `extractor`:
+   * this lane skipped sanitisation entirely for months because nothing forced a
+   * composition root to provide it, and an optional dep is a dep that can be
+   * forgotten. Email and WhatsApp sanitise where their bytes are first held, so
+   * they do not pass through here.
+   */
+  readonly uploadSanitiser: UploadSanitisationStep;
   /**
    * Extraction (METH Stage 4). REQUIRED for the same reason as `media`: a
    * processor that quietly skipped extraction is exactly the "documents never
@@ -102,9 +112,10 @@ async function handle(payload: IngestJobPayload, deps: ProcessorDeps): Promise<v
 
   // A web-upload job (#76) refers to a document its OWN service already persisted
   // in RECEIVED — the worker must not re-persist it (that would double-create), it
-  // extracts it. This is the only channel that arrives already-persisted, and
-  // without this branch its documents never leave RECEIVED (METH Stage 4
-  // acceptance #1). Extraction reads the filename/byteHash off the row itself.
+  // sanitises and extracts it. This is the only channel that arrives
+  // already-persisted, and without this branch its documents never leave RECEIVED
+  // (METH Stage 4 acceptance #1). Extraction reads the filename/byteHash off the
+  // row itself, which is why sanitisation has to correct the row first.
   if (payload.documentId !== undefined) {
     if (payload.practiceId === undefined) {
       // A standalone business has no practice above it, so there is no
@@ -116,6 +127,50 @@ async function handle(payload: IngestJobPayload, deps: ProcessorDeps): Promise<v
       return;
     }
 
+    const routedBusinessId = payload.routing.businessId ?? null;
+
+    // SANITISATION (Stage A3) — the step this lane never had. Web and portal
+    // uploads are persisted by their own service straight from the browser's
+    // claims, so until this call the bytes had never been sniffed, the EXIF had
+    // never been stripped and a HEIC was still a HEIC by the time extraction
+    // asked Bedrock to read it. It runs FIRST, before dedupe and extraction,
+    // because both of those describe the document: dedupe keys on the byte hash
+    // and extraction reads `s3_key` + `mime_type` off the row, and sanitisation
+    // is what makes all three true.
+    const sanitisation = await deps.uploadSanitiser.run({
+      documentId: payload.documentId,
+      practiceId: payload.practiceId,
+      businessId: routedBusinessId,
+      traceId: payload.traceId,
+    });
+
+    if (sanitisation.status === 'rejected') {
+      // Visible, not dropped, and not a DLQ entry either: the document is
+      // REJECTED on the row with its NT-ING code and a plain-English reason, on
+      // the Rejected/Failed surface, retryable through a `document.reprocess`
+      // proposal. Retrying the job would refuse the same bytes for the same
+      // reason, so the job completes — the outcome is recorded where a human
+      // looks, which is the whole of what the DLQ was buying the WhatsApp lane.
+      deps.logger.warn(
+        `web-upload ${payload.documentId} rejected by sanitisation: ${sanitisation.rejection.code} ${sanitisation.rejection.message} (trace=${payload.traceId})`,
+      );
+      return;
+    }
+    if (sanitisation.status === 'unavailable') {
+      deps.logger.warn(`web-upload ${payload.documentId} not available to sanitise (trace=${payload.traceId})`);
+      return;
+    }
+
+    // The job's `sha256` describes what the BROWSER uploaded. Sanitisation may
+    // have re-encoded those bytes (HEIC→JPEG, EXIF stripped, a PDF rewritten by
+    // qpdf), so the row's hash is the one that identifies the document now —
+    // dedupe against the payload's would compare a receipt to a file that no
+    // longer exists. Falling back to the payload is what a step that made no
+    // statement about identity leaves us with.
+    const identity = sanitisation.document;
+    const byteHash = identity?.byteHash ?? payload.sha256;
+    const perceptualHash = identity?.perceptualHash ?? payload.perceptualHash ?? null;
+
     // Duplicate detection (#40) for the already-persisted lane too (METH S7).
     // This branch bypasses `persist()` by design — which meant it also bypassed
     // the detector, so web upload was the ONE channel whose documents never got
@@ -124,14 +179,13 @@ async function handle(payload: IngestJobPayload, deps: ProcessorDeps): Promise<v
     // needs a business to anchor on) and a byte hash to key on; the write is
     // idempotent (ordered pair + unique index), so a redelivery detects again
     // and writes nothing twice.
-    const routedBusinessId = payload.routing.businessId ?? null;
-    if (routedBusinessId !== null && payload.sha256 !== undefined) {
+    if (routedBusinessId !== null && byteHash !== undefined) {
       const { findings, candidatesTruncated } = await deps.detector.detect({
         documentId: payload.documentId,
         practiceId: payload.practiceId,
         businessId: routedBusinessId,
-        byteHash: payload.sha256,
-        perceptualHash: payload.perceptualHash ?? null,
+        byteHash,
+        perceptualHash,
       });
       deps.logger.log(`dedupe ${payload.documentId}: ${findings.length} match(es) trace=${payload.traceId}`);
       if (candidatesTruncated) {

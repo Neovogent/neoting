@@ -7,6 +7,7 @@ import { InMemoryDocumentStore } from '../storage/document-store.js';
 import { documentIdFor, PrismaDocumentSink } from './document-sink.js';
 import { InMemoryDuplicateDetector } from './duplicate-detector.js';
 import { processIngestJob } from './ingest-processor.js';
+import { RecordingUploadSanitisation } from '../web-upload/upload-sanitisation.js';
 import { FixtureMediaFetcher } from './media-fetcher.js';
 import { InMemoryProcessedStore } from './processed-store.js';
 
@@ -87,6 +88,9 @@ describe.skipIf(!DATABASE_URL || !OWNER_URL)('WhatsApp media intake against a re
       sink: new PrismaDocumentSink(app),
       detector: new InMemoryDuplicateDetector(),
       media: { fetcher, store },
+      // Never consulted: a WhatsApp job carries no `documentId`, so it never
+      // reaches the already-persisted branch sanitisation lives on (Stage A3).
+      uploadSanitiser: new RecordingUploadSanitisation(),
       // A no-op here: this test is about the #79 persistence/tenancy write, not
       // extraction (which has its own integration test). Leaving the document in
       // RECEIVED keeps the assertions below about what the sink wrote.
