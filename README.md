@@ -1,8 +1,8 @@
-# Neoting
+# Neo Accounting
 
 Chat-first document-to-bookkeeping for UK accounting practices, by Neovogent.
 
-A receipt arrives by photo, email, WhatsApp or upload. Neoting reads it, codes it against the client's own chart of accounts, flags duplicates, matches it to the bank feed, notices what's *missing* and chases the client by SMS with a no-app upload link, routes it through approvals, and publishes it to Xero or QuickBooks with the source image attached — driven from chat, with nothing changing state until a human presses Approve.
+A receipt arrives by photo, email, WhatsApp or upload. Neo Accounting reads it, codes it against the client's own chart of accounts, flags duplicates, matches it to the bank feed, notices what's *missing* and chases the client by SMS with a no-app upload link, routes it through approvals, and publishes it to Xero or QuickBooks with the source image attached — driven from chat, with nothing changing state until a human presses Approve.
 
 ## Start here
 
