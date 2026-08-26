@@ -6,6 +6,7 @@ import { scopedDb } from '../../common/db/scoped-db.js';
 import type { Env } from '../../config/env.js';
 import { canonicalStringify as approvalsCanonicalStringify, sha256Hex as approvalsSha256Hex } from '../approvals/canonical-hash.js';
 import { AuthService } from './auth.service.js';
+import { InMemorySignInThrottle } from './sign-in-throttle.js';
 import { PracticeSignupService, TERMS_VERSION_IN_FORCE, type PracticeSignupInput } from './practice-signup.service.js';
 import { verifySessionCookieHeader } from './session-cookie.js';
 import { loadScopeForUser } from './session-scope.js';
@@ -128,7 +129,7 @@ describe.skipIf(DATABASE_URL === undefined || OWNER_URL === undefined)('practice
   });
 
   test('REFUSAL: the account is unusable until verified, and then it is usable', async () => {
-    const auth = new AuthService(app, env);
+    const auth = new AuthService(app, env, new InMemorySignInThrottle());
     const credentials = { email: `owner${EMAIL_DOMAIN}`, password: 'a-perfectly-good-passphrase', totp: '000000' };
 
     await expect(auth.login(credentials)).rejects.toMatchObject({ code: 'NT-AUTH-003' });

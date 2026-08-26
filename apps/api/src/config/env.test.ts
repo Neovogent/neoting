@@ -19,6 +19,10 @@ const PRODUCTION = {
   EMAIL_SENDER: 'ses',
   EMAIL_CONFIGURATION_SET: 'nt-staging-default',
   EMAIL_RATE_LIMIT: 'redis',
+  // A2: the fixed six-digit code is refused in production, so a bootable
+  // production environment now has to name the real verifier. This is the line
+  // the comment above predicts every new gate will cost.
+  OTP_MODE: 'totp',
 } as unknown as NodeJS.ProcessEnv;
 
 test('loads defaults; the Meta secrets are optional and default empty', () => {
@@ -106,6 +110,20 @@ test('AI_CHAT defaults to demo outside production, so a cold clone runs offline'
   expect(env.AI_CHAT).toBe('demo');
   expect(env.BEDROCK_REGION).toBe('eu-west-2');
   expect(env.AI_DAILY_BUDGET_PENCE).toBe(500);
+});
+
+// A2 (and S1's gate, landing here first). `OTP_MODE=demo` accepts ONE literal
+// six-digit code — the same one on every account, in every practice, on every
+// portal session, written down in the source and in the seed. A universal second
+// factor on a workspace holding other people's financial records is not a second
+// factor, so it gets the AI_CHAT treatment: refused at boot, not defaulted away.
+test('NODE_ENV=production with OTP_MODE=demo fails to boot', () => {
+  expect(() => loadEnv({ ...PRODUCTION, OTP_MODE: 'demo' } as NodeJS.ProcessEnv)).toThrow(/OTP_MODE/);
+});
+
+test('OTP_MODE defaults to demo outside production, so a cold clone signs in offline', () => {
+  expect(loadEnv({}).OTP_MODE).toBe('demo');
+  expect(loadEnv({ ...PRODUCTION } as NodeJS.ProcessEnv).OTP_MODE).toBe('totp');
 });
 
 // #76: UPLOAD_URL_SECRET. Unlike the Meta secrets it is NOT optional in

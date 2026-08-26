@@ -91,10 +91,23 @@ const EnvSchema = z.object({
   // Stage 15 env change, not with this code.
   SESSION_SECRET: z.string().default(''),
 
-  // TOTP verification mode (METH Stage 1). `demo` accepts the literal fixed
-  // code and nothing else — the only value until Twilio Verify replaces it
-  // post-demo. // DEMO-MOCK: Twilio Verify (real TOTP/OTP) replaces this.
-  OTP_MODE: z.enum(['demo']).default('demo'),
+  // Second-factor verification mode, for both the accountant sign-in
+  // (`auth.service.ts`) and the client portal (`portal-session.service.ts`).
+  // `demo` accepts ONE literal six-digit code — the same one on every account,
+  // in every practice, on every portal session, and it is written down in the
+  // source and in the seed. `totp` is the real RFC 6238 verifier. Default
+  // `demo` so a fresh clone and CI sign in offline; `demo` is REFUSED under
+  // `NODE_ENV=production` below (S1).
+  //
+  // ⚠ A2 IMPLEMENTED THE `totp` BRANCH, and it deliberately fails CLOSED where
+  // it has nothing to check: `auth-tenancy/totp.ts` verifies against the
+  // envelope in `users.totp_secret_ref`, and the portal verifies against
+  // `otp_sessions.otp_hash`. An account with no enrolment, or a portal session
+  // with no minted code, therefore cannot pass — which is correct and is not
+  // yet reachable to fix, because `openapi.yaml` publishes no enrolment
+  // operation and no code-minting operation (G7). See
+  // `auth-tenancy/totp-enrolment.service.ts`.
+  OTP_MODE: z.enum(['demo', 'totp']).default('demo'),
 
   // Web-upload intent signing (#76). The `uploadId` is a STATELESS HMAC-signed
   // token (no DocumentUpload table — prisma/ is LAW), and this secret signs it.
@@ -391,6 +404,21 @@ const EnvSchema = z.object({
       path: ['EMAIL_RATE_LIMIT'],
       message:
         'EMAIL_RATE_LIMIT=memory counts per process, and production runs several — the per-address and per-IP ceilings would be multiplied by the task count. Set EMAIL_RATE_LIMIT=redis (S2)',
+    });
+  }
+
+  // `demo` accepts one fixed six-digit code, identical on every account in
+  // every practice and on every portal session, published in the source and in
+  // the seed. A universal second factor on a workspace holding other people's
+  // financial records is not a second factor; it is a longer password field.
+  // A2 lands the real verifier behind this same switch — until then `totp`
+  // fails every check closed, which is the honest state to be in.
+  if (env.NODE_ENV === 'production' && env.OTP_MODE === 'demo') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['OTP_MODE'],
+      message:
+        'OTP_MODE=demo accepts one fixed code on every account in every practice — set OTP_MODE=totp (S1; A2 implements the verifier)',
     });
   }
 
