@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Building2, ChevronDown, Plus, PanelLeftClose, PanelLeft, X, Check } from 'lucide-react';
+import { Building2, ChevronDown, Plus, PanelLeftClose, PanelLeft, X, Check, Sparkles } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { useTour } from '../tour/TourProvider';
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 
@@ -14,6 +15,13 @@ const m = defineMessages({
     defaultMessage: 'No client attached — answers span all clients',
   },
   attachClient: { id: 'shell.contextBar.attachClient', defaultMessage: 'Attach Client' },
+  // The short halves of the three labels that shrink on a phone. A separate id
+  // rather than a substring: what is short in English is not short in German,
+  // so the trimming is a translator's decision, not a slice of the long form.
+  attachClientShort: { id: 'shell.contextBar.attachClient.short', defaultMessage: 'Attach' },
+  noClientAttachedShort: { id: 'shell.contextBar.noClientAttached.short', defaultMessage: 'All clients' },
+  tourButton: { id: 'shell.contextBar.tourButton', defaultMessage: "Let's have a demo tour" },
+  tourButtonShort: { id: 'shell.contextBar.tourButton.short', defaultMessage: 'Demo tour' },
   pickerHeading: { id: 'shell.contextBar.pickerHeading', defaultMessage: 'Attach to conversation' },
 });
 
@@ -24,6 +32,7 @@ const m = defineMessages({
 export function ContextBar() {
   const { isHistoryVisible, toggleHistory, clients, attachedClients, attachClient, detachClient } = useAppContext();
   const intl = useIntl();
+  const tour = useTour();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -73,10 +82,12 @@ export function ContextBar() {
 
 
   return (
-    <header className="h-20 border-b border-white/5 px-8 flex items-center justify-between gap-4 shrink-0 bg-ground/80 backdrop-blur-md z-10 sticky top-0">
+    <header className="h-16 sm:h-20 border-b border-white/5 px-3 sm:px-8 flex items-center justify-between gap-4 shrink-0 bg-ground/80 backdrop-blur-md z-10 sticky top-0">
       <div className="flex items-center gap-4 min-w-0">
         <button
           onClick={toggleHistory}
+          data-tour="history-toggle"
+          aria-label={intl.formatMessage(isHistoryVisible ? m.hideHistory : m.showHistory)}
           className="p-2.5 text-zinc-400 hover:text-white bg-card hover:bg-raised border border-white/5 rounded-full transition-all shadow-lg overflow-hidden relative flex items-center justify-center w-10 h-10 shrink-0"
           title={intl.formatMessage(isHistoryVisible ? m.hideHistory : m.showHistory)}
         >
@@ -106,7 +117,7 @@ export function ContextBar() {
                 className="group flex items-center gap-3 bg-card pl-4 pr-2 py-2 rounded-full border border-white/5 shadow-lg shrink-0"
               >
                 <Building2 size={16} className="text-zinc-400 shrink-0" />
-                <span className="text-sm font-semibold text-white tracking-wide whitespace-nowrap">{c.name}</span>
+                <span className="text-sm font-semibold text-white tracking-wide whitespace-nowrap max-w-[9rem] sm:max-w-none truncate">{c.name}</span>
                 <button
                   onClick={() => detachClient(c.id)}
                   className="p-1 rounded-full text-zinc-600 hover:text-white hover:bg-white/10 transition-colors"
@@ -119,18 +130,23 @@ export function ContextBar() {
           </AnimatePresence>
 
           {attachedClients.length === 0 && (
-            <span className="text-sm text-zinc-500 font-medium px-2 whitespace-nowrap">{intl.formatMessage(m.noClientAttached)}</span>
+            <span className="text-sm text-zinc-500 font-medium px-2 whitespace-nowrap truncate">
+              <span className="hidden sm:inline">{intl.formatMessage(m.noClientAttached)}</span>
+              <span className="sm:hidden">{intl.formatMessage(m.noClientAttachedShort)}</span>
+            </span>
           )}
         </div>
 
         <div className="shrink-0">
           <button
             ref={triggerRef}
+            data-tour="attach-client"
             onClick={() => setPickerOpen((o) => !o)}
             className="flex items-center gap-2 text-zinc-400 hover:text-brand text-sm font-medium transition-colors px-3 py-2 rounded-full hover:bg-white/5 whitespace-nowrap"
           >
             <Plus size={16} />
-            {intl.formatMessage(m.attachClient)}
+            <span className="hidden sm:inline">{intl.formatMessage(m.attachClient)}</span>
+            <span className="sm:hidden">{intl.formatMessage(m.attachClientShort)}</span>
             <ChevronDown size={14} className={`transition-transform ${pickerOpen ? 'rotate-180' : ''}`} />
           </button>
 
@@ -144,7 +160,7 @@ export function ContextBar() {
                   exit={{ opacity: 0, y: -8, scale: 0.97 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                   style={{ top: anchor.top, left: anchor.left }}
-                  className="fixed w-72 max-h-[60vh] overflow-y-auto bg-card border border-white/10 rounded-2xl shadow-2xl z-[100] p-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                  className="fixed w-72 max-h-[60dvh] overflow-y-auto bg-card border border-white/10 rounded-2xl shadow-2xl z-[100] p-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 >
                   <div className="px-3 py-2 text-[11px] font-bold text-zinc-500 uppercase tracking-widest">
                     {intl.formatMessage(m.pickerHeading)}
@@ -172,6 +188,18 @@ export function ContextBar() {
           )}
         </div>
       </div>
+
+      {/* Top right: the guided tour. It walks every screen and keeps coming
+          back to the point that the chat can do all of it. */}
+      <button
+        onClick={() => tour.start(0)}
+        data-tour="tour-button"
+        className="shrink-0 flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full text-[13px] font-bold text-brand bg-brand/10 border border-brand/30 hover:bg-brand/20 transition-colors whitespace-nowrap"
+      >
+        <Sparkles size={15} />
+        <span className="hidden sm:inline">{intl.formatMessage(m.tourButton)}</span>
+        <span className="sm:hidden">{intl.formatMessage(m.tourButtonShort)}</span>
+      </button>
 
       {/* The connection chips are gone from here.
           Both said the same thing on every conversation regardless of subject,

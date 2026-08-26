@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useScrollActiveIntoView } from '../../lib/useScrollActiveIntoView';
 
 export interface SubTab {
   key: string;
@@ -23,8 +24,15 @@ export function SubTabs({ tabs, active, onChange }: {
   active: string;
   onChange: (key: string) => void;
 }) {
+  // A row that scrolls instead of wrapping can hide the selected tab off its
+  // own right edge — on a deep link, before the user has touched anything.
+  const ref = useScrollActiveIntoView<HTMLDivElement>(active);
   return (
-    <div className="inline-flex items-center gap-1 p-1 rounded-2xl bg-ground border border-white/5 shadow-inner max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div
+      ref={ref}
+      data-tour="client-subtabs"
+      className="inline-flex items-center gap-1 p-1 rounded-2xl bg-ground border border-white/5 shadow-inner max-w-full scroll-x"
+    >
       {tabs.map((t) => {
         const selected = t.key === active;
         return (
