@@ -325,3 +325,123 @@ html.light .via-teal-deep\/30 { --tw-gradient-via: color-mix(in srgb, var(--colo
 html.light .shadow-2xl { box-shadow: 0 1px 2px color-mix(in srgb, var(--color-ink) 4%, transparent), 0 8px 24px color-mix(in srgb, var(--color-ink) 6%, transparent); }
 html.light .shadow-inner { box-shadow: inset 0 1px 2px color-mix(in srgb, var(--color-ink) 4%, transparent); }
 html.light .shadow-lg { box-shadow: 0 4px 12px color-mix(in srgb, var(--color-ink) 7%, transparent); }
+
+/* ==========================================================================
+   Small screens and touch
+   --------------------------------------------------------------------------
+   The layout work lives in the components as responsive utilities. What sits
+   here is the platform plumbing every screen needs and no component should
+   have to remember: safe areas, the iOS focus-zoom rule, the visual-viewport
+   height for keyboards, and a larger hit area for the small controls.
+   ========================================================================== */
+
+/* Notch / home-indicator clearance. `viewport-fit=cover` in index.html makes
+   env() non-zero; without it these are harmless zeros. */
+@utility pt-safe { padding-top: env(safe-area-inset-top, 0px); }
+@utility pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+@utility pl-safe { padding-left: env(safe-area-inset-left, 0px); }
+@utility pr-safe { padding-right: env(safe-area-inset-right, 0px); }
+@utility px-safe {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+/* Bottom padding that still keeps a real gap above the home indicator. */
+@utility pb-safe-4 { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 1rem); }
+@utility pb-safe-6 { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 1.5rem); }
+/* Height of the bottom tab bar, so scroll areas can leave room for it. */
+@utility pb-nav { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4.25rem); }
+
+/* The visual viewport: what is actually visible once the keyboard is up.
+   useVisualViewport() keeps --vvh current; until it runs, fall back to dvh. */
+:root { --vvh: 100dvh; }
+@utility h-vv { height: var(--vvh); }
+@utility max-h-vv { max-height: var(--vvh); }
+
+/* A tap target can't grow the layout of a dense table row, but it can grow its
+   hit area. Used on checkboxes, flags and icon buttons. */
+@utility hit-area {
+  position: relative;
+  &::after {
+    content: "";
+    position: absolute;
+    inset: -0.625rem;
+  }
+}
+
+/* Horizontal strips (tab rows, chip rows) that scroll instead of wrapping. */
+@utility scroll-x {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  &::-webkit-scrollbar { display: none; }
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+button, [role="button"], a, input, select, textarea {
+  touch-action: manipulation;
+}
+
+@media (pointer: coarse) {
+  /* iOS Safari zooms into any field under 16px on focus. Every input in the
+     app is 13–14px, so rather than touching each one, raise the floor. */
+  input, select, textarea {
+    font-size: max(16px, 1em);
+  }
+}
+
+/* ==========================================================================
+   Demo tour
+   --------------------------------------------------------------------------
+   The spotlight is one element sized to the target; its shadow is what dims
+   the rest of the page, which keeps the move between targets a single
+   animated box rather than four panels. It takes no pointer events, so the
+   page underneath keeps scrolling and hovering.
+
+   Every colour here derives from the palette above. The prototype wrote these
+   as raw alpha-channel literals; check-colors.mjs bans that function under
+   src/ (issue #86) — this comment may not even name it — and color-mix over
+   the brand token is also what makes a brand change reach the spotlight ring
+   instead of leaving one stale mint value behind.
+   ========================================================================== */
+.tour-spot {
+  box-shadow:
+    0 0 0 9999px color-mix(in srgb, black 62%, transparent),
+    0 0 0 2px var(--color-brand),
+    0 0 28px color-mix(in srgb, var(--color-brand) 45%, transparent);
+  pointer-events: none;
+  transition: top 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), left 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), height 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: tour-ring 1.4s ease-out 1;
+}
+@keyframes tour-ring {
+  0% {
+    box-shadow:
+      0 0 0 9999px color-mix(in srgb, black 62%, transparent),
+      0 0 0 0 color-mix(in srgb, var(--color-brand) 90%, transparent),
+      /* Fully transparent BRAND, not `transparent` — see --color-brand-fade
+         above: 0% of a colour mixed with transparent collapses to transparent
+         black and greys the ramp this keyframe animates through. */
+      0 0 0 var(--color-brand-fade);
+  }
+  100% {
+    box-shadow:
+      0 0 0 9999px color-mix(in srgb, black 62%, transparent),
+      0 0 0 2px var(--color-brand),
+      0 0 28px color-mix(in srgb, var(--color-brand) 45%, transparent);
+  }
+}
+.tour-box {
+  animation: tour-box-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes tour-box-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour-spot, .tour-box { animation: none; transition: none; }
+}
