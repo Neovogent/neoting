@@ -50,3 +50,9 @@ apps/web/web-errors.txt
 # §1.4: never commit generated output). It is the artefact a translator
 # receives, and `pnpm lint` regenerates and validates it on every run.
 apps/web/lang/
+
+# Claude Code working state: session scratch, agent worktrees, local settings.
+# `.claude/worktrees/` held full checkouts, and a `git add -A` swept 17 of them into
+# main as gitlinks with no .gitmodules (b5c0b11) — a fresh clone got empty directories
+# and errors. Ignored so it cannot happen again.
+.claude/
