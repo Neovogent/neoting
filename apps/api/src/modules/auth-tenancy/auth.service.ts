@@ -13,8 +13,17 @@ import { DUMMY_PASSWORD_HASH, verifyPasswordHash } from './password.js';
 import { normaliseEmail } from './practice-signup.service.js';
 import { SESSION_TTL_MS, signSessionToken } from './session-cookie.js';
 import { pickActingMembership } from './session-scope.js';
+import { RateLimitedException, type SignInThrottle } from './sign-in-throttle.js';
+import { type SecondFactorVerdict, verifySecondFactor } from './totp.js';
 
-/** The fixed demo verification code (METH_MODE §7). */
+/**
+ * The fixed demo verification code (METH_MODE §7).
+ *
+ * ⚠ It is reachable only under `OTP_MODE=demo`, and `config/env.ts` REFUSES
+ * `demo` under `NODE_ENV=production` (launch stage A2, matching S1). Until that
+ * refusal existed this constant was the entire second factor of the product:
+ * one code, on every account, in every practice, published here and in the seed.
+ */
 const DEMO_TOTP_CODE = '000000';
 
 export interface LoginInput {
@@ -35,6 +44,8 @@ interface CredentialRow {
   readonly passwordHash: string | null;
   readonly emailVerified: boolean;
   readonly deactivatedAt: Date | null;
+  /** The AES-GCM envelope holding the TOTP seed and the recovery-code hashes (`totp-secret.ts`). */
+  readonly totpSecretRef: string | null;
 }
 
 /**
@@ -58,45 +69,104 @@ interface CredentialRow {
  *    PRODUCES the identity every scoped query later needs, so it cannot run
  *    inside one. Keep the privileged surface to exactly this query.
  *
- * It still writes nothing, and that is deliberate: a failed-login counter and a
- * lockout are stage A2's, and they are a write, so they arrive with the design
- * that makes a write on an unauthenticated path safe.
+ * ⚠ **IT NOW WRITES, ON EXACTLY ONE BRANCH (launch stage A2).** A sign-in that
+ * spends a RECOVERY code has to remove that code, or "single-use" is a word
+ * rather than a property. That is the only write, it happens only after the
+ * credentials have already verified, and it is the same privileged
+ * `users`-table touch as the read above — `users` carries no RLS, and there is
+ * no scope context to build before a session exists. Nothing else about login
+ * writes: no session row, no `lastLoginAt`, and the failed-attempt counter is
+ * deliberately in memory (`sign-in-throttle.ts`) rather than in a table, both
+ * because `prisma/` is LAW and because a table anyone can make the server write
+ * to, unauthenticated, is a different risk from a bounded map.
  */
 export class AuthService {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly env: Env,
+    private readonly throttle: SignInThrottle,
   ) {}
 
-  /** Verify credentials, mint the signed session token. Throws 401 `NT-AUTH-003` on ANY miss. */
-  async login(input: LoginInput): Promise<IssuedSession> {
+  /**
+   * Verify credentials, mint the signed session token.
+   *
+   * Throws `401 NT-AUTH-003` on ANY credential miss and `429 NT-RATE-001` when
+   * this ADDRESS has failed too often lately. The two are different questions:
+   * the 401 refuses to say who exists, the 429 reports the caller's own recent
+   * behaviour against a string they typed. See `sign-in-throttle.ts` for why
+   * that distinction is safe and why the counter is keyed on the address rather
+   * than on the user row.
+   */
+  async login(input: LoginInput, nowMs: number = Date.now()): Promise<IssuedSession> {
     const email = normaliseEmail(input.email);
+
+    // BEFORE any scrypt. A locked address must cost the server nothing, or the
+    // lockout is an amplifier rather than a defence.
+    const standing = this.throttle.inspect(email, nowMs);
+    if (standing.locked) throw new RateLimitedException(standing.retryAfterSeconds);
+
     const user = await this.findCredentialRow(email);
 
     // Every check ALWAYS runs before the branch, and each miss still spends a
     // scrypt. Short-circuiting on the password would make a TOTP-only failure
     // measurably faster and leak which factor was wrong; short-circuiting on an
     // unknown address would leak whether the address is registered. Those two
-    // leaks are the whole reason NT-AUTH-003 is one code.
+    // leaks are the whole reason NT-AUTH-003 is one code. The second factor
+    // keeps the same discipline — `verifySecondFactor` burns an HMAC even when
+    // there is no enrolment to check.
     const storedMatched = verifyPasswordHash(input.password, user?.passwordHash ?? DUMMY_PASSWORD_HASH);
     const demoUserId = verifyDemoPassword(email, input.password, this.env.NODE_ENV);
-    const totpValid = this.verifyTotp(input.totp);
+    const factor = await this.verifySecondFactor(user, input.totp, nowMs);
 
     const userId = this.resolveUserId(user, storedMatched, demoUserId);
-    if (userId === null || !totpValid) {
-      throw new AppException(
-        'NT-AUTH-003',
-        HttpStatus.UNAUTHORIZED,
-        'Invalid credentials',
-        'The email, password or verification code did not match.',
-      );
+    if (userId === null || !factor.ok) return this.refuse(email, nowMs);
+
+    // The second factor verified against the row we found; if the password
+    // matched a DIFFERENT row we would be about to mint a session for the wrong
+    // person. `resolveUserId` only ever returns `user.id`, so this cannot
+    // currently happen — asserted here so that it also cannot start to.
+    if (user === null || userId !== user.id) return this.refuse(email, nowMs);
+
+    // Replay: a TOTP code is live for its whole step plus the tolerance either
+    // side, so one captured in flight can be presented again. Claiming the step
+    // spends it. See `sign-in-throttle.ts` for the honest limits of an
+    // in-process claim.
+    if (factor.timeStep !== null && !this.throttle.claimTimeStep(user.id, factor.timeStep, nowMs)) {
+      return this.refuse(email, nowMs);
     }
 
-    const expiresAtMs = Date.now() + SESSION_TTL_MS;
+    // The one write, and only on the branch that needs it: the spent recovery
+    // code is gone from the envelope before the session exists.
+    if (factor.updatedRef !== null) {
+      await this.prisma.user.update({ where: { id: user.id }, data: { totpSecretRef: factor.updatedRef } });
+    }
+
+    this.throttle.recordSuccess(email);
+
+    const expiresAtMs = nowMs + SESSION_TTL_MS;
     return {
       token: signSessionToken({ userId, expiresAtMs }, this.env.SESSION_SECRET),
       expiresAt: new Date(expiresAtMs),
     };
+  }
+
+  /**
+   * Count the failure, then answer.
+   *
+   * The attempt that TRIPS the lock answers `429` rather than `401` — the
+   * threshold is not a secret, and telling the accountant at the moment it
+   * happens is the only way they can act on it. Every other failure is the one
+   * `NT-AUTH-003`, unchanged.
+   */
+  private refuse(email: string, nowMs: number): never {
+    const verdict = this.throttle.recordFailure(email, nowMs);
+    if (verdict.locked) throw new RateLimitedException(verdict.retryAfterSeconds);
+    throw new AppException(
+      'NT-AUTH-003',
+      HttpStatus.UNAUTHORIZED,
+      'Invalid credentials',
+      'The email, password or verification code did not match.',
+    );
   }
 
   /**
@@ -106,7 +176,7 @@ export class AuthService {
   private async findCredentialRow(email: string): Promise<CredentialRow | null> {
     return this.prisma.user.findUnique({
       where: { email },
-      select: { id: true, kind: true, passwordHash: true, emailVerified: true, deactivatedAt: true },
+      select: { id: true, kind: true, passwordHash: true, emailVerified: true, deactivatedAt: true, totpSecretRef: true },
     });
   }
 
@@ -144,11 +214,28 @@ export class AuthService {
     return stored || demo ? user.id : null;
   }
 
-  // DEMO-MOCK: Twilio Verify (real TOTP) replaces this fixed-code check. The
-  // mode switch stays explicit so the real verifier lands as a new branch on
-  // OTP_MODE, not a rewrite of the callers.
-  private verifyTotp(totp: string): boolean {
-    return this.env.OTP_MODE === 'demo' && totp === DEMO_TOTP_CODE;
+  /**
+   * The second factor, both modes (launch stage A2).
+   *
+   * `demo` is the fixed code that used to be the whole of it, kept so a fresh
+   * clone and CI sign in offline and refused at boot in production
+   * (`config/env.ts`). `totp` is RFC 6238 through otplib, plus the single-use
+   * recovery codes, against the envelope in `users.totp_secret_ref`.
+   *
+   * ⚠ **`totp` fails CLOSED for an account with no enrolment.** There is no
+   * "no second factor configured, let them in" branch and there must not be
+   * one: that branch is a second factor an attacker can opt out of by being
+   * first. See this module's `CLAUDE.md` — the enrolment ENDPOINT is a contract
+   * gap (G7), so under `OTP_MODE=totp` today nobody can sign in until it lands.
+   * That is the intended state, and it is louder than the alternative.
+   */
+  private async verifySecondFactor(user: CredentialRow | null, totp: string, nowMs: number): Promise<SecondFactorVerdict> {
+    if (this.env.OTP_MODE === 'demo') {
+      return totp === DEMO_TOTP_CODE
+        ? { ok: true, usedRecoveryCode: false, updatedRef: null, timeStep: null }
+        : { ok: false };
+    }
+    return verifySecondFactor(user?.totpSecretRef ?? null, totp, this.env.SESSION_SECRET, nowMs);
   }
 
   /**

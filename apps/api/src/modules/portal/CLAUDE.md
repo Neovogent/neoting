@@ -90,7 +90,69 @@ else.
 | `chase-verdict.ts` | The pure chase-validation copy — `describeChaseMismatch`. See "The post-upload half" below. |
 | `portal-upload-status.service.ts` | The post-upload read: document state + extraction + verdict, under the delegated scope for the document and the SYSTEM scope for the chase. **Unrouted** — no contract path, so no provider (see below). |
 | `portal-upload-notifier.ts` | The accountant's `portal.upload` notification row (SoT §4 Stage 8.8). |
+| `otp-attempts.ts` | **A2** — the attempt counter, the lockout and the minted-code compare. Pure. See below. |
 | `portal.module.ts` / `tokens.ts` / `index.ts` | Wiring, DI symbols, the public seam. |
+
+## The OTP is real, and it is counted (launch stage A2)
+
+Until A2 the portal OTP was the literal string `'000000'` — the same code for
+every client of every practice, published in this directory and in the seed —
+and `otp_sessions.attempts` / `locked_until` were **read and written by
+nothing**. This file said so out loud (*"METH Stage 9 says 'Rate-limit
+nothing'"*), which was an acceptable demo decision and not a shipping one.
+
+**Five wrong codes on one link, then fifteen minutes locked.** Tighter than the
+sign-in lane's ten because there is no password in front of it: the link plus the
+code IS the whole credential, so the budget for guessing it has to be smaller.
+
+**A locked link gets the SAME `401 NT-OTP-001` as every other failure**, word for
+word — never a `429`, never a distinct message. `openapi.yaml` mandates the
+uniform 401 here, and the key is why: this counter lives on a row keyed by
+`link_token_hash`, and that row exists only for a real chase, so any
+distinguishable answer would confirm the link names something. (The sign-in lane
+*does* answer `429`, because its counter is keyed on a string the caller typed
+and so reveals nothing about who exists — `auth-tenancy/CLAUDE.md` has the full
+argument. The two differ because the keys differ, not by accident.)
+
+**⚠ A failed attempt now CREATES the `otp_sessions` row, and the row is
+deliberately not a session.** Before A2 a row appeared only on success, so a
+failure had nowhere to be recorded and the two columns were unreachable. The
+counter row is written with `verified_at` NULL and `expires_at` = now, so
+`PortalSessionContextResolver` refuses it on **two** independent checks — proven
+against real Postgres in `portal-otp-lockout.integration.test.ts`, because
+"counting a failure accidentally mints the credential that failing withheld" is
+the way this could have gone badly. It is bounded: `link_token_hash` is
+`@unique`, so one link can only ever produce one row.
+
+**What is NOT counted:** a link token that does not verify. There is no chase
+behind it, so no tenant to write under — and nothing to brute-force either, since
+the token is 256 bits of HMAC. Counting it would let an anonymous caller create
+rows by sending noise.
+
+**⚠ THE ORDER OF CHECKS CHANGED, and it improved the timing story.**
+`createSession` used to verify link and OTP together and resolve the chase only
+after both passed — so a SUCCESS was measurably slower than any failure, which is
+the distinction that matters. Counting needs a tenant anchor, so the chase now
+resolves for every request whose link verifies. What is still distinguishable is
+"this link verifies" (which its holder already knows); what is now
+indistinguishable is right code versus wrong.
+
+**`OTP_MODE=totp` compares against `otp_sessions.otp_hash` / `otp_expires_at`**,
+not RFC 6238 — a client holding a forwarded link on a borrowed phone has no
+authenticator app and never will, so the portal's factor is a one-time code we
+mint and send, which is exactly what those two columns describe. The hash is a
+plain SHA-256 and `otp-attempts.ts` is honest that six digits is 20 bits and
+therefore trivially reversible by anyone holding the column: what it buys is that
+the code is not sitting in the clear next to the row saying who it went to. The
+real defence is the counter and the short expiry.
+
+⚠ **Nothing mints that code yet, so `totp` fails CLOSED here.** Writing
+`otp_hash` belongs to whoever sends it — the chase link is minted in
+`modules/chase` (A13), and the invited-client route is
+`POST /v1/portal/sign-in-codes`, which `openapi.yaml` publishes and no controller
+implements. Both are outside A2's owned paths. Until one lands, `OTP_MODE=totp`
+means no portal session can be opened, which is the honest state and is better
+than the one it replaces.
 
 ## The three endpoints, and the two decisions inside them
 
@@ -353,7 +415,7 @@ duplicate document, and the alternative is a migration this stage may not make.
 |---|---|---|
 | `PORTAL_SESSION_SECRET` | **Stage 9** | Signs the bearer. Empty = fail closed (refuses to sign or verify). No production boot-refusal — the SESSION_SECRET stance. |
 | `PORTAL_LINK_SECRET` | Stage 8 | Verifies the SMS link. Reused, not re-declared. |
-| `OTP_MODE` | Stage 1 | **Reused, not duplicated** — auth-tenancy already declared it and checks the same fixed code. `demo` → the OTP is the literal `000000`. `// DEMO-MOCK: Twilio Verify`. |
+| `OTP_MODE` | Stage 1, extended by S1 | **Reused, not duplicated** — auth-tenancy already declared it. `demo` → the literal `000000`, and S1 REFUSES `demo` under `NODE_ENV=production`. `totp` → the minted code in `otp_sessions.otp_hash` (A2). |
 
 A **second** secret rather than reusing `PORTAL_LINK_SECRET` on purpose: the link
 is a 24 h public URL handed to whoever holds the paperwork; the bearer is a
@@ -507,7 +569,18 @@ ordinary `pnpm test` with docker up.
 - [ ] Post-demo: give the **link** token a `practiceId` claim (a chase-module
       format change, so a Stage 8 decision) and the practice sweep in
       `resolveChase` collapses to a single lookup.
-- [ ] Post-demo: rate limiting per number and per IP (SoT §15 — "rate limiting
-      per number and per IP"). METH Stage 9 says *"Rate-limit nothing"*, so
-      `otp_sessions.attempts` / `locked_until` are deliberately unused.
+- [x] **A2: `otp_sessions.attempts` / `locked_until` are read and written.** Five
+      wrong codes per link, then fifteen minutes, with the uniform `NT-OTP-001`.
+      Proven against real Postgres in `portal-otp-lockout.integration.test.ts`.
+- [ ] **Per-IP limiting is still absent, deliberately.** `main.ts` never calls
+      `app.set('trust proxy', …)`, so behind the ALB `req.ip` is the load
+      balancer for every request — an IP ceiling would be one global ceiling for
+      every client at once, and `X-Forwarded-For` without `trust proxy` is an
+      attacker-supplied header. `main.ts` is not this stage's path. SoT §15's
+      "per number and per IP" needs that wired first.
+- [ ] **Nothing writes `otp_sessions.otp_hash`, so `OTP_MODE=totp` opens no
+      portal session.** The chase sender is A13's; the invited-client route is
+      `POST /v1/portal/sign-in-codes`, contracted and unimplemented. Whoever
+      lands either must hash the code with `hashOtp` from `otp-attempts.ts` and
+      set `otp_expires_at` — a null expiry is refused, on purpose.
 - [ ] Update this file on exit — it is how the next session picks up.

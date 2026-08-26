@@ -10,8 +10,18 @@ import { BusinessesController } from './businesses.controller.js';
 import { BusinessesService } from './businesses.service.js';
 import { PracticeSignupService } from './practice-signup.service.js';
 import { PracticesController } from './practices.controller.js';
+import { InMemorySignInThrottle, type SignInThrottle } from './sign-in-throttle.js';
 import { RecordingSignupMailer, type SignupMailer } from './signup-mailer.js';
-import { AUTH_SERVICE, BUSINESSES_SERVICE, PRACTICE_SIGNUP_SERVICE, PRISMA, SIGNUP_MAILER } from './tokens.js';
+import { TotpEnrolmentService } from './totp-enrolment.service.js';
+import {
+  AUTH_SERVICE,
+  BUSINESSES_SERVICE,
+  PRACTICE_SIGNUP_SERVICE,
+  PRISMA,
+  SIGN_IN_THROTTLE,
+  SIGNUP_MAILER,
+  TOTP_ENROLMENT_SERVICE,
+} from './tokens.js';
 
 /**
  * The demo-auth surface (METH Stage 1, issue #118). The Prisma client is the
@@ -29,8 +39,25 @@ import { AUTH_SERVICE, BUSINESSES_SERVICE, PRACTICE_SIGNUP_SERVICE, PRISMA, SIGN
   providers: [
     { provide: PRISMA, useFactory: () => getPrismaClient() },
     {
+      // ⚠ ONE INSTANCE FOR THE PROCESS. Nest providers are singletons by
+      // default and this one depends on it: a throttle rebuilt per request
+      // counts every attempt as the first. The counters are in memory, so the
+      // ceiling is really per API task — `sign-in-throttle.ts` states the cost
+      // and names the Redis follow-up.
+      provide: SIGN_IN_THROTTLE,
+      useFactory: (): SignInThrottle => new InMemorySignInThrottle(),
+    },
+    {
       provide: AUTH_SERVICE,
-      useFactory: (prisma: PrismaClient, env: Env) => new AuthService(prisma, env),
+      useFactory: (prisma: PrismaClient, env: Env, throttle: SignInThrottle) => new AuthService(prisma, env, throttle),
+      inject: [PRISMA, ENV, SIGN_IN_THROTTLE],
+    },
+    {
+      // The QR-enrolment half of A2. ⚠ No controller injects it, because
+      // `openapi.yaml` publishes no TOTP operation (G7) — see
+      // `totp-enrolment.service.ts` for the gap and what it blocks.
+      provide: TOTP_ENROLMENT_SERVICE,
+      useFactory: (prisma: PrismaClient, env: Env) => new TotpEnrolmentService(prisma, env),
       inject: [PRISMA, ENV],
     },
     {
