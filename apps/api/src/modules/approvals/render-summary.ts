@@ -103,6 +103,41 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
         { heading: 'Documents', entries: ids.map((id, i) => ({ label: `Document ${i + 1}`, value: id })) },
       ]);
     }
+    case 'document.reject': {
+      // The reason VERBATIM, as its own entry — the contract calls it
+      // "surfaced verbatim in the Rejected view", and the review is where a
+      // human agrees to the words that will sit on someone's document.
+      const ids = stringArray(payload['documentIds']);
+      return summary(`Reject ${count(ids.length, 'document')}`, [
+        {
+          heading: 'Reason, exactly as it will be recorded',
+          entries: [{ label: 'Reason', value: text(payload['reason']) }],
+        },
+        { heading: 'Documents', entries: ids.map((id, i) => ({ label: `Document ${i + 1}`, value: id })) },
+      ]);
+    }
+    case 'document.reprocess': {
+      // ⚠ The card states the LIMIT, not just the intent. `reprocess-document.ts`
+      // clears the failure and re-decides readiness; it does not read the bytes
+      // again, because nothing here can enqueue a pipeline job yet. Review →
+      // Approve promises that what was shown is what happens, so the shortfall
+      // belongs on the card a human approves rather than in a file they will
+      // never open.
+      const ids = stringArray(payload['documentIds']);
+      const fromStage = payload['fromStage'];
+      return summary(`Retry ${count(ids.length, 'document')}`, [
+        {
+          heading: 'What this does',
+          entries: [
+            { label: 'Clears the failure reason', value: 'Yes' },
+            { label: 'Re-checks Total, Supplier and Category', value: 'Yes — the document returns to Ready or To Review' },
+            { label: 'Reads the document again', value: 'No — extraction is not re-run' },
+            ...(fromStage == null ? [] : [{ label: 'Requested from stage', value: text(fromStage) }]),
+          ],
+        },
+        { heading: 'Documents', entries: ids.map((id, i) => ({ label: `Document ${i + 1}`, value: id })) },
+      ]);
+    }
     case 'rule.create': {
       // The rule the approval activates — fields, tier and scope spelled out
       // (METH S13): a reviewer must see exactly what will start coding their
@@ -135,8 +170,9 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
     }
     default:
       // Honest generic rendering for the kinds whose stages have not shaped a
-      // richer card yet (move-business, reprocess, reject, split,
-      // bank.confirm-match): every payload member, named.
+      // richer card yet (move-business, split, revoke-link, bank.confirm-match):
+      // every payload member, named. `reprocess` and `reject` left this list in
+      // stage A12.
       return summary(`${kind}`, [
         {
           heading: 'Proposed action',
