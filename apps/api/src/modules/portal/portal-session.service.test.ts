@@ -5,6 +5,7 @@ import { expect, test } from 'vitest';
 import type { PrismaClient } from '../../common/db/prisma.js';
 import type { AppException } from '../../common/problem/problem.js';
 import { signPortalLink } from '../chase/index.js';
+import { hashOtp, PORTAL_OTP_LOCKOUT_MS, PORTAL_OTP_MAX_ATTEMPTS } from './otp-attempts.js';
 import type { PortalSessionFacts } from './portal-session-context.js';
 import { PORTAL_SESSION_TTL_MS, verifyPortalSessionToken } from './portal-session-token.js';
 import { PortalSessionService } from './portal-session.service.js';
@@ -33,6 +34,11 @@ interface OtpRow {
   grantedItemIds: string[];
   verifiedAt: Date | null;
   expiresAt: Date;
+  /** A2 — the four columns the schema always had and nothing read until now. */
+  attempts: number;
+  lockedUntil: Date | null;
+  otpHash: string | null;
+  otpExpiresAt: Date | null;
 }
 
 interface Fixture {
@@ -83,7 +89,7 @@ function fakePrisma(fixture: Fixture): PrismaClient {
       upsert: async ({ where, create, update }: { where: { linkTokenHash: string }; create: Partial<OtpRow>; update: Partial<OtpRow> }) => {
         const existing = fixture.otpSessions.find((row) => row.linkTokenHash === where.linkTokenHash);
         if (existing !== undefined) return Object.assign(existing, update);
-        const row = { id: `otp_${nextId++}`, grantedItemIds: [], ...create } as OtpRow;
+        const row = { id: `otp_${nextId++}`, grantedItemIds: [], attempts: 0, lockedUntil: null, otpHash: null, otpExpiresAt: null, ...create } as OtpRow;
         fixture.otpSessions.push(row);
         return row;
       },
@@ -247,6 +253,10 @@ test('grantItems pushes only the ids the session does not already hold', async (
         grantedItemIds: ['doc_a'],
         verifiedAt: new Date(NOW),
         expiresAt: new Date(NOW + PORTAL_SESSION_TTL_MS),
+        attempts: 0,
+        lockedUntil: null,
+        otpHash: null,
+        otpExpiresAt: null,
       },
     ],
   });
@@ -272,4 +282,153 @@ test('grantItems pushes only the ids the session does not already hold', async (
 test('an empty PORTAL_LINK_SECRET fails closed and loud, never as a quiet accept', async () => {
   const service = new PortalSessionService(fakePrisma(fixture()), { ...config, portalLinkSecret: '' });
   await expect(service.createSession({ linkToken: link(), otp: '000000' }, NOW)).rejects.toThrow(/PORTAL_LINK_SECRET/);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A2 — attempt counting and lockout on otp_sessions.attempts / locked_until
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('A2: a wrong code is COUNTED, on a row that is deliberately not a session', async () => {
+  const db = fixture();
+  const token = link();
+  const service = new PortalSessionService(fakePrisma(db), config);
+
+  await grab(() => service.createSession({ linkToken: token, otp: '111111' }, NOW));
+
+  const row = db.otpSessions[0];
+  expect(row?.attempts).toBe(1);
+  expect(row?.lockedUntil).toBeNull();
+  // ⚠ Before A2 an `otp_sessions` row appeared only on SUCCESS, so a failure
+  // had nowhere to be recorded and both columns were unreachable. The row this
+  // creates is a counter, not a credential: `PortalSessionContextResolver`
+  // refuses it on `verifiedAt === null` AND on `expiresAt <= now`, two
+  // independent checks.
+  expect(row?.verifiedAt).toBeNull();
+  expect(row?.expiresAt).toEqual(new Date(NOW));
+  expect(row?.linkTokenHash).toBe(createHash('sha256').update(token).digest('hex'));
+  // One link, one row, however many wrong codes — `link_token_hash` is unique,
+  // so an unauthenticated caller cannot grow the table.
+  await grab(() => service.createSession({ linkToken: token, otp: '222222' }, NOW));
+  expect(db.otpSessions).toHaveLength(1);
+  expect(db.otpSessions[0]?.attempts).toBe(2);
+});
+
+test('A2 REFUSAL: five wrong codes lock the link, and the RIGHT code then gets the SAME 401', async () => {
+  const db = fixture();
+  const token = link();
+  const service = new PortalSessionService(fakePrisma(db), config);
+
+  for (let attempt = 0; attempt < PORTAL_OTP_MAX_ATTEMPTS; attempt += 1) {
+    const error = await grab(() => service.createSession({ linkToken: token, otp: '111111' }, NOW));
+    expect(error.code).toBe('NT-OTP-001');
+  }
+  expect(db.otpSessions[0]?.lockedUntil).toEqual(new Date(NOW + PORTAL_OTP_LOCKOUT_MS));
+
+  // ⚠ THE SAME 401, WORD FOR WORD. `openapi.yaml` requires every verification
+  // failure here to be indistinguishable — a distinct "this link is locked"
+  // would confirm that the link names a real chase, which is exactly what the
+  // uniform code exists to refuse. (Contrast the sign-in lane, whose 429 is
+  // keyed on a string the CALLER typed and so reveals nothing.)
+  const locked = await grab(() => service.createSession({ linkToken: token, otp: '000000' }, NOW));
+  expect(locked.code).toBe('NT-OTP-001');
+  expect(locked.getStatus()).toBe(401);
+  expect(locked.publicDetail).toBe('The link or verification code did not verify. Request a fresh link if this one has expired.');
+
+  // A locked link stops COUNTING too — the refusal is before the compare, so a
+  // flood cannot inflate the number or extend the lock for ever.
+  expect(db.otpSessions[0]?.attempts).toBe(PORTAL_OTP_MAX_ATTEMPTS);
+});
+
+test('A2: the lock lifts with the window, and a success clears the counter', async () => {
+  const db = fixture();
+  const token = link();
+  const service = new PortalSessionService(fakePrisma(db), config);
+
+  for (let attempt = 0; attempt < PORTAL_OTP_MAX_ATTEMPTS; attempt += 1) {
+    await grab(() => service.createSession({ linkToken: token, otp: '111111' }, NOW));
+  }
+  const after = NOW + PORTAL_OTP_LOCKOUT_MS + 1;
+  await expect(service.createSession({ linkToken: token, otp: '000000' }, after)).resolves.toBeDefined();
+
+  // Carrying five attempts into the next visit would lock this client out on
+  // their first slip, for a mistake they already corrected.
+  expect(db.otpSessions[0]?.attempts).toBe(0);
+  expect(db.otpSessions[0]?.lockedUntil).toBeNull();
+  expect(db.otpSessions[0]?.verifiedAt).toEqual(new Date(after));
+});
+
+test('A2: one link locking does not touch another link on the same chase', async () => {
+  const db = fixture();
+  const service = new PortalSessionService(fakePrisma(db), config);
+  const locked = link();
+  const fresh = signPortalLink({ chaseId: 'chase_1', expSeconds: 7200 }, LINK_SECRET, NOW + 1);
+
+  for (let attempt = 0; attempt < PORTAL_OTP_MAX_ATTEMPTS; attempt += 1) {
+    await grab(() => service.createSession({ linkToken: locked, otp: '111111' }, NOW));
+  }
+  await expect(service.createSession({ linkToken: fresh, otp: '000000' }, NOW)).resolves.toBeDefined();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A2 — OTP_MODE=totp: the code comes from otp_sessions.otp_hash, not from source
+// ─────────────────────────────────────────────────────────────────────────────
+
+const realOtp = { ...config, otpMode: 'totp' } as const;
+
+/** A link whose session row already carries a minted code, as a sender would leave it. */
+function withMintedCode(otp: string, expiresAt: Date): { db: Fixture; token: string } {
+  const token = link();
+  const db = fixture({
+    otpSessions: [
+      {
+        id: 'otp_minted',
+        linkTokenHash: createHash('sha256').update(token).digest('hex'),
+        businessId: 'biz_burger',
+        chaseId: 'chase_1',
+        requestedFromContactId: 'contact_1',
+        userId: null,
+        scope: 'DELEGATED_UPLOAD',
+        grantedItemIds: [],
+        verifiedAt: null,
+        expiresAt,
+        attempts: 0,
+        lockedUntil: null,
+        otpHash: hashOtp(otp),
+        otpExpiresAt: expiresAt,
+      },
+    ],
+  });
+  return { db, token };
+}
+
+test('A2: under totp the portal verifies the MINTED code, and the published 000000 stops working', async () => {
+  const { db, token } = withMintedCode('483920', new Date(NOW + 10 * 60 * 1000));
+  const service = new PortalSessionService(fakePrisma(db), realOtp);
+
+  const fixed = await grab(() => service.createSession({ linkToken: token, otp: '000000' }, NOW));
+  expect(fixed.code).toBe('NT-OTP-001');
+
+  await expect(service.createSession({ linkToken: token, otp: '483920' }, NOW)).resolves.toBeDefined();
+  expect(db.otpSessions[0]?.verifiedAt).toEqual(new Date(NOW));
+});
+
+test('A2 REFUSAL: under totp, a session with NO minted code cannot be opened at all', async () => {
+  // The honest intermediate state: nothing in A2's owned paths mints a code —
+  // the chase sender is A13's and `POST /portal/sign-in-codes` is contracted and
+  // unimplemented. Failing closed is the point, not a bug.
+  const db = fixture();
+  const service = new PortalSessionService(fakePrisma(db), realOtp);
+  for (const otp of ['000000', '483920']) {
+    const error = await grab(() => service.createSession({ linkToken: link(), otp }, NOW));
+    expect(error.code).toBe('NT-OTP-001');
+  }
+});
+
+test('A2 REFUSAL: an EXPIRED minted code is refused even though it is the right six digits', async () => {
+  const { db, token } = withMintedCode('483920', new Date(NOW - 1));
+  const service = new PortalSessionService(fakePrisma(db), realOtp);
+  const error = await grab(() => service.createSession({ linkToken: token, otp: '483920' }, NOW));
+  expect(error.code).toBe('NT-OTP-001');
+  // …and it still counted as an attempt, so guessing around an expiry is not free.
+  expect(db.otpSessions[0]?.attempts).toBe(1);
 });

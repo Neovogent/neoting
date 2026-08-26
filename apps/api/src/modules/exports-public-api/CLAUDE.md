@@ -45,23 +45,92 @@ pnpm --filter @neoting/api test -- exports-public-api
 
 ## Current state
 
-**Stage A7 has landed: the canonical model and the VT Transaction+ emitter.** Pure domain
-code — no controller, no Prisma, no NestJS module, nothing registered in `app.module.ts`.
-That is deliberate: A9 owns the HTTP surface and the screen, and this stage is the thing
-A9 calls.
+**A7 (the canonical model + the VT emitter) and A8 (the source-document link) have both
+landed.** A7 is pure domain code. A8 added the module's first Prisma access, its first
+NestJS module and its **only** controller — `GET /d/{code}`, the one route in this API
+outside the session wall.
 
 ```
 canonical/canonical-row.ts       the model — two record families, signed integer pence
+canonical/money.ts               integer pence → 2dp, shared by the VT cells and the manifest
 emitters/export-emitter.ts       the seam: one emitter per target
 emitters/select-emitter.ts       target → emitter, typed Record<ExportTarget, …>
 emitters/csv/csv.ts              the serialiser (hand-written, no dependency)
 emitters/csv/encoding.ts         ⚠ THE ENCODING DECISION POINT — see below
 emitters/vt/…                    the VT Transaction+ emitter, its format rules, its guards
 emitters/generic-csv/…           GENERIC_CSV, because the contract enum admits it
-index.ts                         the public seam: the model, and `selectEmitter`
+
+links/capability-code.ts         ⚠ THE TOKEN. 40 bits from crypto.randomBytes — read it first
+links/capability-url.ts          the origin, and `code` → CanonicalSourceLink
+links/document-link.service.ts   minting, under the exporter's own scope. Reuse > mint
+links/capability-link.service.ts ⚠ THE UNAUTHENTICATED RESOLVER, and the one unscoped query
+links/capability-link.controller.ts  `GET /d/:code`, at the origin root
+links/link-rate-limit.ts         per-code and per-IP ceilings, memory + Redis
+links/capability-link.module.ts  the wiring; the only thing app.module.ts imports
+
+bundle/zip.ts                    a STORED ZIP writer, hand-rolled — no dependency
+bundle/manifest.ts               the manifest CSV, keyed by capability code
+bundle/source-document-bundle.ts rung 4 assembled: manifest + originals named by code
+index.ts                         the public seam
 ```
 
-`pnpm --filter @neoting/api test -- exports` → 7 files, 67 tests.
+`pnpm --filter @neoting/api test -- exports` → 16 files, 201 tests (14 of them
+integration, skipped without a database).
+
+## ⚠ A8 — `GET /d/{code}`, the one route outside the session wall
+
+**Read `links/capability-link.service.ts`'s header before touching anything in `links/`.**
+It carries the full account; this is the index.
+
+| Property | Where it lives | What proves it |
+|---|---|---|
+| Unguessable | `capability-code.ts` — **8 chars, Crockford base32, 40 bits from `crypto.randomBytes`** | `capability-code.test.ts` — alphabet, bit-slicing, resample, exhaustion |
+| At least one letter | resample, **never** a forced position | same file; plus A7's `assertVtEntryDetailsSafe` and the canonical schema |
+| View-only, one document | `findUnique` on the id the LINK named, nothing else | `capability-link.service.test.ts` |
+| Expiring | `document-link.service.ts`, `practices.document_link_ttl_days` ?? 365 days | `document-link.service.test.ts`, and the real-DB expiry test |
+| Revocable | `document.revoke-link` **proposal**, executor in `validation-dedupe/proposals/revoke-link.ts` | `revoke-link.test.ts` + the real-engine integration test |
+| Access-logged | `document_links.access_count`/`last_accessed_at` + a `document_events` row | integration test asserts both move |
+| Rate-limited | `link-rate-limit.ts` — 60/code/hour, 300/IP/hour, IP consumed **first** | `link-rate-limit.test.ts` |
+
+**404 vs 410 — this route deliberately breaks the house rule, and both the contract and
+`rls.sql` §4b instruct it to.** Unknown *or malformed* → **404 `NT-VAL-001`**; revoked or
+expired → **410 `NT-EXP-002`**. There is no 403 and no 400 anywhere on the route (the
+contract declares neither). The reasoning is written in both LAW files: the code is
+CSPRNG-generated and rate-limited, so "this code once existed" is not a useful oracle,
+while an accountant holding a dead link needs to know it was revoked rather than mistyped.
+**Do not unify it back to a single 404 without changing `openapi.yaml` and `rls.sql` too.**
+
+**The one unscoped query.** `app_resolve_document_link(code)` on the root client, isolated
+in `CapabilityLinkService.resolveLinkRow`, bound-parameter only. `rls.sql` §4b spends fifty
+lines on why it exists and which two alternatives were rejected. Everything after it
+re-enters through `scopedDb(systemContext(...))`. The integration test proves both halves:
+a contextless `SELECT … FROM document_links` returns **nothing**, and the function returns
+exactly six opaque columns.
+
+## ⚠ Three things A8 could not fix from inside this module
+
+Each is one line somewhere outside `exports-public-api/`, and each is recorded rather than
+worked around.
+
+1. **`main.ts` does not `app.set('trust proxy', …)`.** Express's `req.ip` is therefore the
+   *socket* address, so behind the ALB and CloudFront the per-IP ceiling degrades into one
+   global ceiling on this route. It fails in the safe direction and `PER_IP_HOURLY` (300)
+   is sized for the degraded mode, but it is not the control it is meant to be until that
+   line exists. Reading `X-Forwarded-For` by hand would be worse than useless.
+2. **There is no `CAPABILITY_LINK_ORIGIN` env key**, so `capability-url.ts` carries the
+   contract's own declared origin as a default and `capability-link.module.ts` is where an
+   override attaches. A code minted against the wrong origin is inside a customer's ledger
+   before anyone notices.
+3. **There is no `CAPABILITY_LINK_RATE_LIMIT` env key**, so the module takes a
+   `sharedCounters: boolean` and `app.module.ts` currently derives it from
+   `EMAIL_RATE_LIMIT` — the repo's only existing "are limits shared across processes?"
+   switch, read for a purpose its name does not describe.
+
+**The access log is a `document_events` row, not an `audit_events` one**, and that is a
+recorded shortfall. The hash-chained writer lives in `modules/approvals/audit-writer.ts`
+with no public seam; a second implementation of a hash chain is a chain that fails
+verification the first time two canonicalisations disagree. Promoting it means moving that
+writer to `common/audit/`.
 
 ## ⚠ A10 — the two lines you came here to change
 
@@ -99,17 +168,37 @@ machine**. Neither produces a stack trace we would ever see.
    defect in the minting, not customer data. An empty cell is allowed. The canonical
    schema refuses a letterless code as well, so there are two locks on that door.
 
-## Where A8 attaches
+## Where A9 attaches — the seam A8 left filled
 
-`CanonicalSourceLink { code, url }` in `canonical/canonical-row.ts` is the seam, and it is
-nullable **only** because A8 has not merged. A8 fills it; nothing else has to change.
+`CanonicalSourceLink { code, url }` in `canonical/canonical-row.ts` was A7's seam and A8
+fills it. **A9's only job on this axis is to call one method and put the answer on the
+row:**
+
+```ts
+const links = await documentLinkService.linksFor(ctx, documentIds); // Map<documentId, link>
+const rows = documents.map((d) => ({ ...canonicalRow(d), sourceLink: links.get(d.id) ?? null }));
+```
 
 - **`code` → `Entry details`**, in `entryDetailsCell()`. Schema-enforced: contains a
   letter, at most 20 characters (targets truncate silently at 30 and ~25).
 - **`url` → `Transaction notes`**, in `transactionNotesCell()`, with the code and
   `VT_PROVENANCE_TAG`.
-- Until then every row raises a `source-link-missing` warning. An export that is quietly
-  linkless is the D43 failure this surface exists to prevent.
+- A row whose document was invisible, unrouted or absent gets **no** entry in that map and
+  therefore still raises `source-link-missing`. Keep that: an export that is quietly
+  linkless is the D43 failure this surface exists to prevent. Do not substitute a
+  placeholder to make the warning stop.
+- `linksFor` is capped at `MAX_LINKS_PER_CALL` (500) and refuses beyond it with the
+  contract's own `NT-EXP-003`, so A9's batch cap and this one are the same number.
+
+For rung 4, `buildSourceDocumentBundle({ documents, readBytes })` returns the ZIP plus its
+own warnings; hand it the config-selected `DocumentStore` as `{ read: (k) => store.get(k) }`.
+
+⚠ **A measurement A10 should carry into the field:** the full URL is **31 characters before
+the code** (`https://neoacc.neovogent.com/d/`). It does not fit a 25- or 30-character
+reference field and never could. That is not a defect — it is why D43 is a ladder: the bare
+**code** goes in `Entry details` (8 characters, fits anything), the **URL** goes in
+`Transaction notes` (VT documents it as unlimited), and the **bundle** works when neither
+does. `capability-url.test.ts` pins the measurement.
 
 ## Decisions made here, with their reasons
 
@@ -133,11 +222,24 @@ nullable **only** because A8 has not merged. A8 fills it; nothing else has to ch
 
 ## TODO
 
-- [ ] **A8** — the capability token, `GET /d/{code}`, and the manifest + ZIP bundle
-      (D43 rungs 2 and 4). The model seam is ready; see "Where A8 attaches".
+- [x] **A8** — the capability token, `GET /d/{code}`, revocation on the Approve path, and
+      the manifest + ZIP bundle. All four D43 rungs. **No new dependency was taken**: the
+      ZIP writer is `bundle/zip.ts`, STORED-method only, and its tests read the archive
+      back with an independent parser.
+- [ ] **A8 follow-ups that need a path outside this module** — the three in
+      "⚠ Three things A8 could not fix": `trust proxy` in `main.ts`, and the
+      `CAPABILITY_LINK_ORIGIN` / `CAPABILITY_LINK_RATE_LIMIT` keys in `config/env.ts`.
+      The trust-proxy one is the only one that is a real weakening today.
+- [ ] A shaped review card for `document.revoke-link`. `approvals/render-summary.ts` falls
+      back to naming every payload member, so a reviewer sees the id list and the reason —
+      correct, but the contract asks for *"revoke the eleven links in January's export"*.
+- [ ] A per-IP **miss** counter on `/d/{code}` (a third scope in `link-rate-limit.ts`).
+      Legitimate traffic almost never 404s and a brute force is 100% misses, so it is the
+      sharper control. Not load-bearing at 40 bits; worth having if the code ever shortens.
 - [ ] **A9** — the HTTP surface (`listExports`, `createExport`) and the export screen.
-      Nothing here is registered in `app.module.ts` yet, on purpose.
-- [ ] **A10** — settle the two constants above against a real VT on Windows.
+      Only `CapabilityLinkModule` is registered in `app.module.ts` so far.
+- [ ] **A10** — settle the two constants above against a real VT on Windows, and confirm
+      the click-through. If the URL is inert, rung 4 becomes the primary route.
 - [ ] Bank lines still ride the general UIS layout. §24.3.1 notes VT has a dedicated
       bank-statement import mode (Date / Description / Payment / Receipt); that second file
       is not built, and bank statement extraction is on the launch plan's cut list.

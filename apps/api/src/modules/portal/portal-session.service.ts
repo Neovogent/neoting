@@ -8,6 +8,13 @@ import { type ScopedClient, scopedDb } from '../../common/db/scoped-db.js';
 import { AppException } from '../../common/problem/problem.js';
 import type { Env } from '../../config/env.js';
 import { verifyPortalLink } from '../chase/index.js';
+import {
+  isOtpLocked,
+  type OtpAttemptState,
+  OTP_ATTEMPTS_CLEARED,
+  nextOtpAttempt,
+  otpMatches,
+} from './otp-attempts.js';
 import type { PortalSessionFacts } from './portal-session-context.js';
 import { PORTAL_SESSION_TTL_MS, signPortalSessionToken } from './portal-session-token.js';
 
@@ -32,7 +39,15 @@ import { PORTAL_SESSION_TTL_MS, signPortalSessionToken } from './portal-session-
  * matching document actually arrives.
  */
 
-/** The fixed demo verification code (METH_MODE §7, shared with auth-tenancy's TOTP). */
+/**
+ * The fixed demo verification code (METH_MODE §7, shared with auth-tenancy's
+ * TOTP).
+ *
+ * ⚠ Reachable only under `OTP_MODE=demo`, which `config/env.ts` REFUSES under
+ * `NODE_ENV=production` as of launch stage A2. It used to be the whole of the
+ * portal's authentication: one code, on every session, for every client of every
+ * practice, published here.
+ */
 const DEMO_OTP_CODE = '000000';
 
 export interface PortalSessionConfig {
@@ -51,6 +66,17 @@ export interface CreatePortalSessionInput {
 export interface IssuedPortalSession {
   readonly token: string;
   readonly expiresAt: Date;
+}
+
+/**
+ * The verification-state columns of an `otp_sessions` row, read before the code
+ * is compared: the counter, the lock, and the minted code this link is waiting
+ * for. All four have existed in `prisma/schema.prisma` since it was written and
+ * none of them was read by anything until A2.
+ */
+interface AttemptRow extends OtpAttemptState {
+  readonly otpHash: string | null;
+  readonly otpExpiresAt: Date | null;
 }
 
 /** What the practice-scoped bootstrap read out of the chase before any session existed. */
@@ -73,23 +99,50 @@ export class PortalSessionService {
     private readonly config: PortalSessionConfig,
   ) {}
 
+  /**
+   * Link token + OTP → a portal bearer, with the attempts counted (A2).
+   *
+   * ⚠ **THE ORDER CHANGED IN A2, AND IT IMPROVED THE TIMING STORY RATHER THAN
+   * WEAKENING IT.** This method used to check the link and the OTP together and
+   * only resolve the chase once BOTH had passed — so a successful verification
+   * was measurably slower than any failure, which is the distinction that
+   * actually matters. Counting an attempt needs somewhere to write it, and the
+   * only tenant anchor available is the chase, so the resolution now happens for
+   * every request whose LINK verifies. What remains distinguishable is
+   * "verifies" versus "does not", and a caller already knows which link they
+   * were given; what is now indistinguishable is right code versus wrong, which
+   * is the pair `NT-OTP-001` exists for.
+   *
+   * An empty `PORTAL_LINK_SECRET` still throws rather than returning a verdict:
+   * fail closed and loud, the house stance for an unset secret.
+   */
   async createSession(input: CreatePortalSessionInput, nowMs: number = Date.now()): Promise<IssuedPortalSession> {
-    // BOTH checks always run before the branch. Short-circuiting on the link
-    // would make a wrong-OTP attempt measurably different from a bad-link one
-    // and leak which half failed — the single NT-OTP-001 exists to hide exactly
-    // that. (An empty PORTAL_LINK_SECRET throws here rather than returning a
-    // verdict: fail closed and loud, the house stance for an unset secret.)
     const link = verifyPortalLink(input.linkToken, this.config.portalLinkSecret, nowMs);
-    const otpValid = this.verifyOtp(input.otp);
-    if (!link.ok || !otpValid) throw verificationFailed();
+    // A token that is not ours anchors nothing, so there is nothing to count it
+    // against — and nothing worth counting either: it is 256 bits of HMAC, not
+    // a six-digit code (`otp-attempts.ts` states the full argument).
+    if (!link.ok) throw verificationFailed();
 
     const resolved = await this.resolveChase(link.chaseId);
     // A signed link naming a chase that is gone (or whose business has no
     // practice, so no SYSTEM actor can reach it). Same 401 as everything else.
     if (resolved === null) throw verificationFailed();
 
+    const linkTokenHash = hashLinkToken(input.linkToken);
+    const attemptState = await this.readAttemptState(resolved, linkTokenHash);
+
+    // Locked: refuse BEFORE comparing the code, so a locked link cannot be used
+    // as an oracle that answers faster or slower for a right guess, and so the
+    // lock costs the server one read rather than a verification.
+    if (isOtpLocked(attemptState, nowMs)) throw verificationFailed();
+
+    if (!this.verifyOtp(input.otp, attemptState, nowMs)) {
+      await this.recordFailedAttempt(resolved, linkTokenHash, attemptState, nowMs);
+      throw verificationFailed();
+    }
+
     const expiresAt = new Date(nowMs + PORTAL_SESSION_TTL_MS);
-    const otpSessionId = await this.recordSession(resolved, hashLinkToken(input.linkToken), expiresAt, new Date(nowMs));
+    const otpSessionId = await this.recordSession(resolved, linkTokenHash, expiresAt, new Date(nowMs));
 
     // Governance §11: the session is logged, the credential is not. No link
     // token, no OTP, no bearer — the two ids are what an incident needs.
@@ -135,12 +188,91 @@ export class PortalSessionService {
     return [...facts.grantedItemIds, ...missing];
   }
 
-  // DEMO-MOCK: Twilio Verify (SoT §15 — "Twilio … Verify for OTP") replaces this
-  // fixed-code check. The mode switch stays explicit so the real verifier lands
-  // as a new branch on OTP_MODE, not a rewrite of the callers — the same shape
-  // auth-tenancy's TOTP check uses, and the same fixed code.
-  private verifyOtp(otp: string): boolean {
-    return this.config.otpMode === 'demo' && otp === DEMO_OTP_CODE;
+  /**
+   * The OTP, both modes (launch stage A2).
+   *
+   * `demo` is the fixed code, kept so a laptop and CI run the whole client
+   * journey offline, and refused at boot in production (`config/env.ts`).
+   *
+   * `totp` compares against `otp_sessions.otp_hash` / `otp_expires_at` — the
+   * two columns the schema has always carried for a real per-session code. It
+   * is deliberately NOT the RFC 6238 verifier `auth-tenancy` uses: a client
+   * holding a forwarded link on a borrowed phone has no authenticator app and
+   * never will, so the portal's second factor is a one-time code we mint and
+   * send, which is exactly what those columns describe.
+   *
+   * ⚠ **NOTHING MINTS THAT CODE YET, so `totp` fails CLOSED here.** Writing
+   * `otp_hash` belongs to whoever sends the code: the chase link is minted in
+   * `modules/chase` (A13), and the invited-client route is
+   * `POST /v1/portal/sign-in-codes`, which `openapi.yaml` publishes and no
+   * controller implements. Both are outside A2's owned paths. Until one of them
+   * lands, `OTP_MODE=totp` means no portal session can be opened — which is the
+   * honest state, and is better than the alternative it replaces.
+   */
+  private verifyOtp(otp: string, state: AttemptRow | null, nowMs: number): boolean {
+    if (this.config.otpMode === 'demo') return otp === DEMO_OTP_CODE;
+    return otpMatches(state?.otpHash ?? null, state?.otpExpiresAt ?? null, otp, nowMs);
+  }
+
+  /**
+   * The counter, the lock and the minted code for this link — or null if this
+   * link has never been presented before.
+   *
+   * Read under the practice SYSTEM context, the same one `recordSession` writes
+   * under: `otp_sessions` is a tenant table with no delegated branch (see this
+   * module's `CLAUDE.md`), and there is no session yet to be scoped by.
+   */
+  private async readAttemptState(resolved: ResolvedChase, linkTokenHash: string): Promise<AttemptRow | null> {
+    return scopedDb(this.prisma, systemContext(resolved.practiceId, resolved.systemUserId), (db) =>
+      db.otpSession.findUnique({
+        where: { linkTokenHash },
+        select: { attempts: true, lockedUntil: true, otpHash: true, otpExpiresAt: true },
+      }),
+    );
+  }
+
+  /**
+   * Count a wrong code, and lock the link once there have been enough.
+   *
+   * ⚠ **THIS CREATES THE ROW WHEN THERE IS NONE, AND THAT IS THE POINT.** Before
+   * A2 an `otp_sessions` row appeared only on a SUCCESSFUL verification, so
+   * there was nowhere for a failure to be recorded and the counter columns could
+   * never be reached. The row created here is deliberately not a session:
+   * `verified_at` stays NULL and `expires_at` is set to now, so
+   * `PortalSessionContextResolver` refuses it on two independent checks. It is a
+   * counter that happens to live in the sessions table, because that is where
+   * the schema put the counter.
+   *
+   * It is bounded: `link_token_hash` is `@unique`, so one link can produce at
+   * most one row however many wrong codes are sent to it. An unauthenticated
+   * caller cannot grow the table beyond the number of valid links they hold.
+   */
+  private async recordFailedAttempt(
+    resolved: ResolvedChase,
+    linkTokenHash: string,
+    state: AttemptRow | null,
+    nowMs: number,
+  ): Promise<void> {
+    const next = nextOtpAttempt(state, nowMs);
+    await scopedDb(this.prisma, systemContext(resolved.practiceId, resolved.systemUserId), (db) =>
+      db.otpSession.upsert({
+        where: { linkTokenHash },
+        create: {
+          linkTokenHash,
+          businessId: resolved.businessId,
+          chaseId: resolved.chaseId,
+          requestedFromContactId: resolved.requestedFromContactId,
+          scope: 'DELEGATED_UPLOAD',
+          // NOT a session: unverified, and already expired. Both are re-checked
+          // by the resolver, so this row can never be mistaken for a credential.
+          verifiedAt: null,
+          expiresAt: new Date(nowMs),
+          ...next,
+        },
+        update: next,
+        select: { id: true },
+      }),
+    );
   }
 
   /**
@@ -289,6 +421,11 @@ export class PortalSessionService {
       userId: resolved.delegatedUserId,
       verifiedAt,
       expiresAt,
+      // A verification that succeeded clears the counter and the lock (A2).
+      // Without this a client who mistyped four times and then got it right
+      // would carry four attempts into their next visit and be locked out on
+      // one further slip — punished for a mistake they had already corrected.
+      ...OTP_ATTEMPTS_CLEARED,
     };
 
     return scopedDb(this.prisma, systemContext(resolved.practiceId, resolved.systemUserId), async (db) => {

@@ -13,6 +13,7 @@ import { ChaseModule } from './modules/chase/chase.module.js';
 import { ChatFrameworkModule } from './modules/chat-framework/chat.module.js';
 import { ClientsTeamSettingsModule } from './modules/clients-team-settings/clients-team-settings.module.js';
 import { DocumentsModule } from './modules/documents/documents.module.js';
+import { CapabilityLinkModule } from './modules/exports-public-api/index.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { WebUploadModule } from './modules/ingestion-routing/web-upload/web-upload.module.js';
 import { WhatsAppWebhookModule } from './modules/ingestion-routing/webhooks/whatsapp/whatsapp.module.js';
@@ -28,6 +29,13 @@ import { RulesSuggestionsModule } from './modules/rules-suggestions/rules-sugges
     ApprovalsModule,
     AuthTenancyModule,
     BankingMatchingModule,
+    // ⚠ `GET /d/{code}` — the D43 capability URL, and the ONE route in this app
+    // outside the session wall. It is registered here like any other module,
+    // and it is deliberately the only one that resolves no `ScopeContext`:
+    // the token IS the authorisation. Read
+    // `exports-public-api/links/capability-link.service.ts` before changing
+    // anything about it. `config/routing.ts` keeps it off the `/v1` prefix.
+    CapabilityLinkModule,
     ChaseModule,
     ChatFrameworkModule,
     ClientsTeamSettingsModule,

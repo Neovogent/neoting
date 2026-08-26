@@ -11,6 +11,7 @@ import {
   type ProposalPayloadMap,
 } from './proposal-executor.js';
 import { createPublishBatchExecutor, type PublishGateway } from './publish-batch.js';
+import { revokeLinkExecutor } from './revoke-link.js';
 import { routeDocumentExecutor } from './route-document.js';
 import { ruleCreateExecutor } from './rule-create.js';
 import { updateCodingExecutor } from './update-coding.js';
@@ -40,15 +41,15 @@ export interface ExecutorRegistryDeps {
  * runtime `NT-PRP-001` guard for a wire value outside the enum stays the
  * second line of defence, not the first.
  *
- * Seven real executors, four honest holes: a registry with named
+ * Eight real executors, four honest holes: a registry with named
  * unimplemented kinds beats half-executors, and it means the engine (METH S3,
  * #122) wires against the full enum on day one. Each hole throws
  * `ProposalNotImplementedError` carrying its kind — loudly, before any write.
  * All four METH Stage 2 kinds (issue #120) now have executors: `chase.send`
  * left the hole list in METH S8, `publish.batch` in METH S10,
- * `bank.confirm-match` in METH S11 and `rule.create` in METH S13 (#142); the
- * remaining #81 four (`move-business`, `reprocess`, `reject`, `split`) each
- * need their own issue.
+ * `bank.confirm-match` in METH S11, `rule.create` in METH S13 (#142) and
+ * `document.revoke-link` in launch stage A8; the remaining #81 four
+ * (`move-business`, `reprocess`, `reject`, `split`) each need their own issue.
  *
  * A FACTORY, not a Nest provider: the engine module builds it inside its own
  * `useFactory` and keeps the token out of its public providers, so no executor
@@ -77,14 +78,16 @@ export function buildExecutorRegistry(deps: ExecutorRegistryDeps): ExecutorRegis
     // only by the approved proposal it records as `actionProposalId`.
     'rule.create': ruleCreateExecutor,
     // document.revoke-link arrived with the ID LAW batch (S0) ahead of its
-    // executor, the same way the METH Stage 2 kinds did. It is a hole on
-    // purpose: A8 owns the capability-URL lane, and the alternative was a
-    // second LAW change later for one enum value on a kind whose surface is
-    // already contracted. Revoking is a real outward act — it turns a working
-    // entry inside someone's ledger into a 410 — so it belongs on the proposal
-    // spine rather than behind a DELETE, and this line is where its executor
-    // attaches.
-    'document.revoke-link': notImplemented('document.revoke-link'),
+    // executor, the same way the METH Stage 2 kinds did, and this is the line
+    // that comment named as where it attaches. It landed with stage A8: the
+    // capability-URL lane is `modules/exports-public-api`, but the EXECUTOR
+    // lives here like every other one — `revoke-link.ts`'s header records why
+    // (it would otherwise close a runtime cycle between two public seams, the
+    // hazard `publish-batch.ts` documents). Revoking is a real outward act — it
+    // turns a working entry inside someone's ledger into a 410 — so it is on
+    // the proposal spine rather than behind a DELETE, and no revoke endpoint
+    // exists anywhere.
+    'document.revoke-link': revokeLinkExecutor,
   };
 }
 

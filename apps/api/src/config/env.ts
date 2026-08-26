@@ -103,13 +103,19 @@ const EnvSchema = z.object({
   // `demo` so a fresh clone and CI sign in offline; `demo` is REFUSED under
   // `NODE_ENV=production` below (S1).
   //
-  // ⚠ `totp` IS AN ENUM VALUE BEFORE IT IS AN IMPLEMENTATION, deliberately.
-  // Both verifiers read `mode === 'demo' && code === <fixed>`, so setting
-  // `totp` today makes every second factor return FALSE — sign-in and portal
-  // entry fail closed, universally, until A2 lands otplib enrolment, verify and
-  // recovery codes behind this same switch. That is the intended intermediate
-  // state and it is the right way round: no second factor that works is a
-  // better failure than a second factor everybody already knows.
+  // ⚠ S1 DECLARED `totp` AS AN ENUM VALUE BEFORE IT WAS AN IMPLEMENTATION, and
+  // A2 HAS NOW IMPLEMENTED IT. S1's note said setting `totp` made every second
+  // factor return false; the verifiers behind this switch are real as of A2 —
+  // `auth-tenancy/totp.ts` (RFC 6238 through otplib, against the envelope in
+  // `users.totp_secret_ref`, plus single-use recovery codes) and
+  // `portal-session.service.ts` (the minted code in `otp_sessions.otp_hash`).
+  //
+  // S1's fail-closed intent survives where there is nothing to check, and that
+  // is still the right way round: an account with no enrolment, or a portal
+  // session with no code minted for it, cannot pass. Both remain UNREACHABLE to
+  // fix from inside A2, because `openapi.yaml` publishes no enrolment operation
+  // and nothing implements the code-minting one (G7) — see
+  // `auth-tenancy/totp-enrolment.service.ts`.
   OTP_MODE: z.enum(['demo', 'totp']).default('demo'),
 
   // Web-upload intent signing (#76). The `uploadId` is a STATELESS HMAC-signed
