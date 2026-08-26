@@ -97,8 +97,16 @@
 # Full instructions, with the exact Cloudflare fields: docs/runbooks/web-cloudfront.md.
 # --------------------------------------------------------------------------
 variable "web_public_zone_name" {
-  type        = string
-  default     = null
+  type = string
+
+  # ⚠ SET HERE, NOT IN terraform.tfvars. `infra/.gitignore` ignores *.tfvars,
+  # and the CI apply job runs a bare `terraform plan -out=tfplan` with no -var
+  # and no TF_VAR_ in its environment. A tfvars value therefore works locally
+  # and is INVISIBLE to CI — which reads this default, sees null, and plans to
+  # DESTROY the hosted zone. The delegation in Cloudflare would then point at a
+  # zone that no longer exists. Phase 3 flips web_public_zone_delegated the
+  # same way, and for the same reason.
+  default     = "neoacc.neovogent.com"
   description = "A hostname outside the neoting. zone to serve the app on, e.g. \"neoacc.neovogent.com\". Terraform creates a Route 53 hosted zone for it; you delegate to that zone from the parent (Cloudflare) once. Null builds app.<domain> only."
 }
 
