@@ -2,6 +2,25 @@ import { expect, test } from 'vitest';
 
 import { loadEnv } from './env.js';
 
+/**
+ * The smallest environment that actually boots under `NODE_ENV=production`.
+ *
+ * It is a named fixture because the list only ever grows — every gate added to
+ * the `superRefine` block adds a variable a production boot must supply, and
+ * spelling the list out at each call site means the next gate breaks six tests
+ * that were not about it. Adding a line here is the intended cost of adding a
+ * gate.
+ */
+const PRODUCTION = {
+  NODE_ENV: 'production',
+  AUTH_MODE: 'session',
+  UPLOAD_URL_SECRET: 's',
+  AI_CHAT: 'bedrock',
+  EMAIL_SENDER: 'ses',
+  EMAIL_CONFIGURATION_SET: 'nt-staging-default',
+  EMAIL_RATE_LIMIT: 'redis',
+} as unknown as NodeJS.ProcessEnv;
+
 test('loads defaults; the Meta secrets are optional and default empty', () => {
   const env = loadEnv({});
   expect(env.PORT).toBe(3000);
@@ -65,13 +84,9 @@ test('NODE_ENV=production with the fixture (defaulted) auth mode fails to boot',
 test('NODE_ENV=production with AUTH_MODE=session boots', () => {
   // UPLOAD_URL_SECRET is required in production too (see below), so a
   // production env that only fixes AUTH_MODE is not a bootable one. AI_CHAT
-  // joined that list with the chat runtime — see the block below.
-  const env = loadEnv({
-    NODE_ENV: 'production',
-    AUTH_MODE: 'session',
-    UPLOAD_URL_SECRET: 's',
-    AI_CHAT: 'bedrock',
-  } as NodeJS.ProcessEnv);
+  // joined that list with the chat runtime — see the block below. EMAIL_SENDER
+  // and EMAIL_RATE_LIMIT joined it with S2, for the reason in that block.
+  const env = loadEnv(PRODUCTION);
   expect(env.AUTH_MODE).toBe('session');
 });
 
@@ -134,4 +149,49 @@ test('EMAIL_SOURCE=s3 boots with the real queue and store; mailhog stays a fixtu
 test('MEDIA_FETCH=graph with a real store boots', () => {
   const env = loadEnv({ MEDIA_FETCH: 'graph', META_MEDIA_ACCESS_TOKEN: 't', OBJECT_STORE: 's3' } as NodeJS.ProcessEnv);
   expect(env.MEDIA_FETCH).toBe('graph');
+});
+
+// ── Outbound email (S2) ──────────────────────────────────────────────────────
+//
+// The AI_CHAT treatment, and for the AI_CHAT reason. `EMAIL_SENDER=demo` sends
+// into an in-memory outbox: every call succeeds, every call returns a message
+// id, and no email exists. With SMS cut for Initial Delivery, email is the
+// client's ONLY channel — so this is not a degraded feature, it is a client who
+// is never contacted, in a workspace where nothing looks wrong.
+
+test('EMAIL_SENDER defaults to demo outside production, so a cold clone runs offline', () => {
+  const env = loadEnv({});
+  expect(env.EMAIL_SENDER).toBe('demo');
+  expect(env.EMAIL_RATE_LIMIT).toBe('memory');
+  // ⚠ no-reply@, never doc@ — doc@ is the INBOUND intake address, and mail
+  // arriving there is filed as a client document (email.tf, doc-to-s3).
+  expect(env.EMAIL_FROM_ADDRESS).toBe('no-reply@neoting.neovogent.com');
+  expect(env.EMAIL_FROM_ADDRESS).not.toContain('doc@');
+  expect(env.SES_REGION).toBe('eu-west-2');
+});
+
+test('NODE_ENV=production with EMAIL_SENDER=demo fails to boot', () => {
+  expect(() => loadEnv({ ...PRODUCTION, EMAIL_SENDER: 'demo' } as NodeJS.ProcessEnv)).toThrow(/EMAIL_SENDER/);
+});
+
+test('EMAIL_SENDER=ses without a configuration set fails to boot, in every environment', () => {
+  // Without it a send silently opts out of bounce suppression — so we keep
+  // mailing addresses that have already bounced, which is the fastest route to
+  // the 5% suspension the reputation alarms watch for (observability.tf).
+  expect(() => loadEnv({ EMAIL_SENDER: 'ses' } as NodeJS.ProcessEnv)).toThrow(/EMAIL_CONFIGURATION_SET/);
+  expect(() => loadEnv({ EMAIL_SENDER: 'ses', EMAIL_CONFIGURATION_SET: 'c', EMAIL_FROM_ADDRESS: '' } as NodeJS.ProcessEnv)).toThrow(
+    /EMAIL_FROM_ADDRESS/,
+  );
+});
+
+test('a real sender behind a per-process rate limiter fails to boot in production', () => {
+  // The API runs more than one ECS task, so an in-process ceiling of five is
+  // five PER TASK — the numbers in email-rate-limit.ts become fiction, in the
+  // direction that costs a sending reputation, and nothing about it is visible.
+  expect(() => loadEnv({ ...PRODUCTION, EMAIL_RATE_LIMIT: 'memory' } as NodeJS.ProcessEnv)).toThrow(/EMAIL_RATE_LIMIT/);
+});
+
+test('the memory limiter is fine outside production, where there genuinely is one process', () => {
+  const laptop = loadEnv({ EMAIL_SENDER: 'ses', EMAIL_CONFIGURATION_SET: 'c', EMAIL_RATE_LIMIT: 'memory' } as NodeJS.ProcessEnv);
+  expect(laptop.EMAIL_RATE_LIMIT).toBe('memory');
 });

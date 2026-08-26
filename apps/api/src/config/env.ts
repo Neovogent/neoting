@@ -192,6 +192,69 @@ const EnvSchema = z.object({
   // DEMO-MOCK: Twilio Messaging replaces `DemoSmsSender`.
   SMS_SENDER: z.enum(['demo']).default('demo'),
 
+  // ── Outbound email (S2) ──────────────────────────────────────────────────
+  //
+  // ⚠ THIS BLOCK IS IN S1's FILE AND S2 WROTE IT, KNOWINGLY. A transport whose
+  // implementation is chosen by config has to have somewhere for that config to
+  // live, and Governance §11.5 makes this the only file that may read
+  // process.env. It is written as one self-contained block, additive, touching
+  // no existing line, so S1's boot-gate pass merges over it rather than into it.
+  //
+  // The sender (S2). `demo` = `DemoEmailSender`, which "sends" into an
+  // in-memory outbox dev and tests read back — no network, no AWS credentials,
+  // so a fresh clone runs the whole journey offline. `ses` = the real Amazon
+  // SES v2 client. Selected by config, not import, exactly like EXTRACTOR /
+  // SMS_SENDER / OBJECT_STORE.
+  //
+  // ⚠ `demo` is REFUSED under NODE_ENV=production below, and it is the AI_CHAT
+  // case rather than the SMS_SENDER one. Every other demo switch degrades
+  // something a user can SEE — no bill reaches Xero, no document is really
+  // read. This one degrades nothing visible at all: the invite is "sent", the
+  // sign-in code is "sent", each call returns a message id, and no email
+  // exists. With SMS cut for Initial Delivery, email is the client's ONLY
+  // channel, so a production `demo` sender is a client who can never sign in
+  // and a workspace where nothing looks wrong.
+  EMAIL_SENDER: z.enum(['demo', 'ses']).default('demo'),
+
+  // The Bedrock knobs' reasoning, applied to SES: a separate region variable
+  // makes "where is client mail processed" answerable from configuration rather
+  // than from whatever the container inherited, and pins it to London (D30 /
+  // ADR 0001). eu-west-2 is where the verified identity, the DKIM records and
+  // the configuration set actually are (infra/envs/staging/email.tf).
+  SES_REGION: z.string().default('eu-west-2'),
+
+  // The envelope From. A BARE address — the display name is product copy and
+  // lives in `modules/notifications/email-copy.ts`, because a brand that can be
+  // changed by editing an ECS task definition is a brand nobody reviews.
+  //
+  // ⚠ `no-reply@`, NEVER `doc@`. `doc@` is the INBOUND document intake address
+  // (email.tf, the `doc-to-s3` receipt rule): mail arriving there is written to
+  // the receipts bucket and filed as a client document. Sending from it would
+  // mean every "thanks, got it" a client types back is ingested as paperwork.
+  EMAIL_FROM_ADDRESS: z.string().default('no-reply@neoting.neovogent.com'),
+
+  // Where a replying human lands. A different domain on purpose: the sending
+  // domain's MX points at SES inbound, whose rule set accepts `doc@` and
+  // `dmarc@` and nothing else, so a reply to any other address ON it bounces.
+  // Empty omits the header rather than sending a blank one.
+  EMAIL_REPLY_TO_ADDRESS: z.string().default('support@neovogent.com'),
+
+  // The SES configuration set (`nt-<env>-default`, email.tf). Left off, a
+  // message still sends — and silently opts out of bounce/complaint
+  // suppression, reputation metrics and the SNS event feed, i.e. every
+  // mechanism that would tell us an address has already bounced. Empty default
+  // because there is no configuration set on a laptop; required for `ses` below.
+  EMAIL_CONFIGURATION_SET: z.string().default(''),
+
+  // The rate-limit store (per address AND per IP, `email-rate-limit.ts`).
+  // `memory` = in-process counters; `redis` = shared ones.
+  //
+  // ⚠ `memory` is refused alongside a real sender in production below. The API
+  // runs more than one ECS task, so an in-process ceiling of five is five PER
+  // TASK — the numbers in that file become fiction, in the direction that costs
+  // a sending reputation, and nothing about it is visible.
+  EMAIL_RATE_LIMIT: z.enum(['memory', 'redis']).default('memory'),
+
   // Signs the chase portal-link token (METH Stage 8, SoT §4 Stage 8.3) — the
   // same HMAC pattern as UPLOAD_URL_SECRET / SESSION_SECRET. Stage 8 mints the
   // link; Stage 9's OTP portal verifies it. Empty default fails CLOSED: signing
@@ -278,6 +341,56 @@ const EnvSchema = z.object({
       path: ['AI_CHAT'],
       message:
         'AI_CHAT=demo is a deterministic stand-in and must never answer a real accountant — set AI_CHAT=bedrock (Governance §9.1)',
+    });
+  }
+
+  // ── Outbound email (S2) ──────────────────────────────────────────────────
+  // Same self-contained-block discipline as the declarations above: three
+  // gates, additive, so S1's boot-gate pass merges over them.
+
+  // The AI_CHAT treatment, and for the AI_CHAT reason. `EMAIL_SENDER=demo`
+  // "sends" into an in-memory outbox: every call succeeds, every call returns a
+  // message id, and no email exists. With SMS cut for Initial Delivery (D40's
+  // sibling — the chase channel went with it) email is the client's only
+  // channel, so this is not a degraded feature, it is a client who is never
+  // contacted, in a workspace where nothing looks wrong. Boot refusal is the
+  // cheaper and louder outcome.
+  if (env.NODE_ENV === 'production' && env.EMAIL_SENDER === 'demo') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['EMAIL_SENDER'],
+      message:
+        'EMAIL_SENDER=demo sends into an in-memory outbox — every send reports success and no email is delivered. Set EMAIL_SENDER=ses (S2)',
+    });
+  }
+
+  // A real sender with no From address, or none with a configuration set,
+  // fails at REQUEST time rather than boot: SES rejects the call, the process
+  // is healthy, the ALB is green, and the first symptom is a client who never
+  // got their code. The UPLOAD_URL_SECRET argument exactly. The configuration
+  // set is in the same gate because without it a send silently opts out of
+  // suppression — so we keep mailing addresses that have already bounced,
+  // which is the fastest route to the 5% suspension the reputation alarms
+  // watch for (observability.tf).
+  if (env.EMAIL_SENDER === 'ses' && (env.EMAIL_FROM_ADDRESS === '' || env.EMAIL_CONFIGURATION_SET === '')) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['EMAIL_SENDER'],
+      message:
+        'EMAIL_SENDER=ses needs EMAIL_FROM_ADDRESS and EMAIL_CONFIGURATION_SET — without the configuration set a send opts out of bounce suppression and reputation metrics (S2, email.tf)',
+    });
+  }
+
+  // A per-process limiter in front of a real sender is a limit multiplied by
+  // the task count and reported as if it were not. Refused only in production,
+  // where there is more than one task: `pnpm dev` is genuinely one process, and
+  // gating it there would demand Redis for a laptop that needs none.
+  if (env.NODE_ENV === 'production' && env.EMAIL_SENDER === 'ses' && env.EMAIL_RATE_LIMIT === 'memory') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['EMAIL_RATE_LIMIT'],
+      message:
+        'EMAIL_RATE_LIMIT=memory counts per process, and production runs several — the per-address and per-IP ceilings would be multiplied by the task count. Set EMAIL_RATE_LIMIT=redis (S2)',
     });
   }
 
