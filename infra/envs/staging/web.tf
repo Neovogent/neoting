@@ -111,8 +111,16 @@ variable "web_public_zone_name" {
 }
 
 variable "web_public_zone_delegated" {
-  type        = bool
-  default     = false
+  type = bool
+
+  # Set here, not in terraform.tfvars, for the reason on web_public_zone_name
+  # above: *.tfvars is gitignored and CI's apply reads only these defaults.
+  #
+  # Flipped true on 27 Aug 2026, AFTER the four NS records were live in
+  # Cloudflare and answering:
+  #   nslookup -type=NS neoacc.neovogent.com 8.8.8.8  -> ns-485 / ns-1513 /
+  #   ns-1733 / ns-798. Zone Z02777372XZBDH2ECLZZD.
+  default     = true
   description = "Set true ONLY after the NS records from web_public_zone_nameservers are live in the parent zone. Until then the certificate cannot validate and apply would hang. Ignored when web_public_zone_name is null."
 
   validation {
