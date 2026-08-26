@@ -65,6 +65,21 @@ migration and ONE contracts PR. Do not scatter it.
 Full gate. PR.
 ```
 
+### ✅ Done — issue #164, PR #165 (26 Aug 2026)
+
+One migration `20260826120000_id_law_batch`, one contracts pass, twelve
+operations. **Everything downstream of S0 is unblocked.** Three things worth
+knowing before you run the next stage:
+
+1. **`POST /v1/businesses`, not `/v1/clients`.** Same resource `GET
+   /v1/businesses` already served. A11 and M7 build against `businesses`.
+2. **(e) needed no migration.** `users.password_hash` and `totp_secret_ref` were
+   always writable — `users` carries no RLS. The blocker is
+   `demo-credentials.ts`, which is A1's.
+3. **The `Export` model already existed and was extended, not replaced**, and
+   `document_links` + a `document.revoke-link` ProposalKind were added beyond the
+   brief so A8's capability URL has somewhere to live. Both flagged on #164.
+
 ---
 
 ## S1 · Secrets and boot gates

@@ -95,7 +95,7 @@ why it is larger than "build the missing features". The five that reshaped it:
 Not a schedule — a partial order. Anything with satisfied `Needs` can start.
 
 ```
-S0  contracts + prisma (LAW)          ← EVERYTHING WAITS ON THIS
+S0  contracts + prisma (LAW)          ← DONE, #164 / PR #165
  │
  ├─ S1 secrets & boot gates ──────────┐
  ├─ S2 email transport ───────┐       │
@@ -117,6 +117,18 @@ S0  contracts + prisma (LAW)          ← EVERYTHING WAITS ON THIS
 
 **S0 is the only true global blocker.** After it, three streams run independently and each
 person can fan out across several agents.
+
+**S0 landed on 26 Aug 2026** — contract-change issue #164, PR #165. Three notes for
+everyone downstream, because each would otherwise be discovered the hard way:
+
+- **The client resource is `businesses`, not `clients`.** `POST /v1/businesses`,
+  `POST /v1/businesses/{businessId}/members`. "Client" stays the word on screen.
+- **`GET /d/{code}` is served at the origin root, not under `/v1`**, and is
+  deliberately excluded from codegen — there is no generated client for it, on
+  purpose. `apps/api/src/config/routing.ts` already carries its exclusion.
+- **A9's export surface, A8's `document_links` table and a `document.revoke-link`
+  proposal kind all exist in the contract already.** Build against them; if you find
+  a field they do not cover, stop and say so rather than editing a LAW path.
 
 ---
 
