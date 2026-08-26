@@ -4,6 +4,14 @@
 
 Read `docs/Source_Of_Truth.md` D37 before assuming anything Next-shaped. The requirements that route groups used to satisfy for free did **not** go away; they became build configuration plus review conditions, and the notes in `vite.config.ts` say which is which.
 
+### ⚠ There is ONE Vite build entry, not two
+
+SoT D37 and §15 describe the portal as "a separate build entry", and `docs/Team_Engineering_Guideline.md` §2's repo map repeats it as `(workspace) + (portal) separate build entries`. **That is the plan, not the build.** `vite.config.ts` has a single entry and always has, and its own header comment is where the divergence was recorded honestly rather than papered over:
+
+> *What is NOT done here, and is tracked separately: the portal is still part of this build's graph rather than a separate entry. Lazy loading keeps it out of the initial download, which is most of the benefit; a genuinely separate entry additionally needs the hand-rolled router split and a host rewrite, and that is its own change.*
+
+So do not plan a change around a second entry that does not exist, and do not "fix" a build script that looks like it is missing one. What actually keeps the portal light today is **route-level `React.lazy`** plus the review condition in *Bundle* below — which is why that condition is not optional: it is the only thing standing where the second entry was supposed to be. Closing the gap (either by building the entry, or by amending D37 to say lazy loading is the answer) is a versioned SoT amendment and Shakib's call, not a decision this file can take.
+
 ## ⚠ Initial Delivery (ID) — what the UI may and may not say
 
 SoT v1.6 §24 scopes the first paid client release. Five of its decisions land squarely on this app, because they are about **what a screen is allowed to claim**.
@@ -369,11 +377,33 @@ What is covered today, and why those:
 | `src/api/auth.test.ts` | The session boundary. 401 and "the API is down" are DIFFERENT states — the first shows LoginView, the second degrades to seed data — and collapsing them turns every transient outage into a lock-out. Plus: a /me body that drifts from the contract never authenticates, login carries `credentials` (the cookie is the whole session), and logout never throws. |
 | `src/api/businesses.test.ts` | The synthetic half of the businesses slice: the counting rules, and — the actual point — that the derived fallback rows still PARSE AS THE CONTRACT, so a screen reading the slice cannot tell the worlds apart. |
 | `src/views/LoginView.test.tsx` | The front door's gate refused BEFORE the network (all three credentials, TOTP exactly six digits), the error state wearing its `NT-` code, and an unreachable API saying so instead of blaming the credentials. |
+| `src/App.test.tsx` | The shell switch — the one structural decision `App.tsx` takes in JS rather than CSS. `Sidebar` at desktop AND tablet width, `BottomNav` at phone width, each asserting the other is absent, plus both live directions when the viewport moves under a mounted tree (which is the only thing that exercises `useMediaQuery`'s `change` subscription). |
+| `src/test/viewport.test.ts` | The second suite that tests a *gate*: that the viewport stub still discriminates. See below — the stub it replaced answered every question `false` and nothing failed, so the discrimination is now pinned through `useViewport` itself. |
+| `src/lib/useScrollActiveIntoView.test.tsx` | The active-item selector. `[aria-current]` matched the attribute at ANY value, so a strip whose inactive items render `aria-current="false"` scrolled its FIRST item into view forever — hiding the item actually selected, on the deep-link journey the hook exists to fix. Pins the exclusion, the other two clauses, and "nothing active scrolls nothing". |
 | `eslint/no-literal-string-in-jsx.test.js` | The one suite that tests a *gate* rather than the product: real copy still fails the literal rule, punctuation still passes. The cases are lifted verbatim from the views. Not under `src/`, because the rule is not application code — which also keeps it out of `tsc`'s include and out of the bundle. |
 
 Component tests are still owed for anything with logic (frontend ten, item 10) — the AppContext suite is the first, not the last.
 
-`vitest.setup.ts` sets `asyncUtilTimeout` (above) and shims what jsdom lacks and the app really uses. Four shims: `matchMedia`, `ResizeObserver`, `scrollIntoView`, and `Blob.prototype.arrayBuffer` — jsdom 25 still has no `arrayBuffer()` (nor `text()`), and the portal reads the bytes it is about to upload in order to hash them. The shim is built out of jsdom's own `FileReader`, so it is a real read rather than a stand-in, and it is `??=`-guarded like the others so a jsdom that grows the method wins.
+⚠ **A suite that fails to TRANSFORM reports as one failed file, not as four missing tests.** `LoginView.tsx` shipped with a `{/* … */}` comment sitting beside the returned element inside `return (…)` — two expressions, which is a parse error and not a stylistic preference. It took `tsc`, `vite` and all four of `LoginView.test.tsx`'s assertions down with it, and the run summary said "1 failed | 23 passed" rather than naming what had gone missing. When a file count and a test count move in opposite directions, read the file count first. A JSX comment before the root element belongs above the `return` as a line comment.
+
+### ⚠ The layout mode is something a test CHOOSES, and its default is desktop
+
+`vitest.setup.ts` sets `asyncUtilTimeout` (above) and shims what jsdom lacks and the app really uses: `matchMedia`, `ResizeObserver`, `scrollIntoView`, and `Blob.prototype.arrayBuffer` — jsdom 25 still has no `arrayBuffer()` (nor `text()`), and the portal reads the bytes it is about to upload in order to hash them, so that shim is built out of jsdom's own `FileReader` and is a real read rather than a stand-in.
+
+Three of those four are `??=`-guarded so a jsdom that grows a real implementation wins. **`matchMedia` is not, and the exception is the point.**
+
+It used to be, and it used to answer `matches: false` to every query. That read as neutral and was not. `useViewport()` derives the layout mode from three media queries and turns a universal `false` into `{ phone: true, tablet: false, desktop: false }` — so after the responsive port **every component test rendered the phone shell**: `App.tsx` mounted `BottomNav` and never `Sidebar`, and the sidebar rail, the desktop asides and every `hidden md:*` surface the port introduced were exercised by none of the ~300 tests. A regression in any of them would have gone green. Nothing announced this; it is what a stub that answers everything looks like from the outside.
+
+`src/test/viewport.ts` replaces it with a small real media-query evaluator over a settable viewport:
+
+- **`setViewport('phone' | 'tablet' | 'desktop')`** is how a test says which shell it means. `resetViewport()` runs from an `afterEach` in the setup file, so one test's choice cannot decide what the next one renders.
+- **The default is `desktop`**, which is what the suite exercised before the port (there was one layout, and it was that one). Flipping it there broke nothing — the whole suite passed unchanged — which is itself the measurement of how little the desktop shell was being looked at.
+- It answers `min-width` / `max-width` / `pointer` / `hover` / `prefers-reduced-motion` honestly and **everything else `false`**, the old behaviour. The app's own queries stop being guesses; nothing else gains an answer a real browser might disagree with.
+- A `setViewport` on a mounted tree **notifies existing subscribers**, so the `change` half of `useMediaQuery` is reachable. Wrap that call in `act()`.
+- It is `matchMedia` and nothing else. `innerWidth`, `getBoundingClientRect` and layout are still jsdom's zeroes, so nothing here can assert measured geometry — only which branch the app takes on the mode it is told it is in.
+- Assigned unconditionally on purpose: a jsdom that grew a real `matchMedia` would answer against a layout viewport it does not have, and `setViewport` would go quietly back to controlling nothing — the exact failure this replaced.
+
+One real behaviour it surfaced, worth knowing before writing an assertion: **the rail does not leave the DOM the instant the shell narrows.** `Sidebar` is wrapped in `AnimatePresence`, so it stays mounted through its exit animation; `BottomNav` is a plain conditional and unmounts at once. `App.test.tsx` therefore asserts both halves of the swap only in the phone→desktop direction, and mount-time absence in the others, rather than chasing an animation this environment cannot run honestly.
 
 **Lazy routes need `findBy*`, not `await act(async () => {})`.** A `React.lazy` chunk does not resolve inside a microtask flush, so an `act` flush leaves the skeleton on screen and every query fails against it. `ChasePortalView.test.tsx` waits on `screen.findByRole` — still offline, because the only thing being waited on is a dynamic `import()`. This is also why `AppContext.test.tsx` can only assert that `#root` is non-empty: what it is looking at is the skeleton.
 
