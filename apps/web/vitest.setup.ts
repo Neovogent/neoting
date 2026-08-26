@@ -1,4 +1,26 @@
 import '@testing-library/jest-dom/vitest';
+import { configure } from '@testing-library/react';
+
+/**
+ * `findBy*` keeps its OWN clock, and vitest's `testTimeout` does not govern it.
+ *
+ * This was measured, not assumed: raising `testTimeout` to 20s left
+ * `ChasePortalView.test.tsx` failing in exactly the same place, because
+ * `findByRole` gives up after testing-library's `asyncUtilTimeout` — 1000ms by
+ * default — long before the test itself is in any danger.
+ *
+ * What those queries are waiting for is a `React.lazy` chunk: the portal screens
+ * are lazy by design (SoT §14 wants the OTP portal to be the lightest surface in
+ * the product), so `/p/<token>` genuinely cannot paint until a dynamic
+ * `import()` resolves. In a 24-file parallel run that import is queued behind
+ * vite transforming everything else, and one second is not a realistic budget
+ * for it on a loaded machine.
+ *
+ * Five seconds is a ceiling, not a delay. A query that matches immediately still
+ * returns immediately; only the give-up point moves, so a element that never
+ * appears still fails the test.
+ */
+configure({ asyncUtilTimeout: 5000 });
 
 // jsdom has no layout engine; these are the browser APIs the app shell
 // touches when a component test renders it (motion reads matchMedia and

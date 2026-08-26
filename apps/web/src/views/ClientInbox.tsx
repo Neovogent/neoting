@@ -965,7 +965,11 @@ export function ClientInbox({ client, kind, onPreview }: {
               if (ok) sel.forEach((d) => updateDocumentStatus(d.id, 'review'));
             },
           },
-          { label: intl.formatMessage(m.bulkPublish), icon: Send, primary: true, onClick: publish },
+          // `tourKey`, not a slugified label: the frame this was ported from
+          // derived the anchor from the English button text, which under
+          // react-intl would move with the locale and strand the step in every
+          // language but one. The tour's `costs-ready-publish` step targets this.
+          { label: intl.formatMessage(m.bulkPublish), icon: Send, primary: true, tourKey: 'bulk-publish-selected', onClick: publish },
         ]
       : status === 'published'
       ? [

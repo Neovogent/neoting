@@ -17,9 +17,9 @@ SoT v1.6 §24 scopes the first paid client release. Five of its decisions land s
 ## The frontend ten (Guideline §7.4)
 
 1. **Split at the route.** Every screen is `lazy()`-loaded from `App.tsx` so opening one downloads one. This replaced "Server Components by default", and it inherits that rule's job: keeping per-route weight down. (Guideline v1.2 §7.4.)
-2. **Tokens only** — no hex, no arbitrary px, no rgb()/rgba(). Done for colour: the palette AND the shadow/glow ramp live in the `@theme` block of `src/index.css` (issues #64, #85, #86); alpha steps derive from the base tokens via `color-mix`. Light mode is a variable redefinition plus the documented per-utility exceptions in that file. `scripts/check-colors.mjs` fails `pnpm lint` on any rgb()/rgba() literal anywhere under `src`, including the stylesheet ESLint cannot see.
+2. **Tokens only** — no hex, no arbitrary px, no rgb()/rgba(). Done for colour: the palette AND the shadow/glow ramp live in the `@theme` block of `src/index.css` (issues #64, #85, #86); alpha steps derive from the base tokens via `color-mix`. Light mode is a variable redefinition plus the documented per-utility exceptions in that file. `scripts/check-colors.mjs` fails `pnpm lint` on any rgb()/rgba() literal anywhere under `src`, including the stylesheet ESLint cannot see. The prototype wrote its spotlight and shadow work as raw alpha literals; every one of them was re-expressed as `color-mix` over a palette token on the way in, which is also what makes a brand change reach the tour ring instead of leaving one stale mint value behind. ⚠ One trap worth knowing before you write a fade-from-brand keyframe: **`color-mix(… var(--color-brand) 0%, transparent)` collapses to transparent BLACK** and greys the whole ramp — that is what `--color-brand-fade` exists for, and why the `tour-ring` keyframe uses it instead of `0%`. New animation also carries a `prefers-reduced-motion: reduce` opt-out, as `.tour-spot` / `.tour-box` do.
 3. Chat renders **component-grammar primitives only**. If the grammar lacks a card, that is a G7 conversation, not a one-off `<div>`. The grammar is being derived from the imported components rather than imposed on them.
-4. Every user-facing string through a catalogue (en-GB); the lint rule blocks literals. **Done — issue #65.** The library is **react-intl** (§12.6 leaves the library open and fixes the behaviour; react-intl is ICU-MessageFormat and framework-agnostic, which is what D37 needed). `defineMessages` per component, ids on `domain.component.purpose`, and `lang/en-GB.json` extracted from source by `pnpm i18n:extract` — **generated, never hand-edited.** Two gates, at different altitudes: `neoting/no-literal-string-in-jsx` works on source and blocks the next literal someone types, `pnpm i18n:check` works on the catalogue and blocks a message with no default, an off-convention key, a silently-overwritten duplicate id or invalid ICU. **2,642 messages** (136 local ids collapsed into 22 `common.*` ids in issue #94). See *i18n* below before adding a string.
+4. Every user-facing string through a catalogue (en-GB); the lint rule blocks literals. **Done — issue #65.** The library is **react-intl** (§12.6 leaves the library open and fixes the behaviour; react-intl is ICU-MessageFormat and framework-agnostic, which is what D37 needed). `defineMessages` per component, ids on `domain.component.purpose`, and `lang/en-GB.json` extracted from source by `pnpm i18n:extract` — **generated, never hand-edited.** Two gates, at different altitudes: `neoting/no-literal-string-in-jsx` works on source and blocks the next literal someone types, `pnpm i18n:check` works on the catalogue and blocks a message with no default, an off-convention key, a silently-overwritten duplicate id or invalid ICU. **3,133 messages** (136 local ids collapsed into 22 `common.*` ids in issue #94; the prototype port added ~490, of which ~206 are the demo tour). See *i18n* below before adding a string.
 5. All four states per screen: empty (teaches the next action), loading (skeletons, no spinners on primary surfaces), error (plain English + `NT-` code), success.
 6. Accessibility on every PR: full keyboard path, visible focus, `aria-live="polite"` on chat updates, contrast from tokens, error text never colour-only. `jsx-a11y` (recommended set) and `react-hooks` (`rules-of-hooks` + `exhaustive-deps`) are now enforced at error in `eslint.config.js`, and the pre-existing findings are swept: backdrops are `role="presentation"` with Escape as the keyboard dismissal (`lib/useEscape.ts` — a stack, because dialogs nest; read it before adding a listener of your own), row-click targets carry real button semantics, and the three `autoFocus` uses carry reasoned disables (focus following an explicit user action is the dialog pattern, not focus theft). **Axe before review is still owed on every PR** — the linter cannot see computed contrast or focus order. The nine `exhaustive-deps` disables in `AppContext.tsx` are deliberate inventory, not fixes: each names its omitted-but-stable dep (`logAudit`, `setActiveConversationId`), and they come out together in a stable-callback sweep of that file — do not fix one in passing, and do not add a tenth.
 7. Motion by the numbers (tokens `CLAUDE.md`). `motion` (Framer), not CSS transitions, for anything stateful.
@@ -50,7 +50,7 @@ SoT v1.6 §24 scopes the first paid client release. Five of its decisions land s
 - `slices.chases`/`slices.proposals` in AppContext stay `'seed'` — a statement about the CONTEXT ARRAYS, which really are still synthetic and still feed `statsFor`, chat cards and ClientsView. The wired views compute their own `sliceStatus` from their own queries and wear their own `DataSourceBadge`; a live-query failure degrades that view to the synthetic board with the badge on (`ChasesView` is the worked example — `SyntheticChasesBoard` is the fallback, `ChasesLiveBoard` the live surface).
 - The live Chases board is deliberately its OWN read-only surface, not the synthetic composer fed with server rows: the composer's actions (reminders, item staging, policy) have no contract yet, and buttons whose writes the next poll reverts are worse than absent. Both `chases.ts` hooks poll at 5 s because the beats they exist for (a chase.send approval landing in the outbox; the pipeline auto-closing a chase after a portal upload) happen outside this browser.
 - `proposals.ts` deliberately uses the plain `listActionProposals` function inside its own `useQuery` instead of the generated hook/queryKey machinery: `bank.ts` (floor) already pins the generated action-proposals client module into the shared chunk, so every extra export touched from it ships on every route. Read the comment on `QUEUE_QUERY_KEY` before "cleaning this up" to the generated hook.
-- `LiveProposalCard` is the live Review → Approve card: [Read review] calls `POST …/review` and renders EXACTLY the server's sections (fail-closed — a section it cannot render withholds Approve), Approve echoes the returned hash, Cancel is the contracted cancellation. `ProposalFlowModal` wraps create-then-card for the two S12 flows: routing an Unrouted document (`UnroutedQueue` in InboxesView — unrouted rows are the contract's `businessId: ''` placeholder, filtered OUT of the inbox lists and INTO the queue) and retrying a failed publish (a fresh `publish.batch` over the one document — Stage 10's retry path; extraction failures instead get a disabled-with-tooltip Retry pointing at the chase engine, because `document.reprocess` has no executor yet). Closing the modal undecided is fine: the proposal stays pending and appears in the Approvals queue, which is the point of having one.
+- `LiveProposalCard` is the live Review → Approve card: [Read review] calls `POST …/review` and renders EXACTLY the server's sections (fail-closed — a section it cannot render withholds Approve), Approve echoes the returned hash, Cancel is the contracted cancellation. `ProposalFlowModal` wraps create-then-card for the two S12 flows: routing a document (see *The Unrouted queue is gone* below — the `document.route` proposal now hangs off InboxesView's bulk **Move to client**, and unrouted rows, the contract's `businessId: ''` placeholder, list with everything else instead of being held back) and retrying a failed publish (a fresh `publish.batch` over the one document — Stage 10's retry path; extraction failures instead get a disabled-with-tooltip Retry pointing at the chase engine, because `document.reprocess` has no executor yet). Closing the modal undecided is fine: the proposal stays pending and appears in the Approvals queue, which is the point of having one.
 - `ApprovalsLiveQueue` keeps decided cards mounted showing their outcome banner — the settle refetch removes them from `proposals`, and without that the approval confirmation unmounted the instant it appeared (caught by the S12 browser smoke, invisible to unit tests).
 - `Document.failureCode` (the API's stable `NT-*` code) now crosses the boundary, and `lib/failures.ts` prefers it for the extraction-vs-publish call: every API row has `fields: []`, which the old field-count heuristic read as "never extracted", branding every publish failure an extraction failure. Same fix corrected `publishFailed` (it was `state === 'FAILED'`, which is extraction; a failed publish is `REJECTED` + `NT-PUB-*`).
 - ⚠ `getChaseResponse` is orval's strict-intersection `allOf` gap (see `packages/contracts/CLAUDE.md`): the generated schema rejects every valid `Chase`. `chases.ts` parses the two halves separately (`parseChaseDetail`), pinned by test; a detail that still fails degrades to its list-validated summary with items/messages withheld rather than felling the board (known case: seeded `chs_003` serves `items: []` against the contract's `minItems: 1` — flagged as a pass-3 contract question).
@@ -157,6 +157,19 @@ Two things about the bank slice that will bite the next person:
 
 The suggestion engine in `lib/matching.ts` stays **display-tier**: its arithmetic is float pounds, it never reaches the server, and nothing server-side applies a tolerance derived from it. Flagged for a post-demo rewrite in pence.
 
+### The Unrouted queue is gone, and routing moved onto bulk Move to client
+
+`views/UnroutedQueue.tsx` is deleted — the one file the prototype port removed. SoT issue **#158** resolves prototype-vs-SoT surface disputes in the prototype's favour, and the prototype has no Unrouted queue. The removal predates the fork rather than being a prototype invention: an identical comment survives on both sides ("The taught-sender tick from the old unrouted card, kept where the routing decision now happens"), so the *card* was already retired in the shared lineage and this repo re-introduced it as a METH S12 live surface.
+
+**The deletion was only ever valid together with its compensating rewire, and they landed in one commit.** Removing the queue alone would have left live/API mode with no way to route a document at all — bulk-move was gated off in api mode and the queue was the only other door. That is a backend regression hidden inside a UI removal, and no test covers it, so it is worth knowing exactly where the pieces went:
+
+- the `document.route` `CreateActionProposalRequest` and the `ProposalFlowModal` launch now hang off InboxesView's bulk **Move to client**, one proposal per document, walked one at a time (`routeRequestFor` / `startRouting` / `advanceRouting`);
+- the `documentsSource !== 'api'` gate is lifted for that action only. Live it goes straight to Review → Approve with no local confirm in front — the review *is* the confirmation, and a second dialog before it is theatre. Synthetic mode keeps its `confirm()` + `moveDocuments` path unchanged;
+- unrouted rows are no longer filtered out of the inbox lists into a separate queue; they list like anything else. In synthetic mode no document carries an empty client id, so that reads exactly as before;
+- the clientLabel/inboxLabel pair and the sentence "Assigning one is a state change — it goes through Review → Approve like everything else." moved into the bulk-move menu rather than retiring with the queue.
+
+`document.route` itself is untouched in `packages/contracts` (LAW), and routing still goes through Review → Approve. The seven `inboxes.unroutedQueue.*` ids retired with the surface.
+
 ### The seed↔server id bridge, and the live gating sweep (METH S14)
 
 Stage 14's hardening audit found the golden path broke against a **freshly reset** DB, and the reason is worth keeping: the synthetic cast keys clients as `'1'`/`'2'`, the MSW fixtures bridge them as `biz_1`/`biz_2`, and the real seed's businesses are `biz_burger`/`biz_cosmo`/`biz_dental` — earlier stages smoked against a stale shared DB and never met the real ids, so uploads and Unrouted routing were refused server-side and every client-scoped filter (ClientInbox, the embedded BankView) matched nothing after `pnpm demo:reset`. The fix lives in `AppContext`: `serverClientIdFor(clientId)` joins the seed clients to the hydrated `businesses` slice **by normalised name** (case, punctuation and a trailing Ltd/Limited dropped — the name is the only fact both casts share), falling back to the `biz_<id>` fixture convention when the slice has not answered; `isSameClient(rowClientId, clientId)` is the tolerant compare every client-scoped filter now uses (`InboxesView`, `ClientInbox`, `BankView`); and `clientNameFor` answers an opaque id from the hydrated slice before falling through to the id itself. The bridge still retires when the clients list itself reads from `GET /businesses`.
@@ -203,9 +216,62 @@ Five things about it that are decisions, not details:
 
 **What the SMS must contain.** The link the chase composes has to be `<web origin>/p/<linkToken>`. The API composes the SMS body (`sms-copy.ts`, marker `Upload securely: `) and today the token is put in bare; whoever wires the demo outbox must build the full URL, or the tap goes nowhere. The link-entry screen accepts either — it keeps the last path segment of whatever is pasted — but that is a fallback for a mangled text, not the design. Until the engine-side compose seam exists (the known gap in `apps/api/src/modules/chase/CLAUDE.md` — no outbox SMS carries a *working* token today), `pnpm demo:portal-link` (`scripts/demo/portal-link.ts`, METH S14) signs a real token for a real chase; the demo script's beat 7 enters the portal through it.
 
+## Responsive, safe areas and the phone shell
+
+**D49 made the prototype UI repo ID's design source of record, and the port landed the whole responsive layer.** The rule that settled every dispute: the prototype wins on UI, UX and functionality — *including its removals* — and this repo wins on data, backend and AI. Nothing from the prototype's `src/api/generated/**`, its `src/api/http.ts` or its Gemini `server.ts` came across; `@google/genai` appears nowhere and must not.
+
+**Three layout modes, and the breakpoint is only read in JS when the *structure* changes.**
+
+| | width | shell |
+|---|---|---|
+| phone | < 768 | no rail — `BottomNav`; tables become cards |
+| tablet | 768–1023 | collapsed rail, two-column grids |
+| desktop | ≥ 1024 | the original layout |
+
+`lib/useViewport.ts` exports `useViewport()` (`{ phone, tablet, desktop, coarse }`), `useMediaQuery` and `useVisualViewport`. They match Tailwind's `md`/`lg` exactly, so **anything that only changes size stays a Tailwind class** — reach for the hook only to render a *different component* (a bottom bar instead of a rail, a sheet instead of a dialog). `App.tsx` is the worked example: it reads `phone` to swap `Sidebar` for `BottomNav`, and everything else is CSS.
+
+**`useVisualViewport()` is mounted exactly once, in `App.tsx`, and must stay that way.** iOS Safari does not shrink the layout viewport when the keyboard opens, so anything sized in `dvh` slides under the keyboard. The hook writes the honest number to `--vvh` and toggles a `keyboard-open` class on `<html>`. A second mount in a view would fight the first. Views get the keyboard treatment by *using* `h-vv` / `max-h-vv`, never by mounting the hook.
+
+**The utilities in `index.css`, which no component should re-invent:**
+
+- safe areas — `pt-safe` / `pb-safe` / `pl-safe` / `pr-safe` / `px-safe`, plus `pb-safe-4` and `pb-safe-6` (safe inset *plus* a real gap) and `pb-nav` (inset + the 4.25rem tab bar, so a scroll area can clear it);
+- `h-vv` / `max-h-vv` over `--vvh`, which falls back to `100dvh` until the hook runs;
+- `hit-area` — an `::after` inset of −0.625rem. A tap target cannot grow a dense table row's layout, but it can grow its hit area. Checkboxes, flags, icon buttons;
+- `scroll-x` — strips that scroll sideways instead of wrapping, with the scrollbar hidden and `overscroll-behavior-x: contain`.
+
+⚠ **`viewport-fit=cover` in `index.html` is what makes `env(safe-area-inset-*)` non-zero.** Without it every safe-area utility silently computes to zero and the whole layer is inert — it is not decoration, it is the switch. Two more platform rules live in the stylesheet rather than in each component: `touch-action: manipulation` on every interactive element (kills the 300ms double-tap delay), and a `(pointer: coarse)` block raising inputs to `max(16px, 1em)` because **iOS Safari zooms into any field under 16px on focus** and every input in this app is 13–14px.
+
+## The demo tour
+
+`src/tour/` — `TourProvider` (state + `useTour`), `TourOverlay` (spotlight and card), `steps.ts` (45 steps), `bus.ts`. Entered from the button in `ContextBar`.
+
+- **It is lazy.** `steps.ts` is 36 kB gzipped of descriptors and must never reach the floor; it and `TourOverlay` are their own chunks, pulled only when the tour starts. Check this survives any refactor of the provider — a static import from a floor module would put the whole script on every route.
+- **The bus is how the tour reaches view-local state.** Some steps need a document preview or an approval detail open, and that state lives inside the view. Rather than lifting it, the view calls `useTourAction(name, handler)` and the tour calls `emitTourAction(name)`. `tour:reset` fires on **every** step change so a view can close whatever it opened — subscribe to it if you open anything.
+- **Anchors are `data-tour="<key>"`, and `findTarget` picks the last *visible* match.** Two layouts routinely share a key (the desktop aside and the phone `SectionStrip` both answer to `settings-nav`, both to `portal-settings`), which is deliberate and safe: `findTarget` filters on `getClientRects().length > 0` and non-zero dimensions, so the `hidden md:flex` aside is skipped on a phone and the strip is skipped on desktop. Do not "de-duplicate" these by deleting one — that breaks the other viewport.
+- **Never slugify a label into an anchor.** The prototype derived `bulk-publish-selected` from an English button caption; under react-intl that key moves with the locale and the step strands in every language but one. `DataTable`'s `BulkAction` carries an explicit `tourKey` instead — that is the mechanism, use it.
+- A step whose `target` resolves to nothing degrades to a centred card **and prints a visible amber "missing target" line**, so a broken anchor is loud rather than silent. As of this port all 45 targeted anchors resolve; five anchors exist that no step targets (`bulk-bar`, `client-users`, `composer-generate`, `inboxes-upload`, `tour-button`), which is harmless. Note `inbox-upload` (ClientInbox, targeted) and `inboxes-upload` (InboxesView, not targeted) are different keys that read almost identically — check which one you mean.
+- The tour is **fully translated, not English-only**: ~206 catalogue keys, most of them prose. That is a real translation cost for a demo surface and it was a deliberate call; if ID ever wants it English-only the descriptors collapse back to literals in one file.
+
+## Two shared frames
+
+Both are additive — they replace none of the modals that already draw their own chrome.
+
+**`DynamicComponents/Modal`** — the one dialog frame: scrim, close button, Escape, placement. On a phone it is a bottom-anchored sheet, full width, safe-area aware, with the close button *inside* the card where a thumb reaches; from 640 up the card floats near the top. Props are `{ children, onClose, width?, label? }`. Render it inside an `AnimatePresence` or the exit animation will not play. Two departures from the ported frame, both load-bearing: Escape goes through `lib/useEscape` (a **stack** — a `ConfirmStep` opened over a Modal owns the key, so Escape mid-confirm cancels the confirm and not the surface underneath; two naive `window` listeners fire outer-first and close the wrong one), and the scrim is `role="presentation"` with `role="dialog"` on the card, because announcing a click target as the dialog itself is a lie the a11y sweep already rejected once.
+
+**`DynamicComponents/SectionStrip`** — a row of section pills that scrolls sideways instead of wrapping, for the places a side list or a wide tab row used to be. It scrolls the active pill into view whenever it changes, so a deep link never lands on a strip whose selection is off-screen. **`StripItem.label` is REQUIRED here, unlike the frame it was ported from**, which rendered `item.label ?? item.key` and so leaked a raw machine key (`'vat-returns'`) into the UI the moment a caller forgot one — untranslated, and untranslatable because nothing would ever flag it. `key` is identity and is never rendered; `label` is copy and every call site passes `intl.formatMessage(...)`.
+
 ## i18n
 
 Adding a string: `defineMessages` at the top of the component, id `domain.component.purpose`, `intl.formatMessage(m.thing)` at the call site. Plurals are ICU (`{count, plural, one {# day} other {# days}}`) — **never** `${n} day${n === 1 ? '' : 's'}`, which encodes an English-only rule about pluralisation and is wrong in most of the languages this would be translated into. Never concatenate a sentence out of fragments; interpolate into one message.
+
+**Shortening a label on a phone is TWO messages, never a truncation.** The convention the port established is a twin span — the full label in `hidden sm:inline`, a short one in `sm:hidden`, each with its own id (`…Short`):
+
+```tsx
+<span className="hidden sm:inline">{intl.formatMessage(m.attachClient)}</span>
+<span className="sm:hidden">{intl.formatMessage(m.attachClientShort)}</span>
+```
+
+Both spans are in the DOM and CSS chooses; nothing measures text. This exists because the alternatives are all worse in a catalogue: slicing a string in JS assumes English word boundaries, and CSS truncation gives a translator no way to write a genuinely shorter phrase for a narrow screen. `ContextBar` carries the worked examples. The cost is one extra id per shortened label, which is the point — the translator gets to see both and make them agree.
 
 Before minting a per-component id for a universal word, check `src/i18n/common.ts` (`common.action.*`, `common.label.*`, `common.placeholder.*`). Consolidation is by meaning, never string equality: status pills, tabs, navigation labels, channel names and "Yes, …" confirm labels stay per-component so a translator shortening one surface cannot silently reword another (issue #94).
 
@@ -222,15 +288,19 @@ Before minting a per-component id for a universal word, check `src/i18n/common.t
 
 Gzipped, after the i18n extraction. The budget is **JS** (SoT §14: "initial JS < 250 KB gzipped per route"), so CSS is listed but not counted against it:
 
-| | METH S6 | METH S12 | METH S13 | METH S14 | now (§9 chat) |
-|---|---|---|---|---|---|
-| `index.js` (shared, incl. the 0.1 kB entry stub) | 188.3 kB | 179.3 kB | 179.4 kB | 179.6 kB | **180.1 kB** |
-| `query.js` (TanStack) | 14.7 kB | 14.7 kB | 14.7 kB | 14.7 kB | 14.7 kB |
-| `react.js` | 1.5 kB | 1.5 kB | 1.5 kB | 1.5 kB | 1.5 kB |
-| **shared JS floor, every route** | **204.5 kB** | **195.5 kB** | **195.6 kB** | **195.8 kB** | **196.3 kB** |
-| heaviest route on top (`ClientDetailView`) | 45.1 kB | 45.2 kB | 45.2 kB | 45.7 kB | **45.7 kB** |
-| **worst route, total JS** | **249.6 kB** | **240.7 kB** | **240.8 kB** | **241.5 kB** | **242.0 kB** |
-| `index.css` (not in the JS budget) | 13.3 kB | 13.3 kB | 13.3 kB | 13.1 kB | 13.1 kB |
+| | METH S6 | METH S12 | METH S13 | METH S14 | §9 chat | **prototype port** |
+|---|---|---|---|---|---|---|
+| `index.js` (shared, incl. the 0.1 kB entry stub) | 188.3 kB | 179.3 kB | 179.4 kB | 179.6 kB | 180.1 kB | **183.2 kB** |
+| `query.js` (TanStack) | 14.7 kB | 14.7 kB | 14.7 kB | 14.7 kB | 14.7 kB | 14.8 kB |
+| `react.js` | 1.5 kB | 1.5 kB | 1.5 kB | 1.5 kB | 1.5 kB | 1.5 kB |
+| **shared JS floor, every route** | **204.5 kB** | **195.5 kB** | **195.6 kB** | **195.8 kB** | **196.3 kB** | **199.5 kB** |
+| heaviest route on top (`ClientDetailView`) | 45.1 kB | 45.2 kB | 45.2 kB | 45.7 kB | 45.7 kB | **46.4 kB** |
+| **worst route, total JS** | **249.6 kB** | **240.7 kB** | **240.8 kB** | **241.5 kB** | **242.0 kB** | **245.9 kB** |
+| `index.css` (not in the JS budget) | 13.3 kB | 13.3 kB | 13.3 kB | 13.1 kB | 13.1 kB | 15.1 kB |
+
+**The prototype port cost +2.5 kB of floor and +3.0 kB at the worst route, leaving 4.1 kB of headroom against the 250 kB budget** — under, but the tightest it has been since S6. The floor moved because `BottomNav` and `useViewport` are eagerly imported by `App.tsx`, which is the shell and cannot be lazy: on a phone the rail is not a narrower rail, it is a different component, so the choice has to be made before anything renders. The tour is **not** in that number — `steps.ts` (36.0 kB) and `TourOverlay` (7.5 kB) are their own chunks and load only when the tour starts. `index.css` grew 1.9 kB for the safe-area and tour blocks; CSS is not in the JS budget, but it is on the critical path, so it is not free either.
+
+**Next person adding a screen: you have ~4 kB.** The known reclaims below (the seed dataset leaving the floor, the `defaultMessage` strip on a second locale) are now the difference between shipping and a D37 reject, not nice-to-haves.
 
 **The §9 chat runtime cost the floor +0.5 kB, and unlike S12's slices it is ON
 the floor deliberately.** `src/api/chat.ts` is imported by `InputRow`, which the
@@ -269,7 +339,7 @@ Three things drive the floor, all known:
 - the synthetic dataset (~67 kB of source across the three seed/generate modules) is imported by `AppContext` at module scope and therefore ships to users;
 - every `defaultMessage` is in the bundle. The catalogue is not loaded at runtime yet — `lang/en-GB.json` exists for translators and for the gate. When a second locale arrives, the messages should move to a fetched catalogue and the defaults be stripped at build (`@formatjs/babel-plugin-react-intl` / the SWC equivalent `removeDefaultMessage`), which gives most of the 19.6 kB back.
 
-Most of the seed weight leaves when the views move onto the generated client. Until then, treat 203.5 kB as the floor a new screen is spending against, and re-measure with `pnpm --filter @neoting/web build` before adding a dependency.
+Most of the seed weight leaves when the views move onto the generated client. Until then, treat **199.5 kB** as the floor a new screen is spending against, and re-measure with `pnpm --filter @neoting/web build` before adding a dependency.
 
 ## Tests
 
@@ -303,9 +373,20 @@ What is covered today, and why those:
 
 Component tests are still owed for anything with logic (frontend ten, item 10) — the AppContext suite is the first, not the last.
 
-`vitest.setup.ts` shims what jsdom lacks and the app really uses. Four entries now: `matchMedia`, `ResizeObserver`, `scrollIntoView`, and `Blob.prototype.arrayBuffer` — jsdom 25 still has no `arrayBuffer()` (nor `text()`), and the portal reads the bytes it is about to upload in order to hash them. The shim is built out of jsdom's own `FileReader`, so it is a real read rather than a stand-in, and it is `??=`-guarded like the others so a jsdom that grows the method wins.
+`vitest.setup.ts` sets `asyncUtilTimeout` (above) and shims what jsdom lacks and the app really uses. Four shims: `matchMedia`, `ResizeObserver`, `scrollIntoView`, and `Blob.prototype.arrayBuffer` — jsdom 25 still has no `arrayBuffer()` (nor `text()`), and the portal reads the bytes it is about to upload in order to hash them. The shim is built out of jsdom's own `FileReader`, so it is a real read rather than a stand-in, and it is `??=`-guarded like the others so a jsdom that grows the method wins.
 
 **Lazy routes need `findBy*`, not `await act(async () => {})`.** A `React.lazy` chunk does not resolve inside a microtask flush, so an `act` flush leaves the skeleton on screen and every query fails against it. `ChasePortalView.test.tsx` waits on `screen.findByRole` — still offline, because the only thing being waited on is a dynamic `import()`. This is also why `AppContext.test.tsx` can only assert that `#root` is non-empty: what it is looking at is the skeleton.
+
+### The two timeouts, and why `testTimeout` alone does not fix a lazy-chunk flake
+
+⚠ **`findBy*` keeps its own clock.** vitest's `testTimeout` does not govern it; testing-library's `asyncUtilTimeout` does, and that defaults to **1000 ms**. This was measured, not assumed — raising `testTimeout` to 20 s left `ChasePortalView.test.tsx` failing in exactly the same place, because the *test* was never close to timing out; the *query* had already given up.
+
+So the harness sets **both**, and they are budgets for transform contention rather than for slow assertions:
+
+- `testTimeout` / `hookTimeout` `20000` in `vite.config.ts` — for suites that `await import()` in the test body (`ChatArea.test.tsx` does, deliberately, so the context mock is in place first);
+- `configure({ asyncUtilTimeout: 5000 })` in `vitest.setup.ts` — for `findBy*` waiting on a `React.lazy` route chunk.
+
+**The flake these fix is pre-existing and not caused by any application change.** On a loaded machine `origin/main` alone failed 2 of 303 tests on roughly one run in three (measured: run 1 green, run 2 red, run 3 green), always `ChatArea` or `ChasePortalView`, always on a dynamic `import()`, while the suite reported 60–113 s of aggregate import time across 24 parallel files. Every one of those files passes deterministically in about a second in isolation. Raising a ceiling costs a green run nothing — a query that matches immediately still returns immediately — and an element that never appears still fails the test. **If you see one of these two suites time out, do not edit the test body**; it is machine load, and the assertions are not the thing that broke.
 
 ## Previews
 
