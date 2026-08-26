@@ -1,3 +1,21 @@
+> ### ⚠ CONTRACTING ENTITY IS TEMPORARY — READ BEFORE PUBLISHING
+>
+> For the **first customer only**, the contracting entity and merchant of record is
+> **Exambinary Holding Ltd**, because that is the company holding the live Stripe account
+> (`acct_1RQtbxGMdHp4NCWv`). Decision taken 26 Aug 2026.
+>
+> This matters and is not cosmetic:
+> - The customer's **card statement** will read Exambinary. If the contract named a
+>   different company, an accountant who does not recognise the name raises a chargeback.
+> - The **VAT invoice comes from Exambinary's VAT registration**, because HMRC requires the
+>   invoice to come from the entity that made the supply. Neovogent's VAT number is not the
+>   one that belongs on it.
+>
+> So every reference below names Exambinary. **When Stripe moves to
+> NEOVOGENT AI SOLUTIONS UK LTD** (company no. 15946429, registered office Suite 5,
+> The Cloisters, 11–12 George Road, Edgbaston, Birmingham B15 1NP), these documents change
+> back in the same commit as the Stripe migration — not before, and not after.
+
 <!--
 DRAFTING MAP — which parts are fixed by law, and which are our own commercial choice.
 
@@ -138,10 +156,10 @@ DRAFTING MAP — which parts are fixed by law, and which are our own commercial 
 
 ## 11. Who we are
 
-**NEOVOGENT AI SOLUTIONS UK LTD**, trading as Neovogent.
+**Exambinary Holding Ltd** [PLACEHOLDER: confirm the exact registered name at Companies House], a company registered in England and Wales, company number [PLACEHOLDER: Exambinary company number], registered office [PLACEHOLDER: Exambinary registered office], VAT registration number [PLACEHOLDER: Exambinary VAT number], trading as Exambinary.
 
-- Company number: 15946429
-- Registered office: Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham B15 1NP, Birmingham, United Kingdom
+- Company number: [PLACEHOLDER: Exambinary company number]
+- Registered office: [PLACEHOLDER: Exambinary registered office], Birmingham, United Kingdom
 - Tax ID: 9286810564
 - VAT registration number: [PLACEHOLDER: UK VAT registration number. 9286810564 is the company TAX ID, not the VAT number — the VAT registration number is a separate nine-digit reference and must be obtained before any invoice is issued]
 - Support and billing: **support@neovogent.com** — replies within 24 hours, 06:00–18:00 UK time

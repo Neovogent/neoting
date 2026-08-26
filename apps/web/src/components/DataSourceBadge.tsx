@@ -1,29 +1,41 @@
 import { defineMessages, useIntl } from 'react-intl';
 import { AlertTriangle } from 'lucide-react';
+import { commonActions } from '../i18n/common';
 import type { SliceStatus } from '../api/slices';
 
 /**
- * The dev-only "this screen fell back to sample data" badge (METH Stage 6).
+ * The "this data could not be loaded" badge (launch M2, replacing METH
+ * Stage 6's dev-only sample-data badge).
  *
- * A slice whose API fetch fails degrades to the synthetic generators rather
- * than to a blank screen — that is the standing fallback — but fixtures that
- * look like server truth are a trap for whoever is debugging, so in a dev
- * build the fallback wears this. Production builds render nothing: the
- * degradation itself is the designed behaviour there.
+ * A slice whose API fetch fails no longer degrades to the synthetic
+ * generators — it says so, in EVERY build. The old badge rendered nothing in
+ * production, which meant the one signal that would have told a paying
+ * accountant "these rows are not real" was invisible in exactly the build
+ * where it mattered. Now there are no fixture rows to disclaim; the badge
+ * names the failure and, where the caller passes `onRetry`, offers the retry
+ * the error state owes (frontend ten, item 5).
  *
- * Wired screens (Stages 7/11/12) mount one per slice they read; the context
- * header carries them for the slices no single screen owns.
+ * Wired screens mount one per slice they read; the context header carries
+ * them for the slices no single screen owns.
  */
 const m = defineMessages({
-  fallback: {
-    id: 'shell.dataSourceBadge.fallback',
-    defaultMessage: '{slice}: sample data — the API fetch failed',
+  error: {
+    id: 'shell.dataSourceBadge.error',
+    defaultMessage: '{slice}: data could not be loaded',
   },
 });
 
-export function DataSourceBadge({ slice, status }: { slice: string; status: SliceStatus }) {
+export function DataSourceBadge({
+  slice,
+  status,
+  onRetry,
+}: {
+  slice: string;
+  status: SliceStatus;
+  onRetry?: () => void;
+}) {
   const intl = useIntl();
-  if (!import.meta.env.DEV || status.source !== 'seed-fallback') return null;
+  if (status.source !== 'error') return null;
 
   return (
     <span
@@ -31,7 +43,48 @@ export function DataSourceBadge({ slice, status }: { slice: string; status: Slic
       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-amber-500/20 bg-amber-500/10 text-[11px] font-bold text-amber-400 whitespace-nowrap"
     >
       <AlertTriangle size={12} className="shrink-0" />
-      {intl.formatMessage(m.fallback, { slice })}
+      {intl.formatMessage(m.error, { slice })}
+      {onRetry && (
+        <button
+          onClick={onRetry}
+          className="ml-1 px-2 py-0.5 rounded-full border border-amber-500/30 hover:bg-amber-500/20 text-amber-300 transition-colors"
+        >
+          {intl.formatMessage(commonActions.retry)}
+        </button>
+      )}
     </span>
+  );
+}
+
+/**
+ * The full-size version, for a surface whose whole live board failed to load.
+ * These used to fall back to the synthetic boards; now the screen says what
+ * happened and offers the way forward. `heading` arrives already formatted —
+ * it is the view's own sentence about the view's own data.
+ */
+export function SliceLoadError({
+  heading,
+  error,
+  onRetry,
+}: {
+  heading: string;
+  error: string | null;
+  onRetry: () => void;
+}) {
+  const intl = useIntl();
+  return (
+    <div className="flex items-center gap-3 px-5 py-4 rounded-2xl border bg-red-500/10 border-red-500/20 text-red-300 text-[13px] font-semibold">
+      <AlertTriangle size={15} className="shrink-0" />
+      <span className="min-w-0">
+        {heading}
+        {error && <span className="block text-[12px] font-medium text-red-300/80 truncate">{error}</span>}
+      </span>
+      <button
+        onClick={onRetry}
+        className="ml-auto shrink-0 px-3.5 py-1.5 rounded-full text-[12px] font-bold border border-red-500/30 text-red-200 hover:bg-red-500/20 transition-colors"
+      >
+        {intl.formatMessage(commonActions.retry)}
+      </button>
+    </div>
   );
 }

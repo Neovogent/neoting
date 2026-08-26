@@ -1,31 +1,94 @@
 # notifications
 
-**Lane L** · **Source of Truth:** SoT §4 Stage 8.8, §12 · **Owner:** see the project board
+**Lane L** · **Source of Truth:** SoT §4 Stage 8.8, §12 · **Launch stage:** S2 (`docs/launch/SHAKIB.md`)
 
 ## Purpose
 
-Per-event notification preferences, delivery, and accountant-facing alerts on client uploads and failures.
+**Outbound transactional email, and the first thing in this repository that sends any.**
 
-## Contracts it must honour
+Before S2 a repo-wide grep for `SESClient`, `sendEmail`, `nodemailer`, `SendEmailCommand`
+and `smtp` returned zero hits. Only INBOUND mail existed (`ingestion-routing/email`,
+`doc@` → S3). With SMS cut for Initial Delivery the client had **no delivery channel at
+all**: no invite could reach them, no sign-in code could be delivered, nothing could be
+chased. This module is that channel.
 
-- `packages/contracts` — endpoints, DTOs and error codes (**LAW**, G7)
-- `prisma/` — schema and RLS policies (**LAW**, G7)
-- `packages/validators` — deterministic validator config where this module validates
+Per-event notification *preferences* (SoT §4 Stage 8.8, "granular per event, configurable
+in both directions") are still unbuilt — see TODO.
 
-Changing any of those is a contract-change issue approved by Shakib **before** a PR opens. Code follows contracts; contracts never follow code.
+## What is here
 
-## Invariants
+| File | What it is |
+|---|---|
+| `email-sender.ts` | The `EmailSender` seam + `OutboundEmail`/`SentEmail` + `DemoEmailSender` (in-memory outbox) |
+| `ses-email-sender.ts` | The real one — Amazon SES v2, eu-west-2 |
+| `select-email-sender.ts` | Config selection for BOTH the sender and the rate limiter |
+| `email-copy.ts` | The three messages, pure functions |
+| `email-address.ts` | The address boundary — validation, CR/LF refusal, the rate-limit identity |
+| `sign-in-code.ts` | The credential wrapper that refuses to reveal itself |
+| `email-rate-limit.ts` | Per-address and per-IP ceilings, memory + Redis |
+| `notifications.service.ts` | The one door outbound email leaves by |
 
-- Preferences are granular per event and configurable in both directions — being able to silence a notification is a feature, not an oversight.
-- Every Prisma query goes through `scopedDb(ctx)` — an unscoped query is a tenancy leak (Governance §5.2).
-- Money is integer pence. No floats, ever.
-- Every state change creates an `ActionProposal` and executes only after a human Approve (Governance §10). No side-effect path may exist outside it.
-- Zod at every boundary; external content wrapped in `<untrusted_content>` before any model sees it.
-- Audit events emitted for every new state change.
+**The three messages** (S2): client invite · sign-in code · document request.
+
+## The rules that matter more than the feature
+
+- **Plain text. No HTML part, no images, no tracking pixel, no marketing chrome.** There is
+  no `html` field on `OutboundEmail` and there must not be one. A transactional message that
+  looks like a campaign is scored as one, and a sign-in code in a spam folder is a client who
+  cannot sign in at all. `email-copy.test.ts` asserts it on every message.
+- **The sign-in code is a CREDENTIAL.** Never logged, never in a URL, never in a subject,
+  never in an API response or an error — *not even in development*. `SignInCode` makes this
+  structural rather than aspirational: template interpolation, `JSON.stringify` and
+  `util.inspect` all yield `[sign-in code]`, and `reveal()` is the one door out.
+  **`grep -rn 'reveal()'` should return exactly one call site, in `email-copy.ts`.** A second
+  one is a finding.
+- **Rate-limited per address AND per IP.** Either alone leaves the other wide open — see the
+  header of `email-rate-limit.ts`. Address keys carry the kind; the IP key deliberately does
+  not.
+- **`no-reply@`, never `doc@`.** `doc@` is the inbound document intake address; mail arriving
+  there is filed as a client document, so sending from it would ingest every reply as
+  paperwork. The task role's `ses:FromAddress` condition and `EMAIL_FROM_ADDRESS` must agree
+  or every send is AccessDenied.
+- **What reaches the logs:** the kind, the provider message id, and the recipient's *domain*.
+  Never the address (Governance §11.6), never the body.
+- **No message may claim a ledger was written to** (D42). Asserted in `email-copy.test.ts`.
 
 ## Boundaries
 
-Exposes **only** its public providers. No other module reaches into its internals; cross-module work goes through those providers or through domain events on the transactional outbox. Import rules are lint-enforced, because this boundary is also the parallel-agent lane map.
+Exposes **only** `index.ts`. The boundary is lint-enforced
+(`neoting/no-cross-module-internals`).
+
+**This module writes nothing to the database, on purpose.** There is no email-outbox table
+and adding one is `prisma/` — LAW (G7), and not in the S0 batch. The constraint turned out
+to be the right shape: the durable record of *why* a message was sent already belongs to the
+caller (`invites`, `otp_sessions`, `chases` + `chase_messages`), and a transport-owned second
+copy would be a second opinion about what was sent. What replaces the outbox row is
+`DemoEmailSender`'s in-memory ring in dev, and SES's own configuration-set metrics + the
+`nt-<env>-ses-events` SNS topic in a deployed environment.
+
+It imports `chase/index.ts` for `formatGbp`, `formatDay` and `ChaseItem` — money and dates
+come from one implementation, not two. `formatGbp` is string arithmetic on integer pence and
+never divides; a local `£${p / 100}` would be wrong and would look right.
+
+**No controller.** Nothing in `openapi.yaml` publishes a notifications endpoint and
+`packages/contracts` is LAW. This module exists to be injected.
+
+## Config (`config/env.ts`, the S2 block)
+
+`EMAIL_SENDER` (`demo`|`ses`) · `SES_REGION` · `EMAIL_FROM_ADDRESS` ·
+`EMAIL_REPLY_TO_ADDRESS` · `EMAIL_CONFIGURATION_SET` · `EMAIL_RATE_LIMIT` (`memory`|`redis`)
+
+Three boot gates refuse: `demo` in production; `ses` without a From address or a
+configuration set; `ses` behind the per-process limiter in production.
+
+⚠ **There is no fallback from `ses` to `demo`, and there must not be one** —
+`select-extractor.ts` carries the long version of why, paid for on 25 Aug 2026.
+
+## Locally
+
+`EMAIL_SENDER=demo`. The sign-in code you need in order to sign in is in the in-memory
+outbox — `DemoEmailSender.lastTo(address)`. It is a bounded ring (100), and it holds
+credentials in memory, which is one more reason the production gate exists.
 
 ## Tests
 
@@ -33,13 +96,28 @@ Exposes **only** its public providers. No other module reaches into its internal
 pnpm --filter @neoting/api test -- notifications
 ```
 
-## Current state
+## Verified against the real thing (26 Aug 2026)
 
-**Skeleton only.** Created by the S0 scaffold; no implementation yet.
+SES account: production access GRANTED, 50,000/day, 14/s, `SendingEnabled`, enforcement
+HEALTHY. Identity `neoting.neovogent.com`: `VerifiedForSendingStatus` true, DKIM `SUCCESS`
+(3 tokens), MAIL FROM `mail.neoting.neovogent.com` `SUCCESS`. DNS resolves: SPF
+(`v=spf1 include:amazonses.com ~all`), the MAIL FROM MX, and DMARC (`p=none`, with `rua=`).
+
+Three real messages sent to a real Gmail address **through this code**, not through the
+CLI — SES `Send=3`, `Delivery`, `Bounce=0`, `Complaint=0`, `Reject=0`, suppression list
+empty.
 
 ## TODO
 
-- [ ] Await the frozen OpenAPI contract for this module's endpoints
-- [ ] Service + repository skeleton with Zod DTOs
-- [ ] Unit tests for the logic above
-- [ ] Update this file on exit — it is how the next session picks up
+- [ ] **Subscribe a human to `nt-staging-ses-events`.** It has ZERO subscribers, so bounces
+      and complaints publish into a void: account-side suppression still works, but nobody is
+      *told*. `observability.tf` forbids declaring the subscription in Terraform (it would be
+      created `PendingConfirmation` and look wired while delivering nothing), so this is an
+      out-of-band action and the confirmation is the proof.
+- [ ] Confirm inbox-vs-spam placement on Outlook — the Gmail send is done, no Outlook address
+      was available.
+- [ ] Tighten DMARC to `p=quarantine` once `rua` reports are clean (runbook §5.3).
+- [ ] Per-event notification preferences (SoT §4 Stage 8.8) — granular, both directions.
+- [ ] Wire the consumers: A1/A11 (`sendClientInvite`), A2 (`sendSignInCode`),
+      A14 (`sendDocumentRequest`, cut-listed at hour 22).
+- [ ] Update this file on exit — it is how the next session picks up.

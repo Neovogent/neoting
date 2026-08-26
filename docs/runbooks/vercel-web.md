@@ -1,7 +1,28 @@
 # Runbook — hosting `apps/web` on Vercel
 
-**Status:** written 20 Aug 2026 · **Owner:** Shakib · **Related:** `docs/runbooks/staging-demo.md` §5,
-`infra/envs/staging/edge.tf` (why `app.` and `portal.` are not built on AWS)
+> ## ⚠ SUPERSEDED 26 Aug 2026 — read `docs/runbooks/web-cloudfront.md` instead
+>
+> Launch stage **S3** moved `apps/web` onto AWS: a private S3 bucket behind its
+> own CloudFront distribution, with `/v1/*`, `/d/*` and `/healthz` proxied to the
+> existing ALB from the same origin. `infra/envs/staging/web.tf` builds it and
+> `.github/workflows/deploy-web.yml` publishes to it.
+>
+> **This file is kept because two things in it are still load-bearing** and were
+> paid for the hard way:
+>
+> - **"The one idea this rests on"** below is unchanged and explains *why* the
+>   API is proxied rather than called cross-origin. The CloudFront design exists
+>   to reproduce that property.
+> - **The `VITE_API_ENABLED` warning** is the single most expensive variable in
+>   the build, and it applies verbatim to the new workflow.
+>
+> Everything about the Vercel dashboard, `vercel.json` and Deployment Protection
+> is history. `vercel.json` is still in the repo on purpose — remove it when you
+> turn the Vercel project off, not before, so there is a way back.
+
+**Status:** written 20 Aug 2026, superseded 26 Aug 2026 · **Owner:** Shakib ·
+**Related:** `docs/runbooks/web-cloudfront.md` (the replacement),
+`docs/runbooks/staging-demo.md` §5
 
 What it takes to put the workspace and the OTP portal on a URL a client can
 open, talking to the deployed API. `edge.tf` always assumed this — *"apps/web

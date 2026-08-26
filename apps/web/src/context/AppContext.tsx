@@ -444,6 +444,14 @@ interface AppContextType {
   documentsLoading: boolean;
   documentsError: string | null;
   /**
+   * The retries the error states owe (launch M2): a failed slice never
+   * degrades to the synthetic rows, so the screen that says "could not be
+   * loaded" must also offer the way forward.
+   */
+  refetchDocuments: () => void;
+  refetchBank: () => void;
+  refetchBusinesses: () => void;
+  /**
    * The 73-vote move-between-entities, with the addressee check done by the
    * caller. `teachSender` records the senders of those documents against the
    * client, so the same address routes itself next time — the one useful thing
@@ -547,12 +555,30 @@ function buildInitialPipeline(intl: IntlShape) {
   };
 }
 
+/**
+ * The synthetic cast is DEMO-ONLY (launch M2). With the API on, every seeded
+ * array below starts empty and fills from the server — the demo cast must
+ * never be the starting state for a paying accountant, who would see
+ * "American Burger Ltd" and a set of invented invoices with no way to know
+ * they are not real. With the API off, the seeds stand and the walkthrough
+ * is exactly what it always was (METH_MODE §1's standing condition).
+ */
+const SYNTHETIC = !API_ENABLED;
+
+const EMPTY_PIPELINE: ReturnType<typeof buildInitialPipeline> = {
+  documents: [],
+  accounts: [],
+  transactions: [],
+  matches: [],
+  missing: [],
+};
+
 export function AppProvider({ children }: { children: ReactNode }) {
   // `AppIntlProvider` sits above this in `main.tsx`, so messages are available
   // to the seed pipeline and to every derivation below it.
   const intl = useIntl();
 
-  const [initial] = useState(() => buildInitialPipeline(intl));
+  const [initial] = useState(() => (SYNTHETIC ? buildInitialPipeline(intl) : EMPTY_PIPELINE));
 
   /**
    * Everything about *where you are* comes from the address bar rather than
@@ -587,7 +613,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const { session } = useSession({ enabled: workspaceApiOn });
   const slicesOn = workspaceApiOn && session.status === 'authenticated';
 
-  const [clients, setClients] = useState<Client[]>(seedClients);
+  const [clients, setClients] = useState<Client[]>(SYNTHETIC ? seedClients : []);
   const [documents, setDocuments] = useState<Document[]>(initial.documents);
 
   /**
@@ -686,6 +712,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
    */
   const bankQuery = useBankTransactions({ enabled: slicesOn, clientNameFor, params: { limit: 100 } });
   const refetchBank = bankQuery.refetch;
+  const refetchDocuments = documentsQuery.refetch;
+  const refetchBusinesses = businessesQuery.refetch;
 
   useEffect(() => {
     if (!API_ENABLED || bankQuery.transactions.length === 0) return;
@@ -740,10 +768,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await apiLogout();
     await queryClient.invalidateQueries();
   }, []);
-  const [statements, setStatements] = useState<Statement[]>(seedStatements);
-  const [supplierStatements, setSupplierStatements] = useState<SupplierStatement[]>(seedSupplierStatements);
-  const [expenseClaims, setExpenseClaims] = useState<ExpenseClaim[]>(seedExpenseClaims);
-  const [statementGaps, setStatementGaps] = useState<StatementGap[]>(() => buildGaps(seedClients, initial.accounts));
+  const [statements, setStatements] = useState<Statement[]>(SYNTHETIC ? seedStatements : []);
+  const [supplierStatements, setSupplierStatements] = useState<SupplierStatement[]>(SYNTHETIC ? seedSupplierStatements : []);
+  const [expenseClaims, setExpenseClaims] = useState<ExpenseClaim[]>(SYNTHETIC ? seedExpenseClaims : []);
+  const [statementGaps, setStatementGaps] = useState<StatementGap[]>(() =>
+    SYNTHETIC ? buildGaps(seedClients, initial.accounts) : [],
+  );
   const [matchSettings, setMatchSettings] = useState<MatchSettings>(DEFAULT_MATCH_SETTINGS);
   /**
    * Pairs a person has already ruled on, so a decision sticks. Detection is
@@ -752,7 +782,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
    */
   const [resolvedDuplicates, setResolvedDuplicates] = useState<string[]>([]);
 
-  const [rules, setRules] = useState<Rule[]>(seedRules);
+  const [rules, setRules] = useState<Rule[]>(SYNTHETIC ? seedRules : []);
   const [chasePolicy, setChasePolicyState] = useState<ChasePolicy>(DEFAULT_CHASE_POLICY);
 
   /** Central clamp: no caller can set a secure link to outlive a week. */
@@ -760,11 +790,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setChasePolicyState({ ...p, linkTtlHours: clampLinkTtl(p.linkTtlHours) });
   }, []);
   const [chases, setChases] = useState<Chase[]>(() =>
-    buildChases(initial.missing, seedClients, DEFAULT_CHASE_POLICY),
+    SYNTHETIC ? buildChases(initial.missing, seedClients, DEFAULT_CHASE_POLICY) : [],
   );
   const [itemMessages, setItemMessages] = useState<ItemMessage[]>([]);
-  const [approvalWorkflows, setApprovalWorkflows] = useState<ApprovalWorkflow[]>(seedWorkflows);
-  const [approvals, setApprovals] = useState<ApprovalItem[]>(() => buildApprovals(initial.documents, seedWorkflows));
+  const [approvalWorkflows, setApprovalWorkflows] = useState<ApprovalWorkflow[]>(SYNTHETIC ? seedWorkflows : []);
+  const [approvals, setApprovals] = useState<ApprovalItem[]>(() =>
+    SYNTHETIC ? buildApprovals(initial.documents, seedWorkflows) : [],
+  );
   const [approvalRequests, setApprovalRequests] = useState<ApprovalRequest[]>([]);
   const [clientDetailChanges, setClientDetailChanges] = useState<ClientDetailChange[]>([]);
 
@@ -826,10 +858,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
-  const [vault, setVault] = useState<VaultDocument[]>(() => buildVault(seedClients));
-  const [colleagues, setColleagues] = useState<Colleague[]>(seedColleagues);
-  const [teams, setTeams] = useState<Team[]>(seedTeams);
-  const [tasks, setTasks] = useState<WorkflowTask[]>(() => buildTasks(seedClients));
+  const [vault, setVault] = useState<VaultDocument[]>(() => (SYNTHETIC ? buildVault(seedClients) : []));
+  const [colleagues, setColleagues] = useState<Colleague[]>(SYNTHETIC ? seedColleagues : []);
+  const [teams, setTeams] = useState<Team[]>(SYNTHETIC ? seedTeams : []);
+  const [tasks, setTasks] = useState<WorkflowTask[]>(() => (SYNTHETIC ? buildTasks(seedClients) : []));
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
 
   /**
@@ -855,7 +887,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sheetImports, setSheetImports] = useState<SheetImport[]>([]);
 
   const [onboardingLinks, setOnboardingLinks] = useState<OnboardingLink[]>([]);
-  const [businessAccounts, setBusinessAccounts] = useState<BusinessAccount[]>(() => buildBusinessAccounts(seedClients));
+  const [businessAccounts, setBusinessAccounts] = useState<BusinessAccount[]>(() =>
+    SYNTHETIC ? buildBusinessAccounts(seedClients) : [],
+  );
 
   // `segments`/`root`/`portal` are read at the top of the provider (the
   // session and the API slices key off them); everything else the address
@@ -877,7 +911,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     navigate(id ? path('clients', id) : '/clients');
   }, []);
 
-  const [starredClientIds, setStarredClientIds] = useState<string[]>(['1']);
+  const [starredClientIds, setStarredClientIds] = useState<string[]>(SYNTHETIC ? ['1'] : []);
 
   /**
    * There is always exactly one active conversation. A brand-new one starts
@@ -886,8 +920,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
    * correct across awaits and are safe to run twice under StrictMode.
    */
   const [conversations, setConversations] = useState<Conversation[]>(() => [
-    newDraft(['1'], 'draft-initial'),
-    ...seedConversations,
+    // Live, the first draft attaches no client — '1' is the synthetic cast's
+    // id and does not exist server-side — and the seeded chat history (canned
+    // assistant turns over invented rows) stays out entirely.
+    newDraft(SYNTHETIC ? ['1'] : [], 'draft-initial'),
+    ...(SYNTHETIC ? seedConversations : []),
   ]);
   /**
    * The conversation in the address bar, falling back to the newest draft.
@@ -2512,6 +2549,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         documentsSource: API_ENABLED ? 'api' : 'seed',
         documentsLoading: documentsQuery.isLoading,
         documentsError: documentsQuery.contractError ?? errorLabel(documentsQuery.error),
+        refetchDocuments,
+        refetchBank,
+        refetchBusinesses,
         session,
         logout,
         businesses,

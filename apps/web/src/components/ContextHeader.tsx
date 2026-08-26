@@ -13,8 +13,8 @@ import { DataSourceBadge } from './DataSourceBadge';
  *
  * It renders nothing in synthetic mode ('off'): there is no identity to show
  * and inventing one would be the opposite of orientation. In 'degraded' mode
- * it carries only the dev-only fallback badges, so an API that died
- * mid-session is named rather than silently impersonated by seed data.
+ * it carries only the failure badges — visible in every build (launch M2) —
+ * so an API that died mid-session is named rather than silently impersonated.
  */
 const m = defineMessages({
   scope: {
@@ -26,12 +26,12 @@ const m = defineMessages({
   sessionSlice: {
     id: 'shell.contextHeader.sessionSlice',
     defaultMessage: 'session',
-    description: 'Name of the session data slice on the fallback badge — a technical noun.',
+    description: 'Name of the session data slice on the load-failure badge — a technical noun.',
   },
   businessesSlice: {
     id: 'shell.contextHeader.businessesSlice',
     defaultMessage: 'clients',
-    description: 'Name of the businesses data slice on the fallback badge.',
+    description: 'Name of the businesses data slice on the load-failure badge.',
   },
   // Role names stay per-component (i18n rule: consolidation by meaning only).
   rolePracticeAdmin: { id: 'shell.contextHeader.rolePracticeAdmin', defaultMessage: 'Practice Admin' },
@@ -53,7 +53,7 @@ const ROLE_LABEL: Record<WorkspaceRole, MessageDescriptor> = {
 
 export function ContextHeader() {
   const intl = useIntl();
-  const { session, businesses, slices, logout } = useAppContext();
+  const { session, businesses, slices, refetchBusinesses, logout } = useAppContext();
   const [menuOpen, setMenuOpen] = useState(false);
   useEscape(() => setMenuOpen(false), menuOpen);
 
@@ -64,10 +64,14 @@ export function ContextHeader() {
       {session.status === 'degraded' && (
         <DataSourceBadge
           slice={intl.formatMessage(m.sessionSlice)}
-          status={{ source: 'seed-fallback', loading: false, error: session.error }}
+          status={{ source: 'error', loading: false, error: session.error }}
         />
       )}
-      <DataSourceBadge slice={intl.formatMessage(m.businessesSlice)} status={slices.businesses} />
+      <DataSourceBadge
+        slice={intl.formatMessage(m.businessesSlice)}
+        status={slices.businesses}
+        onRetry={refetchBusinesses}
+      />
     </span>
   );
 

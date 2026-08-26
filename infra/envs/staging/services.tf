@@ -170,6 +170,60 @@ locals {
     { name = "AI_CHAT", value = "bedrock" },
     { name = "BEDROCK_REGION", value = local.region },
     { name = "AI_DAILY_BUDGET_PENCE", value = "500" },
+
+    # ------------------------------------------------------------------------
+    # Outbound email (S2) — the second adapter above that is NOT a demo
+    # stand-in, and the FIRST thing in this repository that sends any mail.
+    #
+    # ⚠ EVERY LINE HERE IS LOAD-BEARING FOR BOOT. `config/env.ts` refuses
+    # EMAIL_SENDER=demo under NODE_ENV=production, refuses EMAIL_SENDER=ses
+    # without a configuration set, and refuses a real sender behind the
+    # per-process rate limiter in production. Omit any of them and the task
+    # exits 1 with the env-validation error — the AUTH_MODE / AI_CHAT pattern,
+    # deliberately, because a `demo` email sender is the one stand-in whose
+    # failure is invisible from every screen: each send returns a message id
+    # and no email exists.
+    #
+    #   EMAIL_SENDER=ses  The infrastructure has been ready since 17 Aug 2026
+    #                     (email.tf: production access granted, 50,000/day,
+    #                     sandbox exited, DKIM + SPF-aligned MAIL FROM + DMARC
+    #                     published). That file's status note listed "no sending
+    #                     client exists in the app" as gate one. S2 built it.
+    #
+    #   EMAIL_FROM_ADDRESS  ⚠ no-reply@, NOT doc@. `doc@` is the inbound
+    #                     document intake address and mail arriving there is
+    #                     filed as a client document — sending from it would
+    #                     ingest every reply as paperwork. The task role's
+    #                     `ses:FromAddress` condition (compute.tf) was pinned to
+    #                     `doc@` and is widened to this address for the same
+    #                     reason; the two must agree or every send is
+    #                     AccessDenied.
+    #
+    #   EMAIL_REPLY_TO_ADDRESS  A different domain on purpose: this domain's MX
+    #                     points at SES inbound, whose rule set accepts `doc@`
+    #                     and `dmarc@` and nothing else, so a reply to any other
+    #                     address ON it would bounce.
+    #
+    #   EMAIL_CONFIGURATION_SET  Without it a send still succeeds and silently
+    #                     opts out of bounce/complaint suppression, reputation
+    #                     metrics and the SNS event feed — i.e. we would keep
+    #                     mailing addresses that have already bounced, which is
+    #                     the fastest route to the 5% suspension the reputation
+    #                     alarms in observability.tf watch for.
+    #
+    #   EMAIL_RATE_LIMIT=redis  The per-address and per-IP ceilings must hold
+    #                     ACROSS tasks. `memory` counts per process, and the api
+    #                     service runs more than one — the ceilings would be
+    #                     multiplied by the task count, silently. No new
+    #                     credential: it reuses the REDIS_* parts and the
+    #                     REDIS_AUTH_TOKEN secret already injected above.
+    # ------------------------------------------------------------------------
+    { name = "EMAIL_SENDER", value = "ses" },
+    { name = "SES_REGION", value = local.region },
+    { name = "EMAIL_FROM_ADDRESS", value = "no-reply@${local.domain}" },
+    { name = "EMAIL_REPLY_TO_ADDRESS", value = "support@neovogent.com" },
+    { name = "EMAIL_CONFIGURATION_SET", value = aws_sesv2_configuration_set.primary.configuration_set_name },
+    { name = "EMAIL_RATE_LIMIT", value = "redis" },
   ]
 
   # ------------------------------------------------------------------------

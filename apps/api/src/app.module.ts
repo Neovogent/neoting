@@ -15,6 +15,7 @@ import { DocumentsModule } from './modules/documents/documents.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { WebUploadModule } from './modules/ingestion-routing/web-upload/web-upload.module.js';
 import { WhatsAppWebhookModule } from './modules/ingestion-routing/webhooks/whatsapp/whatsapp.module.js';
+import { NotificationsModule } from './modules/notifications/notifications.module.js';
 import { PortalModule } from './modules/portal/portal.module.js';
 import { PublishingModule } from './modules/publishing/publishing.module.js';
 
@@ -29,6 +30,7 @@ import { PublishingModule } from './modules/publishing/publishing.module.js';
     ChatFrameworkModule,
     DocumentsModule,
     HealthModule,
+    NotificationsModule,
     PortalModule,
     PublishingModule,
     WebUploadModule,

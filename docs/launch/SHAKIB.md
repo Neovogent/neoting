@@ -161,6 +161,44 @@ one test message, then leave it alone.
 Full gate. PR.
 ```
 
+### ✅ Done — PR #168 (26 Aug 2026)
+
+`apps/api/src/modules/notifications/` is a config-selected transport with three
+composed messages. **Every downstream consumer is unblocked**: A1/A11 call
+`sendClientInvite`, A2 calls `sendSignInCode`, A14 calls `sendDocumentRequest`.
+Read the module's `CLAUDE.md` before wiring one. Five things worth knowing:
+
+1. **Proven with a real send, not a terraform apply.** Three messages to a real
+   Gmail address *through the code*: SES `Send 3 · Delivery 3 · Bounce 0 ·
+   Reject 0`, suppression list empty. DKIM, SPF-aligned MAIL FROM and DMARC all
+   verified live.
+2. **The `ses:FromAddress` grant was pinned to `doc@`, and that was a bug.**
+   `doc@` is the *inbound* intake address — mail arriving there is filed as a
+   client document, so sending from it would ingest every client reply as
+   paperwork. Now `no-reply@`, with `Reply-To: support@neovogent.com`.
+3. **Three boot gates, and `services.tf` was updated in the same commit** so the
+   next staging deploy cannot crash-loop. `EMAIL_SENDER=demo` refuses in
+   production — it is the one stand-in whose failure is invisible from every
+   screen.
+4. **It adds `@aws-sdk/client-sesv2`** (+6 packages, pinned to `client-s3`'s
+   version). A dependency, so it is flagged on the PR rather than assumed.
+5. **The env block lives in S1's file**, written as one self-contained additive
+   block so your S1 pass merges over it rather than into it.
+
+**Two things still need you, and neither is code:**
+
+- **Confirm inbox-vs-spam placement**, and give me an Outlook address — SES can
+  prove delivery to Gmail's MX, only a human proves the inbox, and no Outlook
+  address was available.
+- **Subscribe someone to `nt-staging-ses-events`.** Zero subscribers today, so
+  bounces and complaints publish into a void: account-side suppression still
+  works, but nobody is *told*. `observability.tf` forbids declaring it in
+  Terraform (it would be created `PendingConfirmation` and look wired while
+  delivering nothing), so this is out of band and the confirmation is the proof.
+
+`support@neovogent.com` MX resolves to Cloudflare email routing with a matching
+SPF record; the live forwarding test is still yours to run from outside.
+
 ---
 
 ## S3 · The frontend moves to AWS
@@ -192,6 +230,45 @@ on 25 Aug. Confirm what actually exists before wiring an origin to it.
 Terraform fmt and validate must pass. PR — do not apply by hand.
 ```
 
+### ✅ Done — `infra/envs/staging/web.tf`, `.github/workflows/deploy-web.yml` (26 Aug 2026)
+
+The ⚠ paid off: **the staging ALB is up**, and so is everything else the origin
+needs. Verified against AWS, not against the code —
+`nt-staging-alb` (active, internet-facing), the `nt-staging` ECS cluster with
+all four services, distribution `E2SUZ6X0H1I02U` serving `api.` and `staging.`,
+and the six `nt-staging-*` buckets. **Only prod was destroyed on 25 Aug; staging
+is untouched.**
+
+`terraform plan` reports **14 to add, 0 to change, 0 to destroy** — the `api.`
+distribution, the ALB, the WAF and every alarm are left exactly as they are.
+
+**Three things to know before the next stage:**
+
+1. **The app is at `app.neoting.neovogent.com`, not `neoacc.neovogent.com`** —
+   for now. `neovogent.com` is on Cloudflare, only `neoting.neovogent.com` is
+   delegated to Route 53, and the wildcard cert does not cover a `neoacc.`
+   label. **You asked to delegate it; the exact Cloudflare steps are in
+   `docs/runbooks/web-cloudfront.md`** — four NS records, three phases, and the
+   two `web_public_zone_*` variables that gate it so a half-done delegation
+   cannot hang CI's apply. Update PLAN.md's walkthrough when it is live.
+2. **SPA routing is a CloudFront Function, not `custom_error_response`.** The
+   usual 403/404 → `index.html` recipe is distribution-wide, so it would have
+   turned every API 404 into an HTML 200 — including `GET /d/{revoked-token}`
+   reporting success. Do not "simplify" it back.
+3. **`/d/*` has its own cache behaviour** pointing at the ALB. Without it, A8's
+   capability URLs — step 9 of the walkthrough, the acceptance test for the
+   whole product — would return the app shell instead of the document.
+
+Deploy is `.github/workflows/deploy-web.yml`: push to `main` touching
+`apps/web/**` or the contract packages, or `workflow_dispatch` for a rollback.
+It smoke-tests `/`, `/healthz` and `/app` after every publish and fails the job
+if any of the three is wrong.
+
+**Not applied.** The PR carries the plan; CI applies on merge if
+`TERRAFORM_AUTO_APPLY` is set, otherwise run terraform from the Actions tab.
+`deploy-web` will fail until the apply has created the two SSM parameters —
+that ordering is deliberate and the error message says so.
+
 ---
 
 ## S4 · Stripe, and the VAT that S2 forgot
@@ -222,6 +299,27 @@ PDFs on.
 TWO ENDPOINTS:
 - POST /v1/billing/checkout-sessions (authenticated) -> { url }
 - POST /v1/webhooks/stripe -> verify signature, update the business
+
+ALREADY DONE, do not redo: the Stripe CLI is installed and logged in, against the
+Exambinary account acct_1RQtbxGMdHp4NCWv. `stripe login` is not a step you need.
+
+⚠ THE SIGNING SECRET FROM `stripe listen` IS NOT THE ONE IN THE DASHBOARD. They are
+different values for the same account, and this is the single most common hour lost in a
+Stripe integration. `stripe listen --forward-to localhost:3000/v1/webhooks/stripe` prints
+its own `whsec_...` on startup; that is the one STRIPE_WEBHOOK_SECRET must hold LOCALLY.
+The dashboard endpoint's `whsec_...` is the one staging must hold. Cross them and every
+event fails signature verification with a 400 that says nothing useful, while the Stripe
+dashboard cheerfully shows the event as sent.
+
+Test the webhook with `stripe trigger`, not with a card. You need at least:
+  stripe trigger checkout.session.completed      → subscription becomes active
+  stripe trigger customer.subscription.deleted   → cancellation, and D32 still lets them export
+  stripe trigger invoice.payment_failed          → dunning; Stripe retries, we do not
+
+Both keys are secrets. STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are new env vars, so
+they are yours to add — follow S1's pattern and gate BOTH in the production superRefine
+block. An empty webhook secret does not fail loudly; it accepts unsigned events, which
+means anyone who can reach the endpoint can mark any business subscribed.
 
 PERSISTENCE: the four additive columns from S0. Do NOT create a subscriptions table.
 

@@ -935,32 +935,37 @@ resource "aws_cloudfront_distribution" "api" {
 }
 
 # --------------------------------------------------------------------------
-# app. AND portal. ARE DELIBERATELY NOT BUILT YET.
+# app. NOW EXISTS — IT IS IN web.tf. portal. STILL DOES NOT.
 #
-# Runbook §6.5 wants three distributions. Two of them have no origin in this
-# account: apps/web — which serves BOTH the workspace and the OTP portal — runs
-# on Vercel with Deployment Protection for the whole sprint (G6/G10/R16, runbook
-# Appendix C: "does not host apps/web on AWS during the sprint"). ECS `web`
-# lands at Infra Week.
+# ⚠ SUPERSEDED 26 AUG 2026 (launch stage S3). This block used to say that
+# neither name was built, because apps/web ran on Vercel with Deployment
+# Protection "for the whole sprint" (G6/G10/R16, runbook Appendix C). That
+# sprint is over and the product is being launched, so apps/web moved onto AWS:
+# infra/envs/staging/web.tf builds a SECOND distribution for app.<domain>,
+# serving a private S3 origin over Origin Access Control with /v1/*, /d/* and
+# /healthz forwarded to this same ALB.
 #
-# The alternative was pointing app. and portal. at this same ALB. Rejected: the
-# ALB's only target group is the api service, so both names would answer 404 on
-# every path — alb.tf's listener rule matches on the origin header alone, so a
-# request for portal.<domain> forwards to the api target group just the same and
-# comes back 404. A 404 served with a valid certificate through a WAF is worse
-# than no distribution at all: it looks deployed. It would also claim two CNAMEs
-# in CloudFront's global namespace that the real distributions then have to
-# fight for at cutover.
+# The prediction the old text made was right and is worth keeping, because
+# web.tf depends on it: the wildcard certificate already covered the new name,
+# and the response-headers policy and this shared ACL were reusable as-is.
+# web.tf references all three rather than duplicating them, which is why adding
+# a whole public surface cost about $0.05/month.
 #
-# The protection is not actually lost in the meantime. The portal's HTML is
-# static and lives on Vercel, but every request that MATTERS — OTP request, OTP
-# verify, upload intent, extraction correction — is an API call to api., and
-# api. is behind this distribution and this ACL. The rate rules above already
-# cover them, which is why they are scoped by path rather than by distribution.
+# WHAT DID NOT HAPPEN, AND WHY. app. and portal. were NOT pointed at this ALB.
+# The rejection still stands verbatim: the ALB's only target group is the api
+# service, so both names would answer 404 on every path — alb.tf's listener rule
+# matches on the origin header alone, so a request for portal.<domain> forwards
+# to the api target group just the same and comes back 404. A 404 served with a
+# valid certificate through a WAF is worse than no distribution at all: it looks
+# deployed. web.tf avoids this by giving the SPA its own S3 origin and routing
+# ONLY the API prefixes at the ALB.
 #
-# TO ADD THEM at Infra Week: the wildcard certificate already covers both names,
-# the response-headers policy and the shared ACL are reusable as-is, and prod
-# should split the ACL per distribution at the same time (see the WAF banner).
+# portal. is still unbuilt and still does not need to be. apps/web serves BOTH
+# the workspace and the OTP portal from one bundle (the hand-rolled router in
+# apps/web/src/lib/router.ts), so the portal is already reachable through the
+# app. distribution. A separate portal. name buys a tighter per-distribution
+# WAF, which is a prod concern — see the "ONE SHARED ACL" banner above, which
+# now fronts two distributions rather than one and should be split in prod.
 # --------------------------------------------------------------------------
 
 # --------------------------------------------------------------------------
