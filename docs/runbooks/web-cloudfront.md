@@ -134,7 +134,14 @@ problem in between.
 
 ### Phase 1 — create the zone
 
-Add to `infra/envs/staging/terraform.tfvars` (or pass `-var`):
+Set the **variable default** in `infra/envs/staging/web.tf`:
+
+> ⚠ **Not `terraform.tfvars`, and not `-var`.** `infra/.gitignore` ignores
+> `*.tfvars`, and the CI apply job runs a bare `terraform plan -out=tfplan`
+> with no `-var` and nothing in `TF_VAR_`. A tfvars value works on your
+> laptop, never reaches CI, and the next apply on `main` reads `null` and
+> plans to **destroy the hosted zone** — leaving the Cloudflare delegation
+> pointing at a zone that no longer exists. The same applies to phase 3.
 
 ```hcl
 web_public_zone_name = "neoacc.neovogent.com"

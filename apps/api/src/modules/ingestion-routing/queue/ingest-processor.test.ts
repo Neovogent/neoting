@@ -3,6 +3,10 @@ import { expect, test } from 'vitest';
 import { RecordingChaseAutoClose } from '../../chase/index.js';
 import { type ExtractionCompletion, RecordingExtractionStep } from '../../extraction/index.js';
 import { InMemoryDocumentStore } from '../storage/document-store.js';
+import {
+  RecordingUploadSanitisation,
+  type UploadSanitisationResult,
+} from '../web-upload/upload-sanitisation.js';
 import { InMemoryDocumentSink } from './document-sink.js';
 import { InMemoryDuplicateDetector } from './duplicate-detector.js';
 import { processIngestJob, TerminalJobError } from './ingest-processor.js';
@@ -13,7 +17,10 @@ import { InMemoryProcessedStore } from './processed-store.js';
  *  normaliser is a passthrough — so these ARE valid PNG bytes for this pipeline. */
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01, 0x02]);
 
-function harness(completion: ExtractionCompletion | null = null): {
+function harness(
+  completion: ExtractionCompletion | null = null,
+  sanitisation?: UploadSanitisationResult,
+): {
   logs: string[];
   warns: string[];
   sink: InMemoryDocumentSink;
@@ -23,6 +30,7 @@ function harness(completion: ExtractionCompletion | null = null): {
   store: InMemoryDocumentStore;
   extractor: RecordingExtractionStep;
   autoClose: RecordingChaseAutoClose;
+  uploadSanitiser: RecordingUploadSanitisation;
   deps: Parameters<typeof processIngestJob>[1];
 } {
   const logs: string[] = [];
@@ -34,6 +42,8 @@ function harness(completion: ExtractionCompletion | null = null): {
   const store = new InMemoryDocumentStore();
   const extractor = new RecordingExtractionStep(completion);
   const autoClose = new RecordingChaseAutoClose();
+  const uploadSanitiser =
+    sanitisation === undefined ? new RecordingUploadSanitisation() : new RecordingUploadSanitisation(sanitisation);
   return {
     logs,
     warns,
@@ -44,12 +54,14 @@ function harness(completion: ExtractionCompletion | null = null): {
     store,
     extractor,
     autoClose,
+    uploadSanitiser,
     deps: {
       processed,
       logger: { log: (m) => logs.push(m), warn: (m) => warns.push(m) },
       sink,
       detector,
       media: { fetcher, store },
+      uploadSanitiser,
       extractor,
       autoClose,
     },
@@ -238,9 +250,92 @@ test('a web-upload job runs duplicate detection on the already-persisted documen
   expect(h.detector.seen).toHaveLength(1);
   expect(h.detector.seen[0]?.documentId).toBe('doc_web_1');
   expect(h.detector.seen[0]?.businessId).toBe('biz_1');
+  // The default fixture sanitiser makes no statement about identity, so the
+  // processor falls back to the job's own hash — the pre-A3 behaviour, kept
+  // here deliberately so the fallback stays covered. The real step always
+  // answers; see the sanitised-hash test below.
   expect(h.detector.seen[0]?.byteHash).toBe('b'.repeat(64));
-  expect(h.detector.seen[0]?.perceptualHash).toBeNull(); // web uploads carry none today
+  expect(h.detector.seen[0]?.perceptualHash).toBeNull();
   expect(h.logs.some((l) => l.includes('dedupe doc_web_1'))).toBe(true);
+});
+
+// ── Upload sanitisation (Stage A3) ──────────────────────────────────────────
+//
+// Web and portal uploads skipped sanitisation entirely: the document was
+// persisted from the browser's claims and the worker went straight to dedupe and
+// extract. A HEIC stayed HEIC, EXIF (and its GPS) was never stripped, and
+// `documents.mime_type` was whatever the browser said.
+
+test('a web-upload job is sanitised BEFORE it is deduped or extracted', async () => {
+  const h = harness();
+  await processIngestJob(webUploadJob, h.deps);
+  expect(h.uploadSanitiser.runs).toHaveLength(1);
+  const run = h.uploadSanitiser.runs[0];
+  expect(run?.documentId).toBe('doc_web_1');
+  expect(run?.practiceId).toBe('prac_web');
+  expect(run?.businessId).toBe('biz_1');
+  expect(run?.traceId).toBe('trace-web');
+});
+
+test('dedupe keys on the SANITISED byte hash, not the one the browser uploaded', async () => {
+  // Sanitisation re-encodes: HEIC→JPEG, EXIF stripped, a PDF rewritten by qpdf.
+  // The job's `sha256` then describes bytes that no longer exist anywhere, so
+  // deduping against it compares this receipt to a file we do not hold.
+  const h = harness(null, {
+    status: 'sanitised',
+    document: {
+      storageKey: 'w/biz_1/documents/' + 'c'.repeat(64),
+      byteHash: 'c'.repeat(64),
+      byteSize: 900,
+      mimeType: 'image/jpeg',
+      perceptualHash: 'ffff0000ffff0000',
+    },
+  });
+  await processIngestJob(webUploadJob, h.deps);
+
+  expect(h.detector.seen).toHaveLength(1);
+  expect(h.detector.seen[0]?.byteHash).toBe('c'.repeat(64)); // NOT the job's 'b'*64
+  // Web uploads carried no perceptual hash at all until sanitisation computed
+  // one, so the "same paper photographed twice" net never covered this lane.
+  expect(h.detector.seen[0]?.perceptualHash).toBe('ffff0000ffff0000');
+});
+
+test('a rejected upload stops: no dedupe, no extraction, and a reason in the log', async () => {
+  // The document is REJECTED on the row with its NT-ING code — the Rejected/
+  // Failed surface — so nothing is dropped and nothing needs to dead-letter.
+  const h = harness(null, {
+    status: 'rejected',
+    rejection: { kind: 'password_protected', code: 'NT-ING-004', message: 'This file is password-protected.' },
+  });
+  await processIngestJob(webUploadJob, h.deps);
+
+  expect(h.detector.seen).toHaveLength(0);
+  expect(h.extractor.runs).toHaveLength(0);
+  expect(h.warns.some((w) => w.includes('NT-ING-004') && w.includes('doc_web_1'))).toBe(true);
+});
+
+test('an upload whose row is not visible stops rather than extracting nothing', async () => {
+  const h = harness(null, { status: 'unavailable', reason: 'not visible' });
+  await processIngestJob(webUploadJob, h.deps);
+  expect(h.detector.seen).toHaveLength(0);
+  expect(h.extractor.runs).toHaveLength(0);
+  expect(h.warns.some((w) => w.includes('not available to sanitise'))).toBe(true);
+});
+
+test('an already-sanitised upload still extracts — a redelivery is not a failure', async () => {
+  const h = harness(null, {
+    status: 'already-sanitised',
+    document: {
+      storageKey: 'w/biz_1/documents/' + 'd'.repeat(64),
+      byteHash: 'd'.repeat(64),
+      byteSize: 12,
+      mimeType: 'application/pdf',
+      perceptualHash: null,
+    },
+  });
+  await processIngestJob(webUploadJob, h.deps);
+  expect(h.extractor.runs).toHaveLength(1);
+  expect(h.detector.seen[0]?.byteHash).toBe('d'.repeat(64));
 });
 
 test('a web-upload job with no byte hash skips detection rather than keying on nothing', async () => {

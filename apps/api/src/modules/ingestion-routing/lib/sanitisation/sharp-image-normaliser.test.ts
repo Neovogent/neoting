@@ -95,6 +95,83 @@ test('a corrupt image fails one document with a reason, it does not throw', asyn
   if (!result.ok) expect(result.rejection.message).toMatch(/could not read/i);
 });
 
+/**
+ * Deterministic noise. Flat colour compresses to nothing, so it can never make
+ * an encoded JPEG exceed a ceiling — and a ceiling that is never reached tests
+ * nothing. The seeded LCG keeps the byte sizes reproducible run to run.
+ */
+async function noisyJpeg(width: number, height: number): Promise<Buffer> {
+  const pixels = Buffer.allocUnsafe(width * height * 3);
+  let seed = 12_345;
+  for (let i = 0; i < pixels.length; i += 1) {
+    seed = (seed * 1_103_515_245 + 12_345) & 0x7fffffff;
+    pixels[i] = (seed >> 16) & 0xff;
+  }
+  return sharp(pixels, { raw: { width, height, channels: 3 } }).jpeg({ quality: 92 }).toBuffer();
+}
+
+test('a photo too big to encode within the ceiling is downscaled, NOT refused', async () => {
+  // This is the A4 defect: this file never called `.resize()`, so an ordinary
+  // 48 MP phone photo left here at 8–15 MB and the extractor answered
+  // NT-EXT-007 — "send a smaller photo" — to someone who sent a normal one.
+  // Shrinking is something we can do and the client cannot.
+  const big = await noisyJpeg(1400, 1000);
+  const ceiling = 200_000;
+  expect(big.byteLength).toBeGreaterThan(ceiling);
+
+  const tight = createSharpImageNormaliser({ maxEncodedBytes: ceiling });
+  const result = await tight.normalise(big, 'jpeg');
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.bytes.byteLength).toBeLessThanOrEqual(ceiling);
+
+  const meta = await sharp(result.bytes).metadata();
+  expect(meta.format).toBe('jpeg');
+  expect(meta.width ?? 0).toBeLessThan(1400);
+  // Still a usable document, not a thumbnail — the shrink stops at MIN_LONG_EDGE.
+  expect(meta.width ?? 0).toBeGreaterThanOrEqual(320);
+});
+
+test('an image already under the ceiling keeps its full resolution', async () => {
+  // Downscaling is on demand, never a blanket policy: these bytes are what
+  // D43's source-document link resolves to — the evidence an accountant opens
+  // and zooms into. 2400 px is past the 1568 px shrink target on purpose, so a
+  // resize that fired unconditionally would show up right here.
+  const wide = await sharp({
+    create: { width: 2400, height: 1600, channels: 3, background: '#efefef' },
+  })
+    .jpeg()
+    .toBuffer();
+
+  const result = await normaliser.normalise(wide, 'jpeg');
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  const meta = await sharp(result.bytes).metadata();
+  expect(meta.width).toBe(2400);
+  expect(meta.height).toBe(1600);
+});
+
+test('downscaling still strips EXIF and still applies orientation', async () => {
+  // The shrink path re-opens the source, so it is a second place these two
+  // could be lost. They are the reason this normaliser exists at all.
+  const noisy = await noisyJpeg(1200, 600);
+  const withExif = await sharp(noisy).withMetadata({ orientation: 6, exif: { IFD0: { Artist: 'someones-phone' } } }).toBuffer();
+
+  const tight = createSharpImageNormaliser({ maxEncodedBytes: 120_000 });
+  const result = await tight.normalise(withExif, 'jpeg');
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.bytes.byteLength).toBeLessThanOrEqual(120_000);
+
+  const meta = await sharp(result.bytes).metadata();
+  expect(meta.exif).toBeUndefined();
+  // Orientation 6 rotates 90°: a landscape source comes back portrait.
+  expect(meta.height ?? 0).toBeGreaterThan(meta.width ?? 0);
+});
+
 test('the output is smaller or comparable, and always a valid JPEG', async () => {
   const result = await normaliser.normalise(await landscapeJpeg(), 'jpeg');
   expect(result.ok).toBe(true);

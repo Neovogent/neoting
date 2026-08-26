@@ -4,7 +4,7 @@ import { AlertTriangle, Loader2, LogIn } from 'lucide-react';
 import { NtProblemError } from '@neoting/contracts';
 import { login } from '../api/auth';
 import { queryClient } from '../api/queryClient';
-import logo from '../assets/logo.png';
+import { Wordmark } from '../assets/Wordmark';
 
 /**
  * The front door (METH Stage 6). Email + password + TOTP against
@@ -21,7 +21,7 @@ import logo from '../assets/logo.png';
  * otherwise), so the error copy names all three and wears the code.
  */
 const m = defineMessages({
-  title: { id: 'auth.loginView.title', defaultMessage: 'Sign in to Neoting' },
+  title: { id: 'auth.loginView.title', defaultMessage: 'Sign in to Neo Accounting' },
   subtitle: {
     id: 'auth.loginView.subtitle',
     defaultMessage: 'Your practice workspace',
@@ -58,10 +58,10 @@ const m = defineMessages({
     id: 'auth.loginView.audit',
     defaultMessage: 'Every sign-in is audited. Nothing in this product changes state without a named human.',
   },
-  logoAlt: {
-    id: 'auth.loginView.logoAlt',
-    defaultMessage: 'Neoting',
-    description: 'Alt text for the product mark on the login screen. A product name — leave untranslated.',
+  wordmarkTitle: {
+    id: 'auth.loginView.wordmarkTitle',
+    defaultMessage: 'Neo Accounting',
+    description: 'Accessible name for the product wordmark on the login screen. A product name — leave untranslated.',
   },
 });
 
@@ -126,12 +126,8 @@ export function LoginView() {
   return (
     <div className="flex-1 flex flex-col min-w-0 h-vv bg-ground overflow-y-auto px-safe">
       <div className="w-full max-w-sm mx-auto px-5 pt-10 pb-safe-6 my-auto flex flex-col gap-5">
-        <div className="flex items-center gap-3">
-          <img
-            src={logo}
-            alt={intl.formatMessage(m.logoAlt)}
-            className="w-11 h-11 rounded-2xl shrink-0 object-cover shadow-glow-logo"
-          />
+        <div className="flex flex-col gap-4">
+          <Wordmark title={intl.formatMessage(m.wordmarkTitle)} size={22} className="text-white" />
           <div className="min-w-0">
             <h1 className="font-sans font-bold text-xl text-white tracking-tight truncate">
               {intl.formatMessage(m.title)}

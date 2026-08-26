@@ -83,12 +83,16 @@ const EnvSchema = z.object({
   // Signs the stateless `nt_session` cookie (METH Stage 1, #118) — the same
   // HMAC pattern as UPLOAD_URL_SECRET. Empty default fails CLOSED: signing or
   // verifying with an empty secret is refused, so an unset secret cannot mint a
-  // forgeable session. Deliberately NO production boot-refusal (unlike
-  // UPLOAD_URL_SECRET): staging already runs AUTH_MODE=session without this
-  // variable, and a boot gate added here would crash-loop the next staging
-  // deploy — taking /healthz down — instead of leaving session endpoints
-  // failing closed exactly as they do today. The staging value lands with the
-  // Stage 15 env change, not with this code.
+  // forgeable session. REFUSED EMPTY under `NODE_ENV=production` below (S1).
+  //
+  // ⚠ THAT REFUSAL REVERSES WHAT THIS COMMENT USED TO SAY, and the reversal is
+  // the interesting part. It argued against a boot gate because staging ran
+  // `AUTH_MODE=session` with no secret behind it, so a gate would have
+  // crash-looped the next deploy and taken `/healthz` down over a secret
+  // nobody had yet. METH Stage 15 (#146) closed that: `/neoting/staging/auth`
+  // holds the key and the task definition injects it. What the missing gate
+  // still protected was therefore only the case it was never meant to allow —
+  // a real environment signing real sessions with the empty string.
   SESSION_SECRET: z.string().default(''),
 
   // Second-factor verification mode, for both the accountant sign-in
@@ -99,13 +103,18 @@ const EnvSchema = z.object({
   // `demo` so a fresh clone and CI sign in offline; `demo` is REFUSED under
   // `NODE_ENV=production` below (S1).
   //
-  // ⚠ A2 IMPLEMENTED THE `totp` BRANCH, and it deliberately fails CLOSED where
-  // it has nothing to check: `auth-tenancy/totp.ts` verifies against the
-  // envelope in `users.totp_secret_ref`, and the portal verifies against
-  // `otp_sessions.otp_hash`. An account with no enrolment, or a portal session
-  // with no minted code, therefore cannot pass — which is correct and is not
-  // yet reachable to fix, because `openapi.yaml` publishes no enrolment
-  // operation and no code-minting operation (G7). See
+  // ⚠ S1 DECLARED `totp` AS AN ENUM VALUE BEFORE IT WAS AN IMPLEMENTATION, and
+  // A2 HAS NOW IMPLEMENTED IT. S1's note said setting `totp` made every second
+  // factor return false; the verifiers behind this switch are real as of A2 —
+  // `auth-tenancy/totp.ts` (RFC 6238 through otplib, against the envelope in
+  // `users.totp_secret_ref`, plus single-use recovery codes) and
+  // `portal-session.service.ts` (the minted code in `otp_sessions.otp_hash`).
+  //
+  // S1's fail-closed intent survives where there is nothing to check, and that
+  // is still the right way round: an account with no enrolment, or a portal
+  // session with no code minted for it, cannot pass. Both remain UNREACHABLE to
+  // fix from inside A2, because `openapi.yaml` publishes no enrolment operation
+  // and nothing implements the code-minting one (G7) — see
   // `auth-tenancy/totp-enrolment.service.ts`.
   OTP_MODE: z.enum(['demo', 'totp']).default('demo'),
 
@@ -149,12 +158,24 @@ const EnvSchema = z.object({
   // because it genuinely cannot read one; `sharp` = the real EXIF/HEIC path.
   // Selected by config rather than by import so unit tests stay offline and
   // deterministic — a test feeding four magic bytes and the word "image" must
-  // not be handed to a real decoder that correctly rejects it.
+  // not be handed to a real decoder that correctly rejects it. ⚠ `fixture` is
+  // REFUSED under `NODE_ENV=production` below (S1) — HEIC is the default
+  // camera format on every iPhone since iOS 11, so the format the fixture
+  // cannot read is the format a photographed receipt actually arrives in.
   IMAGE_NORMALISER: z.enum(['fixture', 'sharp']).default('fixture'),
 
   // The PDF guard (#22). `fixture` = the dependency-free /Encrypt grep, which
   // has a known false-negative on incrementally-updated PDFs; `qpdf` = the real
-  // one. Defaults to fixture so a machine without the binary still runs tests.
+  // one. Defaults to fixture so a machine without the binary still runs tests —
+  // the guard's own unit tests drive a fake runner, so the decision logic is
+  // covered everywhere rather than only where the binary happens to exist.
+  //
+  // ⚠ `fixture` is REFUSED under `NODE_ENV=production` below (S1), and qpdf
+  // is installed in the runtime image as of that same change. The false
+  // negative is not exotic: an incrementally-updated PDF is most signed or
+  // form-filled accounting paperwork, and a password-protected one the grep
+  // passes is a document the pipeline then cannot read, with the guard having
+  // reported it clean.
   DOCUMENT_GUARD: z.enum(['fixture', 'qpdf']).default('fixture'),
 
   // The document extractor (METH Stage 4). `demo` = the deterministic fixture
@@ -172,6 +193,16 @@ const EnvSchema = z.object({
   // triggered by nothing worse than a throttle. It is deleted. A failed read is
   // a FAILED document with a visible reason, retryable through a reprocess
   // proposal (select-extractor.ts).
+  //
+  // ⚠ `demo` is REFUSED under `NODE_ENV=production` below (S1). Every other
+  // demo switch in this file DEGRADES something — no SMS arrives, no bill
+  // reaches a ledger. This one INVENTS: DemoExtractor derives supplier, date,
+  // total, tax and a VAT number from a hash of the filename, stamps 0.8
+  // confidence on them, and `resolveProcessedState` reads 0.8 as Ready. The
+  // accountant is shown a complete, confident invoice with no signal that
+  // nothing was ever read. That is the AI_CHAT failure mode with the volume
+  // turned up, so it gets the AI_CHAT answer: a boot refusal, not a safe
+  // default.
   EXTRACTOR: z.enum(['demo', 'bedrock']).default('demo'),
 
   // NO BEDROCK_MODEL_ID, deliberately. The model is pinned in
@@ -272,9 +303,10 @@ const EnvSchema = z.object({
   // same HMAC pattern as UPLOAD_URL_SECRET / SESSION_SECRET. Stage 8 mints the
   // link; Stage 9's OTP portal verifies it. Empty default fails CLOSED: signing
   // or verifying with an empty secret is refused (`portal-link.ts`), so an unset
-  // secret cannot mint a forgeable link. No production boot-refusal, matching
-  // SESSION_SECRET's stance (the portal endpoints simply fail closed until the
-  // Stage 15 env change sets it, rather than crash-looping /healthz).
+  // secret cannot mint a forgeable link. REFUSED EMPTY under
+  // `NODE_ENV=production` below, for the reason written out at SESSION_SECRET:
+  // the Stage 15 env change that made the old "no boot-refusal" stance correct
+  // is the same change that made it obsolete.
   PORTAL_LINK_SECRET: z.string().default(''),
 
   // Signs the portal SESSION bearer (METH Stage 9) — what `POST
@@ -284,9 +316,10 @@ const EnvSchema = z.object({
   // the paperwork, the bearer is a short-lived credential that has already
   // passed the OTP, and one rotation must not be forced to invalidate the other.
   // Same empty-default fail-closed stance as SESSION_SECRET / PORTAL_LINK_SECRET
-  // (`portal-session-token.ts` refuses to sign or verify with it), and the same
-  // deliberate absence of a production boot-refusal — an unset secret leaves the
-  // portal endpoints failing closed rather than crash-looping /healthz.
+  // (`portal-session-token.ts` refuses to sign or verify with it), and now the
+  // same production boot-refusal below — the three are gated together, because
+  // an environment holding one of them and not the others is not a state
+  // anybody chose on purpose.
   PORTAL_SESSION_SECRET: z.string().default(''),
 
   // The ledger adapter (METH Stage 10). `demo` = DemoXeroAdapter — deterministic
@@ -315,10 +348,26 @@ const EnvSchema = z.object({
   // MODEL each runs is pinned in chat-framework/models.ts, not configured.
 
   // Per-practice daily AI spend ceiling in integer pence (§9.7). Warn at 80%,
-  // hard stop at 100%. £5/day/practice is a demo-scale number chosen to be
-  // noticeable rather than punitive; it is a config value precisely so it can
-  // be raised without a deploy argument.
-  AI_DAILY_BUDGET_PENCE: z.coerce.number().int().positive().default(500),
+  // hard stop at 100%.
+  //
+  // £25/day, raised from the £5 demo-scale number by S1. £5 was chosen to be
+  // noticeable rather than punitive, which is the right property for a demo and
+  // the wrong one for a paying practice: this is a HARD STOP, not a warning, so
+  // the day it bites is a day the practice's documents stop being read. At the
+  // £0.02/document extraction guardrail (§24.7, S5), £5 buys 250 documents —
+  // which a practice clears in one month-end afternoon.
+  //
+  // £25 is ~1,250 documents/day, more than a practice with fifty client
+  // businesses puts through in a normal week, so a real workload never reaches
+  // it. It is still a real ceiling rather than a formality: a full day at it
+  // costs the gross monthly subscription of about ninety client businesses
+  // (£8.50 each, D48), so touching it is an incident to investigate.
+  //
+  // ⚠ EXTRACTION DOES NOT COUNT AGAINST THIS YET. BedrockExtractor constructs
+  // AnthropicBedrock directly and never consults the budget the chat runtime
+  // uses, so the per-document arithmetic above describes what the ceiling WILL
+  // govern once S5 wires extraction to it — not what it governs today.
+  AI_DAILY_BUDGET_PENCE: z.coerce.number().int().positive().default(2500),
 
   S3_ENDPOINT: z.string().default(''), // e.g. http://localhost:9000 for MinIO; empty = AWS default
   S3_REGION: z.string().default('eu-west-2'),
@@ -407,6 +456,47 @@ const EnvSchema = z.object({
     });
   }
 
+  // The three HMAC signing keys, gated together.
+  //
+  // All three already fail closed at REQUEST time: the signers refuse to sign
+  // or verify with an empty key, so nothing forgeable is ever minted. The gate
+  // exists for the UPLOAD_URL_SECRET reason (#76) — a request-time failure
+  // still boots, still passes the ALB health check, still reports steady state,
+  // and then 401s every sign-in and refuses every portal link, on a deploy that
+  // went green. That reads as a broken product rather than a missing variable,
+  // and by the time anyone believes it is a variable the deploy that caused it
+  // is several deploys ago.
+  //
+  // Each of the three carried a comment explaining why it deliberately had NO
+  // boot gate. That reasoning was sound while `/neoting/staging/auth` was
+  // empty and a gate would have crash-looped `/healthz` over a secret nobody
+  // had; METH Stage 15 filled the secret and wired the injections, which is
+  // what retired it.
+  for (const key of ['SESSION_SECRET', 'PORTAL_LINK_SECRET', 'PORTAL_SESSION_SECRET'] as const) {
+    if (env.NODE_ENV === 'production' && env[key] === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [key],
+        message: `${key} must be set in production — an empty key cannot sign or verify, so the process boots healthy and then refuses every request that needs it (S1)`,
+      });
+    }
+  }
+
+  // DemoExtractor does not degrade the read, it INVENTS it — supplier, date,
+  // total, tax and VAT number from a hash of the filename, at 0.8 confidence,
+  // which resolveProcessedState reads as Ready. Nothing on the screen
+  // distinguishes it from a document that was actually read, which is exactly
+  // the AI_CHAT argument above and exactly why this refuses to boot rather than
+  // merely defaulting safely.
+  if (env.NODE_ENV === 'production' && env.EXTRACTOR === 'demo') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['EXTRACTOR'],
+      message:
+        'EXTRACTOR=demo fabricates supplier, date and total from a filename hash and marks them Ready — set EXTRACTOR=bedrock (S1)',
+    });
+  }
+
   // `demo` accepts one fixed six-digit code, identical on every account in
   // every practice and on every portal session, published in the source and in
   // the seed. A universal second factor on a workspace holding other people's
@@ -419,6 +509,31 @@ const EnvSchema = z.object({
       path: ['OTP_MODE'],
       message:
         'OTP_MODE=demo accepts one fixed code on every account in every practice — set OTP_MODE=totp (S1; A2 implements the verifier)',
+    });
+  }
+
+  // Both fixtures are honest about being fixtures, and both are wrong in a real
+  // environment for the same reason: each is SILENT about the format it cannot
+  // handle. The passthrough normaliser refuses HEIC — the default camera format
+  // on every iPhone since iOS 11, so the format a photographed receipt actually
+  // arrives in. The grep guard misses an /Encrypt in a mid-file trailer, which
+  // is most signed or form-filled accounting paperwork, and reports clean on a
+  // password-protected PDF the pipeline then cannot read.
+  if (env.NODE_ENV === 'production' && env.IMAGE_NORMALISER === 'fixture') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['IMAGE_NORMALISER'],
+      message:
+        'IMAGE_NORMALISER=fixture is a passthrough that refuses HEIC, the format phone photographs arrive in — set IMAGE_NORMALISER=sharp (S1)',
+    });
+  }
+
+  if (env.NODE_ENV === 'production' && env.DOCUMENT_GUARD === 'fixture') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['DOCUMENT_GUARD'],
+      message:
+        'DOCUMENT_GUARD=fixture greps 8 KB for /Encrypt and reports clean on an incrementally-updated encrypted PDF — set DOCUMENT_GUARD=qpdf (S1)',
     });
   }
 

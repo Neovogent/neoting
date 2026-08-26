@@ -24,6 +24,21 @@ export function maxBytesForChannel(channel: DocumentChannel): number {
   return CHANNEL_POLICY[CAP_CHANNEL[channel]].maxBytes;
 }
 
+/**
+ * The internal cap channel an arrival channel maps to — the same map
+ * `maxBytesForChannel` reads, exposed because worker-side sanitisation needs the
+ * `Channel`, not just its byte cap: `sanitise()` takes the channel and looks the
+ * policy up itself (it also carries `maxPdfPages`).
+ *
+ * Exported rather than re-derived. A second opinion about which cap a web upload
+ * falls under is how the door and the worker end up disagreeing about whether a
+ * file was ever acceptable — the door would presign it and the worker would
+ * reject it, with the client having already spent the upload.
+ */
+export function capChannelFor(channel: DocumentChannel): Channel {
+  return CAP_CHANNEL[channel];
+}
+
 // The declared-MIME allowlist is the MIME of every format the sanitiser accepts.
 // A declared type off it is 415 — a cheap pre-filter at the door; magic bytes
 // still decide the real type after the bytes land (Governance §11.4).

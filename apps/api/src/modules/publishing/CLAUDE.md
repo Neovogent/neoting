@@ -17,6 +17,17 @@ The canonical model, Xero and QuickBooks adapters, two-way reference sync, idemp
 
 D6 stands unchanged for v1. Nothing here is deleted; it is dormant.
 
+### What launch stage A5 did to that, on 26 Aug 2026
+
+**Dormant now means unreachable, not merely unused.** `publish.batch` no longer returns the `publish` `FollowUp`, so nothing drives `publish-follow-up.ts` and nothing calls `LedgerAdapter.publishBill`. The release happens inside the effect transaction — `publishes` QUEUED → SUCCEEDED and READY → PUBLISHED, atomically with the approval — because releasing for export makes no external call, and the post-commit split existed for exactly one sentence: *an external HTTP call must never hold a tenant transaction open*. The reasoning below is still the reasoning; it is just waiting for D6.
+
+Three consequences worth knowing before touching this module:
+
+- **`export-destination.ts` is the new ID vocabulary.** `VT` and `MANUAL` are export destinations; the four ledger vendors are not, and `isExportDestination` is what keeps a seeded `XERO` row from being adopted by a release. The contract says it on `IntegrationKind` itself: neither value carries a token, an org ref or a health state, and **neither may ever become an adapter call**.
+- **A client with no `integrations` row releases anyway.** D47 forbids intake from asking for a connection, so the row is optional and `publishes.integration_id` is null when there is none. The refusal that used to live here — "this client has no active ledger connection" — is why nothing could ever reach Published.
+- **⚠ Auto-archive was removed with the follow-up, and that is load-bearing.** `POST /v1/exports`: *"Only `PUBLISHED` documents are exported."* Archiving on release would move every document past the only state the export can see. **If the v1 ledger lane is ever re-enabled, its archive step has to be reconsidered against the export lane, not restored verbatim.**
+- **`external_ref` stays NULL and `attachment_sent` FALSE on an ID release.** Nothing external was reached; nothing travelled. The link back to the source document is the D43 capability code the export emits (stage A8), never a vendor reference.
+
 ## Contracts it must honour
 
 - `packages/contracts` — endpoints, DTOs and error codes (**LAW**, G7)
@@ -38,12 +49,13 @@ Changing any of those is a contract-change issue approved by Shakib **before** a
 
 Exposes **only** its public providers. No other module reaches into its internals; cross-module work goes through those providers or through domain events on the transactional outbox. Import rules are lint-enforced, because this boundary is also the parallel-agent lane map.
 
-`index.ts` is the public seam. It carries the adapter interface + its result types, the
-config selector, the preview/minimum functions and the `LEDGER_ADAPTER` DI token — the
-surface the `publish.batch` executor and the `GET /v1/publishes` read lane need, and
-nothing else. **`DemoXeroAdapter` is deliberately not on it:** nothing outside this
-module should name a demo implementation, which is what keeps the adapter choice in
-config where the real Xero client replaces it without touching a call site.
+`index.ts` is the public seam. It carries the **export-destination vocabulary** (A5), the
+adapter interface + its result types, the config selector, the preview/minimum functions
+and the `LEDGER_ADAPTER` DI token — the surface the `publish.batch` executor and the
+`GET /v1/publishes` read lane need, and nothing else. **`DemoXeroAdapter` is deliberately
+not on it:** nothing outside this module should name a demo implementation, which is what
+keeps the adapter choice in config where the real Xero client replaces it without touching
+a call site.
 
 ## Tests
 
@@ -61,6 +73,23 @@ prefixed `p10_` and torn down at both ends; vitest runs file-serially
 (`fileParallelism: false`), which is what keeps prefix isolation honest.
 
 ## Current state
+
+### `export-destination.ts` — what an `integrations` row means in ID (launch stage A5)
+
+Small, and it is the file that lets a document reach Published. `EXPORT_DESTINATION_KINDS`
+is `['VT', 'MANUAL']`, `isExportDestination(kind)` is the guard, and `ExportDestination` is
+`{ id, kind }` — **no `orgRef`, no token, no health**, because the contract states neither
+kind carries them and a field that is always null is an invitation to populate it.
+
+`MANUAL` sits beside `VT` because the first client's software is not the last one's: a
+practice whose client uses something with no emitter still releases documents and still
+downloads `ExportTarget.GENERIC_CSV`. Both are inert by construction — nothing in this
+module or any other may turn one into an adapter call.
+
+**Where the row comes from:** stage **A11** (client intake,
+`modules/clients-team-settings`) creates one `VT`/`MANUAL` row per client at intake.
+**A11 has not merged**, and the release deliberately does not wait for it — a client with
+no row releases with `publishes.integration_id = null`.
 
 ### The LedgerAdapter seam + the server-computed preview (METH Stage 10)
 
@@ -194,8 +223,15 @@ network. Second, the real adapter *is* HTTP, and `apps/api/CLAUDE.md`'s async sp
 already rules that "every ingest/extract/publish/chase/export runs through BullMQ —
 never inline in a request".
 
+⚠ **A5 UPDATE — this whole section is v1's, not ID's.** D42 removed the vendor call, and
+with it the reason for the split: `publish.batch` releases for export inside the effect
+transaction and returns **no** `publish` follow-up, so `publish-follow-up.ts` and the
+engine's arm below are dormant. Everything here stays because it is the design D6 restores,
+and because the sentence at the top of it is permanent: the moment a real HTTP adapter
+lands, the post-commit split has to come back with it.
+
 **Decision: the adapter is called POST-COMMIT, through the engine's `FollowUp` seam.**
-Not inside the effect. **This is now BUILT** — `validation-dedupe/proposals/publish-batch.ts`
+Not inside the effect. **This was BUILT** — `validation-dedupe/proposals/publish-batch.ts`
 (the effect) and `publish-follow-up.ts` (the ledger call), with the `publish` `FollowUp`
 arm in `approvals/action-proposals.service.ts`. The shape it took:
 
@@ -264,10 +300,15 @@ sketched 1–2 s; 800 ms is deliberately under it, because the number multiplies
       takes the SHAPES as `import type` (erased) and the FUNCTIONS as a dependency.
       A business with no active integration refuses, as required (`biz_dental` has none
       seeded); so does one with two, rather than picking.
-- [ ] A sweep for QUEUED `publishes` rows whose follow-up never completed. The rows are
-      honest and `runPublishFollowUp` re-drives them from the proposal id, but nothing
-      periodic calls it yet — same shape and same status as the dedupe sweep
-      (`findStaleDedupeFollowUps`), and it should land with it, on the worker.
+- [x] **Launch stage A5 — a document can reach Published.** `export-destination.ts` +
+      `publish.batch` releasing for export instead of demanding a ledger connection. The
+      unit suite pins the D42 wording and the tripwire adapter; `publish-batch.integration.test.ts`
+      (`s10_`) proves READY → PUBLISHED against a real database, including a client with
+      **no** integration row.
+- [x] A sweep for QUEUED `publishes` rows whose follow-up never completed — **not needed
+      in ID**: the release resolves the row in the same transaction that creates it, so it
+      cannot leave one QUEUED. It returns with the v1 ledger lane, alongside the dedupe
+      sweep (`findStaleDedupeFollowUps`), on the worker.
 - [x] `GET /v1/publishes` — `listPublishes`, `x-nt-side-effect: none`, `state` is an
       ARRAY query param (form + explode; omitted = every state). Thin controller,
       generated Zod at the boundary, `PublishingModule` and `app.module.ts` wire it.
@@ -282,8 +323,14 @@ sketched 1–2 s; 800 ms is deliberately under it, because the number multiplies
 - [ ] Integration health logic and webhooks — **v1, not ID** (D42). Canonical-model
       completeness IS ID work: it is what the export emitters read from.
 - [ ] Release authority (D44): `Ready → Published` gated on the firm’s **super admin**,
-      singly and in bulk. Not built — the `assertCan` matrix does not yet distinguish it
-      (see `modules/approvals` TODO, Governance §11.2).
+      singly and in bulk. **Still not built — stage A12**, and it attaches on the ENGINE's
+      approve path (`modules/approvals/action-proposals.service.ts`,
+      `assertCan(actor, 'publish.release', …)` before the executor runs), NOT in the
+      executor: the engine owns authorisation and an executor decides nothing about
+      whether an effect may happen. Until it lands, any authenticated member of the
+      practice can approve a `publish.batch`, which is the release. The `publishes` row
+      already records `published_by_user_id`, so who released what is on the row either
+      way (see `modules/approvals` TODO, Governance §11.2).
 - [ ] `clearPublishingData` on unarchiving a PUBLISHED document — `document.archive`
       records `publishingDataClearDeferred` and leaves the `publishes` rows for this
       module (the seam agreed on #81). Still unbuilt.

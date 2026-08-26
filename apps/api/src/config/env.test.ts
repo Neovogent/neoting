@@ -19,10 +19,13 @@ const PRODUCTION = {
   EMAIL_SENDER: 'ses',
   EMAIL_CONFIGURATION_SET: 'nt-staging-default',
   EMAIL_RATE_LIMIT: 'redis',
-  // A2: the fixed six-digit code is refused in production, so a bootable
-  // production environment now has to name the real verifier. This is the line
-  // the comment above predicts every new gate will cost.
+  SESSION_SECRET: 's',
+  PORTAL_LINK_SECRET: 's',
+  PORTAL_SESSION_SECRET: 's',
+  EXTRACTOR: 'bedrock',
   OTP_MODE: 'totp',
+  IMAGE_NORMALISER: 'sharp',
+  DOCUMENT_GUARD: 'qpdf',
 } as unknown as NodeJS.ProcessEnv;
 
 test('loads defaults; the Meta secrets are optional and default empty', () => {
@@ -88,8 +91,10 @@ test('NODE_ENV=production with the fixture (defaulted) auth mode fails to boot',
 test('NODE_ENV=production with AUTH_MODE=session boots', () => {
   // UPLOAD_URL_SECRET is required in production too (see below), so a
   // production env that only fixes AUTH_MODE is not a bootable one. AI_CHAT
-  // joined that list with the chat runtime — see the block below. EMAIL_SENDER
-  // and EMAIL_RATE_LIMIT joined it with S2, for the reason in that block.
+  // joined that list with the chat runtime; S2 added EMAIL_SENDER and
+  // EMAIL_RATE_LIMIT, and S1 added the three signing keys, the extractor, the
+  // second factor and the two sanitisation implementations — which is why the
+  // list is a fixture now.
   const env = loadEnv(PRODUCTION);
   expect(env.AUTH_MODE).toBe('session');
 });
@@ -109,21 +114,7 @@ test('AI_CHAT defaults to demo outside production, so a cold clone runs offline'
   const env = loadEnv({});
   expect(env.AI_CHAT).toBe('demo');
   expect(env.BEDROCK_REGION).toBe('eu-west-2');
-  expect(env.AI_DAILY_BUDGET_PENCE).toBe(500);
-});
-
-// A2 (and S1's gate, landing here first). `OTP_MODE=demo` accepts ONE literal
-// six-digit code — the same one on every account, in every practice, on every
-// portal session, written down in the source and in the seed. A universal second
-// factor on a workspace holding other people's financial records is not a second
-// factor, so it gets the AI_CHAT treatment: refused at boot, not defaulted away.
-test('NODE_ENV=production with OTP_MODE=demo fails to boot', () => {
-  expect(() => loadEnv({ ...PRODUCTION, OTP_MODE: 'demo' } as NodeJS.ProcessEnv)).toThrow(/OTP_MODE/);
-});
-
-test('OTP_MODE defaults to demo outside production, so a cold clone signs in offline', () => {
-  expect(loadEnv({}).OTP_MODE).toBe('demo');
-  expect(loadEnv({ ...PRODUCTION } as NodeJS.ProcessEnv).OTP_MODE).toBe('totp');
+  expect(env.AI_DAILY_BUDGET_PENCE).toBe(2500);
 });
 
 // #76: UPLOAD_URL_SECRET. Unlike the Meta secrets it is NOT optional in
@@ -212,4 +203,93 @@ test('a real sender behind a per-process rate limiter fails to boot in productio
 test('the memory limiter is fine outside production, where there genuinely is one process', () => {
   const laptop = loadEnv({ EMAIL_SENDER: 'ses', EMAIL_CONFIGURATION_SET: 'c', EMAIL_RATE_LIMIT: 'memory' } as NodeJS.ProcessEnv);
   expect(laptop.EMAIL_RATE_LIMIT).toBe('memory');
+});
+
+// ── S1 · the boot gates ─────────────────────────────────────────────────────
+//
+// Every gate below refuses at BOOT rather than at request time, and that is the
+// whole point. A request-time failure ships a deploy that goes green, passes
+// its health check and reports steady state, and then breaks a user journey
+// nobody connects back to a variable until several deploys later. Each test
+// here pins the variable NAME into the message, because the message is the only
+// thing the operator reading a crash-looping task's logs actually gets.
+
+test('the three signing keys stay optional outside production', () => {
+  const env = loadEnv({});
+  expect(env.SESSION_SECRET).toBe('');
+  expect(env.PORTAL_LINK_SECRET).toBe('');
+  expect(env.PORTAL_SESSION_SECRET).toBe('');
+});
+
+test.each(['SESSION_SECRET', 'PORTAL_LINK_SECRET', 'PORTAL_SESSION_SECRET'] as const)(
+  'NODE_ENV=production with an empty %s fails to boot',
+  (key) => {
+    expect(() => loadEnv({ ...PRODUCTION, [key]: '' })).toThrow(new RegExp(key));
+  },
+);
+
+// The extractor is the one demo switch that INVENTS rather than degrades:
+// supplier, date, total, tax and VAT number from a hash of the filename, at
+// 0.8 confidence, which resolveProcessedState reads as Ready.
+test('EXTRACTOR defaults to demo outside production, so a cold clone still extracts', () => {
+  expect(loadEnv({}).EXTRACTOR).toBe('demo');
+});
+
+test('NODE_ENV=production with EXTRACTOR=demo fails to boot', () => {
+  expect(() => loadEnv({ ...PRODUCTION, EXTRACTOR: 'demo' })).toThrow(/EXTRACTOR/);
+});
+
+// OTP_MODE=demo is one fixed code on every account in every practice. `totp`
+// is accepted by the schema before A2 implements the verifier, and that is
+// deliberate: it fails every second factor CLOSED in the meantime.
+test('OTP_MODE defaults to demo outside production and accepts the real verifier', () => {
+  expect(loadEnv({}).OTP_MODE).toBe('demo');
+  expect(loadEnv({ OTP_MODE: 'totp' } as NodeJS.ProcessEnv).OTP_MODE).toBe('totp');
+});
+
+test('NODE_ENV=production with OTP_MODE=demo fails to boot', () => {
+  expect(() => loadEnv({ ...PRODUCTION, OTP_MODE: 'demo' })).toThrow(/OTP_MODE/);
+});
+
+test('OTP_MODE refuses a value that is neither demo nor totp', () => {
+  expect(() => loadEnv({ OTP_MODE: 'twilio-verify' } as NodeJS.ProcessEnv)).toThrow(/OTP_MODE/);
+});
+
+// Both sanitisation fixtures are SILENT about the format they cannot handle —
+// HEIC for the passthrough normaliser, a mid-file /Encrypt trailer for the
+// grep guard. Silence is what makes them boot gates rather than warnings.
+test('IMAGE_NORMALISER and DOCUMENT_GUARD default to fixture outside production', () => {
+  const env = loadEnv({});
+  expect(env.IMAGE_NORMALISER).toBe('fixture');
+  expect(env.DOCUMENT_GUARD).toBe('fixture');
+});
+
+test('NODE_ENV=production with the passthrough image normaliser fails to boot', () => {
+  expect(() => loadEnv({ ...PRODUCTION, IMAGE_NORMALISER: 'fixture' })).toThrow(/IMAGE_NORMALISER/);
+});
+
+test('NODE_ENV=production with the grep PDF guard fails to boot', () => {
+  expect(() => loadEnv({ ...PRODUCTION, DOCUMENT_GUARD: 'fixture' })).toThrow(/DOCUMENT_GUARD/);
+});
+
+// The fixture above is only useful while it is true. Without this, a gate added
+// later that PRODUCTION does not satisfy turns every negative test green for
+// the wrong reason — they would all throw, but on the missing variable rather
+// than on the one under test.
+test('the PRODUCTION fixture really is a bootable production environment', () => {
+  const env = loadEnv(PRODUCTION);
+  expect(env.NODE_ENV).toBe('production');
+  expect(env.EXTRACTOR).toBe('bedrock');
+  expect(env.OTP_MODE).toBe('totp');
+  expect(env.IMAGE_NORMALISER).toBe('sharp');
+  expect(env.DOCUMENT_GUARD).toBe('qpdf');
+});
+
+// The ceiling is a HARD STOP, not a warning, so the day it bites is a day the
+// practice's documents stop being read. £5/day was 250 documents at the
+// £0.02/document guardrail — one month-end afternoon.
+test('AI_DAILY_BUDGET_PENCE is £25/day, in integer pence', () => {
+  const value = loadEnv({}).AI_DAILY_BUDGET_PENCE;
+  expect(value).toBe(2500);
+  expect(Number.isInteger(value)).toBe(true);
 });
