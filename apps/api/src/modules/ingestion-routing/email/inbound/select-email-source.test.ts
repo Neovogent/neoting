@@ -27,6 +27,7 @@ function env(overrides: Partial<Env> = {}): Env {
     EXTRACTOR: 'demo',
     BEDROCK_REGION: 'eu-west-2',
     SMS_SENDER: 'demo',
+    EMAIL_SENDER: 'demo', SES_REGION: 'eu-west-2', EMAIL_FROM_ADDRESS: 'no-reply@neoting.neovogent.com', EMAIL_REPLY_TO_ADDRESS: 'support@neovogent.com', EMAIL_CONFIGURATION_SET: '', EMAIL_RATE_LIMIT: 'memory',
     PORTAL_LINK_SECRET: '',
     PORTAL_SESSION_SECRET: '',
     LEDGER_ADAPTER: 'demo',

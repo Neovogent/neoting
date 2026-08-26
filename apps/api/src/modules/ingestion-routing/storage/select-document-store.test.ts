@@ -22,6 +22,7 @@ function env(overrides: Partial<Env> = {}): Env {
     BEDROCK_REGION: 'eu-west-2',
     LEDGER_ADAPTER: 'demo', AI_CHAT: 'demo', AI_DAILY_BUDGET_PENCE: 500,
     SMS_SENDER: 'demo', PORTAL_LINK_SECRET: '', PORTAL_SESSION_SECRET: '',
+    EMAIL_SENDER: 'demo', SES_REGION: 'eu-west-2', EMAIL_FROM_ADDRESS: 'no-reply@neoting.neovogent.com', EMAIL_REPLY_TO_ADDRESS: 'support@neovogent.com', EMAIL_CONFIGURATION_SET: '', EMAIL_RATE_LIMIT: 'memory',
     EMAIL_SOURCE: 'fixture',
     MAILHOG_API_URL: 'http://localhost:8025',
     S3_BUCKET_RECEIPTS: 'nt-local-receipts',

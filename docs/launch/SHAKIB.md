@@ -161,6 +161,44 @@ one test message, then leave it alone.
 Full gate. PR.
 ```
 
+### ✅ Done — PR #168 (26 Aug 2026)
+
+`apps/api/src/modules/notifications/` is a config-selected transport with three
+composed messages. **Every downstream consumer is unblocked**: A1/A11 call
+`sendClientInvite`, A2 calls `sendSignInCode`, A14 calls `sendDocumentRequest`.
+Read the module's `CLAUDE.md` before wiring one. Five things worth knowing:
+
+1. **Proven with a real send, not a terraform apply.** Three messages to a real
+   Gmail address *through the code*: SES `Send 3 · Delivery 3 · Bounce 0 ·
+   Reject 0`, suppression list empty. DKIM, SPF-aligned MAIL FROM and DMARC all
+   verified live.
+2. **The `ses:FromAddress` grant was pinned to `doc@`, and that was a bug.**
+   `doc@` is the *inbound* intake address — mail arriving there is filed as a
+   client document, so sending from it would ingest every client reply as
+   paperwork. Now `no-reply@`, with `Reply-To: support@neovogent.com`.
+3. **Three boot gates, and `services.tf` was updated in the same commit** so the
+   next staging deploy cannot crash-loop. `EMAIL_SENDER=demo` refuses in
+   production — it is the one stand-in whose failure is invisible from every
+   screen.
+4. **It adds `@aws-sdk/client-sesv2`** (+6 packages, pinned to `client-s3`'s
+   version). A dependency, so it is flagged on the PR rather than assumed.
+5. **The env block lives in S1's file**, written as one self-contained additive
+   block so your S1 pass merges over it rather than into it.
+
+**Two things still need you, and neither is code:**
+
+- **Confirm inbox-vs-spam placement**, and give me an Outlook address — SES can
+  prove delivery to Gmail's MX, only a human proves the inbox, and no Outlook
+  address was available.
+- **Subscribe someone to `nt-staging-ses-events`.** Zero subscribers today, so
+  bounces and complaints publish into a void: account-side suppression still
+  works, but nobody is *told*. `observability.tf` forbids declaring it in
+  Terraform (it would be created `PendingConfirmation` and look wired while
+  delivering nothing), so this is out of band and the confirmation is the proof.
+
+`support@neovogent.com` MX resolves to Cloudflare email routing with a matching
+SPF record; the live forwarding test is still yours to run from outside.
+
 ---
 
 ## S3 · The frontend moves to AWS

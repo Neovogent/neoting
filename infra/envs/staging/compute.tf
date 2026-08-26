@@ -268,12 +268,31 @@ resource "aws_iam_role_policy" "app_runtime" {
         Resource = "*"
       },
       {
+        # ⚠ THE FROM ADDRESS CHANGED WITH S2, AND THE OLD ONE WAS A BUG WAITING
+        # TO HAPPEN. This condition used to pin `ses:FromAddress` to
+        # `doc@${local.domain}` — which is the INBOUND document intake address
+        # (email.tf, the `doc-to-s3` receipt rule). Mail arriving at `doc@` is
+        # written to the receipts bucket and filed as a client document, so
+        # sending transactional mail FROM it means every "thanks, got it" a
+        # client types back is ingested as paperwork and lands in someone's
+        # books. The grant existed before any code called ses:SendEmail, so
+        # nothing had ever exercised it.
+        #
+        # `no-reply@` is the outbound identity (EMAIL_FROM_ADDRESS,
+        # services.tf). `doc@` stays in the list because it is a valid identity
+        # on the domain and removing it is not this stage's call — but no code
+        # sends from it, and none should.
+        #
+        # The condition is kept rather than widened to the domain: it is the one
+        # thing standing between a compromised task role and mail sent as any
+        # address on a verified domain, which is a phishing platform with our
+        # DKIM signature on it.
         Sid      = "OutboundEmail"
         Effect   = "Allow"
         Action   = ["ses:SendEmail", "ses:SendRawEmail"]
         Resource = "*"
         Condition = {
-          StringEquals = { "ses:FromAddress" = "doc@${local.domain}" }
+          StringEquals = { "ses:FromAddress" = ["no-reply@${local.domain}", "doc@${local.domain}"] }
         }
       },
       {
