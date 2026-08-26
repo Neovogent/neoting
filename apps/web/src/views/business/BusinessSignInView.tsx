@@ -181,7 +181,7 @@ export function BusinessSignInView() {
 
   return (
     <div className="flex-1 min-w-0 h-full overflow-y-auto bg-ground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      <div className="min-h-full flex flex-col items-center justify-center p-8">
+      <div className="min-h-full flex flex-col items-center justify-center p-4 md:p-8">
         <div className="w-full max-w-lg flex flex-col gap-6">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -194,7 +194,7 @@ export function BusinessSignInView() {
                 <div className="font-sans font-bold text-[15px] text-white tracking-tight">
                   {intl.formatMessage(m.title)}
                 </div>
-                <div className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider">
+                <div className="hidden sm:block text-[11px] text-zinc-500 font-semibold uppercase tracking-wider">
                   {intl.formatMessage(m.subtitle)}
                 </div>
               </div>
@@ -272,7 +272,7 @@ export function BusinessSignInView() {
                       onChange={(v) => set('businessName', v)}
                       placeholder={intl.formatMessage(m.businessNamePlaceholder)}
                     />
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <Field
                         label={intl.formatMessage(m.contactNameLabel)}
                         value={form.contactName}
