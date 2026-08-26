@@ -209,10 +209,6 @@ const m = defineMessages({
     id: 'portal.businessHomeView.reasonStatementGap',
     defaultMessage: 'a gap in your bank statements',
   },
-  reasonLedgerAttachment: {
-    id: 'portal.businessHomeView.reasonLedgerAttachment',
-    defaultMessage: 'no copy attached in the ledger',
-  },
   reasonRecurring: {
     id: 'portal.businessHomeView.reasonRecurring',
     defaultMessage: 'you usually send this one every month',
@@ -673,7 +669,6 @@ const REASON: Record<MissingItem['detectedBy'], MessageDescriptor> = {
   'bank-transaction': m.reasonBankTransaction,
   'supplier-statement': m.reasonSupplierStatement,
   'statement-gap': m.reasonStatementGap,
-  'ledger-attachment': m.reasonLedgerAttachment,
   recurring: m.reasonRecurring,
 };
 

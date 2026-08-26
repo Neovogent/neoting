@@ -27,7 +27,6 @@ export interface Client {
   missingDocs: number;
   toReview: number;
   deadline: string;
-  xeroConnected: boolean;
   bankConnected: boolean;
   contactName?: string | undefined;
   mobile?: string | undefined;
@@ -45,12 +44,12 @@ export interface Client {
 }
 
 /**
- * What the client has to do themselves. `ledger` and `bank` need their own
- * credentials at the provider, which the practice never holds; `profile` is the
- * company record itself, on the invite path where the client registers rather
- * than the accountant keying it in.
+ * What the client has to do themselves. `profile` is the company record
+ * itself, on the invite path where the client registers rather than the
+ * accountant keying it in. The connection tasks are gone with D47 — client
+ * onboarding asks for no connections, so there is nothing left to authorise.
  */
-export type SetupTask = 'profile' | 'ledger' | 'bank';
+export type SetupTask = 'profile';
 
 /**
  * One SMS link covering everything the client must connect themselves. The
@@ -207,7 +206,7 @@ export interface Document {
   uploadFileName?: string | undefined;
   fields: ExtractedField[];
   lineItems: LineItem[];
-  /** Set when a previous publish to the accounting software failed (yellow Ready). */
+  /** Set when a previous release for export was refused (yellow Ready). */
   publishFailed?: boolean | undefined;
   /** Auto-split provenance: "page 3 of 40-page batch". */
   splitFrom?: string | undefined;
@@ -777,8 +776,8 @@ export interface MissingItem {
   supplier: string;
   date: string;
   amount: number;
-  /** Which of the five detection engines flagged this. */
-  detectedBy: 'bank-transaction' | 'supplier-statement' | 'statement-gap' | 'ledger-attachment' | 'recurring';
+  /** Which of the four detection engines flagged this. */
+  detectedBy: 'bank-transaction' | 'supplier-statement' | 'statement-gap' | 'recurring';
   chased: boolean;
 }
 

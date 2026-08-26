@@ -60,7 +60,6 @@ const ENGINES: MissingItem['detectedBy'][] = [
   'bank-transaction',
   'bank-transaction',
   'supplier-statement',
-  'ledger-attachment',
   'recurring',
   'statement-gap',
 ];
@@ -376,7 +375,9 @@ export function composeChaseMessage(client: Client, items: { supplier: string; a
     ? `we're missing the receipt for ${head.supplier}${head.amount ? ` £${head.amount.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''} on ${head.date.replace(/ \d{4}$/, '')}`
     : 'we need some paperwork from you';
   const tail = rest > 0 ? `, plus ${rest} other item${rest === 1 ? '' : 's'}` : '';
-  return `${client.name.replace(/ Ltd$/, '')} Accounts: ${first}${tail}. Upload securely: https://sec.ure/${client.id}${hashPart(client.id)}`;
+  // The real portal link shape: <web origin>/p/<linkToken>. This is sent
+  // history, so it carries a (synthetic, deterministic) token.
+  return `${client.name.replace(/ Ltd$/, '')} Accounts: ${first}${tail}. Upload securely: ${window.location.origin}/p/${hashPart(client.id)}`;
 }
 
 function hashPart(id: string) {

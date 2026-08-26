@@ -52,13 +52,6 @@ const m = defineMessages({
       'A bank statement is missing for this period, so anything inside it is unverifiable. This is a gap in the evidence rather than one absent receipt.',
   },
 
-  ledgerAttachmentTag: { id: 'pipeline.detection.ledgerAttachmentTag', defaultMessage: 'Posted, no attachment' },
-  ledgerAttachmentDetail: {
-    id: 'pipeline.detection.ledgerAttachmentDetail',
-    defaultMessage:
-      'The entry is already in the ledger with nothing attached to support it. It will be the first thing an inspector asks for.',
-  },
-
   recurringTag: { id: 'pipeline.detection.recurringTag', defaultMessage: 'Expected, not arrived' },
   recurringDetail: {
     id: 'pipeline.detection.recurringDetail',
@@ -94,11 +87,6 @@ export const DETECTION: Record<MissingItem['detectedBy'], DetectionLabel> = {
     tag: m.statementGapTag,
     detail: m.statementGapDetail,
     where: m.whereBankStatements,
-  },
-  'ledger-attachment': {
-    tag: m.ledgerAttachmentTag,
-    detail: m.ledgerAttachmentDetail,
-    where: m.whereDocuments,
   },
   recurring: {
     tag: m.recurringTag,

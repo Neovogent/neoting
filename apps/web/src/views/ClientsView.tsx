@@ -39,21 +39,19 @@ const TAB_LABEL: Record<Tab, MessageDescriptor> = defineMessages({
  * So the tuple stays English and the words on screen come from `COLUMN_LABEL`.
  */
 const OPTIONAL_COLUMNS = [
-  'Integration', 'Bank', 'Health', 'To review', 'Ready', 'Missing', 'Requested',
+  'Health', 'To review', 'Ready', 'Missing', 'Requested',
   'Overdue', 'Unmatched', 'Statement gaps', 'Rejected', 'Approvals', 'Item delay',
-  'Auto-publish', 'Next deadline',
+  'Next deadline',
 ] as const;
 type OptionalColumn = (typeof OPTIONAL_COLUMNS)[number];
 
 /**
  * What each column is called in the picker, and — for the drillable counts —
- * in the table header too. Two columns are headed differently from the way the
- * picker names them (`Integration` → Ledger, `Health` → Pipeline health); those
- * headers are separate messages on `m`.
+ * in the table header too. One column is headed differently from the way the
+ * picker names it (`Health` → Pipeline health); that header is a separate
+ * message on `m`.
  */
 const COLUMN_LABEL: Record<OptionalColumn, MessageDescriptor> = defineMessages({
-  Integration: { id: 'analytics.clientsView.columnIntegration', defaultMessage: 'Integration' },
-  Bank: { id: 'analytics.clientsView.columnBank', defaultMessage: 'Bank' },
   Health: { id: 'analytics.clientsView.columnHealth', defaultMessage: 'Health' },
   'To review': { id: 'analytics.clientsView.columnToReview', defaultMessage: 'To review' },
   Ready: { id: 'analytics.clientsView.columnReady', defaultMessage: 'Ready' },
@@ -65,11 +63,10 @@ const COLUMN_LABEL: Record<OptionalColumn, MessageDescriptor> = defineMessages({
   Rejected: { id: 'analytics.clientsView.columnRejected', defaultMessage: 'Rejected' },
   Approvals: { id: 'analytics.clientsView.columnApprovals', defaultMessage: 'Approvals' },
   'Item delay': { id: 'analytics.clientsView.columnItemDelay', defaultMessage: 'Item delay' },
-  'Auto-publish': { id: 'analytics.clientsView.columnAutoPublish', defaultMessage: 'Auto-publish' },
   'Next deadline': { id: 'analytics.clientsView.columnNextDeadline', defaultMessage: 'Next deadline' },
 });
 
-const DEFAULT_COLUMNS = ['Integration', 'Health', 'To review', 'Missing', 'Requested', 'Rejected', 'Next deadline'];
+const DEFAULT_COLUMNS = ['Health', 'To review', 'Missing', 'Requested', 'Rejected', 'Next deadline'];
 
 const m = defineMessages({
   heading: { id: 'analytics.clientsView.heading', defaultMessage: 'Clients' },
@@ -99,7 +96,6 @@ const m = defineMessages({
   drillRejected: { id: 'analytics.clientsView.drillRejected', defaultMessage: 'Show rejected items' },
   drillApprovals: { id: 'analytics.clientsView.drillApprovals', defaultMessage: 'Show the approval queue' },
 
-  columnLedger: { id: 'analytics.clientsView.columnLedger', defaultMessage: 'Ledger' },
   columnPipelineHealth: {
     id: 'analytics.clientsView.columnPipelineHealth',
     defaultMessage: 'Pipeline health',
@@ -108,10 +104,6 @@ const m = defineMessages({
     id: 'analytics.clientsView.awaitingRegistration',
     defaultMessage: 'Awaiting client registration',
   },
-  pillXero: { id: 'analytics.clientsView.pillXero', defaultMessage: 'Xero' },
-  pillNotConnected: { id: 'analytics.clientsView.pillNotConnected', defaultMessage: 'Not connected' },
-  pillBankLive: { id: 'analytics.clientsView.pillBankLive', defaultMessage: 'Live' },
-  pillBankStatements: { id: 'analytics.clientsView.pillBankStatements', defaultMessage: 'Statements' },
   percent: { id: 'analytics.clientsView.percent', defaultMessage: '{value}%' },
   days: { id: 'analytics.clientsView.days', defaultMessage: '{days}d' },
 
@@ -196,12 +188,6 @@ export function ClientsView() {
         </span>
       ),
     },
-    ...(columns.includes('Integration')
-      ? [{ key: 'integration', label: intl.formatMessage(m.columnLedger), sortValue: (c: Client) => String(c.xeroConnected), render: (c: Client) => (c.xeroConnected ? <Pill tone="blue">{intl.formatMessage(m.pillXero)}</Pill> : <Pill tone="red">{intl.formatMessage(m.pillNotConnected)}</Pill>) }]
-      : []),
-    ...(columns.includes('Bank')
-      ? [{ key: 'bank', label: intl.formatMessage(COLUMN_LABEL.Bank), sortValue: (c: Client) => String(c.bankConnected), render: (c: Client) => (c.bankConnected ? <Pill tone="green">{intl.formatMessage(m.pillBankLive)}</Pill> : <Pill tone="amber">{intl.formatMessage(m.pillBankStatements)}</Pill>) }]
-      : []),
     ...(columns.includes('Health')
       ? [{
           key: 'health', label: intl.formatMessage(m.columnPipelineHealth), align: 'right' as const, sortValue: (c: Client) => statsFor(c.id).health,
@@ -222,9 +208,6 @@ export function ClientsView() {
     ...countColumn(intl, 'Approvals', columns, (c) => statsFor(c.id).approvals, (ids) => drill(ids, 'SHOW_APPROVALS', intl.formatMessage(m.drillApprovals))),
     ...(columns.includes('Item delay')
       ? [{ key: 'delay', label: intl.formatMessage(COLUMN_LABEL['Item delay']), align: 'right' as const, sortValue: (c: Client) => statsFor(c.id).itemDelay, render: (c: Client) => <span className="tabular-nums text-zinc-400">{intl.formatMessage(m.days, { days: statsFor(c.id).itemDelay })}</span> }]
-      : []),
-    ...(columns.includes('Auto-publish')
-      ? [{ key: 'autopub', label: intl.formatMessage(COLUMN_LABEL['Auto-publish']), align: 'right' as const, sortValue: (c: Client) => statsFor(c.id).autoPublishCoverage, render: (c: Client) => <span className="tabular-nums text-zinc-400">{intl.formatMessage(m.percent, { value: statsFor(c.id).autoPublishCoverage })}</span> }]
       : []),
     ...(columns.includes('Next deadline')
       ? [{ key: 'deadline', label: intl.formatMessage(COLUMN_LABEL['Next deadline']), align: 'right' as const, sortValue: (c: Client) => c.deadline, render: (c: Client) => <span className="text-zinc-400">{c.deadline}</span> }]
@@ -444,8 +427,6 @@ function ViewToggle({ active, onClick, icon: Icon, label }: { active: boolean; o
 const mCard = defineMessages({
   star: { id: 'analytics.clientCard.star', defaultMessage: 'Star' },
   unstar: { id: 'analytics.clientCard.unstar', defaultMessage: 'Unstar' },
-  xeroConnected: { id: 'analytics.clientCard.xeroConnected', defaultMessage: 'Xero connected' },
-  bankFeedLive: { id: 'analytics.clientCard.bankFeedLive', defaultMessage: 'Bank feed live' },
   pipelineHealth: { id: 'analytics.clientCard.pipelineHealth', defaultMessage: 'Pipeline Health' },
   healthPercent: { id: 'analytics.clientCard.healthPercent', defaultMessage: '{value}%' },
   statMissing: { id: 'analytics.clientCard.statMissing', defaultMessage: 'Missing' },
@@ -498,24 +479,6 @@ function ClientCard({
           >
             <Star size={14} fill={starred ? 'currentColor' : 'none'} />
           </button>
-          {client.xeroConnected && (
-            <div className="w-8 h-8 rounded-full bg-brand/10 text-brand flex items-center justify-center border border-brand/20" title={intl.formatMessage(mCard.xeroConnected)}>
-              {/* The Xero mark, drawn as its initial because the real logo is
-                  not ours to redistribute. It is an icon that happens to be a
-                  letter, not copy — a translator has nothing to do with it, and
-                  the accessible name is the `title` above, which is in the
-                  catalogue. The literal rule cannot tell a brand glyph from a
-                  word, so the exemption is stated here rather than widened into
-                  a config that would let real single letters through. */}
-              {/* eslint-disable-next-line neoting/no-literal-string-in-jsx */}
-              <span className="font-bold text-[11px]">X</span>
-            </div>
-          )}
-          {client.bankConnected && (
-            <div className="w-8 h-8 rounded-full bg-brand/10 text-brand flex items-center justify-center border border-brand/20" title={intl.formatMessage(mCard.bankFeedLive)}>
-              <span className="font-bold text-[11px]">$</span>
-            </div>
-          )}
         </div>
       </div>
 
@@ -586,11 +549,11 @@ function ClientCard({
 }
 
 function exportClients(rows: Client[], statsFor: (id: string) => ClientStats) {
-  const header = 'Client,Industry,Ledger,Bank,Health,To review,Ready,Missing,Requested,Rejected,Approvals,Unverified,Next deadline\n';
+  const header = 'Client,Industry,Health,To review,Ready,Missing,Requested,Rejected,Approvals,Unverified,Next deadline\n';
   const body = rows
     .map((c) => {
       const s = statsFor(c.id);
-      return `"${c.name}","${c.industry}","${c.xeroConnected ? 'Xero' : 'none'}","${c.bankConnected ? 'live' : 'statements'}",${s.health},${s.toReview},${s.ready},${s.missing},${s.requested},${s.rejected},${s.approvals},"${currency(s.unverified)}","${c.deadline}"`;
+      return `"${c.name}","${c.industry}",${s.health},${s.toReview},${s.ready},${s.missing},${s.requested},${s.rejected},${s.approvals},"${currency(s.unverified)}","${c.deadline}"`;
     })
     .join('\n');
   const blob = new Blob([header + body], { type: 'text/csv;charset=utf-8;' });

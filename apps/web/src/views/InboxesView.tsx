@@ -135,7 +135,7 @@ const m = defineMessages({
   },
   publishLiveHint: {
     id: 'inboxes.inboxesView.publishLiveHint',
-    defaultMessage: 'Publishing is a Review → Approve action — ask the workspace: "Publish all approved costs to Xero".',
+    defaultMessage: 'Releasing is a Review → Approve action — ask the workspace: "Publish all approved costs".',
   },
   bulkNoneReadyTitle: { id: 'inboxes.inboxesView.bulkNoneReadyTitle', defaultMessage: 'None of these can move yet' },
   bulkNoneReadyItem: { id: 'inboxes.inboxesView.bulkNoneReadyItem', defaultMessage: '{supplier} — {missing}' },
@@ -250,7 +250,7 @@ const m = defineMessages({
   cannotPublish: { id: 'inboxes.inboxesView.cannotPublish', defaultMessage: 'Cannot publish — missing {fields}' },
   flagBlockedDetail: {
     id: 'inboxes.inboxesView.flagBlockedDetail',
-    defaultMessage: 'Your practice made these fields mandatory before anything reaches the ledger.',
+    defaultMessage: 'Your practice made these fields mandatory before anything is released for export.',
   },
   markReviewedTitle: {
     id: 'inboxes.inboxesView.markReviewedTitle',
@@ -284,7 +284,7 @@ const m = defineMessages({
   },
   confirmPublishSubtitle: {
     id: 'inboxes.inboxesView.confirmPublishSubtitle',
-    defaultMessage: "This posts to the ledger and can't be undone here",
+    defaultMessage: 'This marks them Published — approved and released for export',
   },
   confirmRowItems: { id: 'inboxes.inboxesView.confirmRowItems', defaultMessage: 'Items' },
   confirmRowValue: { id: 'inboxes.inboxesView.confirmRowValue', defaultMessage: 'Total value' },
@@ -616,7 +616,6 @@ export function InboxesView() {
     const failure = failureOf(doc);
     if (!failure) return;
     if (failure.fix === 'open-document') { setPreview(doc); return; }
-    if (failure.fix === 'reconnect-ledger') { navigate(path('clients', doc.clientId, 'integrations')); return; }
     if (failure.fix === 'replace-file') { setReplacing(doc); replaceRef.current?.click(); }
   };
 
@@ -791,7 +790,7 @@ export function InboxesView() {
                           className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
                           title={intl.formatMessage(failure.detail)}
                         >
-                          {failure.fix === 'replace-file' ? <UploadCloud size={14} /> : failure.fix === 'reconnect-ledger' ? <Link2 size={14} /> : <PencilLine size={14} />}
+                          {failure.fix === 'replace-file' ? <UploadCloud size={14} /> : <PencilLine size={14} />}
                           {intl.formatMessage(failure.fixLabel)}
                         </button>
                       )}
@@ -1518,7 +1517,7 @@ export function InboxesView() {
       {/* The two suspected copies, side by side, with keep-one / keep-both */}
       {comparing && <DuplicateModal pair={comparing} onClose={() => setComparing(null)} />}
 
-      {/* Publish confirmation — publishing posts to the ledger, so it always asks first */}
+      {/* Publish confirmation — releasing is a state change, so it always asks first */}
       <AnimatePresence>
         {confirmPublish && (() => {
           const docs = documents.filter((d) => confirmPublish.includes(d.id));

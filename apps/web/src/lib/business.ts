@@ -100,7 +100,7 @@ export function buildBusinessAccounts(clients: Client[]): BusinessAccount[] {
       clientId: second.id,
       businessName: second.name,
       contactName: second.contactName ?? 'Primary contact',
-      email: 'maria@cosmorestaurants.co.uk',
+      email: 'maria@anandagroup.co.uk',
       mobile: second.mobile ?? '+44 7700 900871',
       origin: 'self-signup',
       status: 'active',
@@ -115,7 +115,7 @@ export function buildBusinessAccounts(clients: Client[]): BusinessAccount[] {
       multiPageCapture: true,
       twoFactor: true,
       members: [
-        { id: 'bm-seed-4', name: second.contactName ?? 'Maria Silva', email: 'maria@cosmorestaurants.co.uk', mobile: '+44 7700 900871', role: 'Owner', canUpload: true, canSeeTotals: true, status: 'active' },
+        { id: 'bm-seed-4', name: second.contactName ?? 'Maria Silva', email: 'maria@anandagroup.co.uk', mobile: '+44 7700 900871', role: 'Owner', canUpload: true, canSeeTotals: true, status: 'active' },
       ],
     });
   }

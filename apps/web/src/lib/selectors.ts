@@ -26,7 +26,6 @@ export interface ClientStats {
   unverified: number;
   health: number;
   itemDelay: number;
-  autoPublishCoverage: number;
 }
 
 /**
@@ -51,7 +50,6 @@ const EMPTY_CLIENT_STATS: ClientStats = {
   unverified: 0,
   health: 100,
   itemDelay: 0,
-  autoPublishCoverage: 0,
 };
 
 export function deriveClientStats(
@@ -115,7 +113,6 @@ export function deriveClientStats(
     unverified,
     health: pipelineHealth({ missing, overdue, toReview, rejected, duplicates, approvals, client }),
     itemDelay: itemDelayFor(client),
-    autoPublishCoverage: autoPublishFor(client),
   };
 }
 
@@ -141,7 +138,6 @@ function pipelineHealth(x: {
   score -= x.duplicates * 2;
   score -= Math.min(8, x.approvals * 2);
   if (!x.client.bankConnected) score -= 10;
-  if (!x.client.xeroConnected) score -= 8;
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
@@ -150,12 +146,6 @@ function itemDelayFor(client: Client): number {
   let h = 0;
   for (let i = 0; i < client.id.length; i++) h = (h * 31 + client.id.charCodeAt(i)) >>> 0;
   return Math.round(((h % 130) / 10 + 1.4) * 10) / 10;
-}
-
-function autoPublishFor(client: Client): number {
-  let h = 3;
-  for (let i = 0; i < client.name.length; i++) h = (h * 17 + client.name.charCodeAt(i)) >>> 0;
-  return 40 + (h % 55);
 }
 
 export function healthTone(health: number): 'green' | 'amber' | 'red' {

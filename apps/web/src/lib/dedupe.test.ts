@@ -89,7 +89,7 @@ describe('detectDuplicates — the seeded pairs', () => {
 
 describe('detectDuplicates — what it refuses to pair', () => {
   it('never pairs the same invoice sent to two different companies', () => {
-    const pairs = detectDuplicates(intl, [doc({ id: 'a' }), doc({ id: 'b', clientId: '2', clientName: 'Cosmo' })]);
+    const pairs = detectDuplicates(intl, [doc({ id: 'a' }), doc({ id: 'b', clientId: '2', clientName: 'Ananda' })]);
 
     expect(pairs).toEqual([]);
   });

@@ -28,7 +28,6 @@ export const seedClients: Client[] = [
     missingDocs: 3,
     toReview: 1,
     deadline: '12 Aug 2026',
-    xeroConnected: true,
     bankConnected: true,
     contactName: 'John Doe',
     mobile: '+44 7700 900123',
@@ -36,13 +35,12 @@ export const seedClients: Client[] = [
   },
   {
     id: '2',
-    name: 'Cosmo Restaurants',
+    name: 'Ananda Group',
     industry: 'Hospitality & Food',
     health: 40,
     missingDocs: 1,
     toReview: 2,
     deadline: '20 Aug 2026',
-    xeroConnected: true,
     bankConnected: false,
     contactName: 'Maria Silva',
     mobile: '+44 7700 900871',
@@ -110,7 +108,7 @@ export const seedDocuments: Document[] = [
   {
     id: 'd3',
     clientId: '2',
-    clientName: 'Cosmo Restaurants',
+    clientName: 'Ananda Group',
     supplier: 'Costco',
     date: '09 Aug 2026',
     total: 850.2,
@@ -155,7 +153,7 @@ export const seedDocuments: Document[] = [
     total: 61.99,
     category: 'Software',
     status: 'rejected',
-    statusNote: 'Publish to Xero failed — tax rate not found in chart of accounts',
+    statusNote: 'Release refused — tax rate not found in chart of accounts',
     source: 'email',
     uploader: 'accounts@americanburger.co.uk',
     currency: 'GBP',
@@ -170,7 +168,7 @@ export const seedDocuments: Document[] = [
   {
     id: 'd6',
     clientId: '2',
-    clientName: 'Cosmo Restaurants',
+    clientName: 'Ananda Group',
     supplier: 'Unknown',
     date: '08 Aug 2026',
     total: 0,
@@ -235,17 +233,17 @@ export const seedDocuments: Document[] = [
   {
     id: 's2',
     clientId: '2',
-    clientName: 'Cosmo Restaurants',
+    clientName: 'Ananda Group',
     supplier: 'Westfield Events',
     date: '05 Aug 2026',
     total: 6240.0,
     category: 'Sales — Events',
     status: 'ready',
-    /** Green Ready vs yellow Ready: this one failed a previous publish. */
+    /** Green Ready vs yellow Ready: this one was refused at a previous release. */
     publishFailed: true,
-    statusNote: 'Previous publish failed — customer not found in Xero',
+    statusNote: 'Previous release refused — customer not found in the chart of accounts',
     source: 'web',
-    uploader: 'maria@cosmo.co.uk',
+    uploader: 'maria@anandagroup.co.uk',
     currency: 'GBP',
     kind: 'sales',
     fields: [
@@ -259,7 +257,7 @@ export const seedDocuments: Document[] = [
   {
     id: 's3',
     clientId: '2',
-    clientName: 'Cosmo Restaurants',
+    clientName: 'Ananda Group',
     supplier: 'Just Eat',
     date: '09 Aug 2026',
     total: 2140.3,
@@ -267,7 +265,7 @@ export const seedDocuments: Document[] = [
     status: 'review',
     statusNote: 'Missing Category',
     source: 'email',
-    uploader: 'maria@cosmo.co.uk',
+    uploader: 'maria@anandagroup.co.uk',
     currency: 'GBP',
     kind: 'sales',
     fields: [
@@ -285,17 +283,17 @@ export const seedTransactions: BankTransaction[] = [
   { id: 't2', clientId: '1', clientName: 'American Burger Ltd', description: 'BIDFOOD UK LTD', date: '12 Aug 2026', amount: 1420.5, matchedDocId: 'd1', isCredit: false, accountId: 'acct-1-1' },
   { id: 't3', clientId: '1', clientName: 'American Burger Ltd', description: 'GOOGLE ADS', date: '05 Aug 2026', amount: 600.0, isCredit: false, accountId: 'acct-1-1', missingItemId: 'mi2' },
   { id: 't4', clientId: '1', clientName: 'American Burger Ltd', description: 'BIDFOOD UK LTD REFUND', date: '14 Aug 2026', amount: -212.4, isCredit: true, accountId: 'acct-1-1' },
-  { id: 't5', clientId: '2', clientName: 'Cosmo Restaurants', description: 'SQUARE UP PAYMENT', date: '07 Aug 2026', amount: 1900.0, isCredit: false, accountId: 'acct-2-1' },
+  { id: 't5', clientId: '2', clientName: 'Ananda Group', description: 'SQUARE UP PAYMENT', date: '07 Aug 2026', amount: 1900.0, isCredit: false, accountId: 'acct-2-1' },
 ];
 
-/** Cosmo has no live feed, so its books run on uploaded statements. */
+/** Ananda Group has no live feed, so its books run on uploaded statements. */
 export const seedStatements: Statement[] = [
   {
     id: 'st1',
     clientId: '2',
-    clientName: 'Cosmo Restaurants',
+    clientName: 'Ananda Group',
     accountId: 'acct-2-1',
-    fileName: 'cosmo-june-statement.pdf',
+    fileName: 'ananda-june-statement.pdf',
     period: '01 Jun – 30 Jun 2026',
     openingBalance: 14204.11,
     closingBalance: 9871.4,
@@ -306,7 +304,7 @@ export const seedStatements: Statement[] = [
   {
     id: 'st2',
     clientId: '2',
-    clientName: 'Cosmo Restaurants',
+    clientName: 'Ananda Group',
     accountId: 'acct-2-1',
     fileName: 'scan_bank_aug.pdf',
     period: 'unknown',
@@ -360,7 +358,7 @@ export const seedSupplierStatements: SupplierStatement[] = [
   {
     id: 'sup-3',
     clientId: '2',
-    clientName: 'Cosmo Restaurants',
+    clientName: 'Ananda Group',
     supplier: 'Sysco',
     fileName: 'sysco-statement-aug.pdf',
     period: '01 Aug – 12 Aug 2026',
@@ -428,7 +426,7 @@ export const seedExpenseClaims: ExpenseClaim[] = [
   {
     id: 'exp-4',
     clientId: '2',
-    clientName: 'Cosmo Restaurants',
+    clientName: 'Ananda Group',
     claimant: 'Maria Silva',
     period: 'August 2026',
     status: 'draft',
@@ -559,7 +557,7 @@ export const seedMatches: Match[] = [
   },
   {
     id: 'm3',
-    clientName: 'Cosmo Restaurants',
+    clientName: 'Ananda Group',
     documentId: 'batch-4',
     transactionId: 't5',
     documentLabel: '4 invoices · £1,900.00 combined',
@@ -625,7 +623,7 @@ export const seedDuplicateCopies: Document[] = [
   {
     id: 'd3b',
     clientId: '2',
-    clientName: 'Cosmo Restaurants',
+    clientName: 'Ananda Group',
     supplier: 'Costco',
     date: '13 Aug 2026',
     total: 850.2,
@@ -633,7 +631,7 @@ export const seedDuplicateCopies: Document[] = [
     status: 'review',
     statusNote: 'Missing Category',
     source: 'email',
-    uploader: 'maria@cosmo.co.uk',
+    uploader: 'maria@anandagroup.co.uk',
     currency: 'GBP',
     kind: 'cost',
     fields: [
@@ -683,7 +681,7 @@ export const seedMissing: MissingItem[] = [
   { id: 'mi1', clientId: '1', clientName: 'American Burger Ltd', supplier: 'Currys', date: '09 Aug 2026', amount: 1299.0, detectedBy: 'bank-transaction', chased: false },
   { id: 'mi2', clientId: '1', clientName: 'American Burger Ltd', supplier: 'Google Ads', date: '05 Aug 2026', amount: 600.0, detectedBy: 'bank-transaction', chased: false },
   { id: 'mi3', clientId: '1', clientName: 'American Burger Ltd', supplier: 'Brakes', date: '02 Aug 2026', amount: 842.15, detectedBy: 'supplier-statement', chased: true },
-  { id: 'mi4', clientId: '2', clientName: 'Cosmo Restaurants', supplier: 'Sysco', date: '04 Aug 2026', amount: 2140.0, detectedBy: 'bank-transaction', chased: true },
+  { id: 'mi4', clientId: '2', clientName: 'Ananda Group', supplier: 'Sysco', date: '04 Aug 2026', amount: 2140.0, detectedBy: 'bank-transaction', chased: true },
 ];
 
 export const seedConversations: Conversation[] = [
@@ -715,7 +713,7 @@ export const seedConversations: Conversation[] = [
       {
         id: 'c2m2',
         role: 'assistant',
-        content: "I've scanned bank feeds, supplier statements and recurring patterns. Here's what's missing:",
+        content: "I've scanned bank statements, supplier statements and recurring patterns. Here's what's missing:",
         intent: 'SHOW_MISSING',
         payload: { clientIds: [], clientNames: [] },
       },
@@ -737,7 +735,7 @@ export const seedAnalytics = {
   stats: [
     { label: 'Documents processed', value: '28', sub: 'this week' },
     { label: 'Correction rate', value: '8.4%', sub: 'extraction accuracy' },
-    { label: 'Auto-published', value: '71%', sub: 'of ready items' },
+    { label: 'Auto-categorised', value: '71%', sub: 'of documents read' },
     { label: 'Median chase response', value: '4h 12m', sub: 'SMS to upload' },
     { label: 'Overdue chases', value: '1', sub: 'past escalation' },
     { label: 'Item delay', value: '6.2 days', sub: 'doc date to upload' },

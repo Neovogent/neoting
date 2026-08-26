@@ -17,7 +17,7 @@ const m = defineMessages({
   scopeNote: {
     id: 'shell.pipelineStats.scopeNote',
     defaultMessage:
-      'Pipeline metrics only. Ledger reporting — P&L, balance sheet, management accounts — is out of scope for this product.',
+      'Pipeline metrics only. Accounts reporting — P&L, balance sheet, management accounts — is out of scope for this product.',
   },
 });
 

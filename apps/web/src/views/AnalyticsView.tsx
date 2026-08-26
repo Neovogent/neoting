@@ -27,7 +27,7 @@ const m = defineMessages({
   heading: { id: 'analytics.analyticsView.heading', defaultMessage: 'Analytics' },
   subheading: {
     id: 'analytics.analyticsView.subheading',
-    defaultMessage: 'Document pipeline only — no ledger reporting',
+    defaultMessage: 'Document pipeline only — no accounts reporting',
   },
   scopePractice: {
     id: 'analytics.analyticsView.scopePractice',
@@ -51,7 +51,6 @@ const m = defineMessages({
   columnRequested: { id: 'analytics.analyticsView.columnRequested', defaultMessage: 'Requested' },
   columnUnmatched: { id: 'analytics.analyticsView.columnUnmatched', defaultMessage: 'Unmatched' },
   columnItemDelay: { id: 'analytics.analyticsView.columnItemDelay', defaultMessage: 'Item delay' },
-  columnAutoPublish: { id: 'analytics.analyticsView.columnAutoPublish', defaultMessage: 'Auto-publish' },
 
   tileProcessed: { id: 'analytics.analyticsView.tileProcessed', defaultMessage: 'Documents processed' },
   tileProcessedSub: { id: 'analytics.analyticsView.tileProcessedSub', defaultMessage: 'in scope' },
@@ -120,12 +119,12 @@ const m = defineMessages({
   tableEmpty: { id: 'analytics.analyticsView.tableEmpty', defaultMessage: 'No clients in scope.' },
   tableFooter: {
     id: 'analytics.analyticsView.tableFooter',
-    defaultMessage: '{broken} client(s) with an incomplete integration • {inactive} inactive',
+    defaultMessage: '{inactive} inactive client(s)',
   },
   outOfScope: {
     id: 'analytics.analyticsView.outOfScope',
     defaultMessage:
-      'Ledger-health analytics — bank reconciliation status, control accounts, lock dates — are deliberately out of scope. This platform reports on its own pipeline; the accounting software remains the ledger.',
+      'Accounts-health analytics — bank reconciliation status, control accounts, lock dates — are deliberately out of scope. This platform reports on its own document pipeline; the accounting software remains the system of record.',
   },
 });
 
@@ -175,7 +174,6 @@ export function AnalyticsView() {
       approvalCount: scopedApprovals.length,
       unmatched: scopedTxns.filter((t) => !t.matchedDocId).length,
       gaps: statementGaps.filter((g) => scope === 'practice' || g.clientId === scope).length,
-      integrationsBroken: scopedClients.filter((c) => !c.xeroConnected || !c.bankConnected).length,
       inactive: scopedClients.filter((c) => statsFor(c.id).toReview === 0 && statsFor(c.id).ready === 0).length,
       itemDelay: scopedClients.length
         ? Math.round((scopedClients.reduce((n, c) => n + statsFor(c.id).itemDelay, 0) / scopedClients.length) * 10) / 10
@@ -207,7 +205,6 @@ export function AnalyticsView() {
     { key: 'requested', label: intl.formatMessage(m.columnRequested), align: 'right', sortValue: (c) => statsFor(c.id).requested, render: (c) => <span className="tabular-nums text-zinc-300">{statsFor(c.id).requested}</span> },
     { key: 'unmatched', label: intl.formatMessage(m.columnUnmatched), align: 'right', sortValue: (c) => statsFor(c.id).unmatched, render: (c) => <span className="tabular-nums text-zinc-300">{statsFor(c.id).unmatched}</span> },
     { key: 'delay', label: intl.formatMessage(m.columnItemDelay), align: 'right', sortValue: (c) => statsFor(c.id).itemDelay, render: (c) => <span className="tabular-nums text-zinc-400">{intl.formatMessage(m.days, { days: statsFor(c.id).itemDelay })}</span> },
-    { key: 'autopub', label: intl.formatMessage(m.columnAutoPublish), align: 'right', sortValue: (c) => statsFor(c.id).autoPublishCoverage, render: (c) => <span className="tabular-nums text-zinc-400">{intl.formatMessage(m.percent, { value: statsFor(c.id).autoPublishCoverage })}</span> },
   ];
 
   return (
@@ -278,7 +275,7 @@ export function AnalyticsView() {
             rows={scopedClients}
             rowId={(c) => c.id}
             emptyMessage={intl.formatMessage(m.tableEmpty)}
-            footer={intl.formatMessage(m.tableFooter, { broken: metrics.integrationsBroken, inactive: metrics.inactive })}
+            footer={intl.formatMessage(m.tableFooter, { inactive: metrics.inactive })}
           />
 
           <div className="border border-white/5 rounded-[32px] bg-card p-6 text-[13px] text-zinc-500 leading-relaxed">

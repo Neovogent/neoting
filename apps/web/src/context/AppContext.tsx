@@ -484,8 +484,6 @@ const ACTOR = 'You (Practice Admin)';
 
 export const SETUP_LABEL: Record<SetupTask, string> = {
   profile: 'company details',
-  ledger: 'accounting software',
-  bank: 'bank feed',
 };
 
 let draftSeq = 0;
@@ -1094,13 +1092,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!client || tasks.length === 0) return;
       const clientId = client.id;
 
-      // "Connect" is wrong for the profile task — that one is filled in, not
-      // authorised — so the two read as separate clauses.
-      const connect = tasks.filter((t) => t !== 'profile').map((t) => SETUP_LABEL[t]);
-      const what = [
-        ...(tasks.includes('profile') ? ['register your company details'] : []),
-        ...(connect.length ? [`connect your ${connect.join(' and ')}`] : []),
-      ].join(', then ');
+      // The only task left after D47 is registering the company record — the
+      // link asks for no connections of any kind.
+      const what = 'register your company details';
       setOnboardingLinks((prev) => [
         {
           id: `setup-${clientId}-${Date.now()}`,
@@ -1130,15 +1124,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   /**
-   * The client connects at the provider. The connection flag is only ever set
-   * from here — the practice has no way to switch it on itself.
+   * The client completes their own setup task. Only they can — the practice
+   * has no way to mark it done itself.
    */
   const completeOnboardingTask = useCallback((clientId: string, task: SetupTask) => {
     const patchFor: Record<SetupTask, Partial<Client>> = {
       // The client has filled in the record the invite path left blank.
       profile: { awaitingRegistration: false },
-      ledger: { xeroConnected: true },
-      bank: { bankConnected: true },
     };
     setClients((prev) => prev.map((c) => (c.id === clientId ? { ...c, ...patchFor[task] } : c)));
     setOnboardingLinks((prev) =>

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
-  ArrowLeft, Sparkles, Send, Activity, Landmark, Link2, Star,
+  ArrowLeft, Sparkles, Send, Activity, Star,
   RefreshCw, CheckCircle, Eye, Users, Settings as SettingsIcon, Download, Smartphone,
   Radio, History, ListChecks, Bot, Circle, Plus, PencilLine, X as XIcon, ShieldCheck, Clock, Check,
   LucideIcon,
@@ -40,7 +40,7 @@ const m = defineMessages({
   // ── Status column ───────────────────────────────────────────────────────
   statusToReview: { id: 'clients.clientDetailView.statusToReview', defaultMessage: 'To review' },
   statusReady: { id: 'clients.clientDetailView.statusReady', defaultMessage: 'Ready' },
-  statusReadyPublishFailed: { id: 'clients.clientDetailView.statusReadyPublishFailed', defaultMessage: 'Ready — publish failed' },
+  statusReadyPublishFailed: { id: 'clients.clientDetailView.statusReadyPublishFailed', defaultMessage: 'Ready — release refused' },
   statusRejected: { id: 'clients.clientDetailView.statusRejected', defaultMessage: 'Rejected' },
   statusRejectedWithNote: { id: 'clients.clientDetailView.statusRejectedWithNote', defaultMessage: 'Rejected — {note}' },
   statusProcessing: { id: 'clients.clientDetailView.statusProcessing', defaultMessage: 'Processing' },
@@ -50,10 +50,6 @@ const m = defineMessages({
   backToClients: { id: 'clients.clientDetailView.backToClients', defaultMessage: 'All clients' },
   pillAwaitingRegistration: { id: 'clients.clientDetailView.pillAwaitingRegistration', defaultMessage: 'Awaiting client registration' },
   pillPipelineHealth: { id: 'clients.clientDetailView.pillPipelineHealth', defaultMessage: 'Pipeline health {health}%' },
-  pillXero: { id: 'clients.clientDetailView.pillXero', defaultMessage: 'Xero' },
-  pillNoLedger: { id: 'clients.clientDetailView.pillNoLedger', defaultMessage: 'No ledger' },
-  pillBankFeedLive: { id: 'clients.clientDetailView.pillBankFeedLive', defaultMessage: 'Bank feed live' },
-  pillStatementFallback: { id: 'clients.clientDetailView.pillStatementFallback', defaultMessage: 'Statement fallback' },
   pillSetupLinkSent: { id: 'clients.clientDetailView.pillSetupLinkSent', defaultMessage: 'Setup link sent' },
   askAi: { id: 'clients.clientDetailView.askAi', defaultMessage: 'Ask AI' },
   chaseAction: { id: 'clients.clientDetailView.chaseAction', defaultMessage: 'Chase' },
@@ -78,21 +74,6 @@ const m = defineMessages({
   channelMixEmpty: { id: 'clients.clientDetailView.channelMixEmpty', defaultMessage: 'No documents in yet.' },
   channelSharePct: { id: 'clients.clientDetailView.channelSharePct', defaultMessage: '{pct}%' },
 
-  // ── Overview: integration health ────────────────────────────────────────
-  panelIntegrationHealth: { id: 'clients.clientDetailView.panelIntegrationHealth', defaultMessage: 'Integration health' },
-  accountingSoftware: { id: 'clients.clientDetailView.accountingSoftware', defaultMessage: 'Accounting software' },
-  ledgerTokenValidLong: { id: 'clients.clientDetailView.ledgerTokenValidLong', defaultMessage: 'Xero token valid — re-auth in 284d' },
-  ledgerNotConnected: { id: 'clients.clientDetailView.ledgerNotConnected', defaultMessage: 'No ledger connected' },
-  pillLive: { id: 'clients.clientDetailView.pillLive', defaultMessage: 'Live' },
-  pillOff: { id: 'clients.clientDetailView.pillOff', defaultMessage: 'Off' },
-  bankFeed: { id: 'clients.clientDetailView.bankFeed', defaultMessage: 'Bank feed' },
-  bankFeedNoAccount: { id: 'clients.clientDetailView.bankFeedNoAccount', defaultMessage: 'No account on file.' },
-  bankAccountName: { id: 'clients.clientDetailView.bankAccountName', defaultMessage: '{bank} ••{last4}' },
-  bankAccountLive: { id: 'clients.clientDetailView.bankAccountLive', defaultMessage: 'Re-auth in {days}d · synced {sync}' },
-  bankAccountError: { id: 'clients.clientDetailView.bankAccountError', defaultMessage: 'Credential error — feed has stalled' },
-  bankAccountDisconnected: { id: 'clients.clientDetailView.bankAccountDisconnected', defaultMessage: 'Disconnected — statement upload only' },
-  reauthNow: { id: 'clients.clientDetailView.reauthNow', defaultMessage: 'Re-auth now' },
-
   // ── Overview: recent activity ───────────────────────────────────────────
   panelRecentActivity: { id: 'clients.clientDetailView.panelRecentActivity', defaultMessage: 'Recent activity' },
   activityEmpty: {
@@ -109,8 +90,6 @@ const m = defineMessages({
   rowUnverifiedSpend: { id: 'clients.clientDetailView.rowUnverifiedSpend', defaultMessage: 'Unverified spend' },
   rowItemDelay: { id: 'clients.clientDetailView.rowItemDelay', defaultMessage: 'Item delay' },
   itemDelayValue: { id: 'clients.clientDetailView.itemDelayValue', defaultMessage: '{days} days' },
-  rowAutoPublish: { id: 'clients.clientDetailView.rowAutoPublish', defaultMessage: 'Suppliers on auto-publish' },
-  autoPublishValue: { id: 'clients.clientDetailView.autoPublishValue', defaultMessage: '{pct}%' },
   rowDuplicates: { id: 'clients.clientDetailView.rowDuplicates', defaultMessage: 'Duplicates flagged' },
   rowOverdueChases: { id: 'clients.clientDetailView.rowOverdueChases', defaultMessage: 'Overdue chases' },
   rowUnexplained: { id: 'clients.clientDetailView.rowUnexplained', defaultMessage: 'Unexplained transactions' },
@@ -390,30 +369,7 @@ const m = defineMessages({
       'A contact is a verified phone number and nothing more — it receives chases and uploads through OTP links without ever being provisioned as a user. A business user, above, can sign in to the portal.',
   },
 
-  // ── Integrations tab ────────────────────────────────────────────────────
-  panelConnections: { id: 'clients.clientDetailView.panelConnections', defaultMessage: 'Connections' },
-  connectionLedgerDetail: {
-    id: 'clients.clientDetailView.connectionLedgerDetail',
-    defaultMessage: 'Chart of accounts, tax rates and tracking categories sync both ways',
-  },
-  connectionBankName: { id: 'clients.clientDetailView.connectionBankName', defaultMessage: 'Bank feed (open banking)' },
-  connectionBankConnected: { id: 'clients.clientDetailView.connectionBankConnected', defaultMessage: 'Re-auth due in 62 days' },
-  connectionBankFallback: {
-    id: 'clients.clientDetailView.connectionBankFallback',
-    defaultMessage: 'Statement upload is the fallback until connected',
-  },
-  // The three states of a ConnectionRow pill. Own ids rather than reuse of
-  // `waitingOnClient` / `ledgerTokenNone`, which happen to read the same today:
-  // those label a setup task and a token row, and a translator who shortens one
-  // to fit its column must not silently reword a pill on another tab.
-  connectionConnected: { id: 'clients.clientDetailView.connectionConnected', defaultMessage: 'Connected' },
-  connectionRequested: { id: 'clients.clientDetailView.connectionRequested', defaultMessage: 'Waiting on client' },
-  connectionNotConnected: { id: 'clients.clientDetailView.connectionNotConnected', defaultMessage: 'Not connected' },
-  connectionsNote: {
-    id: 'clients.clientDetailView.connectionsNote',
-    defaultMessage:
-      'Only the client can switch these on — both need their own login at the provider, which the practice never holds. Ask for them with a setup link.',
-  },
+  // ── Client setup link (Settings tab) ────────────────────────────────────
   panelSetupLink: { id: 'clients.clientDetailView.panelSetupLink', defaultMessage: 'Client setup link' },
   rowSentTo: { id: 'clients.clientDetailView.rowSentTo', defaultMessage: 'Sent to' },
   setupSentToValue: { id: 'clients.clientDetailView.setupSentToValue', defaultMessage: '{name} · {mobile}' },
@@ -425,7 +381,6 @@ const m = defineMessages({
   setupResentCount: { id: 'clients.clientDetailView.setupResentCount', defaultMessage: '{count}×' },
   setupTaskProfile: { id: 'clients.clientDetailView.setupTaskProfile', defaultMessage: 'Company details' },
   setupTaskDoneProfile: { id: 'clients.clientDetailView.setupTaskDoneProfile', defaultMessage: 'Registered by client' },
-  setupTaskDoneConnection: { id: 'clients.clientDetailView.setupTaskDoneConnection', defaultMessage: 'Connected by client' },
   waitingOnClient: { id: 'clients.clientDetailView.waitingOnClient', defaultMessage: 'Waiting on client' },
   resendSetupDetail: {
     id: 'clients.clientDetailView.resendSetupDetail',
@@ -434,7 +389,7 @@ const m = defineMessages({
   resendSetupLink: { id: 'clients.clientDetailView.resendSetupLink', defaultMessage: 'Resend link' },
   setupAllConnected: {
     id: 'clients.clientDetailView.setupAllConnected',
-    defaultMessage: 'Everything the client had to connect is connected.',
+    defaultMessage: 'Nothing is outstanding — the client has registered their details.',
   },
   setupNoLinkSent: {
     id: 'clients.clientDetailView.setupNoLinkSent',
@@ -443,14 +398,8 @@ const m = defineMessages({
   sendSetupLink: { id: 'clients.clientDetailView.sendSetupLink', defaultMessage: 'Send setup link' },
   setupNeedsMobile: {
     id: 'clients.clientDetailView.setupNeedsMobile',
-    defaultMessage: 'Add a mobile number on the Settings tab first.',
+    defaultMessage: 'Add a mobile number first.',
   },
-  rowLedgerToken: { id: 'clients.clientDetailView.rowLedgerToken', defaultMessage: 'Ledger token' },
-  ledgerTokenValid: { id: 'clients.clientDetailView.ledgerTokenValid', defaultMessage: 'Valid — 284 days' },
-  ledgerTokenNone: { id: 'clients.clientDetailView.ledgerTokenNone', defaultMessage: 'Not connected' },
-  rowBankReauth: { id: 'clients.clientDetailView.rowBankReauth', defaultMessage: 'Bank re-auth' },
-  bankReauthValue: { id: 'clients.clientDetailView.bankReauthValue', defaultMessage: '62 days' },
-  rowPublishFailures: { id: 'clients.clientDetailView.rowPublishFailures', defaultMessage: 'Publish failures' },
 
   // ── Modals ──────────────────────────────────────────────────────────────
   chaseReviewNote: {
@@ -476,7 +425,7 @@ const m = defineMessages({
  */
 const TABS = [
   'Overview', 'Costs', 'Sales', 'Bank', 'Supplier Statements', 'Expense Claims',
-  'Approvals', 'Documents', 'Chases', 'Tasks', 'Integrations', 'Users', 'Settings', 'AI',
+  'Approvals', 'Documents', 'Chases', 'Tasks', 'Users', 'Settings', 'AI',
 ] as const;
 type Tab = (typeof TABS)[number];
 
@@ -492,7 +441,6 @@ const TAB_LABEL: Record<Tab, MessageDescriptor> = defineMessages({
   Documents: { id: 'clients.clientDetailView.tabDocuments', defaultMessage: 'Documents' },
   Chases: { id: 'clients.clientDetailView.tabChases', defaultMessage: 'Chases' },
   Tasks: { id: 'clients.clientDetailView.tabTasks', defaultMessage: 'Tasks' },
-  Integrations: { id: 'clients.clientDetailView.tabIntegrations', defaultMessage: 'Integrations' },
   Users: { id: 'clients.clientDetailView.tabUsers', defaultMessage: 'Users' },
   Settings: { id: 'clients.clientDetailView.tabSettings', defaultMessage: 'Settings' },
   AI: { id: 'clients.clientDetailView.tabAi', defaultMessage: 'AI' },
@@ -545,7 +493,6 @@ export function ClientDetailView() {
     approvals, chases, startConversation, retryDocument,
     starredClientIds, toggleStarClient,
     onboardingLinks, sendOnboardingLink, resendOnboardingLink,
-    accounts, reauthAccount,
     tasks, setTaskStatus, auditLog, settings, conversations, selectConversation, setActiveTab,
     approvalWorkflows, saveWorkflow, deleteWorkflow,
     businessAccounts, inviteBusinessUser, openRegistrationLink, colleagues, addTask,
@@ -558,7 +505,7 @@ export function ClientDetailView() {
   // and Back steps between them.
   const [tabSlug, setTabSlug] = useSegment(2);
   const tab: Tab = fromSlug(tabSlug, TABS) ?? 'Overview';
-  // Fourteen tabs do not fit a phone: the strip scrolls, so the active one
+  // Thirteen tabs do not fit a phone: the strip scrolls, so the active one
   // has to be scrolled back into view when a deep link picks a later tab.
   const tabStripRef = useScrollActiveIntoView<HTMLDivElement>(tab);
   const setTab = (next: Tab) => setTabSlug(next === 'Overview' ? null : slug(next));
@@ -634,14 +581,9 @@ export function ClientDetailView() {
   const setupLink = onboardingLinks.find((l) => l.clientId === client.id);
   // What the client still owes. `profile` only appears on invite-path records,
   // where the client registers the company rather than the practice keying it
-  // in; the other two the practice cannot do at all.
-  const pendingTasks: SetupTask[] = [
-    ...(client.awaitingRegistration ? (['profile'] as SetupTask[]) : []),
-    ...(client.xeroConnected ? [] : (['ledger'] as SetupTask[])),
-    ...(client.bankConnected ? [] : (['bank'] as SetupTask[])),
-  ];
+  // in. Connection tasks are gone with D47 — nothing else is ever asked for.
+  const pendingTasks: SetupTask[] = client.awaitingRegistration ? ['profile'] : [];
 
-  const clientAccounts = accounts.filter((a) => a.clientId === client.id);
   const clientTasks = tasks.filter((t) => t.clientId === client.id);
   const pendingChanges = clientDetailChanges.filter((c) => c.clientId === client.id && c.status === 'pending');
   const clientSideItems = clientSideApprovals(client.id);
@@ -750,12 +692,6 @@ export function ClientDetailView() {
                 {client.companyType && <Pill>{client.companyType}</Pill>}
                 {client.awaitingRegistration && <Pill tone="amber">{intl.formatMessage(m.pillAwaitingRegistration)}</Pill>}
                 <Pill tone={healthTone(s.health)}>{intl.formatMessage(m.pillPipelineHealth, { health: s.health })}</Pill>
-                {client.xeroConnected
-                  ? <Pill tone="blue">{intl.formatMessage(m.pillXero)}</Pill>
-                  : <Pill tone="red">{intl.formatMessage(m.pillNoLedger)}</Pill>}
-                {client.bankConnected
-                  ? <Pill tone="green">{intl.formatMessage(m.pillBankFeedLive)}</Pill>
-                  : <Pill tone="amber">{intl.formatMessage(m.pillStatementFallback)}</Pill>}
                 {setupLink && setupLink.completed.length < setupLink.tasks.length && (
                   <Pill tone="amber">{intl.formatMessage(m.pillSetupLinkSent)}</Pill>
                 )}
@@ -826,7 +762,7 @@ export function ClientDetailView() {
                 <Tile label={intl.formatMessage(m.tileAwaitingApproval)} value={s.approvals} onClick={() => setTab('Approvals')} />
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <Panel title={intl.formatMessage(m.panelChannelMix)} icon={Radio}>
                   <p className="text-[12px] text-zinc-500 mb-4 leading-relaxed">
                     {intl.formatMessage(m.channelMixIntro, {
@@ -853,61 +789,6 @@ export function ClientDetailView() {
                       ))}
                     </div>
                   )}
-                </Panel>
-
-                {/* Wireframe puts integration health on Overview, not buried on
-                    the Integrations tab — a dead token stops the pipeline. */}
-                <Panel title={intl.formatMessage(m.panelIntegrationHealth)} icon={Landmark}>
-                  <div className="flex flex-col gap-3">
-                    <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-ground/60 border border-white/5">
-                      <div className="min-w-0">
-                        <div className="text-[13px] font-bold text-white">{intl.formatMessage(m.accountingSoftware)}</div>
-                        <div className="text-[12px] text-zinc-500">
-                          {intl.formatMessage(client.xeroConnected ? m.ledgerTokenValidLong : m.ledgerNotConnected)}
-                        </div>
-                      </div>
-                      {client.xeroConnected
-                        ? <Pill tone="green">{intl.formatMessage(m.pillLive)}</Pill>
-                        : <Pill tone="red">{intl.formatMessage(m.pillOff)}</Pill>}
-                    </div>
-
-                    {clientAccounts.length === 0 ? (
-                      <div className="p-3.5 rounded-2xl bg-ground/60 border border-white/5">
-                        <div className="text-[13px] font-bold text-white">{intl.formatMessage(m.bankFeed)}</div>
-                        <div className="text-[12px] text-zinc-500">{intl.formatMessage(m.bankFeedNoAccount)}</div>
-                      </div>
-                    ) : (
-                      clientAccounts.map((a) => (
-                        <div key={a.id} className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-ground/60 border border-white/5">
-                          <div className="min-w-0">
-                            <div className="text-[13px] font-bold text-white truncate">
-                              {intl.formatMessage(m.bankAccountName, { bank: a.bankName, last4: a.last4 })}
-                            </div>
-                            <div className="text-[12px] text-zinc-500">
-                              {a.status === 'live'
-                                ? intl.formatMessage(m.bankAccountLive, { days: a.reauthDays, sync: a.lastSync })
-                                : a.status === 'error'
-                                ? intl.formatMessage(m.bankAccountError)
-                                : intl.formatMessage(m.bankAccountDisconnected)}
-                            </div>
-                          </div>
-                          {/* Open banking consent expires every 90 days; this is
-                              the one integration action the practice can take. */}
-                          {a.status === 'live' && a.reauthDays > 14 ? (
-                            <Pill tone="green">{intl.formatMessage(m.pillLive)}</Pill>
-                          ) : (
-                            <button
-                              onClick={() => reauthAccount(a.id)}
-                              className="shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
-                            >
-                              <RefreshCw size={13} strokeWidth={2.5} />
-                              {intl.formatMessage(m.reauthNow)}
-                            </button>
-                          )}
-                        </div>
-                      ))
-                    )}
-                  </div>
                 </Panel>
 
                 <Panel title={intl.formatMessage(m.panelRecentActivity)} icon={History}>
@@ -949,7 +830,6 @@ export function ClientDetailView() {
                   <div className="flex flex-col gap-2.5 text-[13px]">
                     <Row label={intl.formatMessage(m.rowUnverifiedSpend)} value={currency(s.unverified)} />
                     <Row label={intl.formatMessage(m.rowItemDelay)} value={intl.formatMessage(m.itemDelayValue, { days: s.itemDelay })} />
-                    <Row label={intl.formatMessage(m.rowAutoPublish)} value={intl.formatMessage(m.autoPublishValue, { pct: s.autoPublishCoverage })} />
                     <Row label={intl.formatMessage(m.rowDuplicates)} value={String(s.duplicates)} />
                     <Row label={intl.formatMessage(m.rowOverdueChases)} value={String(s.overdue)} />
                     <Row label={intl.formatMessage(m.rowUnexplained)} value={String(s.unmatched)} />
@@ -1539,28 +1419,17 @@ export function ClientDetailView() {
             </div>
           )}
 
-          {tab === 'Integrations' && (
-            <div data-tour="integrations" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Panel title={intl.formatMessage(m.panelConnections)} icon={Link2}>
-                <div className="flex flex-col gap-3">
-                  <ConnectionRow
-                    name={intl.formatMessage(m.accountingSoftware)}
-                    detail={intl.formatMessage(m.connectionLedgerDetail)}
-                    connected={client.xeroConnected}
-                    requested={setupLink?.tasks.includes('ledger') ?? false}
-                  />
-                  <ConnectionRow
-                    name={intl.formatMessage(m.connectionBankName)}
-                    detail={intl.formatMessage(client.bankConnected ? m.connectionBankConnected : m.connectionBankFallback)}
-                    connected={client.bankConnected}
-                    requested={setupLink?.tasks.includes('bank') ?? false}
-                  />
-                </div>
-                <p className="text-[12px] text-zinc-500 mt-5 leading-relaxed">
-                  {intl.formatMessage(m.connectionsNote)}
-                </p>
-              </Panel>
+          {tab === 'Settings' && (
+            <div data-tour="client-settings" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <ClientDetailsPanel
+                client={client}
+                pending={pendingChanges}
+                onPropose={proposeClientDetailChanges}
+              />
 
+              {/* The setup link asks for company details only — D47 removed
+                  every connection from onboarding, so there is nothing else a
+                  client could be asked to do. */}
               <Panel title={intl.formatMessage(m.panelSetupLink)} icon={Smartphone}>
                 {setupLink ? (
                   <>
@@ -1581,14 +1450,10 @@ export function ClientDetailView() {
                       {setupLink.tasks.map((t) => (
                         <div key={t} className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-ground/60 border border-white/5">
                           <span className="text-[13px] font-semibold text-white">
-                            {intl.formatMessage(
-                              t === 'profile' ? m.setupTaskProfile : t === 'ledger' ? m.accountingSoftware : m.bankFeed,
-                            )}
+                            {intl.formatMessage(m.setupTaskProfile)}
                           </span>
                           {setupLink.completed.includes(t) ? (
-                            <Pill tone="green">
-                              {intl.formatMessage(t === 'profile' ? m.setupTaskDoneProfile : m.setupTaskDoneConnection)}
-                            </Pill>
+                            <Pill tone="green">{intl.formatMessage(m.setupTaskDoneProfile)}</Pill>
                           ) : (
                             <Pill tone="amber">{intl.formatMessage(m.waitingOnClient)}</Pill>
                           )}
@@ -1633,27 +1498,6 @@ export function ClientDetailView() {
                   </>
                 )}
               </Panel>
-
-              <Panel title={intl.formatMessage(m.panelIntegrationHealth)} icon={Landmark}>
-                <div className="flex flex-col gap-2.5 text-[13px]">
-                  <Row
-                    label={intl.formatMessage(m.rowLedgerToken)}
-                    value={intl.formatMessage(client.xeroConnected ? m.ledgerTokenValid : m.ledgerTokenNone)}
-                  />
-                  <Row label={intl.formatMessage(m.rowBankReauth)} value={client.bankConnected ? intl.formatMessage(m.bankReauthValue) : '—'} />
-                  <Row label={intl.formatMessage(m.rowPublishFailures)} value={String(s.rejected)} />
-                </div>
-              </Panel>
-            </div>
-          )}
-
-          {tab === 'Settings' && (
-            <div data-tour="client-settings" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <ClientDetailsPanel
-                client={client}
-                pending={pendingChanges}
-                onPropose={proposeClientDetailChanges}
-              />
             </div>
           )}
         </motion.div>
@@ -2456,26 +2300,3 @@ function ContactRow({ name, detail, role }: { name: string; detail: string; role
   );
 }
 
-/**
- * Status only — there is deliberately no Connect button here. The practice
- * cannot make either connection; it can only ask the client to.
- */
-function ConnectionRow({ name, detail, connected, requested }: { name: string; detail: string; connected: boolean; requested: boolean }) {
-  const intl = useIntl();
-
-  return (
-    <div className="flex items-center justify-between gap-4 p-4 border border-white/5 rounded-2xl bg-ground/60 shadow-inner">
-      <div className="min-w-0">
-        <div className="text-sm font-bold text-white">{name}</div>
-        <div className="text-[12px] text-zinc-500">{detail}</div>
-      </div>
-      {connected ? (
-        <Pill tone="green">{intl.formatMessage(m.connectionConnected)}</Pill>
-      ) : requested ? (
-        <Pill tone="amber">{intl.formatMessage(m.connectionRequested)}</Pill>
-      ) : (
-        <Pill tone="red">{intl.formatMessage(m.connectionNotConnected)}</Pill>
-      )}
-    </div>
-  );
-}

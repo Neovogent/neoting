@@ -112,8 +112,8 @@ const m = defineMessages({
   columnChannel: { id: 'analytics.clientInbox.columnChannel', defaultMessage: 'Received via' },
   columnWhyFlagged: { id: 'analytics.clientInbox.columnWhyFlagged', defaultMessage: 'Why flagged' },
   columnVat: { id: 'analytics.clientInbox.columnVat', defaultMessage: 'VAT' },
-  columnPublishTo: { id: 'analytics.clientInbox.columnPublishTo', defaultMessage: 'Publish to' },
-  columnInTheLedger: { id: 'analytics.clientInbox.columnInTheLedger', defaultMessage: 'In the ledger' },
+  columnPublishTo: { id: 'analytics.clientInbox.columnPublishTo', defaultMessage: 'Releases to' },
+  columnRelease: { id: 'analytics.clientInbox.columnRelease', defaultMessage: 'Release' },
   columnWhatFailed: { id: 'analytics.clientInbox.columnWhatFailed', defaultMessage: 'What failed' },
   columnReason: { id: 'analytics.clientInbox.columnReason', defaultMessage: 'Reason' },
 
@@ -206,11 +206,9 @@ const m = defineMessages({
     id: 'analytics.clientInbox.extractionRunning',
     defaultMessage: 'Extraction running',
   },
-  targetXeroBills: { id: 'analytics.clientInbox.targetXeroBills', defaultMessage: 'Xero — Bills' },
-  targetXeroInvoices: { id: 'analytics.clientInbox.targetXeroInvoices', defaultMessage: 'Xero — Invoices' },
-  targetNoLedger: { id: 'analytics.clientInbox.targetNoLedger', defaultMessage: 'No ledger connected' },
-  targetExported: { id: 'analytics.clientInbox.targetExported', defaultMessage: 'Exported' },
-  failedPublish: { id: 'analytics.clientInbox.failedPublish', defaultMessage: 'Publish' },
+  targetVtFile: { id: 'analytics.clientInbox.targetVtFile', defaultMessage: 'VT import file' },
+  releasedForExport: { id: 'analytics.clientInbox.releasedForExport', defaultMessage: 'Released for export' },
+  failedPublish: { id: 'analytics.clientInbox.failedPublish', defaultMessage: 'Release' },
   failedExtraction: { id: 'analytics.clientInbox.failedExtraction', defaultMessage: 'Extraction' },
   noReasonRecorded: { id: 'analytics.clientInbox.noReasonRecorded', defaultMessage: 'No reason recorded' },
 
@@ -282,7 +280,7 @@ const m = defineMessages({
   unpublishConsequence: {
     id: 'analytics.clientInbox.unpublishConsequence',
     defaultMessage:
-      'This does not remove them from the accounting software — that has to be undone in the ledger itself.',
+      'An import file you have already downloaded still contains them — export again afterwards.',
   },
   unpublishConfirm: { id: 'analytics.clientInbox.unpublishConfirm', defaultMessage: 'Yes, unpublish' },
 
@@ -345,7 +343,7 @@ const m = defineMessages({
   footerPublished: {
     id: 'analytics.clientInbox.footerPublished',
     defaultMessage:
-      'Already in the accounting software — unpublishing here does not remove it from the ledger',
+      'Approved and released for export — unpublish brings an item back to Ready',
   },
   footerRejected: {
     id: 'analytics.clientInbox.footerRejected',
@@ -851,7 +849,7 @@ export function ClientInbox({ client, kind, onPreview }: {
            key: 'target', label: intl.formatMessage(m.columnPublishTo),
            render: () => (
              <span className="text-zinc-400">
-               {intl.formatMessage(client.xeroConnected ? (kind === 'cost' ? m.targetXeroBills : m.targetXeroInvoices) : m.targetNoLedger)}
+               {intl.formatMessage(m.targetVtFile)}
              </span>
            ),
          },
@@ -868,9 +866,9 @@ export function ClientInbox({ client, kind, onPreview }: {
          channelCell,
          flagCell,
          {
-           key: 'where', label: intl.formatMessage(m.columnInTheLedger),
+           key: 'where', label: intl.formatMessage(m.columnRelease),
            render: () => (
-             <Pill tone="blue">{intl.formatMessage(client.xeroConnected ? (kind === 'cost' ? m.targetXeroBills : m.targetXeroInvoices) : m.targetExported)}</Pill>
+             <Pill tone="blue">{intl.formatMessage(m.releasedForExport)}</Pill>
            ),
          },
          actionCell]

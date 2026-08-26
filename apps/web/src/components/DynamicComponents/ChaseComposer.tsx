@@ -127,9 +127,10 @@ function composeSms(client: Client, items: MissingItem[], intl: IntlShape) {
   // The `rest > 0` guard stays: a `plural` on zero renders "plus 0 other
   // items", and the tail is meant to be absent entirely for a single item.
   const tail = rest > 0 ? intl.formatMessage(m.smsTail, { count: rest }) : '';
-  return `${client.name.replace(/ Ltd$/, '')} Accounts: ${first}${tail}. Upload securely: https://sec.ure/${client.id}${Math.random()
-    .toString(36)
-    .slice(2, 6)}`;
+  // The real portal link shape: <web origin>/p/<linkToken>. A draft carries the
+  // tokenless path — the token is signed server-side at send, never composed
+  // here (the S8/S9 compose seam; LiveChaseComposerCard does the same).
+  return `${client.name.replace(/ Ltd$/, '')} Accounts: ${first}${tail}. Upload securely: ${window.location.origin}/p/`;
 }
 
 /**
@@ -253,19 +254,19 @@ export function ChaseComposer({ clientIds, missingItemIds }: {
   /**
    * Composed once for these items, not on every render.
    *
-   * `composeSms` mints a link with `Math.random()`, so recomputing it in the
-   * render body gave a different URL every time the component drew — the text
-   * an accountant read was not the text that would go out. Memoised on what
-   * the message actually depends on.
+   * `composeSms` used to mint a link with `Math.random()`, so recomputing it
+   * in the render body gave a different URL every time the component drew.
+   * The link is deterministic now (launch M5 — the real tokenless /p/ shape),
+   * but the memo stays: the message an accountant read should be the message
+   * that goes out, not a recomputation of it.
    *
    * The dependency is a derived IDENTITY STRING, not `targets` itself, because
    * `targets` is rebuilt every render and comparing it by reference would make
-   * every render a recompute — which for THIS memo is not a harmless waste but
-   * the bug itself, per the paragraph above. So when `exhaustive-deps` arrived
-   * (it wasn't installed when this was written) it got the one thing it is
-   * right about — `intl` in the array, and the expression hoisted to a named
-   * variable it can see — and a disable for the one thing it cannot know:
-   * that `targets` is keyed here by value on purpose.
+   * every render a recompute. So when `exhaustive-deps` arrived (it wasn't
+   * installed when this was written) it got the one thing it is right about —
+   * `intl` in the array, and the expression hoisted to a named variable it can
+   * see — and a disable for the one thing it cannot know: that `targets` is
+   * keyed here by value on purpose.
    *
    * It sits ABOVE the targets-empty return, because a hook after a conditional
    * return changes the hook count between renders — the exact shape behind
@@ -275,7 +276,7 @@ export function ChaseComposer({ clientIds, missingItemIds }: {
   const targetsIdentity = targets.map((t) => `${t.client.id}:${t.items.map((i) => i.id).join(',')}`).join('|');
   const suggested = useMemo(
     () => targets.map((t) => ({ ...t, sms: composeSms(t.client, t.items, intl) })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- targets is deliberately keyed by targetsIdentity (its value), not by reference: it is rebuilt every render, and a reference dep would re-mint the Math.random() SMS link each render — the bug this memo exists to stop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- targets is deliberately keyed by targetsIdentity (its value), not by reference: it is rebuilt every render, and a reference dep would recompose the SMS each render.
     [targetsIdentity, intl],
   );
 

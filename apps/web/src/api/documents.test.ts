@@ -45,7 +45,7 @@ const row = (over: Partial<DocumentSummary> = {}): DocumentSummary => ({
   ...over,
 });
 
-const nameFor = (businessId: string) => (businessId === 'biz_1' ? 'American Burger Ltd' : 'Cosmo Restaurants');
+const nameFor = (businessId: string) => (businessId === 'biz_1' ? 'American Burger Ltd' : 'Ananda Group');
 
 describe('money', () => {
   it('reads integer pence as pounds', () => {
@@ -142,7 +142,7 @@ describe('state mapping', () => {
     // the server FAILED is an extraction failure, and a failed publish is
     // REJECTED carrying the follow-up's NT-PUB code.
     expect(
-      toLocalDocument(row({ state: 'REJECTED', failureCode: 'NT-PUB-0003', failureMessage: 'Xero refused it' }), nameFor)
+      toLocalDocument(row({ state: 'REJECTED', failureCode: 'NT-PUB-0003', failureMessage: 'refused at release' }), nameFor)
         .publishFailed,
     ).toBe(true);
     expect(toLocalDocument(row({ state: 'FAILED', failureCode: 'NT-EXT-0004' }), nameFor).publishFailed).toBeUndefined();
@@ -205,7 +205,7 @@ describe('the rest of the row', () => {
     const doc = toLocalDocument(row({ businessId: 'biz_2' }), nameFor);
 
     expect(doc.clientId).toBe('biz_2');
-    expect(doc.clientName).toBe('Cosmo Restaurants');
+    expect(doc.clientName).toBe('Ananda Group');
   });
 
   it('shows an em dash for an uncoded document rather than the word null', () => {
