@@ -192,6 +192,45 @@ on 25 Aug. Confirm what actually exists before wiring an origin to it.
 Terraform fmt and validate must pass. PR — do not apply by hand.
 ```
 
+### ✅ Done — `infra/envs/staging/web.tf`, `.github/workflows/deploy-web.yml` (26 Aug 2026)
+
+The ⚠ paid off: **the staging ALB is up**, and so is everything else the origin
+needs. Verified against AWS, not against the code —
+`nt-staging-alb` (active, internet-facing), the `nt-staging` ECS cluster with
+all four services, distribution `E2SUZ6X0H1I02U` serving `api.` and `staging.`,
+and the six `nt-staging-*` buckets. **Only prod was destroyed on 25 Aug; staging
+is untouched.**
+
+`terraform plan` reports **14 to add, 0 to change, 0 to destroy** — the `api.`
+distribution, the ALB, the WAF and every alarm are left exactly as they are.
+
+**Three things to know before the next stage:**
+
+1. **The app is at `app.neoting.neovogent.com`, not `neoacc.neovogent.com`** —
+   for now. `neovogent.com` is on Cloudflare, only `neoting.neovogent.com` is
+   delegated to Route 53, and the wildcard cert does not cover a `neoacc.`
+   label. **You asked to delegate it; the exact Cloudflare steps are in
+   `docs/runbooks/web-cloudfront.md`** — four NS records, three phases, and the
+   two `web_public_zone_*` variables that gate it so a half-done delegation
+   cannot hang CI's apply. Update PLAN.md's walkthrough when it is live.
+2. **SPA routing is a CloudFront Function, not `custom_error_response`.** The
+   usual 403/404 → `index.html` recipe is distribution-wide, so it would have
+   turned every API 404 into an HTML 200 — including `GET /d/{revoked-token}`
+   reporting success. Do not "simplify" it back.
+3. **`/d/*` has its own cache behaviour** pointing at the ALB. Without it, A8's
+   capability URLs — step 9 of the walkthrough, the acceptance test for the
+   whole product — would return the app shell instead of the document.
+
+Deploy is `.github/workflows/deploy-web.yml`: push to `main` touching
+`apps/web/**` or the contract packages, or `workflow_dispatch` for a rollback.
+It smoke-tests `/`, `/healthz` and `/app` after every publish and fails the job
+if any of the three is wrong.
+
+**Not applied.** The PR carries the plan; CI applies on merge if
+`TERRAFORM_AUTO_APPLY` is set, otherwise run terraform from the Actions tab.
+`deploy-web` will fail until the apply has created the two SSM parameters —
+that ordering is deliberate and the error message says so.
+
 ---
 
 ## S4 · Stripe, and the VAT that S2 forgot
