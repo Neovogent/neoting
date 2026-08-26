@@ -108,7 +108,15 @@ beforeAll(async () => {
   await owner.practice.create({ data: { id: P, name: 'A13' } });
   await owner.business.create({ data: { id: BIZ, practiceId: P, name: 'Wright Cleaning' } });
   await owner.user.create({ data: { id: USER, email: 'a13@example.test' } });
-  await owner.membership.create({ data: { id: MEMBERSHIP, userId: USER, practiceId: P, role: 'PRACTICE_ADMIN' } });
+  // ⚠ `isOwner` matters since stage A12: `chase.send` is a RELEASE (D44 — "a
+  // text or email to someone else's client" is one of the two irreversible
+  // outward acts), so the approve path refuses `NT-PRM-001` for a
+  // `PRACTICE_ADMIN` who is not the firm's super admin. Without this flag every
+  // approval below fails the gate rather than the executor, and the failure
+  // reads as a chase bug rather than as the gate doing its job.
+  await owner.membership.create({
+    data: { id: MEMBERSHIP, userId: USER, practiceId: P, role: 'PRACTICE_ADMIN', isOwner: true },
+  });
   await owner.contact.create({
     data: { id: CONTACT, businessId: BIZ, mobileE164: '+447700900101', email: 'sam@wrightcleaning.test', isPrimary: true },
   });
