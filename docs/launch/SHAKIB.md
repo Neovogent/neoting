@@ -118,7 +118,7 @@ Update infra/envs/staging/services.tf to match.
 Full gate. PR.
 ```
 
-### ✅ Done — PR #166 (26 Aug 2026)
+### ✅ Done — PR #169 (26 Aug 2026)
 
 Eight variables gated, all keyed on `NODE_ENV=production` so they follow the
 AUTH_MODE / AI_CHAT / UPLOAD_URL_SECRET pattern already in the file rather than
