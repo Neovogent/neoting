@@ -12,6 +12,7 @@ import { compressImage } from '../../lib/capture';
 import type { CapturedPage } from '../../lib/capture';
 import { currency } from '../../lib/resolver';
 import { navigate, path } from '../../lib/router';
+import { PrivacyNoticeLink } from '../legal/PrivacyNoticeLink';
 import { usePortalJourney } from './usePortalJourney';
 import type { PortalFault, UploadOutcome } from './usePortalJourney';
 
@@ -658,6 +659,12 @@ function Shell({ title, subtitle, children }: { title: string; subtitle?: string
           </div>
         </div>
         {children}
+        {/* On the shell rather than per-step: UK GDPR Art. 13 wants the
+            privacy notice AT the point of collection, and every step of this
+            journey — the link, the code, the photograph — collects. It opens
+            in a new tab because the session lives in React state and an
+            in-app navigation would end it (launch stage M4). */}
+        <PrivacyNoticeLink />
       </div>
     </div>
   );

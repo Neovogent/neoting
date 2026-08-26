@@ -296,7 +296,13 @@ interface AppContextType {
    * root moved to `/app`; the tab addresses (`/clients`, `/chat/…`) are
    * unchanged.
    */
-  portal: 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload' | 'landing';
+  /**
+   * 'legal' is the other public surface (launch stage M4): `/legal/*`, the
+   * four documents from docs/legal rendered outside every wall — a client on
+   * a portal link reads the privacy notice with no workspace session to
+   * probe, so like 'landing' it must never fire one.
+   */
+  portal: 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload' | 'landing' | 'legal';
   /** The approval session the SMS link opened, when portal === 'approval'. */
   openApprovalRequestId: string | null;
   openApprovalLink: (requestId: string) => void;
@@ -598,11 +604,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const segments = usePath();
   const [root, first, second] = segments;
 
-  const portal: 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload' | 'landing' =
+  const portal: 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload' | 'landing' | 'legal' =
     // Bare `/` is the public landing page (launch stage M3), so the session
     // probe below never fires for a visitor who has not asked for the app —
     // the workspace root is `/app`.
     root === undefined ? 'landing'
+      // `/legal/*` is public for the same reason (launch stage M4).
+      : root === 'legal' ? 'legal'
       : root === 'portal' ? 'business'
       : root === 'approve' ? 'approval'
       : root === 'register' ? 'registration'

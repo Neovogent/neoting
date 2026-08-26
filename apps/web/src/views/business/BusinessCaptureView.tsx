@@ -5,6 +5,7 @@ import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
 import { PORTAL_UPLOAD_LIMIT } from '../../lib/business';
 import type { BusinessAccount } from '../../lib/types';
+import { PrivacyNoticeLink } from '../legal/PrivacyNoticeLink';
 
 interface Page {
   id: string;
@@ -232,6 +233,9 @@ export function BusinessCaptureView({ account }: { account: BusinessAccount }) {
             ? intl.formatMessage(m.subtitleMultiPage)
             : intl.formatMessage(m.subtitleSinglePage)}
         </p>
+        {/* The camera is an upload control too — UK GDPR Art. 13 wants the
+            privacy notice where the collecting happens (launch stage M4). */}
+        <PrivacyNoticeLink className="mt-2" />
       </div>
 
       <div

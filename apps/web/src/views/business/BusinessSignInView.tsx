@@ -7,6 +7,7 @@ import { useAppContext } from '../../context/AppContext';
 import { commonLabels, commonPlaceholders } from '../../i18n/common';
 import { Pill } from '../../components/DynamicComponents/DataTable';
 import { newBusinessAccount, newMember } from '../../lib/business';
+import { PrivacyNoticeLink } from '../legal/PrivacyNoticeLink';
 
 // Not messages: the chosen value is written to `Client.industry` and read back
 // as data on the practice side, so translating it here would make a stored
@@ -348,6 +349,12 @@ export function BusinessSignInView() {
               </div>
             )}
           </motion.div>
+
+          {/* A sign-in screen collects credentials and the sign-up card
+              collects names, emails and phone numbers — UK GDPR Art. 13 wants
+              the privacy notice reachable right here, not only in a footer
+              (launch stage M4). */}
+          <PrivacyNoticeLink className="text-center" />
         </div>
       </div>
     </div>
