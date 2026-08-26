@@ -192,8 +192,8 @@ Full gate. PR.
 
 **Needs:** nothing — start here, alongside M2. **M1 is waiting on this one**, so it is
 worth more than its size suggests.
-**Owns:** `apps/web/src/lib/types.ts`, the client and settings views, and the tour prose
-covering publish and connections.
+**Owns:** `apps/web/src/lib/types.ts`, `apps/web/src/api/proposals.ts`, the client and
+settings views, and the tour prose covering publish and connections.
 
 ```
 Read D42, D47 and D40. This is a mechanical pass, not a redesign — resist improving the
@@ -213,6 +213,14 @@ the field and the surfaces follow.
   "connection health", no "the reference Xero gave it".
 - Use "Export for VT" / "Download VT import file". NEVER "Send to VT" — that implies
   transmission and D42 forbids it just as much as Xero did.
+
+⚠ TWO EXACT STRINGS, handed over from Abdullah's S0 review. Both say "Publish to the
+  ledger", which is the one phrase D42 forbids in as many words — and both are the label a
+  user reads at the moment they approve, so they are the worst two in the app:
+  • apps/web/src/api/proposals.ts:45  — the publish.batch proposal kind label
+  • apps/web/src/tour/steps.ts:173     — inboxesPublishTitle
+  Grep "Publish to the ledger" and "ledger" across apps/web/src before you call M5 done;
+  the count should be zero outside comments. Published asserts nothing about a ledger.
 - Drop the five Xero steps from tour/steps.ts and the "connect their own Xero and bank"
   line from the client-add copy.
 - ChaseComposer.tsx builds its SMS preview with a literal fake domain and a random suffix.
