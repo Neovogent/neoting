@@ -8,6 +8,7 @@ import { ACCEPTED_EXTENSIONS } from '../../lib/ingest';
 import { PORTAL_UPLOAD_LIMIT } from '../../lib/business';
 import { Panel } from './BusinessHomeView';
 import type { BusinessAccount } from '../../lib/types';
+import { PrivacyNoticeLink } from '../legal/PrivacyNoticeLink';
 
 const m = defineMessages({
   title: { id: 'portal.businessUploadView.title', defaultMessage: 'Upload a document' },
@@ -134,6 +135,10 @@ export function BusinessUploadView({ account }: { account: BusinessAccount }) {
       <div>
         <h1 className="font-sans text-2xl font-bold text-white tracking-tight">{intl.formatMessage(m.title)}</h1>
         <p className="text-[13px] text-zinc-500 mt-1">{intl.formatMessage(m.subtitle)}</p>
+        {/* Above the upload control, not only in a footer: UK GDPR Art. 13
+            requires the privacy notice at the point of collection, and this
+            screen is where a client hands over documents (launch stage M4). */}
+        <PrivacyNoticeLink className="mt-2" />
       </div>
 
       {/* The dropzone really is a button — activating it opens the file
