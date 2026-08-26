@@ -177,7 +177,8 @@ export function TourProvider({ children }: { children: ReactNode }) {
       // The script is not loaded yet, so a ?step= out of range is clamped by
       // goTo (which bails on a missing step) rather than checked here.
       const at = Number.isFinite(wanted) && wanted >= 1 ? wanted - 1 : 0;
-      navigate('/', { replace: true, force: true });
+      // The workspace root is `/app` since M3 gave `/` to the landing page.
+      navigate('/app', { replace: true, force: true });
       start(at);
     }
   }, [path, index, start, documentsSource]);
