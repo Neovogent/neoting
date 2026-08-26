@@ -31,9 +31,11 @@ export class AuthController {
 
   @Post('auth/sessions')
   @HttpCode(HttpStatus.NO_CONTENT)
-  login(@Body() body: unknown, @Res({ passthrough: true }) res: Response): void {
+  // `async` since launch stage A1: credentials moved into `users.password_hash`,
+  // so login reads the user row. It still writes nothing.
+  async login(@Body() body: unknown, @Res({ passthrough: true }) res: Response): Promise<void> {
     const parsed = parseBoundary(createSessionBody, body, 'request body');
-    const session = this.service.login(parsed);
+    const session = await this.service.login(parsed);
     res.cookie(SESSION_COOKIE_NAME, session.token, { ...this.cookieOptions(), expires: session.expiresAt });
   }
 

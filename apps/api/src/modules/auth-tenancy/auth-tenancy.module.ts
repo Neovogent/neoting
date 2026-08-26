@@ -1,13 +1,17 @@
 import { Module } from '@nestjs/common';
 
 import { getPrismaClient, type PrismaClient } from '../../common/db/prisma.js';
+import { InMemoryIdempotencyStore } from '../../common/idempotency/idempotency-store.js';
 import type { Env } from '../../config/env.js';
 import { ENV } from '../../config/env.module.js';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { BusinessesController } from './businesses.controller.js';
 import { BusinessesService } from './businesses.service.js';
-import { AUTH_SERVICE, BUSINESSES_SERVICE, PRISMA } from './tokens.js';
+import { PracticeSignupService } from './practice-signup.service.js';
+import { PracticesController } from './practices.controller.js';
+import { RecordingSignupMailer, type SignupMailer } from './signup-mailer.js';
+import { AUTH_SERVICE, BUSINESSES_SERVICE, PRACTICE_SIGNUP_SERVICE, PRISMA, SIGNUP_MAILER } from './tokens.js';
 
 /**
  * The demo-auth surface (METH Stage 1, issue #118). The Prisma client is the
@@ -21,13 +25,33 @@ import { AUTH_SERVICE, BUSINESSES_SERVICE, PRISMA } from './tokens.js';
  * owns the assembly.
  */
 @Module({
-  controllers: [AuthController, BusinessesController],
+  controllers: [AuthController, BusinessesController, PracticesController],
   providers: [
     { provide: PRISMA, useFactory: () => getPrismaClient() },
     {
       provide: AUTH_SERVICE,
       useFactory: (prisma: PrismaClient, env: Env) => new AuthService(prisma, env),
       inject: [PRISMA, ENV],
+    },
+    {
+      // ⚠ THE ONE LINE S2 CHANGES. `RecordingSignupMailer` sends nothing — the
+      // notifications module has not merged, so A1 builds against its seam
+      // (`signup-mailer.ts`) and the composition root swaps the implementation
+      // when it lands. `PracticeSignupService` refuses to create an account at
+      // all under NODE_ENV=production while this stand-in is what is wired, so
+      // the gap cannot ship quietly.
+      provide: SIGNUP_MAILER,
+      useFactory: (): SignupMailer => new RecordingSignupMailer(),
+    },
+    {
+      provide: PRACTICE_SIGNUP_SERVICE,
+      // The idempotency store is the shared in-memory one, per-process, exactly
+      // as the proposal engine and web-upload use it (common/idempotency —
+      // there is no idempotency table, prisma/ is LAW). A durable store is the
+      // known follow-up for all three at once.
+      useFactory: (prisma: PrismaClient, env: Env, mailer: SignupMailer) =>
+        new PracticeSignupService(prisma, env, mailer, new InMemoryIdempotencyStore()),
+      inject: [PRISMA, ENV, SIGNUP_MAILER],
     },
     {
       // The businesses read surface (`GET /v1/businesses`) lives in this
