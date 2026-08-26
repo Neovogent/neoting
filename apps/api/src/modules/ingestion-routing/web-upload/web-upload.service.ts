@@ -18,6 +18,7 @@ import { documentIdFor } from '../queue/document-sink.js';
 import { type DocumentStore, uploadIntentKey } from '../storage/document-store.js';
 import type { IngestJob, IngestQueue } from '../webhooks/whatsapp/ingest-queue.js';
 import { fingerprint, type IdempotencyStore } from '../../../common/idempotency/idempotency-store.js';
+import { assertMayIngest } from '../../billing/index.js';
 import { isAllowedMime, maxBytesForChannel } from './upload-policy.js';
 import { signUploadToken, type UploadClaims, verifyUploadToken } from './upload-token.js';
 
@@ -166,11 +167,23 @@ export class WebUploadService {
     //
     // 404, never 403 — a 403 confirms the record exists (packages/contracts/CLAUDE.md).
     const business = await scopedDb(this.prisma, ctx, (db) =>
-      db.business.findUnique({ where: { id: request.businessId }, select: { id: true, practiceId: true } }),
+      db.business.findUnique({
+        where: { id: request.businessId },
+        select: { id: true, practiceId: true, subscriptionStatus: true },
+      }),
     );
     if (business === null) {
       throw new AppException('NT-VAL-001', HttpStatus.NOT_FOUND, 'No such business', 'No business with that id is reachable.');
     }
+
+    // ENTITLEMENT (D48), checked here and not in `scopedDb` or an RLS policy —
+    // `modules/billing/entitlement.ts` explains at length why that placement is
+    // the decision rather than the detail. Checked AFTER reachability so a
+    // caller cannot learn whether a business they cannot see is paying, and
+    // BEFORE a URL is signed so no bytes reach storage for a workspace that
+    // may not accept them. Reading, reviewing, approving and exporting are all
+    // untouched by this: the line is that a lapsed client stops ADDING.
+    assertMayIngest(business);
 
     const key = uploadIntentKey(request.businessId, randomUUID());
     const presigned = await this.store.presignPut({

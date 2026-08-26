@@ -183,11 +183,27 @@ locals {
     #                        there is no ledger API in Initial Delivery at all,
     #                        so this stays `demo` on purpose rather than by
     #                        omission. Export is the only egress.
+    #   BILLING=demo         DemoStripeClient. Hosted-session URLs are minted on
+    #                        the reserved `.invalid` TLD, so a staging checkout
+    #                        link provably cannot reach a payment page and NO
+    #                        CARD CAN BE CHARGED FROM THIS ENVIRONMENT. Flipping
+    #                        it to `stripe` needs the four secrets in
+    #                        docs/runbooks/stripe-billing.md §7 — `config/env.ts`
+    #                        refuses to boot on `stripe` without them, which is
+    #                        why the flip is a deliberate change here and not a
+    #                        default that could drift on.
+    #
+    #                        ⚠ Entitlement is NOT affected by this value. It is
+    #                        read from `businesses.subscription_status` in the
+    #                        service layer whichever client is wired, so staging
+    #                        still refuses uploads for an unsubscribed business
+    #                        — the seed is what makes the demo clients entitled.
     # ------------------------------------------------------------------------
     { name = "EXTRACTOR", value = "bedrock" },
     { name = "SMS_SENDER", value = "demo" },
     { name = "OTP_MODE", value = "totp" },
     { name = "LEDGER_ADAPTER", value = "demo" },
+    { name = "BILLING", value = "demo" },
 
     # ------------------------------------------------------------------------
     # The AI workspace (Governance §9), and the one adapter above that is NOT

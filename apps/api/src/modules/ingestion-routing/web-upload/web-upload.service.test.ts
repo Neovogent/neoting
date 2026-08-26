@@ -66,7 +66,14 @@ function fakePrisma(business: { id: string; practiceId: string | null } | null):
 }
 
 function harness(
-  business: { id: string; practiceId: string | null } | null = { id: 'biz_1', practiceId: 'prac_1' },
+  // `subscriptionStatus` is part of the fixture because `createUpload` now
+  // gates on it (D48 entitlement). ACTIVE is the ordinary case; the refusal
+  // has its own test below.
+  business: { id: string; practiceId: string | null; subscriptionStatus: string | null } | null = {
+    id: 'biz_1',
+    practiceId: 'prac_1',
+    subscriptionStatus: 'ACTIVE',
+  },
 ): { store: InMemoryDocumentStore; queue: FixtureIngestQueue; service: WebUploadService } {
   const store = new InMemoryDocumentStore();
   const queue = new FixtureIngestQueue();
@@ -126,10 +133,27 @@ test('a business the caller cannot reach is 404 and nothing is signed', async ()
   expect((err as AppException).getStatus()).toBe(HttpStatus.NOT_FOUND);
 });
 
+test('ENTITLEMENT: a lapsed business is 402 NT-BIL-001 and nothing is signed', async () => {
+  // D48. Checked AFTER reachability, so a caller cannot learn whether a business
+  // they cannot see is paying, and BEFORE a URL exists, so no bytes reach storage
+  // for a workspace that will not accept them. Reading, reviewing, approving and
+  // exporting are untouched — the line is that a lapsed client stops ADDING.
+  const { service } = harness({ id: 'biz_1', practiceId: 'prac_1', subscriptionStatus: 'CANCELED' });
+  const err = await grab(() => service.createUpload(CTX, request()));
+  expect((err as AppException).code).toBe('NT-BIL-001');
+  expect((err as AppException).getStatus()).toBe(HttpStatus.PAYMENT_REQUIRED);
+});
+
+test('ENTITLEMENT: a business that has never subscribed is refused the same way', async () => {
+  const { service } = harness({ id: 'biz_1', practiceId: 'prac_1', subscriptionStatus: null });
+  const err = await grab(() => service.createUpload(CTX, request()));
+  expect((err as AppException).code).toBe('NT-BIL-001');
+});
+
 test('the practice anchor comes from the business row, not the caller context', async () => {
   // A business-level actor has no practiceId in scope; the document must still
   // be anchored on the business's own practice.
-  const { service } = harness({ id: 'biz_1', practiceId: 'prac_owner' });
+  const { service } = harness({ id: 'biz_1', practiceId: 'prac_owner', subscriptionStatus: 'ACTIVE' });
   const ctx = ScopeContextSchema.parse({ actorId: 'usr_1', businessId: 'biz_1' });
   const result = await service.createUpload(ctx, request());
   const verified = verifyUploadToken(result.uploadId, SECRET);

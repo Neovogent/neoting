@@ -180,6 +180,16 @@ async function main() {
         practiceCode: c.code,
         bookkeepingManagedBy: 'practice',
         bookkeepingFrequency: 'monthly',
+        // ENTITLEMENT (D48, launch stage S4). Not decoration: uploads are gated
+        // on this column, so a seeded client business with a null subscription
+        // could be opened, read and reviewed but never given a new document —
+        // and the demo would break at the one step it exists to show. These are
+        // synthetic businesses with no Stripe customer behind them, which is
+        // exactly right: `stripe_customer_id` stays null, so nothing here can
+        // be mistaken for a real subscription or opened in the customer portal.
+        subscriptionStatus: 'ACTIVE',
+        plan: 'demo-neo-accounting-monthly',
+        subscriptionCurrentPeriodEnd: daysAhead(30),
         nextDeadline: daysAhead(12),
         yearEndMonth: 3,
         yearEndDay: 31,

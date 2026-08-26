@@ -8,6 +8,7 @@ import type { PrismaClient } from '../../common/db/prisma.js';
 import { scopedDb } from '../../common/db/scoped-db.js';
 import { fingerprint, type IdempotencyStore } from '../../common/idempotency/idempotency-store.js';
 import { AppException } from '../../common/problem/problem.js';
+import { assertMayIngest } from '../billing/index.js';
 import {
   type DocumentStore,
   documentIdFor,
@@ -111,7 +112,10 @@ export class PrismaPortalUploadService implements PortalUploadService {
     // with no practice), so it is read from the row that owns the answer. The
     // read also proves the session's business is still reachable at all.
     const business = await scopedDb(this.prisma, systemScopeFor(facts), (db) =>
-      db.business.findUnique({ where: { id: facts.businessId }, select: { id: true, practiceId: true } }),
+      db.business.findUnique({
+        where: { id: facts.businessId },
+        select: { id: true, practiceId: true, subscriptionStatus: true },
+      }),
     );
     if (business === null) {
       // The session names a business that is gone (or that its own practice can
@@ -121,6 +125,20 @@ export class PrismaPortalUploadService implements PortalUploadService {
       this.logger.warn(`portal session ${facts.otpSessionId} names unreachable business ${facts.businessId}`);
       throw portalSessionRequired('This portal session is no longer valid. Open the link from your text message again.');
     }
+
+    // ENTITLEMENT (D48). The client is the payer under D48, so the surface the
+    // client uploads through is exactly where the rule has to bite — gating
+    // only the accountant's own upload would leave the main ID path open.
+    //
+    // ⚠ CONTRACT DRIFT, flagged rather than hidden: `createPortalUpload`
+    // declares 400/401/409/413/415/429/500 and no 402, while
+    // `createDocumentUpload` does declare one. `docs/runbooks/error-codes.md`
+    // puts `NT-BIL-001` at 402 on "any entitlement-gated operation" and the
+    // Stripe webhook's own contract text says new uploads stop at a lapse, so
+    // the behaviour is contracted even where this status code is not listed.
+    // Adding the response belongs in a contract-change issue (LAW, G7); it is
+    // not edited here.
+    assertMayIngest(business);
 
     const key = uploadIntentKey(facts.businessId, randomUUID());
     const presigned = await this.store.presignPut({

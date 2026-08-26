@@ -168,8 +168,11 @@ beforeAll(async () => {
   });
   await owner.business.createMany({
     data: [
-      { id: BIZ_A, practiceId: P_A, name: 'P9U American Burger' },
-      { id: BIZ_B, practiceId: P_B, name: 'P9U Other Client' },
+      // ACTIVE because the portal intent is entitlement-gated (D48): a client
+      // business with no subscription cannot take new documents, which is what
+      // this suite is otherwise entirely about.
+      { id: BIZ_A, practiceId: P_A, name: 'P9U American Burger', subscriptionStatus: 'ACTIVE' },
+      { id: BIZ_B, practiceId: P_B, name: 'P9U Other Client', subscriptionStatus: 'ACTIVE' },
     ],
   });
   await owner.chase.createMany({
