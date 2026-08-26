@@ -19,7 +19,7 @@ import { createPortal } from 'react-dom';
  *
  * Hover and focus open it on a desktop. On a touch screen there is no hover,
  * so a tap on the anchor toggles it and the next tap anywhere else closes it;
- * the tap still reaches the anchor'''s own onClick, so a flag that opens a
+ * the tap still reaches the anchor's own onClick, so a flag that opens a
  * comparison keeps doing that. Anything that needs a click of its own still
  * belongs in a button.
  */
@@ -75,9 +75,9 @@ export function Tooltip({ label, detail, children, side = 'top' }: {
   // the pointer has left the thing it was describing anyway. A tap outside
   // closes it for the same reason.
   //
-  // The outside listener is capture-phase so it runs before the app'''s own
+  // The outside listener is capture-phase so it runs before the app's own
   // handlers, and it only calls setOpen (no stopPropagation, no
-  // preventDefault) — a modal'''s click-away scrim and ConfirmStep'''s own
+  // preventDefault) — a modal's click-away scrim and ConfirmStep's own
   // dismissal still receive the event exactly as they did.
   useLayoutEffect(() => {
     if (!open) return;

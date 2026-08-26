@@ -80,9 +80,12 @@ export async function requestChatTurn(request: ChatTurnRequest): Promise<ChatTur
  *
  * They are not the same set and should not be forced to be: the API knows
  * `unrouted` and `failed` as document states, while the inbox table's filter is
- * a display concept where an unrouted document is not in the list at all (it is
- * in the Unrouted queue). `unrouted` therefore maps to no filter rather than to
- * a lie, and `failed` maps to the `rejected` bucket the table actually renders.
+ * a display concept. An unrouted document is not in the list at all — it is held
+ * back by InboxesView's `clientId !== ''` filter until a `document.route`
+ * proposal gives it a client. (It used to sit in a dedicated Unrouted queue;
+ * D45 removed that surface, but not the holding-back.) `unrouted` therefore maps
+ * to no filter rather than to a lie, and `failed` maps to the `rejected` bucket
+ * the table actually renders.
  */
 const STATUS_FILTER_TO_APP: Record<string, DocStatus | undefined> = {
   review: 'review',

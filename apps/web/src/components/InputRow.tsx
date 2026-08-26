@@ -38,7 +38,7 @@ const m = defineMessages({
     id: 'shell.inputRow.voiceUnsupported',
     defaultMessage: 'Voice not supported in this browser',
   },
-  // The visible version of the line above. A disabled button'''s title never
+  // The visible version of the line above. A disabled button's title never
   // appears on touch — and a phone is where the browser choice is a real
   // choice — so the reason is written under the toolbar instead. It names the
   // way out, which a tooltip on an unhoverable control cannot.

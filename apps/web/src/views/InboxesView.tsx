@@ -424,8 +424,14 @@ export function InboxesView() {
    * live mode with no way to route anything at all. In synthetic mode no
    * document carries an empty client id, so this reads the same as before.
    */
+  // `clientId !== ''` is not redundant with the kind filter: a document the
+  // routing ladder could not address has no client, and the inbox is a
+  // per-client working queue. Dropping it (as the port briefly did) lists
+  // unrouted documents with an empty client column in live mode. D45 removed
+  // the Unrouted QUEUE; it did not make an unaddressed document a normal inbox
+  // row. It is held back until a `document.route` proposal gives it a client.
   const inKind = useMemo(
-    () => documents.filter((d) => d.kind === inbox),
+    () => documents.filter((d) => d.kind === inbox && d.clientId !== ''),
     [documents, inbox],
   );
 
@@ -447,7 +453,17 @@ export function InboxesView() {
   // The demo tour opens the first document and asks to publish; every step
   // change fires `tour:reset`, which closes whatever the tour opened.
   useTourAction('inboxes:open-preview', useCallback(() => { if (rows[0]) setPreview(rows[0]); }, [rows]));
-  useTourAction('inboxes:request-publish', useCallback(() => { if (rows.length) setConfirmPublish(rows.map((d) => d.id)); }, [rows]));
+  // ⚠ The live guard is on the BUTTONS (the row action, the header publish and
+  // the bulk bar all carry a `documentsSource === api` check), not inside
+  // requestPublish — which needs none, because it is only reachable from them.
+  // A tour action reaches setConfirmPublish without passing any of them, so the
+  // guard has to be restated here or the tour can drive a publish on live data
+  // that the product itself refuses. A demo surface must not be able to reach a
+  // path the product gates.
+  useTourAction('inboxes:request-publish', useCallback(() => {
+    if (documentsSource === 'api') return;
+    if (rows.length) setConfirmPublish(rows.map((d) => d.id));
+  }, [rows, documentsSource]));
   useTourAction('tour:reset', useCallback(() => { setPreview(null); setConfirmPublish(null); setFieldsOpen(false); }, []));
 
   /**
@@ -1082,7 +1098,21 @@ export function InboxesView() {
                             {/* The taught-sender tick from the old unrouted
                                 card, kept where the routing decision now
                                 happens: correcting an addressee once should
-                                mean never correcting it again. */}
+                                mean never correcting it again.
+
+                                ⚠ SYNTHETIC MODE ONLY, and the gate is the whole
+                                point. The live branch below resets teachSender
+                                and calls startRouting() without it — there is no
+                                sender-rule endpoint in the contract yet, so the
+                                intent has nowhere to go. Rendering the tick in
+                                api mode told an accountant a rule had been
+                                taught when nothing was written and nothing was
+                                audited; the next email from that sender arrives
+                                misrouted again. Ungating this needs a
+                                contract-change issue for the rule, not a UI
+                                edit. On origin/main the whole menu was gated,
+                                which is why this never shipped before. */}
+                            {documentsSource !== 'api' && (
                             <label className="flex items-start gap-2 px-3 py-2 mb-1 rounded-xl cursor-pointer hover:bg-zinc-50">
                               <input
                                 type="checkbox"
@@ -1097,6 +1127,7 @@ export function InboxesView() {
                                 </span>
                               </span>
                             </label>
+                            )}
                             {clients.map((c) => {
                               const mismatch = selectedDocs.some((d) => d.clientName !== c.name);
                               return (
