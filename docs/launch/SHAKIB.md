@@ -118,6 +118,43 @@ Update infra/envs/staging/services.tf to match.
 Full gate. PR.
 ```
 
+### ✅ Done — PR #166 (26 Aug 2026)
+
+Eight variables gated, all keyed on `NODE_ENV=production` so they follow the
+AUTH_MODE / AI_CHAT / UPLOAD_URL_SECRET pattern already in the file rather than
+inventing a second one. **Staging runs `NODE_ENV=production`** (build parity,
+and it is the launch target), so every gate bites staging — which is the point,
+and which is why the Terraform half of this stage is not optional.
+
+Four things worth knowing before you run the next stage:
+
+1. **Nobody can sign in to staging until A2 merges.** Staging is on
+   `OTP_MODE=totp`, and both verifiers still read `mode === 'demo' && code ===
+   <fixed>`, so every second factor returns false. Fail-CLOSED and deliberate —
+   `demo` was one fixed six-digit code on every account in every practice — but
+   it blocks A1's and M6's staging testing, so **A2 is the stage to run next**.
+
+2. **PDFs on staging now fail with NT-EXT-003 until A4 merges.** Staging is on
+   `EXTRACTOR=bedrock` and BedrockExtractor is images-only, with no fallback by
+   design. That is the trade S1 chose: a loud, retryable FAILED document instead
+   of a quiet, confident, fabricated one.
+
+3. **S5's flip is already done — its other three items are not.** Staging is on
+   `bedrock`, so S5 is now "verify the FAILED path end to end, add the cost
+   ceiling, measure £/document". Item 3 got MORE urgent: BedrockExtractor
+   constructs AnthropicBedrock directly and never touches the AI budget, so
+   staging now has UNMETERED extraction spend on a live environment.
+
+4. **`infra/envs/prod/services.tf` was already unbootable and still is.** It
+   sets no `AI_CHAT`, so it failed the existing gate before this stage touched
+   anything. Deliberately left alone: prod was destroyed on 25 Aug and its
+   rebuild has to reconcile more than S1. Do not read it as a working example.
+
+Also in the diff: `qpdf` is installed in `apps/api/Dockerfile` (the gate and
+the binary are two halves of one change), `AI_DAILY_BUDGET_PENCE` is £25/day
+with the arithmetic written down, and the stale "qpdf is not in the image"
+strings in `check.yml` and the module `CLAUDE.md`s are corrected.
+
 ---
 
 ## S2 · Email that arrives
