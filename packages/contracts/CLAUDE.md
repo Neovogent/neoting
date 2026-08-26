@@ -87,7 +87,7 @@ It depends on `js-yaml` and nothing else, on purpose: it has to run before the c
 
 ## Current state
 
-**Pass 1 drafted — NOT frozen.** `openapi.yaml`, 26 operations, 67 schemas, covering:
+**Pass 1 drafted — NOT frozen.** `openapi.yaml`, 40 operations, 97 schemas, covering:
 
 | Surface | Operations |
 |---|---|
@@ -100,6 +100,11 @@ It depends on `js-yaml` and nothing else, on purpose: it has to run before the c
 | Publishing (METH Stage 2 #120) | list publishes |
 | Banking (METH Stage 2 #120) | list bank transactions |
 | Businesses (METH Stage 2 #120) | list with waiting-work counts |
+| Practices (ID LAW batch) | signup |
+| Clients & team (ID LAW batch) | create client · list members · invite member |
+| Export (ID LAW batch) | list · create · resolve capability link |
+| Billing (ID LAW batch) | checkout session · customer-portal session · Stripe webhook |
+| Portal onboarding (ID LAW batch) | request sign-in code · open onboarding session |
 
 The auth trio is the demo-spine slice of pass 2, pulled forward under the
 standing approval in METH_MODE §3.1: one stateless cookie session, the §13.3
@@ -140,10 +145,80 @@ surface. What it decided, beyond the table above:
 
 Every shape derives from the applied Prisma schema. Enum values are copied verbatim and drift is checked mechanically, not by eye.
 
+**The ID LAW batch (launch stage S0, issue #164)** — one contract-change issue, one
+approval, one migration, one PR, for the whole of Initial Delivery's contract
+need. Batched deliberately: three people block on this file, and the four
+surfaces below would otherwise have been four separate blocks. Twelve
+operations, thirty schemas, five error codes, one `ProposalKind`.
+
+| Surface | Operations |
+|---|---|
+| Practices | `POST /practices` — signup, and the only door a tenant that does not yet exist can come through |
+| Clients & team | `POST /businesses` · `GET`+`POST /businesses/{businessId}/members` |
+| Export (D42/D43) | `GET`+`POST /exports` · `GET /d/{code}` |
+| Billing (D48) | `POST /billing/checkout-sessions` · `POST /billing/portal-sessions` · `POST /webhooks/stripe` |
+| Portal onboarding (D47) | `POST /portal/sign-in-codes` · `POST /portal/onboarding-sessions` |
+
+Three enums joined `MIRRORED_ENUMS`: **`IntegrationKind`** (the reason the list
+earns its keep — its contents decide whether a document can reach Published at
+all, and it was wrong), `ExportTarget`, `SubscriptionStatus`.
+
+New error families: **`EXP`** (export and the capability URL) and **`BIL`**
+(billing). Both have runbook entries in `docs/runbooks/error-codes.md`, per
+Governance §13.4. Stripe's webhook signature reuses `NT-INT-001` rather than
+minting a code — that family is exactly "inbound webhook auth".
+
+**Five decisions in it worth knowing before reading the YAML:**
+
+- **`POST /businesses`, not `POST /clients`.** The launch plan says "clients";
+  the resource is the one `GET /businesses` already serves, `businessId` already
+  filters on, and prisma already calls `Business`. "Client" is UI vocabulary. A
+  second name for one resource is a second door — convention 1 above.
+
+- **Signup answers `202` and says nothing.** Whether an email is already
+  registered is not something an unauthenticated caller may learn; the
+  verification mail is what distinguishes the outcomes. Same stance as
+  `NT-AUTH-003`, and it is also exactly the flow A1 needs, since the account is
+  unusable until the address is verified. `POST /portal/sign-in-codes` answers
+  `202` for the same reason.
+
+- **`POST /exports` is `ingest`, not `execute`.** The human authorisation lives
+  at the Ready → Published transition, which is the super-admin act (D44); the
+  export reads the result of it, creates one new record and changes the state of
+  nothing. Exactly one operation may ever be `execute`, and the checker asserts
+  it.
+
+- **`GET /d/{code}` is served at the ORIGIN ROOT and is deliberately not
+  generated.** The capability URL has to survive a ledger reference field that
+  truncates silently at 30 and ~25 characters (SoT §24.3.2), and `/v1/` is three
+  characters it cannot spare. orval ignores a path-item `servers` override
+  (measured on v7.21) and `ntFetch` builds `baseUrl() + url` with `/v1` already
+  inside `baseUrl()` — so a generated caller would request `/v1/d/{code}`, a URL
+  nothing serves, failing as a 404 that reads like a missing document. The
+  operation therefore carries its own `capability-links` tag, which
+  `orval.config.ts` excludes from **both** projects. It stays declared here
+  because it is real public surface the checker must see, and
+  `apps/api/src/config/routing.test.ts` couples it to `UNVERSIONED_ROUTES` so
+  the spec and the Nest prefix cannot drift apart silently.
+
+- **`ProposalKind` gained `document.revoke-link`, with no migration** — the METH
+  Stage 2 precedent, and for the same reason: `action_proposals.kind` is TEXT,
+  so the contract enum is the only registry. Revoking a capability URL turns a
+  working entry inside someone's ledger into a `410`, which is a real outward
+  act and belongs on the proposal spine rather than behind a `DELETE`. It is
+  registered as a `ProposalNotImplementedError` stub until A8 lands the
+  executor; adding it later would have been a second LAW change for one enum
+  value.
+
+Two response fields were added **optional rather than required** on purpose —
+`BusinessSummary.subscription` and `Document.links`. Both are contracted ahead
+of the lane that populates them, and a required field would have obliged every
+producer to move in this PR, which is scope this batch does not own.
+
 ### Before this can freeze
 
 1. **Shamim's list of the frontend's required API calls.** Freezing without it freezes the wrong shapes — this is the one input that cannot be derived from the schema.
-2. **Shakib's provisioning-under-RLS decision** (`prisma/CLAUDE.md`), which the auth-tenancy surface in pass 2 depends on.
+2. ~~Shakib's provisioning-under-RLS decision~~ — **settled 14 Aug 2026**, and the ID LAW batch is the first surface to lean on it. `users`, `practices`, `memberships` and `sessions` carry no RLS, so `POST /practices` creates a tenant in one transaction with no bypass of any kind; the membership row exists before the first policed insert needs it. The reasoning and the live-database transcript are in `prisma/CLAUDE.md`. **That exemption is for provisioning and nothing else** — every subsequent query in the request is scoped to the practice just created.
 
 ### Still to write, in order
 

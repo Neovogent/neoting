@@ -54,10 +54,11 @@ SYSTEM users have no email, password or sessions. Exclude them from team lists, 
 
 **Draft for review — not yet frozen.**
 
-- `schema.prisma` — all 8 entity groups from SoT §15, ~35 models. `prisma validate` passes.
-- `sql/rls.sql` — helper functions, the single `app_can_access_business()` predicate, policies for every tenant table, delegated-OTP scoping, the append-only audit trigger, and the ActionProposal guard trigger.
+- `schema.prisma` — all 8 entity groups from SoT §15, ~37 models. `prisma validate` passes.
+- `sql/rls.sql` — helper functions, the single `app_can_access_business()` predicate, the anchor-pair `app_can_access_document()`, policies for every tenant table, delegated-OTP scoping, the D43 capability-link resolver, the append-only audit trigger, and the ActionProposal guard trigger.
 
 - `migrations/*_init` — generated, applied, and **verified against a live database**.
+- `migrations/20260826120000_id_law_batch` — applied, and verified **twice**: incrementally against the running local database, and from scratch against a throwaway one (`migrate deploy` over the whole chain, then `migrate diff` returning an empty migration, 38 policies installed, `tenancy-check.sql` green). A migration that only works forward from today's database is a migration a fresh clone cannot run.
 - `sql/tenancy-check.sql` — assertions all passing. Run it with `pnpm db:tenancy-check` after any policy change; it is the miniature of the CI suite that Governance §15.4 requires.
 
 ## ActionProposal is anchored like Document (issue #104)
@@ -73,6 +74,81 @@ shape and same not-exactly-one semantics as `documents_tenant_anchor`), and
 rewrote the policy onto `app_can_access_document(business_id, practice_id)`,
 which despite its name is the anchor-pair predicate. Section 9 of
 `tenancy-check.sql` is the regression: it fails against the old policy.
+
+## The ID LAW batch — `20260826120000_id_law_batch` (launch stage S0, issue #164)
+
+One migration for the whole of Initial Delivery's schema need, because three
+people block on this directory and four approvals would have cost four blocks.
+Additive throughout: every new column is nullable or defaulted, one NOT NULL is
+**dropped**, nothing renamed or removed.
+
+| Change | Why it is not optional |
+|---|---|
+| `IntegrationKind` += `VT`, `MANUAL` | **The blocker.** `publish-batch.ts` resolves an Integration before admitting a document, `resolveIntegration` is the only door, and the enum held only the four ledger vendors D42 removed from this release — while D47 forbids intake from asking for a connection. Nothing could ever reach Published, so the export had nothing to export and SoT §24.7 could not run. |
+| `businesses` += `stripe_customer_id` (UNIQUE), `subscription_status`, `plan`, `subscription_current_period_end` | D48. Four columns, not a `subscriptions` table: one flat plan per business, so a child table buys a join for nothing. **The UNIQUE is load-bearing** — the Stripe webhook has no session and cannot lean on RLS, so it resolves the tenant from the customer id and must assert exactly one match. |
+| `exports` += `target`, `period_start`, `period_end`, `row_count` | The `Export` model already existed and is EXTENDED. A second model would have been a second door onto one resource with one policy. |
+| `otp_sessions.business_id` nullable + `practice_id` + `otp_sessions_tenant_anchor` | `OtpSessionScope.ONBOARDING` was declared and unusable: a pre-client session had nowhere to live. See the RLS note below — this one had a trap in it. |
+| `document_links` (new) | The D43 capability URL. See below. |
+| `practices.document_link_ttl_days` | D43's "expiry configurable per practice". |
+| `ExportTarget`, `SubscriptionStatus` (new enums) | Both mirrored into `check-contract.mjs`, so drift fails the build. |
+
+### ⚠ A nullable anchor under a policy written for a NOT NULL one — twice now
+
+`otp_sessions` was in the `direct_tables` loop, whose predicate is
+`app_can_access_business(business_id)`. That function returns **FALSE** for a
+NULL argument, so the moment `business_id` became nullable an ONBOARDING row
+would have been **invisible and unwritable to everyone, forever, with nothing
+reporting it**.
+
+This is the #104 bug in reverse. There, a NULL-business `action_proposal` was
+world-readable and world-writable; here a NULL-business session would have been
+nobody-readable. **Same mistake, opposite direction:** a nullable tenant anchor
+left under a policy written for a NOT NULL column. If a third table's anchor
+ever becomes nullable, it leaves `direct_tables` in the same commit or the same
+class of bug ships again.
+
+The fix is the shape `documents` and `action_proposals` already use:
+`app_can_access_document(business_id, practice_id)` — the anchor-pair predicate,
+preferred over the `invites`/`guidance` spelling because it carries the
+`session_scope = 'user'` guard those two only get inside their business branch.
+Section 10 of `tenancy-check.sql` is the regression, and it was **negative
+tested**: restored against the old single-column policy, the ONBOARDING row
+reads 0 rows instead of 1.
+
+### `document_links`, and the one sanctioned RLS bypass
+
+`GET /d/{code}` is unauthenticated **by design** — an accountant reads the code
+out of a column inside VT Transaction+, where no session of ours can exist. That
+creates a real ordering problem: to resolve a code we need the row, to read the
+row under RLS we need a practice-scoped actor, and the practice is what the row
+would have told us.
+
+The table is therefore **policed like any other business-anchored table**, and
+one narrow `SECURITY DEFINER` function — `app_resolve_document_link(code)` —
+takes a code and returns at most one row of four ids plus two state booleans.
+It reads no financial data and cannot return more than one row (`code` is
+UNIQUE). Everything after it goes back through
+`scopedDb(systemContext(practiceId, systemUserId))` like any worker.
+
+The two rejected alternatives are written into `rls.sql` above the function
+rather than left to be re-litigated: an unpoliced table (makes a whole tenant
+table readable by any path that forgets to think, to spare one caller), and a
+third `capability_link` session scope (attractive — no bypass at all — but
+`ScopeContext` requires an actorId AND a practice-or-business, and a capability
+read has none of the three; relaxing those refinements weakens a shared guard
+for every caller to serve one route).
+
+**`code` is stored in plain text, and that is deliberate** — the only token in
+this schema that is. Every other one is hashed because nothing needs to read it
+back; this one must re-emit identically next month, or the accountant's saved VT
+conversion table stops matching and every import goes manual again (§24.3.1
+calls that byte-stability the highest-leverage detail in the export). A hash
+cannot be re-emitted. Its safety is being unguessable and rate-limited, not
+being secret at rest.
+
+**Not `@@unique([documentId])`**, deliberately: revocation must actually break
+the links already sitting in someone's ledger, so revoking mints nothing and a
+replacement is a new row with a new code.
 
 ### Regenerating from scratch
 

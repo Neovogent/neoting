@@ -18,14 +18,90 @@ const SPEC = readFileSync(
   'utf8',
 );
 
+const SPEC_LINES = SPEC.split('\n');
+
+/**
+ * The server URLs declared at one indentation level, scanned by line.
+ *
+ * A line scanner rather than a multi-line regex, and rather than a YAML parse:
+ * regexes over a 3 700-line document with two `servers:` blocks at different
+ * depths were unreadable and quietly wrong on the first attempt, and adding a
+ * YAML dependency to `apps/api` for one test would be a real cost for a file
+ * whose whole point is to be cheap enough to keep.
+ *
+ * `indent` is the column `servers:` itself sits at — 0 for the top-level block,
+ * 4 for a path item's own override.
+ */
+function serverUrlsAt(indent: number, startLine: number): string[] {
+  const key = `${' '.repeat(indent)}servers:`;
+  const from = SPEC_LINES.findIndex((line, i) => i >= startLine && line === key);
+  if (from === -1) return [];
+
+  const urls: string[] = [];
+  for (const line of SPEC_LINES.slice(from + 1)) {
+    // Blank lines and comments belong to the block; anything at or left of the
+    // key's own indentation ends it.
+    if (line.trim() === '' || line.trimStart().startsWith('#')) continue;
+    if (line.search(/\S/) <= indent) break;
+    const url = /^\s*-\s*url:\s*(\S+)/.exec(line)?.[1];
+    if (url !== undefined) urls.push(url);
+  }
+  return urls;
+}
+
 test('the prefix is the one the OpenAPI servers block declares', () => {
-  // Every server URL in the spec must agree, or "the prefix" is not a single
-  // thing and this file cannot express it.
-  const paths = [...SPEC.matchAll(/^\s*-\s*url:\s*(\S+)/gm)].map((m) => new URL(m[1]!).pathname);
+  // The TOP-LEVEL block only. It used to be every `- url:` in the file, which
+  // was right while the spec had exactly one servers block — the ID LAW batch
+  // added a second (see the next test), and reading both made "the prefix" two
+  // things and failed this test on a deliberate change.
+  //
+  // Every top-level server URL must still agree with every other, or the prefix
+  // is not a single thing and this file cannot express it.
+  const paths = serverUrlsAt(0, 0).map((url) => new URL(url).pathname);
 
   expect(paths.length).toBeGreaterThan(0);
   expect(new Set(paths)).toEqual(new Set([`/${API_PREFIX}`]));
 });
+
+test('a path declaring root-origin servers is excluded from the global prefix', () => {
+  // The coupling that stops a contract change and the Nest config drifting
+  // apart silently. A path item overriding `servers` to the origin ROOT is
+  // saying "I am not under /v1"; if `setGlobalPrefix` has not been told the
+  // same thing, Nest mounts its controller at `/v1/...` and the URL the
+  // contract published — the one an accountant typed out of their ledger —
+  // 404s.
+  //
+  // Scanned from the spec rather than compared against a literal list, so a
+  // SECOND such path fails here on the day it is added rather than in
+  // production.
+  const rootOriginPaths = SPEC_LINES.flatMap((line, i) => {
+    const specPath = /^ {2}(\/\S*):\s*$/.exec(line)?.[1];
+    if (specPath === undefined) return [];
+    const urls = pathItemServerUrls(i);
+    if (urls.length === 0) return [];
+    return urls.every((url) => new URL(url).pathname === '/') ? [specPath] : [];
+  });
+
+  expect(rootOriginPaths).toEqual(['/d/{code}']);
+
+  for (const specPath of rootOriginPaths) {
+    // `/d/{code}` in OpenAPI is `d/:code` in Nest — one route, two dialects.
+    const nestPath = specPath.replace(/^\//, '').replace(/\{(\w+)\}/g, ':$1');
+    expect(UNVERSIONED_ROUTES.map((r) => r.path), specPath).toContain(nestPath);
+  }
+});
+
+/** The `servers:` a single path item declares for itself, if any. */
+function pathItemServerUrls(pathLine: number): string[] {
+  for (let i = pathLine + 1; i < SPEC_LINES.length; i += 1) {
+    const line = SPEC_LINES[i]!;
+    if (line.trim() === '' || line.trimStart().startsWith('#')) continue;
+    // Back out to column 2 or less: the next path item, or the end of `paths:`.
+    if (line.search(/\S/) <= 2) return [];
+    if (line === '    servers:') return serverUrlsAt(4, i);
+  }
+  return [];
+}
 
 test('the routes outside the contract are excluded, with their methods', () => {
   const excluded = UNVERSIONED_ROUTES.map((r) => `${RequestMethod[r.method]} ${r.path}`);
@@ -40,6 +116,11 @@ test('the routes outside the contract are excluded, with their methods', () => {
     // redirects for delivery. Both the handshake (GET) and delivery (POST).
     'GET webhooks/whatsapp',
     'POST webhooks/whatsapp',
+    // The D43 capability URL. Excluded ahead of its controller (ID LAW batch,
+    // stage S0) because the exclusion is what makes the route exist where the
+    // contract says it does — and because `/v1/` is three characters this URL
+    // cannot spare against a ledger field that truncates silently.
+    'GET d/:code',
   ]);
 });
 

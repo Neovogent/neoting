@@ -48,6 +48,14 @@ model Practice {
   vatRegistered     Boolean  @default(false) @map("vat_registered")
   yearEndMonth      Int?     @map("year_end_month")
   yearEndDay        Int?     @map("year_end_day")
+
+  /// How long a `/d/{code}` capability URL stays resolvable, in days. NULL
+  /// means the platform default. D43 makes expiry "configurable per practice",
+  /// and the setting lives here rather than in config because the practice
+  /// whose links are pasted into a client's ledger is the one who has to
+  /// choose between a link that dies and a link that outlives the engagement.
+  documentLinkTtlDays Int? @map("document_link_ttl_days")
+
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
@@ -57,6 +65,7 @@ model Practice {
   guidance    Guidance[]
   documents   Document[]
   proposals   ActionProposal[]
+  otpSessions OtpSession[]
 
   @@map("practices")
 }
@@ -97,6 +106,29 @@ model Business {
   practiceCode         String?   @map("practice_code")
 
   isActive  Boolean  @default(true) @map("is_active")
+
+  /// ---- Subscription (D48, ID only) ----------------------------------------
+  ///
+  /// Four columns rather than a `subscriptions` table, deliberately: ID sells
+  /// ONE flat plan per client business (€8.50/month + VAT), so a business has
+  /// at most one subscription and a child table would buy a join for nothing.
+  /// Stripe owns the invoices, the dunning and the card; this is the local
+  /// projection the product reads to answer "is this workspace entitled".
+  ///
+  /// ⚠ `stripeCustomerId` is UNIQUE on purpose. `POST /v1/webhooks/stripe`
+  /// runs with NO session, so it cannot lean on RLS to find the tenant — it has
+  /// to resolve one from the Stripe customer id and assert it matched exactly
+  /// one row. The unique index is what makes that assertion structural rather
+  /// than a hopeful `findFirst`: a subscription written to the wrong tenant
+  /// would be invisible, because RLS fails closed and silent.
+  stripeCustomerId             String?             @unique @map("stripe_customer_id")
+  subscriptionStatus           SubscriptionStatus? @map("subscription_status")
+  /// The Stripe price/plan reference this business is on. Free text, not an
+  /// enum: it is Stripe's identifier, and pinning our own enum to a value only
+  /// Stripe mints would make a dashboard change a schema change.
+  plan                         String?
+  subscriptionCurrentPeriodEnd DateTime?           @map("subscription_current_period_end")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -125,6 +157,7 @@ model Business {
   exports            Export[]
   imports            Import[]
   auditEvents        AuditEvent[]
+  documentLinks      DocumentLink[]
 
   @@index([practiceId])
   @@index([practiceId, isActive])
@@ -307,8 +340,28 @@ enum OtpSessionScope {
 /// (Governance §5.2). The link is deliberately forwardable, so the audit trail
 /// records requested-from separately from uploaded-by (SoT Stage 8.3).
 model OtpSession {
-  id         String @id @default(cuid())
-  businessId String @map("business_id")
+  id String @id @default(cuid())
+
+  /// Tenancy anchor, the same two-column shape as `documents` and
+  /// `action_proposals`. AT LEAST ONE is present, enforced by the CHECK
+  /// constraint `otp_sessions_tenant_anchor` — not exactly one, and the normal
+  /// DELEGATED_UPLOAD case sets both.
+  ///
+  /// `business_id` became nullable for ONBOARDING (D47, SoT §24.5): a client
+  /// signing in to complete their own setup, or an accountant-level code, has a
+  /// practice above it and no business yet — under the old NOT NULL column that
+  /// row had nowhere to live, which is why `OtpSessionScope.ONBOARDING` was
+  /// declared and never used.
+  ///
+  /// ⚠ The nullable column is why this table left the `direct_tables` loop in
+  /// rls.sql. `app_can_access_business(NULL)` is FALSE, so a NULL-business row
+  /// under the old single-column policy would have been invisible and
+  /// unwritable to everyone — the exact mirror of the #104 bug, which made a
+  /// NULL-business proposal visible to everyone. Both are the same mistake: a
+  /// nullable anchor under a policy written for a NOT NULL one. It now uses the
+  /// anchor-pair predicate `app_can_access_document(business_id, practice_id)`.
+  businessId String? @map("business_id")
+  practiceId String? @map("practice_id")
 
   contactId      String?         @map("contact_id")
   userId         String?         @map("user_id")
@@ -328,12 +381,17 @@ model OtpSession {
   expiresAt     DateTime @map("expires_at")
   createdAt     DateTime @default(now()) @map("created_at")
 
-  contact Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
-  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  chase   Chase?   @relation(fields: [chaseId], references: [id], onDelete: SetNull)
+  contact  Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  chase    Chase?    @relation(fields: [chaseId], references: [id], onDelete: SetNull)
+  practice Practice? @relation(fields: [practiceId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
   @@index([chaseId])
+  /// The practice branch of the anchor-pair predicate reads `practice_id`, and
+  /// an ONBOARDING row is found by it alone. Ships with the query pattern it
+  /// exists for (Governance §5.3, expand-contract).
+  @@index([practiceId])
   @@map("otp_sessions")
 }
 
@@ -476,6 +534,7 @@ model Document {
   publishes     Publish[]
   itemThreads   ItemThread[]
   approvals     Approval[]
+  links         DocumentLink[]
 
   @@index([businessId, inbox, state])
   @@index([businessId, receivedAt])
@@ -1092,11 +1151,30 @@ model ActionProposal {
 // PUBLISHING
 // ===========================================================================
 
+/// ⚠ VT and MANUAL exist because without them NOTHING CAN EVER REACH PUBLISHED.
+///
+/// `publish-batch.ts` resolves an Integration before it will admit a document
+/// for publish, and `resolveIntegration` is the only door: with no active row
+/// it refuses with "this client has no active ledger connection". Under D42
+/// there IS no ledger connection to make — no adapter, no OAuth flow, no
+/// endpoint — and D47 says client intake must not ask for one. So every
+/// document stopped at READY forever and the export had nothing to export.
+///
+/// VT     — the client's own VT Transaction+ installation. Nothing is
+///          transmitted to it; the row records which target this business
+///          exports for, so the emitter and the accountant agree.
+/// MANUAL — no target named. Export produces the generic CSV.
+///
+/// Neither carries a token, an org ref or a health state, and neither may ever
+/// become an adapter call: D42 makes *Published* an INTERNAL state meaning
+/// approved and released for export, asserting nothing about a ledger.
 enum IntegrationKind {
   XERO
   QUICKBOOKS
   SAGE
   FREEAGENT
+  VT
+  MANUAL
 }
 
 model Integration {
@@ -1297,12 +1375,39 @@ model Import {
   @@map("imports")
 }
 
+/// ⚠ This model already existed and is EXTENDED, not replaced. The ID plan
+/// asked for "an Export model: id, businessId, target, rowCount, createdBy,
+/// createdAt"; four of those six were already here under their own names
+/// (`createdByUserId`), so a second model would have been a second door onto
+/// the same resource with the same RLS policy. Only `target`, `rowCount` and
+/// the period bounds are new.
+///
+/// Under D42 this table is the record of the ONLY way data leaves the product.
 model Export {
   id         String @id @default(cuid())
   businessId String @map("business_id")
 
-  kind            String
-  format          String
+  kind   String
+  format String
+
+  /// Which accounting package the file is shaped for. Nullable because rows
+  /// written before this column existed have no answer, and expand-contract
+  /// forbids inventing one (Governance §5.3).
+  target ExportTarget?
+
+  /// The period the export covers, recorded as columns rather than inside
+  /// `filters` because "has this period already been exported for this client"
+  /// is a question the export screen asks on every render, and a JSON predicate
+  /// makes it a scan.
+  periodStart DateTime? @map("period_start")
+  periodEnd   DateTime? @map("period_end")
+
+  /// How many canonical rows the emitter wrote. The accountant reconciles this
+  /// against what VT's Universal Input Sheet shows before pressing Post, so a
+  /// silently short file is caught by a human at the one moment they are
+  /// looking. Null on a failed or legacy export.
+  rowCount Int? @map("row_count")
+
   filters         Json?
   s3Key           String?   @map("s3_key")
   state           String    @default("queued")
@@ -1315,7 +1420,103 @@ model Export {
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId, state])
+  @@index([businessId, target, periodEnd])
   @@map("exports")
+}
+
+/// A short capability URL onto one document — the D43 source-document link.
+///
+/// **The token IS the authorisation.** `GET /d/{code}` is unauthenticated by
+/// design: the whole point is that an accountant reads the code out of a CSV
+/// column inside VT Transaction+, where no session of ours exists, and reaches
+/// the document. SoT §24.3.2 makes the constraints binding — unguessable,
+/// per-document, view-only, individually revocable, access-logged, expiry
+/// configurable per practice (`practices.document_link_ttl_days`).
+///
+/// **Why the code is stored in plain text.** Every other token in this schema
+/// is a hash (`Invite.tokenHash`, `OtpSession.linkTokenHash`,
+/// `Session.refreshTokenHash`) because nothing ever needs to read it back. This
+/// one is different: the same document re-exported next month must carry the
+/// SAME code, or the accountant's saved VT conversion table stops matching and
+/// every import goes manual again — §24.3.1 calls that byte-stability the
+/// highest-leverage detail in the whole export. A hash cannot be re-emitted. So
+/// the code is stored, and its safety comes from being unguessable and
+/// rate-limited rather than from being secret at rest.
+///
+/// **Two shape constraints that come from VT, not from us**, and both are
+/// enforced where the code is minted rather than here, because Postgres cannot
+/// express "contains a letter" without a CHECK that would then have to be
+/// carried by hand through every rebuild:
+///   - it must contain at least one LETTER — VT has a documented history of
+///     coercing numeric-looking strings in `Entry details` into 2-decimal
+///     numbers, which would silently corrupt an all-digit code;
+///   - the whole URL must stay short — target reference fields truncate
+///     SILENTLY at 30 and ~25 characters, and a truncated link is worse than no
+///     link because it looks correct and resolves to nothing.
+///
+/// **Not unique per document, deliberately.** Revocation must actually break
+/// the links already sitting in someone's ledger, so revoking mints nothing and
+/// a replacement is a new row. Byte-stability is "reuse the live link if there
+/// is one", which is an application rule; a `@@unique([documentId])` here would
+/// make revocation impossible instead.
+model DocumentLink {
+  id         String @id @default(cuid())
+  documentId String @map("document_id")
+  businessId String @map("business_id")
+
+  /// Six to eight URL-safe characters from a CSPRNG (SoT §24.3.2 rung 2).
+  code String @unique
+
+  createdByUserId String? @map("created_by_user_id")
+
+  /// NULL means no expiry — a practice that set `document_link_ttl_days` to
+  /// nothing has chosen links that outlive the engagement.
+  expiresAt DateTime? @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  /// The access log, denormalised. SoT §24.3.2 requires accesses to be logged;
+  /// the narrative record is an `audit_events` row like every other access, and
+  /// these two columns are the cheap projection the revoke screen renders — "12
+  /// views, last one on Tuesday" is the whole question an accountant asks
+  /// before revoking, and it should not cost an audit scan.
+  accessCount    Int       @default(0) @map("access_count")
+  lastAccessedAt DateTime? @map("last_accessed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  /// "The live link for this document", which is what the emitter asks for once
+  /// per exported row.
+  @@index([documentId, revokedAt])
+  @@map("document_links")
+}
+
+/// The export targets ID actually emits. Deliberately two values, not five:
+/// SoT §24.3 names VT (primary), Xero, Sage and generic CSV as the target set,
+/// and A7 builds the VT emitter only. An enum value with no emitter behind it
+/// is a 500 waiting for whoever passes it, so Xero and Sage arrive with their
+/// emitters or not at all.
+enum ExportTarget {
+  VT_TRANSACTION_PLUS
+  GENERIC_CSV
+}
+
+/// Stripe's own subscription statuses, upper-cased. All eight are here even
+/// though ID's flow touches four, because the webhook writes whatever Stripe
+/// sends and a value the enum does not admit is a failed write — loud, retried
+/// by Stripe, and visible — rather than a silently stale entitlement.
+enum SubscriptionStatus {
+  INCOMPLETE
+  INCOMPLETE_EXPIRED
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+  PAUSED
 }
 
 /// Append-only and hash-chained. There is no update or delete API for this

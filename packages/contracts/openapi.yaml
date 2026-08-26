@@ -6,6 +6,19 @@
 #   2. Shakib decides how provisioning runs under RLS (prisma/CLAUDE.md), which
 #      is what the auth-tenancy surface in pass 2 depends on.
 #
+# ID LAW BATCH (docs/launch/SHAKIB.md stage S0, issue #164). One issue, one
+# approval, one migration — because three people block on this file and four
+# separate approvals would have cost four separate blocks. It adds the six
+# surfaces Initial Delivery needs and nothing else: practice signup, client
+# intake and team, export + the D43 capability URL, billing (D48), and a portal
+# OTP session that is NOT tied to a chase (D47). Everything it adds is governed
+# by SoT §24 and D39–D49.
+#
+#   ⚠ D42 IS A COPY RULE, NOT ONLY A DESIGN ONE. *Published* is an INTERNAL
+#   state meaning approved and released for export. It asserts nothing about a
+#   ledger. Nothing in this file — no summary, no description, no example — may
+#   say posted, synced, sent to VT, or written to. The words are "Export for VT".
+#
 # SCOPE OF THIS PASS: ingestion + documents + the Review → Approve spine,
 # plus the MINIMAL demo-auth trio (login, logout, /me) pulled forward from
 # pass 2 by METH_MODE Stage 1 (issue #118, pre-approved in METH_MODE §3.1),
@@ -183,6 +196,40 @@ tags:
       through `POST /action-proposals` like any other. The chat surface is
       therefore structurally incapable of changing state — there is no second
       door to close.
+  - name: practices
+    description: |
+      Creating a practice. Exactly one operation and it is unauthenticated,
+      because it is the only door through which a tenant that does not yet
+      exist can come into being (D39, SoT §24.5).
+  - name: exports
+    description: |
+      The sole egress (D42). Export produces a file for the accountant's own
+      software; nothing is transmitted anywhere. Includes the capability URL
+      that gets an accountant from a line in VT back to the source document
+      (D43) — the acceptance test for the whole release.
+  - name: capability-links
+    description: |
+      The `/d/{code}` route, and it has a tag of its own for a mechanical
+      reason rather than a taxonomic one: `orval.config.ts` EXCLUDES this tag
+      from codegen.
+
+      This is the only operation not served under `/v1` (see the path item for
+      why the three characters matter), and `ntFetch` builds every request as
+      `baseUrl() + url` with `/v1` already inside `baseUrl()`. A generated
+      client for it would therefore call `/v1/d/{code}` — a URL nothing serves,
+      failing as a 404 that looks like a missing document rather than a wrong
+      base. Nobody should be calling this from our own frontend anyway: it is
+      typed or pasted into a browser by an accountant sitting inside VT.
+
+      The operation stays declared here because it IS public API surface and
+      the contract checker must see it — one door per resource, a declared
+      side-effect class, a stated error shape.
+  - name: billing
+    description: |
+      Subscription (D48). Stripe hosts checkout, the invoice, the receipt, the
+      dunning and the card-update flow; these two operations mint the hosted
+      URLs and nothing else. There is no plan-change UI and no invoice renderer
+      in this contract on purpose.
   - name: webhooks
     description: Inbound webhooks from third parties. Signature-verified, not session-authenticated.
 
@@ -288,6 +335,373 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Me' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ==========================================================================
+  # EXPORTS — the sole egress (D42), and the link back (D43)
+  # ==========================================================================
+
+  /exports:
+    get:
+      operationId: listExports
+      summary: Export history
+      description: |
+        What has been exported, for which client, covering which period, newest
+        first. This is the audit answer to "did we already send January to the
+        accountant" — a question that gets asked, and whose wrong answer is a
+        double-imported month in someone's books.
+      tags: [exports]
+      x-nt-side-effect: none
+      parameters:
+        - $ref: '#/components/parameters/BusinessIdFilter'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of exports, newest first.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pageInfo]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Export' }
+                  pageInfo: { $ref: '#/components/schemas/PageInfo' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+    post:
+      operationId: createExport
+      summary: Export for VT
+      description: |
+        Produces the import file for the accountant's own software, plus the
+        companion bundle, and records what was produced.
+
+        **Nothing is transmitted anywhere.** D42: *Published* is an internal
+        state meaning approved and released for export, and the operation is
+        named "Export for VT", never "send", "publish to" or "sync". A client
+        string implying transmission is a D42 defect, not a copy preference.
+
+        **Only `PUBLISHED` documents are exported.** That is where the human
+        authorisation lives: the Ready → Published transition is the
+        super-admin act (D44), and this operation reads the result of it. It is
+        therefore `ingest` rather than `execute` — it creates one new record,
+        the `Export`, and changes the state of nothing. A second `execute`
+        operation here would break the Review → Approve guarantee the contract
+        checker asserts mechanically.
+
+        **What comes back:**
+        - `file` — the target's import file. For `VT_TRANSACTION_PLUS` that is
+          the Universal Input Sheet layout in VT's own on-screen column order,
+          amounts always positive because VT derives debit and credit from
+          `Type` (SoT §24.3.1).
+        - `bundle` — a ZIP of the source documents plus a manifest keyed by
+          capability code (D43 rung 4). Not a fallback: no established product
+          solves matching an exported document bundle back to its exported rows,
+          and this is the cheapest differentiator in the release.
+        - `warnings` — **what did not travel.** VT accepts one nominal per row,
+          and three of the five ID targets accept no line items at all, so a
+          document spanning several nominals collapses. §24.3.4 names silent
+          flattening as the failure mode to design against; this array is how
+          the accountant is told instead.
+
+        Generation is synchronous in ID and the batch is capped; over the cap is
+        `NT-EXP-003` naming the cap, never a truncated file.
+      tags: [exports]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExportRequest' }
+      responses:
+        '201':
+          description: The export, with short-lived URLs for the file and the bundle.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Export' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422':
+          description: |
+            Nothing to export — `NT-EXP-001` — or more rows than one synchronous
+            export may carry, `NT-EXP-003`. Both name the number.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              example:
+                type: https://neoting.com/problems/NT-EXP-001
+                title: Nothing to export
+                status: 422
+                code: NT-EXP-001
+                detail: No documents reached Published in 01/01/2026 to 31/01/2026 for this client.
+                traceId: 01J8XN2ZQ5R7TQ9E3M4K6P
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /d/{code}:
+    # ⚠ SERVED AT THE ORIGIN ROOT, NOT UNDER /v1, and the three characters are
+    # the reason. The whole design rests on this URL fitting inside a reference
+    # field that truncates SILENTLY — one major target clips at 30 characters,
+    # another at ~25 (SoT §21 risk register). `https://` plus a short host burns
+    # 15–25 of that before the token, so `/v1/` would spend an eighth of the
+    # budget on a version segment no human will ever type. A truncated link is
+    # worse than no link: it looks correct and resolves to nothing.
+    servers:
+      - url: http://localhost:3000
+        description: Local — the origin root, deliberately outside the /v1 prefix.
+      - url: https://neoacc.neovogent.com
+        description: |
+          The capability-URL origin. Kept as short as the domain allows, because
+          every character here comes out of the truncation budget above.
+    parameters:
+      - $ref: '#/components/parameters/DocumentLinkCode'
+    get:
+      operationId: resolveDocumentLink
+      summary: Open a source document from a capability link
+      description: |
+        The D43 source-document link, and the acceptance test for the whole
+        release: an accountant reads this code out of a column inside VT
+        Transaction+ and reaches the document that line came from.
+
+        **Unauthenticated by design. The code IS the authorisation**, and it is
+        the only route in this API outside the session wall. That is not a gap —
+        no session of ours can exist inside someone else's accounting software,
+        and D43 is written on the outcome rather than the mechanism precisely
+        because of it. What makes it safe is stated in SoT §24.3.2 and is
+        binding, not aspirational: unguessable per-document codes, **view-only**
+        authority over exactly one document, individual revocation, an access
+        log, and an expiry configurable per practice.
+
+        **Rate limiting is not an optional extra on this route.** Per code and
+        per IP. A short code without one is a short code with unlimited guesses.
+
+        **Two shape rules the code obeys, and both come from the target rather
+        than from us.** It contains at least one LETTER, because VT has a
+        documented history of coercing numeric-looking strings in `Entry
+        details` into 2-decimal numbers. And it stays short, for the truncation
+        reason on this path item.
+
+        Answers `302` to a short-lived, object-scoped URL rather than proxying
+        bytes — the same stance as `GET /documents/{documentId}/original`, and
+        the reason the API never becomes a file server. There is no content
+        negotiation: this URL is typed or pasted into a browser by a person.
+
+        **No client is generated for this operation.** See the
+        `capability-links` tag — a generated caller would build `/v1/d/{code}`,
+        which nothing serves.
+      tags: [capability-links]
+      x-nt-side-effect: none
+      security: []
+      responses:
+        '302':
+          description: |
+            Found. `Location` is a presigned, object-scoped URL that expires in
+            minutes. The access is logged and the link's counter incremented
+            before the redirect is issued.
+          headers:
+            Location:
+              description: The short-lived URL for the document itself.
+              schema: { type: string, format: uri }
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+        '404':
+          description: |
+            No such code. Deliberately indistinguishable from a code that never
+            existed, because that is exactly what it is.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '410':
+          description: |
+            The link was revoked, or it has expired — `NT-EXP-002`.
+
+            **Told apart from `404` on purpose**, which is the opposite of this
+            contract's usual stance. The usual reasoning does not apply: the
+            code is CSPRNG-generated and rate-limited, so "this code once
+            existed" is not a useful oracle, while an accountant holding a dead
+            link inside their ledger genuinely needs to know it was revoked
+            rather than be left thinking they mistyped it.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              example:
+                type: https://neoting.com/problems/NT-EXP-002
+                title: Link no longer available
+                status: 410
+                code: NT-EXP-002
+                detail: This document link has been revoked. Ask the practice for a fresh export.
+                traceId: 01J8XN2ZQ5R7TQ9E3M4K6P
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ==========================================================================
+  # BILLING — buy, do not build (D48)
+  # ==========================================================================
+
+  /billing/checkout-sessions:
+    post:
+      operationId: createCheckoutSession
+      summary: Start subscription checkout
+      description: |
+        Mints a Stripe **hosted** Checkout session and returns its URL. Hosted,
+        not Payment Element and not a Payment Link: zero client-side bundle, so
+        the 250 KB route budget never notices; no card data anywhere near our
+        origin; and Stripe hosts the invoice, the receipt, the dunning and the
+        card-update flow, none of which we then have to build or get right.
+
+        One product, one price — €8.50 per month per client business, paid by
+        the client (D48). No tiers, no add-ons, no coupon.
+
+        ⚠ **The price is TAX-EXCLUSIVE and the checkout must show VAT before the
+        client commits.** A price created with no tax behaviour set is treated
+        as VAT-inclusive, which silently means absorbing the VAT. §24.5 requires
+        the quote to be exclusive and displayed as such, and the invoice to
+        carry the VAT amount **in sterling** even on a euro price — a
+        requirement of the VAT invoice regulations, not a preference.
+
+        ⚠ `successUrl` and `cancelUrl` are caller-supplied and are therefore
+        validated against an allowlist of our own origins. An unvalidated return
+        URL on an authenticated endpoint is an open redirect with a session
+        attached to it.
+      tags: [billing]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckoutSessionRequest' }
+      responses:
+        '201':
+          description: Send the client to `url`.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HostedBillingSession' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: |
+            Already subscribed — `NT-BIL-002`. Card changes and cancellation
+            live in the Stripe customer portal, not in a second checkout.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /billing/portal-sessions:
+    post:
+      operationId: createBillingPortalSession
+      summary: Open the Stripe customer portal
+      description: |
+        Mints a Stripe-hosted customer-portal session for changing the card,
+        reading invoices and cancelling. Deliberately the whole of our billing
+        UI beyond a status line: a plan-change screen, a cancellation flow and
+        an invoice renderer are three things Stripe already does correctly and
+        three more things that could be wrong on our side.
+
+        `returnUrl` is validated against our own origins, for the reason given
+        on the checkout operation.
+      tags: [billing]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BillingPortalSessionRequest' }
+      responses:
+        '201':
+          description: Send the client to `url`.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HostedBillingSession' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ==========================================================================
+  # PRACTICES — the only door a tenant that does not exist yet can come through
+  # (ID LAW batch, SoT §24.5)
+  # ==========================================================================
+
+  /practices:
+    post:
+      operationId: createPractice
+      summary: Sign up an accounting practice
+      description: |
+        Creates a practice, its first user, and the membership that binds them —
+        in one transaction. That first user is the practice **super admin**: D44
+        makes releasing a chase and moving an item to Published a super-admin
+        act, so the release authority exists from the first second the tenant
+        does rather than being granted later by something else that would also
+        need a door.
+
+        **The response is always `202`, and it is deliberately uninformative.**
+        It does not say whether an account was created, because saying so would
+        answer "is this email registered here" for anyone who asks — the same
+        enumeration oracle `NT-AUTH-003` exists to close on the login path. The
+        verification email is what distinguishes the two outcomes, and it goes
+        to the address, not to the caller. A `400` is still a `400`: a password
+        that is too short is the caller's own input and reveals nothing about
+        anyone else.
+
+        **The account is unusable until the address is verified.** Until then
+        there is a practice with no reachable owner, which is the correct state
+        for something nobody has proved they control.
+
+        ⚠ **This is the one legitimately unscoped write in the system.** There
+        is no session, because the tenant being created is what a session would
+        have been scoped to. `users`, `practices` and `memberships` carry no RLS
+        precisely so this ordering resolves without a bypass (prisma/CLAUDE.md,
+        issue #17) — the membership row exists before the first policed insert
+        needs it. Nothing else may borrow that exemption.
+
+        Acceptance of the terms in force is recorded as an `audit_events` row
+        rather than a column: what a person agreed to, and when, is an event
+        about a person, and the audit stream is append-only and hash-chained.
+      tags: [practices]
+      x-nt-side-effect: ingest
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PracticeSignupRequest' }
+      responses:
+        '202':
+          description: |
+            Accepted. Check the email address for what happens next. Empty by
+            design — see the description.
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
 
@@ -1324,6 +1738,114 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  # --------------------------------------------------------------------------
+  # PORTAL ONBOARDING — a session that is NOT the consequence of a chase
+  # (ID LAW batch, D47 / SoT §24.5)
+  #
+  # `POST /portal/sessions` above can only exist downstream of a chase: it takes
+  # a chase link token, resolves the chase, and 401s if it is gone. But an
+  # invited client has no chase yet — nobody has asked them for anything, they
+  # are being asked to set themselves up. `OtpSessionScope.ONBOARDING` was
+  # declared in the schema for exactly this and nothing implemented it, because
+  # `otp_sessions.business_id` was NOT NULL and a pre-client session had nowhere
+  # to live. The ID LAW batch made it nullable; these two operations are the
+  # surface that uses it.
+  #
+  # Two steps, not one, and the split is not ceremony: the code has to be
+  # DELIVERED between them. Step one sends it, step two spends it.
+  # --------------------------------------------------------------------------
+
+  /portal/sign-in-codes:
+    post:
+      operationId: createPortalSignInCode
+      summary: Email a six-digit sign-in code
+      description: |
+        The client follows the setup link their accountant sent, gives the email
+        address they were registered with, and receives a six-digit code.
+
+        **Always `202`, whatever happened.** Whether that address is registered
+        on that workspace is not something an unauthenticated caller may learn —
+        the `NT-AUTH-003` stance, applied here. The email is the channel that
+        distinguishes the two outcomes, and it goes to the address, not to the
+        caller.
+
+        **The code is a credential.** It is never logged, never placed in a URL,
+        never returned in a response or an error, and not in development either.
+        Rate-limited per address AND per IP: a six-digit code with unlimited
+        attempts is a four-digit code by lunchtime.
+
+        There is no SMS here. D47 names the client-registration route as a short
+        setup link plus the company general email, and the copy on every screen
+        must say "emailed", never "texted".
+      tags: [portal]
+      x-nt-side-effect: ingest
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PortalSignInCodeRequest' }
+      responses:
+        '202':
+          description: |
+            Accepted. If that address is registered on this workspace, a code is
+            on its way. Empty by design — see the description.
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /portal/onboarding-sessions:
+    post:
+      operationId: createPortalOnboardingSession
+      summary: Open a portal session from a setup link
+      description: |
+        Exchanges the setup link, the registered address and the emailed code
+        for a portal session — the same `PortalSession` bearer the chase path
+        issues, opened under `OtpSessionScope.ONBOARDING` rather than
+        `DELEGATED_UPLOAD`.
+
+        **An onboarding session grants no items.** A delegated session's whole
+        authority is its list of chased item ids; this one has no chase and
+        therefore no list, which is precisely why it needed a scope of its own
+        rather than an empty grant. An empty grant reads to a human as "no
+        restriction" and denies everything in SQL — a gap between what a
+        reviewer sees and what the database does is the shape of bug this
+        contract exists to prevent.
+
+        Every verification failure — unknown link, expired link, wrong address,
+        wrong code — returns the same `401 NT-OTP-001`, for the reason the chase
+        path gives.
+      tags: [portal]
+      x-nt-side-effect: ingest
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PortalOnboardingSessionRequest' }
+      responses:
+        '201':
+          description: The session. Send `token` as a bearer on every portal call.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PortalSession' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: Link, address or code failed verification — `NT-OTP-001`, uniformly.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   # ==========================================================================
   # PUBLISHING — read surface (METH Stage 2, issue #120)
   # ==========================================================================
@@ -1463,6 +1985,142 @@ paths:
                     items: { $ref: '#/components/schemas/BusinessSummary' }
                   pageInfo: { $ref: '#/components/schemas/PageInfo' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+    post:
+      operationId: createBusiness
+      summary: Add a client
+      description: |
+        Client intake (SoT §24.5, D47). **It asks for no connections.** No bank
+        connection, no accounting-software connection — both steps are skipped
+        entirely, and an intake form that grew one back would be building the
+        wrong product.
+
+        `contextQuestionnaire` is REQUIRED, and that is the whole weight of this
+        operation. D47 removed the ledger-synced chart of accounts, so the
+        business-type profile captured here is the ONLY context the coding
+        engine gets (§24.4) and the only basis on which an uploaded document can
+        be judged acceptable for this business (D46). A client created without
+        it is a client whose documents cannot be coded, so the contract refuses
+        it rather than letting the gap surface six weeks later as bad
+        categorisation.
+
+        The primary contact's email is the client's **registered address**: D45
+        gates every intake channel on known senders, so this is not a
+        convenience field, it is the identity the email and portal channels
+        check against.
+
+        This resource is called `businesses` and not `clients` on purpose. The
+        UI word is "client"; the resource is the same one `GET /businesses`
+        already serves, `businessId` already filters on, and `Business` is
+        already named in prisma. A second name for one resource is a second
+        door, and this contract has exactly one door per resource (see
+        packages/contracts/CLAUDE.md, convention 1).
+      tags: [businesses]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BusinessCreateRequest' }
+      responses:
+        '201':
+          description: The new client workspace.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Business' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /businesses/{businessId}/members:
+    parameters:
+      - $ref: '#/components/parameters/BusinessId'
+    get:
+      operationId: listBusinessMembers
+      summary: Who can reach this client workspace
+      description: |
+        The client's own people and the practice staff assigned to them.
+
+        **SYSTEM users are never listed.** A worker's actor is a real user row
+        with a real membership (issue #17) so that machine writes go through the
+        same predicate as human ones — but it has no email, no password and no
+        sessions, and showing it in a team list would invite someone to try to
+        invite, seat-count or deactivate it.
+      tags: [businesses]
+      x-nt-side-effect: none
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of members.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pageInfo]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/BusinessMember' }
+                  pageInfo: { $ref: '#/components/schemas/PageInfo' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+    post:
+      operationId: inviteBusinessMember
+      summary: Invite someone to a client workspace
+      description: |
+        Creates an invite and emails it. D45 makes this the mechanism by which a
+        client's own team members become permitted senders — "only that number
+        and team members the client has added may upload" — so an invite is an
+        identity decision, not an access convenience.
+
+        **Only the three business-level roles are accepted here**:
+        `BUSINESS_ADMIN`, `USER_ADMIN`, `BUSINESS_STANDARD`. The field takes the
+        whole `WorkspaceRole` enum because there is exactly one copy of that
+        enum in this contract and a subset schema would be a second copy free to
+        drift from prisma; a practice-level role sent here is refused with
+        `NT-VAL-001`.
+
+        The invite token is never returned. It exists in the email and in
+        `invites.token_hash`, and nowhere else — an invite readable from an API
+        response is an invite anyone with read access can accept.
+      tags: [businesses]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MemberInviteRequest' }
+      responses:
+        '201':
+          description: The invite. Without its token.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invite' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
 
@@ -1690,6 +2348,74 @@ paths:
                 detail: Webhook signature missing or invalid.
                 traceId: 01J8XN2ZQ5R7TQ9E3M4K6P
 
+
+  /webhooks/stripe:
+    post:
+      operationId: receiveStripeWebhook
+      summary: Inbound Stripe event
+      description: |
+        The only thing that moves a business's subscription state. Checkout
+        completing, a renewal succeeding, a card failing, a cancellation: all of
+        it arrives here, and none of it is inferred from a redirect. A client who
+        closes the tab on Stripe's success page is still subscribed, because
+        Stripe said so on this endpoint and not because a browser came back.
+
+        The signature is verified against the **raw** body before anything is
+        parsed. A framework that has already JSON-parsed and re-serialised the
+        body computes a different HMAC over the same event, which fails
+        verification for a reason that looks nothing like the cause.
+
+        ⚠ **THIS RUNS WITH NO SESSION, AND RLS FAILS CLOSED AND SILENT.** There
+        is no actor, so every policy branch is false and an unscoped read returns
+        nothing rather than erroring. The tenant is therefore resolved
+        explicitly from the Stripe customer id, and the handler must assert it
+        matched **exactly one** business — `businesses.stripe_customer_id` is
+        UNIQUE so that assertion is structural rather than hopeful. A
+        subscription written to the wrong tenant would be invisible to everyone,
+        including us.
+
+        ⚠ **Entitlement is enforced in the SERVICE LAYER, never in `scopedDb` or
+        an RLS policy.** Entitlement inside RLS would silently break D32's
+        export-at-cancellation promise: an unsubscribed tenant would not see a
+        billing message, they would see an empty workspace, and their own data
+        would appear to have been deleted. Reading and exporting survive a lapse;
+        new uploads do not.
+
+        Events arrive out of order and more than once. Every handler is
+        idempotent on the Stripe event id, and a subscription update older than
+        the one already stored is discarded rather than applied.
+      tags: [webhooks]
+      x-nt-side-effect: ingest
+      security:
+        - stripeSignature: []
+      requestBody:
+        required: true
+        description: |
+          Stripe's event envelope, passed through as received. Deliberately
+          untyped here, for the reason the WhatsApp receiver gives: this contract
+          does not own Stripe's schema and a pinned copy of it would rot. It is
+          Zod-parsed at the boundary against the shapes the handler actually
+          reads, and an event type we do not handle is acknowledged and ignored.
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: |
+            Acknowledged. Returned once the signature verifies, including for
+            event types this handler ignores — Stripe retries anything else, and
+            a retry storm is worse than a no-op.
+        '401':
+          description: |
+            Signature missing, malformed or failing verification — `NT-INT-001`,
+            the same single code the WhatsApp receiver uses and for the same
+            reason: telling an unauthenticated caller which part of their
+            signature was wrong hands them an oracle for free.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
 # ============================================================================
 # COMPONENTS
 # ============================================================================
@@ -1733,6 +2459,16 @@ components:
             documents:read: Read documents, extractions and processing logs
             documents:write: Create documents and propose document actions
             proposals:read: Read action proposals
+
+    stripeSignature:
+      type: apiKey
+      in: header
+      name: Stripe-Signature
+      description: |
+        Stripe's HMAC-SHA256 over the RAW request body plus a timestamp.
+        Verified before the body is parsed — a framework that has already
+        JSON-parsed and re-serialised the body computes a different HMAC over
+        the same event. Replays outside Stripe's tolerance are rejected.
 
     whatsappSignature:
       type: apiKey
@@ -1787,6 +2523,27 @@ components:
       in: path
       required: true
       schema: { type: string }
+
+    BusinessId:
+      name: businessId
+      in: path
+      required: true
+      schema: { type: string }
+
+    DocumentLinkCode:
+      name: code
+      in: path
+      required: true
+      description: |
+        The capability code from an exported row. Six to eight URL-safe
+        characters, at least one of them a LETTER — VT coerces numeric-looking
+        strings in `Entry details` into 2-decimal numbers, which would silently
+        corrupt an all-digit code.
+      schema:
+        type: string
+        minLength: 6
+        maxLength: 12
+        pattern: '^[A-Za-z0-9_-]*[A-Za-z][A-Za-z0-9_-]*$'
 
     IdempotencyKey:
       name: Idempotency-Key
@@ -1972,6 +2729,18 @@ components:
         # batch only with Total + Supplier + Category present; refusing at
         # proposal time beats publishing half-coded books.
         - NT-PUB-001   # document not publishable — mandatory fields missing
+        # Export and the capability URL (EXP family, ID LAW batch). Under D42
+        # export is the ONLY way data leaves the product, so a refusal here is
+        # not a minor inconvenience — it is the delivery not happening, and it
+        # has to say which of the three reasons it was.
+        - NT-EXP-001   # nothing reached Published in that period for that client
+        - NT-EXP-002   # capability link revoked or expired
+        - NT-EXP-003   # more rows than one synchronous export may carry
+        # Billing (BIL family, D48). Not INT: that family is integration AUTH,
+        # and an alert that cannot tell "a webhook signature failed" from "a
+        # client's card was declined" is two incidents sharing one pager.
+        - NT-BIL-001   # this business has no active subscription
+        - NT-BIL-002   # this business already has an active subscription
         - NT-PRP-001   # unknown action kind
         - NT-PRP-002   # approve attempted before the review was opened
         - NT-PRP-003   # proposal expired
@@ -2191,6 +2960,43 @@ components:
         fine-grained permissions are checked at call sites, never inferred
         from the role name.
       enum: [PRACTICE_ADMIN, CLIENT_ADMIN, PRACTICE_STANDARD, BUSINESS_ADMIN, USER_ADMIN, BUSINESS_STANDARD]
+
+    IntegrationKind:
+      type: string
+      description: |
+        Mirrors the Prisma `IntegrationKind` enum exactly.
+
+        ⚠ `VT` and `MANUAL` are why anything can reach Published at all. The
+        publish executor resolves an Integration before it will admit a
+        document, and under D42 there is no ledger connection to make — no
+        adapter, no OAuth flow, no endpoint, and D47 forbids intake from asking
+        for one. Without a value that means "this client exports rather than
+        connects", every document stopped at READY forever and the export had
+        nothing to export.
+
+        Neither value carries a token, an org ref or a health state, and neither
+        may ever become an adapter call. The four ledger vendors remain for v1
+        (D6), which D42 supersedes for this release only.
+      enum: [XERO, QUICKBOOKS, SAGE, FREEAGENT, VT, MANUAL]
+
+    ExportTarget:
+      type: string
+      description: |
+        Mirrors the Prisma `ExportTarget` enum exactly. Two values, not the five
+        SoT §24.3 names as the eventual target set: an enum value with no emitter
+        behind it is a 500 waiting for whoever passes it, so Xero and Sage arrive
+        with their emitters or not at all.
+      enum: [VT_TRANSACTION_PLUS, GENERIC_CSV]
+
+    SubscriptionStatus:
+      type: string
+      description: |
+        Mirrors the Prisma `SubscriptionStatus` enum exactly — Stripe's own
+        statuses, upper-cased. All eight, though ID's flow touches four, because
+        the webhook writes whatever Stripe sends and a value the enum does not
+        admit must be a failed write (loud, retried by Stripe, visible) rather
+        than a silently stale entitlement.
+      enum: [INCOMPLETE, INCOMPLETE_EXPIRED, TRIALING, ACTIVE, PAST_DUE, CANCELED, UNPAID, PAUSED]
 
     SplitMode:
       type: string
@@ -2424,6 +3230,20 @@ components:
               oneOf:
                 - $ref: '#/components/schemas/Extraction'
                 - type: 'null'
+            links:
+              type: array
+              description: |
+                The capability URLs minted for this document (D43) — what an
+                accountant reads before deciding to revoke one, and the read
+                surface behind the `document.revoke-link` proposal. Revoked
+                links stay in the list with their `revokedAt` set: a link that
+                vanished on revocation would leave "why does the code in my
+                January export return 410" with no answer anywhere.
+
+                **Optional, not required** — for the same reason
+                `BusinessSummary.subscription` is: this shape is added ahead of
+                the export lane rather than with it.
+              items: { $ref: '#/components/schemas/DocumentLink' }
             createdAt: { type: string, format: date-time }
             updatedAt: { type: string, format: date-time }
 
@@ -2669,6 +3489,7 @@ components:
         - publish.batch           # publish reviewed documents to the ledger; review shows the server-computed preview
         - bank.confirm-match      # confirm a suggested document ↔ transaction match
         - rule.create             # create a coding rule; it activates only on approval
+        - document.revoke-link    # revoke capability URLs already sitting in someone's ledger
 
     CreateActionProposalRequest:
       description: |
@@ -2688,6 +3509,7 @@ components:
         - $ref: '#/components/schemas/PublishBatchProposalRequest'
         - $ref: '#/components/schemas/BankConfirmMatchProposalRequest'
         - $ref: '#/components/schemas/RuleCreateProposalRequest'
+        - $ref: '#/components/schemas/RevokeLinkProposalRequest'
       discriminator:
         propertyName: kind
         mapping:
@@ -2702,6 +3524,7 @@ components:
           publish.batch: '#/components/schemas/PublishBatchProposalRequest'
           bank.confirm-match: '#/components/schemas/BankConfirmMatchProposalRequest'
           rule.create: '#/components/schemas/RuleCreateProposalRequest'
+          document.revoke-link: '#/components/schemas/RevokeLinkProposalRequest'
 
     ProposalRequestBase:
       type: object
@@ -2808,6 +3631,15 @@ components:
           properties:
             kind: { const: rule.create }
             payload: { $ref: '#/components/schemas/RuleCreatePayload' }
+
+    RevokeLinkProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: document.revoke-link }
+            payload: { $ref: '#/components/schemas/RevokeLinkPayload' }
 
     RoutePayload:
       type: object
@@ -3056,6 +3888,40 @@ components:
             vatTreatment: { type: string }
             description: { type: string }
           additionalProperties: false
+
+    RevokeLinkPayload:
+      type: object
+      description: |
+        Kills capability URLs that have already left our control (D43).
+
+        **This is a state change with a real outward consequence**, which is why
+        it is a proposal and not a `DELETE`. The links being revoked are sitting
+        inside an accountant's ledger file right now; revoking one turns a
+        working entry into a `410`, and whoever presses the button should have
+        read a review saying exactly which documents stop being reachable.
+
+        Batched like every other document kind — a review card for "revoke the
+        eleven links in January's export" is more useful than eleven approvals,
+        and it keeps the bulk path and the single path identical.
+
+        Revocation mints no replacement. A document whose link was revoked has
+        no live link until the next export creates one, and that new link
+        carries a new code — which is the point: an old code that still resolved
+        would not have been revoked.
+      required: [documentLinkIds]
+      properties:
+        documentLinkIds:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items: { type: string }
+        reason:
+          type: [string, 'null']
+          maxLength: 500
+          description: |
+            Why, for the audit trail and for the review card. Untrusted only in
+            the sense that every free-text field is — it is wrapped before any
+            model sees it.
 
     ActionProposal:
       type: object
@@ -3326,6 +4192,438 @@ components:
             one. Null lets extraction decide — the pipeline compares the
             extraction against every open item regardless (SoT Stage 8.5).
 
+    # ---- practices, clients and team (ID LAW batch) ------------------------
+
+    PracticeSignupRequest:
+      type: object
+      description: |
+        Everything needed to bring a tenant into being. Nothing optional here is
+        decoration: the first user becomes the practice super admin, which is
+        D44's release authority, so a signup that could not name a person would
+        create a practice nobody is accountable for.
+      required: [practiceName, firstName, lastName, email, password, acceptedTermsVersion]
+      properties:
+        practiceName: { type: string, minLength: 1, maxLength: 200 }
+        firstName: { type: string, minLength: 1, maxLength: 100 }
+        lastName: { type: string, minLength: 1, maxLength: 100 }
+        email:
+          type: string
+          format: email
+          description: |
+            The super admin's login and the address the verification mail goes
+            to. The account is unusable until it is verified.
+        password:
+          type: string
+          minLength: 12
+          maxLength: 256
+          description: |
+            Minimum twelve characters, checked here so a weak password is the
+            caller's own `400` rather than a silent acceptance. Length only — a
+            composition rule (one upper, one digit, one symbol) reliably produces
+            `Password1!` and a shorter search space than twelve free characters.
+        acceptedTermsVersion:
+          type: string
+          maxLength: 40
+          description: |
+            The version of the terms shown on the screen the caller accepted.
+            Recorded as an `audit_events` row rather than a column: what a person
+            agreed to and when is an event about a person, and the audit stream
+            is append-only and hash-chained. A signup naming a version that is
+            not the one in force is refused.
+
+    BusinessContextQuestionnaire:
+      type: object
+      description: |
+        The business-type profile (SoT §5.1, §24.4). **This is the only coding
+        context the AI gets in ID.** D47 removed the ledger connection, so there
+        is no synced chart of accounts to lean on: what is here decides how a
+        document is categorised, and it is what D46 judges "is this acceptable
+        evidence for this kind of business" against.
+
+        Free text on purpose. A dropdown of industries would be cheaper to store
+        and worth less to a model than one honest sentence about what the
+        business actually does.
+      required: [businessActivity]
+      properties:
+        businessActivity:
+          type: string
+          minLength: 3
+          maxLength: 500
+          description: What the business actually does, in the accountant's own words.
+        typicalSuppliers:
+          type: array
+          maxItems: 50
+          items: { type: string, maxLength: 200 }
+          description: Names the coding engine should expect to see, and A6 seeds supplier rules from.
+        typicalCosts:
+          type: array
+          maxItems: 50
+          items: { type: string, maxLength: 200 }
+          description: The cost categories this business actually incurs — what its chart of accounts is seeded from.
+        hasEmployees: { type: boolean }
+        usesSubcontractors: { type: boolean }
+        notes:
+          type: string
+          maxLength: 2000
+          description: |
+            Anything else the accountant knows. Untrusted content: wrapped before
+            any model sees it, like every other free-text field in this contract.
+
+    BusinessPrimaryContact:
+      type: object
+      description: |
+        The client's own person. Their email is the **registered address** D45
+        gates the email and portal channels on, so this is an identity record,
+        not a convenience field.
+      required: [firstName, lastName, email]
+      properties:
+        firstName: { type: string, minLength: 1, maxLength: 100 }
+        lastName: { type: string, minLength: 1, maxLength: 100 }
+        email: { type: string, format: email }
+        mobileE164:
+          type: [string, 'null']
+          pattern: '^\+[1-9][0-9]{7,14}$'
+          description: |
+            Optional in ID. Kept in the shape because the schema carries it and
+            v1's chase channel is SMS — but ID sends no SMS, and a screen that
+            implies otherwise is wrong copy.
+
+    BusinessCreateRequest:
+      type: object
+      description: |
+        Client intake. **No bank connection and no accounting-software
+        connection appear here, deliberately (D47)** — if a field for one shows
+        up in a later revision, the wrong product is being built.
+      required: [name, primaryContact, contextQuestionnaire]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        tradingName: { type: [string, 'null'], maxLength: 200 }
+        companyNumber: { type: [string, 'null'], maxLength: 20 }
+        industry: { type: [string, 'null'], maxLength: 200 }
+        vatRegistered: { type: boolean, default: false }
+        vatNumber: { type: [string, 'null'], maxLength: 20 }
+        primaryContact: { $ref: '#/components/schemas/BusinessPrimaryContact' }
+        contextQuestionnaire: { $ref: '#/components/schemas/BusinessContextQuestionnaire' }
+
+    BusinessSubscription:
+      type: object
+      description: |
+        The local projection of what Stripe knows (D48). It is a projection and
+        never the source of truth — Stripe is, and this is updated only by
+        `POST /webhooks/stripe`.
+
+        There is no price in this object on purpose. The amount, the VAT and the
+        gross total are shown by Stripe's own hosted checkout and on Stripe's own
+        invoice, which is where they are correct; a second copy here would be a
+        second thing to keep in step with a tax rate.
+      required: [status]
+      properties:
+        status: { $ref: '#/components/schemas/SubscriptionStatus' }
+        plan: { type: [string, 'null'] }
+        currentPeriodEnd:
+          type: [string, 'null']
+          format: date-time
+          description: When the current paid period ends — the renewal date a settings screen shows.
+
+    Business:
+      type: object
+      description: |
+        One client workspace. `BusinessSummary` is the row shape for lists; this
+        is the record.
+      required: [id, name, isActive, createdAt]
+      properties:
+        id: { type: string }
+        practiceId:
+          type: [string, 'null']
+          description: Null for a standalone business — there is no practice above them.
+        name: { type: string }
+        tradingName: { type: [string, 'null'] }
+        companyNumber: { type: [string, 'null'] }
+        industry: { type: [string, 'null'] }
+        vatRegistered: { type: boolean }
+        vatNumber: { type: [string, 'null'] }
+        countryCode: { type: string, pattern: '^[A-Z]{2}$' }
+        baseCurrency: { type: string, pattern: '^[A-Z]{3}$' }
+        contextQuestionnaire:
+          oneOf:
+            - $ref: '#/components/schemas/BusinessContextQuestionnaire'
+            - type: 'null'
+        subscription:
+          description: Null until the client has been through checkout.
+          oneOf:
+            - $ref: '#/components/schemas/BusinessSubscription'
+            - type: 'null'
+        isActive: { type: boolean }
+        createdAt: { type: string, format: date-time }
+
+    BusinessMember:
+      type: object
+      description: |
+        One person who can reach this workspace, and what they may do in it.
+        SYSTEM actors never appear — see the operation description.
+      required: [membershipId, userId, role]
+      properties:
+        membershipId: { type: string }
+        userId: { type: string }
+        email: { type: [string, 'null'], format: email }
+        firstName: { type: [string, 'null'] }
+        lastName: { type: [string, 'null'] }
+        role: { $ref: '#/components/schemas/WorkspaceRole' }
+        scope:
+          type: string
+          enum: [practice, business]
+          description: |
+            Whether they reach this workspace through a practice-wide membership
+            or one on this business alone. The difference is what "remove from
+            this client" can and cannot do.
+        hideFinancialFields:
+          type: boolean
+          description: A non-finance submitter sees their submission, not the coding (SoT §3.3).
+        isOwner: { type: boolean }
+        createdAt: { type: string, format: date-time }
+
+    MemberInviteRequest:
+      type: object
+      required: [email, role]
+      properties:
+        email: { type: string, format: email }
+        firstName: { type: [string, 'null'], maxLength: 100 }
+        lastName: { type: [string, 'null'], maxLength: 100 }
+        role:
+          $ref: '#/components/schemas/WorkspaceRole'
+          description: |
+            Only `BUSINESS_ADMIN`, `USER_ADMIN` and `BUSINESS_STANDARD` are
+            accepted on this route; a practice-level role is refused with
+            `NT-VAL-001`. The whole enum is referenced rather than a subset
+            because there is exactly one copy of `WorkspaceRole` in this
+            contract, checked against prisma verbatim, and a subset schema would
+            be a second copy free to drift.
+        hideFinancialFields:
+          type: boolean
+          default: false
+          description: For a non-finance submitter who should see their submission but not its coding (SoT §3.3).
+
+    Invite:
+      type: object
+      description: |
+        An outstanding invitation. **The token is never here.** It exists in the
+        email and in `invites.token_hash`, and nowhere else — an invite readable
+        from an API response is an invite that anyone with read access can
+        accept.
+      required: [id, role, expiresAt, createdAt]
+      properties:
+        id: { type: string }
+        businessId: { type: [string, 'null'] }
+        practiceId: { type: [string, 'null'] }
+        email: { type: [string, 'null'], format: email }
+        role: { $ref: '#/components/schemas/WorkspaceRole' }
+        expiresAt: { type: string, format: date-time }
+        acceptedAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+
+    # ---- export and the capability URL (ID LAW batch) ----------------------
+
+    ExportRequest:
+      type: object
+      description: |
+        One client, one target, one period. `documentIds` narrows it further for
+        the single-item export D42 requires alongside the bulk one.
+      required: [businessId, target, periodStart, periodEnd]
+      properties:
+        businessId: { type: string }
+        target: { $ref: '#/components/schemas/ExportTarget' }
+        periodStart:
+          type: string
+          format: date
+          description: |
+            Inclusive. A calendar date, not an instant — a period has a first
+            day, not a first microsecond. Rendered `DD/MM/YYYY`: `04/08/2026` is
+            4 August.
+        periodEnd:
+          type: string
+          format: date
+          description: Inclusive.
+        documentIds:
+          type: array
+          maxItems: 500
+          items: { type: string }
+          description: |
+            Export exactly these, instead of everything Published in the period.
+            An id outside the period, outside the client, or not yet Published is
+            refused rather than silently skipped — a short export file that
+            looked complete is the failure this whole surface is designed
+            against.
+
+    ExportWarning:
+      type: object
+      description: |
+        Something that did not survive the target's own limits. §24.3.4: VT
+        accepts one nominal per row and three of the five ID targets accept no
+        line items at all, so a multi-nominal document collapses. Silent
+        flattening is the failure mode to design against; this is the telling.
+      required: [code, message]
+      properties:
+        documentId: { type: [string, 'null'] }
+        code:
+          type: string
+          description: 'Stable, e.g. `analysis-collapsed`, `line-items-dropped`, `field-truncated`.'
+        message:
+          type: string
+          description: What did not travel, in words an accountant can act on.
+
+    Export:
+      type: object
+      description: |
+        One export, and the files it produced. **Nothing was transmitted
+        anywhere** — D42 makes *Published* an internal state meaning approved and
+        released for export, and this record asserts nothing about any ledger.
+      required: [id, businessId, target, state, createdAt]
+      properties:
+        id: { type: string }
+        businessId: { type: string }
+        target: { $ref: '#/components/schemas/ExportTarget' }
+        periodStart: { type: [string, 'null'], format: date }
+        periodEnd: { type: [string, 'null'], format: date }
+        rowCount:
+          type: [integer, 'null']
+          minimum: 0
+          description: |
+            Canonical rows written. The accountant reconciles this against what
+            VT's Universal Input Sheet shows before pressing Post, which is the
+            one moment a silently short file gets caught by a human.
+        documentCount:
+          type: [integer, 'null']
+          minimum: 0
+          description: Source documents in the bundle. Differs from `rowCount` wherever a document collapsed or split.
+        state:
+          type: string
+          description: |
+            `queued`, `succeeded` or `failed`. Free text rather than an enum
+            because `exports.state` is TEXT in prisma and a contract enum with no
+            column behind it is a value free to drift. ID generates
+            synchronously, so in practice this is `succeeded` by the time the
+            caller reads it.
+        file:
+          description: The import file. Short-lived URL — re-request rather than caching it.
+          oneOf:
+            - $ref: '#/components/schemas/FileAccess'
+            - type: 'null'
+        bundle:
+          description: |
+            ZIP of the source documents plus the manifest, filenames carrying the
+            same capability codes as the rows (D43 rung 4).
+          oneOf:
+            - $ref: '#/components/schemas/FileAccess'
+            - type: 'null'
+        warnings:
+          type: array
+          items: { $ref: '#/components/schemas/ExportWarning' }
+        createdAt: { type: string, format: date-time }
+        completedAt: { type: [string, 'null'], format: date-time }
+
+    DocumentLink:
+      type: object
+      description: |
+        A capability URL onto one document (D43). View-only, revocable,
+        access-logged, and expiring on the practice's own setting.
+      required: [id, code, url, accessCount, createdAt]
+      properties:
+        id: { type: string }
+        code:
+          type: string
+          description: |
+            What goes in the export's `Entry details` column. Contains at least
+            one letter — VT coerces numeric-looking strings there into 2-decimal
+            numbers.
+        url:
+          type: string
+          format: uri
+          description: |
+            The whole link, as it appears in `Transaction notes`. Short by
+            necessity: reference fields in the targets truncate SILENTLY at 30
+            and ~25 characters, and a truncated link looks correct and resolves
+            to nothing.
+        expiresAt: { type: [string, 'null'], format: date-time }
+        revokedAt: { type: [string, 'null'], format: date-time }
+        accessCount:
+          type: integer
+          minimum: 0
+          description: How many times it has been opened. With `lastAccessedAt`, the whole of what an accountant wants before revoking one.
+        lastAccessedAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+
+    # ---- billing (D48) -----------------------------------------------------
+
+    CheckoutSessionRequest:
+      type: object
+      required: [businessId, successUrl, cancelUrl]
+      properties:
+        businessId:
+          type: string
+          description: The client business being subscribed. D48 charges the client, not the practice.
+        successUrl:
+          type: string
+          format: uri
+          description: |
+            Where Stripe returns the client on success. Validated against an
+            allowlist of our own origins — an unvalidated return URL on an
+            authenticated endpoint is an open redirect with a session attached.
+
+            **It is not proof of payment.** A client who closes the tab is still
+            subscribed, and one who reaches this URL is not subscribed until the
+            webhook says so.
+        cancelUrl: { type: string, format: uri }
+
+    BillingPortalSessionRequest:
+      type: object
+      required: [businessId, returnUrl]
+      properties:
+        businessId: { type: string }
+        returnUrl:
+          type: string
+          format: uri
+          description: Validated against our own origins, for the reason `successUrl` gives.
+
+    HostedBillingSession:
+      type: object
+      description: |
+        A Stripe-hosted URL and when it stops working. One shape for both
+        checkout and the customer portal: they differ in what Stripe shows, not
+        in what we hand back.
+      required: [url]
+      properties:
+        url: { type: string, format: uri }
+        expiresAt: { type: [string, 'null'], format: date-time }
+
+    # ---- portal onboarding (ID LAW batch) ----------------------------------
+
+    PortalSignInCodeRequest:
+      type: object
+      required: [setupToken, email]
+      properties:
+        setupToken:
+          type: string
+          description: From the setup link the accountant sent. Names the workspace being set up.
+        email:
+          type: string
+          format: email
+          description: |
+            The address the client was registered with (D45). A mismatch is not
+            reported — the response is `202` either way.
+
+    PortalOnboardingSessionRequest:
+      type: object
+      required: [setupToken, email, otp]
+      properties:
+        setupToken: { type: string }
+        email: { type: string, format: email }
+        otp:
+          type: string
+          pattern: '^[0-9]{6}$'
+          description: |
+            The six digits from the email. Single use, short expiry, attempt
+            limited. Never logged, never in a URL, never in a response.
+
     # ---- publishing (SoT Stage 10 — METH Stage 2, issue #120) ---------------
 
     Publish:
@@ -3413,3 +4711,16 @@ components:
               type: integer
               minimum: 0
               description: REJECTED and FAILED together — the Rejected/Failed view's badge.
+        subscription:
+          description: |
+            The client's subscription (D48), for the settings Plan section and
+            for showing a lapsed client in the switcher rather than letting them
+            discover it at the next upload.
+
+            **Optional, not required** — deliberately. Making it required would
+            oblige every producer of this shape to populate it in the same PR as
+            the contract change, and this surface is added ahead of the billing
+            lane rather than with it.
+          oneOf:
+            - $ref: '#/components/schemas/BusinessSubscription'
+            - type: 'null'

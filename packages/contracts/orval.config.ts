@@ -11,11 +11,40 @@
  */
 import { defineConfig } from 'orval';
 
+/**
+ * `GET /d/{code}` is declared in the contract and deliberately NOT generated.
+ *
+ * It is the one operation served at the origin root instead of under `/v1` —
+ * the capability URL has to fit inside a ledger reference field that truncates
+ * silently at ~25-30 characters (SoT §24.3.2), and a version segment no human
+ * will ever type is not what that budget should be spent on.
+ *
+ * `ntFetch` builds every request as `baseUrl() + url` with `/v1` already inside
+ * `baseUrl()`, and orval emits path-relative URLs — it ignores a path-item
+ * `servers` override, measured on v7.21 rather than assumed. So a generated
+ * caller would request `/v1/d/{code}`: a URL nothing serves, failing as a 404
+ * that reads like a missing document rather than a wrong base.
+ *
+ * Excluding it is the honest fix. Nothing in our own frontend should call this
+ * route — it is typed or pasted into a browser by an accountant sitting inside
+ * VT Transaction+ — while the contract keeps declaring it, because it is real
+ * public surface and check-contract.mjs has to see it.
+ */
+// ⚠ NOT `as const`. orval types `filters.tags` as a MUTABLE `(string |
+// RegExp)[]`, so a readonly tuple is not assignable and this file stops
+// typechecking — the annotation below is what pins the union member of `mode`
+// without freezing the array.
+const CAPABILITY_LINK_EXCLUSION: { mode: 'exclude'; tags: string[] } = {
+  mode: 'exclude',
+  tags: ['capability-links'],
+};
+
 export default defineConfig({
   /** Typed client + TanStack Query hooks + MSW handlers — consumed by apps/web. */
   client: {
     input: {
       target: './openapi.yaml',
+      filters: CAPABILITY_LINK_EXCLUSION,
     },
     output: {
       // ⚠ EVERY PATH IN THIS BLOCK IS RELATIVE TO `workspace`, NOT TO THIS
@@ -75,6 +104,7 @@ export default defineConfig({
   zod: {
     input: {
       target: './openapi.yaml',
+      filters: CAPABILITY_LINK_EXCLUSION,
     },
     output: {
       // Workspace-relative, as in the client project above.

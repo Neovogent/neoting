@@ -48,6 +48,15 @@ const MIRRORED_ENUMS = [
   'PublishMode',
   'PublishState',
   'RuleTier',
+  // ID LAW batch (docs/launch/SHAKIB.md S0). IntegrationKind is the reason this
+  // list matters rather than a nicety: its contents decide whether a document
+  // can reach Published at all, and it was wrong -- {XERO, QUICKBOOKS, SAGE,
+  // FREEAGENT} under a release that has no ledger adapter (D42). Now that VT and
+  // MANUAL exist, the drift check is what stops the enum being quietly wrong
+  // again for the six weeks before someone tries to publish.
+  'IntegrationKind',
+  'ExportTarget',
+  'SubscriptionStatus',
 ];
 
 const failures = [];
