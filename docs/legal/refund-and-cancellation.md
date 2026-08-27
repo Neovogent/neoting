@@ -1,17 +1,17 @@
 > ### ⚠ CONTRACTING ENTITY IS TEMPORARY — READ BEFORE PUBLISHING
 >
 > For the **first customer only**, the contracting entity and merchant of record is
-> **Exambinary Holding Ltd**, because that is the company holding the live Stripe account
+> **EXAM BINARY LTD**, because that is the company holding the live Stripe account
 > (`acct_1RQtbxGMdHp4NCWv`). Decision taken 26 Aug 2026.
 >
 > This matters and is not cosmetic:
-> - The customer's **card statement** will read Exambinary. If the contract named a
+> - The customer's **card statement** will read Exam Binary. If the contract named a
 >   different company, an accountant who does not recognise the name raises a chargeback.
-> - The **VAT invoice comes from Exambinary's VAT registration**, because HMRC requires the
+> - The **VAT invoice comes from Exam Binary's VAT registration**, because HMRC requires the
 >   invoice to come from the entity that made the supply. Neovogent's VAT number is not the
 >   one that belongs on it.
 >
-> So every reference below names Exambinary. **When Stripe moves to
+> So every reference below names Exam Binary. **When Stripe moves to
 > NEOVOGENT AI SOLUTIONS UK LTD** (company no. 15946429, registered office Suite 5,
 > The Cloisters, 11–12 George Road, Edgbaston, Birmingham B15 1NP), these documents change
 > back in the same commit as the Stripe migration — not before, and not after.
@@ -67,7 +67,7 @@ DRAFTING MAP — which parts are fixed by law, and which are our own commercial 
 
 ## 2. How to cancel
 
-2.1 **Yourself, in the app.** Sign in at [https://neoacc.neovogent.com/app](https://neoacc.neovogent.com/app) and open the billing link at [PLACEHOLDER: exact location of the Billing link in /app]. That opens the Stripe customer portal, where you can cancel immediately. You do not need our permission and you do not need to raise a ticket.
+2.1 **Yourself, in the app.** Sign in at [https://neoacc.neovogent.com/app](https://neoacc.neovogent.com/app) and open the billing link at Settings › Billing in the app. That opens the Stripe customer portal, where you can cancel immediately. You do not need our permission and you do not need to raise a ticket.
 
 2.2 **By email.** Write to **support@neovogent.com** from an email address on the account and say you want to cancel. We reply within 24 hours, and we act on the request the same working day. Our support hours are 06:00–18:00 UK time.
 
@@ -96,7 +96,7 @@ DRAFTING MAP — which parts are fixed by law, and which are our own commercial 
 
 4.3 Refunds are made through Stripe, back to the card we originally charged, and include the VAT charged on that payment. How quickly it appears is set by your card issuer, not by us.
 
-4.4 Tell us within [PLACEHOLDER: confirm the window for reporting an incorrect charge — 90 days is a common choice] of the charge appearing on your statement, so we can still reverse it in Stripe rather than send money separately.
+4.4 Tell us within 90 days of the charge appearing on your statement, so we can still reverse it in Stripe rather than send money separately.
 
 ## 5. Goodwill refunds
 
@@ -108,7 +108,7 @@ DRAFTING MAP — which parts are fixed by law, and which are our own commercial 
 
 ## 6. Your data when you cancel
 
-6.1 You are the data controller for your clients' documents and data. We only process them on your instructions. Nothing in this policy overrides your Data Processing Agreement with us at [PLACEHOLDER: link to the DPA].
+6.1 You are the data controller for your clients' documents and data. We only process them on your instructions. Nothing in this policy overrides your Data Processing Agreement with us at /legal/data-processing-terms.
 
 6.2 **You can export everything yourself, at any time, without a support ticket.** That includes the documents you uploaded, the data we read from them, and an index of what is in the export.
 
@@ -122,7 +122,7 @@ DRAFTING MAP — which parts are fixed by law, and which are our own commercial 
 
 ## 7. Failed payments
 
-7.1 If a card payment fails, Stripe will retry it and we will email you. [PLACEHOLDER: confirm the retry schedule, any grace period, and the point at which access is suspended.]
+7.1 If a card payment fails, Stripe will retry it and we will email you. Stripe retries the card on its own schedule and emails you each time. There is no grace period beyond those retries: the moment the subscription is no longer active or trialling, new documents stop being accepted for that client business. Nothing already in the account is deleted, and it stays exportable.
 
 7.2 **We do not delete your data because a payment failed.** If we suspend access for non-payment, the export route in clause 6 stays open to you.
 
@@ -150,20 +150,20 @@ DRAFTING MAP — which parts are fixed by law, and which are our own commercial 
 
 10.1 We may change this policy. The version and date at the bottom always tell you which version you are reading.
 
-10.2 If we change the price, we will email you at least [PLACEHOLDER: notice period for price changes — 30 days is a common choice] before the new price is charged, so you can cancel first under clause 2 if you would rather not pay it.
+10.2 If we change the price, we will email you at least 30 days before the new price is charged, so you can cancel first under clause 2 if you would rather not pay it.
 
 10.3 A change to this policy never applies retrospectively to a payment you have already made.
 
 ## 11. Who we are
 
-**Exambinary Holding Ltd** [PLACEHOLDER: confirm the exact registered name at Companies House], a company registered in England and Wales, company number [PLACEHOLDER: Exambinary company number], registered office [PLACEHOLDER: Exambinary registered office], VAT registration number [PLACEHOLDER: Exambinary VAT number], trading as Exambinary.
+**EXAM BINARY LTD**, trading as Exam Binary.
 
-- Company number: [PLACEHOLDER: Exambinary company number]
-- Registered office: [PLACEHOLDER: Exambinary registered office], Birmingham, United Kingdom
+- Company number: 16261850
+- Registered office: Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham, West Midlands B15 1NP, United Kingdom
 - Tax ID: 9286810564
-- VAT registration number: [PLACEHOLDER: UK VAT registration number. 9286810564 is the company TAX ID, not the VAT number — the VAT registration number is a separate nine-digit reference and must be obtained before any invoice is issued]
+- VAT registration number: [PLACEHOLDER: EXAM BINARY LTD’s UK VAT registration number — nine digits, format GB123456789. Not on Companies House; take it from the company’s VAT certificate or HMRC online account. `9286810564` is a TAX ID and is NOT it. Stripe’s tax-ID field expects a `gb_vat` value, and an invoice carrying the wrong registration number is not a valid VAT invoice.]
 - Support and billing: **support@neovogent.com** — replies within 24 hours, 06:00–18:00 UK time
-- Related documents: Terms of Service [PLACEHOLDER: link] · Privacy Notice [PLACEHOLDER: link] · Data Processing Agreement [PLACEHOLDER: link]
+- Related documents: Terms of Service `/legal/terms-of-service` · Privacy Notice `/legal/privacy-notice` · Data Processing Agreement `/legal/data-processing-terms`
 
 ---
 

@@ -1,17 +1,17 @@
 > ### ⚠ CONTRACTING ENTITY IS TEMPORARY — READ BEFORE PUBLISHING
 >
 > For the **first customer only**, the contracting entity and merchant of record is
-> **Exambinary Holding Ltd**, because that is the company holding the live Stripe account
+> **EXAM BINARY LTD**, because that is the company holding the live Stripe account
 > (`acct_1RQtbxGMdHp4NCWv`). Decision taken 26 Aug 2026.
 >
 > This matters and is not cosmetic:
-> - The customer's **card statement** will read Exambinary. If the contract named a
+> - The customer's **card statement** will read Exam Binary. If the contract named a
 >   different company, an accountant who does not recognise the name raises a chargeback.
-> - The **VAT invoice comes from Exambinary's VAT registration**, because HMRC requires the
+> - The **VAT invoice comes from Exam Binary's VAT registration**, because HMRC requires the
 >   invoice to come from the entity that made the supply. Neovogent's VAT number is not the
 >   one that belongs on it.
 >
-> So every reference below names Exambinary. **When Stripe moves to
+> So every reference below names Exam Binary. **When Stripe moves to
 > NEOVOGENT AI SOLUTIONS UK LTD** (company no. 15946429, registered office Suite 5,
 > The Cloisters, 11–12 George Road, Edgbaston, Birmingham B15 1NP), these documents change
 > back in the same commit as the Stripe migration — not before, and not after.
@@ -19,7 +19,7 @@
 > ### ⚠ NOT PART OF THE PUBLISHED DOCUMENT — REMOVE THIS BLOCK BEFORE PUBLICATION
 >
 > This is a **drafting aid**, not legal advice. It was prepared from the product's own
-> documented behaviour and from the facts supplied by Exambinary. It has **not** been
+> documented behaviour and from the facts supplied by Exam Binary. It has **not** been
 > reviewed by a qualified lawyer. It **must be reviewed and approved by a qualified UK
 > solicitor before it is published, linked from the website, or presented to any
 > customer**. Every `[PLACEHOLDER: ...]` must be resolved or deleted first — a published
@@ -75,7 +75,7 @@
 
 ## In plain English, before the formal wording
 
-This document is the contract between your accounting practice and Exambinary for the use
+This document is the contract between your accounting practice and Exam Binary for the use
 of Neo Accounting. Neo Accounting collects your clients' business documents — receipts,
 supplier invoices, bank statements — reads them, suggests how each one should be coded,
 and produces an import file for VT Transaction+. **It reads documents using AI, and AI
@@ -123,11 +123,11 @@ sign up.
 
 1.1 This agreement is between:
 
-- **Exambinary Holding Ltd** [PLACEHOLDER: confirm the exact registered name at Companies House], a company registered in England and Wales, company number [PLACEHOLDER: Exambinary company number], registered office [PLACEHOLDER: Exambinary registered office], VAT registration number [PLACEHOLDER: Exambinary VAT number], a company registered in
+- **EXAM BINARY LTD**, a company registered in
   England and Wales, company number
-  [PLACEHOLDER: Exambinary company number], tax ID **9286810564**, VAT registration number [PLACEHOLDER: UK VAT registration number. 9286810564 is the company TAX ID, not the VAT number — the VAT registration number is a separate nine-digit reference and must be obtained before any invoice is issued], whose
-  registered office is in Birmingham at [PLACEHOLDER: Exambinary registered office]
-  ("**Exambinary**", "**we**", "**us**", "**our**"); and
+  16261850, tax ID **9286810564**, VAT registration number [PLACEHOLDER: EXAM BINARY LTD’s UK VAT registration number — nine digits, format GB123456789. Not on Companies House; take it from the company’s VAT certificate or HMRC online account. `9286810564` is a TAX ID and is NOT it. Stripe’s tax-ID field expects a `gb_vat` value, and an invoice carrying the wrong registration number is not a valid VAT invoice.], whose
+  registered office is in Birmingham at Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham, West Midlands B15 1NP
+  ("**Exam Binary**", "**we**", "**us**", "**our**"); and
 - the accounting practice named on the account ("**you**", "**your**", "**the
   practice**").
 
@@ -197,9 +197,7 @@ clients, to your professional body, and under anti-money-laundering and tax law 
 unaffected by using Neo Accounting.
 
 4.6 VT Transaction+ is third-party software that we do not supply, control, host or
-support. [PLACEHOLDER: confirm whether any partnership, reseller or endorsement
-relationship with the publisher of VT Transaction+ exists before publication; if none,
-state plainly that we are independent of them.]
+support. We are independent of the publisher of VT Transaction+. We are not a partner, reseller or affiliate of theirs, and they do not endorse us. "VT Transaction+" is used only to name the software our export is formatted for.
 
 ---
 
@@ -302,32 +300,22 @@ account.
 shown separately on the invoice.
 
 9.3 Payment is by card, taken by **Stripe**, our payment processor. Checkout is hosted by
-Stripe. **Card details never reach Exambinary's systems and we do not store them.** Your
+Stripe. **Card details never reach Exam Binary's systems and we do not store them.** Your
 use of Stripe's checkout is also subject to Stripe's own terms.
 
-9.4 Billing is monthly in advance. [PLACEHOLDER: confirm the billing cycle mechanics —
-which day the charge is taken, whether the first month and part-months are pro-rated, and
-what happens to the charge when a client business is added or removed mid-month.]
+9.4 Billing is monthly in advance. £8.50 plus VAT per client business per month, billed to your card in advance. The charge is taken on the anniversary of the day the client business was added, so a client business added mid-month is billed from that day rather than pro-rated. Removing a client business stops its charge from the next renewal; the month already paid for runs to its end. There is no minimum term.
 
-9.5 [PLACEHOLDER: confirm whether a free trial is offered, how long it lasts, whether a
-card is required to start it, and what happens at the end of it.]
+9.5 No free trial is offered. A subscription starts when you complete checkout.
 
-9.6 **If a payment fails:** [PLACEHOLDER: confirm the retry and grace-period process,
-how we notify you, and at what point access is suspended. Whatever is decided, it must
-not cut off self-serve export — see Clause 11.4.]
+9.6 **If a payment fails:** Stripe retries a failed card on its own schedule and emails you each time it does. There is no further grace period: as soon as the subscription is no longer active, we stop accepting new documents for that client business. Nothing already in the account is deleted, and export and deletion stay available throughout — see Clause 11.4.
 
-9.7 **Refunds:** [PLACEHOLDER: confirm the refund position. State plainly whether a
-part-month is refunded on cancellation, or whether the month already paid for simply runs
-to its end.]
+9.7 **Refunds:** A part-month is not refunded on cancellation. The month already paid for runs to its end and you keep full use of the service until it does. The Refund and Cancellation Policy sets out the exceptions — charges made in error, and discretionary goodwill refunds.
 
-9.8 We may change the price. We will tell you at least [PLACEHOLDER: confirm notice
-period, e.g. 30 days] before a change takes effect, by email to the account's registered
+9.8 We may change the price. We will tell you at least 30 days before a change takes effect, by email to the account's registered
 address. If you do not want to pay the new price, cancel before it takes effect under
 Clause 11.
 
-9.9 [PLACEHOLDER: confirm who the payer is — these terms assume the practice holds the
-account and pays for every client business on it. If a client business may pay directly,
-that arrangement needs its own wording here.]
+9.9 The client business pays for its own subscription. The practice composes and manages the work; the client business holds the payment relationship for the £8.50 per month that covers it.
 
 ---
 
@@ -347,8 +335,7 @@ month.**
 11.1 You can cancel at any time, in the product, yourself. You do not need to raise a
 support ticket, call anyone, or ask permission.
 
-11.2 Cancelling stops the next payment. [PLACEHOLDER: confirm whether access continues to
-the end of the paid month — see Clause 9.7.]
+11.2 Cancelling stops the next payment. Access continues to the end of the month already paid for.
 
 11.3 You can cancel a single client business without cancelling the whole account. The
 charge for that client business stops at the next billing date.
@@ -457,9 +444,9 @@ trader names and addresses, incidental personal detail visible in a document ima
 the contact details (name, email, mobile) of the people at your client businesses.
 
 15.3 Our processing obligations, including everything UK GDPR Article 28(3) requires, are
-set out in our **Data Processing Agreement** at [PLACEHOLDER: URL of the DPA]. It forms
+set out in our **Data Processing Agreement** at /legal/data-processing-terms. It forms
 part of this agreement. How we handle personal data more generally is described in our
-**Privacy Notice** at [PLACEHOLDER: URL of the Privacy Notice].
+**Privacy Notice** at /legal/privacy-notice.
 
 15.4 **Sub-processors.** We use these, and only these:
 
@@ -519,7 +506,7 @@ anything for it.
 feature you rely on without telling you first.
 
 18.2 We may change these terms. If a change materially affects you, we will email the
-account's registered address at least [PLACEHOLDER: confirm notice period, e.g. 30 days]
+account's registered address at least 30 days
 before it takes effect. If you do not accept it, cancel under Clause 11 before it takes
 effect; continuing to use the service after that date means you accept it.
 
@@ -539,7 +526,7 @@ reading.
 19.2 We will tell you why, and restore access as soon as the reason has gone.
 
 19.3 Either of us may end this agreement immediately if the other commits a serious
-breach and does not put it right within [PLACEHOLDER: confirm cure period, e.g. 14 days]
+breach and does not put it right within 14 days
 of being asked to in writing, or becomes insolvent.
 
 19.4 **Suspension does not remove your right to export.** Except where the law or a
@@ -632,13 +619,12 @@ You can save and print this page at any time.
 
 ## 24. Who we are, and how to contact us
 
-**Exambinary Holding Ltd** [PLACEHOLDER: confirm the exact registered name at Companies House], a company registered in England and Wales, company number [PLACEHOLDER: Exambinary company number], registered office [PLACEHOLDER: Exambinary registered office], VAT registration number [PLACEHOLDER: Exambinary VAT number]
+**EXAM BINARY LTD**
 Registered in England and Wales, company number
-**[PLACEHOLDER: Exambinary company number]**
-Registered office: [PLACEHOLDER: Exambinary registered office], Birmingham,
-[PLACEHOLDER: postcode]
+**16261850**
+Registered office: Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham, West Midlands B15 1NP
 Tax ID: **9286810564**
-VAT registration number: [PLACEHOLDER: UK VAT registration number. 9286810564 is the company TAX ID, not the VAT number — the VAT registration number is a separate nine-digit reference and must be obtained before any invoice is issued]
+VAT registration number: [PLACEHOLDER: EXAM BINARY LTD’s UK VAT registration number — nine digits, format GB123456789. Not on Companies House; take it from the company’s VAT certificate or HMRC online account. `9286810564` is a TAX ID and is NOT it. Stripe’s tax-ID field expects a `gb_vat` value, and an invoice carrying the wrong registration number is not a valid VAT invoice.]
 
 **Support and general enquiries:** support@neovogent.com
 **Response time:** within 24 hours, 06:00–18:00 UK time

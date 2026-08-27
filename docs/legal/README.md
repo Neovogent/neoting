@@ -83,27 +83,39 @@ The data-protection fee (£40–60/year) is not registered.
 `docs/Kickoff_Requirements.md` §1.2 marks it blocking **before any real customer data**.
 The registration number goes in the privacy notice.
 
-### 7. The contracting entity is Exambinary, and it is temporary
+### 7. The contracting entity is Exam Binary, and it is temporary
 
 Decided 26 Aug 2026. For the **first customer only**, the contracting entity and merchant
-of record in all four documents is **Exambinary Holding Ltd**, not
+of record in all four documents is **EXAM BINARY LTD**, not
 NEOVOGENT AI SOLUTIONS UK LTD.
 
-The reason is that Exambinary holds the live Stripe account (`acct_1RQtbxGMdHp4NCWv`), and
+The reason is that Exam Binary holds the live Stripe account (`acct_1RQtbxGMdHp4NCWv`), and
 the entity that takes the money is the entity that makes the supply:
 
-- The customer's **card statement** will read Exambinary. A contract naming a company the
+- The customer's **card statement** will read Exam Binary. A contract naming a company the
   accountant has never heard of is how a legitimate charge becomes a chargeback.
-- The **VAT invoice comes from Exambinary's VAT registration**, because HMRC requires the
+- The **VAT invoice comes from Exam Binary's VAT registration**, because HMRC requires the
   invoice to come from the supplier. Neovogent's number cannot go on it.
 
-**Three things are still missing and each blocks publication:** Exambinary's exact
-registered name at Companies House, its company number, and its VAT registration number.
-They are marked `[PLACEHOLDER: Exambinary …]` in every document.
+**Confirmed at Companies House, 27 Aug 2026 — and the name we had was wrong.**
+The entity is **EXAM BINARY LTD** (company **16261850**, incorporated 19 Feb 2025), not
+"Exambinary Holding Ltd", which does not exist. Registered office is
+**Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham, West Midlands B15 1NP**
+— the same address as Neovogent. All four documents now carry these.
+
+⚠ **One thing is still missing, and it blocks charging anybody:** EXAM BINARY LTD’s
+**UK VAT registration number**. It is not on the public register; take it from the VAT
+certificate or the HMRC online account. `9286810564` is a tax ID and is not it. Stripe’s
+tax-ID field expects a `gb_vat` value, and an invoice with the wrong number on it is not a
+valid VAT invoice.
+
+⚠ **Its SIC code is 85600, "Educational support services."** Harmless legally — SIC is
+informational — but Stripe underwriting reads the company record, and an education company
+selling bookkeeping software is the kind of mismatch that triggers a review.
 
 **Reverting is a single commit, and it must be the same commit as the Stripe migration** —
 not before it, and not after. Publishing terms naming Neovogent while Stripe still charges
-as Exambinary reintroduces exactly the mismatch this decision avoids.
+as Exam Binary reintroduces exactly the mismatch this decision avoids.
 
 ---
 
