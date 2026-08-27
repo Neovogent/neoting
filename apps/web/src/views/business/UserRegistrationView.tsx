@@ -78,7 +78,7 @@ const m = defineMessages({
 });
 
 /**
- * What an invited business user sees when they open their SMS link. The
+ * What an invited business user sees when they open their invite link. The
  * practice set who they are and what they may do; everything on this screen is
  * theirs to supply — their photo, their email, and a check that the details
  * held about them are right.

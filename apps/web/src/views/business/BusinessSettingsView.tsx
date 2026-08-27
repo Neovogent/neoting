@@ -65,14 +65,14 @@ const m = defineMessages({
   notificationsTitle: { id: 'portal.businessSettingsView.notificationsTitle', defaultMessage: 'When we contact you' },
   notificationsSubtitle: {
     id: 'portal.businessSettingsView.notificationsSubtitle',
-    defaultMessage: 'Chases always come by SMS — the rest is up to you',
+    defaultMessage: 'Chases always come by email — the rest is up to you',
   },
   smsLabel: {
     id: 'portal.businessSettingsView.smsLabel',
-    defaultMessage: 'Text me when something is missing',
+    defaultMessage: 'Tell me when something is missing',
   },
-  smsHint: { id: 'portal.businessSettingsView.smsHint', defaultMessage: 'Sent to {mobile}' },
-  smsHintNoMobile: { id: 'portal.businessSettingsView.smsHintNoMobile', defaultMessage: 'Sent to your mobile' },
+  smsHint: { id: 'portal.businessSettingsView.smsHint', defaultMessage: 'Sent by email' },
+  smsHintNoMobile: { id: 'portal.businessSettingsView.smsHintNoMobile', defaultMessage: 'Sent by email' },
   emailLabel: { id: 'portal.businessSettingsView.emailLabel', defaultMessage: 'Email me too' },
   emailHintNone: { id: 'portal.businessSettingsView.emailHintNone', defaultMessage: 'No email on file' },
   weeklyLabel: { id: 'portal.businessSettingsView.weeklyLabel', defaultMessage: 'Weekly summary' },
@@ -320,7 +320,7 @@ const m = defineMessages({
   auditScopeAutoSubmit: { id: 'portal.businessSettingsView.auditScopeAutoSubmit', defaultMessage: 'send as I shoot' },
   auditScopeSmsNotifications: {
     id: 'portal.businessSettingsView.auditScopeSmsNotifications',
-    defaultMessage: 'SMS notifications',
+    defaultMessage: 'missing-item notifications',
   },
   auditScopeEmailNotifications: {
     id: 'portal.businessSettingsView.auditScopeEmailNotifications',
