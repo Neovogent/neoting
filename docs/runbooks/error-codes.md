@@ -252,6 +252,184 @@ reject and reprocess undo each other, which is why neither needs the super admin
 
 ---
 
+## `NT-AUTH-004` — email verification link not valid
+
+**Status:** `401` · **Surface:** `POST /v1/auth/email-verification` · **Added by:** stage A14
+
+**Symptom.** Someone clicks the link in their signup email and is told it is not
+valid. Their account stays unusable: `auth.service.ts` refuses a session to an
+unverified address, with the same `NT-AUTH-003` a wrong password gets, so from
+the sign-in screen it looks like the password is wrong.
+
+**What it means.** One code for six causes, deliberately: missing, malformed,
+forged, minted for another purpose, naming a user that no longer exists or is
+deactivated, or naming an address that has since changed. Splitting them would
+answer "does this token name a real account here" for whoever is asking, which is
+the question the whole login lane refuses.
+
+**Diagnose.** The common cause is not an attack — it is a mail client that
+wrapped the URL. The token is `base64url.base64url`, long, and clients break long
+URLs across lines; a truncated token fails the signature and arrives here.
+
+```sql
+-- Is this address waiting on verification at all?
+SELECT id, email_verified, deactivated_at, created_at
+  FROM users WHERE email = :email;
+```
+
+`email_verified = true` already means the link worked and the person is looking
+at a stale tab — treat it as `NT-AUTH-005`'s remedy, not this one. A row that
+does not exist means the signup never completed; check whether
+`POST /v1/practices` returned a `500 NT-SRV-001`, which is what it does when the
+registered mailer cannot actually send.
+
+**The other real cause: `SESSION_SECRET` changed.** The key is derived from it
+(`signed-claims.ts`), so rotating it invalidates every outstanding verification
+link — and every TOTP enrolment, which is the more expensive half. Check the
+deploy history before hunting a bug.
+
+**Fix.** Sign up again from the same address. Nothing needs correcting
+server-side, and a stale link is not evidence of anything to fix.
+
+**Prevention.** M9's signup screen should offer "resend the verification email"
+so that this refusal has somewhere to go from. There is no resend operation in
+the contract today — the remedy is a second signup, which the duplicate-signup
+notice handles honestly, but it is worse copy than it needs to be.
+
+---
+
+## `NT-AUTH-005` — email verification link expired
+
+**Status:** `401` · **Surface:** `POST /v1/auth/email-verification` · **Added by:** stage A14
+
+**Symptom.** The link was genuinely ours and is more than 48 hours old
+(`EMAIL_VERIFICATION_TTL_MS`).
+
+**What it means.** Exactly what it says, and it is the one thing on this path
+that is safe to say precisely. An expiry is a fact about a token its holder
+already had, so it discloses nothing about who is registered — the same reasoning
+that lets `NT-AUTH-002` distinguish an expired session from `NT-AUTH-001`.
+
+**Diagnose.** Nothing to diagnose. If this fires on a link that is *not* two days
+old, the clock on an API task is wrong — compare `date -u` inside the container
+with a known-good source before looking anywhere else.
+
+**Fix.** Sign up again to get a fresh link.
+
+**Prevention.** 48 hours is chosen to survive a weekend and a spam folder. If
+this code shows up often in logs, the mail is arriving late or in spam, and the
+fix is deliverability (`docs/runbooks/`, SES suppression and DMARC) rather than a
+longer TTL — a longer TTL just means a leaked mailbox is a standing key.
+
+---
+
+## `NT-AUTH-006` — enrolment refused, address not verified
+
+**Status:** `409` · **Surface:** `POST /v1/auth/totp-enrolment` (and `/confirm`) · **Added by:** stage A14
+
+**Symptom.** A user who knows their password is told to verify their email
+before they can set up an authenticator app.
+
+**What it means.** The password verified and the address did not. Enrolment
+refuses an unverified account on purpose (issue #195): verification is what
+proves the mailbox, and letting an unverified account enrol makes that check
+decorative.
+
+⚠ **This code is named rather than collapsed into `NT-AUTH-003`, and the reason
+is worth understanding before anyone "tidies" it.** It is reachable *only* after
+the password has already verified — so there is no enumeration left to protect,
+and a user told merely "invalid credentials" would retype a correct password for
+ever.
+
+**Diagnose.**
+
+```sql
+SELECT email_verified, totp_secret_ref IS NOT NULL AS enrolled
+  FROM users WHERE email = :email;
+```
+
+**Fix.** Follow `NT-AUTH-004`'s path: click the verification link, or sign up
+again for a fresh one. Then enrol.
+
+**Prevention.** M9's flow puts verification immediately before enrolment for
+exactly this reason, so in the intended journey this refusal is unreachable. It
+fires when someone bookmarks the enrolment screen or returns to a stale tab.
+
+---
+
+## `NT-AUTH-007` — enrolment refused, an authenticator is already set up
+
+**Status:** `409` · **Surface:** `POST /v1/auth/totp-enrolment` (and `/confirm`) · **Added by:** stage A14
+
+**Symptom.** A user tries to set up an authenticator and is told they already
+have one.
+
+**What it means.** `users.totp_secret_ref` is set. Re-enrolment is a
+credential-reset flow with its own threat model and **this release does not have
+one** — so this endpoint refuses rather than replacing a factor by accident.
+
+⚠ **If the user genuinely cannot produce codes, this is the state that matters,
+and the answer is a recovery code, not a re-enrolment.** Ten were shown once at
+enrolment. `TotpEnrolmentService.recoveryCodesLeft(userId)` reports how many
+remain.
+
+⚠ **A recovery code cannot currently be SUBMITTED.** `SessionCreateRequest.totp`
+is `pattern: '^[0-9]{6}$'`, so a nineteen-character recovery code is a `400` at
+the controller and never reaches the verifier that would accept it. That is a
+known contract gap, recorded in the module `CLAUDE.md` since A2 and **not closed
+by A14** — so today a user in this state with a lost phone has no self-service
+route back in, and the only remedy is an operator clearing the column:
+
+```sql
+-- LAST RESORT, and it removes the account's second factor entirely.
+-- Confirm the person's identity out of band FIRST. They can then enrol again.
+UPDATE users SET totp_secret_ref = NULL, totp_enabled_at = NULL WHERE id = :userId;
+```
+
+**Diagnose.** Confirm it is not the race: two tabs confirming one enrolment makes
+the second answer this code, correctly, and nothing is wrong. The write is
+conditional on the ref still being null precisely so the first one's seed is not
+silently replaced.
+
+**Prevention.** Widening `SessionCreateRequest.totp` (or adding a recovery
+operation) is the fix that removes the SQL above from this page. It needs a
+contract-change issue.
+
+---
+
+## `NT-AUTH-008` — enrolment session not valid
+
+**Status:** `401` · **Surface:** `POST /v1/auth/totp-enrolment/confirm` · **Added by:** stage A14
+
+**Symptom.** A user scans the QR, types the code, and is told the setup session
+is no longer valid.
+
+**What it means.** The `enrolmentToken` from the first step did not verify, has
+expired (15 minutes, `TOTP_ENROLMENT_TICKET_TTL_MS`), or names a different user
+than the credentials did.
+
+**Why there is a token at all.** It carries the candidate enrolment so that
+**nothing is written until a real code comes back** — see
+`totp-enrolment-ticket.ts`. Writing at step one is what made a single mis-scan a
+permanent lockout in the shape A14 removed.
+
+**Fix.** Start the enrolment again. It costs nothing: no row was written, so
+there is no half-finished state to clean up, and the previous candidate simply
+expires. **This is the good failure** — the whole two-step exists so that this
+refusal is recoverable instead of terminal.
+
+**Diagnose.** If it fires *immediately* rather than after a delay, suspect
+`SESSION_SECRET` differing between API tasks: the ticket is signed by whichever
+task served `begin` and verified by whichever serves `confirm`. Both read the
+same `/neoting/<env>/auth` secret, so a mismatch means a deploy in flight with
+two task revisions live.
+
+**Prevention.** Fifteen minutes is sized for scanning a QR and copying ten
+recovery codes onto paper. If real users hit this, lengthen the TTL rather than
+removing the ticket — the ticket is the lockout fix.
+
+---
+
 ## A note on codes this file does not add
 
 **Stripe webhook signature failures are `NT-INT-001`, not a new code.** The

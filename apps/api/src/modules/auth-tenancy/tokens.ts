@@ -18,13 +18,19 @@ export const SIGNUP_MAILER = Symbol('SIGNUP_MAILER');
  */
 export const SIGN_IN_THROTTLE = Symbol('SIGN_IN_THROTTLE');
 /**
- * QR enrolment for the real second factor (A2, `totp-enrolment.service.ts`).
+ * QR enrolment for the real second factor (A2 wrote the service,
+ * `totp-enrolment.service.ts`; A14 gave it its two routes).
  *
- * ⚠ Registered with no controller behind it, deliberately — `openapi.yaml`
- * publishes no TOTP operation (G7). Unlike `portal-upload-status.service.ts`,
- * which was left UNregistered for exactly that reason, this one is wired so the
- * missing endpoint is a controller file and nothing else, and so the wiring
- * itself is covered by the module's boot test.
+ * A2 registered this with no controller behind it, because `openapi.yaml`
+ * published no TOTP operation (G7) — the note here said the missing piece was
+ * "a controller file and nothing else", and issue #195 approved the contract
+ * that let it be written. `SignupChainController` is that file.
  */
 export const TOTP_ENROLMENT_SERVICE = Symbol('TOTP_ENROLMENT_SERVICE');
+/**
+ * `POST /v1/auth/email-verification` (A14, `email-verification.service.ts`) —
+ * the other half of the same gap: A1 minted the token, and until #195 nothing
+ * could spend it.
+ */
+export const EMAIL_VERIFICATION_SERVICE = Symbol('EMAIL_VERIFICATION_SERVICE');
 export const PRISMA = Symbol('AUTH_TENANCY_PRISMA');
