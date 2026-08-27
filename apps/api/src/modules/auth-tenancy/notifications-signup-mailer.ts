@@ -82,9 +82,19 @@ export function buildVerificationLink(appOrigin: string, token: string): string 
 }
 
 /**
- * ⚠ **M9 must serve a screen here.** The path is stated once, in this file, so
- * the mail and the screen that receives it cannot drift apart. M9's landing
- * page reads `token` from the query and posts it to
- * `POST /v1/auth/email-verification`.
+ * ⚠ **THIS MUST MATCH M9'S ROUTE, AND ONCE IT DID NOT.**
+ *
+ * It was `/app/verify-email`, chosen here before M9 merged, with a note saying
+ * M9 must serve a screen at it. M9 merged 48 minutes later serving
+ * `/signup/verify` instead, and nothing failed: `apps/web` is a single-page app,
+ * so the wrong path still answered **200** with the app shell. The token was
+ * simply dropped on the floor, every verification link in every signup email was
+ * inert, and the first person through the flow could not verify, could not
+ * enrol, and therefore could not sign in — with no error anywhere to say why.
+ *
+ * A path agreed in a comment between two stages is not agreement. If this ever
+ * moves again, the honest fix is a route the API can assert against, not another
+ * note. Until then, `notifications-signup-mailer.test.ts` reads M9’s own source and
+ * fails if the two halves drift.
  */
-export const VERIFY_EMAIL_PATH = '/app/verify-email';
+export const VERIFY_EMAIL_PATH = '/signup/verify';
