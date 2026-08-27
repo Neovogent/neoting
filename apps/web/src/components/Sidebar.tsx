@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import {
   Bot, Users, Inbox,
-  Send, CheckCircle, FileText, BarChart2,
+  Send, CheckCircle, FileText, Download, BarChart2,
   Shield, Settings, Store, Sun, Moon,
   type LucideProps,
 } from 'lucide-react';
@@ -30,6 +30,9 @@ export const shellNav = defineMessages({
   chases: { id: 'shell.sidebar.chases', defaultMessage: 'Chases' },
   approvals: { id: 'shell.sidebar.approvals', defaultMessage: 'Approvals' },
   documents: { id: 'shell.sidebar.documents', defaultMessage: 'Documents' },
+  // 'Export', never 'Publish' or 'Send' — in ID nothing leaves the product on
+  // its own and no label may suggest a ledger was written to (D42).
+  export: { id: 'shell.sidebar.export', defaultMessage: 'Export' },
   analytics: { id: 'shell.sidebar.analytics', defaultMessage: 'Analytics' },
   team: { id: 'shell.sidebar.team', defaultMessage: 'Team' },
   settings: { id: 'shell.sidebar.settings', defaultMessage: 'Settings' },
@@ -47,6 +50,7 @@ const navItems = [
   { icon: Send, tab: 'Chases', label: shellNav.chases },
   { icon: CheckCircle, tab: 'Approvals', label: shellNav.approvals },
   { icon: FileText, tab: 'Documents', label: shellNav.documents },
+  { icon: Download, tab: 'Export', label: shellNav.export },
   { icon: BarChart2, tab: 'Analytics', label: shellNav.analytics },
   { icon: Shield, tab: 'Team', label: shellNav.team },
   { icon: Settings, tab: 'Settings', label: shellNav.settings },

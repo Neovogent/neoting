@@ -190,27 +190,82 @@ locals {
     #                        there is no ledger API in Initial Delivery at all,
     #                        so this stays `demo` on purpose rather than by
     #                        omission. Export is the only egress.
-    #   BILLING=demo         DemoStripeClient. Hosted-session URLs are minted on
-    #                        the reserved `.invalid` TLD, so a staging checkout
-    #                        link provably cannot reach a payment page and NO
-    #                        CARD CAN BE CHARGED FROM THIS ENVIRONMENT. Flipping
-    #                        it to `stripe` needs the four secrets in
-    #                        docs/runbooks/stripe-billing.md §7 — `config/env.ts`
-    #                        refuses to boot on `stripe` without them, which is
-    #                        why the flip is a deliberate change here and not a
-    #                        default that could drift on.
+    #   BILLING=stripe       ⚠ REAL STRIPE, AGAINST A SANDBOX ACCOUNT. Flipped
+    #                        28 Aug 2026 (see the STRIPE block below). It was
+    #                        `demo` — DemoStripeClient, hosted-session URLs on
+    #                        the reserved `.invalid` TLD — which proved a
+    #                        checkout link could not reach a payment page, and
+    #                        also meant the subscribe step of the client's own
+    #                        onboarding could never complete. `subscription_status`
+    #                        is written ONLY by the Stripe webhook, so on `demo`
+    #                        it stayed null, `mayIngest(null)` was false, and
+    #                        every upload 402'd: the walkthrough died at the step
+    #                        after sign-in.
+    #
+    #                        NO CARD CAN STILL BE CHARGED FROM HERE, and the
+    #                        guarantee moved rather than went away — it is now
+    #                        the ACCOUNT, not the adapter. The key below is a
+    #                        sandbox key (Guideline §8.4, G2): Checkout, the
+    #                        webhook and the subscription lifecycle are all real,
+    #                        and `4242 4242 4242 4242` is the only card that
+    #                        works. Live mode is a different account and is
+    #                        blocked on company verification and the UK VAT
+    #                        registration number (runbook §0, §1).
     #
     #                        ⚠ Entitlement is NOT affected by this value. It is
     #                        read from `businesses.subscription_status` in the
     #                        service layer whichever client is wired, so staging
     #                        still refuses uploads for an unsubscribed business
-    #                        — the seed is what makes the demo clients entitled.
+    #                        — what changed is that a client can now DO something
+    #                        about it.
     # ------------------------------------------------------------------------
     { name = "EXTRACTOR", value = "bedrock" },
     { name = "SMS_SENDER", value = "demo" },
     { name = "OTP_MODE", value = "totp" },
     { name = "LEDGER_ADAPTER", value = "demo" },
-    { name = "BILLING", value = "demo" },
+    { name = "BILLING", value = "stripe" },
+
+    # ------------------------------------------------------------------------
+    # What `BILLING=stripe` requires. `config/env.ts` REFUSES to boot without
+    # every one of these, which is why they are stated here rather than left to
+    # a default — a missing one is a task that will not start, never a checkout
+    # that quietly charges the wrong thing.
+    #
+    #   STRIPE_PRICE_ID      The one price (D48): GBP 8.50/month, recurring,
+    #                        `tax_behavior=exclusive`. Exclusive is the whole
+    #                        VAT decision — the customer is charged 850 PLUS
+    #                        VAT. An inclusive price of the same number would
+    #                        mean absorbing the VAT out of the 850, which is a
+    #                        16.7% cut of every subscription, silently.
+    #
+    #   STRIPE_TAX=rate      A fixed 20% GB VAT rate, not Stripe Tax's automatic
+    #                        calculation. `automatic` needs a tax registration,
+    #                        and a registration needs the UK VAT number this
+    #                        company does not have yet. `rate` is the honest
+    #                        stand-in and the runbook (§3) says when to move.
+    #
+    #   STRIPE_TAX_RATE_ID   The `txr_…` for that 20%. ⚠ `STRIPE_TAX=rate` with
+    #                        no id charges the net price with NO VAT ADDED, so
+    #                        env.ts refuses that pairing outright.
+    #
+    #   BILLING_RETURN_ORIGINS
+    #                        The allowlist `successUrl` / `cancelUrl` /
+    #                        `returnUrl` are checked against. All three are
+    #                        CALLER-SUPPLIED on an authenticated endpoint, so an
+    #                        unvalidated one is an open redirect with a session
+    #                        attached. BOTH web origins are live and either can
+    #                        start a checkout, so both are listed; empty would
+    #                        admit no origin and refuse every checkout, which is
+    #                        the correct direction to fail.
+    #
+    # These four are ids and origins, not credentials — they grant nothing on
+    # their own. The two things that DO grant something (the API key and the
+    # webhook signing secret) are in Secrets Manager, injected below.
+    # ------------------------------------------------------------------------
+    { name = "STRIPE_PRICE_ID", value = "price_1U8lIsGMdHp4NCWvxj03BBuc" },
+    { name = "STRIPE_TAX", value = "rate" },
+    { name = "STRIPE_TAX_RATE_ID", value = "txr_1U8lIuGMdHp4NCWvqQoFEvmQ" },
+    { name = "BILLING_RETURN_ORIGINS", value = "https://neoacc.neovogent.com,https://app.neoting.neovogent.com" },
 
     # ------------------------------------------------------------------------
     # The AI workspace (Governance §9), and the one adapter above that is NOT
@@ -439,6 +494,18 @@ locals {
     { name = "SESSION_SECRET", valueFrom = "${aws_secretsmanager_secret.app["auth"].arn}:session_secret::" },
     { name = "PORTAL_LINK_SECRET", valueFrom = "${aws_secretsmanager_secret.app["auth"].arn}:portal_link_secret::" },
     { name = "PORTAL_SESSION_SECRET", valueFrom = "${aws_secretsmanager_secret.app["auth"].arn}:portal_session_secret::" },
+
+    # D48's subscription rail. Sandbox credentials — see the BILLING block above
+    # for why that is the guarantee no card can be charged, and secrets.tf for
+    # why the webhook secret is not an optional half of the pair.
+    #
+    # No IAM change is needed: `ecs_execution_app_secrets` (secrets.tf) grants
+    # `[for s in aws_secretsmanager_secret.app : s.arn]`, so a new group in that
+    # map is granted by construction. That is the one place in this stack where
+    # adding a secret does NOT also mean remembering an ARN — the whatsapp entry
+    # in compute.tf is a different role and a different list.
+    { name = "STRIPE_SECRET_KEY", valueFrom = "${aws_secretsmanager_secret.app["stripe"].arn}:secret_key::" },
+    { name = "STRIPE_WEBHOOK_SECRET", valueFrom = "${aws_secretsmanager_secret.app["stripe"].arn}:webhook_secret::" },
   ]
 
   # ⚠ THE RDS MASTER CREDENTIAL GOES TO THE MIGRATION TASK AND NOWHERE ELSE.

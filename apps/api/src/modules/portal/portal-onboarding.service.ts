@@ -72,6 +72,8 @@ export interface CreateOnboardingSessionInput extends RequestSignInCodeInput {
 export interface IssuedOnboardingSession {
   readonly token: string;
   readonly expiresAt: Date;
+  /** The business this session was opened for — the contract's optional `PortalSession.businessId` (#205). */
+  readonly businessId: string;
 }
 
 /** What a valid setup token plus a matching address resolves to. */
@@ -221,6 +223,7 @@ export class PortalOnboardingService {
         this.config.portalSessionSecret,
       ),
       expiresAt,
+      businessId: resolved.businessId,
     };
   }
 

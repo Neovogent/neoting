@@ -81,17 +81,23 @@ export interface OnboardingSession {
 }
 
 /**
- * The contract's `PortalSession` is `{token, expiresAt}` and nothing else.
+ * ✅ `businessId` IS CONTRACTED, as of change #205 (28 Aug 2026), and the
+ * subscribe step works because of it. `POST /billing/checkout-sessions`
+ * requires a `businessId`, and an onboarding session had no way to learn its
+ * own — the chase portal reads `GET /portal/context`, which needs a chase an
+ * invited client does not have. So the step reported "could not open the
+ * checkout, nothing has been charged" for every client, every time.
  *
- * ⚠ `businessId` IS NOT CONTRACTED YET, AND THE SUBSCRIBE STEP IS BLOCKED ON
- * IT. `POST /billing/checkout-sessions` requires a `businessId`, and an
- * onboarding session has no contracted way to learn its own — the chase
- * portal reads `GET /portal/context`, which needs a chase this session does
- * not have. Growing `PortalSession` by an optional `businessId` is a
- * contract-change issue for Shakib (G7 — LAW is not edited from here); the
- * field is parsed as optional so the screens light up the moment it ships,
- * and `subscribe` degrades honestly while it is absent. Deliberately NOT
- * `.strict()`, for the same reason.
+ * It stays `.nullish()` and the shape stays NON-strict, and that is not
+ * leftover caution: the field is optional in the contract because a CHASE
+ * session deliberately omits it (its business is not its holder's to act on),
+ * and this same shape parses both. A hard requirement here would break the
+ * chase portal the day it shares this parser.
+ *
+ * ⚠ The server does not trust what it sends back either. Checkout re-derives
+ * the business from the session and answers 404 to a body naming a different
+ * one, so this field is a convenience for the caller and never the thing that
+ * decides whose subscription is paid for.
  */
 const onboardingSessionShape = z.object({
   token: z.string().min(1),

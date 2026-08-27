@@ -105,14 +105,14 @@ test('missing, malformed and forged bearers are one 401 NT-OTP-002 with one deta
 test('an expired bearer says so — it was genuinely ours, and "tap the link again" is safe to say', async () => {
   const error = await grab(() => resolver(row()).resolve(bearer({ expiresAtMs: NOW }), NOW));
   expect(error.code).toBe('NT-OTP-002');
-  expect(error.publicDetail).toBe('This portal session has expired. Open the link from your text message again.');
+  expect(error.publicDetail).toBe('This portal session has expired. Open the link in your email again.');
 });
 
 test('the ROW outranks the token: expired, unverified, wrong scope or a different business are all refused', async () => {
   // Expired on the row but not yet on the token — a session shortened after the
   // bearer was minted must lose to the row.
   const expired = await grab(() => resolver(row({ expiresAt: new Date(NOW) })).resolve(bearer(), NOW));
-  expect(expired.publicDetail).toBe('This portal session has expired. Open the link from your text message again.');
+  expect(expired.publicDetail).toBe('This portal session has expired. Open the link in your email again.');
 
   for (const stored of [row({ verifiedAt: null }), row({ scope: 'ONBOARDING' }), row({ businessId: 'biz_someone_else' })]) {
     const error = await grab(() => resolver(stored).resolve(bearer(), NOW));
@@ -165,4 +165,45 @@ test('the system context reads the practice, in USER scope — the only way to s
     sessionScope: 'user',
     grantedItemIds: [],
   });
+});
+
+/**
+ * ⚠ The two scopes are two DOORS, not one door with a flag.
+ *
+ * `resolve` and `resolveOnboarding` differ by exactly which `otp_sessions.scope`
+ * they will accept, and each refuses the other's. That is the whole safety of
+ * contract-change #205: an onboarding session has no chase and an empty grant,
+ * so answering the upload question with one would hand it document powers it
+ * was never granted — and answering the billing question with a chase session
+ * would let a forwarded chase link buy a subscription.
+ *
+ * Both refusals are the SAME uniform `NT-OTP-002`, so a holder learns "not a
+ * session for this", never which check said so.
+ */
+test('resolveOnboarding takes an ONBOARDING row and refuses a chase one', async () => {
+  const facts = await resolver(row({ scope: 'ONBOARDING', chaseId: null })).resolveOnboarding(bearer(), NOW);
+  expect(facts.businessId).toBe('biz_burger');
+  // No chase, and nothing it could ever write a document against.
+  expect(facts.chaseId).toBeNull();
+  expect(delegatedScopeFor(facts)).toEqual({ ok: false, reason: 'no-granted-items' });
+  // What it CAN do is name its own business, under a context that sees the
+  // whole practice — which is why the caller has to constrain the query.
+  expect(systemScopeFor(facts).practiceId).toBe('prac_1');
+
+  const wrongKind = await grab(() => resolver(row()).resolveOnboarding(bearer(), NOW));
+  expect(wrongKind.code).toBe('NT-OTP-002');
+  expect(wrongKind.publicDetail).toBe('missing or invalid portal session');
+});
+
+test('an ONBOARDING row still fails every other check a session has to pass', async () => {
+  const onboarding = (over: Partial<OtpRow>) => row({ scope: 'ONBOARDING', chaseId: null, ...over });
+
+  for (const stored of [onboarding({ verifiedAt: null }), onboarding({ businessId: 'biz_someone_else' })]) {
+    const error = await grab(() => resolver(stored).resolveOnboarding(bearer(), NOW));
+    expect(error.code).toBe('NT-OTP-002');
+    expect(error.publicDetail).toBe('missing or invalid portal session');
+  }
+
+  const expired = await grab(() => resolver(onboarding({ expiresAt: new Date(NOW) })).resolveOnboarding(bearer(), NOW));
+  expect(expired.publicDetail).toBe('This portal session has expired. Open the link in your email again.');
 });

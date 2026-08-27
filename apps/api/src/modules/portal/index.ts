@@ -7,12 +7,18 @@
  * Growing this list is a boundary decision — a name here is a name every other
  * module may build against.
  *
- * The seam exists for ONE consumer the contract itself creates:
- * `POST /v1/document-uploads/{uploadId}/complete` accepts the portal bearer
- * alongside the workspace session (`openapi.yaml`), because that is step two of
- * every portal upload. `modules/ingestion-routing/web-upload` therefore needs
- * to resolve a portal session and build a delegated scope — and nothing else
- * from in here.
+ * The seam exists for the consumers the CONTRACT itself creates — operations
+ * `openapi.yaml` puts the portal bearer on, next to the workspace session:
+ *
+ *   · `POST /v1/document-uploads/{uploadId}/complete` — step two of every
+ *     portal upload. `modules/ingestion-routing/web-upload` resolves a session
+ *     and builds a DELEGATED scope, and needs nothing else from in here.
+ *   · `POST /v1/billing/checkout-sessions` — the invited client subscribing
+ *     inside their own onboarding (D48, issue #205). `modules/billing` calls
+ *     `resolveOnboarding`, which refuses a delegated session, and constrains
+ *     the request to `facts.businessId`.
+ *
+ * Both are the same shape: one operation, two principals, no second door.
  *
  * The three portal endpoints themselves live INSIDE this module and import
  * these files directly; they are not consumers of the seam.

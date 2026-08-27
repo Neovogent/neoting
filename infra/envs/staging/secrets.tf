@@ -223,6 +223,29 @@ locals {
       }
     }
 
+    # STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET. D48's subscription rail, and the
+    # ONLY vendor in this map that takes money. Staging points at a Stripe
+    # SANDBOX (Guideline §8.4): the objects are real, the Checkout page is real,
+    # the webhook is real, and no card can be charged.
+    #
+    # ⚠ The webhook secret is not an optional half of this pair. Without it every
+    # Stripe event 401s at the signature guard, no subscription ever reaches
+    # ACTIVE, and the client sees a successful payment followed by an app that
+    # still refuses their uploads — which reads as "the card was declined".
+    # `config/env.ts` refuses to boot on `BILLING=stripe` with either missing,
+    # so the failure is a task that will not start rather than a lie on screen.
+    #
+    # The price id and the tax rate id are NOT here. They identify objects, they
+    # grant nothing, and an id in Secrets Manager is an id that cannot be read in
+    # a plan — so they sit in `services.tf` where an operator can see them.
+    stripe = {
+      description = "Stripe API key and webhook signing secret - client subscriptions (D48; sandbox keys in staging)"
+      values = {
+        secret_key     = "PLACEHOLDER_STRIPE_SECRET_KEY"
+        webhook_secret = "PLACEHOLDER_STRIPE_WEBHOOK_SECRET"
+      }
+    }
+
     # Sentry EU, one DSN per app (Kickoff 4.9, D24). Not in .env.example yet
     # because Sentry is Slice C / Infra Week work (Guideline G1) — the secret
     # exists now so that landing Sentry is a value change, not an infra

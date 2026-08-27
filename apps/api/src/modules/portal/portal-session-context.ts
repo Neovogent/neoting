@@ -60,7 +60,7 @@ export interface PortalSessionFacts {
   readonly systemUserId: string;
   /** The actor a delegated write is attributed to. See `resolveDelegatedActor` in the service for why it is what it is. */
   readonly actorId: string;
-  /** The chase this session exists to answer. Null only for a non-chase OTP session (onboarding), which this module does not mint. */
+  /** The chase this session exists to answer. **Null on an ONBOARDING session**, which has no chase — nobody has asked an invited client for anything yet. */
   readonly chaseId: string | null;
   /** The document ids this session may touch. Empty until its first upload — see `delegatedScopeFor`. */
   readonly grantedItemIds: readonly string[];
@@ -117,6 +117,17 @@ export function systemScopeFor(facts: PortalSessionFacts): ScopeContext {
   return systemContext(facts.practiceId, facts.systemUserId);
 }
 
+/**
+ * The one distinguishable failure, and the one sentence for it.
+ *
+ * It said *"Open the link from your text message again"* until 28 Aug 2026.
+ * There is no SMS in Initial Delivery — S2 made email the transport and A13
+ * sends chases through it (D40/D47) — so that sentence pointed a client at a
+ * message that was never sent. `apps/web` swept the same claim at launch M8;
+ * this is the server-side copy that pass could not see.
+ */
+const SESSION_EXPIRED_DETAIL = 'This portal session has expired. Open the link in your email again.';
+
 /** The contract's 401 for `getPortalContext` / `createPortalUpload` — session missing, invalid or expired. */
 export function portalSessionRequired(detail: string): AppException {
   return new AppException('NT-OTP-002', HttpStatus.UNAUTHORIZED, 'Portal session required', detail);
@@ -140,14 +151,48 @@ export class PortalSessionContextResolver {
    * says the session is still live. A row that has been expired, unverified or
    * repointed since the token was minted loses to the row.
    */
-  async resolve(authorizationHeader: string | undefined, nowMs: number = Date.now()): Promise<PortalSessionFacts> {
+  resolve(authorizationHeader: string | undefined, nowMs: number = Date.now()): Promise<PortalSessionFacts> {
+    return this.factsFor(authorizationHeader, 'DELEGATED_UPLOAD', nowMs);
+  }
+
+  /**
+   * The same bearer, the same checks, and a DIFFERENT scope — the invited
+   * client's onboarding session (contract-change issue #205).
+   *
+   * ⚠ **A separate method rather than a parameter on `resolve`, and that is the
+   * safety.** The scope check below is not a formality: an `ONBOARDING` row has
+   * no chase and an empty grant, so handing it to `resolve` would give a
+   * session document-write powers it was never granted. Callers name which kind
+   * of session they mean, and a caller that wants the other one gets a 401
+   * rather than a widened credential.
+   *
+   * What an onboarding session can do with these facts is exactly one thing:
+   * name its own business. `delegatedScopeFor` refuses it (`grantedItemIds` is
+   * empty and stays empty — nothing calls `grantItems` on this scope), and
+   * `systemScopeFor` sees the whole practice, so **every query made under it
+   * must be constrained to `facts.businessId` in the query**. That is the same
+   * application guarantee the chase boundary rests on, and it is stated here
+   * because it is the only thing narrowing it.
+   */
+  resolveOnboarding(
+    authorizationHeader: string | undefined,
+    nowMs: number = Date.now(),
+  ): Promise<PortalSessionFacts> {
+    return this.factsFor(authorizationHeader, 'ONBOARDING', nowMs);
+  }
+
+  private async factsFor(
+    authorizationHeader: string | undefined,
+    expectedScope: 'DELEGATED_UPLOAD' | 'ONBOARDING',
+    nowMs: number,
+  ): Promise<PortalSessionFacts> {
     const verdict = verifyPortalSessionHeader(authorizationHeader, this.config.portalSessionSecret, nowMs);
     if (!verdict.ok) {
       // Expiry is the one distinguishable case: the bearer was genuinely ours,
       // and "tap the link again" is safe and useful to say. Missing, malformed
       // and forged share one detail string — the NT-AUTH-001 stance.
       throw verdict.reason === 'expired'
-        ? portalSessionRequired('This portal session has expired. Open the link from your text message again.')
+        ? portalSessionRequired(SESSION_EXPIRED_DETAIL)
         : portalSessionRequired('missing or invalid portal session');
     }
     const claims = verdict.claims;
@@ -183,14 +228,17 @@ export class PortalSessionContextResolver {
     // and a disagreement means one of them is not what we minted. Refuse rather
     // than pick a winner — the delegated context is built from the ROW below.
     if (row.businessId !== claims.businessId) throw portalSessionRequired('missing or invalid portal session');
-    // Only a DELEGATED_UPLOAD session may drive the portal. An ONBOARDING or
-    // ITEM_MESSAGE row is a different grant with different scope, and this
-    // resolver would hand it document-write powers it was never given.
-    if (row.scope !== 'DELEGATED_UPLOAD') throw portalSessionRequired('missing or invalid portal session');
+    // The session must be the KIND the caller asked for. A DELEGATED_UPLOAD row
+    // and an ONBOARDING row are different grants, and answering either question
+    // with either row is how one becomes the other: the upload path would gain
+    // a session with no chase and no grant, and the billing path would gain one
+    // that can write documents. `ITEM_MESSAGE` matches neither and is refused
+    // by both.
+    if (row.scope !== expectedScope) throw portalSessionRequired('missing or invalid portal session');
     // A row that exists but was never verified is an OTP that was never passed.
     if (row.verifiedAt === null) throw portalSessionRequired('missing or invalid portal session');
     if (row.expiresAt.getTime() <= nowMs) {
-      throw portalSessionRequired('This portal session has expired. Open the link from your text message again.');
+      throw portalSessionRequired(SESSION_EXPIRED_DETAIL);
     }
 
     return {

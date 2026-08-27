@@ -367,12 +367,12 @@ it no longer forces a split across two columns.
       `ExportsApiModule` beside `CapabilityLinkModule`. Synchronous generation, capped at
       500, no worker and no `QUEUED`. Proven against a real database
       (`api/exports.integration.test.ts`, prefix `a9x_`, cleanup by explicit id list).
-- [ ] **A9 left the screen UNREACHABLE, and it is one line in four of Mubasshir's files.**
-      `ExportView` is written, tested and under 5 kB gzip on its own chunk, but `App.tsx`,
-      `AppContext.tsx` (`SIDEBAR_TABS`), `Sidebar.tsx` and `BottomNav.tsx` are the shell and
-      were outside A9's owned paths while he had open PRs in them. Until those four lines
-      land the view is dead code and `/export` resolves to the AI Workspace. The exact diff
-      is on the A9 PR.
+- [x] **The screen is REACHABLE** (28 Aug 2026). The four lines A9 could not write —
+      a `lazy()` + `case 'Export':` in `App.tsx`, `'Export'` in `SIDEBAR_TABS`, and a
+      `Download`-icon nav entry in `Sidebar.tsx` and `BottomNav.tsx` — landed once those
+      files had no open PRs against them. `/export` no longer resolves to the AI
+      Workspace, and `ExportView` is in the build graph: 4.80 kB gzip on its own chunk,
+      floor +0.2 kB, worst route 245.8 kB against the 250 kB budget.
 - [ ] **Three columns on `exports` would retire the `filters` compromise** —
       `document_count`, `warnings jsonb`, and a second key for the bundle (or an
       `export_artefacts` child). A contract-change candidate, not taken here.

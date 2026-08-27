@@ -792,6 +792,18 @@ paths:
         attached to it.
       tags: [billing]
       x-nt-side-effect: ingest
+      # TWO PRINCIPALS, ONE OPERATION — the shape `completeDocumentUpload` already
+      # uses. D48 says the CLIENT pays, and the client holds a portal bearer, not
+      # a workspace cookie; the accountant keeps the cookie path because they are
+      # the one who can see a client is unsubscribed (issue #205).
+      #
+      # ⚠ Under a portal bearer, `businessId` MUST equal the session's own and a
+      # mismatch is a 404 — never a 403, which would confirm the other business
+      # exists. A client holding a forwarded setup link does not get to name
+      # whose subscription they are paying for.
+      security:
+        - workspaceSession: []
+        - portalSession: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -4504,6 +4516,25 @@ components:
           type: string
           description: 'Send as `Authorization: Bearer …` on every portal call.'
         expiresAt: { type: string, format: date-time }
+        businessId:
+          type: string
+          description: |
+            The business this session was opened for — present **only** on a
+            session from `createPortalOnboardingSession`, absent on a chase
+            session (contract-change issue #205).
+
+            The two are the same credential at two different jobs. An invited
+            client is onboarding their own business and has to name it to
+            subscribe (`CheckoutSessionRequest.businessId`), and no other
+            operation can tell them: `getPortalContext` needs a chase, and an
+            invited client has none by definition. A chase session's business is
+            not its holder's to act on — they may upload against granted
+            documents and nothing else — so it is not given an id it could put
+            in a request body.
+
+            ⚠ It is an ANSWER, never an instruction. A caller who sends a
+            different `businessId` on a portal-authenticated checkout gets a
+            404, because the session decides whose subscription this is.
 
     PortalContext:
       type: object

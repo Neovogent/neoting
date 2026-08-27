@@ -4,6 +4,7 @@ import { getPrismaClient, type PrismaClient } from '../../common/db/prisma.js';
 import { type IdempotencyStore, InMemoryIdempotencyStore } from '../../common/idempotency/idempotency-store.js';
 import type { Env } from '../../config/env.js';
 import { ENV } from '../../config/env.module.js';
+import { PortalModule } from '../portal/index.js';
 import { BillingController } from './billing.controller.js';
 import { BillingService } from './billing.service.js';
 import { type Clock, systemClock } from './clock.js';
@@ -46,6 +47,10 @@ import {
  * would put the Stripe seam in two places.
  */
 @Module({
+  // `PortalModule` for `PORTAL_SESSION_CONTEXT` — checkout accepts the portal
+  // bearer as well as the workspace cookie (#205), and a second resolver built
+  // here would be a second opinion about what a live session is.
+  imports: [PortalModule],
   controllers: [BillingController, StripeWebhookController],
   providers: [
     StripeSignatureGuard,

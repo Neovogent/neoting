@@ -172,7 +172,20 @@ three more things that could be wrong on our side.
 
 ## 6. The webhook
 
-Register `https://api.neoting.neovogent.com/v1/webhooks/stripe`, subscribed to:
+**Registered in the sandbox on 28 Aug 2026: `we_1U9BfsGMdHp4NCWvglaIH4Ap`**, at
+`https://api.neoting.neovogent.com/v1/webhooks/stripe`, with the four events
+below. Its signing secret is in Secrets Manager at `/neoting/staging/stripe`
+under `webhook_secret` and nowhere else — Stripe reveals it once, at creation.
+
+`api_version` on it is **null**, i.e. it follows the account default, and that is
+a recorded fact rather than a choice: Stripe rejects `api_version` on an UPDATE
+(`Received unknown parameter`), so it can only be pinned at creation and this one
+was not. It is safe today because `stripe-event.ts` reads `current_period_end`
+from both places. Pin it on the live-mode endpoint, where the account default is
+someone else's to move.
+
+To recreate one, register `https://api.neoting.neovogent.com/v1/webhooks/stripe`
+subscribed to:
 
 ```
 customer.subscription.created
@@ -205,15 +218,30 @@ decides which deployments silently lose the renewal date.
 
 ## 7. Configuration
 
-| Variable | Staging today | Live |
+| Variable | Staging since 28 Aug 2026 | Live |
 |---|---|---|
-| `BILLING` | `demo` | `stripe` |
-| `STRIPE_SECRET_KEY` | — | a **restricted** key (`rk_…`), not `sk_…` |
-| `STRIPE_WEBHOOK_SECRET` | — | the endpoint's signing secret |
-| `STRIPE_PRICE_ID` | — | the live-mode `price_…` |
+| `BILLING` | **`stripe`** | `stripe` |
+| `STRIPE_SECRET_KEY` | a sandbox key, from Secrets Manager | a **restricted** key (`rk_…`), not `sk_…` |
+| `STRIPE_WEBHOOK_SECRET` | `we_1U9Bfs…`'s signing secret | the endpoint's signing secret |
+| `STRIPE_PRICE_ID` | `price_1U8lIsGMdHp4NCWvxj03BBuc` | the live-mode `price_…` |
 | `STRIPE_TAX` | `rate` | `rate` until registered, then `automatic` |
-| `STRIPE_TAX_RATE_ID` | — | the live-mode `txr_…` |
-| `BILLING_RETURN_ORIGINS` | the app origin | the app origin |
+| `STRIPE_TAX_RATE_ID` | `txr_1U8lIuGMdHp4NCWvqQoFEvmQ` | the live-mode `txr_…` |
+| `BILLING_RETURN_ORIGINS` | both app origins | the app origin |
+
+⚠ **A restricted key is the LIVE-mode rule, and staging knowingly does not
+follow it.** Stripe has no API for minting one, so a restricted key is a
+dashboard action; in a sandbox the blast radius of a full key is a sandbox, and
+paying a manual step per rebuild to narrow a permission set over fake data is
+not a trade worth making. Live mode is the opposite: mint the `rk_` with exactly
+**Customers**, **Checkout Sessions** and **Billing Portal Sessions** write, and
+nothing else.
+
+⚠ **Both web origins are listed, because both are live.**
+`neoacc.neovogent.com` is the address the launch plan and the signup emails use;
+`app.neoting.neovogent.com` is the one the CloudFront distribution has always
+answered on, and the one a walkthrough is usually driven from. `successUrl` is
+built from `window.location.origin`, so a checkout started on either has to be
+allowed to come back or it is refused at the door.
 
 The restricted key needs exactly three write permissions: **Customers**,
 **Checkout Sessions**, **Billing Portal Sessions**. Nothing else. A full secret

@@ -16,6 +16,47 @@ slogan: `stripe-client.ts` is what the shape costs, and it is three calls.
 | `entitlement.ts` + `index.ts` | The public seam: what a business that is not paying may still do |
 | `return-url.ts` | The open-redirect guard on three caller-supplied URLs |
 
+## ⚠ Checkout has two principals (contract change #205, 28 Aug 2026)
+
+`openapi.yaml` now puts `portalSession` beside `workspaceSession` on
+`createCheckoutSession`, and `PortalSession` carries an optional `businessId`.
+Both are additive, both were approved before the PR opened, and the reason is
+that **D48 says the CLIENT pays** — and a client holds a portal bearer, not a
+workspace cookie. Until this, the subscribe step at the end of the invited
+client's own onboarding could not be called at all: the session had no way to
+learn its own business, so `apps/web` reported "could not open the checkout" to
+every client, every time.
+
+`billing.controller.ts#principalFor` is the whole of the choice. A bearer means
+the portal and is judged as a portal session on its own merits
+(`resolveOnboarding`, which refuses a chase session, an unverified row and an
+expired one); no header at all is the accountant, unchanged.
+
+⚠ **The 404 in that method is the entire tenancy check on the portal path.**
+`systemScopeFor` yields the practice SYSTEM context, which can see every business
+in the practice, so RLS narrows nothing here — the session row does. A body
+naming a different business is **404, never 403**, because a 403 confirms the
+other business exists. The upload path dodges this by giving
+`PortalUploadRequest` no `businessId` at all; checkout cannot, because the
+contract shares one request schema with the accountant. `billing.controller.test.ts`
+pins all five branches, including that nothing reaches Stripe on a mismatch.
+
+The customer-portal operation deliberately did NOT gain the second principal: it
+is card changes, invoices and cancellation on an already-subscribed business,
+reached from that client's own settings, behind a session that has been through
+more than a setup link.
+
+## Staging is REAL Stripe now, against a sandbox
+
+**Staging runs `BILLING=stripe` against a SANDBOX since 28 Aug 2026.** It ran
+`demo` until then, and that was not merely a weaker environment: `subscription_status`
+is written ONLY by the Stripe webhook, so on `demo` it stayed null, `mayIngest(null)`
+was false, and every upload 402'd — the walkthrough died at the step after
+sign-in. The "no card can be charged" guarantee moved rather than went away: it
+is now the ACCOUNT, not the adapter, and `4242 4242 4242 4242` is the only card
+that works. See `docs/runbooks/stripe-billing.md` §7 and
+`infra/envs/staging/services.tf`.
+
 ## The four things worth knowing before you change anything here
 
 ### 1. Entitlement is in the service layer, and moving it is a data-loss bug
