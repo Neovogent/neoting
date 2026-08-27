@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { AlertTriangle, ArrowLeft, ArrowRight, BadgeCheck, CreditCard, Loader2, Mail, ShieldCheck } from 'lucide-react';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
+import type { MessageDescriptor } from 'react-intl';
 import { OTP_LENGTH } from '../../api/onboarding';
 import { useAppContext } from '../../context/AppContext';
 import { navigate, useQueryParam } from '../../lib/router';
@@ -131,6 +132,11 @@ const m = defineMessages({
   faultUnreachable: {
     id: 'portal.onboarding.faultUnreachable',
     defaultMessage: 'We could not reach your accountant’s system. Check your connection and try again.',
+  },
+  faultRefused: {
+    id: 'portal.onboarding.faultRefused',
+    defaultMessage:
+      'Your accountant’s system answered with an error we did not expect. Try again in a moment — if it keeps happening, tell your accountant and quote the reference below.',
   },
   faultCode: { id: 'portal.onboarding.faultCode', defaultMessage: 'Reference {code}' },
 
@@ -489,21 +495,27 @@ function OutcomeBadge({ good = false }: { good?: boolean }) {
  * Plain English first, the `NT-` reference after it (frontend ten, item 5).
  * `subscribing` swaps the no-code fallback: on the subscribe step the only
  * honest sentence is about the checkout and the fact nothing was charged.
+ *
+ * ⚠ **A code means the server ANSWERED, so the fallback splits on it.** An
+ * `NT-` reference and "check your connection" cannot both be true: the
+ * reference came back over the connection being blamed. This screen shipped
+ * saying it anyway, and S7 walked into the consequence — the two onboarding
+ * routes were unimplemented, the 404 arrived as `NT-VAL-001`, and an invited
+ * client was sent to their wifi settings for a route that did not exist.
  */
+export function faultMessageFor(fault: PortalFault, subscribing: boolean): MessageDescriptor {
+  if (fault.code === 'NT-OTP-001') return m.faultOtp;
+  if (fault.code === 'NT-OTP-002') return m.faultSession;
+  if (fault.code === 'NT-RATE-001') return m.faultRateLimited;
+  if (subscribing) return m.faultCheckout;
+  return fault.code === null ? m.faultUnreachable : m.faultRefused;
+}
+
 function Fault({ fault, subscribing = false }: { fault: PortalFault | null; subscribing?: boolean }) {
   const intl = useIntl();
   if (!fault) return null;
 
-  const message =
-    fault.code === 'NT-OTP-001'
-      ? intl.formatMessage(m.faultOtp)
-      : fault.code === 'NT-OTP-002'
-        ? intl.formatMessage(m.faultSession)
-        : fault.code === 'NT-RATE-001'
-          ? intl.formatMessage(m.faultRateLimited)
-          : subscribing
-            ? intl.formatMessage(m.faultCheckout)
-            : intl.formatMessage(m.faultUnreachable);
+  const message = intl.formatMessage(faultMessageFor(fault, subscribing));
 
   return (
     <div role="alert" className="p-4 rounded-2xl border border-red-500/20 bg-red-500/5">

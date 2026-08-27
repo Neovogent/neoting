@@ -6,6 +6,7 @@ import App from '../../App';
 import { queryClient } from '../../api/queryClient';
 import { AppProvider } from '../../context/AppContext';
 import { AppIntlProvider } from '../../i18n/AppIntlProvider';
+import { faultMessageFor } from './ChasePortalView';
 
 /**
  * The chase portal, driven through the real shell.
@@ -86,4 +87,22 @@ test('with no token in the address the portal asks for the link rather than gues
 
   expect(await screen.findByRole('heading', { name: 'Open your secure link' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /Continue/ })).toBeDisabled();
+});
+
+/**
+ * ⚠ "Check your signal" is true only when nothing answered.
+ *
+ * The `NT-` reference beside it came back over the connection the sentence
+ * blames, so the two cannot both be on screen. A client sent to their signal
+ * for a server-side fault stops trying, and the document we chased never
+ * arrives — which is the whole thing this surface exists to collect.
+ */
+test('a code means the server answered — the signal is never blamed for a reply we received', () => {
+  expect(faultMessageFor({ code: 'NT-VAL-001', detail: null }).id).toBe('portal.chasePortal.faultRefused');
+  expect(faultMessageFor({ code: 'NT-SRV-001', detail: null }).id).toBe('portal.chasePortal.faultRefused');
+  expect(faultMessageFor({ code: null, detail: null }).id).toBe('portal.chasePortal.faultUnreachable');
+
+  // The two the client can act on keep their own sentence.
+  expect(faultMessageFor({ code: 'NT-OTP-001', detail: null }).id).toBe('portal.chasePortal.faultOtp');
+  expect(faultMessageFor({ code: 'NT-OTP-002', detail: null }).id).toBe('portal.chasePortal.faultSession');
 });
