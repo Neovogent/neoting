@@ -37,19 +37,30 @@ test('one canonical row, two targets, two different files', () => {
   const vt = selectEmitter('VT_TRANSACTION_PLUS').emit([twoNominals]);
   const generic = selectEmitter('GENERIC_CSV').emit([twoNominals]);
 
-  // VT collapses to one nominal per row and says so; generic keeps both.
-  expect(vt.rowCount).toBe(1);
+  // Both keep both nominals now. VT used to collapse to one row and warn; A10
+  // showed VT imports a split analysis perfectly well, so that collapse — and
+  // the `analysis-collapsed` warning that confessed to it — is gone.
+  expect(vt.rowCount).toBe(2);
   expect(generic.rowCount).toBe(2);
-  expect(vt.warnings.map((warning) => warning.code)).toContain('analysis-collapsed');
+  expect(vt.warnings.map((warning) => warning.code)).not.toContain('analysis-collapsed');
   expect(generic.warnings).toStrictEqual([]);
 
-  const vtText = vt.bytes.toString('utf8');
-  const genericText = generic.bytes.toString('utf8');
+  // They still disagree, which is the point of the seam — just about different
+  // things than before. VT is now an archive of per-date, per-direction CSVs
+  // with no header, no type code and no date column; generic is one flat CSV
+  // carrying the canonical sign and ISO dates.
+  expect(selectEmitter('VT_TRANSACTION_PLUS').fileExtension).toBe('zip');
+  expect(selectEmitter('GENERIC_CSV').fileExtension).toBe('csv');
 
-  // VT: magnitudes and UK d/m/y. Generic: the canonical sign and ISO dates.
-  expect(vtText).toContain('04/08/2026');
-  expect(vtText).toContain('PCR');
+  const genericText = generic.bytes.toString('utf8');
   expect(genericText).toContain('2026-08-04');
   expect(genericText).toContain('-30.00');
-  expect(vtText).not.toContain('-30.00');
+
+  // The VT bytes are a ZIP, so the CSV text lives inside it. Proving the date
+  // reached the *filename* rather than a column is the whole A10 finding.
+  const vtArchive = vt.bytes.toString('latin1');
+  expect(vtArchive.startsWith('PK')).toBe(true);
+  expect(vtArchive).toContain('2026-08-04-purchase-credit-notes.csv');
+  // No type column any more: the format the accountant picks decides direction.
+  expect(vtArchive).not.toContain('PCR');
 });

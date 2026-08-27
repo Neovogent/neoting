@@ -1,91 +1,135 @@
 import type { ExportWarning } from '@neoting/contracts/model';
 
-import {
-  CanonicalRowsSchema,
-  type CanonicalBankStatementLine,
-  type CanonicalRow,
-  type CanonicalSourceLink,
-  type CanonicalTransactionDocument,
+import { buildZipArchive } from '../../bundle/zip.js';
+import type {
+  CanonicalBankStatementLine,
+  CanonicalRow,
+  CanonicalSourceLink,
+  CanonicalTransactionDocument,
 } from '../../canonical/canonical-row.js';
+import { CanonicalRowsSchema } from '../../canonical/canonical-row.js';
 import { serialiseCsv } from '../csv/csv.js';
 import { encodeCsv } from '../csv/encoding.js';
 import type { EmittedFile, ExportEmitter } from '../export-emitter.js';
-
-import { formatVtAmount, formatVtDate, vtTypeForBankLine, vtTypeForDocument } from './vt-format.js';
+import { formatVtAmount, vtTypeForBankLine, vtTypeForDocument } from './vt-format.js';
+import type { VtType } from './vt-format.js';
 import { assertVtEntryDetailsSafe, breakLongNumericTokens } from './vt-safety.js';
 
 /**
- * The VT Transaction+ emitter — the Universal Input Sheet layout.
+ * VT Transaction+ — the emitter, rewritten against the real import (A10).
  *
- * VT is a **solved target**, not a guess (§24.3.1): `Transactions › Universal
- * Input Sheet › Import from: CSV File`, column-mapped rather than
- * header-driven, staged onto the sheet for the accountant to review and press
- * **Post**. That last property is why VT suits this product — the import is a
- * review queue, which is the same shape as Review → Approve.
+ * ⚠ **EVERYTHING HERE WAS VERIFIED IN A REAL VT ON 27 AUG 2026.** The previous
+ * version targeted the **Universal Input Sheet** with eleven columns led by a
+ * `PIN`/`SIN` type code. That target does not accept an import at all:
+ * `Transaction ▸ Universal Input Sheet…` opens a bank-side *Payments And
+ * Receipts* sheet whose type column takes `1`/`2`/`3` and which has no import
+ * command. `docs/Source_Of_Truth.md` §24.3.1 carries the finding.
  *
- * **Nothing here transmits anything** (D42). This function returns bytes. The
- * accountant downloads them and imports them. *Published* is an internal state
- * meaning approved and released for export; the operation is **"Export for
- * VT"**, and any string in any surface implying that a ledger was written to is
- * a D42 defect.
+ * **The real route** is `Transaction ▸ Journal ▸ Import…`, CSV, data format
+ * **"Payments list/purchase invoices list"**, which VT documents as:
+ *
+ * ```
+ * A: Bank account name/supplier's name (or code)
+ * B: Paid to/invoice details
+ * C: Gross amount
+ * D: Input VAT
+ * E: Net amount (use multiple lines for split analysis)
+ * F: Net amount for VAT purposes
+ * G: Analysis account name (or code)
+ * ```
+ *
+ * Three consequences shape this file, and each reverses something the old one
+ * did:
+ *
+ * 1. **There is no date column, and no custom format can add one.** The format
+ *    designer's defined-ranges list has fourteen entries and none is a date;
+ *    the built-in "Trial balance with date" states `Column A: Date (ignored by
+ *    VT)`. The journal's single Date field applies to every row in the file.
+ *    **So one file per document date** — a mixed-date file posts every
+ *    document into one VAT period, which is an accounting error rather than an
+ *    inconvenience.
+ * 2. **There is no type column.** Purchase versus sales is chosen by the
+ *    accountant when they pick the data format, so **one file per direction**
+ *    as well — mixing them posts sales as purchases.
+ * 3. **VT accepts a split analysis.** Column E says so in VT's own words, and a
+ *    two-nominal document was observed posting correctly. The old
+ *    `collapseAnalysis()`, which put a document's whole net against its largest
+ *    line and warned, is gone. **One row per analysis line.**
+ *
+ * Because 1 and 2 mean one emit produces many files, the output is a **ZIP**.
+ * That is not a new mechanism: `bundle/zip.ts` already builds one for A8's
+ * source-document bundle, and `exports.service.ts` already stores whatever
+ * bytes, extension and content type the emitter declares.
  */
 
 /**
- * ⚠ **VT's on-screen column order. Do not reorder.**
- *
- * The import dialog is column-mapped, so a different order is recoverable —
- * the accountant repoints each column by hand. Matching VT's own order is what
- * makes it one click instead, on every import, for ever.
+ * The seven columns, in VT's order. **Not written as a header row** — see
+ * {@link VT_CSV_INCLUDE_HEADER}. Kept as a named constant because it is the
+ * spec, and because the tests assert the emitted width against it.
  */
-export const VT_UIS_COLUMNS = [
-  'Type',
-  'Ref no',
-  'Date',
-  'Primary account',
-  'Details',
-  'Total',
-  'VAT',
-  'Analysis',
-  'Analysis account',
-  'Entry details',
-  'Transaction notes',
+export const VT_LIST_COLUMNS = [
+  "Bank account name/supplier's name",
+  'Paid to/invoice details',
+  'Gross amount',
+  'Input VAT',
+  'Net amount',
+  'Net amount for VAT purposes',
+  'Analysis account name',
 ] as const;
 
 /**
- * ⚠ **A10 CHANGES THIS LINE** (the second of the module's two open questions;
- * the other is `csv/encoding.ts`).
- *
- * VT's import is column-mapped, not header-driven, so a header row is a
- * convenience for the human choosing destinations rather than something VT
- * parses. The two ways to be wrong are symmetrical and both are cheap to fix
- * from here: with the header, VT may stage it as a junk first row the
- * accountant deletes; without it, the accountant maps eleven unlabelled
- * columns. Defaulting to *with*, because a labelled column is easier to map
- * than an unlabelled one and VT's dialog has a start-row control for the
- * former problem.
+ * ⚠ **THIS WAS `true`, AND IT WAS WRONG.** The old reasoning — a labelled
+ * column is easier for a human to map — belonged to the Universal Input Sheet,
+ * whose import is column-mapped by hand. The journal import is **positional**
+ * and reads row 1 as data, so a header row imports as a transaction whose
+ * supplier is "Bank account name/supplier's name" and whose amounts are
+ * unparseable text.
  */
-export const VT_CSV_INCLUDE_HEADER = true;
+export const VT_CSV_INCLUDE_HEADER = false;
 
-/** §24.3.2 rung 3, and rule 9: this is provenance, not a claim that anything was sent. */
+/** Provenance, in the one free-text column there is. Never a claim that anything was transmitted (D42). */
 export const VT_PROVENANCE_TAG = 'Imported from Neo Accounting';
 
 /**
- * VT stores a **VAT amount in pounds and has no tax codes at all** (§24.3.1) —
- * no T0/T1/T20, nothing to map. Whether something is in scope is a property of
- * the analysis account, not of the transaction. Recorded here because the
- * absence of a tax-code column is the kind of thing a future emitter author
- * assumes is an oversight.
+ * Which file a row belongs in, and therefore which VT data format the
+ * accountant must choose for it.
  */
+export type VtFileKind =
+  | 'purchase-invoices'
+  | 'purchase-credit-notes'
+  | 'sales-invoices'
+  | 'sales-credit-notes'
+  | 'bank';
 
-interface RowBuild {
-  readonly cells: readonly string[];
-  readonly warnings: readonly ExportWarning[];
+const FILE_KIND_BY_TYPE: Readonly<Record<VtType, VtFileKind>> = Object.freeze({
+  PIN: 'purchase-invoices',
+  PCR: 'purchase-credit-notes',
+  SIN: 'sales-invoices',
+  SCR: 'sales-credit-notes',
+  PAY: 'bank',
+  CHQ: 'bank',
+  REC: 'bank',
+});
+
+/** The VT data format to pick per file. Printed into the how-to so nobody has to guess. */
+const VT_DATA_FORMAT_BY_KIND: Readonly<Record<VtFileKind, string>> = Object.freeze({
+  'purchase-invoices': 'Payments list/purchase invoices list',
+  'purchase-credit-notes': 'Payments list/purchase invoices list',
+  'sales-invoices': 'Receipts list/sales invoices list',
+  'sales-credit-notes': 'Receipts list/sales invoices list',
+  bank: 'Payments list/purchase invoices list',
+});
+
+export const HOW_TO_IMPORT_FILENAME = 'HOW-TO-IMPORT.txt';
+
+interface CsvFile {
+  readonly kind: VtFileKind;
+  /** `YYYY-MM-DD`, the date the accountant types into VT's journal Date box. */
+  readonly date: string;
+  readonly rows: string[][];
 }
 
-/**
- * Free text on its way into a cell: guarded against landmine 1, and the guard's
- * repair reported rather than swallowed.
- */
+/** Free text on its way into a cell: guarded against landmine 1, and the guard's repair reported. */
 function safeText(value: string, documentId: string, field: string, warnings: ExportWarning[]): string {
   const guarded = breakLongNumericTokens(value);
   if (guarded.changed) {
@@ -99,197 +143,258 @@ function safeText(value: string, documentId: string, field: string, warnings: Ex
 }
 
 /**
- * `Entry details` — **D43 rung 1**, the field VT itself designates for extra
- * per-line detail and exactly where Dext puts its link.
+ * Column B — **the whole of D43 rung 1, and A10 made it a strong one.**
  *
- * ⚠ **THE A8 ATTACHMENT POINT (1 of 2).** A8 mints the capability code and
- * fills `row.sourceLink`; this function is where it lands, and it needs no
- * change to do so. Until A8 merges, `sourceLink` is null, the cell is blank and
- * the export says so — D43 requires every exported transaction to carry a
- * resolvable link, and an export that quietly carries none is the failure this
- * whole surface exists to prevent.
- */
-function entryDetailsCell(
-  sourceLink: CanonicalSourceLink | null,
-  documentId: string,
-  warnings: ExportWarning[],
-): string {
-  if (sourceLink === null) {
-    warnings.push({
-      documentId,
-      code: 'source-link-missing',
-      message:
-        'This row has no source-document link, so the Entry details column is blank. D43 requires one on every exported transaction.',
-    });
-    return assertVtEntryDetailsSafe('');
-  }
-  // Landmine 2. Throws on a letterless code rather than silently emitting one
-  // that VT will render as a number — see `vt-safety.ts`.
-  return assertVtEntryDetailsSafe(sourceLink.code);
-}
-
-/**
- * `Transaction notes` — **D43 rung 3**: the code again, the full URL, and the
- * provenance tag, in a field with no length limit. Also what makes our rows
- * findable and reversible inside VT.
+ * The old design split the link across `Entry details` (the code) and
+ * `Transaction notes` (code, URL, provenance). **The journal import has no
+ * notes column**, so both collapse into this one field — and that turned out to
+ * be an upgrade rather than a loss:
  *
- * ⚠ **THE A8 ATTACHMENT POINT (2 of 2).** A8's `https://…/d/{code}` URL is
- * written here. It passes the landmine-1 guard like any other text: a URL is a
- * place a long digit run hides, and VT does not care that the digits were part
- * of a link when it crashes on them.
+ * - A 104-character value was observed importing **whole**, token intact. The
+ *   ~30-character truncation the old design worked around belongs to VT's
+ *   *reference* fields, not to entry details.
+ * - VT **replicates this text onto every leg** of the resulting double entry —
+ *   the bank line, the VAT line and each analysis line — so the link is
+ *   wherever the accountant happens to look.
+ *
+ * A missing link is still reported: D43 requires one on every exported
+ * transaction, and an export that quietly carries none is the failure this
+ * surface exists to prevent.
  */
-function transactionNotesCell(
-  sourceLink: CanonicalSourceLink | null,
+function detailsCell(
   reference: string,
+  sourceLink: CanonicalSourceLink | null,
   documentId: string,
   warnings: ExportWarning[],
 ): string {
   const parts: string[] = [];
   if (reference.length > 0) parts.push(reference);
-  if (sourceLink !== null) parts.push(sourceLink.code, sourceLink.url);
+
+  if (sourceLink === null) {
+    warnings.push({
+      documentId,
+      code: 'source-link-missing',
+      message:
+        'This row has no source-document link, so the invoice details column carries no way back to the document. D43 requires one on every exported transaction.',
+    });
+  } else {
+    // Landmine 2: throws on a letterless code rather than emitting one VT will
+    // render as a number. The URL goes in too — there is no second field now,
+    // and A10 showed the length is affordable.
+    parts.push(assertVtEntryDetailsSafe(sourceLink.code), sourceLink.url);
+  }
+
   parts.push(VT_PROVENANCE_TAG);
-  return safeText(parts.join(' · '), documentId, 'transaction notes', warnings);
+  return safeText(parts.join(' · '), documentId, 'invoice details', warnings);
 }
 
 /**
- * `Analysis account` **carries the ledger prefix** — `Cost of sales:
- * Purchases`, `Expenses: Motor expenses` — where `Primary account` carries the
- * name alone. Getting these two the wrong way round is the single most likely
- * way to produce a file that imports cleanly and posts to the wrong place.
+ * Column G **carries the ledger prefix** — `Cost of sales: Purchases` — where
+ * Column A carries the bare name.
+ *
+ * A10 turned this from a preference into a requirement. VT's format designer
+ * type-guesses each cell, and a bare numeric code like `5001` rendered as
+ * `5,001.00` — a number, not an account. The prefixed form stays text and
+ * auto-matches VT's chart with no mapping at all, provided the ledger name
+ * matches VT's own (`Expenses:`, not `Overheads:`).
  */
-function analysisAccountCell(
-  account: string,
-  documentId: string,
-  warnings: ExportWarning[],
-): string {
+function analysisAccountCell(account: string, documentId: string, warnings: ExportWarning[]): string {
   if (!account.includes(':')) {
     warnings.push({
       documentId,
       code: 'analysis-account-unprefixed',
-      message: `The analysis account "${account}" has no ledger prefix. VT expects "Cost of sales: Purchases" form and may not match it to a nominal without one.`,
+      message: `The analysis account "${account}" has no ledger prefix. VT reads a bare numeric code as a number rather than an account — send the "Cost of sales: Purchases" form so it matches VT's chart without manual mapping.`,
     });
   }
   return safeText(account, documentId, 'analysis account', warnings);
 }
 
 /**
- * **One nominal per row** (§24.3.4). VT cannot import a split analysis, and
- * this is where that constraint is paid.
+ * One document becomes **one row per analysis line** (verified, A10).
  *
- * The choice is collapse-and-tell, not split. Splitting a document into several
- * UIS rows would create several *transactions* in VT — several supplier
- * balances where the accountant has one invoice — which reconciles to a wrong
- * creditor. Collapsing keeps `Total` equal to the document's gross, which is
- * the number that reconciles against the supplier statement, and puts the whole
- * net against the largest line's nominal.
+ * Gross and Input VAT appear on the first line only; continuation lines carry
+ * their own net and nothing else. That is VT's documented mechanism — *"Column
+ * E: Net amount (use multiple lines for split analysis)"* — and a £240 invoice
+ * split £150/£50 across two nominals was observed posting with both nominals
+ * correct and the journal balanced.
  *
- * That misposts part of the value, on purpose, and says so. §24.3.4: *silent
- * flattening is the failure mode to design against.*
+ * ⚠ **The continuation line must repeat Column A.** Leaving it blank makes VT
+ * report an unassigned account and refuse. Repeating it costs an extra **£0.00
+ * line** in the supplier account — cosmetic, totals unaffected, and reported
+ * below so the accountant is not surprised by it.
  */
-function collapseAnalysis(
-  row: CanonicalTransactionDocument,
-  warnings: ExportWarning[],
-): string {
-  const [dominant, ...rest] = [...row.analysis].sort(
-    (a, b) => Math.abs(b.netPence) - Math.abs(a.netPence),
-  );
-  const account = dominant?.analysisAccount ?? '';
+function buildDocumentRows(row: CanonicalTransactionDocument): {
+  rows: string[][];
+  warnings: ExportWarning[];
+} {
+  const warnings: ExportWarning[] = [];
+  const rows: string[][] = [];
 
-  if (rest.length > 0) {
-    const dropped = rest.map((line) => line.analysisAccount).join(', ');
+  // Passed through byte-for-byte. VT's Converter saves the supplier mapping
+  // against this exact string; re-casing or re-trimming it makes every future
+  // import a manual mapping session again.
+  const primary = safeText(row.primaryAccount, row.documentId, 'supplier or customer name', warnings);
+  const details = detailsCell(row.reference, row.sourceLink, row.documentId, warnings);
+
+  row.analysis.forEach((line, index) => {
+    const first = index === 0;
+    rows.push([
+      primary,
+      details,
+      first ? formatVtAmount(row.grossPence) : '',
+      first ? formatVtAmount(row.vatPence) : '',
+      formatVtAmount(line.netPence),
+      // "Net amount for VAT purposes (eg excluding items outside the scope of
+      // VAT)" — VT's box-7 figure. The canonical model records a VAT amount but
+      // not whether a zero-VAT line is zero-rated (in scope) or outside scope,
+      // and those differ here. Sending the net is right for the overwhelming
+      // majority of supplier invoices; telling them apart needs a field the
+      // model does not have, which is a roadmap item rather than a per-row
+      // guess to make silently.
+      formatVtAmount(line.netPence),
+      analysisAccountCell(line.analysisAccount, row.documentId, warnings),
+    ]);
+  });
+
+  if (row.analysis.length > 1) {
     warnings.push({
       documentId: row.documentId,
-      code: 'analysis-collapsed',
-      message: `VT accepts one nominal per row, so this document was exported against "${account}" for its full net. Reallocate in VT after posting: ${dropped}.`,
+      code: 'split-analysis-zero-line',
+      message: `This document spans ${row.analysis.length} nominals and is exported as ${row.analysis.length} rows, which is how VT imports a split analysis. VT will show an extra £0.00 line against ${row.primaryAccount}; the totals are unaffected.`,
     });
   }
 
-  return account;
+  if (row.instrument === 'CREDIT_NOTE') {
+    warnings.push({
+      documentId: row.documentId,
+      code: 'credit-note-direction-unverified',
+      message:
+        'Credit notes go to their own file with positive amounts. VT list formats have no credit-note type, so check the direction in Preview Journal before saving and reverse it in VT if it posts the wrong way.',
+    });
+  }
+
+  return { rows, warnings };
 }
 
-function buildDocumentRow(row: CanonicalTransactionDocument): RowBuild {
+/** A bank line. One row, one contra account — a statement line has no split to make. */
+function buildBankRows(row: CanonicalBankStatementLine): { rows: string[][]; warnings: ExportWarning[] } {
   const warnings: ExportWarning[] = [];
+  const details = detailsCell(row.description, row.sourceLink, row.documentId, warnings);
 
-  const cells = [
-    vtTypeForDocument(row),
-    // `Ref no` is LEFT BLANK, deliberately (§24.3.1): VT assigns its own
-    // reference at post time, and our document code goes to Entry details and
-    // Transaction notes. Writing here would collide with VT's own numbering.
-    '',
-    formatVtDate(row.date),
-    // Passed through byte-for-byte. VT's Converter saves the supplier mapping
-    // against this exact string; re-casing or re-trimming it makes every future
-    // import manual again (§24.3.1).
-    safeText(row.primaryAccount, row.documentId, 'supplier or customer name', warnings),
-    // `Details` is SHORT on purpose — VT's AutoComplete keys off it and VT's own
-    // help warns against padding it. The invoice number, not a sentence.
-    safeText(row.reference, row.documentId, 'document reference', warnings),
-    formatVtAmount(row.grossPence),
-    formatVtAmount(row.vatPence),
-    formatVtAmount(row.netPence),
-    analysisAccountCell(collapseAnalysis(row, warnings), row.documentId, warnings),
-    entryDetailsCell(row.sourceLink, row.documentId, warnings),
-    transactionNotesCell(row.sourceLink, row.reference, row.documentId, warnings),
-  ];
+  return {
+    rows: [
+      [
+        safeText(row.bankAccount, row.documentId, 'bank account name', warnings),
+        details,
+        formatVtAmount(row.grossPence),
+        formatVtAmount(row.vatPence),
+        formatVtAmount(row.netPence),
+        formatVtAmount(row.netPence),
+        analysisAccountCell(row.contraAccount, row.documentId, warnings),
+      ],
+    ],
+    warnings,
+  };
+}
 
-  return { cells, warnings };
+/** `2026-08-04-purchase-invoices.csv` — the date is in the name because the accountant types it into VT. */
+export function vtFileName(date: string, kind: VtFileKind): string {
+  return `${date}-${kind}.csv`;
 }
 
 /**
- * A bank line in the general UIS layout.
+ * The how-to that travels with the archive.
  *
- * §24.3.1 notes that VT also has a dedicated bank-statement import mode mapping
- * only Date / Description / Payment / Receipt, and that bank rows are not
- * forced through the general layout. That second file is not A7's — ID's bank
- * input is a manual statement upload (D40) and statement extraction is on the
- * plan's own cut list. What is here is the `PAY`/`CHQ`/`REC` mapping the stage
- * specifies, so the canonical model's second record family has a real emitter
- * behind it rather than a `throw`.
+ * A10 found that the click path is not the one the published VT research
+ * described, and that the accountant must type the date themselves because no
+ * column carries it. Both are cheap to get wrong and free to write down.
  */
-function buildBankRow(row: CanonicalBankStatementLine): RowBuild {
-  const warnings: ExportWarning[] = [];
-
-  const cells = [
-    vtTypeForBankLine(row),
+function buildHowTo(files: readonly CsvFile[]): Buffer {
+  const lines: string[] = [
+    'Importing this export into VT Transaction+',
+    '==========================================',
     '',
-    formatVtDate(row.date),
-    safeText(row.bankAccount, row.documentId, 'bank account name', warnings),
-    safeText(row.description, row.documentId, 'statement narrative', warnings),
-    formatVtAmount(row.grossPence),
-    formatVtAmount(row.vatPence),
-    formatVtAmount(row.netPence),
-    analysisAccountCell(row.contraAccount, row.documentId, warnings),
-    entryDetailsCell(row.sourceLink, row.documentId, warnings),
-    transactionNotesCell(row.sourceLink, row.description, row.documentId, warnings),
+    'In VT:  Transaction > Journal > Import...',
+    '',
+    '  Import via:   CSV file (eg columns separated by commas)',
+    '  File:         one of the .csv files in this archive',
+    '  Data format:  see the table below - it differs per file',
+    '',
+    'THE DATE IS NOT IN THE FILE. VT applies ONE date to a whole journal, so',
+    'each file holds a single day and the date is in its filename. Type that',
+    'date into the journal Date box before importing.',
+    '',
+    'Use Preview Journal to check the entries before pressing Save.',
+    '',
+    'Files in this archive',
+    '---------------------',
   ];
 
-  return { cells, warnings };
+  for (const file of files) {
+    lines.push(
+      `  ${vtFileName(file.date, file.kind)}`,
+      `      date ${file.date} · ${file.rows.length} row(s) · format: ${VT_DATA_FORMAT_BY_KIND[file.kind]}`,
+    );
+  }
+
+  lines.push(
+    '',
+    'The first time you import, VT asks you to assign each supplier and nominal',
+    'to a VT account. That mapping is saved in a conversion table and reused by',
+    'every later import, so it is a one-off per supplier rather than per export.',
+    '',
+  );
+
+  return Buffer.from(lines.join('\r\n'), 'utf8');
 }
 
 class VtTransactionPlusEmitter implements ExportEmitter {
   readonly target = 'VT_TRANSACTION_PLUS' as const;
-  readonly fileExtension = 'csv';
-  readonly contentType = 'text/csv';
+  readonly fileExtension = 'zip';
+  readonly contentType = 'application/zip';
 
   emit(rows: readonly CanonicalRow[]): EmittedFile {
-    // Rule 4, at the one boundary this module has. The rows were assembled by
-    // our own code, which is exactly the argument that stops people parsing.
+    // Rule 4, at the one boundary this module has.
     const parsed = CanonicalRowsSchema.parse(rows);
 
     const warnings: ExportWarning[] = [];
-    const cells: string[][] = [];
-
-    if (VT_CSV_INCLUDE_HEADER) cells.push([...VT_UIS_COLUMNS]);
+    // Keyed `date|kind`. Insertion-ordered, then sorted, so the archive lists
+    // chronologically rather than in hash order.
+    const grouped = new Map<string, CsvFile>();
 
     for (const row of parsed) {
-      const built = row.family === 'TRANSACTION_DOCUMENT' ? buildDocumentRow(row) : buildBankRow(row);
-      cells.push([...built.cells]);
+      const kind =
+        row.family === 'TRANSACTION_DOCUMENT'
+          ? FILE_KIND_BY_TYPE[vtTypeForDocument(row)]
+          : FILE_KIND_BY_TYPE[vtTypeForBankLine(row)];
+
+      const built = row.family === 'TRANSACTION_DOCUMENT' ? buildDocumentRows(row) : buildBankRows(row);
       warnings.push(...built.warnings);
+
+      const key = `${row.date}|${kind}`;
+      const file = grouped.get(key) ?? { kind, date: row.date, rows: [] };
+      file.rows.push(...built.rows);
+      grouped.set(key, file);
     }
 
+    const files = [...grouped.values()].sort(
+      (a, b) => a.date.localeCompare(b.date) || a.kind.localeCompare(b.kind),
+    );
+
+    const entries = files.map((file) => ({
+      name: vtFileName(file.date, file.kind),
+      bytes: encodeCsv(
+        serialiseCsv(VT_CSV_INCLUDE_HEADER ? [[...VT_LIST_COLUMNS], ...file.rows] : file.rows),
+      ),
+    }));
+    entries.push({ name: HOW_TO_IMPORT_FILENAME, bytes: buildHowTo(files) });
+
     return {
-      bytes: encodeCsv(serialiseCsv(cells)),
-      rowCount: parsed.length,
+      bytes: buildZipArchive(entries),
+      // CSV rows across every file — what the accountant reconciles against
+      // VT's Preview Journal. It exceeds the input row count wherever a
+      // document split across nominals, which is the honest direction.
+      rowCount: files.reduce((total, file) => total + file.rows.length, 0),
       warnings,
     };
   }
