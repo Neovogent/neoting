@@ -86,6 +86,12 @@ const LandingView = lazy(() => import('./views/LandingView').then((m) => ({ defa
 // only when that document is opened.
 const LegalView = lazy(() => import('./views/legal/LegalView').then((m) => ({ default: m.LegalView })));
 
+// Creating a practice at `/signup/*` (launch stage M9) — the third public
+// surface, and the one the other two point at. Its own chunk, which is what
+// keeps the hand-rolled QR encoder off every other route: nothing but the
+// enrolment step ever downloads it.
+const SignupView = lazy(() => import('./views/signup/SignupView').then((m) => ({ default: m.SignupView })));
+
 // The §13.3 context header. Lazy for the budget (the floor sat 0.6 kB over
 // SoT §14's 250 kB on the worst route with it inlined), and mounted only when
 // a session state exists — synthetic mode never downloads it. `fallback` is
@@ -244,6 +250,17 @@ export default function App() {
     return (
       <Suspense fallback={null}>
         <LegalView />
+      </Suspense>
+    );
+  }
+
+  // Signing up (M9), public for the same reason and before every wall: this is
+  // the address a person with no account arrives at, so a login gate over it
+  // would be the one dead end the stage exists to remove.
+  if (portal === 'signup') {
+    return (
+      <Suspense fallback={<PortalSkeleton />}>
+        <SignupView />
       </Suspense>
     );
   }

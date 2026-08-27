@@ -52,7 +52,15 @@ const m = defineMessages({
     defaultMessage:
       'UK accounting practices use Neo Accounting to collect their clients’ receipts and invoices, read and code them automatically, and chase the client for whatever is missing — then produce a VT Transaction+ import file with the original document reachable from every line. Nothing is booked until someone in your practice approves it.',
   },
-  heroCta: { id: 'landing.landingView.heroCta', defaultMessage: 'Sign in to your practice' },
+  /**
+   * ⚠ THIS CTA POINTED AT `/app` UNTIL LAUNCH M9, AND HAD TO — there was no
+   * signup screen for it to point at, so the only honest word for the button
+   * was "sign in". M9 built one, and a landing page whose primary action sends
+   * a prospective customer to a login wall they cannot pass is the gap that
+   * stage exists to close. `headerSignIn` above is still the door for someone
+   * who already has an account.
+   */
+  heroCta: { id: 'landing.landingView.heroCta', defaultMessage: 'Create your account' },
   heroSecondary: { id: 'landing.landingView.heroSecondary', defaultMessage: 'See the price' },
 
   howTitle: { id: 'landing.landingView.howTitle', defaultMessage: 'How it works' },
@@ -242,7 +250,7 @@ export function LandingView() {
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <a
-                {...linkProps('/app')}
+                {...linkProps('/signup')}
                 className="flex items-center gap-2 px-7 py-3.5 rounded-full text-[14px] font-bold text-brand-on bg-brand hover:bg-brand-hover transition-colors shadow-glow-btn"
               >
                 {intl.formatMessage(m.heroCta)}
@@ -353,7 +361,7 @@ export function LandingView() {
                 {intl.formatMessage(m.pricingOneTier)}
               </p>
               <a
-                {...linkProps('/app')}
+                {...linkProps('/signup')}
                 className="mt-6 inline-flex items-center gap-2 px-7 py-3.5 rounded-full text-[14px] font-bold text-brand-on bg-brand hover:bg-brand-hover transition-colors shadow-glow-btn"
               >
                 {intl.formatMessage(m.heroCta)}
