@@ -1,22 +1,22 @@
 > ### ⚠ CONTRACTING ENTITY IS TEMPORARY — READ BEFORE PUBLISHING
 >
 > For the **first customer only**, the contracting entity and merchant of record is
-> **Exambinary Holding Ltd**, because that is the company holding the live Stripe account
+> **EXAM BINARY LTD**, because that is the company holding the live Stripe account
 > (`acct_1RQtbxGMdHp4NCWv`). Decision taken 26 Aug 2026.
 >
 > This matters and is not cosmetic:
-> - The customer's **card statement** will read Exambinary. If the contract named a
+> - The customer's **card statement** will read Exam Binary. If the contract named a
 >   different company, an accountant who does not recognise the name raises a chargeback.
-> - The **VAT invoice comes from Exambinary's VAT registration**, because HMRC requires the
+> - The **VAT invoice comes from Exam Binary's VAT registration**, because HMRC requires the
 >   invoice to come from the entity that made the supply. Neovogent's VAT number is not the
 >   one that belongs on it.
 >
-> So every reference below names Exambinary. **When Stripe moves to
+> So every reference below names Exam Binary. **When Stripe moves to
 > NEOVOGENT AI SOLUTIONS UK LTD** (company no. 15946429, registered office Suite 5,
 > The Cloisters, 11–12 George Road, Edgbaston, Birmingham B15 1NP), these documents change
 > back in the same commit as the Stripe migration — not before, and not after.
 
-> ⚠ **NOT LEGAL ADVICE — DRAFTING AID ONLY.** The document below was drafted from Exambinary's own documented product behaviour and the facts supplied by the product owner. It has not been reviewed by a lawyer. It must be read and approved by a qualified UK solicitor (data protection) before it is published, linked from the landing page, or shown to any customer. Every `[PLACEHOLDER: ...]` marks something that could not be established from the facts and must be filled in or deleted before publication. This warning block is **outside** the document body and must not be published with it.
+> ⚠ **NOT LEGAL ADVICE — DRAFTING AID ONLY.** The document below was drafted from Exam Binary's own documented product behaviour and the facts supplied by the product owner. It has not been reviewed by a lawyer. It must be read and approved by a qualified UK solicitor (data protection) before it is published, linked from the landing page, or shown to any customer. Every `[PLACEHOLDER: ...]` marks something that could not be established from the facts and must be filled in or deleted before publication. This warning block is **outside** the document body and must not be published with it.
 
 ---
 
@@ -54,7 +54,7 @@ CONTROLLER parts of this notice.
 
 # Neo Accounting — Privacy Notice
 
-**In one paragraph.** This notice explains what Exambinary does with personal data when you use Neo Accounting. It matters that we do two different jobs. When an accounting practice signs up, pays and uses the app, we decide how that practice's own account data is handled — for that data we are the **controller**, and this notice is your notice. When a practice uploads its clients' receipts, invoices and bank statements, we only do what the practice tells us — for that data the **practice is the controller and we are its processor**, and the practice's own privacy notice is the one that applies. Clause 2 sets out which is which. Everything below is written for an accountant to read, not a lawyer.
+**In one paragraph.** This notice explains what Exam Binary does with personal data when you use Neo Accounting. It matters that we do two different jobs. When an accounting practice signs up, pays and uses the app, we decide how that practice's own account data is handled — for that data we are the **controller**, and this notice is your notice. When a practice uploads its clients' receipts, invoices and bank statements, we only do what the practice tells us — for that data the **practice is the controller and we are its processor**, and the practice's own privacy notice is the one that applies. Clause 2 sets out which is which. Everything below is written for an accountant to read, not a lawyer.
 
 ---
 
@@ -83,12 +83,12 @@ CONTROLLER parts of this notice.
 
 | | |
 |---|---|
-| Trading name | Exambinary |
-| Registered name | Exambinary Holding Ltd |
-| Company number | [PLACEHOLDER: company number. SoT D34 records **[PLACEHOLDER: Exambinary company number]** — confirm] |
-| Registered office | Birmingham, United Kingdom — [PLACEHOLDER: Exambinary registered office] |
+| Trading name | Exam Binary |
+| Registered name | EXAM BINARY LTD |
+| Company number | [PLACEHOLDER: company number. SoT D34 records **16261850** — confirm] |
+| Registered office | Birmingham, United Kingdom — Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham, West Midlands B15 1NP |
 | Tax ID | 9286810564 |
-| VAT registration number | [PLACEHOLDER: UK VAT registration number. 9286810564 is the company TAX ID, not the VAT number — the VAT registration number is a separate nine-digit reference and must be obtained before any invoice is issued] |
+| VAT registration number | [PLACEHOLDER: EXAM BINARY LTD’s UK VAT registration number — nine digits, format GB123456789. Not on Companies House; take it from the company’s VAT certificate or HMRC online account. `9286810564` is a TAX ID and is NOT it. Stripe’s tax-ID field expects a `gb_vat` value, and an invoice carrying the wrong registration number is not a valid VAT invoice.] |
 | ICO registration number | [PLACEHOLDER: ICO data protection fee registration number] |
 | Product | Neo Accounting — https://neoacc.neovogent.com (the app is at /app) |
 
@@ -107,7 +107,7 @@ This is the most important part of this notice. Getting it wrong would send peop
 | | **Part A — we are the controller** | **Part B — we are the processor** |
 |---|---|---|
 | Whose data | The accounting practice and its staff: the people who sign up, sign in, pay and email support | The practice's **clients** — their business documents, and the contact details of their staff |
-| Who decides what happens to it | **Exambinary** | **The accounting practice** |
+| Who decides what happens to it | **Exam Binary** | **The accounting practice** |
 | Whose privacy notice applies | This one | The practice's own privacy notice |
 | Who a person asks about their data | Us — support@neovogent.com | Their accountant. See clause 4.3 |
 | What governs it | This notice, and our terms | Our Data Processing Agreement with the practice |
@@ -140,7 +140,7 @@ This is the most important part of this notice. Getting it wrong would send peop
 
 **4.1 What this covers.** Everything the practice — or its clients — uploads into Neo Accounting so that we can read and code it: supplier invoices, receipts, bank statements, and the contact details (name, email address, mobile number) of the client business's staff. These are business records, but they routinely contain personal data — a sole trader's name and address, a person's name on a receipt, incidental personal detail visible in a photograph of a document.
 
-**4.2 Our role.** For all of this, **the practice is the controller and Exambinary is the processor**. We act only on the practice's documented instructions. We do not decide what to collect, we do not use it for our own purposes, and we do not sell it or share it with anyone except the sub-processors listed in clause 6.
+**4.2 Our role.** For all of this, **the practice is the controller and Exam Binary is the processor**. We act only on the practice's documented instructions. We do not decide what to collect, we do not use it for our own purposes, and we do not sell it or share it with anyone except the sub-processors listed in clause 6.
 
 **4.3 If you are a client of a practice.** If you want a copy of your data, want something corrected, or want it deleted, please ask **your accountant**. We are not allowed to act on your request directly — we would be acting without our customer's instruction. If you contact us anyway, we will pass your request to the practice and tell you we have done so. [PLACEHOLDER: confirm the internal timescale for forwarding such a request — suggest "without undue delay and in any event within 3 working days".]
 
@@ -178,7 +178,7 @@ We have considered whether these override your interests and concluded they do n
 
 **5.4 Do you have to give us this data?** Yes, for the account and billing data at clause 3.1. It is a contractual requirement: without it we cannot open an account, sign you in, or invoice you. The service and security records are collected automatically as a consequence of using the app.
 
-**5.5 Marketing.** [PLACEHOLDER: confirm whether Exambinary sends marketing email. If it does, state the lawful basis — consent, or the soft opt-in for existing customers — and how to unsubscribe. If it does not, replace this clause with "We do not send marketing email."]
+**5.5 Marketing.** [PLACEHOLDER: confirm whether Exam Binary sends marketing email. If it does, state the lawful basis — consent, or the soft opt-in for existing customers — and how to unsubscribe. If it does not, replace this clause with "We do not send marketing email."]
 
 ---
 
