@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Building2, ChevronRight, Link2, Smartphone, ImagePlus, X, ArrowLeft, Send, PencilLine, Check } from 'lucide-react';
+import { Building2, ChevronRight, Link2, Smartphone, ImagePlus, X, ArrowLeft, Send, PencilLine, Check, Mail, CheckCircle2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import type { MessageDescriptor } from 'react-intl';
@@ -8,6 +8,15 @@ import { commonLabels, commonPlaceholders } from '../../i18n/common';
 import { ReviewGate, ReviewRows, ReviewSection } from './ReviewGate';
 import { Pill } from './DataTable';
 import type { SetupTask } from '../../lib/types';
+import { API_ENABLED } from '../../api/config';
+import { errorLabel } from '../../api/slices';
+import {
+  buildIntakeRequest,
+  submitClientIntake,
+  type CreatedBusiness,
+  type IntakeDraft,
+  type TriState,
+} from '../../api/intake';
 
 /**
  * Copy for all five components in this file — #65, following ActionCard.
@@ -96,7 +105,7 @@ const m = defineMessages({
       'Intake asks for no bank connection and no accounting-software connection. Documents come in by upload, email and the portal.',
   },
 
-  // InviteIntake — three fields and an SMS.
+  // InviteIntake — three fields and a setup link.
   inviteTitle: {
     id: 'clients.inviteIntake.title',
     defaultMessage: 'Add new client',
@@ -108,7 +117,7 @@ const m = defineMessages({
   inviteIntro: {
     id: 'clients.inviteIntake.intro',
     defaultMessage:
-      'Three things — enough to address the SMS and know whose record it is. The client supplies their own identity, tax and trading detail on the link, so nothing here is a guess you would have to correct later.',
+      'Three things — enough to address the setup link and know whose record it is. The client supplies their own identity, tax and trading detail on the link, so nothing here is a guess you would have to correct later.',
   },
   inviteCompanyNameLabel: {
     id: 'clients.inviteIntake.companyNameLabel',
@@ -134,11 +143,11 @@ const m = defineMessages({
   // say different things, and only one of them has a number to address.
   inviteSmsLinkTo: {
     id: 'clients.inviteIntake.smsLinkTo',
-    defaultMessage: 'One SMS link to {mobile}',
+    defaultMessage: 'One setup link to {mobile}',
   },
   inviteSmsLinkPending: {
     id: 'clients.inviteIntake.smsLinkPending',
-    defaultMessage: 'One SMS link once the three fields are in',
+    defaultMessage: 'One setup link once the three fields are in',
   },
   inviteSmsLinkBody: {
     id: 'clients.inviteIntake.smsLinkBody',
@@ -207,7 +216,7 @@ const m = defineMessages({
   inviteApprovalNote: {
     id: 'clients.inviteIntake.approvalNote',
     defaultMessage:
-      'Approving creates the record and queues the SMS — it does not register anything. The client shows as awaiting registration until they finish.',
+      'Approving creates the record and queues the setup link — it does not register anything. The client shows as awaiting registration until they finish.',
   },
   inviteApproveLabel: {
     id: 'clients.inviteIntake.approveLabel',
@@ -216,7 +225,7 @@ const m = defineMessages({
   inviteSuccessMessage: {
     id: 'clients.inviteIntake.successMessage',
     defaultMessage:
-      '{name} created and one setup SMS queued to {mobile} — they register the company details themselves.',
+      '{name} created and one setup link queued to {mobile} — they register the company details themselves.',
   },
   inviteAuditAction: {
     id: 'clients.inviteIntake.auditAction',
@@ -335,7 +344,7 @@ const m = defineMessages({
   practiceContactIntro: {
     id: 'clients.practiceIntake.contactIntro',
     defaultMessage:
-      'The mobile number is required — it drives SMS chasing and OTP onboarding. The client never installs an app.',
+      'The mobile number is required — a chase names its recipient by it. The client never installs an app.',
   },
   practiceContactNameLabel: {
     id: 'clients.practiceIntake.contactNameLabel',
@@ -359,7 +368,7 @@ const m = defineMessages({
   },
   practiceWhatsappHint: {
     id: 'clients.practiceIntake.whatsappHint',
-    defaultMessage: 'Intake only — chasing is always SMS.',
+    defaultMessage: 'Intake only — chasing is always by email.',
   },
   practiceManagedByLabel: {
     id: 'clients.practiceIntake.managedByLabel',
@@ -499,7 +508,7 @@ const m = defineMessages({
   },
   practiceNoMobileReviewWarning: {
     id: 'clients.practiceIntake.noMobileReviewWarning',
-    defaultMessage: 'No mobile number — SMS chasing will not work until one is added.',
+    defaultMessage: 'No mobile number — chasing will not work until one is added.',
   },
   practiceApproveLabel: {
     id: 'clients.practiceIntake.approveLabel',
@@ -566,7 +575,7 @@ const STEPS: [MessageDescriptor, ...MessageDescriptor[]] = [
 
 /**
  * Who fills the record in. The practice path keys everything in itself; the
- * invite path sends one SMS link and the client registers their own details.
+ * invite path sends one setup link and the client registers their own details.
  * Neither path asks for a connection of any kind (D47).
  */
 type IntakeMode = 'invite' | 'practice';
@@ -596,11 +605,20 @@ const FREQUENCIES: [string, string, string] = ['Weekly', 'Monthly', 'Quarterly']
 
 /**
  * Consolidated client intake (PRD section 5.1) — the same component the sidebar
- * uses, rendered inline in chat. Creation goes through Review -> Approve.
+ * uses, rendered inline in chat.
+ *
+ * Two worlds behind one name (launch M7): with a live session the form is
+ * `LiveIntake`, one flow against `POST /v1/businesses` — the server creates
+ * the workspace, its contact, its VT integration and the setup invite in one
+ * transaction, and the registration email carries the link. Synthetic mode
+ * keeps the original two-path demo flow unchanged (METH_MODE §1's standing
+ * condition), whose creation goes through the local Review -> Approve theatre.
  */
 export function ClientIntakeForm({ defaultName = '' }: { defaultName?: string }) {
+  const { session } = useAppContext();
   const [mode, setMode] = useState<IntakeMode | null>(null);
 
+  if (API_ENABLED && session.status === 'authenticated') return <LiveIntake defaultName={defaultName} />;
   if (mode === null) return <ModeChooser onPick={setMode} />;
   if (mode === 'invite') return <InviteIntake defaultName={defaultName} onBack={() => setMode(null)} />;
   return <PracticeIntake defaultName={defaultName} onBack={() => setMode(null)} />;
@@ -743,7 +761,7 @@ function ModeOption({
 }
 
 /**
- * The invite path: the three things needed to address an SMS, and nothing else.
+ * The invite path: the three things needed to address a setup link, and nothing else.
  * Everything the practice would otherwise key in is asked of the client on the
  * link, so asking for it here as well would only be a second guess at it.
  */
@@ -816,7 +834,7 @@ function InviteIntake({ defaultName, onBack }: { defaultName: string; onBack: ()
 
       <div className="p-4 bg-raised/50">
         {/* No review card until the link is actually sendable — approving a
-            half-filled invite would create a record and queue an SMS to
+            half-filled invite would create a record and queue a setup link to
             nobody. The three fields are the whole form, so this is not a
             hidden gate. */}
         {!ready ? (
@@ -1444,6 +1462,585 @@ function LogoPicker({ value, onChange, name }: { value: string; onChange: (v: st
         />
       </div>
       {error && <div className="text-[11px] text-amber-400 mt-2 font-semibold">{error}</div>}
+    </div>
+  );
+}
+
+/**
+ * Copy for the live intake (launch M7). The registration is by EMAIL — the
+ * client signs in with a six-digit code we email them (M6); nothing here may
+ * say "text" or "SMS", because ID sends none. And per D47 the flow asks for
+ * no bank connection and no accounting-software connection, which the strict
+ * contract body makes structural rather than a promise.
+ */
+const mLive = defineMessages({
+  title: { id: 'clients.liveIntake.title', defaultMessage: 'Add new client' },
+  stepSubtitle: {
+    id: 'clients.liveIntake.stepSubtitle',
+    defaultMessage: 'Step {current} of {total} — {step}',
+  },
+  stepCompany: { id: 'clients.liveIntake.stepCompany', defaultMessage: 'Company' },
+  stepContact: { id: 'clients.liveIntake.stepContact', defaultMessage: 'Contact' },
+  stepProfile: { id: 'clients.liveIntake.stepProfile', defaultMessage: 'Business type' },
+
+  // Step 1 — company.
+  legalNameLabel: { id: 'clients.liveIntake.legalNameLabel', defaultMessage: 'Legal name' },
+  legalNamePlaceholder: { id: 'clients.liveIntake.legalNamePlaceholder', defaultMessage: 'Sparkle Cleaning Ltd' },
+  tradingNameLabel: { id: 'clients.liveIntake.tradingNameLabel', defaultMessage: 'Trading name' },
+  tradingNamePlaceholder: { id: 'clients.liveIntake.tradingNamePlaceholder', defaultMessage: 'Sparkle' },
+  companyNumberLabel: { id: 'clients.liveIntake.companyNumberLabel', defaultMessage: 'Company number' },
+  companyNumberPlaceholder: { id: 'clients.liveIntake.companyNumberPlaceholder', defaultMessage: '12345678' },
+  industryLabel: { id: 'clients.liveIntake.industryLabel', defaultMessage: 'Industry' },
+  industryPlaceholder: { id: 'clients.liveIntake.industryPlaceholder', defaultMessage: 'Commercial cleaning' },
+  vatRegisteredLabel: { id: 'clients.liveIntake.vatRegisteredLabel', defaultMessage: 'VAT registered' },
+  vatNumberPlaceholder: { id: 'clients.liveIntake.vatNumberPlaceholder', defaultMessage: 'GB 412 8875 21' },
+
+  // Step 2 — the primary contact, who the registration email goes to.
+  contactIntro: {
+    id: 'clients.liveIntake.contactIntro',
+    defaultMessage:
+      'The registration email goes to this person. They sign in with a six-digit code we email them, register the company details themselves, and complete their own onboarding — including the subscription.',
+  },
+  firstNameLabel: { id: 'clients.liveIntake.firstNameLabel', defaultMessage: 'First name' },
+  lastNameLabel: { id: 'clients.liveIntake.lastNameLabel', defaultMessage: 'Last name' },
+  emailHint: {
+    id: 'clients.liveIntake.emailHint',
+    defaultMessage: 'Their registered address — the sign-in link, the codes and every request go here.',
+  },
+  emailPlaceholder: { id: 'clients.liveIntake.emailPlaceholder', defaultMessage: 'priya@sparklecleaning.co.uk' },
+  mobileLabel: { id: 'clients.liveIntake.mobileLabel', defaultMessage: 'Mobile (optional)' },
+  mobileHint: {
+    id: 'clients.liveIntake.mobileHint',
+    defaultMessage: 'Include the country code, like +44 7700 900123.',
+  },
+
+  // Step 3 — the business-type profile, §24.4's whole weight.
+  profileIntro: {
+    id: 'clients.liveIntake.profileIntro',
+    defaultMessage:
+      'This is the only context the AI gets when it codes this client’s documents — there is no connected chart of accounts. One honest sentence is worth more than a category.',
+  },
+  activityLabel: { id: 'clients.liveIntake.activityLabel', defaultMessage: 'What the business does' },
+  activityPlaceholder: {
+    id: 'clients.liveIntake.activityPlaceholder',
+    defaultMessage: 'Commercial cleaning for offices and schools',
+  },
+  suppliersLabel: { id: 'clients.liveIntake.suppliersLabel', defaultMessage: 'Typical suppliers' },
+  suppliersPlaceholder: { id: 'clients.liveIntake.suppliersPlaceholder', defaultMessage: 'Nisbets, Costco' },
+  suppliersHint: {
+    id: 'clients.liveIntake.suppliersHint',
+    defaultMessage: 'Comma-separated. Supplier coding rules are seeded from these.',
+  },
+  costsLabel: { id: 'clients.liveIntake.costsLabel', defaultMessage: 'Typical costs' },
+  costsPlaceholder: { id: 'clients.liveIntake.costsPlaceholder', defaultMessage: 'Cleaning materials, wages, fuel' },
+  costsHint: {
+    id: 'clients.liveIntake.costsHint',
+    defaultMessage: 'Comma-separated. The chart of accounts is seeded from these.',
+  },
+  hasEmployeesLabel: { id: 'clients.liveIntake.hasEmployeesLabel', defaultMessage: 'Employees' },
+  usesSubcontractorsLabel: { id: 'clients.liveIntake.usesSubcontractorsLabel', defaultMessage: 'Subcontractors' },
+  triUnknown: { id: 'clients.liveIntake.triUnknown', defaultMessage: 'Not sure' },
+  triYes: { id: 'clients.liveIntake.triYes', defaultMessage: 'Yes' },
+  triNo: { id: 'clients.liveIntake.triNo', defaultMessage: 'No' },
+  notesLabel: { id: 'clients.liveIntake.notesLabel', defaultMessage: 'Anything else' },
+  notesPlaceholder: {
+    id: 'clients.liveIntake.notesPlaceholder',
+    defaultMessage: 'Anything else the coding should know — leases, tills, seasonal work…',
+  },
+
+  // The still-needed line, invite-style: names joined with ', ' at the call site.
+  missingName: { id: 'clients.liveIntake.missingName', defaultMessage: 'company name' },
+  missingFirstName: { id: 'clients.liveIntake.missingFirstName', defaultMessage: 'contact first name' },
+  missingLastName: { id: 'clients.liveIntake.missingLastName', defaultMessage: 'contact last name' },
+  missingEmail: { id: 'clients.liveIntake.missingEmail', defaultMessage: 'contact email' },
+  missingActivity: { id: 'clients.liveIntake.missingActivity', defaultMessage: 'what the business does' },
+  stillNeeded: {
+    id: 'clients.liveIntake.stillNeeded',
+    defaultMessage: 'Still needed before this client can be created: {missing}.',
+  },
+
+  // The review before the one real call.
+  reviewCompanySection: { id: 'clients.liveIntake.reviewCompanySection', defaultMessage: 'Company' },
+  reviewContactSection: { id: 'clients.liveIntake.reviewContactSection', defaultMessage: 'Primary contact' },
+  reviewProfileSection: { id: 'clients.liveIntake.reviewProfileSection', defaultMessage: 'Business type' },
+  reviewVatValue: { id: 'clients.liveIntake.reviewVatValue', defaultMessage: 'Yes — {number}' },
+  reviewContactValue: { id: 'clients.liveIntake.reviewContactValue', defaultMessage: '{firstName} {lastName}' },
+  noConnectionsNote: {
+    id: 'clients.liveIntake.noConnectionsNote',
+    defaultMessage:
+      'No bank connection and no accounting-software connection is asked for, at any point. Documents arrive by upload, email and the portal.',
+  },
+  createNote: {
+    id: 'clients.liveIntake.createNote',
+    defaultMessage:
+      'Creating the client emails {email} a secure registration link. Nothing else is sent, and nothing is asked of them here.',
+  },
+  createLabel: { id: 'clients.liveIntake.createLabel', defaultMessage: 'Create client & email the sign-in link' },
+  creatingLabel: { id: 'clients.liveIntake.creatingLabel', defaultMessage: 'Creating…' },
+  mobileRefused: {
+    id: 'clients.liveIntake.mobileRefused',
+    defaultMessage: 'Enter the mobile with its country code, like +44 7700 900123 — or leave it empty.',
+  },
+  contractRefused: {
+    id: 'clients.liveIntake.contractRefused',
+    defaultMessage: 'This cannot be sent yet — {detail}',
+  },
+
+  // Success — what actually happened, and what happens next.
+  successTitle: { id: 'clients.liveIntake.successTitle', defaultMessage: '{name} added' },
+  successSubtitle: { id: 'clients.liveIntake.successSubtitle', defaultMessage: 'Registration email sent' },
+  successBody: {
+    id: 'clients.liveIntake.successBody',
+    defaultMessage:
+      'We’ve emailed {email} a secure link. {firstName} signs in with a six-digit code we email them, registers the company details, and completes their own onboarding — including the subscription.',
+  },
+  successUntil: {
+    id: 'clients.liveIntake.successUntil',
+    defaultMessage: 'Until they finish, the client is listed here as awaiting onboarding.',
+  },
+  addAnother: { id: 'clients.liveIntake.addAnother', defaultMessage: 'Add another client' },
+});
+
+const LIVE_STEPS: [MessageDescriptor, ...MessageDescriptor[]] = [
+  mLive.stepCompany,
+  mLive.stepContact,
+  mLive.stepProfile,
+];
+
+const EMPTY_DRAFT: Omit<IntakeDraft, 'name'> = {
+  tradingName: '',
+  companyNumber: '',
+  industry: '',
+  vatRegistered: false,
+  vatNumber: '',
+  firstName: '',
+  lastName: '',
+  email: '',
+  mobile: '',
+  businessActivity: '',
+  typicalSuppliers: '',
+  typicalCosts: '',
+  hasEmployees: 'unknown',
+  usesSubcontractors: 'unknown',
+  notes: '',
+};
+
+/**
+ * The live intake (launch M7): one flow, three steps, one call.
+ *
+ * `POST /v1/businesses` is `x-nt-side-effect: ingest`, not a proposal — it
+ * creates records and changes the state of nothing that exists, so there is
+ * no Review → Approve here and no `ReviewGate` theatre pretending there is.
+ * What stands in front of the call instead is the full read-back of exactly
+ * what will be sent, and a client-side refusal (`buildIntakeRequest`) for
+ * anything the contract itself would refuse.
+ */
+function LiveIntake({ defaultName }: { defaultName: string }) {
+  const { refetchBusinesses } = useAppContext();
+  const intl = useIntl();
+  const [step, setStep] = useState(0);
+  const [draft, setDraft] = useState<IntakeDraft>({ name: defaultName, ...EMPTY_DRAFT });
+  const [sending, setSending] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [created, setCreated] = useState<CreatedBusiness | null>(null);
+
+  const set = <K extends keyof IntakeDraft>(key: K, value: IntakeDraft[K]) =>
+    setDraft((d) => ({ ...d, [key]: value }));
+
+  const missing = [
+    ...(draft.name.trim() ? [] : [intl.formatMessage(mLive.missingName)]),
+    ...(draft.firstName.trim() ? [] : [intl.formatMessage(mLive.missingFirstName)]),
+    ...(draft.lastName.trim() ? [] : [intl.formatMessage(mLive.missingLastName)]),
+    ...(draft.email.trim() ? [] : [intl.formatMessage(mLive.missingEmail)]),
+    ...(draft.businessActivity.trim().length >= 3 ? [] : [intl.formatMessage(mLive.missingActivity)]),
+  ];
+  const ready = missing.length === 0;
+  const isLast = step === LIVE_STEPS.length - 1;
+
+  const submit = async () => {
+    const built = buildIntakeRequest(draft);
+    if (!built.ok) {
+      setFailure(
+        built.refusal.reason === 'mobileNotE164'
+          ? intl.formatMessage(mLive.mobileRefused)
+          : intl.formatMessage(mLive.contractRefused, { detail: built.refusal.detail }),
+      );
+      return;
+    }
+    setFailure(null);
+    setSending(true);
+    try {
+      setCreated(await submitClientIntake(built.request));
+      refetchBusinesses();
+    } catch (error) {
+      setFailure(errorLabel(error));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  if (created) {
+    return (
+      <Shell
+        title={intl.formatMessage(mLive.successTitle, { name: created.name })}
+        subtitle={intl.formatMessage(mLive.successSubtitle)}
+      >
+        <div className="p-6 flex flex-col gap-4">
+          <div className="flex items-start gap-3 p-4 rounded-2xl border border-white/5 bg-ground/60 shadow-inner">
+            <CheckCircle2 size={18} className="text-brand mt-0.5 shrink-0" />
+            <p className="text-[13px] text-zinc-300 leading-relaxed min-w-0">
+              {intl.formatMessage(mLive.successBody, {
+                email: draft.email.trim(),
+                firstName: draft.firstName.trim(),
+              })}
+            </p>
+          </div>
+          <p className="text-[12px] text-zinc-500 leading-relaxed">{intl.formatMessage(mLive.successUntil)}</p>
+          <button
+            onClick={() => {
+              setCreated(null);
+              setDraft({ name: '', ...EMPTY_DRAFT });
+              setStep(0);
+            }}
+            className="self-start flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all shadow-glow-btn-soft"
+          >
+            <Mail size={15} />
+            {intl.formatMessage(mLive.addAnother)}
+          </button>
+        </div>
+      </Shell>
+    );
+  }
+
+  return (
+    <Shell
+      title={draft.name.trim() || intl.formatMessage(mLive.title)}
+      subtitle={intl.formatMessage(mLive.stepSubtitle, {
+        current: step + 1,
+        total: LIVE_STEPS.length,
+        step: intl.formatMessage(LIVE_STEPS[step] ?? LIVE_STEPS[0]),
+      })}
+    >
+      {/* The same step rail the practice flow draws — same 4px bar, same 24px target. */}
+      <div className="px-6 pt-5 flex items-center gap-1.5">
+        {LIVE_STEPS.map((s, i) => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => setStep(i)}
+            title={intl.formatMessage(s)}
+            aria-label={intl.formatMessage(m.shellStepLabel, { number: i + 1, name: intl.formatMessage(s) })}
+            {...(i === step ? { 'aria-current': 'step' as const } : {})}
+            className="flex-1 py-3 -my-3 group"
+          >
+            <span className={`block h-1 rounded-full transition-all ${i <= step ? 'bg-brand' : 'bg-white/10 group-hover:bg-white/20'}`} />
+          </button>
+        ))}
+      </div>
+
+      <div className="p-6">
+        <motion.div key={step} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} className="flex flex-col gap-4">
+          {step === 0 && (
+            <>
+              <Field
+                label={intl.formatMessage(mLive.legalNameLabel)}
+                value={draft.name}
+                onChange={(v) => set('name', v)}
+                placeholder={intl.formatMessage(mLive.legalNamePlaceholder)}
+              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field
+                  label={intl.formatMessage(mLive.tradingNameLabel)}
+                  value={draft.tradingName}
+                  onChange={(v) => set('tradingName', v)}
+                  placeholder={intl.formatMessage(mLive.tradingNamePlaceholder)}
+                />
+                <Field
+                  label={intl.formatMessage(mLive.companyNumberLabel)}
+                  value={draft.companyNumber}
+                  onChange={(v) => set('companyNumber', v)}
+                  placeholder={intl.formatMessage(mLive.companyNumberPlaceholder)}
+                />
+              </div>
+              <Field
+                label={intl.formatMessage(mLive.industryLabel)}
+                value={draft.industry}
+                onChange={(v) => set('industry', v)}
+                placeholder={intl.formatMessage(mLive.industryPlaceholder)}
+              />
+              <Toggle
+                label={intl.formatMessage(mLive.vatRegisteredLabel)}
+                value={draft.vatRegistered}
+                onChange={(v) => set('vatRegistered', v)}
+              />
+              {draft.vatRegistered && (
+                <Field
+                  label={intl.formatMessage(commonLabels.vatNumber)}
+                  value={draft.vatNumber}
+                  onChange={(v) => set('vatNumber', v)}
+                  placeholder={intl.formatMessage(mLive.vatNumberPlaceholder)}
+                />
+              )}
+            </>
+          )}
+
+          {step === 1 && (
+            <>
+              <p className="text-[13px] text-zinc-500 leading-relaxed">{intl.formatMessage(mLive.contactIntro)}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field
+                  label={intl.formatMessage(mLive.firstNameLabel)}
+                  value={draft.firstName}
+                  onChange={(v) => set('firstName', v)}
+                  placeholder={intl.formatMessage(commonPlaceholders.personName)}
+                />
+                <Field
+                  label={intl.formatMessage(mLive.lastNameLabel)}
+                  value={draft.lastName}
+                  onChange={(v) => set('lastName', v)}
+                />
+              </div>
+              <Field
+                label={intl.formatMessage(commonLabels.email)}
+                value={draft.email}
+                onChange={(v) => set('email', v)}
+                placeholder={intl.formatMessage(mLive.emailPlaceholder)}
+                hint={intl.formatMessage(mLive.emailHint)}
+              />
+              <Field
+                label={intl.formatMessage(mLive.mobileLabel)}
+                value={draft.mobile}
+                onChange={(v) => set('mobile', v)}
+                placeholder={intl.formatMessage(commonPlaceholders.ukMobile)}
+                hint={intl.formatMessage(mLive.mobileHint)}
+              />
+            </>
+          )}
+
+          {step === 2 && (
+            <>
+              <p className="text-[13px] text-zinc-500 leading-relaxed">{intl.formatMessage(mLive.profileIntro)}</p>
+              <Area
+                label={intl.formatMessage(mLive.activityLabel)}
+                value={draft.businessActivity}
+                onChange={(v) => set('businessActivity', v)}
+                placeholder={intl.formatMessage(mLive.activityPlaceholder)}
+                maxLength={500}
+              />
+              <Field
+                label={intl.formatMessage(mLive.suppliersLabel)}
+                value={draft.typicalSuppliers}
+                onChange={(v) => set('typicalSuppliers', v)}
+                placeholder={intl.formatMessage(mLive.suppliersPlaceholder)}
+                hint={intl.formatMessage(mLive.suppliersHint)}
+              />
+              <Field
+                label={intl.formatMessage(mLive.costsLabel)}
+                value={draft.typicalCosts}
+                onChange={(v) => set('typicalCosts', v)}
+                placeholder={intl.formatMessage(mLive.costsPlaceholder)}
+                hint={intl.formatMessage(mLive.costsHint)}
+              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <TriChoice
+                  label={intl.formatMessage(mLive.hasEmployeesLabel)}
+                  value={draft.hasEmployees}
+                  onChange={(v) => set('hasEmployees', v)}
+                />
+                <TriChoice
+                  label={intl.formatMessage(mLive.usesSubcontractorsLabel)}
+                  value={draft.usesSubcontractors}
+                  onChange={(v) => set('usesSubcontractors', v)}
+                />
+              </div>
+              <Area
+                label={intl.formatMessage(mLive.notesLabel)}
+                value={draft.notes}
+                onChange={(v) => set('notes', v)}
+                placeholder={intl.formatMessage(mLive.notesPlaceholder)}
+                maxLength={2000}
+              />
+            </>
+          )}
+        </motion.div>
+      </div>
+
+      {!isLast ? (
+        <div className="p-4 bg-raised/50 flex justify-between items-center">
+          <button
+            onClick={() => setStep((s) => Math.max(s - 1, 0))}
+            className={`px-5 py-2.5 text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 rounded-full transition-colors ${
+              step === 0 ? 'invisible' : ''
+            }`}
+          >
+            {intl.formatMessage(m.practiceBack)}
+          </button>
+          <button
+            onClick={() => setStep((s) => Math.min(s + 1, LIVE_STEPS.length - 1))}
+            className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all shadow-glow-btn-strong"
+          >
+            {intl.formatMessage(m.practiceContinue)}
+            <ChevronRight size={16} strokeWidth={2.5} />
+          </button>
+        </div>
+      ) : (
+        <div className="p-4 bg-raised/50 flex flex-col gap-3">
+          <button
+            onClick={() => setStep((s) => Math.max(s - 1, 0))}
+            className="self-start px-5 py-2.5 text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 rounded-full transition-colors"
+          >
+            {intl.formatMessage(m.practiceBack)}
+          </button>
+
+          {!ready ? (
+            <div className="flex items-center gap-3 px-5 py-3.5 rounded-full bg-ground/60 border border-white/5 text-[13px] font-bold text-zinc-500">
+              <Mail size={15} className="shrink-0" />
+              {intl.formatMessage(mLive.stillNeeded, { missing: missing.join(', ') })}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-white/5 bg-ground/60 p-5 flex flex-col gap-4 shadow-inner">
+              <ReviewSection title={intl.formatMessage(mLive.reviewCompanySection)}>
+                <ReviewRows
+                  rows={[
+                    { label: intl.formatMessage(mLive.legalNameLabel), value: draft.name.trim() },
+                    { label: intl.formatMessage(mLive.tradingNameLabel), value: draft.tradingName.trim() || '—' },
+                    { label: intl.formatMessage(mLive.companyNumberLabel), value: draft.companyNumber.trim() || '—' },
+                    { label: intl.formatMessage(mLive.industryLabel), value: draft.industry.trim() || '—' },
+                    {
+                      label: intl.formatMessage(mLive.vatRegisteredLabel),
+                      value: draft.vatRegistered
+                        ? intl.formatMessage(mLive.reviewVatValue, { number: draft.vatNumber.trim() || '—' })
+                        : intl.formatMessage(mLive.triNo),
+                    },
+                  ]}
+                />
+              </ReviewSection>
+              <ReviewSection title={intl.formatMessage(mLive.reviewContactSection)}>
+                <ReviewRows
+                  rows={[
+                    {
+                      label: intl.formatMessage(commonLabels.client),
+                      value: intl.formatMessage(mLive.reviewContactValue, {
+                        firstName: draft.firstName.trim(),
+                        lastName: draft.lastName.trim(),
+                      }),
+                    },
+                    { label: intl.formatMessage(commonLabels.email), value: draft.email.trim() },
+                    { label: intl.formatMessage(commonLabels.mobile), value: draft.mobile.trim() || '—' },
+                  ]}
+                />
+              </ReviewSection>
+              <ReviewSection title={intl.formatMessage(mLive.reviewProfileSection)}>
+                <ReviewRows
+                  rows={[
+                    { label: intl.formatMessage(mLive.activityLabel), value: draft.businessActivity.trim() },
+                    { label: intl.formatMessage(mLive.suppliersLabel), value: draft.typicalSuppliers.trim() || '—' },
+                    { label: intl.formatMessage(mLive.costsLabel), value: draft.typicalCosts.trim() || '—' },
+                    { label: intl.formatMessage(mLive.hasEmployeesLabel), value: triLabel(intl, draft.hasEmployees) },
+                    {
+                      label: intl.formatMessage(mLive.usesSubcontractorsLabel),
+                      value: triLabel(intl, draft.usesSubcontractors),
+                    },
+                  ]}
+                />
+              </ReviewSection>
+              <p className="text-[12px] text-zinc-500 leading-relaxed">
+                {intl.formatMessage(mLive.noConnectionsNote)}
+              </p>
+              <p className="text-[12px] text-zinc-500 leading-relaxed">
+                {intl.formatMessage(mLive.createNote, { email: draft.email.trim() })}
+              </p>
+              {failure && (
+                <p role="alert" className="text-[13px] text-red-400 font-semibold">
+                  {failure}
+                </p>
+              )}
+              <button
+                onClick={() => void submit()}
+                disabled={sending}
+                className="flex items-center justify-center gap-2 px-6 py-3 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all shadow-glow-btn-strong disabled:opacity-50"
+              >
+                <Mail size={15} />
+                {intl.formatMessage(sending ? mLive.creatingLabel : mLive.createLabel)}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </Shell>
+  );
+}
+
+function triLabel(intl: ReturnType<typeof useIntl>, value: TriState): string {
+  return intl.formatMessage(value === 'yes' ? mLive.triYes : value === 'no' ? mLive.triNo : mLive.triUnknown);
+}
+
+/** Three answers, the honest third being "not answered" — which omits the key. */
+function TriChoice({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: TriState;
+  onChange: (v: TriState) => void;
+}) {
+  const intl = useIntl();
+  const options: { key: TriState; text: string }[] = [
+    { key: 'unknown', text: intl.formatMessage(mLive.triUnknown) },
+    { key: 'yes', text: intl.formatMessage(mLive.triYes) },
+    { key: 'no', text: intl.formatMessage(mLive.triNo) },
+  ];
+  return (
+    <div>
+      <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">{label}</div>
+      <div className="flex items-center bg-ground border border-white/5 rounded-xl p-1">
+        {options.map((o) => (
+          <button
+            key={o.key}
+            type="button"
+            aria-pressed={value === o.key}
+            onClick={() => onChange(o.key)}
+            className={`flex-1 px-3 py-1.5 rounded-lg text-[13px] font-bold transition-all ${
+              value === o.key ? 'bg-brand text-white' : 'text-zinc-500 hover:text-white'
+            }`}
+          >
+            {o.text}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** `Field`'s multi-line twin, for the two long questionnaire answers. */
+function Area({
+  label,
+  value,
+  onChange,
+  placeholder,
+  hint,
+  maxLength,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  hint?: string;
+  maxLength?: number;
+}) {
+  return (
+    <div>
+      <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">{label}</div>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        maxLength={maxLength}
+        rows={3}
+        className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors resize-none"
+      />
+      {hint && <div className="text-[11px] text-zinc-600 mt-1.5 font-medium">{hint}</div>}
     </div>
   );
 }
