@@ -441,14 +441,12 @@ Twenty-one of twenty-nine stages are merged. **Yours to run: S5, S6, A10, S7.**
 human importing a real file into VT. It is gated on A9, which Abdullah still owes — you
 cannot start until that merges.
 
-**⚠ S5 IS NOT IN ANYONE'S SCHEDULE, AND IT IS THE MOST URGENT THING LEFT.** The 26 Aug
-plan named A10, S6 and S7 as yours and did not mention S5. Until it flips, `EXTRACTOR=demo`
-is live on staging and `DemoExtractor` invents supplier, date, total and VAT number from a
-filename hash, at 0.8 confidence — which makes `resolveProcessedState` return READY. A
-fabricated invoice is shown to an accountant as ready to post. A3 and A4 both merged, so
-the safety condition the stage waits on is already met and it is one Terraform value.
-Do it before A10: A10 imports what extraction produced, and importing fabricated data into
-VT proves nothing about the round trip.
+**S5 is DONE — corrected 27 Aug 2026.** An earlier revision of this block claimed S5 was
+unscheduled and that `EXTRACTOR=demo` was still live. **Both were wrong.** Item 1 shipped
+with S1 (#169), which set `EXTRACTOR=bedrock` in `services.tf`; items 2–4 shipped on
+27 Aug (`common/ai-budget.ts`, `scripts/measure/extraction-cost.ts`). Staging has been
+reading documents with the real model since #169 merged — there is nothing to flip, and
+nothing about A10 waits on it.
 
 **⚠ NOBODY OWNS THE PRACTICE SIGNUP SCREEN.** A1 shipped `POST /v1/practices` and it works
 in production. Nothing in `apps/web/src` calls it — no `createPractice`, no

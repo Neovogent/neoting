@@ -142,18 +142,17 @@ the frontend is published.
 |---|---|---|
 | **Abdullah** | A9, A13 | overnight — A9 first, it blocks A10 |
 | **Mubasshir** | M6, M7, M8 (+M9 if agreed) | by lunch, 27 Aug |
-| **Shakib** | **S5**, A10, S6, S7 | A10 after A9; S7 evening, 27 Aug |
+| **Shakib** | A10, S6, S7 (S5 done) | A10 unblocked — A9 merged; S7 last |
 
 **A10 moved from Abdullah to Shakib** — Abdullah has no VT Transaction+ install, and the
 stage is a person importing a real file into VT.
 
 **Two things are not on anyone's schedule:**
 
-1. **S5 — real extraction.** The 26 Aug plan listed A10, S6 and S7 for Shakib and omitted
-   S5. `EXTRACTOR=demo` is still live, so `DemoExtractor` fabricates supplier, date and
-   total from a filename hash and marks them READY. A3 and A4 are merged, so nothing blocks
-   it and it is one Terraform value. It must precede A10 — importing fabricated data into
-   VT proves nothing.
+1. ~~**S5 — real extraction.**~~ **Struck 27 Aug 2026: S5 is DONE and this entry was
+   wrong.** `EXTRACTOR=bedrock` shipped with S1 (#169); metering, the FAILED path and the
+   cost measurement shipped 27 Aug. Staging has never run `demo` under the S1 boot gate —
+   `config/env.ts` refuses it in production. Nothing here blocks A10.
 2. **The practice signup screen.** `POST /v1/practices` works; nothing in `apps/web/src`
    calls it, and no M stage builds it. **No accountant can create an account in a browser
    today**, and S7's walkthrough begins with signing up.
