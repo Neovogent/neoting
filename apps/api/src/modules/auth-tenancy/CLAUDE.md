@@ -35,6 +35,96 @@ pnpm --filter @neoting/api test -- auth-tenancy
 
 ## Current state
 
+### The signup chain — verification and enrolment (launch stage A14)
+
+Contract-change issue **#195**, approved. Three operations, no migration:
+
+| Operation | Side effect | Service |
+|---|---|---|
+| `POST /v1/auth/email-verification` | `ingest` | `email-verification.service.ts` |
+| `POST /v1/auth/totp-enrolment` | **`none`** | `totp-enrolment.service.ts` · `begin` |
+| `POST /v1/auth/totp-enrolment/confirm` | `ingest` | `totp-enrolment.service.ts` · `confirm` |
+
+All three are `security: []` and live in `signup-chain.controller.ts`, which
+injects no `RequestContext`. **A1 and A2 each built half of one journey and
+neither half had a door**: signup minted a verification token nothing consumed,
+so an account created through the product's own front door could never become
+usable, and the second factor fails closed for an account with no enrolment, so
+under `OTP_MODE=totp` — what staging runs — that refusal pointed at an endpoint
+nobody had built. Not "no new customers": nobody able to sign in at all.
+
+**⚠ THE TWO-STEP WAS NOT REAL, AND THAT WAS THE SERIOUS FIND.** A2's `begin`
+wrote `users.totp_secret_ref` and `confirm` only set `totp_enabled_at` — but
+**nothing on the login path reads `totp_enabled_at`**; `auth.service.ts`
+verifies against the ref alone. So the factor went live at step one. Mis-scan
+the QR, mistype the manual seed, or run a skewed clock, and the account has a
+second factor nothing can produce a code for; start again and #195's
+"an account that already has an enrolment may not enrol" refuses you; and this
+release has no reset flow. **One mis-scan, permanent lockout, on the account
+holding a practice's clients' books.** `totp-enrolment.service.test.ts` pins
+the regression by name.
+
+The fix is `totp-enrolment-ticket.ts`: the candidate never touches the database
+until a code proves an authenticator received it, travelling instead as a
+signed, short-lived, user-bound ticket (15 min). Read that file before changing
+anything here — it carries the disclosure argument for why an AES-GCM envelope
+is safe to put in a response, and why letting the client post the *seed* back
+would have been worse. Consequences worth knowing:
+
+- **`begin` writes nothing**, which is why the contract classes it
+  `x-nt-side-effect: none`. That is a fact about the implementation, not a
+  taxonomy choice — if anything here starts writing, the contract is wrong and
+  Governance §10.6's route-table test is what should say so.
+- **`confirm`'s write is a conditional `updateMany`** on `totpSecretRef: null`,
+  so "already enrolled" holds under a race rather than being a check two
+  concurrent requests can both pass. `update()` cannot express it.
+- An abandoned enrolment costs nothing and can simply be restarted. That is the
+  property, and it is the whole point.
+
+**Enrolment is authenticated by PASSWORD ONLY** — the one authenticated route
+that cannot require a second factor, because its purpose is that the caller has
+none. ⚠ It therefore opens a window in which whoever knows the password can
+claim the factor. What bounds it is written at the service, not glossed: an
+unenrolled account cannot be logged into by anyone, so nothing is taken from a
+user who was already in; and **it shares ONE lockout counter with sign-in**,
+keyed on the same normalised address, so it cannot be used as an unthrottled
+password oracle. Two counters would have doubled the guesses available against
+every address, at the cheaper of the two doors.
+
+**Two extractions rather than a third copy**, both proven by the tests that
+already existed:
+
+- `signed-claims.ts` — one HMAC claims scheme, now shared by A1's
+  email-verification token and A14's enrolment ticket. The key is derived from a
+  **purpose label**, so the two token spaces are disjoint; `password.test.ts`
+  passes unchanged, which is what proves the extraction is byte-compatible.
+  `session-cookie.ts` deliberately stays separate (request-path verifier, its
+  own verdict shape, risk with no reader).
+- `credentials.ts` — one answer to "did this email and password authenticate
+  anyone, and is that account usable". Login and enrolment share it, so the
+  unverified-address rule cannot drift on the endpoint that hands out
+  authenticator seeds. Its `CredentialVerdict` is a three-way rather than a
+  boolean **for one reason**: login must collapse `unverified` into the uniform
+  `NT-AUTH-003` (naming it answers "does this firm have an account here"), while
+  enrolment may name it, because by then the password has verified.
+
+**Five new codes, each with a runbook page** (`docs/runbooks/error-codes.md`):
+`-004` invalid link · `-005` expired link · `-006` address not verified ·
+`-007` already enrolled · `-008` enrolment ticket bad or expired. `-004/-005`
+split exactly the way `-001/-002` do. `-006/-007` are reachable only after the
+password verified, so naming them answers nothing an attacker did not have.
+
+**The `Idempotency-Key` is required and parsed but deliberately NOT
+replay-cached** on the two mutations — the call `portal.controller.ts` already
+makes on `POST /portal/sessions`, and for the same reason: a replay cache keyed
+on a caller-supplied header, on a public endpoint, hands the first caller's
+response to the second, and `verifyEmailAddress`'s response names an email
+address. Both operations are idempotent by construction instead — a one-way flag
+under a conditional write, and a replayed confirmation meeting `NT-AUTH-007`.
+
+⚠ **This did NOT add a "no second factor configured, let them in" branch and
+must never grow one.** It is the door the refusal points at, not a way round it.
+
 ### Real MFA and a sign-in lockout (launch stage A2)
 
 Two holes, both wide open until this stage. **The second factor was the literal
@@ -81,9 +171,11 @@ lunchtime.
   then a `429 NT-RATE-001` with `Retry-After`.** Also holds the single-use TOTP
   time-step claim (RFC 6238 §5.2 replay).
 - `totp-enrolment.service.ts` — `begin` / `confirm` / `recoveryCodesLeft`. Two
-  steps on purpose: `begin` stores the candidate with `totp_enabled_at` NULL,
-  `confirm` requires a code **from that candidate** (a recovery code is refused
-  here — it proves nothing about the app). ⚠ **No route reaches it** (see TODO).
+  steps on purpose; `confirm` requires a code **from that candidate** (a recovery
+  code is refused here — it proves nothing about the app). ⚠ **A14 rewrote
+  both.** `begin` stored the candidate in `users.totp_secret_ref`, which made
+  the split buy nothing, and both took a `userId` from a session a user with no
+  enrolment cannot have. See the A14 section above.
 
 **⚠ THE KEY IS THE SUBMITTED ADDRESS, NEVER THE USER ROW — this is the whole
 security argument.** A lockout keyed on `users.id` can only ever fire for an
@@ -124,7 +216,9 @@ one gate and A2 did not write a second one beside it.
 
 ⚠ **`totp` fails CLOSED for an account with no enrolment.** There is no
 "no second factor configured, let them in" branch and there must not be one —
-that branch is a second factor an attacker opts out of by being first.
+that branch is a second factor an attacker opts out of by being first. **A14
+built the door that refusal points at** (`POST /v1/auth/totp-enrolment`); it did
+not soften the refusal, and nothing may.
 
 ### Practice signup — an accountant can create an account (launch stage A1)
 
@@ -193,12 +287,14 @@ a call-site convention. It also now requires a real, verified, active `users`
 row (the seed provides one with `emailVerified: true`), so a fixture login that
 would have 401'd on every later request fails at the login instead.
 
-⚠ **`emailVerified` cannot be flipped through the API.** There is no
-verify-email operation in `openapi.yaml` — no `POST /practices/…/verify`, no
-`GET /verify/{token}`. Minting is done; the endpoint that consumes the token is
-a contract change (G7), and until it exists a signed-up account is only usable
-after S2 sends the mail and something outside this module marks the address
-proven. Raised in the A1 report.
+✅ **`emailVerified` can now be flipped through the API** — `POST
+/v1/auth/email-verification`, launch stage A14 (issue #195). A1's note here read
+*"there is no verify-email operation in `openapi.yaml`… until it exists a
+signed-up account is only usable after something outside this module marks the
+address proven"*, and that was exactly right: for the whole of A1's life,
+`users.email_verified` could only be set by `prisma/seed.ts`, so every account
+created through the product's own front door was permanent scenery.
+`email-verification.service.ts` is the consumer.
 
 ### Demo auth — real sessions, mocked TOTP (METH Stage 1, issue #118)
 
@@ -280,11 +376,9 @@ pnpm --filter @neoting/api vitest run src/modules/auth-tenancy/   # unit, offlin
 
 ## TODO
 
-- [ ] **Contract gap (G7, blocks A1 end-to-end):** there is no verify-email
-      operation in `openapi.yaml`, so nothing can flip `users.email_verified`
-      through the API and a signed-up account cannot become usable by itself.
-      The token is minted and tested (`email-verification.ts`); it needs a
-      contract-change issue and then a controller.
+- [x] **Contract gap (G7, blocked A1 end-to-end): closed by A14** (#195).
+      `POST /v1/auth/email-verification` flips `users.email_verified`, so an
+      account created through the front door can become usable by itself.
 - [x] Credentials in `users.password_hash` — done in A1 (scrypt, not Argon2:
       A1's brief was "do not introduce a second scheme"). Argon2id remains the
       upgrade, landing as a new scheme prefix beside `scrypt$` so existing
@@ -292,32 +386,45 @@ pnpm --filter @neoting/api vitest run src/modules/auth-tenancy/   # unit, offlin
 - [x] **A2:** real TOTP (otplib), recovery codes, failed-attempt counting and
       lockout on `POST /v1/auth/sessions`, which now returns the `429
       NT-RATE-001` the contract has always declared.
-- [ ] **Contract gap #1 (G7, blocks `PLAN.md` step 1 "Set up MFA"):** there is
-      no TOTP ENROLMENT operation in `openapi.yaml` — no `POST /v1/me/totp`, no
-      confirmation path — so nothing can hand a user the QR code.
-      `totp-enrolment.service.ts` is the service half, written and tested, and
-      is a Nest provider no controller injects. **Consequence:** with S1's
-      production refusal of `OTP_MODE=demo` in force, a production deployment
-      has a second factor nobody can register, so nobody can sign in. Needs a
-      contract-change issue.
-- [ ] **Contract gap #2 (G7):** `SessionCreateRequest.totp` is
+- [x] **Contract gap #1 (G7, blocked `PLAN.md` step 1 "Set up MFA"): closed by
+      A14** (#195). `POST /v1/auth/totp-enrolment` and `/confirm` hand the user
+      the QR and then write the enrolment. A14 also found and fixed that the
+      two-step was not actually two-step — see the A14 section above.
+- [ ] **⚠ Contract gap #2 (G7) — STILL OPEN, and A14 makes it the sharpest edge
+      left in this module.** `SessionCreateRequest.totp` is
       `pattern: '^[0-9]{6}$'`, so a 19-character RECOVERY code is a `400` at the
-      controller and never reaches the service. The codes are minted, hashed,
-      verified and spent correctly and are covered by the service tests; the
-      route in is a widened field or a recovery operation of its own.
-- [ ] **The throttle is IN-PROCESS.** Production runs more than one API task, so
-      ten-per-address is really ten per task. `notifications/email-rate-limit.ts`
-      answered the identical problem with a Redis implementation behind an
-      `EMAIL_RATE_LIMIT` switch; the same belongs here and needs a new variable
-      in `config/env.ts`, which A2 did not own. `SignInThrottle` is an interface
-      so `RedisSignInThrottle` drops in with no call-site change.
+      controller and never reaches the verifier that would accept it. The codes
+      are minted, hashed, verified and spent correctly, and are shown to the
+      user at enrolment as *"the only way back in"* — **which is currently not
+      true, because there is no route in.** Combined with `NT-AUTH-007`
+      (enrolment refuses an account that already has one, since this release has
+      no reset flow), a user who loses their phone has **no self-service route
+      back into their own workspace**; the only remedy is an operator clearing
+      `users.totp_secret_ref`, which `docs/runbooks/error-codes.md` now spells
+      out under `NT-AUTH-007`. The fix is a widened field or a recovery
+      operation of its own, and it needs a contract-change issue.
+- [ ] **The throttle is IN-PROCESS, and A14 gave it three more callers.**
+      Production runs more than one API task, so ten-per-address is really ten
+      per task — now across sign-in, both enrolment steps and email
+      verification, which all share the one instance.
+      `notifications/email-rate-limit.ts` answered the identical problem with a
+      Redis implementation behind an `EMAIL_RATE_LIMIT` switch; the same belongs
+      here and needs a new variable in `config/env.ts`, which neither A2 nor A14
+      owned. `SignInThrottle` is an interface so `RedisSignInThrottle` drops in
+      with no call-site change — and it is now worth more than it was, because
+      four endpoints inherit the fix.
 - [ ] **No per-IP ceiling, deliberately.** `main.ts` never calls
       `app.set('trust proxy', …)`, so behind the ALB `req.ip` is the load
       balancer for *every* request — an IP ceiling would be a single global
       ceiling that takes sign-in down for everyone under load, and trusting
       `X-Forwarded-For` without `trust proxy` is trusting an attacker-supplied
       header. `main.ts` is not this stage's path. Wire the proxy trust first,
-      then add the ceiling.
+      then add the ceiling. ⚠ **#195 asked for per-IP on email verification and
+      A14 could not deliver it, for this reason.** What shipped is per-TOKEN,
+      which bounds repeated work against one link and does NOT bound a flood
+      (an attacker varies the token for free). Stated in
+      `email-verification.service.ts` rather than glossed, because the
+      difference matters.
 - [ ] **TOTP replay suppression is in-process too.** RFC 6238 §5.2 wants the
       last-accepted time step persisted per user; `users` has no column for it
       (`prisma/` is LAW), so `SignInThrottle.claimTimeStep` holds the claim in

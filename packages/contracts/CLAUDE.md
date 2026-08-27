@@ -215,6 +215,47 @@ Two response fields were added **optional rather than required** on purpose —
 of the lane that populates them, and a required field would have obliged every
 producer to move in this PR, which is scope this batch does not own.
 
+**The signup chain (launch stage A14, issue #195)** — three operations, five
+schemas, five error codes, one shared `409` response, **no Prisma migration**.
+The ID LAW batch shipped `POST /practices` and METH Stage 1 shipped
+`POST /auth/sessions`, and between them was a gap nobody had noticed was
+load-bearing: signup minted an email-verification token **no operation
+consumed**, and there was **no TOTP enrolment operation at all**. Under
+`OTP_MODE=totp` — what staging runs — the second factor fails closed for an
+account with no enrolment, so the contract described a product nobody could sign
+in to.
+
+| Surface | Operations |
+|---|---|
+| Auth (A14) | `POST /auth/email-verification` · `POST /auth/totp-enrolment` · `POST /auth/totp-enrolment/confirm` |
+
+**Three decisions in it worth knowing before reading the YAML:**
+
+- **`beginTotpEnrolment` is `x-nt-side-effect: none`, and that is a claim about
+  the implementation.** It writes nothing: the candidate enrolment goes back to
+  the caller as a signed short-lived `enrolmentToken` and is stored nowhere, so
+  an abandoned attempt costs nothing. That is not an optimisation — writing at
+  step one is what turned a single mis-scanned QR into a permanent lockout in
+  the code A14 replaced. If it ever starts writing, the field is wrong and
+  Governance §10.6's route-table test is what should catch it. It consequently
+  takes **no `Idempotency-Key`**, which the checker agrees with.
+
+- **`TotpEnrolmentConfirmRequest` carries `enrolmentToken`, which #195's sketch
+  did not.** The issue's own binding constraint — *"the ref is persisted only
+  after the user posts back a valid code"* — cannot hold with the sketched
+  `{email, password, totp}` body: the candidate has to survive between two
+  calls, and with no migration approved there is no column to hold it. The
+  alternatives were storing it against the user (the lockout the constraint
+  exists to prevent) or letting the client post the *seed* back (a
+  caller-chosen secret). Flagged on #195 rather than done quietly.
+
+- **All five codes join the `AUTH` family; none is collapsed and none is
+  invented elsewhere.** `-004`/`-005` split invalid from expired exactly as
+  `-001`/`-002` do. `-006`/`-007` are reachable **only after the password has
+  verified**, so naming them answers nothing an unauthenticated caller could
+  learn — which is what lets them be two actionable messages instead of one
+  useless one. Runbook pages for all five, per Governance §13.4.
+
 ### Before this can freeze
 
 1. **Shamim's list of the frontend's required API calls.** Freezing without it freezes the wrong shapes — this is the one input that cannot be derived from the schema.
