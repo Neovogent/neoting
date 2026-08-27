@@ -183,6 +183,16 @@ jobs:
             lint_rules=no
           fi
 
+          # What this push actually touched. Computed once and used twice — by
+          # the docs-only deploy skip below, and by the eval gate after it.
+          # An unreadable diff (a force push, a branch's first push) leaves this
+          # EMPTY, and both consumers must treat empty as "assume the worst".
+          if [ -n "${BASE_SHA:-}" ] && [ "${BASE_SHA}" != "0000000000000000000000000000000000000000" ]; then
+            changed=$(git diff --name-only "$BASE_SHA" "${{ github.sha }}" || true)
+          else
+            changed=""
+          fi
+
           # ------------------------------------------------------------------
           # Stage 9 is the ONE hand-set guard: no probe can detect "the deploy
           # target exists".
@@ -219,16 +229,36 @@ jobs:
           # ------------------------------------------------------------------
           deploy=yes
 
+          # ⚠ THE DOCS-ONLY SKIP IS WRITTEN INVERTED ON PURPOSE, AND MUST STAY
+          # THAT WAY. It says "deploy UNLESS every changed path is provably
+          # documentation" — never "deploy IF a path matches this list". The
+          # inverse form is the one that rots: the day someone adds a directory
+          # nobody thought about, a list-of-paths gate silently stops shipping
+          # it, and a commit that never reached staging is far more expensive
+          # than an 18-minute deploy nobody needed. So an empty `changed` (a
+          # force push, a branch's first push) deploys, and anything
+          # unrecognised deploys.
+          #
+          # Safe because `docs/` is in .dockerignore — the daemon never even
+          # receives that directory, so a change under it CANNOT alter the
+          # image. Other `.md` files (CLAUDE.md, README.md) are in the build
+          # context, but nothing reads a markdown file at run time; the only
+          # cost is that a CLAUDE.md baked into the image lags main until the
+          # next code push, which no running code can observe.
+          #
+          # Worth having: #198 and #199 were documentation-only and each one
+          # rebuilt the emulated arm64 image and rolled both ECS services.
+          if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qvE '^docs/|\.md$'; then
+            deploy=no
+            echo "documentation-only push — stage 9 skipped. Changed paths:"
+            printf '%s\n' "$changed" | sed 's/^/  /'
+          fi
+
           # Evals are REQUIRED when extraction, prompts, models, routing,
           # thresholds or packages/component-grammar changed (§14.7). Widen the
           # pattern as those modules land — a path that should have demanded
           # evals and did not is a governance miss, not a CI convenience.
           eval_required=no
-          if [ -n "${BASE_SHA:-}" ] && [ "${BASE_SHA}" != "0000000000000000000000000000000000000000" ]; then
-            changed=$(git diff --name-only "$BASE_SHA" "${{ github.sha }}" || true)
-          else
-            changed=""
-          fi
           if printf '%s\n' "$changed" | grep -qE \
             '^(services/extraction/|packages/component-grammar/|evals/|apps/api/src/modules/(extraction|ingestion-routing|rules-suggestions)/)|(^|/)(prompts?|models?|routing|thresholds)/'; then
             eval_required=yes
@@ -1028,6 +1058,66 @@ jobs:
               --task-definition "${{ steps.taskdef.outputs.arn }}" --no-cli-pager > /dev/null
           fi
 
+      # ⚠ WORKERS IS STARTED HERE, BESIDE THE API, AND THAT IS A DELIBERATE
+      # TRADE — READ THIS BEFORE "TIDYING" IT BACK.
+      #
+      # These two steps used to sit AFTER the api had reached steady state and
+      # been asserted, which bought one real guarantee: workers were never
+      # touched unless the api rollout had fully succeeded. It also cost the
+      # deploy the SUM of two rollouts (3m38s + 4m24s measured on run
+      # 33117001006) where it only ever needed the slower of the two. Starting
+      # both here and waiting for both below makes that max() instead of sum().
+      #
+      # What is given up, stated plainly: an api rollout that fails and is
+      # rolled back by the circuit breaker now leaves NEW workers running
+      # against the OLD api. That is tolerable here, and only here, because:
+      #   · migrations already ran, above — the new schema is live either way,
+      #     so new-workers/new-schema is the CONSISTENT pair and the old api is
+      #     the anomaly in both orderings.
+      #   · §5.3 migrations are additive, so new workers only write columns the
+      #     old api ignores.
+      #   · both services carry deployment_circuit_breaker { rollback = true },
+      #     so each rolls itself back independently, and the assertions below
+      #     still turn the job red — a human is already looking.
+      # If any of those three stops being true, put these steps back after the
+      # api assertion and take the four minutes.
+      #
+      # The image is the SAME digest as the api — one build, two repositories.
+      - name: Register a workers task definition revision pinned to this commit
+        id: workersdef
+        run: |
+          set -euo pipefail
+          aws ecs describe-task-definition --task-definition "$WORKERS_TASK_FAMILY" \
+            --query taskDefinition > live-workers.json
+
+          jq --arg image "${{ steps.ecr.outputs.registry }}/nt/workers:${{ github.sha }}" '
+            .containerDefinitions |= map(if .name == "workers" then .image = $image else . end)
+            | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                  .compatibilities, .registeredAt, .registeredBy)
+          ' live-workers.json > next-workers.json
+
+          arn=$(aws ecs register-task-definition --cli-input-json file://next-workers.json \
+                  --query taskDefinition.taskDefinitionArn --output text)
+          echo "arn=$arn" >> "$GITHUB_OUTPUT"
+          echo "registered $arn"
+
+      - name: Deploy workers
+        run: |
+          set -euo pipefail
+          current=$(aws ecs describe-services --cluster "$CLUSTER" --services "$WORKERS_SERVICE" \
+                      --query 'services[0].desiredCount' --output text)
+          echo "current desired count: $current"
+
+          if [ "$current" = "0" ]; then
+            echo "first workers deploy — raising desired count to 1 (services.tf sizes workers at 1 task)"
+            aws ecs update-service --cluster "$CLUSTER" --service "$WORKERS_SERVICE" \
+              --task-definition "${{ steps.workersdef.outputs.arn }}" \
+              --desired-count 1 --no-cli-pager > /dev/null
+          else
+            aws ecs update-service --cluster "$CLUSTER" --service "$WORKERS_SERVICE" \
+              --task-definition "${{ steps.workersdef.outputs.arn }}" --no-cli-pager > /dev/null
+          fi
+
       # The circuit breaker (services.tf) rolls back on its own if the tasks
       # cannot pass the target-group health check — and `services-stable`
       # SUCCEEDS after that rollback completes, because a service serving the
@@ -1081,44 +1171,6 @@ jobs:
           done
           echo "::error title=Deployed but not serving::https://$EDGE_HOST/healthz did not return 200 within 100s. ECS reported steady state, so look at CloudFront, WAF and the ALB origin-verify rule before the container."
           exit 1
-
-      # Workers last: it consumes the queue the api fills, so a worker running
-      # older code than the api is the ordering that matters least. The image is
-      # the SAME digest as the api — one build, pushed to two repositories.
-      - name: Register a workers task definition revision pinned to this commit
-        id: workersdef
-        run: |
-          set -euo pipefail
-          aws ecs describe-task-definition --task-definition "$WORKERS_TASK_FAMILY" \
-            --query taskDefinition > live-workers.json
-
-          jq --arg image "${{ steps.ecr.outputs.registry }}/nt/workers:${{ github.sha }}" '
-            .containerDefinitions |= map(if .name == "workers" then .image = $image else . end)
-            | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
-                  .compatibilities, .registeredAt, .registeredBy)
-          ' live-workers.json > next-workers.json
-
-          arn=$(aws ecs register-task-definition --cli-input-json file://next-workers.json \
-                  --query taskDefinition.taskDefinitionArn --output text)
-          echo "arn=$arn" >> "$GITHUB_OUTPUT"
-          echo "registered $arn"
-
-      - name: Deploy workers
-        run: |
-          set -euo pipefail
-          current=$(aws ecs describe-services --cluster "$CLUSTER" --services "$WORKERS_SERVICE" \
-                      --query 'services[0].desiredCount' --output text)
-          echo "current desired count: $current"
-
-          if [ "$current" = "0" ]; then
-            echo "first workers deploy — raising desired count to 1 (services.tf sizes workers at 1 task)"
-            aws ecs update-service --cluster "$CLUSTER" --service "$WORKERS_SERVICE" \
-              --task-definition "${{ steps.workersdef.outputs.arn }}" \
-              --desired-count 1 --no-cli-pager > /dev/null
-          else
-            aws ecs update-service --cluster "$CLUSTER" --service "$WORKERS_SERVICE" \
-              --task-definition "${{ steps.workersdef.outputs.arn }}" --no-cli-pager > /dev/null
-          fi
 
       # ⚠ WEAKER THAN THE API'S EQUIVALENT, AND WORTH KNOWING. workers has no
       # load balancer and no container healthCheck (services.tf carries the TODO),

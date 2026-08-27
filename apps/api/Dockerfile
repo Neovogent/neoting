@@ -87,12 +87,43 @@ RUN corepack enable
 # --------------------------------------------------------------------------
 FROM base AS build
 
-# No manifest-only pre-copy layer: `COPY . .` costs cache locality that a
-# fresh CI runner does not have anyway, and enumerating nine workspace
-# manifests by hand is a step that silently rots the day a package is added.
+# ⚠ THE ORDER OF THESE FOUR LINES IS THE SINGLE BIGGEST COST IN THE DEPLOY.
+#
+# This was `COPY . .` then `pnpm install`, justified by "a fresh CI runner has
+# no cache locality anyway". That stopped being true when the deploy job gained
+# `cache-from/cache-to: type=gha` — the GHA cache IS that locality, and
+# `COPY . .` was what threw it away: ANY commit, a docs typo included,
+# invalidated the layer and re-ran a full dependency install UNDER QEMU
+# EMULATION, because the task definitions pin arm64 and this org's plan has no
+# arm64 runners. Measured on #203, a ONE-LINE api fix: 5m24s of a 17m deploy.
+#
+# The old comment's real objection stands and is answered rather than dropped:
+# enumerating nine workspace manifests by hand DOES rot the day a package is
+# added. `pnpm fetch` needs none of them — it resolves from the LOCKFILE ALONE
+# and ignores package manifests by design. Nothing copied here is per-package,
+# so there is nothing to keep in step.
+#
+# All four files are load-bearing; none is decoration:
+#   pnpm-lock.yaml       what `fetch` actually reads.
+#   pnpm-workspace.yaml  without it the lockfile's importers resolve to nothing.
+#   package.json         `corepack enable` (base stage) pins pnpm from
+#                        packageManager. Absent, corepack has no version to
+#                        honour and this stage silently runs a different pnpm
+#                        than the lockfile was written by.
+#   .npmrc               carries auto-install-peers=true, which CHANGES
+#                        RESOLUTION. Omit it and `fetch` populates a different
+#                        tree than the install below then asks for.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+
+RUN pnpm fetch
+
 COPY . .
 
-RUN pnpm install --frozen-lockfile
+# --offline is a GUARD, not an optimisation: it forbids reaching the network,
+# so a lockfile that has drifted from the manifests fails HERE, loudly, with
+# "not found in store" — instead of quietly resolving something the fetch layer
+# above never saw and shipping it.
+RUN pnpm install --frozen-lockfile --offline
 
 # @prisma/client exports nothing until this runs. Nothing in the api entrypoint
 # imports it today (scoped-db.ts is not yet reachable from main.ts), but the
