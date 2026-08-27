@@ -71,7 +71,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ activeTab, setActiveTab, onOpenBusinessPortal }: SidebarProps) {
-  const { settings, updateSettings } = useAppContext();
+  const { settings, updateSettings, documentsSource } = useAppContext();
   const intl = useIntl();
   const isLight = settings.theme === 'light';
   const mouseY = useMotionValue(Number.POSITIVE_INFINITY);
@@ -126,14 +126,20 @@ export function Sidebar({ activeTab, setActiveTab, onOpenBusinessPortal }: Sideb
 
       {/* The client-facing portal is a separate shell, not another tab here. */}
       <div className="mt-auto w-full px-4 pt-4 border-t border-white/5">
-        <DockItem
-          icon={Store}
-          label={intl.formatMessage(shellNav.businessPortal)}
-          isActive={false}
-          expanded={expanded}
-          mouseY={mouseY}
-          onClick={onOpenBusinessPortal}
-        />
+        {/* The launcher opens the seed-backed portal shells — a demo surface.
+            Gated to synthetic the same way the tour button is (launch M8):
+            live, a door into invented client accounts is a lie waiting to be
+            believed. */}
+        {documentsSource !== 'api' && (
+          <DockItem
+            icon={Store}
+            label={intl.formatMessage(shellNav.businessPortal)}
+            isActive={false}
+            expanded={expanded}
+            mouseY={mouseY}
+            onClick={onOpenBusinessPortal}
+          />
+        )}
         <DockItem
           icon={isLight ? Moon : Sun}
           label={intl.formatMessage(isLight ? shellNav.darkMode : shellNav.lightMode)}

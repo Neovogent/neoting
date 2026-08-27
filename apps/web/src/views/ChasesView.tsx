@@ -46,14 +46,14 @@ const m = defineMessages({
   heading: { id: 'chase.chasesView.heading', defaultMessage: 'Missing Evidence' },
   subheading: {
     id: 'chase.chasesView.subheading',
-    defaultMessage: 'Manage requested paperwork and automated SMS chasing.',
+    defaultMessage: 'Manage requested paperwork and automated chasing by email.',
   },
   itemMessagesAction: { id: 'chase.chasesView.itemMessagesAction', defaultMessage: 'Item messages' },
   policyAction: { id: 'chase.chasesView.policyAction', defaultMessage: 'Chase policy' },
   runEngineAction: { id: 'chase.chasesView.runEngineAction', defaultMessage: 'Run Chase Engine Now' },
   runEngineNote: {
     id: 'chase.chasesView.runEngineNote',
-    defaultMessage: '{detections} detections across {clients, plural, one {# client} other {# clients}}, grouped into one SMS each.',
+    defaultMessage: '{detections} detections across {clients, plural, one {# client} other {# clients}}, grouped into one email each.',
   },
   alreadyRequestedNote: {
     id: 'chase.chasesView.alreadyRequestedNote',
@@ -62,7 +62,7 @@ const m = defineMessages({
   statMissingTitle: { id: 'chase.chasesView.statMissingTitle', defaultMessage: 'Missing Documents' },
   statMissingSubtitle: { id: 'chase.chasesView.statMissingSubtitle', defaultMessage: 'Across {count} clients' },
   statMissingTrend: { id: 'chase.chasesView.statMissingTrend', defaultMessage: 'Not yet chased' },
-  statChasesTitle: { id: 'chase.chasesView.statChasesTitle', defaultMessage: 'Active Chases (SMS)' },
+  statChasesTitle: { id: 'chase.chasesView.statChasesTitle', defaultMessage: 'Active Chases' },
   statChasesSubtitle: { id: 'chase.chasesView.statChasesSubtitle', defaultMessage: '{count} items awaiting upload' },
   statChasesTrend: { id: 'chase.chasesView.statChasesTrend', defaultMessage: '{first}/{second} day policy' },
   statOverdueTitle: { id: 'chase.chasesView.statOverdueTitle', defaultMessage: 'Overdue & Escalated' },
@@ -540,7 +540,7 @@ const mDetail = defineMessages({
   },
   uploadAudit: { id: 'chase.chaseDetail.uploadAudit', defaultMessage: 'Uploaded a chased document' },
   uploadAuditScope: { id: 'chase.chaseDetail.uploadAuditScope', defaultMessage: '{supplier} — {client}' },
-  messageSection: { id: 'chase.chaseDetail.messageSection', defaultMessage: 'Message sent (SMS)' },
+  messageSection: { id: 'chase.chaseDetail.messageSection', defaultMessage: 'Message sent' },
   nextWordingLabel: { id: 'chase.chaseDetail.nextWordingLabel', defaultMessage: 'Wording for the next reminder' },
   doneEditing: { id: 'chase.chaseDetail.doneEditing', defaultMessage: 'Done editing' },
   writeNext: { id: 'chase.chaseDetail.writeNext', defaultMessage: 'Write the next reminder yourself' },
@@ -601,11 +601,11 @@ const mDetail = defineMessages({
   reminderWaitAction: { id: 'chase.chaseDetail.reminderWaitAction', defaultMessage: 'Reminder in {wait}' },
   reminderBlockedTitle: {
     id: 'chase.chaseDetail.reminderBlockedTitle',
-    defaultMessage: 'Another text can go in {wait}',
+    defaultMessage: 'Another message can go in {wait}',
   },
   reminderBlockedDetail: {
     id: 'chase.chaseDetail.reminderBlockedDetail',
-    defaultMessage: '{name} was texted {age}. Texting again this soon repeats the same ask — change the wait under Settings → Chasing, or use Escalate if it is not working.',
+    defaultMessage: '{name} was emailed {age}. Sending again this soon repeats the same ask — change the wait under Settings → Chasing, or use Escalate if it is not working.',
   },
   reminderAudit: { id: 'chase.chaseDetail.reminderAudit', defaultMessage: 'Sent chase reminder' },
   saveAction: { id: 'chase.chaseDetail.saveAction', defaultMessage: 'Save changes' },
@@ -1048,14 +1048,14 @@ function ChaseDetail({ chase, onClose }: { chase: Chase; onClose: () => void }) 
 
 const mPolicy = defineMessages({
   heading: { id: 'chase.policyPanel.heading', defaultMessage: 'Chase policy' },
-  subheading: { id: 'chase.policyPanel.subheading', defaultMessage: 'SMS only — by design' },
+  subheading: { id: 'chase.policyPanel.subheading', defaultMessage: 'Email only — by design' },
   firstChase: { id: 'chase.policyPanel.firstChase', defaultMessage: 'First chase after (hours)' },
   reminderOne: { id: 'chase.policyPanel.reminderOne', defaultMessage: 'Reminder 1 (days)' },
   reminderTwo: { id: 'chase.policyPanel.reminderTwo', defaultMessage: 'Reminder 2 (days)' },
   escalateAfter: { id: 'chase.policyPanel.escalateAfter', defaultMessage: 'Escalate after (days)' },
   quietFrom: { id: 'chase.policyPanel.quietFrom', defaultMessage: 'Quiet hours from' },
   quietTo: { id: 'chase.policyPanel.quietTo', defaultMessage: 'Quiet hours to' },
-  senderId: { id: 'chase.policyPanel.senderId', defaultMessage: 'SMS sender ID' },
+  senderId: { id: 'chase.policyPanel.senderId', defaultMessage: 'Sender name' },
   autoChase: { id: 'chase.policyPanel.autoChase', defaultMessage: 'Auto-chase on schedule' },
   autoChaseHint: {
     id: 'chase.policyPanel.autoChaseHint',
@@ -1144,7 +1144,7 @@ const mItems = defineMessages({
   heading: { id: 'chase.itemMessagesPanel.heading', defaultMessage: 'Item messages' },
   subheading: {
     id: 'chase.itemMessagesPanel.subheading',
-    defaultMessage: 'Per-document questions over the same SMS link — no app required',
+    defaultMessage: 'Per-document questions over the same secure link — no app required',
   },
   documentLabel: { id: 'chase.itemMessagesPanel.documentLabel', defaultMessage: 'Document' },
   documentPlaceholder: { id: 'chase.itemMessagesPanel.documentPlaceholder', defaultMessage: 'Choose…' },
@@ -1155,7 +1155,7 @@ const mItems = defineMessages({
   },
   sentHeading: { id: 'chase.itemMessagesPanel.sentHeading', defaultMessage: 'Sent' },
   awaitingReply: { id: 'chase.itemMessagesPanel.awaitingReply', defaultMessage: '{sentAt} · awaiting reply' },
-  sendAction: { id: 'chase.itemMessagesPanel.sendAction', defaultMessage: 'Send by SMS' },
+  sendAction: { id: 'chase.itemMessagesPanel.sendAction', defaultMessage: 'Send by email' },
   sendAudit: { id: 'chase.itemMessagesPanel.sendAudit', defaultMessage: 'Sent item message' },
   sendAuditScope: { id: 'chase.itemMessagesPanel.sendAuditScope', defaultMessage: '{document} — {client}' },
 });

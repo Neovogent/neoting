@@ -878,7 +878,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [colleagues, setColleagues] = useState<Colleague[]>(SYNTHETIC ? seedColleagues : []);
   const [teams, setTeams] = useState<Team[]>(SYNTHETIC ? seedTeams : []);
   const [tasks, setTasks] = useState<WorkflowTask[]>(() => (SYNTHETIC ? buildTasks(seedClients) : []));
-  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  // The seeded practice identity must never present itself as a real firm's:
+  // with the API on, the name, intake address and WhatsApp number start empty
+  // and the screens say "not set" rather than "Migrate Properly LLP" (launch
+  // M8). The behavioural defaults (thresholds, toggles) stand either way.
+  const [settings, setSettings] = useState<AppSettings>(
+    SYNTHETIC ? DEFAULT_SETTINGS : { ...DEFAULT_SETTINGS, practiceName: '', docEmail: '', whatsappNumber: '' },
+  );
 
   /**
    * Duplicates are derived, never stored: a flag is a live opinion about the
@@ -1813,7 +1819,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                   lastSmsAtMs: Date.now(),
                   linkExpiresInHours: chasePolicy.linkTtlHours,
                   message: message?.trim() || composeChaseMessage(client, merged),
-                  events: [{ at: 'just now', label: 'Chase re-sent by SMS', detail: `${merged.length} items requested` }, ...c.events],
+                  events: [{ at: 'just now', label: 'Chase re-sent by email', detail: `${merged.length} items requested` }, ...c.events],
                 }
               : c,
           );
@@ -1834,7 +1840,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             linkExpiresInHours: chasePolicy.linkTtlHours,
             lastUpload: 'awaiting',
             policy: `Standard (${chasePolicy.reminderOneDays}/${chasePolicy.reminderTwoDays} days)`,
-            events: [{ at: 'just now', label: 'Chase sent by SMS', detail: `${newItems.length} items requested` }],
+            events: [{ at: 'just now', label: 'Chase sent by email', detail: `${newItems.length} items requested` }],
           },
           ...prev,
         ];
@@ -1876,7 +1882,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           // A reminder refreshes the link on the configured TTL, not a fixed one.
           linkExpiresInHours: chasePolicy.linkTtlHours,
           events: [
-            { at: 'just now', label: `Reminder sent by SMS`, detail: `Secure link refreshed — valid ${chasePolicy.linkTtlHours}h` },
+            { at: 'just now', label: `Reminder sent by email`, detail: `Secure link refreshed — valid ${chasePolicy.linkTtlHours}h` },
             ...c.events,
           ],
         };
@@ -2310,7 +2316,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       logAudit({
         action: 'Sent approval request',
-        scope: `${client.name} — ${items.length} item${items.length === 1 ? '' : 's'} by SMS`,
+        scope: `${client.name} — ${items.length} item${items.length === 1 ? '' : 's'} by email`,
         reviewOpened: true,
       });
     },

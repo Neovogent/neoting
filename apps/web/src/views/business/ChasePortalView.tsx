@@ -23,16 +23,16 @@ const m = defineMessages({
   linkDetail: {
     id: 'portal.chasePortal.linkDetail',
     defaultMessage:
-      'Your accountant texted you a link. Tap it on your phone, or paste the code from the end of it here.',
+      'Your accountant emailed you a link. Tap it on your phone, or paste the code from the end of it here.',
   },
-  linkLabel: { id: 'portal.chasePortal.linkLabel', defaultMessage: 'Code from the text' },
+  linkLabel: { id: 'portal.chasePortal.linkLabel', defaultMessage: 'Code from the email' },
   linkPlaceholder: { id: 'portal.chasePortal.linkPlaceholder', defaultMessage: 'Paste the whole link or just its code' },
   linkAction: { id: 'portal.chasePortal.linkAction', defaultMessage: 'Continue' },
 
   otpTitle: { id: 'portal.chasePortal.otpTitle', defaultMessage: 'Enter your code' },
   otpDetail: {
     id: 'portal.chasePortal.otpDetail',
-    defaultMessage: 'We have texted you six digits. The link and the code together open this page — nothing else does.',
+    defaultMessage: 'We have emailed you six digits. The link and the code together open this page — nothing else does.',
   },
   otpLabel: { id: 'portal.chasePortal.otpLabel', defaultMessage: 'One-time code' },
   otpPlaceholder: { id: 'portal.chasePortal.otpPlaceholder', defaultMessage: '000000' },
@@ -122,11 +122,11 @@ const m = defineMessages({
 
   faultOtp: {
     id: 'portal.chasePortal.faultOtp',
-    defaultMessage: 'That link or code did not work. Check the six digits in your text, or ask for a new link.',
+    defaultMessage: 'That link or code did not work. Check the six digits in your email, or ask for a new link.',
   },
   faultSession: {
     id: 'portal.chasePortal.faultSession',
-    defaultMessage: 'This page has been open too long. Open the link in your text message again.',
+    defaultMessage: 'This page has been open too long. Open the link in your email again.',
   },
   faultUnreachable: {
     id: 'portal.chasePortal.faultUnreachable',
@@ -142,7 +142,7 @@ const m = defineMessages({
 });
 
 /**
- * The no-app client journey: SMS link → six digits → the items being chased →
+ * The no-app client journey: emailed link → six digits → the items being chased →
  * a photograph → the pipeline's answer.
  *
  * This is a different surface from `BusinessPortal`, deliberately. That one is
@@ -220,7 +220,7 @@ export function ChasePortalView() {
 function LinkEntry({ onExit }: { onExit: () => void }) {
   const intl = useIntl();
   const [value, setValue] = useState('');
-  // The client may paste the whole SMS link or just the code at the end of it;
+  // The client may paste the whole emailed link or just the code at the end of it;
   // both carry the same token, so the last path segment is what is kept.
   const token = value.trim().split(/[?#]/)[0]?.split('/').filter(Boolean).pop() ?? '';
 
@@ -642,7 +642,7 @@ function Shell({ title, subtitle, children }: { title: string; subtitle?: string
   return (
     // The safe-area insets go on the scroll container, which carries no padding
     // of its own, so they compose with the inner column's `px-5 py-10` instead
-    // of overriding it. This screen is only ever opened from an SMS on a phone:
+    // of overriding it. This screen is only ever opened from an emailed link on a phone:
     // without them the heading sits under the notch and the last item under the
     // home indicator. The 16px input floor arrives from index.css.
     <div className="flex-1 flex flex-col min-w-0 h-full bg-ground overflow-y-auto pt-safe pb-safe px-safe [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

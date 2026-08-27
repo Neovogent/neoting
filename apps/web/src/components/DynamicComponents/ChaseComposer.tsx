@@ -15,12 +15,12 @@ const m = defineMessages({
   // count was a concatenated 's' and had to become ICU (§12.6).
   counts: {
     id: 'shell.chaseComposer.counts',
-    defaultMessage: '{chars} characters · {segments, plural, one {# text} other {# texts}}',
+    defaultMessage: '{chars} characters · {segments, plural, one {# message} other {# messages}}',
   },
   countsUnicode: {
     id: 'shell.chaseComposer.countsUnicode',
     defaultMessage:
-      '{chars} characters · {segments, plural, one {# text} other {# texts}} · non-standard characters, 70 per text',
+      '{chars} characters · {segments, plural, one {# message} other {# messages}} · non-standard characters, 70 per message',
   },
   resetAction: { id: 'shell.chaseComposer.resetAction', defaultMessage: 'Reset to suggested' },
   linkGone: {
@@ -37,7 +37,7 @@ const m = defineMessages({
   previewHeading: {
     id: 'shell.chaseComposer.previewHeading',
     defaultMessage:
-      '{count, plural, one {Message preview (SMS) — # recipient} other {Message preview (SMS) — # recipients}}',
+      '{count, plural, one {Message preview — # recipient} other {Message preview — # recipients}}',
   },
   // Not a `plural`: the source read "1 items" for a single row and this is an
   // extraction, not a rewrite.
@@ -47,12 +47,12 @@ const m = defineMessages({
   channelLabel: { id: 'shell.chaseComposer.channelLabel', defaultMessage: 'Channel' },
   channelValue: {
     id: 'shell.chaseComposer.channelValue',
-    defaultMessage: 'SMS only — no WhatsApp or email chases',
+    defaultMessage: 'Email only — no SMS or WhatsApp chases',
   },
   linkSecurityLabel: { id: 'shell.chaseComposer.linkSecurityLabel', defaultMessage: 'Link security' },
   linkSecurityValue: {
     id: 'shell.chaseComposer.linkSecurityValue',
-    defaultMessage: 'Signed short-lived URL + OTP to registered mobile',
+    defaultMessage: 'Signed short-lived URL + emailed one-time code',
   },
   portalScopeLabel: { id: 'shell.chaseComposer.portalScopeLabel', defaultMessage: 'Portal scope' },
   portalScopeValue: {
@@ -77,12 +77,12 @@ const m = defineMessages({
   editStart: { id: 'shell.chaseComposer.editStart', defaultMessage: 'Edit message' },
   subtitle: {
     id: 'shell.chaseComposer.subtitle',
-    defaultMessage: 'SMS to primary contacts • {count, plural, one {# missing item} other {# missing items}}',
+    defaultMessage: 'Email to primary contacts • {count, plural, one {# missing item} other {# missing items}}',
   },
   approveAction: { id: 'shell.chaseComposer.approveAction', defaultMessage: 'Approve & send' },
   success: {
     id: 'shell.chaseComposer.success',
-    defaultMessage: 'Chase sent to {clientCount, plural, one {# client} other {# clients}} ({itemCount} items) via SMS.',
+    defaultMessage: 'Chase sent to {clientCount, plural, one {# client} other {# clients}} ({itemCount} items) by email.',
   },
   auditAction: { id: 'shell.chaseComposer.auditAction', defaultMessage: 'Sent chase' },
   auditScope: { id: 'shell.chaseComposer.auditScope', defaultMessage: '{count} items across {clients}' },

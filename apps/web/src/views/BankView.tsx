@@ -97,7 +97,7 @@ const m = defineMessages({
   cashCodeAction: { id: 'bank.bankView.cashCodeAction', defaultMessage: 'Cash code' },
   transactionsEmpty: {
     id: 'bank.bankView.transactionsEmpty',
-    defaultMessage: 'No transactions — connect a feed or upload a statement.',
+    defaultMessage: 'No transactions — upload a bank statement to bring them in.',
   },
   chaseBulkAction: { id: 'bank.bankView.chaseBulkAction', defaultMessage: 'Chase for evidence' },
   transactionsFooter: {
@@ -150,21 +150,18 @@ const m = defineMessages({
     defaultMessage: 'Download the extracted data as CSV',
   },
   statementsEmpty: { id: 'bank.bankView.statementsEmpty', defaultMessage: 'No statements uploaded.' },
-  accountFeedLive: { id: 'bank.bankView.accountFeedLive', defaultMessage: 'Feed live' },
-  accountCredentialError: { id: 'bank.bankView.accountCredentialError', defaultMessage: 'Credential error' },
+  // Statement freshness, not feed health: D40 makes uploaded statements the
+  // only bank input in this release, so the account card must not speak of
+  // feeds, consent or credentials (launch M8).
+  accountFeedLive: { id: 'bank.bankView.accountFeedLive', defaultMessage: 'Statements current' },
+  accountCredentialError: { id: 'bank.bankView.accountCredentialError', defaultMessage: 'Statements overdue' },
   accountStatementsOnly: { id: 'bank.bankView.accountStatementsOnly', defaultMessage: 'Statements only' },
   rowBalance: { id: 'bank.bankView.rowBalance', defaultMessage: 'Balance' },
-  rowLastSync: { id: 'bank.bankView.rowLastSync', defaultMessage: 'Last sync' },
-  rowSource: { id: 'bank.bankView.rowSource', defaultMessage: 'Source' },
-  sourceFeed: { id: 'bank.bankView.sourceFeed', defaultMessage: 'Plaid open-banking feed' },
-  sourceUpload: { id: 'bank.bankView.sourceUpload', defaultMessage: 'Statement upload fallback' },
-  consentExpires: { id: 'bank.bankView.consentExpires', defaultMessage: 'Consent expires in' },
-  // Not a plural: the screen says "1 days" today and this is an extraction,
-  // not a rewrite. Flagged in the report instead.
-  consentDays: { id: 'bank.bankView.consentDays', defaultMessage: '{count} days' },
-  connectFeedAction: { id: 'bank.bankView.connectFeedAction', defaultMessage: 'Connect feed' },
-  reauthAction: { id: 'bank.bankView.reauthAction', defaultMessage: 'Re-authorise' },
-  reauthAudit: { id: 'bank.bankView.reauthAudit', defaultMessage: 'Re-authorised bank connection' },
+  rowLastSync: { id: 'bank.bankView.rowLastSync', defaultMessage: 'Latest statement' },
+  accountsEmpty: {
+    id: 'bank.bankView.accountsEmpty',
+    defaultMessage: 'No accounts yet — upload a bank statement and its account appears here.',
+  },
   accountUnexplained: { id: 'bank.bankView.accountUnexplained', defaultMessage: '{count} unexplained' },
   chaseNote: {
     id: 'bank.bankView.chaseNote',
@@ -232,7 +229,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
   const {
     clients, transactions, matches, documents, accounts, statements, statementGaps,
     matchSettings, setMatchSettings, matchTransaction, unmatchTransaction, cashCode,
-    uploadStatement, reauthAccount, logAudit, statsFor, isSameClient, slices,
+    uploadStatement, logAudit, statsFor, isSameClient, slices,
     refetchBank,
   } = useAppContext();
   const intl = useIntl();
@@ -819,7 +816,10 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
             </div>
           )}
 
-          {tab === 'Accounts' && (
+          {tab === 'Accounts' && scopedAccounts.length === 0 && (
+            <p className="px-4 py-12 text-center text-zinc-400 font-medium">{intl.formatMessage(m.accountsEmpty)}</p>
+          )}
+          {tab === 'Accounts' && scopedAccounts.length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {scopedAccounts.map((a: BankAccount) => (
                 <div key={a.id} className="border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
@@ -837,35 +837,8 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                   <div className="p-6 flex flex-col gap-2.5 text-[13px]">
                     <Row label={intl.formatMessage(m.rowBalance)} value={currency(a.balance)} />
                     <Row label={intl.formatMessage(m.rowLastSync)} value={a.lastSync} />
-                    <Row
-                      label={intl.formatMessage(m.rowSource)}
-                      value={intl.formatMessage(a.source === 'feed' ? m.sourceFeed : m.sourceUpload)}
-                    />
-                    {a.status !== 'disconnected' && (
-                      <div className="mt-2">
-                        <div className="flex justify-between items-center text-[12px] mb-1.5">
-                          <span className="text-zinc-500 font-medium">{intl.formatMessage(m.consentExpires)}</span>
-                          <span className={`font-bold ${a.reauthDays < 14 ? 'text-red-400' : 'text-white'}`}>
-                            {intl.formatMessage(m.consentDays, { count: a.reauthDays })}
-                          </span>
-                        </div>
-                        <div className="h-1.5 w-full bg-raised rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${a.reauthDays < 14 ? 'bg-red-500' : 'bg-brand'}`}
-                            style={{ width: `${Math.min(100, (a.reauthDays / 90) * 100)}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
                   </div>
                   <div className="p-4 bg-raised/50 flex items-center gap-3 flex-wrap">
-                    <button
-                      onClick={() => { reauthAccount(a.id); logAudit({ action: intl.formatMessage(m.reauthAudit), scope: `${a.bankName} ••${a.last4}`, reviewOpened: true }); }}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
-                    >
-                      <RefreshCw size={15} />
-                      {intl.formatMessage(a.status === 'disconnected' ? m.connectFeedAction : m.reauthAction)}
-                    </button>
                     <button
                       onClick={() => { setUploadFor(a.clientId); fileRef.current?.click(); }}
                       className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 border border-white/5 transition-colors"

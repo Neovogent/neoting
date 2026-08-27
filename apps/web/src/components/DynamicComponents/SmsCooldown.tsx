@@ -26,12 +26,12 @@ const m = defineMessages({
   },
   // The noun that fills `{what}` when a caller does not name one. Callers that
   // do — "chase", "reminder" — pass their own word.
-  whatDefault: { id: 'shell.smsCooldown.whatDefault', defaultMessage: 'text' },
+  whatDefault: { id: 'shell.smsCooldown.whatDefault', defaultMessage: 'message' },
   noticeHeading: { id: 'shell.smsCooldown.noticeHeading', defaultMessage: 'Another {what} can go in {wait}' },
   noticeDetail: {
     id: 'shell.smsCooldown.noticeDetail',
     defaultMessage:
-      '{recipient} was texted {age} and the link is still live. Sending again now repeats the same ask — change the wait under Settings → Chasing.',
+      '{recipient} was emailed {age} and the link is still live. Sending again now repeats the same ask — change the wait under Settings → Chasing.',
   },
   chipTitle: {
     id: 'shell.smsCooldown.chipTitle',

@@ -34,7 +34,7 @@ const TAB_LABELS = defineMessages({
 // in this file (`<Pill>{c.role}</Pill>`). Translating the picker but not the
 // record would make one row disagree with the chip that set it.
 const ROLES: ColleagueRole[] = ['Practice Admin', 'Client Admin', 'Standard User'];
-const PERMISSIONS = ['Publish', 'Approve', 'Chase', 'Connect bank', 'Export', 'Delete'];
+const PERMISSIONS = ['Publish', 'Approve', 'Chase', 'Export', 'Delete'];
 
 const m = defineMessages({
   heading: { id: 'team.teamView.heading', defaultMessage: 'Team' },

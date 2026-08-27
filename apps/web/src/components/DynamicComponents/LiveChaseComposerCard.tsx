@@ -10,10 +10,10 @@ import { LiveProposalFlow } from './LiveProposalFlow';
 import { ReviewSection } from './ReviewGate';
 
 const m = defineMessages({
-  title: { id: 'shell.liveChaseComposer.title', defaultMessage: 'Chase {client} by SMS' },
+  title: { id: 'shell.liveChaseComposer.title', defaultMessage: 'Chase {client} by email' },
   subtitle: {
     id: 'shell.liveChaseComposer.subtitle',
-    defaultMessage: 'One grouped text covering every missing receipt — the review shows it exactly as it will send.',
+    defaultMessage: 'One grouped message covering every missing receipt — the review shows it exactly as it will send.',
   },
   pickClient: { id: 'shell.liveChaseComposer.pickClient', defaultMessage: 'Which client is this chase for?' },
   itemsSection: { id: 'shell.liveChaseComposer.itemsSection', defaultMessage: 'Missing receipts to chase' },
@@ -26,10 +26,10 @@ const m = defineMessages({
     id: 'shell.liveChaseComposer.recipientInvalid',
     defaultMessage: 'Enter an international mobile number, e.g. +447700900001.',
   },
-  draftSection: { id: 'shell.liveChaseComposer.draftSection', defaultMessage: 'Draft SMS' },
+  draftSection: { id: 'shell.liveChaseComposer.draftSection', defaultMessage: 'Draft message' },
   draftNote: {
     id: 'shell.liveChaseComposer.draftNote',
-    defaultMessage: 'The portal link is minted when the SMS is composed server-side; this draft carries the portal address without a signed token.',
+    defaultMessage: 'The portal link is minted when the message is composed server-side; this draft carries the portal address without a signed token.',
   },
   stage: { id: 'shell.liveChaseComposer.stage', defaultMessage: 'Stage for review' },
 });
@@ -76,10 +76,13 @@ export function LiveChaseComposerCard({
   // Prefilled from the synthetic client record when one shares the name —
   // there is no /v1/contacts read surface yet — and always editable: the
   // number is part of what Read review shows, so the accountant owns it.
+  // With no namesake it starts EMPTY: staging is disabled until a number is
+  // typed, and an invented placeholder number a hurried approver could send
+  // to is exactly the kind of fake data launch M8 removes.
   // // DEMO-MOCK: contact lookup once a contacts read surface exists.
   const [recipient, setRecipient] = useState(() => {
     const namesake = clients.find((c) => resolvedName !== null && c.name.toLowerCase() === resolvedName.toLowerCase());
-    return namesake?.mobile ?? '+447700900001';
+    return namesake?.mobile ?? '';
   });
   const recipientE164 = toE164(recipient);
 

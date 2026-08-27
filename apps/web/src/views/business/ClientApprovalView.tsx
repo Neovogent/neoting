@@ -27,7 +27,7 @@ const m = defineMessages({
   },
 
   otpTitle: { id: 'portal.otpChallenge.title', defaultMessage: 'Approve securely' },
-  otpSmsReceived: { id: 'portal.otpChallenge.smsReceived', defaultMessage: 'SMS received' },
+  otpSmsReceived: { id: 'portal.otpChallenge.smsReceived', defaultMessage: 'Message received' },
   otpCodeSentTo: { id: 'portal.otpChallenge.codeSentTo', defaultMessage: 'Code sent to {mobile}' },
   otpCodeAriaLabel: { id: 'portal.otpChallenge.codeAriaLabel', defaultMessage: 'One-time code' },
   // The digit shape of the code, which is a numeral and not a symbol: a locale

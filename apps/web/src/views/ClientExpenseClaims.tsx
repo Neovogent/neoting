@@ -230,7 +230,9 @@ export function ClientExpenseClaims({ client, onPreview }: {
     clientId: client.id,
     clientName: client.name,
     claimant: '',
-    period: 'August 2026',
+    // The real current month (Europe/London), not the synthetic dataset's
+    // frozen one — a claim the user creates is their data (launch M8).
+    period: new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric', timeZone: 'Europe/London' }).format(new Date()),
     items: [],
     status: 'draft',
   });
@@ -601,7 +603,13 @@ function ClaimEditor({ claim, onSave, onClose, onAttach }: {
       ...draft,
       items: [
         ...draft.items,
-        { id: `item-${Date.now()}`, description: '', date: '12 Aug 2026', total: 0, category: 'Travel' },
+        {
+          id: `item-${Date.now()}`,
+          description: '',
+          date: new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Europe/London' }).format(new Date()),
+          total: 0,
+          category: 'Travel',
+        },
       ],
     });
 

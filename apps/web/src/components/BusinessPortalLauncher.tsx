@@ -49,7 +49,7 @@ const m = defineMessages({
   awaitingNote: {
     id: 'shell.businessPortalLauncher.awaitingNote',
     defaultMessage:
-      'These sit on a stage only the business can clear. The approver gets an SMS link — open it here to see exactly what they see.',
+      'These sit on a stage only the business can clear. The approver gets a secure link by email — open it here to see exactly what they see.',
   },
   awaitingItems: {
     id: 'shell.businessPortalLauncher.awaitingItems',
@@ -77,13 +77,13 @@ const inviteMessages = defineMessages({
   heading: { id: 'shell.inviteForm.heading', defaultMessage: 'Invite {client}' },
   note: {
     id: 'shell.inviteForm.note',
-    defaultMessage: 'They get a link by text. The account stays in Invited until they first sign in.',
+    defaultMessage: 'They get a link by email. The account stays in Invited until they first sign in.',
   },
   contactNameLabel: { id: 'shell.inviteForm.contactNameLabel', defaultMessage: 'Contact name' },
   emailPlaceholder: { id: 'shell.inviteForm.emailPlaceholder', defaultMessage: 'john@business.co.uk' },
   noMobileWarning: {
     id: 'shell.inviteForm.noMobileWarning',
-    defaultMessage: 'Without a mobile number the invite text cannot be sent.',
+    defaultMessage: 'Without a mobile number the invite cannot be sent.',
   },
   create: { id: 'shell.inviteForm.create', defaultMessage: 'Create & send invite' },
 });
@@ -103,7 +103,7 @@ export function BusinessPortalLauncher({ onClose }: { onClose: () => void }) {
   /**
    * Clients with something sitting on a client-side approval stage. This is
    * the practice's way into the approver's own screen — the real one arrives
-   * by SMS, and nobody in the practice ever holds that link.
+   * by email, and nobody in the practice ever holds that link.
    */
   const awaitingSignOff = clients
     .map((c) => ({ client: c, items: clientSideApprovals(c.id), request: approvalRequests.find((r) => r.clientId === c.id) }))

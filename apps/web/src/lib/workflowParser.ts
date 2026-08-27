@@ -125,7 +125,7 @@ export function parseWorkflow(text: string, base: ApprovalWorkflow): ParsedWorkf
     });
     understood.push(`${named.length} stage${named.length === 1 ? '' : 's'}: ${named.join(' → ')}`);
     if (stages.some((s) => s.clientSide)) {
-      understood.push('The last word is the business owner’s, over SMS');
+      understood.push('The last word is the business owner’s, from an emailed link');
     }
   }
 
