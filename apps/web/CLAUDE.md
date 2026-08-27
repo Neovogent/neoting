@@ -206,7 +206,7 @@ Every api-layer module therefore reads the awaited value as `unknown` — throug
 
 ## Client-facing surfaces
 
-Four shells replace the practice app outright rather than sitting inside it, because a client must never have another client's data behind the screen they are on. `App.tsx` switches on `portal` from `AppContext`, and each is its own lazy chunk:
+Five shells replace the practice app outright rather than sitting inside it, because a client must never have another client's data behind the screen they are on. `App.tsx` switches on `portal` from `AppContext`, and each is its own lazy chunk:
 
 | `portal` | Address | What it is | Data |
 |---|---|---|---|
@@ -214,6 +214,20 @@ Four shells replace the practice app outright rather than sitting inside it, bec
 | `approval` | `/approve/:requestId` | SMS link → OTP → approve one client's batch | seed |
 | `registration` | `/register/:accountId/:memberId` | An invited person filling in their own details | seed |
 | `chase-upload` | `/p/:linkToken` | SMS link → OTP → the items one chase asked for → upload | **real API** |
+| `setup` | `/app/setup?setupToken=…` | Email link → emailed six-digit code → onboarding → subscribe (launch M6) | **real API** (contracted; server half pending) |
+
+### The setup journey (`/app/setup`) — launch stage M6
+
+The invited client's way in (SoT §24.5, D45/D47/D48): the accountant adds a client, the client is EMAILED a setup link — the address is `SETUP_LINK_PATH` in `apps/api/src/modules/clients-team-settings/setup-link.ts`, which is why this client surface lives under `/app` — and signs in with a six-digit code sent to the registered address. Then their own onboarding, then the subscription. **There is no SMS on this journey and no copy on it may say "text"** — the contract's own words on `createPortalSignInCode`.
+
+`BusinessOnboardingView` is the screen flow, `useOnboardingJourney` the state, `src/api/onboarding.ts` the wire — the chase portal's architecture, deliberately: two implementations behind one interface, bearer in React state and nowhere else, synthetic mode walks end to end with no API (the seeded account it onboards is the first one without a `subscription`). Things to know before touching it:
+
+- **The `portal` derivation checks `/app/setup` BEFORE falling through to `'accountant'`** — an invited client holds no workspace session, so this address reaching the login wall is a dead end for exactly the person the email invited. Like every portal value, it keeps `workspaceApiOn` false: no `/me` probe fires.
+- **The server half is contracted and not yet implemented.** `POST /portal/sign-in-codes` and `POST /portal/onboarding-sessions` are in `openapi.yaml` (S0's ID LAW batch) with no controller behind them (`apps/api/src/modules/portal/CLAUDE.md` records it), so a live sign-in currently ends in the uniform `401 NT-OTP-001`. The screens are built to the contract and light up when the controller lands.
+- **The subscribe step is blocked on a contract gap, degraded honestly.** `POST /billing/checkout-sessions` needs a `businessId`, and an onboarding session has no contracted way to learn its own — `GET /portal/context` needs a chase this session does not have. `api/onboarding.ts` parses an optional `businessId` off the session response (deliberately not `.strict()`) so the step lights up the moment the contract grows the field; until then live `subscribe()` reports "could not open the checkout, nothing charged". Growing `PortalSession` is a **contract-change issue for Shakib** (G7), not an edit made from here. The checkout call also sends the portal bearer, which the billing controller does not yet accept (it resolves the workspace cookie) — the same coordination point.
+- **One price, as copy.** "£8.50 + VAT" — exclusive of VAT and labelled as such (§24.5); the VAT and the gross total are Stripe's to show. No tier picker, no comparison table (D48). The same string discipline as the landing page: never a bare figure.
+- **Stripe's return leg is two standalone screens** (`?checkout=success|cancelled`). The bearer died with the redirect — by design — so they resume nothing, and the success copy claims only "Stripe is confirming": reaching the URL is not proof of payment (the contract's own words on `successUrl`).
+- **The settings Plan section** (`BusinessSettingsView` → `PlanPanel`) is the whole of the billing UI beyond checkout: status, renewal date, the price as copy, and a button that mints a Stripe customer-portal session (`POST /billing/portal-sessions`) — card changes, invoices and cancellation are Stripe's pages, deliberately none of ours. Disabled with the demo note on seed data (the S12 rule: a button whose action cannot happen is worse than absent). `BusinessAccount.subscription` (`BusinessPlan` in `lib/types.ts`) is the seed-side stand-in for the contract's `BusinessSubscription`.
 
 ### The chase portal (`/p/:linkToken`) — METH Stage 9
 

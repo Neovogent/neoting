@@ -15,7 +15,7 @@ const m = defineMessages({
   doneDetail: {
     id: 'portal.userRegistrationView.doneDetail',
     defaultMessage:
-      'You can now send paperwork for {business}. There is nothing to install — every time you come back, you get a code by text.',
+      'You can now send paperwork for {business}. There is nothing to install — every time you come back, you get a code by email.',
   },
 
   joinTitle: { id: 'portal.userRegistrationView.joinTitle', defaultMessage: 'Join {business}' },

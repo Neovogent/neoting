@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { Building2, Bell, Users, KeyRound, Link2, Camera, Plus, Trash2 } from 'lucide-react';
+import { Building2, Bell, CreditCard, Users, KeyRound, Link2, Camera, Loader2, Plus, Trash2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import { commonActions, commonLabels, commonPlaceholders } from '../../i18n/common';
+import { API_ENABLED } from '../../api/config';
+import { openBillingPortal } from '../../api/onboarding';
 import { useAppContext } from '../../context/AppContext';
 import { Pill } from '../../components/DynamicComponents/DataTable';
 import { newMember } from '../../lib/business';
@@ -14,6 +16,7 @@ import type { BusinessAccount, BusinessMember } from '../../lib/types';
 
 const m = defineMessages({
   sectionBusiness: { id: 'portal.businessSettingsView.sectionBusiness', defaultMessage: 'Business' },
+  sectionPlan: { id: 'portal.businessSettingsView.sectionPlan', defaultMessage: 'Plan' },
   sectionSending: { id: 'portal.businessSettingsView.sectionSending', defaultMessage: 'Sending' },
   sectionNotifications: { id: 'portal.businessSettingsView.sectionNotifications', defaultMessage: 'Notifications' },
   sectionPeople: { id: 'portal.businessSettingsView.sectionPeople', defaultMessage: 'People' },
@@ -95,7 +98,7 @@ const m = defineMessages({
   peopleNote: {
     id: 'portal.businessSettingsView.peopleNote',
     defaultMessage:
-      'Everyone here signs in the same way you do — a code by SMS or email, no password to share. Removing someone stops their access immediately; the documents they already sent stay with your accountant.',
+      'Everyone here signs in the same way you do — a six-digit code emailed to them, no password to share. Removing someone stops their access immediately; the documents they already sent stay with your accountant.',
   },
 
   connectionsTitle: {
@@ -124,15 +127,61 @@ const m = defineMessages({
   bankError: { id: 'portal.businessSettingsView.bankError', defaultMessage: 'Needs reconnecting' },
   bankDisconnected: { id: 'portal.businessSettingsView.bankDisconnected', defaultMessage: 'Disconnected' },
 
+  // The Plan section (launch stage M6, D48). One plan, so there is no picker
+  // here — status, the renewal date, and the door to Stripe, which hosts the
+  // card change, the invoices and the cancellation flow. Deliberately nothing
+  // else: a plan-change screen, a cancellation flow and an invoice renderer
+  // are three things Stripe already does correctly.
+  planTitle: { id: 'portal.businessSettingsView.planTitle', defaultMessage: 'Your plan' },
+  planSubtitle: {
+    id: 'portal.businessSettingsView.planSubtitle',
+    defaultMessage: 'One plan — everything your accountant set up here is included',
+  },
+  planStatusLabel: { id: 'portal.businessSettingsView.planStatusLabel', defaultMessage: 'Status' },
+  planStatusActive: { id: 'portal.businessSettingsView.planStatusActive', defaultMessage: 'Active' },
+  planStatusPastDue: { id: 'portal.businessSettingsView.planStatusPastDue', defaultMessage: 'Payment overdue' },
+  planStatusCanceled: { id: 'portal.businessSettingsView.planStatusCanceled', defaultMessage: 'Cancelled' },
+  planStatusNone: { id: 'portal.businessSettingsView.planStatusNone', defaultMessage: 'Not subscribed yet' },
+  planRenewsLabel: { id: 'portal.businessSettingsView.planRenewsLabel', defaultMessage: 'Renews on' },
+  planPriceLabel: { id: 'portal.businessSettingsView.planPriceLabel', defaultMessage: 'Price' },
+  // Never a bare figure: prices are stored exclusive of VAT and displayed as
+  // such (§24.5). The VAT amount and the gross total are Stripe's to show.
+  planPriceValue: { id: 'portal.businessSettingsView.planPriceValue', defaultMessage: '£8.50 + VAT per month' },
+  planPriceNote: {
+    id: 'portal.businessSettingsView.planPriceNote',
+    defaultMessage: 'Shown excluding VAT. The VAT and the total are on your Stripe invoice, in sterling.',
+  },
+  planManageAction: { id: 'portal.businessSettingsView.planManageAction', defaultMessage: 'Manage billing in Stripe' },
+  planManageNote: {
+    id: 'portal.businessSettingsView.planManageNote',
+    defaultMessage:
+      'Card changes, invoices and cancellation are all handled on Stripe’s own billing pages — nothing about your card is stored here.',
+  },
+  planManageSynthetic: {
+    id: 'portal.businessSettingsView.planManageSynthetic',
+    defaultMessage: 'Demo data — this build is not talking to a server, so there is no Stripe billing page to open.',
+  },
+  planManageFault: {
+    id: 'portal.businessSettingsView.planManageFault',
+    defaultMessage: 'We could not open Stripe’s billing page. Try again in a moment — if it keeps failing, tell your accountant.',
+  },
+  planNotSubscribedNote: {
+    id: 'portal.businessSettingsView.planNotSubscribedNote',
+    defaultMessage:
+      'Subscribing happens at the end of setup — open the setup link from your registration email. Your accountant can send a fresh one if it has expired.',
+  },
+
   securityTitle: { id: 'portal.businessSettingsView.securityTitle', defaultMessage: 'Sign-in' },
   securitySubtitle: {
     id: 'portal.businessSettingsView.securitySubtitle',
     defaultMessage: 'Protects everything you send from this portal',
   },
   twoFactorLabel: { id: 'portal.businessSettingsView.twoFactorLabel', defaultMessage: 'Two-factor authentication' },
+  // Emailed, never texted — the portal's sign-in codes have no SMS behind
+  // them (launch stage M6, D47).
   twoFactorHint: {
     id: 'portal.businessSettingsView.twoFactorHint',
-    defaultMessage: 'A code by SMS each time you sign in on a new device.',
+    defaultMessage: 'A code by email each time you sign in on a new device.',
   },
   accessTitle: { id: 'portal.businessSettingsView.accessTitle', defaultMessage: 'Access' },
   accessSubtitle: {
@@ -233,7 +282,7 @@ const m = defineMessages({
   detailsNote: {
     id: 'portal.businessDetailsPanel.note',
     defaultMessage:
-      'Your mobile is the one that matters — document requests and your sign-in codes both go there, and neither needs an app or a password.',
+      'Your sign-in codes are emailed to this address — no app, no password. Keep the mobile up to date too, so your accountant can reach you.',
   },
   detailsProblemName: {
     id: 'portal.businessDetailsPanel.problemName',
@@ -241,7 +290,7 @@ const m = defineMessages({
   },
   detailsProblemMobile: {
     id: 'portal.businessDetailsPanel.problemMobile',
-    defaultMessage: 'A mobile is required. It is where document requests and sign-in codes go.',
+    defaultMessage: 'A mobile is required — it is how your accountant reaches you about paperwork.',
   },
   detailsProblemEmail: {
     id: 'portal.businessDetailsPanel.problemEmail',
@@ -304,6 +353,7 @@ const m = defineMessages({
 // a hook cannot be called out here.
 const SECTIONS = [
   { key: 'Business', icon: Building2, label: m.sectionBusiness },
+  { key: 'Plan', icon: CreditCard, label: m.sectionPlan },
   { key: 'Sending', icon: Camera, label: m.sectionSending },
   { key: 'Notifications', icon: Bell, label: m.sectionNotifications },
   { key: 'People', icon: Users, label: m.sectionPeople },
@@ -401,6 +451,8 @@ export function BusinessSettingsView({ account }: { account: BusinessAccount }) 
               </Panel>
             </>
           )}
+
+          {section === 'Plan' && <PlanPanel account={account} />}
 
           {section === 'Sending' && (
             <Panel title={intl.formatMessage(m.sendingTitle)} subtitle={intl.formatMessage(m.sendingSubtitle)}>
@@ -602,6 +654,90 @@ export function BusinessSettingsView({ account }: { account: BusinessAccount }) 
         />
       )}
     </div>
+  );
+}
+
+/**
+ * The Plan section (launch stage M6, D48): status, the renewal date, the
+ * price as copy, and the door to Stripe's hosted customer portal — which IS
+ * the billing UI. Card changes, invoices, cancellation: all Stripe's pages,
+ * deliberately none of ours.
+ *
+ * The button is real only when the API is on; on seed data it is disabled
+ * with the demo note underneath, because a link that opens nothing is worse
+ * than a disabled one that says why (the S12 rule). The business id it sends
+ * live goes through the seed↔server bridge (`serverClientIdFor`), the same
+ * join every other live write from a seed-keyed screen makes.
+ */
+function PlanPanel({ account }: { account: BusinessAccount }) {
+  const { serverClientIdFor } = useAppContext();
+  const intl = useIntl();
+  const [opening, setOpening] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const plan = account.subscription ?? null;
+
+  const manage = async () => {
+    setOpening(true);
+    setFailed(false);
+    try {
+      const url = await openBillingPortal(serverClientIdFor(account.clientId));
+      // The whole tab goes to Stripe; its `returnUrl` brings the client back
+      // to this screen when they are done.
+      window.location.assign(url);
+    } catch {
+      setFailed(true);
+      setOpening(false);
+    }
+  };
+
+  return (
+    <Panel title={intl.formatMessage(m.planTitle)} subtitle={intl.formatMessage(m.planSubtitle)}>
+      <Row
+        label={intl.formatMessage(m.planStatusLabel)}
+        value={
+          plan === null ? (
+            <Pill tone="neutral">{intl.formatMessage(m.planStatusNone)}</Pill>
+          ) : plan.status === 'active' ? (
+            <Pill tone="green">{intl.formatMessage(m.planStatusActive)}</Pill>
+          ) : plan.status === 'past_due' ? (
+            <Pill tone="amber">{intl.formatMessage(m.planStatusPastDue)}</Pill>
+          ) : (
+            <Pill tone="red">{intl.formatMessage(m.planStatusCanceled)}</Pill>
+          )
+        }
+      />
+      {plan?.renewsOn && <Row label={intl.formatMessage(m.planRenewsLabel)} value={plan.renewsOn} />}
+      <Row
+        label={intl.formatMessage(m.planPriceLabel)}
+        value={<span className="text-white font-semibold">{intl.formatMessage(m.planPriceValue)}</span>}
+      />
+      <p className="text-[12px] text-zinc-600 leading-relaxed mt-1">{intl.formatMessage(m.planPriceNote)}</p>
+
+      {plan === null ? (
+        <p className="text-[13px] text-zinc-500 leading-relaxed mt-3">{intl.formatMessage(m.planNotSubscribedNote)}</p>
+      ) : (
+        <div className="flex flex-col gap-2 mt-3">
+          <button
+            onClick={() => void manage()}
+            disabled={!API_ENABLED || opening}
+            title={API_ENABLED ? undefined : intl.formatMessage(m.planManageSynthetic)}
+            className="self-start flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {opening ? <Loader2 size={15} className="animate-spin" /> : <CreditCard size={15} strokeWidth={2.5} />}
+            {intl.formatMessage(m.planManageAction)}
+          </button>
+          {failed && (
+            <p role="alert" className="text-[13px] font-semibold text-red-400 leading-relaxed">
+              {intl.formatMessage(m.planManageFault)}
+            </p>
+          )}
+          <p className="text-[12px] text-zinc-600 leading-relaxed">
+            {intl.formatMessage(API_ENABLED ? m.planManageNote : m.planManageSynthetic)}
+          </p>
+        </div>
+      )}
+    </Panel>
   );
 }
 

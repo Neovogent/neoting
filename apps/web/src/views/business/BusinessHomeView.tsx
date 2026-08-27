@@ -119,9 +119,11 @@ const m = defineMessages({
     id: 'portal.businessHomeView.changeAskedBy',
     defaultMessage: 'Asked for by {who} {when}.',
   },
+  // Sign-in codes are EMAILED (launch stage M6, D47), so a number change
+  // never touches them — only the chase channel is at stake here.
   changeAskedByMobile: {
     id: 'portal.businessHomeView.changeAskedByMobile',
-    defaultMessage: 'Asked for by {who} {when}. Every chase and sign-in code would go to this number instead.',
+    defaultMessage: 'Asked for by {who} {when}. Every chase would go to this number instead.',
   },
   declineChangeTitle: {
     id: 'portal.businessHomeView.declineChangeTitle',
@@ -139,7 +141,7 @@ const m = defineMessages({
   changeDetail: { id: 'portal.businessHomeView.changeDetail', defaultMessage: 'It is currently {from}.' },
   changeMobileConsequence: {
     id: 'portal.businessHomeView.changeMobileConsequence',
-    defaultMessage: 'Chases, approvals and sign-in codes will go to the new number from now on.',
+    defaultMessage: 'Chases and approvals will go to the new number from now on. Sign-in codes are emailed, so they are unaffected.',
   },
   changeConfirmLabel: { id: 'portal.businessHomeView.changeConfirmLabel', defaultMessage: 'Yes, change it' },
 
