@@ -471,3 +471,23 @@ cannot drift. M9's landing page reads `token` from the query and posts it to
 `clients-team-settings/setup-link.ts`'s `DEFAULT_APP_ORIGIN`, because
 `config/env.ts` has no `APP_ORIGIN` key. Both sites point at the same missing
 key; promoting it is one line in each module.
+
+### ⚠ The verification link pointed at a route that did not exist (28 Aug 2026)
+
+`VERIFY_EMAIL_PATH` was `/app/verify-email`, declared here before M9 merged with
+a comment saying M9 must serve it. M9 merged 48 minutes later serving
+`/signup/verify`. **Nothing failed.** `apps/web` is a single-page app, so the
+wrong path answered **200** with the app shell and the token was dropped — every
+verification link in every signup email was inert, the first person through the
+flow could not verify, could not enrol and therefore could not sign in, and no
+error appeared anywhere.
+
+Two lessons are worth more than the one-word fix:
+
+- **A path agreed in a comment between two stages is not agreement.** Both halves
+  were internally consistent and neither referred to the other.
+- **An SPA turns a wrong route into a 200.** The failure mode a 404 would have
+  caught on the first click instead survived a full deploy.
+
+`notifications-signup-mailer.test.ts` now reads M9’s own source and fails if the
+two drift again.

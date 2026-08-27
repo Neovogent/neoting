@@ -46,14 +46,19 @@ import {
 /**
  * The public web origin the signup verification link points at.
  *
- * Same value and same reasoning as `clients-team-settings/setup-link.ts`'s
- * `DEFAULT_APP_ORIGIN`: S3 deployed the SPA at `app.neoting.neovogent.com/app`,
- * and `config/env.ts` has no `APP_ORIGIN` key to read it from. Stated here
- * rather than imported so this module does not depend on another module for a
- * constant — the duplication is deliberate and both sites point at the same
- * missing env key.
+ * ⚠ **`neoacc.`, not `app.neoting.` — and the difference is the customer's
+ * confidence, not tidiness.** Both names are aliases on the same CloudFront
+ * distribution, so either resolves. But a practice signs up at
+ * `neoacc.neovogent.com`, and the first thing we send them is a link asking
+ * them to click through to confirm their identity. A different hostname in that
+ * mail than the one they just used is precisely the shape of a phishing mail,
+ * to an audience — accountants — trained to distrust exactly that.
+ *
+ * `clients-team-settings/setup-link.ts` still carries `app.neoting.` for the
+ * CLIENT setup link and should follow this. Both remain constants because
+ * `config/env.ts` has no `APP_ORIGIN` key, and both point at that same gap.
  */
-const SIGNUP_APP_ORIGIN = 'https://app.neoting.neovogent.com';
+const SIGNUP_APP_ORIGIN = 'https://neoacc.neovogent.com';
 
 @Module({
   imports: [NotificationsModule],

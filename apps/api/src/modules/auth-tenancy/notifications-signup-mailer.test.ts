@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, test } from 'vitest';
 
 import type { NotificationsService, SendOutcome } from '../notifications/index.js';
@@ -114,5 +116,25 @@ describe('the duplicate-signup notice', () => {
       to: 'priya@ledgerline.test',
     });
     expect(calls[0]?.input).toStrictEqual({ to: 'priya@ledgerline.test' });
+  });
+});
+
+describe('⚠ the path this mail points at, against the screen that receives it', () => {
+  test('VERIFY_EMAIL_PATH is a route M9 actually serves', () => {
+    // This reads another package's source on purpose, and the bug is the
+    // argument for it. VERIFY_EMAIL_PATH was `/app/verify-email` while M9 served
+    // `/signup/verify`. Nothing failed: `apps/web` is a single-page app, so the
+    // wrong path answered 200 with the app shell and the token was silently
+    // dropped. Every verification link was inert and no test, type or status
+    // code noticed — because both halves were internally consistent and simply
+    // did not refer to each other.
+    const signupView = readFileSync('../web/src/views/signup/SignupView.tsx', 'utf8');
+    expect(signupView).toContain(VERIFY_EMAIL_PATH);
+  });
+
+  test('and it is under /signup, not /app — /app is behind the session wall', () => {
+    // A person clicking a verification link has no session yet. Sending them
+    // into /app is what made the failure invisible rather than a 404.
+    expect(VERIFY_EMAIL_PATH.startsWith('/signup/')).toBe(true);
   });
 });
