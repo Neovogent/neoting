@@ -368,6 +368,49 @@ kind — the Universal Input Sheet is a Transaction+ / Accounts Suite feature.
 
 ---
 
+## A14 · The signup chain — verification and TOTP enrolment
+
+**Needs:** nothing — contract-change issue #195 is APPROVED, start now.
+**Owns:** `packages/contracts/openapi.yaml` (LAW, approved), `apps/api/src/modules/auth-tenancy/`.
+**This is the only thing blocking S7. Do it before anything else.**
+
+```
+Read issue #195 in full — it is the approved contract delta and the spec.
+
+TODAY NOBODY CAN SIGN IN TO STAGING. Not "no new customers" - nobody. You wrote why in
+auth.service.ts:225: totp fails CLOSED for an account with no enrolment, staging runs
+OTP_MODE=totp, and the enrolment endpoint was a contract gap. Failing closed is right.
+The door it points at was never built.
+
+THE DOMAIN LOGIC IS ALREADY YOURS AND ALREADY TESTED. This is an HTTP surface:
+  verifyEmailVerificationToken(token, secret, nowMs) -> ok / invalid / expired
+  createTotpEnrolment(label, wrappingSecret)         -> { secret, uri, recoveryCodes, ref }
+  wrapTotpMaterial / unwrapTotpMaterial
+
+THREE OPERATIONS:
+1. POST /v1/auth/email-verification      { token }
+2. POST /v1/auth/totp-enrolment          { email, password }  -> { uri, secret, recoveryCodes }
+3. POST /v1/auth/totp-enrolment/confirm  { email, password, totp }
+
+NO PRISMA MIGRATION. users.password_hash and totp_secret_ref are already nullable and
+users carries no RLS - S0 established this.
+
+TWO THINGS REVIEW WILL REFUSE:
+- Any "no second factor configured, let them in" branch. The enrolment endpoint must not
+  become the way round the refusal you already wrote.
+- A one-step enrolment. Write the ref only after a valid code comes back. One-step locks
+  out anyone with a skewed clock or a mistyped seed, permanently, because there is no
+  reset flow.
+
+Enrolment is authenticated by PASSWORD ONLY - the user has no second factor yet, which
+makes this the one authenticated route that cannot require one. Refuse unless
+email_verified is true, and refuse if totp_secret_ref is already set.
+
+Full gate. PR.
+```
+
+---
+
 ## A11 · Client intake
 
 **Needs:** S0. **Owns:** `apps/api/src/modules/clients-team-settings/`.

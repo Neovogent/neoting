@@ -302,6 +302,47 @@ react-intl for every string, design tokens for colour, no hex literals. Full gat
 
 ---
 
+## M9 · Signing up — the screens that do not exist
+
+**Needs:** Abdullah's A14 on main. **Owns:** `apps/web/src/views/signup/`, routing for `/signup`.
+**Not optional and not small: today an accountant cannot create an account in a browser.**
+
+```
+A1 shipped POST /v1/practices and it works in production. NOTHING IN apps/web/src CALLS
+IT - no createPractice, no /v1/practices - and the landing page's only buttons are
+#pricing anchors and a mailto. So the product has a login page and no way to reach it.
+
+FOUR SCREENS:
+1. Signup form - practiceName, firstName, lastName, email, password (min 12),
+   acceptedTermsVersion. The terms version MUST be exactly "0.1" -
+   TERMS_VERSION_IN_FORCE in practice-signup.service.ts. Any other value is a 400.
+   Link the checkbox to /legal/terms, which M4 already built.
+
+2. "Check your email" - and this is the one that needs care. THE API ALWAYS ANSWERS 202
+   WITH AN EMPTY BODY, whether or not an account was created. That is deliberate: saying
+   so would answer "is this email registered here" for anyone who asks. So the screen must
+   NOT say "account created" and must NOT say "that email is already registered". It says
+   what happens next, and nothing about what just happened.
+
+3. The verify-link landing - reads the token from the URL, posts it, shows success or
+   "this link has expired, request another". Nothing else; invalid and expired are the
+   only two outcomes the API distinguishes.
+
+4. TOTP enrolment - QR from the otpauth:// uri, the base32 secret underneath for manual
+   entry, then TEN RECOVERY CODES SHOWN EXACTLY ONCE. Make the user confirm they have
+   saved them, then make them type a code from the authenticator before enrolment
+   completes. That second step is what stops a skewed clock locking someone out for ever.
+
+Never put the secret, the recovery codes or the token in a URL, in a log, or in an error.
+
+The usual two: no bare strings in JSX (react-intl, lint ERROR), no hex colours in a
+className (use the tokens).
+
+Full gate. PR.
+```
+
+---
+
 ## M8 · The last honest-copy pass
 
 **Needs:** M1, M3, M4, M5 — every stage that writes user-facing copy. This one is last.

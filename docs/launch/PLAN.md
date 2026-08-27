@@ -140,9 +140,9 @@ the frontend is published.
 
 | Who | Owes | When |
 |---|---|---|
-| **Abdullah** | A9, A13 | overnight — A9 first, it blocks A10 |
-| **Mubasshir** | M6, M7, M8 (+M9 if agreed) | by lunch, 27 Aug |
-| **Shakib** | A10, S6, S7 (S5 done) | A10 unblocked — A9 merged; S7 last |
+| **Abdullah** | **A14** (#195, approved) | start now — blocks S7 |
+| **Mubasshir** | **M9** | after A14 lands |
+| **Shakib** | A10, S6, S7 | A10 files ready; S7 after A14+M9 |
 
 **A10 moved from Abdullah to Shakib** — Abdullah has no VT Transaction+ install, and the
 stage is a person importing a real file into VT.
@@ -153,9 +153,11 @@ stage is a person importing a real file into VT.
    wrong.** `EXTRACTOR=bedrock` shipped with S1 (#169); metering, the FAILED path and the
    cost measurement shipped 27 Aug. Staging has never run `demo` under the S1 boot gate —
    `config/env.ts` refuses it in production. Nothing here blocks A10.
-2. **The practice signup screen.** `POST /v1/practices` works; nothing in `apps/web/src`
-   calls it, and no M stage builds it. **No accountant can create an account in a browser
-   today**, and S7's walkthrough begins with signing up.
+2. **The signup chain — now scheduled as A14 + M9.** Contract-change issue **#195 is
+   APPROVED** (27 Aug). It is worse than a missing screen: there is also no
+   email-verification endpoint and no TOTP enrolment endpoint, so under `OTP_MODE=totp`
+   — which staging runs — **nobody can sign in at all**. **A14** (Abdullah, three
+   endpoints, no migration) then **M9** (Mubasshir, four screens). **Blocks S7.**
 
 ### How many stages can run at once
 
