@@ -55,7 +55,7 @@ const m = defineMessages({
   reachHeading: { id: 'portal.businessSignInView.reachHeading', defaultMessage: 'How we reach you' },
   reachHint: {
     id: 'portal.businessSignInView.reachHint',
-    defaultMessage: 'The mobile number matters — missing paperwork is chased by text.',
+    defaultMessage: 'The mobile number matters — a chase for missing paperwork names its recipient by it.',
   },
   mobileLabel: { id: 'portal.businessSignInView.mobileLabel', defaultMessage: 'Mobile number' },
   emailPlaceholder: {
