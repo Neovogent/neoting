@@ -15,6 +15,10 @@ Two rules that will save you the most trouble, because nothing in CI catches eit
   with a proper `domain.component.purpose` id — including `aria-label`, `title`,
   `placeholder` and `alt`, which are all copy.
 
+**M1–M8 are all merged.** What is left is **M9**, and it is blocked on Abdullah’s A14
+(contract-change #195, approved). Read M9 at the foot of this file; the ordering notes below
+are kept as the record of how M1–M8 ran.
+
 **Start with M2 and M5, together.** They are the only two of yours that need nothing at
 all, and they touch different files.
 
@@ -302,10 +306,45 @@ react-intl for every string, design tokens for colour, no hex literals. Full gat
 
 ---
 
+## M8 · The last honest-copy pass
+
+**Needs:** M1, M3, M4, M5 — every stage that writes user-facing copy. This one is last.
+**Owns:** copy across `apps/web/src`.
+
+> It was listed as needing only M1 and M5. It cannot be: it sweeps *all* copy, and M3 and
+> M4 both add pages full of it. Sweeping before they land means sweeping twice.
+
+```
+A sweep for copy that is now wrong. Small, but these are what a customer notices first.
+
+- LoginView.tsx instructs the user to enter "the six-digit code from your authenticator
+  app". After A2 that is true for the accountant, and after M6 the CLIENT gets an emailed
+  code instead. Make each screen say the right thing.
+- Anywhere still saying "text message", "SMS" or "we'll text you" — there is no SMS.
+- Anywhere implying a bank connection, a Xero sync, or an HMRC filing.
+- Any hardcoded figure, fake chart or invented number rendered as if it were real data.
+- Empty states: what does a brand-new practice with no clients actually see? A screen built
+  against seeded data usually has no empty state at all, and the first thing your first
+  customer sees is an empty one.
+
+⚠ The empty states are the item on this list most likely to be skipped and most likely to
+be seen. A new practice, a new client with no documents, an inbox with nothing in it, an
+export with nothing to export — check every one.
+
+Full gate. PR.
+```
+
+---
+
 ## M9 · Signing up — the screens that do not exist
 
 **Needs:** Abdullah's A14 on main. **Owns:** `apps/web/src/views/signup/`, routing for `/signup`.
 **Not optional and not small: today an accountant cannot create an account in a browser.**
+
+> ⚠ **M8 has already merged (#194), so nothing will sweep your copy after you.** The
+> honest-copy pass ran on 27 Aug, before these screens existed. Apply its rules as you
+> write rather than expecting a later pass: no SMS anywhere, no invented data, no
+> vocabulary implying anything was transmitted, and every string through react-intl.
 
 ```
 A1 shipped POST /v1/practices and it works in production. NOTHING IN apps/web/src CALLS
@@ -342,31 +381,3 @@ Full gate. PR.
 ```
 
 ---
-
-## M8 · The last honest-copy pass
-
-**Needs:** M1, M3, M4, M5 — every stage that writes user-facing copy. This one is last.
-**Owns:** copy across `apps/web/src`.
-
-> It was listed as needing only M1 and M5. It cannot be: it sweeps *all* copy, and M3 and
-> M4 both add pages full of it. Sweeping before they land means sweeping twice.
-
-```
-A sweep for copy that is now wrong. Small, but these are what a customer notices first.
-
-- LoginView.tsx instructs the user to enter "the six-digit code from your authenticator
-  app". After A2 that is true for the accountant, and after M6 the CLIENT gets an emailed
-  code instead. Make each screen say the right thing.
-- Anywhere still saying "text message", "SMS" or "we'll text you" — there is no SMS.
-- Anywhere implying a bank connection, a Xero sync, or an HMRC filing.
-- Any hardcoded figure, fake chart or invented number rendered as if it were real data.
-- Empty states: what does a brand-new practice with no clients actually see? A screen built
-  against seeded data usually has no empty state at all, and the first thing your first
-  customer sees is an empty one.
-
-⚠ The empty states are the item on this list most likely to be skipped and most likely to
-be seen. A new practice, a new client with no documents, an inbox with nothing in it, an
-export with nothing to export — check every one.
-
-Full gate. PR.
-```
