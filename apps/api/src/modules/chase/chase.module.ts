@@ -12,15 +12,17 @@ import { CHASES_SERVICE, PRISMA, SMS_SENDER } from './tokens.js';
  * The chase domain module (SoT §4 Stage 8, METH Stage 8).
  *
  * Foundational: it exposes the domain providers Stage 8/9's later work composes
- * with. Today that is the config-selected `SmsSender` (`SMS_SENDER=demo`), the
- * one provider with a runtime dependency; the composition (`composeChaseSms`),
- * the portal-link token and the detection service are PURE / scoped-client
- * functions with no Nest lifecycle, exported through `index.ts` and used
- * directly (the executor and the portal endpoints call them), not injected.
+ * with. Today that is the config-selected `SmsSender`, the one provider with a
+ * runtime dependency; the composition (`composeChaseSms`), the portal-link token
+ * and the detection service are PURE / scoped-client functions with no Nest
+ * lifecycle, exported through `index.ts` and used directly (the executor and the
+ * portal endpoints call them), not injected.
  *
- * The SMS sender is config-selected, never import-selected, so `pnpm dev` and
- * `pnpm test` write the demo outbox while Twilio would drop in behind the same
- * seam in staging — the house pattern (`selectExtractor`, `selectDocumentStore`).
+ * The sender is config-selected, never import-selected, so `pnpm dev` and
+ * `pnpm test` write the demo outbox (`SMS_SENDER=demo`) while a deployed
+ * environment delivers the chase by email (`SMS_SENDER=email`, launch stage
+ * A13) — the house pattern (`selectExtractor`, `selectDocumentStore`). Neither
+ * the executor nor any call site changes between the two.
  *
  * The Prisma client is the shared pooled one, *received* by any future service,
  * never constructed inside it; it connects as `nt_app`, so every query still has

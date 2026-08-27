@@ -4,13 +4,15 @@
 
 ## Purpose
 
-The five detection engines, chase composition, SMS with OTP secure links, the upload portal endpoints, the policy scheduler, and auto-close on matching inbound.
+The five detection engines, chase composition, delivery with OTP secure links, the upload portal endpoints, the policy scheduler, and auto-close on matching inbound.
+
+⚠ **Since launch stage A13 the chase has a real transport, and it is EMAIL.** SMS was cut for Initial Delivery and `DemoSmsSender` only ever wrote an outbox row, so until A13 nothing this module composed could reach a client. `EmailChaseSender` sits behind the SAME `SmsSender` seam, selected by `SMS_SENDER=email`, and carries the reviewed body byte-for-byte. Read "The email transport" below before touching anything in the send path.
 
 ## ⚠ Initial Delivery (ID) — read this before the sections below
 
 **ID ships THREE of the five detection engines** (SoT §24.2 Stage 8), and the omissions are worth knowing rather than guessing at:
 
-- **In:** (a) bank transaction with no matched document · (c) bank-statement period gap · (e) expected recurring document not arrived.
+- **In:** (a) bank transaction with no matched document · (c) bank-statement period gap · (e) expected recurring document not arrived. ⚠ **Built today: (a) alone.** Launch stage A13 shipped engine (a) and its transport on purpose — §24.2.3 argues (a) is the differentiator, and (c) and (e) are additive behind the same shape.
 - **Out, and for different reasons:** (d) *accounting-software transaction without an attachment* has nothing to read in ID — D42 means there is no ledger connection to read it from. (b) is out on scope, not on principle.
 - **Composition and release are separate authorities (D44).** Accountants and their team members may compose and edit chase message text; only the firm’s **super admin** releases it. The existing “every SMS is shown verbatim in review before sending” invariant is unchanged and still absolute — D44 adds *who may press send*, it does not relax *what they are shown*.
 - **Every inbound channel is identity-gated (D45)** — portal by OTP to the registered mobile, email from a registered address, WhatsApp from a registered number. A chase can still be closed by a reply through any of them; it simply cannot be closed by a stranger.
@@ -25,7 +27,7 @@ Changing any of those is a contract-change issue approved by Shakib **before** a
 
 ## Invariants
 
-- The flagship. Every SMS is shown verbatim in review before sending. Chasing is SMS-only, but a client may reply through any inbound channel and that still closes the chase.
+- The flagship. **Every message is shown verbatim in review before sending, whatever carries it.** `render-summary.ts` renders the payload body byte-for-byte and `rendered_summary_hash` is computed over that render; `chase_messages.body` is the same string; and since A13 the email body is the same string again. **No transport may compose, re-render or template.** The chase lane's delivery is email for ID (`SMS_SENDER=email`); a client may still reply through any inbound channel and that still closes the chase.
 - Every Prisma query goes through `scopedDb(ctx)` — an unscoped query is a tenancy leak (Governance §5.2).
 - Money is integer pence. No floats, ever.
 - Every state change creates an `ActionProposal` and executes only after a human Approve (Governance §10). No side-effect path may exist outside it.
@@ -59,10 +61,27 @@ Twilio, ever), not a fake system.
   that cannot exist.
 - **`detection.ts`** — `detectUnmatchedChases(db, businessId)`, **engine (a)
   only**. Takes a `ScopedClient` (the caller opens `scopedDb`, RLS decides
-  visibility). Returns UNMATCHED, non-suppressed transactions — both the stored
-  `chaseSuppressed` flag and the descriptor scan gate. // DEMO-MOCK lists engines
-  (b)–(e); they are FIXTURE for the demo. The pure predicate is split from the DB
-  read (both unit-tested).
+  visibility). **Four gates since A13**, each closing a different way of asking
+  for something we already have: the stored `chaseSuppressed` flag · the
+  descriptor scan (`isChaseSuppressed`) · `matchState = UNMATCHED`, which is
+  both the "no matched document" half of engine (a) and the *document already
+  received* gate (a line whose paperwork arrived is SUGGESTED or CONFIRMED and
+  never appears) · and `alreadyChasedTransactionIds`, the *chase already open*
+  gate. That last one is new and it is the "do not over-ask" rule: **any chase,
+  in any state, suppresses the line it covers.** Open means we have already
+  asked and there is no reminder scheduler; `CLOSED_RECEIVED` means auto-close
+  matched a document to it, and chasing then is chasing for a receipt we are
+  holding; the other `CLOSED_*` states are somebody's decision not to chase,
+  which re-detection would quietly overturn. It is keyed on `itemRefs` (through
+  `chase-projection.ts`'s `chaseItemRefs`) and not on `transactionId`, because a
+  grouped chase covers many receipts and only the first is in the convenience
+  column — keying on that alone re-chases every other line in the group. **No
+  new rules were written**: the descriptor list is `suppression.ts`'s, the
+  refs narrowing is the projection's, and "the document arrived" stays whatever
+  `auto-close.ts` and `bank.confirm-match` decided. // DEMO-MOCK lists engines
+  (b)–(e); they are FIXTURE for the demo. ⚠ **A13 shipped engine (a) only, on
+  purpose** — (c) period-gap and (e) expected-recurring are additive later. The
+  pure predicates are split from the DB read (both unit-tested).
 - **`sms-copy.ts`** — `composeChaseSms(input)`, a PURE function producing the SoT
   §8.2 copy **verbatim**: *"American Burger Accounts: we're missing the receipt
   for Currys £1,299 on 9 Aug. Upload securely: <link>"*. Grouped per client (one
@@ -79,9 +98,9 @@ Twilio, ever), not a fake system.
   delegated RLS scope gate the data.
 - **`sms-sender.ts` + `select-sms-sender.ts`** — `SmsSender { send(db, messages) }`
   + `DemoSmsSender`, which "sends" by writing the outbox (`chase_messages` update
-  + `sms_log` insert) through the caller's `ScopedClient` — no Twilio. Selected by
-  `SMS_SENDER=demo`, config not import, mirroring `selectExtractor` /
-  `selectMediaFetcher` exactly. // DEMO-MOCK: Twilio Messaging.
+  + `sms_log` insert) through the caller's `ScopedClient` — no Twilio. Selected
+  by config not import, mirroring `selectExtractor` / `selectMediaFetcher`
+  exactly. **`SMS_SENDER` now admits `demo` and `email`** (A13); see below.
 - **`chase.module.ts`** — exposes the config-selected `SMS_SENDER` provider (the
   one provider with a runtime dep) and now the read surface: `ChasesController` +
   `ChasesService`. Composition, token and detection stay pure/scoped-client
@@ -167,15 +186,112 @@ that spine can hide on it (the documents-surface discipline, applied to chases).
   re-extraction / redelivery never re-fires). Matching nothing is the normal,
   non-error case. Engine (a) single-transaction chases only — // DEMO-MOCK lists
   the b–e close paths and a real fuzzy/cross-type matcher.
-- **`index.ts` — the PUBLIC SEAM.** Exports the detection service + suppression,
-  the composition + formatters, the portal-link token functions, the `SmsSender`
-  type + `selectSmsSender`, and now the **auto-close seam** (`ChaseAutoClose`,
+- **`index.ts` — the PUBLIC SEAM.** Exports the detection service + suppression
+  (including A13's `alreadyChasedTransactionIds`), the composition + formatters,
+  the portal-link token functions, the `SmsSender` type + `selectSmsSender` +
+  A13's `EmailChaseSender` / `CHASE_EMAIL_SUBJECT` / `CHASE_EMAIL_CHANNEL` /
+  `ChaseEmailTransport`, and the **auto-close seam** (`ChaseAutoClose`,
   `PrismaChaseAutoClose`, `RecordingChaseAutoClose`, `chaseMatchesDocument` + the
   tolerances). The ingest processor calls `ChaseAutoClose.run` THROUGH this seam
   after extraction; the worker composition root (`worker/main.ts`) wires
   `PrismaChaseAutoClose`, and the ingest-processor unit tests use
   `RecordingChaseAutoClose`. It is chase's SECOND cross-module consumer, after the
   `chase.send` executor.
+
+### The email transport (launch stage A13) — `email-chase-sender.ts`
+
+**The chase's only real delivery.** SMS was cut for Initial Delivery, so before
+this stage the module composed a message, minted a portal link, ran it through
+Review → Approve, wrote an outbox row and reached nobody. `EmailChaseSender`
+implements the **same `SmsSender` interface** the `chase.send` executor already
+calls, so *the executor is unchanged and no call site moved* — an executor
+performs one effect and decides nothing, least of all which wire it leaves by.
+
+- **Config, not import.** `SMS_SENDER=email` (`select-sms-sender.ts`). ⚠ It
+  points at a SECOND switch: the transport underneath is `EMAIL_SENDER`-selected,
+  so `SMS_SENDER=email` + `EMAIL_SENDER=demo` still delivers nothing. **No new
+  boot gate was added beside it, deliberately** — `config/env.ts` already refuses
+  `EMAIL_SENDER=demo` under `NODE_ENV=production`, and one gate covering every
+  outbound email beats a second that covers this caller only and can disagree.
+  The full argument (including why the key was WIDENED rather than given a
+  sibling, and why the name is now a value out of date) is written out at the
+  `SMS_SENDER` declaration in `config/env.ts`.
+- **⚠ The body is `message.body`, VERBATIM.** Nothing here composes. That string
+  was produced by `composeChaseSms` at proposal time, stored on the proposal,
+  rendered byte-for-byte by `render-summary.ts`, hashed into
+  `rendered_summary_hash`, and written to `chase_messages.body`. The transport
+  copies it. There is nothing here that could drift, which is the point.
+  `notifications`' own `composeDocumentRequest` is a nicer email and is
+  **deliberately unused** — it re-renders from the items, and a re-rendering is
+  by definition not the thing the human approved. Adopting it means putting its
+  output in the payload so review shows it: a change to the chase template and
+  the Review → Approve path, and therefore Shakib's call.
+- **The subject is a compile-time constant** (`CHASE_EMAIL_SUBJECT`, *"A document
+  request from your accountant"*). The payload has no subject field and the
+  contract is LAW, so the review never showed one — anything variable there is
+  unreviewed text sent to a client. It also keeps untrusted content where it
+  belongs: a supplier name and a bank descriptor are client-controlled strings,
+  they already sit inside the reviewed body, and they never reach the envelope.
+- **The address comes from the chase's NAMED recipient contact**, read through
+  the caller's `ScopedClient`. A chase naming no contact **refuses** rather than
+  falling back to "the primary contact" — that would be the transport choosing a
+  recipient the reviewer never saw (and D45's inbound stance says the same from
+  the other side: registered addresses only). A contact with no email, an
+  undeliverable address, or `receives_chases = false` refuses too. Every refusal
+  is `NT-PRP-006` and names no id and no address.
+- **Refusing rolls the approval back, and that is the honest answer.** Nothing is
+  recorded as sent that was not sent. The refusal is an `AppException` rather
+  than `ProposalExecutionRefused` because importing that class would close a
+  runtime cycle between two public seams; the wire response is identical.
+- **Three phases: resolve every recipient → consume every ceiling → send.** A
+  batch that was going to refuse refuses *before* the first irreversible act.
+  ⚠ What remains, honestly: a transport failure on message N > 1 still rolls back
+  an approval whose earlier emails are gone. It is bounded (one message per
+  client, SoT §8.2) and visible. Making it impossible means moving the send to a
+  post-commit follow-up — the shape `publish.batch`'s ledger call used, for
+  exactly this reason — which is a change to the executor and the engine.
+- **The rate limiter is the last-resort over-ask guard.** The notifications
+  module's own per-address `document-request` ceiling (10/hour), consumed with no
+  `ip` because an approved chase is a system-initiated send. Suppression at
+  detection is the first guard and the one that matters; this catches what it
+  missed.
+- **No `sms_log` row, on purpose.** `sms_log.to_e164` is required and
+  `SmsOutboxMessage.toE164` is a required contract field, so writing an email
+  send there means inventing a phone number and the SMS-outbox screen would show
+  an SMS nobody sent. The durable record is the `chase_messages` row — the same
+  row that carries the exact text — stamped `channel: 'email'` (a free string in
+  the contract), the provider id and `sentAt`.
+- **⚠ The seam cycle, and why the import is dynamic.**
+  `notifications/email-copy.ts` imports `chase/index.ts` (for `formatGbp` /
+  `formatDay` — money and dates come from ONE implementation), and
+  `chase/index.ts` re-exports `selectSmsSender`. A static VALUE import of the
+  notifications seam from anything `chase/index.ts` reaches would therefore close
+  a runtime cycle between two public seams — the hazard `publish-batch.ts` and
+  `revoke-link.ts` each record refusing to create. `email-chase-sender.ts` takes
+  **type-only** imports (erased) and receives its transport as a
+  `ChaseEmailTransport`; `select-sms-sender.ts` builds that behind a `await
+  import('../notifications/index.js')`, resolved on the first send and memoised.
+  It pays for itself twice: a process configured for email that never chases
+  constructs no SES client and opens no Redis connection, and **tests hand in a
+  fixture so the factory never runs at all**.
+- **Proven:** `email-chase-sender.test.ts` (byte-identity including length, the
+  constant subject, markup in a supplier name staying out of the envelope, every
+  refusal, the second-message-unsendable case sending nothing, the ceiling, and
+  lazy/memoised resolution) and **`chase-email.integration.test.ts` against a
+  real database through the REAL engine**: create → review → approve → the
+  email's body `=== ` the string review rendered `=== ` the stored
+  `chase_messages.body`, the portal link inside it verifies, no `sms_log` row,
+  and a contact with no email refuses `NT-PRP-006` with nothing sent and nothing
+  written. Id namespace `a13_`, torn down by explicit id list.
+- **⚠ Flagged, not fixed — outside A13's fence.** `render-summary.ts` renders
+  `recipientE164`, a phone number, because that is what `ChaseSendPayload`
+  requires. Under this transport a reviewer therefore approves a send to a
+  *contact* whose email address they were not shown. Closing it needs either an
+  address on the payload (LAW, `packages/contracts`) or a render that names the
+  contact (`modules/approvals`). Also unset by this stage: `.env.example` and
+  `infra/envs/staging/services.tf` still say `SMS_SENDER=demo`, and the
+  production boot refusal for `SMS_SENDER=demo` is withheld until that infra
+  change lands in the same PR — see the `config/env.ts` comment.
 
 **The `chase.send` executor lives in `validation-dedupe/proposals/chase-send.ts`**
 (the #81 executor home — an executor is never reachable from a controller), NOT
@@ -231,6 +347,22 @@ S8, `auto-close.ts` behind the `index.ts` seam, wired into the ingest processor)
       exists. Giving `PortalLinkClaims` a `practiceId` (a change to this
       module's format and to the `chase.send` executor's mint call) collapses
       that sweep to one lookup — post-demo, and it is a chase-module decision.
-- [ ] Engines (b)–(e), per-client suppression descriptors (G7 schema).
+- [x] **Launch stage A13 — chase by email.** `EmailChaseSender` behind the
+      existing `SmsSender` seam, `SMS_SENDER=email`, carrying the reviewed body
+      byte-for-byte; over-ask suppression at detection
+      (`alreadyChasedTransactionIds`); engine (a) only. Proven pure and against
+      a real DB through the real engine.
+- [ ] **A13 leftovers, all outside its fence.** (1) `render-summary.ts` shows
+      `recipientE164`, so the email recipient is not the reviewed one — needs a
+      contract field or an approvals render change. (2) `.env.example` and
+      `infra/envs/staging/services.tf` do not yet know `SMS_SENDER=email`.
+      (3) The production boot refusal for `SMS_SENDER=demo` is written up in
+      `config/env.ts` and withheld until (2) lands with it.
+- [ ] Engines (b)–(e) — **(c) period-gap and (e) expected-recurring are the ID
+      pair and are additive**, per SoT §24.2.3; A13 deliberately shipped (a)
+      alone. Per-client suppression descriptors (G7 schema).
 - [ ] Policy scheduler, reminders, escalation, quiet hours, STOP, item messaging.
+      ⚠ Reminders interact with A13's over-ask gate: `alreadyChasedTransactionIds`
+      suppresses on ANY chase precisely because there is no scheduler to own the
+      second message. Whoever builds one owns relaxing it, in that function.
 - [ ] Update this file on exit — it is how the next session picks up.

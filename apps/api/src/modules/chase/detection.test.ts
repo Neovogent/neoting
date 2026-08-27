@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import type { ScopedClient } from '../../common/db/scoped-db.js';
-import { detectUnmatchedChases } from './detection.js';
+import { alreadyChasedTransactionIds, detectUnmatchedChases } from './detection.js';
 
 interface TxnRow {
   id: string;
@@ -29,8 +29,15 @@ function txn(over: Partial<TxnRow> & { id: string }): TxnRow {
   };
 }
 
+/** A chase as the coverage read sees it: its grouped refs and its fallback column. */
+interface ChaseCoverage {
+  businessId: string;
+  itemRefs: unknown;
+  transactionId: string | null;
+}
+
 /** A recording fake — the query filters are asserted, then applied in memory. */
-function harness(rows: TxnRow[]) {
+function harness(rows: TxnRow[], chases: ChaseCoverage[] = []) {
   let lastWhere: Record<string, unknown> | undefined;
   const db = {
     bankTransaction: {
@@ -43,6 +50,10 @@ function harness(rows: TxnRow[]) {
             r.chaseSuppressed === where['chaseSuppressed'],
         );
       },
+    },
+    chase: {
+      findMany: async ({ where }: { where: Record<string, unknown> }) =>
+        chases.filter((c) => c.businessId === where['businessId']),
     },
   } as unknown as ScopedClient;
   return { db, whereWas: () => lastWhere };
@@ -90,4 +101,59 @@ test('the mapped shape carries integer pence and the bank feed identity', async 
     merchantName: 'Currys',
   });
   expect(Number.isInteger(row?.amountPence)).toBe(true);
+});
+
+// ── Do not over-ask (launch stage A13) ─────────────────────────────────────
+
+test('a transaction an OPEN chase already covers is not chased again', async () => {
+  const { db } = harness(
+    [txn({ id: 't_currys' }), txn({ id: 't_google', descriptionRaw: 'GOOGLE ADS' })],
+    [{ businessId: 'biz_1', itemRefs: ['t_currys'], transactionId: 't_currys' }],
+  );
+  const result = await detectUnmatchedChases(db, 'biz_1');
+  expect(result.map((r) => r.transactionId)).toEqual(['t_google']);
+});
+
+test('a transaction whose chase CLOSED because the document arrived is not chased again', async () => {
+  // auto-close.ts stamps CLOSED_RECEIVED when an inbound document matched the
+  // line. The line itself can still read UNMATCHED — the match row is a
+  // separate, human-confirmed act — so without this gate the client is chased
+  // for a receipt already sitting in the accountant's inbox.
+  const { db } = harness(
+    [txn({ id: 't_currys' })],
+    [{ businessId: 'biz_1', itemRefs: ['t_currys'], transactionId: 't_currys' }],
+  );
+  expect(await detectUnmatchedChases(db, 'biz_1')).toEqual([]);
+});
+
+test('EVERY line of a grouped chase is covered, not just the convenience column', async () => {
+  // One text, many receipts (SoT §8.2): `transactionId` holds only the first.
+  // Keying coverage on it alone would re-chase every other line in the group.
+  const { db } = harness(
+    [txn({ id: 't_a' }), txn({ id: 't_b' }), txn({ id: 't_c' })],
+    [{ businessId: 'biz_1', itemRefs: ['t_a', 't_b'], transactionId: 't_a' }],
+  );
+  const result = await detectUnmatchedChases(db, 'biz_1');
+  expect(result.map((r) => r.transactionId)).toEqual(['t_c']);
+});
+
+test('another client’s chase does not suppress this one’s line', async () => {
+  const { db } = harness(
+    [txn({ id: 't_currys' })],
+    [{ businessId: 'biz_2', itemRefs: ['t_currys'], transactionId: 't_currys' }],
+  );
+  expect((await detectUnmatchedChases(db, 'biz_1')).map((r) => r.transactionId)).toEqual(['t_currys']);
+});
+
+test('the coverage set is pure, and survives a malformed itemRefs column', async () => {
+  // `item_refs` is a bare Prisma `Json`. A non-array, or an array with
+  // non-strings in it, must not throw and must not lose the fallback column.
+  expect([
+    ...alreadyChasedTransactionIds([
+      { itemRefs: ['t_a', 7, null], transactionId: 't_a' },
+      { itemRefs: 'not-an-array', transactionId: 't_b' },
+      { itemRefs: [], transactionId: null },
+      { itemRefs: ['t_a'], transactionId: 't_a' },
+    ] as never),
+  ].sort()).toEqual(['t_a', 't_b']);
 });

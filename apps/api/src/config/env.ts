@@ -229,12 +229,50 @@ const EnvSchema = z.object({
   // configuration rather than from whatever the container happened to inherit.
   BEDROCK_REGION: z.string().default('eu-west-2'),
 
-  // The SMS sender (METH Stage 8). `demo` = `DemoSmsSender`, which "sends" by
-  // writing the outbox rows the SMS-outbox screen reads — no Twilio, ever, in
-  // this push. The only value until Twilio Messaging lands behind the same seam
-  // post-demo. Selected by config, not import, exactly like EXTRACTOR / MEDIA_FETCH.
-  // DEMO-MOCK: Twilio Messaging replaces `DemoSmsSender`.
-  SMS_SENDER: z.enum(['demo']).default('demo'),
+  // How a chase leaves the building (METH Stage 8; `email` added by launch
+  // stage A13). Selected by config, not import, exactly like EXTRACTOR /
+  // MEDIA_FETCH / EMAIL_SENDER.
+  //
+  //   demo   `DemoSmsSender` — "sends" by writing the outbox rows the
+  //          SMS-outbox screen reads. No Twilio, ever. Nothing leaves the
+  //          machine, and it stays the default so a fresh clone and CI run the
+  //          whole journey offline.
+  //   email  `EmailChaseSender` (A13) — the chase is delivered by email through
+  //          the S2 notifications transport, carrying the reviewed body
+  //          byte-for-byte. SMS was cut for Initial Delivery and this is the
+  //          chase lane's only real delivery.
+  //
+  // ⚠ **The name is now one value out of date and a rename is not this
+  // stage's.** This key selects the chase TRANSPORT, of which SMS is no longer
+  // one. Renaming it to `CHASE_SENDER` means editing `.env.example`,
+  // `infra/envs/staging/services.tf` and `infra/README.md` in the same change —
+  // all outside stage A13's fence — and a half-done rename is an environment
+  // that boots with the wrong transport. Recorded, deliberately deferred.
+  //
+  // ⚠ **Widened rather than given a sibling key, on purpose.** A second switch
+  // ("SMS_SENDER=demo, CHASE_EMAIL=on") would be two knobs governing one act,
+  // and every combination of two knobs includes the ones nobody meant: a
+  // configured email transport that never sends because the other key still
+  // says `demo`, silently, with a green outbox row to look at. One key, one
+  // decision, no precedence rule to remember.
+  //
+  // ⚠ **`email` points at a second switch, and no gate is added beside the one
+  // that already covers it.** The transport it composes is `EMAIL_SENDER`-
+  // selected, so `SMS_SENDER=email` + `EMAIL_SENDER=demo` still delivers
+  // nothing — and `EMAIL_SENDER=demo` is ALREADY refused under
+  // `NODE_ENV=production` below (S2). One gate covering every outbound email
+  // beats a second one covering this caller only and able to disagree with it.
+  //
+  // ⚠ **`demo` is NOT refused in production, and that is a live gap, not a
+  // ruling.** It has the `EMAIL_SENDER=demo` failure shape — the chase is
+  // approved, the outbox row appears, and no client is ever contacted. The gate
+  // is withheld only because `infra/envs/staging/services.tf` still sets
+  // `SMS_SENDER=demo` and staging runs `NODE_ENV=production`: adding the refusal
+  // without that change in the same PR crash-loops the launch target over a
+  // variable nobody has set yet. It is the SESSION_SECRET story exactly, and it
+  // gets the same answer — the gate lands with the infra change, not before it.
+  // DEMO-MOCK: Twilio Messaging would land behind the same seam for v1.
+  SMS_SENDER: z.enum(['demo', 'email']).default('demo'),
 
   // ── Outbound email (S2) ──────────────────────────────────────────────────
   //
