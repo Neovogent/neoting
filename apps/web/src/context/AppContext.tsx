@@ -302,7 +302,15 @@ interface AppContextType {
    * a portal link reads the privacy notice with no workspace session to
    * probe, so like 'landing' it must never fire one.
    */
-  portal: 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload' | 'landing' | 'legal';
+  /**
+   * 'setup' is the invited client's way in (launch stage M6): `/app/setup`,
+   * the address the registration email carries (`SETUP_LINK_PATH` in
+   * apps/api/src/modules/clients-team-settings/setup-link.ts). It lives under
+   * `/app` because the emails already say so, but it is a CLIENT surface with
+   * its own credential — email plus a six-digit code — so it must never fire
+   * the workspace session probe.
+   */
+  portal: 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload' | 'landing' | 'legal' | 'setup';
   /** The approval session the SMS link opened, when portal === 'approval'. */
   openApprovalRequestId: string | null;
   openApprovalLink: (requestId: string) => void;
@@ -602,7 +610,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const segments = usePath();
   const [root, first, second] = segments;
 
-  const portal: 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload' | 'landing' | 'legal' =
+  const portal: 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload' | 'landing' | 'legal' | 'setup' =
     // Bare `/` is the public landing page (launch stage M3), so the session
     // probe below never fires for a visitor who has not asked for the app —
     // the workspace root is `/app`.
@@ -616,6 +624,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // SMS, where every character is billed and re-typed by hand when the link
       // does not survive the client's phone.
       : root === 'p' ? 'chase-upload'
+      // `/app/setup?setupToken=…` — the registration email's address (launch
+      // stage M6). Checked BEFORE the accountant fallback: an invited client
+      // holds no workspace session, and this address rendering the login wall
+      // would be a dead end for exactly the person the email invited.
+      : root === 'app' && first === 'setup' ? 'setup'
       : 'accountant';
 
   /**

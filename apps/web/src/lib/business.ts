@@ -114,6 +114,11 @@ export function buildBusinessAccounts(clients: Client[]): BusinessAccount[] {
       autoSubmitOnCapture: true,
       multiPageCapture: true,
       twoFactor: true,
+      // Subscribed, so the settings Plan section has a populated state to
+      // show. The first account deliberately has no subscription — it is the
+      // one the synthetic onboarding journey picks, so the subscribe step
+      // stays reachable in a demo (launch stage M6).
+      subscription: { status: 'active', renewsOn: '28 Sep 2026' },
       members: [
         { id: 'bm-seed-4', name: second.contactName ?? 'Maria Silva', email: 'maria@anandagroup.co.uk', mobile: '+44 7700 900871', role: 'Owner', canUpload: true, canSeeTotals: true, status: 'active' },
       ],

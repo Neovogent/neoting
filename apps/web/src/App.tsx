@@ -49,6 +49,9 @@ const BusinessPortal = lazy(() => import('./views/business/BusinessPortal').then
 const ChasePortalView = lazy(() => import('./views/business/ChasePortalView').then((m) => ({ default: m.ChasePortalView })));
 const ClientApprovalView = lazy(() => import('./views/business/ClientApprovalView').then((m) => ({ default: m.ClientApprovalView })));
 const UserRegistrationView = lazy(() => import('./views/business/UserRegistrationView').then((m) => ({ default: m.UserRegistrationView })));
+// The invited client's sign-in and subscription (launch stage M6): its own
+// chunk, so `/app/setup` downloads the journey and nothing of the workspace.
+const BusinessOnboardingView = lazy(() => import('./views/business/BusinessOnboardingView').then((m) => ({ default: m.BusinessOnboardingView })));
 
 // The practice app. One chunk per tab, so opening Clients does not also cost
 // you Approvals.
@@ -256,6 +259,7 @@ export default function App() {
           {portal === 'approval' ? <ClientApprovalView />
             : portal === 'chase-upload' ? <ChasePortalView />
             : portal === 'registration' ? <UserRegistrationView />
+            : portal === 'setup' ? <BusinessOnboardingView />
             : <BusinessPortal />}
         </Suspense>
       </div>

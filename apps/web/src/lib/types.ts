@@ -126,6 +126,20 @@ export interface BusinessMember {
   declinedReason?: string | undefined;
 }
 
+/**
+ * The client's subscription (D48), as the portal's Plan section shows it —
+ * the seed-side stand-in for the contract's `BusinessSubscription`, which is
+ * a projection of what Stripe knows and is written only by the webhook. The
+ * price is deliberately NOT here, in either shape: it lives in copy as
+ * "£8.50 + VAT per month", and the authoritative figures are on Stripe's own
+ * checkout and invoice (launch stage M6).
+ */
+export interface BusinessPlan {
+  status: 'active' | 'past_due' | 'canceled';
+  /** "27 Sep 2026" — when the current paid period ends. */
+  renewsOn?: string | undefined;
+}
+
 export interface BusinessAccount {
   id: string;
   /** The client record in the practice this account belongs to. */
@@ -151,6 +165,8 @@ export interface BusinessAccount {
   multiPageCapture: boolean;
   members: BusinessMember[];
   twoFactor: boolean;
+  /** Absent until the client has been through checkout (launch stage M6). */
+  subscription?: BusinessPlan | undefined;
 }
 
 /** A single extracted field carries its own confidence + provenance (PRD stage 2). */
