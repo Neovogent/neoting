@@ -5,7 +5,9 @@ import { type IdempotencyStore, InMemoryIdempotencyStore } from '../../common/id
 import type { Env } from '../../config/env.js';
 import { ENV } from '../../config/env.module.js';
 import { type DocumentStore, selectDocumentStore } from '../ingestion-routing/index.js';
+import { NotificationsModule, NOTIFICATIONS_SERVICE, type NotificationsService } from '../notifications/index.js';
 import { PortalContextService } from './portal-context.service.js';
+import { PortalOnboardingService } from './portal-onboarding.service.js';
 import { PortalSessionContextResolver } from './portal-session-context.js';
 import { PortalSessionService } from './portal-session.service.js';
 import { PortalUploadNotifier } from './portal-upload-notifier.js';
@@ -16,6 +18,7 @@ import {
   PORTAL_DOCUMENT_STORE,
   PORTAL_IDEMPOTENCY_STORE,
   PORTAL_SESSION_CONTEXT,
+  PORTAL_ONBOARDING_SERVICE,
   PORTAL_SESSION_SERVICE,
   PORTAL_UPLOAD_NOTIFIER,
   PORTAL_UPLOAD_SERVICE,
@@ -57,8 +60,22 @@ import {
  * does not need.
  */
 @Module({
+  imports: [NotificationsModule],
   controllers: [PortalController],
   providers: [
+    {
+      // The invited client's way in. It needs the notifications seam because
+      // the six-digit code is EMAILED — D47 names the client route as a setup
+      // link plus the company address, and there is no SMS on this path.
+      provide: PORTAL_ONBOARDING_SERVICE,
+      useFactory: (prisma: PrismaClient, env: Env, notifications: NotificationsService) =>
+        new PortalOnboardingService(
+          prisma,
+          { portalSessionSecret: env.PORTAL_SESSION_SECRET, otpMode: env.OTP_MODE },
+          notifications,
+        ),
+      inject: [PRISMA, ENV, NOTIFICATIONS_SERVICE],
+    },
     { provide: PRISMA, useFactory: () => getPrismaClient() },
     { provide: PORTAL_CONTEXT_SERVICE, useFactory: (prisma: PrismaClient) => new PortalContextService(prisma), inject: [PRISMA] },
     { provide: PORTAL_DOCUMENT_STORE, useFactory: (env: Env) => selectDocumentStore(env), inject: [ENV] },

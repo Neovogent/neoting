@@ -6,6 +6,7 @@ import App from '../../App';
 import { queryClient } from '../../api/queryClient';
 import { AppProvider } from '../../context/AppContext';
 import { AppIntlProvider } from '../../i18n/AppIntlProvider';
+import { faultMessageFor } from './BusinessOnboardingView';
 
 /**
  * The invited client's journey (launch stage M6), driven through the real
@@ -125,4 +126,29 @@ test('returning from a cancelled checkout says nothing was charged', async () =>
 
   expect(await screen.findByRole('heading', { name: 'Checkout cancelled' })).toBeInTheDocument();
   expect(screen.getByText(/Nothing has been charged/)).toBeInTheDocument();
+});
+
+/**
+ * ⚠ The fallback splits on whether the server ANSWERED, and this is the only
+ * mechanical guard that rule has.
+ *
+ * An `NT-` reference on screen beside "check your connection" cannot both be
+ * true — the reference arrived over the connection the sentence blames. S7 walked
+ * into it live: `POST /portal/sign-in-codes` and `/portal/onboarding-sessions`
+ * were contracted and unimplemented, the 404 came back as `NT-VAL-001`, and an
+ * invited client was told to check their wifi for a route that did not exist.
+ */
+test('a code means the server answered — the connection is never blamed for a reply we received', () => {
+  expect(faultMessageFor({ code: 'NT-VAL-001', detail: null }, false).id).toBe('portal.onboarding.faultRefused');
+  expect(faultMessageFor({ code: 'NT-SRV-001', detail: null }, false).id).toBe('portal.onboarding.faultRefused');
+
+  // Nothing answered. Now, and only now, the connection is the honest suspect.
+  expect(faultMessageFor({ code: null, detail: null }, false).id).toBe('portal.onboarding.faultUnreachable');
+
+  // The three the client can act on keep their own sentence, and the subscribe
+  // step keeps the one that says nothing was charged.
+  expect(faultMessageFor({ code: 'NT-OTP-001', detail: null }, false).id).toBe('portal.onboarding.faultOtp');
+  expect(faultMessageFor({ code: 'NT-OTP-002', detail: null }, false).id).toBe('portal.onboarding.faultSession');
+  expect(faultMessageFor({ code: 'NT-RATE-001', detail: null }, false).id).toBe('portal.onboarding.faultRateLimited');
+  expect(faultMessageFor({ code: 'NT-VAL-001', detail: null }, true).id).toBe('portal.onboarding.faultCheckout');
 });

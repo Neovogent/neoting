@@ -9,6 +9,7 @@ import type { PortalContextService } from './portal-context.service.js';
 import { type PortalSessionFacts, PortalSessionContextResolver, portalSessionRequired } from './portal-session-context.js';
 import type { PortalSessionService } from './portal-session.service.js';
 import type { PortalUploadIntent, PortalUploadService } from './portal-upload.port.js';
+import type { PortalOnboardingService } from './portal-onboarding.service.js';
 import { PortalController } from './portal.controller.js';
 
 const KEY = randomUUID();
@@ -49,6 +50,8 @@ const UPLOAD: DocumentUpload = {
 
 interface Calls {
   createSession: unknown[];
+  requestSignInCode: unknown[];
+  createOnboardingSession: unknown[];
   resolve: (string | undefined)[];
   getContext: PortalSessionFacts[];
   createUpload: { facts: PortalSessionFacts; request: PortalUploadIntent; key: string | undefined }[];
@@ -58,10 +61,18 @@ function harness(
   over: {
     session?: () => Promise<{ token: string; expiresAt: Date }>;
     resolve?: () => Promise<PortalSessionFacts>;
+    onboarding?: () => Promise<{ token: string; expiresAt: Date } | null>;
     context?: () => Promise<PortalContext>;
   } = {},
 ): { controller: PortalController; calls: Calls } {
-  const calls: Calls = { createSession: [], resolve: [], getContext: [], createUpload: [] };
+  const calls: Calls = {
+    createSession: [],
+    requestSignInCode: [],
+    createOnboardingSession: [],
+    resolve: [],
+    getContext: [],
+    createUpload: [],
+  };
 
   const sessions = {
     createSession: async (input: unknown) => {
@@ -95,7 +106,19 @@ function harness(
     },
   };
 
-  return { controller: new PortalController(sessions, resolver, context, uploads), calls };
+  // The onboarding service the two invited-client routes call. Recorded rather
+  // than exercised here — `portal-onboarding.service.test.ts` owns its rules.
+  const onboarding = {
+    requestSignInCode: async (input: unknown) => {
+      calls.requestSignInCode.push(input);
+    },
+    createOnboardingSession: async (input: unknown) => {
+      calls.createOnboardingSession.push(input);
+      return over.onboarding === undefined ? { token: 'portal.bearer', expiresAt: EXPIRES } : over.onboarding();
+    },
+  } as unknown as PortalOnboardingService;
+
+  return { controller: new PortalController(sessions, resolver, context, uploads, onboarding), calls };
 }
 
 async function grab(fn: () => Promise<unknown>): Promise<AppException> {
@@ -185,12 +208,24 @@ test('POST /portal/uploads authenticates BEFORE it validates — a bad bearer wi
   expect(calls.createUpload).toEqual([]);
 });
 
-test('the three contracted routes are the WHOLE surface — nothing else is reachable on the portal', () => {
-  // `openapi.yaml` declares exactly `createPortalSession`, `getPortalContext`
-  // and `createPortalUpload` under the `portal` tag. The portal is the smallest
-  // surface in the product and the only one a stranger holding a forwarded link
-  // can reach, so a fourth handler appearing here is a contract change (G7), not
-  // a convenience — this pins it.
+test('the five contracted routes are the WHOLE surface — nothing else is reachable on the portal', () => {
+  // `openapi.yaml` declares exactly `createPortalSession`, `getPortalContext`,
+  // `createPortalUpload`, `createPortalSignInCode` and
+  // `createPortalOnboardingSession` under the `portal` tag. The portal is the
+  // smallest surface in the product and the only one a stranger holding a
+  // forwarded link can reach, so a SIXTH handler appearing here is a contract
+  // change (G7), not a convenience — this pins it.
+  //
+  // It read `three` until the S7 walkthrough: the last two were published by
+  // S0's ID LAW batch and implemented by nobody, so an invited client's sign-in
+  // 404'd. Growing this list was the contract being MET, not widened — and it
+  // is the one direction that may be taken without an issue first.
   const handlers = Object.getOwnPropertyNames(PortalController.prototype).filter((name) => name !== 'constructor');
-  expect(handlers.sort()).toEqual(['createSession', 'createUpload', 'getContext']);
+  expect(handlers.sort()).toEqual([
+    'createOnboardingSession',
+    'createSession',
+    'createSignInCode',
+    'createUpload',
+    'getContext',
+  ]);
 });

@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
+import type { MessageDescriptor } from 'react-intl';
 import { OTP_LENGTH } from '../../api/portal';
 import type { PortalItem, PortalView } from '../../api/portal';
 import { useAppContext } from '../../context/AppContext';
@@ -131,6 +132,11 @@ const m = defineMessages({
   faultUnreachable: {
     id: 'portal.chasePortal.faultUnreachable',
     defaultMessage: 'We could not reach your accountant’s system. Check your signal and try again.',
+  },
+  faultRefused: {
+    id: 'portal.chasePortal.faultRefused',
+    defaultMessage:
+      'Something went wrong at your accountant’s end. Try again in a moment — if it keeps happening, tell them and quote the reference below.',
   },
   faultCode: { id: 'portal.chasePortal.faultCode', defaultMessage: 'Reference {code}' },
 
@@ -673,19 +679,26 @@ function Shell({ title, subtitle, children }: { title: string; subtitle?: string
 /**
  * A failure the way the house renders one: plain English first, the `NT-`
  * reference after it (frontend ten, item 5). The two portal codes get their own
- * sentence because the client can act on them; anything else falls back to
- * "we could not reach it", which is the only true thing left to say.
+ * sentence because the client can act on them.
+ *
+ * ⚠ **The rest splits on whether there is a code at all.** "We could not
+ * reach it" is the only true thing left to say when nothing answered — and it
+ * is a lie the moment a reference is on screen beside it, because that
+ * reference travelled over the connection the sentence blames. Sending a
+ * client to their signal for a server-side fault costs the document we asked
+ * for.
  */
+export function faultMessageFor(fault: PortalFault): MessageDescriptor {
+  if (fault.code === 'NT-OTP-001') return m.faultOtp;
+  if (fault.code === 'NT-OTP-002') return m.faultSession;
+  return fault.code === null ? m.faultUnreachable : m.faultRefused;
+}
+
 function Fault({ fault }: { fault: PortalFault | null }) {
   const intl = useIntl();
   if (!fault) return null;
 
-  const message =
-    fault.code === 'NT-OTP-001'
-      ? intl.formatMessage(m.faultOtp)
-      : fault.code === 'NT-OTP-002'
-        ? intl.formatMessage(m.faultSession)
-        : intl.formatMessage(m.faultUnreachable);
+  const message = intl.formatMessage(faultMessageFor(fault));
 
   return (
     <div role="alert" className="p-4 rounded-2xl border border-red-500/20 bg-red-500/5">

@@ -17,3 +17,6 @@ export const PORTAL_CONTEXT_SERVICE = Symbol('PORTAL_CONTEXT_SERVICE');
 // status path, so nothing injects it (see the note in `portal.module.ts`).
 /** The accountant's `portal.upload` notification (SoT §4 Stage 8.8, `portal-upload-notifier.ts`). */
 export const PORTAL_UPLOAD_NOTIFIER = Symbol('PORTAL_UPLOAD_NOTIFIER');
+
+/** The invited client's way in — the two endpoints `openapi.yaml` published and nothing implemented. */
+export const PORTAL_ONBOARDING_SERVICE = Symbol('PORTAL_ONBOARDING_SERVICE');

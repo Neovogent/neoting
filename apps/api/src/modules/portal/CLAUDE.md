@@ -91,6 +91,7 @@ else.
 | `portal-upload-status.service.ts` | The post-upload read: document state + extraction + verdict, under the delegated scope for the document and the SYSTEM scope for the chase. **Unrouted** — no contract path, so no provider (see below). |
 | `portal-upload-notifier.ts` | The accountant's `portal.upload` notification row (SoT §4 Stage 8.8). |
 | `otp-attempts.ts` | **A2** — the attempt counter, the lockout and the minted-code compare. Pure. See below. |
+| `portal-onboarding.service.ts` | **The invited client's way in** — `requestSignInCode` + `createOnboardingSession`, the two operations `openapi.yaml` published and no controller implemented until the S7 walkthrough hit the 404. Mints the code, hashes it, emails it, and exchanges it for a bearer. See below. |
 | `portal.module.ts` / `tokens.ts` / `index.ts` | Wiring, DI symbols, the public seam. |
 
 ## The OTP is real, and it is counted (launch stage A2)
@@ -146,25 +147,34 @@ therefore trivially reversible by anyone holding the column: what it buys is tha
 the code is not sitting in the clear next to the row saying who it went to. The
 real defence is the counter and the short expiry.
 
-⚠ **Nothing mints that code yet, so `totp` fails CLOSED here.** Writing
-`otp_hash` belongs to whoever sends it — the chase link is minted in
-`modules/chase` (A13), and the invited-client route is
-`POST /v1/portal/sign-in-codes`, which `openapi.yaml` publishes and no controller
-implements. Both are outside A2's owned paths. Until one lands, `OTP_MODE=totp`
-means no portal session can be opened, which is the honest state and is better
-than the one it replaces.
+✅ **The invited-client half now mints that code** — `portal-onboarding.service.ts`
+hashes it with `hashOtp` and sets `otp_expires_at`, which is what A2 said
+whoever landed either route would have to do. The CHASE half still does not:
+`modules/chase` (A13) sends the link and mints no code, so under
+`OTP_MODE=totp` a chase link opens no session. That is still the honest state,
+and it is now one gap rather than two.
 
-## The three endpoints, and the two decisions inside them
+## The five endpoints, and the decisions inside them
 
 | Route | Auth | Side effect | Failure |
 |---|---|---|---|
 | `POST /v1/portal/sessions` | public (`security: []`) | `ingest` | one `401 NT-OTP-001` for every verification failure |
 | `GET /v1/portal/context` | `portalSession` bearer | `none` | `401 NT-OTP-002` |
 | `POST /v1/portal/uploads` | `portalSession` bearer | `ingest` | `401 NT-OTP-002` |
+| `POST /v1/portal/sign-in-codes` | public (`security: []`) | `ingest` | **none — `202`, always** |
+| `POST /v1/portal/onboarding-sessions` | public (`security: []`) | `ingest` | one `401 NT-OTP-001` for every verification failure |
 
-Both writes are legitimately outside Review → Approve: the contract marks them
-`x-nt-side-effect: ingest`, the same standing as web upload — submitting evidence
-creates a new record and changes no existing one. No chase moves state from here.
+This table read **three** rows until 28 Aug 2026. `openapi.yaml` published them in
+S0's ID LAW batch, M6 built the screens against them, and no controller
+implemented them — so the setup link an invited client was emailed reached a
+screen whose first request 404'd. Growing this surface to five is the contract
+being MET, not widened, which is the one direction that needs no issue first.
+`portal.controller.test.ts` pins the list at five; a sixth is a G7 conversation.
+
+Every write here is legitimately outside Review → Approve: the contract marks
+all four `x-nt-side-effect: ingest`, the same standing as web upload —
+submitting evidence, or opening a session for yourself, creates a new record and
+changes no existing one. No chase and no document moves state from here.
 
 **`Idempotency-Key` on `POST /portal/sessions` is required, parsed, and
 deliberately NOT replay-cached.** The header is contract-required on every
@@ -220,6 +230,78 @@ actor every WhatsApp/email document already carries.
 `otp_sessions.contact_id` is deliberately **NULL**: the link is forwardable, we
 do not know who is holding it, and a guess in an audit column is worse than an
 absence. Who we *asked* is `requested_from_contact_id` (SoT Stage 8.3).
+
+## The invited client's way in — `sign-in-codes` + `onboarding-sessions`
+
+`portal-onboarding.service.ts`. A11 creates the client and emails a **setup
+link**; M6 built the screen it lands on; the seam between them belonged to
+nobody until the S7 walkthrough found it the way a customer would — the link
+arrives, the screen loads, and the request 404s.
+
+**The setup token is the link, not the credential.** It names the workspace; the
+six-digit code proves the person. A token alone opens nothing, which is why the
+token may sit in a URL and the code may never.
+
+**⚠ The two operations are deliberately asymmetric, and getting this backwards
+is the whole risk on this surface.**
+
+| | Answers | Why |
+|---|---|---|
+| `requestSignInCode` | **always, silently — `202`** | Whether an address is registered on a workspace is not something an unauthenticated caller may learn. The setup link travels by email through people who are not always the client, so the MAIL is what distinguishes the outcomes and it goes to the address, never to the caller. |
+| `createOnboardingSession` | one `401 NT-OTP-001` for every refusal | By then the caller holds a code we sent to that address. Wrong code, locked, expired, unknown token and wrong address are still one answer, for the same reason the chase path gives them one. |
+
+Four refusals collapse into that silence: a token that was never ours, an
+expired invite, an already-accepted one, and an address that is not the
+registered one (D45). `portal-onboarding.service.test.ts` asserts **nothing was
+sent** for each rather than that something was reported — reporting is exactly
+what would leak.
+
+**A send failure is the one thing not swallowed.** The caller still sees `202`,
+but the log carries it (§11: the address's DOMAIN and the business, never the
+address and never the code), because a client waiting for a code that never left
+is otherwise invisible. The code is still minted and stored, so a retry works.
+
+**The invite is found by the same sanctioned sweep `resolveChase` uses** — one
+unscoped read over `memberships` (which carries no RLS) yields each practice's
+SYSTEM actor, and each context is asked whether it can see this invite. RLS
+answers, not a filter. One scoped lookup per practice, once per client at
+onboarding, never on a hot path. The unit harness's Prisma double answers
+`invite.findUnique` only under the practice whose context is set, so the sweep is
+really exercised rather than short-circuited.
+
+**The code, and its two clocks.** Six digits from `randomInt(0, 10**6)` with
+`padStart` — not `randomBytes % 1_000_000`, which is biased low, and not a
+100000–999999 range, which throws away a tenth of the space to exclude leading
+zeros. Stored as `hashOtp` (the same plain SHA-256 the chase path uses) with
+`otp_expires_at` at **ten minutes**, a number the mail states so the copy and the
+constant cannot drift. The `otp_sessions` ROW lives as long as a session does;
+the CODE lives ten minutes. Conflating the two would either expire the link or
+keep a code alive for a week.
+
+**⚠ The code is single-use, and the clearing is what makes it so.** Opening a
+session sets `otp_hash` to NULL; without that a code stays live for the rest of
+its ten minutes after it has already been spent. Pinned by test.
+
+**Re-requesting a code clears the attempt counter**, deliberately: a client who
+mistyped twice and then asked for a fresh code has not earned a lockout. The
+ceiling that stops this being an unbounded mail tap is the per-address one in
+`notifications` (`email-rate-limit.ts`), not this counter. The LOCKOUT is
+unchanged — five wrong codes on one link, then fifteen minutes, checked BEFORE
+the code is compared so a locked link is not a timing oracle.
+
+**The session opens with `scope = ONBOARDING`, not `DELEGATED_UPLOAD`**, and it
+carries no chase. That matters for what it can do: the delegated RLS branches key
+on granted DOCUMENT ids and this session has none, so it is a proof of identity
+and not yet a grant. `GET /portal/context` needs a chase and will refuse it.
+
+⚠ **The subscribe step is still blocked on the contract, and this stage did not
+unblock it.** `PortalSession` carries `{token, expiresAt}` and no `businessId`,
+so an onboarding session has no contracted way to learn its own business and
+`POST /billing/checkout-sessions` cannot be called with it. `apps/web`'s
+`api/onboarding.ts` already parses an optional `businessId` off the response
+(deliberately not `.strict()`) and lights the step up the moment the field
+exists. Growing `PortalSession` is a **contract-change issue for Shakib** (G7),
+not an edit made from here.
 
 ## The `otp_sessions` write shape
 
@@ -468,7 +550,14 @@ pnpm --filter @neoting/api vitest run src/modules/portal/portal-delegated-upload
 The unit suites use a Prisma stand-in that **simulates the practice scoping** (it
 reads `app.practice_id` out of `scopedDb`'s `set_config` call), so the sweep and
 the context read are exercised against something that behaves like
-`chases_tenant` rather than a stub that always answers. `portal-context.service.test.ts`
+`chases_tenant` rather than a stub that always answers.
+
+`portal-onboarding.service.test.ts` is fifteen cases and most of them assert an
+ABSENCE: every refusal resolves and **sends nothing**, which is the only way to
+test a rule whose whole point is that it has no visible effect. Its double must
+expose `$executeRaw` on the TRANSACTION client, not just the root one —
+`scopedDb` sets the RLS context with a tagged template inside the transaction,
+and a double missing it fails in a way that reads like a service bug. `portal-context.service.test.ts`
 also parses its own output with the generated `getPortalContextResponse` — the
 contract checking the projection, including `minItems` and integer pence.
 
@@ -578,9 +667,14 @@ ordinary `pnpm test` with docker up.
       every client at once, and `X-Forwarded-For` without `trust proxy` is an
       attacker-supplied header. `main.ts` is not this stage's path. SoT §15's
       "per number and per IP" needs that wired first.
-- [ ] **Nothing writes `otp_sessions.otp_hash`, so `OTP_MODE=totp` opens no
-      portal session.** The chase sender is A13's; the invited-client route is
-      `POST /v1/portal/sign-in-codes`, contracted and unimplemented. Whoever
-      lands either must hash the code with `hashOtp` from `otp-attempts.ts` and
-      set `otp_expires_at` — a null expiry is refused, on purpose.
+- [x] **`POST /v1/portal/sign-in-codes` and `POST /v1/portal/onboarding-sessions`
+      are implemented** (28 Aug 2026), which was the invited-client half of the
+      `otp_hash` gap. The code is hashed with `hashOtp` and `otp_expires_at` is
+      set, as this list required.
+- [ ] **The CHASE half still writes no `otp_hash`, so `OTP_MODE=totp` opens no
+      session from a chase link.** The sender is A13's (`modules/chase`), and it
+      needs the same two writes — a null expiry is refused, on purpose.
+- [ ] **`PortalSession` has no `businessId`, so an onboarding session cannot
+      reach checkout.** A contract-change issue for Shakib (G7); the web half is
+      already written to accept the field the day it lands.
 - [ ] Update this file on exit — it is how the next session picks up.

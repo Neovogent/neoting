@@ -2,18 +2,30 @@ import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Inject, Post } fr
 
 import type { DocumentUpload, PortalContext, PortalSession } from '@neoting/contracts/model';
 import {
+  createPortalOnboardingSessionBody,
+  createPortalOnboardingSessionHeader,
   createPortalSessionBody,
   createPortalSessionHeader,
+  createPortalSignInCodeBody,
+  createPortalSignInCodeHeader,
   createPortalUploadBody,
   createPortalUploadHeader,
 } from '@neoting/contracts/zod';
 
+import { AppException } from '../../common/problem/problem.js';
 import { parseBoundary, parseIdempotencyKey } from '../../common/validation/parse-boundary.js';
 import type { PortalContextService } from './portal-context.service.js';
+import type { PortalOnboardingService } from './portal-onboarding.service.js';
 import type { PortalSessionContextResolver } from './portal-session-context.js';
 import type { PortalSessionService } from './portal-session.service.js';
 import type { PortalUploadService } from './portal-upload.port.js';
-import { PORTAL_CONTEXT_SERVICE, PORTAL_SESSION_CONTEXT, PORTAL_SESSION_SERVICE, PORTAL_UPLOAD_SERVICE } from './tokens.js';
+import {
+  PORTAL_CONTEXT_SERVICE,
+  PORTAL_ONBOARDING_SERVICE,
+  PORTAL_SESSION_CONTEXT,
+  PORTAL_SESSION_SERVICE,
+  PORTAL_UPLOAD_SERVICE,
+} from './tokens.js';
 
 /**
  * The three contracted portal operations (METH Stage 9, SoT §4 Stage 8.3): open
@@ -49,6 +61,7 @@ export class PortalController {
     @Inject(PORTAL_SESSION_CONTEXT) private readonly resolver: PortalSessionContextResolver,
     @Inject(PORTAL_CONTEXT_SERVICE) private readonly context: PortalContextService,
     @Inject(PORTAL_UPLOAD_SERVICE) private readonly uploads: PortalUploadService,
+    @Inject(PORTAL_ONBOARDING_SERVICE) private readonly onboarding: PortalOnboardingService,
   ) {}
 
   /**
@@ -75,6 +88,66 @@ export class PortalController {
     parseIdempotencyKey(createPortalSessionHeader, idempotencyKey);
     const request = parseBoundary(createPortalSessionBody, body, 'request body');
     const issued = await this.sessions.createSession(request);
+    return { token: issued.token, expiresAt: issued.expiresAt.toISOString() };
+  }
+
+  /**
+   * `POST /portal/sign-in-codes` — public. Setup link + address → a six-digit
+   * code, by email.
+   *
+   * ⚠ **`202`, always, whatever happened.** An unknown token, an expired or
+   * already-accepted invite and a wrong address are one outcome here. Whether an
+   * address is registered on a workspace is not something an unauthenticated
+   * caller may learn, and the setup link travels by email through people who are
+   * not always the client. The mail is what distinguishes the outcomes, and it
+   * goes to the address rather than to the caller.
+   *
+   * The `Idempotency-Key` is required and parsed but not replay-cached, for the
+   * reason given on `createSession`: this is public, and a cache keyed on a
+   * caller-supplied header would let anyone replay someone else's request. It is
+   * naturally idempotent anyway — asking twice sends a second code and voids
+   * the first.
+   */
+  @Post('sign-in-codes')
+  @HttpCode(HttpStatus.ACCEPTED)
+  async createSignInCode(
+    @Body() body: unknown,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+  ): Promise<void> {
+    parseIdempotencyKey(createPortalSignInCodeHeader, idempotencyKey);
+    const request = parseBoundary(createPortalSignInCodeBody, body, 'request body');
+    await this.onboarding.requestSignInCode(request);
+  }
+
+  /**
+   * `POST /portal/onboarding-sessions` — public. Setup link + address + code
+   * → a portal bearer, opened under `ONBOARDING` rather than
+   * `DELEGATED_UPLOAD`.
+   *
+   * Every refusal is the same `401 NT-OTP-001` the chase path raises. The
+   * service answers `null` for all of them — wrong code, locked, expired,
+   * unknown token, wrong address — because telling them apart would say which
+   * links exist and which addresses are on them.
+   */
+  @Post('onboarding-sessions')
+  @HttpCode(HttpStatus.CREATED)
+  async createOnboardingSession(
+    @Body() body: unknown,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+  ): Promise<PortalSession> {
+    parseIdempotencyKey(createPortalOnboardingSessionHeader, idempotencyKey);
+    const request = parseBoundary(createPortalOnboardingSessionBody, body, 'request body');
+    const issued = await this.onboarding.createOnboardingSession(request);
+    if (issued === null) {
+      // One answer for every refusal - wrong code, locked out, expired,
+      // unknown token, wrong address. See the header.
+      throw new AppException(
+        'NT-OTP-001',
+        HttpStatus.UNAUTHORIZED,
+        'Verification failed',
+        'The link, the email address or the code did not verify. Ask your accountant to send a fresh link if this one has expired.',
+      );
+    }
     return { token: issued.token, expiresAt: issued.expiresAt.toISOString() };
   }
 
