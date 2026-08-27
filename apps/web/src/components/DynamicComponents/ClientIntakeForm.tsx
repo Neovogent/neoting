@@ -105,7 +105,7 @@ const m = defineMessages({
       'Intake asks for no bank connection and no accounting-software connection. Documents come in by upload, email and the portal.',
   },
 
-  // InviteIntake — three fields and an SMS.
+  // InviteIntake — three fields and a setup link.
   inviteTitle: {
     id: 'clients.inviteIntake.title',
     defaultMessage: 'Add new client',
@@ -117,7 +117,7 @@ const m = defineMessages({
   inviteIntro: {
     id: 'clients.inviteIntake.intro',
     defaultMessage:
-      'Three things — enough to address the SMS and know whose record it is. The client supplies their own identity, tax and trading detail on the link, so nothing here is a guess you would have to correct later.',
+      'Three things — enough to address the setup link and know whose record it is. The client supplies their own identity, tax and trading detail on the link, so nothing here is a guess you would have to correct later.',
   },
   inviteCompanyNameLabel: {
     id: 'clients.inviteIntake.companyNameLabel',
@@ -143,11 +143,11 @@ const m = defineMessages({
   // say different things, and only one of them has a number to address.
   inviteSmsLinkTo: {
     id: 'clients.inviteIntake.smsLinkTo',
-    defaultMessage: 'One SMS link to {mobile}',
+    defaultMessage: 'One setup link to {mobile}',
   },
   inviteSmsLinkPending: {
     id: 'clients.inviteIntake.smsLinkPending',
-    defaultMessage: 'One SMS link once the three fields are in',
+    defaultMessage: 'One setup link once the three fields are in',
   },
   inviteSmsLinkBody: {
     id: 'clients.inviteIntake.smsLinkBody',
@@ -216,7 +216,7 @@ const m = defineMessages({
   inviteApprovalNote: {
     id: 'clients.inviteIntake.approvalNote',
     defaultMessage:
-      'Approving creates the record and queues the SMS — it does not register anything. The client shows as awaiting registration until they finish.',
+      'Approving creates the record and queues the setup link — it does not register anything. The client shows as awaiting registration until they finish.',
   },
   inviteApproveLabel: {
     id: 'clients.inviteIntake.approveLabel',
@@ -225,7 +225,7 @@ const m = defineMessages({
   inviteSuccessMessage: {
     id: 'clients.inviteIntake.successMessage',
     defaultMessage:
-      '{name} created and one setup SMS queued to {mobile} — they register the company details themselves.',
+      '{name} created and one setup link queued to {mobile} — they register the company details themselves.',
   },
   inviteAuditAction: {
     id: 'clients.inviteIntake.auditAction',
@@ -344,7 +344,7 @@ const m = defineMessages({
   practiceContactIntro: {
     id: 'clients.practiceIntake.contactIntro',
     defaultMessage:
-      'The mobile number is required — it drives SMS chasing and OTP onboarding. The client never installs an app.',
+      'The mobile number is required — a chase names its recipient by it. The client never installs an app.',
   },
   practiceContactNameLabel: {
     id: 'clients.practiceIntake.contactNameLabel',
@@ -368,7 +368,7 @@ const m = defineMessages({
   },
   practiceWhatsappHint: {
     id: 'clients.practiceIntake.whatsappHint',
-    defaultMessage: 'Intake only — chasing is always SMS.',
+    defaultMessage: 'Intake only — chasing is always by email.',
   },
   practiceManagedByLabel: {
     id: 'clients.practiceIntake.managedByLabel',
@@ -508,7 +508,7 @@ const m = defineMessages({
   },
   practiceNoMobileReviewWarning: {
     id: 'clients.practiceIntake.noMobileReviewWarning',
-    defaultMessage: 'No mobile number — SMS chasing will not work until one is added.',
+    defaultMessage: 'No mobile number — chasing will not work until one is added.',
   },
   practiceApproveLabel: {
     id: 'clients.practiceIntake.approveLabel',
@@ -575,7 +575,7 @@ const STEPS: [MessageDescriptor, ...MessageDescriptor[]] = [
 
 /**
  * Who fills the record in. The practice path keys everything in itself; the
- * invite path sends one SMS link and the client registers their own details.
+ * invite path sends one setup link and the client registers their own details.
  * Neither path asks for a connection of any kind (D47).
  */
 type IntakeMode = 'invite' | 'practice';
@@ -761,7 +761,7 @@ function ModeOption({
 }
 
 /**
- * The invite path: the three things needed to address an SMS, and nothing else.
+ * The invite path: the three things needed to address a setup link, and nothing else.
  * Everything the practice would otherwise key in is asked of the client on the
  * link, so asking for it here as well would only be a second guess at it.
  */
@@ -834,7 +834,7 @@ function InviteIntake({ defaultName, onBack }: { defaultName: string; onBack: ()
 
       <div className="p-4 bg-raised/50">
         {/* No review card until the link is actually sendable — approving a
-            half-filled invite would create a record and queue an SMS to
+            half-filled invite would create a record and queue a setup link to
             nobody. The three fields are the whole form, so this is not a
             hidden gate. */}
         {!ready ? (

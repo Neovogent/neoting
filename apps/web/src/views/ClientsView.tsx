@@ -118,7 +118,7 @@ const m = defineMessages({
   },
   chaseGroupedNote: {
     id: 'analytics.clientsView.chaseGroupedNote',
-    defaultMessage: 'Grouped per client — one SMS each.',
+    defaultMessage: 'Grouped per client — one email each.',
   },
 });
 
