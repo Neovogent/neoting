@@ -14,7 +14,7 @@ import { ChaseModule } from './modules/chase/chase.module.js';
 import { ChatFrameworkModule } from './modules/chat-framework/chat.module.js';
 import { ClientsTeamSettingsModule } from './modules/clients-team-settings/clients-team-settings.module.js';
 import { DocumentsModule } from './modules/documents/documents.module.js';
-import { CapabilityLinkModule } from './modules/exports-public-api/index.js';
+import { CapabilityLinkModule, ExportsApiModule } from './modules/exports-public-api/index.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { WebUploadModule } from './modules/ingestion-routing/web-upload/web-upload.module.js';
 import { WhatsAppWebhookModule } from './modules/ingestion-routing/webhooks/whatsapp/whatsapp.module.js';
@@ -37,6 +37,10 @@ import { RulesSuggestionsModule } from './modules/rules-suggestions/rules-sugges
     // `exports-public-api/links/capability-link.service.ts` before changing
     // anything about it. `config/routing.ts` keeps it off the `/v1` prefix.
     CapabilityLinkModule,
+    // `GET`+`POST /v1/exports` — the sole egress (D42, stage A9). It imports
+    // CapabilityLinkModule for the one `DocumentLinkService`, so the two are
+    // registered here in that order rather than independently.
+    ExportsApiModule,
     BillingModule,
     ChaseModule,
     ChatFrameworkModule,
