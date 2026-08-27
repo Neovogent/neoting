@@ -443,3 +443,31 @@ pnpm --filter @neoting/api vitest run src/modules/auth-tenancy/   # unit, offlin
 - [ ] `DocumentEvent.detail` redaction can now happen — `/me` knows the role,
       but `ScopeContext` still does not carry it (documents module TODO).
 - [ ] Update this file on exit — it is how the next session picks up
+
+## ✅ SIGNUP_MAILER is real now (27 Aug 2026)
+
+`auth-tenancy.module.ts` wired `RecordingSignupMailer` — which sends nothing —
+from A1 until today. A1 said *"the composition root swaps the implementation when
+[notifications] lands"*. S2 landed on 26 Aug and **nobody swapped it**, so
+`PracticeSignupService`'s production refusal fired on every signup and staging
+(which runs `NODE_ENV=production`) had no working signup at all. A14's
+`POST /v1/auth/email-verification` therefore had no mail to consume either.
+
+`notifications-signup-mailer.ts` is the adapter. It translates A1's two messages
+into the notifications module's two, and holds the public web origin.
+
+⚠ **A refused verification THROWS; a refused duplicate notice does not.**
+`NotificationsService` reports a rate-limit refusal as a value rather than an
+exception, which is right for sign-in — that endpoint must answer identically
+whether an address is known, unknown or limited. Signup is the opposite case, and
+the asymmetry is pinned in `notifications-signup-mailer.test.ts`.
+
+⚠ **`VERIFY_EMAIL_PATH` is `/app/verify-email`, and M9 must serve it.** The path
+is declared once, in the mailer, so the mail and the screen that receives the link
+cannot drift. M9's landing page reads `token` from the query and posts it to
+`POST /v1/auth/email-verification`.
+
+⚠ **The origin is still a constant**, duplicated with
+`clients-team-settings/setup-link.ts`'s `DEFAULT_APP_ORIGIN`, because
+`config/env.ts` has no `APP_ORIGIN` key. Both sites point at the same missing
+key; promoting it is one line in each module.

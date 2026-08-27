@@ -70,6 +70,15 @@ const PER_ADDRESS_HOURLY: Readonly<Record<EmailKind, number>> = Object.freeze({
   'sign-in-code': 5,
   'client-invite': 5,
   'document-request': 10,
+  // Signup is the one flow an unauthenticated stranger can drive at an address
+  // they do not own, so both ceilings are tight. Three verification mails is
+  // more than anyone needs — a fourth means the first three went somewhere the
+  // person cannot read, and a fifth does not fix that.
+  'email-verification': 3,
+  // Tighter still. This one is sent *because* someone else typed your address:
+  // it exists to make the uninformative 202 honest, and an attacker repeating
+  // the signup must not turn that courtesy into a mailbombing service.
+  'duplicate-signup': 2,
 });
 
 /**

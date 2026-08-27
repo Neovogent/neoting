@@ -49,7 +49,15 @@ import type { EmailAddress } from './email-address.js';
  * held far tighter than an invite) and because it is the one thing about a
  * message that is safe to log.
  */
-export type EmailKind = 'client-invite' | 'sign-in-code' | 'document-request';
+export type EmailKind =
+  | 'client-invite'
+  | 'sign-in-code'
+  | 'document-request'
+  // The two signup messages. A1 built `SignupMailer` as a seam for these and
+  // shipped a recording stand-in; until they existed here, `POST /v1/practices`
+  // refused under NODE_ENV=production and staging had no signup at all.
+  | 'email-verification'
+  | 'duplicate-signup';
 
 /** One message, fully composed. The sender adds the envelope and nothing else. */
 export interface OutboundEmail {

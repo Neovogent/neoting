@@ -29,6 +29,8 @@ export {
   type SendClientInviteInput,
   type SendContext,
   type SendDocumentRequestInput,
+  type SendDuplicateSignupNoticeInput,
+  type SendEmailVerificationInput,
   type SendOutcome,
   type SendSignInCodeInput,
 } from './notifications.service.js';
@@ -79,6 +81,9 @@ export {
   composeClientInvite,
   type ComposeDocumentRequestInput,
   composeDocumentRequest,
+  composeDuplicateSignupNotice,
+  type ComposeEmailVerificationInput,
+  composeEmailVerification,
   type ComposeSignInCodeInput,
   composeSignInCode,
   SENDER_DISPLAY_NAME,

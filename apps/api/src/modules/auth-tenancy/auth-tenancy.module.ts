@@ -8,11 +8,17 @@ import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { BusinessesController } from './businesses.controller.js';
 import { BusinessesService } from './businesses.service.js';
+import {
+  NOTIFICATIONS_SERVICE,
+  type NotificationsService,
+  NotificationsModule,
+} from '../notifications/index.js';
 import { EmailVerificationService } from './email-verification.service.js';
+import { NotificationsSignupMailer } from './notifications-signup-mailer.js';
 import { PracticeSignupService } from './practice-signup.service.js';
 import { PracticesController } from './practices.controller.js';
 import { InMemorySignInThrottle, type SignInThrottle } from './sign-in-throttle.js';
-import { RecordingSignupMailer, type SignupMailer } from './signup-mailer.js';
+import type { SignupMailer } from './signup-mailer.js';
 import { SignupChainController } from './signup-chain.controller.js';
 import { TotpEnrolmentService } from './totp-enrolment.service.js';
 import {
@@ -37,7 +43,20 @@ import {
  * `SessionContextResolver`. This module owns the pieces; the context module
  * owns the assembly.
  */
+/**
+ * The public web origin the signup verification link points at.
+ *
+ * Same value and same reasoning as `clients-team-settings/setup-link.ts`'s
+ * `DEFAULT_APP_ORIGIN`: S3 deployed the SPA at `app.neoting.neovogent.com/app`,
+ * and `config/env.ts` has no `APP_ORIGIN` key to read it from. Stated here
+ * rather than imported so this module does not depend on another module for a
+ * constant — the duplication is deliberate and both sites point at the same
+ * missing env key.
+ */
+const SIGNUP_APP_ORIGIN = 'https://app.neoting.neovogent.com';
+
 @Module({
+  imports: [NotificationsModule],
   controllers: [AuthController, BusinessesController, PracticesController, SignupChainController],
   providers: [
     { provide: PRISMA, useFactory: () => getPrismaClient() },
@@ -79,14 +98,21 @@ import {
       inject: [PRISMA, ENV, SIGN_IN_THROTTLE],
     },
     {
-      // ⚠ THE ONE LINE S2 CHANGES. `RecordingSignupMailer` sends nothing — the
-      // notifications module has not merged, so A1 builds against its seam
-      // (`signup-mailer.ts`) and the composition root swaps the implementation
-      // when it lands. `PracticeSignupService` refuses to create an account at
-      // all under NODE_ENV=production while this stand-in is what is wired, so
-      // the gap cannot ship quietly.
+      // ✅ **THE LINE A1 LEFT FOR S2, CONNECTED.** It said: *"the composition
+      // root swaps the implementation when it lands"*. S2 landed and nothing
+      // swapped it, so `RecordingSignupMailer` — which sends nothing — stayed
+      // wired, `PracticeSignupService` kept refusing every signup under
+      // NODE_ENV=production, and signup was therefore dead on staging. A14's
+      // `POST /v1/auth/email-verification` had no mail to consume either.
+      //
+      // The origin is a constant for the reason `setup-link.ts` gives: there is
+      // no APP_ORIGIN key in `config/env.ts`, and adding one is a `config/`
+      // change. It is an argument rather than a literal so promoting it later
+      // is this line and nothing else.
       provide: SIGNUP_MAILER,
-      useFactory: (): SignupMailer => new RecordingSignupMailer(),
+      useFactory: (notifications: NotificationsService): SignupMailer =>
+        new NotificationsSignupMailer(notifications, SIGNUP_APP_ORIGIN),
+      inject: [NOTIFICATIONS_SERVICE],
     },
     {
       provide: PRACTICE_SIGNUP_SERVICE,
