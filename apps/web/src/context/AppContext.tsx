@@ -310,7 +310,14 @@ interface AppContextType {
    * its own credential — email plus a six-digit code — so it must never fire
    * the workspace session probe.
    */
-  portal: 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload' | 'landing' | 'legal' | 'setup';
+  /**
+   * 'signup' is how a practice comes into being (launch stage M9): `/signup`,
+   * the form, the check-your-email screen, the landing spot for the emailed
+   * verification link, and authenticator enrolment. Public for the same reason
+   * as 'landing' and 'legal' — the whole point is that the visitor has no
+   * account yet, so their browser must never fire the workspace `/me` probe.
+   */
+  portal: 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload' | 'landing' | 'legal' | 'setup' | 'signup';
   /** The approval session the SMS link opened, when portal === 'approval'. */
   openApprovalRequestId: string | null;
   openApprovalLink: (requestId: string) => void;
@@ -610,13 +617,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const segments = usePath();
   const [root, first, second] = segments;
 
-  const portal: 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload' | 'landing' | 'legal' | 'setup' =
+  const portal:
+    | 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload' | 'landing' | 'legal' | 'setup' | 'signup' =
     // Bare `/` is the public landing page (launch stage M3), so the session
     // probe below never fires for a visitor who has not asked for the app —
     // the workspace root is `/app`.
     root === undefined ? 'landing'
       // `/legal/*` is public for the same reason (launch stage M4).
       : root === 'legal' ? 'legal'
+      // `/signup/*` — creating a practice (launch stage M9). Public, and the
+      // reason is the strongest of the three: the visitor has no account yet,
+      // so a `/me` probe could only 401 and a login wall over this address
+      // would be the door locking the person who came to be let in.
+      : root === 'signup' ? 'signup'
       : root === 'portal' ? 'business'
       : root === 'approve' ? 'approval'
       : root === 'register' ? 'registration'

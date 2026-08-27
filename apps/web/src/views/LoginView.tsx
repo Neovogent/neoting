@@ -4,6 +4,7 @@ import { AlertTriangle, Loader2, LogIn } from 'lucide-react';
 import { NtProblemError } from '@neoting/contracts';
 import { login } from '../api/auth';
 import { queryClient } from '../api/queryClient';
+import { linkProps } from '../lib/router';
 import { Wordmark } from '../assets/Wordmark';
 
 /**
@@ -58,6 +59,12 @@ const m = defineMessages({
     id: 'auth.loginView.audit',
     defaultMessage: 'Every sign-in is audited. Nothing in this product changes state without a named human.',
   },
+  /**
+   * Launch M9. Until this stage there was no screen behind this link, so the
+   * login page was a door with nothing beside it — someone who reached it
+   * without an account had nowhere to go.
+   */
+  noAccount: { id: 'auth.loginView.noAccount', defaultMessage: 'No account yet? Create your practice' },
   wordmarkTitle: {
     id: 'auth.loginView.wordmarkTitle',
     defaultMessage: 'Neo Accounting',
@@ -221,6 +228,13 @@ export function LoginView() {
             {intl.formatMessage(busy ? m.actionBusy : m.action)}
           </button>
         </form>
+
+        <a
+          {...linkProps('/signup')}
+          className="text-[13px] font-bold text-brand hover:underline self-start"
+        >
+          {intl.formatMessage(m.noAccount)}
+        </a>
 
         <p className="text-[12px] text-zinc-600 leading-relaxed">{intl.formatMessage(m.audit)}</p>
       </div>
