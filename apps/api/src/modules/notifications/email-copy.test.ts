@@ -1,7 +1,14 @@
-import { expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
 import type { ChaseItem } from '../chase/index.js';
-import { composeClientInvite, composeDocumentRequest, composeSignInCode, SENDER_DISPLAY_NAME } from './email-copy.js';
+import {
+  composeClientInvite,
+  composeDocumentRequest,
+  composeDuplicateSignupNotice,
+  composeEmailVerification,
+  composeSignInCode,
+  SENDER_DISPLAY_NAME,
+} from './email-copy.js';
 import { SignInCode } from './sign-in-code.js';
 
 const ALL = [
@@ -141,4 +148,50 @@ test('the single-item chase reads as one thing, not as a list of one', () => {
   const { subject, body } = ALL[2] as { subject: string; body: string };
   expect(subject).toBe("Sparkle Cleaning: we're missing a receipt");
   expect(body).toContain('the paperwork for this payment');
+});
+
+// ── the two signup messages ─────────────────────────────────────
+
+describe('verify your email address', () => {
+  const input = {
+    firstName: 'Priya',
+    practiceName: 'Ledgerline',
+    verifyLink: 'https://app.neoting.neovogent.com/app/verify-email?token=tok_abc',
+    expiresAt: new Date('2026-08-06T09:00:00Z'),
+  };
+
+  test('states the link on its own line, so it survives a mail client wrapping it', () => {
+    const { body } = composeEmailVerification(input);
+    expect(body.split('\n')).toContain(input.verifyLink);
+  });
+
+  test('names the practice and the expiry, and tells an unexpecting reader to do nothing', () => {
+    const { body } = composeEmailVerification(input);
+    expect(body).toContain('Ledgerline');
+    expect(body).toContain('Priya');
+    // `formatDay` is day + short month, no year — shared with the invite copy,
+    // and unambiguous for a link that lives 48 hours.
+    expect(body).toContain('6 Aug');
+    expect(body).toContain('If you did not create this account');
+  });
+
+  test('the subject carries no token', () => {
+    expect(composeEmailVerification(input).subject).not.toContain('tok_abc');
+  });
+});
+
+describe('someone tried to sign up with your address', () => {
+  test('⚠ names nothing about the attempt — the reader may not be the account holder', () => {
+    const { subject, body } = composeDuplicateSignupNotice();
+    // No practice, no name, no address, no hint of who tried: a message that
+    // described the attempt would leak the account to whoever was probing it.
+    expect(body).not.toMatch(/Ledgerline|Priya|@/);
+    expect(subject).not.toMatch(/@/);
+  });
+
+  test('says plainly that nothing changed, and offers a reply route', () => {
+    const { body } = composeDuplicateSignupNotice();
+    expect(body).toContain('nothing was created and nothing has changed');
+    expect(body).toContain('reply to this email');
+  });
 });

@@ -7,6 +7,9 @@ import {
   composeClientInvite,
   type ComposeDocumentRequestInput,
   composeDocumentRequest,
+  composeDuplicateSignupNotice,
+  type ComposeEmailVerificationInput,
+  composeEmailVerification,
   type ComposeSignInCodeInput,
   composeSignInCode,
 } from './email-copy.js';
@@ -75,6 +78,15 @@ export interface SendDocumentRequestInput extends ComposeDocumentRequestInput {
   readonly to: string;
 }
 
+export interface SendEmailVerificationInput extends ComposeEmailVerificationInput {
+  readonly to: string;
+}
+
+/** No composed fields — the notice deliberately carries nothing but the address. */
+export interface SendDuplicateSignupNoticeInput {
+  readonly to: string;
+}
+
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
@@ -91,6 +103,33 @@ export class NotificationsService {
   /** S2 message 2 — six digits, short expiry, single use. */
   sendSignInCode(input: SendSignInCodeInput, context: SendContext = {}): Promise<SendOutcome> {
     return this.#deliver('sign-in-code', input.to, context, () => composeSignInCode(input));
+  }
+
+  /**
+   * The signup verification mail — the message `POST /v1/practices` depends on
+   * to mean anything.
+   *
+   * ⚠ **A failure here must reach the caller.** {@link SendOutcome} reports a
+   * rate-limit refusal rather than throwing, and for sign-in that is right: the
+   * endpoint must answer identically whether the address is known, unknown or
+   * limited. Signup is the opposite case. A practice created whose verification
+   * mail went nowhere is an account that can never become usable, so
+   * `practice-signup.service.ts` treats a non-sent outcome as a failed signup
+   * rather than a `202`.
+   */
+  sendEmailVerification(input: SendEmailVerificationInput, context: SendContext = {}): Promise<SendOutcome> {
+    return this.#deliver('email-verification', input.to, context, () => composeEmailVerification(input));
+  }
+
+  /**
+   * The notice that makes the uninformative `202` honest — see
+   * {@link composeDuplicateSignupNotice} for why it says so little.
+   */
+  sendDuplicateSignupNotice(
+    input: SendDuplicateSignupNoticeInput,
+    context: SendContext = {},
+  ): Promise<SendOutcome> {
+    return this.#deliver('duplicate-signup', input.to, context, composeDuplicateSignupNotice);
   }
 
   /** S2 message 3 — the chase, by email instead of SMS. Wiring is A14's. */

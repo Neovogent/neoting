@@ -121,3 +121,35 @@ empty.
 - [ ] Wire the consumers: A1/A11 (`sendClientInvite`), A2 (`sendSignInCode`),
       A14 (`sendDocumentRequest`, cut-listed at hour 22).
 - [ ] Update this file on exit — it is how the next session picks up.
+
+## ✅ The signup messages — the seam A1 left, connected (27 Aug 2026)
+
+S2 built this module and merged. **Nothing ever swapped the provider**, so
+`auth-tenancy` kept `RecordingSignupMailer`, which sends nothing;
+`PracticeSignupService` refuses to create an account at all under
+`NODE_ENV=production` while that stand-in is wired, and staging runs
+`NODE_ENV=production`. **Signup was dead on the launch target**, and A14's
+`POST /v1/auth/email-verification` had no mail to consume.
+
+Two messages were added here to close it:
+
+| Kind | Composer | Per-address ceiling |
+|---|---|---|
+| `email-verification` | `composeEmailVerification` | **3**/hour |
+| `duplicate-signup` | `composeDuplicateSignupNotice` | **2**/hour |
+
+Both ceilings are tighter than the other three, because signup is the one flow
+an unauthenticated stranger can point at an address they do not own.
+
+⚠ **`composeDuplicateSignupNotice` takes no input, and that is the design.** It
+names no practice, no person and no address. It exists to make the
+uninformative `202` honest — the account holder is the only party entitled to
+learn a signup was attempted — and whoever typed the address may not be them. A
+message describing the attempt would hand the account straight back to the
+person probing for it.
+
+⚠ **The two callers want opposite failure behaviour**, and
+`auth-tenancy/notifications-signup-mailer.ts` is where that is reconciled. A
+refused verification **throws**, because a practice whose mail never left is an
+account that can never be used. A refused duplicate notice **does not**, because
+turning a rate-limited courtesy into a 500 tells the caller the address exists.

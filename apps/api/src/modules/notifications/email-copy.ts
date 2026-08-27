@@ -182,6 +182,84 @@ export function composeDocumentRequest(input: ComposeDocumentRequestInput): Comp
   };
 }
 
+// ── 4 · Verify your email address ───────────────────────────────
+
+export interface ComposeEmailVerificationInput {
+  readonly firstName: string;
+  readonly practiceName: string;
+  /**
+   * The whole link, built by the caller.
+   *
+   * Same split as {@link composeClientInvite}: this module composes words, and
+   * the public web origin is a configuration concern belonging to whoever owns
+   * the composition root. `auth-tenancy` builds it from the token.
+   */
+  readonly verifyLink: string;
+  readonly expiresAt: Date;
+}
+
+/**
+ * The mail that turns a `202` into a usable account.
+ *
+ * ⚠ **This message is the whole of the signup flow’s honesty.** `POST
+ * /v1/practices` answers `202` with an empty body whether or not an account was
+ * created, because saying otherwise answers *"is this address registered here"*
+ * for anyone who asks. The only party who may learn what happened is the person
+ * at the address — so if this mail does not arrive, the signup is not merely
+ * degraded, it is a permanent silent failure the caller was told nothing about.
+ *
+ * The link sits on its own line and the expiry is named, because a verification
+ * mail that has gone stale is the one a person retries rather than reports.
+ */
+export function composeEmailVerification(input: ComposeEmailVerificationInput): ComposedEmail {
+  return {
+    subject: `Confirm your email address for ${SENDER_DISPLAY_NAME}`,
+    body: lines(
+      `Hello ${input.firstName},`,
+      '',
+      `You created a ${SENDER_DISPLAY_NAME} account for ${input.practiceName}. Confirm this email address to finish setting it up:`,
+      '',
+      input.verifyLink,
+      '',
+      `This link stops working on ${formatDay(input.expiresAt)}. If it has expired by the time you read this, start the signup again and a new one will be sent.`,
+      '',
+      'If you did not create this account you can ignore this email. Nothing has been set up, and the address cannot be used until the link is opened.',
+      '',
+      SENDER_DISPLAY_NAME,
+    ),
+  };
+}
+
+// ── 5 · Someone tried to sign up with your address ─────────────────────
+
+/**
+ * Sent when a signup names an address that already has an account.
+ *
+ * ⚠ **Not politeness — this is what makes the uninformative `202` honest.**
+ * The API refuses to tell the caller that an address is registered. The account
+ * holder is the one party entitled to know a signup was attempted, and their
+ * inbox is the one place only they are reading.
+ *
+ * It therefore says as little as it can: no practice name, no first name, no
+ * hint about who tried. Whoever typed the address may not be the account
+ * holder, and a message describing the attempt would leak the account straight
+ * back to the person doing the probing.
+ */
+export function composeDuplicateSignupNotice(): ComposedEmail {
+  return {
+    subject: 'Someone tried to sign up with your email address',
+    body: lines(
+      `Someone entered this email address when signing up for ${SENDER_DISPLAY_NAME}. It already has an account, so nothing was created and nothing has changed.`,
+      '',
+      'If that was you, sign in as usual rather than signing up again.',
+      '',
+      'If it was not you, there is nothing you need to do. Your account is unaffected and no one has gained access to it. If you would like us to look into it, reply to this email.',
+      '',
+      SENDER_DISPLAY_NAME,
+    ),
+  };
+}
+
 /**
  * Join body lines with `\n`, ending with one.
  *
