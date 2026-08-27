@@ -1,10 +1,16 @@
 import { useState } from 'react';
 import { BarChart2 } from 'lucide-react';
 import { defineMessages, useIntl } from 'react-intl';
+import { API_ENABLED } from '../../api/config';
 import { seedAnalytics } from '../../lib/seed';
 
 const m = defineMessages({
   heading: { id: 'shell.pipelineStats.heading', defaultMessage: 'Pipeline health' },
+  notAvailableLive: {
+    id: 'shell.pipelineStats.notAvailableLive',
+    defaultMessage:
+      'Pipeline figures are not available in chat yet — open the Analytics screen for numbers computed from your own documents.',
+  },
   scope: { id: 'shell.pipelineStats.scope', defaultMessage: '{scope} • last 7 days' },
   seriesTitle: { id: 'shell.pipelineStats.seriesTitle', defaultMessage: 'Documents processed per day' },
   hovered: { id: 'shell.pipelineStats.hovered', defaultMessage: '{label} — {value}' },
@@ -31,6 +37,19 @@ const m = defineMessages({
 export function PipelineStats({ scopeName }: { scopeName: string }) {
   const [hover, setHover] = useState<number | null>(null);
   const intl = useIntl();
+
+  // The figures below are the SYNTHETIC dataset's. With the API on this card
+  // can still be reached — the local classifier answers when the session is
+  // degraded — and a real firm must never read "28 documents this week" as its
+  // own number (launch M8). So live it declines honestly instead.
+  if (API_ENABLED) {
+    return (
+      <div className="w-full max-w-3xl border border-white/5 rounded-[32px] bg-card shadow-2xl p-6 text-[13px] text-zinc-400 leading-relaxed">
+        {intl.formatMessage(m.notAvailableLive)}
+      </div>
+    );
+  }
+
   const data = seedAnalytics.processed;
   const max = Math.max(...data.map((d) => d.value));
   const peak = data.findIndex((d) => d.value === max);

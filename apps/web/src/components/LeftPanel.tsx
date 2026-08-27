@@ -19,6 +19,10 @@ const m = defineMessages({
   recentHistory: { id: 'shell.leftPanel.recentHistory', defaultMessage: 'Recent History' },
   noClients: { id: 'shell.leftPanel.noClients', defaultMessage: 'No clients match.' },
   noConversations: { id: 'shell.leftPanel.noConversations', defaultMessage: 'No conversations match.' },
+  // A brand-new practice has zero clients and no query typed — "no clients
+  // match" would blame a search that never happened (launch M8).
+  noClientsYet: { id: 'shell.leftPanel.noClientsYet', defaultMessage: 'No clients yet — add your first under Clients.' },
+  noConversationsYet: { id: 'shell.leftPanel.noConversationsYet', defaultMessage: 'No conversations yet.' },
 });
 
 const historyMessages = defineMessages({
@@ -126,7 +130,7 @@ export function LeftPanel() {
                 />
               </motion.div>
             ))}
-            {filteredClients.length === 0 && <EmptyRow text={intl.formatMessage(m.noClients)} />}
+            {filteredClients.length === 0 && <EmptyRow text={intl.formatMessage(q ? m.noClients : m.noClientsYet)} />}
           </div>
         </div>
 
@@ -151,7 +155,7 @@ export function LeftPanel() {
                 />
               </motion.div>
             ))}
-            {filteredConversations.length === 0 && <EmptyRow text={intl.formatMessage(m.noConversations)} />}
+            {filteredConversations.length === 0 && <EmptyRow text={intl.formatMessage(q ? m.noConversations : m.noConversationsYet)} />}
           </div>
         </div>
       </motion.div>

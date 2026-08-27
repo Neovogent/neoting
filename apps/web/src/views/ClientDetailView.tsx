@@ -72,6 +72,10 @@ const m = defineMessages({
     defaultMessage: "How this client's documents arrive. Email lands at <highlight>{email}</highlight>.",
   },
   channelMixEmpty: { id: 'clients.clientDetailView.channelMixEmpty', defaultMessage: 'No documents in yet.' },
+  clientNotFound: {
+    id: 'clients.clientDetailView.clientNotFound',
+    defaultMessage: 'No client here. Pick one from Clients — or add your first client to get started.',
+  },
   channelSharePct: { id: 'clients.clientDetailView.channelSharePct', defaultMessage: '{pct}%' },
 
   // ── Overview: recent activity ───────────────────────────────────────────
@@ -104,7 +108,7 @@ const m = defineMessages({
   rowLastUpload: { id: 'clients.clientDetailView.rowLastUpload', defaultMessage: 'Last upload' },
   clientContactNote: {
     id: 'clients.clientDetailView.clientContactNote',
-    defaultMessage: 'Chasing is SMS-only to this number. The client needs no app — the secure link opens in any phone browser.',
+    defaultMessage: 'Chases reach this client by email. They need no app — the secure link opens in any phone browser.',
   },
 
   // ── AI tab ──────────────────────────────────────────────────────────────
@@ -189,7 +193,7 @@ const m = defineMessages({
     defaultMessage: '{items} — link sent {sentAt} to {mobile}, not opened yet',
   },
   clientSideNoLink: { id: 'clients.clientDetailView.clientSideNoLink', defaultMessage: '{items} — no link sent yet' },
-  resendTitle: { id: 'clients.clientDetailView.resendTitle', defaultMessage: 'Text {name} again?' },
+  resendTitle: { id: 'clients.clientDetailView.resendTitle', defaultMessage: 'Message {name} again?' },
   resendApprovalDetail: {
     id: 'clients.clientDetailView.resendApprovalDetail',
     defaultMessage: 'A fresh link replaces the one sent {sentAt}. Their previous link stops working.',
@@ -202,10 +206,10 @@ const m = defineMessages({
   resendReadyHint: { id: 'clients.clientDetailView.resendReadyHint', defaultMessage: 'Send a fresh link' },
   resendLocked: { id: 'clients.clientDetailView.resendLocked', defaultMessage: 'Resend in {hours}h' },
   resend: { id: 'clients.clientDetailView.resend', defaultMessage: 'Resend' },
-  sendRequestTitle: { id: 'clients.clientDetailView.sendRequestTitle', defaultMessage: 'Text {name} for approval?' },
+  sendRequestTitle: { id: 'clients.clientDetailView.sendRequestTitle', defaultMessage: 'Ask {name} for approval?' },
   sendRequestTitleUnnamed: {
     id: 'clients.clientDetailView.sendRequestTitleUnnamed',
-    defaultMessage: 'Text the approver for approval?',
+    defaultMessage: 'Ask the approver for approval?',
   },
   sendRequestDetail: {
     id: 'clients.clientDetailView.sendRequestDetail',
@@ -228,7 +232,7 @@ const m = defineMessages({
     id: 'clients.clientDetailView.approvalsTableSubtitle',
     defaultMessage: 'Approving here is the same queue an approver sees under Approvals',
   },
-  pillClientBySms: { id: 'clients.clientDetailView.pillClientBySms', defaultMessage: 'Client — by SMS' },
+  pillClientBySms: { id: 'clients.clientDetailView.pillClientBySms', defaultMessage: 'Client — by secure link' },
   pillPractice: { id: 'clients.clientDetailView.pillPractice', defaultMessage: 'Practice' },
   waitingDays: { id: 'clients.clientDetailView.waitingDays', defaultMessage: '{days}d' },
   pillApproved: { id: 'clients.clientDetailView.pillApproved', defaultMessage: 'Approved' },
@@ -393,7 +397,7 @@ const m = defineMessages({
   },
   setupNoLinkSent: {
     id: 'clients.clientDetailView.setupNoLinkSent',
-    defaultMessage: 'No setup link has been sent. One SMS covers everything still outstanding.',
+    defaultMessage: 'No setup link has been sent. One email covers everything still outstanding.',
   },
   sendSetupLink: { id: 'clients.clientDetailView.sendSetupLink', defaultMessage: 'Send setup link' },
   setupNeedsMobile: {
@@ -480,7 +484,7 @@ function noteTitle(note: string | undefined): { title?: string } {
 const CHANNEL_LABEL: Record<Document['source'], MessageDescriptor> = defineMessages({
   email: { id: 'clients.clientDetailView.channelEmail', defaultMessage: 'Email' },
   whatsapp: { id: 'clients.clientDetailView.channelWhatsapp', defaultMessage: 'WhatsApp' },
-  'sms-link': { id: 'clients.clientDetailView.channelSmsLink', defaultMessage: 'SMS chase links' },
+  'sms-link': { id: 'clients.clientDetailView.channelSmsLink', defaultMessage: 'Chase links' },
   web: { id: 'clients.clientDetailView.channelWeb', defaultMessage: 'Web upload' },
   portal: { id: 'clients.clientDetailView.channelPortal', defaultMessage: 'Client portal' },
   chat: { id: 'clients.clientDetailView.channelChat', defaultMessage: 'Chat upload' },
@@ -567,7 +571,17 @@ export function ClientDetailView() {
     return [...fromAudit, ...fromChase].slice(0, 8);
   }, [auditLog, chases, client, intl]);
 
-  if (!client) return null;
+  // A stale bookmark or a brand-new practice lands here with no client — a
+  // blank pane says nothing, so say where to go instead (launch M8).
+  if (!client) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-ground p-6 md:p-10">
+        <p className="max-w-md text-center text-[14px] text-zinc-400 leading-relaxed">
+          {intl.formatMessage(m.clientNotFound)}
+        </p>
+      </div>
+    );
+  }
 
   const s = statsFor(client.id);
   const docs = documents.filter((d) => d.clientId === client.id);
@@ -766,7 +780,7 @@ export function ClientDetailView() {
                 <Panel title={intl.formatMessage(m.panelChannelMix)} icon={Radio}>
                   <p className="text-[12px] text-zinc-500 mb-4 leading-relaxed">
                     {intl.formatMessage(m.channelMixIntro, {
-                      email: settings.docEmail,
+                      email: settings.docEmail || '—',
                       highlight: (chunks: React.ReactNode[]) => (
                         <span className="text-zinc-300 font-semibold">{chunks}</span>
                       ),
@@ -1048,7 +1062,7 @@ export function ClientDetailView() {
           {tab === 'Approvals' && (
             <div data-tour="client-approvals" className="flex flex-col gap-6">
               {/* Items on a client-side stage. Nobody in the practice can clear
-                  these — the only move is getting the SMS link to the approver
+                  these — the only move is getting the secure link to the approver
                   and, if they go quiet, chasing it. */}
               {clientSideItems.length > 0 && (
                 <div className="border border-brand/20 rounded-[28px] bg-brand/[0.05] p-5 flex items-center justify-between gap-4 flex-wrap">
@@ -1408,7 +1422,7 @@ export function ClientDetailView() {
                   />
                   <ContactRow
                     name={intl.formatMessage(m.contactInboxName)}
-                    detail={intl.formatMessage(m.contactInboxDetail, { email: settings.docEmail })}
+                    detail={intl.formatMessage(m.contactInboxDetail, { email: settings.docEmail || '—' })}
                     role={intl.formatMessage(m.contactInboxRole)}
                   />
                 </div>
@@ -2013,7 +2027,7 @@ const inviteMessages = defineMessages({
   },
   problemMobile: {
     id: 'clients.inviteBusinessUser.problemMobile',
-    defaultMessage: 'A mobile is required — chases and approvals reach them by SMS.',
+    defaultMessage: 'A mobile is required — a chase names its recipient by it.',
   },
   heading: { id: 'clients.inviteBusinessUser.heading', defaultMessage: 'Add a user at {client}' },
   subheading: {

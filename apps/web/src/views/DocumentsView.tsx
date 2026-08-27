@@ -13,7 +13,6 @@ import { DocumentPreview } from '../components/DynamicComponents/DocumentPreview
 import { Modal } from './ApprovalsView';
 import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
 import { currency } from '../lib/resolver';
-import { PRACTICE_NAME } from '../lib/seed2';
 import type { Document, VaultDocument } from '../lib/types';
 import { EXPORT_HINT } from '../lib/exportRules';
 import { commonActions, commonLabels } from '../i18n/common';
@@ -138,6 +137,10 @@ const m = defineMessages({
     id: 'documents.documentsView.vaultEmptyFiltered',
     defaultMessage: 'Nothing in the vault matches those filters.',
   },
+  vaultEmpty: {
+    id: 'documents.documentsView.vaultEmpty',
+    defaultMessage: 'Nothing in the vault yet — the company documents you file for a client land here.',
+  },
 
   moveHeading: { id: 'documents.documentsView.moveHeading', defaultMessage: 'Move to another entity' },
   moveCount: {
@@ -175,7 +178,7 @@ export function DocumentsView() {
   const {
     documents, vault, clients, updateDocumentStatus, moveDocuments, addVaultDocument,
     updateVaultDocument, deleteVaultDocument, moveVaultDocument, logAudit,
-    documentsSource, documentsLoading, documentsError, refetchDocuments, slices,
+    documentsSource, documentsLoading, documentsError, refetchDocuments, slices, settings,
   } = useAppContext();
 
   const [tab, setTab] = useState<Tab>('Archive');
@@ -481,7 +484,7 @@ export function DocumentsView() {
               onChange={setOwnerFilter}
               options={[
                 { value: 'all', label: intl.formatMessage(m.filterAnyOwner) },
-                { value: 'firm', label: intl.formatMessage(m.filterFirmOwned, { practice: PRACTICE_NAME }) },
+                { value: 'firm', label: intl.formatMessage(m.filterFirmOwned, { practice: settings.practiceName || '—' }) },
                 ...vaultOwners.map((o) => ({ value: o, label: intl.formatMessage(m.filterOwnedBy, { owner: o }) })),
               ]}
             />
@@ -655,7 +658,7 @@ export function DocumentsView() {
 
               {grouped.size === 0 && (
                 <div className="border border-white/5 rounded-[32px] bg-card p-4 md:p-10 text-center text-zinc-500">
-                  {intl.formatMessage(m.vaultEmptyFiltered)}
+                  {intl.formatMessage(query || filtersActive ? m.vaultEmptyFiltered : m.vaultEmpty)}
                 </div>
               )}
             </div>
@@ -676,10 +679,14 @@ export function DocumentsView() {
               doc={vault.find((v) => v.id === vaultPreview.id) ?? vaultPreview}
               onMove={() => setMoveTarget({ ids: [vaultPreview.id], kind: 'vault' })}
               onSetOwner={(kind, name) => {
-                updateVaultDocument(vaultPreview.id, { ownerKind: kind, ownerName: name });
+                // The firm's name is resolved here, from settings, rather than
+                // imported from the seed — the seeded practice name must never
+                // be written onto a real firm's record (launch M8).
+                const ownerName = kind === 'firm' ? settings.practiceName || 'Firm' : name;
+                updateVaultDocument(vaultPreview.id, { ownerKind: kind, ownerName });
                 logAudit({
                   action: intl.formatMessage(m.ownerAudit),
-                  scope: intl.formatMessage(m.ownerAuditScope, { name: vaultPreview.name, owner: name }),
+                  scope: intl.formatMessage(m.ownerAuditScope, { name: vaultPreview.name, owner: ownerName }),
                   reviewOpened: true,
                 });
               }}
@@ -894,7 +901,7 @@ function VaultPreview({
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => onSetOwner('firm', PRACTICE_NAME)}
+              onClick={() => onSetOwner('firm', '')}
               className={`flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold border transition-all ${
                 doc.ownerKind === 'firm'
                   ? 'bg-brand text-white border-brand'

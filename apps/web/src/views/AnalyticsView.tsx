@@ -17,7 +17,7 @@ const CHANNEL_LABEL: Record<SourceChannel, MessageDescriptor> = defineMessages({
   email: { id: 'analytics.analyticsView.channelEmail', defaultMessage: 'Email' },
   web: { id: 'analytics.analyticsView.channelWeb', defaultMessage: 'Web upload' },
   whatsapp: { id: 'analytics.analyticsView.channelWhatsapp', defaultMessage: 'WhatsApp' },
-  'sms-link': { id: 'analytics.analyticsView.channelSmsLink', defaultMessage: 'SMS link' },
+  'sms-link': { id: 'analytics.analyticsView.channelSmsLink', defaultMessage: 'Chase link' },
   csv: { id: 'analytics.analyticsView.channelCsv', defaultMessage: 'CSV / XLSX' },
   chat: { id: 'analytics.analyticsView.channelChat', defaultMessage: 'Chat' },
   portal: { id: 'analytics.analyticsView.channelPortal', defaultMessage: 'Business portal' },

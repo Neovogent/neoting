@@ -127,7 +127,7 @@ const m = defineMessages({
   chasePolicyTitle: { id: 'settings.settingsView.chasePolicyTitle', defaultMessage: 'Chase policy' },
   chasePolicySubtitle: {
     id: 'settings.settingsView.chasePolicySubtitle',
-    defaultMessage: 'SMS only — no WhatsApp or email chases',
+    defaultMessage: 'Email only — no SMS or WhatsApp chases',
   },
   firstChaseAfter: { id: 'settings.settingsView.firstChaseAfter', defaultMessage: 'First chase after (hours)' },
   reminderOne: { id: 'settings.settingsView.reminderOne', defaultMessage: 'Reminder 1 (days)' },
@@ -135,7 +135,7 @@ const m = defineMessages({
   escalateAfter: { id: 'settings.settingsView.escalateAfter', defaultMessage: 'Escalate after (days)' },
   quietHoursFrom: { id: 'settings.settingsView.quietHoursFrom', defaultMessage: 'Quiet hours from' },
   quietHoursTo: { id: 'settings.settingsView.quietHoursTo', defaultMessage: 'Quiet hours to' },
-  smsSenderId: { id: 'settings.settingsView.smsSenderId', defaultMessage: 'SMS sender ID' },
+  smsSenderId: { id: 'settings.settingsView.smsSenderId', defaultMessage: 'Sender name' },
   resendAfter: { id: 'settings.settingsView.resendAfter', defaultMessage: 'Resend allowed after (hours)' },
   resendNote: {
     id: 'settings.settingsView.resendNote',
@@ -191,11 +191,9 @@ const m = defineMessages({
   },
   listCategories: { id: 'settings.settingsView.listCategories', defaultMessage: 'Categories' },
   listTaxRates: { id: 'settings.settingsView.listTaxRates', defaultMessage: 'Tax rates' },
-  listPaymentMethods: { id: 'settings.settingsView.listPaymentMethods', defaultMessage: 'Payment methods' },
   listProjects: { id: 'settings.settingsView.listProjects', defaultMessage: 'Projects / tracking' },
   listSupplierRules: { id: 'settings.settingsView.listSupplierRules', defaultMessage: 'Supplier rules' },
   fromChartOfAccounts: { id: 'settings.settingsView.fromChartOfAccounts', defaultMessage: 'From the chart of accounts' },
-  configuredCount: { id: 'settings.settingsView.configuredCount', defaultMessage: '{count} configured' },
   activeCount: { id: 'settings.settingsView.activeCount', defaultMessage: '{count} active' },
 
   guidanceTitle: { id: 'settings.settingsView.guidanceTitle', defaultMessage: 'AI guidance' },
@@ -255,7 +253,7 @@ const m = defineMessages({
   securityNote: {
     id: 'settings.settingsView.securityNote',
     defaultMessage:
-      'Client-side access needs none of this — clients re-enter through an SMS OTP link with no password and no app.',
+      'Client-side access needs none of this — clients re-enter through an emailed link and one-time code, with no password and no app.',
   },
 
   // Audit entries. `AuditTable` renders `action` and `scope` straight to a
@@ -627,7 +625,6 @@ export function SettingsView() {
               <div className="flex flex-col gap-2">
                 <Row label={intl.formatMessage(m.listCategories)} value={<Pill>{intl.formatMessage(m.fromChartOfAccounts)}</Pill>} />
                 <Row label={intl.formatMessage(m.listTaxRates)} value={<Pill>{intl.formatMessage(m.fromChartOfAccounts)}</Pill>} />
-                <Row label={intl.formatMessage(m.listPaymentMethods)} value={<Pill>{intl.formatMessage(m.configuredCount, { count: 4 })}</Pill>} />
                 <Row label={intl.formatMessage(m.listProjects)} value={<Pill>{intl.formatMessage(m.fromChartOfAccounts)}</Pill>} />
                 <Row label={intl.formatMessage(m.listSupplierRules)} value={<Pill>{intl.formatMessage(m.activeCount, { count: rules.length })}</Pill>} />
               </div>

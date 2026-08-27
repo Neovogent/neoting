@@ -41,7 +41,7 @@ export const KIND_LABEL: Record<ProposalKind, MessageDescriptor> = defineMessage
   'document.reject': { id: 'proposals.kindLabel.documentReject', defaultMessage: 'Reject documents' },
   'document.split': { id: 'proposals.kindLabel.documentSplit', defaultMessage: 'Split a document' },
   'document.archive': { id: 'proposals.kindLabel.documentArchive', defaultMessage: 'Archive documents' },
-  'chase.send': { id: 'proposals.kindLabel.chaseSend', defaultMessage: 'Send chase SMS' },
+  'chase.send': { id: 'proposals.kindLabel.chaseSend', defaultMessage: 'Send chase email' },
   'publish.batch': { id: 'proposals.kindLabel.publishBatch', defaultMessage: 'Release for export' },
   'bank.confirm-match': { id: 'proposals.kindLabel.bankConfirmMatch', defaultMessage: 'Confirm a bank match' },
   'rule.create': { id: 'proposals.kindLabel.ruleCreate', defaultMessage: 'Create a rule' },

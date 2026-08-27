@@ -736,7 +736,7 @@ export const seedAnalytics = {
     { label: 'Documents processed', value: '28', sub: 'this week' },
     { label: 'Correction rate', value: '8.4%', sub: 'extraction accuracy' },
     { label: 'Auto-categorised', value: '71%', sub: 'of documents read' },
-    { label: 'Median chase response', value: '4h 12m', sub: 'SMS to upload' },
+    { label: 'Median chase response', value: '4h 12m', sub: 'chase to upload' },
     { label: 'Overdue chases', value: '1', sub: 'past escalation' },
     { label: 'Item delay', value: '6.2 days', sub: 'doc date to upload' },
   ],

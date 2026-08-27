@@ -3,22 +3,15 @@ import { defineMessages, type MessageDescriptor } from 'react-intl';
 /**
  * Which channel each thing we send goes out on.
  *
- * SMS is reserved. It reaches someone who has installed nothing and may not
- * read email that day, and every use of it costs a little of the client's
- * patience — so it carries only the four things that are genuinely urgent or
- * that must work with no account at all:
- *
- *   · a chase for a missing document
- *   · a reminder on one
- *   · an approval that is waiting on a person
- *   · the very first registration of a client company
- *
- * Everything else — inviting a colleague at the business, telling someone a
- * claim was reimbursed, weekly summaries, receipts of what arrived — goes by
- * email, where it can be longer, kept, and searched later.
+ * Initial Delivery has exactly one: email (launch S2/A13 — SMS was cut, and
+ * nothing in the product sends one). Chases, reminders, approval requests,
+ * client registration, colleague invites, claim updates, summaries and
+ * receipts all go by email, where a message can be longer, kept, and
+ * searched later.
  *
  * Keeping the rule here rather than in prose means the copy on every screen
- * can be generated from it, so a screen cannot quietly claim the wrong one.
+ * can be generated from it, so a screen cannot quietly claim the wrong one —
+ * and when a second channel returns, this list is where it comes back.
  *
  * The fragments below are `MessageDescriptor`s: this is module scope, where no
  * hook can run, so the sentence that embeds one formats it at the call site —
@@ -37,12 +30,9 @@ export type Notification =
   | 'weekly-summary'
   | 'upload-receipt';
 
-const SMS_ONLY: Notification[] = [
-  'chase',
-  'chase-reminder',
-  'approval-request',
-  'client-registration',
-];
+/** Empty for Initial Delivery: there is no SMS. Kept so the seam — and every
+ *  sentence generated from it — survives the channel's return unchanged. */
+const SMS_ONLY: Notification[] = [];
 
 export const channelFor = (what: Notification): Channel => (SMS_ONLY.includes(what) ? 'sms' : 'email');
 

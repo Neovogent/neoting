@@ -48,6 +48,13 @@ const m = defineMessages({
     defaultMessage:
       'Every document is filed under a named client — pick one in the client filter, or upload from inside that client’s inbox. Guessing at upload time is how paperwork lands in the wrong books.',
   },
+  // A practice with no clients cannot "pick one in the client filter" — the
+  // filter is empty, and the instruction has to point at the real first step.
+  uploadNeedsFirstClientDetail: {
+    id: 'inboxes.inboxesView.uploadNeedsFirstClientDetail',
+    defaultMessage:
+      'Every document is filed under a named client, and this practice has none yet — add your first client under Clients, then upload into their inbox.',
+  },
   publishAudit: { id: 'inboxes.inboxesView.publishAudit', defaultMessage: 'Published documents' },
   publishAuditScope: {
     id: 'inboxes.inboxesView.publishAuditScope',
@@ -122,7 +129,7 @@ const m = defineMessages({
   channelEmail: { id: 'inboxes.inboxesView.channelEmail', defaultMessage: 'Email' },
   channelWeb: { id: 'inboxes.inboxesView.channelWeb', defaultMessage: 'Web upload' },
   channelWhatsapp: { id: 'inboxes.inboxesView.channelWhatsapp', defaultMessage: 'WhatsApp' },
-  channelSmsLink: { id: 'inboxes.inboxesView.channelSmsLink', defaultMessage: 'SMS link' },
+  channelSmsLink: { id: 'inboxes.inboxesView.channelSmsLink', defaultMessage: 'Chase link' },
   channelCsv: { id: 'inboxes.inboxesView.channelCsv', defaultMessage: 'CSV / XLSX' },
   channelPortal: { id: 'inboxes.inboxesView.channelPortal', defaultMessage: 'Business portal' },
   rowCount: { id: 'inboxes.inboxesView.rowCount', defaultMessage: '{count} items' },
@@ -265,7 +272,7 @@ const m = defineMessages({
   retryChaseInstead: {
     id: 'inboxes.inboxesView.retryChaseInstead',
     defaultMessage:
-      'Re-reading the same file is not built yet — re-request it from the client instead: the chase engine (Chases) asks for a fresh copy by SMS.',
+      'Re-reading the same file is not built yet — re-request it from the client instead: the chase engine (Chases) asks for a fresh copy by email.',
   },
   publishRowTitle: { id: 'inboxes.inboxesView.publishRowTitle', defaultMessage: 'Publish this item' },
   viewTitle: {
@@ -518,7 +525,7 @@ export function InboxesView() {
       await confirm({
         tone: 'red',
         title: intl.formatMessage(m.uploadNeedsClientTitle),
-        detail: intl.formatMessage(m.uploadNeedsClientDetail),
+        detail: intl.formatMessage(clients.length === 0 ? m.uploadNeedsFirstClientDetail : m.uploadNeedsClientDetail),
         confirmLabel: intl.formatMessage(commonActions.close),
       });
       return;

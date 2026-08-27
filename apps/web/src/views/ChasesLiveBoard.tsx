@@ -11,20 +11,20 @@ const m = defineMessages({
   heading: { id: 'chase.liveBoard.heading', defaultMessage: 'Missing Evidence' },
   subheading: {
     id: 'chase.liveBoard.subheading',
-    defaultMessage: 'Live chases — detection, SMS and auto-close are the server’s.',
+    defaultMessage: 'Live chases — detection, sending and auto-close are the server’s.',
   },
   openCount: { id: 'chase.liveBoard.openCount', defaultMessage: '{count} open' },
   closedCount: { id: 'chase.liveBoard.closedCount', defaultMessage: '{count} closed' },
   loading: { id: 'chase.liveBoard.loading', defaultMessage: 'Loading chases from the API…' },
   empty: {
     id: 'chase.liveBoard.empty',
-    defaultMessage: 'No chases yet. Ask in chat — “chase American Burger for the missing receipts” — and the Review → Approve card does the rest.',
+    defaultMessage: 'No chases yet. Ask in chat to chase a client for their missing receipts — the Review → Approve card does the rest.',
   },
   columnClient: { id: 'chase.liveBoard.columnClient', defaultMessage: 'Client' },
   columnFoundBy: { id: 'chase.liveBoard.columnFoundBy', defaultMessage: 'Found by' },
   columnItems: { id: 'chase.liveBoard.columnItems', defaultMessage: 'Chasing' },
   columnState: { id: 'chase.liveBoard.columnState', defaultMessage: 'State' },
-  columnLastSms: { id: 'chase.liveBoard.columnLastSms', defaultMessage: 'Last SMS' },
+  columnLastSms: { id: 'chase.liveBoard.columnLastSms', defaultMessage: 'Last message' },
   columnAction: { id: 'chase.liveBoard.columnAction', defaultMessage: 'Action' },
   itemsSummary: {
     id: 'chase.liveBoard.itemsSummary',
@@ -48,15 +48,15 @@ const m = defineMessages({
   },
   closeDetail: { id: 'chase.liveBoard.closeDetail', defaultMessage: 'Close' },
 
-  outboxHeading: { id: 'chase.liveBoard.outboxHeading', defaultMessage: 'SMS outbox — the client’s phone' },
+  outboxHeading: { id: 'chase.liveBoard.outboxHeading', defaultMessage: 'Message outbox — the client’s phone' },
   outboxDemoTag: { id: 'chase.liveBoard.outboxDemoTag', defaultMessage: 'Demo surface' },
   outboxNote: {
     id: 'chase.liveBoard.outboxNote',
-    defaultMessage: 'With the demo sender nothing leaves this machine — every approved SMS lands here instead, link and all.',
+    defaultMessage: 'With the demo sender nothing leaves this machine — every approved message lands here instead, link and all.',
   },
   outboxEmpty: {
     id: 'chase.liveBoard.outboxEmpty',
-    defaultMessage: 'Nothing sent yet. Approve a chase and its SMS arrives here.',
+    defaultMessage: 'Nothing sent yet. Approve a chase and its message arrives here.',
   },
   outboxError: { id: 'chase.liveBoard.outboxError', defaultMessage: 'Could not load the outbox — {error}' },
   outboxTo: { id: 'chase.liveBoard.outboxTo', defaultMessage: 'To {to} · {at}' },

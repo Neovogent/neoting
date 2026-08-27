@@ -171,7 +171,7 @@ export const seedColleagues: Colleague[] = [
   {
     id: 'u1', name: 'You', email: 'you@practice.co.uk', role: 'Practice Admin', location: 'London',
     teamId: 't1', clientIds: ['1', '2'],
-    permissions: ['Publish', 'Approve', 'Chase', 'Connect bank', 'Export', 'Delete'],
+    permissions: ['Publish', 'Approve', 'Chase', 'Export', 'Delete'],
     hideFinanceFields: false, active: true,
   },
   {
@@ -189,7 +189,7 @@ export const seedColleagues: Colleague[] = [
   {
     id: 'u4', name: 'J. Whitfield', email: 'j.whitfield@practice.co.uk', role: 'Practice Admin', location: 'London',
     teamId: 't1', clientIds: ['1', '2'],
-    permissions: ['Publish', 'Approve', 'Chase', 'Connect bank', 'Export', 'Delete'],
+    permissions: ['Publish', 'Approve', 'Chase', 'Export', 'Delete'],
     hideFinanceFields: false, active: true,
   },
   {

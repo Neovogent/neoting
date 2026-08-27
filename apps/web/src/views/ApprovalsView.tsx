@@ -842,7 +842,7 @@ const mCard = defineMessages({
   statusActive: { id: 'approvals.workflowCard.statusActive', defaultMessage: 'Active' },
   statusPaused: { id: 'approvals.workflowCard.statusPaused', defaultMessage: 'Paused' },
   stagesHeading: { id: 'approvals.workflowCard.stagesHeading', defaultMessage: 'Stages' },
-  clientStage: { id: 'approvals.workflowCard.clientStage', defaultMessage: 'Client · SMS' },
+  clientStage: { id: 'approvals.workflowCard.clientStage', defaultMessage: 'Client · email link' },
   // The threshold and the edit right are independent of each other, so the
   // four readings are four messages rather than one with two inserted clauses.
   stageAlways: { id: 'approvals.workflowCard.stageAlways', defaultMessage: '{approver} · always' },
@@ -1395,7 +1395,7 @@ const mEditor = defineMessages({
   },
   clientSideTitle: {
     id: 'approvals.workflowEditor.clientSideTitle',
-    defaultMessage: 'Approved by the business, over SMS',
+    defaultMessage: 'Approved by the business, from an emailed link',
   },
   practiceSideTitle: {
     id: 'approvals.workflowEditor.practiceSideTitle',
@@ -1806,12 +1806,12 @@ export function blankWorkflow(intl?: IntlShape): ApprovalWorkflow {
     // opt-in, so it cannot start by capturing the whole practice.
     clientIds: [],
     specificity: 1,
-    // Only `name` is copy. 'R. Okafor' is fixture data — a sample person from
-    // the synthetic practice, not a string to translate.
+    // The approver starts empty: prefilling a person invents a colleague the
+    // practice may not have — the editor makes the user pick one (launch M8).
     stages: [
       {
         name: intl ? intl.formatMessage(mBlank.stageName) : String(mBlank.stageName.defaultMessage),
-        approver: 'R. Okafor',
+        approver: '',
         canEdit: true,
       },
     ],

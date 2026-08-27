@@ -23,6 +23,10 @@ const m = defineMessages({
   tourButton: { id: 'shell.contextBar.tourButton', defaultMessage: "Let's have a demo tour" },
   tourButtonShort: { id: 'shell.contextBar.tourButton.short', defaultMessage: 'Demo tour' },
   pickerHeading: { id: 'shell.contextBar.pickerHeading', defaultMessage: 'Attach to conversation' },
+  pickerEmpty: {
+    id: 'shell.contextBar.pickerEmpty',
+    defaultMessage: 'No clients yet — add your first under Clients, then attach it here.',
+  },
 });
 
 /**
@@ -165,6 +169,11 @@ export function ContextBar() {
                   <div className="px-3 py-2 text-[11px] font-bold text-zinc-500 uppercase tracking-widest">
                     {intl.formatMessage(m.pickerHeading)}
                   </div>
+                  {clients.length === 0 && (
+                    <p className="px-3 py-2.5 text-[13px] text-zinc-500 leading-relaxed">
+                      {intl.formatMessage(m.pickerEmpty)}
+                    </p>
+                  )}
                   {clients.map((c) => {
                     const attached = attachedClients.some((a) => a.id === c.id);
                     return (

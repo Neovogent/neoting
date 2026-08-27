@@ -11,7 +11,7 @@ const m = defineMessages({
   body: {
     id: 'shell.genericView.body',
     defaultMessage:
-      "This section is part of the Document Workflow scope but hasn't been fully mocked up in this prototype iteration. Use the <tab>AI Workspace</tab>, <tab>Clients</tab>, <tab>Inboxes</tab>, or <tab>Chases</tab> tabs to explore active features.",
+      "This area isn't available yet. Use the <tab>AI Workspace</tab>, <tab>Clients</tab>, <tab>Inboxes</tab>, or <tab>Chases</tab> tabs — that is where the work happens today.",
   },
 });
 

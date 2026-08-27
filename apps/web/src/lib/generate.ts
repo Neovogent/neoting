@@ -436,7 +436,7 @@ export function buildChases(
     else if (days >= policy.reminderTwoDays) stage = 'reminder-2';
     else if (days >= policy.reminderOneDays) stage = 'reminder-1';
 
-    const events = [{ at: `${hoursSinceSent}h ago`, label: 'Chase sent by SMS', detail: `${chased.length} items requested` }];
+    const events = [{ at: `${hoursSinceSent}h ago`, label: 'Chase sent by email', detail: `${chased.length} items requested` }];
     // Each reminder refreshes the secure link, so expiry runs from the last touch.
     let hoursSinceLastTouch = hoursSinceSent;
     if (stage !== 'sent') {

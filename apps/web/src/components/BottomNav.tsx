@@ -75,7 +75,7 @@ interface BottomNavProps {
 }
 
 export function BottomNav({ activeTab, setActiveTab, onOpenBusinessPortal }: BottomNavProps) {
-  const { settings, updateSettings } = useAppContext();
+  const { settings, updateSettings, documentsSource } = useAppContext();
   const intl = useIntl();
   const [moreOpen, setMoreOpen] = useState(false);
   const isLight = settings.theme === 'light';
@@ -156,14 +156,18 @@ export function BottomNav({ activeTab, setActiveTab, onOpenBusinessPortal }: Bot
                 </div>
                 <div className="my-2 border-t border-white/5" />
                 <div className="grid grid-cols-1 gap-1">
-                  <SheetRow
-                    icon={Store}
-                    label={intl.formatMessage(shellNav.businessPortal)}
-                    onClick={() => {
-                      setMoreOpen(false);
-                      onOpenBusinessPortal();
-                    }}
-                  />
+                  {/* Seed-backed demo surface — synthetic only, like the tour
+                      button (launch M8). */}
+                  {documentsSource !== 'api' && (
+                    <SheetRow
+                      icon={Store}
+                      label={intl.formatMessage(shellNav.businessPortal)}
+                      onClick={() => {
+                        setMoreOpen(false);
+                        onOpenBusinessPortal();
+                      }}
+                    />
+                  )}
                   <SheetRow
                     icon={isLight ? Moon : Sun}
                     label={intl.formatMessage(isLight ? shellNav.darkMode : shellNav.lightMode)}

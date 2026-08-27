@@ -21,7 +21,6 @@ const m = defineMessages({
   permissionPublish: { id: 'shell.userInviteForm.permissionPublish', defaultMessage: 'Publish' },
   permissionApprove: { id: 'shell.userInviteForm.permissionApprove', defaultMessage: 'Approve' },
   permissionChase: { id: 'shell.userInviteForm.permissionChase', defaultMessage: 'Chase' },
-  permissionConnectBank: { id: 'shell.userInviteForm.permissionConnectBank', defaultMessage: 'Connect bank' },
   permissionExport: { id: 'shell.userInviteForm.permissionExport', defaultMessage: 'Export' },
   permissionDelete: { id: 'shell.userInviteForm.permissionDelete', defaultMessage: 'Delete' },
 
@@ -77,7 +76,6 @@ const PERMISSIONS = [
   { value: 'Publish', label: m.permissionPublish },
   { value: 'Approve', label: m.permissionApprove },
   { value: 'Chase', label: m.permissionChase },
-  { value: 'Connect bank', label: m.permissionConnectBank },
   { value: 'Export', label: m.permissionExport },
   { value: 'Delete', label: m.permissionDelete },
 ] as const;
