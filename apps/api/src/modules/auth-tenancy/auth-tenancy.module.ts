@@ -8,14 +8,17 @@ import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { BusinessesController } from './businesses.controller.js';
 import { BusinessesService } from './businesses.service.js';
+import { EmailVerificationService } from './email-verification.service.js';
 import { PracticeSignupService } from './practice-signup.service.js';
 import { PracticesController } from './practices.controller.js';
 import { InMemorySignInThrottle, type SignInThrottle } from './sign-in-throttle.js';
 import { RecordingSignupMailer, type SignupMailer } from './signup-mailer.js';
+import { SignupChainController } from './signup-chain.controller.js';
 import { TotpEnrolmentService } from './totp-enrolment.service.js';
 import {
   AUTH_SERVICE,
   BUSINESSES_SERVICE,
+  EMAIL_VERIFICATION_SERVICE,
   PRACTICE_SIGNUP_SERVICE,
   PRISMA,
   SIGN_IN_THROTTLE,
@@ -35,7 +38,7 @@ import {
  * owns the assembly.
  */
 @Module({
-  controllers: [AuthController, BusinessesController, PracticesController],
+  controllers: [AuthController, BusinessesController, PracticesController, SignupChainController],
   providers: [
     { provide: PRISMA, useFactory: () => getPrismaClient() },
     {
@@ -53,12 +56,27 @@ import {
       inject: [PRISMA, ENV, SIGN_IN_THROTTLE],
     },
     {
-      // The QR-enrolment half of A2. ⚠ No controller injects it, because
-      // `openapi.yaml` publishes no TOTP operation (G7) — see
-      // `totp-enrolment.service.ts` for the gap and what it blocks.
+      // The QR-enrolment half of A2, routed by A14 (`SignupChainController`).
+      //
+      // ⚠ IT TAKES THE SAME THROTTLE INSTANCE AS `AuthService`, and that is the
+      // point of injecting it rather than constructing one here. Enrolment
+      // checks a password with NO second factor in front of it, so it is the
+      // cheaper of the two endpoints to guess against; a counter of its own
+      // would mean ten guesses at `/auth/sessions` plus ten more here, per
+      // window, for the same address.
       provide: TOTP_ENROLMENT_SERVICE,
-      useFactory: (prisma: PrismaClient, env: Env) => new TotpEnrolmentService(prisma, env),
-      inject: [PRISMA, ENV],
+      useFactory: (prisma: PrismaClient, env: Env, throttle: SignInThrottle) => new TotpEnrolmentService(prisma, env, throttle),
+      inject: [PRISMA, ENV, SIGN_IN_THROTTLE],
+    },
+    {
+      // A14's other half: the endpoint that spends A1's verification token.
+      // Shares the throttle too, though it keys on a hash of the token rather
+      // than on an address — see `email-verification.service.ts` for why that
+      // bounds one link rather than one caller, and what it would take to
+      // bound a caller.
+      provide: EMAIL_VERIFICATION_SERVICE,
+      useFactory: (prisma: PrismaClient, env: Env, throttle: SignInThrottle) => new EmailVerificationService(prisma, env, throttle),
+      inject: [PRISMA, ENV, SIGN_IN_THROTTLE],
     },
     {
       // ⚠ THE ONE LINE S2 CHANGES. `RecordingSignupMailer` sends nothing — the

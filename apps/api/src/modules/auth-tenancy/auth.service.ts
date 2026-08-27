@@ -8,8 +8,7 @@ import type { ScopeContext } from '../../common/db/scope-context.js';
 import { scopedDb } from '../../common/db/scoped-db.js';
 import { AppException } from '../../common/problem/problem.js';
 import type { Env } from '../../config/env.js';
-import { verifyDemoPassword } from './demo-credentials.js';
-import { DUMMY_PASSWORD_HASH, verifyPasswordHash } from './password.js';
+import { type CredentialRow, findCredentialRow, verifyCredentials } from './credentials.js';
 import { normaliseEmail } from './practice-signup.service.js';
 import { SESSION_TTL_MS, signSessionToken } from './session-cookie.js';
 import { pickActingMembership } from './session-scope.js';
@@ -35,17 +34,6 @@ export interface LoginInput {
 export interface IssuedSession {
   readonly token: string;
   readonly expiresAt: Date;
-}
-
-/** What the privileged by-email lookup needs to decide whether a session may be issued. */
-interface CredentialRow {
-  readonly id: string;
-  readonly kind: string;
-  readonly passwordHash: string | null;
-  readonly emailVerified: boolean;
-  readonly deactivatedAt: Date | null;
-  /** The AES-GCM envelope holding the TOTP seed and the recovery-code hashes (`totp-secret.ts`). */
-  readonly totpSecretRef: string | null;
 }
 
 /**
@@ -105,26 +93,34 @@ export class AuthService {
     const standing = this.throttle.inspect(email, nowMs);
     if (standing.locked) throw new RateLimitedException(standing.retryAfterSeconds);
 
-    const user = await this.findCredentialRow(email);
+    const user = await findCredentialRow(this.prisma, email);
 
     // Every check ALWAYS runs before the branch, and each miss still spends a
-    // scrypt. Short-circuiting on the password would make a TOTP-only failure
+    // scrypt (`credentials.ts` holds that discipline for the password half).
+    // Short-circuiting on the password would make a TOTP-only failure
     // measurably faster and leak which factor was wrong; short-circuiting on an
     // unknown address would leak whether the address is registered. Those two
     // leaks are the whole reason NT-AUTH-003 is one code. The second factor
     // keeps the same discipline — `verifySecondFactor` burns an HMAC even when
     // there is no enrolment to check.
-    const storedMatched = verifyPasswordHash(input.password, user?.passwordHash ?? DUMMY_PASSWORD_HASH);
-    const demoUserId = verifyDemoPassword(email, input.password, this.env.NODE_ENV);
+    //
+    // ⚠ **A `unverified` verdict is refused here exactly like a wrong
+    // password.** `credentials.ts` distinguishes it so that TOTP ENROLMENT can
+    // say "verify your email first" to a caller who has already proved the
+    // password; on this path that sentence is a confirmed answer to "does this
+    // firm have an account here", handed to whoever guessed the address, which
+    // is the question `POST /v1/practices` returns a contentless `202` to keep
+    // unanswerable. Same for a deactivated account and for a SYSTEM actor.
+    const credentials = verifyCredentials(user, email, input.password, this.env.NODE_ENV);
     const factor = await this.verifySecondFactor(user, input.totp, nowMs);
 
-    const userId = this.resolveUserId(user, storedMatched, demoUserId);
-    if (userId === null || !factor.ok) return this.refuse(email, nowMs);
+    if (!credentials.ok || !factor.ok) return this.refuse(email, nowMs);
 
     // The second factor verified against the row we found; if the password
     // matched a DIFFERENT row we would be about to mint a session for the wrong
-    // person. `resolveUserId` only ever returns `user.id`, so this cannot
-    // currently happen — asserted here so that it also cannot start to.
+    // person. The verdict carries the row it matched, so this cannot currently
+    // happen — asserted here so that it also cannot start to.
+    const userId = credentials.user.id;
     if (user === null || userId !== user.id) return this.refuse(email, nowMs);
 
     // Replay: a TOTP code is live for its whole step plus the tolerance either
@@ -167,51 +163,6 @@ export class AuthService {
       'Invalid credentials',
       'The email, password or verification code did not match.',
     );
-  }
-
-  /**
-   * The privileged by-email lookup. See the class header for why it is not
-   * inside `scopedDb` and why that is not a bypass.
-   */
-  private async findCredentialRow(email: string): Promise<CredentialRow | null> {
-    return this.prisma.user.findUnique({
-      where: { email },
-      select: { id: true, kind: true, passwordHash: true, emailVerified: true, deactivatedAt: true, totpSecretRef: true },
-    });
-  }
-
-  /**
-   * Who, if anyone, this attempt authenticated as.
-   *
-   * ⚠ **AN UNVERIFIED ADDRESS IS THE SAME `NT-AUTH-003` AS A WRONG PASSWORD,
-   * DELIBERATELY.** It is tempting to answer "verify your email first", and it
-   * is the friendlier message — but it is also a confirmed answer to "does this
-   * firm have an account here", handed to whoever guessed the address, and
-   * `POST /v1/practices` goes to the trouble of a contentless `202` precisely so
-   * that question stays unanswerable. The person who owns the address already
-   * has the mail that tells them; the person who does not owns nothing. Same
-   * argument for a deactivated account and for a SYSTEM actor.
-   *
-   * The demo-fixture branch is a DEVELOPMENT fallback and nothing more:
-   * `verifyDemoPassword` has already returned null under `NODE_ENV=production`
-   * before this is reached. It still requires a real, verified, active `users`
-   * row — the seed creates one with `emailVerified: true` for both fixture
-   * accounts — because a login that succeeds against a user who does not exist
-   * mints a cookie that 401s on every subsequent request, which is the confusing
-   * failure this module's own notes record having hit before.
-   */
-  private resolveUserId(user: CredentialRow | null, storedMatched: boolean, demoUserId: string | null): string | null {
-    if (user === null) return null;
-    if (user.kind !== 'HUMAN') return null;
-    if (user.deactivatedAt !== null) return null;
-    // A1's rule, in one line: the account is unusable until the address is
-    // verified. Signup writes `emailVerified: false`; nothing but proving
-    // control of the address may write true.
-    if (!user.emailVerified) return null;
-
-    const stored = user.passwordHash !== null && storedMatched;
-    const demo = demoUserId !== null && demoUserId === user.id;
-    return stored || demo ? user.id : null;
   }
 
   /**

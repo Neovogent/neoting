@@ -9,8 +9,9 @@ import { parseBoundary } from '../../common/validation/parse-boundary.js';
 import type { Env } from '../../config/env.js';
 import { ENV } from '../../config/env.module.js';
 import type { AuthService } from './auth.service.js';
+import { applyRateLimitHeaders } from './rate-limit-headers.js';
 import { SESSION_COOKIE_NAME } from './session-cookie.js';
-import { RateLimitedException, SIGN_IN_MAX_FAILURES } from './sign-in-throttle.js';
+import { RateLimitedException } from './sign-in-throttle.js';
 import { AUTH_SERVICE } from './tokens.js';
 
 /**
@@ -46,18 +47,10 @@ export class AuthController {
       // per-exception headers is a change A2 does not own. Setting them here
       // costs four lines and keeps the response the contract describes.
       // `passthrough: true` means these survive the filter's own `res.status().send()`.
-      if (error instanceof RateLimitedException) this.rateLimitHeaders(res, error.retryAfterSeconds);
+      if (error instanceof RateLimitedException) applyRateLimitHeaders(res, error.retryAfterSeconds);
       throw error;
     }
     res.cookie(SESSION_COOKIE_NAME, session.token, { ...this.cookieOptions(), expires: session.expiresAt });
-  }
-
-  /** `RateLimited` (`openapi.yaml`, `components.responses`) — seconds, as integers. */
-  private rateLimitHeaders(res: Response, retryAfterSeconds: number): void {
-    res.setHeader('Retry-After', String(retryAfterSeconds));
-    res.setHeader('RateLimit-Limit', String(SIGN_IN_MAX_FAILURES));
-    res.setHeader('RateLimit-Remaining', '0');
-    res.setHeader('RateLimit-Reset', String(retryAfterSeconds));
   }
 
   @Delete('auth/sessions/current')

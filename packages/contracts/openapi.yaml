@@ -315,6 +315,220 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  # --------------------------------------------------------------------------
+  # THE SIGNUP CHAIN (launch stage A14, contract-change issue #195)
+  #
+  # `POST /practices` mints an email-verification token and mails it, and the
+  # real second factor fails CLOSED for an account with no enrolment. Both
+  # halves are right; neither had a door. Nothing consumed the token, so a
+  # signed-up account could never become usable — and nothing could hand a user
+  # a QR code, so under `OTP_MODE=totp` (what staging runs) that refusal pointed
+  # at a door nobody had built. Not "no new customers": nobody able to sign in
+  # at all.
+  #
+  # These three operations are that door, and they are one chain:
+  # sign up -> prove the address -> enrol an authenticator -> sign in.
+  # --------------------------------------------------------------------------
+
+  /auth/email-verification:
+    post:
+      operationId: verifyEmailAddress
+      summary: Verify an email address
+      description: |
+        Spends the token from the signup email and marks the address proved.
+        Until this happens the account exists and cannot be used: login refuses
+        an unverified address with the same `401 NT-AUTH-003` as a wrong
+        password, so an unconsumed token is a practice with no reachable owner.
+
+        **The token is the whole authorisation**, which is why the operation is
+        unauthenticated — the account it verifies is by definition one nobody
+        can log in to yet. It is signed, not encrypted, and carries the user id,
+        the address it proves and its own expiry; a forged or edited token fails
+        the signature rather than verifying an address the holder does not
+        control.
+
+        **Idempotent.** Verifying an already-verified address is `200`, not a
+        conflict — a client that retries, or a corporate mail scanner that
+        fetches the link before the human clicks it, must not turn a working
+        account into an error page.
+
+        **Two failures, and the split is deliberate.** `NT-AUTH-004` collapses
+        missing, malformed, forged, wrong-purpose and naming-a-user-that-is-gone
+        into one verdict, so a guesser learns nothing from which one they hit.
+        `NT-AUTH-005` distinguishes *expired*, because someone who waited three
+        days has to be told to ask for another one, and an expiry leaks nothing
+        about whether an address is registered — the token was ours, and the
+        holder already had it. Same split, and the same reasoning, as
+        `NT-AUTH-001` and `NT-AUTH-002` on the session cookie.
+      tags: [auth]
+      x-nt-side-effect: ingest
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmailVerificationRequest' }
+      responses:
+        '200':
+          description: |
+            The address is verified. The body names it so the next screen can
+            say which address was proved and carry it into enrolment without
+            asking the user to retype it — a mistyped address there is an
+            `NT-AUTH-003` that reads like a broken password.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmailVerificationResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: |
+            The link did not verify — `NT-AUTH-004`, or `NT-AUTH-005` if it was
+            genuinely ours and has expired.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              example:
+                type: https://neoting.com/problems/NT-AUTH-004
+                title: Verification link not valid
+                status: 401
+                code: NT-AUTH-004
+                detail: That verification link is not valid. Sign up again to get a new one.
+                traceId: 01J8XN2ZQ5R7TQ9E3M4K6P
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /auth/totp-enrolment:
+    post:
+      operationId: beginTotpEnrolment
+      summary: Start setting up an authenticator app
+      description: |
+        Mints a candidate second factor and returns the QR URI, the seed for
+        manual entry, and ten recovery codes **shown exactly once**. Nothing is
+        enabled yet — the confirmation step is what switches the factor on.
+
+        **Authenticated by password only, and this is the one route that has to
+        be.** The whole point of the operation is that the caller has no second
+        factor; requiring one would be a door that can only be opened by
+        whoever is already through it. The account must also be verified and
+        must not already be enrolled, so the reachable window is exactly the one
+        between proving the address and finishing setup.
+
+        ⚠ **The honest limit.** Inside that window, whoever knows the password
+        can claim the second factor. That is inherent to enrolling a factor
+        after signup rather than during it; it is bounded by the fact that an
+        unenrolled account cannot be logged into by anyone, including the
+        attacker's victim; and for a real user the window is the minutes between
+        clicking the verification link and scanning the QR. It is rate-limited
+        on the same per-address counter as sign-in, so this endpoint cannot be
+        used as an unthrottled password oracle.
+
+        **`x-nt-side-effect: none` is a fact about the implementation, not a
+        classification.** This operation writes nothing. The candidate travels
+        back to the caller as a short-lived signed `enrolmentToken` and is
+        stored nowhere, which is what lets an abandoned attempt be discarded for
+        free — see the confirmation step for why that matters. If anything here
+        ever starts writing, this field is wrong, and the architectural test
+        that reads it (Governance §10.6) is what should say so.
+
+        **The seed is never emailed.** Handing the QR to the signup mailer would
+        put both factors in one mailbox, and a second factor that lives where
+        the password recovery lives protects nothing.
+      tags: [auth]
+      x-nt-side-effect: none
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TotpEnrolmentRequest' }
+      responses:
+        '200':
+          description: |
+            The candidate enrolment. Render `uri` as the QR, offer `secret` for
+            a device that cannot scan, and show `recoveryCodes` once with the
+            warning that they are the only way back in. Post `enrolmentToken`
+            back with the first code the app produces.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TotpEnrolmentOffer' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: The email or password did not match — `NT-AUTH-003`, uniformly.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409': { $ref: '#/components/responses/EnrolmentNotAvailable' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /auth/totp-enrolment/confirm:
+    post:
+      operationId: confirmTotpEnrolment
+      summary: Finish setting up an authenticator app
+      description: |
+        Takes a code the authenticator actually produced and only then writes
+        the enrolment. This is the step that makes the second factor live.
+
+        ⚠ **THE ENROLMENT IS WRITTEN HERE AND NOWHERE ELSE, AND THE TWO-STEP IS
+        NOT CEREMONY.** A one-step enrolment — mint the seed, store it, tell the
+        user to scan — permanently locks out anyone who mis-scans, mistypes the
+        manual seed, or has a skewed clock: there is no reset flow in this
+        release to rescue them, a second attempt is refused as already-enrolled,
+        and the account has no other way in. Holding the candidate outside the
+        database until a real code comes back means an abandoned attempt costs
+        nothing and can simply be started again.
+
+        **That is why `enrolmentToken` exists.** The candidate has to survive
+        between the two calls, and both alternatives are worse: storing it
+        against the user is the lockout above, and letting the client post the
+        seed back would let a caller choose their own. The token is signed,
+        short-lived and bound to one user; the seed inside it is the same
+        encrypted envelope the database column holds, so it discloses nothing
+        the previous response did not already hand over in the clear.
+
+        **A recovery code is refused here.** It would confirm an enrolment
+        without ever proving the authenticator received anything, which is
+        precisely the mis-scan this step exists to catch.
+
+        Every credential failure — wrong password, wrong code — is the same
+        `401 NT-AUTH-003` the login path returns, for the same reason. An
+        enrolment token that has expired or does not verify is `NT-AUTH-008`,
+        safe to distinguish because it is a fact about a value we handed this
+        caller minutes ago.
+      tags: [auth]
+      x-nt-side-effect: ingest
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TotpEnrolmentConfirmRequest' }
+      responses:
+        '204':
+          description: |
+            Enrolled. The authenticator is now the second factor for this
+            account, and sign-in will require it. Empty by design — there is
+            nothing to say that the next sign-in does not say better.
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: |
+            The password or the code did not match — `NT-AUTH-003` — or the
+            enrolment token has expired or did not verify, `NT-AUTH-008`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409': { $ref: '#/components/responses/EnrolmentNotAvailable' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /me:
     get:
       operationId: getMe
@@ -2623,6 +2837,27 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
 
+    EnrolmentNotAvailable:
+      description: |
+        The password verified, but the account is not in a state where enrolling
+        a second factor means anything (launch stage A14).
+
+        Two codes, and both are named rather than collapsed because the caller
+        has *already proved the password* — there is no enumeration to protect
+        at this point, and each one leads somewhere different:
+        `NT-AUTH-006` says verify the address first, `NT-AUTH-007` says an
+        authenticator is already set up and sign-in is the way in.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://neoting.com/problems/NT-AUTH-006
+            title: Email address not verified
+            status: 409
+            code: NT-AUTH-006
+            detail: Verify your email address before setting up an authenticator app.
+            traceId: 01J8XN2ZQ5R7TQ9E3M4K6P
+
     RateLimited:
       description: Rate limit exceeded (Governance §11.8).
       headers:
@@ -2696,6 +2931,19 @@ components:
         # wrong TOTP. Splitting them would hand an account-enumeration oracle
         # to whoever is guessing (same stance as NT-INT-001's single code).
         - NT-AUTH-003  # login credentials did not verify
+        # The signup chain (launch stage A14, issue #195). -004 and -005 split
+        # on the same line -001 and -002 do: one is "that is not a credential I
+        # issued", the other is "it was, and it has run out". The split is safe
+        # because an expiry is a fact about a token the holder already had, and
+        # it is necessary because the two lead to different screens.
+        - NT-AUTH-004  # email verification link invalid, forged or naming a user that is gone
+        - NT-AUTH-005  # email verification link expired — request another
+        # -006 and -007 are reachable ONLY after the password has verified, so
+        # naming them answers nothing an attacker did not already know. Each
+        # points somewhere different, which is the whole reason they are two.
+        - NT-AUTH-006  # second-factor enrolment refused: the address is not verified
+        - NT-AUTH-007  # second-factor enrolment refused: this account already has one
+        - NT-AUTH-008  # the enrolment token did not verify, or has expired
         - NT-PRM-001   # actor lacks permission for this action kind
         - NT-IDM-001   # idempotency key reused with a different payload
         - NT-RATE-001  # rate limit exceeded
@@ -3081,6 +3329,106 @@ components:
           description: |
             Six digits. Demo builds verify against a fixed code
             (`OTP_MODE=demo`); real TOTP replaces the verifier, not this shape.
+
+    # ---- the signup chain (launch stage A14, issue #195) ------------------
+
+    EmailVerificationRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: |
+            The signed token from the signup email, exactly as it appeared in
+            the link. It is a credential: never log it, never echo it back, and
+            never put it anywhere a `Referer` header will carry it.
+
+    EmailVerificationResult:
+      type: object
+      description: |
+        What the verify-link screen needs to hand the user to enrolment without
+        making them retype anything. Only ever returned to a caller who already
+        holds a valid token, and the token's own claims are readable — so this
+        discloses nothing its holder did not already have.
+      required: [email, alreadyVerified]
+      properties:
+        email:
+          type: string
+          format: email
+          description: The address that is now proved. Prefill the enrolment form with it.
+        alreadyVerified:
+          type: boolean
+          description: |
+            True when the address was already verified before this call. The
+            outcome is identical either way — this exists so the screen can say
+            "already confirmed" rather than implying something just happened.
+
+    TotpEnrolmentRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: |
+            Checked, not policed. The signup endpoint owns the length rule; here
+            a wrong password is a `401`, and a minimum length would make a short
+            one a `400` that says the password is short — which answers a
+            question about someone else's account.
+
+    TotpEnrolmentOffer:
+      type: object
+      description: |
+        Shown once, on the enrolment screen, and stored nowhere by the client.
+        Every field except `enrolmentToken` is secret material the user is
+        responsible for capturing before they navigate away.
+      required: [enrolmentToken, uri, secret, recoveryCodes]
+      properties:
+        enrolmentToken:
+          type: string
+          maxLength: 4096
+          description: |
+            The candidate enrolment, signed and short-lived. Post it back with
+            the code from the app. It is what keeps the two-step honest — see
+            the confirmation operation.
+        uri:
+          type: string
+          description: '`otpauth://totp/...` — render as the QR code.'
+        secret:
+          type: string
+          description: The base32 seed, for a device that cannot scan a QR.
+        recoveryCodes:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { type: string }
+          description: |
+            Single-use codes, shown exactly once and never retrievable again.
+            The screen must say so before the user can leave it: they are the
+            only way back into the account if the phone is lost.
+
+    TotpEnrolmentConfirmRequest:
+      type: object
+      required: [email, password, enrolmentToken, totp]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 1, maxLength: 256 }
+        enrolmentToken:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: Returned by the previous step, unmodified.
+        totp:
+          type: string
+          pattern: '^[0-9]{6}$'
+          description: |
+            Six digits from the authenticator app. A recovery code is refused
+            here on purpose — it would prove nothing about whether the app ever
+            received the seed.
 
     Me:
       type: object
