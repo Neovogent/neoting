@@ -186,12 +186,44 @@ async function refusal(fn: () => Promise<unknown>): Promise<AppException> {
 }
 
 /** The CSV that was handed to storage, decoded past its BOM. */
-function emittedCsv(calls: Calls): string {
-  const csv = calls.put.find((call) => call.contentType === 'text/csv');
-  if (csv === undefined) throw new Error('no CSV was stored');
-  return csv.bytes.toString('utf8').replace(/^﻿/, '');
+/**
+ * The export artefact is a ZIP now (A10): VT applies one journal date to a whole
+ * file, so one export becomes one CSV per document date. Both stored artefacts
+ * are therefore `application/zip` — the export archive and A8's source-document
+ * bundle — so they are told apart by order, not by content type.
+ */
+function exportArchive(calls: Calls): Map<string, Buffer> {
+  const stored = calls.put[0];
+  if (stored === undefined) throw new Error('nothing was stored');
+
+  const archive = stored.bytes;
+  const eocd = archive.length - 22;
+  const entryCount = archive.readUInt16LE(eocd + 10);
+  const files = new Map<string, Buffer>();
+
+  let cursor = archive.readUInt32LE(eocd + 16);
+  for (let index = 0; index < entryCount; index += 1) {
+    const nameLength = archive.readUInt16LE(cursor + 28);
+    const extraLength = archive.readUInt16LE(cursor + 30);
+    const commentLength = archive.readUInt16LE(cursor + 32);
+    const localOffset = archive.readUInt32LE(cursor + 42);
+    const size = archive.readUInt32LE(cursor + 24);
+    const name = archive.subarray(cursor + 46, cursor + 46 + nameLength).toString('ascii');
+    const dataStart =
+      localOffset + 30 + archive.readUInt16LE(localOffset + 26) + archive.readUInt16LE(localOffset + 28);
+    files.set(name, archive.subarray(dataStart, dataStart + size));
+    cursor += 46 + nameLength + extraLength + commentLength;
+  }
+  return files;
 }
 
+/** The one CSV in the export archive, as text. */
+function emittedCsv(calls: Calls): string {
+  for (const [name, bytes] of exportArchive(calls)) {
+    if (name.endsWith('.csv')) return bytes.toString('utf8').replace(/^﻿/, '');
+  }
+  throw new Error('no CSV in the export archive');
+}
 // ── the happy path ──────────────────────────────────────────────────────────
 
 test('an export produces the import file, the bundle and one succeeded record', async () => {
@@ -202,7 +234,7 @@ test('an export produces the import file, the bundle and one succeeded record', 
   expect(result.state).toBe('succeeded');
   expect(result.rowCount).toBe(1);
   expect(result.documentCount).toBe(1);
-  expect(result.file?.mimeType).toBe('text/csv');
+  expect(result.file?.mimeType).toBe('application/zip');
   expect(result.bundle?.mimeType).toBe('application/zip');
   expect(calls.exportCreate).toHaveLength(1);
   expect(calls.exportCreate[0]?.data).toMatchObject({
@@ -214,24 +246,33 @@ test('an export produces the import file, the bundle and one succeeded record', 
   });
 });
 
-test('the file really is VT Universal Input Sheet, and the capability code is in Entry details', async () => {
+test('the file really is a VT journal import, and the capability code rides Column B', async () => {
   // The end-to-end assertion the whole stage exists for: the accountant opens
   // this file in VT and can get from a line back to the document (D43).
   const { calls, service } = harness();
   await service.createExport(CTX, request(), KEY);
 
-  const csv = emittedCsv(calls);
-  const [header, row] = csv.trim().split('\r\n');
+  const rows = emittedCsv(calls).trim().split('\r\n');
+  const row = rows[0] ?? '';
 
-  expect(header).toBe('Type,Ref no,Date,Primary account,Details,Total,VAT,Analysis,Analysis account,Entry details,Transaction notes');
-  expect(row).toContain('PIN');
-  // DD/MM/YYYY, and amounts positive — VT derives debit and credit from Type.
-  expect(row).toContain('14/01/2026');
+  // NO HEADER: VT's journal import is positional and reads row 1 as data, so the
+  // first line is a transaction (A10). Seven columns, not eleven, and no type
+  // code — the accountant picks purchases-versus-sales as the data format.
+  expect(rows).toHaveLength(1);
+  expect(row).not.toContain('Primary account');
+  expect(row).not.toContain('PIN');
+
+  // No date column either. The date is in the FILENAME, because VT applies one
+  // date to a whole journal.
+  expect(row).not.toContain('14/01/2026');
+  expect([...exportArchive(calls).keys()]).toContain('2026-01-14-purchase-invoices.csv');
+
   expect(row).toContain('120.00');
   expect(row).toContain('K7QM2X00');
   expect(row).toContain('https://neoacc.neovogent.com/d/K7QM2X00');
   expect(row).toContain('Imported from Neo Accounting');
-  // The comma and the accent survive the hand-rolled serialiser.
+  // The comma and the accent survive the hand-rolled serialiser — and A10
+  // confirmed they survive VT's own parser too.
   expect(row).toContain('"Épicerie Dubois, S.à r.l."');
 });
 
@@ -241,7 +282,7 @@ test('the download filenames name the target and the period, and nothing else', 
 
   const names = calls.presignGet.map((call) => call.filename);
   expect(names).toEqual([
-    'vt-transaction-plus-2026-01-01-to-2026-01-31.csv',
+    'vt-transaction-plus-2026-01-01-to-2026-01-31.zip',
     'source-documents-2026-01-01-to-2026-01-31.zip',
   ]);
   // Minutes, not hours — the URL is bearer authority with no session behind it.

@@ -142,23 +142,46 @@ with no public seam; a second implementation of a hash chain is a chain that fai
 verification the first time two canonicalisations disagree. Promoting it means moving that
 writer to `common/audit/`.
 
-## ⚠ A10 — the two lines you came here to change
+## ✅ A10 — DONE, and it rewrote the target (27 Aug 2026)
 
-Both are single exported constants, and nothing else in the module makes either decision.
+**Read `emitters/vt/vt-transaction-plus-emitter.ts`’s header, then SoT §24.3.1.** Raw
+evidence, including the double entry VT produced from our file, is in
+`Desktop/A10-vt-roundtrip/VERDICT.md`.
 
-| Question | Constant | File | Default |
-|---|---|---|---|
-| **What byte encoding does VT read?** | `CSV_ENCODING` | `emitters/csv/encoding.ts` | `'utf-8-with-bom'` |
-| **Does the file carry a header row?** | `VT_CSV_INCLUDE_HEADER` | `emitters/vt/vt-transaction-plus-emitter.ts` | `true` |
+A10 was scoped as "settle two constants against a real VT". It settled them — and found
+the emitter was aimed at a dialog that cannot import.
 
-`encoding.ts` carries a table of *what you will see in VT* → *what to change it to*, and
-implements `utf-8`, `utf-8-with-bom` and `windows-1252` (the last hand-rolled, no
-dependency, including the 0x80–0x9F block Latin-1 lacks). All three branches are tested,
-so changing the constant is a one-line change against a green suite.
+| Was | Is |
+|---|---|
+| `Transaction ▸ Universal Input Sheet ▸ Import from CSV` | **`Transaction ▸ Journal ▸ Import…`** — the UIS opens a bank-side sheet with **no import command** |
+| 11 columns led by `Type` = `PIN`/`SIN` | **7 columns**, no type code, no `Ref no`, **no date**, no `Transaction notes` |
+| `VT_CSV_INCLUDE_HEADER = true` | **`false`** — the journal import is positional and reads row 1 as data |
+| One CSV per export | **A ZIP of one CSV per (date, direction)** — VT applies one journal date to a whole file |
+| Collapse a split analysis and warn | **One row per analysis line.** VT imports splits; `collapseAnalysis()` is deleted |
+| `Entry details` ≤ 20 chars, URL to notes | **Column B took 104 characters untruncated** — code *and* URL both ride it |
 
-The case A10 must put in front of a real VT is **a supplier name containing both a comma
-and an accented character** — `Épicerie Dubois, S.à r.l.` is in the test suite and is the
-one that breaks hand-rolled serialisers and legacy code pages at the same time.
+**The two constants, settled:**
+
+| Question | Constant | Answer |
+|---|---|---|
+| Byte encoding | `CSV_ENCODING` (`emitters/csv/encoding.ts`) | **`'utf-8-with-bom'` — unchanged, now verified.** `Café Noël, Sons & Co` survived parse *and* posting with accent, comma and separator intact |
+| Header row | `VT_CSV_INCLUDE_HEADER` | **`false`** — was `true`, and would have imported the header as a transaction |
+
+**Two behaviours to design around.** VT **type-guesses each cell**, so a bare `5001` renders
+`5,001.00` — a number, not an account; the prefixed `Ledger: Account` form stays text and
+auto-matches VT’s chart. And VT **replicates Column B onto every leg** of the double entry,
+so the D43 link is wherever the accountant looks.
+
+**One thing left open, deliberately.** A split analysis costs a cosmetic **£0.00 line** in
+the supplier account, because the continuation row must repeat Column A (blank makes VT
+refuse). Totals are unaffected and the emitter raises `split-analysis-zero-line`. The format
+designer exposes a **"Repeated columns"** range, hinting several analysis triplets may fit
+on one row — unproven, and worth one session if the £0.00 line ever bothers anyone.
+
+**Onboarding cost, measured.** Every supplier must exist as a VT account or be assigned
+during import, and **Auto Assign on partial matching resolved 1 of 8**. It is a one-off per
+supplier, saved in a conversion table — but it is a real mapping session, and A9’s screen
+should say so rather than let the accountant meet it mid-import.
 
 ## ⚠ The two VT landmines — do not remove these guards
 
@@ -277,10 +300,11 @@ const rows = documents.map((d) => ({ ...canonicalRow(d), sourceLink: links.get(d
 instead of issuing a new one, so two instances would be two things holding one invariant and
 the failure would surface as a customer's import going manual, months later.
 
-- **`code` → `Entry details`**, in `entryDetailsCell()`. Schema-enforced: contains a
-  letter, at most 20 characters (targets truncate silently at 30 and ~25).
-- **`url` → `Transaction notes`**, in `transactionNotesCell()`, with the code and
-  `VT_PROVENANCE_TAG`.
+- **`code` AND `url` both → Column B (`Paid to/invoice details`)**, in `detailsCell()`,
+  with the reference and `VT_PROVENANCE_TAG`. There is one free-text column now, not two —
+  `entryDetailsCell()` and `transactionNotesCell()` are gone. The code is still
+  schema-enforced to contain a letter, because VT type-guesses a letterless one into a
+  number.
 - A row whose document was invisible, unrouted or absent gets **no** entry in that map and
   therefore still raises `source-link-missing`. Keep that: an export that is quietly
   linkless is the D43 failure this surface exists to prevent. Do not substitute a
@@ -291,23 +315,27 @@ the failure would surface as a customer's import going manual, months later.
 For rung 4, `buildSourceDocumentBundle({ documents, readBytes })` returns the ZIP plus its
 own warnings; hand it the config-selected `DocumentStore` as `{ read: (k) => store.get(k) }`.
 
-⚠ **A measurement A10 should carry into the field:** the full URL is **31 characters before
-the code** (`https://neoacc.neovogent.com/d/`). It does not fit a 25- or 30-character
-reference field and never could. That is not a defect — it is why D43 is a ladder: the bare
-**code** goes in `Entry details` (8 characters, fits anything), the **URL** goes in
-`Transaction notes` (VT documents it as unlimited), and the **bundle** works when neither
-does. `capability-url.test.ts` pins the measurement.
+✅ **A10 answered the measurement, and the answer was better than the design assumed.**
+The full URL is 31 characters before the code (`https://neoacc.neovogent.com/d/`), which is
+why D43 was built as a ladder. But the journal import has **no `Transaction notes` column
+at all**, so rungs 1 and 3 had to collapse into `Paid to/invoice details` — and that field
+took a **104-character value untruncated**, code and full URL together. The 25/30-character
+truncation the ladder was designed around belongs to VT’s *reference* fields, not to this
+one. `capability-url.test.ts` still pins the 31-character measurement; what changed is that
+it no longer forces a split across two columns.
 
 ## Decisions made here, with their reasons
 
-- **One nominal per row: collapse, do not split** (§24.3.4). Splitting would make VT create
-  several *transactions* from one invoice and misstate the creditor; collapsing keeps
-  `Total` equal to the document gross — the number that reconciles against a supplier
-  statement — and raises `analysis-collapsed` naming the nominals that did not travel.
-- **Amounts are unsigned in the VT file**, because VT derives debit and credit from `Type`.
-  The canonical model stores them signed (debit positive) per §24.3.4; the sign is dropped
-  at the emitter and nowhere earlier.
-- **`Ref no` is left blank.** VT assigns its own reference at post time.
+- **~~One nominal per row: collapse, do not split~~ — REVERSED by A10.** VT imports a split
+  analysis; Column E documents it and a two-nominal invoice was observed posting correctly.
+  The emitter writes **one row per analysis line** and `collapseAnalysis()` is gone. The old
+  reasoning — that splitting would create several transactions and misstate the creditor —
+  was a guess, and it was wrong.
+- **Amounts are unsigned in the VT file.** Still true, but no longer *because of* `Type`,
+  which does not exist in this format: direction comes from the data format the accountant
+  picks, which is why the archive separates purchases from sales.
+- **~~`Ref no` is left blank~~ — moot.** There is no `Ref no` column. The reference travels
+  in Column B with the capability code and the URL.
 - **`Primary account` is passed through byte-for-byte.** VT's Converter saves the supplier
   mapping against that exact string; re-casing or re-trimming it makes every future import
   manual (§24.3.1).
@@ -353,8 +381,15 @@ does. `capability-url.test.ts` pins the measurement.
       (content-addressed, still under `w/`), but it is not what that prefix means.
 - [ ] **A durable idempotency store.** The in-memory one is per-process; see the note above
       for why this surface can live with that and a publish could not.
-- [ ] **A10** — settle the two constants above against a real VT on Windows, and confirm
-      the click-through. If the URL is inert, rung 4 becomes the primary route.
+- [x] **A10** — settled, and it rewrote the target rather than two constants. See the
+      section above. Click-through is **still unconfirmed**, so rung 4 stays shipped.
+- [ ] **The £0.00 split line.** Try the designer’s "Repeated columns" range — several
+      analysis triplets on one row would remove the artefact entirely.
+- [ ] **`ExportWarning`’s description in `openapi.yaml` is now wrong** — it cites
+      `analysis-collapsed` and states "VT accepts one nominal per row". LAW, so it needs a
+      contract-change issue rather than an edit here. The `code` field is a free string, so
+      the new codes (`split-analysis-zero-line`, `credit-note-direction-unverified`) are
+      already legal.
 - [ ] Bank lines still ride the general UIS layout. §24.3.1 notes VT has a dedicated
       bank-statement import mode (Date / Description / Payment / Receipt); that second file
       is not built, and bank statement extraction is on the launch plan's cut list.

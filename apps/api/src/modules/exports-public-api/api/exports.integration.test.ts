@@ -192,11 +192,18 @@ describe.skipIf(!enabled)('A9 — Export for VT, against a real database', () =>
     const link = await owner.documentLink.findFirst({ where: { documentId: DOC_IN } });
     expect(link).not.toBeNull();
 
-    const csv = store.get(new URL(result.file!.url).pathname.replace(/^\//, ''));
-    const text = (await csv).toString('utf8').replace(/^﻿/, '');
+    // The export artefact is a ZIP of per-date CSVs (A10) — VT applies one
+    // journal date to a whole file, so the date lives in the FILENAME and never
+    // in a column. Searching the archive bytes for the code and the URL is
+    // enough here: the emitter's own suite asserts the cell layout.
+    const archive = await store.get(new URL(result.file!.url).pathname.replace(/^\//, ''));
+    const raw = archive.toString('latin1');
+    expect(raw.startsWith('PK')).toBe(true);
+    expect(raw).toContain('2026-01-14-purchase-invoices.csv');
+
+    const text = archive.toString('utf8');
     expect(text).toContain(link!.code);
     expect(text).toContain(`https://neoacc.neovogent.com/d/${link!.code}`);
-    expect(text).toContain('14/01/2026');
     // Only January's document travelled.
     expect(text).not.toContain('03/02/2026');
   });

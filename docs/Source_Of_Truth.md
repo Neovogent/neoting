@@ -70,7 +70,7 @@ This document and its companion, **NEOTING-Engineering-Governance-v1.4.md**, are
 | **D40** | **Bank input in ID is manual statement upload only — supersedes D4 for the ID release.** Accepted inputs: **PDF, CSV, XLSX** and comparable tabular formats; upload is available to accountant and client, per client, per period. The AI reads the statement and produces every transaction on it; transactions land in the **Bank tab inside the client** and are reachable from the **AI chat**. TrueLayer is **deferred, not dropped** — D4's sole-provider commitment stands for v1, and the provider-agnostic interface is still built, now with exactly one implementation behind it. **What is given up:** continuous transaction arrival, and with it the ability to notice a missing document within hours of the spend. ID notices it whenever the next statement is uploaded — a slower loop the client must be told about rather than left to discover. **Re-opens when:** TrueLayer production access is granted and a client asks for a live feed. |
 | **D41** | **Statement extraction is gated on provable completeness, not on confidence alone.** Because D40 makes upload the only path, a silently dropped transaction is a document that is never chased. **The gates exist because of a measured failure mode, not a theoretical one:** on long documents the dominant extraction failure is **silent truncation** — schema-valid JSON containing a fraction of the rows, with no error signal — and **structured outputs do not fix it**, since a valid thirty-item array is still valid when the page held forty rows. **Hard gates, blocking commit to the Bank tab:** **(G1) statement balance** — opening + Σcredits − Σdebits = closing, in **integer pence, zero tolerance**; **(G2) row-level balance chain** — `balance[n−1] + signed_amount[n] = balance[n]`, permitting reordering within a same-date group before failing, since banks print same-day rows out of balance order; **(G3) page accounting** — every page between the first and last transaction page yields at least one row, because a zero-row middle page is a stitching failure and not a blank page; **(G4) page-boundary continuity** — the last row of page N chains to the first row of page N+1; **(G5) printed totals** — the statement's own summary box and transaction count, read as scalars, agree with the computed sums; **(G6) date containment and monotonicity**; **(G7) amount coverage** — every currency-like token in a cheap raw-OCR pass over the table region appears in some extracted row, **which is the anti-truncation gate and the cheapest insurance available**; **(G8) duplicate and overlap detection**, fingerprinting on account, date, signed pence, normalised description **and running balance** — the balance is what distinguishes a genuine repeat purchase from a true duplicate. **Soft gates, committing but flagging:** intra-statement date gaps, sub-threshold field confidence, statement-to-statement chaining (`closing[N] = opening[N+1]`), and coverage-grid gaps. **The running balance is load-bearing and no vendor supplies it** — every prebuilt bank-statement model omits it — so ID defines the column in its own schema. **Where a statement genuinely has none, G2 and G4 are unavailable: that ingest is marked reduced-assurance, G5 and G7 become mandatory, and human-review sampling rises.** A statement failing a hard gate is never silently accepted — it enters a visible reconciliation state showing the discrepancy and the candidate rows. |
 | **D42** | **No ledger API integration and no auto-publish in ID — supersedes D6 and Stage 10's adapter path for the ID release.** In ID, **"Published" is an internal state meaning approved and released for export.** It does not assert that anything was written into a ledger, and **no ID surface may imply that it does.** **Export is the sole egress**, in bulk and singly, and the Ready → Published transition is **super-admin only** (D44). **What is given up:** the attachment-travels-with-the-bill guarantee the Xero and QBO APIs provide natively — which is exactly why D43 exists. **Consequence for the prototype:** every "Send to Xero" string, the `xeroConnected` publish destination, the connection-health surfaces and the tour's five Xero steps are wrong for ID and must be reworked to export language before delivery. |
-| **D43** | **Every exported transaction carries a resolvable link to its source document, and the requirement is on the outcome, not the mechanism.** The accountant must be able to get from a line in their accounting software to the document that line came from. **Verified for the primary target (24.3):** VT Transaction+ has a real, documented, column-mapped bulk CSV import (the Universal Input Sheet), a competitor already ships a VT-shaped export, and **VT cannot attach files at all** — confirmed by exhaustive absence across its published help corpus. **Whether VT renders a URL as a *clickable* hyperlink is unconfirmed, and the working assumption is that it does not.** ID therefore does not bet on clicking: it ships **all four rungs at once**, because together they cost almost nothing. (1) the link in **`Entry details`**, the field VT designates for per-line detail; (2) the link as a **short, typable capability URL** — six to eight URL-safe characters, designed to be retyped or copy-pasted rather than clicked, which is why it is a short link and never a presigned S3 URL; (3) code and full URL repeated in **`Transaction notes`** with an `Imported from Neoting` provenance tag; (4) a **companion index file and document bundle** whose filenames carry the same code — which mirrors VT's own documented practice of writing the reference on the paperwork and filing by it. **Rung 1 is confirmed by a ten-minute test in the client's own VT in the first days of the release**, and **whichever rung is live is stated to the accountant** — silently shipping rung 3 while the client believes they bought rung 1 breaks a promise. **Binding security constraint:** these URLs leave our control the moment they enter someone's ledger, so they are **capability URLs** — unguessable, per-document, view-only, individually revocable, access-logged, expiry configurable per practice. A ledger file is not a secret store and must never be treated as one. **· Extended after cross-target research (24.3.4):** the same answer holds for **every** export target, not only VT — **a clickable source-document link is not achievable through CSV import anywhere.** Xero's CSV carries no URL column; Sage 50's audit-trail import cannot write the record that produces its clickable paperclip; QuickBooks has no URL field on its attachment entity and explicitly blocks shortcut file types. In every case the clickable route is an **API or desktop-component second pass, not a file** — which is why D42 defers it, and why ID's answer is the short typable link plus the manifest. **There is no CSV-based competitor to copy, because it cannot be done**, and the roadmap carries this as an explicit later decision rather than an assumed eventual fix. **Rung 4 is upgraded from fallback to differentiator:** none of the three established products solves matching an exported document bundle back to its exported rows — undocumented filename conventions, documents obtainable only by support ticket, or a folder tree with no index. ID's manifest costs almost nothing and beats all three. |
+| **D43** | **Every exported transaction carries a resolvable link to its source document, and the requirement is on the outcome, not the mechanism.** The accountant must be able to get from a line in their accounting software to the document that line came from. **Verified for the primary target (24.3):** VT Transaction+ has a real, documented, column-mapped bulk CSV import (the Universal Input Sheet), a competitor already ships a VT-shaped export, and **VT cannot attach files at all** — confirmed by exhaustive absence across its published help corpus. **Whether VT renders a URL as a *clickable* hyperlink is unconfirmed, and the working assumption is that it does not.** ID therefore does not bet on clicking: it ships **all four rungs at once**, because together they cost almost nothing. (1) the link in **`Entry details`**, the field VT designates for per-line detail; (2) the link as a **short, typable capability URL** — six to eight URL-safe characters, designed to be retyped or copy-pasted rather than clicked, which is why it is a short link and never a presigned S3 URL; (3) code and full URL repeated in **`Transaction notes`** with an `Imported from Neoting` provenance tag; (4) a **companion index file and document bundle** whose filenames carry the same code — which mirrors VT's own documented practice of writing the reference on the paperwork and filing by it. **Rung 1 is confirmed by a ten-minute test in the client's own VT in the first days of the release**, and **whichever rung is live is stated to the accountant** — silently shipping rung 3 while the client believes they bought rung 1 breaks a promise. **Binding security constraint:** these URLs leave our control the moment they enter someone's ledger, so they are **capability URLs** — unguessable, per-document, view-only, individually revocable, access-logged, expiry configurable per practice. A ledger file is not a secret store and must never be treated as one. **· Extended after cross-target research (24.3.4):** the same answer holds for **every** export target, not only VT — **a clickable source-document link is not achievable through CSV import anywhere.** Xero's CSV carries no URL column; Sage 50's audit-trail import cannot write the record that produces its clickable paperclip; QuickBooks has no URL field on its attachment entity and explicitly blocks shortcut file types. In every case the clickable route is an **API or desktop-component second pass, not a file** — which is why D42 defers it, and why ID's answer is the short typable link plus the manifest. **There is no CSV-based competitor to copy, because it cannot be done**, and the roadmap carries this as an explicit later decision rather than an assumed eventual fix. **Rung 4 is upgraded from fallback to differentiator:** none of the three established products solves matching an exported document bundle back to its exported rows — undocumented filename conventions, documents obtainable only by support ticket, or a folder tree with no index. ID's manifest costs almost nothing and beats all three. **· AMENDED by A10, 27 Aug 2026 — the outcome stands, three mechanism claims do not.** The import is **`Transaction ▸ Journal ▸ Import…`**, not the Universal Input Sheet, which has no import command at all. There is **no `Transaction notes` column**, so rungs 1 and 3 collapse into the single `Paid to/invoice details` field — which turned out to be an upgrade: a **104-character value imports untruncated**, so the code *and* the full URL both fit, and VT **replicates that text onto every leg** of the double entry. The ~25–30 character truncation this decision designed around belongs to VT's *reference* fields, not to entry details. Whether the URL renders as a clickable hyperlink is **still unconfirmed**, so rung 4 remains shipped and the ladder is unchanged. See §24.3.1. |
 | **D44** | **Composition and release are separate authorities in ID.** Accountants and their team members may **compose and edit** — chase message text, document coding, every extracted field. Only the **accounting firm's super admin** may **release**: authorise a chase SMS to send, and move an item from Ready to Published. Enforced **server-side** as a role condition layered on §8.2's Review → Approve, not as a UI affordance. **Reason:** ID's two irreversible outward acts are a text message to a client and a released export; both deserve a named accountable person, and the practice principal is that person. |
 | **D45** | **Identity-gated intake — every ID channel accepts only known senders.** Client portal: phone number + OTP to the **registered** number; only that number and **team members the client has added** may upload, by device camera capture or file upload, in any format (images, HEIC, PDF, XLSX, CSV, screenshots). Email: **only mail forwarded from a registered address**. WhatsApp: **only messages from a registered number**. **Consequence, recorded because it is a real reversal: ID has no Unrouted queue** — an unregistered sender is rejected with a reason rather than queued for triage. The prototype removed the queue (instructions #9 and #59). This **conflicts with §4 Stage 1**, which mandates the queue as the guarantee that nothing is silently dropped; the guarantee survives in a different shape — rejection is **visible and reasoned** in the Rejected/Failed view, and the sender is told. **Honest caveat:** identity-gating trades recoverable ambiguity for hard rejection. A supplier emailing a client's invoice directly to us — the exact case AI addressee detection exists for — is refused in ID. Acceptable only because ID's document sources are the client and their own team, and **it must be re-opened before any channel is opened to third parties.** |
 | **D46** | **Unacceptable documents are flagged, never blocked.** The AI separates every uploaded file **individually** — a batch is never treated as one document — and evaluates each against what is expected for that client's business category and against what makes it valid evidence. Where a document is not the one requested, or not acceptable for the business category, a flag is raised **in the accountant portal and shown to the client in the client portal at the moment of upload**. **The client may upload it anyway; the upload is never blocked.** The flag persists on the document, with its reason, for the accountant. **Reason:** blocking a client mid-upload teaches them to stop sending things. The cost of junk is an accountant's glance; the cost of silence is a missing document at year end. |
@@ -961,64 +961,91 @@ VT is an emitter, not the architecture — otherwise the second client is a rebu
 
 Targets in ID: **VT Transaction+ (primary)**, **Xero**, **Sage**, **generic CSV**.
 
-#### 24.3.1 VT Transaction+ — verified, not assumed
+#### 24.3.1 VT Transaction+ — verified in a real VT, 27 Aug 2026
 
-VT is a **solved target**, and the folklore that "VT has limited import" is wrong for VT
-Transaction+. It has a documented bulk import through the **Universal Input Sheet (UIS)** —
-`Transactions › Universal Input Sheet › Import from: CSV File / Text File / Clipboard`.
-Three facts make it a comfortable target:
+⚠ **This section was rewritten by A10 and the previous version was wrong in every
+structural respect.** It described the route, the columns, the type codes and the
+split-analysis limit, and none of those survived contact with a running VT. What follows
+was read out of VT’s own dialogs on a licensed install; the raw evidence, including the
+double entry VT produced, is in `Desktop/A10-vt-roundtrip/VERDICT.md`.
 
-- **Import is column-mapped, not header-driven.** The dialog shows our raw data and the
-  accountant picks a destination field per column, so a near-miss is recoverable rather
-  than fatal. Matching VT's on-screen order makes it one-click.
-- **Import is staged, not committed.** Rows land on the UIS and the accountant presses
-  **Post**. It is a review queue, which suits a product whose whole thesis is that a human
-  approves before state changes.
-- **A competitor already does this.** Dext ships a native "VT Transaction+" export shaped
-  to the UIS. We are not inventing a format; we are matching a proven one.
+**The route is `Transaction ▸ Journal ▸ Import…`.**
 
-**The emitted columns, in VT's own on-screen order:**
+*Not* the Universal Input Sheet. `Transaction ▸ Universal Input Sheet…` opens a form
+titled **Payments And Receipts** — a bank-side sheet bound to a bank account, whose type
+column accepts `1`/`2`/`3` (payment / cheque payment / receipt) and which **has no import
+command of any kind**. It cannot express a purchase invoice. VT Transaction+’s own binary
+contains exactly four import surfaces — trial balance, ledger and account names, journal,
+reversing journal — and no universal-input-sheet import at all.
+
+The import dialog offers **Clipboard / Tab delimited / CSV**, seven built-in data formats,
+a **Converter** with saved conversion tables, and a **Preview Journal** dry run that shows
+the full double entry before anything is saved.
+
+**The emitted columns, from VT’s own "Payments list/purchase invoices list" spec:**
 
 ```
-Type, Ref no, Date, Primary account, Details, Total, VAT, Analysis, Analysis account, Entry details, Transaction notes
+A: Bank account name/supplier's name (or code)
+B: Paid to/invoice details
+C: Gross amount
+D: Input VAT
+E: Net amount (use multiple lines for split analysis)
+F: Net amount for VAT purposes (eg excluding items outside the scope of VAT)
+G: Analysis account name (or code)
 ```
 
 | Field | Rule |
 |---|---|
-| `Type` | `PIN`/`PCR` purchase invoice/credit note · `SIN`/`SCR` sales · `PAY`/`CHQ`/`REC` bank · `PCV` petty cash. Never invented. |
-| `Ref no` | **Left blank.** VT assigns its own reference at post time; our document code does not go here. |
-| `Date` | `DD/MM/YYYY`. |
-| `Primary account` | Supplier or customer name, **without** ledger prefix. |
-| `Details` | A **short** document reference only — VT's AutoComplete keys off this field and VT's own help warns against padding it. |
-| `Total` / `VAT` / `Analysis` | Gross / VAT amount in pounds / net. **All positive** — VT derives debit and credit from `Type`. |
-| `Analysis account` | **With** ledger prefix — `Expenses: Motor expenses`, `Income: Sales`. |
-| `Entry details` | **The source-document link** (see 24.3.2). |
-| `Transaction notes` | Document code, full link, and an `Imported from Neoting` provenance tag — which also makes our rows findable and reversible inside VT. |
+| Column A | Supplier or bank account name, **without** ledger prefix. Byte-stable across exports — see below. |
+| Column B | Reference, the D43 capability code, the full URL and the provenance tag. **Verified to accept 104 characters untruncated.** |
+| Column C / D | Gross and input VAT, **first row of a document only**. |
+| Column E / F | Net, and net for VAT purposes. One row per analysis line. |
+| Column G | Analysis account **with** ledger prefix — `Cost of sales: Purchases`. |
 
-**Three VT constraints that are product constraints, not export details:**
+**Four constraints that are product constraints, not export details:**
 
-1. **VT has no tax codes.** No T0/T1/T20, nothing to map — the **VAT amount in pounds** is
-   what VT stores, and whether something is in scope is a property of the analysis account,
-   not the transaction. Any rate we hold is used only to compute the amount.
-2. **Split analysis cannot be imported.** *One nominal per row.* A document spanning
-   several nominals must either collapse to one line or emit its primary line with the
-   remainder flagged for manual entry. **This bounds what line-item extraction can deliver
-   into VT** and must be visible to the accountant rather than silently truncated.
-3. **VT Cash Book — the free tier — cannot import at all.** Bulk import is a VT
-   Transaction+ (£90+VAT/yr) and Accounts Suite (£175+VAT/yr) feature only. **Which VT
-   product the client runs is an onboarding question, and the wrong answer means the export
-   does not work for them.**
+1. **There is no date column, and no custom format can add one.** The journal’s single
+   `Date` field applies to every row in the file. The New Data Format designer exposes
+   fourteen defined ranges and none is a date; the built-in "Trial balance with date"
+   format states `Column A: Date (ignored by VT)`. **The export therefore emits one file
+   per document date**, delivered as an archive, with the date in each filename — a
+   mixed-date file would post a whole month into one VAT period.
+2. **There is no type column.** `PIN`/`SIN`/`PCR`/`SCR` have nowhere to go: purchases
+   versus sales is chosen by the accountant when they pick the data format. **One file per
+   direction**, or sales post as purchases.
+3. **Split analysis IMPORTS — the previous claim that it cannot was false.** Column E says
+   *"use multiple lines for split analysis"*, and a £240 invoice split £150/£50 across two
+   nominals was observed posting correctly and in balance. The continuation row must repeat
+   Column A; leaving it blank makes VT refuse with an unassigned account. The cost is a
+   cosmetic **£0.00 line** in the supplier account, which the export reports rather than
+   hides.
+4. **VT Cash Book — the free tier — cannot import at all.** Unchanged, and still an
+   onboarding question. `TranPlus.exe` and `CashBook.exe` sit side by side in one install
+   directory, so "we have VT" is not the same answer as "we can import".
 
-**Supplier naming is the highest-leverage detail in the whole export.** VT's Converter
-maps incoming account names to VT accounts, with Auto Assign and saved, reusable
-conversion tables. If our `Primary account` and `Analysis account` strings are
-**byte-stable across exports**, the accountant maps each supplier *once* and every later
-import assigns itself. Reformatting or re-deriving those strings destroys that and makes
-every export manual again.
+**Two behaviours worth designing around:**
 
-**Bank lines get their own file.** VT's bank-statement import mode maps only
-Date / Description / Payment / Receipt. Bank rows are not forced through the general
-layout.
+- **VT type-guesses each cell.** A bare numeric analysis code (`5001`) renders as
+  `5,001.00` — a number, not an account. The prefixed `Ledger: Account` form stays text
+  and auto-matches VT’s chart with no mapping at all, provided the ledger name matches
+  VT’s own (`Expenses:`, not `Overheads:`).
+- **VT replicates Column B onto every leg** of the resulting double entry — the bank line,
+  the VAT line and each analysis line — so the D43 link appears wherever the accountant
+  looks.
+
+**Encoding is settled: UTF-8 with BOM.** `Café Noël, Sons & Co` survived the parse and the
+posting preview with accents, the embedded comma and the separator intact.
+
+**Supplier naming is still the highest-leverage detail in the whole export.** VT’s
+Converter maps incoming account names to VT accounts, with Auto Assign and saved, reusable
+conversion tables. If Column A and Column G are **byte-stable across exports**, the
+accountant maps each supplier *once*. Two measured facts about that first mapping session:
+**Auto Assign on partial matching resolved only 1 of 8** incoming accounts, and **every
+supplier must exist as a VT account** or be assigned during import. It is a one-off per
+supplier rather than per export — but it is a real session, and the export screen says so
+rather than letting the accountant discover it mid-import.
+
+**Bank lines get their own file**, as before.
 
 #### 24.3.2 The source-document link (D43)
 
