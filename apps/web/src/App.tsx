@@ -65,6 +65,7 @@ const AnalyticsView = lazy(() => import('./views/AnalyticsView').then((m) => ({ 
 const TeamView = lazy(() => import('./views/TeamView').then((m) => ({ default: m.TeamView })));
 const SettingsView = lazy(() => import('./views/SettingsView').then((m) => ({ default: m.SettingsView })));
 const ChasesView = lazy(() => import('./views/ChasesView').then((m) => ({ default: m.ChasesView })));
+const ExportView = lazy(() => import('./views/ExportView').then((m) => ({ default: m.ExportView })));
 const GenericView = lazy(() => import('./views/GenericView').then((m) => ({ default: m.GenericView })));
 
 // Practice-only, and a modal, so it is the safest thing in the file to defer:
@@ -219,6 +220,15 @@ export default function App() {
       break;
     case 'Analytics':
       content = <AnalyticsView />;
+      break;
+    // D42/D43 make this the visible endpoint of the whole journey, and A9 built
+    // it without being able to register it — the shell files had open PRs in
+    // them at the time, so `/export` fell through `fromSlug` to the AI
+    // Workspace and `ExportView` was not in the build graph at all. These four
+    // lines (here, `SIDEBAR_TABS`, `Sidebar`, `BottomNav`) are the whole of what
+    // that stage was told to stop short of.
+    case 'Export':
+      content = <ExportView />;
       break;
     case 'Team':
       content = <TeamView />;

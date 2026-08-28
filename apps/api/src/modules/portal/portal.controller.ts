@@ -148,7 +148,17 @@ export class PortalController {
         'The link, the email address or the code did not verify. Ask your accountant to send a fresh link if this one has expired.',
       );
     }
-    return { token: issued.token, expiresAt: issued.expiresAt.toISOString() };
+    // ⚠ `businessId` is an ANSWER, not an instruction (contract-change #205).
+    // An invited client has to name their business to subscribe and nothing
+    // else can tell them — `getPortalContext` needs a chase, and they have
+    // none. The checkout handler still re-derives it from the session and 404s
+    // a body naming a different one, so this is a convenience for the caller
+    // and never the thing that decides.
+    return {
+      token: issued.token,
+      expiresAt: issued.expiresAt.toISOString(),
+      businessId: issued.businessId,
+    };
   }
 
   /** `GET /portal/context` — the chased items this session exists to collect, and nothing else. */

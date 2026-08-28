@@ -86,7 +86,7 @@ else.
 | `portal-upload.service.ts` | `PrismaPortalUploadService.createPortalUpload(facts, request, key)` — the delegated intent. Mirrors web upload's `createUpload` from ingestion-routing's *mechanisms*, and **grants the derived document id to the session before returning**. See "The delegated upload path" below. |
 | `portal-session-token.ts` | The bearer. `base64url(claims).base64url(hmac)` — the house format, fourth instance. Claims `{otpSessionId, businessId, practiceId, expiresAtMs}`, secret `PORTAL_SESSION_SECRET`, TTL **60 min**. Missing/malformed/forged collapse to one `invalid`; `expired` stays distinct. Empty secret refuses to sign *and* to verify. |
 | `portal-session.service.ts` | `createSession(linkToken, otp)` → verify link (chase seam) + OTP → resolve the chase → upsert `otp_sessions` → mint the bearer. `grantItems(facts, ids)` — the only thing that widens a session. |
-| `portal-session-context.ts` | `PortalSessionContextResolver.resolve(authorizationHeader)` → `PortalSessionFacts`, plus `delegatedScopeFor()` and `systemScopeFor()`. |
+| `portal-session-context.ts` | `PortalSessionContextResolver.resolve(authorizationHeader)` → `PortalSessionFacts`, plus `resolveOnboarding()`, `delegatedScopeFor()` and `systemScopeFor()`. **Two doors, not one door with a flag** — see below. |
 | `chase-verdict.ts` | The pure chase-validation copy — `describeChaseMismatch`. See "The post-upload half" below. |
 | `portal-upload-status.service.ts` | The post-upload read: document state + extraction + verdict, under the delegated scope for the document and the SYSTEM scope for the chase. **Unrouted** — no contract path, so no provider (see below). |
 | `portal-upload-notifier.ts` | The accountant's `portal.upload` notification row (SoT §4 Stage 8.8). |
@@ -294,14 +294,47 @@ carries no chase. That matters for what it can do: the delegated RLS branches ke
 on granted DOCUMENT ids and this session has none, so it is a proof of identity
 and not yet a grant. `GET /portal/context` needs a chase and will refuse it.
 
-⚠ **The subscribe step is still blocked on the contract, and this stage did not
-unblock it.** `PortalSession` carries `{token, expiresAt}` and no `businessId`,
-so an onboarding session has no contracted way to learn its own business and
-`POST /billing/checkout-sessions` cannot be called with it. `apps/web`'s
-`api/onboarding.ts` already parses an optional `businessId` off the response
-(deliberately not `.strict()`) and lights the step up the moment the field
-exists. Growing `PortalSession` is a **contract-change issue for Shakib** (G7),
-not an edit made from here.
+✅ **The subscribe step is unblocked** — contract change **#205**, approved and
+landed 28 Aug 2026. `PortalSession` gained an OPTIONAL `businessId` and
+`createCheckoutSession` gained `portalSession` beside `workspaceSession`, so the
+invited client can now pay at the end of their own onboarding, which is the only
+flow D48 and SoT §24.5 describe. `apps/web` needed no change: it had parsed the
+field as optional all along.
+
+Two things about it that belong here rather than in `billing/`:
+
+- **`businessId` is optional because a CHASE session deliberately omits it.** Its
+  business is not its holder's to act on — they may upload against granted
+  documents and nothing else — so handing them an id they could put in a request
+  body widens the credential for no purpose. Optional says which kind of session
+  this is; required would say every portal session is a billing principal.
+- **The field is an ANSWER, never an instruction.** `billing.controller.ts`
+  re-derives the business from the session and answers **404** to a body naming a
+  different one. 404 and not 403: a 403 would confirm the other business exists.
+
+## ⚠ `resolve` and `resolveOnboarding` are two DOORS, and that is the safety
+
+They differ by exactly which `otp_sessions.scope` they accept, and each refuses
+the other's with the same uniform `NT-OTP-002`. A separate method rather than a
+parameter, because the parameter version has a default and the default drifts:
+
+- `resolve` → `DELEGATED_UPLOAD` only. An ONBOARDING row here would be handed
+  document-write powers it was never granted.
+- `resolveOnboarding` → `ONBOARDING` only. A chase row here would let a
+  forwarded chase link buy a subscription.
+
+An onboarding session has `chaseId: null` and an empty grant that nothing ever
+widens, so `delegatedScopeFor` refuses it outright — it *cannot* become a
+document grant even by mistake. What it can do is name its own business, under
+`systemScopeFor`, which sees the whole practice: **every query made under it must
+be constrained to `facts.businessId` in the query**, the same application
+guarantee the chase boundary rests on. `portal-session-context.test.ts` pins both
+doors and both refusals.
+
+The expiry sentence also stopped saying *"Open the link from your text message
+again"* in the same change. There is no SMS in ID (D40/D47) — `apps/web` swept
+that claim at launch M8, and this was the server-side copy that pass could not
+see.
 
 ## The `otp_sessions` write shape
 
