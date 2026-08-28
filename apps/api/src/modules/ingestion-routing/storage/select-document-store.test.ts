@@ -34,6 +34,7 @@ function env(overrides: Partial<Env> = {}): Env {
     S3_SECRET_ACCESS_KEY: '',
     S3_FORCE_PATH_STYLE: false,
     S3_BUCKET_DOCUMENTS: 'nt-local-docs',
+    STATEMENT_READER: 'none',
     ...overrides,
   });
 }

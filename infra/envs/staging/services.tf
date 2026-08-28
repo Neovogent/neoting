@@ -220,6 +220,32 @@ locals {
     #                        about it.
     # ------------------------------------------------------------------------
     { name = "EXTRACTOR", value = "bedrock" },
+
+    # ------------------------------------------------------------------------
+    # STATEMENT_READER=textract — how a PDF or photographed bank statement
+    # becomes a table (D20, D41). CSV and XLSX are read deterministically and
+    # need nothing here; this is the rung for everything else.
+    #
+    # The IAM grant it needs is ALREADY in compute.tf's "Extraction" statement
+    # (AnalyzeDocument, StartDocumentAnalysis, GetDocumentAnalysis) — that
+    # statement predates this flip by weeks and was the D20 grant nothing had
+    # ever used.
+    #
+    # ⚠ `none` is not a weaker environment, it is a REFUSAL: a PDF statement is
+    # rejected by name with a visible reason rather than silently skipped. It is
+    # the local default because Textract's asynchronous path reads from S3 and
+    # cannot read MinIO — a developer machine genuinely has no reader for a
+    # multi-page PDF, and pretending otherwise is how invented transactions
+    # reach someone's books.
+    #
+    # ⚠ COST. Textract TABLES is ~1.2p/page, so a 29-page statement is ~35p —
+    # far above the £0.02 per-DOCUMENT guardrail, which is written for receipts
+    # and invoices. A statement is a different unit (one file, a month of a
+    # client's banking) and the ID release has no other bank input at all
+    # (D40). Watch it per client per month rather than per document.
+    # ------------------------------------------------------------------------
+    { name = "STATEMENT_READER", value = "textract" },
+
     { name = "SMS_SENDER", value = "demo" },
     { name = "OTP_MODE", value = "totp" },
     { name = "LEDGER_ADAPTER", value = "demo" },

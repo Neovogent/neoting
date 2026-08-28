@@ -1,4 +1,5 @@
 import { formatFor, readSheet, type Grid, type ReadFailure } from './sheet-reader.js';
+import type { TableReadFailure } from './table-reader.js';
 
 /**
  * A bank statement's bytes → the transactions it contains.
@@ -76,6 +77,8 @@ export interface ColumnMapping {
 export type ParseFailure =
   | { reason: 'unsupportedFormat'; fileName: string }
   | { reason: 'unreadable'; detail: ReadFailure['reason'] }
+  /** The OCR reader's own verdict, for a PDF or an image. */
+  | { reason: 'tableRead'; failure: TableReadFailure }
   | { reason: 'noHeaderRow' }
   | { reason: 'noDateColumn' }
   | { reason: 'noAmountColumn' }
@@ -261,6 +264,15 @@ export function parseMoneyPence(raw: string): number | null {
 
 /* ── The parse ────────────────────────────────────────────────────────────── */
 
+/**
+ * A statement's bytes → its transactions, for the SPREADSHEET formats.
+ *
+ * CSV and XLSX only. A PDF or an image is a table that has to be recovered
+ * rather than read, which is Textract's job (D20) — that path produces a grid
+ * and calls {@link parseStatementGrid} with it. Both end up in the same parser,
+ * so the column rules, the money rules and the D41 gate are shared and cannot
+ * drift between formats.
+ */
 export function parseStatement(bytes: Buffer, fileName: string): ParseResult {
   const format = formatFor(fileName);
   if (format === null) return { ok: false, failure: { reason: 'unsupportedFormat', fileName } };
@@ -268,6 +280,12 @@ export function parseStatement(bytes: Buffer, fileName: string): ParseResult {
   const read = readSheet(bytes, format);
   if (!read.ok) return { ok: false, failure: { reason: 'unreadable', detail: read.failure.reason } };
 
+  return parseStatementGrid(read.grid);
+}
+
+/** The half that works on a grid, whatever produced it. */
+export function parseStatementGrid(grid: Grid): ParseResult {
+  const read = { grid };
   const mapping = findMapping(read.grid);
   if (mapping === null) return { ok: false, failure: { reason: 'noHeaderRow' } };
 

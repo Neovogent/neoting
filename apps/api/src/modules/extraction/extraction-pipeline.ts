@@ -110,7 +110,21 @@ export function categoryFromRule(sets: Prisma.JsonValue): string | null {
 
 /** `YYYY-MM-DD` → a UTC instant for a `DateTime` column (UTC in storage). */
 function toStoredDate(ymd: string | null): Date | null {
-  return ymd === null ? null : new Date(`${ymd}T00:00:00.000Z`);
+  // ⚠ An EMPTY or unparseable value is null, not `new Date("Invalid Date")`.
+  //
+  // Prisma rejects an Invalid Date, and the throw lands here — inside the write
+  // that finalises extraction — so the document never leaves PROCESSING, the
+  // job burns all five attempts and dead-letters, and NOTHING says why on any
+  // screen. That is the stranded-document failure this file's own header warns
+  // about, reached through a date rather than a model error.
+  //
+  // It is reachable from any extractor that has no date to give: a bank
+  // statement covers a period rather than a day, so the demo profile for one
+  // returns an empty string, and that alone was enough to strand every
+  // statement uploaded.
+  if (ymd === null || ymd.trim() === '') return null;
+  const parsed = new Date(`${ymd}T00:00:00.000Z`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 export interface PrismaExtractionStepOptions {

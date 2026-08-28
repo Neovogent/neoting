@@ -211,10 +211,14 @@ the local demo behaviour, per METH_MODE §1.
 
 Two things to know:
 
-- **`accept` is `.csv,.xlsx`, narrowed from `.pdf,.tiff,.csv,.xlsx`.** The server
-  reads the two formats that are grids; offering a PDF and then refusing it
-  server-side is a worse experience than not offering it. D40 does list PDF, and
-  that gap is tracked in the banking module's own file.
+- **`accept` is `.pdf,.csv,.xlsx` plus the four raster types**, widened back on
+  28 Aug 2026 when the server gained a real reader for them (Textract, D20). It
+  was narrowed to the two grid formats while a PDF was refused server-side —
+  offering a format and then refusing it is worse than not offering it — and
+  the widening is gated on the same fact: **a photograph or a PDF only imports
+  where `STATEMENT_READER=textract`.** Staging sets it; a local machine cannot
+  (Textract cannot read MinIO — see the banking module's own file), and there
+  the refusal says the reader is not switched on rather than promising a retry.
 - **A refusal is rendered**, as a `role="alert"` line by the upload button. The
   bytes never left, so silence would read as an upload that worked and then did
   nothing — the exact behaviour this replaced.

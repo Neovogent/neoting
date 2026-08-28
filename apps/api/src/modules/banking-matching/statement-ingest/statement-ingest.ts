@@ -1,5 +1,7 @@
 import { assessCompleteness, type CompletenessReport } from './completeness.js';
-import { parseStatement, type ParsedStatement } from './statement-parser.js';
+import { formatFor } from './sheet-reader.js';
+import { parseStatement, parseStatementGrid, type ParsedStatement, type ParseResult } from './statement-parser.js';
+import { isTextractMedia, type StatementTableReader } from './table-reader.js';
 
 /**
  * An uploaded bank statement becomes `Statement` + `BankTransaction` rows.
@@ -51,6 +53,10 @@ export interface StatementIngestInput {
   /** The statement's own file name — the reader picks CSV or XLSX from it. */
   readonly fileName: string;
   readonly bytes: Buffer;
+  /** Sniffed at ingest, never the client's declared type. */
+  readonly mimeType: string;
+  /** Where the object lives, for Textract's multi-page path. */
+  readonly s3Key: string | null;
 }
 
 export type StatementIngestOutcome =
@@ -88,6 +94,14 @@ export async function ingestStatement(
   db: StatementScopedClient,
   input: StatementIngestInput,
   logger: StatementIngestLogger,
+  /**
+   * The OCR reader, for a PDF or an image (D20).
+   *
+   * Optional ONLY so a spreadsheet can be ingested with no reader wired at all —
+   * a CSV needs no OCR and it would be wrong to demand one. A PDF arriving with
+   * no reader is refused and says so, rather than being quietly skipped.
+   */
+  tables?: StatementTableReader,
 ): Promise<StatementIngestOutcome> {
   // Idempotency first, before any parsing work.
   const already = await db.statement.findFirst({
@@ -99,7 +113,7 @@ export async function ingestStatement(
     return { status: 'alreadyIngested', statementId: already.id };
   }
 
-  const parsed = parseStatement(input.bytes, input.fileName);
+  const parsed = await readStatement(input, tables);
   if (!parsed.ok) {
     const reason = refusalText(parsed.failure);
     logger.warn(`statement-ingest: refused ${input.documentId} — ${reason}`);
@@ -165,6 +179,36 @@ export async function ingestStatement(
 }
 
 /**
+ * Spreadsheet or OCR — decided by what the file actually is.
+ *
+ * CSV and XLSX are exact grids already and stay deterministic; sending them
+ * through OCR would add loss to something lossless. A PDF or an image is a
+ * table to be recovered, which is Textract's job under D20 — and the grid it
+ * returns goes through the SAME parser, so the column rules, the money rules and
+ * the D41 completeness gate cannot drift between the two.
+ */
+async function readStatement(
+  input: StatementIngestInput,
+  tables: StatementTableReader | undefined,
+): Promise<ParseResult> {
+  if (formatFor(input.fileName) !== null) return parseStatement(input.bytes, input.fileName);
+
+  if (!isTextractMedia(input.mimeType)) {
+    return { ok: false, failure: { reason: 'unsupportedFormat', fileName: input.fileName } };
+  }
+  if (tables === undefined) {
+    return {
+      ok: false,
+      failure: { reason: 'tableRead', failure: { reason: 'readerNotConfigured' } },
+    };
+  }
+
+  const read = await tables.read({ bytes: input.bytes, mimeType: input.mimeType, s3Key: input.s3Key });
+  if (!read.ok) return { ok: false, failure: { reason: 'tableRead', failure: read.failure } };
+  return parseStatementGrid(read.grid);
+}
+
+/**
  * A refusal an accountant can act on.
  *
  * Every branch names the file's problem and what to do about it. "Could not
@@ -174,19 +218,30 @@ export async function ingestStatement(
 function refusalText(failure: Extract<ReturnType<typeof parseStatement>, { ok: false }>['failure']): string {
   switch (failure.reason) {
     case 'unsupportedFormat':
-      return `${failure.fileName} is not a format this reads. Bank statements can be uploaded as .pdf, .csv or .xlsx.`;
+      return `${failure.fileName} is not a format this reads. Bank statements can be uploaded as PDF, CSV, XLSX, or a photograph.`;
+    case 'tableRead':
+      switch (failure.failure.reason) {
+        case 'noTableFound':
+          return 'No transaction table was found in this document. If it is a photograph, make sure the whole table is in frame and in focus.';
+        case 'unsupportedMedia':
+          return `This file could not be read as a statement (${failure.failure.detail}).`;
+        case 'readerUnavailable':
+          // ⚠ Deliberately NOT phrased as a problem with their document. It is
+          // ours, and telling a client their statement is unreadable would send
+          // them to re-scan a perfectly good file.
+          return 'The document reader could not be reached, so this statement has not been imported yet. Nothing is lost — it will be read again shortly.';
+        case 'readerNotConfigured':
+          // Permanent for this environment, so it must NOT promise a retry.
+          // Naming the two formats that need no reader is the one action the
+          // person holding the file can actually take.
+          return 'This file needs to be read by the document reader, which is not switched on here. A statement uploaded as CSV or XLSX imports without it.';
+      }
     case 'unreadable':
       switch (failure.detail) {
         case 'notAZipFile':
           return 'This file is named .xlsx but is not a spreadsheet — it may have been renamed.';
         case 'notAWorkbook':
           return 'This spreadsheet has no readable worksheet.';
-        case 'notAPdf':
-          return 'This file is named .pdf but is not one.';
-        case 'encrypted':
-          return 'This PDF is password-protected, so its transactions cannot be read. Export it again without a password, or upload the CSV or XLSX your bank offers.';
-        case 'noTextFound':
-          return 'This PDF has no readable text — it looks like a scan or a photograph of a statement. Download the statement from your bank as a PDF, CSV or XLSX rather than scanning a printout.';
         default:
           return 'This file is empty.';
       }

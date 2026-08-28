@@ -133,7 +133,7 @@ const m = defineMessages({
   statementsTitle: { id: 'bank.bankView.statementsTitle', defaultMessage: 'Statements' },
   statementsSubtitle: {
     id: 'bank.bankView.statementsSubtitle',
-    defaultMessage: 'PDF / TIFF up to 50MB, 300 pages · CSV and XLSX also accepted',
+    defaultMessage: 'PDF or a photograph, read by OCR · CSV and XLSX read exactly',
   },
   columnFile: { id: 'bank.bankView.columnFile', defaultMessage: 'File' },
   columnPeriod: { id: 'bank.bankView.columnPeriod', defaultMessage: 'Period' },
@@ -539,7 +539,11 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
               ref={fileRef}
               type="file"
               className="hidden"
-              accept=".pdf,.csv,.xlsx"
+              // CSV and XLSX are read deterministically; a PDF or a photograph
+              // goes through Textract (D20). A photographed statement is the
+              // one a client actually sends, so refusing images here would
+              // close the commonest door in the ID release's only bank input.
+              accept=".pdf,.csv,.xlsx,.jpg,.jpeg,.png,.tif,.tiff"
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 // Resolve the target client at handling time so the upload can

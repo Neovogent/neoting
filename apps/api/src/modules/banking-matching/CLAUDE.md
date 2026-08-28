@@ -113,6 +113,9 @@ bank input in ID, so the one input the release has was a mock end to end.
 | File | What it is |
 |---|---|
 | `sheet-reader.ts` | CSV + XLSX → grid, on `node:zlib`. **No new dependency** — adding one is on the root stop-and-ask list, and `apps/web/src/lib/spreadsheet.ts` already proved the subset is worth owning |
+| `table-reader.ts` | the `StatementTableReader` seam — how a NON-spreadsheet becomes a grid |
+| `textract-table-reader.ts` | Textract `TABLES` behind that seam (D20) |
+| `select-table-reader.ts` | chosen by CONFIG (`STATEMENT_READER`), never by import |
 | `statement-parser.ts` | grid → dated, signed, integer-pence rows |
 | `completeness.ts` | the D41 gate |
 | `statement-ingest.ts` | persistence: `Statement` + `BankTransaction[]`, idempotent on `documentId` |
@@ -123,6 +126,60 @@ already existed in prisma and the contract, and `Statement.documentId` already
 pointed at a document: statements were always meant to ride `/document-uploads`.
 The step runs after extraction, reads the row it is about to act on, and answers
 "not mine" for everything the extractor did not classify `STATEMENT`.
+
+### PDF and photographs go through Textract (D20), 28 Aug 2026
+
+**This lane hand-rolled a PDF text extractor first, and it was the wrong call.**
+It is deleted (`pdf-reader.ts`), and it should not come back:
+
+- it read only **born-digital** PDFs. A scanned or photographed statement has no
+  text objects at all, and that is the file a client actually sends;
+- on a real 29-page statement it parsed **1,170 of 1,250** rows, dropped **every
+  one of the 80 credit lines** (`CREDIT` and `BALANCE` fused into a single header
+  cell), and found no balance column — so under D41 it could only ever report
+  **`reduced`**, never prove completeness. That is the gate failing quietly on
+  the one bank input the ID release has;
+- three separate bug fixes of its author's own (ASCII85 + Flate filter chains,
+  `Tm` capture-group offsets, empty cells shifting columns) each made it *less*
+  wrong without making it right. Recovering a table from glyph positions is a
+  guess; Textract states the grid.
+
+D20 already committed this job to Textract and `extraction/CLAUDE.md` carried it
+as an open TODO. What is built:
+
+| | |
+|---|---|
+| **Images and a single-page PDF** | synchronous `AnalyzeDocument`, raw bytes |
+| **A multi-page PDF** | asynchronous `StartDocumentAnalysis` + `GetDocumentAnalysis`, **from S3 only** — it cannot be handed bytes, which is why `StatementIngestInput` carries `s3Key` as well as the file |
+
+- **The response is PAGINATED and a statement is long enough to be paginated.**
+  `GetDocumentAnalysis` is followed through every `NextToken`; stopping at the
+  first response reads a slice of a file and reports it as the whole, which is
+  exactly the silent truncation D41 exists to catch.
+- **`blocksToGrid` reads `CELL` `RowIndex`/`ColumnIndex`, not geometry.** The
+  grid is *stated* rather than inferred, so an empty cell is an empty column
+  rather than a gap that slides every later value one place left — the defect
+  that filed credits as debits in the hand-rolled reader.
+- **Failures are classified, because they mean opposite things.**
+  `noTableFound` is the document's problem and the accountant can send a better
+  copy; `readerUnavailable` (a throttle, an expired credential, a socket reset)
+  is OURS and must never be phrased as "your statement is unreadable" — that is
+  a lie that costs the client a re-scan. `readerNotConfigured` is a third, and
+  separate on purpose: it is permanent for that environment, so its message must
+  not promise the retry `readerUnavailable`'s does.
+- **`STATEMENT_READER=none` is a REFUSAL, not a degraded mode.** CSV and XLSX
+  still import; a PDF is refused by name with a reason. There is deliberately
+  **no fixture table reader** — a fake one would return invented transactions
+  for a real client's statement, the same hazard `FallbackExtractor` was deleted
+  for.
+- ⚠ **Textract cannot read MinIO**, so local development has no multi-page PDF
+  path and `none` is the local default by necessity. Testing a PDF statement
+  locally needs a real bucket.
+- ⚠ **COST.** Textract TABLES is ~1.2p/page — a 29-page statement is ~35p,
+  far above the £0.02 per-**document** guardrail, which is written for receipts.
+  A statement is a different unit (one file, a month of a client's banking) and
+  D40 leaves the release no other bank input. Watch it per client per month, not
+  per document.
 
 Six things that are decisions, not details:
 
@@ -171,9 +228,9 @@ file's `beforeAll`.
 
 ## Boundaries
 
-Exposes **only** its public providers. There is no `index.ts` seam yet, and
-that is deliberate: a module needs one when its first cross-module consumer
-arrives, and nothing imports this module today. The `bank.confirm-match`
+`index.ts` is the seam, created when the worker composition root became this
+module's first consumer: it exports `NO_STATEMENT_STEP`, `PrismaStatementStep`,
+`selectTableReader` and the reader types, and nothing else. The `bank.confirm-match`
 executor writes `matches` and `bank_transactions` through the engine's
 `ScopedClient` directly, so it needs nothing from here.
 
@@ -197,9 +254,9 @@ executor writes `matches` and `bank_transactions` through the engine's
 - [ ] **ID-critical, still open**: cash coding, partial/batch payments
       server-side, consent lifecycle and configurable match windows — all
       explicitly out of METH S11's scope.
-- [ ] **PDF statements are refused, by name.** D40 accepts PDF, CSV and XLSX;
-      this lane reads the two that are grids. A PDF needs a different
-      extraction call (the single-document schema returns a header, not line
-      rows), so it is refused with a message naming what IS accepted rather
-      than parsed into something plausible.
+- [x] **PDF and photographed statements — DONE, 28 Aug 2026, through Textract
+      (D20).** See *PDF and photographs* above. Still open: nothing measures the
+      real per-statement Textract cost the way `scripts/measure/extraction-cost.ts`
+      measures a document, and there is no local PDF path at all because
+      Textract cannot read MinIO.
 - [ ] Update this file on exit — it is how the next session picks up.
