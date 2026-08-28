@@ -101,6 +101,50 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
   }
 }
 
+# --------------------------------------------------------------------------
+# CORS — what makes a presigned browser upload possible at all.
+#
+# ⚠ THE DOCS BUCKET HAD NONE, AND SO NO BROWSER UPLOAD ON STAGING HAD EVER
+# WORKED. The journey is: the API mints a presigned PUT, the browser sends it
+# to S3 directly (the bytes must never transit our API), and a cross-origin PUT
+# with a `Content-Type` header is NOT a simple request — the browser first
+# sends an `OPTIONS` preflight. A bucket with no CORS configuration answers
+# that preflight `403`, so the PUT is never attempted.
+#
+# What made it invisible for so long: every LOCAL environment uploads to MinIO,
+# which allows any origin by default, so the whole path works on a developer
+# machine and fails only where it is deployed. And the failure surfaces in the
+# browser as `TypeError: Failed to fetch` with no status and nothing in the
+# API's logs, because the request never reached us — it reads exactly like a
+# dropped connection.
+#
+# The grant is deliberately narrow:
+#   PUT   the presigned upload, the only write a browser makes;
+#   GET   the presigned read behind "open the original".
+# No POST, no DELETE, no HEAD. `content-type` is the ONLY header allowed
+# because it is the only one the API signs into the intent
+# (`s3-document-store.ts`), and a preflight fails closed on anything else.
+#
+# `allowed_origins` never contains `*`: these are presigned URLs for a client's
+# financial records, and a wildcard would let any page a user has open drive an
+# upload with a URL it had somehow obtained.
+# --------------------------------------------------------------------------
+resource "aws_s3_bucket_cors_configuration" "this" {
+  for_each = { for name, cfg in var.buckets : name => cfg if length(cfg.cors_origins) > 0 }
+  bucket   = aws_s3_bucket.this[each.key].id
+
+  cors_rule {
+    allowed_methods = ["PUT", "GET"]
+    allowed_origins = each.value.cors_origins
+    allowed_headers = ["content-type"]
+    # So a caller can read the object's ETag off its own upload response. The
+    # completion call sends a SHA-256 it computed itself, so nothing depends on
+    # this — it is here to make a failed upload diagnosable.
+    expose_headers  = ["ETag"]
+    max_age_seconds = 3000
+  }
+}
+
 resource "aws_s3_bucket_policy" "this" {
   for_each = var.buckets
   bucket   = aws_s3_bucket.this[each.key].id
