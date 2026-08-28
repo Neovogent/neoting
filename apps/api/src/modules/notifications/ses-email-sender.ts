@@ -86,10 +86,14 @@ export class SesEmailSender implements EmailSender {
         Content: {
           Simple: {
             Subject: { Data: email.subject, Charset: 'UTF-8' },
-            // `Text` and only `Text`. There is no `Html` key here and adding one
-            // is the change that puts sign-in codes in spam folders — see the
-            // plain-text note on `EmailSender`.
-            Body: { Text: { Data: email.body, Charset: 'UTF-8' } },
+            // Text always; Html only when the composition rendered one. The
+            // HTML part is DERIVED from the same text (`email-html.ts`), so a
+            // client that prefers either part reads the same message — see the
+            // reversal note on `EmailSender`.
+            Body: {
+              Text: { Data: email.body, Charset: 'UTF-8' },
+              ...(email.html === undefined ? {} : { Html: { Data: email.html, Charset: 'UTF-8' } }),
+            },
           },
         },
         // Dimensions on the configuration set's CloudWatch metrics: it makes

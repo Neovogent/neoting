@@ -32,10 +32,14 @@ in both directions") are still unbuilt — see TODO.
 
 ## The rules that matter more than the feature
 
-- **Plain text. No HTML part, no images, no tracking pixel, no marketing chrome.** There is
-  no `html` field on `OutboundEmail` and there must not be one. A transactional message that
-  looks like a campaign is scored as one, and a sign-in code in a spam folder is a client who
-  cannot sign in at all. `email-copy.test.ts` asserts it on every message.
+- **The HTML part is DERIVED, never composed.** (28 Aug 2026: Mubasshir reversed the
+  plain-text-only stance; the deliverability constraints survive the reversal.)
+  `email-html.ts` re-renders the approved plain-text body in the product shell: nothing may
+  appear in the HTML that is not in the text, the HTML fetches no remote resource — no
+  image, no tracking pixel, no webfont — and the text part stays complete and authoritative
+  in a multipart/alternative send. `email-copy.test.ts` asserts the text part is still
+  plain and that the HTML carries every line of it; S7's walkthrough re-verifies inbox
+  placement with the part attached.
 - **The sign-in code is a CREDENTIAL.** Never logged, never in a URL, never in a subject,
   never in an API response or an error — *not even in development*. `SignInCode` makes this
   structural rather than aspirational: template interpolation, `JSON.stringify` and

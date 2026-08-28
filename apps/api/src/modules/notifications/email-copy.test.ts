@@ -32,11 +32,30 @@ function item(supplierLabel: string, amountPence: number, bookedAt: string): Cha
 
 // ── The rules that apply to every message ──────────────────────────────────
 
-test('every message is plain text — no HTML, no tracking pixel, no marketing chrome', () => {
+test('the TEXT part stays plain — no markup, no tracking pixel, no marketing chrome', () => {
   for (const { subject, body } of ALL) {
     expect(body).not.toMatch(/<[a-z!/][^>]*>/i);
     expect(body).not.toMatch(/<img|href=|style=|\bunsubscribe\b/i);
     expect(subject).not.toMatch(/<[a-z!/][^>]*>/i);
+  }
+});
+
+test('the HTML part is derived, complete, and fetches nothing — the drift rule', () => {
+  const escape = (v: string) =>
+    v.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+  for (const { body, html } of ALL) {
+    // Derived: every content line of the approved text appears in the HTML —
+    // whole where possible, word-by-word where the renderer legitimately
+    // splits a line (the sign-in code becomes label + box).
+    for (const raw of body.split('\n')) {
+      const line = raw.trim().replace(/^- /, '');
+      if (line === '') continue;
+      if (html.includes(escape(line))) continue;
+      for (const word of line.split(/\s+/)) expect(html).toContain(escape(word));
+    }
+    // No remote resource of any kind — the deliverability half that survived.
+    expect(html).not.toMatch(/<img|<style|@import|url\(|<link/i);
+    expect(html).not.toMatch(/\bunsubscribe\b/i);
   }
 });
 
