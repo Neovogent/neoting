@@ -100,6 +100,32 @@ Consequently staging sets `EXTRACTOR=bedrock`, `OTP_MODE=totp` and `DOCUMENT_GUA
 
 ⚠ Workers has no load balancer and no container health check, so ECS steady state proves the task **started**, not that it reached Redis. A worker that connects and then silently stops consuming looks identical to an idle one.
 
+## ⚠ Every practice needs a SYSTEM actor, and until 28 Aug 2026 signup made none
+
+Everything with no human behind it resolves one per practice — the ingest and
+extract workers, the chase portal's session lookup, the capability-link
+resolver, and the invited client's `POST /v1/portal/sign-in-codes`. Every RLS
+policy requires an actor, and `resolveSystemActor` **throws** when a practice
+has none.
+
+The only thing that ever created one was `prisma/seed.ts`. So a practice born
+through `POST /v1/practices` had none, and all of that was dead for it — while
+every seeded demo worked perfectly, which is why it survived so long.
+
+**It surfaced as an invited client pressing "send me a code" and nothing
+arriving**: a `202` on screen, no email, and not one line in the logs. Each
+layer was individually correct and the combination was undiagnosable — the
+sweep found no candidate practice and returned the same silent refusal it gives
+an unknown token, which is right for the caller and was wrong for the operator.
+
+Three things changed together, and none of them is sufficient alone:
+
+| | |
+|---|---|
+| `common/db/resolve-system-actor.ts` | `createSystemActor` — one definition of what the actor IS: `SYSTEM` kind, no email, no password hash (so it cannot sign in even if it reaches a screen), `PRACTICE_STANDARD` on a practice-wide membership. Never an admin role: D44 reserves release authority for a human, and a machine that could release could publish. |
+| `auth-tenancy/practice-signup.service.ts` | Creates it **inside the signup transaction**. A practice that exists without its actor is one whose first upload lands in a DLQ, so rolling back beats repairing. |
+| `db/backfill-system-actors.ts` | Repairs the practices that predate the fix. Idempotent, insert-only, runs on the **api** task family because it needs no elevated privilege. |
+
 ## Definition of Done (Guideline §8.6)
 
 Checks green · Zod on every new boundary · queries through `scopedDb` · money in pence · tests for changed logic with property tests on money paths · seed updated so screens stay honest · module `CLAUDE.md` updated · migration additive or via the contract process · no `# BOOTSTRAP` shim without an issue link.

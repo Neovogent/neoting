@@ -4,6 +4,7 @@ import { createPracticeBodyPasswordMin } from '@neoting/contracts/zod';
 
 import { fingerprint, type IdempotencyStore } from '../../common/idempotency/idempotency-store.js';
 import type { PrismaClient } from '../../common/db/prisma.js';
+import { createSystemActor } from '../../common/db/resolve-system-actor.js';
 import { AppException } from '../../common/problem/problem.js';
 import type { Env } from '../../config/env.js';
 import { EMAIL_VERIFICATION_TTL_MS, signEmailVerificationToken } from './email-verification.js';
@@ -209,6 +210,27 @@ export class PracticeSignupService {
             isOwner: true,
           },
         });
+
+        // ⚠ THE PRACTICE'S MACHINE ACTOR, AND IT MUST BE IN THIS TRANSACTION.
+        //
+        // Every RLS policy requires an actor, and everything with no human
+        // behind it resolves one per practice: the ingest and extract workers,
+        // the chase portal's session lookup, the capability-link resolver, and
+        // the invited client's `POST /portal/sign-in-codes`.
+        // `resolveSystemActor` THROWS when a practice has none.
+        //
+        // Until 28 Aug 2026 the only thing that ever created one was
+        // `prisma/seed.ts`, so a practice born here had none and every one of
+        // those paths was dead for it — invisibly, because each fails in its own
+        // quiet way: the sweep in `portal-onboarding.service.ts` simply finds no
+        // candidate practice and returns the same silent refusal it gives an
+        // unknown token, so a real client asked for a sign-in code and nothing
+        // happened, with nothing logged.
+        //
+        // Inside the transaction rather than after it: a practice that exists
+        // without its actor is a practice whose first upload lands in a DLQ, and
+        // rolling back is better than repairing.
+        await createSystemActor(tx, practice.id);
 
         await appendTermsAcceptanceEvent(tx, {
           practiceId: practice.id,
