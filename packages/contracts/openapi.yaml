@@ -2431,6 +2431,46 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Problem' }
 
+  /chat/suggestions:
+    get:
+      operationId: getChatSuggestions
+      summary: What is worth doing next, for the chat box
+      description: |
+        Ranked suggestions for the workspace chat input — the sentence the box
+        offers to type on the accountant's behalf, and why. Written by the
+        pinned model from the practice's own RLS-scoped pipeline state (client
+        count, waiting review work, open chases, failed work), never from a
+        canned list. When the model is unavailable or the practice's daily AI
+        budget is spent, the response degrades to a deterministic ranking over
+        the same state and says so in `source` — the DataSourceBadge stance
+        applied to a sentence, and the one place §9.3's "honest error" floor is
+        deliberately a fallback instead: an ambient hint may degrade, because
+        nobody asked it a question.
+
+        Read-only in the §10.6 sense and every other: it changes nothing,
+        drafts nothing and proposes nothing. Cached server-side per practice
+        for a short window because it is called on every workspace load; the
+        cache is why `generatedAt` is in the body.
+      tags: [chat]
+      x-nt-side-effect: none
+      parameters:
+        - name: businessId
+          in: query
+          required: false
+          schema: { type: string }
+          description: Narrow the state read to one client workspace, when one is attached.
+      responses:
+        '200':
+          description: Ranked suggestions, most urgent first.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatSuggestions' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   # ==========================================================================
   # WEBHOOKS
   # ==========================================================================
@@ -3181,6 +3221,43 @@ components:
         promptVersion:
           type: string
           description: The system prompt's version, from the repo — never a dashboard value (§9.8).
+
+    ChatSuggestion:
+      type: object
+      required: [text, because, weight]
+      description: |
+        One thing worth doing next. `text` is a sentence the chat box types on
+        the accountant's behalf; `because` is why it is offered, rendered under
+        the box; `weight` ranks urgency, higher first, ties keeping order.
+      properties:
+        text: { type: string, maxLength: 200 }
+        because: { type: string, maxLength: 200 }
+        weight: { type: integer }
+
+    ChatSuggestions:
+      type: object
+      required: [suggestions, source, generatedAt]
+      description: |
+        The chat box's briefing. `source` is load-bearing: `model` means the
+        pinned model wrote the sentences from this practice's own pipeline
+        state; `derived` means the deterministic fallback ranked them — model
+        unreachable, budget spent, or a practice too new to analyse. A UI must
+        not present one as the other.
+      properties:
+        suggestions:
+          type: array
+          maxItems: 6
+          items: { $ref: '#/components/schemas/ChatSuggestion' }
+        source:
+          type: string
+          enum: [model, derived]
+        modelVersion:
+          type: string
+          description: Present when `source` is `model` (§9.8 reproducibility).
+        promptVersion:
+          type: string
+          description: Present when `source` is `model`.
+        generatedAt: { type: string, format: date-time }
 
     # ---- pagination -------------------------------------------------------
 

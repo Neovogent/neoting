@@ -8,6 +8,7 @@ import { classifyLocally, extractClientName, resolveScope } from '../lib/resolve
 import { mapTurnToPayload, requestChatTurn, SERVER_INTENT_TO_APP } from '../api/chat';
 import { useSpeech } from '../lib/useSpeech';
 import { suggestPrompts } from '../lib/promptSuggestions';
+import { useLiveSuggestions } from '../api/suggestions';
 import { TypedPlaceholder } from './DynamicComponents/TypedPlaceholder';
 import { DocumentFormats, VoiceIcon } from './DynamicComponents/InputAffordances';
 import { defineMessages, useIntl } from 'react-intl';
@@ -92,10 +93,18 @@ export function InputRow() {
   /**
    * Read off the live backlog, so the box offers the thing most worth doing
    * rather than five sentences written months ago.
+   *
+   * With a live session the briefing comes from `GET /chat/suggestions` — the
+   * pinned model reading this practice's real pipeline state (or the server's
+   * deterministic fallback, honestly labelled). The local heuristics stay as
+   * the synthetic path and the answer-not-yet-landed fallback, so the box is
+   * never empty and never lies about where a sentence came from.
    */
+  const attachedForBriefing = attachedClients[0] === undefined ? undefined : serverClientIdFor(attachedClients[0].id);
+  const live = useLiveSuggestions(session.status === 'authenticated', attachedForBriefing);
   const suggestions = useMemo(
-    () => suggestPrompts(intl, { clients, documents, missing, chases, approvals }),
-    [intl, clients, documents, missing, chases, approvals],
+    () => (live !== null && live.suggestions.length > 0 ? [...live.suggestions] : suggestPrompts(intl, { clients, documents, missing, chases, approvals })),
+    [live, intl, clients, documents, missing, chases, approvals],
   );
   const isEmpty = messages.length === 0;
 

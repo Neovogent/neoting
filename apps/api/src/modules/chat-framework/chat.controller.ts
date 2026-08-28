@@ -1,12 +1,13 @@
-import { Body, Controller, HttpCode, HttpStatus, Inject, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Inject, Get, Post, Query } from '@nestjs/common';
 
-import { createChatTurnBody } from '@neoting/contracts/zod';
+import { createChatTurnBody, getChatSuggestionsQueryParams } from '@neoting/contracts/zod';
 
 import { REQUEST_CONTEXT } from '../../common/context/context.module.js';
 import type { RequestContext } from '../../common/context/request-context.js';
 import { parseBoundary } from '../../common/validation/parse-boundary.js';
 import type { ChatService } from './chat.service.js';
-import { CHAT_SERVICE } from './tokens.js';
+import type { SuggestionsService } from './suggestions.service.js';
+import { CHAT_SERVICE, SUGGESTIONS_SERVICE } from './tokens.js';
 
 /**
  * `POST /v1/chat/turns` — the AI workspace's one operation.
@@ -26,6 +27,7 @@ export class ChatController {
   constructor(
     @Inject(REQUEST_CONTEXT) private readonly context: RequestContext,
     @Inject(CHAT_SERVICE) private readonly service: ChatService,
+    @Inject(SUGGESTIONS_SERVICE) private readonly suggestions: SuggestionsService,
   ) {}
 
   @Post('chat/turns')
@@ -37,5 +39,16 @@ export class ChatController {
       businessId: parsed.businessId,
       history: parsed.history,
     });
+  }
+
+  /**
+   * The chat box's briefing. Read-only like the turn above, and additionally
+   * never a 5xx for a model problem — the service degrades to the derived
+   * ranking and says so in `source` (the operation's own contract prose).
+   */
+  @Get('chat/suggestions')
+  async getSuggestions(@Query() query: unknown) {
+    const parsed = parseBoundary(getChatSuggestionsQueryParams, query, 'query parameters');
+    return this.suggestions.getSuggestions(await this.context.require(), parsed.businessId);
   }
 }

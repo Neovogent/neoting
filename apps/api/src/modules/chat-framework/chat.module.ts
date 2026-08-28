@@ -9,7 +9,8 @@ import { ChatService } from './chat.service.js';
 import { CircuitBreaker } from './provider/circuit-breaker.js';
 import type { ModelProvider } from './provider/model-provider.js';
 import { selectModelProvider } from './provider/select-model-provider.js';
-import { AI_BUDGET, CHAT_SERVICE, CIRCUIT_BREAKER, MODEL_PROVIDER, PRISMA } from './tokens.js';
+import { SuggestionsService } from './suggestions.service.js';
+import { AI_BUDGET, CHAT_SERVICE, CIRCUIT_BREAKER, MODEL_PROVIDER, PRISMA, SUGGESTIONS_SERVICE } from './tokens.js';
 
 /**
  * The AI runtime module (Governance §9).
@@ -46,6 +47,12 @@ import { AI_BUDGET, CHAT_SERVICE, CIRCUIT_BREAKER, MODEL_PROVIDER, PRISMA } from
       provide: CHAT_SERVICE,
       useFactory: (prisma: PrismaClient, provider: ModelProvider, breaker: CircuitBreaker, budget: AiBudget) =>
         new ChatService(prisma, provider, breaker, budget),
+      inject: [PRISMA, MODEL_PROVIDER, CIRCUIT_BREAKER, AI_BUDGET],
+    },
+    {
+      provide: SUGGESTIONS_SERVICE,
+      useFactory: (prisma: PrismaClient, provider: ModelProvider, breaker: CircuitBreaker, budget: AiBudget) =>
+        new SuggestionsService(prisma, provider, breaker, budget),
       inject: [PRISMA, MODEL_PROVIDER, CIRCUIT_BREAKER, AI_BUDGET],
     },
   ],
