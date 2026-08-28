@@ -3,7 +3,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
 import { ScopeContextSchema } from '../../../common/db/scope-context.js';
 import { scopedDb } from '../../../common/db/scoped-db.js';
-import { ingestStatement, type StatementScopedClient } from './statement-ingest.js';
+import {
+  ingestStatement,
+  readStatementFor,
+  type StatementScopedClient,
+} from './statement-ingest.js';
+import type { StatementTableReader } from './table-reader.js';
 
 /**
  * Statement import against a REAL database (D40/D41).
@@ -32,7 +37,8 @@ const MEM = 'sti-mem';
 const DOC_GOOD = 'sti-doc-good';
 const DOC_BROKEN = 'sti-doc-broken';
 const DOC_PDF = 'sti-doc-pdf';
-const DOCS = [DOC_GOOD, DOC_BROKEN, DOC_PDF];
+const DOC_SLOW = 'sti-doc-slow';
+const DOCS = [DOC_GOOD, DOC_BROKEN, DOC_PDF, DOC_SLOW];
 
 let owner: PrismaClient;
 let app: PrismaClient;
@@ -126,6 +132,69 @@ const run = (documentId: string, bytes: string, fileName = 'statement.csv') =>
   );
 
 describe.skipIf(!enabled)('statement import, against a real database', () => {
+  test('a reader SLOWER than the transaction timeout still imports', async () => {
+    // ⚠ THE REGRESSION THIS FILE EXISTS TO HOLD DOWN, and it was live.
+    //
+    // `ingestStatement` used to do the read itself, inside `scopedDb` — a
+    // Prisma INTERACTIVE transaction whose timeout is 10 seconds. A CSV parses
+    // in milliseconds so it never showed. Textract's asynchronous path takes
+    // 40-60 seconds on a real statement, and the first 29-page PDF through it
+    // died on the query AFTER the read came back:
+    //
+    //   Transaction already closed: … timeout … was 10000 ms, however 56824 ms
+    //   passed since the start of the transaction
+    //
+    // Textract had SUCCEEDED. The database connection it returned to had not,
+    // and the statement-step swallowed the throw, so the only symptom was a
+    // statement that silently did not import. The reader below sleeps past the
+    // same ceiling; if the read ever moves back inside the transaction, this
+    // test fails exactly the way staging did.
+    const SLOW_MS = 11_000;
+    const slowReader: StatementTableReader = {
+      async read() {
+        await new Promise((resolve) => setTimeout(resolve, SLOW_MS));
+        return {
+          ok: true,
+          grid: [
+            ['Date', 'Description', 'Paid out', 'Paid in', 'Balance'],
+            ['01/04/2026', 'BALANCE BROUGHT FORWARD', '', '', '1000.00'],
+            ['02/04/2026', 'SLOW READER LTD', '150.00', '', '850.00'],
+          ],
+        };
+      },
+    };
+
+    const input = {
+      documentId: DOC_SLOW,
+      businessId: BIZ,
+      fileName: 'slow.pdf',
+      bytes: Buffer.from('%PDF-1.7', 'latin1'),
+      mimeType: 'application/pdf',
+      s3Key: 'w/biz/documents/slow',
+    };
+
+    // Read FIRST, outside any transaction — the shape the step uses.
+    const parsed = await readStatementFor(input, slowReader);
+    expect(parsed.ok).toBe(true);
+
+    const outcome = await scopedDb(app, CTX, (db) =>
+      ingestStatement(db as unknown as StatementScopedClient, input, log, parsed),
+    );
+
+    expect(outcome.status).toBe('ingested');
+    if (outcome.status !== 'ingested') return;
+    expect(outcome.rowCount).toBe(1);
+    expect(
+      await owner.bankTransaction.count({ where: { businessId: BIZ, descriptionRaw: 'SLOW READER LTD' } }),
+    ).toBe(1);
+
+    // Cleaned here rather than in `afterAll`: the sibling tests assert over
+    // EVERY transaction this business has, so a row left behind by this one
+    // fails them instead of this one.
+    await owner.bankTransaction.deleteMany({ where: { businessId: BIZ, descriptionRaw: 'SLOW READER LTD' } });
+    await owner.statement.deleteMany({ where: { documentId: DOC_SLOW } });
+  }, 40_000);
+
   test('a statement becomes real bank transactions', async () => {
     const outcome = await run(DOC_GOOD, statementCsv);
     expect(outcome.status).toBe('ingested');

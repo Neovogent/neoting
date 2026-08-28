@@ -2,7 +2,12 @@ import { resolveSystemActor } from '../../../common/db/resolve-system-actor.js';
 import type { PrismaClient } from '../../../common/db/prisma.js';
 import { systemContext } from '../../../common/db/scope-context.js';
 import { scopedDb } from '../../../common/db/scoped-db.js';
-import { ingestStatement, type StatementScopedClient } from './statement-ingest.js';
+import {
+  ingestStatement,
+  readStatementFor,
+  statementAlreadyIngested,
+  type StatementScopedClient,
+} from './statement-ingest.js';
 import type { StatementTableReader } from './table-reader.js';
 
 /**
@@ -100,27 +105,45 @@ export class PrismaStatementStep implements StatementStep {
       );
       if (document === null || document.docType !== 'STATEMENT') return;
 
+      // Idempotency BEFORE the read, in its own short transaction. A
+      // redelivery that re-read the file would spend a real Textract charge
+      // (~35p for a 29-page statement) to discover rows we already hold.
+      const alreadyId = await scopedDb(this.prisma, ctx, (db) =>
+        statementAlreadyIngested(db as unknown as StatementScopedClient, input.documentId),
+      );
+      if (alreadyId !== null) {
+        this.logger.log(
+          `statement-step: ${input.documentId} already ingested as ${alreadyId} (trace=${input.traceId})`,
+        );
+        return;
+      }
+
       const bytes = await this.store.get(document.s3Key);
 
+      const ingestInput = {
+        documentId: input.documentId,
+        // The row's own business, not the job payload's: routing may have
+        // moved the document since the job was enqueued, and the lines must
+        // land on the client the document actually belongs to now.
+        businessId: document.businessId ?? jobBusinessId,
+        fileName: document.originalFilename,
+        bytes,
+        // The SNIFFED type off the row, never the client's declared one.
+        mimeType: document.mimeType,
+        // Textract's multi-page path reads from storage, not from bytes.
+        s3Key: document.s3Key,
+      };
+
+      // ⚠ THE READ HAPPENS OUTSIDE THE TRANSACTION, and it must. Textract takes
+      // 40-60 seconds on a real statement; `scopedDb` opens a Prisma
+      // interactive transaction whose timeout is 10 seconds, and the first
+      // 29-page PDF through this path died on the query AFTER the read with
+      // "Transaction already closed … 56824 ms passed". Textract had succeeded.
+      // It would also hold a pooled connection open for that whole minute.
+      const parsed = await readStatementFor(ingestInput, this.tables);
+
       const outcome = await scopedDb(this.prisma, ctx, (db) =>
-        ingestStatement(
-          db as unknown as StatementScopedClient,
-          {
-            documentId: input.documentId,
-            // The row's own business, not the job payload's: routing may have
-            // moved the document since the job was enqueued, and the lines must
-            // land on the client the document actually belongs to now.
-            businessId: document.businessId ?? jobBusinessId,
-            fileName: document.originalFilename,
-            bytes,
-            // The SNIFFED type off the row, never the client's declared one.
-            mimeType: document.mimeType,
-            // Textract's multi-page path reads from storage, not from bytes.
-            s3Key: document.s3Key,
-          },
-          this.logger,
-          this.tables,
-        ),
+        ingestStatement(db as unknown as StatementScopedClient, ingestInput, this.logger, parsed),
       );
 
       if (outcome.status === 'refused') {

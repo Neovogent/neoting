@@ -135,7 +135,14 @@ export class TextractTableReader implements StatementTableReader {
 
     for (;;) {
       const page = await this.options.client.send(new GetDocumentAnalysisCommand({ JobId: jobId }));
-      if (page.JobStatus === 'FAILED') throw new Error(page.StatusMessage ?? 'Textract job failed');
+      if (page.JobStatus === 'FAILED') {
+        // ⚠ `??` is not enough: Textract may answer FAILED with an EMPTY
+        // StatusMessage, and `new Error('')` produces a log line that reads
+        // "threw and was skipped — " with nothing after it. An undiagnosable
+        // failure is worse than a wrong one, so an empty message falls back too.
+        const detail = page.StatusMessage ?? '';
+        throw new Error(detail === '' ? 'Textract reported the job FAILED with no reason' : detail);
+      }
       if (page.JobStatus === 'SUCCEEDED') {
         blocks.push(...(page.Blocks ?? []));
         // ⚠ PAGINATED, and a statement is long enough to be paginated. Stopping
