@@ -22,7 +22,7 @@ Conflict rule: the Source of Truth wins on scope, Governance wins on engineering
 |---|---|---|
 | Manual bank statement upload (PDF/CSV/XLSX) is the **only** bank input | TrueLayer feeds | D40 supersedes D4 |
 | **No ledger API, no auto-publish.** Export is the sole egress, and *Published* is an internal state meaning approved-and-released-for-export — it asserts nothing about a ledger, and no surface may imply otherwise | Xero + QuickBooks adapters | D42 supersedes D6 |
-| Subscription is live at intake: €8.50/month + VAT per client business, paid by the client | Billing deferred | D48 supersedes D26 |
+| Subscription is live at intake: £8.50/month + VAT per client business, paid by the client | Billing deferred | D48 supersedes D26 |
 
 The rest of ID in one line each: **D41** gates statement extraction on provable completeness, not confidence · **D43** every exported transaction carries a resolvable link to its source document · **D44** accountants compose and edit, only the firm's **super admin** releases · **D45** every intake channel accepts known senders only · **D46** unacceptable documents are flagged, never blocked · **D47** client onboarding asks for no connections · **D49** the prototype UI repo is ID's design source of record.
 

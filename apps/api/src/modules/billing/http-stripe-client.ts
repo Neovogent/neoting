@@ -121,6 +121,26 @@ export class HttpStripeClient implements StripeClient {
         // brand-new customer is none, and an unresolvable location is what
         // makes a tax calculation quietly return zero.
         billing_address_collection: 'required',
+        // ⚠ OFF, AND THE PRICE THE CLIENT IS QUOTED DEPENDS ON IT.
+        //
+        // Stripe's Adaptive Pricing converts the amount into the CUSTOMER's
+        // local currency from their location, adding a conversion fee — so a
+        // client checking out from outside the UK was quoted, and charged, in
+        // that currency with 4% on top, while the screen that sent them here
+        // says "£8.50 + VAT". Observed on the first real checkout: £10.20
+        // arrived as BDT 1,777.94 with "includes 4% conversion fee".
+        //
+        // Two reasons it is off rather than a preference. The quote must match
+        // the copy — §24.5 requires the price stated exclusive of VAT and shown as
+        // such, and a different number at the payment page is not that price.
+        // And a UK entity's invoice must carry the VAT amount IN STERLING
+        // (§24's own open-questions entry calls this "a requirement of the VAT
+        // invoice regulations, not a preference"), which a converted total does
+        // not do.
+        //
+        // The cost is real and smaller: an overseas client pays their own card
+        // issuer's FX spread instead of Stripe's 4%.
+        adaptive_pricing: { enabled: false },
         // Write what the client types at checkout back onto the customer, so the
         // next invoice and the portal both agree with the first one.
         //

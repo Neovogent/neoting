@@ -12,7 +12,7 @@ Client intake, the client list and cards, client-scoped AI grounding, team manag
 
 - **Two authorities, not one (D44).** Accountants and their team members compose and edit; only the accounting firm's **super admin** releases. Team management must model that distinction, and it is enforced server-side (Governance §11.2).
 - **A client may add their own team members** (D45), and those people may upload — but only they, and only through identity-gated channels.
-- **Subscription is part of intake now, not deferred** (D48 supersedes D26): **€8.50 per month plus VAT, per client business, paid by the client**, asked for at the end of the client's own onboarding. The price is quoted and stored **exclusive of VAT**; VAT is added at the prevailing rate and the displayed price must say which it is. **Money is integer pence — the VAT-exclusive figure is what is stored.**
+- **Subscription is part of intake now, not deferred** (D48 supersedes D26): **£8.50 per month plus VAT, per client business, paid by the client**, asked for at the end of the client's own onboarding. The price is quoted and stored **exclusive of VAT**; VAT is added at the prevailing rate and the displayed price must say which it is. **Money is integer pence — the VAT-exclusive figure is what is stored.**
 
 ## What is here (A11)
 

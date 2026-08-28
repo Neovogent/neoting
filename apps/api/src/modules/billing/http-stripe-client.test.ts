@@ -113,6 +113,13 @@ test('checkout collects a billing address and writes it back — the VAT prerequ
   expect(body.get('billing_address_collection')).toBe('required');
   expect(body.get('customer_update[address]')).toBe('auto');
   expect(body.get('tax_id_collection[enabled]')).toBe('true');
+  // ⚠ The client is quoted in GBP or they are not quoted the price we showed
+  // them. Adaptive Pricing converts to the customer's local currency and adds a
+  // conversion fee: the first real checkout quoted £10.20 as BDT 1,777.94
+  // "includes 4% conversion fee", against a screen that says "£8.50 + VAT".
+  // §24.5 wants the price shown exclusive of VAT, and a UK invoice wants the VAT
+  // amount in sterling; a converted total is neither.
+  expect(body.get('adaptive_pricing[enabled]')).toBe('false');
 });
 
 test('STRIPE_TAX=rate attaches the explicit GB rate and does NOT enable automatic tax', async () => {

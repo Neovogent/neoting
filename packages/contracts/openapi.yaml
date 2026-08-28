@@ -776,7 +776,7 @@ paths:
         origin; and Stripe hosts the invoice, the receipt, the dunning and the
         card-update flow, none of which we then have to build or get right.
 
-        One product, one price — €8.50 per month per client business, paid by
+        One product, one price — £8.50 per month per client business, paid by
         the client (D48). No tiers, no add-ons, no coupon.
 
         ⚠ **The price is TAX-EXCLUSIVE and the checkout must show VAT before the
