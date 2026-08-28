@@ -3038,6 +3038,10 @@ components:
         - REVIEW_DOCUMENT  # navigation — one named document
         - GROUNDED_ANSWER  # a question answered from this client's records (§9.4)
         - SCOPE_REFUSAL    # outside document-pipeline data — refused, not attempted (§9.4)
+        # Chat-first (28 Aug 2026): the intake form renders IN the transcript.
+        # The turn itself changes nothing — the form submits through
+        # `POST /businesses` with every check that operation already carries.
+        - ADD_CLIENT       # onboard a new client — the UI renders the intake form
 
     ChatHistoryTurn:
       type: object
@@ -3084,6 +3088,14 @@ components:
         statusFilter:
           type: string
           description: A document status to narrow the inbox to.
+        clientName:
+          type: string
+          maxLength: 120
+          description: |
+            With `ADD_CLIENT` only — the company name the accountant said, for
+            prefilling the intake form. Words the accountant spoke, never an id:
+            the same doctrine as `documentQuery`, and nothing is created until
+            the form itself is submitted through `POST /businesses`.
 
     ChatRecordReference:
       type: object

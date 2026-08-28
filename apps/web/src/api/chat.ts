@@ -138,6 +138,8 @@ export function mapTurnToPayload(
     ...(turn.navigation?.documentId === undefined ? {} : { documentId: turn.navigation.documentId }),
     ...(statusFilter === undefined ? {} : { statusFilter }),
     ...(ruleDraft === undefined ? {} : { ruleDraft }),
+    // ADD_CLIENT's prefill — IntentRenderer hands it to ClientIntakeForm.
+    ...(turn.navigation?.clientName === undefined ? {} : { clientName: turn.navigation.clientName }),
   };
 }
 
@@ -160,4 +162,6 @@ export const SERVER_INTENT_TO_APP = {
   // card. References ride along in the payload for the reference chips.
   GROUNDED_ANSWER: 'GENERAL',
   SCOPE_REFUSAL: 'GENERAL',
+  // Chat-first: renders ClientIntakeForm in the transcript (IntentRenderer).
+  ADD_CLIENT: 'ADD_CLIENT',
 } as const satisfies Record<ChatTurn['intent'], string>;

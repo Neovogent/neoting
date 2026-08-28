@@ -67,7 +67,7 @@ export interface ChatTurnOutput {
   intent: ModelTurn['intent'];
   reply: string;
   draft?: unknown;
-  navigation?: { businessId?: string; documentId?: string; statusFilter?: string };
+  navigation?: { businessId?: string; documentId?: string; statusFilter?: string; clientName?: string };
   references?: { type: GroundedRecord['type']; id: string; label: string }[];
   usage: {
     model: string;
@@ -265,6 +265,13 @@ export class ChatService {
 
     if (turn.navigation?.statusFilter !== undefined) {
       output.navigation = { ...output.navigation, statusFilter: turn.navigation.statusFilter };
+    }
+
+    // ADD_CLIENT: the name is a prefill for the intake form, nothing more. The
+    // schema already refuses it on any other intent; it crosses here verbatim
+    // because the form is where it gets edited, not the model's paraphrase.
+    if (turn.intent === 'ADD_CLIENT' && turn.navigation?.clientName !== undefined) {
+      output.navigation = { ...output.navigation, clientName: turn.navigation.clientName };
     }
 
     if (turn.intent === 'REVIEW_DOCUMENT' && turn.navigation?.documentQuery !== undefined) {

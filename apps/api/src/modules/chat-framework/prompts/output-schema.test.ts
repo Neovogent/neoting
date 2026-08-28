@@ -59,6 +59,19 @@ describe('the model output schema (Governance §9.2)', () => {
   test('reply length is bounded — an unbounded model string is a layout bug', () => {
     expect(ModelTurnSchema.safeParse({ ...base, reply: 'x'.repeat(1201) }).success).toBe(false);
   });
+
+  test('ADD_CLIENT carries a name as words, and only ADD_CLIENT may', () => {
+    // With a name, without one — both legal: "add a client" names nobody.
+    expect(
+      ModelTurnSchema.safeParse({ ...base, intent: 'ADD_CLIENT', navigation: { clientName: 'Ananda Group' } })
+        .success,
+    ).toBe(true);
+    expect(ModelTurnSchema.safeParse({ ...base, intent: 'ADD_CLIENT' }).success).toBe(true);
+    // On any other intent a clientName is the model inventing a workflow.
+    expect(
+      ModelTurnSchema.safeParse({ ...base, navigation: { clientName: 'Ananda Group' } }).success,
+    ).toBe(false);
+  });
 });
 
 describe('the JSON Schema handed to the model stays in step with the Zod', () => {
