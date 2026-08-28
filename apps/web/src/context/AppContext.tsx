@@ -873,6 +873,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }).format(parsed);
   };
 
+/**
+ * The subscription states that mean the client finished their own onboarding.
+ *
+ * TRIALING counts: the client walked the whole journey and Stripe is carrying
+ * them, so telling their accountant they have not registered would be false.
+ * Everything else — INCOMPLETE, PAST_DUE, CANCELED, UNPAID, PAUSED, and no
+ * subscription at all — leaves the badge on, which is the safe direction: it
+ * asks the accountant to chase, and the worst case is a chase that was not
+ * needed.
+ */
+const REGISTERED_SUBSCRIPTION = new Set(['ACTIVE', 'TRIALING']);
+
   const liveClients = useMemo<Client[]>(
     () =>
       !liveBoard
@@ -888,10 +900,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
               toReview: stats.toReview,
               deadline: b.nextDeadline == null ? '' : formatDeadline(b.nextDeadline),
               bankConnected: true,
-              // An invite-path client has told us nothing yet, and the board
-              // prints "Awaiting client registration" where the sector goes.
-              // The server's null sector is the only signal available for it.
-              ...(b.industry === null || b.industry === undefined ? { awaitingRegistration: true } : {}),
+              // "Awaiting client registration" — the board prints this where the
+              // sector goes, and it is a claim about the CLIENT, not about how
+              // complete their record is.
+              //
+              // ⚠ It read `industry === null` until 28 Aug 2026, which was
+              // wrong in the way that matters: ID's intake asks for no sector
+              // at all (D47), so the field is null for EVERY client for ever and
+              // the badge was permanent, on clients who had finished onboarding
+              // weeks earlier. A badge that is always on says nothing.
+              //
+              // The subscription is the honest signal, because D48 makes paying
+              // the LAST step of the client's own onboarding (§24.5): a business
+              // with no live subscription has not reached the end of it. It is
+              // also the one fact on this row that a server writes rather than
+              // an accountant types — `businesses.subscription_status`, written
+              // only by the Stripe webhook.
+              ...(REGISTERED_SUBSCRIPTION.has(b.subscription?.status ?? '')
+                ? {}
+                : { awaitingRegistration: true }),
             };
           }),
     [liveBoard, businessesQuery.businesses],
