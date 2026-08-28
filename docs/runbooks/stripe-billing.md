@@ -221,20 +221,19 @@ decides which deployments silently lose the renewal date.
 | Variable | Staging since 28 Aug 2026 | Live |
 |---|---|---|
 | `BILLING` | **`stripe`** | `stripe` |
-| `STRIPE_SECRET_KEY` | a sandbox key, from Secrets Manager | a **restricted** key (`rk_…`), not `sk_…` |
+| `STRIPE_SECRET_KEY` | `rk_test_…` — **restricted**, the three permissions below | a **restricted** key (`rk_…`), not `sk_…` |
 | `STRIPE_WEBHOOK_SECRET` | `we_1U9Bfs…`'s signing secret | the endpoint's signing secret |
 | `STRIPE_PRICE_ID` | `price_1U8lIsGMdHp4NCWvxj03BBuc` | the live-mode `price_…` |
 | `STRIPE_TAX` | `rate` | `rate` until registered, then `automatic` |
 | `STRIPE_TAX_RATE_ID` | `txr_1U8lIuGMdHp4NCWvqQoFEvmQ` | the live-mode `txr_…` |
 | `BILLING_RETURN_ORIGINS` | both app origins | the app origin |
 
-⚠ **A restricted key is the LIVE-mode rule, and staging knowingly does not
-follow it.** Stripe has no API for minting one, so a restricted key is a
-dashboard action; in a sandbox the blast radius of a full key is a sandbox, and
-paying a manual step per rebuild to narrow a permission set over fake data is
-not a trade worth making. Live mode is the opposite: mint the `rk_` with exactly
-**Customers**, **Checkout Sessions** and **Billing Portal Sessions** write, and
-nothing else.
+**Staging runs a RESTRICTED key too**, and an earlier draft of this section was
+wrong to say it would not. The reasoning it gave — that minting one is a manual
+dashboard step, so it is not worth paying per rebuild over fake data — evaluated
+a cost that is only paid when somebody is already in the dashboard revealing a
+key, which is every time. There is no API for minting one either way, so the
+choice was never automation versus clicks; it was three clicks versus none.
 
 ⚠ **Both web origins are listed, because both are live.**
 `neoacc.neovogent.com` is the address the launch plan and the signup emails use;
@@ -243,15 +242,59 @@ answered on, and the one a walkthrough is usually driven from. `successUrl` is
 built from `window.location.origin`, so a checkout started on either has to be
 allowed to come back or it is refused at the door.
 
-The restricted key needs exactly three write permissions: **Customers**,
-**Checkout Sessions**, **Billing Portal Sessions**. Nothing else. A full secret
-key grants far more than the blast radius needs.
+### The three permissions, and what they are called on the screen
+
+Exactly three, all **Write**, everything else **None**. `http-stripe-client.ts`
+makes three POSTs and nothing else, so this list is derived from the code rather
+than guessed at — re-derive it the same way if the client grows a call.
+
+| The code calls | Dashboard label | Where in the picker |
+|---|---|---|
+| `/v1/customers` | **Customers** | Core |
+| `/v1/checkout/sessions` | **Checkout Sessions** | Checkout |
+| `/v1/billing_portal/sessions` | **Customer Portal** | Billing |
+
+⚠ **The third one is not called what the API calls it.** The endpoint is
+`billing_portal/sessions` and every doc says "Billing Portal Sessions"; the
+permission picker says **Customer Portal**. Searching the filter box for the
+API's own name finds nothing, which reads as "the permission does not exist".
+
+The webhook needs **no permission at all** — it verifies an HMAC locally and
+never calls back to Stripe. And referencing the price or the tax rate inside a
+checkout-session create needs no Prices or Tax Rates grant; that is part of the
+write.
 
 Secrets go in **Secrets Manager**, injected as an ECS `secrets` entry — never
 in a task-definition `environment` block, never in a committed file.
 
-`BILLING=stripe` refuses to boot with any of the four missing. That cannot
-crash-loop staging, because staging stays on `demo` until the secrets exist.
+`BILLING=stripe` refuses to boot with any of the four missing — which is now a
+live constraint rather than a theoretical one, since staging IS on `stripe`. A
+task that cannot read the secret does not start, and ECS reports
+`ResourceInitializationError`.
+
+### Verified against the deployed key, 28 Aug 2026
+
+§4's probe re-run with the key staging actually holds, which is the only run
+that proves anything about *this* deployment. A unit test cannot answer any of
+these three:
+
+```
+customers write                    cus_… created and deleted
+checkout sessions write            cs_test_… created
+subtotal / tax / total (pence)     850 / 170 / 1020      gbp
+customer portal write              billing.stripe.com/p/session?…
+```
+
+⚠ **The checkout call is also the account check.** The account has a second,
+separate sandbox (`acct_1RQtc56…`) whose keys look identical; one from there
+fails with **"No such price"**, and it fails at the moment a client presses
+Subscribe rather than at boot. Creating a session against the real
+`price_1U8lIs…` is what rules that out.
+
+The portal call is worth its own line because the permission is not the only
+thing it needs: `billing_portal/sessions` also requires a portal
+**configuration** to exist in the account, and a sandbox that has never had one
+answers with a link to go and create it. This one has it.
 
 ---
 
