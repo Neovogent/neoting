@@ -34,7 +34,15 @@ const META = { idempotencyKey: '11111111-1111-4111-8111-111111111111', traceId: 
 
 interface Written {
   practices: { name: string }[];
-  users: { email: string; emailVerified: boolean; passwordHash: string | null; firstName: string; lastName: string }[];
+  users: {
+    id: string;
+    kind?: string;
+    email?: string | null;
+    emailVerified?: boolean;
+    passwordHash?: string | null;
+    firstName: string;
+    lastName: string;
+  }[];
   memberships: { userId: string; practiceId: string | null; role: string; isOwner: boolean; businessId?: string | null }[];
   auditEvents: { event: string; businessId: string | null; seq: bigint; outcome: Record<string, unknown> }[];
   transactions: number;
@@ -63,12 +71,13 @@ function fakePrisma(options: { existingEmails?: readonly string[]; failUserCreat
         user: {
           findUnique: async ({ where }: { where: { email: string } }) =>
             existing.has(where.email) ? { id: `usr_existing` } : null,
-          create: async ({ data }: { data: Written['users'][number] }) => {
+          create: async ({ data }: { data: Omit<Written['users'][number], 'id'> }) => {
             if (options.failUserCreateWithP2002 === true) {
               throw Object.assign(new Error('Unique constraint failed'), { code: 'P2002', meta: { target: ['email'] } });
             }
-            staged.users.push(data);
-            return { id: `usr_${(ids += 1)}` };
+            const id = `usr_${(ids += 1)}`;
+            staged.users.push({ ...data, id });
+            return { id };
           },
         },
         practice: {
@@ -117,21 +126,62 @@ function build(options: Parameters<typeof fakePrisma>[0] = {}, overrides: { env?
   return { service, written, mailer: mailer as RecordingSignupMailer };
 }
 
-test('the happy path writes practice + user + membership in ONE transaction, and nothing else', async () => {
+test('the happy path writes practice + human + SYSTEM actor in ONE transaction, and nothing else', async () => {
   const { service, written } = build();
   await service.signUp(INPUT, META);
 
   expect(written.transactions).toBe(1);
   expect(written.practices).toEqual([{ name: 'Ledgerline Accounting LLP' }]);
-  expect(written.memberships).toHaveLength(1);
-  expect(written.users).toHaveLength(1);
+  // TWO of each: the person signing up, and the practice's machine actor.
+  expect(written.users).toHaveLength(2);
+  expect(written.memberships).toHaveLength(2);
 });
 
-test('the first user is PRACTICE_ADMIN, practice-WIDE, and the super admin (D44 release authority)', async () => {
+/**
+ * ⚠ **The counts above read `1` until 28 Aug 2026, and that pin is what let
+ * this ship.** The only thing that ever created a `SYSTEM` user was
+ * `prisma/seed.ts`, so a practice born here had none — and everything with no
+ * human behind it resolves one per practice: the ingest and extract workers, the
+ * chase portal's session lookup, the capability-link resolver, and the invited
+ * client's `POST /portal/sign-in-codes`. `resolveSystemActor` THROWS in that
+ * state.
+ *
+ * It was invisible because every seeded demo has one. The symptom that finally
+ * surfaced it was an invited client pressing "send me a code" and nothing
+ * arriving, with a `202` on screen and not one line in the logs.
+ *
+ * So this asserts the actor's SHAPE, not merely that a second row exists: a
+ * SYSTEM user that could sign in, or one whose membership named a business
+ * rather than the practice, would satisfy a count and still be wrong.
+ */
+test('the practice gets its machine actor, and it cannot sign in', async () => {
   const { service, written } = build();
   await service.signUp(INPUT, META);
 
-  const membership = written.memberships[0]!;
+  const system = written.users.find((u) => u.kind === 'SYSTEM');
+  expect(system).toBeDefined();
+  // No email and no password hash, so it cannot authenticate even if it leaks
+  // onto a screen — and a null email never collides on the unique key.
+  expect(system!.email ?? null).toBeNull();
+  expect(system!.passwordHash ?? null).toBeNull();
+
+  const membership = written.memberships.find((m) => m.userId === system!.id);
+  expect(membership).toBeDefined();
+  // Practice-WIDE, so `resolveSystemActor`'s lookup by practice finds it.
+  expect(membership!.practiceId).not.toBeNull();
+  expect(membership!.businessId ?? null).toBeNull();
+  // PRACTICE_STANDARD, never an admin role: D44 reserves release authority for a
+  // human super admin, and a machine that could release could publish.
+  expect(membership!.role).toBe('PRACTICE_STANDARD');
+  expect(membership!.isOwner ?? false).toBe(false);
+});
+
+test('the first HUMAN is PRACTICE_ADMIN, practice-WIDE, and the super admin (D44 release authority)', async () => {
+  const { service, written } = build();
+  await service.signUp(INPUT, META);
+
+  const human = written.users.find((u) => u.kind !== 'SYSTEM')!;
+  const membership = written.memberships.find((m) => m.userId === human.id)!;
   expect(membership.role).toBe('PRACTICE_ADMIN');
   expect(membership.isOwner).toBe(true);
   // businessId stays absent so `pickActingMembership` resolves this user to the
@@ -144,7 +194,7 @@ test('the account starts UNVERIFIED and the password is stored as a scrypt hash,
   const { service, written } = build();
   await service.signUp(INPUT, META);
 
-  const user = written.users[0]!;
+  const user = written.users.find((u) => u.kind !== 'SYSTEM')!;
   expect(user.emailVerified).toBe(false);
   expect(user.email).toBe('priya@ledgerline.test'); // normalised once, at the boundary
   expect(user.passwordHash).not.toBeNull();
@@ -267,7 +317,8 @@ test('REFUSAL: production will not create an account it cannot send a verificati
   const real: SignupMailer = { sendEmailVerification: async () => undefined, sendDuplicateSignupNotice: async () => undefined };
   const withReal = build({}, { env: production, mailer: real });
   await expect(withReal.service.signUp(INPUT, META)).resolves.toBeUndefined();
-  expect(withReal.written.users).toHaveLength(1);
+  // The human and the practice's machine actor.
+  expect(withReal.written.users).toHaveLength(2);
 });
 
 test('a replayed Idempotency-Key does the work once; the same key with a different body is 409', async () => {

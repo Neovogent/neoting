@@ -312,6 +312,32 @@ Two things about it that belong here rather than in `billing/`:
   re-derives the business from the session and answers **404** to a body naming a
   different one. 404 and not 403: a 403 would confirm the other business exists.
 
+## ⚠ A silent refusal must not also be a silent LOG
+
+`requestSignInCode` answers `202` whatever happened, and that is the contract —
+telling the outcomes apart would answer *"is this address registered on this
+workspace"* for anyone who types one. What it must NOT do is keep the reason
+from its own operator.
+
+It did, and the cost was a night: an invited client pressed "send me a code",
+saw "Sent — check your email again", and nothing arrived. Nothing was logged
+either, so there was no way in from the outside. SES's own send count is what
+finally showed the request never reached a mail at all.
+
+Two separate silences, both closed:
+
+- **`resolveInvite` now returns a REASON**, logged server-side with the
+  address's DOMAIN and never the address or the token (§11). `no-practice-actor`
+  is spelled out apart from `unknown-token` on purpose — they are
+  indistinguishable from every symptom and have nothing in common as fixes: one
+  is an unprovisioned tenant, the other a bad link. It was the first, and every
+  symptom pointed at the second.
+- **A refused send is RETURNED, not thrown.** `NotificationsService` answers with
+  a `SendOutcome` verdict precisely so a sign-in endpoint can stay uniform to its
+  caller, and a `try/catch` never sees it. A rate-limited code therefore looked
+  identical to a delivered one, from the outside AND in the logs. `sent === false`
+  is now logged.
+
 ## ⚠ `resolve` and `resolveOnboarding` are two DOORS, and that is the safety
 
 They differ by exactly which `otp_sessions.scope` they accept, and each refuses

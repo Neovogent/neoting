@@ -43,6 +43,8 @@ function harness(
     row?: Partial<Row>;
     otpMode?: 'demo' | 'totp';
     send?: () => Promise<unknown>;
+    /** The practices the sweep can see. `[]` is a tenant with no machine actor. */
+    practices?: readonly { practiceId: string; userId: string }[];
   } = {},
 ) {
   const invite = {
@@ -89,7 +91,9 @@ function harness(
         return next;
       },
     },
-    membership: { findMany: async () => [{ practiceId: 'prac_1', userId: 'usr_sys' }] },
+    membership: {
+      findMany: async () => over.practices ?? [{ practiceId: 'prac_1', userId: 'usr_sys' }],
+    },
     // `scopedDb` sets the RLS context with a tagged template on the
     // TRANSACTION client before it runs the callback. The double has one
     // practice, so accepting the SET LOCAL and moving on is faithful.
@@ -236,4 +240,40 @@ describe('exchanging the code for a session', () => {
       ),
     ).toBeNull();
   });
+});
+
+/**
+ * ⚠ **A practice with no SYSTEM actor is not a bad link, and conflating the
+ * two cost a night.** The sweep searches UNDER each practice's machine actor,
+ * so a practice that has none contributes no candidate — and the refusal that
+ * comes back is byte-identical to the one an unknown token gets.
+ *
+ * That is correct for the CALLER (both are a silent `202`, and they must be),
+ * and it was wrong for the LOG, which said nothing at all. Until 28 Aug 2026
+ * only `prisma/seed.ts` created a SYSTEM user, so every real signed-up practice
+ * was in this state and an invited client's code silently went nowhere.
+ */
+test('no practice has a machine actor — refused silently, and the caller still learns nothing', async () => {
+  const { service, sent } = harness({ practices: [] });
+
+  await expect(service.requestSignInCode({ setupToken: TOKEN, email: EMAIL }, NOW)).resolves.toBeUndefined();
+  expect(sent).toHaveLength(0);
+  // And the exchange is refused the same way, rather than throwing out of a
+  // sweep that found nothing to iterate.
+  expect(await service.createOnboardingSession({ setupToken: TOKEN, email: EMAIL, otp: '123456' }, NOW)).toBeNull();
+});
+
+test('a send the notifier REFUSES is not a send, and the code is still spent from the row', async () => {
+  // `sendSignInCode` answers with a verdict rather than throwing, so a
+  // rate-limited code never reached the `catch` and looked identical to a
+  // delivered one. The caller still sees nothing — that part is the contract.
+  const { service, sent, rows } = harness({
+    send: async () => ({ sent: false, kind: 'sign-in-code', reason: 'rate-limited', retryAfterSeconds: 900 }),
+  });
+
+  await expect(service.requestSignInCode({ setupToken: TOKEN, email: EMAIL }, NOW)).resolves.toBeUndefined();
+  expect(sent).toHaveLength(0);
+  // The row still carries a fresh hash: refusing to SEND must not leave the
+  // previous code live, or a retry would be compared against a stale one.
+  expect(rows.get(hashSetupToken(TOKEN))?.otpHash).not.toBeNull();
 });
