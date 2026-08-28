@@ -12,19 +12,80 @@ import { foldCounts } from './businesses.service.js';
 const row = (businessId: string | null, state: string, count: number) =>
   ({ businessId, state, _count: { _all: count } }) as Parameters<typeof foldCounts>[0][number];
 
+const chaseRow = (businessId: string, state: string, count: number) =>
+  ({ businessId, state, _count: { _all: count } }) as NonNullable<Parameters<typeof foldCounts>[1]>[number];
+
+const plainRow = (businessId: string | null, count: number) =>
+  ({ businessId, _count: { _all: count } }) as NonNullable<Parameters<typeof foldCounts>[2]>[number];
+
+/** Every count zero — what a business with nothing waiting folds to. */
+const zero = {
+  toReview: 0,
+  ready: 0,
+  failed: 0,
+  published: 0,
+  missing: 0,
+  requested: 0,
+  overdue: 0,
+  unmatched: 0,
+  statementGaps: 0,
+  approvals: 0,
+};
+
 test('REJECTED and FAILED fold into one `failed` — the contract says together', () => {
   const counts = foldCounts([row('b1', 'REJECTED', 2), row('b1', 'FAILED', 3)]);
-  expect(counts.get('b1')).toEqual({ toReview: 0, ready: 0, failed: 5 });
+  expect(counts.get('b1')).toEqual({ ...zero, failed: 5 });
 });
 
 test('each counted state lands in its own bucket, per business', () => {
   const counts = foldCounts([
     row('b1', 'TO_REVIEW', 4),
     row('b1', 'READY', 1),
+    row('b1', 'PUBLISHED', 6),
     row('b2', 'READY', 7),
   ]);
-  expect(counts.get('b1')).toEqual({ toReview: 4, ready: 1, failed: 0 });
-  expect(counts.get('b2')).toEqual({ toReview: 0, ready: 7, failed: 0 });
+  expect(counts.get('b1')).toEqual({ ...zero, toReview: 4, ready: 1, published: 6 });
+  expect(counts.get('b2')).toEqual({ ...zero, ready: 7 });
+});
+
+test('chase states fold into missing, requested and overdue', () => {
+  // SENT and REMINDED are both "asked for and still outstanding"; DETECTED is
+  // a gap nobody has been asked about yet, and ESCALATED is late.
+  const counts = foldCounts(
+    [],
+    [
+      chaseRow('b1', 'DETECTED', 3),
+      chaseRow('b1', 'SENT', 2),
+      chaseRow('b1', 'REMINDED', 1),
+      chaseRow('b1', 'ESCALATED', 4),
+    ],
+  );
+  expect(counts.get('b1')).toEqual({ ...zero, missing: 3, requested: 3, overdue: 4 });
+});
+
+test('a composed-but-unsent chase is NOT counted as requested', () => {
+  // D44 splits composition from release. Counting PROPOSED or APPROVED here
+  // would tell an accountant they had chased a client they had not.
+  const counts = foldCounts([], [chaseRow('b1', 'PROPOSED', 5), chaseRow('b1', 'APPROVED', 5)]);
+  expect(counts.size).toBe(0);
+});
+
+test('a closed chase belongs in no column', () => {
+  const counts = foldCounts([], [chaseRow('b1', 'CLOSED_RECEIVED', 9), chaseRow('b1', 'CLOSED_DISMISSED', 9)]);
+  expect(counts.size).toBe(0);
+});
+
+test('unmatched and approvals fold from their own aggregates', () => {
+  const counts = foldCounts([], [], [plainRow('b1', 6)], [plainRow('b1', 2)]);
+  expect(counts.get('b1')).toEqual({ ...zero, unmatched: 6, approvals: 2 });
+});
+
+test('a business seen only in a non-document aggregate still gets every count', () => {
+  // The contract requires all ten. A client with three unmatched bank lines and
+  // no documents at all must still report `toReview: 0` rather than arriving
+  // without the key and rendering as an absent column.
+  const counts = foldCounts([], [], [plainRow('b9', 3)]);
+  expect(counts.get('b9')).toEqual({ ...zero, unmatched: 3 });
 });
 
 test('an unrouted group (null businessId) is counted nowhere', () => {

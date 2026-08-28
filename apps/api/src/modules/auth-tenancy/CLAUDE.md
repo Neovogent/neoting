@@ -357,12 +357,44 @@ Contracted in Stage 2 (#120) but assigned to no stage's build list; built here
 with Stage 6 because its web slice and context header are Stage 6's, and
 because businesses are this module's nouns. `businesses.controller.ts` (thin,
 one GET, `x-nt-side-effect: none`) + `businesses.service.ts`: one page of
-RLS-visible businesses, alphabetical on the shared cursor helper, plus ONE
-`groupBy (businessId, state)` aggregate for the header counts — `toReview`,
-`ready`, and `failed` (REJECTED + FAILED together, the contract's own words).
-Unrouted documents have no `businessId` and are counted nowhere. No write
+RLS-visible businesses, alphabetical on the shared cursor helper. No write
 exists on the class and none may be added — a business is created by
 onboarding (post-demo), through Review → Approve like everything else.
+
+**Widened on 28 Aug 2026 (G7 contract change, approved by Shakib), and the
+reason is worth keeping.** The endpoint carried a name and three counts, so
+`apps/web`'s Clients board FORKED: live mode rendered a reduced table because
+every column the real board shows — health, deadline, sector, missing,
+requested, overdue, unmatched, approvals — had no server field, and inventing
+them was the worse option. The answer was to serve them, not to keep two
+boards. `BusinessSummary` now also carries `industry` and `nextDeadline` (both
+already columns on `businesses`, merely unexposed) and **ten** counts.
+
+Where each count comes from, because "one cheap aggregate" is now four:
+
+| Count | Source |
+|---|---|
+| `toReview` `ready` `failed` `published` | `document.groupBy (businessId, state)`; REJECTED + FAILED fold together, PUBLISHED is D42's internal released-for-export state and asserts nothing about a ledger |
+| `missing` `requested` `overdue` | `chase.groupBy (businessId, state)` — DETECTED / SENT+REMINDED / ESCALATED |
+| `unmatched` | `bankTransaction.groupBy`, `matchState: UNMATCHED` and **not** `chaseSuppressed` |
+| `approvals` | `actionProposal.groupBy`, state `CREATED` or `REVIEWED` — the same definition `suggestions.service.ts` uses |
+| `statementGaps` | **always zero.** Nothing in this repo writes `Statement.gapAnalysis`, so zero is the only honest answer; counting statements that merely have the column set would report gaps nobody found. One place to change. |
+
+Four `groupBy`s over the whole page, issued together inside the ONE `scopedDb`
+transaction — the query count is fixed regardless of how many clients a
+practice has, and every aggregate sees the same RLS-visible set the page came
+from, so none can widen it. ⚠ **A chase in `PROPOSED` or `APPROVED` is
+deliberately NOT `requested`**: D44 splits composition from release, and
+counting an unsent chase would tell an accountant they had chased a client they
+had not. Unrouted documents have no `businessId` and are counted nowhere.
+
+⚠ **All ten counts are REQUIRED in the contract**, so `foldCounts` zero-fills
+every business it sees in any of the four aggregates — a client with three
+unmatched bank lines and no documents still reports `toReview: 0` rather than
+arriving without the key. An omitted count and a zero count are
+indistinguishable once rendered, which is the whole reason the shape forces the
+producer to say which.
+
 `foldCounts` is exported for its offline test; the RLS/pagination proof lives
 in `auth-session.integration.test.ts` (note its two id namespaces: `s1a_doc_*`
 is the visibility assertion's exact set, `s1a_cnt_*` is the counts cast).

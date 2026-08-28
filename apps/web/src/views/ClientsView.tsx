@@ -11,12 +11,9 @@ import { useAppContext } from '../context/AppContext';
 import { commonActions, commonLabels } from '../i18n/common';
 import { ClientIntakeForm } from '../components/DynamicComponents/ClientIntakeForm';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
-import { SliceLoadError } from '../components/DataSourceBadge';
 import { currency } from '../lib/resolver';
 import { healthTone, type ClientStats } from '../lib/selectors';
 import type { Client, Intent } from '../lib/types';
-import type { BusinessSummary } from '../api/businesses';
-import type { SubscriptionStatus } from '@neoting/contracts/model';
 import { useQueryParam } from '../lib/router';
 import { ChaseModal } from '../components/DynamicComponents/ChaseModal';
 import { EXPORT_HINT } from '../lib/exportRules';
@@ -123,19 +120,23 @@ const m = defineMessages({
 });
 
 /**
- * Two lists behind one route (launch M7). With a live session the screen
- * renders the hydrated `businesses` slice — real workspaces from
- * `GET /businesses`, with the server's own waiting-work counts — and the
- * intake modal creates real clients over Abdullah's A11. Synthetic mode keeps
- * the original board unchanged, seeds and all.
+ * ONE board, both worlds.
+ *
+ * This used to fork: `LiveClientsView` rendered a reduced table whenever the
+ * businesses slice was live, because `BusinessSummary` carried a name and three
+ * counts and every other column would have been invented. The endpoint now
+ * carries the sector, the deadline and all ten counts, and `AppContext` maps
+ * those rows into the same `Client` shape the seeded cast uses — so the reduced
+ * table has nothing left to protect and the fork is gone. A live practice gets
+ * the real board: cards or table, the tabs, the column picker, health, every
+ * count column, and the bulk bar.
+ *
+ * The S12 rule still holds and is now enforced one level down rather than by
+ * withholding the whole screen — see `statsFor` in `AppContext`, which answers
+ * live rows from the server's counts instead of folding arrays that are empty
+ * when the API is on.
  */
 export function ClientsView() {
-  const { slices } = useAppContext();
-  if (slices.businesses.source !== 'seed') return <LiveClientsView />;
-  return <SyntheticClientsView />;
-}
-
-function SyntheticClientsView() {
   const {
     clients, statsFor, openClient, starredClientIds, toggleStarClient, startConversation,
   } = useAppContext();
@@ -581,226 +582,3 @@ function exportClients(rows: Client[], statsFor: (id: string) => ClientStats) {
   URL.revokeObjectURL(url);
 }
 
-/**
- * Copy for the live list (launch M7). What it shows is exactly what
- * `BusinessSummary` carries — name, the three waiting-work counts, and the
- * subscription's state — and nothing invented on top: the synthetic board's
- * health scores and deadlines have no server truth yet, so they do not
- * appear here dressed as one.
- */
-const mLiveList = defineMessages({
-  loadError: {
-    id: 'analytics.clientsLive.loadError',
-    defaultMessage: 'Clients could not be loaded.',
-  },
-  emptyTitle: { id: 'analytics.clientsLive.emptyTitle', defaultMessage: 'No clients yet' },
-  emptyBody: {
-    id: 'analytics.clientsLive.emptyBody',
-    defaultMessage:
-      'Add your first client — we email them a secure link, they register themselves, and their documents start arriving here.',
-  },
-  emptyFiltered: {
-    id: 'analytics.clientsLive.emptyFiltered',
-    defaultMessage: 'No clients match this search.',
-  },
-  columnToReview: { id: 'analytics.clientsLive.columnToReview', defaultMessage: 'To review' },
-  columnReady: { id: 'analytics.clientsLive.columnReady', defaultMessage: 'Ready' },
-  columnFailed: { id: 'analytics.clientsLive.columnFailed', defaultMessage: 'Rejected / failed' },
-  columnPlan: { id: 'analytics.clientsLive.columnPlan', defaultMessage: 'Plan' },
-  planAwaiting: { id: 'analytics.clientsLive.planAwaiting', defaultMessage: 'Awaiting onboarding' },
-  footer: {
-    id: 'analytics.clientsLive.footer',
-    defaultMessage: '{count, plural, one {# client} other {# clients}}',
-  },
-});
-
-/**
- * Stripe's eight statuses, said in the practice's language. `Record` over the
- * contract enum on purpose: a ninth status fails the build here rather than
- * rendering a raw enum key in a table cell.
- */
-const SUBSCRIPTION_LABEL: Record<SubscriptionStatus, MessageDescriptor> = defineMessages({
-  ACTIVE: { id: 'analytics.clientsLive.subActive', defaultMessage: 'Active' },
-  TRIALING: { id: 'analytics.clientsLive.subTrialing', defaultMessage: 'Trialling' },
-  PAST_DUE: { id: 'analytics.clientsLive.subPastDue', defaultMessage: 'Past due' },
-  UNPAID: { id: 'analytics.clientsLive.subUnpaid', defaultMessage: 'Unpaid' },
-  INCOMPLETE: { id: 'analytics.clientsLive.subIncomplete', defaultMessage: 'Incomplete' },
-  INCOMPLETE_EXPIRED: { id: 'analytics.clientsLive.subIncompleteExpired', defaultMessage: 'Expired' },
-  CANCELED: { id: 'analytics.clientsLive.subCanceled', defaultMessage: 'Cancelled' },
-  PAUSED: { id: 'analytics.clientsLive.subPaused', defaultMessage: 'Paused' },
-});
-
-const SUBSCRIPTION_TONE: Record<SubscriptionStatus, 'neutral' | 'blue' | 'red' | 'green' | 'amber'> = {
-  ACTIVE: 'green',
-  TRIALING: 'blue',
-  PAST_DUE: 'amber',
-  UNPAID: 'amber',
-  INCOMPLETE: 'amber',
-  INCOMPLETE_EXPIRED: 'red',
-  CANCELED: 'red',
-  PAUSED: 'neutral',
-};
-
-/**
- * The client list over the hydrated slice (launch M7): rows are the server's,
- * counts are the server's, and every action the synthetic board offers off
- * local state — star, chase, Ask AI, the drill-through cells — is absent
- * rather than wired to arrays that are empty when the API is on. A control
- * whose backing does not exist live is worse than no control (the S12 rule).
- * The one live write is intake, and the modal carries it.
- */
-function LiveClientsView() {
-  const { businesses, slices, refetchBusinesses } = useAppContext();
-  const [query, setQuery] = useState('');
-  const [addParam, setAddParam] = useQueryParam('add');
-  const adding = addParam === '1';
-  const setAdding = (open: boolean) => setAddParam(open ? '1' : null);
-  const intl = useIntl();
-
-  const status = slices.businesses;
-  const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return businesses;
-    return businesses.filter((b) => `${b.name} ${b.tradingName ?? ''}`.toLowerCase().includes(q));
-  }, [businesses, query]);
-
-  const columns: Column<BusinessSummary>[] = [
-    {
-      key: 'name',
-      label: intl.formatMessage(commonLabels.client),
-      sortValue: (b) => b.name,
-      render: (b) => (
-        <span>
-          <span className="block text-white font-semibold">{b.name}</span>
-          {b.tradingName && (
-            <span className="block text-[11px] text-zinc-500 font-medium">{b.tradingName}</span>
-          )}
-        </span>
-      ),
-    },
-    {
-      key: 'toReview',
-      label: intl.formatMessage(mLiveList.columnToReview),
-      align: 'right',
-      sortValue: (b) => b.counts.toReview,
-      render: (b) => <span className="tabular-nums font-bold text-white">{b.counts.toReview}</span>,
-    },
-    {
-      key: 'ready',
-      label: intl.formatMessage(mLiveList.columnReady),
-      align: 'right',
-      sortValue: (b) => b.counts.ready,
-      render: (b) => <span className="tabular-nums font-bold text-white">{b.counts.ready}</span>,
-    },
-    {
-      key: 'failed',
-      label: intl.formatMessage(mLiveList.columnFailed),
-      align: 'right',
-      sortValue: (b) => b.counts.failed,
-      render: (b) => (
-        <span className={`tabular-nums font-bold ${b.counts.failed > 0 ? 'text-red-400' : 'text-zinc-700'}`}>
-          {b.counts.failed}
-        </span>
-      ),
-    },
-    {
-      key: 'plan',
-      label: intl.formatMessage(mLiveList.columnPlan),
-      align: 'right',
-      sortValue: (b) => b.subscription?.status ?? '',
-      render: (b) =>
-        b.subscription ? (
-          <Pill tone={SUBSCRIPTION_TONE[b.subscription.status]}>
-            {intl.formatMessage(SUBSCRIPTION_LABEL[b.subscription.status])}
-          </Pill>
-        ) : (
-          <Pill tone="neutral">{intl.formatMessage(mLiveList.planAwaiting)}</Pill>
-        ),
-    },
-  ];
-
-  return (
-    <div className="flex-1 flex flex-col min-w-0 bg-ground h-full overflow-hidden">
-      <header data-tour="clients-header" className="px-4 md:px-10 pt-4 md:pt-8 pb-4 md:pb-5 flex items-center justify-between gap-4 shrink-0 flex-wrap">
-        <div className="flex items-baseline gap-4">
-          <h1 className="font-sans text-2xl md:text-3xl font-semibold text-white tracking-tight">{intl.formatMessage(m.heading)}</h1>
-          <span className="text-sm font-semibold text-zinc-500">
-            {intl.formatMessage(m.countOfTotal, { shown: visible.length, total: businesses.length })}
-          </span>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="relative w-full sm:w-auto">
-            <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={intl.formatMessage(m.searchPlaceholder)}
-              className="w-full sm:w-64 bg-card border border-white/5 rounded-full py-2.5 pl-11 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-brand transition-all placeholder:text-zinc-600 text-white font-medium shadow-inner"
-            />
-          </div>
-          <button
-            data-tour="clients-add"
-            onClick={() => setAdding(true)}
-            className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
-          >
-            <Plus size={16} strokeWidth={2.5} />
-            {intl.formatMessage(m.addClient)}
-          </button>
-        </div>
-      </header>
-
-      <div className="flex-1 overflow-y-auto px-4 md:px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {status.source === 'error' ? (
-          <SliceLoadError
-            heading={intl.formatMessage(mLiveList.loadError)}
-            error={status.error}
-            onRetry={refetchBusinesses}
-          />
-        ) : status.loading && businesses.length === 0 ? (
-          <div className="flex flex-col gap-3" aria-hidden>
-            <div className="h-16 rounded-2xl bg-card border border-white/5 animate-pulse" />
-            <div className="h-16 rounded-2xl bg-card border border-white/5 animate-pulse" />
-            <div className="h-16 rounded-2xl bg-card border border-white/5 animate-pulse" />
-          </div>
-        ) : businesses.length === 0 ? (
-          <div className="border border-white/5 rounded-[32px] bg-card p-8 md:p-14 text-center flex flex-col items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-raised flex items-center justify-center text-zinc-500 border border-white/5 shadow-inner">
-              <Plus size={22} />
-            </div>
-            <div className="text-lg font-sans font-bold text-white">{intl.formatMessage(mLiveList.emptyTitle)}</div>
-            <p className="text-[13px] text-zinc-500 leading-relaxed max-w-md">{intl.formatMessage(mLiveList.emptyBody)}</p>
-            <button
-              onClick={() => setAdding(true)}
-              className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
-            >
-              <Plus size={16} strokeWidth={2.5} />
-              {intl.formatMessage(m.addClient)}
-            </button>
-          </div>
-        ) : visible.length === 0 ? (
-          <div className="border border-white/5 rounded-[32px] bg-card p-4 md:p-10 text-center text-zinc-500">
-            {intl.formatMessage(mLiveList.emptyFiltered)}
-          </div>
-        ) : (
-          <DataTable<BusinessSummary>
-            className="max-w-none"
-            columns={columns}
-            rows={visible}
-            rowId={(b) => b.id}
-            footer={intl.formatMessage(mLiveList.footer, { count: visible.length })}
-          />
-        )}
-      </div>
-
-      <AnimatePresence>
-        {adding && (
-          <Modal onClose={() => setAdding(false)} width="max-w-xl" label={intl.formatMessage(m.addClient)}>
-            {/* The same intake component the chat renders — live, it creates a
-                real client over POST /v1/businesses and the list refetches. */}
-            <ClientIntakeForm />
-          </Modal>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}

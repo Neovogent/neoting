@@ -46,7 +46,53 @@ test('counts follow the contract: toReview, ready, and rejected-as-failed, per c
 
 test('a client with no documents still appears, with zero counts', () => {
   const rows = deriveBusinessSummaries([{ id: '9', name: 'Dormant Ltd' }], []);
-  expect(rows).toEqual([{ id: '9', name: 'Dormant Ltd', tradingName: null, counts: { toReview: 0, ready: 0, failed: 0 } }]);
+  // All TEN counts, spelled out rather than spread from a helper: the contract
+  // makes every one of them required precisely because an omitted count and a
+  // zero count are indistinguishable once rendered, and a test that built this
+  // object the same way the source does would pass however far the two drifted.
+  expect(rows).toEqual([
+    {
+      id: '9',
+      name: 'Dormant Ltd',
+      tradingName: null,
+      counts: {
+        toReview: 0,
+        ready: 0,
+        failed: 0,
+        published: 0,
+        missing: 0,
+        requested: 0,
+        overdue: 0,
+        unmatched: 0,
+        statementGaps: 0,
+        approvals: 0,
+      },
+    },
+  ]);
+});
+
+test('published documents are folded, and the six counts this function cannot see stay zero', () => {
+  const rows = deriveBusinessSummaries(
+    [{ id: '9', name: 'Dormant Ltd' }],
+    [
+      { clientId: '9', status: 'published' },
+      { clientId: '9', status: 'published' },
+      { clientId: '9', status: 'review' },
+      // Another client's document must not land on this row.
+      { clientId: '8', status: 'published' },
+    ],
+  );
+  const counts = rows[0]?.counts;
+  expect(counts?.published).toBe(2);
+  expect(counts?.toReview).toBe(1);
+  // Chases, bank matching and the proposal queue are the server's to count;
+  // this synthetic fold has no sight of them and says zero rather than guessing.
+  expect(counts?.missing).toBe(0);
+  expect(counts?.requested).toBe(0);
+  expect(counts?.overdue).toBe(0);
+  expect(counts?.unmatched).toBe(0);
+  expect(counts?.statementGaps).toBe(0);
+  expect(counts?.approvals).toBe(0);
 });
 
 test('the synthetic shape parses as the contract — the fallback is indistinguishable on the wire', () => {
