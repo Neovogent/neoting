@@ -2,7 +2,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { NtProblemError } from '@neoting/contracts';
 import { createBusinessBody } from '@neoting/contracts/zod';
 
-import { buildIntakeRequest, submitClientIntake, type IntakeDraft } from './intake';
+import { buildIntakeRequest, missingIntakeFields, submitClientIntake, type IntakeDraft } from './intake';
 
 /**
  * The intake boundary (launch M7).
@@ -175,4 +175,26 @@ test('a problem+json refusal propagates with its NT- code intact', async () => {
   const failure = await submitClientIntake(builtRequest()).catch((e: unknown) => e);
   expect(failure).toBeInstanceOf(NtProblemError);
   expect((failure as NtProblemError).code).toBe('NT-VAL-001');
+});
+
+// ---- the per-step required-field gate --------------------------------------
+
+test('a full draft owes nothing', () => {
+  expect(missingIntakeFields(FULL_DRAFT)).toEqual([]);
+});
+
+test('every contract-required field is named when absent, in step order', () => {
+  const empty: IntakeDraft = { ...FULL_DRAFT, name: ' ', firstName: '', lastName: '', email: '', businessActivity: '' };
+  expect(missingIntakeFields(empty)).toEqual(['name', 'firstName', 'lastName', 'email', 'businessActivity']);
+});
+
+test('an email that cannot be an email is refused on its own step, not at the contract', () => {
+  // The contract parse at buildIntakeRequest is the real gate; this pre-check
+  // exists so the contact step's Continue can say so three steps earlier.
+  expect(missingIntakeFields({ ...FULL_DRAFT, email: 'priya@sparkle' })).toEqual(['emailShape']);
+  expect(missingIntakeFields({ ...FULL_DRAFT, email: 'not an email' })).toEqual(['emailShape']);
+});
+
+test('a two-character activity is as missing as none — the questionnaire is the coding context', () => {
+  expect(missingIntakeFields({ ...FULL_DRAFT, businessActivity: 'ok' })).toEqual(['businessActivity']);
 });
