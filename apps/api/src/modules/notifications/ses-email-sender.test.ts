@@ -48,16 +48,21 @@ test('the envelope is From no-reply, Reply-To support, and names the configurati
   });
 });
 
-test('the body is sent as text and ONLY as text', async () => {
+test('text always; the derived Html part rides along only when composed', async () => {
   const { client, commands } = harness();
   await new SesEmailSender(config, client).send(email);
 
   const content = commands[0]?.['Content'] as { Simple: { Body: Record<string, unknown>; Subject: { Data: string } } };
   expect(content.Simple.Body).toHaveProperty('Text');
-  // An Html part is what makes a transactional message score as a campaign,
-  // and a sign-in code in a spam folder is a client who cannot sign in at all.
+  // No html on the envelope → none on the wire. The text part is the message.
   expect(content.Simple.Body).not.toHaveProperty('Html');
   expect(content.Simple.Subject.Data).toBe(email.subject);
+
+  const { client: client2, commands: commands2 } = harness();
+  await new SesEmailSender(config, client2).send({ ...email, html: '<p>hi</p>' });
+  const content2 = commands2[0]?.['Content'] as { Simple: { Body: Record<string, unknown> } };
+  expect(content2.Simple.Body).toHaveProperty('Text');
+  expect(content2.Simple.Body).toHaveProperty('Html');
 });
 
 test('the kind is tagged, so bounce rates are answerable per message type', async () => {

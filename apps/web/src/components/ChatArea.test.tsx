@@ -90,9 +90,11 @@ describe('the transcript while a reply is in flight', () => {
   });
 });
 
-describe('provenance on a landed reply', () => {
-  test('a server-answered turn says what answered it', async () => {
-    await renderChat({
+describe('the meta line on a landed reply', () => {
+  test('a healthy server-answered turn carries no model id or latency', async () => {
+    // Removed 28 Aug 2026 (see AssistantMetaLine): the transcript shows no
+    // model identifier; telemetry is where a turn's model and latency live.
+    const { container } = await renderChat({
       messages: [
         USER_TURN,
         {
@@ -111,7 +113,31 @@ describe('provenance on a landed reply', () => {
       assistantPending: null,
     });
 
-    expect(screen.getByText('claude-opus-4-6-v1 · 3.2s')).toBeTruthy();
+    expect(container.textContent).not.toContain('claude');
+    expect(container.textContent).not.toContain('3.2s');
+  });
+
+  test('a degraded turn still wears its warning — that stays (§9.3)', async () => {
+    await renderChat({
+      messages: [
+        USER_TURN,
+        {
+          id: '2',
+          role: 'assistant',
+          content: 'Drafted.',
+          meta: {
+            model: 'anthropic.claude-opus-4-6-v1',
+            tier: 'workhorse',
+            latencyMs: 3188,
+            degraded: true,
+            budgetWarning: false,
+          },
+        } satisfies Message,
+      ],
+      assistantPending: null,
+    });
+
+    expect(screen.getByText('Answered by a fallback model')).toBeTruthy();
   });
 
   test('a synthetic reply stays unlabelled rather than borrowing a model’s authority', async () => {

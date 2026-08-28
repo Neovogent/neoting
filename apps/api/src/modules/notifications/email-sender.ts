@@ -34,13 +34,19 @@ import type { EmailAddress } from './email-address.js';
  * | `demo` | {@link DemoEmailSender}'s in-memory outbox — readable in-process by dev and tests |
  * | `ses` | SES's own: the configuration set's CloudWatch metrics and the `nt-<env>-ses-events` SNS topic (bounce, complaint, reject, rendering failure, delivery delay) |
  *
- * ## Plain text only, and this is not an aesthetic choice
+ * ## The HTML part, and what survives of the plain-text stance (28 Aug 2026)
  *
- * There is no `html` field on {@link OutboundEmail} and there must not be one.
- * A transactional message that arrives looking like a campaign — images, a
- * tracking pixel, a button — is scored as one, and a sign-in code in a spam
- * folder is a client who cannot sign in at all. The whole product is gated on
- * these three messages landing in an inbox.
+ * This file shipped with no `html` field and a paragraph forbidding one,
+ * argued from deliverability: a message that looks like a campaign is scored
+ * as one, and a sign-in code in a spam folder is a client who cannot sign in
+ * at all. Mubasshir reversed the aesthetic half — messages now carry a
+ * designed HTML part (`email-html.ts`) — and the deliverability half survives
+ * as constraints rather than absence: the HTML is DERIVED from the same
+ * approved plain text (no drift, nothing HTML-only), fetches no remote
+ * resource (no image, no pixel, no webfont), and the text part stays complete
+ * and authoritative in a multipart/alternative send. Credentials are body
+ * text in both parts, never a link. S7's walkthrough should re-verify inbox
+ * placement with the HTML part attached.
  */
 
 /**
@@ -72,6 +78,12 @@ export interface OutboundEmail {
   readonly subject: string;
   /** The body, plain text, `\n`-terminated lines. No HTML part exists. */
   readonly body: string;
+  /**
+   * The designed rendering of `body`, derived by `email-html.ts` and never
+   * composed separately (the drift rule). Optional so a caller without a
+   * rendering still sends; the text part is the message either way.
+   */
+  readonly html?: string;
 }
 
 /** What a send produced. The provider's id is the handle an incident traces on. */
@@ -99,6 +111,7 @@ export interface DemoOutboxEntry extends SentEmail {
   readonly to: EmailAddress;
   readonly subject: string;
   readonly body: string;
+  readonly html?: string;
   readonly sentAt: Date;
 }
 
@@ -135,6 +148,7 @@ export class DemoEmailSender implements EmailSender {
       to: email.to,
       subject: email.subject,
       body: email.body,
+      ...(email.html === undefined ? {} : { html: email.html }),
       sentAt: this.now(),
     });
     // Drop the oldest, not the newest: the message a developer is looking for

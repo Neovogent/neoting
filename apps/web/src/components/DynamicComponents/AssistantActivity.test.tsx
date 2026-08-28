@@ -67,11 +67,13 @@ describe('the pending bubble', () => {
   });
 });
 
-describe('the provenance line', () => {
-  test('shows which model answered and how long it took', () => {
-    renderWithIntl(<AssistantMetaLine meta={META} />);
-    // Vendor prefix trimmed, model kept verbatim — never a prettified alias.
-    expect(screen.getByText('claude-opus-4-6-v1 · 3.2s')).toBeTruthy();
+describe('the meta line', () => {
+  test('never shows the model id or latency', () => {
+    // Removed 28 Aug 2026 (see AssistantMetaLine's comment): the transcript
+    // carries no model identifier; the audit trail is where that lives.
+    renderWithIntl(<AssistantMetaLine meta={{ ...META, degraded: true }} />);
+    expect(screen.queryByText(/claude/i)).toBeNull();
+    expect(screen.queryByText(/3\.2s/)).toBeNull();
   });
 
   test('a degrade to a lower tier is stated, not swallowed (§9.3)', () => {
@@ -84,9 +86,10 @@ describe('the provenance line', () => {
     expect(screen.getByText("Most of today's AI allowance is used")).toBeTruthy();
   });
 
-  test('a healthy turn shows neither warning', () => {
+  test('a healthy turn renders nothing at all', () => {
+    // With the model line gone, warnings are the component's only content —
+    // no warning, no element, so a clean reply carries no footer spacing.
     const { container } = renderWithIntl(<AssistantMetaLine meta={META} />);
-    expect(container.textContent).not.toContain('fallback');
-    expect(container.textContent).not.toContain('allowance');
+    expect(container.firstChild).toBeNull();
   });
 });

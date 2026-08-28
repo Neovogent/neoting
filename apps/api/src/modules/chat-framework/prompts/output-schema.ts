@@ -35,6 +35,10 @@ export const ChatIntentSchema = z.enum([
   'REVIEW_DOCUMENT',
   'GROUNDED_ANSWER',
   'SCOPE_REFUSAL',
+  // Chat-first: the UI answers this by rendering the intake form in the
+  // transcript. The turn itself creates nothing — submission goes through
+  // `POST /businesses` with every check that operation already carries.
+  'ADD_CLIENT',
 ]);
 
 export type ChatIntentValue = z.infer<typeof ChatIntentSchema>;
@@ -63,6 +67,13 @@ const NavigationSchema = z
      */
     documentQuery: z.string().min(1).max(120).optional(),
     statusFilter: z.enum(['review', 'ready', 'failed', 'processing', 'unrouted']).optional(),
+    /**
+     * With ADD_CLIENT only: the company name the accountant said ("add a
+     * client called Ananda Group"), for prefilling the intake form. Words,
+     * never an id — the same doctrine as `documentQuery`. Nothing exists
+     * until the form is submitted through `POST /businesses`.
+     */
+    clientName: z.string().min(1).max(120).optional(),
   })
   .strict();
 
@@ -124,6 +135,13 @@ export const ModelTurnSchema = z
         message: 'intent GROUNDED_ANSWER requires grounded.citedRecordIds (possibly empty)',
       });
     }
+    if (turn.intent !== 'ADD_CLIENT' && turn.navigation?.clientName !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['navigation', 'clientName'],
+        message: 'navigation.clientName may only accompany intent ADD_CLIENT',
+      });
+    }
   });
 
 export type ModelTurn = z.infer<typeof ModelTurnSchema>;
@@ -181,6 +199,11 @@ export const RESPOND_TOOL_SCHEMA = {
           description: 'What the accountant called the document, e.g. "Currys receipt". Never an id.',
         },
         statusFilter: { type: 'string', enum: ['review', 'ready', 'failed', 'processing', 'unrouted'] },
+        clientName: {
+          type: 'string',
+          description:
+            'Only with intent ADD_CLIENT: the company name the accountant said, verbatim. Omit if they did not name one.',
+        },
       },
     },
     grounded: {

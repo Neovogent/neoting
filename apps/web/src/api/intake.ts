@@ -50,6 +50,36 @@ export interface IntakeDraft {
   notes: string;
 }
 
+/**
+ * What the contract requires and the form must therefore collect, named so the
+ * live form can gate each STEP on its own fields rather than surprising the
+ * accountant at the review. `emailShape` is a light pre-check only — the
+ * contract's own schema at `buildIntakeRequest` is the real gate; this exists
+ * so an obviously malformed address is refused on the contact step, not three
+ * steps later (the LoginView stance: refused before the network).
+ */
+export type IntakeMissingField =
+  | 'name'
+  | 'firstName'
+  | 'lastName'
+  | 'email'
+  | 'emailShape'
+  | 'businessActivity';
+
+const EMAIL_SHAPE = /^\S+@\S+\.\S+$/;
+
+export function missingIntakeFields(draft: IntakeDraft): IntakeMissingField[] {
+  const email = draft.email.trim();
+  return [
+    ...(draft.name.trim() ? [] : ['name' as const]),
+    ...(draft.firstName.trim() ? [] : ['firstName' as const]),
+    ...(draft.lastName.trim() ? [] : ['lastName' as const]),
+    ...(email ? [] : ['email' as const]),
+    ...(email && !EMAIL_SHAPE.test(email) ? ['emailShape' as const] : []),
+    ...(draft.businessActivity.trim().length >= 3 ? [] : ['businessActivity' as const]),
+  ];
+}
+
 export type IntakeRefusal =
   /** The mobile is present and cannot be an E.164 number — refused, not guessed. */
   | { reason: 'mobileNotE164' }

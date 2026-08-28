@@ -1,4 +1,5 @@
 import { type ChaseItem, formatDay, formatGbp } from '../chase/index.js';
+import { renderEmailHtml } from './email-html.js';
 import type { SignInCode } from './sign-in-code.js';
 
 /**
@@ -45,6 +46,8 @@ export const SENDER_DISPLAY_NAME = 'Neo Accounting';
 export interface ComposedEmail {
   readonly subject: string;
   readonly body: string;
+  /** The designed rendering of `body` — derived from it here, never written separately (email-html.ts). */
+  readonly html: string;
 }
 
 // ── 1 · Client invite ──────────────────────────────────────────────────────
@@ -72,9 +75,8 @@ export interface ComposeClientInviteInput {
  * copy must never grow one.
  */
 export function composeClientInvite(input: ComposeClientInviteInput): ComposedEmail {
-  return {
-    subject: `${input.practiceName} has invited you to ${SENDER_DISPLAY_NAME}`,
-    body: lines(
+  const subject = `${input.practiceName} has invited you to ${SENDER_DISPLAY_NAME}`;
+  const body = lines(
       `${input.practiceName} uses ${SENDER_DISPLAY_NAME} to collect the receipts and invoices for ${input.businessName}.`,
       '',
       'You can send them a photo, forward an email, or upload a file. There is nothing to install and no password to choose.',
@@ -85,8 +87,8 @@ export function composeClientInvite(input: ComposeClientInviteInput): ComposedEm
       `This link stops working on ${formatDay(input.expiresAt)}. If you were not expecting it, you can ignore this email — nothing happens until you open the link.`,
       '',
       SENDER_DISPLAY_NAME,
-    ),
-  };
+  );
+  return { subject, body, html: renderEmailHtml({ subject, body, linkLabels: { [input.inviteLink]: 'Set up your access' } }) };
 }
 
 // ── 2 · Sign-in code ───────────────────────────────────────────────────────
@@ -115,19 +117,20 @@ export interface ComposeSignInCodeInput {
  *    That is the whole design of `SignInCode`.
  */
 export function composeSignInCode(input: ComposeSignInCodeInput): ComposedEmail {
-  return {
-    subject: `Your ${SENDER_DISPLAY_NAME} sign-in code`,
-    body: lines(
-      // The one and only `reveal()`.
-      `Your sign-in code is ${input.code.reveal()}`,
+  // The one and only `reveal()` — held in a local so the HTML render styles
+  // the same six digits rather than calling for them twice.
+  const code = input.code.reveal();
+  const subject = `Your ${SENDER_DISPLAY_NAME} sign-in code`;
+  const body = lines(
+      `Your sign-in code is ${code}`,
       '',
       `It expires in ${input.expiresInMinutes} ${input.expiresInMinutes === 1 ? 'minute' : 'minutes'} and can be used once.`,
       '',
       'Nobody from our team will ever ask you for this code. If you did not just try to sign in, ignore this email — the code is useless on its own and no one else has been given access.',
       '',
       SENDER_DISPLAY_NAME,
-    ),
-  };
+  );
+  return { subject, body, html: renderEmailHtml({ subject, body, highlight: code }) };
 }
 
 // ── 3 · Document request ───────────────────────────────────────────────────
@@ -162,9 +165,8 @@ export interface ComposeDocumentRequestInput {
  */
 export function composeDocumentRequest(input: ComposeDocumentRequestInput): ComposedEmail {
   const noun = input.items.length === 1 ? 'a receipt' : `${input.items.length} receipts`;
-  return {
-    subject: `${input.businessName}: we're missing ${noun}`,
-    body: lines(
+  const subject = `${input.businessName}: we're missing ${noun}`;
+  const body = lines(
       `We're missing ${input.items.length === 1 ? 'the paperwork' : 'paperwork'} for ${input.items.length === 1 ? 'this payment' : 'these payments'} on the ${input.businessName} account:`,
       '',
       // "- Currys £1,299 on 9 Aug", one per line. The magnitude, not the sign:
@@ -178,8 +180,8 @@ export function composeDocumentRequest(input: ComposeDocumentRequestInput): Comp
       'If you have already sent these, ignore this email — it will sort itself out once they are matched.',
       '',
       SENDER_DISPLAY_NAME,
-    ),
-  };
+  );
+  return { subject, body, html: renderEmailHtml({ subject, body, linkLabels: { [input.portalLink]: 'Upload securely' } }) };
 }
 
 // ── 4 · Verify your email address ───────────────────────────────
@@ -212,9 +214,8 @@ export interface ComposeEmailVerificationInput {
  * mail that has gone stale is the one a person retries rather than reports.
  */
 export function composeEmailVerification(input: ComposeEmailVerificationInput): ComposedEmail {
-  return {
-    subject: `Confirm your email address for ${SENDER_DISPLAY_NAME}`,
-    body: lines(
+  const subject = `Confirm your email address for ${SENDER_DISPLAY_NAME}`;
+  const body = lines(
       `Hello ${input.firstName},`,
       '',
       `You created a ${SENDER_DISPLAY_NAME} account for ${input.practiceName}. Confirm this email address to finish setting it up:`,
@@ -226,8 +227,8 @@ export function composeEmailVerification(input: ComposeEmailVerificationInput): 
       'If you did not create this account you can ignore this email. Nothing has been set up, and the address cannot be used until the link is opened.',
       '',
       SENDER_DISPLAY_NAME,
-    ),
-  };
+  );
+  return { subject, body, html: renderEmailHtml({ subject, body, linkLabels: { [input.verifyLink]: 'Confirm email address' } }) };
 }
 
 // ── 5 · Someone tried to sign up with your address ─────────────────────
@@ -246,9 +247,8 @@ export function composeEmailVerification(input: ComposeEmailVerificationInput): 
  * back to the person doing the probing.
  */
 export function composeDuplicateSignupNotice(): ComposedEmail {
-  return {
-    subject: 'Someone tried to sign up with your email address',
-    body: lines(
+  const subject = 'Someone tried to sign up with your email address';
+  const body = lines(
       `Someone entered this email address when signing up for ${SENDER_DISPLAY_NAME}. It already has an account, so nothing was created and nothing has changed.`,
       '',
       'If that was you, sign in as usual rather than signing up again.',
@@ -256,8 +256,8 @@ export function composeDuplicateSignupNotice(): ComposedEmail {
       'If it was not you, there is nothing you need to do. Your account is unaffected and no one has gained access to it. If you would like us to look into it, reply to this email.',
       '',
       SENDER_DISPLAY_NAME,
-    ),
-  };
+  );
+  return { subject, body, html: renderEmailHtml({ subject, body }) };
 }
 
 /**

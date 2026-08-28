@@ -161,7 +161,7 @@ export class NotificationsService {
     // Compose AFTER the limit is granted. For the sign-in message this means a
     // refused send never materialises the code into a string at all.
     const composed = compose();
-    const sent = await this.sender.send({ kind, to, subject: composed.subject, body: composed.body });
+    const sent = await this.sender.send({ kind, to, subject: composed.subject, body: composed.body, ...(composed.html === undefined ? {} : { html: composed.html }) });
 
     // The full log line, and everything it deliberately omits: no address, no
     // subject (which would fingerprint the message), no body.

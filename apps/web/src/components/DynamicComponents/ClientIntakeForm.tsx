@@ -12,9 +12,11 @@ import { API_ENABLED } from '../../api/config';
 import { errorLabel } from '../../api/slices';
 import {
   buildIntakeRequest,
+  missingIntakeFields,
   submitClientIntake,
   type CreatedBusiness,
   type IntakeDraft,
+  type IntakeMissingField,
   type TriState,
 } from '../../api/intake';
 
@@ -556,6 +558,14 @@ const m = defineMessages({
   logoPickerRemove: {
     id: 'clients.logoPicker.remove',
     defaultMessage: 'Remove',
+  },
+
+  // The tag a required field wears. A tag beside the label rather than a
+  // suffix baked into it, so the same label can appear untagged in a review
+  // row without minting a second message for the same words.
+  fieldRequired: {
+    id: 'clients.field.required',
+    defaultMessage: 'Required',
   },
 });
 
@@ -1320,17 +1330,26 @@ function Field({
   onChange,
   placeholder,
   hint,
+  required,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   hint?: string;
+  required?: boolean;
 }) {
+  const intl = useIntl();
   return (
     <div>
-      <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">{label}</div>
+      <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2 flex items-baseline gap-2">
+        {label}
+        {required && (
+          <span className="text-[10px] font-bold text-brand/90">{intl.formatMessage(m.fieldRequired)}</span>
+        )}
+      </div>
       <input
+        aria-required={required}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -1482,6 +1501,16 @@ const mLive = defineMessages({
   stepCompany: { id: 'clients.liveIntake.stepCompany', defaultMessage: 'Company' },
   stepContact: { id: 'clients.liveIntake.stepContact', defaultMessage: 'Contact' },
   stepProfile: { id: 'clients.liveIntake.stepProfile', defaultMessage: 'Business type' },
+  stepReview: { id: 'clients.liveIntake.stepReview', defaultMessage: 'Review' },
+
+  // Who fills in what — stated up front, because the split is the product's
+  // design (D47/§24.5), not an implementation detail: the practice keys the
+  // basics, the client onboards themselves through the emailed link.
+  whoFillsNote: {
+    id: 'clients.liveIntake.whoFillsNote',
+    defaultMessage:
+      'You add the basics here. Your client completes the rest themselves — company details, onboarding and the subscription — through a sign-in link we email them.',
+  },
 
   // Step 1 — company.
   legalNameLabel: { id: 'clients.liveIntake.legalNameLabel', defaultMessage: 'Legal name' },
@@ -1553,10 +1582,18 @@ const mLive = defineMessages({
   missingFirstName: { id: 'clients.liveIntake.missingFirstName', defaultMessage: 'contact first name' },
   missingLastName: { id: 'clients.liveIntake.missingLastName', defaultMessage: 'contact last name' },
   missingEmail: { id: 'clients.liveIntake.missingEmail', defaultMessage: 'contact email' },
+  missingEmailShape: {
+    id: 'clients.liveIntake.missingEmailShape',
+    defaultMessage: 'a valid contact email — the sign-in link goes there',
+  },
   missingActivity: { id: 'clients.liveIntake.missingActivity', defaultMessage: 'what the business does' },
   stillNeeded: {
     id: 'clients.liveIntake.stillNeeded',
     defaultMessage: 'Still needed before this client can be created: {missing}.',
+  },
+  stillNeededHere: {
+    id: 'clients.liveIntake.stillNeededHere',
+    defaultMessage: 'Still needed on this step: {missing}.',
   },
 
   // The review before the one real call.
@@ -1605,7 +1642,32 @@ const LIVE_STEPS: [MessageDescriptor, ...MessageDescriptor[]] = [
   mLive.stepCompany,
   mLive.stepContact,
   mLive.stepProfile,
+  mLive.stepReview,
 ];
+
+/**
+ * Which step owns each required field, so Continue refuses on the step where
+ * the gap IS rather than surprising the accountant at the review. The review
+ * step owns none by construction — everything required has an input on an
+ * earlier step, which is what makes the review reachable only when complete.
+ */
+const FIELD_STEP: Record<IntakeMissingField, number> = {
+  name: 0,
+  firstName: 1,
+  lastName: 1,
+  email: 1,
+  emailShape: 1,
+  businessActivity: 2,
+};
+
+const MISSING_LABEL: Record<IntakeMissingField, MessageDescriptor> = {
+  name: mLive.missingName,
+  firstName: mLive.missingFirstName,
+  lastName: mLive.missingLastName,
+  email: mLive.missingEmail,
+  emailShape: mLive.missingEmailShape,
+  businessActivity: mLive.missingActivity,
+};
 
 const EMPTY_DRAFT: Omit<IntakeDraft, 'name'> = {
   tradingName: '',
@@ -1647,15 +1709,14 @@ function LiveIntake({ defaultName }: { defaultName: string }) {
   const set = <K extends keyof IntakeDraft>(key: K, value: IntakeDraft[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
 
-  const missing = [
-    ...(draft.name.trim() ? [] : [intl.formatMessage(mLive.missingName)]),
-    ...(draft.firstName.trim() ? [] : [intl.formatMessage(mLive.missingFirstName)]),
-    ...(draft.lastName.trim() ? [] : [intl.formatMessage(mLive.missingLastName)]),
-    ...(draft.email.trim() ? [] : [intl.formatMessage(mLive.missingEmail)]),
-    ...(draft.businessActivity.trim().length >= 3 ? [] : [intl.formatMessage(mLive.missingActivity)]),
-  ];
+  const missing = missingIntakeFields(draft);
   const ready = missing.length === 0;
-  const isLast = step === LIVE_STEPS.length - 1;
+  // This step's own gaps, and the furthest step the rail may reach: the first
+  // step still owed a field, or the review when nothing is owed anywhere.
+  const stepMissing = missing.filter((field) => FIELD_STEP[field] === step);
+  const firstIncomplete = LIVE_STEPS.findIndex((_, i) => missing.some((field) => FIELD_STEP[field] === i));
+  const maxReachable = firstIncomplete === -1 ? LIVE_STEPS.length - 1 : firstIncomplete;
+  const isReview = step === LIVE_STEPS.length - 1;
 
   const submit = async () => {
     const built = buildIntakeRequest(draft);
@@ -1727,11 +1788,14 @@ function LiveIntake({ defaultName }: { defaultName: string }) {
           <button
             key={s.id}
             type="button"
-            onClick={() => setStep(i)}
+            // Back is always open; forward stops at the first step still owed a
+            // required field, same rule as the Continue button below.
+            disabled={i > maxReachable}
+            onClick={() => setStep(Math.min(i, maxReachable))}
             title={intl.formatMessage(s)}
             aria-label={intl.formatMessage(m.shellStepLabel, { number: i + 1, name: intl.formatMessage(s) })}
             {...(i === step ? { 'aria-current': 'step' as const } : {})}
-            className="flex-1 py-3 -my-3 group"
+            className="flex-1 py-3 -my-3 group disabled:cursor-not-allowed"
           >
             <span className={`block h-1 rounded-full transition-all ${i <= step ? 'bg-brand' : 'bg-white/10 group-hover:bg-white/20'}`} />
           </button>
@@ -1742,11 +1806,13 @@ function LiveIntake({ defaultName }: { defaultName: string }) {
         <motion.div key={step} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} className="flex flex-col gap-4">
           {step === 0 && (
             <>
+              <p className="text-[13px] text-zinc-500 leading-relaxed">{intl.formatMessage(mLive.whoFillsNote)}</p>
               <Field
                 label={intl.formatMessage(mLive.legalNameLabel)}
                 value={draft.name}
                 onChange={(v) => set('name', v)}
                 placeholder={intl.formatMessage(mLive.legalNamePlaceholder)}
+                required
               />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field
@@ -1793,11 +1859,13 @@ function LiveIntake({ defaultName }: { defaultName: string }) {
                   value={draft.firstName}
                   onChange={(v) => set('firstName', v)}
                   placeholder={intl.formatMessage(commonPlaceholders.personName)}
+                  required
                 />
                 <Field
                   label={intl.formatMessage(mLive.lastNameLabel)}
                   value={draft.lastName}
                   onChange={(v) => set('lastName', v)}
+                  required
                 />
               </div>
               <Field
@@ -1806,6 +1874,7 @@ function LiveIntake({ defaultName }: { defaultName: string }) {
                 onChange={(v) => set('email', v)}
                 placeholder={intl.formatMessage(mLive.emailPlaceholder)}
                 hint={intl.formatMessage(mLive.emailHint)}
+                required
               />
               <Field
                 label={intl.formatMessage(mLive.mobileLabel)}
@@ -1826,6 +1895,7 @@ function LiveIntake({ defaultName }: { defaultName: string }) {
                 onChange={(v) => set('businessActivity', v)}
                 placeholder={intl.formatMessage(mLive.activityPlaceholder)}
                 maxLength={500}
+                required
               />
               <Field
                 label={intl.formatMessage(mLive.suppliersLabel)}
@@ -1862,111 +1932,118 @@ function LiveIntake({ defaultName }: { defaultName: string }) {
               />
             </>
           )}
+
+          {/* The review is a STEP, not a footer: the read-back of exactly what
+              will be sent deserves the whole card, and the rail cannot reach it
+              while a required field is still owed. The !ready branch is a
+              defensive fallback — gating makes it unreachable. */}
+          {isReview &&
+            (!ready ? (
+              <div className="flex items-center gap-3 px-5 py-3.5 rounded-full bg-ground/60 border border-white/5 text-[13px] font-bold text-zinc-500">
+                <Mail size={15} className="shrink-0" />
+                {intl.formatMessage(mLive.stillNeeded, {
+                  missing: missing.map((field) => intl.formatMessage(MISSING_LABEL[field])).join(', '),
+                })}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-white/5 bg-ground/60 p-5 flex flex-col gap-4 shadow-inner">
+                <ReviewSection title={intl.formatMessage(mLive.reviewCompanySection)}>
+                  <ReviewRows
+                    rows={[
+                      { label: intl.formatMessage(mLive.legalNameLabel), value: draft.name.trim() },
+                      { label: intl.formatMessage(mLive.tradingNameLabel), value: draft.tradingName.trim() || '—' },
+                      { label: intl.formatMessage(mLive.companyNumberLabel), value: draft.companyNumber.trim() || '—' },
+                      { label: intl.formatMessage(mLive.industryLabel), value: draft.industry.trim() || '—' },
+                      {
+                        label: intl.formatMessage(mLive.vatRegisteredLabel),
+                        value: draft.vatRegistered
+                          ? intl.formatMessage(mLive.reviewVatValue, { number: draft.vatNumber.trim() || '—' })
+                          : intl.formatMessage(mLive.triNo),
+                      },
+                    ]}
+                  />
+                </ReviewSection>
+                <ReviewSection title={intl.formatMessage(mLive.reviewContactSection)}>
+                  <ReviewRows
+                    rows={[
+                      {
+                        label: intl.formatMessage(commonLabels.client),
+                        value: intl.formatMessage(mLive.reviewContactValue, {
+                          firstName: draft.firstName.trim(),
+                          lastName: draft.lastName.trim(),
+                        }),
+                      },
+                      { label: intl.formatMessage(commonLabels.email), value: draft.email.trim() },
+                      { label: intl.formatMessage(commonLabels.mobile), value: draft.mobile.trim() || '—' },
+                    ]}
+                  />
+                </ReviewSection>
+                <ReviewSection title={intl.formatMessage(mLive.reviewProfileSection)}>
+                  <ReviewRows
+                    rows={[
+                      { label: intl.formatMessage(mLive.activityLabel), value: draft.businessActivity.trim() },
+                      { label: intl.formatMessage(mLive.suppliersLabel), value: draft.typicalSuppliers.trim() || '—' },
+                      { label: intl.formatMessage(mLive.costsLabel), value: draft.typicalCosts.trim() || '—' },
+                      { label: intl.formatMessage(mLive.hasEmployeesLabel), value: triLabel(intl, draft.hasEmployees) },
+                      {
+                        label: intl.formatMessage(mLive.usesSubcontractorsLabel),
+                        value: triLabel(intl, draft.usesSubcontractors),
+                      },
+                    ]}
+                  />
+                </ReviewSection>
+                <p className="text-[12px] text-zinc-500 leading-relaxed">
+                  {intl.formatMessage(mLive.noConnectionsNote)}
+                </p>
+                <p className="text-[12px] text-zinc-500 leading-relaxed">
+                  {intl.formatMessage(mLive.createNote, { email: draft.email.trim() })}
+                </p>
+                {failure && (
+                  <p role="alert" className="text-[13px] text-red-400 font-semibold">
+                    {failure}
+                  </p>
+                )}
+                <button
+                  onClick={() => void submit()}
+                  disabled={sending}
+                  className="flex items-center justify-center gap-2 px-6 py-3 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all shadow-glow-btn-strong disabled:opacity-50"
+                >
+                  <Mail size={15} />
+                  {intl.formatMessage(sending ? mLive.creatingLabel : mLive.createLabel)}
+                </button>
+              </div>
+            ))}
+
+          {stepMissing.length > 0 && (
+            <p className="text-[13px] text-amber-400 font-semibold">
+              {intl.formatMessage(mLive.stillNeededHere, {
+                missing: stepMissing.map((field) => intl.formatMessage(MISSING_LABEL[field])).join(', '),
+              })}
+            </p>
+          )}
         </motion.div>
       </div>
 
-      {!isLast ? (
-        <div className="p-4 bg-raised/50 flex justify-between items-center">
+      <div className="p-4 bg-raised/50 flex justify-between items-center">
+        <button
+          onClick={() => setStep((s) => Math.max(s - 1, 0))}
+          className={`px-5 py-2.5 text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 rounded-full transition-colors ${
+            step === 0 ? 'invisible' : ''
+          }`}
+        >
+          {intl.formatMessage(m.practiceBack)}
+        </button>
+        {!isReview && (
           <button
-            onClick={() => setStep((s) => Math.max(s - 1, 0))}
-            className={`px-5 py-2.5 text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 rounded-full transition-colors ${
-              step === 0 ? 'invisible' : ''
-            }`}
-          >
-            {intl.formatMessage(m.practiceBack)}
-          </button>
-          <button
-            onClick={() => setStep((s) => Math.min(s + 1, LIVE_STEPS.length - 1))}
-            className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all shadow-glow-btn-strong"
+            onClick={() => setStep((s) => Math.min(s + 1, maxReachable))}
+            disabled={stepMissing.length > 0}
+            className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all shadow-glow-btn-strong disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {intl.formatMessage(m.practiceContinue)}
             <ChevronRight size={16} strokeWidth={2.5} />
           </button>
-        </div>
-      ) : (
-        <div className="p-4 bg-raised/50 flex flex-col gap-3">
-          <button
-            onClick={() => setStep((s) => Math.max(s - 1, 0))}
-            className="self-start px-5 py-2.5 text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 rounded-full transition-colors"
-          >
-            {intl.formatMessage(m.practiceBack)}
-          </button>
-
-          {!ready ? (
-            <div className="flex items-center gap-3 px-5 py-3.5 rounded-full bg-ground/60 border border-white/5 text-[13px] font-bold text-zinc-500">
-              <Mail size={15} className="shrink-0" />
-              {intl.formatMessage(mLive.stillNeeded, { missing: missing.join(', ') })}
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-white/5 bg-ground/60 p-5 flex flex-col gap-4 shadow-inner">
-              <ReviewSection title={intl.formatMessage(mLive.reviewCompanySection)}>
-                <ReviewRows
-                  rows={[
-                    { label: intl.formatMessage(mLive.legalNameLabel), value: draft.name.trim() },
-                    { label: intl.formatMessage(mLive.tradingNameLabel), value: draft.tradingName.trim() || '—' },
-                    { label: intl.formatMessage(mLive.companyNumberLabel), value: draft.companyNumber.trim() || '—' },
-                    { label: intl.formatMessage(mLive.industryLabel), value: draft.industry.trim() || '—' },
-                    {
-                      label: intl.formatMessage(mLive.vatRegisteredLabel),
-                      value: draft.vatRegistered
-                        ? intl.formatMessage(mLive.reviewVatValue, { number: draft.vatNumber.trim() || '—' })
-                        : intl.formatMessage(mLive.triNo),
-                    },
-                  ]}
-                />
-              </ReviewSection>
-              <ReviewSection title={intl.formatMessage(mLive.reviewContactSection)}>
-                <ReviewRows
-                  rows={[
-                    {
-                      label: intl.formatMessage(commonLabels.client),
-                      value: intl.formatMessage(mLive.reviewContactValue, {
-                        firstName: draft.firstName.trim(),
-                        lastName: draft.lastName.trim(),
-                      }),
-                    },
-                    { label: intl.formatMessage(commonLabels.email), value: draft.email.trim() },
-                    { label: intl.formatMessage(commonLabels.mobile), value: draft.mobile.trim() || '—' },
-                  ]}
-                />
-              </ReviewSection>
-              <ReviewSection title={intl.formatMessage(mLive.reviewProfileSection)}>
-                <ReviewRows
-                  rows={[
-                    { label: intl.formatMessage(mLive.activityLabel), value: draft.businessActivity.trim() },
-                    { label: intl.formatMessage(mLive.suppliersLabel), value: draft.typicalSuppliers.trim() || '—' },
-                    { label: intl.formatMessage(mLive.costsLabel), value: draft.typicalCosts.trim() || '—' },
-                    { label: intl.formatMessage(mLive.hasEmployeesLabel), value: triLabel(intl, draft.hasEmployees) },
-                    {
-                      label: intl.formatMessage(mLive.usesSubcontractorsLabel),
-                      value: triLabel(intl, draft.usesSubcontractors),
-                    },
-                  ]}
-                />
-              </ReviewSection>
-              <p className="text-[12px] text-zinc-500 leading-relaxed">
-                {intl.formatMessage(mLive.noConnectionsNote)}
-              </p>
-              <p className="text-[12px] text-zinc-500 leading-relaxed">
-                {intl.formatMessage(mLive.createNote, { email: draft.email.trim() })}
-              </p>
-              {failure && (
-                <p role="alert" className="text-[13px] text-red-400 font-semibold">
-                  {failure}
-                </p>
-              )}
-              <button
-                onClick={() => void submit()}
-                disabled={sending}
-                className="flex items-center justify-center gap-2 px-6 py-3 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all shadow-glow-btn-strong disabled:opacity-50"
-              >
-                <Mail size={15} />
-                {intl.formatMessage(sending ? mLive.creatingLabel : mLive.createLabel)}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+        )}
+      </div>
     </Shell>
   );
 }
@@ -2021,6 +2098,7 @@ function Area({
   placeholder,
   hint,
   maxLength,
+  required,
 }: {
   label: string;
   value: string;
@@ -2028,11 +2106,19 @@ function Area({
   placeholder?: string;
   hint?: string;
   maxLength?: number;
+  required?: boolean;
 }) {
+  const intl = useIntl();
   return (
     <div>
-      <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">{label}</div>
+      <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2 flex items-baseline gap-2">
+        {label}
+        {required && (
+          <span className="text-[10px] font-bold text-brand/90">{intl.formatMessage(m.fieldRequired)}</span>
+        )}
+      </div>
       <textarea
+        aria-required={required}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}

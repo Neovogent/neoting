@@ -39,6 +39,7 @@ export interface TaskConfig {
  */
 export const TASKS = {
   chatWorkspace: { model: 'judgment', effort: 'high' }, // one model, always — no split-personality chat
+  chatSuggestions: { model: 'judgment', effort: 'low' }, // the chat box's briefing — same tier as chat (evals cover judgment only), low effort: it ranks, it does not reason
   crossClientAnalysis: { model: 'judgment', effort: 'max' },
   ruleParsing: { model: 'judgment', effort: 'high' },
   ruleConflictResolution: { model: 'judgment', effort: 'max' },
@@ -69,6 +70,7 @@ export type TaskName = keyof typeof TASKS;
  */
 export const DEGRADE_CHAIN: Readonly<Record<TaskName, readonly Tier[]>> = Object.freeze({
   chatWorkspace: [],
+  chatSuggestions: [], // same measured statement as chatWorkspace — no lower tier has passed anything
   crossClientAnalysis: [],
   ruleParsing: [],
   ruleConflictResolution: [],
@@ -131,6 +133,7 @@ export const FAMILY_PARAMS: Readonly<Record<Tier, FamilyParams>> = Object.freeze
 /** `max_tokens` and timeout budgets per use case (§9.1). */
 export const TASK_BUDGETS: Readonly<Record<TaskName, { maxTokens: number; timeoutMs: number }>> = Object.freeze({
   chatWorkspace: { maxTokens: 4096, timeoutMs: 30_000 },
+  chatSuggestions: { maxTokens: 1024, timeoutMs: 20_000 },
   crossClientAnalysis: { maxTokens: 8192, timeoutMs: 60_000 },
   ruleParsing: { maxTokens: 2048, timeoutMs: 20_000 },
   ruleConflictResolution: { maxTokens: 4096, timeoutMs: 30_000 },
@@ -164,7 +167,7 @@ export const TIER_RATES_PENCE_PER_MTOK: Readonly<Record<Tier, { input: number; o
  * historical answer is reproducible (§9.8) — the model ID alone is not enough,
  * because the parameters around it move independently of it.
  */
-export const MODEL_CONFIG_REVISION = '2026-08-21.1';
+export const MODEL_CONFIG_REVISION = '2026-08-28.1';
 
 /** What lands in `ChatTurn.modelVersion`. */
 export function modelVersionOf(tier: Tier): string {
