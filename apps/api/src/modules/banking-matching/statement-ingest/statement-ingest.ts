@@ -90,10 +90,29 @@ async function accountFor(db: StatementScopedClient, businessId: string): Promis
   return created.id;
 }
 
-export async function ingestStatement(
-  db: StatementScopedClient,
+/**
+ * Turn the file into a statement. **Call this OUTSIDE any transaction.**
+ *
+ * ⚠ THIS IS THE SLOW HALF, AND SEPARATING IT IS NOT TIDINESS. It was inline in
+ * `ingestStatement`, which runs inside `scopedDb` — a Prisma *interactive*
+ * transaction with a 10-second timeout. A CSV parses in milliseconds so it
+ * never mattered; Textract's asynchronous path takes 40–60 seconds on a real
+ * statement, and the first 29-page PDF ever put through it died with
+ *
+ *     Transaction already closed: … timeout … was 10000 ms, however 56824 ms
+ *     passed since the start of the transaction
+ *
+ * on the *next* query after the read returned. Textract had succeeded; the
+ * database connection it came back to had not. Holding a transaction open
+ * across a minute-long network call also pins a connection from the pool for
+ * that whole minute, so a handful of concurrent statements would have starved
+ * every other query in the process.
+ *
+ * So the shape is: read here, then persist in a transaction that opens after
+ * the bytes are already a grid and closes in milliseconds.
+ */
+export async function readStatementFor(
   input: StatementIngestInput,
-  logger: StatementIngestLogger,
   /**
    * The OCR reader, for a PDF or an image (D20).
    *
@@ -102,18 +121,41 @@ export async function ingestStatement(
    * no reader is refused and says so, rather than being quietly skipped.
    */
   tables?: StatementTableReader,
+): Promise<ParseResult> {
+  return readStatement(input, tables);
+}
+
+/** Whether this document's rows are already in the database. Its own tiny query. */
+export async function statementAlreadyIngested(
+  db: StatementScopedClient,
+  documentId: string,
+): Promise<string | null> {
+  const already = await db.statement.findFirst({ where: { documentId }, select: { id: true } });
+  return already?.id ?? null;
+}
+
+export async function ingestStatement(
+  db: StatementScopedClient,
+  input: StatementIngestInput,
+  logger: StatementIngestLogger,
+  /**
+   * The read, already done — see `readStatementFor` for why it is not done here.
+   *
+   * Omitted, this reads the file itself, which is correct for a SPREADSHEET and
+   * is what the offline tests do. ⚠ Never omit it for a PDF or an image on a
+   * path that runs inside a transaction.
+   */
+  parsedInput?: ParseResult,
+  tables?: StatementTableReader,
 ): Promise<StatementIngestOutcome> {
-  // Idempotency first, before any parsing work.
-  const already = await db.statement.findFirst({
-    where: { documentId: input.documentId },
-    select: { id: true },
-  });
-  if (already !== null) {
-    logger.log(`statement-ingest: document ${input.documentId} already ingested as ${already.id}`);
-    return { status: 'alreadyIngested', statementId: already.id };
+  // Idempotency first, before any persistence work.
+  const alreadyId = await statementAlreadyIngested(db, input.documentId);
+  if (alreadyId !== null) {
+    logger.log(`statement-ingest: document ${input.documentId} already ingested as ${alreadyId}`);
+    return { status: 'alreadyIngested', statementId: alreadyId };
   }
 
-  const parsed = await readStatement(input, tables);
+  const parsed = parsedInput ?? (await readStatement(input, tables));
   if (!parsed.ok) {
     const reason = refusalText(parsed.failure);
     logger.warn(`statement-ingest: refused ${input.documentId} — ${reason}`);

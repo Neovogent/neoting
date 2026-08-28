@@ -181,6 +181,38 @@ as an open TODO. What is built:
   D40 leaves the release no other bank input. Watch it per client per month, not
   per document.
 
+### ⚠ The READ happens outside the transaction, and it must
+
+`ingestStatement` did the read itself, inside `scopedDb` — a Prisma
+**interactive** transaction whose timeout is **10 seconds**. A CSV parses in
+milliseconds so it never showed. Textract takes **40-60 seconds** on a real
+statement, and the first 29-page PDF through this path died on the query AFTER
+the read returned:
+
+```
+Transaction already closed: … the timeout … was 10000 ms,
+however 56824 ms passed since the start of the transaction
+```
+
+Textract had SUCCEEDED. The database connection it came back to had not — and
+the step swallows its throw by design, so the only symptom was a statement that
+silently did not import. Holding a transaction open across a minute-long
+network call also pins a pooled connection for that whole minute, so a handful
+of concurrent statements would have starved every other query in the process.
+
+The shape now:
+
+1. `statementAlreadyIngested` — its own tiny transaction. **Before the read**,
+   because a redelivery that re-read the file would spend a real Textract charge
+   (~35p) to discover rows we already hold.
+2. `readStatementFor` — **no transaction at all**. This is the slow half.
+3. `ingestStatement(db, input, logger, parsed)` — a transaction that opens once
+   the bytes are already a grid and closes in milliseconds.
+
+`statement-ingest.integration.test.ts` pins it with a reader that deliberately
+sleeps past the 10-second ceiling. Move the read back inside and that test fails
+exactly the way staging did.
+
 Six things that are decisions, not details:
 
 - **It is deterministic, not a model call.** A CSV has no page to read. D41 gates
