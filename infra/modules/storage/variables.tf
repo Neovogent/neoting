@@ -42,6 +42,13 @@ variable "buckets" {
     data_class      = string
     sse             = optional(string, "aws:kms")
     policy_template = optional(string, "bucket.json.tftpl")
+
+    # Browser origins allowed to PUT and GET this bucket's presigned URLs.
+    #
+    # ⚠ EMPTY IS NOT "ALLOW ANY", IT IS "NO BROWSER MAY REACH THIS BUCKET", and
+    # that is the right default: only the bucket a browser genuinely uploads to
+    # should say so, by name.
+    cors_origins = optional(list(string), [])
   }))
 
   validation {

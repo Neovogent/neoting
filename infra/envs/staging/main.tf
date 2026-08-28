@@ -147,7 +147,20 @@ module "storage" {
   region     = local.region
 
   buckets = {
-    docs     = { data_class = "customer-document", sse = "aws:kms" }
+    # ⚠ `docs` is the ONLY bucket a browser touches, and the only one with CORS.
+    # Both origins are real and both upload: the practice app, and the client
+    # surfaces (chase portal, setup/onboarding) served from the app host. A
+    # bucket with no CORS answers the preflight 403 and the upload dies as
+    # "Failed to fetch" — see the comment on the resource in modules/storage.
+    #
+    # `receipts` is written by SES, not by anyone's browser. `exports` is only
+    # ever READ, through a presigned link the browser navigates to rather than
+    # fetches, which is not a CORS request at all. Neither gets an origin.
+    docs = {
+      data_class   = "customer-document"
+      sse          = "aws:kms"
+      cors_origins = ["https://neoacc.neovogent.com", "https://app.neoting.neovogent.com"]
+    }
     receipts = { data_class = "customer-document", sse = "AES256", policy_template = "bucket-receipts.json.tftpl" }
     exports  = { data_class = "customer-document", sse = "aws:kms" }
   }
