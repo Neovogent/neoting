@@ -111,7 +111,7 @@ export function deriveClientStats(
     duplicates,
     approvals,
     unverified,
-    health: pipelineHealth({ missing, overdue, toReview, rejected, duplicates, approvals, client }),
+    health: pipelineHealth({ missing, overdue, toReview, rejected, duplicates, approvals, bankConnected: client.bankConnected }),
     itemDelay: itemDelayFor(client),
   };
 }
@@ -128,7 +128,7 @@ function pipelineHealth(x: {
   rejected: number;
   duplicates: number;
   approvals: number;
-  client: Client;
+  bankConnected: boolean;
 }): number {
   let score = 100;
   score -= Math.min(38, x.missing * 0.55);
@@ -137,8 +137,71 @@ function pipelineHealth(x: {
   score -= x.rejected * 4;
   score -= x.duplicates * 2;
   score -= Math.min(8, x.approvals * 2);
-  if (!x.client.bankConnected) score -= 10;
+  if (!x.bankConnected) score -= 10;
   return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+/**
+ * The same figures, built from what the server already counted.
+ *
+ * `GET /businesses` returns the ten counts the Clients board reads, so a live
+ * practice does not need the seeded arrays this module usually folds — but it
+ * must land on the SAME numbers, scored by the SAME weights, or the board would
+ * quietly mean two different things depending on which world it was rendering.
+ * That is why this reuses `pipelineHealth` rather than recomputing a score
+ * beside it.
+ *
+ * Two counts have no server column yet and are honestly zero rather than
+ * guessed: `duplicates` (the pair table is not aggregated on this endpoint) and
+ * `itemDelay` (no per-item age is projected). Both cost points in the health
+ * score, so a live client scores at or above its seeded twin, never below —
+ * an absent input must not read as a problem.
+ *
+ * `bankConnected: true` is passed deliberately. The seeded formula docks ten
+ * points for a client with no bank feed; ID has no feed to connect (D40 makes
+ * manual statement upload the only input), so applying that penalty live would
+ * mark every client in the practice down for declining to use a feature that
+ * does not exist.
+ */
+export function clientStatsFromCounts(counts: {
+  toReview: number;
+  ready: number;
+  failed: number;
+  published: number;
+  missing: number;
+  requested: number;
+  overdue: number;
+  unmatched: number;
+  statementGaps: number;
+  approvals: number;
+}): ClientStats {
+  return {
+    missing: counts.missing,
+    requested: counts.requested,
+    overdue: counts.overdue,
+    unmatched: counts.unmatched,
+    statementGaps: counts.statementGaps,
+    toReview: counts.toReview,
+    ready: counts.ready,
+    // No PROCESSING count is projected; the board's "processing" column is a
+    // seeded-only figure and reads zero live rather than borrowing another.
+    processing: 0,
+    rejected: counts.failed,
+    published: counts.published,
+    duplicates: 0,
+    approvals: counts.approvals,
+    unverified: 0,
+    health: pipelineHealth({
+      missing: counts.missing,
+      overdue: counts.overdue,
+      toReview: counts.toReview,
+      rejected: counts.failed,
+      duplicates: 0,
+      approvals: counts.approvals,
+      bankConnected: true,
+    }),
+    itemDelay: 0,
+  };
 }
 
 /** Average days from document date to upload — Dext's metric, kept. */

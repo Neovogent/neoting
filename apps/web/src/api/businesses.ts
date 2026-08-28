@@ -74,12 +74,35 @@ export function deriveBusinessSummaries(
   documents: ReadonlyArray<{ clientId: string; status: string }>,
 ): BusinessSummary[] {
   return clients.map((client) => {
-    const counts = { toReview: 0, ready: 0, failed: 0 };
+    // All ten, because the contract requires all ten. The four this function
+    // can see are folded from the seeded documents; the rest are zero rather
+    // than absent — the same rule the server's own fold follows, and the reason
+    // the contract made them required: an omitted count and a zero count look
+    // identical on screen, so the shape must force the producer to say which.
+    //
+    // The six zeroes are not a gap being papered over. This function exists to
+    // give SYNTHETIC mode a `BusinessSummary`-shaped answer for the context
+    // header and the client switcher, neither of which reads them; the Clients
+    // board in synthetic mode scores from `deriveClientStats` over the seeded
+    // arrays, never from here.
+    const counts = {
+      toReview: 0,
+      ready: 0,
+      failed: 0,
+      published: 0,
+      missing: 0,
+      requested: 0,
+      overdue: 0,
+      unmatched: 0,
+      statementGaps: 0,
+      approvals: 0,
+    };
     for (const doc of documents) {
       if (doc.clientId !== client.id) continue;
       if (doc.status === 'review') counts.toReview += 1;
       else if (doc.status === 'ready') counts.ready += 1;
       else if (doc.status === 'rejected') counts.failed += 1;
+      else if (doc.status === 'published') counts.published += 1;
     }
     return { id: client.id, name: client.name, tradingName: null, counts };
   });

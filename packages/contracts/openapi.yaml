@@ -5168,10 +5168,33 @@ components:
         id: { type: string }
         name: { type: string }
         tradingName: { type: [string, 'null'] }
+        industry:
+          description: |
+            The client's sector, as keyed in at intake. The Clients list prints
+            it under the name; a record created from an invite has none until
+            the client registers, which is why it is nullable rather than
+            defaulted to a word nobody chose.
+          type: [string, 'null']
+        nextDeadline:
+          description: |
+            The next filing date this client is working towards, `YYYY-MM-DD`.
+            Null when none is set. Rendered as the Clients list's last column
+            and as the "Next" line on the client card.
+          type: [string, 'null']
+          format: date
         counts:
           type: object
-          description: One cheap aggregate over documents, grouped by state. Unrouted documents belong to no business and are counted nowhere here.
-          required: [toReview, ready, failed]
+          description: |
+            One cheap aggregate of everything waiting on this client. Unrouted
+            documents belong to no business and are counted nowhere here.
+
+            The first three are folded from document state; the rest come from
+            the work queues the Clients board drills into. All are REQUIRED:
+            an absent count and a zero count look identical on screen, so a
+            producer that cannot compute one must say zero deliberately rather
+            than omit it and let the board read as quiet.
+          required:
+            [toReview, ready, failed, published, missing, requested, overdue, unmatched, statementGaps, approvals]
           properties:
             toReview: { type: integer, minimum: 0 }
             ready: { type: integer, minimum: 0 }
@@ -5179,6 +5202,41 @@ components:
               type: integer
               minimum: 0
               description: REJECTED and FAILED together — the Rejected/Failed view's badge.
+            published:
+              type: integer
+              minimum: 0
+              description: |
+                Approved and released for export (D42). **This is an internal
+                state and asserts nothing about a ledger** — it is the count the
+                Export screen builds a VT import file from, and no surface may
+                word it as having been sent anywhere.
+            missing:
+              type: integer
+              minimum: 0
+              description: Paperwork known to be absent and not yet requested — the chase queue's inbox.
+            requested:
+              type: integer
+              minimum: 0
+              description: Missing items a chase has already gone out for, still outstanding.
+            overdue:
+              type: integer
+              minimum: 0
+              description: Requested items past the date they were asked for.
+            unmatched:
+              type: integer
+              minimum: 0
+              description: Bank transactions with no document matched against them.
+            statementGaps:
+              type: integer
+              minimum: 0
+              description: |
+                Periods where an uploaded statement failed its completeness gate
+                (D41). Upload being the only bank input makes a gap a document
+                that will never be chased unless it is counted here.
+            approvals:
+              type: integer
+              minimum: 0
+              description: Items sitting in this client's approval queue, awaiting a human.
         subscription:
           description: |
             The client's subscription (D48), for the settings Plan section and

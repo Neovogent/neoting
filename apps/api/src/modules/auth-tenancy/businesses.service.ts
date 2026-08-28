@@ -2,7 +2,7 @@ import type { z } from 'zod';
 
 import type { BusinessSummary } from '@neoting/contracts/model';
 import type { listBusinessesQueryParams } from '@neoting/contracts/zod';
-import type { Business as BusinessRow, DocumentState, Prisma } from '@prisma/client';
+import type { Business as BusinessRow, ChaseState, DocumentState, Prisma } from '@prisma/client';
 
 import type { PrismaClient } from '../../common/db/prisma.js';
 import type { ScopeContext } from '../../common/db/scope-context.js';
@@ -32,6 +32,45 @@ const COUNTED: Partial<Record<DocumentState, keyof BusinessSummary['counts']>> =
   READY: 'ready',
   REJECTED: 'failed',
   FAILED: 'failed',
+  // Approved and released for export (D42). An INTERNAL state: it is what the
+  // Export screen builds a VT import file from, and nothing here may be worded
+  // as having reached a ledger.
+  PUBLISHED: 'published',
+};
+
+/**
+ * Where a chase's state lands on the Clients board.
+ *
+ * The board asks three different questions of the same queue — what is missing,
+ * what have we already asked for, and what is late — so one `groupBy` over
+ * `ChaseState` answers all three rather than three counts over three filters.
+ *
+ * `DETECTED` is the honest reading of "missing": the gap is known and no text
+ * has gone out. `PROPOSED` and `APPROVED` are deliberately NOT counted as
+ * requested — a chase composed but not sent has not reached the client, and
+ * counting it would tell an accountant they had chased when they had not
+ * (D44 splits composition from release precisely because those differ).
+ * Everything `CLOSED_*` is settled and belongs in no column.
+ */
+const CHASE_COUNTED: Partial<Record<ChaseState, keyof BusinessSummary['counts']>> = {
+  DETECTED: 'missing',
+  SENT: 'requested',
+  REMINDED: 'requested',
+  ESCALATED: 'overdue',
+};
+
+/** Every count at zero — a client with nothing waiting, which is a real state. */
+const ZERO_COUNTS: BusinessSummary['counts'] = {
+  toReview: 0,
+  ready: 0,
+  failed: 0,
+  published: 0,
+  missing: 0,
+  requested: 0,
+  overdue: 0,
+  unmatched: 0,
+  statementGaps: 0,
+  approvals: 0,
 };
 
 /**
@@ -70,7 +109,7 @@ export class BusinessesService {
     };
     const seek = pageQuery(request);
 
-    const { rows, grouped } = await scopedDb(this.prisma, ctx, async (db) => {
+    const { rows, grouped, chases, unmatched, approvals } = await scopedDb(this.prisma, ctx, async (db) => {
       const rows = await db.business.findMany({
         // Spread, not `where: seek.where` — under exactOptionalPropertyTypes
         // an explicit `undefined` is not the same as an absent key, and there
@@ -82,25 +121,63 @@ export class BusinessesService {
       // Grouped over the fetched ids (at most limit + 1 — the extra row's
       // counts are computed and discarded, which is cheaper than a second
       // round-trip after the trim).
-      const grouped = await db.document.groupBy({
-        by: ['businessId', 'state'],
-        where: {
-          businessId: { in: rows.map((row) => row.id) },
-          state: { in: Object.keys(COUNTED) as DocumentState[] },
-        },
-        _count: { _all: true },
-      });
-      return { rows, grouped };
+      const ids = rows.map((row) => row.id);
+      // Four aggregates, not four-per-business: each is one `groupBy` over the
+      // whole page, so the query count is fixed no matter how many clients the
+      // practice has. They are issued together — inside the one `scopedDb`
+      // transaction, so every one of them sees the same RLS-visible set the
+      // page itself came from, and none can widen it.
+      const [grouped, chases, unmatched, approvals] = await Promise.all([
+        db.document.groupBy({
+          by: ['businessId', 'state'],
+          where: {
+            businessId: { in: ids },
+            state: { in: Object.keys(COUNTED) as DocumentState[] },
+          },
+          _count: { _all: true },
+        }),
+        db.chase.groupBy({
+          by: ['businessId', 'state'],
+          where: { businessId: { in: ids }, state: { in: Object.keys(CHASE_COUNTED) as ChaseState[] } },
+          _count: { _all: true },
+        }),
+        // `chaseSuppressed` lines are excluded on purpose: they are bank-
+        // originated entries with no paperwork to find (bank interest, card
+        // fees), so counting them would put a number on screen that no amount
+        // of chasing can ever bring down.
+        db.bankTransaction.groupBy({
+          by: ['businessId'],
+          where: { businessId: { in: ids }, matchState: 'UNMATCHED', chaseSuppressed: false },
+          _count: { _all: true },
+        }),
+        // The same definition of "pending" the chat suggestions use
+        // (`suggestions.service.ts`): CREATED is proposed, REVIEWED is read but
+        // not yet approved. Both are waiting on a human, which is what the
+        // column means.
+        db.actionProposal.groupBy({
+          by: ['businessId'],
+          where: { businessId: { in: ids }, state: { in: ['CREATED', 'REVIEWED'] } },
+          _count: { _all: true },
+        }),
+      ]);
+      return { rows, grouped, chases, unmatched, approvals };
     });
 
-    const counts = foldCounts(grouped);
+    const counts = foldCounts(grouped, chases, unmatched, approvals);
     const page = toPage(rows, request);
     return {
       data: page.data.map((row) => ({
         id: row.id,
         name: row.name,
         tradingName: row.tradingName,
-        counts: counts.get(row.id) ?? { toReview: 0, ready: 0, failed: 0 },
+        // Both already on the row — the Clients list prints the sector under
+        // the name and the deadline in its last column, and neither needed a
+        // schema change to reach it. Null where the client has not said: an
+        // invite-path record has no sector until they register, and not every
+        // client is working towards a filing date.
+        industry: row.industry,
+        nextDeadline: row.nextDeadline === null ? null : toIsoDate(row.nextDeadline),
+        counts: counts.get(row.id) ?? ZERO_COUNTS,
         // The D48 projection, from the four columns already on the row — no
         // second query and no second round-trip. `error-codes.md` asks for it
         // by name under NT-BIL-002: the subscribe call-to-action must not
@@ -115,17 +192,68 @@ export class BusinessesService {
   }
 }
 
-/** The groupBy rows folded into per-business badge counts. Exported for its test. */
+/**
+ * `YYYY-MM-DD`, which is what the contract declares `nextDeadline` to be.
+ *
+ * `toISOString().slice(0, 10)` and not a local-time format: storage is UTC
+ * (Governance), the column is a bare filing date rather than an instant, and
+ * rendering it through a London offset would move a 1 January deadline to
+ * 31 December for anyone reading from a negative-offset timezone.
+ */
+function toIsoDate(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+/**
+ * The four aggregates folded into one set of per-business counts.
+ *
+ * Every business that appears in ANY of the four gets a full, zero-filled
+ * record: the contract makes all ten counts required, and a client with three
+ * unmatched bank lines and no documents must still report `toReview: 0` rather
+ * than arriving without the key.
+ *
+ * Exported for its test.
+ */
 export function foldCounts(
   grouped: ReadonlyArray<{ businessId: string | null; state: DocumentState; _count: { _all: number } }>,
+  chases: ReadonlyArray<{ businessId: string; state: ChaseState; _count: { _all: number } }> = [],
+  unmatched: ReadonlyArray<{ businessId: string | null; _count: { _all: number } }> = [],
+  approvals: ReadonlyArray<{ businessId: string | null; _count: { _all: number } }> = [],
 ): Map<string, BusinessSummary['counts']> {
   const byBusiness = new Map<string, BusinessSummary['counts']>();
+  /** The zero-filled record for this business, created on first sight of it. */
+  const bucketFor = (businessId: string): BusinessSummary['counts'] => {
+    const existing = byBusiness.get(businessId);
+    if (existing !== undefined) return existing;
+    const fresh = { ...ZERO_COUNTS };
+    byBusiness.set(businessId, fresh);
+    return fresh;
+  };
+
   for (const row of grouped) {
     const bucket = COUNTED[row.state];
     if (row.businessId === null || bucket === undefined) continue;
-    const counts = byBusiness.get(row.businessId) ?? { toReview: 0, ready: 0, failed: 0 };
-    counts[bucket] += row._count._all;
-    byBusiness.set(row.businessId, counts);
+    bucketFor(row.businessId)[bucket] += row._count._all;
   }
+  for (const row of chases) {
+    const bucket = CHASE_COUNTED[row.state];
+    if (bucket === undefined) continue;
+    bucketFor(row.businessId)[bucket] += row._count._all;
+  }
+  for (const row of unmatched) {
+    if (row.businessId === null) continue;
+    bucketFor(row.businessId).unmatched += row._count._all;
+  }
+  for (const row of approvals) {
+    if (row.businessId === null) continue;
+    bucketFor(row.businessId).approvals += row._count._all;
+  }
+
+  // `statementGaps` is left at zero on every path, deliberately and visibly.
+  // The column it feeds is real (D41 makes a dropped statement row a document
+  // that is never chased), but NOTHING in this repo writes `Statement.gapAnalysis`
+  // yet — so the only honest number today is zero. Counting statements that
+  // merely HAVE the column set would report gaps that were never found. When
+  // the extractor starts writing it, this is the one place to change.
   return byBusiness;
 }

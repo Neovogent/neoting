@@ -49,7 +49,7 @@ import { SEED_SLICE, errorLabel, sliceStatus, type SliceStatuses } from '../api/
 import { queryClient } from '../api/queryClient';
 import { importSheet, type SheetImport } from '../lib/tableImport';
 import { buildBusinessAccounts, newBusinessAccount } from '../lib/business';
-import { deriveClientStats, type ClientStats } from '../lib/selectors';
+import { clientStatsFromCounts, deriveClientStats, type ClientStats } from '../lib/selectors';
 import { detectDuplicates } from '../lib/dedupe';
 import { fromSlug, navigate, path, slug, usePath } from '../lib/router';
 import type {
@@ -769,12 +769,91 @@ export function AppProvider({ children }: { children: ReactNode }) {
    * derived from the seeded clients. Either way a consumer gets one list,
    * and `slices` below says which world it came from.
    */
+  /**
+   * Whether the Clients board is rendering SERVER rows.
+   *
+   * The same condition the `businesses` memo selects on, named once because
+   * three things now depend on it: which list the board shows, which stats it
+   * scores, and whether the seed↔server id bridge is still needed. A practice
+   * whose query has not answered yet is not live — it keeps the seeded cast in
+   * synthetic mode and an empty board in live mode, which is what the slice
+   * status is for.
+   */
+  const liveBoard = slicesOn && businessesQuery.businesses.length > 0;
+
   const businesses = useMemo(
     () =>
-      slicesOn && businessesQuery.businesses.length > 0
-        ? businessesQuery.businesses
-        : deriveBusinessSummaries(clients, documents),
-    [slicesOn, businessesQuery.businesses, clients, documents],
+      liveBoard ? businessesQuery.businesses : deriveBusinessSummaries(clients, documents),
+    [liveBoard, businessesQuery.businesses, clients, documents],
+  );
+
+  /**
+   * The server's businesses as the board's own `Client` shape.
+   *
+   * `GET /businesses` carries the sector, the deadline and the ten counts since
+   * the widening, so the live Clients screen is no longer a reduced stand-in
+   * for the seeded one — it is the same board over server rows. That is why
+   * `LiveClientsView` is gone: it existed because the endpoint answered three
+   * counts and a name, and every column beyond that would have been invented.
+   *
+   * `bankConnected: true` for the reason `clientStatsFromCounts` records — ID
+   * has no feed to connect (D40), so the field is vestigial here and must not
+   * be read as a capability claim. It is not rendered on any live surface.
+   */
+  /**
+   * `2026-09-07` → `7 Sep 2026`, the form the board already prints.
+   *
+   * `Client.deadline` is a DISPLAY string on the seeded side, not a date, and
+   * every surface that shows it renders it verbatim. The contract sends a
+   * `YYYY-MM-DD`, so the conversion happens here rather than at each of them.
+   *
+   * Formatted in **UTC**, not Europe/London. The value is a bare filing date
+   * with no instant behind it; parsing it lands on UTC midnight, and rendering
+   * that through a zone west of Greenwich would print the previous day — a
+   * deadline silently a day early, which is the wrong direction to be wrong in.
+   */
+  const formatDeadline = (iso: string): string => {
+    const parsed = new Date(`${iso}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime())) return iso;
+    return new Intl.DateTimeFormat('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      timeZone: 'UTC',
+    }).format(parsed);
+  };
+
+  const liveClients = useMemo<Client[]>(
+    () =>
+      !liveBoard
+        ? []
+        : businessesQuery.businesses.map((b) => {
+            const stats = clientStatsFromCounts(b.counts);
+            return {
+              id: b.id,
+              name: b.name,
+              industry: b.industry ?? '',
+              health: stats.health,
+              missingDocs: stats.missing,
+              toReview: stats.toReview,
+              deadline: b.nextDeadline == null ? '' : formatDeadline(b.nextDeadline),
+              bankConnected: true,
+              // An invite-path client has told us nothing yet, and the board
+              // prints "Awaiting client registration" where the sector goes.
+              // The server's null sector is the only signal available for it.
+              ...(b.industry === null || b.industry === undefined ? { awaitingRegistration: true } : {}),
+            };
+          }),
+    [liveBoard, businessesQuery.businesses],
+  );
+
+  /**
+   * Per-client counts keyed by server id, so `statsFor` can answer for a live
+   * row without folding arrays that are empty when the API is on.
+   */
+  const liveStats = useMemo(
+    () => new Map(businessesQuery.businesses.map((b) => [b.id, clientStatsFromCounts(b.counts)])),
+    [businessesQuery.businesses],
   );
 
   /**
@@ -1338,10 +1417,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const statsFor = useCallback(
     (clientId: string) => {
+      // Live rows are scored from what the server counted. Falling through to
+      // the fold would answer zero for every column — the arrays it reads are
+      // empty with the API on — and a board of zeroes reads as a quiet practice
+      // rather than as an unanswered question.
+      const live = liveStats.get(clientId);
+      if (live !== undefined) return live;
       const client = clients.find((c) => c.id === clientId) ?? clients[0];
       return deriveClientStats(client, { documents, missing, chases, approvals, duplicates, transactions, statementGaps });
     },
-    [clients, documents, missing, chases, approvals, duplicates, transactions, statementGaps],
+    [liveStats, clients, documents, missing, chases, approvals, duplicates, transactions, statementGaps],
   );
 
   const updateDocumentStatus = useCallback((id: string, status: DocStatus) => {
@@ -2529,7 +2614,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   return (
     <AppContext.Provider
       value={{
-        clients,
+        clients: liveBoard ? liveClients : clients,
         documents,
         transactions,
         matches,

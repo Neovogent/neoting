@@ -148,8 +148,23 @@ describe.skipIf(DATABASE_URL === undefined || OWNER_URL === undefined)('session 
     expect(page.data.map((b) => b.id)).toEqual(['s1a_biz_1', 's1a_biz_2']);
     // REJECTED and FAILED together are `failed`; the RECEIVED-state document
     // and the unrouted TO_REVIEW one (s1a_cnt_6, no business) count nowhere.
-    expect(page.data[0]!.counts).toEqual({ toReview: 2, ready: 1, failed: 2 });
-    expect(page.data[1]!.counts).toEqual({ toReview: 0, ready: 0, failed: 0 });
+    // The six non-document counts are zero because this fixture seeds no
+    // chases, unmatched transactions or proposals — asserted rather than
+    // omitted, because the contract requires every key to be present.
+    const zero = {
+      toReview: 0,
+      ready: 0,
+      failed: 0,
+      published: 0,
+      missing: 0,
+      requested: 0,
+      overdue: 0,
+      unmatched: 0,
+      statementGaps: 0,
+      approvals: 0,
+    };
+    expect(page.data[0]!.counts).toEqual({ ...zero, toReview: 2, ready: 1, failed: 2 });
+    expect(page.data[1]!.counts).toEqual(zero);
     expect(page.pageInfo).toEqual({ nextCursor: null, hasMore: false });
   });
 
