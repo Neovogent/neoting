@@ -57,6 +57,14 @@ is now the ACCOUNT, not the adapter, and `4242 4242 4242 4242` is the only card
 that works. See `docs/runbooks/stripe-billing.md` §7 and
 `infra/envs/staging/services.tf`.
 
+The key is **restricted** (`rk_test_`), with Write on Customers, Checkout
+Sessions and Customer Portal and nothing else — the same three the live-mode
+rule asks for. §4's VAT probe was re-run against it on the deployed
+configuration and still reads **850 / 170 / 1020**, which is also the check that
+the key belongs to the account owning the price: the account has a second
+sandbox whose keys look identical and fail with "No such price" at the moment a
+client presses Subscribe.
+
 ## The four things worth knowing before you change anything here
 
 ### 1. Entitlement is in the service layer, and moving it is a data-loss bug
