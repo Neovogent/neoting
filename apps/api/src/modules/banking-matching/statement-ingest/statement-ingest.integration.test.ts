@@ -113,7 +113,14 @@ const run = (documentId: string, bytes: string, fileName = 'statement.csv') =>
   scopedDb(app, CTX, (db) =>
     ingestStatement(
       db as unknown as StatementScopedClient,
-      { documentId, businessId: BIZ, fileName, bytes: Buffer.from(bytes, 'utf8') },
+      {
+        documentId,
+        businessId: BIZ,
+        fileName,
+        bytes: Buffer.from(bytes, 'utf8'),
+        mimeType: fileName.endsWith('.pdf') ? 'application/pdf' : 'text/csv',
+        s3Key: null,
+      },
       log,
     ),
   );
@@ -185,15 +192,17 @@ describe.skipIf(!enabled)('statement import, against a real database', () => {
     expect((statement?.gapAnalysis as { assurance?: string } | null)?.assurance).toBe('incomplete');
   });
 
-  test('a SCANNED pdf is refused with a reason, and writes nothing', async () => {
-    // A PDF with no text objects is a photograph of a statement. It needs OCR,
-    // which is the extraction lane; importing zero rows from it would report an
-    // unreadable statement as an empty one.
+  test('a PDF with NO reader configured is refused with a reason, and writes nothing', async () => {
+    // A PDF is Textract's job (D20). With `STATEMENT_READER=none` there is no
+    // reader, and the refusal must say so PERMANENTLY — importing zero rows
+    // would report an unread statement as an empty one, and promising a retry
+    // that no configuration will ever perform is the same lie one step later.
     const before = await owner.bankTransaction.count({ where: { businessId: BIZ } });
     const outcome = await run(DOC_PDF, '%PDF-1.7', 'statement.pdf');
     expect(outcome.status).toBe('refused');
     if (outcome.status !== 'refused') return;
-    expect(outcome.reason).toContain('scan');
+    expect(outcome.reason).toContain('not switched on');
+    expect(outcome.reason).not.toContain('shortly');
     expect(await owner.statement.count({ where: { documentId: DOC_PDF } })).toBe(0);
     expect(await owner.bankTransaction.count({ where: { businessId: BIZ } })).toBe(before);
   });

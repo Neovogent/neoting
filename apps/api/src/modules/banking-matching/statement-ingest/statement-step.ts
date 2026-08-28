@@ -3,6 +3,7 @@ import type { PrismaClient } from '../../../common/db/prisma.js';
 import { systemContext } from '../../../common/db/scope-context.js';
 import { scopedDb } from '../../../common/db/scoped-db.js';
 import { ingestStatement, type StatementScopedClient } from './statement-ingest.js';
+import type { StatementTableReader } from './table-reader.js';
 
 /**
  * The ingest job's statement step.
@@ -71,10 +72,14 @@ export class PrismaStatementStep implements StatementStep {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly store: StatementBytesSource,
-    options: { logger?: StatementStepLogger } = {},
+    options: { logger?: StatementStepLogger; tables?: StatementTableReader } = {},
   ) {
     this.logger = options.logger ?? NOOP_LOGGER;
+    this.tables = options.tables;
   }
+
+  /** The OCR reader for PDFs and photographs (D20). Absent = spreadsheets only. */
+  private readonly tables: StatementTableReader | undefined;
 
   async run(input: StatementStepInput): Promise<void> {
     // An unrouted document has no client, so its lines would belong to nobody.
@@ -90,7 +95,7 @@ export class PrismaStatementStep implements StatementStep {
       const document = await scopedDb(this.prisma, ctx, (db) =>
         db.document.findUnique({
           where: { id: input.documentId },
-          select: { docType: true, originalFilename: true, s3Key: true, businessId: true },
+          select: { docType: true, originalFilename: true, s3Key: true, businessId: true, mimeType: true },
         }),
       );
       if (document === null || document.docType !== 'STATEMENT') return;
@@ -108,8 +113,13 @@ export class PrismaStatementStep implements StatementStep {
             businessId: document.businessId ?? jobBusinessId,
             fileName: document.originalFilename,
             bytes,
+            // The SNIFFED type off the row, never the client's declared one.
+            mimeType: document.mimeType,
+            // Textract's multi-page path reads from storage, not from bytes.
+            s3Key: document.s3Key,
           },
           this.logger,
+          this.tables,
         ),
       );
 

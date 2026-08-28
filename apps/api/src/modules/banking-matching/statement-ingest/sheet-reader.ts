@@ -1,7 +1,5 @@
 import { inflateRawSync } from 'node:zlib';
 
-import { readPdf } from './pdf-reader.js';
-
 /**
  * CSV and XLSX bytes → a grid of strings. Nothing above this file knows which
  * of the two it was handed.
@@ -28,19 +26,13 @@ import { readPdf } from './pdf-reader.js';
 /** A parsed grid. Ragged by nature — a bank's trailer row is often shorter. */
 export type Grid = string[][];
 
-export type SheetFormat = 'csv' | 'xlsx' | 'pdf';
+export type SheetFormat = 'csv' | 'xlsx';
 
 export type ReadFailure =
   /** Not a zip at all — usually a PDF or an image renamed to .xlsx. */
   | { reason: 'notAZipFile' }
   /** A zip, but without the members a worksheet must have. */
   | { reason: 'notAWorkbook' }
-  /** Named .pdf and not one. */
-  | { reason: 'notAPdf' }
-  /** A PDF we may not read the contents of. */
-  | { reason: 'encrypted' }
-  /** A PDF with no text objects — a SCAN. It needs OCR, not this reader. */
-  | { reason: 'noTextFound' }
   /** Structurally readable and completely empty. */
   | { reason: 'noRows' };
 
@@ -59,17 +51,10 @@ export function formatFor(fileName: string): SheetFormat | null {
   const lower = fileName.toLowerCase();
   if (lower.endsWith('.csv')) return 'csv';
   if (lower.endsWith('.xlsx')) return 'xlsx';
-  if (lower.endsWith('.pdf')) return 'pdf';
   return null;
 }
 
 export function readSheet(bytes: Buffer, format: SheetFormat): ReadResult {
-  if (format === 'pdf') {
-    const pdf = readPdf(bytes);
-    if (!pdf.ok) return { ok: false, failure: pdf.failure };
-    if (pdf.grid.length === 0) return { ok: false, failure: { reason: 'noRows' } };
-    return { ok: true, grid: pdf.grid };
-  }
   const grid = format === 'csv' ? readCsv(bytes) : readXlsx(bytes);
   if (!Array.isArray(grid)) return { ok: false, failure: grid };
   if (grid.length === 0) return { ok: false, failure: { reason: 'noRows' } };

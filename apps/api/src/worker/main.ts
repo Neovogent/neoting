@@ -22,7 +22,7 @@ import { INGEST_QUEUE_NAME } from '../modules/ingestion-routing/queue/queue-name
 import { createRedisConnection } from '../modules/ingestion-routing/queue/redis-connection.js';
 import { selectMediaFetcher } from '../modules/ingestion-routing/queue/select-media-fetcher.js';
 import type { MediaIntakeDeps } from '../modules/ingestion-routing/queue/whatsapp-media-intake.js';
-import { PrismaStatementStep } from '../modules/banking-matching/index.js';
+import { PrismaStatementStep, selectTableReader } from '../modules/banking-matching/index.js';
 import { selectDocumentStore } from '../modules/ingestion-routing/storage/select-document-store.js';
 import { PrismaUploadSanitisationStep } from '../modules/ingestion-routing/web-upload/prisma-upload-sanitisation.js';
 
@@ -103,8 +103,12 @@ function bootstrap(): void {
   // Statement import (D40/D41). Shares `documentStore` with extraction — the
   // statement's bytes are the SAME object extraction already read, so a second
   // store would be a second answer to "where are this document's bytes".
+  const statementLogger = { log: (message: string) => logger.log(message), warn: (message: string) => logger.warn(message) };
+  const tableReader = selectTableReader(env, statementLogger);
+  logger.log(`statement reader: ${env.STATEMENT_READER}`);
   const statements = new PrismaStatementStep(getPrismaClient(), documentStore, {
-    logger: { log: (message) => logger.log(message), warn: (message) => logger.warn(message) },
+    logger: statementLogger,
+    ...(tableReader === undefined ? {} : { tables: tableReader }),
   });
 
   const worker = new Worker(

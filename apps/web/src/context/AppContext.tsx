@@ -714,12 +714,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return map;
   }, [businessesQuery.businesses, localClients]);
 
+  /**
+   * The server's own business ids, for the check below.
+   *
+   * A Set rather than a scan: this is consulted on every upload and every
+   * client-scoped filter.
+   */
+  const serverBusinessIds = useMemo(
+    () => new Set(businessesQuery.businesses.map((b) => b.id)),
+    [businessesQuery.businesses],
+  );
+
   const serverClientIdFor = useCallback(
-    (clientId: string) =>
-      serverIdByClient.get(clientId) ??
-      // The MSW fixture convention (api/uploads.ts): seed ids became biz_<id>.
-      (clientId.startsWith('biz_') ? clientId : `biz_${clientId}`),
-    [serverIdByClient],
+    (clientId: string) => {
+      // ⚠ FIRST: an id the server already knows is ALREADY a server id.
+      //
+      // This bridge was written when the board was always the seeded cast, so
+      // every id reaching it was a seed id ('1') needing translation. The board
+      // now renders SERVER rows, whose ids are cuids — and the fallback below
+      // dutifully turned `cmtd3fycx…` into `biz_cmtd3fycx…`, an id that exists
+      // nowhere. The visible symptom was a bank statement upload refused with
+      // "No business with that id is reachable" on a client plainly on screen.
+      if (serverBusinessIds.has(clientId)) return clientId;
+      return (
+        serverIdByClient.get(clientId) ??
+        // The MSW fixture convention (api/uploads.ts): seed ids became biz_<id>.
+        (clientId.startsWith('biz_') ? clientId : `biz_${clientId}`)
+      );
+    },
+    [serverBusinessIds, serverIdByClient],
   );
 
   const isSameClient = useCallback(

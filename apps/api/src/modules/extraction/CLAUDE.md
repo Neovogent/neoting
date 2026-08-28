@@ -360,7 +360,16 @@ missing field or a failed validator, never an invented threshold.
 - [x] METH Stage 4: DemoExtractor + pipeline, documents leave RECEIVED, proven
       against a real DB.
 - [x] A REAL extractor behind `DocumentExtractor` — `EXTRACTOR=bedrock` (METH S15).
-- [ ] Textract as the OCR rung, and the Sonnet→Opus→human escalation ladder above it.
+- [~] Textract as the OCR rung. **Half done, 28 Aug 2026: it is in the BANK
+      STATEMENT lane, not this one.** `banking-matching/statement-ingest/`
+      reads a PDF or photographed statement through Textract's TABLES feature
+      (`STATEMENT_READER=textract`), which is the D20 rung for the one input
+      shape a vision model is genuinely worse at — a 1,250-row table. This
+      module still calls Claude directly for receipts and invoices, and
+      `AnalyzeExpense` is still not in that path. The IAM grant in
+      `infra/envs/staging/compute.tf` (Sid `Extraction`) had sat unused since it
+      was written; the statement lane is its first caller.
+- [ ] The Sonnet→Opus→human escalation ladder above it.
 - [x] Delete `FallbackExtractor` — done 25 Aug 2026; a failed read is a FAILED
       document. Do not reintroduce a degrade-to-fixture path.
 - [x] A4 (26 Aug 2026): PDFs read through the `document` block with a 5-page

@@ -205,6 +205,20 @@ const EnvSchema = z.object({
   // default.
   EXTRACTOR: z.enum(['demo', 'bedrock']).default('demo'),
 
+  /**
+   * How a PDF or photographed bank statement becomes a table (D20, D41).
+   *
+   * `textract`  Amazon Textract's TABLES feature — the committed OCR rung.
+   * `none`      No reader. CSV and XLSX still import (they need no OCR); a PDF
+   *             or an image is REFUSED with a reason, never silently skipped.
+   *
+   * Defaults to `none` so a cold clone and every offline test work with no AWS
+   * credentials, and so a machine that cannot reach Textract says so rather than
+   * appearing to import a statement it never read. Textract cannot read MinIO,
+   * so local development is `none` by necessity, not by preference.
+   */
+  STATEMENT_READER: z.enum(['none', 'textract']).default('none'),
+
   // NO BEDROCK_MODEL_ID, deliberately. The model is pinned in
   // `modules/chat-framework/models.ts` and imported — never configured
   // (Governance §9.1: "a model upgrade is a PR that changes this file AND
