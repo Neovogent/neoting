@@ -248,6 +248,44 @@ export const DEMO_PROFILES: ReadonlyArray<readonly [keyword: string, profile: De
       lineItems: [{ description: 'Sundry (partially illegible)', quantity: 1, totalPence: 8_940, taxPence: 1_490 }],
     }),
   ],
+  /**
+   * A bank statement, so the fixture path can reach the statement importer.
+   *
+   * Without this every statement fell through to the generic profile, which
+   * classifies `INVOICE` — so `statement-step` saw a non-STATEMENT document,
+   * answered "not mine", and the D40 import lane was unreachable in fixture
+   * mode. The header fields are deliberately thin: a statement has no supplier
+   * and no single total, and inventing one would put a figure on the document
+   * card that contradicts the transactions imported from it. The rows are the
+   * point, and they come from the file itself, deterministically.
+   *
+   * ⚠ **LAST in the list, deliberately.** First matching keyword wins, and a
+   * real upload is called `Just Eat statement.pdf` — a supplier document that
+   * happens to carry the word. Placing this first classified it STATEMENT and
+   * broke `demo-extractor.test.ts`, which exists for exactly this footgun. Only
+   * a file matching no supplier keyword falls through to here.
+   */
+  [
+    'statement',
+    ok({
+      docType: 'STATEMENT',
+      // The spec's fields are non-nullable, so a statement's absent header is
+      // expressed as the emptiest honest value rather than a made-up supplier.
+      // Nothing downstream reads these for a STATEMENT document: the rows come
+      // from the file, and `statement-ingest` never looks at the extraction.
+      supplierName: '',
+      customerName: '',
+      documentDate: '',
+      currency: 'GBP',
+      totalPence: 0,
+      taxPence: 0,
+      reference: '',
+      vatNumber: '',
+      categoryCode: 'BANK',
+      overallConfidence: 0.99,
+      lineItems: [],
+    }),
+  ],
 ];
 
 /** Filename keywords that model an unreadable document — lands it FAILED. */

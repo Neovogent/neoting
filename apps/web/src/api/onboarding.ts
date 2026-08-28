@@ -4,6 +4,7 @@ import {
   createCheckoutSession,
   createPortalOnboardingSession,
   createPortalSignInCode,
+  getPortalContext,
 } from '@neoting/contracts/client';
 import {
   createBillingPortalSessionBody,
@@ -165,4 +166,71 @@ export async function openBillingPortal(businessId: string): Promise<string> {
   });
   const body = hostedSessionShape.parse(unwrapBody(await createBillingPortalSession(request)));
   return body.url;
+}
+
+
+/* ── The client's own portal (D47, §24.5) ─────────────────────────────────── */
+
+/**
+ * What a signed-in client sees of their own workspace.
+ *
+ * ⚠ Deliberately NOT the accountant's `BusinessSummary`. A client has no
+ * business seeing how many of their documents sit in the practice's review
+ * queue, or what its approval backlog looks like — that is the firm's working
+ * state. This is their own side of the same pipeline: what they have sent,
+ * what is still being asked of them, and whether they may send more.
+ */
+export interface BusinessPortalHome {
+  readonly businessName: string;
+  readonly businessId: string | null;
+  readonly documentsSent: number;
+  readonly awaitingYou: number;
+  readonly subscriptionActive: boolean;
+  readonly lastDocumentAt: string | null;
+}
+
+/**
+ * The parse is deliberately narrow and NOT `.strict()`.
+ *
+ * One `PortalContext` serves two jobs — a chase being answered and a client
+ * signed into their own workspace — so this shape reads the half it needs and
+ * ignores `items`, which belong to the other job. Parsing the whole thing here
+ * would couple the client's home screen to a chase list it never renders.
+ */
+const portalHomeShape = z.object({
+  businessName: z.string().min(1),
+  businessId: z.string().nullish(),
+  summary: z
+    .object({
+      documentsSent: z.number().int().min(0),
+      awaitingYou: z.number().int().min(0),
+      subscriptionActive: z.boolean(),
+      lastDocumentAt: z.string().nullish(),
+    })
+    .nullish(),
+});
+
+/**
+ * The client's portal home, read with the session bearer they already hold.
+ *
+ * Before the server grew this branch, `GET /portal/context` answered a flat
+ * `401` for a session with no chase — which is every invited client who has
+ * just signed in to their own workspace. So the one credential they can hold
+ * had nowhere to land, and the portal existed only on seed data.
+ *
+ * Returns null when the session carries no summary. That is the CHASE case, and
+ * it is not an error: a chase portal is answering a request, not browsing a
+ * workspace, and it must not be handed one.
+ */
+export async function fetchBusinessPortalHome(sessionToken: string): Promise<BusinessPortalHome | null> {
+  const body = portalHomeShape.parse(unwrapBody(await getPortalContext(bearer(sessionToken))));
+  if (body.summary === null || body.summary === undefined) return null;
+  return {
+    businessName: body.businessName,
+    businessId: body.businessId ?? null,
+    documentsSent: body.summary.documentsSent,
+    awaitingYou: body.summary.awaitingYou,
+    subscriptionActive: body.summary.subscriptionActive,
+    lastDocumentAt: body.summary.lastDocumentAt ?? null,
+  };
 }

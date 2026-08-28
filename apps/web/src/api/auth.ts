@@ -1,10 +1,11 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { createSession, deleteCurrentSession, useGetMe } from '@neoting/contracts/client';
 import { getMeResponse } from '@neoting/contracts/zod';
 import type { Me, SessionCreateRequest } from '@neoting/contracts/model';
 import { NtProblemError } from '@neoting/contracts';
 import { unwrapBody } from './envelope';
 import { errorLabel } from './slices';
+import { setSignedInHint } from '../lib/signed-in-hint';
 
 /**
  * The workspace session, read from `GET /me` (METH Stage 6).
@@ -83,6 +84,22 @@ export function useSession({ enabled }: { enabled: boolean }) {
     () => toSessionState({ enabled, error: query.error, data: query.data }),
     [enabled, query.error, query.data],
   );
+
+  /**
+   * Leave (or clear) the local note that this browser has signed in, so the
+   * public landing page at `/` can send a signed-in accountant to `/app`
+   * without probing `/me` for every anonymous visitor. See
+   * `lib/signed-in-hint.ts` — it holds no identity and grants nothing.
+   *
+   * Only the two DECIDED states write. 'loading' and 'degraded' must not: a
+   * slow or unreachable API is not evidence either way, and clearing on
+   * 'degraded' would log a signed-in user out of the landing page every time
+   * the network hiccuped.
+   */
+  useEffect(() => {
+    if (session.status === 'authenticated') setSignedInHint(true);
+    else if (session.status === 'unauthenticated') setSignedInHint(false);
+  }, [session.status]);
 
   return { session, refetch: query.refetch };
 }

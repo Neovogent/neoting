@@ -109,6 +109,18 @@ export class HttpStripeClient implements StripeClient {
         // methods each client is actually eligible for, configured from the
         // dashboard; hardcoding `['card']` locks out everything else forever.
         line_items: [{ price: this.config.priceId, quantity: 1 }],
+        // The promotion-code box on Stripe's hosted page.
+        //
+        // ⚠ Without this a coupon can EXIST and still be unusable — there is
+        // nowhere to type it, and the only other way to apply one is to attach
+        // a discount to the session server-side, which would mean this product
+        // deciding who gets money off. Letting Stripe collect the code keeps
+        // that decision in the dashboard where it can be revoked.
+        //
+        // ⚠ It is visible to EVERY client, not only to whoever is testing. A
+        // code that leaks is money off for anyone who has it, so a live coupon
+        // wants `max_redemptions` and an expiry rather than trusting obscurity.
+        allow_promotion_codes: true,
         success_url: request.successUrl,
         cancel_url: request.cancelUrl,
         client_reference_id: request.businessId,

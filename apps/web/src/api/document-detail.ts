@@ -48,6 +48,57 @@ export const toPence = (pounds: number): number => Math.round(pounds * 100);
  */
 
 type WireDocument = z.infer<typeof getDocumentResponse>;
+
+/**
+ * ⚠ `getDocumentResponse` REFUSES EVERY VALID DOCUMENT, and this is the
+ * documented generator gap — not a drifted server.
+ *
+ * `Document` is `allOf: [DocumentSummary, {…}]`. orval emits that as a Zod
+ * INTERSECTION of two `.strict()` halves, and each half rejects the other's
+ * keys, so the composed parse can never succeed:
+ *
+ *   Unrecognized key(s): 'mimeType', 'byteSize', 'byteHash', … ;
+ *   byteHash: Invalid; acceptedExtraction: Invalid input
+ *
+ * — one half complaining about the other half's fields, on a body that is
+ * perfectly correct. `packages/contracts/CLAUDE.md` records the gap and names
+ * the two consumers already working around it; `api/chases.ts` does exactly
+ * this for `getChaseResponse`.
+ *
+ * The symptom was not a visible error: the detail parse failed, so the document
+ * screen rendered "No fields extracted" over a document whose fields the server
+ * had sent in full.
+ *
+ * The halves are unwrapped from the intersection and `.strip()`ped, so each
+ * validates its own fields and ignores the other's. **When orval fixes the
+ * generation this whole block deletes** — the test pins the gap so that shows
+ * up as a failure rather than as a mystery.
+ */
+interface StrictHalf {
+  readonly shape: Record<string, unknown>;
+  strip(): { safeParse(value: unknown): { success: boolean; data?: unknown; error?: z.ZodError } };
+}
+
+const documentHalves = (getDocumentResponse as unknown as { _def: { left: StrictHalf; right: StrictHalf } })._def;
+/** The detail half is the one carrying `byteHash`; the summary half is the other. */
+const detailIsRight = documentHalves.right !== undefined && 'byteHash' in documentHalves.right.shape;
+const summaryHalf = (detailIsRight ? documentHalves.left : documentHalves.right).strip();
+const detailHalf = (detailIsRight ? documentHalves.right : documentHalves.left).strip();
+
+export type DocumentDetailParse =
+  | { ok: true; value: WireDocument }
+  | { ok: false; detail: string };
+
+/** A `GET /documents/{id}` body → a contract `Document`, or the reason it is not one. */
+export function parseDocumentDetail(body: unknown): DocumentDetailParse {
+  const summary = summaryHalf.safeParse(body);
+  const detail = detailHalf.safeParse(body);
+  if (!summary.success || !detail.success) {
+    const error = (summary.success ? detail.error : summary.error) as z.ZodError | undefined;
+    return { ok: false, detail: error === undefined ? 'response: did not match the contract' : firstIssues(error) };
+  }
+  return { ok: true, value: { ...(summary.data as object), ...(detail.data as object) } as WireDocument };
+}
 type WireExtraction = NonNullable<WireDocument['acceptedExtraction']>;
 type WireField = WireExtraction['fields'][string];
 
@@ -240,9 +291,9 @@ export function useDocumentDetail({ documentId, enabled, poll = false }: UseDocu
 
     let data = EMPTY;
     if (docQuery.data !== undefined) {
-      const parsed = getDocumentResponse.safeParse(unwrapBody(docQuery.data));
-      if (parsed.success) data = toDetailData(parsed.data, ruleId);
-      else failures.push(firstIssues(parsed.error));
+      const parsed = parseDocumentDetail(unwrapBody(docQuery.data));
+      if (parsed.ok) data = toDetailData(parsed.value, ruleId);
+      else failures.push(parsed.detail);
     }
 
     let image: DocumentDetail['image'] = null;

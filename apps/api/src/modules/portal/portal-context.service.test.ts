@@ -30,8 +30,10 @@ interface ChaseRowFixture {
 
 interface Fixture {
   readonly chases: Readonly<Record<string, ChaseRowFixture>>;
-  readonly businesses: Readonly<Record<string, { practiceId: string; name: string }>>;
+  readonly businesses: Readonly<Record<string, { practiceId: string; name: string; subscriptionStatus?: string | null }>>;
   readonly transactions: readonly TxnRow[];
+  /** Documents this business has sent — only their count and newest date matter. */
+  readonly documents?: readonly { businessId: string; createdAt: Date }[];
 }
 
 interface Recorded {
@@ -57,6 +59,15 @@ function fakePrisma(fixture: Fixture, recorded: Recorded): PrismaClient {
       return 0;
     },
     chase: {
+      findMany: async ({ where }: { where: { businessId: string; state: { in: string[] } } }) =>
+        Object.values(fixture.chases)
+          .filter(
+            (c) =>
+              c.businessId === where.businessId &&
+              where.state.in.includes(c.state) &&
+              c.practiceId === practiceInScope,
+          )
+          .map((c) => ({ itemRefs: c.itemRefs, transactionId: c.transactionId })),
       findUnique: async ({ where }: { where: { id: string } }) => {
         recorded.chaseWhere = where;
         const chase = fixture.chases[where.id];
@@ -69,7 +80,17 @@ function fakePrisma(fixture: Fixture, recorded: Recorded): PrismaClient {
         recorded.businessWhere = where;
         const business = fixture.businesses[where.id];
         if (business === undefined || business.practiceId !== practiceInScope) return null;
-        return { name: business.name };
+        return { name: business.name, subscriptionStatus: business.subscriptionStatus ?? null };
+      },
+    },
+    document: {
+      count: async ({ where }: { where: { businessId: string } }) =>
+        (fixture.documents ?? []).filter((d) => d.businessId === where.businessId).length,
+      findFirst: async ({ where }: { where: { businessId: string } }) => {
+        const rows = (fixture.documents ?? [])
+          .filter((d) => d.businessId === where.businessId)
+          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        return rows[0] ?? null;
       },
     },
     bankTransaction: {
@@ -144,6 +165,10 @@ test('a live session sees ITS chase: the business name, its items in the chase\'
 
   expect(context).toEqual({
     businessName: 'American Burger',
+    // Null on a CHASE session: its holder may upload against granted documents
+    // and nothing else, so they are handed no id they could put in a body.
+    businessId: null,
+    summary: null,
     items: [
       {
         transactionId: 'txn_currys',
@@ -259,7 +284,7 @@ test('a chase whose itemRefs JSON is unusable falls back to the single-transacti
   expect((await service(db).getContext(facts())).items.map((item) => item.transactionId)).toEqual(['txn_currys']);
 });
 
-test('a session naming no chase, an invisible chase, or a chase in another business is 401 NT-OTP-002 — never a leak, never a 500', async () => {
+test('an invisible chase, or a chase in another business, is 401 NT-OTP-002 — never a leak, never a 500', async () => {
   const db = fixture({
     chases: {
       chase_1: { practiceId: 'prac_1', businessId: 'biz_burger', itemRefs: ['txn_currys'], transactionId: null, state: 'SENT' },
@@ -267,8 +292,12 @@ test('a session naming no chase, an invisible chase, or a chase in another busin
     },
   });
 
+  // ⚠ `chaseId: null` is NOT in this list any more. It used to be a 401, and
+  // that was the bug: a client signed into their OWN workspace has no chase by
+  // definition, so the only session an invited client can hold was refused and
+  // they had no portal to land on. It now serves their workspace instead — see
+  // the onboarding test below.
   for (const over of [
-    { chaseId: null }, // a DELEGATED_UPLOAD row with no chase — nothing to show
     { chaseId: 'chase_gone' }, // deleted under a live session
     { chaseId: 'chase_elsewhere' }, // another practice's chase: invisible under this context, as RLS makes it
     { businessId: 'biz_someone_else' }, // the row and the chase disagree about the tenant
@@ -295,4 +324,62 @@ test('a chase with no reachable item is a 500, NOT a 200 with an empty list — 
 test('a business row that cannot be read is the same 500 — `businessName` is required and is never invented', async () => {
   const db = fixture({ businesses: {} });
   expect((await grab(() => service(db).getContext(facts()))).code).toBe('NT-SRV-001');
+});
+
+
+/* ── The client's own portal (D47, §24.5) ─────────────────────────────────── */
+
+test('a session with no chase gets its OWN workspace, not a 401', async () => {
+  // The bug this closes: an invited client who has just paid and signed in holds
+  // exactly this session, and it was refused — so the one credential they can
+  // have had no portal to land on.
+  const db = fixture({
+    businesses: { biz_burger: { practiceId: 'prac_1', name: 'American Burger', subscriptionStatus: 'ACTIVE' } },
+    documents: [
+      { businessId: 'biz_burger', createdAt: new Date('2026-08-01T09:00:00.000Z') },
+      { businessId: 'biz_burger', createdAt: new Date('2026-08-09T09:00:00.000Z') },
+      { businessId: 'biz_other', createdAt: new Date('2026-08-20T09:00:00.000Z') },
+    ],
+  });
+
+  const context = await service(db).getContext(facts({ chaseId: null }));
+
+  expect(context.businessName).toBe('American Burger');
+  expect(context.businessId).toBe('biz_burger');
+  // Nothing is being asked through a sign-in, and an empty list is now sayable.
+  expect(context.items).toEqual([]);
+  // Another business's documents are not counted.
+  expect(context.summary?.documentsSent).toBe(2);
+  expect(context.summary?.lastDocumentAt).toBe('2026-08-09T09:00:00.000Z');
+  expect(context.summary?.subscriptionActive).toBe(true);
+  // The response still has to satisfy the contract it is declared by.
+  expect(getPortalContextResponse.safeParse(context).success).toBe(true);
+});
+
+test('awaitingYou counts ITEMS across open chases, not chases', async () => {
+  // A grouped chase asks for several receipts in one message (SoT §8.2), so the
+  // number that means anything to a client is how many things they owe.
+  const db = fixture({
+    chases: {
+      sent: { practiceId: 'prac_1', businessId: 'biz_burger', itemRefs: ['a', 'b'], transactionId: null, state: 'SENT' },
+      escalated: { practiceId: 'prac_1', businessId: 'biz_burger', itemRefs: ['c'], transactionId: null, state: 'ESCALATED' },
+      // Settled, and a chase composed but NOT sent has not reached this client —
+      // counting it would say they are late for a request nobody made (D44).
+      closed: { practiceId: 'prac_1', businessId: 'biz_burger', itemRefs: ['d'], transactionId: null, state: 'CLOSED_RECEIVED' },
+      unsent: { practiceId: 'prac_1', businessId: 'biz_burger', itemRefs: ['e'], transactionId: null, state: 'PROPOSED' },
+    },
+  });
+
+  const context = await service(db).getContext(facts({ chaseId: null }));
+  expect(context.summary?.awaitingYou).toBe(3);
+});
+
+test('a lapsed subscription is reported, not hidden', async () => {
+  // D48 refuses the upload anyway; the portal says so BEFORE the client
+  // photographs a receipt rather than after.
+  const db = fixture({
+    businesses: { biz_burger: { practiceId: 'prac_1', name: 'American Burger', subscriptionStatus: 'PAST_DUE' } },
+  });
+  const context = await service(db).getContext(facts({ chaseId: null }));
+  expect(context.summary?.subscriptionActive).toBe(false);
 });

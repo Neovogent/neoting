@@ -1,9 +1,22 @@
 import { useCallback, useState } from 'react';
-import { AlertTriangle, ArrowLeft, ArrowRight, BadgeCheck, CreditCard, Loader2, Mail, ShieldCheck } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  BadgeCheck,
+  Clock,
+  CreditCard,
+  FileText,
+  Inbox,
+  Loader2,
+  Mail,
+  ShieldCheck,
+} from 'lucide-react';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
-import type { MessageDescriptor } from 'react-intl';
+import type { IntlShape, MessageDescriptor } from 'react-intl';
 import { OTP_LENGTH } from '../../api/onboarding';
+import type { BusinessPortalHome } from '../../api/onboarding';
 import { useAppContext } from '../../context/AppContext';
 import { navigate, useQueryParam } from '../../lib/router';
 import { PrivacyNoticeLink } from '../legal/PrivacyNoticeLink';
@@ -98,6 +111,39 @@ const m = defineMessages({
     defaultMessage: 'This business is already subscribed — there is nothing to pay twice. You can close this page.',
   },
   enterPortalAction: { id: 'portal.onboarding.enterPortalAction', defaultMessage: 'Open your portal' },
+
+  // The client's own workspace, once they are signed into it. Every sentence
+  // here describes THEIR side of the pipeline — never the practice's queue,
+  // and never a ledger (D42): nothing on this panel is posted anywhere.
+  homeSubtitle: {
+    id: 'portal.onboarding.homeSubtitle',
+    defaultMessage: 'What you have sent, and what is still being asked of you.',
+  },
+  homeAwaiting: {
+    id: 'portal.onboarding.homeAwaiting',
+    defaultMessage: '{count, plural, one {# item is waiting on you} other {# items are waiting on you}}',
+  },
+  homeAwaitingDetail: {
+    id: 'portal.onboarding.homeAwaitingDetail',
+    defaultMessage: 'Your accountant has asked you for these. Send them from this portal whenever you have them.',
+  },
+  homeAwaitingNone: { id: 'portal.onboarding.homeAwaitingNone', defaultMessage: 'Nothing is waiting on you' },
+  homeAwaitingNoneDetail: {
+    id: 'portal.onboarding.homeAwaitingNoneDetail',
+    defaultMessage: 'Your accountant has not asked you for anything. Send a receipt whenever you have one — there is no need to wait to be asked.',
+  },
+  homeSentLabel: { id: 'portal.onboarding.homeSentLabel', defaultMessage: 'Documents sent' },
+  homeLastSentLabel: { id: 'portal.onboarding.homeLastSentLabel', defaultMessage: 'Last one' },
+  homeLastSentNever: { id: 'portal.onboarding.homeLastSentNever', defaultMessage: 'Nothing yet' },
+  homeSubscriptionInactive: {
+    id: 'portal.onboarding.homeSubscriptionInactive',
+    defaultMessage: 'Your subscription is not active yet',
+  },
+  homeSubscriptionInactiveDetail: {
+    id: 'portal.onboarding.homeSubscriptionInactiveDetail',
+    defaultMessage:
+      'Until it is live, anything you send to this portal is refused — so it is worth sorting before you photograph a receipt. If you have just paid, it can take a moment to come through; if it does not, tell your accountant.',
+  },
 
   checkoutSuccessTitle: { id: 'portal.onboarding.checkoutSuccessTitle', defaultMessage: 'Thanks — your payment is with Stripe' },
   checkoutSuccessDetail: {
@@ -259,6 +305,11 @@ export function BusinessOnboardingView() {
             ? intl.formatMessage(m.subscribedDetail, { date: journey.renewsOn })
             : intl.formatMessage(m.subscribedDetailNoDate)}
       </p>
+      {/* The client's own workspace, when the server answered with one. Null on
+          seed data and on a read that failed, and then this renders nothing —
+          the journey completes without it, and an invented figure on a client's
+          own screen would be worse than an absent panel. */}
+      <PortalHome home={journey.home} />
       {/* Live, there is no browsable shell behind this screen — the journey's
           job is done. On seed data the demo continues into the portal. */}
       {!journey.live && (
@@ -405,6 +456,124 @@ function CodeStep({ journey }: { journey: OnboardingJourney }) {
       <p className="text-[12px] text-zinc-600 leading-relaxed">{intl.formatMessage(m.codeNothingArrived)}</p>
     </Shell>
   );
+}
+
+/* ── ④ their own workspace, once they are in ──────────────────────────────── */
+
+/**
+ * The client's portal home (SoT D47, §24.5).
+ *
+ * `GET /portal/context` answers a session with no chase — an invited client
+ * signed into their OWN workspace — with the business and a summary of their
+ * side of the pipeline. Before the server grew that branch it was a flat 401,
+ * so a client who had just paid and signed in had no portal to land on at all.
+ *
+ * Four decisions in here, none of them cosmetic:
+ *
+ * · **`awaitingYou` leads**, because it is the only figure on this panel the
+ *   client can act on. The server counts ITEMS across the chases that have
+ *   actually reached them (`portal-context.service.ts`), so "your accountant
+ *   has asked you for these" is a description of what happened, not a guess.
+ * · **Zero is stated calmly, never celebrated.** Nothing has been achieved by
+ *   having nothing outstanding, and a client whose accountant simply has not
+ *   asked yet should not be congratulated for it.
+ * · **A lapsed subscription is announced, not hidden.** `portal-upload.service`
+ *   refuses an upload without a live one (D48, `NT-BIL-001`), and being told
+ *   after photographing a receipt is the bad half of that trade.
+ * · **Nothing here claims a ledger.** These are documents received and requests
+ *   outstanding; ID exports for VT and syncs with nothing (D42).
+ *
+ * Read-only by construction: there is no action on this panel, because a
+ * client's session on this screen can take none that would still be true after
+ * the next read.
+ */
+function PortalHome({ home }: { home: BusinessPortalHome | null }) {
+  const intl = useIntl();
+  if (!home) return null;
+
+  const waiting = home.awaitingYou > 0;
+  const lastSent = londonDay(intl, home.lastDocumentAt);
+
+  return (
+    <section className="rounded-[28px] border border-white/5 bg-card p-6 flex flex-col gap-4">
+      <div className="min-w-0">
+        <h2 className="text-[15px] font-bold text-white tracking-tight truncate">{home.businessName}</h2>
+        <p className="text-[12px] text-zinc-500 mt-1 leading-relaxed">{intl.formatMessage(m.homeSubtitle)}</p>
+      </div>
+
+      {/* The one number they can do something about: first on the panel, and
+          the only one that changes colour when it is not zero. */}
+      <div
+        className={`flex items-start gap-3 p-4 rounded-2xl border ${
+          waiting ? 'border-amber-500/30 bg-amber-500/5' : 'border-white/5 bg-ground/60'
+        }`}
+      >
+        <Inbox size={16} className={`shrink-0 mt-0.5 ${waiting ? 'text-amber-400' : 'text-zinc-500'}`} />
+        <div className="min-w-0">
+          <p className={`text-[14px] font-bold leading-relaxed ${waiting ? 'text-amber-400' : 'text-zinc-300'}`}>
+            {waiting
+              ? intl.formatMessage(m.homeAwaiting, { count: home.awaitingYou })
+              : intl.formatMessage(m.homeAwaitingNone)}
+          </p>
+          <p className="text-[12px] text-zinc-500 mt-1 leading-relaxed">
+            {waiting ? intl.formatMessage(m.homeAwaitingDetail) : intl.formatMessage(m.homeAwaitingNoneDetail)}
+          </p>
+        </div>
+      </div>
+
+      {/* Everything they have sent — by every route, not only this portal: the
+          server counts the business's documents, so an emailed receipt is in
+          here too. */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="p-4 rounded-2xl border border-white/5 bg-ground/60">
+          <FileText size={15} className="text-zinc-500" />
+          <div className="text-2xl font-bold text-white mt-3 tracking-tight tabular-nums">
+            {intl.formatNumber(home.documentsSent)}
+          </div>
+          <div className="text-[11px] text-zinc-500 font-bold uppercase tracking-wider mt-1">
+            {intl.formatMessage(m.homeSentLabel)}
+          </div>
+        </div>
+        <div className="p-4 rounded-2xl border border-white/5 bg-ground/60">
+          <Clock size={15} className="text-zinc-500" />
+          <div className="text-[15px] font-bold text-white mt-3 tracking-tight">
+            {lastSent ?? intl.formatMessage(m.homeLastSentNever)}
+          </div>
+          <div className="text-[11px] text-zinc-500 font-bold uppercase tracking-wider mt-1">
+            {intl.formatMessage(m.homeLastSentLabel)}
+          </div>
+        </div>
+      </div>
+
+      {/* D48, said before the receipt is photographed rather than after. */}
+      {!home.subscriptionActive && (
+        <div role="status" className="flex items-start gap-3 p-4 rounded-2xl border border-amber-500/30 bg-amber-500/5">
+          <AlertTriangle size={15} className="text-amber-400 shrink-0 mt-0.5" />
+          <div className="min-w-0">
+            <p className="text-[13px] font-bold text-amber-400 leading-relaxed">
+              {intl.formatMessage(m.homeSubscriptionInactive)}
+            </p>
+            <p className="text-[12px] text-zinc-500 mt-1 leading-relaxed">
+              {intl.formatMessage(m.homeSubscriptionInactiveDetail)}
+            </p>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * A UTC instant as a Europe/London day (the repo's render rule), or null when
+ * there is nothing to render. Deliberately local rather than imported from
+ * `api/chases.ts`: this is a client-facing portal chunk, and that module drags
+ * the generated chase client onto it.
+ */
+function londonDay(intl: IntlShape, iso: string | null): string | null {
+  if (!iso) return null;
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return null;
+  return intl.formatDate(at, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Europe/London' });
 }
 
 /* ── shared chrome ────────────────────────────────────────────────────────── */
