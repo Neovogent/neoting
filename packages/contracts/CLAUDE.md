@@ -99,7 +99,7 @@ It depends on `js-yaml` and nothing else, on purpose: it has to run before the c
 | OTP portal (METH Stage 2 #120) | create session · context · delegated upload intent |
 | Publishing (METH Stage 2 #120) | list publishes |
 | Banking (METH Stage 2 #120) | list bank transactions |
-| Businesses (METH Stage 2 #120) | list with waiting-work counts |
+| Businesses (METH Stage 2 #120) | list with waiting-work counts — **ten** of them since 28 Aug 2026, plus sector and next deadline |
 | Practices (ID LAW batch) | signup |
 | Clients & team (ID LAW batch) | create client · list members · invite member |
 | Export (ID LAW batch) | list · create · resolve capability link |
@@ -214,6 +214,38 @@ Two response fields were added **optional rather than required** on purpose —
 `BusinessSummary.subscription` and `Document.links`. Both are contracted ahead
 of the lane that populates them, and a required field would have obliged every
 producer to move in this PR, which is scope this batch does not own.
+
+**`BusinessSummary` widened, 28 Aug 2026 (G7, approved by Shakib).** It gained
+`industry` and `nextDeadline` — both already columns on `businesses`, merely
+unexposed — and `counts` went from three members to **ten**: `published`,
+`missing`, `requested`, `overdue`, `unmatched`, `statementGaps` and `approvals`
+joined `toReview`, `ready` and `failed`.
+
+The reason is worth recording, because it is the clearest example so far of the
+contract shaping the product rather than describing it. `apps/web`'s Clients
+board had **forked**: with the API on it rendered a reduced table, because this
+schema carried a name and three counts and every other column the real board
+shows — health, sector, deadline, missing, unmatched, approvals — had no field
+to read. That was the correct call against the shape as it stood (a control
+whose backing does not exist live is worse than absent), and it meant a paying
+practice saw a poorer screen than the design specifies. Widening the response
+deleted the second board; no UI workaround could have.
+
+**The seven new counts are REQUIRED, which is the opposite of the choice made
+two paragraphs above, and deliberately so.** `subscription` is optional because
+a consumer can meaningfully render without it. A count cannot: an omitted count
+and a zero count are indistinguishable once drawn, so an optional one lets a
+producer stay silent about work a practice is waiting on and have it read as
+"nothing to do". The shape therefore forces every producer to say which it
+means — and the two producers in this repo both do, `foldCounts` in
+`apps/api/src/modules/auth-tenancy/businesses.service.ts` by zero-filling every
+business it sees in any of its four aggregates, and `deriveBusinessSummaries`
+in `apps/web/src/api/businesses.ts` for the synthetic side.
+
+⚠ `statementGaps` is contracted and is served as **zero on every path today** —
+nothing in this repo writes `Statement.gapAnalysis`. The field is real and D41
+makes it load-bearing; the number is not available yet, and counting statements
+that merely have the column set would report gaps nobody found.
 
 **The signup chain (launch stage A14, issue #195)** — three operations, five
 schemas, five error codes, one shared `409` response, **no Prisma migration**.
