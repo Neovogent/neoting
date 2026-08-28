@@ -2223,14 +2223,28 @@ paths:
         entirely, and an intake form that grew one back would be building the
         wrong product.
 
-        `contextQuestionnaire` is REQUIRED, and that is the whole weight of this
-        operation. D47 removed the ledger-synced chart of accounts, so the
-        business-type profile captured here is the ONLY context the coding
+        `contextQuestionnaire` is OPTIONAL, and carries the whole weight of this
+        operation when it is present. D47 removed the ledger-synced chart of
+        accounts, so the business-type profile is the ONLY context the coding
         engine gets (§24.4) and the only basis on which an uploaded document can
-        be judged acceptable for this business (D46). A client created without
-        it is a client whose documents cannot be coded, so the contract refuses
-        it rather than letting the gap surface six weeks later as bad
-        categorisation.
+        be judged acceptable for this business (D46).
+
+        **It was required until 28 Aug 2026, and that made the invite path
+        unbuildable.** D47 and the prototype's instruction #6 describe two ways
+        in: the practice keys the record in itself, or it sends the client a
+        setup link and the client registers their own details — asking, at
+        intake, for nothing but the company name, the responsible person and
+        their contact. Requiring the questionnaire here obliged an accountant to
+        answer questions about a business they had not yet spoken to, so the
+        product shipped one path where the design has two.
+
+        ⚠ **The obligation did not go away, it moved.** A business created
+        without the questionnaire cannot code a document, and the client must
+        complete it during onboarding before documents arrive. What must NOT
+        happen is a producer inventing a default to fill the hole — a guessed
+        business type miscodes every document that follows and looks exactly
+        like a real answer, which is the failure this field was made required to
+        prevent in the first place.
 
         The primary contact's email is the client's **registered address**: D45
         gates every intake channel on known senders, so this is not a
@@ -4630,16 +4644,83 @@ components:
       description: |
         Everything this session may see — and the whole of it. The RLS
         delegated-session policies enforce the boundary below the handler.
+
+        **One shape, two jobs.** A CHASE session is answering a request and
+        carries the items it exists to collect. An ONBOARDING session belongs to
+        a client who has just set their own workspace up and is signing in to
+        it; it has no chase, and what it needs is its own workspace: who it is,
+        and what is waiting. Both are the same credential doing different work
+        (see `PortalSession.businessId`), so both read the same context rather
+        than a second door being opened for the second one.
       required: [businessName, items, expiresAt]
       properties:
         businessName:
           type: string
           description: Display only — whose books the paperwork belongs to.
+        businessId:
+          type: [string, 'null']
+          description: |
+            The business this session may act on, when it has one. Present for an
+            onboarding session — the client's own workspace — and **null for a
+            chase session**, whose holder may upload against granted documents
+            and nothing else, and so is given no id they could put in a request
+            body. Same rule, and the same reason, as `PortalSession.businessId`.
         items:
           type: array
-          minItems: 1
+          description: |
+            The chased items this session exists to collect.
+
+            ⚠ **May be EMPTY, and that is not an error.** It carried
+            `minItems: 1` until 28 Aug 2026, which made the shape unusable for a
+            client signing in to their own portal: they have no chase, so the
+            only honest answer was a list of length zero and the contract
+            refused to let the server say it. An empty list means "nothing is
+            being asked of you", which is exactly what a client who is up to
+            date should be told.
           items: { $ref: '#/components/schemas/ChaseItem' }
+        summary:
+          description: |
+            What is waiting in this client's own workspace, for the portal home
+            screen. Present only for a session that has a `businessId` — a chase
+            session has no workspace to summarise and must not be handed one.
+          oneOf:
+            - $ref: '#/components/schemas/PortalSummary'
+            - type: 'null'
         expiresAt: { type: string, format: date-time }
+
+    PortalSummary:
+      type: object
+      description: |
+        The client's own view of their workspace: what they have sent, what is
+        still wanted, and whether their subscription is live.
+
+        Deliberately NOT the accountant's `BusinessSummary`. A client has no
+        business knowing how many documents are in review inside the practice,
+        or what the practice's approval queue looks like — those are the firm's
+        working state. This is the client's own side of the same pipeline.
+      required: [documentsSent, awaitingYou, subscriptionActive]
+      properties:
+        documentsSent:
+          type: integer
+          minimum: 0
+          description: Documents this client has sent, by any channel.
+        awaitingYou:
+          type: integer
+          minimum: 0
+          description: |
+            Open chase items across every chase for this client — the count the
+            portal home leads with, because it is the only number the client can
+            do anything about.
+        subscriptionActive:
+          type: boolean
+          description: |
+            Whether the subscription is in a state that permits new uploads
+            (D48). False is not a failure to hide: an upload would be refused,
+            so the portal says so before the client photographs a receipt.
+        lastDocumentAt:
+          type: [string, 'null']
+          format: date-time
+          description: When this client last sent anything. Null if they never have.
 
     PortalUploadRequest:
       type: object
@@ -4762,7 +4843,30 @@ components:
         Client intake. **No bank connection and no accounting-software
         connection appear here, deliberately (D47)** — if a field for one shows
         up in a later revision, the wrong product is being built.
-      required: [name, primaryContact, contextQuestionnaire]
+
+        **There are two intake paths, and this shape serves both (D47, and the
+        prototype's instruction #6).** The practice may key the whole record in
+        itself, or it may send the client a setup link and let them register
+        their own details — in which case intake asks only for the company name,
+        the responsible person and their contact, and the client supplies the
+        rest during onboarding.
+
+        `contextQuestionnaire` is what distinguishes them, and it is **optional
+        for that reason and no other**. It was required until 28 Aug 2026, which
+        made the invite path unrepresentable: the accountant was obliged to
+        answer questions about a business they had not yet spoken to, so the
+        product had one intake path where the design has two.
+
+        ⚠ **A business without it cannot code a document, and that is not a
+        detail.** D47 removed the ledger-synced chart of accounts, so this
+        questionnaire is the ONLY context the coding engine gets (§24.4) and the
+        only basis on which an upload can be judged acceptable for this business
+        (D46). Absent, the business is INCOMPLETE rather than merely sparse, and
+        a caller creating one takes on the obligation that the client completes
+        it during onboarding before documents arrive. Producers must not invent
+        a default to fill the hole: a guessed business type silently miscodes
+        every document that follows, which is worse than the gap it hides.
+      required: [name, primaryContact]
       properties:
         name: { type: string, minLength: 1, maxLength: 200 }
         tradingName: { type: [string, 'null'], maxLength: 200 }

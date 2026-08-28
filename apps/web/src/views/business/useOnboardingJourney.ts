@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NtProblemError } from '@neoting/contracts';
 import { API_ENABLED } from '../../api/config';
-import { openOnboardingSession, requestSignInCode, startSubscriptionCheckout } from '../../api/onboarding';
-import type { OnboardingSession } from '../../api/onboarding';
+import {
+  fetchBusinessPortalHome,
+  openOnboardingSession,
+  requestSignInCode,
+  startSubscriptionCheckout,
+} from '../../api/onboarding';
+import type { BusinessPortalHome, OnboardingSession } from '../../api/onboarding';
 import { useAppContext } from '../../context/AppContext';
 import type { BusinessAccount } from '../../lib/types';
 import type { PortalFault } from './usePortalJourney';
@@ -42,11 +47,21 @@ export interface OnboardingJourney {
   /** The address the code went to — rendered back in the step-two copy. */
   email: string;
   /**
-   * The business being set up. Known on seed data; null live — no contracted
-   * read answers it for an onboarding session, so the copy stays generic
-   * rather than inventing a name.
+   * The business being set up.
+   *
+   * Known on seed data, and — since the portal-context widening — live too.
+   * This used to be null live, with the copy kept generic because "no
+   * contracted read answers it for an onboarding session". `GET /portal/context`
+   * now does: a session with no chase is a client signed into their own
+   * workspace, and it is answered with that workspace instead of a 401.
    */
   businessName: string | null;
+  /**
+   * The client's own portal, once they are signed in. Null until the session
+   * exists, and null on the chase portal, which is answering a request rather
+   * than browsing a workspace.
+   */
+  home: BusinessPortalHome | null;
   /** When the paid period renews — the synthetic subscribed screen shows it. */
   renewsOn: string | null;
   busy: boolean;
@@ -206,11 +221,37 @@ export function useOnboardingJourney(setupToken: string | null): OnboardingJourn
 
   const enterPortal = useCallback(() => synthetic.enterPortal(), [synthetic]);
 
+  /**
+   * The client's own workspace, read once the session exists.
+   *
+   * Fetched on the session rather than on the step, so it is already there when
+   * they land on the welcome screen and does not re-request on every step
+   * change. A failure is deliberately silent: the home is extra information on
+   * a journey that must still complete without it, and a client mid-signup does
+   * not need an error about a summary.
+   */
+  const [home, setHome] = useState<BusinessPortalHome | null>(null);
+  useEffect(() => {
+    if (!API_ENABLED || session === null) return;
+    let cancelled = false;
+    void fetchBusinessPortalHome(session.token)
+      .then((value) => {
+        if (!cancelled) setHome(value);
+      })
+      .catch(() => {
+        if (!cancelled) setHome(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
+
   return {
     live: API_ENABLED,
     step,
     email,
-    businessName: API_ENABLED ? null : synthetic.businessName,
+    businessName: API_ENABLED ? home?.businessName ?? null : synthetic.businessName,
+    home,
     renewsOn,
     busy,
     fault,

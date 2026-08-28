@@ -101,6 +101,57 @@ unmatched set, and the client is chased by SMS for the receipt the accountant
 just filed. `bank-matching.integration.test.ts` asserts the disappearance
 directly, against a real database.
 
+## Statement import (D40/D41) — `statement-ingest/`
+
+**Built 28 Aug 2026, and it closed a hole worth naming: nothing in this API had
+ever created a `BankTransaction`.** `prisma/seed.ts` was the only writer, so
+every transaction on every screen was demo data — while the practice app's
+"Upload statement" button took a file NAME, never the bytes, and pushed a row
+into local React state that vanished on reload. D40 makes manual upload the ONLY
+bank input in ID, so the one input the release has was a mock end to end.
+
+| File | What it is |
+|---|---|
+| `sheet-reader.ts` | CSV + XLSX → grid, on `node:zlib`. **No new dependency** — adding one is on the root stop-and-ask list, and `apps/web/src/lib/spreadsheet.ts` already proved the subset is worth owning |
+| `statement-parser.ts` | grid → dated, signed, integer-pence rows |
+| `completeness.ts` | the D41 gate |
+| `statement-ingest.ts` | persistence: `Statement` + `BankTransaction[]`, idempotent on `documentId` |
+| `statement-step.ts` | the ingest job's step, exported through `index.ts` |
+
+**No new endpoint was needed, and that is the design.** `DocumentType.STATEMENT`
+already existed in prisma and the contract, and `Statement.documentId` already
+pointed at a document: statements were always meant to ride `/document-uploads`.
+The step runs after extraction, reads the row it is about to act on, and answers
+"not mine" for everything the extractor did not classify `STATEMENT`.
+
+Six things that are decisions, not details:
+
+- **It is deterministic, not a model call.** A CSV has no page to read. D41 gates
+  on *provable* completeness, and only arithmetic over exact input can prove a
+  balance — a confidence score cannot.
+- **The gate has three outcomes and `reduced` is a real one.** Balance continuity
+  to the penny proves `complete`; a break is proof a transaction is MISSING and
+  the finding names the line and the amount. **A statement with no balance column
+  is `reduced`, never `complete`** — reporting it complete would be a green tick
+  meaning "we did not look", which is precisely what D41 forbids.
+- **A brought-forward line is the opening balance, not a dropped transaction.**
+  Treating it as a hole marked every ordinary statement incomplete and made the
+  gate cry wolf on the most common file there is.
+- **`Paid out` is negated.** Getting it backwards files every payment as income;
+  it looks entirely normal on screen and inverts the client's books.
+- **It never fails the ingest job**, the same rule and reason as chase
+  auto-close: by then the document is persisted and read, and losing that to a
+  parse error would invert "nothing is ever silently dropped". A refusal writes
+  `failureCode`/`failureMessage` on the document **without touching `state`** —
+  the document is fine, only the import did not happen, and failing it would
+  hide a good file in the Rejected/Failed view.
+- **`gapAnalysis` has its first writer**, so `GET /businesses`'s `statementGaps`
+  count reads real data instead of the hardcoded zero it shipped with.
+
+⚠ **The implicit `BankAccount` carries no `connectionId`.** ID has no bank
+connection, so one business gets one account created on first upload; a
+populated connection would claim a feed was authorised.
+
 ## Tests
 
 ```bash
@@ -141,8 +192,14 @@ executor writes `matches` and `bank_transactions` through the engine's
       server rows and answers "is this matched" from `matchState` instead.
 - [ ] `bank.unmatch` has no `ProposalKind`, so breaking a confirmed match has
       no approved path. The executor refuses rather than overwriting.
-- [ ] **ID-critical** (D40/D41) — statement upload wiring with the completeness gates,
-      cash coding, partial/batch payments
+- [x] **ID-critical (D40/D41): statement upload wiring with the completeness
+      gates — DONE, 28 Aug 2026.** See *Statement import* below.
+- [ ] **ID-critical, still open**: cash coding, partial/batch payments
       server-side, consent lifecycle and configurable match windows — all
       explicitly out of METH S11's scope.
+- [ ] **PDF statements are refused, by name.** D40 accepts PDF, CSV and XLSX;
+      this lane reads the two that are grids. A PDF needs a different
+      extraction call (the single-document schema returns a header, not line
+      rows), so it is refused with a message naming what IS accepted rather
+      than parsed into something plausible.
 - [ ] Update this file on exit — it is how the next session picks up.

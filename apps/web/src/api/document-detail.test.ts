@@ -1,6 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, test } from 'vitest';
 
-import { FIELD_PRESENTATION, isEditableLabel, parseCodingDraft, ruleIdFromEvents, toDetailData } from './document-detail';
+import { getDocumentResponse } from '@neoting/contracts/zod';
+
+import {
+  FIELD_PRESENTATION,
+  isEditableLabel,
+  parseCodingDraft,
+  parseDocumentDetail,
+  ruleIdFromEvents,
+  toDetailData,
+} from './document-detail';
 
 /**
  * The detail boundary (METH S7): the accepted extraction becoming the rows the
@@ -209,4 +218,50 @@ describe('the presentation table', () => {
     expect(labels).toContain('Total');
     expect(labels).toContain('Category');
   });
+});
+
+/* ── The allOf/strict generator gap ───────────────────────────────────────── */
+
+test('a valid document parses — the composed schema alone refuses it', () => {
+  // `Document` is `allOf: [DocumentSummary, {…}]`, which orval emits as an
+  // intersection of two `.strict()` halves. Each rejects the other's keys, so
+  // the composed parse fails on a body that is entirely correct — and the
+  // screen rendered "No fields extracted" over a document the server had sent
+  // in full. This pins BOTH facts: the gap is real, and the workaround handles
+  // it. When orval fixes the generation the second assertion fails and the
+  // whole workaround can be deleted.
+  const body = {
+    id: 'doc_1',
+    businessId: 'biz_1',
+    inbox: 'COSTS',
+    state: 'READY',
+    channel: 'WEB_UPLOAD',
+    originalFilename: 'booker.pdf',
+    receivedAt: '2026-08-15T09:00:00.000Z',
+    retryable: false,
+    supplierName: 'Booker',
+    documentDate: '2026-08-15',
+    totalPence: 73_320,
+    currency: 'GBP',
+    mimeType: 'application/pdf',
+    byteSize: 1024,
+    byteHash: 'a'.repeat(64),
+    createdAt: '2026-08-15T09:00:00.000Z',
+    updatedAt: '2026-08-15T09:00:00.000Z',
+  };
+
+  expect(getDocumentResponse.safeParse(body).success).toBe(false);
+
+  const parsed = parseDocumentDetail(body);
+  expect(parsed.ok).toBe(true);
+  if (!parsed.ok) return;
+  expect(parsed.value.byteHash).toBe('a'.repeat(64));
+  expect(parsed.value.supplierName).toBe('Booker');
+});
+
+test('a genuinely wrong body is still refused, with the field named', () => {
+  const parsed = parseDocumentDetail({ id: 'doc_1', byteHash: 'not-a-hash' });
+  expect(parsed.ok).toBe(false);
+  if (parsed.ok) return;
+  expect(parsed.detail.length).toBeGreaterThan(0);
 });

@@ -262,9 +262,17 @@ locals {
     # their own. The two things that DO grant something (the API key and the
     # webhook signing secret) are in Secrets Manager, injected below.
     # ------------------------------------------------------------------------
-    { name = "STRIPE_PRICE_ID", value = "price_1U8lIsGMdHp4NCWvxj03BBuc" },
+    # ⚠ LIVE-MODE objects as of 28 Aug 2026. The previous pair
+    # (price_1U8lIs… / txr_1U8lIu…) were SANDBOX objects, and they are not
+    # interchangeable: with a live key, a sandbox price fails as "No such price"
+    # at the moment a client presses Subscribe — at checkout, not at boot, so
+    # nothing catches it earlier.
+    { name = "STRIPE_PRICE_ID", value = "price_1U9R0uGMdHp4NCWv5NFOBvZ9" },
     { name = "STRIPE_TAX", value = "rate" },
-    { name = "STRIPE_TAX_RATE_ID", value = "txr_1U8lIuGMdHp4NCWvqQoFEvmQ" },
+    # The 20% GB rate, exclusive: GBP 8.50 is the NET price and VAT goes on top
+    # (D48). `env.ts` refuses to boot on `STRIPE_TAX=rate` with this empty,
+    # because the net price charged with no VAT added means absorbing the VAT.
+    { name = "STRIPE_TAX_RATE_ID", value = "txr_1U9R0wGMdHp4NCWvqUjY3Htg" },
     { name = "BILLING_RETURN_ORIGINS", value = "https://neoacc.neovogent.com,https://app.neoting.neovogent.com" },
 
     # ------------------------------------------------------------------------

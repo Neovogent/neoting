@@ -52,6 +52,7 @@ import { buildBusinessAccounts, newBusinessAccount } from '../lib/business';
 import { clientStatsFromCounts, deriveClientStats, type ClientStats } from '../lib/selectors';
 import { detectDuplicates } from '../lib/dedupe';
 import { fromSlug, navigate, path, slug, usePath } from '../lib/router';
+import { hasSignedInBefore } from '../lib/signed-in-hint';
 import type {
   AppSettings,
   ApprovalItem,
@@ -622,7 +623,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Bare `/` is the public landing page (launch stage M3), so the session
     // probe below never fires for a visitor who has not asked for the app —
     // the workspace root is `/app`.
-    root === undefined ? 'landing'
+    //
+    // UNLESS this browser has signed in before, in which case `/` belongs to
+    // the accountant and the effect below sends them to `/app`. An accountant
+    // arriving at the bare domain from a bookmark or a restored tab was being
+    // shown "Create your account", which reads as having been logged out.
+    //
+    // The visitor property is untouched: with no hint there is no probe and no
+    // redirect, and the hint holds no identity and grants nothing — `/app` runs
+    // the ordinary session check and shows the login wall if the cookie is
+    // gone. See `lib/signed-in-hint.ts`.
+    root === undefined ? (hasSignedInBefore() ? 'accountant' : 'landing')
       // `/legal/*` is public for the same reason (launch stage M4).
       : root === 'legal' ? 'legal'
       // `/signup/*` — creating a practice (launch stage M9). Public, and the
@@ -645,6 +656,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
       : 'accountant';
 
   /**
+   * Put the address where the render already is.
+   *
+   * The branch above renders the workspace at `/` for a returning accountant,
+   * which stops the landing page flashing before a redirect could run. This
+   * makes the address canonical afterwards, so a reload, a share and the tab
+   * bar all agree that the workspace root is `/app`.
+   *
+   * `replace`, not push: the bare domain must not become a history entry the
+   * Back button returns to, or Back from the workspace would bounce forward
+   * again and trap the user.
+   */
+  useEffect(() => {
+    if (root === undefined && hasSignedInBefore()) navigate('/app', { replace: true });
+  }, [root]);
+
+  /**
    * The workspace session (METH Stage 6). Asked for only where a workspace
    * exists: API mode, practice shell. The API slices additionally wait for it
    * to be answered — a query fired before login would only 401, and a query
@@ -655,7 +682,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const { session } = useSession({ enabled: workspaceApiOn });
   const slicesOn = workspaceApiOn && session.status === 'authenticated';
 
-  const [clients, setClients] = useState<Client[]>(SYNTHETIC ? seedClients : []);
+  const [localClients, setLocalClients] = useState<Client[]>(SYNTHETIC ? seedClients : []);
   const [documents, setDocuments] = useState<Document[]>(initial.documents);
 
   /**
@@ -680,12 +707,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const normalise = (name: string) =>
       name.toLowerCase().replace(/\b(ltd|limited)\b/g, '').replace(/[^a-z0-9]/g, '');
     const byName = new Map(businessesQuery.businesses.map((b) => [normalise(b.name), b.id]));
-    for (const c of clients) {
+    for (const c of localClients) {
       const hit = byName.get(normalise(c.name));
       if (hit && hit !== c.id) map.set(c.id, hit);
     }
     return map;
-  }, [businessesQuery.businesses, clients]);
+  }, [businessesQuery.businesses, localClients]);
 
   const serverClientIdFor = useCallback(
     (clientId: string) =>
@@ -715,7 +742,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
    */
   const clientNameFor = useCallback(
     (businessId: string) => {
-      const direct = clients.find((c) => c.id === businessId);
+      const direct = localClients.find((c) => c.id === businessId);
       if (direct) return direct.name;
       // A hydrated server row knows its own name — the businesses slice is
       // the authority for opaque ids the synthetic cast has never heard of.
@@ -723,10 +750,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (hydrated) return hydrated.name;
       // The mock encodes the seed id as biz_<id>; a real id will not match and
       // falls through to the id itself rather than inventing a name.
-      const seeded = clients.find((c) => `biz_${c.id}` === businessId);
+      const seeded = localClients.find((c) => `biz_${c.id}` === businessId);
       return seeded?.name ?? businessId;
     },
-    [clients, businessesQuery.businesses],
+    [localClients, businessesQuery.businesses],
   );
 
   const documentsQuery = useDocuments({ enabled: slicesOn, clientNameFor, params: { limit: 100 } });
@@ -783,8 +810,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const businesses = useMemo(
     () =>
-      liveBoard ? businessesQuery.businesses : deriveBusinessSummaries(clients, documents),
-    [liveBoard, businessesQuery.businesses, clients, documents],
+      liveBoard ? businessesQuery.businesses : deriveBusinessSummaries(localClients, documents),
+    [liveBoard, businessesQuery.businesses, localClients, documents],
   );
 
   /**
@@ -855,6 +882,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     () => new Map(businessesQuery.businesses.map((b) => [b.id, clientStatsFromCounts(b.counts)])),
     [businessesQuery.businesses],
   );
+
+  /**
+   * **THE client list, for everything below this line.**
+   *
+   * There is exactly one, and that is the point. The first cut of this exposed
+   * the live rows only on the provider's value object and left `localClients`
+   * — empty whenever the API is on — feeding every derivation inside the
+   * provider. The screens looked right and the internals did not: attaching a
+   * client to a chat filtered an empty array, so the conversation was patched
+   * correctly and the bar still read "No client attached", with nothing to see
+   * in the console and no request to blame.
+   *
+   * Anything ABOVE this line that wants clients wants `localClients` and says
+   * so — the seed↔server id bridge and the synthetic `deriveBusinessSummaries`
+   * fallback are seeded-world helpers by definition. Everything below reads
+   * this. Do not reintroduce a second list.
+   */
+  const clients = liveBoard ? liveClients : localClients;
 
   /**
    * Where each slice's data actually came from. Recomputed every render on
@@ -972,7 +1017,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       prev.map((c) => {
         if (c.id !== id) return c;
         if (verdict === 'approve') {
-          setClients((all) => all.map((cl) => (cl.id === c.clientId ? { ...cl, [c.field]: c.to } : cl)));
+          setLocalClients((all) => all.map((cl) => (cl.id === c.clientId ? { ...cl, [c.field]: c.to } : cl)));
         }
         return { ...c, status: verdict === 'approve' ? 'approved' : 'declined', declinedReason: reason };
       }),
@@ -1200,7 +1245,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ]);
   }, []);
 
-  const addClient = useCallback((client: Client) => setClients((prev) => [...prev, client]), []);
+  const addClient = useCallback((client: Client) => setLocalClients((prev) => [...prev, client]), []);
 
   /**
    * Queues the one setup SMS. Sending again for a client replaces the live link
@@ -1251,7 +1296,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // The client has filled in the record the invite path left blank.
       profile: { awaitingRegistration: false },
     };
-    setClients((prev) => prev.map((c) => (c.id === clientId ? { ...c, ...patchFor[task] } : c)));
+    setLocalClients((prev) => prev.map((c) => (c.id === clientId ? { ...c, ...patchFor[task] } : c)));
     setOnboardingLinks((prev) =>
       prev.map((l) =>
         l.clientId === clientId && !l.completed.includes(task)
@@ -1408,7 +1453,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateClient = useCallback((id: string, patchFields: Partial<Client>) => {
-    setClients((prev) => prev.map((c) => (c.id === id ? { ...c, ...patchFields } : c)));
+    setLocalClients((prev) => prev.map((c) => (c.id === id ? { ...c, ...patchFields } : c)));
   }, []);
 
   const toggleStarClient = useCallback((id: string) => {
@@ -2614,7 +2659,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   return (
     <AppContext.Provider
       value={{
-        clients: liveBoard ? liveClients : clients,
+        clients,
         documents,
         transactions,
         matches,

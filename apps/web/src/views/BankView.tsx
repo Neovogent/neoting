@@ -12,6 +12,7 @@ import { DataTable, Pill, type Column } from '../components/DynamicComponents/Da
 import { SubTabs } from '../components/DynamicComponents/SubTabs';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { fromSlug, slug, useQueryParam, useSegment } from '../lib/router';
+import { sendWorkspaceUploads } from '../api/uploads';
 import { StatementModal, downloadBank } from '../components/DynamicComponents/StatementModal';
 import { ChaseModal } from '../components/DynamicComponents/ChaseModal';
 import { currency } from '../lib/resolver';
@@ -230,7 +231,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
     clients, transactions, matches, documents, accounts, statements, statementGaps,
     matchSettings, setMatchSettings, matchTransaction, unmatchTransaction, cashCode,
     uploadStatement, logAudit, statsFor, isSameClient, slices,
-    refetchBank,
+    refetchBank, serverClientIdFor,
   } = useAppContext();
   const intl = useIntl();
 
@@ -253,6 +254,42 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
    */
   const bankSlice = slices.bankTransactions;
   const liveBank = bankSlice.source === 'api';
+
+  /**
+   * Upload a bank statement — for real, live, and for the first time.
+   *
+   * ⚠ This used to call `uploadStatement(f.name, clientId)`, which took the
+   * file's NAME and never its bytes: it pushed a row into local React state
+   * that said "extracting…" forever and vanished on reload. Nothing was
+   * uploaded, nothing was parsed, and no bank transaction has ever been created
+   * by this product outside `prisma/seed.ts`. D40 makes manual statement upload
+   * the ONLY bank input in ID, so that mock was standing where the whole
+   * release's bank data comes from.
+   *
+   * Live, the file goes through the same three-call journey every other
+   * document takes (intent → presigned PUT → complete). The server classifies
+   * it, and the ingest job's statement step turns it into `Statement` +
+   * `BankTransaction` rows with the D41 completeness gates applied.
+   *
+   * Synthetic mode keeps the local demo behaviour: METH_MODE §1's standing
+   * condition is that the app walks end to end with no API.
+   */
+  const [uploadFault, setUploadFault] = useState<string | null>(null);
+  const uploadStatementFile = async (file: File, clientId: string): Promise<void> => {
+    if (!liveBank) {
+      uploadStatement(file.name, clientId);
+      return;
+    }
+    setUploadFault(null);
+    const outcome = await sendWorkspaceUploads(serverClientIdFor(clientId), [file]);
+    if (outcome.failures.length > 0) {
+      setUploadFault(outcome.failures.join(' · '));
+      return;
+    }
+    // The rows appear when the ingest job has read the file, so the refetch is
+    // a nudge rather than the thing that makes them exist.
+    refetchBank();
+  };
   const [evidenceFilter, setEvidenceFilter] = useState<'all' | 'needs-you' | 'unmatched' | 'matched' | 'credits'>('all');
   const [query, setQuery] = useState('');
   const [matchFor, setMatchFor] = useState<BankTransaction | null>(null);
@@ -502,14 +539,14 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
               ref={fileRef}
               type="file"
               className="hidden"
-              accept=".pdf,.tiff,.csv,.xlsx"
+              accept=".pdf,.csv,.xlsx"
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 // Resolve the target client at handling time so the upload can
                 // never silently do nothing.
                 const targetId = uploadFor ?? (clientFilter === 'all' ? clients[0]?.id : clientFilter);
                 if (f && targetId) {
-                  uploadStatement(f.name, targetId);
+                  void uploadStatementFile(f, targetId);
                   logAudit({
                     action: intl.formatMessage(m.uploadAudit),
                     scope: intl.formatMessage(m.uploadAuditScope, {
@@ -525,6 +562,14 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
             />
           </div>
         </div>
+        {/* A refused upload has to be SAID. The bytes never left, so silence
+            here would read as a statement that uploaded and then did nothing —
+            which is exactly the behaviour this stage replaced. */}
+        {uploadFault !== null && (
+          <p role="alert" className="w-full text-[13px] font-semibold text-red-400">
+            {uploadFault}
+          </p>
+        )}
       </header>
 
       {/* Inside a client these sit directly under the client tab rail, so they

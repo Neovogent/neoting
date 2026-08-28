@@ -1,3 +1,4 @@
+import { NO_STATEMENT_STEP } from '../../banking-matching/index.js';
 import { expect, test } from 'vitest';
 
 import { RecordingChaseAutoClose } from '../../chase/index.js';
@@ -64,6 +65,10 @@ function harness(
       uploadSanitiser,
       extractor,
       autoClose,
+      // Not a statement test: the step is declared and does nothing. Declaring
+      // it is the point — `statements` is required precisely so a composition
+      // root cannot forget it by accident.
+      statements: NO_STATEMENT_STEP,
       // These unit tests drive the processor directly, with no BullMQ job above
       // them, so "is this the last attempt" has no real answer. `false` is the
       // one that changes nothing: extraction rethrows and stays PROCESSING,

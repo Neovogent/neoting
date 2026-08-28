@@ -193,6 +193,32 @@ Six things about it that are decisions, not details:
 
 Colour is tokens throughout — `bg-ground` / `bg-card` / `bg-raised` for surfaces, `bg-brand` + **`text-brand-on`** for the primary buttons (not `text-white`: white on mint is 1.4:1, and `--color-brand-on` exists for exactly this), and the established amber/red/emerald ramps for degraded/failure/settled. **Nothing lints a hex literal in a className**, so it was checked by grepping the two new files for `#[0-9a-fA-F]{3,8}` — zero — and by listing every `bg-`/`text-`/`border-` class in the view against the `@theme` block.
 
+### Bank statement upload is real (28 Aug 2026)
+
+`BankView`'s "Upload statement" sent the file's **name** and never its bytes —
+`uploadStatement(f.name, clientId)` pushed a row into local React state that read
+"extracting…" forever and vanished on reload. With D40 making manual upload the
+only bank input in ID, that mock stood where the whole release's bank data comes
+from, and no `BankTransaction` had ever been created by this product outside
+`prisma/seed.ts`.
+
+Live, the file now goes through `sendWorkspaceUploads` — the same three-call
+journey (`intent → presigned PUT → complete`) every other document takes. The
+server classifies it and the ingest job's statement step writes `Statement` +
+`BankTransaction` rows with the D41 gates applied
+(`apps/api/src/modules/banking-matching/statement-ingest/`). Synthetic mode keeps
+the local demo behaviour, per METH_MODE §1.
+
+Two things to know:
+
+- **`accept` is `.csv,.xlsx`, narrowed from `.pdf,.tiff,.csv,.xlsx`.** The server
+  reads the two formats that are grids; offering a PDF and then refusing it
+  server-side is a worse experience than not offering it. D40 does list PDF, and
+  that gap is tracked in the banking module's own file.
+- **A refusal is rendered**, as a `role="alert"` line by the upload button. The
+  bytes never left, so silence would read as an upload that worked and then did
+  nothing — the exact behaviour this replaced.
+
 ### The Unrouted queue is gone, and routing moved onto bulk Move to client
 
 `views/UnroutedQueue.tsx` is deleted — the one file the prototype port removed. SoT issue **#158** resolves prototype-vs-SoT surface disputes in the prototype's favour, and the prototype has no Unrouted queue. The removal predates the fork rather than being a prototype invention: an identical comment survives on both sides ("The taught-sender tick from the old unrouted card, kept where the routing decision now happens"), so the *card* was already retired in the shared lineage and this repo re-introduced it as a METH S12 live surface.

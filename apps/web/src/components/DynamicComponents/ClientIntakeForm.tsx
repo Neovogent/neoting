@@ -17,6 +17,7 @@ import {
   type CreatedBusiness,
   type IntakeDraft,
   type IntakeMissingField,
+  type IntakeMode as ApiIntakeMode,
   type TriState,
 } from '../../api/intake';
 
@@ -588,7 +589,8 @@ const STEPS: [MessageDescriptor, ...MessageDescriptor[]] = [
  * invite path sends one setup link and the client registers their own details.
  * Neither path asks for a connection of any kind (D47).
  */
-type IntakeMode = 'invite' | 'practice';
+/** One definition, in the api layer — it decides what is sent, not just what is shown. */
+type IntakeMode = ApiIntakeMode;
 
 /** The invite path's link asks for the company record and nothing else. */
 const INVITE_TASKS: SetupTask[] = ['profile'];
@@ -627,9 +629,15 @@ const FREQUENCIES: [string, string, string] = ['Weekly', 'Monthly', 'Quarterly']
 export function ClientIntakeForm({ defaultName = '' }: { defaultName?: string }) {
   const { session } = useAppContext();
   const [mode, setMode] = useState<IntakeMode | null>(null);
+  const live = API_ENABLED && session.status === 'authenticated';
 
-  if (API_ENABLED && session.status === 'authenticated') return <LiveIntake defaultName={defaultName} />;
+  // The fork comes FIRST in both worlds. It used to be skipped live — the live
+  // form went straight to the one full flow — which quietly removed the choice
+  // D47 and the prototype's #6 both describe, and left an accountant answering
+  // profile questions about a business they had not yet spoken to. There is one
+  // chooser now, and the world only decides what the chosen path is made of.
   if (mode === null) return <ModeChooser onPick={setMode} />;
+  if (live) return <LiveIntake defaultName={defaultName} mode={mode} onBack={() => setMode(null)} />;
   if (mode === 'invite') return <InviteIntake defaultName={defaultName} onBack={() => setMode(null)} />;
   return <PracticeIntake defaultName={defaultName} onBack={() => setMode(null)} />;
 }
@@ -1599,6 +1607,11 @@ const mLive = defineMessages({
   // The review before the one real call.
   reviewCompanySection: { id: 'clients.liveIntake.reviewCompanySection', defaultMessage: 'Company' },
   reviewContactSection: { id: 'clients.liveIntake.reviewContactSection', defaultMessage: 'Primary contact' },
+  reviewProfileDeferred: {
+    id: 'clients.clientIntakeLive.reviewProfileDeferred',
+    defaultMessage:
+      'The business-type profile is not asked for on this path — your client answers it during their own onboarding. Until they do, their documents are held rather than coded from a guess.',
+  },
   reviewProfileSection: { id: 'clients.liveIntake.reviewProfileSection', defaultMessage: 'Business type' },
   reviewVatValue: { id: 'clients.liveIntake.reviewVatValue', defaultMessage: 'Yes — {number}' },
   reviewContactValue: { id: 'clients.liveIntake.reviewContactValue', defaultMessage: '{firstName} {lastName}' },
@@ -1697,10 +1710,36 @@ const EMPTY_DRAFT: Omit<IntakeDraft, 'name'> = {
  * what will be sent, and a client-side refusal (`buildIntakeRequest`) for
  * anything the contract itself would refuse.
  */
-function LiveIntake({ defaultName }: { defaultName: string }) {
+function LiveIntake({
+  defaultName,
+  mode,
+  onBack,
+}: {
+  defaultName: string;
+  mode: IntakeMode;
+  onBack: () => void;
+}) {
   const { refetchBusinesses } = useAppContext();
   const intl = useIntl();
   const [step, setStep] = useState(0);
+  /**
+   * The invite path has no profile step — it is the step that asks about a
+   * business the practice has not spoken to yet. Dropping it from the rail is
+   * what makes the two paths visibly different rather than one flow with a
+   * section quietly skipped.
+   */
+  const steps: [MessageDescriptor, ...MessageDescriptor[]] =
+    mode === 'invite' ? [mLive.stepCompany, mLive.stepContact, mLive.stepReview] : LIVE_STEPS;
+  /**
+   * The rail is addressed by MEANING, never by a bare index.
+   *
+   * The invite path drops the profile step, so index 2 is the review there and
+   * the profile here — and a body that switched on the raw number rendered the
+   * profile questions under a "Review" heading, which is exactly the step the
+   * invite path exists not to ask.
+   */
+  const reviewStep = steps.length - 1;
+  const profileStep = mode === 'invite' ? -1 : 2;
   const [draft, setDraft] = useState<IntakeDraft>({ name: defaultName, ...EMPTY_DRAFT });
   const [sending, setSending] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -1709,17 +1748,17 @@ function LiveIntake({ defaultName }: { defaultName: string }) {
   const set = <K extends keyof IntakeDraft>(key: K, value: IntakeDraft[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
 
-  const missing = missingIntakeFields(draft);
+  const missing = missingIntakeFields(draft, mode);
   const ready = missing.length === 0;
   // This step's own gaps, and the furthest step the rail may reach: the first
   // step still owed a field, or the review when nothing is owed anywhere.
   const stepMissing = missing.filter((field) => FIELD_STEP[field] === step);
-  const firstIncomplete = LIVE_STEPS.findIndex((_, i) => missing.some((field) => FIELD_STEP[field] === i));
-  const maxReachable = firstIncomplete === -1 ? LIVE_STEPS.length - 1 : firstIncomplete;
-  const isReview = step === LIVE_STEPS.length - 1;
+  const firstIncomplete = steps.findIndex((_, i) => missing.some((field) => FIELD_STEP[field] === i));
+  const maxReachable = firstIncomplete === -1 ? reviewStep : firstIncomplete;
+  const isReview = step === reviewStep;
 
   const submit = async () => {
-    const built = buildIntakeRequest(draft);
+    const built = buildIntakeRequest(draft, mode);
     if (!built.ok) {
       setFailure(
         built.refusal.reason === 'mobileNotE164'
@@ -1778,13 +1817,17 @@ function LiveIntake({ defaultName }: { defaultName: string }) {
       title={draft.name.trim() || intl.formatMessage(mLive.title)}
       subtitle={intl.formatMessage(mLive.stepSubtitle, {
         current: step + 1,
-        total: LIVE_STEPS.length,
-        step: intl.formatMessage(LIVE_STEPS[step] ?? LIVE_STEPS[0]),
+        total: steps.length,
+        step: intl.formatMessage(steps[step] ?? steps[0]),
       })}
+      // Back to the fork, the same affordance the synthetic paths carry. The
+      // two paths ask for different things, so picking the wrong one has to be
+      // recoverable without abandoning the form.
+      onBack={onBack}
     >
       {/* The same step rail the practice flow draws — same 4px bar, same 24px target. */}
       <div className="px-6 pt-5 flex items-center gap-1.5">
-        {LIVE_STEPS.map((s, i) => (
+        {steps.map((s, i) => (
           <button
             key={s.id}
             type="button"
@@ -1886,7 +1929,7 @@ function LiveIntake({ defaultName }: { defaultName: string }) {
             </>
           )}
 
-          {step === 2 && (
+          {step === profileStep && (
             <>
               <p className="text-[13px] text-zinc-500 leading-relaxed">{intl.formatMessage(mLive.profileIntro)}</p>
               <Area
@@ -1978,20 +2021,34 @@ function LiveIntake({ defaultName }: { defaultName: string }) {
                     ]}
                   />
                 </ReviewSection>
-                <ReviewSection title={intl.formatMessage(mLive.reviewProfileSection)}>
-                  <ReviewRows
-                    rows={[
-                      { label: intl.formatMessage(mLive.activityLabel), value: draft.businessActivity.trim() },
-                      { label: intl.formatMessage(mLive.suppliersLabel), value: draft.typicalSuppliers.trim() || '—' },
-                      { label: intl.formatMessage(mLive.costsLabel), value: draft.typicalCosts.trim() || '—' },
-                      { label: intl.formatMessage(mLive.hasEmployeesLabel), value: triLabel(intl, draft.hasEmployees) },
-                      {
-                        label: intl.formatMessage(mLive.usesSubcontractorsLabel),
-                        value: triLabel(intl, draft.usesSubcontractors),
-                      },
-                    ]}
-                  />
-                </ReviewSection>
+                {/*
+                  The invite path never asked these, so it does not review them.
+                  Rendering the block with blanks and "Not sure" said the
+                  opposite of the truth — it reads as five answers captured and
+                  empty, when the fact is that nobody has been asked yet and the
+                  client answers during onboarding. One sentence beats five
+                  empty rows.
+                */}
+                {mode === 'invite' ? (
+                  <p className="text-[12px] text-zinc-500 leading-relaxed">
+                    {intl.formatMessage(mLive.reviewProfileDeferred)}
+                  </p>
+                ) : (
+                  <ReviewSection title={intl.formatMessage(mLive.reviewProfileSection)}>
+                    <ReviewRows
+                      rows={[
+                        { label: intl.formatMessage(mLive.activityLabel), value: draft.businessActivity.trim() },
+                        { label: intl.formatMessage(mLive.suppliersLabel), value: draft.typicalSuppliers.trim() || '—' },
+                        { label: intl.formatMessage(mLive.costsLabel), value: draft.typicalCosts.trim() || '—' },
+                        { label: intl.formatMessage(mLive.hasEmployeesLabel), value: triLabel(intl, draft.hasEmployees) },
+                        {
+                          label: intl.formatMessage(mLive.usesSubcontractorsLabel),
+                          value: triLabel(intl, draft.usesSubcontractors),
+                        },
+                      ]}
+                    />
+                  </ReviewSection>
+                )}
                 <p className="text-[12px] text-zinc-500 leading-relaxed">
                   {intl.formatMessage(mLive.noConnectionsNote)}
                 </p>

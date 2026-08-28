@@ -22,6 +22,7 @@ import { INGEST_QUEUE_NAME } from '../modules/ingestion-routing/queue/queue-name
 import { createRedisConnection } from '../modules/ingestion-routing/queue/redis-connection.js';
 import { selectMediaFetcher } from '../modules/ingestion-routing/queue/select-media-fetcher.js';
 import type { MediaIntakeDeps } from '../modules/ingestion-routing/queue/whatsapp-media-intake.js';
+import { PrismaStatementStep } from '../modules/banking-matching/index.js';
 import { selectDocumentStore } from '../modules/ingestion-routing/storage/select-document-store.js';
 import { PrismaUploadSanitisationStep } from '../modules/ingestion-routing/web-upload/prisma-upload-sanitisation.js';
 
@@ -99,6 +100,13 @@ function bootstrap(): void {
     { logger: { log: (message) => logger.log(message), warn: (message) => logger.warn(message) } },
   );
 
+  // Statement import (D40/D41). Shares `documentStore` with extraction — the
+  // statement's bytes are the SAME object extraction already read, so a second
+  // store would be a second answer to "where are this document's bytes".
+  const statements = new PrismaStatementStep(getPrismaClient(), documentStore, {
+    logger: { log: (message) => logger.log(message), warn: (message) => logger.warn(message) },
+  });
+
   const worker = new Worker(
     INGEST_QUEUE_NAME,
     async (job: Job) => {
@@ -112,6 +120,7 @@ function bootstrap(): void {
           uploadSanitiser,
           extractor,
           autoClose,
+          statements,
           // Extraction claims the document into PROCESSING and is the only thing
           // that moves it out, so it has to know whether anyone will call it
           // again: with retries left a throw stays PROCESSING for the next

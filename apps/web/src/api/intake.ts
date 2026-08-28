@@ -58,6 +58,23 @@ export interface IntakeDraft {
  * so an obviously malformed address is refused on the contact step, not three
  * steps later (the LoginView stance: refused before the network).
  */
+/**
+ * Which of the two intake paths is being walked (D47, prototype instruction #6).
+ *
+ * `practice` — the accountant keys the whole record in, business-type profile
+ * included, and the client is created ready to code documents.
+ *
+ * `invite` — the accountant supplies only the company name, the responsible
+ * person and their contact; the client registers the rest from the setup link.
+ * The profile is therefore ABSENT rather than empty, and the request omits the
+ * key entirely.
+ *
+ * Declared here rather than in the form because it changes what is SENT, not
+ * merely what is shown: both the required-field set and the assembled body
+ * depend on it.
+ */
+export type IntakeMode = 'invite' | 'practice';
+
 export type IntakeMissingField =
   | 'name'
   | 'firstName'
@@ -68,7 +85,7 @@ export type IntakeMissingField =
 
 const EMAIL_SHAPE = /^\S+@\S+\.\S+$/;
 
-export function missingIntakeFields(draft: IntakeDraft): IntakeMissingField[] {
+export function missingIntakeFields(draft: IntakeDraft, mode: IntakeMode = 'practice'): IntakeMissingField[] {
   const email = draft.email.trim();
   return [
     ...(draft.name.trim() ? [] : ['name' as const]),
@@ -76,7 +93,14 @@ export function missingIntakeFields(draft: IntakeDraft): IntakeMissingField[] {
     ...(draft.lastName.trim() ? [] : ['lastName' as const]),
     ...(email ? [] : ['email' as const]),
     ...(email && !EMAIL_SHAPE.test(email) ? ['emailShape' as const] : []),
-    ...(draft.businessActivity.trim().length >= 3 ? [] : ['businessActivity' as const]),
+    // The invite path does not ask for the business-type profile at all, so it
+    // cannot be owed one. D47 and the prototype's #6 say intake asks the
+    // practice for a company name, a responsible person and a contact — the
+    // client answers the rest from their setup link, and demanding it here
+    // would mean an accountant guessing at a business they have not spoken to.
+    ...(mode === 'invite' || draft.businessActivity.trim().length >= 3
+      ? []
+      : ['businessActivity' as const]),
   ];
 }
 
@@ -112,7 +136,7 @@ function splitList(raw: string): string[] {
  *   stance `toE164` takes in `lib/demoIntents.ts`. Prefixing +44 would file a
  *   non-UK client's number as a UK one, silently.
  */
-export function buildIntakeRequest(draft: IntakeDraft): IntakeBuild {
+export function buildIntakeRequest(draft: IntakeDraft, mode: IntakeMode = 'practice'): IntakeBuild {
   const mobile = draft.mobile.replace(/[\s()-]/g, '');
   if (mobile && !createBusinessBodyPrimaryContactMobileE164RegExp.test(mobile)) {
     return { ok: false, refusal: { reason: 'mobileNotE164' } };
@@ -139,16 +163,28 @@ export function buildIntakeRequest(draft: IntakeDraft): IntakeBuild {
       email: draft.email.trim(),
       ...(mobile ? { mobileE164: mobile } : {}),
     },
-    contextQuestionnaire: {
-      businessActivity: draft.businessActivity.trim(),
-      ...(typicalSuppliers.length ? { typicalSuppliers } : {}),
-      ...(typicalCosts.length ? { typicalCosts } : {}),
-      ...(draft.hasEmployees !== 'unknown' ? { hasEmployees: draft.hasEmployees === 'yes' } : {}),
-      ...(draft.usesSubcontractors !== 'unknown'
-        ? { usesSubcontractors: draft.usesSubcontractors === 'yes' }
-        : {}),
-      ...(notes ? { notes } : {}),
-    },
+    // ⚠ OMITTED on the invite path, never sent empty or defaulted.
+    //
+    // The questionnaire is the only coding context this release has (§24.4),
+    // and an invented `businessActivity` reads exactly like one an accountant
+    // wrote while silently miscoding every document that follows. An absent key
+    // is the honest statement that nobody has answered yet; the client answers
+    // it during their own onboarding, and until they do the server reports the
+    // business as having no profile rather than a wrong one.
+    ...(mode === 'invite'
+      ? {}
+      : {
+          contextQuestionnaire: {
+            businessActivity: draft.businessActivity.trim(),
+            ...(typicalSuppliers.length ? { typicalSuppliers } : {}),
+            ...(typicalCosts.length ? { typicalCosts } : {}),
+            ...(draft.hasEmployees !== 'unknown' ? { hasEmployees: draft.hasEmployees === 'yes' } : {}),
+            ...(draft.usesSubcontractors !== 'unknown'
+              ? { usesSubcontractors: draft.usesSubcontractors === 'yes' }
+              : {}),
+            ...(notes ? { notes } : {}),
+          },
+        }),
   };
 
   const parsed = createBusinessBody.safeParse(request);

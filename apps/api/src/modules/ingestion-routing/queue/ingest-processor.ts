@@ -1,3 +1,4 @@
+import type { StatementStep } from '../../banking-matching/index.js';
 import type { ChaseAutoClose } from '../../chase/index.js';
 import type { ExtractionCompletion, ExtractionStep } from '../../extraction/index.js';
 import type { DocumentSink } from './document-sink.js';
@@ -54,6 +55,18 @@ export interface ProcessorDeps {
    * unit tests offline; `PrismaChaseAutoClose` is wired in `worker/main.ts`.
    */
   readonly autoClose: ChaseAutoClose;
+  /**
+   * Statement import (D40/D41). Runs after extraction for a document the
+   * extractor classified STATEMENT, turning it into `Statement` +
+   * `BankTransaction` rows.
+   *
+   * REQUIRED, for the fourth time on this interface and the same reason as
+   * `media`, `uploadSanitiser` and `extractor`: an optional dep is a dep a
+   * composition root forgets, and this lane has been bitten by that three times
+   * already. A root with no banking concern passes `NO_STATEMENT_STEP` and says
+   * so out loud.
+   */
+  readonly statements: StatementStep;
   /**
    * Whether this is the job's LAST attempt (S5). Per-job, unlike everything else
    * on this interface — the worker rebuilds this object per job, which is what
@@ -215,6 +228,12 @@ async function handle(payload: IngestJobPayload, deps: ProcessorDeps): Promise<v
       finalAttempt: deps.finalAttempt,
     });
     await runAutoClose(completion, payload.practiceId, payload.traceId, deps);
+    await deps.statements.run({
+      documentId: payload.documentId,
+      practiceId: payload.practiceId,
+      businessId: payload.routing.businessId ?? null,
+      traceId: payload.traceId,
+    });
     return;
   }
 
@@ -237,6 +256,17 @@ async function handle(payload: IngestJobPayload, deps: ProcessorDeps): Promise<v
   // Auto-close on inbound match (chase, METH Stage 8) — runs after extraction for
   // a routed document that landed. See `runAutoClose`.
   await runAutoClose(completion, materialised.practiceId, payload.traceId, deps);
+
+  // Statement import (D40/D41) — last, because it is the only step that creates
+  // rows OTHER than the document's own, and it must not run before the document
+  // is safely persisted and read. It decides for itself whether this document is
+  // a statement, and never throws.
+  await deps.statements.run({
+    documentId,
+    practiceId: materialised.practiceId,
+    businessId: payload.routing.businessId ?? null,
+    traceId: payload.traceId,
+  });
 }
 
 /**

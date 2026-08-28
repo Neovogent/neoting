@@ -25,7 +25,24 @@ import { wrapUntrusted } from '../../common/untrusted-content.js';
  * the moment either side changes — the drift the generated contract exists to
  * prevent.
  */
-export const BusinessTypeProfileSchema = createBusinessBody.shape.contextQuestionnaire;
+/**
+ * ⚠ `.unwrap()`, because the FIELD is optional and the PROFILE is not.
+ *
+ * `contextQuestionnaire` became optional on `POST /businesses` on 28 Aug 2026
+ * so the invite path can create a client the practice has not yet interviewed
+ * (D47, prototype #6). That is a statement about whether the key must be
+ * PRESENT — it is not a statement about what a profile looks like once there is
+ * one, and this module is only ever handed a profile that exists.
+ *
+ * Without the unwrap the optionality leaks inward: every consumer here would
+ * have to narrow `undefined` on a value the caller has already established is
+ * there, and — worse — `safeParse(undefined)` would SUCCEED, so a business with
+ * no questionnaire at all would read back as a valid empty profile instead of
+ * as the `null` that tells the coding engine it has no context. The absent case
+ * is handled once, at the top of `readBusinessProfile`, and deliberately not
+ * spread through the shape.
+ */
+export const BusinessTypeProfileSchema = createBusinessBody.shape.contextQuestionnaire.unwrap();
 
 /**
  * The profile as it leaves this module. **A6 seeds a chart of accounts and

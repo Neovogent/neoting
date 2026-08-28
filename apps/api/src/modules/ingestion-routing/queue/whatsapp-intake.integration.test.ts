@@ -1,3 +1,4 @@
+import { NO_STATEMENT_STEP } from '../../banking-matching/index.js';
 import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
@@ -97,6 +98,8 @@ describe.skipIf(!DATABASE_URL || !OWNER_URL)('WhatsApp media intake against a re
       extractor: new RecordingExtractionStep(),
       // No-op: extraction returns null, so auto-close is never triggered here.
       autoClose: new RecordingChaseAutoClose(),
+      // Not a statement test: declared, and does nothing.
+      statements: NO_STATEMENT_STEP,
       finalAttempt: false,
     });
 

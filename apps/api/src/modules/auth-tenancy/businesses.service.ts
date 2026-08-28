@@ -2,7 +2,8 @@ import type { z } from 'zod';
 
 import type { BusinessSummary } from '@neoting/contracts/model';
 import type { listBusinessesQueryParams } from '@neoting/contracts/zod';
-import type { Business as BusinessRow, ChaseState, DocumentState, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import type { Business as BusinessRow, ChaseState, DocumentState } from '@prisma/client';
 
 import type { PrismaClient } from '../../common/db/prisma.js';
 import type { ScopeContext } from '../../common/db/scope-context.js';
@@ -109,7 +110,7 @@ export class BusinessesService {
     };
     const seek = pageQuery(request);
 
-    const { rows, grouped, chases, unmatched, approvals } = await scopedDb(this.prisma, ctx, async (db) => {
+    const { rows, grouped, chases, unmatched, approvals, statementGaps } = await scopedDb(this.prisma, ctx, async (db) => {
       const rows = await db.business.findMany({
         // Spread, not `where: seek.where` — under exactOptionalPropertyTypes
         // an explicit `undefined` is not the same as an absent key, and there
@@ -127,7 +128,7 @@ export class BusinessesService {
       // practice has. They are issued together — inside the one `scopedDb`
       // transaction, so every one of them sees the same RLS-visible set the
       // page itself came from, and none can widen it.
-      const [grouped, chases, unmatched, approvals] = await Promise.all([
+      const [grouped, chases, unmatched, approvals, statementGaps] = await Promise.all([
         db.document.groupBy({
           by: ['businessId', 'state'],
           where: {
@@ -159,11 +160,27 @@ export class BusinessesService {
           where: { businessId: { in: ids }, state: { in: ['CREATED', 'REVIEWED'] } },
           _count: { _all: true },
         }),
+        // D41: a statement whose completeness could not be PROVED. Both
+        // `incomplete` (a break in the balance chain, or a dropped line) and
+        // `reduced` (no balance column, so nothing could be checked) count —
+        // the column asks "how many statements am I not sure about", and a
+        // reduced-assurance file is exactly that. A statement predating this
+        // lane has no `gapAnalysis` at all and is counted nowhere, which is
+        // right: it was never assessed, so there is no finding to report.
+        db.statement.groupBy({
+          by: ['businessId'],
+          where: {
+            businessId: { in: ids },
+            NOT: { gapAnalysis: { path: ['assurance'], equals: 'complete' } },
+            gapAnalysis: { not: Prisma.DbNull },
+          },
+          _count: { _all: true },
+        }),
       ]);
-      return { rows, grouped, chases, unmatched, approvals };
+      return { rows, grouped, chases, unmatched, approvals, statementGaps };
     });
 
-    const counts = foldCounts(grouped, chases, unmatched, approvals);
+    const counts = foldCounts(grouped, chases, unmatched, approvals, statementGaps);
     const page = toPage(rows, request);
     return {
       data: page.data.map((row) => ({
@@ -219,6 +236,15 @@ export function foldCounts(
   chases: ReadonlyArray<{ businessId: string; state: ChaseState; _count: { _all: number } }> = [],
   unmatched: ReadonlyArray<{ businessId: string | null; _count: { _all: number } }> = [],
   approvals: ReadonlyArray<{ businessId: string | null; _count: { _all: number } }> = [],
+  /**
+   * Statements whose D41 assurance is NOT `complete` — one row per business.
+   *
+   * This count was hardcoded to zero until 28 Aug 2026, honestly, because
+   * nothing in the repo wrote `Statement.gapAnalysis`. `statement-ingest.ts` is
+   * now its first writer, so the number has a real source and the column on the
+   * Clients board finally means what it says.
+   */
+  statementGaps: ReadonlyArray<{ businessId: string | null; _count: { _all: number } }> = [],
 ): Map<string, BusinessSummary['counts']> {
   const byBusiness = new Map<string, BusinessSummary['counts']>();
   /** The zero-filled record for this business, created on first sight of it. */
@@ -248,12 +274,11 @@ export function foldCounts(
     if (row.businessId === null) continue;
     bucketFor(row.businessId).approvals += row._count._all;
   }
+  for (const row of statementGaps) {
+    if (row.businessId === null) continue;
+    bucketFor(row.businessId).statementGaps += row._count._all;
+  }
 
-  // `statementGaps` is left at zero on every path, deliberately and visibly.
-  // The column it feeds is real (D41 makes a dropped statement row a document
-  // that is never chased), but NOTHING in this repo writes `Statement.gapAnalysis`
-  // yet — so the only honest number today is zero. Counting statements that
-  // merely HAVE the column set would report gaps that were never found. When
-  // the extractor starts writing it, this is the one place to change.
+  // `statementGaps` is folded by the caller, from the statements aggregate.
   return byBusiness;
 }

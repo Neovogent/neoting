@@ -4,6 +4,7 @@ import type { z } from 'zod';
 import type { Business } from '@neoting/contracts/model';
 import type { createBusinessBody } from '@neoting/contracts/zod';
 
+import { Prisma } from '@prisma/client';
 import type { PrismaClient } from '../../common/db/prisma.js';
 import type { ScopeContext } from '../../common/db/scope-context.js';
 import { scopedDb } from '../../common/db/scoped-db.js';
@@ -60,9 +61,24 @@ const PRIMARY_CONTACT_ROLE = 'BUSINESS_ADMIN';
  * The **business-type profile** (`business-profile.ts`). D47 removed the
  * ledger-synced chart of accounts, so this is the only coding context the engine
  * gets (§24.4) and the only basis on which a document is judged acceptable
- * evidence for this business (D46). The contract makes it required; this refuses
- * a client without one rather than letting the gap surface six weeks later as
- * bad categorisation.
+ * evidence for this business (D46).
+ *
+ * ⚠ **It is OPTIONAL as of 28 Aug 2026, and that is the invite path.** D47 and
+ * the prototype's instruction #6 describe two ways in: the practice keys the
+ * record in itself, or it sends a setup link and the client registers their own
+ * details, having been asked for nothing but a company name, a responsible
+ * person and a contact. While the contract required the questionnaire the
+ * second path could not be built — an accountant cannot answer questions about
+ * a business they have not spoken to — so the product had one intake path where
+ * the design has two.
+ *
+ * The obligation moved rather than disappearing. A business created without a
+ * profile is stored with a SQL NULL in `context_questionnaire`, which
+ * `readBusinessProfile` reports as `null`, which is the coding engine's signal
+ * that it has no context for this client yet. The client supplies it during
+ * their own onboarding. **Nothing here may invent a placeholder**: a guessed
+ * business type reads exactly like one an accountant wrote and silently
+ * miscodes every document that follows.
  *
  * ## Four rows, one transaction
  *
@@ -151,8 +167,28 @@ export class ClientIntakeService {
           industry: request.industry ?? null,
           vatRegistered: request.vatRegistered ?? false,
           vatNumber: request.vatNumber ?? null,
-          // The profile. The whole reason this endpoint exists (§24.4).
-          contextQuestionnaire: toStoredProfile(request.contextQuestionnaire),
+          // The profile, and the whole reason this endpoint exists (§24.4) —
+          // when there is one.
+          //
+          // ⚠ **`Prisma.DbNull`, not `null` and not an omitted key.** The
+          // invite path creates a client the practice has not interviewed yet
+          // (D47), so the questionnaire arrives later, from the client's own
+          // onboarding. On a `Json` column Prisma distinguishes the JSON value
+          // `null` from a SQL NULL, and `readBusinessProfile` treats them
+          // differently for a real reason: SQL NULL means "no context, do not
+          // code documents for this business yet", whereas a stored JSON `null`
+          // would come back as a value the strict profile schema then rejects,
+          // reporting a missing questionnaire as contract drift.
+          //
+          // What must NOT happen here is inventing a placeholder profile. A
+          // guessed business type is indistinguishable on screen from one an
+          // accountant wrote, and it silently miscodes every document that
+          // follows — the failure the required field originally existed to
+          // prevent, which survives the field becoming optional.
+          contextQuestionnaire:
+            request.contextQuestionnaire === undefined
+              ? Prisma.DbNull
+              : toStoredProfile(request.contextQuestionnaire),
         },
       });
 

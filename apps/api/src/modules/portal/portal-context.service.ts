@@ -53,11 +53,13 @@ export class PortalContextService {
   constructor(private readonly prisma: PrismaClient) {}
 
   async getContext(facts: PortalSessionFacts): Promise<PortalContext> {
-    // A `DELEGATED_UPLOAD` row with no chase is not a portal session this
-    // endpoint can answer — there is no item list to show. Same 401 as any
-    // other unusable session; a session that cannot see anything is not one.
+    // No chase means this is a client signed into their OWN workspace — an
+    // ONBOARDING session (D47, §24.5) — not a chase being answered. It used to
+    // be a flat 401: the endpoint could only describe a chase, so an invited
+    // client who had just paid and signed in had nothing to read and no portal
+    // to land on. They get their own workspace instead.
     const chaseId = facts.chaseId;
-    if (chaseId === null) throw portalSessionRequired('missing or invalid portal session');
+    if (chaseId === null) return this.getBusinessContext(facts);
 
     return scopedDb(this.prisma, systemScopeFor(facts), async (db) => {
       const chase = await db.chase.findUnique({
@@ -111,7 +113,91 @@ export class PortalContextService {
       // operation.
       if (business === null || items.length === 0) throw contextUnavailable();
 
-      return { businessName: business.name, items, expiresAt: facts.expiresAt.toISOString() };
+      return {
+        businessName: business.name,
+        // ⚠ NULL for a chase session, deliberately. Its holder may upload
+        // against granted documents and nothing else, so they are given no id
+        // they could put in a request body — the same rule
+        // `PortalSession.businessId` follows, for the same reason.
+        businessId: null,
+        items,
+        summary: null,
+        expiresAt: facts.expiresAt.toISOString(),
+      };
+    });
+  }
+
+  /**
+   * The client's own portal: who they are, and what is waiting.
+   *
+   * ## What this is NOT
+   *
+   * It is not the accountant's `BusinessSummary`. A client has no business
+   * knowing how many of their documents sit in the practice's review queue or
+   * what its approval backlog looks like — that is the firm's working state.
+   * What they get is their own side of the pipeline: what they have sent, what
+   * is still being asked of them, and whether their subscription lets them send
+   * more.
+   *
+   * ## Same trust argument as the chase branch
+   *
+   * The read runs under the practice SYSTEM context for the reason the header
+   * gives — the delegated scope cannot see `chases` at all. The boundary is
+   * therefore the `otp_sessions` row, and it is this: every query below is
+   * filtered by `facts.businessId`, which the server wrote when it opened the
+   * session and which no caller can influence. Nothing here is derived from
+   * anything the holder sent except the bearer.
+   */
+  private async getBusinessContext(facts: PortalSessionFacts): Promise<PortalContext> {
+    return scopedDb(this.prisma, systemScopeFor(facts), async (db) => {
+      const business = await db.business.findUnique({
+        where: { id: facts.businessId },
+        select: { name: true, subscriptionStatus: true },
+      });
+      if (business === null) throw contextUnavailable();
+
+      const [documentsSent, latest, openChases] = await Promise.all([
+        db.document.count({ where: { businessId: facts.businessId } }),
+        db.document.findFirst({
+          where: { businessId: facts.businessId },
+          orderBy: { createdAt: 'desc' },
+          select: { createdAt: true },
+        }),
+        // Every chase still asking for something. CLOSED_* is settled and asks
+        // nothing, and a chase composed but not yet sent has not reached this
+        // client — counting it would tell them they are late for a request
+        // nobody made (D44 splits composition from release).
+        db.chase.findMany({
+          where: { businessId: facts.businessId, state: { in: ['SENT', 'REMINDED', 'ESCALATED'] } },
+          // `transactionId` is selected only because `chaseItemRefs` takes the
+          // chase module's own shape — using its projection rather than
+          // re-deriving refs here is what keeps the client's count and the
+          // accountant's chase list describing the same thing.
+          select: { itemRefs: true, transactionId: true },
+        }),
+      ]);
+
+      // One chase may ask for several receipts (SoT §8.2's grouped chase), so
+      // the number that means anything to a client is ITEMS, not chases.
+      const awaitingYou = openChases.reduce((total, chase) => total + chaseItemRefs(chase).length, 0);
+
+      return {
+        businessName: business.name,
+        businessId: facts.businessId,
+        // Nothing is being asked of them through THIS session — it is a sign-in,
+        // not a chase. An empty list is the honest answer, and the contract now
+        // permits it.
+        items: [],
+        summary: {
+          documentsSent,
+          awaitingYou,
+          // D48: an upload is refused without a live subscription, so the portal
+          // says so before the client photographs a receipt rather than after.
+          subscriptionActive: business.subscriptionStatus === 'ACTIVE' || business.subscriptionStatus === 'TRIALING',
+          lastDocumentAt: latest?.createdAt.toISOString() ?? null,
+        },
+        expiresAt: facts.expiresAt.toISOString(),
+      };
     });
   }
 }
