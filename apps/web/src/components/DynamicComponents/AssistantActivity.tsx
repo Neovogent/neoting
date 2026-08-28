@@ -35,10 +35,6 @@ const m = defineMessages({
     id: 'shell.assistantActivity.stillWorking',
     defaultMessage: 'Still going — a long one sometimes takes a few seconds.',
   },
-  answeredBy: {
-    id: 'shell.assistantActivity.answeredBy',
-    defaultMessage: '{model} · {seconds}s',
-  },
   degraded: {
     id: 'shell.assistantActivity.degraded',
     defaultMessage: 'Answered by a fallback model',
@@ -141,34 +137,27 @@ function Dots({ reduced }: { reduced: boolean }) {
 }
 
 /**
- * What answered, under the reply it answered with.
+ * The warnings under a reply, when a turn has any.
  *
- * This is provenance, not decoration. SoT §13.3 makes the provenance of an
- * extracted value visible by default; the same reasoning applies to a sentence
- * a model wrote — an accountant reading advice should be able to see, without
- * asking, that a model produced it and which one. It also makes two conditions
- * visible that were previously silent: a degrade to a lower tier, and the
- * daily budget running out.
+ * This used to render the model id and latency on every turn, reading SoT
+ * §13.3's provenance-by-default across to model output. Removed 28 Aug 2026 as
+ * a product decision (Shakib): an internal model identifier under every
+ * sentence reads as noise to an accountant, and the audit trail — not the
+ * transcript — is where a turn's model and latency are recorded
+ * (`chat-framework/telemetry.ts`). If §13.3 is later read as requiring it
+ * on-screen again, that is an SoT conversation, not a revert of this file.
  *
- * Rendered only when `meta` exists, so a synthetic reply stays unlabelled
- * rather than borrowing a model's authority.
+ * What stays is what §9 makes mandatory and was previously silent: a degrade
+ * to a lower tier (§9.3) and the daily budget running low (§9.7) are stated,
+ * never swallowed. A healthy turn therefore renders nothing at all.
  */
 export function AssistantMetaLine({ meta }: { meta: AssistantMeta }) {
   const intl = useIntl();
 
-  // `anthropic.claude-opus-4-6-v1` → `claude-opus-4-6-v1`. The vendor prefix is
-  // a Bedrock routing detail; the model is the fact worth showing. Trimmed
-  // rather than prettified — a made-up display name would be a second name for
-  // the same thing, and the two could disagree.
-  const model = meta.model.replace(/^[a-z]+\./, '');
-  const seconds = (meta.latencyMs / 1000).toFixed(1);
+  if (!meta.degraded && !meta.budgetWarning) return null;
 
   return (
     <div className="flex flex-wrap items-center gap-2 mt-3">
-      <span className="text-[11px] font-medium text-zinc-600 tabular-nums">
-        {intl.formatMessage(m.answeredBy, { model, seconds })}
-      </span>
-
       {meta.degraded && (
         <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-400/90">
           <ArrowDownRight size={11} />
