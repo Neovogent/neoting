@@ -1,22 +1,23 @@
 import { TextractClient } from '@aws-sdk/client-textract';
 
-import type { StatementTableReader } from './table-reader.js';
-import { TextractTableReader } from './textract-table-reader.js';
+import type { DocumentOcrReader } from './document-ocr.js';
+import { TextractOcrReader } from './textract-ocr-reader.js';
 
 /**
- * The statement OCR reader, chosen by CONFIG rather than by import — the same
- * seam discipline as `selectExtractor` / `selectDocumentStore`.
+ * The OCR reader, chosen by CONFIG rather than by import — the same seam
+ * discipline as `selectExtractor` / `selectDocumentStore`.
  *
  * Returns `undefined` for `none`, and that is a real answer rather than a
- * degraded one: CSV and XLSX still import, and a PDF is refused with a message
+ * degraded one: a CSV or XLSX statement still imports, and a model still reads
+ * an image or a PDF directly. Only a PDF STATEMENT is refused, with a message
  * saying the reader is not configured. The alternative — quietly skipping the
  * document — is the silent loss D41 exists to prevent.
  *
- * ⚠ There is deliberately no fixture implementation. A fake table reader would
- * return invented transactions for a real client's statement, which is the same
- * class of hazard `FallbackExtractor` was deleted for.
+ * ⚠ There is deliberately no fixture implementation. A fake OCR reader would
+ * return invented text for a real client's document, which is the same class of
+ * hazard `FallbackExtractor` was deleted for.
  */
-export function selectTableReader(
+export function selectOcrReader(
   env: {
     readonly STATEMENT_READER: 'none' | 'textract';
     /**
@@ -29,9 +30,9 @@ export function selectTableReader(
     readonly S3_BUCKET_DOCUMENTS: string;
   },
   logger?: { log(m: string): void; warn(m: string): void },
-): StatementTableReader | undefined {
+): DocumentOcrReader | undefined {
   if (env.STATEMENT_READER === 'none') return undefined;
-  return new TextractTableReader({
+  return new TextractOcrReader({
     client: new TextractClient({ region: env.S3_REGION }),
     bucket: env.S3_BUCKET_DOCUMENTS,
     ...(logger === undefined ? {} : { logger }),

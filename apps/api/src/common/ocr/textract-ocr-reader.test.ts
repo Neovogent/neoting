@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { Block } from '@aws-sdk/client-textract';
 
-import { blocksToGrid } from './textract-table-reader.js';
+import { blocksToPages } from './textract-ocr-reader.js';
+import type { Grid, OcrPage } from './document-ocr.js';
+
+/** Every page's table rows, stacked in page order — what the statement lane reads. */
+const gridOf = (pages: OcrPage[]): Grid => pages.flatMap((page) => page.grid);
 
 /**
  * `blocksToGrid` is the one piece of the Textract path that is ours rather than
@@ -34,7 +38,7 @@ function table(id: string, page: number, cells: Block[]): Block[] {
   ];
 }
 
-describe('blocksToGrid', () => {
+describe('blocksToPages', () => {
   it('reads a table into rows, in row and column order', () => {
     const cells = [
       ...cell('c1', 1, 1, ['Date']),
@@ -45,7 +49,7 @@ describe('blocksToGrid', () => {
       ...cell('c6', 2, 3, ['124.50']),
     ];
 
-    expect(blocksToGrid(table('t1', 1, cells))).toEqual([
+    expect(gridOf(blocksToPages(table('t1', 1, cells)))).toEqual([
       ['Date', 'Description', 'Paid out'],
       ['01/08/2026', 'BIDFOOD LTD', '124.50'],
     ]);
@@ -63,7 +67,7 @@ describe('blocksToGrid', () => {
       ...cell('c5', 1, 5, ['3,120.55']),
     ];
 
-    expect(blocksToGrid(table('t1', 1, cells))).toEqual([
+    expect(gridOf(blocksToPages(table('t1', 1, cells)))).toEqual([
       ['01/08/2026', 'SALARY', '', '2,400.00', '3,120.55'],
     ]);
   });
@@ -75,7 +79,7 @@ describe('blocksToGrid', () => {
     const second = table('t2', 2, [...cell('b1', 1, 1, ['02/08/2026'])]);
     const first = table('t1', 1, [...cell('a1', 1, 1, ['01/08/2026'])]);
 
-    expect(blocksToGrid([...second, ...first])).toEqual([['01/08/2026'], ['02/08/2026']]);
+    expect(gridOf(blocksToPages([...second, ...first]))).toEqual([['01/08/2026'], ['02/08/2026']]);
   });
 
   it('reads a selected checkbox as a mark and an unselected one as empty', () => {
@@ -87,7 +91,7 @@ describe('blocksToGrid', () => {
       { Id: 's2', BlockType: 'SELECTION_ELEMENT', SelectionStatus: 'NOT_SELECTED' } as Block,
     ];
 
-    expect(blocksToGrid(blocks)).toEqual([['X', '']]);
+    expect(gridOf(blocksToPages(blocks))).toEqual([['X', '']]);
   });
 
   it('is empty when the document contains no table at all', () => {
@@ -98,6 +102,6 @@ describe('blocksToGrid', () => {
       { Id: 'w', BlockType: 'WORD', Text: 'Dear customer' } as Block,
     ];
 
-    expect(blocksToGrid(blocks)).toEqual([]);
+    expect(gridOf(blocksToPages(blocks))).toEqual([]);
   });
 });

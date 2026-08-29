@@ -14,6 +14,8 @@
 
 import type { DocumentType } from '@prisma/client';
 
+import type { DocumentOcr } from '../../common/ocr/document-ocr.js';
+
 /** The house extractor kind + model version stamped on every demo extraction. */
 export const DEMO_EXTRACTOR_KIND = 'demo';
 export const DEMO_MODEL_VERSION = 'demo-extractor-1';
@@ -124,6 +126,25 @@ export interface ExtractionRequest {
   readonly s3Key: string | null;
   /** The stored object's content type — selects the image block's `media_type`. */
   readonly mimeType: string | null;
+  /**
+   * What the OCR rung already read (D20), when one is configured.
+   *
+   * ⚠ THIS IS THE CHEAP PATH AND IT IS THE POINT OF THE RUNG. Before it, the
+   * model was handed the raw file — for a 29-page bank statement that is 29
+   * pages of PDF at vision-token prices — and then Textract was handed the SAME
+   * file again by the statement lane. One document, read twice, paid for twice.
+   *
+   * Now Textract reads once and the model reads its TEXT. The statement lane
+   * gets the same read's tables, so the two lanes can never disagree about what
+   * the document says either.
+   *
+   * `undefined` when no reader is configured (local development — Textract
+   * cannot read MinIO), when the media is not OCR-able, or when the read
+   * failed. In every one of those cases the extractor falls back to sending the
+   * bytes, which is exactly what it did before this existed — so an environment
+   * with no OCR still reads documents.
+   */
+  readonly ocr?: DocumentOcr | undefined;
   /**
    * The practice whose daily AI ceiling this read spends against (§9.7, S5).
    *

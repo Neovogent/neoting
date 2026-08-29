@@ -1,7 +1,7 @@
 import { assessCompleteness, type CompletenessReport } from './completeness.js';
 import { formatFor } from './sheet-reader.js';
 import { parseStatement, parseStatementGrid, type ParsedStatement, type ParseResult } from './statement-parser.js';
-import { isTextractMedia, type StatementTableReader } from './table-reader.js';
+import { isOcrMedia, type DocumentOcr, type OcrFailure } from '../../../common/ocr/document-ocr.js';
 
 /**
  * An uploaded bank statement becomes `Statement` + `BankTransaction` rows.
@@ -114,15 +114,16 @@ async function accountFor(db: StatementScopedClient, businessId: string): Promis
 export async function readStatementFor(
   input: StatementIngestInput,
   /**
-   * The OCR reader, for a PDF or an image (D20).
+   * What the OCR rung already read (D20) — see `readStatement` below.
    *
-   * Optional ONLY so a spreadsheet can be ingested with no reader wired at all —
-   * a CSV needs no OCR and it would be wrong to demand one. A PDF arriving with
-   * no reader is refused and says so, rather than being quietly skipped.
+   * Optional ONLY so a spreadsheet can be ingested with no OCR at all: a CSV is
+   * already an exact grid and demanding an OCR pass for one would be absurd. A
+   * PDF arriving with no read is refused and says so, rather than being quietly
+   * skipped.
    */
-  tables?: StatementTableReader,
+  ocr?: DocumentOcr,
 ): Promise<ParseResult> {
-  return readStatement(input, tables);
+  return readStatement(input, ocr);
 }
 
 /** Whether this document's rows are already in the database. Its own tiny query. */
@@ -146,7 +147,7 @@ export async function ingestStatement(
    * path that runs inside a transaction.
    */
   parsedInput?: ParseResult,
-  tables?: StatementTableReader,
+  ocr?: DocumentOcr,
 ): Promise<StatementIngestOutcome> {
   // Idempotency first, before any persistence work.
   const alreadyId = await statementAlreadyIngested(db, input.documentId);
@@ -155,7 +156,7 @@ export async function ingestStatement(
     return { status: 'alreadyIngested', statementId: alreadyId };
   }
 
-  const parsed = parsedInput ?? (await readStatement(input, tables));
+  const parsed = parsedInput ?? (await readStatement(input, ocr));
   if (!parsed.ok) {
     const reason = refusalText(parsed.failure);
     logger.warn(`statement-ingest: refused ${input.documentId} — ${reason}`);
@@ -231,23 +232,54 @@ export async function ingestStatement(
  */
 async function readStatement(
   input: StatementIngestInput,
-  tables: StatementTableReader | undefined,
+  ocr: DocumentOcr | undefined,
 ): Promise<ParseResult> {
+  // A spreadsheet IS a grid. It needs no OCR and never did — reading a CSV
+  // through an OCR service would be paying to make an exact thing approximate.
   if (formatFor(input.fileName) !== null) return parseStatement(input.bytes, input.fileName);
 
-  if (!isTextractMedia(input.mimeType)) {
+  if (!isOcrMedia(input.mimeType)) {
     return { ok: false, failure: { reason: 'unsupportedFormat', fileName: input.fileName } };
   }
-  if (tables === undefined) {
-    return {
-      ok: false,
-      failure: { reason: 'tableRead', failure: { reason: 'readerNotConfigured' } },
-    };
-  }
 
-  const read = await tables.read({ bytes: input.bytes, mimeType: input.mimeType, s3Key: input.s3Key });
-  if (!read.ok) return { ok: false, failure: { reason: 'tableRead', failure: read.failure } };
-  return parseStatementGrid(read.grid);
+  // ⚠ THIS LANE NO LONGER CALLS TEXTRACT ITSELF, AND THAT IS THE POINT.
+  //
+  // It used to, which meant a PDF statement was read twice: once by the model
+  // (the whole file, at vision-token prices) to classify it, and again here to
+  // get its rows. One document, two reads, two bills — and two answers that
+  // could disagree about what it said.
+  //
+  // The OCR rung now runs once, in the extraction step, and hands its result
+  // forward on the completion. `undefined` here means that read did not happen
+  // — no reader configured, or it failed — and the honest answer is a refusal
+  // naming what would work, never an empty statement.
+  if (ocr === undefined) {
+    return { ok: false, failure: { reason: 'tableRead', failure: { reason: 'readerNotConfigured' } } };
+  }
+  if (ocr.grid.length === 0) {
+    return { ok: false, failure: { reason: 'tableRead', failure: { reason: 'nothingFound' } } };
+  }
+  return parseStatementGrid(ocr.grid);
+}
+
+/** Why the OCR rung did not produce a table, in words the accountant can act on. */
+function ocrRefusalText(failure: OcrFailure): string {
+  switch (failure.reason) {
+    case 'nothingFound':
+      return 'No transaction table was found in this document. If it is a photograph, make sure the whole table is in frame and in focus.';
+    case 'unsupportedMedia':
+      return `This file could not be read as a statement (${failure.detail}).`;
+    case 'readerUnavailable':
+      // ⚠ Deliberately NOT phrased as a problem with their document. It is
+      // ours, and telling a client their statement is unreadable would send
+      // them to re-scan a perfectly good file.
+      return 'The document reader could not be reached, so this statement has not been imported yet. Nothing is lost — it will be read again shortly.';
+    case 'readerNotConfigured':
+      // Permanent for this environment, so it must NOT promise a retry. Naming
+      // the two formats that need no reader is the one action the person
+      // holding the file can actually take.
+      return 'This file needs to be read by the document reader, which is not switched on here. A statement uploaded as CSV or XLSX imports without it.';
+  }
 }
 
 /**
@@ -262,22 +294,7 @@ function refusalText(failure: Extract<ReturnType<typeof parseStatement>, { ok: f
     case 'unsupportedFormat':
       return `${failure.fileName} is not a format this reads. Bank statements can be uploaded as PDF, CSV, XLSX, or a photograph.`;
     case 'tableRead':
-      switch (failure.failure.reason) {
-        case 'noTableFound':
-          return 'No transaction table was found in this document. If it is a photograph, make sure the whole table is in frame and in focus.';
-        case 'unsupportedMedia':
-          return `This file could not be read as a statement (${failure.failure.detail}).`;
-        case 'readerUnavailable':
-          // ⚠ Deliberately NOT phrased as a problem with their document. It is
-          // ours, and telling a client their statement is unreadable would send
-          // them to re-scan a perfectly good file.
-          return 'The document reader could not be reached, so this statement has not been imported yet. Nothing is lost — it will be read again shortly.';
-        case 'readerNotConfigured':
-          // Permanent for this environment, so it must NOT promise a retry.
-          // Naming the two formats that need no reader is the one action the
-          // person holding the file can actually take.
-          return 'This file needs to be read by the document reader, which is not switched on here. A statement uploaded as CSV or XLSX imports without it.';
-      }
+      return ocrRefusalText(failure.failure);
     case 'unreadable':
       switch (failure.detail) {
         case 'notAZipFile':

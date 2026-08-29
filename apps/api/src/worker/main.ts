@@ -1,3 +1,4 @@
+import { selectOcrReader } from '../common/ocr/select-ocr-reader.js';
 import 'reflect-metadata';
 
 import { Logger } from '@nestjs/common';
@@ -22,7 +23,7 @@ import { INGEST_QUEUE_NAME } from '../modules/ingestion-routing/queue/queue-name
 import { createRedisConnection } from '../modules/ingestion-routing/queue/redis-connection.js';
 import { selectMediaFetcher } from '../modules/ingestion-routing/queue/select-media-fetcher.js';
 import type { MediaIntakeDeps } from '../modules/ingestion-routing/queue/whatsapp-media-intake.js';
-import { PrismaStatementStep, selectTableReader } from '../modules/banking-matching/index.js';
+import { PrismaStatementStep } from '../modules/banking-matching/index.js';
 import { selectDocumentStore } from '../modules/ingestion-routing/storage/select-document-store.js';
 import { PrismaUploadSanitisationStep } from '../modules/ingestion-routing/web-upload/prisma-upload-sanitisation.js';
 
@@ -62,8 +63,25 @@ function bootstrap(): void {
   // Extraction (METH Stage 4, real since Stage 15) — the step that moves a
   // document out of RECEIVED. Config-selected: `EXTRACTOR=demo` is fixture
   // profiles, `bedrock` actually reads the image. Logs through the worker's logger.
+  //
+  // ⚠ THE OCR RUNG RUNS FIRST AND IS SHARED (D20). Textract reads the document
+  // once; the model is handed its TEXT rather than the file, and the statement
+  // lane is handed the same read's TABLES. Before this, a 29-page bank
+  // statement went to the model whole (at vision-token prices) and then to
+  // Textract again — one document, two reads, two bills, and two answers that
+  // could disagree.
+  //
+  // `undefined` when `STATEMENT_READER=none`, which is a supported
+  // configuration and not a degraded one: the extractor then sends the bytes
+  // exactly as it always did. That is what keeps local development working,
+  // where Textract cannot reach MinIO at all.
+  const ocrLogger = { log: (message: string) => logger.log(message), warn: (message: string) => logger.warn(message) };
+  const ocrReader = selectOcrReader(env, ocrLogger);
+  logger.log(`document reader: ${env.STATEMENT_READER}`);
+
   const extractor = new PrismaExtractionStep(getPrismaClient(), selectExtractor(env, documentStore, aiBudget), {
-    logger: { log: (message) => logger.log(message), warn: (message) => logger.warn(message) },
+    logger: ocrLogger,
+    ...(ocrReader === undefined ? {} : { ocr: ocrReader, store: documentStore }),
   });
   // Auto-close on inbound match (chase, METH Stage 8) — runs after extraction for
   // a routed document; closes an open chase whose transaction the document
@@ -103,13 +121,9 @@ function bootstrap(): void {
   // Statement import (D40/D41). Shares `documentStore` with extraction — the
   // statement's bytes are the SAME object extraction already read, so a second
   // store would be a second answer to "where are this document's bytes".
-  const statementLogger = { log: (message: string) => logger.log(message), warn: (message: string) => logger.warn(message) };
-  const tableReader = selectTableReader(env, statementLogger);
-  logger.log(`statement reader: ${env.STATEMENT_READER}`);
-  const statements = new PrismaStatementStep(getPrismaClient(), documentStore, {
-    logger: statementLogger,
-    ...(tableReader === undefined ? {} : { tables: tableReader }),
-  });
+  // No reader of its own: it reads whatever the OCR rung above already read,
+  // handed forward on the extraction completion.
+  const statements = new PrismaStatementStep(getPrismaClient(), documentStore, { logger: ocrLogger });
 
   const worker = new Worker(
     INGEST_QUEUE_NAME,

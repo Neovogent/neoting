@@ -17,6 +17,7 @@
  * does nothing twice.
  */
 
+import { isOcrMedia, type DocumentOcr, type DocumentOcrReader } from '../../common/ocr/document-ocr.js';
 import type { Prisma } from '@prisma/client';
 
 import type { PrismaClient } from '../../common/db/prisma.js';
@@ -77,6 +78,18 @@ export interface ExtractionCompletion {
   readonly supplierName: string | null;
   readonly totalPence: number | null;
   readonly documentDate: Date | null;
+  /**
+   * What the OCR rung read, so the NEXT step does not read it again.
+   *
+   * ⚠ This is the whole reason the field exists. The statement lane needs the
+   * document's tables and this step needs its text — the same Textract call
+   * answers both, and passing the result forward is what stopped a 29-page
+   * statement being read (and paid for) twice. `undefined` when no reader is
+   * configured or the read failed; the statement lane then reads for itself,
+   * which is correct and costs a second call only in the case where the first
+   * one did not happen.
+   */
+  readonly ocr?: DocumentOcr | undefined;
 }
 
 export interface ExtractionStep {
@@ -127,14 +140,35 @@ function toStoredDate(ymd: string | null): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+/** The one thing the OCR rung needs from storage: the bytes back. */
+export interface ExtractionBytesSource {
+  get(key: string): Promise<Buffer>;
+}
+
 export interface PrismaExtractionStepOptions {
   readonly sleep?: (ms: number) => Promise<void>;
   readonly logger?: ExtractionStepLogger;
+  /**
+   * The OCR rung (D20). Given one, the model is handed TEXT rather than the
+   * file, and the statement lane is handed the same read's tables.
+   *
+   * ⚠ Both this and `store` are optional together, and omitting them is a
+   * supported configuration rather than a degraded one: with no reader the
+   * extractor sends the bytes exactly as it always did. That is what keeps
+   * local development working, where Textract cannot reach MinIO at all.
+   */
+  readonly ocr?: DocumentOcrReader;
+  readonly store?: ExtractionBytesSource;
 }
 
 export class PrismaExtractionStep implements ExtractionStep {
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly logger: ExtractionStepLogger;
+
+  /** The OCR rung (D20). Absent = the extractor reads the bytes itself, as before. */
+  private readonly ocrReader: DocumentOcrReader | undefined;
+  /** Where the bytes are, for the OCR rung's synchronous (image) path. */
+  private readonly store: ExtractionBytesSource | undefined;
 
   constructor(
     private readonly prisma: PrismaClient,
@@ -143,6 +177,39 @@ export class PrismaExtractionStep implements ExtractionStep {
   ) {
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.logger = options.logger ?? NOOP_LOGGER;
+    this.ocrReader = options.ocr;
+    this.store = options.store;
+  }
+
+  /**
+   * Read the document with the OCR rung, or answer `undefined` and let the
+   * extractor send the bytes.
+   *
+   * Every `undefined` here is a fallback to behaviour that already worked, so
+   * nothing this returns can break a document — which is why a failed OCR read
+   * is a WARN and not a document failure. The one thing it must never do is
+   * throw: OCR is an optimisation on top of a path that stands without it.
+   */
+  private async readOcr(request: ExtractionRequest): Promise<DocumentOcr | undefined> {
+    const { s3Key, mimeType } = request;
+    if (this.ocrReader === undefined || this.store === undefined) return undefined;
+    if (s3Key === null || mimeType === null || !isOcrMedia(mimeType)) return undefined;
+
+    try {
+      // ⚠ The multi-page path reads from S3 and needs no bytes at all; only the
+      // synchronous (image / single-page) path does. Fetching them regardless
+      // keeps this one branch instead of two, and an image is small by the time
+      // it reaches here — the normaliser has already capped it.
+      const bytes = await this.store.get(s3Key);
+      const read = await this.ocrReader.read({ bytes, mimeType, s3Key });
+      if (read.ok) return read.ocr;
+      this.logger.warn(`extract: OCR did not read ${request.filename} (${read.failure.reason}) — sending the file instead`);
+      return undefined;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`extract: OCR threw for ${request.filename} (${reason}) — sending the file instead`);
+      return undefined;
+    }
   }
 
   async run(input: ExtractionInput): Promise<ExtractionCompletion | null> {
@@ -174,7 +241,17 @@ export class PrismaExtractionStep implements ExtractionStep {
       await this.sleep(extractionLatencyMs(started.byteHash));
     }
 
-    const outcome = await this.runExtractor(started, input);
+    // The OCR rung, FIRST (D20). What it reads is handed to the model as text,
+    // and handed on again to the statement lane as tables — one read of the
+    // file, two consumers, and they cannot disagree about what it says.
+    const ocr = await this.readOcr(started);
+    if (ocr !== undefined) {
+      this.logger.log(
+        `extract: OCR read ${input.documentId} — ${ocr.pages.length} page(s), ${ocr.grid.length} table row(s)`,
+      );
+    }
+
+    const outcome = await this.runExtractor(ocr === undefined ? started : { ...started, ocr }, input);
     // A retryable throw on a job with attempts left: leave the document in
     // PROCESSING and let BullMQ come back. `begin()` treats PROCESSING as
     // re-entrant precisely so the next attempt picks up here.
@@ -184,7 +261,9 @@ export class PrismaExtractionStep implements ExtractionStep {
     // (the header + final state) is what the caller hands the auto-close hook; it
     // is null for a FAILED read, so a chase never closes on a document we could
     // not read.
-    return scopedDb(this.prisma, ctx, (db) => this.finish(db, input, outcome));
+    const completion = await scopedDb(this.prisma, ctx, (db) => this.finish(db, input, outcome));
+    if (completion === null || ocr === undefined) return completion;
+    return { ...completion, ocr };
   }
 
   /**

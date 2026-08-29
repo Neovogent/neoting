@@ -19,8 +19,6 @@
  * putting it on the seam would invite a second call path to the same data.
  */
 
-export { selectTableReader } from './statement-ingest/select-table-reader.js';
-export type { StatementTableReader, TableReadResult } from './statement-ingest/table-reader.js';
 
 export {
   NO_STATEMENT_STEP,
