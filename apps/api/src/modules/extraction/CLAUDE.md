@@ -338,6 +338,32 @@ Five things that are decisions, not details:
   invented text for a real client's document — the same class of hazard
   `FallbackExtractor` was deleted for.
 
+**⚠ The model sees at most `OCR_PAGE_CEILING` (5) pages, and that is load-bearing.**
+The first real statement through this rung was 29 pages and **1,366 table rows**.
+Sent whole, the model answered with a `tool_use` whose JSON did not parse —
+`NT-EXT-006` — because a 4,096-token answer cannot hold a header AND an
+enumeration of a thousand rows: it came back truncated, and the two schema
+fields with no `.catch()` (`docType`, `confidence`) were simply missing. The
+document landed FAILED and the statement never imported, because the statement
+step keys on a `docType` extraction never wrote.
+
+Five is the same number, and the same argument, as `PDF_PAGE_FLOOR`. **Nothing
+is lost by capping**: the ROWS of a long document are Textract's answer, and
+`banking-matching` reads the FULL `ocr.grid`. The ceiling governs only what the
+model is shown in order to classify and read a header. The prompt states the
+true page count and forbids totalling from the extract — being shown five pages
+of twenty-nine and reporting "the total" is the silent truncation D41 exists to
+catch.
+
+**⚠ `NT-EXT-006` now names its reason.** It answered with one fixed sentence, so
+that first failure had nothing anywhere — not in the log, not on the row — to
+say which field was wrong or that the answer had been cut off mid-JSON. It now
+carries `stop_reason: max_tokens` by name (a different problem from a bad field:
+the missing fields are a symptom, and chasing them wastes a day) or the first
+few Zod issue paths. **Paths and codes only — never a value the model returned**,
+which is client-adjacent content and must not travel into a string that is
+logged and rendered.
+
 ⚠ **What this does to the cost numbers below.** Every OCR-able document now
 carries a Textract charge (~1.2p/page) and a *cheaper* model call, instead of no
 Textract and a vision call. For a one-page receipt that is roughly a wash. For a
