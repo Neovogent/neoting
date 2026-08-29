@@ -389,7 +389,14 @@ export class PrismaExtractionStep implements ExtractionStep {
         traceId: input.traceId,
         detail: { stage: 'extract' },
       });
-      this.logger.warn(`extract: ${input.documentId} FAILED ${outcome.failure.code} (trace=${input.traceId})`);
+      // ⚠ THE MESSAGE, NOT JUST THE CODE. This logged the code alone, so a
+      // document failing `NT-EXT-006` said only "the extracted values did not
+      // make sense" — with the reason sitting on the row where CloudWatch could
+      // not see it. Two deploy cycles were spent guessing at a failure whose
+      // cause the process already knew.
+      this.logger.warn(
+        `extract: ${input.documentId} FAILED ${outcome.failure.code} — ${outcome.failure.message} (trace=${input.traceId})`,
+      );
       return null; // a document we could not read closes no chase
     }
 

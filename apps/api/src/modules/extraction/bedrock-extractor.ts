@@ -357,7 +357,12 @@ export class BedrockExtractor implements DocumentExtractor {
               text:
                 ocrText === null
                   ? promptFor(request.filename, isPdf)
-                  : promptForOcr(request.filename, ocrText, request.ocr?.pages.length ?? 1),
+                  : promptForOcr(
+                      request.filename,
+                      ocrText,
+                      request.ocr?.pages.length ?? 1,
+                      request.ocr?.grid.length ?? 0,
+                    ),
             },
           ],
         },
@@ -524,7 +529,22 @@ function usableOcrText(request: ExtractionRequest): string | null {
  * Two wrapped blocks, each labelled, because they are untrusted in different
  * ways and a reader of this prompt should not have to guess which is which.
  */
-function promptForOcr(filename: string, text: string, pages: number): string {
+/**
+ * A table this size is not a document with line items on it — it is a ledger,
+ * and its rows are read deterministically elsewhere.
+ *
+ * ⚠ **CAPPING THE PAGES WAS NOT ENOUGH ON ITS OWN.** Five pages of a bank
+ * statement is still ~235 transaction rows (1,366 over 29 pages), and the model
+ * dutifully began itemising them — which overruns a 4,096-token answer just as
+ * the full document did, truncating the JSON and taking `docType` and
+ * `confidence` with it. The fix is to stop ASKING, not to send less and hope.
+ *
+ * Forty is well above any real invoice's line count and far below a statement
+ * page's, so an ordinary supplier document is itemised exactly as before.
+ */
+const ITEMISE_ROW_CEILING = 40;
+
+function promptForOcr(filename: string, text: string, pages: number, tableRows: number): string {
   const shown = Math.min(pages, OCR_PAGE_CEILING);
   return [
     `The text below was read from a client-supplied document by OCR (${pages} page${pages === 1 ? '' : 's'}).`,
@@ -541,6 +561,13 @@ function promptForOcr(filename: string, text: string, pages: number): string {
         ]
       : []),
     'Extract its fields.',
+    ...(tableRows > ITEMISE_ROW_CEILING
+      ? [
+          `This document contains a table of ${tableRows} rows, and those rows have`,
+          'ALREADY been extracted separately and exactly. Do not repeat them:',
+          'return an empty lineItems array and report only the header fields.',
+        ]
+      : []),
     'OCR is imperfect: a character it misread is a misread character, not a',
     'different document. Where a figure is unreadable, report it as null rather',
     'than guessing at it.',
