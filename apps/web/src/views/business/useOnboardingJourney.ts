@@ -120,7 +120,7 @@ export function useOnboardingJourney(setupToken: string | null): OnboardingJourn
       try {
         if (API_ENABLED) {
           if (!setupToken) return false;
-          await requestSignInCode(setupToken, address);
+          await requestSignInCode(address, setupToken);
         }
         if (!alive.current) return false;
         setEmail(address);
@@ -151,7 +151,7 @@ export function useOnboardingJourney(setupToken: string | null): OnboardingJourn
       try {
         if (API_ENABLED) {
           if (!setupToken) return false;
-          const opened = await openOnboardingSession(setupToken, email, otp);
+          const opened = await openOnboardingSession(email, otp, setupToken);
           if (!alive.current) return false;
           setSession(opened);
         } else {

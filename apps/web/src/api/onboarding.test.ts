@@ -49,7 +49,7 @@ test('requestSignInCode posts the token and the address, and survives the empty 
   // an answer an unauthenticated caller gets. No body, no content-type.
   const calls = stubFetch([{ body: null, status: 202 }]);
 
-  await requestSignInCode('setup-tok', 'maria@anandagroup.co.uk');
+  await requestSignInCode('maria@anandagroup.co.uk', 'setup-tok');
 
   expect(calls).toHaveLength(1);
   expect(calls[0]!.url).toContain('/v1/portal/sign-in-codes');
@@ -64,7 +64,7 @@ test('requestSignInCode posts the token and the address, and survives the empty 
 
 test('openOnboardingSession refuses a short code before any request is made', async () => {
   const calls = stubFetch([]);
-  await expect(openOnboardingSession('setup-tok', 'maria@anandagroup.co.uk', '12345')).rejects.toThrow();
+  await expect(openOnboardingSession('maria@anandagroup.co.uk', '12345', 'setup-tok')).rejects.toThrow();
   expect(calls).toHaveLength(0);
 });
 
@@ -74,10 +74,10 @@ test('openOnboardingSession returns the bearer, and businessId only when the ser
     { body: { token: 'bearer-2', expiresAt: '2026-08-27T12:00:00.000Z', businessId: 'biz_clean' }, status: 201 },
   ]);
 
-  const bare = await openOnboardingSession('setup-tok', 'maria@anandagroup.co.uk', '123456');
+  const bare = await openOnboardingSession('maria@anandagroup.co.uk', '123456', 'setup-tok');
   expect(bare).toEqual({ token: 'bearer-1', expiresAt: '2026-08-27T12:00:00.000Z', businessId: null });
 
-  const named = await openOnboardingSession('setup-tok', 'maria@anandagroup.co.uk', '123456');
+  const named = await openOnboardingSession('maria@anandagroup.co.uk', '123456', 'setup-tok');
   expect(named.businessId).toBe('biz_clean');
 
   expect(calls[0]!.url).toContain('/v1/portal/onboarding-sessions');

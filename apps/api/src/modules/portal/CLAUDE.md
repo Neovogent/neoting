@@ -737,3 +737,37 @@ ordinary `pnpm test` with docker up.
       reach checkout.** A contract-change issue for Shakib (G7); the web half is
       already written to accept the field the day it lands.
 - [ ] Update this file on exit — it is how the next session picks up.
+
+## Signing in WITHOUT a setup link (29 Aug 2026)
+
+`setupToken` is optional on `POST /portal/sign-in-codes` and
+`POST /portal/onboarding-sessions`.
+
+**It was required, and that made the portal a one-week door.** The invite expires
+after seven days, so a client who onboarded, subscribed and came back a
+fortnight later was locked out of their own workspace — with no route back that
+did not involve telephoning their accountant.
+
+| | route | how the workspace is named | otp row key |
+|---|---|---|---|
+| first sign-in | token present | the invite, plus the address checked against it (D45) | `hashSetupToken(setupToken)` |
+| every one after | token absent | the address alone, via `contacts` | `signInSessionKey(businessId, email)` |
+
+- **⚠ EXACTLY ONE BUSINESS, OR NOTHING.** `resolveByAddress` refuses an address
+  that is a contact of two businesses (`ambiguous-address`). Picking one would
+  open somebody's books on a coin toss, and the person it opened them to would
+  have no way of telling. It is logged loudly because it is a dead end for a real
+  person and only an operator can fix it.
+- **No `isPrimary` condition**, deliberately: D45 lets a client add their own
+  team members and lets those people upload, so any contact of the business is
+  entitled to sign in to it.
+- **The two routes use DIFFERENT otp rows**, so a first sign-in and a return
+  cannot overwrite each other's code. The tokenless key is per business AND per
+  address, so two people at the same client do not either — the loser would
+  otherwise experience a code that simply never worked.
+- **Both refuse identically to the caller.** The routes differ in what they
+  check, never in what they admit to: `requestSignInCode` cannot report failure
+  at all, and every `createOnboardingSession` refusal is one `401 NT-OTP-001`.
+- The sweep is the sanctioned one `resolveInvite` and `resolveChase` use: one
+  unscoped read over `memberships` for each practice's SYSTEM actor, then RLS
+  answers per practice. It runs once per sign-in, never on a hot path.

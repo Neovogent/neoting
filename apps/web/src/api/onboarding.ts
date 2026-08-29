@@ -65,8 +65,20 @@ const bearer = (token: string): RequestInit => ({ headers: { Authorization: `Bea
  * 202. A thrown `NtProblemError` here is a 400 (malformed input) or a 429
  * (rate limit), never "that address is not registered".
  */
-export async function requestSignInCode(setupToken: string, email: string): Promise<void> {
-  const request = createPortalSignInCodeBody.parse({ setupToken, email });
+export async function requestSignInCode(email: string, setupToken?: string): Promise<void> {
+  // ⚠ The token is OPTIONAL, and its absence is the whole business portal.
+  // While it was required, the only way in was the emailed invite — which
+  // expires after seven days — so a client who onboarded, subscribed and came
+  // back a fortnight later was locked out of their own workspace. Omitted, the
+  // address alone names the workspace, which the server permits only when it
+  // names exactly one.
+  // ⚠ Built as a UNION OF TWO LITERALS and validated in place, rather than
+  // passing the parse's own output on. Zod types an optional field's output as
+  // `setupToken?: string | undefined`, which under `exactOptionalPropertyTypes`
+  // is not assignable to the generated `setupToken?: string`. Same boundary,
+  // same check — the parse still throws on drift — and no cast.
+  const request = setupToken === undefined ? { email } : { email, setupToken };
+  createPortalSignInCodeBody.parse(request);
   await createPortalSignInCode(request);
 }
 
@@ -111,8 +123,15 @@ const onboardingSessionShape = z.object({
  * session. Every verification failure — unknown link, expired link, wrong
  * address, wrong code — is the same `401 NT-OTP-001`, deliberately.
  */
-export async function openOnboardingSession(setupToken: string, email: string, otp: string): Promise<OnboardingSession> {
-  const request = createPortalOnboardingSessionBody.parse({ setupToken, email, otp });
+export async function openOnboardingSession(
+  email: string,
+  otp: string,
+  setupToken?: string,
+): Promise<OnboardingSession> {
+  // The token must match how the code was requested — see `requestSignInCode`.
+  // A union of two literals, validated in place — see `requestSignInCode`.
+  const request = setupToken === undefined ? { email, otp } : { email, otp, setupToken };
+  createPortalOnboardingSessionBody.parse(request);
   const body = onboardingSessionShape.parse(unwrapBody(await createPortalOnboardingSession(request)));
   return { token: body.token, expiresAt: body.expiresAt, businessId: body.businessId ?? null };
 }

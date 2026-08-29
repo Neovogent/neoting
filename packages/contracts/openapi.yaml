@@ -5171,11 +5171,25 @@ components:
 
     PortalSignInCodeRequest:
       type: object
-      required: [setupToken, email]
+      required: [email]
       properties:
         setupToken:
           type: string
-          description: From the setup link the accountant sent. Names the workspace being set up.
+          description: |
+            From the setup link the accountant sent. Names the workspace being
+            set up.
+
+            **Optional since 29 Aug 2026, and that is what makes this a portal
+            rather than a one-week door.** It was required, so the only way in
+            was the emailed invite — which expires after seven days. A client who
+            onboarded, subscribed and then came back a fortnight later was locked
+            out of their own workspace with no route back that did not involve
+            telephoning their accountant.
+
+            Omit it and the address alone names the workspace: the client is a
+            known contact of exactly one business (D45), and that is the business
+            they are signed in to. Present, it is the first-sign-in path and the
+            address is additionally checked against the invite.
         email:
           type: string
           format: email
@@ -5183,11 +5197,20 @@ components:
             The address the client was registered with (D45). A mismatch is not
             reported — the response is `202` either way.
 
+            Without a `setupToken` this is the ONLY identifier, so it must match
+            a contact of exactly one business. An address on two businesses is
+            refused rather than guessed at: picking one would open somebody's
+            books on a coin toss.
+
     PortalOnboardingSessionRequest:
       type: object
-      required: [setupToken, email, otp]
+      required: [email, otp]
       properties:
-        setupToken: { type: string }
+        setupToken:
+          type: string
+          description: |
+            Optional, and must match how the code was requested — see
+            `PortalSignInCodeRequest.setupToken`.
         email: { type: string, format: email }
         otp:
           type: string

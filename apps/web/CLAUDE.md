@@ -320,13 +320,65 @@ Five shells replace the practice app outright rather than sitting inside it, bec
 
 | `portal` | Address | What it is | Data |
 |---|---|---|---|
-| `business` | `/portal/:accountId` | An account a business signs into and can browse | seed |
+| `business` | `/portal` (and `/portal/:accountId`) | An account a business signs into and can browse | **real API** |
 | `approval` | `/approve/:requestId` | SMS link → OTP → approve one client's batch | seed |
 | `registration` | `/register/:accountId/:memberId` | An invited person filling in their own details | seed |
 | `chase-upload` | `/p/:linkToken` | SMS link → OTP → the items one chase asked for → upload | **real API** |
 | `setup` | `/app/setup?setupToken=…` | Email link → emailed six-digit code → onboarding → subscribe (launch M6) | **real API** (live since 28 Aug 2026 — see below) |
 
 **⚠ Both portals split their fallback failure copy on whether the server ANSWERED, and that is a correctness rule, not a preference.** `faultMessageFor` (exported from `BusinessOnboardingView.tsx` and from `ChasePortalView.tsx` precisely so a test can reach it) returns the "check your connection / check your signal" sentence **only when `fault.code === null`**. A code means a reply came back over the very connection that sentence blames, so the two cannot be on screen together — and they were: the setup journey's missing routes 404'd as `NT-VAL-001` and an invited client was sent to their wifi settings for a route that did not exist. Anything with a code now says the server erred, says trying again may work, and points at the accountant plus the reference. Pinned in both view tests; those are the only mechanical guard the rule has.
+
+### The business portal (`/portal`) — real since 29 Aug 2026
+
+**It was a drawing of a portal until this.** `BusinessPortal` is the prototype's
+four-tab shell driven by `AppContext.businessAccounts`, which is
+`SYNTHETIC ? buildBusinessAccounts(seedClients) : []` — **empty with the API
+on**. So a live visitor got `BusinessSignInView`, which calls
+`newBusinessAccount()` and writes an account into local React state that
+vanishes on reload. Nothing reached a server; there was no portal.
+
+`views/business/LiveBusinessPortal.tsx` + `useBusinessPortalSession.ts` are the
+same journey against the contract, and `BusinessPortal` branches to them on
+`API_ENABLED` before it touches `businessAccounts`. **The synthetic shell is
+untouched**, because the app must still walk end to end with no API
+(METH_MODE §1).
+
+Five things that are decisions, not details:
+
+- **⚠ The server change that made it possible: `setupToken` is now OPTIONAL** on
+  `POST /portal/sign-in-codes` and `POST /portal/onboarding-sessions` (a G7
+  contract change). It was required, and **the invite expires after seven
+  days** — so a client who onboarded, subscribed and came back a fortnight later
+  was locked out of their own workspace with no route back that did not involve
+  telephoning their accountant. Omitted, the address alone names the workspace,
+  which the server permits only when it names **exactly one** business. An
+  address on two is refused rather than guessed at.
+- **The bearer lives in React state and nowhere else** — not `localStorage`, not
+  a cookie. The same rule and the same reason as the chase portal: it is a
+  credential over a client's financial records, held by someone who cannot
+  re-prove anything, on a phone that gets handed round the till. It dies with
+  the tab.
+- **⚠ NO COPY MAY SAY WHETHER AN ACCOUNT EXISTS.** `sign-in-codes` answers `202`
+  whatever happened, so the code step is reached even for an address nothing was
+  sent to, and `requestCode` **always** advances the step — branching on the
+  result would turn the screen into the enumeration oracle the uniform `202`
+  exists to prevent. The wording is conditional: *"If {email} can be used to
+  sign in…"*.
+- **The lapsed-subscription state is shown BEFORE the upload button, not after
+  the refusal** (D48). An upload without a live subscription is refused
+  server-side, so the honest thing is to say so before the client photographs a
+  receipt.
+- **It reuses `sendPortalUpload` from the chase portal's `api/portal.ts`**, which
+  needs no change: `POST /portal/uploads` keys off the session's business, and an
+  ONBOARDING-scoped session has one. One upload path at two trust levels.
+
+Bundle: `LiveBusinessPortal` lands on the `BusinessPortal` chunk (24.1 kB gzip),
+not the floor. Portal route ~225.6 kB against the 250 kB budget.
+
+⚠ **Still on seed data, and still owed:** the Capture (camera) tab, the Settings
+tab's plan panel, and per-user registration. The live portal has the three things
+that make it a portal — sign in, see what is wanted, send a document — and says
+nothing it cannot do.
 
 ### The setup journey (`/app/setup`) — launch stage M6
 

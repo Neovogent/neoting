@@ -873,18 +873,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }).format(parsed);
   };
 
-/**
- * The subscription states that mean the client finished their own onboarding.
- *
- * TRIALING counts: the client walked the whole journey and Stripe is carrying
- * them, so telling their accountant they have not registered would be false.
- * Everything else — INCOMPLETE, PAST_DUE, CANCELED, UNPAID, PAUSED, and no
- * subscription at all — leaves the badge on, which is the safe direction: it
- * asks the accountant to chase, and the worst case is a chase that was not
- * needed.
- */
-const REGISTERED_SUBSCRIPTION = new Set(['ACTIVE', 'TRIALING']);
-
   const liveClients = useMemo<Client[]>(
     () =>
       !liveBoard
@@ -916,7 +904,14 @@ const REGISTERED_SUBSCRIPTION = new Set(['ACTIVE', 'TRIALING']);
               // also the one fact on this row that a server writes rather than
               // an accountant types — `businesses.subscription_status`, written
               // only by the Stripe webhook.
-              ...(REGISTERED_SUBSCRIPTION.has(b.subscription?.status ?? '')
+              // TRIALING counts alongside ACTIVE: the client walked the whole
+              // journey and Stripe is carrying them. Everything else — and no
+              // subscription at all — leaves the badge on, which is the safe
+              // direction: the worst case is a chase that was not needed.
+              //
+              // Compared inline rather than against a module-level Set, which
+              // `react-hooks/exhaustive-deps` cannot prove stable.
+              ...(b.subscription?.status === 'ACTIVE' || b.subscription?.status === 'TRIALING'
                 ? {}
                 : { awaitingRegistration: true }),
             };
