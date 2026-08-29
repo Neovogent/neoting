@@ -771,3 +771,34 @@ did not involve telephoning their accountant.
 - The sweep is the sanctioned one `resolveInvite` and `resolveChase` use: one
   unscoped read over `memberships` for each practice's SYSTEM actor, then RLS
   answers per practice. It runs once per sign-in, never on a hot path.
+
+## ⚠ All three portal doors take BOTH kinds of session (29 Aug 2026)
+
+The context read, the upload intent and the completion each called
+`resolver.resolve(...)`, which accepted `DELEGATED_UPLOAD` only. So a client who
+signed in to their own portal — with a code they had just typed correctly — was
+answered **`NT-OTP-002 — missing or invalid portal session`** by the very
+endpoints written for them, and `getBusinessContext` was unreachable code.
+
+| door | resolver | takes |
+|---|---|---|
+| `GET /portal/context` | `resolveForContext` | chase **and** own-portal |
+| `POST /portal/uploads` | `resolveForUpload` | chase **and** own-portal |
+| `POST /document-uploads/{id}/complete` | `resolveForUpload` | chase **and** own-portal |
+| `POST /billing/checkout-sessions` | `resolveOnboarding` | own-portal **only** |
+
+**⚠ There is deliberately no bare `resolve` any more.** It is the name a reader
+reaches for by default, and the default must not be the variant that silently
+excludes half the sessions this module issues — which is precisely how this bug
+happened. Every caller names the operation it is resolving *for*.
+
+What makes the widening safe is tenancy, not scope: every query on both context
+branches is constrained to `facts.businessId`, and `createPortalUpload` needs
+nothing from the session but that same id — it takes no chase and files against
+no other business. The holder proved control of an address registered as a
+contact of exactly one business (D45).
+
+What did **not** widen: the billing door, which is how a subscription is paid
+for, and `delegatedScopeFor`, which still refuses a session with no granted
+items. A chase session's `chaseId` is still the only thing that makes the
+context return chase items.

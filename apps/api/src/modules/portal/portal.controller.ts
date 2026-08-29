@@ -165,7 +165,8 @@ export class PortalController {
   @Get('context')
   @HttpCode(HttpStatus.OK)
   async getContext(@Headers('authorization') authorization: string | undefined): Promise<PortalContext> {
-    return this.context.getContext(await this.resolver.resolve(authorization));
+    // Both kinds of session read their own context — see `resolveForContext`.
+    return this.context.getContext(await this.resolver.resolveForContext(authorization));
   }
 
   /**
@@ -184,7 +185,9 @@ export class PortalController {
     @Headers('authorization') authorization: string | undefined,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
   ): Promise<DocumentUpload> {
-    const facts = await this.resolver.resolve(authorization);
+    // A chase session answering a request, or a client sending paperwork from
+    // their own portal — see `resolveForUpload`.
+    const facts = await this.resolver.resolveForUpload(authorization);
     const key = parseIdempotencyKey(createPortalUploadHeader, idempotencyKey);
     const request = parseBoundary(createPortalUploadBody, body, 'request body');
     return this.uploads.createPortalUpload(facts, request, key);

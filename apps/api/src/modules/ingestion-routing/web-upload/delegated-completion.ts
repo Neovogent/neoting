@@ -23,7 +23,12 @@ import type { DelegatedCompletion } from './web-upload.service.js';
  */
 
 /** The only two things web upload needs from the portal — narrowed so tests can stand in for them. */
-export type PortalCompletionResolver = Pick<PortalSessionContextResolver, 'resolve'>;
+/**
+ * ⚠ `resolveForUpload`, not `resolve`: the completion has to accept the same
+ * kinds of session the INTENT accepted, or a client's own portal upload dies
+ * between its two halves with the bytes already in storage.
+ */
+export type PortalCompletionResolver = Pick<PortalSessionContextResolver, 'resolveForUpload'>;
 export type PortalCompletionNotifier = Pick<PortalUploadNotifier, 'notifyUploadReceived'>;
 
 export async function delegatedCompletionFor(
@@ -34,7 +39,7 @@ export async function delegatedCompletionFor(
   // Throws 401 `NT-OTP-002` for a missing, malformed, forged, unverified or
   // expired session. The row is re-read and re-checked there, so a session
   // shortened after its bearer was minted loses to the row.
-  const facts = await resolver.resolve(authorizationHeader);
+  const facts = await resolver.resolveForUpload(authorizationHeader);
 
   const delegated = delegatedScopeFor(facts);
   if (!delegated.ok) {

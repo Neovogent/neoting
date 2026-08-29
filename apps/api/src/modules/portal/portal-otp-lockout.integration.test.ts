@@ -176,7 +176,7 @@ describe.skipIf(!enabled)('A2 — the portal OTP lockout, against real RLS', () 
       SESSION_SECRET,
     );
     const resolver = new PortalSessionContextResolver(app, { portalSessionSecret: SESSION_SECRET });
-    const error = await grab(() => resolver.resolve(`Bearer ${forged}`, NOW));
+    const error = await grab(() => resolver.resolveForUpload(`Bearer ${forged}`, NOW));
     expect(error.code).toBe('NT-OTP-002');
 
     await owner.otpSession.deleteMany({ where: { businessId: BUSINESS } });

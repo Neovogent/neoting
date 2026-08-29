@@ -57,7 +57,7 @@ function harness(over: { resolve?: () => Promise<PortalSessionFacts> } = {}): {
   } as unknown as WebUploadService;
   const context: RequestContext = { require: () => Promise.resolve(CTX) };
   const portal: PortalCompletionResolver = {
-    resolve: async (header) => {
+    resolveForUpload: async (header) => {
       seen.resolved.push(header);
       return over.resolve === undefined ? FACTS : over.resolve();
     },

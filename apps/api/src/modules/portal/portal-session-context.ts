@@ -150,9 +150,63 @@ export class PortalSessionContextResolver {
    * and re-checked. Both matter: the signature says the token is ours, the row
    * says the session is still live. A row that has been expired, unverified or
    * repointed since the token was minted loses to the row.
+   *
+   * ⚠ **There is deliberately no bare `resolve`.** There was, it accepted only
+   * `DELEGATED_UPLOAD`, and all three portal doors called it — so a client
+   * signed in to their own portal was told `NT-OTP-002` by the very endpoints
+   * written for them. It is not restored under that name because `resolve` is
+   * the one a reader reaches for by default, and the default must not be the
+   * variant that silently excludes half the sessions this module issues. Every
+   * caller names the operation it is resolving FOR.
    */
-  resolve(authorizationHeader: string | undefined, nowMs: number = Date.now()): Promise<PortalSessionFacts> {
-    return this.factsFor(authorizationHeader, 'DELEGATED_UPLOAD', nowMs);
+  /**
+   * The CONTEXT read, which BOTH kinds of session are entitled to make.
+   *
+   * ⚠ **This is a deliberate widening and it needs its argument, because the
+   * note on `resolveOnboarding` says a scope PARAMETER would be unsafe.** That
+   * note is about the WRITE paths, and it stands: answering an upload with the
+   * wrong kind of row is how one grant becomes the other.
+   *
+   * A read is different, and `GET /portal/context` is the one operation both
+   * sessions genuinely have. A chase session reads the items it was opened to
+   * collect; a client signed in to their own portal reads their own summary.
+   * `PortalContextService` already branches on `facts.chaseId` — null on an
+   * onboarding row — and **every query on both branches is constrained to
+   * `facts.businessId`**, which is the row's own business. Neither can see the
+   * other's answer, and neither can widen past its tenant.
+   *
+   * It was `resolve` (DELEGATED_UPLOAD only), so an onboarding session got
+   * `401 NT-OTP-002` from the very endpoint written for it: the business-context
+   * branch was unreachable code, and the portal signed a client in and then told
+   * them their session was invalid.
+   */
+  resolveForContext(
+    authorizationHeader: string | undefined,
+    nowMs: number = Date.now(),
+  ): Promise<PortalSessionFacts> {
+    return this.factsFor(authorizationHeader, ['DELEGATED_UPLOAD', 'ONBOARDING'], nowMs);
+  }
+
+  /**
+   * Sending a document, which both kinds of session are also entitled to do.
+   *
+   * A DELEGATED_UPLOAD session answers a chase. An ONBOARDING session is the
+   * client's own portal, and **sending paperwork is the entire point of it** —
+   * a portal that can only look at what is wanted is a notice board.
+   *
+   * What makes it safe is not the scope, it is the tenancy: `createPortalUpload`
+   * needs nothing from the session but `facts.businessId`, files the document
+   * against that business and no other, and takes no chase. The holder proved
+   * control of an address registered as a contact of exactly one business
+   * (D45), which is the same identity gate the whole intake lane rests on.
+   *
+   * The completion that follows is the same story — see `delegated-completion.ts`.
+   */
+  resolveForUpload(
+    authorizationHeader: string | undefined,
+    nowMs: number = Date.now(),
+  ): Promise<PortalSessionFacts> {
+    return this.factsFor(authorizationHeader, ['DELEGATED_UPLOAD', 'ONBOARDING'], nowMs);
   }
 
   /**
@@ -178,12 +232,20 @@ export class PortalSessionContextResolver {
     authorizationHeader: string | undefined,
     nowMs: number = Date.now(),
   ): Promise<PortalSessionFacts> {
-    return this.factsFor(authorizationHeader, 'ONBOARDING', nowMs);
+    return this.factsFor(authorizationHeader, ['ONBOARDING'], nowMs);
   }
 
   private async factsFor(
     authorizationHeader: string | undefined,
-    expectedScope: 'DELEGATED_UPLOAD' | 'ONBOARDING',
+    /**
+     * The kinds of session this caller will accept, named at the call site.
+     *
+     * A LIST rather than a single value, because two operations — the context
+     * read and the upload — are legitimately open to both. It is still the
+     * caller naming what it means: nothing here defaults to "any scope", and a
+     * caller that wants one kind passes one.
+     */
+    expectedScopes: readonly ('DELEGATED_UPLOAD' | 'ONBOARDING')[],
     nowMs: number,
   ): Promise<PortalSessionFacts> {
     const verdict = verifyPortalSessionHeader(authorizationHeader, this.config.portalSessionSecret, nowMs);
@@ -234,7 +296,9 @@ export class PortalSessionContextResolver {
     // a session with no chase and no grant, and the billing path would gain one
     // that can write documents. `ITEM_MESSAGE` matches neither and is refused
     // by both.
-    if (row.scope !== expectedScope) throw portalSessionRequired('missing or invalid portal session');
+    if (!expectedScopes.includes(row.scope as 'DELEGATED_UPLOAD' | 'ONBOARDING')) {
+      throw portalSessionRequired('missing or invalid portal session');
+    }
     // A row that exists but was never verified is an OTP that was never passed.
     if (row.verifiedAt === null) throw portalSessionRequired('missing or invalid portal session');
     if (row.expiresAt.getTime() <= nowMs) {

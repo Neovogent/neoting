@@ -81,11 +81,18 @@ function harness(
     },
   } as unknown as PortalSessionService;
 
+  // Both doors resolve through the WIDENED methods — the context read and the
+  // upload each accept a chase session or a client's own portal session. The
+  // stub records through one list because the controller must reach exactly one
+  // of them per call, and which one is asserted by the endpoint under test.
+  const record = async (header: string | undefined) => {
+    calls.resolve.push(header);
+    return over.resolve === undefined ? FACTS : over.resolve();
+  };
   const resolver = {
-    resolve: async (header: string | undefined) => {
-      calls.resolve.push(header);
-      return over.resolve === undefined ? FACTS : over.resolve();
-    },
+    resolve: record,
+    resolveForContext: record,
+    resolveForUpload: record,
   } as unknown as PortalSessionContextResolver;
 
   const context = {
