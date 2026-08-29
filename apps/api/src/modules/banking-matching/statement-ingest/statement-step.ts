@@ -8,7 +8,7 @@ import {
   statementAlreadyIngested,
   type StatementScopedClient,
 } from './statement-ingest.js';
-import type { StatementTableReader } from './table-reader.js';
+import type { DocumentOcr } from '../../../common/ocr/document-ocr.js';
 
 /**
  * The ingest job's statement step.
@@ -42,6 +42,20 @@ export interface StatementStepInput {
   /** Null while unrouted — a statement cannot be ingested without a client. */
   readonly businessId: string | null;
   readonly traceId: string;
+  /**
+   * What the OCR rung read during extraction (D20), handed forward.
+   *
+   * ⚠ This step used to call Textract itself, so a PDF statement was read
+   * twice — once by the model to classify it and once here for its rows. One
+   * read now serves both, which halves the bill and, more importantly, means
+   * the classification and the transactions can never disagree about what the
+   * document said.
+   *
+   * `undefined` for a spreadsheet (which needs no OCR), and when no reader is
+   * configured or its read failed — in which case a PDF is refused by name
+   * rather than importing as an empty statement.
+   */
+  readonly ocr?: DocumentOcr | undefined;
 }
 
 export interface StatementStep {
@@ -77,14 +91,11 @@ export class PrismaStatementStep implements StatementStep {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly store: StatementBytesSource,
-    options: { logger?: StatementStepLogger; tables?: StatementTableReader } = {},
+    options: { logger?: StatementStepLogger } = {},
   ) {
     this.logger = options.logger ?? NOOP_LOGGER;
-    this.tables = options.tables;
   }
 
-  /** The OCR reader for PDFs and photographs (D20). Absent = spreadsheets only. */
-  private readonly tables: StatementTableReader | undefined;
 
   async run(input: StatementStepInput): Promise<void> {
     // An unrouted document has no client, so its lines would belong to nobody.
@@ -140,7 +151,7 @@ export class PrismaStatementStep implements StatementStep {
       // 29-page PDF through this path died on the query AFTER the read with
       // "Transaction already closed … 56824 ms passed". Textract had succeeded.
       // It would also hold a pooled connection open for that whole minute.
-      const parsed = await readStatementFor(ingestInput, this.tables);
+      const parsed = await readStatementFor(ingestInput, input.ocr);
 
       const outcome = await scopedDb(this.prisma, ctx, (db) =>
         ingestStatement(db as unknown as StatementScopedClient, ingestInput, this.logger, parsed),

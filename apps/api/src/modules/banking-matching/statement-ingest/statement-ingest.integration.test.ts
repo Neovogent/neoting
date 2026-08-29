@@ -8,7 +8,6 @@ import {
   readStatementFor,
   type StatementScopedClient,
 } from './statement-ingest.js';
-import type { StatementTableReader } from './table-reader.js';
 
 /**
  * Statement import against a REAL database (D40/D41).
@@ -150,18 +149,14 @@ describe.skipIf(!enabled)('statement import, against a real database', () => {
     // same ceiling; if the read ever moves back inside the transaction, this
     // test fails exactly the way staging did.
     const SLOW_MS = 11_000;
-    const slowReader: StatementTableReader = {
-      async read() {
-        await new Promise((resolve) => setTimeout(resolve, SLOW_MS));
-        return {
-          ok: true,
-          grid: [
-            ['Date', 'Description', 'Paid out', 'Paid in', 'Balance'],
-            ['01/04/2026', 'BALANCE BROUGHT FORWARD', '', '', '1000.00'],
-            ['02/04/2026', 'SLOW READER LTD', '150.00', '', '850.00'],
-          ],
-        };
-      },
+    const ocr = {
+      pages: [],
+      text: '',
+      grid: [
+        ['Date', 'Description', 'Paid out', 'Paid in', 'Balance'],
+        ['01/04/2026', 'BALANCE BROUGHT FORWARD', '', '', '1000.00'],
+        ['02/04/2026', 'SLOW READER LTD', '150.00', '', '850.00'],
+      ],
     };
 
     const input = {
@@ -173,8 +168,11 @@ describe.skipIf(!enabled)('statement import, against a real database', () => {
       s3Key: 'w/biz/documents/slow',
     };
 
-    // Read FIRST, outside any transaction — the shape the step uses.
-    const parsed = await readStatementFor(input, slowReader);
+    // The read, and the time it takes, happen OUTSIDE any transaction — the
+    // shape the step uses. The sleep stands in for Textract, which is exactly
+    // this slow on a real statement.
+    await new Promise((resolve) => setTimeout(resolve, SLOW_MS));
+    const parsed = await readStatementFor(input, ocr);
     expect(parsed.ok).toBe(true);
 
     const outcome = await scopedDb(app, CTX, (db) =>

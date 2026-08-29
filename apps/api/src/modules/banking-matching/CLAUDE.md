@@ -113,9 +113,6 @@ bank input in ID, so the one input the release has was a mock end to end.
 | File | What it is |
 |---|---|
 | `sheet-reader.ts` | CSV + XLSX → grid, on `node:zlib`. **No new dependency** — adding one is on the root stop-and-ask list, and `apps/web/src/lib/spreadsheet.ts` already proved the subset is worth owning |
-| `table-reader.ts` | the `StatementTableReader` seam — how a NON-spreadsheet becomes a grid |
-| `textract-table-reader.ts` | Textract `TABLES` behind that seam (D20) |
-| `select-table-reader.ts` | chosen by CONFIG (`STATEMENT_READER`), never by import |
 | `statement-parser.ts` | grid → dated, signed, integer-pence rows |
 | `completeness.ts` | the D41 gate |
 | `statement-ingest.ts` | persistence: `Statement` + `BankTransaction[]`, idempotent on `documentId` |
@@ -181,6 +178,32 @@ as an open TODO. What is built:
   D40 leaves the release no other bank input. Watch it per client per month, not
   per document.
 
+### ⚠ This lane no longer calls Textract itself (29 Aug 2026)
+
+It did, for one day, and that was a double read: the model was handed the whole
+PDF to classify it, and then **this lane handed Textract the same PDF** to get
+its rows. One document, two reads, two bills — and two answers that could
+disagree about what it said.
+
+The OCR rung now lives in `common/ocr/` and runs ONCE, in the extraction step.
+Its result reaches here on `ExtractionCompletion.ocr`, passed through by
+`ingest-processor.ts`, and `readStatementFor(input, ocr)` parses
+`ocr.grid` instead of calling a reader of its own. `PrismaStatementStep` takes no
+reader argument any more — there is nothing here to configure.
+
+What each `undefined` means, because they are different:
+
+| | |
+|---|---|
+| a spreadsheet | no OCR needed and none was done — a CSV is already an exact grid, and OCR-ing one would pay to make an exact thing approximate |
+| no reader configured | `readerNotConfigured` — refused by name, PERMANENTLY, so the message must not promise a retry |
+| the read failed | `readerUnavailable` — ours, not the document's, and retryable |
+| read, nothing on it | `nothingFound` — the document's problem; the accountant can send a better copy |
+
+⚠ A PDF statement whose EXTRACTION failed also arrives here with no OCR, because
+the completion is null. That is harmless in practice: extraction failing means
+`docType` was never written, so this step answers "not mine" before it looks.
+
 ### ⚠ The READ happens outside the transaction, and it must
 
 `ingestStatement` did the read itself, inside `scopedDb` — a Prisma
@@ -202,10 +225,12 @@ of concurrent statements would have starved every other query in the process.
 
 The shape now:
 
-1. `statementAlreadyIngested` — its own tiny transaction. **Before the read**,
-   because a redelivery that re-read the file would spend a real Textract charge
-   (~35p) to discover rows we already hold.
-2. `readStatementFor` — **no transaction at all**. This is the slow half.
+1. `statementAlreadyIngested` — its own tiny transaction, and first.
+2. `readStatementFor` — **no transaction at all**. Since the OCR rung moved
+   upstream this is now fast (it parses a grid it was handed), but the ordering
+   stays: the caller that hands it that grid, `extraction-pipeline.ts`, is the
+   one holding the 40-60 second call, and it makes it outside a transaction for
+   exactly this reason.
 3. `ingestStatement(db, input, logger, parsed)` — a transaction that opens once
    the bytes are already a grid and closes in milliseconds.
 

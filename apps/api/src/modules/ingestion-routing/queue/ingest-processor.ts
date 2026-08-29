@@ -233,6 +233,9 @@ async function handle(payload: IngestJobPayload, deps: ProcessorDeps): Promise<v
       practiceId: payload.practiceId,
       businessId: payload.routing.businessId ?? null,
       traceId: payload.traceId,
+      // The OCR rung already read this file during extraction (D20). Handing
+      // the result on is what stops a PDF statement being read a second time.
+      ocr: completion?.ocr,
     });
     return;
   }
@@ -266,6 +269,9 @@ async function handle(payload: IngestJobPayload, deps: ProcessorDeps): Promise<v
     practiceId: materialised.practiceId,
     businessId: payload.routing.businessId ?? null,
     traceId: payload.traceId,
+    // The OCR rung already read this file during extraction (D20). Handing the
+    // result on is what stops a PDF statement being read a second time.
+    ocr: completion?.ocr,
   });
 }
 

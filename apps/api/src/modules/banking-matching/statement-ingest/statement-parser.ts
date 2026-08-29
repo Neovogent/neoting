@@ -1,5 +1,5 @@
 import { formatFor, readSheet, type Grid, type ReadFailure } from './sheet-reader.js';
-import type { TableReadFailure } from './table-reader.js';
+import type { OcrFailure } from '../../../common/ocr/document-ocr.js';
 
 /**
  * A bank statement's bytes → the transactions it contains.
@@ -78,7 +78,7 @@ export type ParseFailure =
   | { reason: 'unsupportedFormat'; fileName: string }
   | { reason: 'unreadable'; detail: ReadFailure['reason'] }
   /** The OCR reader's own verdict, for a PDF or an image. */
-  | { reason: 'tableRead'; failure: TableReadFailure }
+  | { reason: 'tableRead'; failure: OcrFailure }
   | { reason: 'noHeaderRow' }
   | { reason: 'noDateColumn' }
   | { reason: 'noAmountColumn' }
