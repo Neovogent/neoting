@@ -606,3 +606,54 @@ test('a bad FIELD names the field, and never the value the model returned', asyn
   // a message that is logged and rendered.
   expect(outcome.failure.message).not.toContain('NOT_A_TYPE');
 });
+
+test('a document with a BIG table is told not to itemise it', async () => {
+  // ⚠ Capping the pages was not enough on its own. Five pages of a bank
+  // statement is still ~235 transaction rows (1,366 over 29 pages), and the
+  // model dutifully began itemising them — overrunning a 4,096-token answer
+  // exactly as the full document did. The fix is to stop ASKING, not to send
+  // less and hope. The rows have already been read, exactly, by Textract.
+  const { client, sent } = capturingClient();
+  const extractor = new BedrockExtractor({
+    store: storeReturning(BYTES),
+    region: 'eu-west-2',
+    client,
+    budget: allowingBudget(),
+  });
+
+  await extractor.extract({
+    ...PDF_REQUEST,
+    ocr: {
+      pages: [{ pageNumber: 1, grid: [], lines: ['STATEMENT'] }],
+      grid: Array.from({ length: 1366 }, () => ['a', 'b']),
+      text: 'ignored',
+    },
+  });
+
+  const prompt = promptTextFrom(sent());
+  expect(prompt).toContain('table of 1366 rows');
+  expect(prompt).toContain('return an empty lineItems array');
+});
+
+test('an ordinary invoice is still itemised', async () => {
+  // The ceiling is well above any real invoice's line count, so a supplier
+  // document keeps the line items the contract carries.
+  const { client, sent } = capturingClient();
+  const extractor = new BedrockExtractor({
+    store: storeReturning(BYTES),
+    region: 'eu-west-2',
+    client,
+    budget: allowingBudget(),
+  });
+
+  await extractor.extract({
+    ...PDF_REQUEST,
+    ocr: {
+      pages: [{ pageNumber: 1, grid: [], lines: ['INVOICE'] }],
+      grid: Array.from({ length: 12 }, () => ['a', 'b']),
+      text: 'ignored',
+    },
+  });
+
+  expect(promptTextFrom(sent())).not.toContain('empty lineItems array');
+});
