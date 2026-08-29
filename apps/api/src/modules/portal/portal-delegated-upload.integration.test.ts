@@ -119,7 +119,7 @@ async function intentWithBytes(
   filename: string,
   bytes: Buffer,
 ): Promise<{ uploadId: string; byteHash: string }> {
-  const facts = await resolver().resolve(authorization);
+  const facts = await resolver().resolveForUpload(authorization);
   const intent = await portalUploads(store).createPortalUpload(
     facts,
     { filename, mimeType: 'image/jpeg', byteSize: bytes.length },

@@ -71,7 +71,7 @@ async function grab(fn: () => Promise<unknown>): Promise<AppException> {
 }
 
 test('a live bearer resolves to the session facts, taking the tenant from the ROW', async () => {
-  const facts = await resolver(row({ grantedItemIds: ['doc_a'] })).resolve(bearer(), NOW);
+  const facts = await resolver(row({ grantedItemIds: ['doc_a'] })).resolveForUpload(bearer(), NOW);
   expect(facts).toEqual({
     otpSessionId: 'otp_1',
     businessId: 'biz_burger',
@@ -87,7 +87,7 @@ test('a live bearer resolves to the session facts, taking the tenant from the RO
 });
 
 test('the row decides who the session acts as — a stored contact user wins over the SYSTEM fallback', async () => {
-  const facts = await resolver(row({ userId: 'usr_client' })).resolve(bearer(), NOW);
+  const facts = await resolver(row({ userId: 'usr_client' })).resolveForUpload(bearer(), NOW);
   expect(facts.actorId).toBe('usr_client');
   expect(facts.systemUserId).toBe('usr_system_1');
 });
@@ -95,7 +95,7 @@ test('the row decides who the session acts as — a stored contact user wins ove
 test('missing, malformed and forged bearers are one 401 NT-OTP-002 with one detail — no oracle', async () => {
   const service = resolver(row());
   for (const header of [undefined, 'Bearer nonsense', 'Basic abc', `Bearer ${signPortalSessionToken({ otpSessionId: 'otp_1', businessId: 'biz_burger', practiceId: 'prac_1', expiresAtMs: NOW + 1000 }, 'another-secret')}`]) {
-    const error = await grab(() => service.resolve(header, NOW));
+    const error = await grab(() => service.resolveForUpload(header, NOW));
     expect(error.code).toBe('NT-OTP-002');
     expect(error.getStatus()).toBe(401);
     expect(error.publicDetail).toBe('missing or invalid portal session');
@@ -103,26 +103,63 @@ test('missing, malformed and forged bearers are one 401 NT-OTP-002 with one deta
 });
 
 test('an expired bearer says so — it was genuinely ours, and "tap the link again" is safe to say', async () => {
-  const error = await grab(() => resolver(row()).resolve(bearer({ expiresAtMs: NOW }), NOW));
+  const error = await grab(() => resolver(row()).resolveForUpload(bearer({ expiresAtMs: NOW }), NOW));
   expect(error.code).toBe('NT-OTP-002');
   expect(error.publicDetail).toBe('This portal session has expired. Open the link in your email again.');
 });
 
-test('the ROW outranks the token: expired, unverified, wrong scope or a different business are all refused', async () => {
+test('the ROW outranks the token: expired, unverified, unknown scope or a different business are all refused', async () => {
   // Expired on the row but not yet on the token — a session shortened after the
   // bearer was minted must lose to the row.
-  const expired = await grab(() => resolver(row({ expiresAt: new Date(NOW) })).resolve(bearer(), NOW));
+  const expired = await grab(() => resolver(row({ expiresAt: new Date(NOW) })).resolveForUpload(bearer(), NOW));
   expect(expired.publicDetail).toBe('This portal session has expired. Open the link in your email again.');
 
-  for (const stored of [row({ verifiedAt: null }), row({ scope: 'ONBOARDING' }), row({ businessId: 'biz_someone_else' })]) {
-    const error = await grab(() => resolver(stored).resolve(bearer(), NOW));
+  // `ITEM_MESSAGE` is neither of the two kinds these doors take, and a row for
+  // another tenant is refused however well-formed the bearer is.
+  for (const stored of [
+    row({ verifiedAt: null }),
+    row({ scope: 'ITEM_MESSAGE' }),
+    row({ businessId: 'biz_someone_else' }),
+  ]) {
+    const error = await grab(() => resolver(stored).resolveForUpload(bearer(), NOW));
     expect(error.code).toBe('NT-OTP-002');
     expect(error.publicDetail).toBe('missing or invalid portal session');
   }
 });
 
+/**
+ * ⚠ THE REGRESSION THIS FILE NOW EXISTS TO HOLD DOWN.
+ *
+ * All three portal doors — the context read, the upload intent and the
+ * completion — resolved with `DELEGATED_UPLOAD` only. So a client who signed in
+ * to their own portal, with a code they had just typed correctly, was answered
+ * `NT-OTP-002 — missing or invalid portal session` by the very endpoint written
+ * for them, and the business-context branch behind it was unreachable code.
+ */
+test('BOTH kinds of session pass the context and upload doors', async () => {
+  const chase = row();
+  const own = row({ scope: 'ONBOARDING', chaseId: null });
+
+  for (const stored of [chase, own]) {
+    expect((await resolver(stored).resolveForContext(bearer(), NOW)).businessId).toBe('biz_burger');
+    expect((await resolver(stored).resolveForUpload(bearer(), NOW)).businessId).toBe('biz_burger');
+  }
+
+  // And the two remain distinguishable to the service that reads them: the
+  // context branches on `chaseId`, which is null only for the client's own.
+  expect((await resolver(chase).resolveForContext(bearer(), NOW)).chaseId).not.toBeNull();
+  expect((await resolver(own).resolveForContext(bearer(), NOW)).chaseId).toBeNull();
+});
+
+test('the BILLING door stays narrow — it takes only the client own session', async () => {
+  // Widening the two shared doors must not widen this one: it is the door a
+  // subscription is paid through.
+  const wrongKind = await grab(() => resolver(row()).resolveOnboarding(bearer(), NOW));
+  expect(wrongKind.code).toBe('NT-OTP-002');
+});
+
 test('a bearer whose session row is gone is refused like any other', async () => {
-  const error = await grab(() => resolver(null).resolve(bearer(), NOW));
+  const error = await grab(() => resolver(null).resolveForUpload(bearer(), NOW));
   expect(error.code).toBe('NT-OTP-002');
 });
 

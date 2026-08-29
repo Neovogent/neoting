@@ -68,7 +68,7 @@ async function factsWithGrant(grantedItemIds: readonly string[]): Promise<Portal
     SESSION_SECRET,
   );
   const resolver = new PortalSessionContextResolver(app, { portalSessionSecret: SESSION_SECRET });
-  return resolver.resolve(`Bearer ${token}`);
+  return resolver.resolveForUpload(`Bearer ${token}`);
 }
 
 async function seedDocument(

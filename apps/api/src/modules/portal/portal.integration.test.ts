@@ -53,12 +53,12 @@ let app: PrismaClient;
 const config = { portalLinkSecret: LINK_SECRET, portalSessionSecret: SESSION_SECRET, otpMode: 'demo' } as const;
 
 /** The whole journey, exactly as the three endpoints run it: link + OTP → bearer → facts. */
-async function openSession(chaseId = CHASE_A): Promise<Awaited<ReturnType<PortalSessionContextResolver['resolve']>>> {
+async function openSession(chaseId = CHASE_A): Promise<Awaited<ReturnType<PortalSessionContextResolver['resolveForUpload']>>> {
   const issued = await new PortalSessionService(app, config).createSession({
     linkToken: signPortalLink({ chaseId }, LINK_SECRET),
     otp: '000000',
   });
-  return new PortalSessionContextResolver(app, { portalSessionSecret: SESSION_SECRET }).resolve(`Bearer ${issued.token}`);
+  return new PortalSessionContextResolver(app, { portalSessionSecret: SESSION_SECRET }).resolveForUpload(`Bearer ${issued.token}`);
 }
 
 async function cleanup(): Promise<void> {
@@ -260,11 +260,11 @@ describe.skipIf(!enabled)('the OTP portal against real RLS', () => {
     const linkToken = signPortalLink({ chaseId: CHASE_A }, LINK_SECRET);
     const first = await service.createSession({ linkToken, otp: '000000' });
     const resolver = new PortalSessionContextResolver(app, { portalSessionSecret: SESSION_SECRET });
-    const facts = await resolver.resolve(`Bearer ${first.token}`);
+    const facts = await resolver.resolveForUpload(`Bearer ${first.token}`);
     await service.grantItems(facts, [DOC_GRANTED]);
 
     const second = await service.createSession({ linkToken, otp: '000000' });
-    const again = await resolver.resolve(`Bearer ${second.token}`);
+    const again = await resolver.resolveForUpload(`Bearer ${second.token}`);
     expect(again.otpSessionId).toBe(facts.otpSessionId);
     // A document already uploaded in this session stays readable to it.
     expect(again.grantedItemIds).toEqual([DOC_GRANTED]);
