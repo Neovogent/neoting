@@ -209,6 +209,22 @@ server classifies it and the ingest job's statement step writes `Statement` +
 (`apps/api/src/modules/banking-matching/statement-ingest/`). Synthetic mode keeps
 the local demo behaviour, per METH_MODE §1.
 
+**The Statements tab reads the API since 29 Aug 2026** (`api/statements.ts` →
+`GET /v1/statements`). It was the seeded array, which is EMPTY live — so a client
+whose statement had just imported 1,144 transactions saw *"No statements
+uploaded"*, and **D41's verdict on it reached nobody**. Three things about it:
+
+- **`assurance` is its OWN column, never a tone on `status`.** Whether the import
+  happened and what could be PROVEN about the result are different questions.
+  Folding them together makes "we read every line" and "we could not check" the
+  same green tick, which is exactly the claim D41 forbids. `reduced` is amber and
+  says *"Cannot be checked"* — it is not a softer failure.
+- **The findings are shown, not just counted.** A number alone tells an
+  accountant nothing they can act on, so the first finding's own words are on the
+  row and the rest are in its `title`.
+- **Pence → pounds happens in `api/statements.ts` and nowhere else**, like every
+  other money boundary in this app.
+
 Two things to know:
 
 - **`accept` is `.pdf,.csv,.xlsx` plus the four raster types**, widened back on
@@ -526,6 +542,18 @@ Gzipped, after the i18n extraction. The budget is **JS** (SoT §14: "initial JS 
 So the signup route totals **211.1 kB** against the 250 kB budget, and the worst route is **245.7 kB with ~4.3 kB of headroom** — the figure to quote, and the one the next screen is spending against. The floor moved at all for the reachability reason this section already documents: `api/signup.ts` touches four generated client functions and five Zod schemas whose barrels are floor-reachable, so their marginal per-export cost is unavoidable. **The hand-written QR encoder is not in that number** — it is imported only by `QrCode.tsx`, which is imported only by `SignupView`, so all of it lands on the signup chunk and no other route pays for it. Keep it that way: a static import of `qr.ts` from anything floor-reachable would put a Reed–Solomon implementation on every route in the product.
 
 ⚠ **The two paragraphs above were measured independently, each before the other landed, so neither worst-route figure is current.** A9 reports ~244.6 kB with ~5.4 kB of headroom; M7 reports 244.93 kB with ~5.1 kB. Their floor costs are additive (+0.13 kB and +0.4 kB), so the real headroom after both is roughly half a kilobyte tighter than either line claims. Re-measure on `main` before quoting a number, and before adding anything else floor-reachable — the budget is 250 kB.
+
+**The statements read (29 Aug 2026) costs the floor +0.45 kB and the worst route
++1.26 kB.** Measured clean: `index` **185,372 B** + the 96 B stub, `query`
+14,694, `react` 1,534 — floor **201,696 B**; `ClientDetailView` **45,435 B**, so
+the worst route is **247,131 B with ~2.9 kB of headroom**. The floor moved for
+the reachability reason below (`api/statements.ts` touches a generated client
+export whose barrel is floor-reachable) and `ClientDetailView` carries the new
+column because BankView is embedded in it.
+
+⚠ **~2.9 kB is the tightest this has ever been.** The next screen has to take
+one of the known reclaims with it — the seed dataset leaving the floor, or the
+`defaultMessage` strip — rather than spending what is left.
 
 **Next person adding a screen: you have ~4.3 kB** (M9 measured it exactly; the figure below predates that stage). The known reclaims below (the seed dataset leaving the floor, the `defaultMessage` strip on a second locale) are now the difference between shipping and a D37 reject, not nice-to-haves.
 

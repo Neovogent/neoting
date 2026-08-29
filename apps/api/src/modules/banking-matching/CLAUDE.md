@@ -77,6 +77,33 @@ Three decisions worth knowing before changing anything here:
   second implementation on the read path is how the Bank screen and the chase
   list start disagreeing about which lines have paperwork to chase.
 
+## `GET /v1/statements` — the D41 verdict, where someone can read it
+
+`statements.service.ts` + `statements.controller.ts`, added 29 Aug 2026.
+
+**⚠ A verdict nobody can see is not a gate.** This lane has written `assurance`
+since the day it shipped and nothing could read it: the accountant's Statements
+tab was seed data, so a statement the product had *proven* incomplete looked
+exactly like one it had proven whole. The first real statement through the
+pipeline imported 1,144 transactions and reported `incomplete` — correctly — and
+that verdict reached nobody. D41 is a claim about what the product can
+demonstrate, and demonstrating it needs a surface.
+
+- **It is provenance and proof, not rows.** The transactions stay
+  `GET /bank-transactions`. This answers "which file did these come from, for
+  what period, and what could we not prove about it" — which is also D43's
+  resolvable link from an exported line back to its source document.
+- **An unreadable `gapAnalysis` reports `reduced`, never `complete`.** The column
+  is `Json?`, so a row written by an older build may carry anything; the one
+  thing this must never do is claim a statement was proven whole because its
+  analysis could not be parsed.
+- **`businessId` NARROWS, it does not enforce.** RLS has already bounded the
+  set. A business outside the caller's reach yields an empty page — the same
+  answer as "no statements", and it never confirms the business exists.
+- **There is no POST and none may be added.** A statement is created by
+  UPLOADING one; a write door here would be a second way to create bank data,
+  and the two would disagree.
+
 ## Tenancy: RLS, and deliberately no second mechanism
 
 Every query runs inside `scopedDb`. The `businessId` filter **narrows** a set

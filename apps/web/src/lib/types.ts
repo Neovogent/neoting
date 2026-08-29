@@ -397,6 +397,31 @@ export interface Statement {
   status: 'processing' | 'extracted' | 'failed';
   uploadedAt: string;
   note?: string | undefined;
+  /**
+   * D41's completeness verdict, on a live statement.
+   *
+   * ⚠ Separate from `status`, and it must stay separate. `status` says whether
+   * the import happened; this says what could be PROVEN about the result, and
+   * the two are independent — a statement can import perfectly and still be
+   * unprovable, which is exactly the case `reduced` exists for. Folding it into
+   * `status` would make "we read every line" and "we could not check" the same
+   * green tick, which is the claim D41 forbids.
+   *
+   * Undefined on a seeded statement, which predates the gate.
+   */
+  assurance?: 'complete' | 'reduced' | 'incomplete' | undefined;
+  /** What the gate found. Empty when `complete`; the reason otherwise. */
+  findings?: readonly StatementFinding[] | undefined;
+  /** The document it was read from — D43's link back to the source file. */
+  documentId?: string | undefined;
+}
+
+/** One thing D41's completeness check found in a statement. */
+export interface StatementFinding {
+  readonly kind: string;
+  readonly detail: string;
+  readonly sourceLine: number | null;
+  readonly amountPence: number | null;
 }
 
 /** Bank Match tolerances — configurable, unlike Dext's fixed windows. */

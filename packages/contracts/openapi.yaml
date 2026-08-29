@@ -1880,6 +1880,54 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /statements:
+    get:
+      operationId: listStatements
+      summary: Bank statements imported for a client
+      description: |
+        The statements a client's bank data actually came from (D40), newest
+        period first, each carrying **the completeness verdict D41 requires**.
+
+        ⚠ **This exists because a verdict nobody can see is not a gate.** The
+        import lane wrote `assurance` from the first upload it handled, and
+        there was no way to read it: the accountant's Statements tab was seed
+        data, so a statement the product had *proven* incomplete looked
+        identical to one it had proven whole. D41 is about what the product can
+        demonstrate, and demonstrating it requires a surface.
+
+        The transactions themselves are `GET /bank-transactions`. This is the
+        provenance and the proof, not the rows.
+      tags: [banking]
+      x-nt-side-effect: none
+      parameters:
+        - name: businessId
+          in: query
+          required: false
+          schema: { type: string }
+          description: |
+            Narrow to one client. Omitted, every statement the caller can reach.
+            A business outside the caller's scope yields an EMPTY page, never a
+            404 — the rows were already invisible, so the answer never confirms
+            whether that business exists.
+      responses:
+        '200':
+          description: The statements, newest period first.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Statement' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /portal/context:
     get:
       operationId: getPortalContext
@@ -4638,6 +4686,86 @@ components:
             ⚠ It is an ANSWER, never an instruction. A caller who sends a
             different `businessId` on a portal-authenticated checkout gets a
             404, because the session decides whose subscription this is.
+
+    StatementAssurance:
+      type: string
+      description: |
+        D41's verdict, and it has THREE values because the middle one is real.
+
+        `complete`   balance continuity proves, to the penny, that no
+                     transaction is missing.
+        `reduced`    the statement carries no running-balance column, so
+                     completeness cannot be PROVEN either way. Not a failure and
+                     not a pass — reporting it complete would be a green tick
+                     meaning "we did not look", which is what D41 forbids.
+        `incomplete` the arithmetic proves a transaction IS missing, and
+                     `findings` names where.
+      enum: [complete, reduced, incomplete]
+
+    StatementFinding:
+      type: object
+      description: |
+        One thing the completeness check found. Written for an accountant
+        holding the file: it names the line and, where money is involved, the
+        amount that does not add up.
+      required: [kind, detail]
+      properties:
+        kind:
+          type: string
+          description: What sort of gap this is — a balance break, a dropped line, a period gap.
+        detail:
+          type: string
+          description: Plain English, naming the source line and the amount where there is one.
+        sourceLine:
+          type: [integer, 'null']
+          description: The line in the uploaded file, 1-based, when the finding has one.
+        amountPence:
+          type: [integer, 'null']
+          x-nt-money: true
+          description: Integer pence, signed. Null when the finding is not about an amount.
+
+    Statement:
+      type: object
+      description: |
+        One imported bank statement: where a client's transactions came from,
+        and what the completeness gate could prove about them (D40/D41).
+      required: [id, businessId, rowCount, assurance, findings, createdAt]
+      properties:
+        id: { type: string }
+        businessId: { type: string }
+        documentId:
+          type: [string, 'null']
+          description: |
+            The uploaded document this was read from. **D43**: this is what makes
+            an imported transaction resolvable back to the file it came from.
+        fileName:
+          type: [string, 'null']
+          description: The document's own filename, so a row is recognisable on screen.
+        periodStart: { type: [string, 'null'], format: date }
+        periodEnd: { type: [string, 'null'], format: date }
+        openingBalancePence:
+          type: [integer, 'null']
+          x-nt-money: true
+          description: Integer pence. Null when the statement carried no balance column.
+        closingBalancePence:
+          type: [integer, 'null']
+          x-nt-money: true
+          description: Integer pence. Null when the statement carried no balance column.
+        rowCount:
+          type: integer
+          minimum: 0
+          description: Transactions imported from this statement.
+        assurance: { $ref: '#/components/schemas/StatementAssurance' }
+        provenBy:
+          type: [string, 'null']
+          description: How `complete` was established — `balanceContinuity` today.
+        findings:
+          type: array
+          description: |
+            What the gate found. **Empty on a `complete` statement**, and the
+            reason on any other — this is the half an accountant acts on.
+          items: { $ref: '#/components/schemas/StatementFinding' }
+        createdAt: { type: string, format: date-time }
 
     PortalContext:
       type: object
