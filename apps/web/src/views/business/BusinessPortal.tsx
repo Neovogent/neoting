@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Home, Upload, Camera, Settings, ArrowLeft, Building2, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
+import { API_ENABLED } from '../../api/config';
+import { LiveBusinessPortal } from './LiveBusinessPortal';
 import { useAppContext } from '../../context/AppContext';
 import { BusinessHomeView } from './BusinessHomeView';
 import { BusinessUploadView } from './BusinessUploadView';
@@ -58,6 +60,19 @@ export function BusinessPortal() {
   const setTab = (next: Tab) => setTabSlug(next === 'Home' ? null : slug(next));
 
   const account = businessAccounts.find((a) => a.id === portalAccountId);
+
+  // ⚠ LIVE IS A DIFFERENT SURFACE, not this one fed with server rows.
+  //
+  // Everything below is driven by `businessAccounts`, which is EMPTY when the
+  // API is on — so with a live session this shell rendered a sign-in screen that
+  // created an account in local React state and vanished on reload. There was no
+  // business portal, only a drawing of one. `LiveBusinessPortal` is the same
+  // journey against the contract: sign in by email and a six-digit code, see
+  // what the accountant is waiting for, send paperwork.
+  //
+  // The synthetic shell stays exactly as it is, because the whole app must still
+  // walk end to end with no API (METH_MODE §1).
+  if (API_ENABLED) return <LiveBusinessPortal onExit={exitBusinessPortal} />;
 
   // No account selected — sign in, accept an invite, or sign the business up.
   if (!account) return <BusinessSignInView />;

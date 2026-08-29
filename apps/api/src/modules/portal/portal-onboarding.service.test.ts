@@ -45,6 +45,8 @@ function harness(
     send?: () => Promise<unknown>;
     /** The practices the sweep can see. `[]` is a tenant with no machine actor. */
     practices?: readonly { practiceId: string; userId: string }[];
+    /** What `contacts` holds for the address — the tokenless route's only input. */
+    contacts?: readonly { id: string; businessId: string }[];
   } = {},
 ) {
   const invite = {
@@ -73,7 +75,13 @@ function harness(
 
   const db = {
     invite: { findUnique: async ({ where }: { where: { tokenHash: string } }) => (where.tokenHash === hashSetupToken(TOKEN) ? invite : null) },
-    contact: { findFirst: async () => ({ id: 'con_1' }) },
+    contact: {
+      findFirst: async () => ({ id: 'con_1' }),
+      // The tokenless (returning-client) route resolves the workspace from the
+      // address alone. `contacts` defaults to the one business the invite names.
+      findMany: async ({ where }: { where: { email: { equals: string } } }) =>
+        where.email.equals === EMAIL.toLowerCase() ? (over.contacts ?? [{ id: 'con_1', businessId: 'biz_1' }]) : [],
+    },
     otpSession: {
       findUnique: async ({ where }: { where: { linkTokenHash: string } }) => rows.get(where.linkTokenHash) ?? null,
       upsert: async ({ where, update, create }: { where: { linkTokenHash: string }; update: Partial<Row>; create: Partial<Row> }) => {
@@ -276,4 +284,87 @@ test('a send the notifier REFUSES is not a send, and the code is still spent fro
   // The row still carries a fresh hash: refusing to SEND must not leave the
   // previous code live, or a retry would be compared against a stale one.
   expect(rows.get(hashSetupToken(TOKEN))?.otpHash).not.toBeNull();
+});
+
+/* ── Signing in again, with no setup link ─────────────────────────────────── */
+
+/**
+ * ⚠ The invite expires after SEVEN DAYS. While the setup token was required,
+ * that made this a one-week door rather than a portal: a client who onboarded,
+ * subscribed and came back a fortnight later was locked out of their own
+ * workspace, with no route back that did not involve telephoning their
+ * accountant.
+ *
+ * The address alone names the workspace now — which is only safe because it has
+ * to name exactly one.
+ */
+describe('a returning client, with no setup token', () => {
+  test('gets a code, resolved from the address alone', async () => {
+    const { service, sent, rows } = harness();
+
+    await service.requestSignInCode({ email: EMAIL }, NOW);
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.to).toBe(EMAIL);
+    expect(sent[0]?.code).toMatch(/^[0-9]{6}$/);
+    // Keyed on something OTHER than the setup token's hash — there is no link.
+    expect(rows.has(hashSetupToken(TOKEN))).toBe(false);
+    expect(rows.size).toBe(1);
+    // Only the hash is stored, exactly as on the invite route.
+    expect([...rows.values()][0]?.otpHash).not.toBe(sent[0]?.code);
+  });
+
+  test('the code opens a session carrying that business', async () => {
+    const { service, sent } = harness();
+    await service.requestSignInCode({ email: EMAIL }, NOW);
+
+    const issued = await service.createOnboardingSession({ email: EMAIL, otp: sent[0]!.code }, NOW + 1000);
+
+    expect(issued).not.toBeNull();
+    expect(issued?.businessId).toBe('biz_1');
+    const verdict = verifyPortalSessionToken(issued!.token, SECRET, NOW + 2000);
+    expect(verdict.ok).toBe(true);
+    if (verdict.ok) expect(verdict.claims.businessId).toBe('biz_1');
+  });
+
+  test('an address on TWO businesses sends NOTHING — it is never guessed at', async () => {
+    // Picking one would open somebody's books on a coin toss, and the person it
+    // opened them to would have no way of telling. The caller still sees 202.
+    const { service, sent } = harness({
+      contacts: [
+        { id: 'con_1', businessId: 'biz_1' },
+        { id: 'con_2', businessId: 'biz_2' },
+      ],
+    });
+
+    await service.requestSignInCode({ email: EMAIL }, NOW);
+
+    expect(sent).toHaveLength(0);
+  });
+
+  test('an address nobody is a contact at sends nothing', async () => {
+    const { service, sent } = harness();
+    await service.requestSignInCode({ email: 'stranger@elsewhere.test' }, NOW);
+    expect(sent).toHaveLength(0);
+  });
+
+  test('a wrong code opens no session', async () => {
+    const { service, sent } = harness();
+    await service.requestSignInCode({ email: EMAIL }, NOW);
+    const wrong = sent[0]!.code === '000000' ? '111111' : '000000';
+
+    expect(await service.createOnboardingSession({ email: EMAIL, otp: wrong }, NOW + 1000)).toBeNull();
+  });
+
+  test('the invite route still keys on the token, so the two do not collide', async () => {
+    const { service, rows } = harness();
+
+    await service.requestSignInCode({ setupToken: TOKEN, email: EMAIL }, NOW);
+    await service.requestSignInCode({ email: EMAIL }, NOW);
+
+    // Two rows: a first sign-in and a return are different attempts and must not
+    // overwrite each other's code.
+    expect(rows.size).toBe(2);
+    expect(rows.has(hashSetupToken(TOKEN))).toBe(true);
+  });
 });

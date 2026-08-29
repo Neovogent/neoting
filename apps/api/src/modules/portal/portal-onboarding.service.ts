@@ -61,7 +61,15 @@ export interface PortalOnboardingConfig {
 }
 
 export interface RequestSignInCodeInput {
-  readonly setupToken: string;
+  /**
+   * From the setup link, on a FIRST sign-in. Absent on every one after that.
+   *
+   * ⚠ It was required, and that made this a one-week door rather than a portal:
+   * the invite expires after seven days, so a client who onboarded, subscribed
+   * and came back a fortnight later was locked out of their own workspace with
+   * no route back that did not involve telephoning their accountant.
+   */
+  readonly setupToken?: string | undefined;
   readonly email: string;
 }
 
@@ -93,15 +101,36 @@ type RefusalReason =
   | 'expired'
   | 'already-accepted'
   | 'address-mismatch'
-  | 'no-practice-actor';
+  | 'no-practice-actor'
+  /** Tokenless sign-in: no contact anywhere has that address. */
+  | 'unknown-address'
+  /**
+   * Tokenless sign-in: the address is a contact of MORE THAN ONE business.
+   *
+   * ⚠ Refused, never guessed. Picking one would open somebody's books on a coin
+   * toss, and the person it opened them to would have no way of telling. Loud in
+   * the log precisely because it is a dead end for a real person: an operator
+   * has to see it to fix it.
+   */
+  | 'ambiguous-address';
 
-/** What a valid setup token plus a matching address resolves to. */
+/** What a sign-in attempt resolves to, by either route. */
 interface ResolvedInvite {
   readonly practiceId: string;
   readonly systemUserId: string;
   readonly businessId: string;
   readonly contactId: string | null;
   readonly email: string;
+  /**
+   * The `otp_sessions.link_token_hash` this attempt reads and writes.
+   *
+   * On the invite route it is the hash of the setup token, as it always was. On
+   * the tokenless route there is no link, so it is derived from the business and
+   * the address — stable, so asking for a second code REPLACES the first, and
+   * per-address, so two people at the same business do not overwrite each
+   * other's code.
+   */
+  readonly sessionKey: string;
 }
 
 export class PortalOnboardingService {
@@ -128,7 +157,7 @@ export class PortalOnboardingService {
    * for a code that never left is otherwise invisible.
    */
   async requestSignInCode(input: RequestSignInCodeInput, nowMs: number = Date.now()): Promise<void> {
-    const outcome = await this.resolveInvite(input.setupToken, input.email, nowMs);
+    const outcome = await this.resolveClient(input.setupToken, input.email, nowMs);
     if (outcome.ok === false) {
       // §11: the reason and the address's DOMAIN. Never the address, never the
       // token. The CALLER still learns nothing — this is the server telling its
@@ -141,7 +170,7 @@ export class PortalOnboardingService {
 
     const otp = mintOtp();
     const expiresAt = new Date(nowMs + ONBOARDING_OTP_TTL_MS);
-    const linkTokenHash = hashSetupToken(input.setupToken);
+    const linkTokenHash = resolved.sessionKey;
 
     await this.withInviteScope(resolved, (db) =>
       db.otpSession.upsert({
@@ -209,14 +238,14 @@ export class PortalOnboardingService {
     input: CreateOnboardingSessionInput,
     nowMs: number = Date.now(),
   ): Promise<IssuedOnboardingSession | null> {
-    const outcome = await this.resolveInvite(input.setupToken, input.email, nowMs);
+    const outcome = await this.resolveClient(input.setupToken, input.email, nowMs);
     if (outcome.ok === false) {
       this.logger.warn(`onboarding session refused: ${outcome.reason} · domain=${domainOf(input.email)}`);
       return null;
     }
     const resolved = outcome.invite;
 
-    const linkTokenHash = hashSetupToken(input.setupToken);
+    const linkTokenHash = resolved.sessionKey;
     const state = await this.withInviteScope(resolved, (db) =>
       db.otpSession.findUnique({
         where: { linkTokenHash },
@@ -271,6 +300,82 @@ export class PortalOnboardingService {
   private verifyOtp(otp: string, state: OtpAttemptRow | null, nowMs: number): boolean {
     if (this.config.otpMode === 'demo') return otp === DEMO_OTP_CODE;
     return otpMatches(state?.otpHash ?? null, state?.otpExpiresAt ?? null, otp, nowMs);
+  }
+
+  /**
+   * Which route this sign-in takes.
+   *
+   * A setup token means a FIRST sign-in and keeps every check the invite route
+   * has always made. No token means the client is coming back, and the address
+   * alone names the workspace — which is only safe because it must match a
+   * contact of exactly ONE business.
+   *
+   * Both refuse identically to the caller. The two routes differ in what they
+   * check, never in what they admit to.
+   */
+  private async resolveClient(
+    setupToken: string | undefined,
+    email: string,
+    nowMs: number,
+  ): Promise<{ ok: true; invite: ResolvedInvite } | { ok: false; reason: RefusalReason }> {
+    return setupToken === undefined || setupToken === ''
+      ? this.resolveByAddress(email)
+      : this.resolveInvite(setupToken, email, nowMs);
+  }
+
+  /**
+   * Address → the one workspace it belongs to, for a returning client.
+   *
+   * ⚠ **EXACTLY ONE, or nothing.** An address that is a contact of two
+   * businesses is refused rather than guessed at: picking one would open
+   * somebody's books on a coin toss, and the person it opened them to would have
+   * no way of telling. It is logged loudly because it is a dead end for a real
+   * person — an operator has to see it to fix it.
+   *
+   * Found the way `resolveInvite` finds an invite — the sanctioned sweep. ONE
+   * unscoped read over `memberships` (which carries no RLS) yields each
+   * practice's SYSTEM actor, and each context is asked whether it can see a
+   * contact with this address. RLS answers, not a filter.
+   *
+   * There is no `isPrimary` condition, deliberately: D45 lets a client add their
+   * own team members and lets those people upload, so any contact of the
+   * business is a person entitled to sign in to it.
+   */
+  private async resolveByAddress(
+    email: string,
+  ): Promise<{ ok: true; invite: ResolvedInvite } | { ok: false; reason: RefusalReason }> {
+    const wanted = email.trim().toLowerCase();
+    const candidates = await this.systemActorsByPractice();
+    if (candidates.length === 0) return { ok: false, reason: 'no-practice-actor' };
+
+    const found: ResolvedInvite[] = [];
+    for (const candidate of candidates) {
+      const rows = await scopedDb(
+        this.prisma,
+        systemContext(candidate.practiceId, candidate.systemUserId),
+        (db) =>
+          db.contact.findMany({
+            where: { email: { equals: wanted, mode: 'insensitive' } },
+            select: { id: true, businessId: true },
+          }),
+      );
+      for (const row of rows) {
+        found.push({
+          practiceId: candidate.practiceId,
+          systemUserId: candidate.systemUserId,
+          businessId: row.businessId,
+          contactId: row.id,
+          email: wanted,
+          sessionKey: signInSessionKey(row.businessId, wanted),
+        });
+      }
+    }
+
+    if (found.length === 0) return { ok: false, reason: 'unknown-address' };
+    // Two businesses on one address. Deliberately a dead end rather than a
+    // guess — see the header.
+    if (found.length > 1) return { ok: false, reason: 'ambiguous-address' };
+    return { ok: true, invite: found[0]! };
   }
 
   /**
@@ -334,6 +439,8 @@ export class PortalOnboardingService {
             businessId: invite.businessId,
             contactId: contact?.id ?? null,
             email: wanted,
+            // The invite route's key is what it always was: the token's hash.
+            sessionKey: tokenHash,
           } satisfies ResolvedInvite;
         },
       );
@@ -371,6 +478,24 @@ interface OtpAttemptRow extends OtpAttemptState {
  * than a 100000–999999 range, because excluding codes that begin with a zero
  * throws away a tenth of the space to no benefit.
  */
+/**
+ * The `otp_sessions` key for a RETURNING client, who has no link to hash.
+ *
+ * Stable, so asking for a second code replaces the first instead of piling up
+ * rows. Per ADDRESS as well as per business, so two people at the same client
+ * cannot overwrite each other's code — which would read to the loser as a code
+ * that simply never worked.
+ *
+ * ⚠ It goes through `hashSetupToken` rather than being stored in the clear: the
+ * column is `link_token_hash` and it is a hash everywhere else, so a readable
+ * value sitting among hashed ones is the kind of inconsistency that later gets
+ * "tidied up" into a comparison against the wrong thing. It is not a secret and
+ * is not treated as one — it identifies a row, it does not authorise anything.
+ */
+function signInSessionKey(businessId: string, email: string): string {
+  return hashSetupToken(`portal-sign-in:${businessId}:${email}`);
+}
+
 function mintOtp(): string {
   return String(randomInt(0, 10 ** OTP_DIGITS)).padStart(OTP_DIGITS, '0');
 }
