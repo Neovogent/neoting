@@ -3,6 +3,8 @@ import { Module } from '@nestjs/common';
 import { getPrismaClient, type PrismaClient } from '../../common/db/prisma.js';
 import { BankTransactionsController } from './bank-transactions.controller.js';
 import { BankTransactionsService } from './bank-transactions.service.js';
+import { StatementsController } from './statements.controller.js';
+import { StatementsService } from './statements.service.js';
 import { BANK_TRANSACTIONS_SERVICE, PRISMA } from './tokens.js';
 
 /**
@@ -21,9 +23,12 @@ import { BANK_TRANSACTIONS_SERVICE, PRISMA } from './tokens.js';
  * SoT §4 Stage 7, not in METH's scope.
  */
 @Module({
-  controllers: [BankTransactionsController],
+  controllers: [BankTransactionsController, StatementsController],
   providers: [
     { provide: PRISMA, useFactory: () => getPrismaClient() },
+    // The statements read (D40/D41). No token indirection: nothing swaps this
+    // implementation, and a token for a single concrete class is ceremony.
+    { provide: StatementsService, useFactory: (prisma: PrismaClient) => new StatementsService(prisma), inject: [PRISMA] },
     {
       provide: BANK_TRANSACTIONS_SERVICE,
       useFactory: (prisma: PrismaClient) => new BankTransactionsService(prisma),

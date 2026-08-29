@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Landmark, Search, Link2, Unlink, Send, UploadCloud, SlidersHorizontal,
   AlertTriangle, RefreshCw, Check, FileText, Wand2, Download, Eye, Plus,
@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Modal } from '../components/DynamicComponents/Modal';
 import { defineMessages, useIntl } from 'react-intl';
 import { commonActions, commonLabels } from '../i18n/common';
+import { useStatements } from '../api/statements';
 import { useAppContext } from '../context/AppContext';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { SubTabs } from '../components/DynamicComponents/SubTabs';
@@ -140,6 +141,18 @@ const m = defineMessages({
   columnRows: { id: 'bank.bankView.columnRows', defaultMessage: 'Rows' },
   columnBalances: { id: 'bank.bankView.columnBalances', defaultMessage: 'Opening → Closing' },
   statusExtracted: { id: 'bank.bankView.statusExtracted', defaultMessage: 'Extracted' },
+  // D41's three verdicts. `reduced` is NOT a softer failure and must never read
+  // as one: it means the statement carried no running-balance column, so
+  // completeness could not be checked either way. Calling that "complete" would
+  // be a green tick meaning "we did not look".
+  columnAssurance: { id: 'bank.bankView.columnAssurance', defaultMessage: 'Completeness' },
+  assuranceComplete: { id: 'bank.bankView.assuranceComplete', defaultMessage: 'Every line accounted for' },
+  assuranceReduced: { id: 'bank.bankView.assuranceReduced', defaultMessage: 'Cannot be checked' },
+  assuranceIncomplete: { id: 'bank.bankView.assuranceIncomplete', defaultMessage: 'Lines missing' },
+  assuranceFindings: {
+    id: 'bank.bankView.assuranceFindings',
+    defaultMessage: '{count, plural, one {# finding} other {# findings}}',
+  },
   statusProcessing: { id: 'bank.bankView.statusProcessing', defaultMessage: 'Extracting…' },
   statusFailed: { id: 'bank.bankView.statusFailed', defaultMessage: 'Failed' },
   viewStatementAction: {
@@ -234,6 +247,21 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
     refetchBank, serverClientIdFor,
   } = useAppContext();
   const intl = useIntl();
+
+  // ⚠ Live statements come from their OWN query, not from the context array.
+  //
+  // `statements` above is the synthetic seed list and is EMPTY with the API on,
+  // so this tab showed "No statements uploaded" for a client whose statement had
+  // just imported 1,144 transactions — and, worse, hid the D41 verdict on it. A
+  // verdict nobody can see is not a gate.
+  // Resolved HERE rather than from the context: `clientNameFor` is not on the
+  // provider's value, and widening it for one screen would put another closure
+  // on the bundle floor every route pays for.
+  const nameForBusiness = useCallback(
+    (businessId: string) => clients.find((c) => isSameClient(businessId, c.id))?.name ?? businessId,
+    [clients, isSameClient],
+  );
+  const liveStatements = useStatements(nameForBusiness);
 
   /**
    * Embedded in a client the sub-tab is the fourth path segment, so it is
@@ -345,7 +373,13 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
   const scopedMatches = matches.filter(
     (match) => clientFilter === 'all' || clients.find((c) => c.id === clientFilter)?.name === match.clientName,
   );
-  const scopedStatements = statements.filter((s) => clientFilter === 'all' || s.clientId === clientFilter);
+  // Live rows are keyed by the SERVER's business id, seeded ones by the seed's,
+  // so the comparison goes through the same tolerant bridge every other
+  // client-scoped filter on this screen uses.
+  const allStatements = liveStatements.source === 'api' ? liveStatements.statements : statements;
+  const scopedStatements = allStatements.filter(
+    (s) => clientFilter === 'all' || isSameClient(s.clientId, clientFilter),
+  );
   const scopedGaps = statementGaps.filter((g) => clientFilter === 'all' || g.clientId === clientFilter);
   const scopedAccounts = accounts.filter((a) => clientFilter === 'all' || a.clientId === clientFilter);
 
@@ -838,6 +872,38 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                     render: (s: Statement) => s.status === 'extracted'
                       ? <span className="tabular-nums text-zinc-400">{currency(s.openingBalance)} → <span className="text-white font-bold">{currency(s.closingBalance)}</span></span>
                       : <span className="text-zinc-600">—</span>,
+                  },
+                  {
+                    // ⚠ D41's verdict, and it is its OWN column rather than a
+                    // tone on `status`. Whether the import happened and what
+                    // could be PROVEN about the result are different questions,
+                    // and folding them together makes "we read every line" and
+                    // "we could not check" the same green tick.
+                    key: 'assurance', label: intl.formatMessage(m.columnAssurance),
+                    sortValue: (s: Statement) => s.assurance ?? '',
+                    render: (s: Statement) => {
+                      if (s.assurance === undefined) return <span className="text-zinc-600">{'—'}</span>;
+                      const label =
+                        s.assurance === 'complete' ? m.assuranceComplete
+                          : s.assurance === 'reduced' ? m.assuranceReduced
+                          : m.assuranceIncomplete;
+                      const tone = s.assurance === 'complete' ? 'green' : s.assurance === 'reduced' ? 'amber' : 'red';
+                      const findings = s.findings ?? [];
+                      return (
+                        <span className="flex flex-col items-start gap-0.5">
+                          <Pill tone={tone}>{intl.formatMessage(label)}</Pill>
+                          {findings.length > 0 && (
+                            // The count, then the first one in full: a number
+                            // alone tells an accountant nothing they can act on.
+                            <span className="text-[11px] text-zinc-500" title={findings.map((f) => f.detail).join('\n')}>
+                              {intl.formatMessage(m.assuranceFindings, { count: findings.length })}
+                              {' · '}
+                              {findings[0]?.detail}
+                            </span>
+                          )}
+                        </span>
+                      );
+                    },
                   },
                   {
                     key: 'status', label: intl.formatMessage(commonLabels.status), sortValue: (s) => s.status,
