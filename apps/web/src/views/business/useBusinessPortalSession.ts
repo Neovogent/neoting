@@ -103,8 +103,20 @@ export function useBusinessPortalSession(): BusinessPortalSession {
       setError(null);
       try {
         const session = await openOnboardingSession(email, otp);
+        const loaded = await fetchBusinessPortalHome(session.token);
+        // ⚠ NULL IS A DEAD END, SO IT GETS A MESSAGE RATHER THAN A STEP.
+        //
+        // `fetchBusinessPortalHome` answers null when the context carries no
+        // summary — the CHASE case, which an onboarding session should never
+        // be. Advancing to 'in' with no home would render the code form again,
+        // so a client whose code WORKED would retype it for ever with nothing
+        // on screen to say why.
+        if (loaded === null) {
+          setError('We could not open your portal. Ask your accountant to check your account.');
+          return;
+        }
         setToken(session.token);
-        setHome(await fetchBusinessPortalHome(session.token));
+        setHome(loaded);
         setStep('in');
       } catch (caught) {
         // Every verification failure is one 401 by design — wrong code, expired
