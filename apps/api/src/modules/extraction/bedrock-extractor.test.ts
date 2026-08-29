@@ -508,3 +508,101 @@ test('with no OCR configured at all, the byte path is unchanged', async () => {
   expect(store.get).toHaveBeenCalled();
   expect(contentOf(sent()).some((block) => block.type === 'image')).toBe(true);
 });
+
+test('a long document is capped to the first pages, and the model is TOLD it is an extract', async () => {
+  // ⚠ THE REGRESSION. The first real statement through the OCR rung was 29
+  // pages and 1,366 table rows. Sent whole, the model answered with a tool call
+  // whose JSON did not parse — a 4,096-token answer cannot hold a header AND an
+  // enumeration of a thousand rows, so it came back truncated and the two
+  // fields with no `.catch()` were missing. `NT-EXT-006`, with nothing anywhere
+  // saying why.
+  //
+  // Nothing is lost by capping: the ROWS of a long document are Textract's
+  // answer, read in full by the statement lane, not the model's.
+  const { client, sent } = capturingClient();
+  const extractor = new BedrockExtractor({
+    store: storeReturning(BYTES),
+    region: 'eu-west-2',
+    client,
+    budget: allowingBudget(),
+  });
+
+  const pages = Array.from({ length: 29 }, (_, i) => ({
+    pageNumber: i + 1,
+    grid: [],
+    lines: [`PAGE-${i + 1}-MARKER`],
+  }));
+
+  await extractor.extract({ ...PDF_REQUEST, ocr: { pages, grid: [], text: 'ignored' } });
+
+  const prompt = promptTextFrom(sent());
+  expect(prompt).toContain('PAGE-5-MARKER');
+  expect(prompt).not.toContain('PAGE-6-MARKER');
+  // It must know the document is longer than what it was given, or it reports a
+  // total computed from part of it as the total.
+  expect(prompt).toContain('first 5 pages of 29');
+  expect(prompt).toContain('report a figure as null');
+});
+
+test('a short document is sent whole, with no extract warning', async () => {
+  const { client, sent } = capturingClient();
+  const extractor = new BedrockExtractor({
+    store: storeReturning(BYTES),
+    region: 'eu-west-2',
+    client,
+    budget: allowingBudget(),
+  });
+
+  const pages = [{ pageNumber: 1, grid: [], lines: ['ONLY-PAGE'] }];
+  await extractor.extract({ ...PDF_REQUEST, ocr: { pages, grid: [], text: 'ignored' } });
+
+  const prompt = promptTextFrom(sent());
+  expect(prompt).toContain('ONLY-PAGE');
+  expect(prompt).not.toContain('You are being shown the first');
+});
+
+test('a truncated answer says SO, rather than blaming the fields it is missing', async () => {
+  // `stop_reason: max_tokens` is a different problem from a bad field: the
+  // answer was cut off mid-JSON, so the missing fields are a symptom and
+  // chasing them would waste a day.
+  const create = vi.fn().mockResolvedValue({
+    stop_reason: 'max_tokens',
+    content: [{ type: 'tool_use', name: 'record_extraction', input: { supplierName: 'Half an ans' } }],
+  });
+  const extractor = new BedrockExtractor({
+    store: storeReturning(BYTES),
+    region: 'eu-west-2',
+    client: { messages: { create } } as unknown as Pick<AnthropicBedrock, 'messages'>,
+    budget: allowingBudget(),
+  });
+
+  const outcome = await extractor.extract(REQUEST);
+
+  expect(outcome.ok).toBe(false);
+  if (outcome.ok) return;
+  expect(outcome.failure.code).toBe('NT-EXT-006');
+  expect(outcome.failure.message).toContain('cut off before it was complete');
+});
+
+test('a bad FIELD names the field, and never the value the model returned', async () => {
+  const create = vi.fn().mockResolvedValue({
+    stop_reason: 'end_turn',
+    // `docType` and `confidence` are the only two with no `.catch()`.
+    content: [{ type: 'tool_use', name: 'record_extraction', input: { docType: 'NOT_A_TYPE' } }],
+  });
+  const extractor = new BedrockExtractor({
+    store: storeReturning(BYTES),
+    region: 'eu-west-2',
+    client: { messages: { create } } as unknown as Pick<AnthropicBedrock, 'messages'>,
+    budget: allowingBudget(),
+  });
+
+  const outcome = await extractor.extract(REQUEST);
+
+  expect(outcome.ok).toBe(false);
+  if (outcome.ok) return;
+  expect(outcome.failure.message).toContain('docType');
+  // The model's own value is client-adjacent content and must not travel into
+  // a message that is logged and rendered.
+  expect(outcome.failure.message).not.toContain('NOT_A_TYPE');
+});
