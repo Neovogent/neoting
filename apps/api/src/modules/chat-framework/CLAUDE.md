@@ -83,7 +83,7 @@ Terraform change to the ARNs in both envs, and an eval run — not a drive-by.
 
 | Variable | Default | Notes |
 |---|---|---|
-| `AI_CHAT` | `demo` | `bedrock` is the real model. **Refused under `NODE_ENV=production`** — see below |
+| `AI_CHAT` | `demo` | `bedrock` is the real model; `replay` is the real `BedrockModelProvider` served from recorded cassettes (see below). **Both `demo` and `replay` are refused under `NODE_ENV=production`** |
 | `BEDROCK_REGION` | `eu-west-2` | Pinned by D30. Changing it is a residency decision |
 | `AI_DAILY_BUDGET_PENCE` | `2500` | Per practice, per UTC day. £25, raised from £5 by S1 — it is a hard stop, not a warning, and £5 was 250 documents at the £0.02/document guardrail. **Extraction counts against it since S5** (27 Aug 2026): one meter, two spenders, so a practice that exhausts the ceiling in chat will see that day's documents land FAILED and vice versa. Deliberate — §9.7 is a per-*firm* budget — and both refusals are visible. Measured at ~1.3p/document, so £25 is ~1,250 documents/day as the meter counts them |
 
@@ -100,6 +100,17 @@ number from a hash of the filename at 0.8 confidence, and `resolveProcessedState
 reads 0.8 as Ready. `OTP_MODE`, `IMAGE_NORMALISER`, `DOCUMENT_GUARD` and the
 three HMAC signing keys are gated too; `apps/api/src/config/env.ts` carries the
 argument for each.
+
+**`AI_CHAT=replay`** runs the real `BedrockModelProvider` under
+`invokeStructured` with `messages.create` served from
+`fixtures/cassettes/bedrock/` (`common/bedrock-replay.ts`; corpus in
+`replay-corpus.ts`, tests in `replay-provider.test.ts`). The schema-retry
+corpus case records BOTH exchanges of a conversation, so §9.2's
+correction-request assembly is replayed for real — and because the zod
+validation message text participates in the second exchange's key, a zod bump
+can orphan that cassette; the test failing is the re-record demand working. A
+miss names `pnpm --filter @neoting/api record:cassettes`; it never falls
+through to live Bedrock, and replayed turns are metered like real ones.
 
 ## Evals are the merge gate (§9.8)
 
