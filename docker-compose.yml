@@ -1,9 +1,107 @@
-# Local is canonical (Team Guideline §8.2). Everything here is disposable:
-#   docker compose up -d && pnpm db:migrate && pnpm db:seed && pnpm dev
+# Local is canonical (Team Guideline §8.2). Everything here is disposable.
+#
+# TWO MODES, one file:
+#
+#   docker compose up -d
+#     Infra only — postgres, redis, minio(+init), mailhog — exactly what the
+#     10-minute clone target needs. The app runs on the HOST:
+#       pnpm db:migrate && pnpm db:app-role && pnpm db:seed && pnpm dev
+#
+#   docker compose --profile full up -d --build
+#     Local/staging parity — the app itself runs in containers the way it runs
+#     on ECS: one image (apps/api/Dockerfile, target `dev`) serving api and
+#     workers as two services with different commands, plus the web dev server,
+#     a one-shot `migrate` (migrations + nt_app role + seed, mirroring the ECS
+#     migrate run-task), and Unleash mirroring the staging topology. The api
+#     and workers run the staging task definitions' adapter switches
+#     (INGEST_QUEUE=bullmq, OBJECT_STORE=s3, IMAGE_NORMALISER=sharp,
+#     DOCUMENT_GUARD=qpdf, AUTH_MODE=session, EMAIL_SOURCE=fixture) against
+#     the containers above instead of AWS. The repo is bind-mounted for hot
+#     reload; anonymous volumes over every node_modules keep the host's
+#     darwin install and the container's linux install apart. Open the app at
+#     http://localhost:5173 — the browser stays on the host, the Vite proxy
+#     inside the web container forwards /v1 to the api container.
+#     NOT in the full profile, honestly: ClamAV (staging's scanner is an
+#     S3-event Lambda-shaped task whose image does not exist yet, and the API
+#     never dials clamd — a vanilla clamav container would be fake parity) and
+#     any real AWS adapter (EXTRACTOR/AI_CHAT stay at their demo defaults).
 #
 # Third-party calls hit sandboxes or recorded fixtures. No cloud keys are needed
 # for core development (Governance §2) — if you find yourself needing one, that
 # is a bug in the local environment, not a reason to add a secret.
+
+# The api and workers containers share ONE environment, exactly as the ECS task
+# definitions derive theirs from one image. compose `environment:` entries WIN
+# over the bind-mounted .env — tsx forwards --env-file-if-exists to Node, and
+# Node's --env-file never overrides variables already present in the process
+# environment — so a laptop .env pointing at localhost:5433 cannot leak into a
+# container that must dial postgres:5432.
+x-app-env: &app-env
+  # NOT production: NODE_ENV=production trips config/env.ts's S1 boot gates
+  # (EXTRACTOR=demo, OTP_MODE=demo, … refused), and local runs the demo
+  # stand-ins by design.
+  NODE_ENV: development
+  # Container clock parity with the runtime image: storage is UTC, full stop;
+  # Europe/London is applied at render time by the app.
+  TZ: UTC
+  PORT: "3000"
+  # The role split is the tenancy guarantee (prisma/sql/app-role.sql): the app
+  # dials nt_app (RLS bites), migrate/seed dial the owner. Same split as the
+  # host .env, re-pointed at the compose network.
+  DATABASE_URL: postgresql://nt_app:nt_app_local@postgres:5432/neoting?schema=public
+  DIRECT_URL: postgresql://neoting:neoting@postgres:5432/neoting?schema=public
+  REDIS_URL: redis://redis:6379
+  S3_ENDPOINT: http://minio:9000
+  S3_REGION: eu-west-2
+  S3_ACCESS_KEY_ID: neoting
+  S3_SECRET_ACCESS_KEY: neoting123
+  S3_FORCE_PATH_STYLE: "true"
+  S3_BUCKET_DOCUMENTS: nt-local-docs
+  S3_BUCKET_RECEIPTS: nt-local-receipts
+  S3_BUCKET_EXPORTS: nt-local-exports
+  SMTP_HOST: mailhog
+  SMTP_PORT: "1025"
+  MAILHOG_API_URL: http://mailhog:8025
+  # The staging parity point (infra/envs/staging/services.tf via
+  # apps/api/CLAUDE.md): the real ingest lane, not the fixtures.
+  # DOCUMENTED DIVERGENCES from staging, all deliberate: EXTRACTOR, AI_CHAT
+  # and OTP_MODE stay at their demo defaults (no AWS creds locally), and
+  # STATEMENT_READER stays `none` — Textract's multi-page path reads from S3
+  # and CANNOT read MinIO (.env.example), so setting it here would be fake
+  # parity that fails on first statement.
+  INGEST_QUEUE: bullmq
+  OBJECT_STORE: s3
+  IMAGE_NORMALISER: sharp
+  DOCUMENT_GUARD: qpdf
+  AUTH_MODE: session
+  EMAIL_SOURCE: fixture
+  # Dev-only placeholders, copied from .env.example where they are explicitly
+  # documented as non-credentials. AUTH_MODE=session refuses to boot without
+  # SESSION_SECRET; the portal secrets fail closed when empty.
+  SESSION_SECRET: dev-only-change-me-0000000000000000000000000000000000000000000000
+  PORTAL_LINK_SECRET: dev-only-change-me-2222222222222222222222222222222222222222222222
+  PORTAL_SESSION_SECRET: dev-only-change-me-3333333333333333333333333333333333333333333333
+
+# The bind mount gives hot reload; the anonymous volumes mask every
+# node_modules pnpm creates (root + each pnpm-workspace.yaml member) with the
+# image's linux install, so host and container never share binary artefacts.
+# packages/contracts/dist is NOT masked on purpose: the migrate one-shot's
+# entrypoint builds it into the mounted tree when missing, and host and
+# container then share one build (an image-seeded volume would go stale
+# silently every time contracts changed).
+x-dev-volumes: &dev-volumes
+  - .:/app
+  - /app/node_modules
+  - /app/apps/api/node_modules
+  - /app/apps/web/node_modules
+  - /app/packages/component-grammar/node_modules
+  - /app/packages/contracts/node_modules
+  - /app/packages/tokens/node_modules
+  - /app/packages/ui/node_modules
+  - /app/packages/validators/node_modules
+  - /app/services/extraction/node_modules
+  - /app/e2e/node_modules
+  - /app/evals/node_modules
 
 services:
   postgres:
@@ -89,6 +187,190 @@ services:
     ports:
       - "1025:1025"
       - "8025:8025"
+
+  # ==========================================================================
+  # --profile full: the app in containers, the way ECS runs it.
+  # Everything below is additive — the default `docker compose up -d` is still
+  # exactly the five services above.
+  # ==========================================================================
+
+  # One-shot, mirroring the ECS migrate run-task: migrations, then the nt_app
+  # role, then the seed — in that order, before api/workers/web may start
+  # (depends_on: service_completed_successfully). Its entrypoint also builds
+  # packages/contracts into the mounted tree if missing, so exactly one
+  # process ever writes that output.
+  #
+  # The image is built ONCE, here — api/workers/web reference the same tag
+  # with their own commands, which is precisely how the ECS task definitions
+  # share one image (apps/api/Dockerfile header).
+  migrate:
+    image: neoting-dev:local
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: dev
+    profiles: ["full"]
+    environment:
+      # BOTH urls point at the OWNER: migrate/app-role/seed legitimately write
+      # across every tenant, exactly like the deployed migrate task
+      # (apps/api/src/db/migrate.ts sets both to the migrator credential).
+      DATABASE_URL: postgresql://neoting:neoting@postgres:5432/neoting?schema=public
+      DIRECT_URL: postgresql://neoting:neoting@postgres:5432/neoting?schema=public
+    volumes: *dev-volumes
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - sh
+      - -ceu
+      # migrate deploy and app-role.sql are idempotent; the seed is NOT (it
+      # TRUNCATEs first), so it runs only against an empty database — a
+      # restart of the stack must not wipe what you were working on. Re-seed
+      # explicitly with `pnpm db:seed` (host) when you want the reset.
+      - |
+        pnpm prisma migrate deploy
+        pnpm prisma db execute --file prisma/sql/app-role.sql --schema prisma/schema.prisma
+        if node -e "const{PrismaClient}=require('@prisma/client');const p=new PrismaClient();p.practice.count().then(n=>process.exit(n>0?0:1)).catch(()=>process.exit(1))"; then
+          echo '[migrate] database already seeded - skipping (pnpm db:seed re-seeds explicitly)'
+        else
+          pnpm db:seed
+        fi
+
+  api:
+    image: neoting-dev:local
+    container_name: nt-api
+    profiles: ["full"]
+    command: ["pnpm", "--filter", "@neoting/api", "dev"]
+    environment:
+      <<: *app-env
+    ports:
+      - "3000:3000"
+    volumes: *dev-volumes
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      mailhog:
+        condition: service_started
+    healthcheck:
+      # node, not curl: node:22-slim ships neither curl nor wget, and node is
+      # the one binary this image is guaranteed to contain. /healthz is the
+      # same path the staging ALB probes.
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  # Same image, different command — matching how the ECS workers service
+  # overrides the image CMD. No published port and no healthcheck, honestly:
+  # staging's workers task has no container health check either (the known gap
+  # documented in apps/api/CLAUDE.md), and inventing one here would claim a
+  # parity staging does not have.
+  workers:
+    image: neoting-dev:local
+    container_name: nt-workers
+    profiles: ["full"]
+    command: ["pnpm", "--filter", "@neoting/api", "dev:worker"]
+    environment:
+      <<: *app-env
+    volumes: *dev-volumes
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+
+  # The Vite dev server. The BROWSER runs on the host and talks to
+  # localhost:5173; requests to /v1 go same-origin and the dev proxy inside
+  # this container forwards them to the api container (NT_DEV_API_ORIGIN,
+  # vite.config.ts). VITE_API_BASE_URL stays EMPTY on purpose: pointing it at
+  # http://localhost:3000 would send the browser cross-origin to an API that
+  # deliberately has no CORS surface, and the session cookie would stop being
+  # first-party — same reasoning as apps/web/.env.development.
+  web:
+    image: neoting-dev:local
+    container_name: nt-web
+    profiles: ["full"]
+    # `pnpm exec vite`, not `pnpm run dev -- --host …`: pnpm forwards the
+    # literal `--` to vite, which silently swallows the flag — and vite then
+    # binds localhost only, which inside a container means unreachable.
+    command: ["pnpm", "--filter", "@neoting/web", "exec", "vite", "--host", "0.0.0.0"]
+    environment:
+      VITE_API_ENABLED: "true"
+      VITE_API_BASE_URL: ""
+      NT_DEV_API_ORIGIN: http://api:3000
+    ports:
+      - "5173:5173"
+    volumes: *dev-volumes
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      api:
+        condition: service_started
+
+  # Creates Unleash's own database inside nt-postgres, idempotently — separate
+  # database, same instance, exactly the staging shape (a real boundary:
+  # Postgres has no cross-database query path, so a compromised Unleash reads
+  # no client data). CREATE DATABASE has no IF NOT EXISTS, hence the guard.
+  unleash-init:
+    image: postgres:16-alpine
+    profiles: ["full"]
+    environment:
+      PGHOST: postgres
+      PGUSER: neoting
+      PGPASSWORD: neoting
+      PGDATABASE: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint:
+      - sh
+      - -ceu
+      - |
+        if psql -tAc "SELECT 1 FROM pg_database WHERE datname='unleash'" | grep -q 1; then
+          echo 'unleash database already exists'
+        else
+          psql -v ON_ERROR_STOP=1 -c 'CREATE DATABASE unleash'
+          echo 'unleash database created'
+        fi
+
+  # Mirrors the staging topology (infra/envs/staging/unleash.tf: same image
+  # tag, port 4242, its own database in the shared Postgres). HONESTLY: the
+  # API does not consume Unleash yet — it has no flag client and no flag env
+  # var (the dead FLAGS_MODE was removed from .env.example in the same change
+  # that added this service) — this container exists so the Guideline §8.5
+  # flip to a real flag server stays config-only when it comes. Admin UI:
+  # http://localhost:4242 (Unleash OSS first-boot credentials).
+  unleash:
+    image: unleashorg/unleash-server:6
+    container_name: nt-unleash
+    profiles: ["full"]
+    environment:
+      DATABASE_URL: postgres://neoting:neoting@postgres:5432/unleash
+      # Local postgres speaks no TLS; staging sets the inverse for RDS.
+      DATABASE_SSL: "false"
+      # Same stance as staging: no phoning home to version.unleash.run.
+      CHECK_VERSION: "false"
+      LOG_LEVEL: info
+    ports:
+      - "4242:4242"
+    depends_on:
+      unleash-init:
+        condition: service_completed_successfully
+    healthcheck:
+      # Same probe staging's task definition uses; start_period covers the
+      # first-boot schema migration.
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:4242/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
 
 volumes:
   postgres-data:
