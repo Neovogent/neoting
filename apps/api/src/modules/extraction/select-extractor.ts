@@ -1,3 +1,4 @@
+import { replayBedrockMessages } from '../../common/bedrock-replay.js';
 import type { AiBudget } from '../../common/ai-budget.js';
 import type { Env } from '../../config/env.js';
 import type { DocumentStore } from '../ingestion-routing/index.js';
@@ -13,6 +14,12 @@ import { BedrockExtractor } from './bedrock-extractor.js';
  *            filename. Reads nothing. The default.
  *   bedrock  `BedrockExtractor` — Claude reads the document image. One model,
  *            one attempt; a failed read is a FAILED document with a reason.
+ *   replay   `BedrockExtractor` again — THE SAME CLASS, deliberately, because
+ *            exercising its real code offline is the whole point — with the
+ *            transport served from recorded cassettes
+ *            (`common/bedrock-replay.ts`). A request with no cassette fails
+ *            loudly naming the record command; it never falls through to live
+ *            Bedrock. Refused in production (`env.ts`).
  *
  * ⚠ THERE IS NO FALLBACK, AND THERE MUST NOT BE ONE. A `FallbackExtractor` used
  * to wrap the real reader here, catching a throw and answering with
@@ -53,14 +60,26 @@ export function selectExtractor(
   budget?: AiBudget,
 ): DocumentExtractor {
   switch (env.EXTRACTOR) {
+    // One case for both on purpose: replay IS the bedrock adapter, so it makes
+    // the same demands — the bytes to build the request from, and the budget,
+    // because a replayed read still meters against the same per-firm ledger
+    // (that metering being real is part of what replay exists to exercise).
+    case 'replay':
     case 'bedrock': {
       if (store === undefined) {
-        throw new Error('EXTRACTOR=bedrock needs a DocumentStore to read the document bytes from.');
+        throw new Error(`EXTRACTOR=${env.EXTRACTOR} needs a DocumentStore to read the document bytes from.`);
       }
       if (budget === undefined) {
-        throw new Error('EXTRACTOR=bedrock needs an AiBudget — real extraction may not run without a spend ceiling.');
+        throw new Error(`EXTRACTOR=${env.EXTRACTOR} needs an AiBudget — real extraction may not run without a spend ceiling.`);
       }
-      return new BedrockExtractor({ store, region: env.BEDROCK_REGION, budget });
+      return new BedrockExtractor({
+        store,
+        region: env.BEDROCK_REGION,
+        budget,
+        // The same injection seam the unit tests and the measure script drive —
+        // replay is not a third code path through the extractor.
+        ...(env.EXTRACTOR === 'replay' ? { client: replayBedrockMessages() } : {}),
+      });
     }
     case 'demo':
     default:

@@ -67,3 +67,21 @@ test('bedrock without a budget fails at construction — real extraction may not
 test('demo mode needs no budget — a fixture spends nothing', () => {
   expect(selectExtractor(ENV)).toBeInstanceOf(DemoExtractor);
 });
+
+test('replay mode returns the REAL Bedrock adapter — only the transport is swapped', () => {
+  // The point of replay is exercising BedrockExtractor's actual code (request
+  // building, the Zod parse, the metering) against cassettes. A dedicated
+  // ReplayExtractor class here would be a third code path — the exact thing
+  // the mode exists to avoid.
+  const extractor = selectExtractor({ ...ENV, EXTRACTOR: 'replay' }, store, budget());
+  expect(extractor).toBeInstanceOf(BedrockExtractor);
+});
+
+test('replay makes the bedrock demands: no store or no budget fails at construction', () => {
+  // A replayed read still fetches bytes to build the request from, and still
+  // meters against the same per-firm ledger — that metering being real is part
+  // of what replay exists to prove, so the unmetered object stays impossible
+  // to construct in this mode too.
+  expect(() => selectExtractor({ ...ENV, EXTRACTOR: 'replay' })).toThrow(/needs a DocumentStore/);
+  expect(() => selectExtractor({ ...ENV, EXTRACTOR: 'replay' }, store)).toThrow(/spend ceiling/);
+});

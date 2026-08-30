@@ -1,0 +1,41 @@
+{
+  "key": "eb897b99ddb81653",
+  "recordedAt": "2026-08-30",
+  "modelId": "anthropic.claude-sonnet-4-6",
+  "synthetic": true,
+  "description": "extraction · OCR text path · happy read",
+  "response": {
+    "stop_reason": "tool_use",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_REDACTED",
+        "name": "record_extraction",
+        "input": {
+          "docType": "INVOICE",
+          "supplierName": "BIDFOOD WHOLESALE LTD",
+          "customerName": null,
+          "documentDate": "2026-08-04",
+          "dueDate": null,
+          "currency": "GBP",
+          "totalPence": 28296,
+          "taxPence": 4716,
+          "netPence": 23580,
+          "reference": "BF-2026-118374",
+          "vatNumber": "GB 412 8836 21",
+          "lineItems": [],
+          "confidence": {
+            "supplier": 0.99,
+            "date": 0.98,
+            "total": 0.99,
+            "tax": 0.98
+          }
+        }
+      }
+    ],
+    "usage": {
+      "input_tokens": 812,
+      "output_tokens": 288
+    }
+  }
+}
