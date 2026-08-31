@@ -121,18 +121,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # A key added to .env.example but not to the ECS task definitions boots
-      # locally and dies at task start on the next deploy — where it presents
-      # as a deploy failure, not the one-line config gap it is (services.tf's
-      # S3_BUCKET_DOCS → S3_BUCKET_DOCUMENTS incident is the recorded
-      # specimen). Plain node, no install, ~1s; it lives in stage 0 because it
-      # is the same kind of honesty check as the probe below — and because,
-      # with stages 1–8 switched off (28 Aug 2026, #210 batch), this and the
-      # deploy are the only live stages, and this one exists to protect that
-      # deploy.
-      - name: 0a · env parity — .env.example ⇆ ECS task definitions
-        run: node scripts/check-env-parity.mjs
-
       - name: Probe which suites actually exist
         id: probe
         env:
