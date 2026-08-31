@@ -84,6 +84,20 @@ test('the whole journey: intent under /v1, raw PUT to storage, completion with t
   expect(JSON.parse(String(complete!.init.body)).byteHash).toMatch(/^[a-f0-9]{64}$/);
 });
 
+test('the channel is the caller\'s to declare — CHAT_UPLOAD travels; unstated it stays WEB_UPLOAD', async () => {
+  // WEB_UPLOAD-by-default is pinned by the journey test above (no channel
+  // argument there); this pins the chat surface's door name reaching the wire.
+  const calls = stubFetch([INTENT, { body: {} }, { status: 201, body: { id: 'doc_43', state: 'RECEIVED' } }]);
+
+  await sendWorkspaceUpload(
+    'biz_burger',
+    { filename: 'from-chat.jpg', mimeType: 'image/jpeg', bytes: new Blob(['chat bytes']) },
+    'CHAT_UPLOAD',
+  );
+
+  expect(JSON.parse(String(calls[0]!.init.body)).channel).toBe('CHAT_UPLOAD');
+});
+
 test('an empty file is refused before the network is touched', async () => {
   const calls = stubFetch([]);
   await expect(
