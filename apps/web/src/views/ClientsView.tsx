@@ -550,6 +550,9 @@ function ClientCard({
         </div>
       </div>
 
+      {/* No remove affordance here BY DESIGN (31 Aug 2026): removing a client
+          lives on the client's own Settings tab (ClientDetailView), never on
+          the board — "not the front card". Pinned in ClientsView.test.tsx. */}
       <div className="grid grid-cols-3 gap-2 mt-6">
         <button onClick={onOpen} className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl text-zinc-400 hover:bg-raised hover:text-white transition-colors" title={intl.formatMessage(mCard.openClient)}>
           <ExternalLink size={18} />

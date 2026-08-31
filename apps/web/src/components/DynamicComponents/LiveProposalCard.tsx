@@ -5,7 +5,7 @@ import { defineMessages, useIntl } from 'react-intl';
 import { NtProblemError } from '@neoting/contracts';
 import type { ActionProposal } from '@neoting/contracts/model';
 import { useAppContext } from '../../context/AppContext';
-import { approveReviewed, cancelPending, KIND_LABEL, openReview, type ReviewCard } from '../../api/proposals';
+import { approveReviewed, cancelPending, KIND_LABEL, KIND_NOTE, offboardReason, openReview, type ReviewCard } from '../../api/proposals';
 import { commonActions } from '../../i18n/common';
 import { ReviewRows, ReviewSection } from './ReviewGate';
 
@@ -21,6 +21,7 @@ const m = defineMessages({
   approved: { id: 'proposals.liveCard.approved', defaultMessage: 'Approved and executed — {title}' },
   cancelled: { id: 'proposals.liveCard.cancelled', defaultMessage: 'Cancelled — nothing was changed.' },
   errorWithCode: { id: 'proposals.liveCard.errorWithCode', defaultMessage: '{message} ({code})' },
+  offboardReason: { id: 'proposals.liveCard.offboardReason', defaultMessage: 'Reason given: “{reason}”' },
   reviewEnforcement: {
     id: 'proposals.liveCard.reviewEnforcement',
     defaultMessage:
@@ -55,6 +56,11 @@ export function LiveProposalCard({
 
   const kindLabel = intl.formatMessage(KIND_LABEL[proposal.kind]);
   const subtitle = [clientName, kindLabel].filter(Boolean).join(' · ');
+  // The kind→copy mapping's second line, plus the queued reason for an
+  // offboard — both from the proposal itself, so the card says what approving
+  // does before Read review is even opened.
+  const kindNote = KIND_NOTE[proposal.kind];
+  const reason = offboardReason(proposal);
 
   const fail = (error: unknown) => {
     setProblem(
@@ -165,6 +171,17 @@ export function LiveProposalCard({
           )}
         </div>
       </div>
+
+      {(kindNote || reason) && (
+        <div className="px-6 py-4 border-b border-white/5 flex flex-col gap-1.5">
+          {kindNote && <p className="text-[12px] text-zinc-500 leading-relaxed">{intl.formatMessage(kindNote)}</p>}
+          {reason && (
+            <p className="text-[13px] text-zinc-300 leading-relaxed">
+              {intl.formatMessage(m.offboardReason, { reason })}
+            </p>
+          )}
+        </div>
+      )}
 
       <AnimatePresence>
         {review && (phase === 'reviewed' || phase === 'approving') && (

@@ -55,10 +55,16 @@ export interface WorkspaceUploadResult {
   state: string;
 }
 
-export async function sendWorkspaceUpload(businessId: string, file: WorkspaceUploadFile): Promise<WorkspaceUploadResult> {
+export async function sendWorkspaceUpload(
+  businessId: string,
+  file: WorkspaceUploadFile,
+  // The contract's name for the door the file came through. Defaulted so every
+  // existing caller stays byte-identical; the chat surface passes CHAT_UPLOAD.
+  channel: DocumentUploadRequest['channel'] = 'WEB_UPLOAD',
+): Promise<WorkspaceUploadResult> {
   const request: DocumentUploadRequest = {
     businessId,
-    channel: 'WEB_UPLOAD',
+    channel,
     filename: file.filename,
     mimeType: file.mimeType,
     byteSize: file.bytes.size,
@@ -89,12 +95,16 @@ export interface WorkspaceUploadsOutcome {
  * and the named failures to show. Shared by both views that take a drop, so
  * the journey exists once.
  */
-export async function sendWorkspaceUploads(businessId: string, files: File[]): Promise<WorkspaceUploadsOutcome> {
+export async function sendWorkspaceUploads(
+  businessId: string,
+  files: File[],
+  channel: DocumentUploadRequest['channel'] = 'WEB_UPLOAD',
+): Promise<WorkspaceUploadsOutcome> {
   const failures: string[] = [];
   let sent = 0;
   for (const file of files) {
     try {
-      await sendWorkspaceUpload(businessId, { filename: file.name, mimeType: file.type || 'application/octet-stream', bytes: file });
+      await sendWorkspaceUpload(businessId, { filename: file.name, mimeType: file.type || 'application/octet-stream', bytes: file }, channel);
       sent += 1;
     } catch (error) {
       failures.push(`${file.name} — ${error instanceof Error ? error.message : 'upload failed'}`);

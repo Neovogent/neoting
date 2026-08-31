@@ -108,6 +108,28 @@ test('reject shows the reason verbatim — a reviewer agrees to the words, not t
   ]);
 });
 
+test('business.offboard says books are retained, and shows the reason verbatim only when one was given', () => {
+  const summary = renderSummary('business.offboard', {
+    businessId: 'biz_1',
+    reason: 'Client moved to another practice',
+  });
+  expect(summary.title).toBe('Offboard client workspace biz_1 — books retained');
+  const entries = summary.sections[0]?.entries ?? [];
+  expect(entries).toContainEqual({ label: 'Business', value: 'biz_1' });
+  expect(entries).toContainEqual({
+    label: 'Deletes books, documents or the audit trail',
+    value: 'No — retained for the six-year requirement',
+  });
+  expect(entries).toContainEqual({
+    label: 'Reason, exactly as it will be recorded',
+    value: 'Client moved to another practice',
+  });
+  // No reason means no reason entry — recorded, never invented.
+  expect(
+    renderSummary('business.offboard', { businessId: 'biz_1' }).sections[0]?.entries.map((e) => e.label),
+  ).not.toContain('Reason, exactly as it will be recorded');
+});
+
 test('reprocess states what it does NOT do — the card is where the limit belongs, not a source file', () => {
   const summary = renderSummary('document.reprocess', { documentIds: ['doc_1'] });
   expect(summary.title).toBe('Retry 1 document');

@@ -28,6 +28,7 @@
     "db:reset": "prisma migrate reset --force --skip-seed && pnpm db:app-role && pnpm db:seed",
     "db:app-role": "docker exec -i nt-postgres psql -U neoting -d neoting -v ON_ERROR_STOP=1 -q < prisma/sql/app-role.sql",
     "db:tenancy-check": "docker exec -i nt-postgres psql -U neoting -d neoting -v ON_ERROR_STOP=1 -q < prisma/sql/tenancy-check.sql",
+    "verify:parity": "scripts/smoke/local-parity.sh",
     "demo:reset": "tsx --env-file-if-exists=.env scripts/demo/reset.ts",
     "demo:email": "tsx --env-file-if-exists=.env scripts/demo/email.ts",
     "demo:whatsapp": "tsx --env-file-if-exists=.env scripts/demo/whatsapp.ts",

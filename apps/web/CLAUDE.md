@@ -596,6 +596,49 @@ Three things drive the floor, all known:
 
 Most of the seed weight leaves when the views move onto the generated client. Until then, treat **199.5 kB** as the floor a new screen is spending against, and re-measure with `pnpm --filter @neoting/web build` before adding a dependency.
 
+## Three live surfaces landed 31 Aug 2026
+
+**Removing a client lives on the client's Settings tab, NOT the Clients
+board** — a design decision ("not the front card"), pinned by
+`ClientsView.test.tsx` asserting the ABSENCE on both layouts. The danger-zone
+Panel at the bottom of ClientDetailView's Settings tab opens
+`DynamicComponents/OffboardClientDialog` (ConfirmStep chrome + optional
+reason, cap 500 from the contract); confirming creates `business.offboard`
+and STOPS — review/approve are the Approvals queue's moves, and the panel
+then says "queued", never "removed". Live-gated on
+`slices.businesses.source === 'api'`; seed data disables the button with the
+reason (the PlanPanel posture). The kind renders through `api/proposals.ts`
+(`KIND_LABEL`, the partial `KIND_NOTE`, `offboardReason`) generically in
+`LiveProposalCard`, and `ApprovalsLiveQueue`'s settle nudges
+`refetchBusinesses()` — that query neither polls nor refetches on focus, so
+without it an approved offboard stayed on the board.
+
+**Chat uploads are real** (`components/ChatUpload.tsx`): the composer picker
+and drag-drop on ChatArea/InputRow share one flow — live, it is the S7
+two-step journey with `channel: 'CHAT_UPLOAD'`, the business resolved from
+the attached client, and "All clients" refusing with instructions, never
+guessing. Synthetic keeps the local ingest and attach-then-send chips. The
+uploads client is dynamically imported so the flow stays off the floor —
+keep it that way.
+
+**DocumentPreview survives live data now.** Its grid tracks are
+`minmax(0,…)` on purpose — a presigned `<img>`'s natural width and nowrap
+line-item descriptions blow a bare `1fr` past the card, and
+`overflow-hidden` clips every value; truncating elements carry `title`. The
+hover band paints AT the field's `boundingBox` when extraction placed the
+value on the displayed page (page 1), letterbox-corrected through the image's
+natural aspect (`object-contain` in a 3:4 frame — the box is page-relative);
+no box / another page / image not yet loaded falls back to the whole-frame
+band with an honest caption. Boxes come from OCR word geometry matched
+exactly-once server-side (`extraction/field-geometry.ts`) — a value printed
+twice on the page gets NO box rather than a guess. The Path-to-Ready panel mirrors
+`resolveProcessedState` (Total+Supplier+Category via `BASE_MANDATORY`);
+there is deliberately no confirm-as-is button — `UpdateCodingPayload` with
+all-equal values collapses to zero changes server-side before the readiness
+edge (a G7 gap, reported, not bent) — and no bank-match section exists
+because no read surface exposes a document's suggested match (same: G7 gap,
+named in the offboard hand-back).
+
 ## Tests
 
 `pnpm test` (vitest, jsdom). **Offline by construction** (Governance §15.1): every suite either exercises pure functions and the MSW handler bodies directly, or renders the shell against jsdom with the API query disabled — nothing opens a socket and nothing waits on a timer. Tests sit beside what they test, as `*.test.ts(x)`.

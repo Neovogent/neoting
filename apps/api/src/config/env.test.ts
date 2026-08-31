@@ -239,6 +239,25 @@ test('NODE_ENV=production with EXTRACTOR=demo fails to boot', () => {
   expect(() => loadEnv({ ...PRODUCTION, EXTRACTOR: 'demo' })).toThrow(/EXTRACTOR/);
 });
 
+// Replay runs the REAL Bedrock adapters over recorded cassettes — the point is
+// exercising the adapter code (request building, the Zod parse of the model's
+// answer, error mapping, budget metering) offline. Offline is a laptop's
+// property, never production's: a recording of one document is not a reading
+// of another, and a recorded chat turn answering a real accountant is the
+// AI_CHAT=demo failure told through a transcript.
+test('EXTRACTOR=replay and AI_CHAT=replay are accepted outside production', () => {
+  expect(loadEnv({ EXTRACTOR: 'replay' } as NodeJS.ProcessEnv).EXTRACTOR).toBe('replay');
+  expect(loadEnv({ AI_CHAT: 'replay' } as NodeJS.ProcessEnv).AI_CHAT).toBe('replay');
+});
+
+test('NODE_ENV=production with EXTRACTOR=replay fails to boot', () => {
+  expect(() => loadEnv({ ...PRODUCTION, EXTRACTOR: 'replay' })).toThrow(/EXTRACTOR/);
+});
+
+test('NODE_ENV=production with AI_CHAT=replay fails to boot', () => {
+  expect(() => loadEnv({ ...PRODUCTION, AI_CHAT: 'replay' })).toThrow(/AI_CHAT/);
+});
+
 // OTP_MODE=demo is one fixed code on every account in every practice. `totp`
 // is accepted by the schema before A2 implements the verifier, and that is
 // deliberate: it fails every second factor CLOSED in the meantime.

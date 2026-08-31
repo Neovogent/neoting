@@ -4,6 +4,7 @@ import { DemoSmsSender, type SmsSender } from '../../chase/index.js';
 import { archiveDocumentExecutor } from './archive-document.js';
 import { chaseSendExecutor } from './chase-send.js';
 import { confirmMatchExecutor } from './confirm-match.js';
+import { offboardBusinessExecutor } from './offboard-business.js';
 import {
   type ExecutorRegistry,
   ProposalNotImplementedError,
@@ -43,16 +44,17 @@ export interface ExecutorRegistryDeps {
  * runtime `NT-PRP-001` guard for a wire value outside the enum stays the
  * second line of defence, not the first.
  *
- * Ten real executors, two honest holes: a registry with named
+ * Eleven real executors, two honest holes: a registry with named
  * unimplemented kinds beats half-executors, and it means the engine (METH S3,
  * #122) wires against the full enum on day one. Each hole throws
  * `ProposalNotImplementedError` carrying its kind — loudly, before any write.
  * All four METH Stage 2 kinds (issue #120) now have executors: `chase.send`
  * left the hole list in METH S8, `publish.batch` in METH S10,
  * `bank.confirm-match` in METH S11 and `rule.create` in METH S13 (#142);
- * `document.revoke-link` left it in launch stage A8, and `document.reprocess`
- * and `document.reject` in launch stage A12. The **two** still open are
- * `move-business` and `split`, each of which needs its own issue.
+ * `document.revoke-link` left it in launch stage A8, `document.reprocess`
+ * and `document.reject` in launch stage A12, and `business.offboard` arrived
+ * with its executor built alongside the contract change. The **two** still
+ * open are `move-business` and `split`, each of which needs its own issue.
  *
  * A FACTORY, not a Nest provider: the engine module builds it inside its own
  * `useFactory` and keeps the token out of its public providers, so no executor
@@ -96,6 +98,10 @@ export function buildExecutorRegistry(deps: ExecutorRegistryDeps): ExecutorRegis
     // the proposal spine rather than behind a DELETE, and no revoke endpoint
     // exists anywhere.
     'document.revoke-link': revokeLinkExecutor,
+    // business.offboard — the D32 slice: soft-deactivate a client workspace,
+    // books/documents/audit retained (six-year clock, D12). One guarded UPDATE
+    // on `businesses.is_active`; the executor's header carries the discipline.
+    'business.offboard': offboardBusinessExecutor,
   };
 }
 

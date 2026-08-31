@@ -147,6 +147,13 @@ export class PrismaDuplicateDetector implements DuplicateDetector {
         candidatesTruncated = candidates.length === this.candidateLimit;
         for (const c of candidates) {
           if (c.perceptualHash === null) continue;
+          // A stored hash that is not hex cannot participate in a hamming
+          // comparison — and it exists: the demo seed writes placeholder
+          // hashes (`phash:doc_006`) that predate the live hasher. BigInt
+          // throws on them, and that throw kills the ingest job of a NEW
+          // document because of an OLD row's data — the first real image
+          // uploaded into a seeded workspace dead-lettered exactly this way.
+          if (!/^[0-9a-f]+$/i.test(c.perceptualHash)) continue;
           const distance = hammingDistance(input.perceptualHash, c.perceptualHash);
           if (distance <= PERCEPTUAL_HASH_MAX_DISTANCE) nearDistance.set(c.id, distance);
         }

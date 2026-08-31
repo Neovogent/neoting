@@ -1,0 +1,282 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, expect, test, vi } from 'vitest';
+
+import { DocumentPreview } from './DocumentPreview';
+import { AppIntlProvider } from '../../i18n/AppIntlProvider';
+import type { DocumentDetail } from '../../api/document-detail';
+import type { Document } from '../../lib/types';
+
+/**
+ * The live document detail: hover provenance over the real original, the
+ * honest Path-to-Ready panel, and the staged `document.update-coding`
+ * proposal — the only door a state change has (Governance §10).
+ */
+
+// Live mode for the whole file: the fork inside DocumentPreview is on data
+// source, and these tests are about the live branch.
+vi.mock('../../api/config', () => ({
+  API_ENABLED: true,
+  API_MOCKED: false,
+  API_BASE_URL: '',
+  dataSourceLabel: () => 'live API' as const,
+}));
+
+vi.mock('../../context/AppContext', () => ({
+  useAppContext: () => ({ updateDocumentField: vi.fn(), logAudit: vi.fn() }),
+}));
+
+const updateCodingProposal = vi.fn(async (_request: unknown) => {});
+
+// The hook is replaced (each test hands it the detail it needs); the pure
+// helpers — parseCodingDraft, isEditableLabel — stay real, because the staged
+// proposal's payload shape is exactly what is under test.
+let detail: DocumentDetail;
+vi.mock('../../api/document-detail', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../api/document-detail')>();
+  return {
+    ...actual,
+    useDocumentDetail: () => detail,
+    updateCodingProposal: (request: unknown) => updateCodingProposal(request as never),
+    refreshDocument: vi.fn(async () => {}),
+  };
+});
+
+afterEach(() => vi.clearAllMocks());
+
+const LONG_DESCRIPTION =
+  'Microsoft 365 Business Standard - Annual Subscription (May 12, 2025 – May 11, 2026)';
+
+const doc: Document = {
+  id: 'doc_f404e752a4fbb629b203dc04',
+  clientId: 'biz_burger',
+  clientName: 'American Burger',
+  supplier: 'Nexora Solutions LLC',
+  date: '12 May 2025',
+  total: 54352.51,
+  category: '—',
+  status: 'review',
+  source: 'web',
+  uploader: 'Shakib',
+  currency: 'USD',
+  kind: 'cost',
+  fields: [],
+  lineItems: [],
+};
+
+function liveDetail(over: Partial<DocumentDetail> = {}): DocumentDetail {
+  return {
+    fields: [
+      { label: 'Supplier', value: 'Nexora Solutions LLC', confidence: 0.95, provenance: 'AI suggested: bedrock' },
+      // Blank provenance on purpose: the caption must fall back honestly.
+      { label: 'Total', value: '£54,352.51', confidence: 0.93, provenance: '  ' },
+      { label: 'Category', value: '—', confidence: 1, provenance: 'AI suggested: extraction' },
+    ],
+    lineItems: [{ description: LONG_DESCRIPTION, quantity: 150, total: 22500, tax: 0 }],
+    state: 'TO_REVIEW',
+    businessId: 'biz_burger',
+    isLoading: false,
+    contractError: null,
+    image: { url: 'https://example.test/original.png', mimeType: 'image/png', filename: 'invoice.png' },
+    events: [],
+    ...over,
+  };
+}
+
+function renderPreview() {
+  return render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <AppIntlProvider>
+        <DocumentPreview document={doc} />
+      </AppIntlProvider>
+    </QueryClientProvider>,
+  );
+}
+
+test('hovering a live field with no boundingBox frames the whole original — never an invented position — and cites its provenance', () => {
+  detail = liveDetail();
+  renderPreview();
+
+  expect(screen.queryByTestId('provenance-band')).toBeNull();
+
+  // mouseOver bubbles, so React derives the row's onMouseEnter from it.
+  fireEvent.mouseOver(screen.getByText('Supplier'));
+
+  const band = screen.getByTestId('provenance-band');
+  // No fabricated coordinate: without a box the band is the full frame, not a
+  // hash-positioned strip.
+  expect(band.style.top).toBe('');
+  expect(band.className).toContain('inset-0');
+  expect(screen.getByText('AI suggested: bedrock')).toBeTruthy();
+});
+
+/** Tell jsdom the original has loaded at the given pixel size, firing onLoad. */
+function loadOriginal(naturalWidth: number, naturalHeight: number) {
+  const img = screen.getByRole('img');
+  Object.defineProperty(img, 'naturalWidth', { value: naturalWidth, configurable: true });
+  Object.defineProperty(img, 'naturalHeight', { value: naturalHeight, configurable: true });
+  Object.defineProperty(img, 'complete', { value: true, configurable: true });
+  fireEvent.load(img);
+}
+
+const SUPPLIER_BOX = { page: 1, x: 0.1, y: 0.2, width: 0.3, height: 0.05 };
+
+test('a field whose boundingBox is on the displayed page paints the band AT that position', () => {
+  detail = liveDetail({
+    fields: [
+      { label: 'Supplier', value: 'Nexora Solutions LLC', confidence: 0.95, provenance: 'AI suggested: bedrock', boundingBox: SUPPLIER_BOX },
+      { label: 'Total', value: '£54,352.51', confidence: 0.93, provenance: 'AI suggested: bedrock' },
+      { label: 'Category', value: '—', confidence: 1, provenance: 'AI suggested: extraction' },
+    ],
+  });
+  renderPreview();
+
+  // 750×1000 is exactly the frame's 3:4, so no letterboxing: the normalised
+  // box maps straight to container percentages.
+  loadOriginal(750, 1000);
+  fireEvent.mouseOver(screen.getByText('Supplier'));
+
+  const band = screen.getByTestId('provenance-band');
+  expect(band.className).not.toContain('inset-0');
+  // jsdom's CSSOM normalises "10.000%" to "10%" — the numbers are what matter.
+  expect(band.style.left).toBe('10%');
+  expect(band.style.top).toBe('20%');
+  expect(band.style.width).toBe('30%');
+  expect(band.style.height).toBe('5%');
+});
+
+test('a letterboxed original maps the box onto the rendered image, not the frame', () => {
+  detail = liveDetail({
+    fields: [
+      { label: 'Supplier', value: 'Nexora Solutions LLC', confidence: 0.95, provenance: 'AI suggested: bedrock', boundingBox: SUPPLIER_BOX },
+    ],
+  });
+  renderPreview();
+
+  // A square image inside the 3:4 frame is letterboxed top and bottom: it
+  // renders 75% tall, offset 12.5% — a band ignoring that would sit on the bar.
+  loadOriginal(1000, 1000);
+  fireEvent.mouseOver(screen.getByText('Supplier'));
+
+  const band = screen.getByTestId('provenance-band');
+  expect(band.style.left).toBe('10%');
+  expect(band.style.top).toBe('27.5%'); // 12.5% offset + 20% of the 75% slice
+  expect(band.style.height).toBe('3.75%'); // 5% of the 75% slice
+});
+
+test('a box on a page the preview is not showing falls back to the whole-frame band', () => {
+  detail = liveDetail({
+    fields: [
+      { label: 'Supplier', value: 'Nexora Solutions LLC', confidence: 0.95, provenance: 'AI suggested: bedrock', boundingBox: { ...SUPPLIER_BOX, page: 2 } },
+    ],
+  });
+  renderPreview();
+
+  loadOriginal(750, 1000);
+  fireEvent.mouseOver(screen.getByText('Supplier'));
+
+  const band = screen.getByTestId('provenance-band');
+  // The preview shows page 1; painting a page-2 position over it would mark
+  // the wrong paper. Whole frame, existing caption.
+  expect(band.style.top).toBe('');
+  expect(band.className).toContain('inset-0');
+  expect(screen.getByText('AI suggested: bedrock')).toBeTruthy();
+});
+
+test('until the image has loaded, a positioned band is withheld rather than painted over the letterbox', () => {
+  detail = liveDetail({
+    fields: [
+      { label: 'Supplier', value: 'Nexora Solutions LLC', confidence: 0.95, provenance: 'AI suggested: bedrock', boundingBox: SUPPLIER_BOX },
+    ],
+  });
+  renderPreview();
+
+  // No loadOriginal: the aspect is unknown, so the mapping would be a guess.
+  fireEvent.mouseOver(screen.getByText('Supplier'));
+
+  const band = screen.getByTestId('provenance-band');
+  expect(band.style.top).toBe('');
+  expect(band.className).toContain('inset-0');
+});
+
+test('a field with no recorded provenance gets the honest fallback caption, not an empty line', () => {
+  detail = liveDetail();
+  renderPreview();
+
+  fireEvent.mouseOver(screen.getByText('Total'));
+
+  expect(screen.getByText(/its position on the page was not captured/)).toBeTruthy();
+});
+
+test('the Ready panel names the missing mandatory field and its edit stages the update-coding proposal', async () => {
+  detail = liveDetail();
+  renderPreview();
+
+  // The server rule is Total + Supplier + Category; only Category is missing.
+  expect(screen.getByText('Path to Ready')).toBeTruthy();
+  expect(screen.getByText(/Ready needs a value for Category/)).toBeTruthy();
+  expect(screen.getByText(/approving the correction that completes the set makes this document Ready/)).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Add Category' }));
+  const input = screen.getByRole('textbox');
+  fireEvent.change(input, { target: { value: '5100' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+
+  // The staged card is the Review → Approve gate: Approve is not mounted
+  // until Read review has been opened.
+  expect(await screen.findByText('Update coding')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /Approve change/ })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: /Read review/ }));
+  fireEvent.click(screen.getByRole('button', { name: /Approve change/ }));
+
+  expect(updateCodingProposal).toHaveBeenCalledExactlyOnceWith({
+    businessId: 'biz_burger',
+    documentId: 'doc_f404e752a4fbb629b203dc04',
+    fields: { categoryCode: '5100' },
+  });
+});
+
+test('with every required field present the panel is honest about the missing confirm path and offers no dead button', () => {
+  detail = liveDetail({
+    fields: [
+      { label: 'Supplier', value: 'Nexora Solutions LLC', confidence: 0.95, provenance: 'AI suggested: bedrock' },
+      { label: 'Total', value: '£54,352.51', confidence: 0.93, provenance: 'AI suggested: bedrock' },
+      { label: 'Category', value: '5100', confidence: 1, provenance: 'human confirmed' },
+    ],
+  });
+  renderPreview();
+
+  expect(screen.getByText(/has no proposal path yet/)).toBeTruthy();
+  // No "confirm as-is" button exists to press: the payload cannot express it
+  // (equal values collapse to zero changes server-side), so a button here
+  // would be a control whose write does nothing.
+  expect(screen.queryByRole('button', { name: /confirm/i })).toBeNull();
+  expect(screen.queryByRole('button', { name: /^Add / })).toBeNull();
+});
+
+test('the panel exists only for To Review documents', () => {
+  detail = liveDetail({ state: 'READY' });
+  renderPreview();
+
+  expect(screen.queryByText('Path to Ready')).toBeNull();
+});
+
+test('truncated values carry their full text as titles', () => {
+  detail = liveDetail();
+  renderPreview();
+
+  // Twice: the header name and the Supplier field value both truncate.
+  expect(screen.getAllByTitle('Nexora Solutions LLC').length).toBeGreaterThanOrEqual(2);
+  expect(screen.getByTitle(LONG_DESCRIPTION)).toBeTruthy();
+});
+
+test('no bank-match section renders — the contract exposes no match read surface to build one from', () => {
+  // Survey verdict, pinned: `BankTransaction` carries `matchState` but no
+  // document id, and no endpoint exposes a suggested or confirmed match for a
+  // document. Until that read surface exists (G7), the preview says nothing
+  // about transactions rather than fabricating a pairing.
+  detail = liveDetail();
+  renderPreview();
+
+  expect(screen.queryByText(/transaction/i)).toBeNull();
+});

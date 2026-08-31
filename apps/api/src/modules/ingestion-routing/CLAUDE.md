@@ -222,6 +222,18 @@ re-send, and the same paper photographed twice.
   search (hash banding or a BK-tree), which is a `prisma/` change and therefore a
   contract-change issue under G7, not a quiet migration.
 
+**A stored hash that is not hex is SKIPPED, not thrown on (31 Aug 2026).** The
+demo seed writes placeholder hashes (`phash:doc_006`) that predate the live
+hasher, and the detector fed every stored candidate to `BigInt('0x' + hash)` —
+which throws on them, inside the detector's transaction, killing the ingest job
+of the NEW document because of an OLD row's data. Observed live: the first real
+image uploaded into a seeded workspace burned its five retries and
+dead-lettered in 19 s, with the real error visible only in the BullMQ
+`failedReason` (the worker log showed nothing but the retries). The guard skips
+non-hex candidates; `duplicate-detector.integration.test.ts` pins the exact
+seed-shaped value. The honest follow-up is seed data that writes real hex
+dHashes — a `prisma/seed.ts` change, raised rather than made here.
+
 **The unrouted decision (written down, as required).** `Duplicate.business_id` is
 `NOT NULL`, and an UNROUTED document has `business_id = null`, so it *cannot* have
 a `Duplicate` row as the schema stands. This is **not** a schema bug: SoT Stage 6

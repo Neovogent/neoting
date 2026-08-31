@@ -106,6 +106,19 @@ It depends on `js-yaml` and nothing else, on purpose: it has to run before the c
 | Billing (ID LAW batch) | checkout session · customer-portal session · Stripe webhook |
 | Portal onboarding (ID LAW batch) | request sign-in code · open onboarding session |
 
+**`ProposalKind` gained `business.offboard` (31 Aug 2026, ⚠ G7 approval pending).**
+The first slice of D32's self-serve offboarding: deactivate a client workspace
+through the Review→Approve spine — the executor flips `businesses.is_active`
+(the column already existed), so the client leaves every working surface while
+books, documents and audit trail stay put for the D12 six-year retention clock.
+`BusinessOffboardPayload = { businessId, reason? }`; the payload description
+pins the invariant that this kind must never grow a hard delete (D32's export
+and audited erasure are their own, later surfaces). Built end-to-end on
+`feat/client-offboard` at the product owner's direction; the contract-change
+issue for Shakib is drafted in that branch's hand-back and **must be approved
+before a PR opens** — recorded here so the pending state is visible in the law
+file itself.
+
 The auth trio is the demo-spine slice of pass 2, pulled forward under the
 standing approval in METH_MODE §3.1: one stateless cookie session, the §13.3
 context header, and a new `NT-AUTH-003` (one code for every login failure — an

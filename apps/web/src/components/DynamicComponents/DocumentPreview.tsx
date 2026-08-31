@@ -7,8 +7,9 @@ import { API_ENABLED } from '../../api/config';
 import { isEditableLabel, parseCodingDraft, useDocumentDetail, type DraftProblem } from '../../api/document-detail';
 import type { UpdateCodingPayload } from '@neoting/contracts/model';
 import { currency } from '../../lib/resolver';
+import { BASE_MANDATORY } from '../../lib/selectors';
 import { Pill } from './DataTable';
-import type { Document, ExtractedField } from '../../lib/types';
+import type { Document, ExtractedField, FieldBoundingBox } from '../../lib/types';
 
 /**
  * Lazy: the correction card (and its proposal wiring) loads at the moment of
@@ -58,6 +59,31 @@ const m = defineMessages({
     id: 'documents.documentPreview.notEditable',
     defaultMessage: 'This field has no correction path yet — it is shown exactly as extracted.',
   },
+  // The honest hover caption when the extraction recorded no source note AND
+  // no position band is painted — the one thing this caption may not do is
+  // invent where on the page the value came from.
+  provenanceFallback: {
+    id: 'documents.documentPreview.provenanceFallback',
+    defaultMessage: 'Read from the document by extraction — its position on the page was not captured.',
+  },
+  // Its twin for a field whose band IS painted at a real position: the old
+  // sentence would deny the highlight sitting right above it.
+  provenancePositioned: {
+    id: 'documents.documentPreview.provenancePositioned',
+    defaultMessage: 'Read from the document by extraction — highlighted where it was read.',
+  },
+  readyHeading: { id: 'documents.documentPreview.readyHeading', defaultMessage: 'Path to Ready' },
+  readyMissing: {
+    id: 'documents.documentPreview.readyMissing',
+    defaultMessage:
+      'Ready needs a value for {fields}. Add {count, plural, one {it} other {each one}} below — a correction stages a Review → Approve proposal, and approving the correction that completes the set makes this document Ready.',
+  },
+  readyAddField: { id: 'documents.documentPreview.readyAddField', defaultMessage: 'Add {field}' },
+  readyComplete: {
+    id: 'documents.documentPreview.readyComplete',
+    defaultMessage:
+      'Every field Ready requires ({fields}) is present. Confirming the coding without changing a value has no proposal path yet — correcting any value re-checks readiness through Review → Approve.',
+  },
 });
 
 /** Why a typed correction was refused before it ever reached the network. */
@@ -87,6 +113,40 @@ interface PendingCorrection {
   fields: UpdateCodingPayload['fields'];
 }
 
+/** The original frame's CSS aspect (`aspect-[3/4]`) — the letterbox maths below depend on it. */
+const PREVIEW_ASPECT = 3 / 4;
+/** The page whose image the preview shows today. A box on any other page cannot be painted honestly. */
+const PREVIEW_PAGE = 1;
+
+/**
+ * The scan band's absolute-% frame over the live original.
+ *
+ * The box is normalised 0–1 relative to the PAGE, but the `<img>` sits
+ * `object-contain` inside a fixed 3:4 frame, so a page whose aspect differs is
+ * letterboxed and container-percentages would miss the value they claim to
+ * mark. The image's real aspect (from `naturalWidth/Height` once it loads)
+ * maps page coordinates onto the rendered image's slice of the frame; until
+ * the aspect is known the caller paints the whole-frame fallback rather than
+ * a band that might sit on the letterbox bar.
+ */
+export function scanBandFrame(
+  box: FieldBoundingBox,
+  imageAspect: number,
+): { top: string; left: string; width: string; height: string } {
+  const wider = imageAspect >= PREVIEW_ASPECT;
+  const renderedW = wider ? 1 : imageAspect / PREVIEW_ASPECT;
+  const renderedH = wider ? PREVIEW_ASPECT / imageAspect : 1;
+  const offsetX = (1 - renderedW) / 2;
+  const offsetY = (1 - renderedH) / 2;
+  const pct = (n: number) => `${(n * 100).toFixed(3)}%`;
+  return {
+    left: pct(offsetX + box.x * renderedW),
+    top: pct(offsetY + box.y * renderedH),
+    width: pct(box.width * renderedW),
+    height: pct(box.height * renderedH),
+  };
+}
+
 /**
  * Document preview with the editable extraction overlay (PRD stages 2 & 8).
  * Every field carries confidence + provenance; every value is clickable and
@@ -107,6 +167,8 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
   const [hovered, setHovered] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingCorrection | null>(null);
   const [draftProblem, setDraftProblem] = useState<DraftProblem | null>(null);
+  /** The live original's real aspect (naturalWidth/Height) — null until it loads. */
+  const [imageAspect, setImageAspect] = useState<number | null>(null);
 
   const live = API_ENABLED;
   const isProcessing = doc.status === 'processing';
@@ -114,9 +176,47 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
 
   const fields = live ? detail.fields : doc.fields;
   const lineItems = live ? detail.lineItems : doc.lineItems;
+  const metaText = intl.formatMessage(m.meta, { client: doc.clientName, date: doc.date, total: currency(doc.total) });
+
+  /**
+   * The honest path from To Review to Ready (live only): the server's own
+   * readiness rule is Total + Supplier + Category (`resolveProcessedState`),
+   * and the `document.update-coding` executor drives TO_REVIEW → READY when an
+   * approved correction completes that set. So the offer here is exactly that
+   * — fill what is missing, through the same Review → Approve card every
+   * correction uses. There is deliberately NO "confirm as-is" button: a
+   * payload whose values all equal the stored ones collapses to zero changes
+   * server-side and returns before the readiness edge, so such a button's
+   * write would do nothing — reported as a contract gap rather than bent.
+   */
+  const readyPanelOn = live && detail.state === 'TO_REVIEW';
+  const missingForReady = readyPanelOn
+    ? BASE_MANDATORY.filter((label) => {
+        const field = fields.find((f) => f.label === label);
+        return field === undefined || field.value === '—';
+      })
+    : [];
   // After approval, item details lock — the server refuses the proposal, so
   // the affordance goes rather than the refusal being discovered on approve.
   const canEdit = (label: string) => !live || (doc.status !== 'published' && isEditableLabel(label));
+
+  const hoveredField = hovered === null ? undefined : fields.find((f) => f.label === hovered);
+  // The positioned band: only where extraction PLACED the value, only on the
+  // page the preview is actually showing, and only once the image's real
+  // aspect is known — anything less falls back to framing the whole original,
+  // which is the honest claim "this document is the source".
+  const hoveredBox = hoveredField?.boundingBox;
+  const bandFrame =
+    hoveredBox !== undefined && hoveredBox.page === PREVIEW_PAGE && imageAspect !== null
+      ? scanBandFrame(hoveredBox, imageAspect)
+      : null;
+
+  /** Remember the loaded original's aspect; a cached image may never fire onLoad. */
+  const readImageAspect = (img: HTMLImageElement | null) => {
+    if (img !== null && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+      setImageAspect(img.naturalWidth / img.naturalHeight);
+    }
+  };
 
   const startEdit = (f: ExtractedField) => {
     setEditing(f.label);
@@ -155,13 +255,13 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
             <FileText size={22} />
           </div>
           <div className="min-w-0">
-            <h3 className="font-sans font-bold text-xl text-white tracking-tight truncate">{doc.supplier}</h3>
-            <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider truncate">
-              {intl.formatMessage(m.meta, {
-                client: doc.clientName,
-                date: doc.date,
-                total: currency(doc.total),
-              })}
+            {/* Truncated values always carry the full text as a title, so a
+                clipped name is one hover away rather than lost. */}
+            <h3 title={doc.supplier} className="font-sans font-bold text-xl text-white tracking-tight truncate">
+              {doc.supplier}
+            </h3>
+            <p title={metaText} className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider truncate">
+              {metaText}
             </p>
           </div>
         </div>
@@ -212,23 +312,46 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-[1fr_1.25fr]">
+        // ⚠ minmax(0, …) is load-bearing: a bare `1fr` track floors at its
+        // content's min-content size, and live content carries unbreakable
+        // runs (a presigned <img> at natural width, nowrap truncate spans over
+        // 80-character line-item descriptions) that pushed the grid past the
+        // card, whose overflow-hidden then clipped every right-aligned value.
+        // Seed data never showed it because the synthetic values are short.
+        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]">
           {/* Immutable original — the highlighted band shows the provenance of the hovered field. */}
-          <div className="p-6 border-b md:border-b-0 md:border-r border-white/5 bg-ground/40">
+          <div className="min-w-0 p-6 border-b md:border-b-0 md:border-r border-white/5 bg-ground/40">
             <div className="flex items-center gap-2 mb-4 text-[11px] font-bold text-zinc-500 uppercase tracking-widest">
               <Lock size={11} /> {intl.formatMessage(m.originalImmutable)}
             </div>
             {live && detail.image && detail.image.mimeType.startsWith('image/') ? (
-              // The real original off the presigned URL. No provenance band on
-              // top of it: bounding boxes are not extracted yet, and painting
-              // an invented position over a real photograph would be a lie the
-              // synthetic placeholder below never told.
+              // The real original off the presigned URL. The hover band paints
+              // AT the hovered field's boundingBox when extraction placed the
+              // value on the displayed page — that is the contract's editable
+              // OCR overlay, live. A field with no box (or a box on a page the
+              // preview is not showing) falls back to framing the WHOLE image:
+              // the frame says "this document is the source" and never invents
+              // a position. The caption underneath carries the provenance.
               <div className="relative aspect-[3/4] rounded-2xl bg-raised/60 border border-white/5 overflow-hidden shadow-inner">
                 <img
+                  ref={readImageAspect}
                   src={detail.image.url}
                   alt={detail.image.filename ?? intl.formatMessage(m.originalAlt)}
                   className="w-full h-full object-contain"
+                  onLoad={(e) => readImageAspect(e.currentTarget)}
                 />
+                {hovered && (
+                  <motion.div
+                    layoutId="provenance-band"
+                    data-testid="provenance-band"
+                    className={
+                      bandFrame !== null
+                        ? 'absolute rounded-lg border-2 border-brand bg-brand/15 pointer-events-none'
+                        : 'absolute inset-0 rounded-2xl border-2 border-brand bg-brand/15 pointer-events-none'
+                    }
+                    {...(bandFrame === null ? {} : { style: bandFrame })}
+                  />
+                )}
               </div>
             ) : live && detail.image ? (
               // A PDF or anything else a plain <img> cannot show: hand over the
@@ -256,6 +379,7 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                 {hovered && (
                   <motion.div
                     layoutId="provenance-band"
+                    data-testid="provenance-band"
                     className="absolute left-3 right-3 h-8 rounded-lg border-2 border-brand bg-brand/15 pointer-events-none"
                     style={{ top: `${18 + (hashPct(hovered) % 60)}%` }}
                   />
@@ -264,7 +388,11 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
             )}
             {hovered && (
               <p className="mt-3 text-[11px] text-brand font-semibold leading-relaxed">
-                {fields.find((f) => f.label === hovered)?.provenance}
+                {/* A field with no recorded source note still gets an honest
+                    sentence — an empty caption reads as a broken feature, and
+                    which sentence depends on whether a position is painted. */}
+                {(hoveredField?.provenance ?? '').trim() ||
+                  intl.formatMessage(bandFrame !== null ? m.provenancePositioned : m.provenanceFallback)}
               </p>
             )}
 
@@ -281,7 +409,7 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                     <li key={e.id} className="flex items-center gap-2 text-[11px] font-semibold">
                       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${e.outcome === 'failed' ? 'bg-red-400' : 'bg-emerald-400'}`} />
                       <span className="text-zinc-400">{e.stage}</span>
-                      <span className="text-zinc-600 truncate">{e.outcome}</span>
+                      <span className="min-w-0 text-zinc-600 truncate">{e.outcome}</span>
                       {e.durationMs !== null && (
                         <span className="ml-auto text-zinc-600 tabular-nums shrink-0">
                           {intl.formatMessage(m.logDuration, { ms: e.durationMs })}
@@ -295,7 +423,7 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
           </div>
 
           {/* Editable overlay */}
-          <div className="p-6">
+          <div className="min-w-0 p-6">
             <div className="flex items-center justify-between mb-4">
               <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">
                 {intl.formatMessage(m.extractedFields)}
@@ -365,6 +493,7 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                   ) : canEdit(f.label) ? (
                     <button
                       onClick={() => startEdit(f)}
+                      title={f.value}
                       className={`shrink-0 max-w-full group flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-bold transition-all border border-transparent hover:border-white/10 hover:bg-white/5 ${
                         f.confidence < 0.6 ? 'text-amber-400' : 'text-white'
                       }`}
@@ -375,7 +504,7 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                   ) : (
                     <span
                       title={intl.formatMessage(m.notEditable)}
-                      className={`shrink-0 px-3 py-1.5 text-sm font-bold ${f.confidence < 0.6 ? 'text-amber-400' : 'text-white'}`}
+                      className={`min-w-0 max-w-full break-words px-3 py-1.5 text-sm font-bold ${f.confidence < 0.6 ? 'text-amber-400' : 'text-white'}`}
                     >
                       {f.value}
                     </span>
@@ -383,6 +512,49 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                 </div>
               ))}
             </div>
+
+            {/* The path from To Review to Ready — see the note on
+                `missingForReady` above. Approval happens in the staged card
+                below, never here: Review → Approve is the only door. */}
+            {readyPanelOn && (
+              <div className="mt-6 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4">
+                <div className="text-[11px] font-bold text-amber-400 uppercase tracking-widest mb-2">
+                  {intl.formatMessage(m.readyHeading)}
+                </div>
+                {missingForReady.length > 0 ? (
+                  <>
+                    <p className="text-[13px] text-zinc-300 leading-relaxed">
+                      {intl.formatMessage(m.readyMissing, {
+                        fields: intl.formatList(missingForReady, { type: 'conjunction' }),
+                        count: missingForReady.length,
+                      })}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {missingForReady.map((label) => {
+                        const field = fields.find((f) => f.label === label);
+                        if (field === undefined || !canEdit(label)) return null;
+                        return (
+                          <button
+                            key={label}
+                            onClick={() => startEdit(field)}
+                            className="flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold text-white bg-raised hover:bg-white/10 border border-white/5 transition-colors shadow-inner"
+                          >
+                            <PencilLine size={13} className="text-brand" />
+                            {intl.formatMessage(m.readyAddField, { field: label })}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-[13px] text-zinc-300 leading-relaxed">
+                    {intl.formatMessage(m.readyComplete, {
+                      fields: intl.formatList(BASE_MANDATORY, { type: 'conjunction' }),
+                    })}
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* The staged correction — a real proposal in live mode, through
                 the same gate as everything else. Keyed so a new correction
@@ -410,7 +582,12 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                 <div className="bg-ground/40 border border-white/5 rounded-2xl divide-y divide-white/5 shadow-inner">
                   {lineItems.map((li, i) => (
                     <div key={i} className="px-4 py-3 flex items-center justify-between gap-3 text-[13px]">
-                      <span className="text-zinc-400 truncate">{li.description}</span>
+                      {/* min-w-0 is load-bearing: a truncate span is nowrap, and
+                          without it a real 80-character description sets the
+                          row's — and the grid column's — minimum width. */}
+                      <span title={li.description} className="min-w-0 text-zinc-400 truncate">
+                        {li.description}
+                      </span>
                       <span className="text-white font-bold shrink-0">
                         {intl.formatMessage(m.lineItemAmount, {
                           quantity: li.quantity,

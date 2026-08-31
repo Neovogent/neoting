@@ -3,7 +3,7 @@ import {
   ArrowLeft, Sparkles, Send, Activity, Star,
   RefreshCw, CheckCircle, Eye, Users, Settings as SettingsIcon, Download, Smartphone,
   Radio, History, ListChecks, Bot, Circle, Plus, PencilLine, X as XIcon, ShieldCheck, Clock, Check,
-  LucideIcon,
+  UserMinus, LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl, type IntlShape, type MessageDescriptor } from 'react-intl';
@@ -23,6 +23,7 @@ import { currency } from '../lib/resolver';
 import { healthTone } from '../lib/selectors';
 import { fromSlug, slug, useQueryParam, useSegment } from '../lib/router';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
+import { OffboardClientDialog } from '../components/DynamicComponents/OffboardClientDialog';
 import { channelLabel } from '../lib/channels';
 import type { ApprovalWorkflow, BusinessMemberRole, Client, ClientDetailChange, Colleague, Document, Intent, MissingItem, SetupTask, WorkflowTask } from '../lib/types';
 
@@ -77,6 +78,28 @@ const m = defineMessages({
     defaultMessage: 'No client here. Pick one from Clients — or add your first client to get started.',
   },
   channelSharePct: { id: 'clients.clientDetailView.channelSharePct', defaultMessage: '{pct}%' },
+
+  // ── Settings: remove this client (business.offboard) ─────────────────────
+  panelRemoveClient: { id: 'clients.clientDetailView.panelRemoveClient', defaultMessage: 'Remove this client' },
+  removeClientDetail: {
+    id: 'clients.clientDetailView.removeClientDetail',
+    defaultMessage:
+      'Removing {name} goes through Review → Approve: this queues a removal proposal, and the client leaves the client list and every working surface only after it is approved. Documents, books and the audit trail are retained — nothing is deleted.',
+  },
+  removeClientAction: { id: 'clients.clientDetailView.removeClientAction', defaultMessage: 'Remove this client…' },
+  removeClientSynthetic: {
+    id: 'clients.clientDetailView.removeClientSynthetic',
+    defaultMessage:
+      'Demo data — removing a client goes through Review → Approve, and this build is not talking to a server.',
+  },
+  removalQueuedNotice: {
+    id: 'clients.clientDetailView.removalQueuedNotice',
+    defaultMessage: 'Removal queued — {name} stays in the practice until the proposal is approved.',
+  },
+  removalQueuedReview: {
+    id: 'clients.clientDetailView.removalQueuedReview',
+    defaultMessage: 'Review in Approvals',
+  },
 
   // ── Overview: recent activity ───────────────────────────────────────────
   panelRecentActivity: { id: 'clients.clientDetailView.panelRecentActivity', defaultMessage: 'Recent activity' },
@@ -503,6 +526,7 @@ export function ClientDetailView() {
     advanceApproval, rejectApproval,
     clientSideApprovals, approvalRequests, sendApprovalRequest, resendApprovalRequest, openApprovalLink,
     chasePolicy, clientDetailChanges, proposeClientDetailChanges,
+    slices,
   } = useAppContext();
 
   // /clients/:id/:tab — the tab is in the address, so every one is linkable
@@ -523,6 +547,20 @@ export function ClientDetailView() {
   const [inviting, setInviting] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
   const [chasing, setChasing] = useState<string[] | null>(null);
+  /**
+   * The Settings tab's danger zone — the ONE place a client can be removed
+   * (deliberately not the Clients board: "the accountant firm needs to go to
+   * the client and the Settings tab, not the front card"). Removal is a
+   * `business.offboard` proposal, a live write, so it exists only when the
+   * businesses slice is server rows; on seed data nothing mutates a business
+   * client-side, and faking the disappearance would be a deletion this
+   * product never performed — the button is disabled with the reason (the
+   * PlanPanel posture) rather than wired to a lie.
+   */
+  const canOffboard = slices.businesses.source === 'api';
+  const [removing, setRemoving] = useState(false);
+  /** The proposal is queued — the client stays until Approvals decides it. */
+  const [removalQueued, setRemovalQueued] = useState(false);
   const confirm = useConfirm();
   const intl = useIntl();
   const client = clients.find((c) => c.id === openClientId);
@@ -1512,6 +1550,53 @@ export function ClientDetailView() {
                   </>
                 )}
               </Panel>
+
+              {/* The danger zone, last on purpose. The button only ever opens
+                  the confirmation; the removal itself is a business.offboard
+                  proposal decided in Approvals, and the executor is soft —
+                  the copy says so before anyone clicks. */}
+              <div className="lg:col-span-2">
+                <Panel title={intl.formatMessage(m.panelRemoveClient)} icon={UserMinus}>
+                  <p className="text-[13px] text-zinc-500 leading-relaxed">
+                    {intl.formatMessage(m.removeClientDetail, { name: client.name })}
+                  </p>
+                  {removalQueued ? (
+                    <div
+                      role="status"
+                      className="mt-4 px-4 py-3 rounded-2xl border border-brand/25 bg-brand/10 flex items-center justify-between gap-3 flex-wrap"
+                    >
+                      <span className="min-w-0 text-[13px] font-semibold text-brand">
+                        {intl.formatMessage(m.removalQueuedNotice, { name: client.name })}
+                      </span>
+                      <button
+                        onClick={() => setActiveTab('Approvals')}
+                        className="shrink-0 px-4 py-1.5 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
+                      >
+                        {intl.formatMessage(m.removalQueuedReview)}
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Quiet destructive: red outline, never a filled alarm —
+                          the dialog it opens is where the decision is asked. */}
+                      <button
+                        onClick={() => setRemoving(true)}
+                        disabled={!canOffboard}
+                        title={canOffboard ? undefined : intl.formatMessage(m.removeClientSynthetic)}
+                        className="mt-4 flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-red-400 border border-red-400/25 hover:bg-red-500/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <UserMinus size={15} />
+                        {intl.formatMessage(m.removeClientAction)}
+                      </button>
+                      {!canOffboard && (
+                        <p className="text-[12px] text-zinc-600 mt-3">
+                          {intl.formatMessage(m.removeClientSynthetic)}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </Panel>
+              </div>
             </div>
           )}
         </motion.div>
@@ -1583,6 +1668,19 @@ export function ClientDetailView() {
           </Modal>
         )}
       </AnimatePresence>
+
+      {/* Outside the AnimatePresence, like ConfirmStep: a confirmation has no
+          exit animation to wait for, and its unmount must be immediate. */}
+      {removing && (
+        <OffboardClientDialog
+          client={{ id: client.id, name: client.name }}
+          onQueued={() => {
+            setRemoving(false);
+            setRemovalQueued(true);
+          }}
+          onCancel={() => setRemoving(false)}
+        />
+      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { IntentRenderer } from './DynamicComponents/IntentRenderer';
 import { AssistantMetaLine, AssistantPending } from './DynamicComponents/AssistantActivity';
 import { useAppContext } from '../context/AppContext';
 import { motion } from 'motion/react';
+import { ChatDropOverlay, useChatUpload } from './ChatUpload';
 import logo from '../assets/logo.png';
 
 /**
@@ -27,6 +28,12 @@ export function ChatArea() {
   const intl = useIntl();
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // Files dragged over the transcript upload for real — the same flow as the
+  // composer's picker (see `ChatUpload.tsx`), with InboxesView's overlay while
+  // they hover. The composer covers its own rectangle; together the two hosts
+  // are the whole chat surface.
+  const upload = useChatUpload();
+
   // Also on `assistantPending`: the bubble appears BELOW the last message, so
   // without this the one thing the user is waiting for is the one thing off
   // screen.
@@ -35,8 +42,12 @@ export function ChatArea() {
   }, [messages, assistantPending]);
 
   return (
-    <div className={`flex-1 overflow-y-auto px-3 sm:px-6 py-6 sm:py-8 flex flex-col gap-6 sm:gap-8 max-w-4xl w-full mx-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden`}>
-      
+    <div
+      className={`flex-1 overflow-y-auto px-3 sm:px-6 py-6 sm:py-8 flex flex-col gap-6 sm:gap-8 max-w-4xl w-full mx-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden`}
+      {...upload.dropTargetProps}
+    >
+      <ChatDropOverlay dragging={upload.dragging} />
+
       {messages.map((msg) => (
         <Message key={msg.id} from={msg.role}>
           <p className={`text-[15px] leading-relaxed mb-4 ${msg.role === 'user' ? 'text-white' : 'text-zinc-300'}`}>

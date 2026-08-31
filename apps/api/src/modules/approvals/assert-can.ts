@@ -146,6 +146,15 @@ export const RELEASE_KINDS: Readonly<Record<ProposalKind, boolean>> = {
   'bank.confirm-match': false,
   'rule.create': false,
   'document.revoke-link': false,
+  // Not a release: offboarding is soft and entirely internal — it flips
+  // `businesses.is_active`, sends nothing, and lets no figure leave the
+  // product (books, documents and audit trail are retained, D12). Nothing
+  // irreversible happens at the row level; the flag can be restored. D44's
+  // compose half therefore applies, the same reading as every other internal
+  // kind. Note there is no `business.reactivate` kind yet — the undo is a
+  // later surface, the `bank.unmatch` shape — so revisit this ruling if that
+  // asymmetry starts to matter in practice.
+  'business.offboard': false,
 };
 
 /** Does approving this kind need release authority? */

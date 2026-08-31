@@ -203,7 +203,18 @@ const EnvSchema = z.object({
   // nothing was ever read. That is the AI_CHAT failure mode with the volume
   // turned up, so it gets the AI_CHAT answer: a boot refusal, not a safe
   // default.
-  EXTRACTOR: z.enum(['demo', 'bedrock']).default('demo'),
+  //
+  // `replay` constructs the REAL BedrockExtractor — same request building, same
+  // Zod parse of the model's answer, same error mapping, same budget metering —
+  // with the transport served from recorded cassettes on disk
+  // (`common/bedrock-replay.ts`, `apps/api/fixtures/cassettes/bedrock/`). A
+  // request with no cassette FAILS LOUDLY naming the record command; it never
+  // falls through to live Bedrock and never invents an answer. It exists so
+  // local development can exercise the adapter code offline; `demo` skips that
+  // code entirely. ⚠ `replay` is REFUSED under `NODE_ENV=production` below —
+  // it answers from recordings, and a recording of one document is not a
+  // reading of another.
+  EXTRACTOR: z.enum(['demo', 'bedrock', 'replay']).default('demo'),
 
   /**
    * How a PDF or photographed bank statement becomes a table (D20, D41).
@@ -393,7 +404,15 @@ const EnvSchema = z.object({
   // `demo` is REFUSED under NODE_ENV=production below — a stand-in classifier
   // answering a real accountant is a different class of wrong from a fixture
   // queue, because the answer looks exactly as authoritative either way.
-  AI_CHAT: z.enum(['demo', 'bedrock']).default('demo'),
+  //
+  // `replay` is EXTRACTOR=replay's sibling, behind the same seam: the REAL
+  // `BedrockModelProvider` runs — request building, forced-tool narrowing,
+  // §9.2's schema retry, §9.3's error classification — with `messages.create`
+  // served from the same cassette directory. A miss fails loudly naming the
+  // record command; it never falls through to live Bedrock. REFUSED under
+  // NODE_ENV=production below: a replayed classifier answering a real
+  // accountant is the AI_CHAT=demo failure told through a transcript.
+  AI_CHAT: z.enum(['demo', 'bedrock', 'replay']).default('demo'),
 
   // The region this runtime talks to is BEDROCK_REGION, declared with
   // BEDROCK_REGION above — one knob for both Bedrock callers, not two. The
@@ -513,6 +532,21 @@ const EnvSchema = z.object({
     });
   }
 
+  // Replay runs the real adapter over RECORDINGS: any request already recorded
+  // is answered with a transcript of an earlier exchange, and any request that
+  // is not fails on a missing cassette. In production that is either a real
+  // accountant answered by a stale recording or a workspace where every turn
+  // errors — both wrong, the first one invisibly so, which is what earns the
+  // boot refusal rather than a warning.
+  if (env.NODE_ENV === 'production' && env.AI_CHAT === 'replay') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['AI_CHAT'],
+      message:
+        'AI_CHAT=replay answers from recorded cassettes and must never serve production traffic — set AI_CHAT=bedrock (it is a development transport for exercising the real adapter offline)',
+    });
+  }
+
   // ── Outbound email (S2) ──────────────────────────────────────────────────
   // Same self-contained-block discipline as the declarations above: three
   // gates, additive, so S1's boot-gate pass merges over them.
@@ -601,6 +635,21 @@ const EnvSchema = z.object({
       path: ['EXTRACTOR'],
       message:
         'EXTRACTOR=demo fabricates supplier, date and total from a filename hash and marks them Ready — set EXTRACTOR=bedrock (S1)',
+    });
+  }
+
+  // The AI_CHAT=replay gate's twin, and the sharper of the two: a client
+  // document is new bytes every time, so in production replay is not even a
+  // stale answer — it is a guaranteed cassette miss that fails every document
+  // in the practice, or, if a key ever did collide with a recording, one
+  // document answered with another document's read. Recordings are a
+  // development transport; production reads documents.
+  if (env.NODE_ENV === 'production' && env.EXTRACTOR === 'replay') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['EXTRACTOR'],
+      message:
+        'EXTRACTOR=replay answers from recorded cassettes and must never read production documents — a recording of one document is not a reading of another. Set EXTRACTOR=bedrock',
     });
   }
 

@@ -394,6 +394,18 @@ structural) and decides nothing about whether it may happen.
   `ChangedEntity` has no `document-link` member and "these documents stopped
   being reachable" is the sentence the outcome should read as anyway.
 
+- **`business.offboard`** (31 Aug 2026, D32 slice) — `offboard-business.ts`.
+  Soft-deactivates one client workspace: one compare-and-swap `UPDATE` on
+  `businesses.is_active`, RLS resolves the row first (absent and foreign are
+  the same refusal), already-inactive is an idempotent replay, and
+  `payload.reason` rides verbatim in the detail. **Never deletes anything**
+  (D12 six-year retention — the review card says so out loud);
+  `ChangedEntity` grew `'business'` for it. Not a release
+  (`RELEASE_KINDS: false` — internal and outward-silent, flagged for human
+  ratification since that table is permission logic). No `business.reactivate`
+  kind exists yet; an offboarded client can also STILL ingest (`mayIngest`
+  reads only the subscription) — a billing decision deliberately left open.
+
 - **`bank.confirm-match`** (METH S11) — a human confirms that a document is the
   evidence for a bank transaction. **Two rows move or neither does:** the
   `matches` row AND the transaction's `match_state`. Writing the match without

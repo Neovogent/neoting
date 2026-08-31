@@ -11,6 +11,7 @@ import { suggestPrompts } from '../lib/promptSuggestions';
 import { useLiveSuggestions } from '../api/suggestions';
 import { TypedPlaceholder } from './DynamicComponents/TypedPlaceholder';
 import { DocumentFormats, VoiceIcon } from './DynamicComponents/InputAffordances';
+import { ChatDropOverlay, useChatUpload } from './ChatUpload';
 import { defineMessages, useIntl } from 'react-intl';
 import type { AssistantMeta, Intent, MessagePayload } from '../lib/types';
 
@@ -29,6 +30,12 @@ const m = defineMessages({
   attachDocuments: {
     id: 'shell.inputRow.attachDocuments',
     defaultMessage: 'Attach documents — 25MB per file, auto-split runs on multi-doc PDFs',
+  },
+  // The live twin: picking a file live UPLOADS it (ChatUpload.tsx), so a title
+  // claiming "attach" would describe the synthetic flow it no longer takes.
+  uploadDocuments: {
+    id: 'shell.inputRow.uploadDocuments',
+    defaultMessage: 'Upload documents from your computer — 25MB per file, auto-split runs on multi-doc PDFs',
   },
   documents: { id: 'shell.inputRow.documents', defaultMessage: 'Documents' },
   voiceSupported: {
@@ -89,6 +96,15 @@ export function InputRow() {
 
   const { addMessage, clients, messages, attachedClients, attachClient, detachClient, ingest, missing, chases, approvals, documents, businesses, session, serverClientIdFor, setAssistantPending } = useAppContext();
   const intl = useIntl();
+
+  /**
+   * The real pipeline behind both of the composer's file doors (the picker and
+   * a drag onto the composer). Live, a picked or dropped file uploads NOW —
+   * intent → presigned PUT → complete, channel CHAT_UPLOAD — rather than
+   * sitting as a chip a live send has no way to deliver. Synthetic keeps the
+   * chips: attach, then send, then the local ingest below.
+   */
+  const upload = useChatUpload();
 
   /**
    * Read off the live backlog, so the box offers the thing most worth doing
@@ -308,7 +324,13 @@ export function InputRow() {
   const handleSubmit = () => submitMessage(input);
 
   return (
-    <div className={`p-3 sm:p-6 ${isEmpty ? 'pb-2' : 'pb-safe-4 sm:pb-12'} shrink-0 max-w-4xl w-full mx-auto`}>
+    <div
+      className={`p-3 sm:p-6 ${isEmpty ? 'pb-2' : 'pb-safe-4 sm:pb-12'} shrink-0 max-w-4xl w-full mx-auto`}
+      {...upload.dropTargetProps}
+    >
+      {/* The full-viewport overlay while files are over the composer; the
+          transcript half of the surface renders its own from ChatArea. */}
+      <ChatDropOverlay dragging={upload.dragging} />
       {/* A light travelling the border, slowly.
           Two arcs on opposite sides of one conic gradient, turning once every
           22 seconds — slow enough to read as a drift rather than a spinner,
@@ -457,7 +479,7 @@ export function InputRow() {
                 onFocus={() => { setDocsAnchor(docsRef.current?.getBoundingClientRect() ?? null); setDocsHover(true); }}
                 onBlur={() => setDocsHover(false)}
                 className="px-4 py-2 bg-white text-zinc-500 hover:text-zinc-900 border border-zinc-200/50 hover:bg-zinc-50 hover:border-zinc-300 rounded-full text-[13px] font-semibold transition-all shadow-sm flex items-center gap-2"
-                title={intl.formatMessage(m.attachDocuments)}
+                title={intl.formatMessage(upload.live ? m.uploadDocuments : m.attachDocuments)}
               >
                 <Paperclip size={14} />
                 {intl.formatMessage(m.documents)}
@@ -470,8 +492,17 @@ export function InputRow() {
               accept=".jpg,.jpeg,.png,.gif,.bmp,.tiff,.heic,.pdf,.doc,.docx,.odt,.rtf,.zip,.csv,.xlsx"
               className="hidden"
               onChange={(e) => {
-                setFiles((prev) => [...prev, ...Array.from(e.target.files ?? [])]);
+                const picked = Array.from(e.target.files ?? []);
                 e.target.value = '';
+                if (picked.length === 0) return;
+                // Live, picking IS uploading — the real journey starts here,
+                // with the transcript carrying the outcome. A chip a live send
+                // cannot deliver would be the old lie in a new place.
+                if (upload.live) {
+                  void upload.uploadFiles(picked);
+                  return;
+                }
+                setFiles((prev) => [...prev, ...picked]);
               }}
             />
 

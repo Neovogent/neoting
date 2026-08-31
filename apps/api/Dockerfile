@@ -162,6 +162,79 @@ RUN if grep -rqE "(from|require\()\s*['\"]@neoting/contracts" apps/api/dist/; th
     fi
 
 # --------------------------------------------------------------------------
+# dev — the docker-compose `--profile full` stage. NEVER deployed.
+#
+# Same dependency tree as `build` — including its fetch-before-copy layer
+# split, which pays off even harder here (a local rebuild after a source edit
+# reuses the fetch layer with no GHA cache involved) — but stopping short of
+# the tsc emit: the compose services bind-mount the repo over /app and run tsx
+# watch against the mounted source, so a dist/ baked here would be dead weight
+# the mount hides anyway. What the mount does NOT hide is what this stage
+# exists to provide:
+#
+#   * node_modules, installed for linux on this machine's architecture. The
+#     compose services put an anonymous volume over every node_modules
+#     directory (root + each workspace member), seeded from this image, so a
+#     darwin-arm64 install on the host and the linux install in here never
+#     collide.
+#   * the generated Prisma client (lives inside node_modules, so it rides the
+#     volumes above).
+#   * a built packages/contracts — apps/api and apps/web import it at runtime
+#     and src/generated is untracked, so a fresh clone has nothing (see the
+#     build stage's comment). dist/ IS hidden by the bind mount, which is why
+#     docker/dev-entrypoint.sh rebuilds it into the mounted tree when missing —
+#     the compose `migrate` one-shot runs first and does that build once, so
+#     api/workers/web never race each other over the same output files.
+#
+# COREPACK_HOME moves OUT of /app for this stage only. The base image pins it
+# under /app so the runtime stage's COPY carries the pnpm binary along — but
+# here /app is bind-mounted at run time, the host tree has no .corepack, and
+# the first `pnpm` would download pnpm from registry.npmjs.org into the mounted
+# repo. /opt/corepack is in the image and outside every mount.
+#
+# Runs as `node` (same unprivileged user as runtime) from the first install
+# onward, so everything under /app — and everything this container ever writes
+# into the bind-mounted tree (contracts dist/ and src/generated) — lands as a
+# normal uid, not root. A non-issue on Docker Desktop for Mac, load-bearing on
+# Linux. /app itself is chowned because WORKDIR created it as root in `base`.
+#
+# NODE_ENV stays UNSET on purpose: NODE_ENV=production trips config/env.ts's S1
+# boot gates (EXTRACTOR=demo, OTP_MODE=demo, … all refused), and a laptop runs
+# the demo stand-ins by design. docker-compose.yml sets `development`.
+FROM base AS dev
+
+ENV COREPACK_HOME=/opt/corepack
+RUN mkdir -p /opt/corepack && chown node:node /opt/corepack /app
+
+COPY --chown=node:node package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+
+USER node
+
+RUN pnpm fetch
+
+COPY --chown=node:node . .
+
+RUN pnpm install --frozen-lockfile --offline
+
+# Same two steps as the build stage, for the same reasons (see its comments):
+# generate is here so a missing client is a build error, and contracts is an
+# explicit `pnpm --filter` build because nothing here resolves the dependency
+# graph for us.
+RUN pnpm --filter @neoting/api exec prisma generate
+RUN pnpm --filter @neoting/contracts build
+
+# Documentation only — compose publishes the ports it wants.
+EXPOSE 3000 5173
+
+# The entrypoint guarantees a built packages/contracts in whatever tree is
+# mounted, then execs the service command. The CMD is the api; workers and web
+# override it in docker-compose.yml, exactly as ECS overrides the runtime CMD.
+ENTRYPOINT ["/app/apps/api/docker/dev-entrypoint.sh"]
+CMD ["pnpm", "--filter", "@neoting/api", "dev"]
+
+# --------------------------------------------------------------------------
+# runtime MUST STAY THE LAST STAGE: an untargeted `docker build` produces the
+# final stage, and CI/deploy semantics assume that is this production image.
 FROM base AS runtime
 
 ENV NODE_ENV=production

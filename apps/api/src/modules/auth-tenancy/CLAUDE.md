@@ -361,6 +361,13 @@ RLS-visible businesses, alphabetical on the shared cursor helper. No write
 exists on the class and none may be added — a business is created by
 onboarding (post-demo), through Review → Approve like everything else.
 
+**The list serves `isActive: true` only since `business.offboard` landed
+(31 Aug 2026)** — a state filter ANDed into the keyset where, carried by the
+schema's existing `[practiceId, isActive]` index; a tenancy clause it is not.
+⚠ `GET /me`'s business list does NOT yet exclude inactive workspaces, and
+neither does chat grounding — surveyed and reported with the offboard work,
+open product calls rather than oversights.
+
 **Widened on 28 Aug 2026 (G7 contract change, approved by Shakib), and the
 reason is worth keeping.** The endpoint carried a name and three counts, so
 `apps/web`'s Clients board FORKED: live mode rendered a reduced table because

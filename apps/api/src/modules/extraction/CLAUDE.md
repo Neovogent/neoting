@@ -439,6 +439,40 @@ persisted home is still the jsonb (a schema/contract call). The confidence seam
 stays empty (eval-calibrated, does not exist yet) — To-Review is driven by a
 missing field or a failed validator, never an invented threshold.
 
+## Replay (`EXTRACTOR=replay`)
+
+`selectExtractor('replay')` builds the real `BedrockExtractor` — store and
+budget still required constructor args, so the unmetered object stays
+unconstructable — with `common/bedrock-replay.ts`'s cassette transport behind
+`messages.create`. Request building, size guards, the strict Zod parse,
+`classifyThrow` and the meter all run for real; only the wire is recorded.
+`replay-corpus.ts` is the canonical set of extraction requests with cassettes;
+the recorder (`pnpm --filter @neoting/api record:cassettes`) and
+`replay-extractor.test.ts` share it, so the recorded keys are provably the keys
+replay computes. The committed malformed cassette exercises the genuine
+NT-EXT-006 path. A replayed read stamps `extractorKind: 'bedrock'` (same
+class) — honest for live recordings, worth knowing for the current synthetic
+ones. A cassette miss is a hard `CassetteMissError` naming the re-record
+command; it carries no `status` on purpose so `classifyThrow` rethrows it
+intact — no document burned to FAILED, no fallthrough to live Bedrock.
+`STATEMENT_READER` (Textract) has no replay coverage — different provider,
+S3-coupled multi-page path; a future cassette seam of its own if wanted.
+
+## Field geometry (`boundingBox`) is real (31 Aug 2026)
+
+`field-geometry.ts` derives `ExtractedField.boundingBox` from
+`DocumentOcr.words` (Textract WORD blocks, not LINE — a LINE frames
+label+value together) in the pipeline's `run`, post-extraction: no prompt,
+tool schema, model call or judgement changed — the §14.7 eval surface is
+untouched. The rule is exactly-one-occurrence-or-null: candidates are
+collected, overlapping runs merged into regions, and a box returns only when
+one region remains — ambiguity never guesses (a supplier name printed twice
+gets null, which the preview renders as the whole-frame band). No OCR →
+explicit nulls; `docType` is deliberately unplaceable; line items carry no
+boxes yet (quantities are near-always ambiguous — its own decision when
+wanted). `document.update-coding` drops a corrected field's now-stale box by
+construction and does not recompute (that would need the OCR again).
+
 ## TODO
 
 - [x] METH Stage 4: DemoExtractor + pipeline, documents leave RECEIVED, proven

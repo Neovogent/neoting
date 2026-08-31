@@ -14,6 +14,7 @@ import {
   type OcrInput,
   type OcrPage,
   type OcrResult,
+  type OcrWord,
 } from './document-ocr.js';
 
 /**
@@ -96,7 +97,7 @@ export class TextractOcrReader implements DocumentOcrReader {
       const grid = pages.flatMap((page) => page.grid);
       const hasText = pages.some((page) => page.lines.length > 0);
       if (grid.length === 0 && !hasText) return { ok: false, failure: { reason: 'nothingFound' } };
-      return { ok: true, ocr: { pages, grid, text: ocrToText(pages) } };
+      return { ok: true, ocr: { pages, grid, text: ocrToText(pages), words: blocksToWords(blocks) } };
     } catch (error) {
       // ⚠ NOT a document failure. A throttle, an expired credential or a socket
       // reset says nothing about the document, and telling a client their file
@@ -270,4 +271,47 @@ export function blocksToPages(blocks: Block[]): OcrPage[] {
     grid: gridsByPage.get(pageNumber) ?? [],
     lines: linesByPage.get(pageNumber) ?? [],
   }));
+}
+
+/**
+ * The WORD blocks with their geometry — what `DocumentOcr.words` carries so an
+ * extracted value can be pointed at ON the image.
+ *
+ * WORD rather than LINE, deliberately. Textract returns both, and a LINE's box
+ * frames the whole line — for `Total: £405.72` that is the label AND the value,
+ * so hovering "Total" would highlight its own caption. A WORD is the atomic
+ * unit: a multi-word value (a supplier name) is matched as a consecutive run
+ * of words and its box is the run's union, which frames exactly the value and
+ * nothing beside it.
+ *
+ * Textract's `Geometry.BoundingBox` is already normalised 0–1 relative to the
+ * page (`Left/Top/Width/Height`), which is byte-for-byte the convention the
+ * contract's `ExtractedField.boundingBox` specifies — carried through with no
+ * arithmetic. A word with no text or no box is skipped rather than invented;
+ * the page default of 1 is the same single-page-synchronous-read rule
+ * `blocksToPages` documents above.
+ */
+export function blocksToWords(blocks: Block[]): OcrWord[] {
+  const words: OcrWord[] = [];
+  for (const block of blocks) {
+    if (block.BlockType !== 'WORD') continue;
+    const text = block.Text ?? '';
+    const box = block.Geometry?.BoundingBox;
+    if (text.trim() === '' || box === undefined) continue;
+    const { Left, Top, Width, Height } = box;
+    if (
+      typeof Left !== 'number' ||
+      typeof Top !== 'number' ||
+      typeof Width !== 'number' ||
+      typeof Height !== 'number'
+    ) {
+      continue;
+    }
+    words.push({
+      text,
+      pageNumber: block.Page ?? 1,
+      box: { x: Left, y: Top, width: Width, height: Height },
+    });
+  }
+  return words;
 }
