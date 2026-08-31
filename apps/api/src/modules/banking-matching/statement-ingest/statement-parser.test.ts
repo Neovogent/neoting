@@ -51,6 +51,21 @@ describe('money', () => {
     expect(parseMoneyPence('')).toBeNull();
     expect(parseMoneyPence('n/a')).toBeNull();
   });
+
+  test('TWO numbers in one cell are REFUSED, never read as one', () => {
+    // Textract fused a credit and its balance into one cell on a real
+    // statement. Stripping the space would read `25.97 17,321.32` as
+    // £259,717,321.32 — a fake amount with no balance beside it, which is the
+    // one shape the continuity check cannot interrogate.
+    expect(parseMoneyPence('25.97 17,321.32')).toBeNull();
+    expect(parseMoneyPence('1.00 2.00 3.00')).toBeNull();
+    // The cost, accepted deliberately: space-grouped forms are refused too.
+    // A refusal surfaces as a skipped line; a misread never surfaces at all.
+    expect(parseMoneyPence('1 234,56')).toBeNull();
+    // A currency symbol set off by a space is still fine — the refusal is
+    // only for whitespace BETWEEN digit-ish characters.
+    expect(parseMoneyPence('£ 12.34')).toBe(1234);
+  });
 });
 
 describe('dates', () => {
@@ -313,5 +328,128 @@ describe('a PDF statement', () => {
     // an address block — must not read as "this month had no transactions".
     const result = parseStatementGrid([['Your statement'], ['Thank you for banking with us']]);
     expect(result.ok).toBe(false);
+  });
+});
+
+/* ── A fused header cell, which Textract actually produces ────────────────── */
+
+describe('a fused CREDIT BALANCE header', () => {
+  // Verbatim from a real Textract read of a 29-page statement: the header's
+  // last TWO column names came back as ONE cell, and the data rows under it
+  // came back BOTH ways in the same document — some pages one cell short with
+  // the two values fused, other pages at full width. Before this was handled,
+  // every credit was skipped as "has no amount" and the balance column did not
+  // exist, so a perfectly ordinary statement reported 77 dropped lines.
+  const header = ['DATE', 'DESCRIPTION', 'REFERENCE', 'DEBIT', 'CREDIT BALANCE'];
+
+  test('the fused cell maps as TWO logical columns', () => {
+    const result = parseStatementGrid([
+      ['Account holder', 'Account number', 'Sort code', 'Statement period'],
+      ['Alex Morgan (FICTIONAL)', 'TEST-4827-1903-6651', '99-88-77', '01/08/2025 31/07/2026'],
+      header,
+      ['01/08/2025', 'CARD PAYMENT AMAZON UK MARKETPLACE', 'NMB2508010000121', '22.75', '18,429.98'],
+    ]);
+    if (!result.ok) throw new Error('expected a parse');
+    expect(result.statement.mapping).toEqual({
+      date: 0,
+      description: 1,
+      amount: null,
+      paidOut: 3,
+      paidIn: 4,
+      balance: 5,
+      headerRow: 2,
+      fusedAmountBalance: 4,
+    });
+  });
+
+  test('the three row shapes the real read produced all parse, signed correctly', () => {
+    const result = parseStatementGrid([
+      header,
+      // One short, movement under DEBIT: the lone fused value is the BALANCE.
+      ['01/08/2025', 'CARD PAYMENT AMAZON UK MARKETPLACE', 'NMB2508010000121', '22.75', '18,429.98'],
+      // One short, credit and balance fused into one cell.
+      ['06/08/2025', 'BANK TRANSFER RECEIVED A ROBERTS', 'NMB2508060001715', '', '25.97 17,321.32'],
+      // Full width — already logical, read as-is.
+      ['01/10/2025', 'SALARY - NORTHSTAR CONSULTING LTD', 'NMB2510010020834', '', '3,817.96', '16,868.22'],
+    ]);
+    if (!result.ok) throw new Error('expected a parse');
+    expect(result.statement.skipped).toHaveLength(0);
+    const [debit, fusedCredit, fullCredit] = result.statement.rows;
+    expect(debit?.amountPence).toBe(-2275);
+    expect(debit?.balanceAfterPence).toBe(1_842_998);
+    expect(fusedCredit?.amountPence).toBe(2597);
+    expect(fusedCredit?.balanceAfterPence).toBe(1_732_132);
+    expect(fullCredit?.amountPence).toBe(381_796);
+    expect(fullCredit?.balanceAfterPence).toBe(1_686_822);
+  });
+
+  test('a consistent statement mixing both page shapes proves COMPLETE', () => {
+    const result = parseStatementGrid([
+      header,
+      ['Page opening', 'balance: GBP 1,000.00 / Transactions 1-4', '', '', ''],
+      ['01/08/2025', 'CARD PAYMENT AMAZON UK MARKETPLACE', 'REF1', '150.00', '850.00'],
+      ['02/08/2025', 'BANK TRANSFER RECEIVED A ROBERTS', 'REF2', '', '250.00 1,100.00'],
+      ['03/08/2025', 'SALARY - NORTHSTAR CONSULTING LTD', 'REF3', '', '300.00', '1,400.00'],
+      ['04/08/2025', 'ATM CASH WITHDRAWAL MANCHESTER', 'REF4', '100.00', '', '1,300.00'],
+      // The bank's own page trailer: no date, no readable money — not a line.
+      ['PAGE CLOSING', 'BALANCE', '', '', 'GBP 1,300.00'],
+    ]);
+    if (!result.ok) throw new Error('expected a parse');
+    expect(result.statement.rows).toHaveLength(4);
+    expect(result.statement.skipped).toHaveLength(0);
+    // Derived by reversing the first row out of its balance — and it agrees
+    // with the banner the bank printed, which is the point.
+    expect(result.statement.openingBalancePence).toBe(100_000);
+    expect(result.statement.closingBalancePence).toBe(130_000);
+    const report = assessCompleteness(result.statement);
+    expect(report.assurance).toBe('complete');
+    expect(report.provenBy).toBe('balanceContinuity');
+    expect(report.findings).toHaveLength(0);
+  });
+
+  test('a brought-forward line on a fused page is the stated opening, not a credit', () => {
+    const result = parseStatementGrid([
+      header,
+      ['01/08/2025', 'BALANCE BROUGHT FORWARD', 'R0', '', '1,000.00'],
+      ['02/08/2025', 'CARD PAYMENT', 'R1', '40.00', '960.00'],
+    ]);
+    if (!result.ok) throw new Error('expected a parse');
+    expect(result.statement.rows).toHaveLength(1);
+    expect(result.statement.openingBalancePence).toBe(100_000);
+    expect(result.statement.skipped).toHaveLength(0);
+  });
+
+  test('the split REFUSES every other shape, and the refusal is surfaced', () => {
+    // Three tokens, or tokens that are not money, are never split — a guess
+    // here invents a transaction. They surface as skipped lines, and the D41
+    // gate refuses the statement on them.
+    const result = parseStatementGrid([
+      header,
+      ['01/08/2025', 'FINE', 'R1', '10.00', '990.00'],
+      ['02/08/2025', 'THREE TOKENS', 'R2', '', '1.00 2.00 3.00'],
+      ['03/08/2025', 'NOT MONEY', 'R3', '', 'GBP 15,651.64'],
+    ]);
+    if (!result.ok) throw new Error('expected a parse');
+    expect(result.statement.rows).toHaveLength(1);
+    expect(result.statement.skipped).toHaveLength(2);
+    expect(result.statement.skipped.map((s) => s.reason)).toEqual([
+      'unreadableAmount',
+      'unreadableAmount',
+    ]);
+    expect(assessCompleteness(result.statement).assurance).toBe('incomplete');
+  });
+
+  test('the vocabulary stays CLOSED — "Balance brought forward" is not a balance column', () => {
+    // The fusion split matches both halves against the same anchored regexes,
+    // never a loose `includes`. A column NAMED "Balance brought forward" maps
+    // to nothing, and the statement honestly reports reduced assurance.
+    const result = parseStatementGrid([
+      ['Date', 'Description', 'Paid in', 'Balance brought forward'],
+      ['01/08/2025', 'A CREDIT', '10.00', ''],
+    ]);
+    if (!result.ok) throw new Error('expected a parse');
+    expect(result.statement.mapping.balance).toBeNull();
+    expect(result.statement.mapping.fusedAmountBalance).toBeNull();
+    expect(assessCompleteness(result.statement).assurance).toBe('reduced');
   });
 });

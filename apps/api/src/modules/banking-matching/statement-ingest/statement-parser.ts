@@ -72,6 +72,18 @@ export interface ColumnMapping {
   readonly paidIn: number | null;
   readonly balance: number | null;
   readonly headerRow: number;
+  /**
+   * Set when the header's LAST cell carried two column names fused into one —
+   * Textract does this on a real statement, page by page: `CREDIT BALANCE` as
+   * a single header cell, with the two values under it sometimes fused the
+   * same way (`"25.97 17,321.32"`) and sometimes stated as separate cells.
+   *
+   * The value is the physical index of the fused cell. The mapping's own
+   * `paidIn`/`paidOut`/`amount` and `balance` indices are LOGICAL — the fused
+   * cell counts as two columns — and {@link parseStatementGrid} realigns each
+   * data row that shares the fusion before reading it.
+   */
+  readonly fusedAmountBalance: number | null;
 }
 
 export type ParseFailure =
@@ -116,9 +128,30 @@ function findMapping(grid: Grid): ColumnMapping | null {
     };
     const date = find(DATE_HEADERS);
     if (date === null) continue;
-    const amount = find(AMOUNT_HEADERS);
-    const paidOut = find(PAID_OUT_HEADERS);
-    const paidIn = find(PAID_IN_HEADERS);
+    let amount = find(AMOUNT_HEADERS);
+    let paidOut = find(PAID_OUT_HEADERS);
+    let paidIn = find(PAID_IN_HEADERS);
+    let balance = find(BALANCE_HEADERS);
+
+    // No balance header as a cell of its own? Textract fuses adjacent header
+    // cells on a real statement — `CREDIT BALANCE` came back as ONE cell — and
+    // without this the credits and the whole balance column silently vanish.
+    // Only the LAST cell is considered: balance is the rightmost column on
+    // every statement that has one, and a fusion anywhere else would shift the
+    // columns after it, which nothing here could realign truthfully.
+    let fusedAmountBalance: number | null = null;
+    if (balance === null && cells.length > 0) {
+      const last = cells.length - 1;
+      const family = splitFusedHeader(cells[last] ?? '');
+      if (family === 'paidIn' && paidIn === null) paidIn = last;
+      else if (family === 'paidOut' && paidOut === null) paidOut = last;
+      else if (family === 'amount' && amount === null) amount = last;
+      if (family !== null && (paidIn === last || paidOut === last || amount === last)) {
+        balance = last + 1;
+        fusedAmountBalance = last;
+      }
+    }
+
     if (amount === null && paidOut === null && paidIn === null) continue;
     return {
       date,
@@ -128,9 +161,33 @@ function findMapping(grid: Grid): ColumnMapping | null {
       amount,
       paidOut,
       paidIn,
-      balance: find(BALANCE_HEADERS),
+      balance,
       headerRow: r,
+      fusedAmountBalance,
     };
+  }
+  return null;
+}
+
+/**
+ * Is this ONE header cell actually TWO known headers fused — an amount-family
+ * name followed by a balance name, `CREDIT BALANCE` being the shape Textract
+ * actually produces?
+ *
+ * The vocabulary stays CLOSED: both halves must match the existing anchored
+ * regexes in full, tried at every whitespace boundary so multi-word names
+ * (`PAID IN BALANCE`) still split. `Balance brought forward` does NOT split —
+ * `balance` is not an amount-family name and `brought forward` is not in any
+ * vocabulary — which is exactly why this is not a loose `includes` match.
+ */
+function splitFusedHeader(cell: string): 'paidIn' | 'paidOut' | 'amount' | null {
+  const tokens = cell.trim().split(/\s+/);
+  for (let i = 1; i < tokens.length; i += 1) {
+    if (!BALANCE_HEADERS.test(tokens.slice(i).join(' '))) continue;
+    const prefix = tokens.slice(0, i).join(' ');
+    if (PAID_IN_HEADERS.test(prefix)) return 'paidIn';
+    if (PAID_OUT_HEADERS.test(prefix)) return 'paidOut';
+    if (AMOUNT_HEADERS.test(prefix)) return 'amount';
   }
   return null;
 }
@@ -223,6 +280,14 @@ export function parseMoneyPence(raw: string): number | null {
     negative = true;
     value = value.slice(1, -1);
   }
+  // TWO numbers in one cell — `25.97 17,321.32`, Textract fusing adjacent
+  // columns — must never read as one. Stripping the space below would turn a
+  // £25.97 credit and its balance into £259,717,321.32, and a fake amount with
+  // no balance beside it is exactly the shape the continuity check cannot
+  // catch. So whitespace between digit-ish characters is a REFUSAL. The cost
+  // is space-grouped forms (`1 234,56`), refused rather than risked — a
+  // refusal always surfaces as a skipped line, a misread never does.
+  if (/[\d.,]\s+[\d.,(]/.test(value)) return null;
   value = value.replace(/[£$€\s]/g, '');
   if (value.startsWith('-')) {
     negative = true;
@@ -300,7 +365,7 @@ export function parseStatementGrid(grid: Grid): ParseResult {
   let broughtForwardPence: number | null = null;
 
   for (let r = mapping.headerRow + 1; r < read.grid.length; r += 1) {
-    const cells = read.grid[r] ?? [];
+    const cells = alignFusedRow(read.grid[r] ?? [], mapping);
     const at = (i: number | null): string => (i === null || i < 0 ? '' : (cells[i] ?? ''));
     const preview = cells.join(' | ').slice(0, 120);
     // Blank rows survive the reader so line numbers stay true to the file; they
@@ -371,6 +436,52 @@ export function parseStatementGrid(grid: Grid): ParseResult {
       skipped,
     },
   };
+}
+
+/**
+ * Realigns a data row from a page whose table shares the header's fusion.
+ *
+ * With a fused `CREDIT BALANCE` header the mapping is LOGICAL — one column
+ * wider than the header row — and Textract hands back BOTH row shapes in the
+ * same document, page by page:
+ *
+ * - full width (`…, "", "3,817.96", "16,868.22"`): already logical, untouched;
+ * - one cell short, the fused cell holding both values (`…, "", "25.97
+ *   17,321.32"`) or only the balance when the movement sits in the other
+ *   amount column (`…, "22.75", "18,429.98"`).
+ *
+ * The split is deliberately narrow. Exactly two money tokens split into
+ * amount + balance. A single money token is the BALANCE, with the amount half
+ * empty — on a running-balance statement every line carries a balance, and it
+ * is the rightmost value; the row's movement, when it has one, sits in another
+ * column (`22.75` under DEBIT, `18,429.98` alone in the fused cell). The other
+ * reading — a credit whose balance the page never printed — would import a
+ * transaction with a NULL balance, which is the one shape the D41 continuity
+ * check cannot interrogate; read as a balance, a wrong call either absorbs as
+ * brought-forward or breaks the chain on the very next line, loudly and with
+ * the line number. Every other shape (three tokens, non-money text) is left
+ * untouched and surfaces as a skipped line.
+ */
+function alignFusedRow(cells: string[], mapping: ColumnMapping): string[] {
+  const fused = mapping.fusedAmountBalance;
+  // Only rows exactly one short of the logical width — i.e. the width of the
+  // fused header row itself — are candidates. Anything narrower is not a
+  // transaction row; anything at full width already states every column.
+  if (fused === null || cells.length !== fused + 1) return cells;
+
+  const cell = (cells[fused] ?? '').trim();
+  if (cell === '') return cells;
+
+  const tokens = cell.split(/\s+/);
+  const first = tokens[0] ?? '';
+  const second = tokens[1] ?? '';
+  if (tokens.length === 2 && parseMoneyPence(first) !== null && parseMoneyPence(second) !== null) {
+    return [...cells.slice(0, fused), first, second];
+  }
+  if (tokens.length === 1 && parseMoneyPence(cell) !== null) {
+    return [...cells.slice(0, fused), '', cell];
+  }
+  return cells;
 }
 
 /**

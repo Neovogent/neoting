@@ -77,6 +77,25 @@ Three decisions worth knowing before changing anything here:
   second implementation on the read path is how the Bank screen and the chase
   list start disagreeing about which lines have paperwork to chase.
 
+## Textract fuses adjacent columns page-by-page (31 Aug 2026)
+
+On a real 29-page statement the header came back as `CREDIT BALANCE` in ONE
+cell, with data rows one cell short on some pages (`"25.97 17,321.32"` fused)
+and full-width on others — in the same document. Consequence before the fix:
+every credit skipped "has no amount", `noBalanceColumn` on a statement whose
+every line shows a balance, null opening/closing. `statement-parser.ts` now
+maps a fused last header cell as two logical columns (closed vocabulary, both
+halves anchored — "Balance brought forward" still matches nothing) and
+realigns one-short rows: two money tokens split into amount+balance, a lone
+token is the balance, every other shape stays a visible skipped line.
+`parseMoneyPence` refuses whitespace between digits, closing the latent shape
+where a fused pair parsed as one £259M amount with a null balance beside it —
+the one lie the continuity check could not interrogate. Also observed:
+Textract returned the LAST transaction row of most pages as an empty table
+row; the D41 gate reports each as a `balanceBreak` with the exact missing
+amount — that is the gate catching real truncation, not a parser defect. A
+CSV of the same account proves complete.
+
 ## `GET /v1/statements` — the D41 verdict, where someone can read it
 
 `statements.service.ts` + `statements.controller.ts`, added 29 Aug 2026.
