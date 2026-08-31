@@ -4001,6 +4001,7 @@ components:
         - bank.confirm-match      # confirm a suggested document ↔ transaction match
         - rule.create             # create a coding rule; it activates only on approval
         - document.revoke-link    # revoke capability URLs already sitting in someone's ledger
+        - business.offboard       # deactivate a client workspace (D32 slice); soft, books retained
 
     CreateActionProposalRequest:
       description: |
@@ -4021,6 +4022,7 @@ components:
         - $ref: '#/components/schemas/BankConfirmMatchProposalRequest'
         - $ref: '#/components/schemas/RuleCreateProposalRequest'
         - $ref: '#/components/schemas/RevokeLinkProposalRequest'
+        - $ref: '#/components/schemas/BusinessOffboardProposalRequest'
       discriminator:
         propertyName: kind
         mapping:
@@ -4036,6 +4038,7 @@ components:
           bank.confirm-match: '#/components/schemas/BankConfirmMatchProposalRequest'
           rule.create: '#/components/schemas/RuleCreateProposalRequest'
           document.revoke-link: '#/components/schemas/RevokeLinkProposalRequest'
+          business.offboard: '#/components/schemas/BusinessOffboardProposalRequest'
 
     ProposalRequestBase:
       type: object
@@ -4151,6 +4154,15 @@ components:
           properties:
             kind: { const: document.revoke-link }
             payload: { $ref: '#/components/schemas/RevokeLinkPayload' }
+
+    BusinessOffboardProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: business.offboard }
+            payload: { $ref: '#/components/schemas/BusinessOffboardPayload' }
 
     RoutePayload:
       type: object
@@ -4274,6 +4286,24 @@ components:
             Unarchiving a published item asks whether to clear its publishing
             data, because that decides whether it can be republished (SoT
             Stage 11).
+
+    BusinessOffboardPayload:
+      type: object
+      description: |
+        Deactivate a client workspace — the first slice of D32's self-serve
+        offboarding. **Soft, never destructive**: the executor flips
+        `isActive` off, so the client leaves every working surface while the
+        books, documents and audit trail stay exactly where the six-year
+        retention clock (D12) requires them. D32's whole-firm export and
+        audited erasure remain their own, later surfaces — this kind must
+        never grow a hard delete.
+      required: [businessId]
+      properties:
+        businessId: { type: string }
+        reason:
+          type: string
+          maxLength: 500
+          description: Why the client is being offboarded — lands in the audit trail, shown at Review.
 
     ChaseSendPayload:
       type: object
