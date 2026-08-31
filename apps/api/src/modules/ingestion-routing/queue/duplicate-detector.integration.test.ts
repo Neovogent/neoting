@@ -140,6 +140,25 @@ describe.skipIf(!DATABASE_URL || !OWNER_URL)('PrismaDuplicateDetector', () => {
     expect(findings[0]?.score).toBeLessThan(1);
   });
 
+  test('a stored placeholder hash (non-hex) is skipped, not thrown on — old rows must never kill a new document', async () => {
+    // The demo seed writes `phash:doc_006`-style placeholders that predate the
+    // live hasher. BigInt('0x' + that) throws, and before the guard this threw
+    // INSIDE the detector's transaction — the first real image uploaded into a
+    // seeded workspace burned its five retries and dead-lettered on it.
+    await seedDoc('p40_d_seedish', B1, 'hash-seedish', 'phash:doc_006');
+    const real = await seedDoc('p40_d_real_img', B1, 'hash-real-img', 'ff00ff00ff00ff00');
+
+    const { findings } = await new PrismaDuplicateDetector(app).detect({
+      documentId: real,
+      practiceId: P,
+      businessId: B1,
+      byteHash: 'hash-real-img',
+      perceptualHash: 'ff00ff00ff00ff00',
+    });
+
+    expect(findings).toHaveLength(0);
+  });
+
   test('two genuinely different documents are NOT flagged (a false positive costs more than a miss)', async () => {
     await seedDoc('p40_d_far', B1, 'hash-far', 'ffffffffffffffff');
     const lonely = await seedDoc('p40_d_lonely', B1, 'hash-unique', '0000000000000000'); // far from every seeded hash
