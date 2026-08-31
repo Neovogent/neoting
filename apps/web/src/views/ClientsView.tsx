@@ -1,16 +1,13 @@
 import { useMemo, useState } from 'react';
 import {
   Search, Plus, Sparkles, Send, ExternalLink, Activity, LayoutGrid, Rows3,
-  Star, Columns3, Download, Check, LucideIcon, UserMinus, X, AlertTriangle,
+  Star, Columns3, Download, Check, LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { NtProblemError } from '@neoting/contracts';
 import { Modal } from '../components/DynamicComponents/Modal';
 import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
-import { useEscape } from '../lib/useEscape';
 import { defineMessages, useIntl, type IntlShape, type MessageDescriptor } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
-import { createProposal } from '../api/proposals';
 import { commonActions, commonLabels } from '../i18n/common';
 import { ClientIntakeForm } from '../components/DynamicComponents/ClientIntakeForm';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
@@ -120,29 +117,6 @@ const m = defineMessages({
     id: 'analytics.clientsView.chaseGroupedNote',
     defaultMessage: 'Grouped per client — one email each.',
   },
-
-  // The remove affordance, on the card footer and the table row alike. The
-  // synthetic title matches the PlanPanel posture: a live-only action on seed
-  // data is disabled and says why, never hidden and never faked locally —
-  // nothing mutates a business client-side.
-  removeClient: { id: 'analytics.clientsView.removeClient', defaultMessage: 'Remove client…' },
-  removeClientSynthetic: {
-    id: 'analytics.clientsView.removeClientSynthetic',
-    defaultMessage:
-      'Demo data — removing a client goes through Review → Approve, and this build is not talking to a server.',
-  },
-  removalQueuedNotice: {
-    id: 'analytics.clientsView.removalQueuedNotice',
-    defaultMessage: 'Removal queued — {name} stays on this list until the proposal is approved.',
-  },
-  removalQueuedReview: {
-    id: 'analytics.clientsView.removalQueuedReview',
-    defaultMessage: 'Review in Approvals',
-  },
-  removalQueuedDismiss: {
-    id: 'analytics.clientsView.removalQueuedDismiss',
-    defaultMessage: 'Dismiss',
-  },
 });
 
 /**
@@ -165,7 +139,6 @@ const m = defineMessages({
 export function ClientsView() {
   const {
     clients, statsFor, openClient, starredClientIds, toggleStarClient, startConversation,
-    slices, setActiveTab,
   } = useAppContext();
 
   const [tab, setTab] = useState<Tab>('All');
@@ -179,20 +152,6 @@ export function ClientsView() {
   const [columns, setColumns] = useState<string[]>(DEFAULT_COLUMNS);
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
   const [chasing, setChasing] = useState<string[] | null>(null);
-  /**
-   * Removing a client is a `business.offboard` proposal — a live write, so it
-   * exists only when the board's rows ARE server rows. On seed data nothing
-   * mutates a business client-side and faking the disappearance would be a
-   * deletion this product never performed, so the affordance is disabled with
-   * the reason on it (the PlanPanel posture) rather than wired to a lie.
-   */
-  const canOffboard = slices.businesses.source === 'api';
-  const [offboarding, setOffboarding] = useState<Client | null>(null);
-  /** The client whose removal was just queued — the success notice's subject. */
-  const [queuedRemoval, setQueuedRemoval] = useState<string | null>(null);
-  const openOffboard = (client: Client) => {
-    if (canOffboard) setOffboarding(client);
-  };
   const intl = useIntl();
 
   const visible = useMemo(() => {
@@ -270,22 +229,6 @@ export function ClientsView() {
     ...(columns.includes('Next deadline')
       ? [{ key: 'deadline', label: intl.formatMessage(COLUMN_LABEL['Next deadline']), align: 'right' as const, sortValue: (c: Client) => c.deadline, render: (c: Client) => <span className="text-zinc-400">{c.deadline}</span> }]
       : []),
-    {
-      // The row's remove affordance — quiet, like the workflow card's bin:
-      // destructive actions do not shout. Same dialog and same proposal flow
-      // as the card footer's.
-      key: 'remove', label: '', align: 'right' as const,
-      render: (c: Client) => (
-        <button
-          onClick={(e) => { e.stopPropagation(); openOffboard(c); }}
-          disabled={!canOffboard}
-          title={intl.formatMessage(canOffboard ? m.removeClient : m.removeClientSynthetic)}
-          className="p-2 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-white/5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-zinc-500"
-        >
-          <UserMinus size={15} />
-        </button>
-      ),
-    },
   ];
 
   return (
@@ -375,34 +318,6 @@ export function ClientsView() {
         ))}
       </div>
 
-      {/* Queuing succeeded — the honest next step is the Approvals queue,
-          because nothing has changed yet and will not until it is approved. */}
-      {queuedRemoval && (
-        <div
-          role="status"
-          className="mx-4 md:mx-10 mb-4 px-5 py-3.5 rounded-2xl border border-brand/25 bg-brand/10 flex items-center justify-between gap-3 flex-wrap shrink-0"
-        >
-          <span className="min-w-0 text-[13px] font-semibold text-brand">
-            {intl.formatMessage(m.removalQueuedNotice, { name: queuedRemoval })}
-          </span>
-          <span className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => setActiveTab('Approvals')}
-              className="px-4 py-1.5 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
-            >
-              {intl.formatMessage(m.removalQueuedReview)}
-            </button>
-            <button
-              onClick={() => setQueuedRemoval(null)}
-              aria-label={intl.formatMessage(m.removalQueuedDismiss)}
-              className="p-1.5 rounded-full text-brand hover:text-white hover:bg-white/5 transition-colors"
-            >
-              <X size={14} />
-            </button>
-          </span>
-        </div>
-      )}
-
       <div className="flex-1 overflow-y-auto px-4 md:px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {visible.length === 0 ? (
           <div className="border border-white/5 rounded-[32px] bg-card p-4 md:p-10 text-center text-zinc-500">
@@ -420,8 +335,6 @@ export function ClientsView() {
                 onOpen={() => openClient(client.id)}
                 onAskAI={() => askAI([client.id])}
                 onChase={() => chase([client.id])}
-                onRemove={() => openOffboard(client)}
-                removeEnabled={canOffboard}
               />
             ))}
           </div>
@@ -458,19 +371,6 @@ export function ClientsView() {
           </Modal>
         )}
       </AnimatePresence>
-
-      {/* Outside the AnimatePresence, like ConfirmStep: a confirmation has no
-          exit animation to wait for, and its unmount must be immediate. */}
-      {offboarding && (
-        <OffboardClientDialog
-          client={offboarding}
-          onQueued={() => {
-            setQueuedRemoval(offboarding.name);
-            setOffboarding(null);
-          }}
-          onCancel={() => setOffboarding(null)}
-        />
-      )}
     </div>
   );
 }
@@ -562,7 +462,7 @@ const mCard = defineMessages({
 });
 
 function ClientCard({
-  client, starred, onStar, onOpen, onAskAI, onChase, onRemove, removeEnabled, tourKey,
+  client, starred, onStar, onOpen, onAskAI, onChase, tourKey,
 }: {
   client: Client;
   /** Set on the first card only, so the tour has one place to point. */
@@ -572,10 +472,6 @@ function ClientCard({
   onOpen: () => void;
   onAskAI: () => void;
   onChase: () => void;
-  /** Opens the offboard confirmation — the client is never removed from here. */
-  onRemove: () => void;
-  /** False on seed data, where there is no server to propose the removal to. */
-  removeEnabled: boolean;
 }) {
   const { statsFor } = useAppContext();
   const intl = useIntl();
@@ -654,7 +550,10 @@ function ClientCard({
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-2 mt-6">
+      {/* No remove affordance here BY DESIGN (31 Aug 2026): removing a client
+          lives on the client's own Settings tab (ClientDetailView), never on
+          the board — "not the front card". Pinned in ClientsView.test.tsx. */}
+      <div className="grid grid-cols-3 gap-2 mt-6">
         <button onClick={onOpen} className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl text-zinc-400 hover:bg-raised hover:text-white transition-colors" title={intl.formatMessage(mCard.openClient)}>
           <ExternalLink size={18} />
         </button>
@@ -664,169 +563,7 @@ function ClientCard({
         <button onClick={onChase} className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl text-zinc-400 hover:bg-raised hover:text-white transition-colors disabled:opacity-30" title={intl.formatMessage(mCard.chaseMissing)} disabled={s.missing === 0}>
           <Send size={18} />
         </button>
-        {/* Quiet on purpose — red arrives on hover, and the click only ever
-            opens the confirmation. Disabled on seed data with the reason. */}
-        <button
-          onClick={onRemove}
-          disabled={!removeEnabled}
-          title={intl.formatMessage(removeEnabled ? m.removeClient : m.removeClientSynthetic)}
-          className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl text-zinc-500 hover:bg-raised hover:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-zinc-500 disabled:hover:bg-transparent"
-        >
-          <UserMinus size={18} />
-        </button>
       </div>
-    </div>
-  );
-}
-
-const mOffboard = defineMessages({
-  title: { id: 'analytics.offboardDialog.title', defaultMessage: 'Remove {name}?' },
-  detail: {
-    id: 'analytics.offboardDialog.detail',
-    defaultMessage:
-      'Removing a client goes through Review → Approve: confirming queues a removal proposal, and {name} disappears from this list only after it is approved.',
-  },
-  retained: {
-    id: 'analytics.offboardDialog.retained',
-    defaultMessage: 'Documents, books and the audit trail are retained — nothing is deleted.',
-  },
-  reasonLabel: { id: 'analytics.offboardDialog.reasonLabel', defaultMessage: 'Reason (optional)' },
-  reasonPlaceholder: {
-    id: 'analytics.offboardDialog.reasonPlaceholder',
-    defaultMessage: 'Client moved to another practice',
-  },
-  confirmAction: { id: 'analytics.offboardDialog.confirmAction', defaultMessage: 'Yes, queue the removal' },
-  queuing: { id: 'analytics.offboardDialog.queuing', defaultMessage: 'Queuing…' },
-  errorWithCode: { id: 'analytics.offboardDialog.errorWithCode', defaultMessage: '{message} ({code})' },
-  requestFailed: { id: 'analytics.offboardDialog.requestFailed', defaultMessage: 'The request failed' },
-});
-
-/**
- * The "ask first" the removal is behind — the ConfirmStep chrome (red tone,
- * Escape cancels, backdrop is presentation) plus the one thing ConfirmStep
- * cannot hold: the optional reason, which travels on the proposal payload and
- * is rendered back at Review. Confirming creates the `business.offboard`
- * proposal and STOPS — review and approval are the Approvals queue's moves,
- * made by a person (the createProposal contract's own rule).
- */
-function OffboardClientDialog({ client, onQueued, onCancel }: {
-  client: Client;
-  /** The proposal was created — nothing has been removed yet. */
-  onQueued: () => void;
-  onCancel: () => void;
-}) {
-  const intl = useIntl();
-  const [reason, setReason] = useState('');
-  const [queuing, setQueuing] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  // Escape is Cancel — the safe exit, never the confirm (the ConfirmStep rule).
-  useEscape(onCancel);
-
-  const queue = async () => {
-    if (queuing) return;
-    setProblem(null);
-    setQueuing(true);
-    try {
-      const trimmed = reason.trim();
-      await createProposal({
-        kind: 'business.offboard',
-        // Rows on a live board ARE server rows — the id needs no bridging.
-        businessId: client.id,
-        // An unanswered optional is an omitted key (the intake rule): an empty
-        // reason is nobody asserting anything, not an assertion of ''.
-        payload: { businessId: client.id, ...(trimmed === '' ? {} : { reason: trimmed }) },
-      });
-      onQueued();
-    } catch (error) {
-      setQueuing(false);
-      setProblem(
-        error instanceof NtProblemError
-          ? intl.formatMessage(mOffboard.errorWithCode, { message: error.detail ?? error.title, code: error.code })
-          : error instanceof Error
-            ? error.message
-            : intl.formatMessage(mOffboard.requestFailed),
-      );
-    }
-  };
-
-  return (
-    // The backdrop is not a button — role="presentation" says so; the keyboard
-    // dismissal is Escape above.
-    <div
-      className="fixed inset-0 z-[60] bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6"
-      onClick={onCancel}
-      role="presentation"
-    >
-      <motion.div
-        initial={{ opacity: 0, y: 12, scale: 0.97 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label={intl.formatMessage(mOffboard.title, { name: client.name })}
-        className="w-full max-w-md border border-white/10 rounded-[28px] bg-card shadow-2xl overflow-hidden"
-      >
-        <div className="p-6 flex flex-col gap-4">
-          <div className="flex items-start gap-3.5">
-            <span className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border bg-red-500/10 border-red-400/25 text-red-400">
-              <AlertTriangle size={18} />
-            </span>
-            <div className="min-w-0">
-              <h3 className="font-sans font-bold text-lg text-white tracking-tight leading-snug">
-                {intl.formatMessage(mOffboard.title, { name: client.name })}
-              </h3>
-              <p className="text-[13px] text-zinc-400 mt-1.5 leading-relaxed">
-                {intl.formatMessage(mOffboard.detail, { name: client.name })}
-              </p>
-              <p className="text-[12.5px] text-zinc-500 mt-1.5 leading-relaxed">
-                {intl.formatMessage(mOffboard.retained)}
-              </p>
-            </div>
-          </div>
-
-          <label className="flex flex-col gap-1.5 pl-[54px]">
-            <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">
-              {intl.formatMessage(mOffboard.reasonLabel)}
-            </span>
-            <input
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              // The contract's own cap on the payload field.
-              maxLength={500}
-              placeholder={intl.formatMessage(mOffboard.reasonPlaceholder)}
-              className="w-full bg-ground border border-white/10 rounded-2xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand shadow-inner"
-            />
-          </label>
-
-          {problem && (
-            <p role="alert" className="pl-[54px] text-[12.5px] font-semibold text-red-400 leading-relaxed">
-              {problem}
-            </p>
-          )}
-        </div>
-
-        <div className="p-4 bg-raised/50 flex items-center gap-2 sm:gap-3 justify-end flex-wrap [&>button]:flex-1 [&>button]:basis-[8rem] sm:[&>button]:flex-none sm:[&>button]:basis-auto [&>button]:justify-center">
-          <button
-            onClick={onCancel}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 hover:text-white transition-colors"
-          >
-            <X size={14} />
-            {intl.formatMessage(commonActions.cancel)}
-          </button>
-          <button
-            // A modal owns focus while it is open: landing it on the primary
-            // action on open is the dialog pattern, not a focus theft — the
-            // rule's concern — and Escape (above) is the guarded way back out.
-            // eslint-disable-next-line jsx-a11y/no-autofocus
-            autoFocus
-            onClick={() => void queue()}
-            aria-disabled={queuing}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-red-500 hover:bg-red-600 transition-colors aria-disabled:opacity-50"
-          >
-            {intl.formatMessage(queuing ? mOffboard.queuing : mOffboard.confirmAction)}
-          </button>
-        </div>
-      </motion.div>
     </div>
   );
 }
