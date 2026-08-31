@@ -46,7 +46,37 @@ export const KIND_LABEL: Record<ProposalKind, MessageDescriptor> = defineMessage
   'bank.confirm-match': { id: 'proposals.kindLabel.bankConfirmMatch', defaultMessage: 'Confirm a bank match' },
   'rule.create': { id: 'proposals.kindLabel.ruleCreate', defaultMessage: 'Create a rule' },
   'document.revoke-link': { id: 'proposals.kindLabel.documentRevokeLink', defaultMessage: 'Revoke document links' },
+  'business.offboard': { id: 'proposals.kindLabel.businessOffboard', defaultMessage: 'Remove a client' },
 });
+
+/**
+ * A per-kind sentence for the queue card, where the kind label alone would
+ * undersell what approving does. Partial on purpose: most kinds are fully
+ * described by their server-rendered review, and a second sentence here would
+ * be a second description that could drift from it. `business.offboard` gets
+ * one because the contract itself pins the invariant the sentence states —
+ * the executor is soft (`isActive` off), never a delete, and saying less
+ * would let "Remove" read as destruction (D12's retention clock forbids it).
+ */
+export const KIND_NOTE: Partial<Record<ProposalKind, MessageDescriptor>> = defineMessages({
+  'business.offboard': {
+    id: 'proposals.kindNote.businessOffboard',
+    defaultMessage:
+      'Once approved, the client leaves the client list and every working surface. Documents, books and the audit trail are retained — nothing is deleted.',
+  },
+});
+
+/**
+ * The reason the accountant gave when queuing an offboard, read back off the
+ * proposal's own payload. The contract types `payload` as an open record, so
+ * this narrows rather than trusts — a payload with no string reason answers
+ * null, never a rendering of something that is not one.
+ */
+export function offboardReason(proposal: ActionProposal): string | null {
+  if (proposal.kind !== 'business.offboard') return null;
+  const reason = (proposal.payload as Record<string, unknown> | undefined)?.['reason'];
+  return typeof reason === 'string' && reason.trim() !== '' ? reason : null;
+}
 
 export interface UsePendingProposalsOptions {
   /** Off entirely when the app is running on seed data. */

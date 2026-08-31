@@ -185,7 +185,7 @@ export function ApprovalsView() {
   const {
     approvals, approvalWorkflows, clients, saveWorkflow, deleteWorkflow,
     advanceApproval, rejectApproval, startConversation, logAudit, documents,
-    session,
+    session, refetchBusinesses,
   } = useAppContext();
 
   /**
@@ -439,7 +439,16 @@ export function ApprovalsView() {
             <ApprovalsLiveQueue
               proposals={proposalsQuery.proposals}
               loading={proposalsStatus.loading}
-              onSettled={() => void proposalsQuery.refetch()}
+              onSettled={() => {
+                void proposalsQuery.refetch();
+                // An executed approval changes what `GET /businesses` reports —
+                // an offboard removes a row, a route or publish moves its
+                // counts — and that query neither polls nor refetches on focus
+                // (staleTime 60 s, focus refetch off). Without this nudge the
+                // Clients board keeps describing a client the practice has
+                // just removed until something else remounts the slice.
+                refetchBusinesses();
+              }}
             />
           )}
           {/* A failed live fetch is an honest error with a retry, never the
