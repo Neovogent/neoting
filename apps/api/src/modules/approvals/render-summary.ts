@@ -168,6 +168,27 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
         { heading: 'Fields this rule sets', entries: setEntries },
       ]);
     }
+    case 'business.offboard': {
+      // The render is payload-pure (the property this file's header pins), and
+      // `BusinessOffboardPayload` carries the id, not the name — the generated
+      // member schema is `.strict()`, so the name cannot be computed into the
+      // stored payload the way publish previews are. The title is therefore
+      // honest about the act and the id; the surface that knows the name may
+      // render it beside this. What the card must not leave unsaid is the D12
+      // half: nothing is deleted.
+      const reason = typeof payload['reason'] === 'string' ? payload['reason'] : null;
+      return summary(`Offboard client workspace ${text(payload['businessId'])} — books retained`, [
+        {
+          heading: 'What this does',
+          entries: [
+            { label: 'Business', value: text(payload['businessId']) },
+            { label: 'Deactivates the workspace', value: 'Yes — it leaves the client list and every working surface' },
+            { label: 'Deletes books, documents or the audit trail', value: 'No — retained for the six-year requirement' },
+            ...(reason === null ? [] : [{ label: 'Reason, exactly as it will be recorded', value: reason }]),
+          ],
+        },
+      ]);
+    }
     default:
       // Honest generic rendering for the kinds whose stages have not shaped a
       // richer card yet (move-business, split, revoke-link, bank.confirm-match):

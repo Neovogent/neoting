@@ -1,5 +1,6 @@
 import type {
   ArchivePayload,
+  BusinessOffboardPayload,
   ErrorCode,
   BankConfirmMatchPayload,
   ChaseSendPayload,
@@ -45,6 +46,7 @@ export interface ProposalPayloadMap {
   'bank.confirm-match': BankConfirmMatchPayload;
   'rule.create': RuleCreatePayload;
   'document.revoke-link': RevokeLinkPayload;
+  'business.offboard': BusinessOffboardPayload;
 }
 
 export interface ExecutionInput<P> {
@@ -95,9 +97,10 @@ export type FollowUp =
     };
 
 /** The row kinds an executor may report having changed. Grown for `chase.send`
- * (METH S8), which creates `chases` rather than touching `documents`, and for
- * `rule.create` (METH S13), which creates `rules`. */
-export type ChangedEntity = 'document' | 'chase' | 'rule';
+ * (METH S8), which creates `chases` rather than touching `documents`, for
+ * `rule.create` (METH S13), which creates `rules`, and for `business.offboard`,
+ * which deactivates a `businesses` row. */
+export type ChangedEntity = 'document' | 'chase' | 'rule' | 'business';
 
 /** Serialised by the engine into `action_proposals.outcome` (Json?). */
 export interface ExecutionResult {

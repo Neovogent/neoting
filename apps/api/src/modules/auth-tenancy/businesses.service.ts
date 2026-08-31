@@ -60,6 +60,9 @@ const CHASE_COUNTED: Partial<Record<ChaseState, keyof BusinessSummary['counts']>
   ESCALATED: 'overdue',
 };
 
+/** The default list serves live workspaces only — see the where clause below. */
+const ACTIVE_ONLY: Prisma.BusinessWhereInput = { isActive: true };
+
 /** Every count at zero — a client with nothing waiting, which is a real state. */
 const ZERO_COUNTS: BusinessSummary['counts'] = {
   toReview: 0,
@@ -112,10 +115,14 @@ export class BusinessesService {
 
     const { rows, grouped, chases, unmatched, approvals, statementGaps } = await scopedDb(this.prisma, ctx, async (db) => {
       const rows = await db.business.findMany({
-        // Spread, not `where: seek.where` — under exactOptionalPropertyTypes
-        // an explicit `undefined` is not the same as an absent key, and there
-        // are no caller filters here to AND it with (the endpoint takes none).
-        ...(seek.where === undefined ? {} : { where: seek.where as Prisma.BusinessWhereInput }),
+        // NOT a tenancy clause (RLS alone decides reach) — a STATE filter:
+        // an offboarded workspace (`business.offboard` flipped `isActive`
+        // off) has left the working surfaces, and the Clients list, switcher
+        // and context header all render from this page. Its books, documents
+        // and audit trail are retained (D12) and stay reachable by id; only
+        // the default list stops offering it. `@@index([practiceId, isActive])`
+        // carries the filter.
+        where: seek.where === undefined ? ACTIVE_ONLY : { AND: [ACTIVE_ONLY, seek.where as Prisma.BusinessWhereInput] },
         orderBy: seek.orderBy as Prisma.BusinessOrderByWithRelationInput[],
         take: seek.take,
       });
