@@ -26,8 +26,14 @@ matter. **Nothing here changes staging or production.**
 
    ```sh
    pnpm install
+   pnpm build
    docker compose up -d
    ```
+
+   The `pnpm build` is not optional on a cold clone: `@neoting/contracts`
+   ships a compiled exports map and turbo gives `dev` no `dependsOn`, so
+   `pnpm dev` on an unbuilt tree dies resolving the contracts package
+   (`apps/api/CLAUDE.md`, #88/#90).
 
 2. **Create `.env`** — copy `.env.example` to `.env` if you don't have one,
    then set exactly these keys (leave everything else at its example value):
