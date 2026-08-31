@@ -24,7 +24,11 @@ import { StatementsService } from './statements.service.js';
 export class StatementsController {
   constructor(
     @Inject(REQUEST_CONTEXT) private readonly context: RequestContext,
-    private readonly service: StatementsService,
+    // Explicit token, not parameter-type metadata: tsx (esbuild) emits no
+    // design:paramtypes, so a bare class parameter is `undefined` under
+    // `pnpm dev` while working fine in the tsc build — the same reason every
+    // other controller injects by token.
+    @Inject(StatementsService) private readonly service: StatementsService,
   ) {}
 
   @Get()

@@ -96,12 +96,10 @@ const LOCAL_ONLY = {
   COMPANIES_HOUSE_API_KEY: 'not wired to a live lane yet; documented sandbox slot',
   HMRC_CLIENT_ID: 'not wired to a live lane yet; documented sandbox slot',
   HMRC_CLIENT_SECRET: 'not wired to a live lane yet; documented sandbox slot',
-  // Web build-time vars: apps/web deploys through Vercel (G6), never ECS —
-  // Vite inlines these at build, no task definition will ever carry them.
-  VITE_API_ENABLED: 'web is Vercel-deployed (G6); Vite build-time var, never an ECS task var',
-  VITE_API_MOCKING: 'web is Vercel-deployed (G6); Vite build-time var, never an ECS task var',
-  VITE_API_BASE_URL: 'web is Vercel-deployed (G6); Vite build-time var, never an ECS task var',
-  // (Stripe keys used to sit here with a "BILLING=demo on staging" reason.
+  // (VITE_* web vars are deliberately NOT here: the web app reads its
+  // dev-mode switches from apps/web/.env.development, never from the root
+  // .env — so they have no business in .env.example either. Stripe keys
+  // used to sit here with a "BILLING=demo on staging" reason.
   // #206 made Stripe real on staging, services.tf now sets all of them, and
   // the hygiene check below evicted the entries — exactly as designed.)
 };
