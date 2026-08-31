@@ -34,6 +34,10 @@ decides nothing about whether it may happen.
   halves are parsed separately, member selected by the spec's `oneOf` order,
   pinned by `proposal-body.test.ts`. When orval fixes either gap the pinning
   test fails and this file collapses to one `parseBoundary`.
+- `business.offboard` renders a shaped card — "books retained" stated, the
+  reason verbatim when given; the payload carries the business **id**, not the
+  name (the render must be payload-pure and the payload is `.strict()`), so
+  the human name on the queue line is the client surface's to add.
 - `render-summary.ts` — deterministic, pure render of what `[Read review]`
   shows; `rendered_summary_hash` is `canonicalHash` over it. `chase.send`
   renders every SMS byte-for-byte (the contract's words); `rule.create`
