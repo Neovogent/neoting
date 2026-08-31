@@ -341,6 +341,15 @@ executor writes `matches` and `bank_transactions` through the engine's
 - [x] **PDF and photographed statements — DONE, 28 Aug 2026, through Textract
       (D20).** See *PDF and photographs* above. Still open: nothing measures the
       real per-statement Textract cost the way `scripts/measure/extraction-cost.ts`
-      measures a document, and there is no local PDF path at all because
-      Textract cannot read MinIO.
+      measures a document. The local PDF path EXISTS since 31 Aug 2026: shared
+      `nt-dev-*` S3 buckets replace MinIO under `docs/runbooks/live-local.md`,
+      and the full upload → Textract → parser → D41 gates → 12 persisted
+      transactions round trip is verified with
+      `docs/runbooks/fixtures/meridian-statement-jul-2026.pdf`.
+- [x] **31 Aug 2026: `statements.controller.ts` injects `StatementsService` by
+      explicit `@Inject` token.** The bare class parameter worked in the tsc
+      build (staging) but was `undefined` under `pnpm dev` — tsx/esbuild emits
+      no `design:paramtypes` — so `GET /v1/statements` 500'd on every laptop
+      since it landed on 29 Aug. Every other controller already injected by
+      token; this one now matches.
 - [ ] Update this file on exit — it is how the next session picks up.

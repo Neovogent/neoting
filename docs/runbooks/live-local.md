@@ -1,8 +1,8 @@
 # Live-mode local development
 
-Run the real pipeline on your laptop — real Bedrock extraction and chat, real
-queue, real object store — with hot reload instead of the ~15-minute staging
-deploy. This is staging parity minus Textract and outbound email.
+Run the real pipeline on your laptop — real Bedrock extraction and chat,
+real Textract statement OCR, real queue, real S3 — with hot reload instead of
+the ~15-minute staging deploy. This is staging parity minus outbound email.
 
 The architecture already supports this: every external dependency sits behind a
 config switch (`apps/api/src/config/env.ts`). A cold clone defaults everything
@@ -42,13 +42,27 @@ matter. **Nothing here changes staging or production.**
    | `AI_CHAT` | `bedrock` | The real chat model. Under `demo` the assistant answers from a 6-regex keyword table that *looks* identical on screen. |
    | `EXTRACTOR` | `bedrock` | The real document extractor. Under `demo` supplier/date/total are derived **from a hash of the filename** and marked Ready. |
    | `SMS_SENDER` | `email` | Chase sends go through the real compose path into the email seam + SMS outbox screen, instead of a silent demo row. |
+   | `STATEMENT_READER` | `textract` | Real PDF/photo bank-statement OCR (D40's headline input). Requires the real-S3 block below — Textract cannot see MinIO. |
+
+   **And replace the whole `--- S3 ---` block with real AWS.** Textract reads
+   `S3_BUCKET_DOCUMENTS` directly from S3, so live-local stores documents in
+   shared dev buckets (created 31 Aug 2026, 30-day object expiry, one set for
+   the whole team) instead of MinIO. Empty endpoint/creds = the default
+   credential chain, i.e. `AWS_PROFILE`:
+
+   ```dotenv
+   S3_ENDPOINT=
+   S3_REGION=eu-west-2
+   S3_ACCESS_KEY_ID=
+   S3_SECRET_ACCESS_KEY=
+   S3_FORCE_PATH_STYLE=false
+   S3_BUCKET_DOCUMENTS=nt-dev-docs-252959251643
+   S3_BUCKET_RECEIPTS=nt-dev-receipts-252959251643
+   S3_BUCKET_EXPORTS=nt-dev-exports-252959251643
+   ```
 
    Deliberately **left alone**:
 
-   - `STATEMENT_READER=none` — Textract reads `S3_BUCKET_DOCUMENTS` from real
-     S3 and cannot see MinIO. CSV/XLSX statements import fine locally; PDF/photo
-     statements are refused with a reason (test those on staging, or point the
-     `S3_*` block at a real dev bucket).
    - `EMAIL_SENDER=demo` — no real mail leaves your laptop; sends land in the
      in-memory outbox.
    - `OTP_MODE=demo` — the fixed code `000000` everywhere (login TOTP + portal).
@@ -85,13 +99,25 @@ matter. **Nothing here changes staging or production.**
    from the filename means `EXTRACTOR` is still `demo`.
 4. Ask the chat something free-form ("what's outstanding for American
    Burger?"). A conversational answer = Bedrock; a canned one-liner = demo.
+5. **The D40 proof — upload a PDF bank statement.** Use the checked-in fixture
+   `docs/runbooks/fixtures/meridian-statement-jul-2026.pdf` (a fictional bank,
+   balance-consistent on purpose) on American Burger's Bank tab. Within ~a
+   minute the Statements tab should show it with `assurance: complete`,
+   `provenBy: balanceContinuity`, opening £4,520.00 / closing £4,348.65, and
+   the Transactions tab should hold its 12 July lines, all UNMATCHED.
+   That single round trip proves S3 → BullMQ → Textract → the statement parser
+   → every D41 hard gate → persistence. (Verified 31 Aug 2026 with exactly
+   this fixture.)
 
 ## Costs and safety
 
-- Real Bedrock spend: roughly 1–2p per extraction/chat turn, capped by
-  `AI_DAILY_BUDGET_PENCE` (£5/day per practice by default).
-- Everything stays on your machine: MinIO not S3, demo email, demo billing,
-  no Textract, no Twilio. The only cloud calls are Bedrock model invocations.
+- Real cloud spend: roughly 1–2p per extraction/chat turn (capped by
+  `AI_DAILY_BUDGET_PENCE`, £5/day per practice), and Textract at ~1.5p/page
+  for tables (~35p for a 29-page statement).
+- What still never leaves your machine: email (demo outbox), billing (demo),
+  SMS (email seam). Cloud calls are Bedrock, Textract, and the dev S3 buckets.
+- The dev buckets are shared by the whole team and expire objects after 30
+  days — treat them as scratch, never as storage for anything real.
 
 ## Troubleshooting
 
@@ -102,4 +128,6 @@ matter. **Nothing here changes staging or production.**
 | Extraction "works" offline with weirdly confident fields | `EXTRACTOR` still `demo` (filename hash) |
 | `AccessDeniedException` from Bedrock | Wrong profile/region — needs `bedrock:InvokeModel` in eu-west-2 |
 | Upload returns 402 | Intake-created client with `BILLING=demo` — see above |
-| PDF statement refused | Correct behaviour: `STATEMENT_READER=none` locally (D41 — refuse, never silently skip) |
+| Ingest job fails `NoSuchKey` right after upload | Seen once on a minutes-old bucket (read-after-write on fresh DNS); the job burns its 5 fast retries in ~18s. Retry the job or re-upload — it does not recur on a warm bucket |
+| PDF statement refused "no transaction table" | The parser needs a header row with a date column and amount or paid-in/paid-out columns (`statement-parser.ts` lists the accepted names); real bank layouts match, an invented fixture may not |
+| `GET /v1/statements` 500s (`listStatements` undefined) | You are on a commit before the explicit-`@Inject` fix in `statements.controller.ts` — pull main |
