@@ -19,7 +19,7 @@ import {
 import { DocumentType, type UpdateCodingPayload } from '@neoting/contracts/model';
 import type { QueryClient } from '@tanstack/react-query';
 import type { z } from 'zod';
-import type { ExtractedField as LocalExtractedField, LineItem as LocalLineItem } from '../lib/types';
+import type { ExtractedField as LocalExtractedField, FieldBoundingBox, LineItem as LocalLineItem } from '../lib/types';
 import { fromIsoDate } from './documents';
 import { unwrapBody } from './envelope';
 
@@ -151,6 +151,23 @@ function renderValue(kind: DraftKind, value: WireField['value']): string {
 }
 
 /**
+ * The wire boundingBox as a usable box, or undefined. The generated schema
+ * types every member optional (the spec has no `required` list on the box), so
+ * the one honest reading is all-or-nothing: a box missing any coordinate — or
+ * with no area — positions nothing, and the preview falls back to framing the
+ * whole original. Exported for the projection test.
+ */
+export function usableBoundingBox(box: WireField['boundingBox']): FieldBoundingBox | undefined {
+  if (box === null || box === undefined) return undefined;
+  const { page, x, y, width, height } = box;
+  if (page === undefined || x === undefined || y === undefined || width === undefined || height === undefined) {
+    return undefined;
+  }
+  if (!(width > 0) || !(height > 0)) return undefined;
+  return { page, x, y, width, height };
+}
+
+/**
  * The provenance line under a value — the §13.3 class as a person reads it.
  * Free text like the seeds' (this is data beside the value, not a message id),
  * citing the source the contract carried.
@@ -197,6 +214,7 @@ export function toDetailData(doc: WireDocument, ruleId: string | null): Document
   for (const p of FIELD_PRESENTATION) {
     const field = wireFields[p.key];
     if (field !== undefined) {
+      const boundingBox = usableBoundingBox(field.boundingBox);
       fields.push({
         label: p.label,
         value: renderValue(p.kind, field.value),
@@ -205,6 +223,9 @@ export function toDetailData(doc: WireDocument, ruleId: string | null): Document
         // certainty in the existing confidence UI without a special case.
         confidence: field.confidence ?? 1,
         provenance: provenanceText(field),
+        // Omitted, never explicit-undefined: exactOptionalPropertyTypes makes
+        // those two different keys, and the seeds omit it.
+        ...(boundingBox === undefined ? {} : { boundingBox }),
       });
     } else if (p.key === 'categoryCode' && extraction) {
       fields.push({

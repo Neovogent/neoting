@@ -32,6 +32,7 @@ import {
   type ExtractionOutcome,
   type ExtractionRequest,
 } from './document-extractor.js';
+import { withFieldGeometry } from './field-geometry.js';
 
 export interface ExtractionInput {
   readonly documentId: string;
@@ -257,11 +258,21 @@ export class PrismaExtractionStep implements ExtractionStep {
     // re-entrant precisely so the next attempt picks up here.
     if (outcome === null) return null;
 
+    // Field geometry (contract `ExtractedField.boundingBox`), derived HERE
+    // because this is the one place the finished fields and the OCR read are
+    // both in hand. Pure post-processing — no prompt, no model call, no
+    // judgement touched — and with no OCR (reader unconfigured, unsupported
+    // media, read failed) every box is an explicit null: the path stands
+    // without geometry exactly as it stands without OCR.
+    const placed: ExtractionOutcome = outcome.ok
+      ? { ok: true, document: { ...outcome.document, fields: withFieldGeometry(outcome.document.fields, ocr?.words) } }
+      : outcome;
+
     // Phase 3 — write results and finalise the state, atomically. The completion
     // (the header + final state) is what the caller hands the auto-close hook; it
     // is null for a FAILED read, so a chase never closes on a document we could
     // not read.
-    const completion = await scopedDb(this.prisma, ctx, (db) => this.finish(db, input, outcome));
+    const completion = await scopedDb(this.prisma, ctx, (db) => this.finish(db, input, placed));
     if (completion === null || ocr === undefined) return completion;
     return { ...completion, ocr };
   }

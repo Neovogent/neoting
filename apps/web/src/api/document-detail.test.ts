@@ -9,6 +9,7 @@ import {
   parseDocumentDetail,
   ruleIdFromEvents,
   toDetailData,
+  usableBoundingBox,
 } from './document-detail';
 
 /**
@@ -145,6 +146,50 @@ describe('toDetailData', () => {
     const bare = { ...WIRE_DOC, acceptedExtraction: null } as typeof WIRE_DOC;
     expect(toDetailData(bare, null).fields).toEqual([]);
     expect(toDetailData(bare, null).lineItems).toEqual([]);
+  });
+
+  it('carries a complete boundingBox through to the row, and omits an absent one', () => {
+    const box = { page: 1, x: 0.1, y: 0.2, width: 0.3, height: 0.04 };
+    const placed = {
+      ...WIRE_DOC,
+      acceptedExtraction: {
+        ...WIRE_DOC.acceptedExtraction!,
+        fields: {
+          ...WIRE_DOC.acceptedExtraction!.fields,
+          supplierName: { ...aiField('Currys'), boundingBox: box },
+          totalPence: { ...aiField(129_900), boundingBox: null },
+        },
+      },
+    } as typeof WIRE_DOC;
+
+    const detail = toDetailData(placed, null);
+    expect(detail.fields.find((f) => f.label === 'Supplier')?.boundingBox).toEqual(box);
+    // Explicit null on the wire and never-sent both project as "no box": the
+    // preview's fallback is the whole-frame band either way.
+    expect(detail.fields.find((f) => f.label === 'Total')?.boundingBox).toBeUndefined();
+    expect(detail.fields.find((f) => f.label === 'Document date')?.boundingBox).toBeUndefined();
+  });
+});
+
+describe('usableBoundingBox — all-or-nothing over the contract box', () => {
+  const box = { page: 2, x: 0.1, y: 0.2, width: 0.3, height: 0.04 };
+
+  it('accepts a complete box, keeping the page it names', () => {
+    expect(usableBoundingBox(box)).toEqual(box);
+  });
+
+  it('refuses null, undefined, a missing coordinate and a zero-area box — never a partial guess', () => {
+    expect(usableBoundingBox(null)).toBeUndefined();
+    expect(usableBoundingBox(undefined)).toBeUndefined();
+    // Every member is optional in the generated schema (the spec declares no
+    // `required` on the box), so each absence must be handled, not asserted.
+    expect(usableBoundingBox({ ...box, page: undefined })).toBeUndefined();
+    expect(usableBoundingBox({ ...box, x: undefined })).toBeUndefined();
+    expect(usableBoundingBox({ ...box, y: undefined })).toBeUndefined();
+    expect(usableBoundingBox({ ...box, width: undefined })).toBeUndefined();
+    expect(usableBoundingBox({ ...box, height: undefined })).toBeUndefined();
+    expect(usableBoundingBox({ ...box, width: 0 })).toBeUndefined();
+    expect(usableBoundingBox({ ...box, height: 0 })).toBeUndefined();
   });
 });
 

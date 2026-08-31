@@ -458,6 +458,21 @@ intact — no document burned to FAILED, no fallthrough to live Bedrock.
 `STATEMENT_READER` (Textract) has no replay coverage — different provider,
 S3-coupled multi-page path; a future cassette seam of its own if wanted.
 
+## Field geometry (`boundingBox`) is real (31 Aug 2026)
+
+`field-geometry.ts` derives `ExtractedField.boundingBox` from
+`DocumentOcr.words` (Textract WORD blocks, not LINE — a LINE frames
+label+value together) in the pipeline's `run`, post-extraction: no prompt,
+tool schema, model call or judgement changed — the §14.7 eval surface is
+untouched. The rule is exactly-one-occurrence-or-null: candidates are
+collected, overlapping runs merged into regions, and a box returns only when
+one region remains — ambiguity never guesses (a supplier name printed twice
+gets null, which the preview renders as the whole-frame band). No OCR →
+explicit nulls; `docType` is deliberately unplaceable; line items carry no
+boxes yet (quantities are near-always ambiguous — its own decision when
+wanted). `document.update-coding` drops a corrected field's now-stale box by
+construction and does not recompute (that would need the OCR again).
+
 ## TODO
 
 - [x] METH Stage 4: DemoExtractor + pipeline, documents leave RECEIVED, proven

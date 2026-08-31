@@ -9,7 +9,7 @@ import type { UpdateCodingPayload } from '@neoting/contracts/model';
 import { currency } from '../../lib/resolver';
 import { BASE_MANDATORY } from '../../lib/selectors';
 import { Pill } from './DataTable';
-import type { Document, ExtractedField } from '../../lib/types';
+import type { Document, ExtractedField, FieldBoundingBox } from '../../lib/types';
 
 /**
  * Lazy: the correction card (and its proposal wiring) loads at the moment of
@@ -59,12 +59,18 @@ const m = defineMessages({
     id: 'documents.documentPreview.notEditable',
     defaultMessage: 'This field has no correction path yet — it is shown exactly as extracted.',
   },
-  // The honest hover caption when the extraction recorded no source note.
-  // Never a coordinate: bounding boxes are not extracted, so the one thing the
-  // caption may not do is invent where on the page the value came from.
+  // The honest hover caption when the extraction recorded no source note AND
+  // no position band is painted — the one thing this caption may not do is
+  // invent where on the page the value came from.
   provenanceFallback: {
     id: 'documents.documentPreview.provenanceFallback',
     defaultMessage: 'Read from the document by extraction — its position on the page was not captured.',
+  },
+  // Its twin for a field whose band IS painted at a real position: the old
+  // sentence would deny the highlight sitting right above it.
+  provenancePositioned: {
+    id: 'documents.documentPreview.provenancePositioned',
+    defaultMessage: 'Read from the document by extraction — highlighted where it was read.',
   },
   readyHeading: { id: 'documents.documentPreview.readyHeading', defaultMessage: 'Path to Ready' },
   readyMissing: {
@@ -107,6 +113,40 @@ interface PendingCorrection {
   fields: UpdateCodingPayload['fields'];
 }
 
+/** The original frame's CSS aspect (`aspect-[3/4]`) — the letterbox maths below depend on it. */
+const PREVIEW_ASPECT = 3 / 4;
+/** The page whose image the preview shows today. A box on any other page cannot be painted honestly. */
+const PREVIEW_PAGE = 1;
+
+/**
+ * The scan band's absolute-% frame over the live original.
+ *
+ * The box is normalised 0–1 relative to the PAGE, but the `<img>` sits
+ * `object-contain` inside a fixed 3:4 frame, so a page whose aspect differs is
+ * letterboxed and container-percentages would miss the value they claim to
+ * mark. The image's real aspect (from `naturalWidth/Height` once it loads)
+ * maps page coordinates onto the rendered image's slice of the frame; until
+ * the aspect is known the caller paints the whole-frame fallback rather than
+ * a band that might sit on the letterbox bar.
+ */
+export function scanBandFrame(
+  box: FieldBoundingBox,
+  imageAspect: number,
+): { top: string; left: string; width: string; height: string } {
+  const wider = imageAspect >= PREVIEW_ASPECT;
+  const renderedW = wider ? 1 : imageAspect / PREVIEW_ASPECT;
+  const renderedH = wider ? PREVIEW_ASPECT / imageAspect : 1;
+  const offsetX = (1 - renderedW) / 2;
+  const offsetY = (1 - renderedH) / 2;
+  const pct = (n: number) => `${(n * 100).toFixed(3)}%`;
+  return {
+    left: pct(offsetX + box.x * renderedW),
+    top: pct(offsetY + box.y * renderedH),
+    width: pct(box.width * renderedW),
+    height: pct(box.height * renderedH),
+  };
+}
+
 /**
  * Document preview with the editable extraction overlay (PRD stages 2 & 8).
  * Every field carries confidence + provenance; every value is clickable and
@@ -127,6 +167,8 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
   const [hovered, setHovered] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingCorrection | null>(null);
   const [draftProblem, setDraftProblem] = useState<DraftProblem | null>(null);
+  /** The live original's real aspect (naturalWidth/Height) — null until it loads. */
+  const [imageAspect, setImageAspect] = useState<number | null>(null);
 
   const live = API_ENABLED;
   const isProcessing = doc.status === 'processing';
@@ -157,6 +199,24 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
   // After approval, item details lock — the server refuses the proposal, so
   // the affordance goes rather than the refusal being discovered on approve.
   const canEdit = (label: string) => !live || (doc.status !== 'published' && isEditableLabel(label));
+
+  const hoveredField = hovered === null ? undefined : fields.find((f) => f.label === hovered);
+  // The positioned band: only where extraction PLACED the value, only on the
+  // page the preview is actually showing, and only once the image's real
+  // aspect is known — anything less falls back to framing the whole original,
+  // which is the honest claim "this document is the source".
+  const hoveredBox = hoveredField?.boundingBox;
+  const bandFrame =
+    hoveredBox !== undefined && hoveredBox.page === PREVIEW_PAGE && imageAspect !== null
+      ? scanBandFrame(hoveredBox, imageAspect)
+      : null;
+
+  /** Remember the loaded original's aspect; a cached image may never fire onLoad. */
+  const readImageAspect = (img: HTMLImageElement | null) => {
+    if (img !== null && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+      setImageAspect(img.naturalWidth / img.naturalHeight);
+    }
+  };
 
   const startEdit = (f: ExtractedField) => {
     setEditing(f.label);
@@ -265,23 +325,31 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
               <Lock size={11} /> {intl.formatMessage(m.originalImmutable)}
             </div>
             {live && detail.image && detail.image.mimeType.startsWith('image/') ? (
-              // The real original off the presigned URL. The hover band here
-              // frames the WHOLE image, never a position: bounding boxes are
-              // not extracted yet, and painting an invented position over a
-              // real photograph would be a lie the synthetic placeholder below
-              // never told. The frame says "this document is the source"; the
-              // caption underneath carries the provenance class.
+              // The real original off the presigned URL. The hover band paints
+              // AT the hovered field's boundingBox when extraction placed the
+              // value on the displayed page — that is the contract's editable
+              // OCR overlay, live. A field with no box (or a box on a page the
+              // preview is not showing) falls back to framing the WHOLE image:
+              // the frame says "this document is the source" and never invents
+              // a position. The caption underneath carries the provenance.
               <div className="relative aspect-[3/4] rounded-2xl bg-raised/60 border border-white/5 overflow-hidden shadow-inner">
                 <img
+                  ref={readImageAspect}
                   src={detail.image.url}
                   alt={detail.image.filename ?? intl.formatMessage(m.originalAlt)}
                   className="w-full h-full object-contain"
+                  onLoad={(e) => readImageAspect(e.currentTarget)}
                 />
                 {hovered && (
                   <motion.div
                     layoutId="provenance-band"
                     data-testid="provenance-band"
-                    className="absolute inset-0 rounded-2xl border-2 border-brand bg-brand/15 pointer-events-none"
+                    className={
+                      bandFrame !== null
+                        ? 'absolute rounded-lg border-2 border-brand bg-brand/15 pointer-events-none'
+                        : 'absolute inset-0 rounded-2xl border-2 border-brand bg-brand/15 pointer-events-none'
+                    }
+                    {...(bandFrame === null ? {} : { style: bandFrame })}
                   />
                 )}
               </div>
@@ -321,9 +389,10 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
             {hovered && (
               <p className="mt-3 text-[11px] text-brand font-semibold leading-relaxed">
                 {/* A field with no recorded source note still gets an honest
-                    sentence — an empty caption reads as a broken feature. */}
-                {(fields.find((f) => f.label === hovered)?.provenance ?? '').trim() ||
-                  intl.formatMessage(m.provenanceFallback)}
+                    sentence — an empty caption reads as a broken feature, and
+                    which sentence depends on whether a position is painted. */}
+                {(hoveredField?.provenance ?? '').trim() ||
+                  intl.formatMessage(bandFrame !== null ? m.provenancePositioned : m.provenanceFallback)}
               </p>
             )}
 

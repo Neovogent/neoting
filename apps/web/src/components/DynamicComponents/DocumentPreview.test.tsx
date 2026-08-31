@@ -93,7 +93,7 @@ function renderPreview() {
   );
 }
 
-test('hovering a live field frames the whole original — never an invented position — and cites its provenance', () => {
+test('hovering a live field with no boundingBox frames the whole original — never an invented position — and cites its provenance', () => {
   detail = liveDetail();
   renderPreview();
 
@@ -103,10 +103,100 @@ test('hovering a live field frames the whole original — never an invented posi
   fireEvent.mouseOver(screen.getByText('Supplier'));
 
   const band = screen.getByTestId('provenance-band');
-  // No fabricated coordinate: over a real photograph the band is the full
-  // frame, not a hash-positioned strip.
+  // No fabricated coordinate: without a box the band is the full frame, not a
+  // hash-positioned strip.
   expect(band.style.top).toBe('');
+  expect(band.className).toContain('inset-0');
   expect(screen.getByText('AI suggested: bedrock')).toBeTruthy();
+});
+
+/** Tell jsdom the original has loaded at the given pixel size, firing onLoad. */
+function loadOriginal(naturalWidth: number, naturalHeight: number) {
+  const img = screen.getByRole('img');
+  Object.defineProperty(img, 'naturalWidth', { value: naturalWidth, configurable: true });
+  Object.defineProperty(img, 'naturalHeight', { value: naturalHeight, configurable: true });
+  Object.defineProperty(img, 'complete', { value: true, configurable: true });
+  fireEvent.load(img);
+}
+
+const SUPPLIER_BOX = { page: 1, x: 0.1, y: 0.2, width: 0.3, height: 0.05 };
+
+test('a field whose boundingBox is on the displayed page paints the band AT that position', () => {
+  detail = liveDetail({
+    fields: [
+      { label: 'Supplier', value: 'Nexora Solutions LLC', confidence: 0.95, provenance: 'AI suggested: bedrock', boundingBox: SUPPLIER_BOX },
+      { label: 'Total', value: '£54,352.51', confidence: 0.93, provenance: 'AI suggested: bedrock' },
+      { label: 'Category', value: '—', confidence: 1, provenance: 'AI suggested: extraction' },
+    ],
+  });
+  renderPreview();
+
+  // 750×1000 is exactly the frame's 3:4, so no letterboxing: the normalised
+  // box maps straight to container percentages.
+  loadOriginal(750, 1000);
+  fireEvent.mouseOver(screen.getByText('Supplier'));
+
+  const band = screen.getByTestId('provenance-band');
+  expect(band.className).not.toContain('inset-0');
+  // jsdom's CSSOM normalises "10.000%" to "10%" — the numbers are what matter.
+  expect(band.style.left).toBe('10%');
+  expect(band.style.top).toBe('20%');
+  expect(band.style.width).toBe('30%');
+  expect(band.style.height).toBe('5%');
+});
+
+test('a letterboxed original maps the box onto the rendered image, not the frame', () => {
+  detail = liveDetail({
+    fields: [
+      { label: 'Supplier', value: 'Nexora Solutions LLC', confidence: 0.95, provenance: 'AI suggested: bedrock', boundingBox: SUPPLIER_BOX },
+    ],
+  });
+  renderPreview();
+
+  // A square image inside the 3:4 frame is letterboxed top and bottom: it
+  // renders 75% tall, offset 12.5% — a band ignoring that would sit on the bar.
+  loadOriginal(1000, 1000);
+  fireEvent.mouseOver(screen.getByText('Supplier'));
+
+  const band = screen.getByTestId('provenance-band');
+  expect(band.style.left).toBe('10%');
+  expect(band.style.top).toBe('27.5%'); // 12.5% offset + 20% of the 75% slice
+  expect(band.style.height).toBe('3.75%'); // 5% of the 75% slice
+});
+
+test('a box on a page the preview is not showing falls back to the whole-frame band', () => {
+  detail = liveDetail({
+    fields: [
+      { label: 'Supplier', value: 'Nexora Solutions LLC', confidence: 0.95, provenance: 'AI suggested: bedrock', boundingBox: { ...SUPPLIER_BOX, page: 2 } },
+    ],
+  });
+  renderPreview();
+
+  loadOriginal(750, 1000);
+  fireEvent.mouseOver(screen.getByText('Supplier'));
+
+  const band = screen.getByTestId('provenance-band');
+  // The preview shows page 1; painting a page-2 position over it would mark
+  // the wrong paper. Whole frame, existing caption.
+  expect(band.style.top).toBe('');
+  expect(band.className).toContain('inset-0');
+  expect(screen.getByText('AI suggested: bedrock')).toBeTruthy();
+});
+
+test('until the image has loaded, a positioned band is withheld rather than painted over the letterbox', () => {
+  detail = liveDetail({
+    fields: [
+      { label: 'Supplier', value: 'Nexora Solutions LLC', confidence: 0.95, provenance: 'AI suggested: bedrock', boundingBox: SUPPLIER_BOX },
+    ],
+  });
+  renderPreview();
+
+  // No loadOriginal: the aspect is unknown, so the mapping would be a guess.
+  fireEvent.mouseOver(screen.getByText('Supplier'));
+
+  const band = screen.getByTestId('provenance-band');
+  expect(band.style.top).toBe('');
+  expect(band.className).toContain('inset-0');
 });
 
 test('a field with no recorded provenance gets the honest fallback caption, not an empty line', () => {

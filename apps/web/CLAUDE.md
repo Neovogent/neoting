@@ -625,9 +625,13 @@ keep it that way.
 `minmax(0,…)` on purpose — a presigned `<img>`'s natural width and nowrap
 line-item descriptions blow a bare `1fr` past the card, and
 `overflow-hidden` clips every value; truncating elements carry `title`. The
-hover band over a real original frames the WHOLE image (a position would be
-fabricated — no bounding boxes are extracted) with a fallback caption when
-extraction recorded no provenance. The Path-to-Ready panel mirrors
+hover band paints AT the field's `boundingBox` when extraction placed the
+value on the displayed page (page 1), letterbox-corrected through the image's
+natural aspect (`object-contain` in a 3:4 frame — the box is page-relative);
+no box / another page / image not yet loaded falls back to the whole-frame
+band with an honest caption. Boxes come from OCR word geometry matched
+exactly-once server-side (`extraction/field-geometry.ts`) — a value printed
+twice on the page gets NO box rather than a guess. The Path-to-Ready panel mirrors
 `resolveProcessedState` (Total+Supplier+Category via `BASE_MANDATORY`);
 there is deliberately no confirm-as-is button — `UpdateCodingPayload` with
 all-equal values collapses to zero changes server-side before the readiness

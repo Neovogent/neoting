@@ -33,6 +33,27 @@ export interface OcrPage {
   readonly lines: readonly string[];
 }
 
+/**
+ * Where one word sits on its page, normalised 0–1 — Textract's own
+ * `Geometry.BoundingBox` convention (`Left/Top/Width/Height`), carried through
+ * unscaled so the contract's `ExtractedField.boundingBox` (also 0–1) needs no
+ * arithmetic between here and the screen.
+ */
+export interface OcrWordBox {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** One word the reader saw, with the page it was on and where. */
+export interface OcrWord {
+  readonly text: string;
+  /** 1-based, as Textract numbers them (and defaults them — see `blocksToPages`). */
+  readonly pageNumber: number;
+  readonly box: OcrWordBox;
+}
+
 export interface DocumentOcr {
   readonly pages: readonly OcrPage[];
   /**
@@ -45,6 +66,17 @@ export interface DocumentOcr {
   readonly grid: Grid;
   /** The whole document as plain text, pages in order and marked. */
   readonly text: string;
+  /**
+   * Every WORD the reader saw, in reading order, with its normalised box —
+   * what lets an extracted value be pointed at ON the image (the contract's
+   * `ExtractedField.boundingBox`).
+   *
+   * Additive and OPTIONAL: readers that predate it, and tests that build a
+   * `DocumentOcr` by hand, simply omit it, and every consumer of `pages`,
+   * `grid` and `text` is untouched. Absent or empty means "no geometry" and
+   * every field's box is honestly null — never a guess.
+   */
+  readonly words?: readonly OcrWord[];
 }
 
 export type OcrFailure =

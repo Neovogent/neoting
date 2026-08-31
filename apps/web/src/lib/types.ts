@@ -169,12 +169,28 @@ export interface BusinessAccount {
   subscription?: BusinessPlan | undefined;
 }
 
+/**
+ * Where on the original a value was read — the contract's
+ * `ExtractedField.boundingBox`: normalised 0–1 relative to the page, `page`
+ * 1-based. Only ever built from a complete server box; a partial one is
+ * dropped rather than guessed at.
+ */
+export interface FieldBoundingBox {
+  page: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 /** A single extracted field carries its own confidence + provenance (PRD stage 2). */
 export interface ExtractedField {
   label: string;
   value: string;
   confidence: number;
   provenance: string;
+  /** Present only when extraction placed the value on the page (live rows only). */
+  boundingBox?: FieldBoundingBox | undefined;
 }
 
 export interface LineItem {

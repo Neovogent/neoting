@@ -24,6 +24,20 @@ export const DEMO_MODEL_VERSION = 'demo-extractor-1';
 export type ProvenanceClass = 'HUMAN_CONFIRMED' | 'DETERMINISTIC' | 'AI_SUGGESTED';
 
 /**
+ * Where on the page a value was read — the contract's
+ * `ExtractedField.boundingBox`, normalised 0–1, page 1-based. Derived by
+ * `field-geometry.ts` from the OCR rung's words, AFTER extraction: geometry is
+ * post-processing over what the model already returned, never an input to it.
+ */
+export interface FieldBoundingBox {
+  readonly page: number;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
  * One extracted value and everything needed to judge it — the contract's
  * `ExtractedField`. Money is integer pence; dates are `YYYY-MM-DD`; everything
  * else a string. `confidence` is present for `AI_SUGGESTED`, null otherwise.
@@ -34,6 +48,14 @@ export interface ExtractedField {
   readonly confidence: number | null;
   /** What produced it — the extractor id, or a rule/guidance id for DETERMINISTIC. */
   readonly source: string | null;
+  /**
+   * Where the value sits on the original, or null when it could not be placed
+   * HONESTLY — no OCR ran, the value never appears verbatim, or it appears in
+   * more than one place (an ambiguous position is a guess, and a guess painted
+   * over a client's document is a lie). Optional so extractors predating the
+   * geometry step build unchanged; the pipeline fills it in.
+   */
+  readonly boundingBox?: FieldBoundingBox | null;
 }
 
 /** A line on the document — the contract's `Extraction.lineItems[]` shape. */

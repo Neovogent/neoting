@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { Block } from '@aws-sdk/client-textract';
+import type { Block, TextractClient } from '@aws-sdk/client-textract';
 
-import { blocksToPages } from './textract-ocr-reader.js';
+import { blocksToPages, blocksToWords, TextractOcrReader } from './textract-ocr-reader.js';
 import type { Grid, OcrPage } from './document-ocr.js';
 
 /** Every page's table rows, stacked in page order — what the statement lane reads. */
@@ -103,5 +103,64 @@ describe('blocksToPages', () => {
     ];
 
     expect(gridOf(blocksToPages(blocks))).toEqual([]);
+  });
+});
+
+/** A WORD block with Textract's own normalised 0–1 geometry. */
+function wordBlock(id: string, text: string, box: { Left: number; Top: number; Width: number; Height: number }, page?: number): Block {
+  return {
+    Id: id,
+    BlockType: 'WORD',
+    Text: text,
+    ...(page === undefined ? {} : { Page: page }),
+    Geometry: { BoundingBox: box },
+  } as Block;
+}
+
+describe('blocksToWords', () => {
+  it('carries each WORD through with its normalised box, Left/Top/Width/Height → x/y/width/height', () => {
+    const blocks = [
+      wordBlock('w1', 'Nexora', { Left: 0.1, Top: 0.2, Width: 0.08, Height: 0.02 }),
+      wordBlock('w2', 'Solutions', { Left: 0.19, Top: 0.2, Width: 0.1, Height: 0.02 }, 2),
+    ];
+
+    expect(blocksToWords(blocks)).toEqual([
+      // ⚠ A single-page synchronous read carries no `Page` — defaulting to 1
+      // is the same rule blocksToPages pins above.
+      { text: 'Nexora', pageNumber: 1, box: { x: 0.1, y: 0.2, width: 0.08, height: 0.02 } },
+      { text: 'Solutions', pageNumber: 2, box: { x: 0.19, y: 0.2, width: 0.1, height: 0.02 } },
+    ]);
+  });
+
+  it('skips a word with no geometry or no text rather than inventing a place', () => {
+    const blocks: Block[] = [
+      { Id: 'w1', BlockType: 'WORD', Text: 'orphan' } as Block, // no Geometry
+      wordBlock('w2', '   ', { Left: 0.1, Top: 0.1, Width: 0.1, Height: 0.1 }), // no text
+      { Id: 'l1', BlockType: 'LINE', Text: 'a line', Geometry: { BoundingBox: { Left: 0, Top: 0, Width: 1, Height: 0.1 } } } as Block,
+    ];
+
+    expect(blocksToWords(blocks)).toEqual([]);
+  });
+});
+
+describe('TextractOcrReader.read', () => {
+  it('returns the words alongside pages/grid/text, from the same blocks', async () => {
+    const blocks = [
+      { Id: 'l1', BlockType: 'LINE', Text: 'Nexora Solutions' } as Block,
+      wordBlock('w1', 'Nexora', { Left: 0.1, Top: 0.2, Width: 0.08, Height: 0.02 }),
+      wordBlock('w2', 'Solutions', { Left: 0.19, Top: 0.2, Width: 0.1, Height: 0.02 }),
+    ];
+    const client = { send: async () => ({ Blocks: blocks }) } as unknown as TextractClient;
+    const reader = new TextractOcrReader({ client, bucket: 'b' });
+
+    const read = await reader.read({ bytes: Buffer.from('png'), mimeType: 'image/png', s3Key: null });
+
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.ocr.pages[0]?.lines).toEqual(['Nexora Solutions']);
+    expect(read.ocr.words).toEqual([
+      { text: 'Nexora', pageNumber: 1, box: { x: 0.1, y: 0.2, width: 0.08, height: 0.02 } },
+      { text: 'Solutions', pageNumber: 1, box: { x: 0.19, y: 0.2, width: 0.1, height: 0.02 } },
+    ]);
   });
 });
