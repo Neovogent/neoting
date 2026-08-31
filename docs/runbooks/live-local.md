@@ -40,7 +40,7 @@ matter. **Nothing here changes staging or production.**
 
    | Key | Value | Why |
    |---|---|---|
-   | `AWS_PROFILE` | `nt` | Not in `.env.example`. The AWS SDK credential chain reads it; Bedrock needs it. Skip if your default chain already resolves. |
+   | `AWS_PROFILE` | `nt` | Not in `.env.example`. The AWS SDK credential chain reads it; Bedrock needs it. Skip if your default chain already resolves. **A machine with no AWS setup at all** (a reviewer's laptop): skip this row and instead put `AWS_ACCESS_KEY_ID=` and `AWS_SECRET_ACCESS_KEY=` in `.env` with the scoped `nt-dev-pm` keys (IAM user limited to Bedrock invoke in eu-west-2, Textract, and the `nt-dev-*` buckets — ask Shakib for the two values). The SDK reads them from the environment; no AWS CLI or profile needed. `.env` is gitignored — they must never appear in a commit. |
    | `AUTH_MODE` | `session` | Real signed-cookie sessions — the web login wall cannot answer under `fixture`. |
    | `INGEST_QUEUE` | `bullmq` | Not in `.env.example`. Under the default `fixture` **no worker consumes uploads** — every document strands in Processing. |
    | `OBJECT_STORE` | `s3` | Not in `.env.example`. Stores bytes in MinIO (the `S3_*` values already point there). |
