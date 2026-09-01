@@ -268,6 +268,17 @@ resource "aws_iam_role_policy" "app_runtime" {
         Resource = "*"
       },
       {
+        # Phase 3 — SMS chases and sign-in codes through AWS End User
+        # Messaging. Granted ahead of the flip (harmless while
+        # SMS_SENDER=email) so activating the UK number is two env values,
+        # never an IAM change on launch day. SendTextMessage only: the app
+        # never manages numbers, pools or opt-out lists from the task role.
+        Sid      = "SmsChases"
+        Effect   = "Allow"
+        Action   = ["sms-voice:SendTextMessage"]
+        Resource = "*"
+      },
+      {
         # ⚠ THE FROM ADDRESS CHANGED WITH S2, AND THE OLD ONE WAS A BUG WAITING
         # TO HAPPEN. This condition used to pin `ses:FromAddress` to
         # `doc@${local.domain}` — which is the INBOUND document intake address

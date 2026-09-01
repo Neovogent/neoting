@@ -81,6 +81,16 @@ export function composeStatementRequestSms(input: {
   return `${input.businessName} Accounts: we're missing your bank statement for ${formatPeriod(input.period)}. Upload securely: ${input.portalLink}`;
 }
 
+/**
+ * The sign-in code by SMS (Phase 3) — byte-for-byte the sample registered with
+ * the UK carriers (message sample 2 on the GB long-code registration), so the
+ * product sends exactly what the network approved. Pure; the code is the only
+ * variable and it is never logged by any caller.
+ */
+export function composeSignInCodeSms(code: string, expiresInMinutes: number): string {
+  return `Your Neo Accounting sign-in code is ${code}. It expires in ${expiresInMinutes} minutes. Never share this code with anyone.`;
+}
+
 /** `2026-07` → "July 2026" — the month a client says out loud, never an ISO string. */
 export function formatPeriod(period: string): string {
   const month = Number.parseInt(period.slice(5, 7), 10);

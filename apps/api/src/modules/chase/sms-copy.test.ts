@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { composeChaseSms, formatDay, formatGbp } from './sms-copy.js';
+import { composeChaseSms, composeSignInCodeSms, composeStatementRequestSms, formatDay, formatGbp } from './sms-copy.js';
 
 // A booked date in early August — chosen mid-day UTC so the Europe/London day
 // (BST, +1) is unambiguously the 9th.
@@ -46,4 +46,18 @@ test('formatDay renders the Europe/London day, from a UTC instant', () => {
   expect(formatDay(AUG_9)).toBe('9 Aug');
   // 30 Dec 23:30 UTC is 30 Dec in London (GMT in winter) — no rollover here.
   expect(formatDay(new Date('2026-12-30T23:30:00.000Z'))).toBe('30 Dec');
+});
+
+test('the SMS sign-in code is byte-for-byte the carrier-registered sample', () => {
+  // Message sample 2 on the GB long-code registration — the network approved
+  // exactly this shape, so the product sends exactly this shape.
+  expect(composeSignInCodeSms('123456', 10)).toBe(
+    'Your Neo Accounting sign-in code is 123456. It expires in 10 minutes. Never share this code with anyone.',
+  );
+});
+
+test('a statement request names the month a client says out loud', () => {
+  expect(
+    composeStatementRequestSms({ businessName: 'American Burger Ltd', period: '2026-07', portalLink: 'https://app.test/p/t' }),
+  ).toBe("American Burger Ltd Accounts: we're missing your bank statement for July 2026. Upload securely: https://app.test/p/t");
 });

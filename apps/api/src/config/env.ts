@@ -298,10 +298,21 @@ const EnvSchema = z.object({
   // previous version of this comment demanded. The failure it closes has the
   // `EMAIL_SENDER=demo` shape: the chase is approved, the outbox row appears,
   // and no client is ever contacted.
-  // The SMS transport for v1 is AWS End User Messaging (owner decision,
-  // 1 Sep 2026 — supersedes the Twilio note D32 carried); it lands behind this
-  // same seam as a third enum value.
-  SMS_SENDER: z.enum(['demo', 'email']).default('demo'),
+  // `aws` is the real SMS wire (Phase 3, 2 Sep 2026): AWS End User Messaging —
+  // the owner's 1 Sep decision superseding the Twilio note D32 carried. The
+  // reviewed body goes on the wire verbatim to the REGISTERED mobile the
+  // review card showed; a STOP'd recipient refuses the approval (§24.2.3 — a
+  // send never argues with an opt-out). Requires SMS_ORIGINATION_IDENTITY
+  // (refused empty at boot, below) and the sms-voice:SendTextMessage IAM grant.
+  SMS_SENDER: z.enum(['demo', 'email', 'aws']).default('demo'),
+
+  // Where SMS is sent from and through (Phase 3). The identity is the UK
+  // dedicated number (or pool id/ARN) the carrier registration activates —
+  // empty until it exists, and SMS_SENDER=aws refuses to boot on empty: a
+  // sender with no origination identity fails at REQUEST time on every send,
+  // which is the UPLOAD_URL_SECRET failure shape (healthy task, dead feature).
+  SMS_REGION: z.string().default('eu-west-2'),
+  SMS_ORIGINATION_IDENTITY: z.string().default(''),
 
   // The web app's public origin — where `/p/<token>` (the chase portal) and
   // `/app/setup` are served. Read by chase.send composition to build the full
@@ -591,6 +602,19 @@ const EnvSchema = z.object({
       path: ['SMS_SENDER'],
       message:
         'SMS_SENDER=demo writes an outbox row and delivers nothing — an approved chase reaches no client. Set SMS_SENDER=email (A13)',
+    });
+  }
+
+  // In EVERY environment, not just production: `aws` with no origination
+  // identity boots green and then refuses every send at request time — the
+  // UPLOAD_URL_SECRET failure shape (healthy task, dead feature, first symptom
+  // a client who never got their text).
+  if (env.SMS_SENDER === 'aws' && env.SMS_ORIGINATION_IDENTITY === '') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['SMS_ORIGINATION_IDENTITY'],
+      message:
+        'SMS_SENDER=aws needs SMS_ORIGINATION_IDENTITY — the UK dedicated number (or pool) sends originate from. Empty, every send fails at request time.',
     });
   }
 

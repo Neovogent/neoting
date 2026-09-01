@@ -358,10 +358,31 @@ notification mirroring auto-close. The portal context serves the request on
 `statement-request.integration.test.ts` (create → approve → portal → ingest
 closes → received flips; wrong-month statements close nothing).
 
-**Still open here:** per-client suppression descriptors, engines (b), (d),
+✅ **The REAL SMS wire exists: `SMS_SENDER=aws` (Phase 3, 2 Sep 2026 — AWS End
+User Messaging, the owner's 1 Sep decision superseding D32's Twilio note).**
+`aws-sms-transport.ts` is the thin wire (one command, `TRANSACTIONAL`,
+`OptedOutRecipientError` for a STOP'd number); `aws-sms-sender.ts` is the
+seam's third implementation, carrying A13's discipline wholesale: reviewed
+bytes verbatim to the REGISTERED mobile the review card showed, the same
+per-recipient `document-request` ceiling (keyed on the E164), refusals
+(`NT-PRP-006`) that roll the approval back — a STOP is never argued with —
+and REAL `sms_log` rows, so the outbox tells the truth again (`costPence`
+stays null until the SNS delivery-event consumer lands, the recorded
+follow-up). Chase sign-in codes go BY TEXT to the registered mobile when the
+wire is configured (`composeSignInCodeSms` — byte-for-byte the
+carrier-registered sample; email is the fallback, not the twin). env.ts
+refuses `aws` with an empty `SMS_ORIGINATION_IDENTITY` at boot in every
+environment; the IAM grant (`sms-voice:SendTextMessage`) is already on the
+task role. ⚠ Staging stays `SMS_SENDER=email` until the UK dedicated number
+clears carrier review — the flip is two env values
+(`SMS_SENDER=aws` + the number) and nothing else.
+
+**Still open here:** the SNS delivery-event consumer (real `costPence` +
+delivery states), per-client suppression descriptors, engines (b), (d),
 (e), scheduled period-gap DETECTION for (c) (the request is accountant-
-initiated today), the policy scheduler / reminders / quiet hours / STOP /
-item messaging. The read controllers landed (METH S8, see above); auto-close landed (METH
+initiated today), the policy scheduler / reminders / quiet hours /
+item messaging (STOP itself is honoured — AWS's managed opt-out list plus
+the sender's refusal). The read controllers landed (METH S8, see above); auto-close landed (METH
 S8, `auto-close.ts` behind the `index.ts` seam, wired into the ingest processor).
 
 ## TODO
