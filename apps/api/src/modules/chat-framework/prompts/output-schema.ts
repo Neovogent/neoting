@@ -77,6 +77,20 @@ const NavigationSchema = z
   })
   .strict();
 
+const DisplayRequestSchema = z
+  .object({
+    /**
+     * A SHAPE, never data. The model asks for a table or a bar chart of one
+     * subject; `display.ts` fills every cell from RLS-scoped rows after the
+     * fact. There is deliberately no field here a number could travel in —
+     * the same doctrine as `documentQuery` (no ids) and the whole schema
+     * (no figures).
+     */
+    kind: z.enum(['table', 'barChart']),
+    subject: z.enum(['documents', 'bankTransactions', 'chases']),
+  })
+  .strict();
+
 const GroundedAnswerSchema = z
   .object({
     /**
@@ -102,6 +116,7 @@ export const ModelTurnSchema = z
     rule: RuleDraftSchema.optional(),
     navigation: NavigationSchema.optional(),
     grounded: GroundedAnswerSchema.optional(),
+    display: DisplayRequestSchema.optional(),
   })
   .strict()
   .superRefine((turn, ctx) => {
@@ -140,6 +155,15 @@ export const ModelTurnSchema = z
         code: z.ZodIssueCode.custom,
         path: ['navigation', 'clientName'],
         message: 'navigation.clientName may only accompany intent ADD_CLIENT',
+      });
+    }
+    // A display block is a grounded answer's illustration, and only that: the
+    // server fills it from the same retrieved records the citations stand on.
+    if (turn.intent !== 'GROUNDED_ANSWER' && turn.display !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['display'],
+        message: 'display may only accompany intent GROUNDED_ANSWER',
       });
     }
   });
@@ -218,6 +242,17 @@ export const RESPOND_TOOL_SCHEMA = {
         },
       },
       description: 'Only with intent GROUNDED_ANSWER.',
+    },
+    display: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['kind', 'subject'],
+      properties: {
+        kind: { type: 'string', enum: ['table', 'barChart'] },
+        subject: { type: 'string', enum: ['documents', 'bankTransactions', 'chases'] },
+      },
+      description:
+        'Only with intent GROUNDED_ANSWER: ask the system to render this client’s records as a table or bar chart beside your reply. You choose the shape; the system fills the data from real records. Use it when the accountant asks to SEE records — a list, a breakdown, "show me".',
     },
   },
 } as const;

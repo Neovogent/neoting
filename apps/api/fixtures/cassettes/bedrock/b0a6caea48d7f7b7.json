@@ -1,6 +1,6 @@
 {
   "key": "b0a6caea48d7f7b7",
-  "recordedAt": "2026-08-30",
+  "recordedAt": "2026-09-01",
   "modelId": "anthropic.claude-sonnet-4-6",
   "synthetic": true,
   "description": "extraction · OCR text path · malformed model output (SYNTHETIC by design)",

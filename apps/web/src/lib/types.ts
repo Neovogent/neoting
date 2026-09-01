@@ -984,4 +984,10 @@ export interface Message {
   viaVoice?: boolean | undefined;
   /** Set only on a server-answered assistant turn. See {@link AssistantMeta}. */
   meta?: AssistantMeta | undefined;
+  /**
+   * Server-composed tables/charts beside a grounded reply (§9.4's display
+   * blocks). The type-only import is erased at build; the values are the
+   * contract's, filled server-side — nothing in the browser invents a cell.
+   */
+  display?: import('@neoting/contracts/model').ChatDisplayBlock[] | undefined;
 }

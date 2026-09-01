@@ -8,6 +8,8 @@ import { currentTraceId } from '../../common/trace/trace-context.js';
 import { wrapUntrusted } from '../../common/untrusted-content.js';
 import type { AiBudget } from '../../common/ai-budget.js';
 import { buildRuleDraft } from './drafts.js';
+import { composeDisplay } from './display.js';
+import type { ChatDisplayBlock } from '@neoting/contracts/model';
 import {
   type CategoryOption,
   type GroundedRecord,
@@ -69,6 +71,8 @@ export interface ChatTurnOutput {
   draft?: unknown;
   navigation?: { businessId?: string; documentId?: string; statusFilter?: string; clientName?: string };
   references?: { type: GroundedRecord['type']; id: string; label: string }[];
+  /** Server-composed illustrations of a grounded answer — see `display.ts`. */
+  display?: ChatDisplayBlock[];
   usage: {
     model: string;
     tier: 'judgment' | 'workhorse' | 'mechanical';
@@ -295,7 +299,18 @@ export class ChatService {
         return output;
       }
       if (cited.length === 0) output.reply = NO_RECORDS_ANSWER;
-      else output.references = cited.map((r) => ({ type: r.type, id: r.id, label: r.label }));
+      else {
+        output.references = cited.map((r) => ({ type: r.type, id: r.id, label: r.label }));
+        // The model asked for a shape; the block's every value comes from the
+        // same RLS-scoped reads the citations stand on. An answer with no
+        // records got the literal fallback above and no picture — an empty
+        // table would claim "nothing exists" louder than the words do.
+        if (turn.display !== undefined && businessId !== undefined) {
+          const request = turn.display;
+          const block = await scopedDb(this.prisma, context, (db) => composeDisplay(db, businessId, request));
+          if (block !== null) output.display = [block];
+        }
+      }
       return output;
     }
 

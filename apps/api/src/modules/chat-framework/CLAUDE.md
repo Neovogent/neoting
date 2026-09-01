@@ -28,6 +28,7 @@ no second door to close.
 | `invoke-structured.ts` | 9.2, 9.3 | Retry-once-on-schema-failure, the degrade ladder, the breaker |
 | `provider/*` | 9.1, 9.3 | Bedrock client, the offline stand-in, the circuit breaker |
 | `drafts.ts` | 9.5 | Model turn → `rule.create` request, built from real rows |
+| `display.ts` | 9.4 | Model's `{kind, subject}` display request → a contract `ChatDisplayBlock` filled from RLS-scoped rows. GROUNDED_ANSWER only, attached only when citations stood; cells travel as typed strings (pence as digits — the WEB's money boundary renders them), bars are counts only, an empty subject is NO block. The drafts.ts posture applied to rendering |
 | `telemetry.ts` | 9.7 | The `ai.call` / `ai.fallback` / `ai.injection_signal` lines |
 
 ## The five things that will bite you
