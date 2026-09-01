@@ -52,6 +52,7 @@ export {
   type ChaseItem,
   type ComposeChaseInput,
   composeChaseSms,
+  composeSignInCodeSms,
   composeStatementRequestSms,
   formatDay,
   formatGbp,
@@ -104,6 +105,7 @@ export {
   EmailChaseSender,
 } from './email-chase-sender.js';
 export { type ChaseSenderEnv, selectSmsSender } from './select-sms-sender.js';
+export { type AwsSmsTransport, type AwsSmsTransportConfig, createAwsSmsTransport, OptedOutRecipientError } from './aws-sms-transport.js';
 
 // Auto-close on inbound match (SoT §4 Stage 8.5 / METH Stage 8): when an
 // ingested document matches an open chase's transaction (supplier + amount + a

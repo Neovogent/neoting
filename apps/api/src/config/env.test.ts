@@ -381,3 +381,12 @@ test('BILLING=demo ignores the Stripe values entirely, so a laptop needs none of
   expect(env.BILLING).toBe('demo');
   expect(env.STRIPE_SECRET_KEY).toBe('');
 });
+
+test('SMS_SENDER=aws with no origination identity fails to boot, in every environment', () => {
+  // A sender with no number boots green and fails every send at request time —
+  // the UPLOAD_URL_SECRET failure shape (healthy task, dead feature).
+  expect(() => loadEnv({ SMS_SENDER: 'aws' } as NodeJS.ProcessEnv)).toThrow(/SMS_ORIGINATION_IDENTITY/);
+  const configured = loadEnv({ SMS_SENDER: 'aws', SMS_ORIGINATION_IDENTITY: '+447700900000' } as NodeJS.ProcessEnv);
+  expect(configured.SMS_SENDER).toBe('aws');
+  expect(configured.SMS_REGION).toBe('eu-west-2');
+});

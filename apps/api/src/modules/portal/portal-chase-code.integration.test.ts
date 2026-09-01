@@ -190,3 +190,64 @@ describe.skipIf(!enabled)('chase link → emailed code → portal session, under
     expect(email.readOutbox()).toHaveLength(before);
   });
 });
+
+test('with the SMS wire configured, the code goes to the REGISTERED MOBILE and email stays quiet', async () => {
+  const texts: { to: string; body: string }[] = [];
+  const notifications = new NotificationsService(email, new InMemoryEmailRateLimiter());
+  const withSms = new PortalOnboardingService(
+    app,
+    {
+      portalSessionSecret: SESSION_SECRET,
+      otpMode: 'totp',
+      portalLinkSecret: LINK_SECRET,
+      smsOtp: {
+        sendText: async (to, body) => {
+          texts.push({ to, body });
+          return { messageId: 'aws-otp-1' };
+        },
+      },
+    },
+    notifications,
+  );
+
+  const emailsBefore = email.readOutbox().length;
+  const linkToken = signPortalLink({ chaseId: CHASE }, LINK_SECRET);
+  await withSms.requestChaseCode(linkToken);
+
+  // D45's own words: OTP to the registered mobile — and only there.
+  expect(texts).toHaveLength(1);
+  expect(texts[0]?.to).toBe('+447700900201');
+  expect(texts[0]?.body).toMatch(/^Your Neo Accounting sign-in code is [0-9]{6}\./);
+  expect(email.readOutbox()).toHaveLength(emailsBefore);
+
+  // The texted code opens the session — same row, same verifier.
+  const code = /\b([0-9]{6})\b/.exec(texts[0]?.body ?? '')?.[1] ?? '';
+  const issued = await sessions().createSession({ linkToken, otp: code });
+  expect(issued.token.length).toBeGreaterThan(20);
+});
+
+test('an SMS failure falls back to the registered email — a failed text strands nobody', async () => {
+  const notifications = new NotificationsService(email, new InMemoryEmailRateLimiter());
+  const withBrokenSms = new PortalOnboardingService(
+    app,
+    {
+      portalSessionSecret: SESSION_SECRET,
+      otpMode: 'totp',
+      portalLinkSecret: LINK_SECRET,
+      smsOtp: {
+        sendText: async () => {
+          throw new Error('carrier unavailable');
+        },
+      },
+    },
+    notifications,
+  );
+
+  const emailsBefore = email.readOutbox().length;
+  const linkToken = signPortalLink({ chaseId: CHASE }, LINK_SECRET);
+  await withBrokenSms.requestChaseCode(linkToken);
+
+  const sent = email.readOutbox();
+  expect(sent).toHaveLength(emailsBefore + 1);
+  expect(sent.at(-1)?.to).toBe('pcc@client.test');
+});

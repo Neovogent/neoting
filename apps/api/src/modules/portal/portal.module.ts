@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { getPrismaClient, type PrismaClient } from '../../common/db/prisma.js';
+import { createAwsSmsTransport } from '../chase/index.js';
 import { type IdempotencyStore, InMemoryIdempotencyStore } from '../../common/idempotency/idempotency-store.js';
 import type { Env } from '../../config/env.js';
 import { ENV } from '../../config/env.module.js';
@@ -71,7 +72,22 @@ import {
       useFactory: (prisma: PrismaClient, env: Env, notifications: NotificationsService) =>
         new PortalOnboardingService(
           prisma,
-          { portalSessionSecret: env.PORTAL_SESSION_SECRET, otpMode: env.OTP_MODE, portalLinkSecret: env.PORTAL_LINK_SECRET },
+          {
+            portalSessionSecret: env.PORTAL_SESSION_SECRET,
+            otpMode: env.OTP_MODE,
+            portalLinkSecret: env.PORTAL_LINK_SECRET,
+            // OTP by SMS (Phase 3): only when the real wire is configured —
+            // env.ts refuses `aws` with an empty origination identity, so the
+            // transport constructed here always has a number to send from.
+            ...(env.SMS_SENDER === 'aws'
+              ? {
+                  smsOtp: createAwsSmsTransport({
+                    region: env.SMS_REGION,
+                    originationIdentity: env.SMS_ORIGINATION_IDENTITY,
+                  }),
+                }
+              : {}),
+          },
           notifications,
         ),
       inject: [PRISMA, ENV, NOTIFICATIONS_SERVICE],

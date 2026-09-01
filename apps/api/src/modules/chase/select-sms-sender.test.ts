@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 
+import { AwsSmsSender } from './aws-sms-sender.js';
 import { EmailChaseSender } from './email-chase-sender.js';
 import { type ChaseSenderEnv, selectSmsSender } from './select-sms-sender.js';
 import { DemoSmsSender } from './sms-sender.js';
@@ -18,6 +19,8 @@ function env(over: Partial<ChaseSenderEnv> = {}): ChaseSenderEnv {
     EMAIL_REPLY_TO_ADDRESS: '',
     EMAIL_CONFIGURATION_SET: '',
     EMAIL_RATE_LIMIT: 'memory',
+    SMS_REGION: 'eu-west-2',
+    SMS_ORIGINATION_IDENTITY: '',
     REDIS_URL: 'redis://localhost:6379',
     ...over,
   };
@@ -46,4 +49,11 @@ test('an unknown value falls back to the outbox writer rather than to silence', 
   // the default arm exists so a hand-built env in a test or a script cannot
   // produce a sender that is undefined.
   expect(selectSmsSender(env({ SMS_SENDER: 'nonsense' as ChaseSenderEnv['SMS_SENDER'] }))).toBeInstanceOf(DemoSmsSender);
+});
+
+test('SMS_SENDER=aws selects the AWS sender without constructing a client', () => {
+  // Selection must be free: the pinpoint client is built lazily on first send,
+  // so a process configured for aws that never chases opens nothing.
+  const sender = selectSmsSender(env({ SMS_SENDER: 'aws', SMS_ORIGINATION_IDENTITY: '+447700900000' }));
+  expect(sender).toBeInstanceOf(AwsSmsSender);
 });

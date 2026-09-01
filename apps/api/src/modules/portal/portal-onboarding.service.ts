@@ -6,7 +6,7 @@ import type { PrismaClient } from '../../common/db/prisma.js';
 import { systemContext } from '../../common/db/scope-context.js';
 import { type ScopedClient, scopedDb } from '../../common/db/scoped-db.js';
 import type { Env } from '../../config/env.js';
-import { verifyPortalLink } from '../chase/index.js';
+import { composeSignInCodeSms, verifyPortalLink } from '../chase/index.js';
 import { hashSetupToken } from '../clients-team-settings/index.js';
 import { type NotificationsService, SignInCode } from '../notifications/index.js';
 import { hashLinkToken } from './portal-session.service.js';
@@ -62,6 +62,14 @@ export interface PortalOnboardingConfig {
   readonly otpMode: Env['OTP_MODE'];
   /** Verifies a CHASE link on the code-request branch — the same secret that signed it. */
   readonly portalLinkSecret: string;
+  /**
+   * SMS delivery for chase sign-in codes (Phase 3) — present only when
+   * `SMS_SENDER=aws` is configured. With it, a chase code goes to the
+   * REGISTERED MOBILE first (D45's own words: "OTP to the registered number"),
+   * falling back to the registered email when the contact has no mobile.
+   * Absent, email carries every code exactly as before.
+   */
+  readonly smsOtp?: { sendText(toE164: string, body: string): Promise<{ messageId: string }> } | undefined;
 }
 
 export interface RequestSignInCodeInput {
@@ -293,11 +301,33 @@ export class PortalOnboardingService {
       }),
     );
 
+    // D45's own words: "OTP to the registered mobile". With the SMS wire
+    // configured and a mobile on file, the code goes by TEXT — the carrier-
+    // registered sample, verbatim — and email is the fallback, not the twin: a
+    // code on two channels is two interception surfaces for one credential.
+    const minutes = Math.round(ONBOARDING_OTP_TTL_MS / 60_000);
+    if (this.config.smsOtp !== undefined && resolved.mobileE164 !== null) {
+      try {
+        await this.config.smsOtp.sendText(resolved.mobileE164, composeSignInCodeSms(otp, minutes));
+        return;
+      } catch (error) {
+        // §11: never the number, never the code. The email fallback below still
+        // runs — a failed text must not strand a client with no code at all.
+        this.logger.warn(
+          `chase code SMS failed — falling back to email · business=${resolved.businessId}: ${error instanceof Error ? error.name : 'error'}`,
+        );
+      }
+    }
+
+    if (resolved.email === null) {
+      this.logger.warn(`chase code not sent: contact-has-no-email · business=${resolved.businessId}`);
+      return;
+    }
     try {
       const sent = await this.notifications.sendSignInCode({
         to: resolved.email,
         code: SignInCode.parse(otp),
-        expiresInMinutes: Math.round(ONBOARDING_OTP_TTL_MS / 60_000),
+        expiresInMinutes: minutes,
       });
       if (sent.sent === false) {
         this.logger.warn(
@@ -313,18 +343,27 @@ export class PortalOnboardingService {
   }
 
   /**
-   * chaseId → its practice, business and the registered recipient's email.
-   * The `resolveChase` sweep (`portal-session.service.ts`), narrowed to what
-   * code delivery needs: the chase's NAMED recipient contact, and that
-   * contact's address. No contact, or a contact with no email, refuses — the
-   * email transport's own D45 stance; falling back to "the primary contact"
-   * would deliver a credential to someone the reviewer never named.
+   * chaseId → its practice, business and the registered recipient's
+   * identities. The `resolveChase` sweep (`portal-session.service.ts`),
+   * narrowed to what code delivery needs: the chase's NAMED recipient contact
+   * and their registered mobile + email. No contact, or a contact with
+   * NEITHER identity, refuses — falling back to "the primary contact" would
+   * deliver a credential to someone the reviewer never named (D45).
    */
   private async resolveChaseRecipient(
     chaseId: string,
   ): Promise<
-    | { ok: true; practiceId: string; systemUserId: string; businessId: string; chaseId: string; contactId: string; email: string }
-    | { ok: false; reason: 'unknown-chase' | 'no-recipient-contact' | 'contact-has-no-email' | 'no-practice-actor' }
+    | {
+        ok: true;
+        practiceId: string;
+        systemUserId: string;
+        businessId: string;
+        chaseId: string;
+        contactId: string;
+        email: string | null;
+        mobileE164: string | null;
+      }
+    | { ok: false; reason: 'unknown-chase' | 'no-recipient-contact' | 'contact-unreachable' | 'no-practice-actor' }
   > {
     const candidates = await this.systemActorsByPractice();
     if (candidates.length === 0) return { ok: false, reason: 'no-practice-actor' };
@@ -339,17 +378,20 @@ export class PortalOnboardingService {
         if (chase.recipientContactId === null) return { refusal: 'no-recipient-contact' as const };
         const contact = await db.contact.findUnique({
           where: { id: chase.recipientContactId },
-          select: { id: true, email: true },
+          select: { id: true, email: true, mobileE164: true },
         });
         if (contact === null) return { refusal: 'no-recipient-contact' as const };
-        if (contact.email === null || contact.email === '') return { refusal: 'contact-has-no-email' as const };
+        const email = contact.email === null || contact.email === '' ? null : contact.email;
+        const mobileE164 = contact.mobileE164 === null || contact.mobileE164 === '' ? null : contact.mobileE164;
+        if (email === null && mobileE164 === null) return { refusal: 'contact-unreachable' as const };
         return {
           practiceId: candidate.practiceId,
           systemUserId: candidate.systemUserId,
           businessId: chase.businessId,
           chaseId: chase.id,
           contactId: contact.id,
-          email: contact.email,
+          email,
+          mobileE164,
         };
       });
       if (found !== null) {

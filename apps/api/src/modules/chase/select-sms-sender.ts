@@ -1,4 +1,6 @@
 import type { Env } from '../../config/env.js';
+import { AwsSmsSender } from './aws-sms-sender.js';
+import { createAwsSmsTransport } from './aws-sms-transport.js';
 import { EmailChaseSender } from './email-chase-sender.js';
 import { DemoSmsSender, type SmsSender } from './sms-sender.js';
 
@@ -39,10 +41,30 @@ export type ChaseSenderEnv = Pick<
   | 'EMAIL_CONFIGURATION_SET'
   | 'EMAIL_RATE_LIMIT'
   | 'REDIS_URL'
+  // Read only when SMS_SENDER=aws (Phase 3).
+  | 'SMS_REGION'
+  | 'SMS_ORIGINATION_IDENTITY'
 >;
 
 export function selectSmsSender(env: ChaseSenderEnv): SmsSender {
   switch (env.SMS_SENDER) {
+    case 'aws':
+      // The real SMS wire (Phase 3, AWS End User Messaging). Lazy for the same
+      // two reasons as `email` below: the limiter comes off the notifications
+      // seam (the cycle hazard), and a process that never sends builds no AWS
+      // client and opens no Redis connection. `AwsSmsSender` memoises after
+      // the first send. env.ts refuses to boot `aws` with an empty
+      // SMS_ORIGINATION_IDENTITY, so the transport never sees one.
+      return new AwsSmsSender(async () => {
+        const { selectEmailRateLimiter } = await import('../notifications/index.js');
+        return {
+          transport: createAwsSmsTransport({
+            region: env.SMS_REGION,
+            originationIdentity: env.SMS_ORIGINATION_IDENTITY,
+          }),
+          limiter: selectEmailRateLimiter(env),
+        };
+      });
     case 'email':
       // ⚠ The import is DYNAMIC, and that is load-bearing rather than lazy for
       // its own sake. `notifications/email-copy.ts` imports `chase/index.ts`

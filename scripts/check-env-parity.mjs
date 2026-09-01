@@ -77,6 +77,9 @@ const LOCAL_ONLY = {
   // discoverability. If staging ever needs the non-default, the key moves to
   // services.tf and off this list.
   EMAIL_SOURCE: 'defaults to fixture everywhere; the s3 poller has no ECS service yet (apps/api/CLAUDE.md)',
+  SMS_ORIGINATION_IDENTITY:
+    'Phase 3: the UK dedicated number, still in carrier review — lands on services.tf together with the SMS_SENDER=aws flip',
+  SMS_REGION: 'partner of SMS_ORIGINATION_IDENTITY; stated on ECS when the number activates',
   WHATSAPP_PRACTICE_MAP:
     'controller-side override only since Practice.whatsappPhoneNumberId landed (1 Sep 2026); staging maps practices in the DB, not the task definition',
   AUTH_MODE: undefined, // never allowlist a mode switch that IS on ECS — see the check below
