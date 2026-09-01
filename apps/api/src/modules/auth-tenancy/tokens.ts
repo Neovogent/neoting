@@ -33,4 +33,5 @@ export const TOTP_ENROLMENT_SERVICE = Symbol('TOTP_ENROLMENT_SERVICE');
  * could spend it.
  */
 export const EMAIL_VERIFICATION_SERVICE = Symbol('EMAIL_VERIFICATION_SERVICE');
+export const PASSWORD_RESET_SERVICE = Symbol('PASSWORD_RESET_SERVICE');
 export const PRISMA = Symbol('AUTH_TENANCY_PRISMA');

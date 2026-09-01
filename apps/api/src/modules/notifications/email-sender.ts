@@ -63,7 +63,8 @@ export type EmailKind =
   // shipped a recording stand-in; until they existed here, `POST /v1/practices`
   // refused under NODE_ENV=production and staging had no signup at all.
   | 'email-verification'
-  | 'duplicate-signup';
+  | 'duplicate-signup'
+  | 'password-reset';
 
 /** One message, fully composed. The sender adds the envelope and nothing else. */
 export interface OutboundEmail {

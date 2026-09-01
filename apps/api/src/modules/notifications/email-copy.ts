@@ -231,6 +231,40 @@ export function composeEmailVerification(input: ComposeEmailVerificationInput): 
   return { subject, body, html: renderEmailHtml({ subject, body, linkLabels: { [input.verifyLink]: 'Confirm email address' } }) };
 }
 
+// ── 4b · Reset your password ────────────────────────────────────────────
+
+export interface ComposePasswordResetInput {
+  readonly resetLink: string;
+  /** When the LINK dies — named in the mail so the copy and the constant cannot drift. */
+  readonly expiresInMinutes: number;
+}
+
+/**
+ * The forgotten-password mail (2 Sep 2026). Deliberately terse and nameless:
+ * whoever typed the address into the reset form may not be the account holder,
+ * so the mail asserts nothing about the account beyond "a reset was requested"
+ * — the duplicate-signup notice's discipline, applied to a credential mail.
+ * The not-you sentence matters: an unrequested reset mail is the account
+ * holder's only signal that someone is probing their address.
+ */
+export function composePasswordReset(input: ComposePasswordResetInput): ComposedEmail {
+  const subject = `Reset your ${SENDER_DISPLAY_NAME} password`;
+  const body = lines(
+    'Hello,',
+    '',
+    `A password reset was requested for this address on ${SENDER_DISPLAY_NAME}. Set a new password here:`,
+    '',
+    input.resetLink,
+    '',
+    `The link works once and stops working in ${input.expiresInMinutes} minutes. Your authenticator app is unchanged — you will still need it to sign in.`,
+    '',
+    'If you did not request this, you can ignore this email — your password has not changed. If it keeps happening, tell your accountant.',
+    '',
+    SENDER_DISPLAY_NAME,
+  );
+  return { subject, body, html: renderEmailHtml({ subject, body, linkLabels: { [input.resetLink]: 'Set a new password' } }) };
+}
+
 // ── 5 · Someone tried to sign up with your address ─────────────────────
 
 /**

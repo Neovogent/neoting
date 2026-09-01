@@ -6,15 +6,20 @@ import {
   beginTotpEnrolmentBody,
   confirmTotpEnrolmentBody,
   confirmTotpEnrolmentHeader,
+  requestPasswordResetBody,
+  requestPasswordResetHeader,
+  resetPasswordBody,
+  resetPasswordHeader,
   verifyEmailAddressBody,
   verifyEmailAddressHeader,
 } from '@neoting/contracts/zod';
 
 import { parseBoundary, parseIdempotencyKey } from '../../common/validation/parse-boundary.js';
 import type { EmailVerificationService } from './email-verification.service.js';
+import type { PasswordResetService } from './password-reset.service.js';
 import { applyRateLimitHeaders } from './rate-limit-headers.js';
 import { RateLimitedException } from './sign-in-throttle.js';
-import { EMAIL_VERIFICATION_SERVICE, TOTP_ENROLMENT_SERVICE } from './tokens.js';
+import { EMAIL_VERIFICATION_SERVICE, PASSWORD_RESET_SERVICE, TOTP_ENROLMENT_SERVICE } from './tokens.js';
 import type { TotpEnrolmentService } from './totp-enrolment.service.js';
 
 /**
@@ -62,7 +67,43 @@ export class SignupChainController {
   constructor(
     @Inject(EMAIL_VERIFICATION_SERVICE) private readonly verification: EmailVerificationService,
     @Inject(TOTP_ENROLMENT_SERVICE) private readonly enrolment: TotpEnrolmentService,
+    @Inject(PASSWORD_RESET_SERVICE) private readonly passwordReset: PasswordResetService,
   ) {}
+
+  /**
+   * `POST /v1/auth/password-resets` — the forgotten-password door (2 Sep
+   * 2026). **`202`, always, whatever happened** — whether an address has an
+   * account here is not something an unauthenticated caller may learn, so the
+   * mail is the only channel that distinguishes the outcomes and it goes to
+   * the address, never the caller (the `POST /practices` stance).
+   */
+  @Post('auth/password-resets')
+  @HttpCode(HttpStatus.ACCEPTED)
+  async requestPasswordReset(
+    @Body() body: unknown,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+  ): Promise<void> {
+    parseIdempotencyKey(requestPasswordResetHeader, idempotencyKey);
+    const input = parseBoundary(requestPasswordResetBody, body, 'request body');
+    await this.passwordReset.request(input.email);
+  }
+
+  /**
+   * `POST /v1/auth/password` — spend the emailed token, set the new password.
+   * The token is the whole authorisation; refusals are the same `-004`/`-005`
+   * pair as email verification, for the same reasons.
+   */
+  @Post('auth/password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async resetPassword(
+    @Body() body: unknown,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<void> {
+    parseIdempotencyKey(resetPasswordHeader, idempotencyKey);
+    const input = parseBoundary(resetPasswordBody, body, 'request body');
+    await this.withRateLimitHeaders(res, () => this.passwordReset.reset(input.token, input.newPassword));
+  }
 
   /**
    * `POST /v1/auth/email-verification` — spend the link from the signup email.
