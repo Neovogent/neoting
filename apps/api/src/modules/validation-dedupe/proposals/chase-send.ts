@@ -1,7 +1,7 @@
 import type { ChaseSendPayload } from '@neoting/contracts/model';
 
 import type { ScopedClient } from '../../../common/db/scoped-db.js';
-import type { OutboundSms, SmsSender } from '../../chase/index.js';
+import { type OutboundSms, type SmsSender, statementItemRef } from '../../chase/index.js';
 import {
   type ExecutionInput,
   type ExecutionResult,
@@ -65,29 +65,53 @@ export function chaseSendExecutor(sender: SmsSender): ProposalExecutor<'chase.se
       const outbound: OutboundSms[] = [];
 
       for (const message of payload.messages) {
-        // Resolve the business from the chased transactions THROUGH RLS, before
-        // writing anything (the web-upload / route guard applied to effects): an
-        // approver who cannot see a transaction cannot chase it, and the refusal
-        // must not confirm whether the id exists. All ids in one grouped message
-        // must belong to ONE business — that is what "grouped per client" means.
-        // Compare against the DISTINCT requested ids: `findMany(in: [...])` returns
-        // one row per id, so a benign duplicate in the payload must not be
-        // misreported as "not reachable" — dedupe before the reachability count.
-        const requestedIds = new Set(message.transactionIds);
-        const transactions = await db.bankTransaction.findMany({
-          where: { id: { in: [...requestedIds] } },
-          select: { id: true, businessId: true },
-        });
-        if (transactions.length !== requestedIds.size) {
-          throw new ProposalExecutionRefused('chase.send', 'a chased transaction is not reachable');
-        }
-        const businessIds = new Set(transactions.map((t) => t.businessId));
-        if (businessIds.size !== 1) {
-          throw new ProposalExecutionRefused('chase.send', 'a grouped message must chase transactions from one client');
-        }
-        const businessId = transactions[0]?.businessId;
-        if (businessId === undefined) {
-          throw new ProposalExecutionRefused('chase.send', 'a message must chase at least one transaction');
+        // A statement request (engine (c), Phase 5) carries a period instead
+        // of transactions, and its business was stamped by the compose seam
+        // from the proposal's own anchor.
+        const statementPeriod =
+          typeof message.statementPeriod === 'string' && message.statementPeriod !== '' ? message.statementPeriod : null;
+
+        let businessId: string;
+        let transactionIds: readonly string[];
+        if (statementPeriod !== null) {
+          if (message.businessId == null) {
+            throw new ProposalExecutionRefused('chase.send', 'a statement request names no business');
+          }
+          // Resolve through RLS before writing — the same guard as the
+          // transactions branch: unreachable and absent are one refusal.
+          const business = await db.business.findUnique({ where: { id: message.businessId }, select: { id: true } });
+          if (business === null) {
+            throw new ProposalExecutionRefused('chase.send', 'a referenced record is not reachable');
+          }
+          businessId = business.id;
+          transactionIds = [];
+        } else {
+          // Resolve the business from the chased transactions THROUGH RLS, before
+          // writing anything (the web-upload / route guard applied to effects): an
+          // approver who cannot see a transaction cannot chase it, and the refusal
+          // must not confirm whether the id exists. All ids in one grouped message
+          // must belong to ONE business — that is what "grouped per client" means.
+          // Compare against the DISTINCT requested ids: `findMany(in: [...])` returns
+          // one row per id, so a benign duplicate in the payload must not be
+          // misreported as "not reachable" — dedupe before the reachability count.
+          const requestedIds = new Set(message.transactionIds ?? []);
+          const transactions = await db.bankTransaction.findMany({
+            where: { id: { in: [...requestedIds] } },
+            select: { id: true, businessId: true },
+          });
+          if (transactions.length !== requestedIds.size) {
+            throw new ProposalExecutionRefused('chase.send', 'a chased transaction is not reachable');
+          }
+          const businessIds = new Set(transactions.map((t) => t.businessId));
+          if (businessIds.size !== 1) {
+            throw new ProposalExecutionRefused('chase.send', 'a grouped message must chase transactions from one client');
+          }
+          const first = transactions[0]?.businessId;
+          if (first === undefined) {
+            throw new ProposalExecutionRefused('chase.send', 'a message must chase at least one transaction');
+          }
+          businessId = first;
+          transactionIds = [...requestedIds];
         }
 
         // recipientContactId is optional in the payload; when present it must be a
@@ -105,6 +129,11 @@ export function chaseSendExecutor(sender: SmsSender): ProposalExecutor<'chase.se
           }
         }
 
+        if (message.recipientE164 == null) {
+          // The compose seam guarantees a recipient; a pre-seam payload without
+          // one has nowhere to send and refuses rather than inventing a number.
+          throw new ProposalExecutionRefused('chase.send', 'a message names no recipient');
+        }
         const now = new Date();
         const chase = await db.chase.create({
           data: {
@@ -115,11 +144,15 @@ export function chaseSendExecutor(sender: SmsSender): ProposalExecutor<'chase.se
             // mints one (whose link, being tokenless, never worked anyway).
             ...(message.chaseId != null ? { id: message.chaseId } : {}),
             businessId,
-            detectionEngine: 'UNMATCHED_TRANSACTION',
+            // Engine (c) for a statement request — the enum member SoT §24.2
+            // reserved for exactly this ask; engine (a) for chased lines.
+            detectionEngine: statementPeriod !== null ? 'STATEMENT_PERIOD_GAP' : 'UNMATCHED_TRANSACTION',
             // The single-transaction convenience column, plus the full grouped
             // list — one message per client covers many receipts (SoT Stage 8.2).
-            transactionId: message.transactionIds[0] ?? null,
-            itemRefs: message.transactionIds,
+            // A statement request's one item is its month, as the chase seam's
+            // tag, so itemCount stays honest at 1.
+            transactionId: transactionIds[0] ?? null,
+            itemRefs: statementPeriod !== null ? [statementItemRef(statementPeriod)] : [...transactionIds],
             recipientContactId,
             state: 'SENT',
             firstSentAt: now,

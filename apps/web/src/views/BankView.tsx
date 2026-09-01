@@ -32,6 +32,7 @@ import { DataSourceBadge } from '../components/DataSourceBadge';
 // Lazy for the bundle's sake: this view rides the worst route in the app, and
 // the filter drawer is not needed until its button is pressed.
 const BankFilterPanel = lazy(() => import('../components/DynamicComponents/BankFilterPanel'));
+const RequestStatementDialog = lazy(() => import('../components/DynamicComponents/RequestStatementDialog'));
 
 const TABS = ['Transactions', 'Matches', 'Statements', 'Accounts'] as const;
 type Tab = (typeof TABS)[number];
@@ -345,6 +346,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
   // Accountant-defined cash-code categories — added once, offered for every transaction after.
   const [customCategories, setCustomCategories] = useState<string[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [requestStatementOpen, setRequestStatementOpen] = useState(false);
   const [uploadFor, setUploadFor] = useState<string | null>(null);
   const [chasing, setChasing] = useState<string[] | null>(null);
   const confirm = useConfirm();
@@ -589,6 +591,18 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
               <UploadCloud size={16} />
               {intl.formatMessage(m.uploadStatementAction)}
             </button>
+            {/* Request a month's statement from the client — live only (the
+                real chase.send statement path, Phase 5), and only with a
+                client in scope: a request needs someone to ask. */}
+            {liveBank && clientFilter !== 'all' && (
+              <button
+                onClick={() => setRequestStatementOpen(true)}
+                className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-zinc-300 bg-card border border-white/10 rounded-full hover:bg-white/5 transition-all shadow-lg"
+              >
+                <Send size={16} />
+                {intl.formatMessage(m.requestStatementAction)}
+              </button>
+            )}
             <input
               ref={fileRef}
               type="file"
@@ -1079,6 +1093,15 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
 
       {/* Match settings */}
       <AnimatePresence>
+        {requestStatementOpen && clientFilter !== 'all' && (
+          <Suspense fallback={null}>
+            <RequestStatementDialog
+              businessId={serverClientIdFor(clientFilter)}
+              clientName={clients.find((c) => c.id === clientFilter)?.name ?? clientFilter}
+              onClose={() => setRequestStatementOpen(false)}
+            />
+          </Suspense>
+        )}
         {settingsOpen && (
           <Modal onClose={() => setSettingsOpen(false)}>
             <div className="w-full max-w-md border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">

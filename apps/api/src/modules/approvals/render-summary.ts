@@ -81,12 +81,16 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
           // (compose-chase-send.ts) precisely so the reviewer sees it — the
           // A13 leftover this closes. Older payloads carry only the number.
           const email = typeof msg['recipientEmail'] === 'string' && msg['recipientEmail'] !== '' ? msg['recipientEmail'] : null;
+          const period = typeof msg['statementPeriod'] === 'string' && msg['statementPeriod'] !== '' ? msg['statementPeriod'] : null;
           return {
             heading: `Message ${i + 1} — to ${email ?? text(msg['recipientE164'])}`,
             entries: [
               { label: 'Message, exactly as it will send', value: text(msg['body']) },
               ...(email !== null ? [{ label: 'Registered mobile on file', value: text(msg['recipientE164']) }] : []),
-              { label: 'Chasing transactions', value: stringArray(msg['transactionIds']).join(', ') },
+              // A statement request (engine (c)) asks for a month, not lines.
+              period !== null
+                ? { label: 'Requesting bank statement for', value: period }
+                : { label: 'Chasing transactions', value: stringArray(msg['transactionIds']).join(', ') },
             ],
           };
         }),
