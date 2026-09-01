@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { Check, ExternalLink, FileText, Lock, PencilLine, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
@@ -285,6 +285,16 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
     });
     setEditing(null);
   };
+
+  // The staged card renders BELOW the Path-to-Ready and bank-match panels, so
+  // on a phone the tick appeared to do nothing — the row closes showing the
+  // OLD value (correct: nothing changes before approval) and the card that
+  // explains this sat off-screen. Found on the first real walkthrough
+  // (2 Sep 2026): "after clicking save, it doesn't get saved."
+  const stagedRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (pending !== null) stagedRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [pending]);
 
   return (
     <div className="w-full max-w-3xl border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden flex flex-col">
@@ -637,7 +647,7 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                 gets a fresh card rather than an already-approved one. */}
             {live && pending && (
               <Suspense fallback={null}>
-                <div className="mt-6">
+                <div className="mt-6" ref={stagedRef}>
                   <CodingProposalCard
                     key={`${pending.label}:${pending.nextValue}`}
                     document={doc}

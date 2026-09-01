@@ -106,6 +106,19 @@ export function LiveBusinessPortal({ onExit }: { readonly onExit?: (() => void) 
   const [justSent, setJustSent] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // A stored bearer being re-proven (a reload mid-visit). Neither form is
+  // honest here — the address one invites a retype that is not needed, and the
+  // code one implies a code was just sent. A quiet beat, then 'in' or 'address'.
+  if (session.step === 'resuming') {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center bg-ground px-4 py-10 pt-safe pb-safe">
+        <div className="w-12 h-12 rounded-2xl bg-brand flex items-center justify-center text-brand-on animate-pulse">
+          <Building2 size={22} />
+        </div>
+      </div>
+    );
+  }
+
   if (session.step !== 'in' || session.home === null) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-ground px-4 py-10 pt-safe pb-safe">
