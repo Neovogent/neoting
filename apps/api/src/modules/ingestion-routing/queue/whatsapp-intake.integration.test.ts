@@ -1,4 +1,4 @@
-import { NO_STATEMENT_STEP } from '../../banking-matching/index.js';
+import { NO_MATCH_SUGGESTER, NO_STATEMENT_STEP } from '../../banking-matching/index.js';
 import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
@@ -100,6 +100,7 @@ describe.skipIf(!DATABASE_URL || !OWNER_URL)('WhatsApp media intake against a re
       autoClose: new RecordingChaseAutoClose(),
       // Not a statement test: declared, and does nothing.
       statements: NO_STATEMENT_STEP,
+      matchSuggester: NO_MATCH_SUGGESTER,
       finalAttempt: false,
     });
 

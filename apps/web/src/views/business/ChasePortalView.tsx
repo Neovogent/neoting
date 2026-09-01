@@ -6,7 +6,7 @@ import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import type { MessageDescriptor } from 'react-intl';
 import { OTP_LENGTH } from '../../api/portal';
-import type { PortalItem, PortalView } from '../../api/portal';
+import type { PortalItem, PortalStatementRequest, PortalView } from '../../api/portal';
 import { useAppContext } from '../../context/AppContext';
 import { PORTAL_UPLOAD_LIMIT } from '../../lib/business';
 import { compressImage } from '../../lib/capture';
@@ -35,6 +35,17 @@ const m = defineMessages({
     id: 'portal.chasePortal.otpDetail',
     defaultMessage: 'We have emailed you six digits. The link and the code together open this page — nothing else does.',
   },
+  otpRequestDetail: {
+    id: 'portal.chasePortal.otpRequestDetail',
+    defaultMessage:
+      'Press the button and a six-digit code goes to the email address your accountant has on file. The link and the code together open this page — nothing else does.',
+  },
+  otpRequestAction: { id: 'portal.chasePortal.otpRequestAction', defaultMessage: 'Email me my code' },
+  otpRequestedNote: {
+    id: 'portal.chasePortal.otpRequestedNote',
+    defaultMessage: 'If this link is live, a code is on its way to the registered email. It lasts ten minutes.',
+  },
+  otpRequestAgain: { id: 'portal.chasePortal.otpRequestAgain', defaultMessage: 'Send a fresh code' },
   otpLabel: { id: 'portal.chasePortal.otpLabel', defaultMessage: 'One-time code' },
   otpPlaceholder: { id: 'portal.chasePortal.otpPlaceholder', defaultMessage: '000000' },
   otpAction: { id: 'portal.chasePortal.otpAction', defaultMessage: 'Open my documents' },
@@ -57,6 +68,15 @@ const m = defineMessages({
   itemUnnamed: { id: 'portal.chasePortal.itemUnnamed', defaultMessage: 'Card payment' },
   itemReceived: { id: 'portal.chasePortal.itemReceived', defaultMessage: 'Got it' },
   itemSendAction: { id: 'portal.chasePortal.itemSendAction', defaultMessage: 'Send this one' },
+  statementLabel: { id: 'portal.chasePortal.statementLabel', defaultMessage: '{month} bank statement' },
+  statementHint: {
+    id: 'portal.chasePortal.statementHint',
+    defaultMessage: 'A photo of each page works, or the PDF from your banking app.',
+  },
+  captureForStatement: {
+    id: 'portal.chasePortal.captureForStatement',
+    defaultMessage: 'For your {month} bank statement',
+  },
   itemsExpiry: {
     id: 'portal.chasePortal.itemsExpiry',
     defaultMessage: 'This page closes itself on {date}. Ask for a new link any time.',
@@ -173,6 +193,7 @@ export function ChasePortalView() {
   const journey = usePortalJourney(portalLinkToken);
 
   const [picked, setPicked] = useState<PortalItem | null>(null);
+  const [pickedStatement, setPickedStatement] = useState<PortalStatementRequest | null>(null);
   const [page, setPage] = useState<CapturedPage | null>(null);
   const [outcome, setOutcome] = useState<UploadOutcome | null>(null);
 
@@ -185,6 +206,7 @@ export function ChasePortalView() {
     setOutcome(null);
     setPage(null);
     setPicked(null);
+    setPickedStatement(null);
     journey.clearFault();
   }, [journey]);
 
@@ -200,10 +222,11 @@ export function ChasePortalView() {
     return <Result outcome={outcome} page={page} onAgain={restart} onExit={exitBusinessPortal} />;
   }
 
-  if (picked || page) {
+  if (picked || pickedStatement || page) {
     return (
       <Capture
         item={picked}
+        statementMonth={pickedStatement === null ? null : monthLabel(intl, pickedStatement.period)}
         page={page}
         onPage={setPage}
         onSend={send}
@@ -215,10 +238,15 @@ export function ChasePortalView() {
 
   return (
     <Shell title={intl.formatMessage(m.itemsTitle)} subtitle={journey.view.businessName}>
-      <ItemList view={journey.view} onPick={setPicked} live={journey.live} />
+      <ItemList view={journey.view} onPick={setPicked} onPickStatement={setPickedStatement} live={journey.live} />
       <ExitButton onClick={exitBusinessPortal} />
     </Shell>
   );
+}
+
+/** `2026-07` → the client's own month name, in their locale. */
+function monthLabel(intl: ReturnType<typeof useIntl>, period: string): string {
+  return intl.formatDate(new Date(`${period}-01T12:00:00.000Z`), { month: 'long', year: 'numeric', timeZone: 'UTC' });
 }
 
 /* ── ① the link ───────────────────────────────────────────────────────────── */
@@ -271,9 +299,27 @@ function OtpStep({
   const intl = useIntl();
   const [code, setCode] = useState('');
 
+  // Live, the code exists only once the client asks for one (the chase lane
+  // mints per-request codes); synthetic mode's verifier is the fixed demo code
+  // and keeps the original copy. The request never says whether the link is
+  // real — the 202 is uniform — so neither does any sentence here.
+  const needsRequest = journey.live && !journey.codeRequested;
+
   return (
     <Shell title={intl.formatMessage(m.otpTitle)}>
-      <p className="text-[14px] text-zinc-400 leading-relaxed">{intl.formatMessage(m.otpDetail)}</p>
+      <p className="text-[14px] text-zinc-400 leading-relaxed">
+        {intl.formatMessage(needsRequest ? m.otpRequestDetail : journey.live ? m.otpRequestedNote : m.otpDetail)}
+      </p>
+      {journey.live && (
+        <button
+          onClick={() => void journey.requestCode()}
+          disabled={journey.busy}
+          className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-raised hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors border border-white/10"
+        >
+          {journey.busy ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} strokeWidth={2.5} />}
+          {intl.formatMessage(needsRequest ? m.otpRequestAction : m.otpRequestAgain)}
+        </button>
+      )}
       <div>
         <label htmlFor="portal-otp" className="block text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
           {intl.formatMessage(m.otpLabel)}
@@ -309,24 +355,58 @@ function OtpStep({
 function ItemList({
   view,
   onPick,
+  onPickStatement,
   live,
 }: {
   view: PortalView;
   onPick: (item: PortalItem) => void;
+  onPickStatement: (request: PortalStatementRequest) => void;
   live: boolean;
 }) {
   const intl = useIntl();
   const outstanding = view.items.filter((i) => !i.received);
+  const outstandingStatements = view.statementRequests.filter((r) => !r.received);
 
   return (
     <>
       <p className="text-[14px] text-zinc-400 leading-relaxed">
-        {outstanding.length === 0
+        {outstanding.length === 0 && outstandingStatements.length === 0
           ? intl.formatMessage(m.itemsAllDone)
-          : intl.formatMessage(m.itemsDetail, { count: outstanding.length })}
+          : outstanding.length === 0
+            ? intl.formatMessage(m.statementHint)
+            : intl.formatMessage(m.itemsDetail, { count: outstanding.length })}
       </p>
 
       <div className="flex flex-col gap-2.5">
+        {/* Statement requests first — one card per asked month (engine (c)). */}
+        {view.statementRequests.map((request) => (
+          <button
+            key={`stmt-${request.period}`}
+            onClick={() => onPickStatement(request)}
+            disabled={request.received}
+            className="w-full text-left p-4 rounded-2xl bg-card border border-white/5 hover:border-brand/40 disabled:opacity-50 disabled:hover:border-white/5 transition-colors flex items-center justify-between gap-4"
+          >
+            <span className="min-w-0">
+              <span className="block text-[15px] font-bold text-white truncate">
+                {intl.formatMessage(m.statementLabel, { month: monthLabel(intl, request.period) })}
+              </span>
+              <span className="block text-[12.5px] text-zinc-500 mt-1">{intl.formatMessage(m.statementHint)}</span>
+            </span>
+            <span className="shrink-0 text-[12px] font-bold">
+              {request.received ? (
+                <span className="flex items-center gap-1.5 text-emerald-400">
+                  <Check size={14} strokeWidth={3} />
+                  {intl.formatMessage(m.itemReceived)}
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 text-brand">
+                  {intl.formatMessage(m.itemSendAction)}
+                  <ArrowRight size={14} strokeWidth={2.5} />
+                </span>
+              )}
+            </span>
+          </button>
+        ))}
         {view.items.map((item) => (
           <button
             key={item.transactionId}
@@ -371,6 +451,7 @@ function ItemList({
 
 function Capture({
   item,
+  statementMonth = null,
   page,
   onPage,
   onSend,
@@ -378,6 +459,8 @@ function Capture({
   fault,
 }: {
   item: PortalItem | null;
+  /** Set when the pick was a statement request — the header line names the month. */
+  statementMonth?: string | null;
   page: CapturedPage | null;
   onPage: (page: CapturedPage | null) => void;
   onSend: () => void;
@@ -409,14 +492,20 @@ function Capture({
 
   return (
     <Shell title={intl.formatMessage(m.captureTitle)}>
-      {item && (
+      {statementMonth !== null ? (
         <p className="text-[13px] text-brand font-semibold">
-          {intl.formatMessage(m.captureFor, {
-            merchant: item.label ?? intl.formatMessage(m.itemUnnamed),
-            amount: currency(Math.abs(item.amount)),
-            date: item.date,
-          })}
+          {intl.formatMessage(m.captureForStatement, { month: statementMonth })}
         </p>
+      ) : (
+        item && (
+          <p className="text-[13px] text-brand font-semibold">
+            {intl.formatMessage(m.captureFor, {
+              merchant: item.label ?? intl.formatMessage(m.itemUnnamed),
+              amount: currency(Math.abs(item.amount)),
+              date: item.date,
+            })}
+          </p>
+        )
       )}
       <p className="text-[14px] text-zinc-400 leading-relaxed">{intl.formatMessage(m.captureHint)}</p>
 

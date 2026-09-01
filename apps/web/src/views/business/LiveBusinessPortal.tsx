@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { ArrowLeft, Building2, CheckCircle2, Clock, FileText, LogIn, Mail, UploadCloud } from 'lucide-react';
 import { defineMessages, useIntl } from 'react-intl';
 
+import { currency } from '../../lib/resolver';
 import { PrivacyNoticeLink } from '../legal/PrivacyNoticeLink';
 import { useBusinessPortalSession } from './useBusinessPortalSession';
 
@@ -67,6 +68,11 @@ const m = defineMessages({
     id: 'portal.liveBusinessPortal.awaitingCount',
     defaultMessage: '{count, plural, one {# document} other {# documents}}',
   },
+  askStatement: { id: 'portal.liveBusinessPortal.askStatement', defaultMessage: '{month} bank statement' },
+  askItem: { id: 'portal.liveBusinessPortal.askItem', defaultMessage: 'Receipt for {label} · {amount} · {date}' },
+  askUnnamed: { id: 'portal.liveBusinessPortal.askUnnamed', defaultMessage: 'a card payment' },
+  askWaiting: { id: 'portal.liveBusinessPortal.askWaiting', defaultMessage: 'Waiting' },
+  askReceived: { id: 'portal.liveBusinessPortal.askReceived', defaultMessage: 'Got it' },
   awaitingNone: {
     id: 'portal.liveBusinessPortal.awaitingNone',
     defaultMessage: 'Nothing right now — you are up to date.',
@@ -250,6 +256,50 @@ export function LiveBusinessPortal({ onExit }: { readonly onExit?: (() => void) 
               ? intl.formatMessage(m.awaitingNone)
               : intl.formatMessage(m.awaitingCount, { count: home.awaitingYou })}
           </div>
+          {/* The itemised asks (Phase 5): the count now NAMES what is wanted —
+              each outstanding line and statement month, so "3 documents" stops
+              being a number the client has to telephone about. Sending any of
+              them goes through the same upload button below. */}
+          {(home.statementRequests.length > 0 || home.items.length > 0) && (
+            <ul className="mt-4 flex flex-col gap-2">
+              {home.statementRequests.map((request) => (
+                <li
+                  key={`stmt-${request.period}`}
+                  className="flex items-center justify-between gap-3 rounded-2xl bg-raised/50 border border-white/5 px-4 py-3"
+                >
+                  <span className="text-[13px] font-semibold text-white">
+                    {intl.formatMessage(m.askStatement, {
+                      month: intl.formatDate(new Date(`${request.period}-01T12:00:00.000Z`), {
+                        month: 'long',
+                        year: 'numeric',
+                        timeZone: 'UTC',
+                      }),
+                    })}
+                  </span>
+                  <span className={`text-[11px] font-bold uppercase tracking-wider ${request.received ? 'text-emerald-400' : 'text-brand'}`}>
+                    {intl.formatMessage(request.received ? m.askReceived : m.askWaiting)}
+                  </span>
+                </li>
+              ))}
+              {home.items.map((ask) => (
+                <li
+                  key={ask.transactionId}
+                  className="flex items-center justify-between gap-3 rounded-2xl bg-raised/50 border border-white/5 px-4 py-3"
+                >
+                  <span className="min-w-0 text-[13px] font-semibold text-white truncate">
+                    {intl.formatMessage(m.askItem, {
+                      label: ask.label ?? intl.formatMessage(m.askUnnamed),
+                      amount: currency(Math.abs(ask.amount)),
+                      date: ask.date,
+                    })}
+                  </span>
+                  <span className={`shrink-0 text-[11px] font-bold uppercase tracking-wider ${ask.received ? 'text-emerald-400' : 'text-brand'}`}>
+                    {intl.formatMessage(ask.received ? m.askReceived : m.askWaiting)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
 
         <section className="rounded-3xl bg-card border border-white/5 p-5">

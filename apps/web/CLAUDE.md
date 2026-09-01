@@ -596,6 +596,54 @@ Three things drive the floor, all known:
 
 Most of the seed weight leaves when the views move onto the generated client. Until then, treat **199.5 kB** as the floor a new screen is spending against, and re-measure with `pnpm --filter @neoting/web build` before adding a dependency.
 
+## The chase portal requests its own code (1 Sep 2026)
+
+The OTP step's copy used to claim "We have emailed you six digits" while
+nothing ever sent one (the chase lane minted no code — under staging's
+`OTP_MODE=totp` the portal was unopenable from a chase link). Live, `OtpStep`
+now shows an **"Email me my code"** button: `usePortalJourney.requestCode()` →
+`requestPortalCode(linkToken)` (`api/portal.ts`) → `POST /portal/sign-in-codes`
+with the LINK TOKEN — the code goes to the chase's registered recipient
+contact, never an address typed here, and the 202 is uniform, so no sentence on
+the step may say whether the link is real ("If this link is live, a code is on
+its way…"). Synthetic mode keeps the fixed demo code and the original copy;
+`journey.codeRequested` is what flips the wording. Four new `portal.chasePortal.otp*`
+ids.
+
+## Statement requests + the itemised portal (Phase 5, 2 Sep 2026)
+
+Three surfaces, one chase kind (engine (c), `statementPeriod` on a
+`chase.send` message — the engine composes month + working link + PRIMARY
+contact server-side):
+
+- **BankView** (live, client in scope): a "Request statement" button beside
+  Upload statement opens `RequestStatementDialog` (lazy) — month picker,
+  confirm CREATES the proposal via `requestStatementProposal`
+  (`api/proposals.ts`) and says "queued … approved in Approvals"
+  (the OffboardClientDialog posture; D44 means the dialog never says "sent").
+- **ChasePortalView**: `PortalView.statementRequests` renders a statement card
+  per asked month; picking one goes through the same Capture step
+  (`statementMonth` header line, upload with `transactionId: null`). Synthetic
+  mode carries `statementRequests: []` — untouched.
+- **LiveBusinessPortal**: the "waiting for N documents" count now NAMES the
+  asks — `BusinessPortalHome` gained `items` + `statementRequests`
+  (`api/onboarding.ts`, tolerant parse so an older server sends neither), and
+  the awaiting card lists each line/month with Waiting/Got-it state.
+
+## DocumentPreview shows the bank match (Phase 4, 1 Sep 2026)
+
+The section PR #230 refused to fabricate exists now that the server does:
+`api/bank-match.ts` (lazy — imported only by the DocumentPreview chunk, plain
+generated function inside its own `useQuery`, the `proposals.ts` reasoning)
+reads `GET /documents/{id}/bank-match`; the preview renders "Suggested bank
+match" / "Matched bank transaction" with the line's label, amount and date,
+and a SUGGESTED match gets a **Confirm match** button that runs the SAME
+three-call `confirmMatchProposal` ritual the Bank screen uses (create →
+review → approve echoing the hash — the middle call cannot be skipped).
+`toLocalTransaction` now fills `matchedDocId` from the contract's new
+`matchedDocumentId` (CONFIRMED only — a suggestion arrives null by design),
+closing the old "never set from a server row" caveat in `api/bank.ts`.
+
 ## Three live surfaces landed 31 Aug 2026
 
 **Removing a client lives on the client's Settings tab, NOT the Clients

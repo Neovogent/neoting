@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, HttpStatus, Inject, Query } from '@nestjs/common';
+import { Controller, Get, HttpCode, HttpStatus, Inject, Param, Query } from '@nestjs/common';
 
 import { listBankTransactionsQueryParams } from '@neoting/contracts/zod';
 
@@ -22,14 +22,29 @@ import { BANK_TRANSACTIONS_SERVICE } from './tokens.js';
  * the single Approve operation is the only side-effect door in the API
  * (Governance §10).
  */
-@Controller('bank-transactions')
+@Controller()
 export class BankTransactionsController {
   constructor(
     @Inject(REQUEST_CONTEXT) private readonly context: RequestContext,
     @Inject(BANK_TRANSACTIONS_SERVICE) private readonly service: BankTransactionsService,
   ) {}
 
-  @Get()
+  /**
+   * `GET /documents/{documentId}/bank-match` (Phase 4) — the document's one
+   * live match, embedded transaction included. Lives HERE, not in
+   * `modules/documents`: the `matches` rows belong to this lane, and the
+   * documents module reaching into them would be the cross-module drift the
+   * seams exist to prevent. The explicit route on a bare `@Controller()` is
+   * the chases-controller shape (`sms-outbox` under `/v1` without a module
+   * prefix).
+   */
+  @Get('documents/:documentId/bank-match')
+  @HttpCode(HttpStatus.OK)
+  async bankMatch(@Param('documentId') documentId: string) {
+    return this.service.getDocumentBankMatch(await this.context.require(), documentId);
+  }
+
+  @Get('bank-transactions')
   @HttpCode(HttpStatus.OK)
   async list(@Query() query: unknown) {
     // `coerceQuery` first: Express delivers every query value as a string, and

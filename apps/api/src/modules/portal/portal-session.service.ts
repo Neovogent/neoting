@@ -421,6 +421,11 @@ export class PortalSessionService {
       userId: resolved.delegatedUserId,
       verifiedAt,
       expiresAt,
+      // The code is spent — clearing the hash is what makes a minted chase
+      // code single-use (the onboarding lane's rule, applied here now that the
+      // chase lane mints codes too). Under OTP_MODE=demo there is no hash and
+      // this writes the null it already was.
+      otpHash: null,
       // A verification that succeeded clears the counter and the lock (A2).
       // Without this a client who mistyped four times and then got it right
       // would carry four attempts into their next visit and be locked out on
@@ -466,7 +471,13 @@ function verificationFailed(): AppException {
   );
 }
 
-function hashLinkToken(linkToken: string): string {
+/**
+ * The `otp_sessions.link_token_hash` for a CHASE link. Exported because the
+ * code-minting path (`portal-onboarding.service.ts`'s chase branch) must write
+ * `otp_hash` onto the SAME row this service reads at verification — two
+ * hashings would be a code that never matches, silently.
+ */
+export function hashLinkToken(linkToken: string): string {
   return createHash('sha256').update(linkToken).digest('hex');
 }
 

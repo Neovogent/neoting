@@ -44,6 +44,10 @@ pnpm-debug.log*
 
 # Local scratch — anything here is yours and nobody else's
 .scratch/
+
+# Model-generated synthetic test documents (docs/testing/gpt-test-document-prompts.md
+# §10: gitignored because the set contains images)
+fixtures/synthetic/
 apps/web/web-errors.txt
 
 # Extracted from source by `pnpm --filter @neoting/web i18n:extract` (Governance

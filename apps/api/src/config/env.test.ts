@@ -14,6 +14,7 @@ import { loadEnv } from './env.js';
 const PRODUCTION = {
   NODE_ENV: 'production',
   AUTH_MODE: 'session',
+  SMS_SENDER: 'email',
   UPLOAD_URL_SECRET: 's',
   AI_CHAT: 'bedrock',
   EMAIL_SENDER: 'ses',
@@ -181,6 +182,10 @@ test('EMAIL_SENDER defaults to demo outside production, so a cold clone runs off
 
 test('NODE_ENV=production with EMAIL_SENDER=demo fails to boot', () => {
   expect(() => loadEnv({ ...PRODUCTION, EMAIL_SENDER: 'demo' } as NodeJS.ProcessEnv)).toThrow(/EMAIL_SENDER/);
+});
+
+test('NODE_ENV=production with SMS_SENDER=demo fails to boot — an approved chase must reach a client', () => {
+  expect(() => loadEnv({ ...PRODUCTION, SMS_SENDER: 'demo' } as NodeJS.ProcessEnv)).toThrow(/SMS_SENDER/);
 });
 
 test('EMAIL_SENDER=ses without a configuration set fails to boot, in every environment', () => {
@@ -375,4 +380,13 @@ test('BILLING=demo ignores the Stripe values entirely, so a laptop needs none of
   const env = loadEnv({ STRIPE_TAX: 'rate' } as NodeJS.ProcessEnv);
   expect(env.BILLING).toBe('demo');
   expect(env.STRIPE_SECRET_KEY).toBe('');
+});
+
+test('SMS_SENDER=aws with no origination identity fails to boot, in every environment', () => {
+  // A sender with no number boots green and fails every send at request time —
+  // the UPLOAD_URL_SECRET failure shape (healthy task, dead feature).
+  expect(() => loadEnv({ SMS_SENDER: 'aws' } as NodeJS.ProcessEnv)).toThrow(/SMS_ORIGINATION_IDENTITY/);
+  const configured = loadEnv({ SMS_SENDER: 'aws', SMS_ORIGINATION_IDENTITY: '+447700900000' } as NodeJS.ProcessEnv);
+  expect(configured.SMS_SENDER).toBe('aws');
+  expect(configured.SMS_REGION).toBe('eu-west-2');
 });

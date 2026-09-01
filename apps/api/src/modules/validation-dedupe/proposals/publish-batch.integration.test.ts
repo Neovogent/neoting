@@ -7,6 +7,9 @@ import { ScopeContextSchema } from '../../../common/db/scope-context.js';
 import { scopedDb } from '../../../common/db/scoped-db.js';
 import { AppException } from '../../../common/problem/problem.js';
 import { InMemoryIdempotencyStore } from '../../../common/idempotency/idempotency-store.js';
+
+// chase.send composition config for tests — a real secret so signed links verify.
+const TEST_CHASE_COMPOSE = { portalLinkSecret: 'test-portal-link-secret', appOrigin: 'https://app.test' };
 import { ActionProposalsService } from '../../approvals/action-proposals.service.js';
 import { LEDGER_REJECTED, previewPublishBatch } from '../../publishing/index.js';
 import { ProposalExecutionRefused } from './proposal-executor.js';
@@ -430,6 +433,7 @@ describe.skipIf(!enabled)('publish.batch against a real database', () => {
       { detect: async () => ({ findings: [], candidatesTruncated: false }) },
       PUBLISHING,
       new InMemoryIdempotencyStore(),
+    TEST_CHASE_COMPOSE,
     );
 
     const created = await service.create(
@@ -476,6 +480,7 @@ describe.skipIf(!enabled)('publish.batch against a real database', () => {
       { detect: async () => ({ findings: [], candidatesTruncated: false }) },
       PUBLISHING,
       new InMemoryIdempotencyStore(),
+    TEST_CHASE_COMPOSE,
     );
 
     // A payload that lies about the figures. If create stored it verbatim, a
@@ -509,6 +514,7 @@ describe.skipIf(!enabled)('publish.batch against a real database', () => {
       { detect: async () => ({ findings: [], candidatesTruncated: false }) },
       PUBLISHING,
       new InMemoryIdempotencyStore(),
+    TEST_CHASE_COMPOSE,
     );
 
     const error = await service

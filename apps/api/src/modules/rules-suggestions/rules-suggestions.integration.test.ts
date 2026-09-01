@@ -4,6 +4,9 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { ScopeContextSchema } from '../../common/db/scope-context.js';
 import { scopedDb } from '../../common/db/scoped-db.js';
 import { InMemoryIdempotencyStore } from '../../common/idempotency/idempotency-store.js';
+
+// chase.send composition config for tests — a real secret so signed links verify.
+const TEST_CHASE_COMPOSE = { portalLinkSecret: 'test-portal-link-secret', appOrigin: 'https://app.test' };
 import { ActionProposalsService } from '../approvals/action-proposals.service.js';
 import { loadCategories } from '../chat-framework/grounding.js';
 import type { PublishGateway } from '../validation-dedupe/proposals/publish-batch.js';
@@ -82,6 +85,7 @@ function proposals(): ActionProposalsService {
     { detect: async () => ({ findings: [], candidatesTruncated: false }) },
     STUB_PUBLISHING,
     new InMemoryIdempotencyStore(),
+    TEST_CHASE_COMPOSE,
   );
 }
 

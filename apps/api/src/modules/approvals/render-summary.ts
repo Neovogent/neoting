@@ -70,17 +70,27 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
       ]);
     }
     case 'chase.send': {
-      // Every SMS verbatim, every recipient — the whole point of the review.
+      // Every message verbatim, every recipient — the whole point of the review.
       const messages = Array.isArray(payload['messages']) ? payload['messages'] : [];
       return summary(
-        `Send ${count(messages.length, 'chase SMS message')}`,
+        `Send ${count(messages.length, 'chase message')}`,
         messages.map((m, i) => {
           const msg = isObject(m) ? m : {};
+          // Under the email transport (SMS_SENDER=email) the message goes to
+          // the named contact's ADDRESS, resolved into the payload at creation
+          // (compose-chase-send.ts) precisely so the reviewer sees it — the
+          // A13 leftover this closes. Older payloads carry only the number.
+          const email = typeof msg['recipientEmail'] === 'string' && msg['recipientEmail'] !== '' ? msg['recipientEmail'] : null;
+          const period = typeof msg['statementPeriod'] === 'string' && msg['statementPeriod'] !== '' ? msg['statementPeriod'] : null;
           return {
-            heading: `Message ${i + 1} — to ${text(msg['recipientE164'])}`,
+            heading: `Message ${i + 1} — to ${email ?? text(msg['recipientE164'])}`,
             entries: [
-              { label: 'SMS, exactly as it will send', value: text(msg['body']) },
-              { label: 'Chasing transactions', value: stringArray(msg['transactionIds']).join(', ') },
+              { label: 'Message, exactly as it will send', value: text(msg['body']) },
+              ...(email !== null ? [{ label: 'Registered mobile on file', value: text(msg['recipientE164']) }] : []),
+              // A statement request (engine (c)) asks for a month, not lines.
+              period !== null
+                ? { label: 'Requesting bank statement for', value: period }
+                : { label: 'Chasing transactions', value: stringArray(msg['transactionIds']).join(', ') },
             ],
           };
         }),

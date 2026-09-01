@@ -1,6 +1,13 @@
 import { HttpStatus, Logger } from '@nestjs/common';
 
-import type { ActionProposal, ErrorCode, ProposalKind, ProposalReview, PublishBatchPayload } from '@neoting/contracts/model';
+import type {
+  ActionProposal,
+  ChaseSendPayload,
+  ErrorCode,
+  ProposalKind,
+  ProposalReview,
+  PublishBatchPayload,
+} from '@neoting/contracts/model';
 import type { listActionProposalsQueryParams } from '@neoting/contracts/zod';
 import type { ActionProposal as ActionProposalRow, Prisma } from '@prisma/client';
 import type { z } from 'zod';
@@ -20,6 +27,8 @@ import {
 import { AppException } from '../../common/problem/problem.js';
 import { currentTraceId } from '../../common/trace/trace-context.js';
 import {
+  type ChaseComposeConfig,
+  computeChaseSendPayload,
   computePublishBatchPayload,
   type DedupeDetection,
   type ExecutionInput,
@@ -96,6 +105,12 @@ export class ActionProposalsService {
      */
     private readonly publishing: PublishGateway,
     private readonly idempotency: IdempotencyStore,
+    /**
+     * `chase.send` composition config (portal-link secret + web origin). The
+     * engine recomposes each message body at creation the way it recomputes
+     * the publish preview — the reviewed link is a link that verifies.
+     */
+    private readonly chaseCompose: ChaseComposeConfig,
   ) {}
 
   async create(ctx: ScopeContext, request: CreateProposalRequest, idempotencyKey: string): Promise<ActionProposal> {
@@ -147,6 +162,32 @@ export class ActionProposalsService {
             db,
             this.publishing,
             request.payload as unknown as PublishBatchPayload,
+          )) as unknown as Record<string, unknown>;
+        } catch (error) {
+          if (error instanceof ProposalExecutionRefused) {
+            throw new AppException(
+              error.code ?? 'NT-PRP-006',
+              HttpStatus.UNPROCESSABLE_ENTITY,
+              'Proposal is not executable',
+              error.message,
+            );
+          }
+          throw error;
+        }
+      }
+      // The same promise for `chase.send`: the body Read-review shows is
+      // composed by the SERVER over the chased transactions, with a SIGNED
+      // portal link the executor's chase will answer to — whatever body the
+      // caller sent is discarded (the S13 compose-seam gap, closed).
+      if (request.kind === 'chase.send') {
+        try {
+          payload = (await computeChaseSendPayload(
+            db,
+            request.payload as unknown as ChaseSendPayload,
+            this.chaseCompose,
+            // A statement request derives its business from the PROPOSAL's own
+            // anchor — it has no transactions to derive one from (Phase 5).
+            businessId,
           )) as unknown as Record<string, unknown>;
         } catch (error) {
           if (error instanceof ProposalExecutionRefused) {

@@ -1,7 +1,10 @@
-import type { StatementStep } from '../../banking-matching/index.js';
+import type { MatchSuggester, StatementStep } from '../../banking-matching/index.js';
 import type { ChaseAutoClose } from '../../chase/index.js';
 import type { ExtractionCompletion, ExtractionStep } from '../../extraction/index.js';
+import type { SenderMapLoader } from '../email/inbound/sender-map.js';
+import { decideRouting } from '../webhooks/whatsapp/routing.js';
 import type { DocumentSink } from './document-sink.js';
+import type { WhatsAppPracticeResolver } from './whatsapp-practice-resolver.js';
 import type { DuplicateDetector } from './duplicate-detector.js';
 import { type IngestJobPayload, IngestJobPayloadSchema } from './job-payload.js';
 import { MediaFetchError } from './media-fetcher.js';
@@ -68,6 +71,37 @@ export interface ProcessorDeps {
    */
   readonly statements: StatementStep;
   /**
+   * The automatic match suggester (Phase 4). Runs AFTER extraction for a
+   * routed document that landed, before auto-close: exactly-one deterministic
+   * candidate becomes a SUGGESTED `matches` row + `matchState` flip, which the
+   * human-only `bank.confirm-match` proposal promotes. REQUIRED, the
+   * `statements` argument exactly: an optional dep is a dep a composition
+   * root forgets, and a root with no banking concern passes
+   * `NO_MATCH_SUGGESTER` and says so out loud. Never throws into the job —
+   * a suggestion failure costs the suggestion, not the document.
+   */
+  readonly matchSuggester: MatchSuggester;
+  /**
+   * The sender→workspace map for WhatsApp routing (Phase 2, 1 Sep 2026).
+   * OPTIONAL, the email lane's own precedent (`runEmailIntake`'s
+   * `senderMapLoader`): absent → the webhook's routing stands (everything
+   * Unrouted), which was the only behaviour before this. Present, a WhatsApp
+   * job whose controller-decided routing is `unrouted` is re-decided here
+   * against the practice's registered contacts — `buildSenderMap` already keys
+   * `mobileE164` both with and without the leading `+` precisely so a
+   * `wa_id` matches. Loaded in the WORKER, not the webhook, because the
+   * controller has no database and Meta's webhook must answer fast.
+   */
+  readonly senderMap?: SenderMapLoader;
+  /**
+   * phone_number_id → practice, from `Practice.whatsappPhoneNumberId`
+   * (Phase 2). OPTIONAL like `senderMap`; absent → the env map is the only
+   * source and an unmapped number dead-letters exactly as before. The env map
+   * (resolved by the controller) WINS when set — this fires only for a job
+   * that arrived with no `practiceId`.
+   */
+  readonly whatsAppPractices?: WhatsAppPracticeResolver;
+  /**
    * Whether this is the job's LAST attempt (S5). Per-job, unlike everything else
    * on this interface — the worker rebuilds this object per job, which is what
    * makes that safe.
@@ -129,7 +163,13 @@ export async function processIngestJob(raw: unknown, deps: ProcessorDeps): Promi
   }
 }
 
-async function handle(payload: IngestJobPayload, deps: ProcessorDeps): Promise<void> {
+async function handle(rawPayload: IngestJobPayload, deps: ProcessorDeps): Promise<void> {
+  // A WhatsApp job may arrive with no practice (the env map did not name the
+  // receiving number) and always arrives Unrouted (the webhook has no DB, so
+  // its sender map was empty since #9). Both anchors are resolved HERE, in the
+  // worker, where the database is — the email lane's `runEmailIntake` shape.
+  const payload = await resolveWhatsAppAnchors(rawPayload, deps);
+
   const staleTag = payload.stale ? ' [stale]' : '';
   deps.logger.log(
     `ingest ${payload.idempotencyKey} from ${payload.from} (${payload.messageType}, ${payload.routing.kind})${staleTag} trace=${payload.traceId}`,
@@ -227,6 +267,7 @@ async function handle(payload: IngestJobPayload, deps: ProcessorDeps): Promise<v
       traceId: payload.traceId,
       finalAttempt: deps.finalAttempt,
     });
+    await runMatchSuggestion(completion, payload.practiceId, payload.traceId, deps);
     await runAutoClose(completion, payload.practiceId, payload.traceId, deps);
     await deps.statements.run({
       documentId: payload.documentId,
@@ -256,8 +297,10 @@ async function handle(payload: IngestJobPayload, deps: ProcessorDeps): Promise<v
     finalAttempt: deps.finalAttempt,
   });
 
-  // Auto-close on inbound match (chase, METH Stage 8) — runs after extraction for
-  // a routed document that landed. See `runAutoClose`.
+  // Match suggestion (Phase 4) then auto-close (chase, METH Stage 8) — both run
+  // after extraction for a routed document that landed, both through the same
+  // deterministic compare, and neither may fail the job.
+  await runMatchSuggestion(completion, materialised.practiceId, payload.traceId, deps);
   await runAutoClose(completion, materialised.practiceId, payload.traceId, deps);
 
   // Statement import (D40/D41) — last, because it is the only step that creates
@@ -273,6 +316,110 @@ async function handle(payload: IngestJobPayload, deps: ProcessorDeps): Promise<v
     // result on is what stops a PDF statement being read a second time.
     ocr: completion?.ocr,
   });
+}
+
+/**
+ * Write the automatic match suggestion for a document that just finished
+ * extraction (Phase 4) — same guards as auto-close (a completion, a routed
+ * document), same failure posture (logged and swallowed: the document is safe,
+ * a lost suggestion costs a human a lookup, not the books an error).
+ */
+async function runMatchSuggestion(
+  completion: ExtractionCompletion | null,
+  practiceId: string,
+  traceId: string,
+  deps: ProcessorDeps,
+): Promise<void> {
+  if (completion === null || completion.businessId === null) return;
+
+  try {
+    const result = await deps.matchSuggester.run({
+      documentId: completion.documentId,
+      businessId: completion.businessId,
+      practiceId,
+      supplierName: completion.supplierName,
+      totalPence: completion.totalPence,
+      documentDate: completion.documentDate,
+      traceId,
+    });
+    if (result.suggested !== null) {
+      deps.logger.log(
+        `match-suggest ${completion.documentId}: suggested against ${result.suggested.transactionId} trace=${traceId}`,
+      );
+    }
+  } catch (error) {
+    deps.logger.warn(
+      `match-suggest ${completion.documentId} failed (document is safe, no suggestion written): ${String(error)} trace=${traceId}`,
+    );
+  }
+}
+
+/**
+ * Fill a WhatsApp job's two missing anchors from the database (Phase 2).
+ *
+ * - **practice**: the env map (controller-resolved) WINS; a job that arrived
+ *   without one asks `Practice.whatsappPhoneNumberId` by the number that
+ *   RECEIVED the message — never the sender. Still nothing → unchanged, and
+ *   `materialise` dead-letters it loudly exactly as before.
+ * - **routing**: the webhook always enqueues `unrouted` (it has no DB). With a
+ *   practice known and a sender map wired, the sender's `wa_id` is re-decided
+ *   against the practice's registered contacts — D45's identity, the same
+ *   contacts rows the email lane routes by, through the same
+ *   `buildSenderMap`/`decideRouting` pair, so the two channels cannot disagree
+ *   about what a recognised sender is. `matched` → routed to that workspace;
+ *   `multiple` → Unrouted with the "Which company?" reason (the queue is where
+ *   a human answers that); `none` → Unrouted, never dropped.
+ *
+ * A resolver/loader failure downgrades to the pre-Phase-2 behaviour (Unrouted,
+ * or a dead-letter for a missing practice) rather than failing the job: a
+ * routing convenience must never lose a document.
+ */
+async function resolveWhatsAppAnchors(payload: IngestJobPayload, deps: ProcessorDeps): Promise<IngestJobPayload> {
+  if (payload.source !== 'whatsapp') return payload;
+
+  let { practiceId } = payload;
+  if (practiceId === undefined && payload.phoneNumberId !== undefined && deps.whatsAppPractices !== undefined) {
+    try {
+      practiceId = (await deps.whatsAppPractices.byPhoneNumberId(payload.phoneNumberId)) ?? undefined;
+      if (practiceId !== undefined) {
+        deps.logger.log(
+          `whatsapp practice resolved from Practice.whatsappPhoneNumberId for ${payload.idempotencyKey} (trace=${payload.traceId})`,
+        );
+      }
+    } catch (error) {
+      deps.logger.warn(
+        `whatsapp practice resolution failed for ${payload.idempotencyKey}: ${String(error)} — falling back to the job's own anchor (trace=${payload.traceId})`,
+      );
+    }
+  }
+
+  let { routing } = payload;
+  if (practiceId !== undefined && routing.kind === 'unrouted' && deps.senderMap !== undefined) {
+    try {
+      const map = await deps.senderMap.load(practiceId);
+      const decided = decideRouting(payload.from, map);
+      // `multiple` stays Unrouted ON PURPOSE: the queue is where a human answers
+      // "Which company?", and the job payload's routing shape has no member for
+      // carrying candidates today. The reason says so rather than pretending.
+      routing =
+        decided.kind === 'multiple'
+          ? {
+              kind: 'unrouted',
+              reason: `Sender ${payload.from} is a contact of ${decided.candidateBusinessIds.length} workspaces — a human picks in the queue.`,
+            }
+          : decided;
+      if (routing.kind === 'matched') {
+        deps.logger.log(`whatsapp sender matched a registered contact for ${payload.idempotencyKey} (trace=${payload.traceId})`);
+      }
+    } catch (error) {
+      deps.logger.warn(
+        `whatsapp sender-map load failed for ${payload.idempotencyKey}: ${String(error)} — staying Unrouted (trace=${payload.traceId})`,
+      );
+    }
+  }
+
+  if (practiceId === payload.practiceId && routing === payload.routing) return payload;
+  return { ...payload, routing, ...(practiceId === undefined ? {} : { practiceId }) };
 }
 
 /**
@@ -376,12 +523,13 @@ async function materialise(payload: IngestJobPayload, deps: ProcessorDeps): Prom
   if (practiceId === undefined) {
     // ⚠ THROW, do not skip. `documents.practice_id` is the only tenancy anchor
     // an unrouted document has: `documentKey()` refuses to build a key without
-    // it and `documents_tenant_anchor` refuses the row. Nothing in prisma/ maps
-    // a Meta number to a practice yet (#79, G7), so WHATSAPP_PRACTICE_MAP is
-    // what fills the gap — and an unmapped number must dead-letter loudly, where
-    // a human sees it, rather than return cleanly having written nothing.
+    // it and `documents_tenant_anchor` refuses the row. Both sources have been
+    // tried by now — the controller's WHATSAPP_PRACTICE_MAP env and the
+    // worker's Practice.whatsappPhoneNumberId resolver — so an unmapped number
+    // must dead-letter loudly, where a human sees it, rather than return
+    // cleanly having written nothing.
     throw new TerminalJobError(
-      `no practice anchor for ${payload.idempotencyKey} (phone_number_id=${payload.phoneNumberId ?? 'absent'}) — set WHATSAPP_PRACTICE_MAP; refusing to persist an unanchored document (trace=${payload.traceId})`,
+      `no practice anchor for ${payload.idempotencyKey} (phone_number_id=${payload.phoneNumberId ?? 'absent'}) — set Practice.whatsappPhoneNumberId (or WHATSAPP_PRACTICE_MAP); refusing to persist an unanchored document (trace=${payload.traceId})`,
     );
   }
 

@@ -1,4 +1,4 @@
-import { NO_STATEMENT_STEP } from '../../banking-matching/index.js';
+import { NO_MATCH_SUGGESTER, NO_STATEMENT_STEP, RecordingMatchSuggester } from '../../banking-matching/index.js';
 import { expect, test } from 'vitest';
 
 import { RecordingChaseAutoClose } from '../../chase/index.js';
@@ -69,6 +69,7 @@ function harness(
       // it is the point — `statements` is required precisely so a composition
       // root cannot forget it by accident.
       statements: NO_STATEMENT_STEP,
+      matchSuggester: NO_MATCH_SUGGESTER,
       // These unit tests drive the processor directly, with no BullMQ job above
       // them, so "is this the last attempt" has no real answer. `false` is the
       // one that changes nothing: extraction rethrows and stays PROCESSING,
@@ -541,4 +542,175 @@ test('the fixture fetcher never invents bytes for an id nobody seeded', async ()
   const h = harness();
   await expect(processIngestJob(whatsappJob, h.deps)).rejects.toThrow(TerminalJobError);
   expect(h.sink.persisted.size).toBe(0);
+});
+
+/* ── WhatsApp routing anchors (Phase 2) ─────────────────────────────────────── */
+
+const mapOf = (entries: Record<string, readonly string[]>) => new Map(Object.entries(entries));
+
+test('a whatsapp sender registered as a contact routes to their workspace', async () => {
+  const h = harness();
+  h.fetcher.put('media-1', { bytes: PNG });
+  const deps = {
+    ...h.deps,
+    // The wa_id arrives without the leading `+`; buildSenderMap keys both
+    // forms, so a plain-map fixture keys the bare form directly.
+    senderMap: { load: async (_practiceId: string) => mapOf({ '447700900000': ['biz_wa'] }) },
+  };
+
+  await processIngestJob(whatsappJob, deps);
+
+  const persisted = [...h.sink.persisted.values()][0];
+  expect(persisted?.businessId).toBe('biz_wa');
+  expect(h.extractor.runs[0]?.businessId).toBe('biz_wa');
+});
+
+test('a sender on two workspaces stays Unrouted with the which-company reason', async () => {
+  const h = harness();
+  h.fetcher.put('media-1', { bytes: PNG });
+  const deps = {
+    ...h.deps,
+    senderMap: { load: async () => mapOf({ '447700900000': ['biz_a', 'biz_b'] }) },
+  };
+
+  await processIngestJob(whatsappJob, deps);
+
+  const persisted = [...h.sink.persisted.values()][0];
+  expect(persisted?.businessId).toBeNull();
+  expect(h.logs.some((l) => l.includes('unrouted'))).toBe(true);
+});
+
+test('an unknown whatsapp sender stays Unrouted — never guessed, never dropped', async () => {
+  const h = harness();
+  h.fetcher.put('media-1', { bytes: PNG });
+  const deps = { ...h.deps, senderMap: { load: async () => mapOf({}) } };
+
+  await processIngestJob(whatsappJob, deps);
+
+  const persisted = [...h.sink.persisted.values()][0];
+  expect(persisted?.businessId).toBeNull();
+  expect(h.sink.persisted.size).toBe(1);
+});
+
+test('a sender-map failure downgrades to Unrouted rather than failing the job', async () => {
+  const h = harness();
+  h.fetcher.put('media-1', { bytes: PNG });
+  const deps = {
+    ...h.deps,
+    senderMap: {
+      load: async (): Promise<ReadonlyMap<string, readonly string[]>> => {
+        throw new Error('contacts unreachable');
+      },
+    },
+  };
+
+  await processIngestJob(whatsappJob, deps);
+
+  expect(h.sink.persisted.size).toBe(1);
+  expect([...h.sink.persisted.values()][0]?.businessId).toBeNull();
+  expect(h.warns.some((w) => w.includes('sender-map load failed'))).toBe(true);
+});
+
+test('an env-unmapped receiving number resolves its practice from Practice.whatsappPhoneNumberId', async () => {
+  const h = harness();
+  h.fetcher.put('media-1', { bytes: PNG });
+  const { practiceId: _dropped, ...unanchored } = whatsappJob;
+  const deps = {
+    ...h.deps,
+    whatsAppPractices: {
+      byPhoneNumberId: async (id: string) => (id === '123456789012345' ? 'prac_from_column' : null),
+    },
+  };
+
+  await processIngestJob(unanchored, deps);
+
+  expect([...h.sink.persisted.values()][0]?.practiceId).toBe('prac_from_column');
+});
+
+test('the env map WINS over the column — a controller-anchored job is not re-resolved', async () => {
+  const h = harness();
+  h.fetcher.put('media-1', { bytes: PNG });
+  let asked = 0;
+  const deps = {
+    ...h.deps,
+    whatsAppPractices: {
+      byPhoneNumberId: async () => {
+        asked += 1;
+        return 'prac_other';
+      },
+    },
+  };
+
+  await processIngestJob(whatsappJob, deps);
+
+  expect(asked).toBe(0);
+  expect([...h.sink.persisted.values()][0]?.practiceId).toBe('prac_wa');
+});
+
+test('a number neither source names still dead-letters — the resolver is a fallback, not a net', async () => {
+  const h = harness();
+  h.fetcher.put('media-1', { bytes: PNG });
+  const { practiceId: _dropped, ...unanchored } = whatsappJob;
+  const deps = { ...h.deps, whatsAppPractices: { byPhoneNumberId: async () => null } };
+
+  await expect(processIngestJob(unanchored, deps)).rejects.toThrow(TerminalJobError);
+  expect(h.sink.persisted.size).toBe(0);
+});
+
+test('an email job is never re-anchored by the whatsapp resolvers', async () => {
+  const h = harness();
+  let asked = 0;
+  const deps = {
+    ...h.deps,
+    senderMap: {
+      load: async () => {
+        asked += 1;
+        return mapOf({ 'sender@acme.co': ['biz_email'] });
+      },
+    },
+  };
+
+  await processIngestJob(emailJob, deps);
+
+  // The email lane routes in runEmailIntake, BEFORE the queue — re-deciding
+  // here would be a second opinion on a decision already made.
+  expect(asked).toBe(0);
+  expect([...h.sink.persisted.values()][0]?.businessId).toBeNull();
+});
+
+/* ── the automatic match suggester (Phase 4) ───────────────────────────────── */
+
+test('a routed, landed document runs the match suggester with its extracted header', async () => {
+  const suggester = new RecordingMatchSuggester();
+  const h = harness(READY_COMPLETION);
+  await processIngestJob({ ...emailJob, routing: { kind: 'matched', businessId: 'biz_1' } }, { ...h.deps, matchSuggester: suggester });
+
+  expect(suggester.runs).toHaveLength(1);
+  const run = suggester.runs[0];
+  expect(run?.businessId).toBe('biz_1');
+  expect(run?.practiceId).toBe('prac_x');
+  expect(run?.supplierName).toBe('Currys');
+  expect(run?.totalPence).toBe(129_900);
+});
+
+test('an unrouted document runs no match suggestion — a suggestion needs a business', async () => {
+  const suggester = new RecordingMatchSuggester();
+  const h = harness({ ...READY_COMPLETION, businessId: null });
+  await processIngestJob(emailJob, { ...h.deps, matchSuggester: suggester });
+  expect(suggester.runs).toHaveLength(0);
+});
+
+test('a suggester failure is swallowed — the document and the job are safe', async () => {
+  const h = harness(READY_COMPLETION);
+  const deps = {
+    ...h.deps,
+    matchSuggester: {
+      run: async () => {
+        throw new Error('suggestion store unreachable');
+      },
+    },
+  };
+  await processIngestJob({ ...emailJob, routing: { kind: 'matched', businessId: 'biz_1' } }, deps);
+  expect(h.warns.some((w) => w.includes('match-suggest'))).toBe(true);
+  expect(h.sink.persisted.size).toBe(1);
 });

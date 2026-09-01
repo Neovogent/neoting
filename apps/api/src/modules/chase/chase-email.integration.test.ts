@@ -11,7 +11,7 @@ import type { PublishGateway } from '../validation-dedupe/proposals/publish-batc
 import { buildExecutorRegistry } from '../validation-dedupe/proposals/registry.js';
 import { detectUnmatchedChases } from './detection.js';
 import { CHASE_EMAIL_SUBJECT, type ChaseEmailTransport, EmailChaseSender } from './email-chase-sender.js';
-import { signPortalLink, verifyPortalLink } from './portal-link.js';
+import { verifyPortalLink } from './portal-link.js';
 import { composeChaseSms } from './sms-copy.js';
 
 /**
@@ -61,6 +61,11 @@ const STUB_PUBLISHING: PublishGateway = {
   previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0 } }),
 };
 
+// chase.send composition config — the SAME secret the assertions verify with,
+// because the engine (not the caller) signs the reviewed link since the
+// compose seam landed.
+const TEST_CHASE_COMPOSE = { portalLinkSecret: PORTAL_SECRET, appOrigin: 'https://app.test' };
+
 function transport(): ChaseEmailTransport {
   return { sender: email, limiter: new InMemoryEmailRateLimiter(), parseAddress: parseEmailAddress };
 }
@@ -77,6 +82,7 @@ function service(): ActionProposalsService {
     { detect: async () => ({ findings: [], candidatesTruncated: false }) },
     STUB_PUBLISHING,
     new InMemoryIdempotencyStore(),
+    TEST_CHASE_COMPOSE,
   );
 }
 
@@ -152,20 +158,11 @@ afterAll(async () => {
 });
 
 describe.skipIf(!enabled)('chase by email, end to end through the engine', () => {
-  test('create → review (verbatim body) → approve → the EMAIL carries the reviewed bytes', async () => {
-    const link = signPortalLink({ chaseId: 'a13_link_chase', expSeconds: 86_400 }, PORTAL_SECRET);
-    const body = composeChaseSms({
-      businessName: 'Wright Cleaning',
-      portalLink: link,
-      items: [
-        {
-          transactionId: TXN_CURRYS,
-          amountPence: -129_900,
-          bookedAt: new Date('2026-08-09T12:00:00.000Z'),
-          supplierLabel: 'Currys',
-        },
-      ],
-    });
+  test('create (engine composes) → review (verbatim body) → approve → the EMAIL carries the reviewed bytes', async () => {
+    // The caller's draft body — DISCARDED by the compose seam, exactly as a
+    // caller-sent publish preview is. What review shows and what sends is the
+    // engine's own composition, whose portal link actually verifies.
+    const callerDraft = 'a body the caller typed, with a dead link: /p/';
 
     const svc = service();
     const created = await svc.create(
@@ -175,21 +172,44 @@ describe.skipIf(!enabled)('chase by email, end to end through the engine', () =>
         businessId: BIZ,
         payload: {
           messages: [
-            { recipientE164: '+447700900101', recipientContactId: CONTACT, body, transactionIds: [TXN_CURRYS] },
+            { recipientE164: '+447700900101', recipientContactId: CONTACT, body: callerDraft, transactionIds: [TXN_CURRYS] },
           ],
         },
       },
       'a13-key-create',
     );
 
+    // The stored payload is the ENGINE's composition: server body over the
+    // chased transaction, the minted chase id, the contact's email for review.
+    const composed = (created.payload as { messages: Record<string, unknown>[] }).messages[0] ?? {};
+    expect(composed['body']).not.toBe(callerDraft);
+    expect(typeof composed['chaseId']).toBe('string');
+    expect(composed['recipientEmail']).toBe('sam@wrightcleaning.test');
+    expect(composed['body']).toBe(
+      composeChaseSms({
+        businessName: 'Wright Cleaning',
+        portalLink: `https://app.test/p/${String(composed['body']).split('/p/')[1] ?? ''}`,
+        items: [
+          {
+            transactionId: TXN_CURRYS,
+            amountPence: -129_900,
+            bookedAt: new Date('2026-08-09T12:00:00.000Z'),
+            supplierLabel: 'Currys',
+          },
+        ],
+      }),
+    );
+
     // Review renders the body byte-for-byte — the flagship guarantee, unchanged
-    // by the transport underneath it.
+    // by the transport underneath it — and names the ADDRESS the message goes
+    // to (the A13 leftover, closed by the compose seam).
     const review = await svc.review(STAFF, created.id, 'a13-key-review');
     const summary = review.renderedSummary as unknown as {
-      sections: { entries: { label: string; value: string }[] }[];
+      sections: { heading: string; entries: { label: string; value: string }[] }[];
     };
-    const shownBody = summary.sections[0]?.entries.find((e) => e.label.startsWith('SMS'))?.value;
-    expect(shownBody).toBe(body);
+    expect(summary.sections[0]?.heading).toContain('sam@wrightcleaning.test');
+    const shownBody = summary.sections[0]?.entries.find((e) => e.label.startsWith('Message,'))?.value;
+    expect(shownBody).toBe(composed['body']);
 
     const executed = await svc.approve(
       STAFF,
@@ -204,15 +224,17 @@ describe.skipIf(!enabled)('chase by email, end to end through the engine', () =>
     // normalisation" — identical, and identical to the stored audit row too.
     const [sent] = email.readOutbox();
     expect(sent?.body).toBe(shownBody);
-    expect(sent?.body).toBe(body);
     expect(sent?.to).toBe('sam@wrightcleaning.test');
     expect(sent?.kind).toBe('document-request');
     expect(sent?.subject).toBe(CHASE_EMAIL_SUBJECT);
 
     const chase = await owner.chase.findFirst({ where: { businessId: BIZ, actionProposalId: created.id } });
     expect(chase?.state).toBe('SENT');
+    // The executor ADOPTED the composed chase id — the reviewed link names the
+    // chase that now exists, which is the whole point of the compose seam.
+    expect(chase?.id).toBe(composed['chaseId']);
     const message = await owner.chaseMessage.findFirst({ where: { chaseId: chase?.id ?? '' } });
-    expect(message?.body).toBe(body);
+    expect(message?.body).toBe(shownBody);
     expect(message?.channel).toBe('email');
     expect(message?.providerMessageId).toBe(sent?.providerMessageId);
     expect(message?.sentAt).not.toBeNull();
@@ -221,9 +243,12 @@ describe.skipIf(!enabled)('chase by email, end to end through the engine', () =>
     // outbox, so that screen keeps telling the truth about what it shows.
     expect(await owner.smsLog.count({ where: { businessId: BIZ } })).toBe(0);
 
-    // The portal link the client received is the reviewed one and it verifies.
-    const tokenInBody = (sent?.body ?? '').split('Upload securely: ')[1]?.trim() ?? '';
-    expect(verifyPortalLink(tokenInBody, PORTAL_SECRET)).toEqual({ ok: true, chaseId: 'a13_link_chase' });
+    // The portal link the client received is the reviewed one, it VERIFIES,
+    // and it names the chase the approval created.
+    const url = (sent?.body ?? '').split('Upload securely: ')[1]?.trim() ?? '';
+    expect(url.startsWith('https://app.test/p/')).toBe(true);
+    const tokenInBody = url.slice('https://app.test/p/'.length);
+    expect(verifyPortalLink(tokenInBody, PORTAL_SECRET)).toEqual({ ok: true, chaseId: chase?.id });
   });
 
   test('detection will not ask again for the line that chase already covers', async () => {

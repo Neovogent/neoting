@@ -2,12 +2,14 @@ import { z } from 'zod';
 import {
   completeDocumentUpload,
   createPortalSession,
+  createPortalSignInCode,
   createPortalUpload,
   getPortalContext,
 } from '@neoting/contracts/client';
 import {
   completeDocumentUploadBody,
   createPortalSessionBody,
+  createPortalSignInCodeBody,
   createPortalUploadBody,
   getPortalContextResponse,
 } from '@neoting/contracts/zod';
@@ -103,6 +105,21 @@ export async function openPortalSession(linkToken: string, otp: string): Promise
   return portalSessionShape.parse(await responseBody(createPortalSession(request)));
 }
 
+/**
+ * Ask for the six-digit code — it goes to the chase's REGISTERED recipient,
+ * never to an address typed here (the link is forwardable; the registered
+ * contact is the identity D45 gates on). The answer is a `202` whatever
+ * happened, so there is nothing to parse and nothing to show but "check the
+ * registered email".
+ */
+export async function requestPortalCode(linkToken: string): Promise<void> {
+  // Parse validates the boundary; the literal travels (the parsed value's
+  // optional keys are `string | undefined`, which exactOptionalPropertyTypes
+  // rightly refuses to hand to a model whose absent keys must be absent).
+  createPortalSignInCodeBody.parse({ linkToken });
+  await responseBody(createPortalSignInCode({ linkToken }));
+}
+
 /* ── ② what the session may see ───────────────────────────────────────────── */
 
 /** One chased item, in the shape the portal renders rather than the wire's. */
@@ -120,9 +137,18 @@ export interface PortalItem {
   received: boolean;
 }
 
+/** A bank statement the accountant has asked for (engine (c), Phase 5). */
+export interface PortalStatementRequest {
+  /** `YYYY-MM` — the view formats it into the client's own month name. */
+  period: string;
+  received: boolean;
+}
+
 export interface PortalView {
   businessName: string;
   items: PortalItem[];
+  /** Statement requests ride beside items — a statement is not a transaction. */
+  statementRequests: PortalStatementRequest[];
   /** ISO — the session's own expiry, shown so the client knows the clock runs. */
   expiresAt: string;
 }
@@ -145,6 +171,7 @@ export async function fetchPortalView(token: string): Promise<PortalView> {
   return {
     businessName: parsed.businessName,
     items: parsed.items.map(toPortalItem),
+    statementRequests: (parsed.statementRequests ?? []).map((r) => ({ period: r.period, received: r.received })),
     expiresAt: parsed.expiresAt,
   };
 }

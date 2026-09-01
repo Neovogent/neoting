@@ -28,15 +28,29 @@ test('archive and restore render as different actions over the same documents', 
   expect(archive.sections[0]?.entries.map((e) => e.value)).toEqual(['doc_1', 'doc_2']);
 });
 
-test('chase.send renders every SMS byte-for-byte and its recipient — nothing summarised away', () => {
+test('chase.send renders every message byte-for-byte and its recipient — nothing summarised away', () => {
   const body = 'American Burger Accounts: we’re missing the receipt for Currys £1,299 on 9 Aug. Upload securely: https://x';
   const summary = renderSummary('chase.send', {
     messages: [{ recipientE164: '+447700900001', body, transactionIds: ['txn_1', 'txn_2'] }],
   });
-  expect(summary.title).toBe('Send 1 chase SMS message');
+  expect(summary.title).toBe('Send 1 chase message');
+  // A pre-compose-seam payload carries no recipientEmail: the number heads it.
   expect(summary.sections[0]?.heading).toContain('+447700900001');
   expect(summary.sections[0]?.entries[0]?.value).toBe(body);
   expect(summary.sections[0]?.entries[1]?.value).toBe('txn_1, txn_2');
+});
+
+test('chase.send with a resolved recipientEmail heads the section with the ADDRESS the email transport sends to', () => {
+  const body = 'American Burger Accounts: we’re missing the receipt for Currys £1,299 on 9 Aug. Upload securely: https://x';
+  const summary = renderSummary('chase.send', {
+    messages: [
+      { recipientE164: '+447700900001', recipientEmail: 'sam@client.test', body, transactionIds: ['txn_1'] },
+    ],
+  });
+  expect(summary.sections[0]?.heading).toContain('sam@client.test');
+  expect(summary.sections[0]?.entries[0]?.value).toBe(body);
+  // The registered mobile stays on the card — the reviewer sees both.
+  expect(summary.sections[0]?.entries[1]?.value).toBe('+447700900001');
 });
 
 test('publish.batch renders the server-computed preview with integer-only money formatting', () => {

@@ -28,7 +28,11 @@ import type { BankTransaction as BankTransactionRow } from '@prisma/client';
  *   contract violation the generated client's Zod parse would reject at the
  *   consumer, far from here.
  */
-export function toBankTransaction(row: BankTransactionRow): BankTransaction {
+/**
+ * The CONFIRMED match's document id, when the caller joined it in — the list
+ * and the bank-match read both pass it; a caller with no join passes null.
+ */
+export function toBankTransaction(row: BankTransactionRow, matchedDocumentId: string | null = null): BankTransaction {
   return {
     id: row.id,
     businessId: row.businessId,
@@ -44,5 +48,6 @@ export function toBankTransaction(row: BankTransactionRow): BankTransaction {
     balanceAfterPence: row.balanceAfterPence,
     matchState: row.matchState,
     chaseSuppressed: row.chaseSuppressed,
+    matchedDocumentId,
   };
 }

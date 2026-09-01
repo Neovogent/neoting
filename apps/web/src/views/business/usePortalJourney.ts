@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NtProblemError } from '@neoting/contracts';
 import { API_ENABLED } from '../../api/config';
-import { fetchPortalView, openPortalSession, sendPortalUpload } from '../../api/portal';
+import { fetchPortalView, openPortalSession, requestPortalCode, sendPortalUpload } from '../../api/portal';
 import type { PortalItem, PortalView } from '../../api/portal';
 import { useAppContext } from '../../context/AppContext';
 import { PORTAL_UPLOAD_LIMIT } from '../../lib/business';
@@ -57,6 +57,15 @@ export interface PortalJourney {
   busy: boolean;
   fault: PortalFault | null;
   clearFault: () => void;
+  /**
+   * Ask for the six-digit code. Live it is emailed to the chase's REGISTERED
+   * recipient (a `202` whatever happened — the mail is the only answer);
+   * synthetic mode needs no code, so this resolves without a network. Returns
+   * whether the request was ACCEPTED, never whether a code exists.
+   */
+  requestCode: () => Promise<boolean>;
+  /** True once a code was requested this visit — what flips the copy to "check your email". */
+  codeRequested: boolean;
   verify: (otp: string) => Promise<boolean>;
   upload: (page: CapturedPage, transactionId: string | null) => Promise<UploadOutcome>;
 }
@@ -100,6 +109,28 @@ export function usePortalJourney(linkToken: string | null): PortalJourney {
   }, []);
 
   const clearFault = useCallback(() => setFault(null), []);
+
+  const [codeRequested, setCodeRequested] = useState(false);
+  const requestCode = useCallback(async (): Promise<boolean> => {
+    if (!linkToken) return false;
+    if (!API_ENABLED) {
+      // Synthetic mode's verifier is the fixed demo code — nothing to send.
+      setCodeRequested(true);
+      return true;
+    }
+    setBusy(true);
+    setFault(null);
+    try {
+      await requestPortalCode(linkToken);
+      if (alive.current) setCodeRequested(true);
+      return true;
+    } catch (error) {
+      if (alive.current) setFault(faultFrom(error));
+      return false;
+    } finally {
+      if (alive.current) setBusy(false);
+    }
+  }, [linkToken]);
 
   const verify = useCallback(
     async (otp: string): Promise<boolean> => {
@@ -191,7 +222,7 @@ export function usePortalJourney(linkToken: string | null): PortalJourney {
     [synthetic, token],
   );
 
-  return { live: API_ENABLED, view, busy, fault, clearFault, verify, upload };
+  return { live: API_ENABLED, view, busy, fault, clearFault, requestCode, codeRequested, verify, upload };
 }
 
 /* ── the seed-data implementation ─────────────────────────────────────────── */
@@ -221,6 +252,7 @@ function useSyntheticPortal(linkToken: string | null): SyntheticPortal {
   const toView = useCallback(
     (): PortalView => ({
       businessName: chase?.clientName ?? '',
+      statementRequests: [],
       items: (chase?.items ?? []).map((item) => ({
         transactionId: item.missingItemId,
         label: item.supplier,

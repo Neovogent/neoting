@@ -161,6 +161,9 @@ function harness(
     },
   } as unknown as ExecutorRegistry;
 
+// chase.send composition config for tests — a real secret so signed links verify.
+const TEST_CHASE_COMPOSE = { portalLinkSecret: 'test-portal-link-secret', appOrigin: 'https://app.test' };
+
   const service = new ActionProposalsService(
     prisma,
     registry,
@@ -172,6 +175,7 @@ function harness(
       previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0 } }),
     },
     new InMemoryIdempotencyStore(),
+    TEST_CHASE_COMPOSE,
   );
   return { service, map, audits, executed, listCalls, membershipQueries };
 }

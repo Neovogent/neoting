@@ -15,15 +15,17 @@ import {
   selectImageNormaliser,
 } from '../modules/ingestion-routing/lib/sanitisation/index.js';
 import { BullmqDeadLetterQueue } from '../modules/ingestion-routing/queue/dead-letter.js';
+import { PrismaSenderMapLoader } from '../modules/ingestion-routing/email/inbound/sender-map.js';
 import { PrismaDocumentSink } from '../modules/ingestion-routing/queue/document-sink.js';
 import { PrismaDuplicateDetector } from '../modules/ingestion-routing/queue/duplicate-detector.js';
+import { PrismaWhatsAppPracticeResolver } from '../modules/ingestion-routing/queue/whatsapp-practice-resolver.js';
 import { processIngestJob, TerminalJobError } from '../modules/ingestion-routing/queue/ingest-processor.js';
 import { InMemoryProcessedStore } from '../modules/ingestion-routing/queue/processed-store.js';
 import { INGEST_QUEUE_NAME } from '../modules/ingestion-routing/queue/queue-names.js';
 import { createRedisConnection } from '../modules/ingestion-routing/queue/redis-connection.js';
 import { selectMediaFetcher } from '../modules/ingestion-routing/queue/select-media-fetcher.js';
 import type { MediaIntakeDeps } from '../modules/ingestion-routing/queue/whatsapp-media-intake.js';
-import { PrismaStatementStep } from '../modules/banking-matching/index.js';
+import { PrismaMatchSuggester, PrismaStatementStep } from '../modules/banking-matching/index.js';
 import { selectDocumentStore } from '../modules/ingestion-routing/storage/select-document-store.js';
 import { PrismaUploadSanitisationStep } from '../modules/ingestion-routing/web-upload/prisma-upload-sanitisation.js';
 
@@ -124,6 +126,9 @@ function bootstrap(): void {
   // No reader of its own: it reads whatever the OCR rung above already read,
   // handed forward on the extraction completion.
   const statements = new PrismaStatementStep(getPrismaClient(), documentStore, { logger: ocrLogger });
+  const matchSuggester = new PrismaMatchSuggester(getPrismaClient());
+  const senderMap = new PrismaSenderMapLoader(getPrismaClient());
+  const whatsAppPractices = new PrismaWhatsAppPracticeResolver(getPrismaClient());
 
   const worker = new Worker(
     INGEST_QUEUE_NAME,
@@ -139,6 +144,14 @@ function bootstrap(): void {
           extractor,
           autoClose,
           statements,
+          matchSuggester,
+          // WhatsApp routing anchors (Phase 2): the sender map routes a
+          // registered contact's wa_id to their workspace (the email lane's
+          // loader, shared — one definition of a recognised sender), and the
+          // practice resolver answers an env-unmapped receiving number from
+          // Practice.whatsappPhoneNumberId.
+          senderMap,
+          whatsAppPractices,
           // Extraction claims the document into PROCESSING and is the only thing
           // that moves it out, so it has to know whether anyone will call it
           // again: with retries left a throw stays PROCESSING for the next

@@ -126,7 +126,7 @@ function harness(
 
   const service = new PortalOnboardingService(
     prisma,
-    { portalSessionSecret: SECRET, otpMode: over.otpMode ?? 'totp' },
+    { portalSessionSecret: SECRET, otpMode: over.otpMode ?? 'totp', portalLinkSecret: 'test-portal-link-secret' },
     notifications,
   );
 

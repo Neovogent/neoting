@@ -138,6 +138,14 @@ structural) and decides nothing about whether it may happen.
   asserts it; the provider-side half is upheld in `approvals.module.ts`
   (registry built inside the service factory, no token).
 
+- **`compose-chase-send.ts`** (1 Sep 2026) — `computeChaseSendPayload`, the
+  chase.send twin of `computePublishBatchPayload`: at proposal CREATION the
+  engine discards the caller's body, reads the chased transactions through RLS,
+  mints the chase id, signs the portal link over it (7-day TTL, full
+  `<APP_ORIGIN>/p/<token>` URL) and composes via the chase seam's
+  `composeChaseSms`; `recipientEmail` is resolved for the review render. The
+  executor adopts `message.chaseId`, so the reviewed link names the chase the
+  approval creates. Exported through `index.ts` beside the publish compute.
 - **`chase.send`** (METH S8) — the flagship effect, `chase-send.ts`. A factory
   `chaseSendExecutor(sender)` taking an `SmsSender` from the **chase module's
   public seam** (`../../chase/index.js`) — the executor's first cross-module

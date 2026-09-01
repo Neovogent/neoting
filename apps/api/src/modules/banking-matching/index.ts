@@ -28,3 +28,17 @@ export {
   type StatementStepInput,
   type StatementStepLogger,
 } from './statement-ingest/statement-step.js';
+
+// The automatic match suggester (Phase 4) — the ingest processor runs it after
+// extraction, exactly as it runs the chase auto-close, and through the same
+// deterministic compare. The Recording fixture keeps the processor's unit
+// tests offline; NO_MATCH_SUGGESTER is for roots with no banking concern.
+export {
+  type MatchSuggester,
+  type MatchSuggesterInput,
+  type MatchSuggesterResult,
+  type MatchSuggestion,
+  NO_MATCH_SUGGESTER,
+  PrismaMatchSuggester,
+  RecordingMatchSuggester,
+} from './suggestion/match-suggester.js';

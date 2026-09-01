@@ -52,9 +52,26 @@ export {
   type ChaseItem,
   type ComposeChaseInput,
   composeChaseSms,
+  composeSignInCodeSms,
+  composeStatementRequestSms,
   formatDay,
   formatGbp,
+  formatPeriod,
 } from './sms-copy.js';
+
+// Statement-request chases (engine (c), Phase 5): the itemRefs tag format, the
+// shared received/coverage predicate, and the close the statement lane runs
+// inside its own ingest transaction.
+export {
+  closeStatementRequestChases,
+  type CloseStatementRequestsInput,
+  periodWindow,
+  type StatementChaseClient,
+  statementCoversPeriod,
+  statementItemRef,
+  statementPeriodOf,
+  STATEMENT_ITEM_PREFIX,
+} from './statement-request.js';
 
 // The signed portal-link token — minted here (Stage 8), verified by the portal
 // (Stage 9). One format, one place.
@@ -88,6 +105,7 @@ export {
   EmailChaseSender,
 } from './email-chase-sender.js';
 export { type ChaseSenderEnv, selectSmsSender } from './select-sms-sender.js';
+export { type AwsSmsTransport, type AwsSmsTransportConfig, createAwsSmsTransport, OptedOutRecipientError } from './aws-sms-transport.js';
 
 // Auto-close on inbound match (SoT §4 Stage 8.5 / METH Stage 8): when an
 // ingested document matches an open chase's transaction (supplier + amount + a

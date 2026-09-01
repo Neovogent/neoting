@@ -116,7 +116,15 @@ export class PortalController {
   ): Promise<void> {
     parseIdempotencyKey(createPortalSignInCodeHeader, idempotencyKey);
     const request = parseBoundary(createPortalSignInCodeBody, body, 'request body');
-    await this.onboarding.requestSignInCode(request);
+    // Three routes, one uniform 202. A chase link names its chase and the code
+    // goes to the REGISTERED recipient (never a typed address — the link is
+    // forwardable); an email names a workspace; a body naming neither
+    // identifies nothing and is silently accepted like every other refusal.
+    if (typeof request.linkToken === 'string' && request.linkToken !== '') {
+      await this.onboarding.requestChaseCode(request.linkToken);
+    } else if (typeof request.email === 'string' && request.email !== '') {
+      await this.onboarding.requestSignInCode({ setupToken: request.setupToken, email: request.email });
+    }
   }
 
   /**

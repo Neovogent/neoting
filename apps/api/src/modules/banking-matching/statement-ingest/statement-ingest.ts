@@ -2,6 +2,7 @@ import { assessCompleteness, type CompletenessReport } from './completeness.js';
 import { formatFor } from './sheet-reader.js';
 import { parseStatement, parseStatementGrid, type ParsedStatement, type ParseResult } from './statement-parser.js';
 import { isOcrMedia, type DocumentOcr, type OcrFailure } from '../../../common/ocr/document-ocr.js';
+import { closeStatementRequestChases } from '../../chase/index.js';
 
 /**
  * An uploaded bank statement becomes `Statement` + `BankTransaction` rows.
@@ -45,6 +46,15 @@ export interface StatementScopedClient {
   document: {
     update(args: unknown): Promise<unknown>;
   };
+  // The statement-request close (chase seam, Phase 5) runs inside this step's
+  // transaction, so its three tables join the narrow client. A fake that
+  // answers `findMany: []` opts out of the close entirely.
+  chase: {
+    findMany(args: unknown): Promise<{ id: string; itemRefs: unknown }[]>;
+    updateMany(args: unknown): Promise<{ count: number }>;
+  };
+  chaseMessage: { create(args: unknown): Promise<unknown> };
+  notification: { create(args: unknown): Promise<unknown> };
 }
 
 export interface StatementIngestInput {
@@ -213,6 +223,22 @@ export async function ingestStatement(
     where: { id: input.documentId },
     data: { updatedAt: new Date() },
   });
+
+  // Close every open statement-request chase this statement covers (engine
+  // (c), Phase 5) — inside the SAME transaction, so a statement that imports
+  // also settles the ask that requested it, atomically. The chase seam owns
+  // the tag format and the close semantics; a failure here fails the ingest
+  // transaction as a whole, which is right — the statement and its settlement
+  // are one fact.
+  const closedChases = await closeStatementRequestChases(db, {
+    businessId: input.businessId,
+    documentId: input.documentId,
+    periodStart: new Date(`${parsed.statement.periodStart}T00:00:00.000Z`),
+    periodEnd: new Date(`${parsed.statement.periodEnd}T00:00:00.000Z`),
+  });
+  if (closedChases.length > 0) {
+    logger.log(`statement-ingest: ${input.documentId} closed ${closedChases.length} statement-request chase(s)`);
+  }
 
   logger.log(
     `statement-ingest: ${input.documentId} → statement ${statement.id}, ` +
