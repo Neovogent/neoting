@@ -217,6 +217,22 @@ export async function createProposal(request: CreateActionProposalRequest): Prom
   return parsed.data as ActionProposal;
 }
 
+/**
+ * Queue a bank-statement request (engine (c), Phase 5) — one `chase.send`
+ * proposal whose message names a month instead of transactions. The body sent
+ * here is a placeholder the ENGINE discards: composition (the month, the
+ * signed portal link, the client's PRIMARY contact) is server-side at
+ * creation, and Read review shows the real text verbatim. Creation only — the
+ * release is the Approvals queue's move (D44).
+ */
+export async function requestStatementProposal(businessId: string, period: string): Promise<ActionProposal> {
+  return createProposal({
+    kind: 'chase.send',
+    businessId,
+    payload: { messages: [{ statementPeriod: period, body: 'Composed at review.' }] },
+  } as CreateActionProposalRequest);
+}
+
 /** Nudge every queue reader to refetch now rather than on the next poll. */
 export async function refreshProposals(queryClient: QueryClient): Promise<void> {
   await queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });

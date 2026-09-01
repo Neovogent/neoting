@@ -13,6 +13,7 @@ import {
   createPortalSignInCodeBody,
 } from '@neoting/contracts/zod';
 import { unwrapBody } from './envelope';
+import { fromIsoDate, fromPence } from './documents';
 
 /**
  * The invited client's sign-in and subscription, read from the API (launch
@@ -199,6 +200,16 @@ export async function openBillingPortal(businessId: string): Promise<string> {
  * state. This is their own side of the same pipeline: what they have sent,
  * what is still being asked of them, and whether they may send more.
  */
+/** One outstanding ask, in the shape the portal home renders. */
+export interface BusinessPortalAsk {
+  readonly transactionId: string;
+  readonly label: string | null;
+  /** Pounds, signed as the feed records it. */
+  readonly amount: number;
+  readonly date: string;
+  readonly received: boolean;
+}
+
 export interface BusinessPortalHome {
   readonly businessName: string;
   readonly businessId: string | null;
@@ -206,6 +217,9 @@ export interface BusinessPortalHome {
   readonly awaitingYou: number;
   readonly subscriptionActive: boolean;
   readonly lastDocumentAt: string | null;
+  /** The itemised asks (Phase 5) — what "waiting for N documents" actually names. */
+  readonly items: readonly BusinessPortalAsk[];
+  readonly statementRequests: readonly { period: string; received: boolean }[];
 }
 
 /**
@@ -219,6 +233,22 @@ export interface BusinessPortalHome {
 const portalHomeShape = z.object({
   businessName: z.string().min(1),
   businessId: z.string().nullish(),
+  // The itemised asks (Phase 5): every outstanding chased line and statement
+  // request on the workspace, so "waiting for 3 documents" can name them.
+  // Tolerant (`nullish`, defaults) because an older server sends neither.
+  items: z
+    .array(
+      z.object({
+        transactionId: z.string(),
+        merchantName: z.string().nullish(),
+        descriptionRaw: z.string().nullish(),
+        amountPence: z.number().int(),
+        bookedAt: z.string(),
+        received: z.boolean(),
+      }),
+    )
+    .nullish(),
+  statementRequests: z.array(z.object({ period: z.string(), received: z.boolean() })).nullish(),
   summary: z
     .object({
       documentsSent: z.number().int().min(0),
@@ -251,5 +281,13 @@ export async function fetchBusinessPortalHome(sessionToken: string): Promise<Bus
     awaitingYou: body.summary.awaitingYou,
     subscriptionActive: body.summary.subscriptionActive,
     lastDocumentAt: body.summary.lastDocumentAt ?? null,
+    items: (body.items ?? []).map((item) => ({
+      transactionId: item.transactionId,
+      label: item.merchantName ?? item.descriptionRaw ?? null,
+      amount: fromPence(item.amountPence),
+      date: fromIsoDate(item.bookedAt),
+      received: item.received,
+    })),
+    statementRequests: (body.statementRequests ?? []).map((r) => ({ period: r.period, received: r.received })),
   };
 }

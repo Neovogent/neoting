@@ -610,6 +610,26 @@ its way…"). Synthetic mode keeps the fixed demo code and the original copy;
 `journey.codeRequested` is what flips the wording. Four new `portal.chasePortal.otp*`
 ids.
 
+## Statement requests + the itemised portal (Phase 5, 2 Sep 2026)
+
+Three surfaces, one chase kind (engine (c), `statementPeriod` on a
+`chase.send` message — the engine composes month + working link + PRIMARY
+contact server-side):
+
+- **BankView** (live, client in scope): a "Request statement" button beside
+  Upload statement opens `RequestStatementDialog` (lazy) — month picker,
+  confirm CREATES the proposal via `requestStatementProposal`
+  (`api/proposals.ts`) and says "queued … approved in Approvals"
+  (the OffboardClientDialog posture; D44 means the dialog never says "sent").
+- **ChasePortalView**: `PortalView.statementRequests` renders a statement card
+  per asked month; picking one goes through the same Capture step
+  (`statementMonth` header line, upload with `transactionId: null`). Synthetic
+  mode carries `statementRequests: []` — untouched.
+- **LiveBusinessPortal**: the "waiting for N documents" count now NAMES the
+  asks — `BusinessPortalHome` gained `items` + `statementRequests`
+  (`api/onboarding.ts`, tolerant parse so an older server sends neither), and
+  the awaiting card lists each line/month with Waiting/Got-it state.
+
 ## DocumentPreview shows the bank match (Phase 4, 1 Sep 2026)
 
 The section PR #230 refused to fabricate exists now that the server does:

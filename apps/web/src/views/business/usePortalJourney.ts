@@ -252,6 +252,7 @@ function useSyntheticPortal(linkToken: string | null): SyntheticPortal {
   const toView = useCallback(
     (): PortalView => ({
       businessName: chase?.clientName ?? '',
+      statementRequests: [],
       items: (chase?.items ?? []).map((item) => ({
         transactionId: item.missingItemId,
         label: item.supplier,

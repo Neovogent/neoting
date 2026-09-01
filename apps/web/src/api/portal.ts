@@ -137,9 +137,18 @@ export interface PortalItem {
   received: boolean;
 }
 
+/** A bank statement the accountant has asked for (engine (c), Phase 5). */
+export interface PortalStatementRequest {
+  /** `YYYY-MM` — the view formats it into the client's own month name. */
+  period: string;
+  received: boolean;
+}
+
 export interface PortalView {
   businessName: string;
   items: PortalItem[];
+  /** Statement requests ride beside items — a statement is not a transaction. */
+  statementRequests: PortalStatementRequest[];
   /** ISO — the session's own expiry, shown so the client knows the clock runs. */
   expiresAt: string;
 }
@@ -162,6 +171,7 @@ export async function fetchPortalView(token: string): Promise<PortalView> {
   return {
     businessName: parsed.businessName,
     items: parsed.items.map(toPortalItem),
+    statementRequests: (parsed.statementRequests ?? []).map((r) => ({ period: r.period, received: r.received })),
     expiresAt: parsed.expiresAt,
   };
 }

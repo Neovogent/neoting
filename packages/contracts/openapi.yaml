@@ -4376,8 +4376,23 @@ components:
           maxItems: 50
           items:
             type: object
-            required: [recipientE164, body, transactionIds]
+            description: |
+              Exactly ONE of `transactionIds` (a document chase, engine (a))
+              or `statementPeriod` (a bank-statement request, engine (c)) per
+              message — the compose seam refuses both or neither. Every field
+              a reviewer reads is server-stamped at creation: the body, the
+              chase id, the recipient's email and — when the caller names no
+              contact — the business's PRIMARY contact and their registered
+              mobile (D45: the registered identity, never a typed one).
+            required: [body]
             properties:
+              statementPeriod:
+                type: [string, 'null']
+                pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+                description: The calendar month whose bank statement is wanted, `YYYY-MM`. Present ⇒ this is a statement request.
+              businessId:
+                type: [string, 'null']
+                description: Server-stamped at creation for a statement request (a transaction chase derives its business from the chased transactions; a statement request has no transactions to derive from).
               chaseId:
                 type: [string, 'null']
                 description: |
@@ -4905,6 +4920,26 @@ components:
             being asked of you", which is exactly what a client who is up to
             date should be told.
           items: { $ref: '#/components/schemas/ChaseItem' }
+        statementRequests:
+          type: array
+          description: |
+            Bank statements the accountant has asked for (engine (c),
+            `STATEMENT_PERIOD_GAP` chases). A separate list from `items`
+            because a statement is not a transaction and pretending it is one
+            would put nulls in money fields. For a chase session: the request
+            that chase carries (at most one today). For an own-portal session:
+            every open statement request on the workspace. `received` flips
+            when a statement covering the period is ingested — the same
+            deterministic fact that auto-closes the chase.
+          items:
+            type: object
+            required: [period, received]
+            properties:
+              period:
+                type: string
+                pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+                description: The calendar month wanted, `YYYY-MM`.
+              received: { type: boolean }
         summary:
           description: |
             What is waiting in this client's own workspace, for the portal home

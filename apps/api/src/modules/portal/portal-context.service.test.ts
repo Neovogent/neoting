@@ -168,6 +168,7 @@ test('a live session sees ITS chase: the business name, its items in the chase\'
     // Null on a CHASE session: its holder may upload against granted documents
     // and nothing else, so they are handed no id they could put in a body.
     businessId: null,
+    statementRequests: [],
     summary: null,
     items: [
       {
@@ -346,8 +347,11 @@ test('a session with no chase gets its OWN workspace, not a 401', async () => {
 
   expect(context.businessName).toBe('American Burger');
   expect(context.businessId).toBe('biz_burger');
-  // Nothing is being asked through a sign-in, and an empty list is now sayable.
-  expect(context.items).toEqual([]);
+  // Phase 5: the own-portal ITEMISES the workspace's open asks — the fixture's
+  // default open chase covers two transactions, and both are named here so
+  // "waiting for N documents" stops being a number the client telephones about.
+  expect(context.items.map((i) => i.transactionId).sort()).toEqual(['txn_currys', 'txn_google']);
+  expect(context.items.every((i) => i.received === false)).toBe(true);
   // Another business's documents are not counted.
   expect(context.summary?.documentsSent).toBe(2);
   expect(context.summary?.lastDocumentAt).toBe('2026-08-09T09:00:00.000Z');

@@ -338,8 +338,30 @@ acceptance. `SMS_SENDER=email` is live on staging
 (`infra/envs/staging/services.tf`) and `SMS_SENDER=demo` is REFUSED under
 `NODE_ENV=production` (`config/env.ts`), the pairing A13 demanded.
 
-**Still open here:** per-client suppression descriptors, engines (b)–(e), the
-policy scheduler / reminders / quiet hours / STOP / item messaging. The read controllers landed (METH S8, see above); auto-close landed (METH
+✅ **Engine (c) has its first real use: the statement-request chase (Phase 5,
+2 Sep 2026).** `statement-request.ts` owns the shape: a `chase.send` message
+carrying `statementPeriod: 'YYYY-MM'` instead of `transactionIds` (exactly one
+of the two, the compose seam refuses both/neither) becomes a chase with
+`detectionEngine: STATEMENT_PERIOD_GAP` whose one item is the month, tagged on
+`itemRefs` as `statement:YYYY-MM` (`statementItemRef`/`statementPeriodOf` —
+itemCount stays honest at 1, no schema change). `composeStatementRequestSms`
+is the pure copy ("we're missing your bank statement for July 2026"); the
+compose seam stamps `businessId` from the PROPOSAL's anchor and resolves the
+PRIMARY contact when the caller names none (D45 — recipientE164 now defaults
+from the contact's registered mobile; no reachable recipient refuses).
+`statementCoversPeriod` is the ONE received/coverage predicate, and
+`closeStatementRequestChases` runs INSIDE the statement lane's ingest
+transaction (banking-matching imports this seam) — a statement that imports
+also settles the ask atomically, with the event message + `chase.closed`
+notification mirroring auto-close. The portal context serves the request on
+`PortalContext.statementRequests` for both session kinds. Proven end to end in
+`statement-request.integration.test.ts` (create → approve → portal → ingest
+closes → received flips; wrong-month statements close nothing).
+
+**Still open here:** per-client suppression descriptors, engines (b), (d),
+(e), scheduled period-gap DETECTION for (c) (the request is accountant-
+initiated today), the policy scheduler / reminders / quiet hours / STOP /
+item messaging. The read controllers landed (METH S8, see above); auto-close landed (METH
 S8, `auto-close.ts` behind the `index.ts` seam, wired into the ingest processor).
 
 ## TODO

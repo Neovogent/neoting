@@ -5,7 +5,13 @@ import type { PortalContext } from '@neoting/contracts/model';
 import type { PrismaClient } from '../../common/db/prisma.js';
 import { scopedDb } from '../../common/db/scoped-db.js';
 import { AppException } from '../../common/problem/problem.js';
-import { chaseItemRefs, isChaseReceivedClose, toChaseItem } from '../chase/index.js';
+import {
+  chaseItemRefs,
+  isChaseReceivedClose,
+  statementCoversPeriod,
+  statementPeriodOf,
+  toChaseItem,
+} from '../chase/index.js';
 import { type PortalSessionFacts, portalSessionRequired, systemScopeFor } from './portal-session-context.js';
 
 /**
@@ -81,6 +87,16 @@ export class PortalContextService {
           ? []
           : await db.bankTransaction.findMany({ where: { id: { in: refs }, businessId: facts.businessId } });
 
+      // A statement-request chase (engine (c), Phase 5) carries its month as
+      // the chase seam's tag instead of transactions. Its `received` is the
+      // SAME predicate the close runs — a statement covering the period exists
+      // — so the portal and the close cannot disagree.
+      const statementPeriod = statementPeriodOf(refs);
+      const statementRequests =
+        statementPeriod === null
+          ? []
+          : [{ period: statementPeriod, received: await statementCoversPeriod(db, facts.businessId, statementPeriod) }];
+
       const byId = new Map(transactions.map((txn) => [txn.id, txn]));
       // ⚠ A CLOSED_RECEIVED chase says ONE line arrived, not all of them.
       //
@@ -104,14 +120,13 @@ export class PortalContextService {
         return txn === undefined ? [] : [toChaseItem(txn, ref === closedRef)];
       });
 
-      // `PortalContext.items` is `minItems: 1` in the contract, so an empty list
-      // is not a 200 — it is a row that should not exist (the `chase.send`
-      // executor resolved every transaction at approve time). Same for a missing
-      // business: `chases.business_id` is a NOT NULL foreign key. Both are
-      // server-side inconsistencies, which is a 500, not a 4xx blamed on the
-      // client; `NT-SRV-001` is the house code and `500` is declared on this
-      // operation.
-      if (business === null || items.length === 0) throw contextUnavailable();
+      // A chase that asks for NOTHING — no transaction items AND no statement
+      // request — is a row that should not exist (the executor resolved every
+      // item at approve time). Same for a missing business:
+      // `chases.business_id` is a NOT NULL foreign key. Both are server-side
+      // inconsistencies, which is a 500, not a 4xx blamed on the client;
+      // `NT-SRV-001` is the house code and `500` is declared on this operation.
+      if (business === null || (items.length === 0 && statementRequests.length === 0)) throw contextUnavailable();
 
       return {
         businessName: business.name,
@@ -121,6 +136,7 @@ export class PortalContextService {
         // `PortalSession.businessId` follows, for the same reason.
         businessId: null,
         items,
+        statementRequests,
         summary: null,
         expiresAt: facts.expiresAt.toISOString(),
       };
@@ -181,13 +197,39 @@ export class PortalContextService {
       // the number that means anything to a client is ITEMS, not chases.
       const awaitingYou = openChases.reduce((total, chase) => total + chaseItemRefs(chase).length, 0);
 
+      // Phase 5: the ITEMISED list — "your accountant is waiting for N
+      // documents" now names them. Every open chase's outstanding lines, plus
+      // every open statement request, so the client's own portal shows the
+      // same asks a chase link would, without the link. Transaction refs are
+      // fetched by the chases' own refs AND the session's business (the
+      // chase-branch discipline); a ref whose transaction is invisible is
+      // dropped, never faked. `received` for a transaction is its own
+      // matchState (`toChaseItem`); for a statement, the coverage predicate
+      // the close runs.
+      const transactionRefs = [
+        ...new Set(openChases.flatMap((chase) => chaseItemRefs(chase)).filter((ref) => statementPeriodOf([ref]) === null)),
+      ];
+      const openTransactions =
+        transactionRefs.length === 0
+          ? []
+          : await db.bankTransaction.findMany({ where: { id: { in: transactionRefs }, businessId: facts.businessId } });
+      const items = openTransactions.map((txn) => toChaseItem(txn, false));
+
+      const periods = [
+        ...new Set(openChases.flatMap((chase) => statementPeriodOf(chaseItemRefs(chase)) ?? [])),
+      ];
+      const statementRequests = await Promise.all(
+        periods.map(async (period) => ({
+          period,
+          received: await statementCoversPeriod(db, facts.businessId, period),
+        })),
+      );
+
       return {
         businessName: business.name,
         businessId: facts.businessId,
-        // Nothing is being asked of them through THIS session — it is a sign-in,
-        // not a chase. An empty list is the honest answer, and the contract now
-        // permits it.
-        items: [],
+        items,
+        statementRequests,
         summary: {
           documentsSent,
           awaitingYou,

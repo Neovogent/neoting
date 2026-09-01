@@ -185,6 +185,9 @@ export class ActionProposalsService {
             db,
             request.payload as unknown as ChaseSendPayload,
             this.chaseCompose,
+            // A statement request derives its business from the PROPOSAL's own
+            // anchor — it has no transactions to derive one from (Phase 5).
+            businessId,
           )) as unknown as Record<string, unknown>;
         } catch (error) {
           if (error instanceof ProposalExecutionRefused) {
