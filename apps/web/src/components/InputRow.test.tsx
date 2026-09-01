@@ -107,14 +107,15 @@ describe('picking files, live', () => {
     expect(screen.queryByText('receipt.jpg')).toBeNull();
   });
 
-  test('with "All clients" active it prompts for a client instead of uploading', async () => {
+  test('with "All clients" active it asks with the searchable picker instead of uploading', async () => {
     const { container } = await renderComposer({ attachedClients: [] });
     fireEvent.change(fileInput(container), {
       target: { files: [new File(['bytes'], 'receipt.jpg', { type: 'image/jpeg' })] },
     });
 
-    await waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(1));
-    expect(mocks.confirm.mock.calls[0]![0]).toMatchObject({ title: 'Choose a client before uploading' });
+    // The client question, not a flat refusal — and nothing sent until it is
+    // answered (the picker's own behaviours are pinned in ChatUpload.test.tsx).
+    expect(await screen.findByText('Choose a client for this upload')).toBeTruthy();
     expect(mocks.sendWorkspaceUpload).not.toHaveBeenCalled();
   });
 });

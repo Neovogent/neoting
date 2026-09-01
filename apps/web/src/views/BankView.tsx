@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useMemo, useRef, useState } from 'react';
 import {
   Landmark, Search, Link2, Unlink, Send, UploadCloud, SlidersHorizontal,
   AlertTriangle, RefreshCw, Check, FileText, Wand2, Download, Eye, Plus,
@@ -21,7 +21,17 @@ import { assessTransaction, isMatched, txnLabel, type Candidate, type MatchVerdi
 import { DocumentPreview } from '../components/DynamicComponents/DocumentPreview';
 import type { BankAccount, BankTransaction, Document, Match, Statement, StatementGap } from '../lib/types';
 import { EXPORT_HINT } from '../lib/exportRules';
+// Type-only on purpose — erased at build. The refinement machinery itself
+// (`lib/bankFilters`) is imported ONLY by the lazy panel: this view rides the
+// worst route in the app, which was 977 gzipped bytes under its 250 kB budget
+// when this landed, so the panel hands back a compiled predicate instead of
+// this chunk carrying the predicate's source.
+import type { BankRefinement } from '../components/DynamicComponents/BankFilterPanel';
 import { DataSourceBadge } from '../components/DataSourceBadge';
+
+// Lazy for the bundle's sake: this view rides the worst route in the app, and
+// the filter drawer is not needed until its button is pressed.
+const BankFilterPanel = lazy(() => import('../components/DynamicComponents/BankFilterPanel'));
 
 const TABS = ['Transactions', 'Matches', 'Statements', 'Accounts'] as const;
 type Tab = (typeof TABS)[number];
@@ -74,6 +84,10 @@ const m = defineMessages({
   uploadAuditScope: { id: 'bank.bankView.uploadAuditScope', defaultMessage: '{file} — {client}' },
   gapBadge: { id: 'bank.bankView.gapBadge', defaultMessage: '{count, plural, one {# gap} other {# gaps}}' },
   searchPlaceholder: { id: 'bank.bankView.searchPlaceholder', defaultMessage: 'Search transactions...' },
+  filtersButton: {
+    id: 'bank.bankView.filtersButton',
+    defaultMessage: '{count, plural, =0 {Filters} other {Filters · #}}',
+  },
   columnDescription: { id: 'bank.bankView.columnDescription', defaultMessage: 'Description' },
   columnClient: { id: 'bank.bankView.columnClient', defaultMessage: 'Client' },
   columnEvidence: { id: 'bank.bankView.columnEvidence', defaultMessage: 'Evidence' },
@@ -320,6 +334,11 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
   };
   const [evidenceFilter, setEvidenceFilter] = useState<'all' | 'needs-you' | 'unmatched' | 'matched' | 'credits'>('all');
   const [query, setQuery] = useState('');
+  // The refinement (date/amount/direction/supplier) as the panel compiled it:
+  // filters for the panel to re-open with, a ready predicate for `scopedTxns`,
+  // and the active count the button wears. Null until the panel first answers.
+  const [refine, setRefine] = useState<BankRefinement | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [matchFor, setMatchFor] = useState<BankTransaction | null>(null);
   const [previewDoc, setPreviewDoc] = useState<Document | null>(null);
   const [cashFor, setCashFor] = useState<BankTransaction | null>(null);
@@ -366,9 +385,10 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
       if (evidenceFilter === 'matched' && !isMatched(t)) return false;
       if (evidenceFilter === 'credits' && !t.isCredit) return false;
       if (q && !`${t.description} ${t.clientName} ${t.amount}`.toLowerCase().includes(q)) return false;
+      if (refine !== null && !refine.predicate(t)) return false;
       return true;
     });
-  }, [transactions, clientFilter, evidenceFilter, query, verdicts, isSameClient]);
+  }, [transactions, clientFilter, evidenceFilter, query, refine, verdicts, isSameClient]);
 
   const scopedMatches = matches.filter(
     (match) => clientFilter === 'all' || clients.find((c) => c.id === clientFilter)?.name === match.clientName,
@@ -689,7 +709,31 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                     {intl.formatMessage(EVIDENCE_FILTER_LABELS[f], { count: needsYouCount })}
                   </button>
                 ))}
+                <button
+                  onClick={() => setFiltersOpen(true)}
+                  className={`px-4 py-2 rounded-full text-[13px] font-bold transition-all border flex items-center gap-2 ${
+                    (refine?.active ?? 0) > 0
+                      ? 'bg-brand text-white border-brand'
+                      : 'bg-card text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
+                  }`}
+                >
+                  <SlidersHorizontal size={14} />
+                  {intl.formatMessage(m.filtersButton, { count: refine?.active ?? 0 })}
+                </button>
               </div>
+
+              <AnimatePresence>
+                {filtersOpen && (
+                  <Suspense fallback={null}>
+                    <BankFilterPanel
+                      rows={transactions.filter((t) => clientFilter === 'all' || isSameClient(t.clientId, clientFilter))}
+                      current={refine}
+                      onChange={setRefine}
+                      onClose={() => setFiltersOpen(false)}
+                    />
+                  </Suspense>
+                )}
+              </AnimatePresence>
 
               <DataTable<BankTransaction>
                 className="max-w-none"

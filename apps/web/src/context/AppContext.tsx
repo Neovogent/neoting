@@ -400,6 +400,14 @@ interface AppContextType {
   serverClientIdFor: (clientId: string) => string;
   /** Whether a row's businessId names the given (possibly seed-id) client. */
   isSameClient: (rowClientId: string, clientId: string) => boolean;
+  /**
+   * A client's display name from either id world — seed id, `biz_*` fixture
+   * id, or an opaque server id answered by the hydrated businesses slice.
+   * Falls through to the id itself rather than inventing a name. Render
+   * through this instead of a stored `clientName`: rows filled before the
+   * slice answered carry the raw id in the stored string forever.
+   */
+  clientNameFor: (businessId: string) => string;
 
   // Navigation shared across sections
   activeTab: string;
@@ -2778,6 +2786,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         slices,
         serverClientIdFor,
         isSameClient,
+        clientNameFor,
         statsFor,
         onboardingLinks,
         sendOnboardingLink,

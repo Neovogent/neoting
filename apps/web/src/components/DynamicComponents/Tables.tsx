@@ -60,6 +60,16 @@ const inbox = defineMessages({
   },
   markReviewedAction: { id: 'shell.inboxTable.markReviewedAction', defaultMessage: 'Mark reviewed' },
   noneCanMoveTitle: { id: 'shell.inboxTable.noneCanMoveTitle', defaultMessage: 'None of these can move yet' },
+  onlyReviewCanMove: {
+    id: 'shell.inboxTable.onlyReviewCanMove',
+    defaultMessage: 'Only documents in To review can be marked reviewed — the Ready and Published ones already are.',
+  },
+  nothingToPublishTitle: { id: 'shell.inboxTable.nothingToPublishTitle', defaultMessage: 'Nothing selected can publish' },
+  nothingToPublishDetail: {
+    id: 'shell.inboxTable.nothingToPublishDetail',
+    defaultMessage:
+      '{publishedCount, plural, =0 {} one {# is already Published — approved and released for export. } other {# are already Published — approved and released for export. }}{otherCount, plural, =0 {} one {# must reach Ready before it can publish.} other {# must reach Ready before they can publish.}}',
+  },
   blockedRow: { id: 'shell.inboxTable.blockedRow', defaultMessage: '{supplier} — {missing}' },
   moveToReadyTitle: {
     id: 'shell.inboxTable.moveToReadyTitle',
@@ -94,7 +104,7 @@ export function InboxTable({
   /** Narrows to one status — "show everything to review" (METH Stage 13). */
   statusFilter?: DocStatus | undefined;
 }) {
-  const { documents, addMessage, updateDocumentStatus, mandatoryFields } = useAppContext();
+  const { documents, addMessage, updateDocumentStatus, mandatoryFields, clientNameFor } = useAppContext();
   const intl = useIntl();
   const confirm = useConfirm();
   const rows = documents.filter(
@@ -112,7 +122,16 @@ export function InboxTable({
       selectable
       columns={[
         { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (d) => d.supplier, render: (d) => <span className="text-white font-semibold">{d.supplier}</span> },
-        { key: 'clientName', label: intl.formatMessage(commonLabels.client), sortValue: (d) => d.clientName },
+        {
+          key: 'clientName',
+          label: intl.formatMessage(commonLabels.client),
+          // Through the resolver, not the stored string: a live row is filled
+          // before the businesses slice answers, and the stored name is the
+          // raw `biz_*` id until something re-derives it. The resolver answers
+          // from the hydrated slice on every render.
+          sortValue: (d) => clientNameFor(d.clientId),
+          render: (d) => <span>{clientNameFor(d.clientId)}</span>,
+        },
         { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date },
         { key: 'category', label: intl.formatMessage(commonLabels.category), sortValue: (d) => d.category },
         { key: 'total', label: intl.formatMessage(commonLabels.total), align: 'right', sortValue: (d) => d.total, render: (d) => <span className="text-white font-bold tabular-nums">{currency(d.total)}</span> },
@@ -151,7 +170,20 @@ export function InboxTable({
           label: intl.formatMessage(inbox.markReviewedAction),
           icon: CheckCircle,
           onClick: async (sel) => {
-            const { ready, blocked } = partitionByReadiness(sel, mandatoryFields, intl);
+            // Only To-review documents can move to Ready. A Published or Ready
+            // row offered this action is the functional lie the user report
+            // named: the screen claiming a state change that cannot happen.
+            const movable = sel.filter((d) => d.status === 'review');
+            if (movable.length === 0) {
+              await confirm({
+                tone: 'red',
+                title: intl.formatMessage(inbox.noneCanMoveTitle),
+                detail: intl.formatMessage(inbox.onlyReviewCanMove),
+                confirmLabel: intl.formatMessage(commonActions.close),
+              });
+              return;
+            }
+            const { ready, blocked } = partitionByReadiness(movable, mandatoryFields, intl);
             if (ready.length === 0) {
               await confirm({
                 tone: 'red',
@@ -184,14 +216,32 @@ export function InboxTable({
           label: intl.formatMessage(inbox.publishAction),
           icon: Send,
           primary: true,
-          onClick: () =>
+          onClick: async (sel) => {
+            // Publish means Ready → Published. A selection with nothing Ready
+            // gets the honest refusal, counted by state — a Published document
+            // is already released, and offering to publish it again tells an
+            // accountant their books are in a state they are not (D42).
+            if (!sel.some((d) => d.status === 'ready')) {
+              const publishedCount = sel.filter((d) => d.status === 'published').length;
+              await confirm({
+                tone: 'red',
+                title: intl.formatMessage(inbox.nothingToPublishTitle),
+                detail: intl.formatMessage(inbox.nothingToPublishDetail, {
+                  publishedCount,
+                  otherCount: sel.length - publishedCount,
+                }),
+                confirmLabel: intl.formatMessage(commonActions.close),
+              });
+              return;
+            }
             addMessage({
               id: `${Date.now()}-pub`,
               role: 'assistant',
               content: intl.formatMessage(inbox.publishReply),
               intent: 'PUBLISH',
               payload: { clientIds, clientNames },
-            }),
+            });
+          },
         },
       ]}
     />
