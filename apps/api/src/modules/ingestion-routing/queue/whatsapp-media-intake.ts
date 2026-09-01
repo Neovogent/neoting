@@ -24,6 +24,7 @@ import {
   type VirusScanner,
 } from '../lib/sanitisation/index.js';
 import type { DocumentStore } from '../storage/document-store.js';
+import { effectiveFormat } from '../web-upload/upload-sanitisation.js';
 import { type MediaFetcher, WHATSAPP_MEDIA_CHANNEL } from './media-fetcher.js';
 
 export interface MediaIntakeDeps {
@@ -97,13 +98,20 @@ export async function fetchWhatsAppMedia(
   );
   if (!result.ok) return { ok: false, rejection: result.rejection };
 
+  // ⚠ The pipeline's `detectedType` describes the INPUT; step 5 re-encodes
+  // every image to JPEG. Labelling the stored object with the input format put
+  // `image/heic` on JPEG bytes — recreating NT-EXT-003 on the exact format the
+  // normaliser exists to fix. `effectiveFormat` re-sniffs the OUTPUT bytes,
+  // exactly as `upload-sanitisation.ts` does (one fix, two lanes, no drift).
+  const storedFormat = effectiveFormat(result.document.bytes, result.document.detectedType);
+
   // Hash the SANITISED bytes while they are already in hand (#40) — never a
   // round trip back to S3 to re-read what we are holding.
   const perceptualHash = deps.perceptualHasher
-    ? await deps.perceptualHasher.hash(result.document.bytes, result.document.detectedType)
+    ? await deps.perceptualHasher.hash(result.document.bytes, storedFormat)
     : null;
 
-  const mimeType = mimeForFormat(result.document.detectedType);
+  const mimeType = mimeForFormat(storedFormat);
   // Store BEFORE the caller persists, so a `documents` row never points at an
   // object that does not exist.
   const stored = await deps.store.put({
@@ -124,7 +132,7 @@ export async function fetchWhatsAppMedia(
       filename:
         input.filename !== undefined && input.filename.length > 0
           ? safeBasename(input.filename)
-          : synthesiseFilename(result.document.sha256, result.document.detectedType),
+          : synthesiseFilename(result.document.sha256, storedFormat),
       perceptualHash,
     },
   };

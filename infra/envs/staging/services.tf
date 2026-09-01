@@ -252,6 +252,12 @@ locals {
     { name = "STATEMENT_READER", value = "textract" },
 
     { name = "SMS_SENDER", value = "email" },
+    # WhatsApp media fetch (Phase 2). `fixture` until the real System User
+    # token replaces the placeholder in the whatsapp secret — env.ts refuses
+    # `graph` with an empty token, and a fixture fetcher on a real message
+    # dead-letters loudly rather than fabricating bytes. Flip to `graph`
+    # together with the real token; the secret pipe is already laid above.
+    { name = "MEDIA_FETCH", value = "fixture" },
     # The web app's public origin — chase.send composition signs portal links
     # as <APP_ORIGIN>/p/<token>. Stated rather than left to the code default so
     # the value survives the day the default constant moves.
@@ -460,6 +466,12 @@ locals {
     # `META_APP_SECRET` ← `app_secret`, `META_VERIFY_TOKEN` ← `verify_token`.
     { name = "META_APP_SECRET", valueFrom = "${aws_secretsmanager_secret.app["whatsapp"].arn}:app_secret::" },
     { name = "META_VERIFY_TOKEN", valueFrom = "${aws_secretsmanager_secret.app["whatsapp"].arn}:verify_token::" },
+    # The Graph media bearer (Phase 2 plumbing). Injected even while MEDIA_FETCH
+    # is `fixture`: an empty placeholder value costs nothing at boot under
+    # fixture, and having the pipe laid means flipping to `graph` is exactly two
+    # value changes (this secret's real token + MEDIA_FETCH below) rather than a
+    # task-definition surgery on launch day.
+    { name = "META_MEDIA_ACCESS_TOKEN", valueFrom = "${aws_secretsmanager_secret.app["whatsapp"].arn}:media_access_token::" },
 
     # The second boot gate from the #90–#107 deploy failures: env.ts refuses an
     # empty UPLOAD_URL_SECRET under NODE_ENV=production, because an empty key

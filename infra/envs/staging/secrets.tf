@@ -216,10 +216,18 @@ locals {
     # inbound webhook HMAC is computed with (Governance §11.7) — treat a leak
     # of it as "anyone can forge an inbound message", not as a config value.
     whatsapp = {
-      description = "Meta WhatsApp Business Platform - webhook verify token and app secret (HMAC, Gov §11.7)"
+      description = "Meta WhatsApp Business Platform - webhook verify token, app secret (HMAC, Gov §11.7), media access token (Graph bearer)"
       values = {
         verify_token = "PLACEHOLDER_WHATSAPP_VERIFY_TOKEN"
         app_secret   = "PLACEHOLDER_WHATSAPP_APP_SECRET"
+        # The Graph API bearer the WORKER fetches media bytes with — a SYSTEM
+        # USER token holding `whatsapp_business_messaging` (durable), never the
+        # 24-hour dashboard token (docs/runbooks/whatsapp-sandbox.md). A third
+        # credential on purpose: the app secret verifies inbound HMAC, the
+        # verify token answers the handshake, and NEITHER authenticates a Graph
+        # call. While this is a placeholder, MEDIA_FETCH stays `fixture` in
+        # services.tf — env.ts refuses `graph` with an empty token at boot.
+        media_access_token = "PLACEHOLDER_WHATSAPP_MEDIA_ACCESS_TOKEN"
       }
     }
 

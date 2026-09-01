@@ -542,3 +542,137 @@ test('the fixture fetcher never invents bytes for an id nobody seeded', async ()
   await expect(processIngestJob(whatsappJob, h.deps)).rejects.toThrow(TerminalJobError);
   expect(h.sink.persisted.size).toBe(0);
 });
+
+/* ── WhatsApp routing anchors (Phase 2) ─────────────────────────────────────── */
+
+const mapOf = (entries: Record<string, readonly string[]>) => new Map(Object.entries(entries));
+
+test('a whatsapp sender registered as a contact routes to their workspace', async () => {
+  const h = harness();
+  h.fetcher.put('media-1', { bytes: PNG });
+  const deps = {
+    ...h.deps,
+    // The wa_id arrives without the leading `+`; buildSenderMap keys both
+    // forms, so a plain-map fixture keys the bare form directly.
+    senderMap: { load: async (_practiceId: string) => mapOf({ '447700900000': ['biz_wa'] }) },
+  };
+
+  await processIngestJob(whatsappJob, deps);
+
+  const persisted = [...h.sink.persisted.values()][0];
+  expect(persisted?.businessId).toBe('biz_wa');
+  expect(h.extractor.runs[0]?.businessId).toBe('biz_wa');
+});
+
+test('a sender on two workspaces stays Unrouted with the which-company reason', async () => {
+  const h = harness();
+  h.fetcher.put('media-1', { bytes: PNG });
+  const deps = {
+    ...h.deps,
+    senderMap: { load: async () => mapOf({ '447700900000': ['biz_a', 'biz_b'] }) },
+  };
+
+  await processIngestJob(whatsappJob, deps);
+
+  const persisted = [...h.sink.persisted.values()][0];
+  expect(persisted?.businessId).toBeNull();
+  expect(h.logs.some((l) => l.includes('unrouted'))).toBe(true);
+});
+
+test('an unknown whatsapp sender stays Unrouted — never guessed, never dropped', async () => {
+  const h = harness();
+  h.fetcher.put('media-1', { bytes: PNG });
+  const deps = { ...h.deps, senderMap: { load: async () => mapOf({}) } };
+
+  await processIngestJob(whatsappJob, deps);
+
+  const persisted = [...h.sink.persisted.values()][0];
+  expect(persisted?.businessId).toBeNull();
+  expect(h.sink.persisted.size).toBe(1);
+});
+
+test('a sender-map failure downgrades to Unrouted rather than failing the job', async () => {
+  const h = harness();
+  h.fetcher.put('media-1', { bytes: PNG });
+  const deps = {
+    ...h.deps,
+    senderMap: {
+      load: async (): Promise<ReadonlyMap<string, readonly string[]>> => {
+        throw new Error('contacts unreachable');
+      },
+    },
+  };
+
+  await processIngestJob(whatsappJob, deps);
+
+  expect(h.sink.persisted.size).toBe(1);
+  expect([...h.sink.persisted.values()][0]?.businessId).toBeNull();
+  expect(h.warns.some((w) => w.includes('sender-map load failed'))).toBe(true);
+});
+
+test('an env-unmapped receiving number resolves its practice from Practice.whatsappPhoneNumberId', async () => {
+  const h = harness();
+  h.fetcher.put('media-1', { bytes: PNG });
+  const { practiceId: _dropped, ...unanchored } = whatsappJob;
+  const deps = {
+    ...h.deps,
+    whatsAppPractices: {
+      byPhoneNumberId: async (id: string) => (id === '123456789012345' ? 'prac_from_column' : null),
+    },
+  };
+
+  await processIngestJob(unanchored, deps);
+
+  expect([...h.sink.persisted.values()][0]?.practiceId).toBe('prac_from_column');
+});
+
+test('the env map WINS over the column — a controller-anchored job is not re-resolved', async () => {
+  const h = harness();
+  h.fetcher.put('media-1', { bytes: PNG });
+  let asked = 0;
+  const deps = {
+    ...h.deps,
+    whatsAppPractices: {
+      byPhoneNumberId: async () => {
+        asked += 1;
+        return 'prac_other';
+      },
+    },
+  };
+
+  await processIngestJob(whatsappJob, deps);
+
+  expect(asked).toBe(0);
+  expect([...h.sink.persisted.values()][0]?.practiceId).toBe('prac_wa');
+});
+
+test('a number neither source names still dead-letters — the resolver is a fallback, not a net', async () => {
+  const h = harness();
+  h.fetcher.put('media-1', { bytes: PNG });
+  const { practiceId: _dropped, ...unanchored } = whatsappJob;
+  const deps = { ...h.deps, whatsAppPractices: { byPhoneNumberId: async () => null } };
+
+  await expect(processIngestJob(unanchored, deps)).rejects.toThrow(TerminalJobError);
+  expect(h.sink.persisted.size).toBe(0);
+});
+
+test('an email job is never re-anchored by the whatsapp resolvers', async () => {
+  const h = harness();
+  let asked = 0;
+  const deps = {
+    ...h.deps,
+    senderMap: {
+      load: async () => {
+        asked += 1;
+        return mapOf({ 'sender@acme.co': ['biz_email'] });
+      },
+    },
+  };
+
+  await processIngestJob(emailJob, deps);
+
+  // The email lane routes in runEmailIntake, BEFORE the queue — re-deciding
+  // here would be a second opinion on a decision already made.
+  expect(asked).toBe(0);
+  expect([...h.sink.persisted.values()][0]?.businessId).toBeNull();
+});

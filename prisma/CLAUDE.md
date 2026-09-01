@@ -34,6 +34,19 @@ The CI tenancy suite (Governance §15.4) must assert that `nt_app` cannot bypass
 
 Never drop or rename a column in one step. Indexes ship in the **same migration** as the query pattern that needs them. `prisma migrate dev` is local-only; `migrate deploy` is the only migration command that runs anywhere else.
 
+## `Practice.whatsappPhoneNumberId` (1 Sep 2026, migration 20260901180000)
+
+The #79 promised column, additive and nullable: the Meta `phone_number_id` of
+the WhatsApp Business number that RECEIVES a practice's client messages —
+derived from the receiving number, never the sender. UNIQUE (one Meta number
+delivers to one practice). Unset practices keep resolving through the
+`WHATSAPP_PRACTICE_MAP` env override; the worker's
+`PrismaWhatsAppPracticeResolver` reads this column as the fallback, each
+practice's SYSTEM context asked for its own row (RLS answers — no new policy
+needed, `practices` already admits its own tenant). Landed under the owner's
+1 Sep 2026 ruling that retired the G7 issue ceremony; recorded in
+`packages/contracts/CLAUDE.md`.
+
 ## Documents are practice-anchored until they are business-anchored
 
 Issue #17. `documents.business_id` is **nullable** and `documents.practice_id` was added, because `inbox` defaults to `UNROUTED` — a document from a sender we do not recognise has no business until routing says so, and a NOT NULL `business_id` made that state unwritable.

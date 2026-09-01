@@ -164,3 +164,37 @@ test('a fetch failure PROPAGATES as a thrown MediaFetchError, never a rejection'
   ).rejects.toBeInstanceOf(MediaFetchError);
   expect(puts).toHaveLength(0);
 });
+
+test('a HEIC arriving by WhatsApp is stored as image/jpeg — the label describes the OUTPUT bytes', async () => {
+  // REGRESSION (the #79 latent mismatch, fixed 1 Sep 2026). The pipeline's
+  // `detectedType` describes the INPUT and step 5 re-encodes images — so a
+  // HEIC came back labelled `heic` carrying JPEG bytes, and the stored object
+  // wore `image/heic`, recreating NT-EXT-003 on the exact format the
+  // normaliser exists to fix. `effectiveFormat` re-sniffs the stored bytes.
+  const HEIC = Buffer.concat([
+    Buffer.from([0x00, 0x00, 0x00, 0x18]),
+    Buffer.from('ftypheic'),
+    Buffer.alloc(16),
+  ]);
+  const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00]);
+
+  const fetcher = new FixtureMediaFetcher();
+  fetcher.put('m-heic', { bytes: HEIC });
+  const { store, puts } = recordingStore();
+
+  const outcome = await fetchWhatsAppMedia(
+    { mediaId: 'm-heic', practiceId: PRACTICE, businessId: null },
+    {
+      fetcher,
+      store,
+      // What the real sharp normaliser does to a HEIC, in one line: JPEG out.
+      imageNormaliser: { normalise: async () => ({ ok: true, bytes: JPEG }) },
+    },
+  );
+
+  expect(outcome.ok).toBe(true);
+  if (!outcome.ok) return;
+  expect(outcome.document.mimeType).toBe('image/jpeg');
+  expect(outcome.document.filename.endsWith('.jpeg')).toBe(true);
+  expect(puts[0]?.contentType).toBe('image/jpeg');
+});
