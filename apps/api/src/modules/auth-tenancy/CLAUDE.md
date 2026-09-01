@@ -125,6 +125,47 @@ under a conditional write, and a replayed confirmation meeting `NT-AUTH-007`.
 ⚠ **This did NOT add a "no second factor configured, let them in" branch and
 must never grow one.** It is the door the refusal points at, not a way round it.
 
+### The forgotten-password flow (2 Sep 2026)
+
+The contract used to say "this release has no reset flow" in as many words; now
+it has one, and the lockout TODO below is HALF closed — the forgotten-password
+half. Two operations in `signup-chain.controller.ts`, no migration:
+
+| Operation | Answers | Service |
+|---|---|---|
+| `POST /v1/auth/password-resets` | **`202`, always, silently** | `password-reset.service.ts` · `request` |
+| `POST /v1/auth/password` | `204`, or the `-004`/`-005` pair | same · `reset` |
+
+The design decision worth reading before touching it is in `password-reset.ts`:
+**the token is single-use with no table.** Its claims carry a 16-hex-char
+fingerprint of the password hash it was minted against, and spending it
+replaces that hash — so one use kills every outstanding token at once,
+including itself, and so does a password change through any other door. No
+schema change, no spent-token store, and the compare-and-swap in the service
+(`updateMany` on the EXACT old hash) makes two racing resets collapse to one
+winner.
+
+The rest follows patterns already in this module, deliberately:
+
+- `request` refuses silently (unknown / SYSTEM / deactivated / no password /
+  **unverified** — a reset mail to an unverified address would BE the
+  verification bypass), logs the reason domain-only, and answers the same empty
+  `202` regardless (the `POST /practices` stance). A refused SEND is logged,
+  never thrown — the sign-in-codes asymmetry, not the signup mailer's.
+- `reset` throttles per token in its own `pr:` keyspace (the `ev:` discipline),
+  collapses every mismatch into `NT-AUTH-004` with expiry alone named as
+  `-005`, and hashes OUTSIDE the write (scrypt blocks the event loop).
+- **TOTP is untouched**, which is what makes an email-only reset acceptable on
+  an account holding a practice's books: a reset password still meets the
+  second-factor gate. This flow is NOT the lost-phone recovery — that half of
+  the TODO below is still open.
+- The mail (`notifications/`, kind `password-reset`, ceiling 3/hour) points at
+  `RESET_PASSWORD_PATH = '/signup/reset'` — the same SPA drift trap as
+  `VERIFY_EMAIL_PATH`, pinned the same way in
+  `notifications-signup-mailer.test.ts`. The web half lives in M9's
+  `SignupView` (`ResetStep`, both halves at one address), with the
+  "Forgotten your password?" link on `LoginView`.
+
 ### Real MFA and a sign-in lockout (launch stage A2)
 
 Two holes, both wide open until this stage. **The second factor was the literal
@@ -436,9 +477,11 @@ pnpm --filter @neoting/api vitest run src/modules/auth-tenancy/   # unit, offlin
       are minted, hashed, verified and spent correctly, and are shown to the
       user at enrolment as *"the only way back in"* — **which is currently not
       true, because there is no route in.** Combined with `NT-AUTH-007`
-      (enrolment refuses an account that already has one, since this release has
-      no reset flow), a user who loses their phone has **no self-service route
-      back into their own workspace**; the only remedy is an operator clearing
+      (enrolment refuses an account that already has one), a user who loses
+      their phone has **no self-service route back into their own workspace**
+      (the 2 Sep 2026 password-reset flow closes the forgotten-PASSWORD half
+      only — it deliberately leaves TOTP untouched); the only remedy is an
+      operator clearing
       `users.totp_secret_ref`, which `docs/runbooks/error-codes.md` now spells
       out under `NT-AUTH-007`. The fix is a widened field or a recovery
       operation of its own, and it needs a contract-change issue.

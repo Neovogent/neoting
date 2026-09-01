@@ -141,6 +141,16 @@ Two messages were added here to close it:
 |---|---|---|
 | `email-verification` | `composeEmailVerification` | **3**/hour |
 | `duplicate-signup` | `composeDuplicateSignupNotice` | **2**/hour |
+| `password-reset` | `composePasswordReset` (added 2 Sep 2026) | **3**/hour |
+
+`password-reset` is the same class as `email-verification` — a stranger can
+point the request endpoint at any address — so it takes the same tight ceiling.
+Its copy names no person and no practice (the requester may not be the account
+holder), says the link works once and dies in 30 minutes, and says the
+authenticator is unchanged. A refused send is RETURNED to
+`auth-tenancy/password-reset.service.ts`, which logs and stays silent — the
+sign-in-code posture, not the signup mailer's throw, because the caller's `202`
+must be uniform.
 
 Both ceilings are tighter than the other three, because signup is the one flow
 an unauthenticated stranger can point at an address they do not own.

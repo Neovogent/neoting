@@ -401,6 +401,106 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /auth/password-resets:
+    post:
+      operationId: requestPasswordReset
+      summary: Email a password-reset link
+      description: |
+        The forgotten-password door (2 Sep 2026 — the flow the module docs
+        carried as this release's sharpest lockout edge).
+
+        **Always `202`, whatever happened** — the `POST /practices` stance:
+        whether an address has an account here is not something an
+        unauthenticated caller may learn. The email is the channel that
+        distinguishes the outcomes, and it goes to the address, never the
+        caller. Rate-limited per address like the other credential mails.
+
+        The link carries a signed, 30-minute token bound to the account's
+        CURRENT password hash, so it is single-use without a table: the reset
+        that spends it changes the hash and every outstanding token stops
+        verifying. It does not touch the second factor — a reset password
+        still meets the TOTP gate.
+      tags: [auth]
+      x-nt-side-effect: ingest
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '202':
+          description: Accepted. If that address has an account, a reset link is on its way. Empty by design.
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /auth/password:
+    post:
+      operationId: resetPassword
+      summary: Set a new password from a reset link
+      description: |
+        Spends the emailed token and replaces the password. The token is the
+        whole authorisation (the `verifyEmailAddress` argument, verbatim): it
+        is signed, purpose-bound, expiring, and additionally bound to the
+        password hash it was minted against — used once, every outstanding
+        copy dies with the old hash.
+
+        **Two failures, the `-004`/`-005` split**: one uniform verdict for
+        missing/forged/spent/user-gone, expiry named on its own because "ask
+        for another one" is the only actionable answer and it discloses
+        nothing the holder did not have.
+
+        Sessions are stateless cookies and are NOT revoked by a reset — the
+        12-hour expiry is the horizon. The second factor is untouched.
+      tags: [auth]
+      x-nt-side-effect: ingest
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, newPassword]
+              properties:
+                token: { type: string, minLength: 1 }
+                newPassword:
+                  type: string
+                  minLength: 12
+                  maxLength: 200
+                  description: The same floor signup enforces — one rule, two doors.
+      responses:
+        '204':
+          description: The password is set. Sign in with it (and the usual second factor).
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: |
+            The link did not verify — `NT-AUTH-004`, or `NT-AUTH-005` if it was
+            genuinely ours and has expired.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              example:
+                type: https://neoting.com/problems/NT-AUTH-004
+                title: Reset link not valid
+                status: 401
+                code: NT-AUTH-004
+                detail: That reset link is not valid. Request a new one from the sign-in screen.
+                traceId: 01J8XN2ZQ5R7TQ9E3M4K6P
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /auth/totp-enrolment:
     post:
       operationId: beginTotpEnrolment

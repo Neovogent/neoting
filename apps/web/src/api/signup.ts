@@ -1,10 +1,19 @@
 import { NtProblemError } from '@neoting/contracts';
-import { beginTotpEnrolment, confirmTotpEnrolment, createPractice, verifyEmailAddress } from '@neoting/contracts/client';
+import {
+  beginTotpEnrolment,
+  confirmTotpEnrolment,
+  createPractice,
+  requestPasswordReset as requestPasswordResetOp,
+  resetPassword as resetPasswordOp,
+  verifyEmailAddress,
+} from '@neoting/contracts/client';
 import {
   beginTotpEnrolmentBody,
   beginTotpEnrolmentResponse,
   confirmTotpEnrolmentBody,
   createPracticeBody,
+  requestPasswordResetBody,
+  resetPasswordBody,
   verifyEmailAddressBody,
   verifyEmailAddressResponse,
 } from '@neoting/contracts/zod';
@@ -169,6 +178,34 @@ export async function confirmEnrolment(input: {
     totp: input.totp,
   });
   await confirmTotpEnrolment(request);
+}
+
+/**
+ * Ask for the reset link (2 Sep 2026 — the forgotten-password door).
+ *
+ * Resolves on the `202` and returns nothing, exactly as `signUpPractice` does
+ * and for the same reason: the answer is uniform whether or not the address
+ * has an account, so there is nothing true to render beyond what happens
+ * next. The mail is the channel that distinguishes the outcomes, and it goes
+ * to the address rather than to the caller.
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  const request = requestPasswordResetBody.parse({ email: email.trim().toLowerCase() });
+  await requestPasswordResetOp(request);
+}
+
+/**
+ * Spend the emailed token, set the new password. `204` on success.
+ *
+ * The link is single-use server-side (the token is bound to the password hash
+ * it was minted against), so a second submit of the same link is `NT-AUTH-004`
+ * — the screens treat that as "ask for a fresh one", never as a retry. The
+ * split is the verification link's: `-004` is every kind of not-valid in one
+ * verdict, `-005` alone names expiry. The authenticator is untouched.
+ */
+export async function resetPassword(token: string, newPassword: string): Promise<void> {
+  const request = resetPasswordBody.parse({ token, newPassword });
+  await resetPasswordOp(request);
 }
 
 /**

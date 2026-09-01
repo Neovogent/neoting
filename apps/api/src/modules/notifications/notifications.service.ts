@@ -10,6 +10,8 @@ import {
   composeDuplicateSignupNotice,
   type ComposeEmailVerificationInput,
   composeEmailVerification,
+  composePasswordReset,
+  type ComposePasswordResetInput,
   type ComposeSignInCodeInput,
   composeSignInCode,
 } from './email-copy.js';
@@ -82,6 +84,10 @@ export interface SendEmailVerificationInput extends ComposeEmailVerificationInpu
   readonly to: string;
 }
 
+export interface SendPasswordResetInput extends ComposePasswordResetInput {
+  readonly to: string;
+}
+
 /** No composed fields — the notice deliberately carries nothing but the address. */
 export interface SendDuplicateSignupNoticeInput {
   readonly to: string;
@@ -119,6 +125,11 @@ export class NotificationsService {
    */
   sendEmailVerification(input: SendEmailVerificationInput, context: SendContext = {}): Promise<SendOutcome> {
     return this.#deliver('email-verification', input.to, context, () => composeEmailVerification(input));
+  }
+
+  /** The forgotten-password mail (2 Sep 2026) — terse and nameless by design, see composePasswordReset. */
+  sendPasswordReset(input: SendPasswordResetInput, context: SendContext = {}): Promise<SendOutcome> {
+    return this.#deliver('password-reset', input.to, context, () => composePasswordReset(input));
   }
 
   /**

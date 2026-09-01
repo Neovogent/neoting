@@ -5,8 +5,10 @@ import { describe, expect, test } from 'vitest';
 import type { NotificationsService, SendOutcome } from '../notifications/index.js';
 
 import {
+  buildPasswordResetLink,
   buildVerificationLink,
   NotificationsSignupMailer,
+  RESET_PASSWORD_PATH,
   VERIFY_EMAIL_PATH,
 } from './notifications-signup-mailer.js';
 
@@ -136,5 +138,21 @@ describe('⚠ the path this mail points at, against the screen that receives it'
     // A person clicking a verification link has no session yet. Sending them
     // into /app is what made the failure invisible rather than a 404.
     expect(VERIFY_EMAIL_PATH.startsWith('/signup/')).toBe(true);
+  });
+
+  test('RESET_PASSWORD_PATH is a route the web app actually serves — the SAME drift trap', () => {
+    // The forgotten-password mail (2 Sep 2026) points at the same SPA, which
+    // answers ANY path 200 with the app shell. The reset screen lives in the
+    // signup view family, so the pin is the same file read.
+    const signupView = readFileSync('../web/src/views/signup/SignupView.tsx', 'utf8');
+    expect(signupView).toContain(RESET_PASSWORD_PATH);
+    expect(RESET_PASSWORD_PATH.startsWith('/signup/')).toBe(true);
+  });
+
+  test('the reset link is origin + path + the token, escaped, trailing slash tolerated', () => {
+    expect(buildPasswordResetLink(ORIGIN, 'tok.sig')).toBe(`${ORIGIN}${RESET_PASSWORD_PATH}?token=tok.sig`);
+    expect(buildPasswordResetLink(`${ORIGIN}/`, 'a+b/c=d')).toBe(
+      `${ORIGIN}${RESET_PASSWORD_PATH}?token=a%2Bb%2Fc%3Dd`,
+    );
   });
 });

@@ -467,10 +467,18 @@ locals {
     { name = "META_APP_SECRET", valueFrom = "${aws_secretsmanager_secret.app["whatsapp"].arn}:app_secret::" },
     { name = "META_VERIFY_TOKEN", valueFrom = "${aws_secretsmanager_secret.app["whatsapp"].arn}:verify_token::" },
     # The Graph media bearer (Phase 2 plumbing). Injected even while MEDIA_FETCH
-    # is `fixture`: an empty placeholder value costs nothing at boot under
-    # fixture, and having the pipe laid means flipping to `graph` is exactly two
-    # value changes (this secret's real token + MEDIA_FETCH below) rather than a
-    # task-definition surgery on launch day.
+    # is `fixture`, so flipping to `graph` is exactly two value changes (this
+    # secret's real token + MEDIA_FETCH below) rather than a task-definition
+    # surgery on launch day.
+    #
+    # ⚠ A PLACEHOLDER VALUE IS NOT FREE — THE KEY MUST EXIST IN THE STORED JSON.
+    # ECS resolves every `valueFrom` before the container starts; a task
+    # definition naming a JSON key the secret does not carry fails with
+    # ResourceInitializationError and the deploy waiter times out. That is not
+    # theory: this exact line broke every main deploy on 1 Sep 2026, because
+    # secrets.tf's ignore_changes=[secret_string] means adding a key THERE
+    # delivers nothing — the stored JSON must be updated by hand, whole-document
+    # (a partial put-secret-value DELETES the keys it omits).
     { name = "META_MEDIA_ACCESS_TOKEN", valueFrom = "${aws_secretsmanager_secret.app["whatsapp"].arn}:media_access_token::" },
 
     # The second boot gate from the #90–#107 deploy failures: env.ts refuses an
