@@ -106,6 +106,22 @@ It depends on `js-yaml` and nothing else, on purpose: it has to run before the c
 | Billing (ID LAW batch) | checkout session · customer-portal session · Stripe webhook |
 | Portal onboarding (ID LAW batch) | request sign-in code · open onboarding session |
 
+**⚠ The G7 approval CEREMONY was retired by the owner on 1 Sep 2026** ("we are
+turning off Law completely… we need product") — contract/schema changes no
+longer wait on a contract-change issue. Keep this file honest and the codegen
+coherent; the discipline that remains is the diff itself. The `business.offboard`
+pending-approval note below is therefore historical: the kind stands.
+
+**Two chase-lane changes (1 Sep 2026, the compose-seam + chase-OTP push):**
+`ChaseSendPayload.messages[]` gained optional `chaseId` (server-minted at
+proposal creation; the executor adopts it so the signed portal link in the
+reviewed body names the chase the approval creates) and `recipientEmail`
+(the named contact's address, resolved at creation so Read review shows where
+the email transport sends). `PortalSignInCodeRequest` gained optional
+`linkToken` and dropped `email` from `required`: a chase link requests its
+code by TOKEN and the code goes to the chase's registered recipient contact,
+never a typed address (D45).
+
 **`ProposalKind` gained `business.offboard` (31 Aug 2026, ⚠ G7 approval pending).**
 The first slice of D32's self-serve offboarding: deactivate a client workspace
 through the Review→Approve spine — the executor flips `businesses.is_active`

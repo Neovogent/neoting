@@ -288,16 +288,25 @@ const EnvSchema = z.object({
   // `NODE_ENV=production` below (S2). One gate covering every outbound email
   // beats a second one covering this caller only and able to disagree with it.
   //
-  // ⚠ **`demo` is NOT refused in production, and that is a live gap, not a
-  // ruling.** It has the `EMAIL_SENDER=demo` failure shape — the chase is
-  // approved, the outbox row appears, and no client is ever contacted. The gate
-  // is withheld only because `infra/envs/staging/services.tf` still sets
-  // `SMS_SENDER=demo` and staging runs `NODE_ENV=production`: adding the refusal
-  // without that change in the same PR crash-loops the launch target over a
-  // variable nobody has set yet. It is the SESSION_SECRET story exactly, and it
-  // gets the same answer — the gate lands with the infra change, not before it.
-  // DEMO-MOCK: Twilio Messaging would land behind the same seam for v1.
+  // ⚠ **`demo` IS refused under `NODE_ENV=production`** (the superRefine below),
+  // landed 1 Sep 2026 in the SAME change that flips
+  // `infra/envs/staging/services.tf` to `SMS_SENDER=email` — the pairing the
+  // previous version of this comment demanded. The failure it closes has the
+  // `EMAIL_SENDER=demo` shape: the chase is approved, the outbox row appears,
+  // and no client is ever contacted.
+  // The SMS transport for v1 is AWS End User Messaging (owner decision,
+  // 1 Sep 2026 — supersedes the Twilio note D32 carried); it lands behind this
+  // same seam as a third enum value.
   SMS_SENDER: z.enum(['demo', 'email']).default('demo'),
+
+  // The web app's public origin — where `/p/<token>` (the chase portal) and
+  // `/app/setup` are served. Read by chase.send composition to build the full
+  // portal URL the reviewed message carries; the default is the staging
+  // frontend so a task definition that never sets it keeps working links.
+  // Local .env sets http://localhost:5173. The two hard-coded
+  // DEFAULT_APP_ORIGIN constants (clients-team-settings, auth-tenancy) are the
+  // acknowledged siblings to migrate onto this key.
+  APP_ORIGIN: z.string().default('https://app.neoting.neovogent.com'),
 
   // ── Outbound email (S2) ──────────────────────────────────────────────────
   //
@@ -564,6 +573,20 @@ const EnvSchema = z.object({
       path: ['EMAIL_SENDER'],
       message:
         'EMAIL_SENDER=demo sends into an in-memory outbox — every send reports success and no email is delivered. Set EMAIL_SENDER=ses (S2)',
+    });
+  }
+
+  // The same failure shape one seam up: SMS_SENDER=demo writes the outbox row
+  // and contacts nobody — an approved chase that quietly reaches no client.
+  // Withheld until infra/envs/staging/services.tf said SMS_SENDER=email; that
+  // change and this gate land together (the pairing the SMS_SENDER declaration
+  // comment demanded).
+  if (env.NODE_ENV === 'production' && env.SMS_SENDER === 'demo') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['SMS_SENDER'],
+      message:
+        'SMS_SENDER=demo writes an outbox row and delivers nothing — an approved chase reaches no client. Set SMS_SENDER=email (A13)',
     });
   }
 

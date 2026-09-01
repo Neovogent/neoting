@@ -2,12 +2,14 @@ import { z } from 'zod';
 import {
   completeDocumentUpload,
   createPortalSession,
+  createPortalSignInCode,
   createPortalUpload,
   getPortalContext,
 } from '@neoting/contracts/client';
 import {
   completeDocumentUploadBody,
   createPortalSessionBody,
+  createPortalSignInCodeBody,
   createPortalUploadBody,
   getPortalContextResponse,
 } from '@neoting/contracts/zod';
@@ -101,6 +103,21 @@ export async function openPortalSession(linkToken: string, otp: string): Promise
   // pattern is checked here rather than trusted from a caller's input handler.
   const request = createPortalSessionBody.parse({ linkToken, otp });
   return portalSessionShape.parse(await responseBody(createPortalSession(request)));
+}
+
+/**
+ * Ask for the six-digit code — it goes to the chase's REGISTERED recipient,
+ * never to an address typed here (the link is forwardable; the registered
+ * contact is the identity D45 gates on). The answer is a `202` whatever
+ * happened, so there is nothing to parse and nothing to show but "check the
+ * registered email".
+ */
+export async function requestPortalCode(linkToken: string): Promise<void> {
+  // Parse validates the boundary; the literal travels (the parsed value's
+  // optional keys are `string | undefined`, which exactOptionalPropertyTypes
+  // rightly refuses to hand to a model whose absent keys must be absent).
+  createPortalSignInCodeBody.parse({ linkToken });
+  await responseBody(createPortalSignInCode({ linkToken }));
 }
 
 /* ── ② what the session may see ───────────────────────────────────────────── */

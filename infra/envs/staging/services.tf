@@ -180,11 +180,16 @@ locals {
     #                        state: A2 lands otplib enrolment, verify and
     #                        recovery codes behind this same switch.
     #
-    #   SMS_SENDER=demo      writes outbox rows. NOTHING LEAVES THE ACCOUNT —
-    #                        this is the variable that stands between a staging
-    #                        chase and a real text message to a real phone. SMS
-    #                        is cut for Initial Delivery (D40/§24), so this one
-    #                        is not on anybody's path to a real vendor.
+    #   SMS_SENDER=email     the A13 chase transport — an approved chase.send
+    #                        delivers by email through the SES sender below,
+    #                        carrying the reviewed body byte-for-byte to the
+    #                        chase's named recipient contact. Flipped from
+    #                        `demo` 1 Sep 2026 together with the production
+    #                        boot gate in config/env.ts that now refuses
+    #                        `demo` (an approved chase that contacts nobody).
+    #                        No SMS leaves the account — `email` is email;
+    #                        the AWS End User Messaging transport lands behind
+    #                        the same seam as a third value.
     #   LEDGER_ADAPTER=demo  DemoXeroAdapter, fake refs. No client's books are
     #                        reachable from this environment — and under D42
     #                        there is no ledger API in Initial Delivery at all,
@@ -246,7 +251,11 @@ locals {
     # ------------------------------------------------------------------------
     { name = "STATEMENT_READER", value = "textract" },
 
-    { name = "SMS_SENDER", value = "demo" },
+    { name = "SMS_SENDER", value = "email" },
+    # The web app's public origin — chase.send composition signs portal links
+    # as <APP_ORIGIN>/p/<token>. Stated rather than left to the code default so
+    # the value survives the day the default constant moves.
+    { name = "APP_ORIGIN", value = "https://app.neoting.neovogent.com" },
     { name = "OTP_MODE", value = "totp" },
     { name = "LEDGER_ADAPTER", value = "demo" },
     { name = "BILLING", value = "stripe" },

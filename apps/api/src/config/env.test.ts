@@ -14,6 +14,7 @@ import { loadEnv } from './env.js';
 const PRODUCTION = {
   NODE_ENV: 'production',
   AUTH_MODE: 'session',
+  SMS_SENDER: 'email',
   UPLOAD_URL_SECRET: 's',
   AI_CHAT: 'bedrock',
   EMAIL_SENDER: 'ses',
@@ -181,6 +182,10 @@ test('EMAIL_SENDER defaults to demo outside production, so a cold clone runs off
 
 test('NODE_ENV=production with EMAIL_SENDER=demo fails to boot', () => {
   expect(() => loadEnv({ ...PRODUCTION, EMAIL_SENDER: 'demo' } as NodeJS.ProcessEnv)).toThrow(/EMAIL_SENDER/);
+});
+
+test('NODE_ENV=production with SMS_SENDER=demo fails to boot — an approved chase must reach a client', () => {
+  expect(() => loadEnv({ ...PRODUCTION, SMS_SENDER: 'demo' } as NodeJS.ProcessEnv)).toThrow(/SMS_SENDER/);
 });
 
 test('EMAIL_SENDER=ses without a configuration set fails to boot, in every environment', () => {

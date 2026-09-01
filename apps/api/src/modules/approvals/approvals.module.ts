@@ -60,6 +60,9 @@ import { ACTION_PROPOSALS_SERVICE, PRISMA } from './tokens.js';
           new PrismaDuplicateDetector(prisma),
           publishing,
           new InMemoryIdempotencyStore(),
+          // chase.send composition at creation: the engine signs the portal
+          // link into the reviewed body (compose-chase-send.ts has the story).
+          { portalLinkSecret: env.PORTAL_LINK_SECRET, appOrigin: env.APP_ORIGIN },
         );
       },
       inject: [PRISMA, ENV, LEDGER_ADAPTER],

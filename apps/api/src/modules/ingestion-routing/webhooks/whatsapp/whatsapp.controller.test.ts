@@ -15,7 +15,7 @@ const env: Env = Object.freeze({
   NODE_ENV: 'test', PORT: 3000, META_APP_SECRET: 's', META_VERIFY_TOKEN: 'vtoken',
   META_MEDIA_ACCESS_TOKEN: '', MEDIA_FETCH: 'fixture',
   WHATSAPP_PRACTICE_MAP: { [PHONE_NUMBER_ID]: PRACTICE },
-  AUTH_MODE: 'fixture', SESSION_SECRET: 'test-session-secret', OTP_MODE: 'demo', UPLOAD_URL_SECRET: 'test-secret', UPLOAD_URL_TTL_SECONDS: 900,
+  AUTH_MODE: 'fixture', SESSION_SECRET: 'test-session-secret', APP_ORIGIN: 'https://app.test', OTP_MODE: 'demo', UPLOAD_URL_SECRET: 'test-secret', UPLOAD_URL_TTL_SECONDS: 900,
   INGEST_QUEUE: 'fixture', REDIS_URL: 'redis://localhost:6379',
   OBJECT_STORE: 'fixture', EMAIL_SOURCE: 'fixture', MAILHOG_API_URL: 'http://localhost:8025', S3_BUCKET_RECEIPTS: 'nt-local-receipts',
   IMAGE_NORMALISER: 'fixture', DOCUMENT_GUARD: 'fixture', EXTRACTOR: 'demo',

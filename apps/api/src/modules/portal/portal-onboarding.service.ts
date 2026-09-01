@@ -6,8 +6,10 @@ import type { PrismaClient } from '../../common/db/prisma.js';
 import { systemContext } from '../../common/db/scope-context.js';
 import { type ScopedClient, scopedDb } from '../../common/db/scoped-db.js';
 import type { Env } from '../../config/env.js';
+import { verifyPortalLink } from '../chase/index.js';
 import { hashSetupToken } from '../clients-team-settings/index.js';
 import { type NotificationsService, SignInCode } from '../notifications/index.js';
+import { hashLinkToken } from './portal-session.service.js';
 
 import {
   hashOtp,
@@ -58,6 +60,8 @@ const DEMO_OTP_CODE = '000000';
 export interface PortalOnboardingConfig {
   readonly portalSessionSecret: string;
   readonly otpMode: Env['OTP_MODE'];
+  /** Verifies a CHASE link on the code-request branch — the same secret that signed it. */
+  readonly portalLinkSecret: string;
 }
 
 export interface RequestSignInCodeInput {
@@ -224,6 +228,135 @@ export class PortalOnboardingService {
         error instanceof Error ? error.stack : undefined,
       );
     }
+  }
+
+  /**
+   * Mint and email a code for a CHASE link — the half A2's TODO said whoever
+   * sends the chase would owe, delivered here instead because the code request
+   * is the CLIENT's act, not the send's: minting at send time would start the
+   * ten-minute clock before the client ever opened the link.
+   *
+   * The journey: chase email arrives carrying `/p/<token>` → the portal screen
+   * posts the token here → the code goes to the chase's REGISTERED recipient
+   * contact (D45 — never to an address the caller types; the link is
+   * forwardable and the registered contact is the identity) → the client types
+   * it into `POST /portal/sessions`, whose `verifyOtp` already compares
+   * against the `otp_hash` this writes.
+   *
+   * **Silent like the email route, and for the same reason**: whether a link
+   * names a live chase is not something an unauthenticated caller may learn.
+   * Every refusal — bad token, expired link, vanished chase, no recipient
+   * contact, contact without an email — is a logged reason and a uniform 202.
+   *
+   * The row it writes is the counter-row shape (`verifiedAt: null`,
+   * `expiresAt: now`) — deliberately NOT a session, refused by the resolver on
+   * two independent checks, exactly as `recordFailedAttempt` writes it. The
+   * session appears only when `createSession` verifies the code.
+   */
+  async requestChaseCode(linkToken: string, nowMs: number = Date.now()): Promise<void> {
+    const link = verifyPortalLink(linkToken, this.config.portalLinkSecret, nowMs);
+    if (!link.ok) {
+      this.logger.warn(`chase code not sent: link-${link.reason}`);
+      return;
+    }
+
+    const resolved = await this.resolveChaseRecipient(link.chaseId);
+    if (resolved.ok === false) {
+      this.logger.warn(`chase code not sent: ${resolved.reason} · chase=${link.chaseId}`);
+      return;
+    }
+
+    const otp = mintOtp();
+    const expiresAt = new Date(nowMs + ONBOARDING_OTP_TTL_MS);
+    const linkTokenHash = hashLinkToken(linkToken);
+
+    await scopedDb(this.prisma, systemContext(resolved.practiceId, resolved.systemUserId), (db) =>
+      db.otpSession.upsert({
+        where: { linkTokenHash },
+        // Re-requesting REPLACES the code and clears the counter — the
+        // onboarding rule; the notifications per-address ceiling is the tap
+        // guard.
+        update: { otpHash: hashOtp(otp), otpExpiresAt: expiresAt, ...OTP_ATTEMPTS_CLEARED },
+        create: {
+          linkTokenHash,
+          scope: 'DELEGATED_UPLOAD',
+          businessId: resolved.businessId,
+          chaseId: resolved.chaseId,
+          requestedFromContactId: resolved.contactId,
+          otpHash: hashOtp(otp),
+          otpExpiresAt: expiresAt,
+          // NOT a session: unverified and already expired, the
+          // recordFailedAttempt shape — `createSession` upserts the real one.
+          verifiedAt: null,
+          expiresAt: new Date(nowMs),
+        },
+      }),
+    );
+
+    try {
+      const sent = await this.notifications.sendSignInCode({
+        to: resolved.email,
+        code: SignInCode.parse(otp),
+        expiresInMinutes: Math.round(ONBOARDING_OTP_TTL_MS / 60_000),
+      });
+      if (sent.sent === false) {
+        this.logger.warn(
+          `chase code not sent: ${sent.reason} · business=${resolved.businessId} domain=${domainOf(resolved.email)}`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `chase code could not be sent · business=${resolved.businessId} domain=${domainOf(resolved.email)}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
+  }
+
+  /**
+   * chaseId → its practice, business and the registered recipient's email.
+   * The `resolveChase` sweep (`portal-session.service.ts`), narrowed to what
+   * code delivery needs: the chase's NAMED recipient contact, and that
+   * contact's address. No contact, or a contact with no email, refuses — the
+   * email transport's own D45 stance; falling back to "the primary contact"
+   * would deliver a credential to someone the reviewer never named.
+   */
+  private async resolveChaseRecipient(
+    chaseId: string,
+  ): Promise<
+    | { ok: true; practiceId: string; systemUserId: string; businessId: string; chaseId: string; contactId: string; email: string }
+    | { ok: false; reason: 'unknown-chase' | 'no-recipient-contact' | 'contact-has-no-email' | 'no-practice-actor' }
+  > {
+    const candidates = await this.systemActorsByPractice();
+    if (candidates.length === 0) return { ok: false, reason: 'no-practice-actor' };
+
+    for (const candidate of candidates) {
+      const found = await scopedDb(this.prisma, systemContext(candidate.practiceId, candidate.systemUserId), async (db) => {
+        const chase = await db.chase.findUnique({
+          where: { id: chaseId },
+          select: { id: true, businessId: true, recipientContactId: true },
+        });
+        if (chase === null) return null;
+        if (chase.recipientContactId === null) return { refusal: 'no-recipient-contact' as const };
+        const contact = await db.contact.findUnique({
+          where: { id: chase.recipientContactId },
+          select: { id: true, email: true },
+        });
+        if (contact === null) return { refusal: 'no-recipient-contact' as const };
+        if (contact.email === null || contact.email === '') return { refusal: 'contact-has-no-email' as const };
+        return {
+          practiceId: candidate.practiceId,
+          systemUserId: candidate.systemUserId,
+          businessId: chase.businessId,
+          chaseId: chase.id,
+          contactId: contact.id,
+          email: contact.email,
+        };
+      });
+      if (found !== null) {
+        return 'refusal' in found ? { ok: false, reason: found.refusal } : { ok: true, ...found };
+      }
+    }
+    return { ok: false, reason: 'unknown-chase' };
   }
 
   /**

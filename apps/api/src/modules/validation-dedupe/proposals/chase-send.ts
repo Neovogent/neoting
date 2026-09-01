@@ -108,6 +108,12 @@ export function chaseSendExecutor(sender: SmsSender): ProposalExecutor<'chase.se
         const now = new Date();
         const chase = await db.chase.create({
           data: {
+            // The id the portal link inside `body` already names — minted at
+            // proposal creation by `computeChaseSendPayload`, adopted here so
+            // the reviewed link verifies against the chase it created. Absent
+            // on proposals older than the compose seam; Prisma's default then
+            // mints one (whose link, being tokenless, never worked anyway).
+            ...(message.chaseId != null ? { id: message.chaseId } : {}),
             businessId,
             detectionEngine: 'UNMATCHED_TRANSACTION',
             // The single-transaction convenience column, plus the full grouped
