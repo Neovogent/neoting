@@ -65,10 +65,12 @@ import { useAppContext } from '../context/AppContext';
  */
 
 const m = defineMessages({
-  heading: { id: 'export.exportView.heading', defaultMessage: 'Export for VT' },
+  // The surface is named for the JOURNEY, not the format: more targets are
+  // coming, and the Format dropdown below is where the format is named.
+  heading: { id: 'export.exportView.heading', defaultMessage: 'Export' },
   subheading: {
     id: 'export.exportView.subheading',
-    defaultMessage: 'Published documents, as an import file for VT Transaction+',
+    defaultMessage: 'Published documents, as an import file for your bookkeeping software',
   },
   // ⚠ D42. This paragraph is the one that has to be exactly right: it states
   // what Published means and that nothing left the product.

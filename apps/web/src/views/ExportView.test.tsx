@@ -112,10 +112,10 @@ async function pressExport() {
 
 // ── D42: what the screen is allowed to say ──────────────────────────────────
 
-test('the surface is named "Export for VT" and states what Published means', () => {
+test('the surface is named "Export" — format-neutral, the dropdown names VT — and states what Published means', () => {
   renderView();
 
-  expect(screen.getByRole('heading', { name: 'Export for VT' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Export' })).toBeTruthy();
   expect(screen.getByRole('button', { name: /Export for VT/ })).toBeTruthy();
   expect(document.body.textContent).toContain('approved and released for export');
   expect(document.body.textContent).toContain('Nothing leaves Neo Accounting on its own');

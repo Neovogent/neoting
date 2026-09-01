@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { IntlProvider } from 'react-intl';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { ChatDropOverlay, useChatUpload } from './ChatUpload';
+import { ChatDropOverlay, ChatUploadClientPicker, useChatUpload } from './ChatUpload';
 
 /**
  * The chat surface's upload flow — the thing the user report said did not
@@ -10,8 +10,10 @@ import { ChatDropOverlay, useChatUpload } from './ChatUpload';
  *
  * - live, a drop reaches the real uploads client with the ATTACHED client's
  *   server id and `channel: 'CHAT_UPLOAD'` — never a guessed workspace;
- * - "All clients" refuses with instructions (InboxesView's posture) instead of
- *   uploading somewhere hopeful, and nothing is sent;
+ * - "All clients" holds the files and ASKS (the searchable picker) instead of
+ *   uploading somewhere hopeful — nothing is sent until a client is chosen,
+ *   and cancelling sends nothing at all; a practice with no clients yet keeps
+ *   the named refusal, because an empty list has nothing to pick;
  * - a refused file's server reason lands in the transcript by name;
  * - synthetic mode keeps the local ingest, so the no-API walkthrough works.
  */
@@ -37,6 +39,7 @@ function Harness() {
   return (
     <div data-testid="zone" {...upload.dropTargetProps}>
       <ChatDropOverlay dragging={upload.dragging} />
+      <ChatUploadClientPicker upload={upload} />
     </div>
   );
 }
@@ -121,29 +124,65 @@ describe('a drop with a client attached, live', () => {
 });
 
 describe('a drop with "All clients" active, live', () => {
-  test('prompts for a client instead of uploading — nothing is sent, nothing is guessed', async () => {
+  test('asks with the searchable picker — nothing is sent until a client is chosen by name', async () => {
     renderZone({ attachedClients: [] });
     dropFile();
 
-    await waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(1));
-    expect(mocks.confirm.mock.calls[0]![0]).toMatchObject({
-      tone: 'red',
-      title: 'Choose a client before uploading',
-    });
+    // The picker is its own lazy chunk, so it arrives via findBy*.
+    expect(await screen.findByText('Choose a client for this upload')).toBeTruthy();
     expect(mocks.sendWorkspaceUpload).not.toHaveBeenCalled();
     expect(addMessage).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'American Burger Ltd' }));
+    await waitFor(() => expect(mocks.sendWorkspaceUpload).toHaveBeenCalledTimes(1));
+    expect(mocks.sendWorkspaceUpload).toHaveBeenCalledWith(
+      'biz_1',
+      { filename: 'receipt.jpg', mimeType: 'image/jpeg', bytes: expect.any(File) },
+      'CHAT_UPLOAD',
+    );
+    // The old flat refusal is gone — the question replaced it.
+    expect(mocks.confirm).not.toHaveBeenCalled();
   });
 
-  test('two attached clients is not a choice either', async () => {
+  test('the search narrows the list, and cancel sends nothing', async () => {
     renderZone({
-      attachedClients: [
+      attachedClients: [],
+      clients: [
         { id: '1', name: 'American Burger Ltd' },
         { id: '2', name: 'Ananda Group' },
       ],
     });
     dropFile();
 
-    await waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(1));
+    const search = await screen.findByRole('textbox', { name: 'Search clients' });
+    fireEvent.change(search, { target: { value: 'ananda' } });
+    expect(screen.queryByRole('button', { name: 'American Burger Ltd' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Ananda Group' })).toBeTruthy();
+
+    // A query nothing matches says so, rather than showing an empty silence.
+    fireEvent.change(search, { target: { value: 'zzz' } });
+    expect(screen.getByText('No client matches “zzz”.')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByText('Choose a client for this upload')).toBeNull());
+    expect(mocks.sendWorkspaceUpload).not.toHaveBeenCalled();
+    expect(addMessage).not.toHaveBeenCalled();
+  });
+
+  test('two attached clients is not a choice either — the picker asks', async () => {
+    renderZone({
+      attachedClients: [
+        { id: '1', name: 'American Burger Ltd' },
+        { id: '2', name: 'Ananda Group' },
+      ],
+      clients: [
+        { id: '1', name: 'American Burger Ltd' },
+        { id: '2', name: 'Ananda Group' },
+      ],
+    });
+    dropFile();
+
+    expect(await screen.findByText('Choose a client for this upload')).toBeTruthy();
     expect(mocks.sendWorkspaceUpload).not.toHaveBeenCalled();
   });
 

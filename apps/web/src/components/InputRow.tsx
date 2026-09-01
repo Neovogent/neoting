@@ -11,7 +11,7 @@ import { suggestPrompts } from '../lib/promptSuggestions';
 import { useLiveSuggestions } from '../api/suggestions';
 import { TypedPlaceholder } from './DynamicComponents/TypedPlaceholder';
 import { DocumentFormats, VoiceIcon } from './DynamicComponents/InputAffordances';
-import { ChatDropOverlay, useChatUpload } from './ChatUpload';
+import { ChatDropOverlay, ChatUploadClientPicker, useChatUpload } from './ChatUpload';
 import { defineMessages, useIntl } from 'react-intl';
 import type { AssistantMeta, Intent, MessagePayload } from '../lib/types';
 
@@ -331,6 +331,7 @@ export function InputRow() {
       {/* The full-viewport overlay while files are over the composer; the
           transcript half of the surface renders its own from ChatArea. */}
       <ChatDropOverlay dragging={upload.dragging} />
+      <ChatUploadClientPicker upload={upload} />
       {/* A light travelling the border, slowly.
           Two arcs on opposite sides of one conic gradient, turning once every
           22 seconds — slow enough to read as a drift rather than a spinner,

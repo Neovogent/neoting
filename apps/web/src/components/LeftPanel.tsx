@@ -52,6 +52,7 @@ export function LeftPanel() {
     togglePinConversation,
     newConversation,
     attachClient,
+    detachClient,
     statsFor,
   } = useAppContext();
 
@@ -120,16 +121,22 @@ export function LeftPanel() {
             <Pin size={12} /> {q ? intl.formatMessage(m.matchingClients) : intl.formatMessage(m.pinnedClients)}
           </motion.div>
           <div className="flex flex-col gap-1">
-            {filteredClients.map((c) => (
-              <motion.div key={c.id} variants={itemVariants}>
-                <ClientItem
-                  name={c.name}
-                  missing={statsFor(c.id).missing}
-                  active={attachedClients.some((a) => a.id === c.id)}
-                  onClick={() => attachClient(c.id)}
-                />
-              </motion.div>
-            ))}
+            {filteredClients.map((c) => {
+              // The same toggle ContextBar's picker performs — a click on an
+              // already-attached client detaches it, so the second click is
+              // never a no-op.
+              const attached = attachedClients.some((a) => a.id === c.id);
+              return (
+                <motion.div key={c.id} variants={itemVariants}>
+                  <ClientItem
+                    name={c.name}
+                    missing={statsFor(c.id).missing}
+                    active={attached}
+                    onClick={() => (attached ? detachClient(c.id) : attachClient(c.id))}
+                  />
+                </motion.div>
+              );
+            })}
             {filteredClients.length === 0 && <EmptyRow text={intl.formatMessage(q ? m.noClients : m.noClientsYet)} />}
           </div>
         </div>

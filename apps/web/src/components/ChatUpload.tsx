@@ -1,4 +1,5 @@
-import { useCallback, useState, type DragEvent } from 'react';
+import { lazy, Suspense, useCallback, useState, type DragEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { UploadCloud } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
@@ -18,9 +19,12 @@ import { commonActions } from '../i18n/common';
  * with `channel: 'CHAT_UPLOAD'`, the contract's name for this door. The
  * business id is resolved exactly the way InboxesView resolves it: the chosen
  * client through `serverClientIdFor`. With "All clients" active there is no
- * chosen client, and the honest answer is InboxesView's — a named refusal with
- * instructions, never a guessed workspace (guessing at ingest time is the
- * misrouting the product exists to fix).
+ * chosen client — so the files are HELD and the one missing question is asked
+ * (`ChatClientPicker`, a searchable client list; render `ChatUploadClientPicker`
+ * beside the overlay), and the upload continues with the explicit answer. A
+ * practice with no clients yet keeps the named refusal, because an empty list
+ * has nothing to pick. Never a guessed workspace either way — guessing at
+ * ingest time is the misrouting the product exists to fix.
  *
  * Synthetic mode keeps InboxesView's posture for a drop: the local `ingest`
  * runs immediately (METH_MODE §1 — the app walks end to end with no API), and
@@ -52,13 +56,9 @@ const m = defineMessages({
     id: 'shell.chatUpload.needsClientTitle',
     defaultMessage: 'Choose a client before uploading',
   },
-  needsClientDetail: {
-    id: 'shell.chatUpload.needsClientDetail',
-    defaultMessage:
-      'Every document is filed under a named client — pick one with the client selector in the composer, then send the files again. Guessing at upload time is how paperwork lands in the wrong books.',
-  },
-  // A practice with no clients cannot "pick one with the client selector" —
-  // the list is empty, and the instruction has to point at the real first step.
+  // A practice with no clients cannot pick one from a list — it is empty, and
+  // the instruction has to point at the real first step. (With clients present
+  // this dialog never shows: the searchable picker asks instead of refusing.)
   needsFirstClientDetail: {
     id: 'shell.chatUpload.needsFirstClientDetail',
     defaultMessage:
@@ -118,6 +118,14 @@ export interface ChatUpload {
   };
   /** The one flow both entry points share. */
   uploadFiles: (files: File[]) => Promise<void>;
+  /**
+   * Files held while the client question is asked — a live drop with no single
+   * attached client. Render `ChatUploadClientPicker` from the same host that
+   * renders the overlay; `resolvePick`/`cancelPick` settle it.
+   */
+  pendingPick: File[] | null;
+  resolvePick: (clientId: string) => void;
+  cancelPick: () => void;
 }
 
 export function useChatUpload(): ChatUpload {
@@ -128,60 +136,19 @@ export function useChatUpload(): ChatUpload {
   const [dragging, setDragging] = useState(false);
 
   const live = documentsSource === 'api';
+  const [pendingPick, setPendingPick] = useState<File[] | null>(null);
 
-  const uploadFiles = useCallback(
-    async (files: File[]) => {
-      if (files.length === 0) return;
-      const attachments = files.map((f) => ({ name: f.name, size: f.size, raw: f }));
-
-      if (!live) {
-        // Synthetic: InboxesView's posture — ingest immediately, no client
-        // required (extraction reads the addressee off the document) — told in
-        // the transcript because that is where this surface talks.
-        addMessage({ id: nextId(), role: 'user', content: '', attachments });
-        const result = ingest(attachments, attachedClients[0]?.id, 'chat');
-        const firstId = result.documents[0]?.id;
-        if (result.documents.length) {
-          addMessage({
-            id: nextId(),
-            role: 'assistant',
-            content:
-              result.documents.length > files.length
-                ? intl.formatMessage(m.ingestedSplit, { fileCount: files.length, documentCount: result.documents.length })
-                : intl.formatMessage(m.ingested, { documentCount: result.documents.length }),
-            intent: 'SHOW_INBOX',
-            payload: { ...(firstId === undefined ? {} : { documentId: firstId }) },
-          });
-        } else if (result.rejected.length) {
-          addMessage({
-            id: nextId(),
-            role: 'assistant',
-            content: intl.formatMessage(m.rejected, {
-              count: result.rejected.length,
-              reasons: result.rejected.map((r) => `${r.fileName} — ${r.reason.toLowerCase()}`).join('; '),
-            }),
-            intent: 'GENERAL',
-          });
-        }
-        return;
-      }
-
-      // Exactly one attached client names the workspace. Zero is "All clients";
-      // two or more is not a choice either — refuse with instructions, never
-      // guess (the API's own rule, and InboxesView's).
-      const target = attachedClients.length === 1 ? attachedClients[0] : undefined;
-      if (target === undefined) {
-        await confirm({
-          tone: 'red',
-          title: intl.formatMessage(m.needsClientTitle),
-          detail: intl.formatMessage(clients.length === 0 ? m.needsFirstClientDetail : m.needsClientDetail),
-          confirmLabel: intl.formatMessage(commonActions.close),
-        });
-        return;
-      }
+  /** The live journey once the client is known — attached, or the picker's answer. */
+  const uploadTo = useCallback(
+    async (target: { id: string; name: string }, files: File[]) => {
       const businessId = serverClientIdFor(target.id);
 
-      addMessage({ id: nextId(), role: 'user', content: '', attachments });
+      addMessage({
+        id: nextId(),
+        role: 'user',
+        content: '',
+        attachments: files.map((f) => ({ name: f.name, size: f.size, raw: f })),
+      });
       // The transcript's own in-flight state. `businessName: null` on purpose:
       // the named variant claims records are being read, and an upload reads none.
       setAssistantPending({ businessName: null });
@@ -228,8 +195,84 @@ export function useChatUpload(): ChatUpload {
         setAssistantPending(null);
       }
     },
-    [live, addMessage, ingest, attachedClients, clients, serverClientIdFor, setAssistantPending, confirm, intl],
+    [addMessage, serverClientIdFor, setAssistantPending, intl],
   );
+
+  const uploadFiles = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0) return;
+      const attachments = files.map((f) => ({ name: f.name, size: f.size, raw: f }));
+
+      if (!live) {
+        // Synthetic: InboxesView's posture — ingest immediately, no client
+        // required (extraction reads the addressee off the document) — told in
+        // the transcript because that is where this surface talks.
+        addMessage({ id: nextId(), role: 'user', content: '', attachments });
+        const result = ingest(attachments, attachedClients[0]?.id, 'chat');
+        const firstId = result.documents[0]?.id;
+        if (result.documents.length) {
+          addMessage({
+            id: nextId(),
+            role: 'assistant',
+            content:
+              result.documents.length > files.length
+                ? intl.formatMessage(m.ingestedSplit, { fileCount: files.length, documentCount: result.documents.length })
+                : intl.formatMessage(m.ingested, { documentCount: result.documents.length }),
+            intent: 'SHOW_INBOX',
+            payload: { ...(firstId === undefined ? {} : { documentId: firstId }) },
+          });
+        } else if (result.rejected.length) {
+          addMessage({
+            id: nextId(),
+            role: 'assistant',
+            content: intl.formatMessage(m.rejected, {
+              count: result.rejected.length,
+              reasons: result.rejected.map((r) => `${r.fileName} — ${r.reason.toLowerCase()}`).join('; '),
+            }),
+            intent: 'GENERAL',
+          });
+        }
+        return;
+      }
+
+      // Exactly one attached client names the workspace. Zero is "All clients";
+      // two or more is not a choice either — never guess (the API's own rule,
+      // and InboxesView's).
+      const target = attachedClients.length === 1 ? attachedClients[0] : undefined;
+      if (target === undefined) {
+        if (clients.length === 0) {
+          await confirm({
+            tone: 'red',
+            title: intl.formatMessage(m.needsClientTitle),
+            detail: intl.formatMessage(m.needsFirstClientDetail),
+            confirmLabel: intl.formatMessage(commonActions.close),
+          });
+          return;
+        }
+        // The files are already in hand; only the client is missing. Hold them
+        // and ask with the searchable picker, instead of refusing and making
+        // the user find the composer's selector and drop everything again.
+        setPendingPick(files);
+        return;
+      }
+      await uploadTo(target, files);
+    },
+    [live, addMessage, ingest, attachedClients, clients, uploadTo, confirm, intl],
+  );
+
+  const resolvePick = useCallback(
+    (clientId: string) => {
+      const files = pendingPick;
+      const client = clients.find((c) => c.id === clientId);
+      setPendingPick(null);
+      // A pick that raced a cancel, or a client list that changed under the
+      // dialog, settles to nothing rather than to a guess.
+      if (files && client) void uploadTo(client, files);
+    },
+    [pendingPick, clients, uploadTo],
+  );
+
+  const cancelPick = useCallback(() => setPendingPick(null), []);
 
   const onDragOver = useCallback((e: DragEvent) => {
     e.preventDefault();
@@ -246,7 +289,48 @@ export function useChatUpload(): ChatUpload {
     [uploadFiles],
   );
 
-  return { live, dragging, dropTargetProps: { onDragOver, onDragLeave, onDrop }, uploadFiles };
+  return {
+    live,
+    dragging,
+    dropTargetProps: { onDragOver, onDragLeave, onDrop },
+    uploadFiles,
+    pendingPick,
+    resolvePick,
+    cancelPick,
+  };
+}
+
+/**
+ * The client question a drop with no chosen client opens — a searchable list
+ * over the practice's clients (`ChatClientPicker`), held while the dropped
+ * files wait. Lazy for the same reason `api/uploads.ts` is imported
+ * dynamically: this module is floor-resident and the dialog is not needed
+ * until a drop actually asks for it, so the chunk fetch hides behind the
+ * user's own gesture.
+ */
+const LazyChatClientPicker = lazy(() => import('./ChatClientPicker'));
+
+export function ChatUploadClientPicker({ upload }: { upload: ChatUpload }) {
+  const { clients } = useAppContext();
+  // Portalled to <body> (ContextBar's pattern): both hosts sit under animated
+  // containers, and an ancestor transform turns the Modal's `fixed` scrim into
+  // an ancestor-relative box — the dialog rendered clipped to the composer's
+  // rectangle instead of covering the screen.
+  return createPortal(
+    <AnimatePresence>
+      {upload.pendingPick && (
+        <Suspense fallback={null}>
+          <LazyChatClientPicker
+            clients={clients}
+            fileCount={upload.pendingPick.length}
+            onPick={upload.resolvePick}
+            onCancel={upload.cancelPick}
+          />
+        </Suspense>
+      )}
+    </AnimatePresence>,
+    document.body,
+  );
 }
 
 /**

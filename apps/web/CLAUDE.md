@@ -616,10 +616,15 @@ without it an approved offboard stayed on the board.
 **Chat uploads are real** (`components/ChatUpload.tsx`): the composer picker
 and drag-drop on ChatArea/InputRow share one flow — live, it is the S7
 two-step journey with `channel: 'CHAT_UPLOAD'`, the business resolved from
-the attached client, and "All clients" refusing with instructions, never
-guessing. Synthetic keeps the local ingest and attach-then-send chips. The
-uploads client is dynamically imported so the flow stays off the floor —
-keep it that way.
+the attached client. With "All clients" active (or several attached) the
+files are HELD and the missing question is asked — `ChatClientPicker`, a
+searchable client list rendered by `ChatUploadClientPicker` beside the drop
+overlay in both hosts — and the upload continues with the explicit answer;
+never a guess. A practice with no clients keeps the named refusal (an empty
+list has nothing to pick). Synthetic keeps the local ingest and
+attach-then-send chips. The uploads client is dynamically imported and the
+picker is `lazy()` (its own ~1.3 kB chunk) so the flow stays off the floor —
+keep both that way; measured floor cost of the picker seam is zero.
 
 **DocumentPreview survives live data now.** Its grid tracks are
 `minmax(0,…)` on purpose — a presigned `<img>`'s natural width and nowrap
