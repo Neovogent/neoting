@@ -150,10 +150,17 @@ export async function computeChaseSendPayload(
     }
 
     const recipientE164 = message.recipientE164 ?? contact?.mobileE164 ?? null;
-    if (recipientE164 === null) {
+    const recipientEmail = contact?.email ?? null;
+    // A reachable CHANNEL, not specifically a mobile (2 Sep 2026). Intake
+    // makes the mobile optional and ID's live transport is email
+    // (SMS_SENDER=email), so requiring an E164 here refused a statement
+    // request for every client whose contact registered only an address —
+    // found on the first real walkthrough. The SMS-only senders refuse a
+    // mobile-less message at THEIR seam, where "cannot deliver" is true.
+    if (recipientE164 === null && recipientEmail === null) {
       throw new ProposalExecutionRefused(
         'chase.send',
-        'no reachable recipient: name a contact with a registered mobile, or supply one',
+        'no reachable recipient: the client needs a registered mobile or email address',
       );
     }
 
@@ -162,8 +169,11 @@ export async function computeChaseSendPayload(
       chaseId,
       businessId,
       recipientContactId: contact?.id ?? message.recipientContactId ?? null,
-      recipientEmail: contact?.email ?? null,
-      recipientE164,
+      recipientEmail,
+      // Omitted rather than null when absent: the stored payload re-parses
+      // against the generated schema at execution, and the contract types the
+      // field as a patterned string — absent is legal, null is not.
+      ...(recipientE164 === null ? {} : { recipientE164 }),
       ...(hasPeriod ? { statementPeriod: message.statementPeriod } : {}),
       body,
     });

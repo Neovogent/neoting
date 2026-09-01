@@ -27,7 +27,14 @@ export interface OutboundSms {
   readonly chaseId: string;
   /** The chase_messages row already written by the executor — updated with the send result. */
   readonly chaseMessageId: string;
-  readonly toE164: string;
+  /**
+   * Null when the recipient registered no mobile (2 Sep 2026 — the compose
+   * seam now accepts an email-only contact, because intake makes the mobile
+   * optional and ID's live transport is email). The EMAIL transport resolves
+   * its address from the chase's contact and never reads this; the SMS
+   * transports refuse a null loudly, where "cannot deliver" is true.
+   */
+  readonly toE164: string | null;
   /** The exact SMS body — byte-for-byte what review showed. */
   readonly body: string;
 }
@@ -60,6 +67,12 @@ export class DemoSmsSender implements SmsSender {
   async send(db: ScopedClient, messages: readonly OutboundSms[]): Promise<SentSms[]> {
     const sent: SentSms[] = [];
     for (const message of messages) {
+      if (message.toE164 === null) {
+        // This transport is an SMS stand-in and `sms_log.to_e164` is NOT NULL.
+        // An email-only recipient belongs on SMS_SENDER=email; landing here is
+        // a mis-paired configuration, said out loud rather than half-sent.
+        throw new Error('chase message has no mobile number — the SMS transport cannot deliver it (use SMS_SENDER=email, or register a mobile for the contact)');
+      }
       const providerMessageId = `${DEMO_PROVIDER_PREFIX}-${message.chaseMessageId}`;
       const deliveryState = 'sent';
       const sentAt = new Date();
