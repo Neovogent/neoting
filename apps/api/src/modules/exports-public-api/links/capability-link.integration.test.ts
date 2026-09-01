@@ -57,6 +57,9 @@ const STUB_PUBLISHING: PublishGateway = {
   previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0 } }),
 };
 
+// chase.send composition config for tests — a real secret so signed links verify.
+const TEST_CHASE_COMPOSE = { portalLinkSecret: 'test-portal-link-secret', appOrigin: 'https://app.test' };
+
 function minter(): DocumentLinkService {
   return new DocumentLinkService(app, { origin: 'https://neoacc.neovogent.com' });
 }
@@ -72,6 +75,7 @@ function engine(): ActionProposalsService {
     { detect: async () => ({ findings: [], candidatesTruncated: false }) },
     STUB_PUBLISHING,
     new InMemoryIdempotencyStore(),
+    TEST_CHASE_COMPOSE,
   );
 }
 

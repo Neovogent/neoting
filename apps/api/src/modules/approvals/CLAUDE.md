@@ -224,6 +224,14 @@ pnpm --filter @neoting/api test -- approvals            # unit, offline
   the payload's. `NT-PRP-004` structurally cannot see that drift, so the
   executor is the only place it is visible — a pattern any future kind whose
   payload carries live facts should copy.
+  **`chase.send` joined the compose-at-creation pattern on 1 Sep 2026**:
+  `create()` calls `computeChaseSendPayload` (validation-dedupe seam) to
+  compose each message body server-side with a SIGNED portal link over a
+  minted chase id the executor adopts, discarding the caller's body — the
+  S13 compose-seam gap, closed. The service takes a `ChaseComposeConfig`
+  (portal-link secret + `APP_ORIGIN`) as its sixth constructor arg, wired in
+  `approvals.module.ts`; `render-summary.ts` heads each message section with
+  the payload's `recipientEmail` when present (the A13 render leftover).
 - The `Idempotency-Key` store is the shared in-memory one
   (`common/idempotency/` — moved there from web-upload when this module became
   its second consumer). Durable store remains the known follow-up, same as

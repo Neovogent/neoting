@@ -596,6 +596,20 @@ Three things drive the floor, all known:
 
 Most of the seed weight leaves when the views move onto the generated client. Until then, treat **199.5 kB** as the floor a new screen is spending against, and re-measure with `pnpm --filter @neoting/web build` before adding a dependency.
 
+## The chase portal requests its own code (1 Sep 2026)
+
+The OTP step's copy used to claim "We have emailed you six digits" while
+nothing ever sent one (the chase lane minted no code — under staging's
+`OTP_MODE=totp` the portal was unopenable from a chase link). Live, `OtpStep`
+now shows an **"Email me my code"** button: `usePortalJourney.requestCode()` →
+`requestPortalCode(linkToken)` (`api/portal.ts`) → `POST /portal/sign-in-codes`
+with the LINK TOKEN — the code goes to the chase's registered recipient
+contact, never an address typed here, and the 202 is uniform, so no sentence on
+the step may say whether the link is real ("If this link is live, a code is on
+its way…"). Synthetic mode keeps the fixed demo code and the original copy;
+`journey.codeRequested` is what flips the wording. Four new `portal.chasePortal.otp*`
+ids.
+
 ## Three live surfaces landed 31 Aug 2026
 
 **Removing a client lives on the client's Settings tab, NOT the Clients

@@ -48,6 +48,9 @@ let app: PrismaClient;
 const STAFF_A = ScopeContextSchema.parse({ actorId: 'p122_user_a', practiceId: P_A });
 const STAFF_B = ScopeContextSchema.parse({ actorId: 'p122_user_b', practiceId: P_B });
 
+// chase.send composition config for tests — a real secret so signed links verify.
+const TEST_CHASE_COMPOSE = { portalLinkSecret: 'test-portal-link-secret', appOrigin: 'https://app.test' };
+
 function service(): ActionProposalsService {
   return new ActionProposalsService(
     app,
@@ -57,6 +60,7 @@ function service(): ActionProposalsService {
     { detect: async () => ({ findings: [], candidatesTruncated: false }) },
     PUBLISHING,
     new InMemoryIdempotencyStore(),
+    TEST_CHASE_COMPOSE,
   );
 }
 

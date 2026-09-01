@@ -35,6 +35,17 @@ const m = defineMessages({
     id: 'portal.chasePortal.otpDetail',
     defaultMessage: 'We have emailed you six digits. The link and the code together open this page — nothing else does.',
   },
+  otpRequestDetail: {
+    id: 'portal.chasePortal.otpRequestDetail',
+    defaultMessage:
+      'Press the button and a six-digit code goes to the email address your accountant has on file. The link and the code together open this page — nothing else does.',
+  },
+  otpRequestAction: { id: 'portal.chasePortal.otpRequestAction', defaultMessage: 'Email me my code' },
+  otpRequestedNote: {
+    id: 'portal.chasePortal.otpRequestedNote',
+    defaultMessage: 'If this link is live, a code is on its way to the registered email. It lasts ten minutes.',
+  },
+  otpRequestAgain: { id: 'portal.chasePortal.otpRequestAgain', defaultMessage: 'Send a fresh code' },
   otpLabel: { id: 'portal.chasePortal.otpLabel', defaultMessage: 'One-time code' },
   otpPlaceholder: { id: 'portal.chasePortal.otpPlaceholder', defaultMessage: '000000' },
   otpAction: { id: 'portal.chasePortal.otpAction', defaultMessage: 'Open my documents' },
@@ -271,9 +282,27 @@ function OtpStep({
   const intl = useIntl();
   const [code, setCode] = useState('');
 
+  // Live, the code exists only once the client asks for one (the chase lane
+  // mints per-request codes); synthetic mode's verifier is the fixed demo code
+  // and keeps the original copy. The request never says whether the link is
+  // real — the 202 is uniform — so neither does any sentence here.
+  const needsRequest = journey.live && !journey.codeRequested;
+
   return (
     <Shell title={intl.formatMessage(m.otpTitle)}>
-      <p className="text-[14px] text-zinc-400 leading-relaxed">{intl.formatMessage(m.otpDetail)}</p>
+      <p className="text-[14px] text-zinc-400 leading-relaxed">
+        {intl.formatMessage(needsRequest ? m.otpRequestDetail : journey.live ? m.otpRequestedNote : m.otpDetail)}
+      </p>
+      {journey.live && (
+        <button
+          onClick={() => void journey.requestCode()}
+          disabled={journey.busy}
+          className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-[14px] font-bold text-white bg-raised hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors border border-white/10"
+        >
+          {journey.busy ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} strokeWidth={2.5} />}
+          {intl.formatMessage(needsRequest ? m.otpRequestAction : m.otpRequestAgain)}
+        </button>
+      )}
       <div>
         <label htmlFor="portal-otp" className="block text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
           {intl.formatMessage(m.otpLabel)}

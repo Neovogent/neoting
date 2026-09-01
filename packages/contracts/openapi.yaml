@@ -4308,11 +4308,14 @@ components:
     ChaseSendPayload:
       type: object
       description: |
-        Everything Read review must show: every SMS byte-for-byte as it will
-        send, and who receives it. If the sent text ever differs from this
-        payload, the Review → Approve guarantee is broken (SoT §8.2).
-        Composition is server-side; this payload is its output, never
-        free-typed by a caller.
+        Everything Read review must show: every message byte-for-byte as it
+        will send, and who receives it. If the sent text ever differs from
+        this payload, the Review → Approve guarantee is broken (SoT §8.2).
+        Composition is server-side AT PROPOSAL CREATION — the engine
+        recomposes each message body from the chased transactions and signs
+        the portal link into it, discarding whatever body the caller sent
+        (the publish.batch preview precedent). This payload is that output,
+        never free-typed by a caller.
       required: [messages]
       properties:
         messages:
@@ -4323,9 +4326,23 @@ components:
             type: object
             required: [recipientE164, body, transactionIds]
             properties:
+              chaseId:
+                type: [string, 'null']
+                description: |
+                  Server-minted at proposal creation so the portal link inside
+                  `body` can name the chase before it exists; the executor
+                  adopts this id when it creates the chase at approve time.
+                  Never caller-supplied — the engine overwrites it.
               recipientContactId:
                 type: [string, 'null']
                 description: The contact being asked, when one is on file. The audit trail records requested-from separately from uploaded-by.
+              recipientEmail:
+                type: [string, 'null']
+                description: |
+                  The named recipient contact's email at proposal creation,
+                  resolved server-side so Read review shows where the message
+                  actually goes under the email transport. Display-tier — the
+                  transport re-resolves from the contact at send time.
               recipientE164:
                 type: string
                 pattern: '^\+[1-9][0-9]{6,14}$'
@@ -5329,8 +5346,18 @@ components:
 
     PortalSignInCodeRequest:
       type: object
-      required: [email]
       properties:
+        linkToken:
+          type: string
+          description: |
+            From a chase link (`/p/<token>`) instead of `email`/`setupToken`.
+            Present, the six-digit code is minted for THAT link and emailed to
+            the chase's registered recipient contact — never to an address the
+            caller types, because the link is forwardable and the registered
+            contact is the identity D45 gates on. The response is `202`
+            whatever happened, exactly as for the email route: whether a link
+            names a live chase is not something an unauthenticated caller may
+            learn.
         setupToken:
           type: string
           description: |
@@ -5353,7 +5380,9 @@ components:
           format: email
           description: |
             The address the client was registered with (D45). A mismatch is not
-            reported — the response is `202` either way.
+            reported — the response is `202` either way. Required unless
+            `linkToken` is present (the chase route never takes an address —
+            the code goes to the registered recipient).
 
             Without a `setupToken` this is the ONLY identifier, so it must match
             a contact of exactly one business. An address on two businesses is

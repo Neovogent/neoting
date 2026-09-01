@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { ScopeContextSchema } from '../../../common/db/scope-context.js';
 import { InMemoryIdempotencyStore } from '../../../common/idempotency/idempotency-store.js';
 import { AppException } from '../../../common/problem/problem.js';
-import { composeChaseSms, DemoSmsSender, signPortalLink, verifyPortalLink } from '../../chase/index.js';
+import { composeChaseSms, DemoSmsSender, verifyPortalLink } from '../../chase/index.js';
 import { ActionProposalsService } from '../../approvals/action-proposals.service.js';
 import type { PublishGateway } from './publish-batch.js';
 import { buildExecutorRegistry } from './registry.js';
@@ -43,6 +43,9 @@ const STUB_PUBLISHING: PublishGateway = {
   previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0 } }),
 };
 
+// chase.send composition config for tests — a real secret so signed links verify.
+const TEST_CHASE_COMPOSE = { portalLinkSecret: PORTAL_SECRET, appOrigin: 'https://app.test' };
+
 function service(): ActionProposalsService {
   return new ActionProposalsService(
     app,
@@ -50,6 +53,7 @@ function service(): ActionProposalsService {
     { detect: async () => ({ findings: [], candidatesTruncated: false }) },
     STUB_PUBLISHING,
     new InMemoryIdempotencyStore(),
+    TEST_CHASE_COMPOSE,
   );
 }
 
@@ -110,17 +114,10 @@ afterAll(async () => {
 });
 
 describe.skipIf(!enabled)('chase.send end to end through the engine', () => {
-  test('create → review (verbatim SMS) → approve → chase SENT + outbox with a working portal link', async () => {
-    // Composition — exactly the copy detection would produce, with a real portal
-    // link signed over a pre-minted chase identity (the token Stage 9 verifies).
-    const link = signPortalLink({ chaseId: 'p8_link_chase', expSeconds: 86_400 }, PORTAL_SECRET);
-    const body = composeChaseSms({
-      businessName: 'American Burger',
-      portalLink: link,
-      items: [{ transactionId: 'p8_txn_currys', amountPence: -129_900, bookedAt: new Date('2026-08-09T12:00:00.000Z'), supplierLabel: 'Currys' }],
-    });
-    expect(body).toContain("we're missing the receipt for Currys £1,299 on 9 Aug");
-
+  test('create (engine composes) → review (verbatim body) → approve → chase SENT + outbox with a working portal link', async () => {
+    // The caller's draft is DISCARDED by the compose seam at creation — the
+    // engine composes the body over the chased transactions and signs the
+    // portal link over the chase id it mints (the publish preview precedent).
     const svc = service();
     const created = await svc.create(
       STAFF,
@@ -129,7 +126,12 @@ describe.skipIf(!enabled)('chase.send end to end through the engine', () => {
         businessId: BIZ,
         payload: {
           messages: [
-            { recipientE164: '+447700900001', recipientContactId: 'p8_contact', body, transactionIds: ['p8_txn_currys'] },
+            {
+              recipientE164: '+447700900001',
+              recipientContactId: 'p8_contact',
+              body: 'caller draft — discarded',
+              transactionIds: ['p8_txn_currys'],
+            },
           ],
         },
       },
@@ -137,14 +139,25 @@ describe.skipIf(!enabled)('chase.send end to end through the engine', () => {
     );
     expect(created.state).toBe('CREATED');
 
-    // Review renders the SMS byte-for-byte — the flagship guarantee.
+    const composed = (created.payload as { messages: Record<string, unknown>[] }).messages[0] ?? {};
+    const body = String(composed['body']);
+    expect(body).toContain("we're missing the receipt for Currys £1,299 on 9 Aug");
+    expect(body).toBe(
+      composeChaseSms({
+        businessName: 'American Burger',
+        portalLink: `https://app.test/p/${body.split('/p/')[1] ?? ''}`,
+        items: [{ transactionId: 'p8_txn_currys', amountPence: -129_900, bookedAt: new Date('2026-08-09T12:00:00.000Z'), supplierLabel: 'Currys' }],
+      }),
+    );
+
+    // Review renders the body byte-for-byte — the flagship guarantee.
     const review = await svc.review(STAFF, created.id, 'p8-key-review');
     const summary = review.renderedSummary as {
       title: string;
       sections: { entries: { label: string; value: string }[] }[];
     };
-    expect(summary.title).toBe('Send 1 chase SMS message');
-    const shownBody = summary.sections[0]?.entries.find((e) => e.label.startsWith('SMS'))?.value;
+    expect(summary.title).toBe('Send 1 chase message');
+    const shownBody = summary.sections[0]?.entries.find((e) => e.label.startsWith('Message,'))?.value;
     expect(shownBody).toBe(body);
 
     const executed = await svc.approve(STAFF, created.id, { renderedSummaryHash: review.renderedSummaryHash }, 'p8-key-approve');
@@ -152,9 +165,10 @@ describe.skipIf(!enabled)('chase.send end to end through the engine', () => {
     expect(executed.outcome).toMatchObject({ alreadyApplied: false });
 
     // The chase landed SENT, engine (a), stamped with the proposal, its item the
-    // chased transaction.
+    // chased transaction — under the ID the reviewed link names (adoption).
     const chase = await owner.chase.findFirst({ where: { businessId: BIZ, actionProposalId: created.id } });
     expect(chase?.state).toBe('SENT');
+    expect(chase?.id).toBe(composed['chaseId']);
     expect(chase?.detectionEngine).toBe('UNMATCHED_TRANSACTION');
     expect(chase?.itemRefs).toEqual(['p8_txn_currys']);
     expect(chase?.recipientContactId).toBe('p8_contact');
@@ -171,9 +185,10 @@ describe.skipIf(!enabled)('chase.send end to end through the engine', () => {
     expect(smsLog?.body).toBe(body);
     expect(smsLog?.toE164).toBe('+447700900001');
 
-    // The portal link inside the SMS verifies — Stage 9 will do exactly this.
-    const tokenInBody = body.split('Upload securely: ')[1] ?? '';
-    expect(verifyPortalLink(tokenInBody, PORTAL_SECRET)).toEqual({ ok: true, chaseId: 'p8_link_chase' });
+    // The portal link inside the message verifies AND names the chase the
+    // approval created — Stage 9 does exactly this.
+    const tokenInBody = (body.split('Upload securely: ')[1] ?? '').slice('https://app.test/p/'.length);
+    expect(verifyPortalLink(tokenInBody, PORTAL_SECRET)).toEqual({ ok: true, chaseId: chase?.id });
   });
 
   test('re-approving the executed proposal is refused and sends nothing — exactly-once holds', async () => {

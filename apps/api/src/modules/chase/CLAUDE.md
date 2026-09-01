@@ -307,21 +307,39 @@ supplier, date-window, sign, missing-field cases) AND against a real database
 writes the event + notification under RLS; a non-matching one leaves it open;
 a re-run is idempotent).
 
-**Known gaps, flagged not hidden:** the portal-link token names a `chaseId`, but
-`chase.send` creates the chase at approve time — so composition and the executor
-coordinate on chase identity (Stage 9 owns that reconciliation when it consumes
-the token). ⚠ **Sharpened by METH S13:** no HTTP surface runs `composeChaseSms` +
-`signPortalLink` at proposal time, so the chat's chase beat composes the SoT copy
-client-side with a TOKENLESS portal path in the body (`<origin>/p/` — the outbox
-renders no tap target rather than a dead one). The demo-script hop from the
-chat-created chase's SMS into the portal (beat 6 → 7) does not work until a
-server compose seam exists — either the engine composing `chase.send` payloads at
-creation (the publish.batch recompute precedent) with the executor adopting the
-token's chase id, or a dedicated compose endpoint. That touches the chase
-template and the Review → Approve path, so it is Shakib's call, flagged on the
-S13 PR (#142) — not something a stage session may slip in. Per-client suppression descriptors, engines (b)–(e), the policy
-scheduler / reminders / quiet hours / STOP / item messaging remain out of this
-stage. The read controllers landed (METH S8, see above); auto-close landed (METH
+✅ **The compose seam LANDED (1 Sep 2026, owner-directed — G7 ceremony retired
+by owner ruling the same day).** `computeChaseSendPayload`
+(`validation-dedupe/proposals/compose-chase-send.ts`, exported through that
+module's seam) runs at proposal CREATION exactly the way `publish.batch`'s
+preview recompute does: the engine discards the caller's body, reads the chased
+transactions through RLS, **mints the chase id**, signs the portal link over it
+(7-day TTL — signed at creation, frozen by the review hash, so a 24 h token
+minted on Friday would be dead by a Monday approval; the link still grants
+nothing without the OTP), composes via `composeChaseSms` with the FULL
+`<APP_ORIGIN>/p/<token>` URL, and resolves the named contact's email into
+`recipientEmail` so Read review names the address the email transport sends to
+(the A13 render leftover, closed — `render-summary.ts` heads the section with
+it). The executor ADOPTS `message.chaseId`, so the reviewed link verifies
+against the chase the approval creates; pre-seam pending proposals fall back to
+Prisma's own id. `ChaseSendPayload` gained optional `chaseId`/`recipientEmail`.
+Proven end to end in `chase-send.integration.test.ts` and
+`chase-email.integration.test.ts` (both rewritten to pin composition +
+adoption + a verifying link). `APP_ORIGIN` is new in `config/env.ts`
+(default = the staging frontend; local `.env` points at Vite).
+
+✅ **The chase OTP is minted and emailed (same change).**
+`PortalOnboardingService.requestChaseCode` (modules/portal) accepts the LINK
+TOKEN on `POST /portal/sign-in-codes` (contract: optional `linkToken`, `email`
+no longer required), verifies it with `PORTAL_LINK_SECRET`, resolves the chase
+by the sanctioned sweep, and emails a six-digit code to the chase's REGISTERED
+recipient contact — never a typed address (D45). So `OTP_MODE=totp` now opens a
+session from a chase link; `portal-chase-code.integration.test.ts` is the
+acceptance. `SMS_SENDER=email` is live on staging
+(`infra/envs/staging/services.tf`) and `SMS_SENDER=demo` is REFUSED under
+`NODE_ENV=production` (`config/env.ts`), the pairing A13 demanded.
+
+**Still open here:** per-client suppression descriptors, engines (b)–(e), the
+policy scheduler / reminders / quiet hours / STOP / item messaging. The read controllers landed (METH S8, see above); auto-close landed (METH
 S8, `auto-close.ts` behind the `index.ts` seam, wired into the ingest processor).
 
 ## TODO

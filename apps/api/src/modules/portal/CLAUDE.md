@@ -730,9 +730,17 @@ ordinary `pnpm test` with docker up.
       are implemented** (28 Aug 2026), which was the invited-client half of the
       `otp_hash` gap. The code is hashed with `hashOtp` and `otp_expires_at` is
       set, as this list required.
-- [ ] **The CHASE half still writes no `otp_hash`, so `OTP_MODE=totp` opens no
-      session from a chase link.** The sender is A13's (`modules/chase`), and it
-      needs the same two writes — a null expiry is refused, on purpose.
+- [x] **The CHASE half mints its code (1 Sep 2026).**
+      `PortalOnboardingService.requestChaseCode` — `POST /portal/sign-in-codes`
+      with a `linkToken` (contract widened; `email` no longer required) verifies
+      the link, resolves the chase by the sanctioned sweep, writes
+      `otp_hash`/`otp_expires_at` onto the link's row (the counter-row shape —
+      NOT a session), and emails the code to the chase's REGISTERED recipient
+      contact, never a typed address (D45). Uniform 202; every refusal a logged
+      reason. `createSession` now also CLEARS `otp_hash` on success, so chase
+      codes are single-use like onboarding's.
+      `portal-chase-code.integration.test.ts` proves link → code → totp session
+      → single-use → lockout counting → silent refusals against real Postgres.
 - [ ] **`PortalSession` has no `businessId`, so an onboarding session cannot
       reach checkout.** A contract-change issue for Shakib (G7); the web half is
       already written to accept the field the day it lands.

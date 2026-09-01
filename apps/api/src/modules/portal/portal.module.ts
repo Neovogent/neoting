@@ -71,7 +71,7 @@ import {
       useFactory: (prisma: PrismaClient, env: Env, notifications: NotificationsService) =>
         new PortalOnboardingService(
           prisma,
-          { portalSessionSecret: env.PORTAL_SESSION_SECRET, otpMode: env.OTP_MODE },
+          { portalSessionSecret: env.PORTAL_SESSION_SECRET, otpMode: env.OTP_MODE, portalLinkSecret: env.PORTAL_LINK_SECRET },
           notifications,
         ),
       inject: [PRISMA, ENV, NOTIFICATIONS_SERVICE],
