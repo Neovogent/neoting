@@ -403,6 +403,40 @@ export function isEditableLabel(label: string): boolean {
 
 /* ── the proposal ─────────────────────────────────────────────────────────── */
 
+/**
+ * ⚠ `createActionProposalBody.parse(body)` REJECTS EVERY VALID BODY, so do not
+ * put it back. Each union member is orval's strict-intersection —
+ * `zod.object({businessId}).strict().and(zod.object({kind, payload}).strict())`
+ * — and a real body carries all three keys, so each strict half refuses the
+ * other half's. The same generator gap `getChaseResponse` documents, on the
+ * REQUEST side. It cost a real correction on 2 Sep 2026: the parse threw
+ * before the network, the card's catch buried the error in the audit log, and
+ * the accountant was told "Correction approved" over a write that never left
+ * the browser.
+ *
+ * This is the server's own answer (`approvals/proposal-body.ts`), portable:
+ * split the body at the intersection and let each generated half judge its own
+ * keys. Membership is decided by the payload's shape rather than by index, so
+ * a regeneration that reorders the union cannot silently validate against the
+ * wrong member.
+ */
+export function parseCreateProposalHalves(body: { kind: string; businessId: string | null; payload: unknown }): void {
+  const options = (createActionProposalBody as unknown as {
+    options?: ReadonlyArray<{ _def?: { left?: { safeParse: (v: unknown) => { success: boolean } }; right?: { safeParse: (v: unknown) => { success: boolean } } } }>;
+  }).options;
+  if (options === undefined || options.length === 0) {
+    throw new Error('the generated proposal schema changed shape — parseCreateProposalHalves is out of step with the contract');
+  }
+  const accepted = options.some(
+    (member) =>
+      member._def?.left?.safeParse({ businessId: body.businessId }).success === true &&
+      member._def.right?.safeParse({ kind: body.kind, payload: body.payload }).success === true,
+  );
+  if (!accepted) {
+    throw new Error(`the ${body.kind} request does not match the API contract — nothing was sent`);
+  }
+}
+
 export interface UpdateCodingRequest {
   businessId: string;
   documentId: string;
@@ -426,7 +460,7 @@ export async function updateCodingProposal(request: UpdateCodingRequest): Promis
   };
   // The outbound boundary, checked by the contract's own schema before the
   // network — a pence value that is not an integer is refused right here.
-  createActionProposalBody.parse(body);
+  parseCreateProposalHalves(body);
 
   const created = unwrapBody(await createActionProposal(body)) as { id?: string };
   if (typeof created.id !== 'string') throw new Error('the proposal was created without an id');
