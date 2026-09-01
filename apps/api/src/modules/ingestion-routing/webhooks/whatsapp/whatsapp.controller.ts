@@ -124,11 +124,12 @@ export class WhatsAppWebhookController {
       if (media !== null && practiceId === undefined) {
         // Enqueue ANYWAY. A 4xx here would make Meta retry, then give up, and the
         // document would be lost to our own misconfiguration — age and config are
-        // never reasons to drop a signed document. The worker refuses to persist
-        // without an anchor and dead-letters the job, so this surfaces as a page
-        // rather than as silence. The wamid is safe to log; the caption is not.
+        // never reasons to drop a signed document. The worker tries
+        // Practice.whatsappPhoneNumberId next (Phase 2); a number neither source
+        // names dead-letters there, so this surfaces as a page rather than as
+        // silence. The wamid is safe to log; the caption is not.
         this.logger.warn(
-          `no practice mapped for phone_number_id ${phoneNumberId ?? '(absent)'} — wamid ${message.id} will dead-letter (set WHATSAPP_PRACTICE_MAP)`,
+          `no practice env-mapped for phone_number_id ${phoneNumberId ?? '(absent)'} — the worker will try Practice.whatsappPhoneNumberId, then dead-letter wamid ${message.id}`,
         );
       }
 
@@ -139,7 +140,10 @@ export class WhatsAppWebhookController {
         receivedAtSeconds: seconds ?? 0,
         messageType: message.type,
         caption: caption === null ? null : wrapUntrusted(caption),
-        // No sender→workspace map exists yet (no DB) → Unrouted, never dropped.
+        // The webhook has no DB, so it enqueues Unrouted and the WORKER
+        // re-decides against the practice's registered contacts (Phase 2,
+        // `resolveWhatsAppAnchors` — the email lane's sender map, shared).
+        // Never dropped either way.
         routing: decideRouting(message.from, new Map()),
         stale,
         // Conditional spread, not `undefined` — exactOptionalPropertyTypes.

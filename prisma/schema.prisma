@@ -56,6 +56,15 @@ model Practice {
   /// choose between a link that dies and a link that outlives the engagement.
   documentLinkTtlDays Int? @map("document_link_ttl_days")
 
+  /// The Meta phone_number_id of the WhatsApp Business number that RECEIVES
+  /// this practice's client messages (#79's promised column — additive,
+  /// 1 Sep 2026). Derived from the number that received the message, never
+  /// from the sender. Unique because one Meta number delivers to exactly one
+  /// practice; a number shared by two would make routing a coin toss. The
+  /// WHATSAPP_PRACTICE_MAP env var remains as an override the controller can
+  /// read without a DB round trip; the worker falls back to this column.
+  whatsappPhoneNumberId String? @unique @map("whatsapp_phone_number_id")
+
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 

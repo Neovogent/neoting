@@ -318,6 +318,44 @@ email takes from the point the bytes are in hand.
   is untouched — no real Meta id is ever fabricated (unit + select tests prove
   both: fixture resolves the demo id to PNG bytes, graph mode does not).
 
+### WhatsApp routing anchors are wired (Phase 2, 1 Sep 2026)
+
+The two halves #79 left open landed together, in the WORKER (the webhook still
+has no DB and answers Meta fast):
+
+- **Sender→workspace routing is live.** `resolveWhatsAppAnchors`
+  (`queue/ingest-processor.ts`) re-decides a WhatsApp job's `unrouted` routing
+  against the practice's registered contacts through the email lane's OWN
+  `SenderMapLoader` — one definition of a recognised sender for both channels;
+  `buildSenderMap` already keyed `mobileE164` with and without the leading `+`
+  for exactly this. `matched` routes to the workspace; `multiple` stays
+  Unrouted with the "Which company?" reason (the queue is where a human picks —
+  the job payload has no candidates member); a loader failure downgrades to
+  Unrouted, never fails the job. `senderMap` is OPTIONAL on `ProcessorDeps`
+  (the email precedent); `worker/main.ts` wires `PrismaSenderMapLoader`.
+- **`Practice.whatsappPhoneNumberId` landed** (additive migration
+  `20260901180000`, UNIQUE). `PrismaWhatsAppPracticeResolver`
+  (`queue/whatsapp-practice-resolver.ts`) answers an env-unmapped receiving
+  number by the sanctioned sweep — each practice's SYSTEM context is asked for
+  its OWN row, RLS answers. The env map (controller-resolved, no DB round trip
+  on the webhook) WINS when set; a number neither source names still
+  dead-letters loudly. Proven against real RLS
+  (`whatsapp-practice-resolver.integration.test.ts`).
+- **The HEIC mime mismatch is fixed**: `whatsapp-media-intake.ts` now labels
+  the stored object via `effectiveFormat` (re-sniffed OUTPUT bytes), shared
+  with `upload-sanitisation.ts` — a WhatsApp HEIC is stored as `image/jpeg`
+  carrying JPEG bytes, pinned by a regression test.
+- **Staging plumbing laid**: the `whatsapp` secret carries a
+  `media_access_token` placeholder, `META_MEDIA_ACCESS_TOKEN` is injected, and
+  `MEDIA_FETCH=fixture` is stated in services.tf — flipping to `graph` is two
+  value changes (real System User token + the switch) once Meta business
+  verification clears.
+
+Still open from #79: the `documents.s3_key DROP NOT NULL` + CHECK migration so
+a refused WhatsApp document becomes a visible REJECTED row instead of a
+DLQ-only entry — deliberately deferred (it touches the sink, the state machine
+and the read surface; its own change).
+
 **Three things raised on the issue for @shakibbinkabir before this can be marked
 complete** (all posted, awaiting his call):
 

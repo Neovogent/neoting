@@ -77,9 +77,8 @@ const LOCAL_ONLY = {
   // discoverability. If staging ever needs the non-default, the key moves to
   // services.tf and off this list.
   EMAIL_SOURCE: 'defaults to fixture everywhere; the s3 poller has no ECS service yet (apps/api/CLAUDE.md)',
-  MEDIA_FETCH: 'defaults to fixture; no WhatsApp media credentials on staging yet (#79)',
-  META_MEDIA_ACCESS_TOKEN: 'partner of MEDIA_FETCH=graph; not on staging until that flips',
-  WHATSAPP_PRACTICE_MAP: 'interim local mapping (G7 raised on #79); staging value arrives with the schema',
+  WHATSAPP_PRACTICE_MAP:
+    'controller-side override only since Practice.whatsappPhoneNumberId landed (1 Sep 2026); staging maps practices in the DB, not the task definition',
   AUTH_MODE: undefined, // never allowlist a mode switch that IS on ECS — see the check below
   // ID-dormant sandboxes (D40/D42 supersede D4/D6 for ID): the integrations
   // are fenced out of the release, the keys stay documented for v1.

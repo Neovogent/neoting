@@ -48,11 +48,15 @@ const EnvSchema = z.object({
    * the same move the email lane made (`email-intake.ts`: the caller supplies
    * `practiceId`, with the seam written down), keyed by the number that RECEIVED
    * the message so a future `Practice.whatsappPhoneNumberId` column replaces it
-   * without touching a call site. That column is `prisma/`, so G7 — raised on #79.
+   * without touching a call site. **That column LANDED 1 Sep 2026**
+   * (`Practice.whatsappPhoneNumberId`, unique): the worker's
+   * `PrismaWhatsAppPracticeResolver` answers a number this env never named, so
+   * this map is now the controller-side OVERRIDE (no DB round trip on the
+   * webhook) rather than the only source.
    *
-   * Fails CLOSED: an unmapped number yields no anchor, the worker refuses to
-   * persist and the job lands in the DLQ. It is never a quiet success that wrote
-   * nothing.
+   * Fails CLOSED: a number neither source names yields no anchor, the worker
+   * refuses to persist and the job lands in the DLQ. It is never a quiet
+   * success that wrote nothing.
    */
   WHATSAPP_PRACTICE_MAP: z
     .string()
