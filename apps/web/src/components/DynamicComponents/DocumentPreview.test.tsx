@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { DocumentPreview } from './DocumentPreview';
@@ -32,6 +32,15 @@ const updateCodingProposal = vi.fn(async (_request: unknown) => {});
 // helpers — parseCodingDraft, isEditableLabel — stay real, because the staged
 // proposal's payload shape is exactly what is under test.
 let detail: DocumentDetail;
+let bankMatch: import('../../api/bank-match').DocumentBankMatchResult = { match: null, loading: false, error: false, refetch: () => {} };
+const confirmBankMatch = vi.fn(async (_documentId: unknown, _match: unknown) => {});
+// Offline by construction: the real hook would open a socket from jsdom.
+// Default: no match — the section renders nothing; tests override `bankMatch`.
+vi.mock('../../api/bank-match', () => ({
+  useDocumentBankMatch: () => bankMatch,
+  confirmDocumentBankMatch: (documentId: unknown, match: unknown) => confirmBankMatch(documentId, match),
+}));
+
 vi.mock('../../api/document-detail', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api/document-detail')>();
   return {
@@ -279,4 +288,58 @@ test('no bank-match section renders — the contract exposes no match read surfa
   renderPreview();
 
   expect(screen.queryByText(/transaction/i)).toBeNull();
+});
+
+test('a suggested bank match renders with its line and Confirm stages the three-call ritual', async () => {
+  detail = liveDetail();
+  bankMatch = {
+    match: {
+      matchId: 'match_1',
+      state: 'SUGGESTED',
+      kind: 'EXACT',
+      amount: -1299,
+      date: '09 Aug 2026',
+      label: 'Currys',
+      transactionId: 'txn_003',
+      businessId: 'biz_burger',
+      confidence: 1,
+    },
+    loading: false,
+    error: false,
+    refetch: () => {},
+  };
+  renderPreview();
+
+  expect(screen.getByText('Suggested bank match')).toBeTruthy();
+  expect(screen.getByText(/Currys/)).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: /Confirm match/ }));
+  await waitFor(() => expect(confirmBankMatch).toHaveBeenCalledTimes(1));
+  expect(confirmBankMatch.mock.calls[0]?.[0]).toBe(doc.id);
+  bankMatch = { match: null, loading: false, error: false, refetch: () => {} };
+});
+
+test('a CONFIRMED match renders as matched, with no confirm button', () => {
+  detail = liveDetail();
+  bankMatch = {
+    match: {
+      matchId: 'match_1',
+      state: 'CONFIRMED',
+      kind: 'EXACT',
+      amount: -1299,
+      date: '09 Aug 2026',
+      label: 'Currys',
+      transactionId: 'txn_003',
+      businessId: 'biz_burger',
+      confidence: 1,
+    },
+    loading: false,
+    error: false,
+    refetch: () => {},
+  };
+  renderPreview();
+
+  expect(screen.getByText('Matched bank transaction')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /Confirm match/ })).toBeNull();
+  bankMatch = { match: null, loading: false, error: false, refetch: () => {} };
 });

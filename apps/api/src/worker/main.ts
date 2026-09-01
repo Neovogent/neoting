@@ -25,7 +25,7 @@ import { INGEST_QUEUE_NAME } from '../modules/ingestion-routing/queue/queue-name
 import { createRedisConnection } from '../modules/ingestion-routing/queue/redis-connection.js';
 import { selectMediaFetcher } from '../modules/ingestion-routing/queue/select-media-fetcher.js';
 import type { MediaIntakeDeps } from '../modules/ingestion-routing/queue/whatsapp-media-intake.js';
-import { PrismaStatementStep } from '../modules/banking-matching/index.js';
+import { PrismaMatchSuggester, PrismaStatementStep } from '../modules/banking-matching/index.js';
 import { selectDocumentStore } from '../modules/ingestion-routing/storage/select-document-store.js';
 import { PrismaUploadSanitisationStep } from '../modules/ingestion-routing/web-upload/prisma-upload-sanitisation.js';
 
@@ -126,6 +126,7 @@ function bootstrap(): void {
   // No reader of its own: it reads whatever the OCR rung above already read,
   // handed forward on the extraction completion.
   const statements = new PrismaStatementStep(getPrismaClient(), documentStore, { logger: ocrLogger });
+  const matchSuggester = new PrismaMatchSuggester(getPrismaClient());
   const senderMap = new PrismaSenderMapLoader(getPrismaClient());
   const whatsAppPractices = new PrismaWhatsAppPracticeResolver(getPrismaClient());
 
@@ -143,6 +144,7 @@ function bootstrap(): void {
           extractor,
           autoClose,
           statements,
+          matchSuggester,
           // WhatsApp routing anchors (Phase 2): the sender map routes a
           // registered contact's wa_id to their workspace (the email lane's
           // loader, shared — one definition of a recognised sender), and the

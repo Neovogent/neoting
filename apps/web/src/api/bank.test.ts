@@ -24,6 +24,7 @@ const row = (over: Partial<ApiBankTransaction> = {}): ApiBankTransaction => ({
   currency: 'GBP',
   descriptionRaw: 'CURRYS 0842',
   merchantName: 'CURRYS',
+  matchedDocumentId: null,
   classification: 'expense',
   balanceAfterPence: 1_841_255,
   matchState: 'UNMATCHED',

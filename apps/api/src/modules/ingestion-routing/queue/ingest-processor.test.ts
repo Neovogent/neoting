@@ -1,4 +1,4 @@
-import { NO_STATEMENT_STEP } from '../../banking-matching/index.js';
+import { NO_MATCH_SUGGESTER, NO_STATEMENT_STEP, RecordingMatchSuggester } from '../../banking-matching/index.js';
 import { expect, test } from 'vitest';
 
 import { RecordingChaseAutoClose } from '../../chase/index.js';
@@ -69,6 +69,7 @@ function harness(
       // it is the point — `statements` is required precisely so a composition
       // root cannot forget it by accident.
       statements: NO_STATEMENT_STEP,
+      matchSuggester: NO_MATCH_SUGGESTER,
       // These unit tests drive the processor directly, with no BullMQ job above
       // them, so "is this the last attempt" has no real answer. `false` is the
       // one that changes nothing: extraction rethrows and stays PROCESSING,
@@ -675,4 +676,41 @@ test('an email job is never re-anchored by the whatsapp resolvers', async () => 
   // here would be a second opinion on a decision already made.
   expect(asked).toBe(0);
   expect([...h.sink.persisted.values()][0]?.businessId).toBeNull();
+});
+
+/* ── the automatic match suggester (Phase 4) ───────────────────────────────── */
+
+test('a routed, landed document runs the match suggester with its extracted header', async () => {
+  const suggester = new RecordingMatchSuggester();
+  const h = harness(READY_COMPLETION);
+  await processIngestJob({ ...emailJob, routing: { kind: 'matched', businessId: 'biz_1' } }, { ...h.deps, matchSuggester: suggester });
+
+  expect(suggester.runs).toHaveLength(1);
+  const run = suggester.runs[0];
+  expect(run?.businessId).toBe('biz_1');
+  expect(run?.practiceId).toBe('prac_x');
+  expect(run?.supplierName).toBe('Currys');
+  expect(run?.totalPence).toBe(129_900);
+});
+
+test('an unrouted document runs no match suggestion — a suggestion needs a business', async () => {
+  const suggester = new RecordingMatchSuggester();
+  const h = harness({ ...READY_COMPLETION, businessId: null });
+  await processIngestJob(emailJob, { ...h.deps, matchSuggester: suggester });
+  expect(suggester.runs).toHaveLength(0);
+});
+
+test('a suggester failure is swallowed — the document and the job are safe', async () => {
+  const h = harness(READY_COMPLETION);
+  const deps = {
+    ...h.deps,
+    matchSuggester: {
+      run: async () => {
+        throw new Error('suggestion store unreachable');
+      },
+    },
+  };
+  await processIngestJob({ ...emailJob, routing: { kind: 'matched', businessId: 'biz_1' } }, deps);
+  expect(h.warns.some((w) => w.includes('match-suggest'))).toBe(true);
+  expect(h.sink.persisted.size).toBe(1);
 });

@@ -1,4 +1,4 @@
-import type { StatementStep } from '../../banking-matching/index.js';
+import type { MatchSuggester, StatementStep } from '../../banking-matching/index.js';
 import type { ChaseAutoClose } from '../../chase/index.js';
 import type { ExtractionCompletion, ExtractionStep } from '../../extraction/index.js';
 import type { SenderMapLoader } from '../email/inbound/sender-map.js';
@@ -70,6 +70,17 @@ export interface ProcessorDeps {
    * so out loud.
    */
   readonly statements: StatementStep;
+  /**
+   * The automatic match suggester (Phase 4). Runs AFTER extraction for a
+   * routed document that landed, before auto-close: exactly-one deterministic
+   * candidate becomes a SUGGESTED `matches` row + `matchState` flip, which the
+   * human-only `bank.confirm-match` proposal promotes. REQUIRED, the
+   * `statements` argument exactly: an optional dep is a dep a composition
+   * root forgets, and a root with no banking concern passes
+   * `NO_MATCH_SUGGESTER` and says so out loud. Never throws into the job —
+   * a suggestion failure costs the suggestion, not the document.
+   */
+  readonly matchSuggester: MatchSuggester;
   /**
    * The sender→workspace map for WhatsApp routing (Phase 2, 1 Sep 2026).
    * OPTIONAL, the email lane's own precedent (`runEmailIntake`'s
@@ -256,6 +267,7 @@ async function handle(rawPayload: IngestJobPayload, deps: ProcessorDeps): Promis
       traceId: payload.traceId,
       finalAttempt: deps.finalAttempt,
     });
+    await runMatchSuggestion(completion, payload.practiceId, payload.traceId, deps);
     await runAutoClose(completion, payload.practiceId, payload.traceId, deps);
     await deps.statements.run({
       documentId: payload.documentId,
@@ -285,8 +297,10 @@ async function handle(rawPayload: IngestJobPayload, deps: ProcessorDeps): Promis
     finalAttempt: deps.finalAttempt,
   });
 
-  // Auto-close on inbound match (chase, METH Stage 8) — runs after extraction for
-  // a routed document that landed. See `runAutoClose`.
+  // Match suggestion (Phase 4) then auto-close (chase, METH Stage 8) — both run
+  // after extraction for a routed document that landed, both through the same
+  // deterministic compare, and neither may fail the job.
+  await runMatchSuggestion(completion, materialised.practiceId, payload.traceId, deps);
   await runAutoClose(completion, materialised.practiceId, payload.traceId, deps);
 
   // Statement import (D40/D41) — last, because it is the only step that creates
@@ -302,6 +316,42 @@ async function handle(rawPayload: IngestJobPayload, deps: ProcessorDeps): Promis
     // result on is what stops a PDF statement being read a second time.
     ocr: completion?.ocr,
   });
+}
+
+/**
+ * Write the automatic match suggestion for a document that just finished
+ * extraction (Phase 4) — same guards as auto-close (a completion, a routed
+ * document), same failure posture (logged and swallowed: the document is safe,
+ * a lost suggestion costs a human a lookup, not the books an error).
+ */
+async function runMatchSuggestion(
+  completion: ExtractionCompletion | null,
+  practiceId: string,
+  traceId: string,
+  deps: ProcessorDeps,
+): Promise<void> {
+  if (completion === null || completion.businessId === null) return;
+
+  try {
+    const result = await deps.matchSuggester.run({
+      documentId: completion.documentId,
+      businessId: completion.businessId,
+      practiceId,
+      supplierName: completion.supplierName,
+      totalPence: completion.totalPence,
+      documentDate: completion.documentDate,
+      traceId,
+    });
+    if (result.suggested !== null) {
+      deps.logger.log(
+        `match-suggest ${completion.documentId}: suggested against ${result.suggested.transactionId} trace=${traceId}`,
+      );
+    }
+  } catch (error) {
+    deps.logger.warn(
+      `match-suggest ${completion.documentId} failed (document is safe, no suggestion written): ${String(error)} trace=${traceId}`,
+    );
+  }
 }
 
 /**

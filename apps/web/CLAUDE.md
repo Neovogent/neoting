@@ -610,6 +610,20 @@ its way…"). Synthetic mode keeps the fixed demo code and the original copy;
 `journey.codeRequested` is what flips the wording. Four new `portal.chasePortal.otp*`
 ids.
 
+## DocumentPreview shows the bank match (Phase 4, 1 Sep 2026)
+
+The section PR #230 refused to fabricate exists now that the server does:
+`api/bank-match.ts` (lazy — imported only by the DocumentPreview chunk, plain
+generated function inside its own `useQuery`, the `proposals.ts` reasoning)
+reads `GET /documents/{id}/bank-match`; the preview renders "Suggested bank
+match" / "Matched bank transaction" with the line's label, amount and date,
+and a SUGGESTED match gets a **Confirm match** button that runs the SAME
+three-call `confirmMatchProposal` ritual the Bank screen uses (create →
+review → approve echoing the hash — the middle call cannot be skipped).
+`toLocalTransaction` now fills `matchedDocId` from the contract's new
+`matchedDocumentId` (CONFIRMED only — a suggestion arrives null by design),
+closing the old "never set from a server row" caveat in `api/bank.ts`.
+
 ## Three live surfaces landed 31 Aug 2026
 
 **Removing a client lives on the client's Settings tab, NOT the Clients

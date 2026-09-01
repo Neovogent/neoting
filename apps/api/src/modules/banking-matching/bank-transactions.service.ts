@@ -1,6 +1,7 @@
+import { HttpStatus } from '@nestjs/common';
 import type { z } from 'zod';
 
-import type { BankTransaction } from '@neoting/contracts/model';
+import type { BankTransaction, DocumentBankMatch } from '@neoting/contracts/model';
 import { listBankTransactionsQueryParams } from '@neoting/contracts/zod';
 import type { BankTransaction as BankTransactionRow, Prisma } from '@prisma/client';
 
@@ -8,6 +9,7 @@ import type { PrismaClient } from '../../common/db/prisma.js';
 import type { ScopeContext } from '../../common/db/scope-context.js';
 import { scopedDb } from '../../common/db/scoped-db.js';
 import { dateField, type Page, type PageRequest, pageQuery, toPage } from '../../common/pagination/cursor.js';
+import { AppException } from '../../common/problem/problem.js';
 import { toBankTransaction } from './bank-transaction-response.js';
 
 type ListQuery = z.infer<typeof listBankTransactionsQueryParams>;
@@ -74,11 +76,86 @@ export class BankTransactionsService {
         where: seek.where === undefined ? filters : { AND: [filters, seek.where] },
         orderBy: seek.orderBy as Prisma.BankTransactionOrderByWithRelationInput[],
         take: seek.take,
+        // The CONFIRMED match's document — `matchedDocumentId` on the wire
+        // (Phase 4). A live match per transaction is at most one by the
+        // confirm executor's own rules; `take: 1` states it rather than
+        // trusting it. SUGGESTED deliberately does not fill the field — a
+        // suggestion is a question, and the document's bank-match read is
+        // where the question lives.
+        include: {
+          matches: { where: { state: 'CONFIRMED', unmatchedAt: null }, select: { documentId: true }, take: 1 },
+        },
       }),
     );
 
     const page = toPage(rows, request);
-    return { data: page.data.map(toBankTransaction), pageInfo: page.pageInfo };
+    return {
+      data: page.data.map((row) => toBankTransaction(row, row.matches?.[0]?.documentId ?? null)),
+      pageInfo: page.pageInfo,
+    };
+  }
+
+  /**
+   * `GET /documents/{documentId}/bank-match` (Phase 4) — the one live match
+   * linking this document to a bank line: CONFIRMED when one exists, else the
+   * newest SUGGESTED, else `match: null`. Read-only; confirming is a
+   * `bank.confirm-match` proposal, and this surface exists precisely so the
+   * DocumentPreview can stop inventing one (the PR #230 gap).
+   *
+   * The document is resolved through RLS FIRST: an unreachable document and an
+   * absent one are the same 404, and neither confirms existence. A reachable
+   * document with no match is the honest `{ match: null }` — an answer, not
+   * an error.
+   */
+  async getDocumentBankMatch(ctx: ScopeContext, documentId: string): Promise<DocumentBankMatch> {
+    return scopedDb(this.prisma, ctx, async (db) => {
+      const document = await db.document.findUnique({ where: { id: documentId }, select: { id: true } });
+      if (document === null) {
+        throw new AppException(
+          'NT-VAL-001',
+          HttpStatus.NOT_FOUND,
+          'Not found',
+          'The requested record does not exist.',
+        );
+      }
+
+      const row = await db.match.findFirst({
+        where: { documentId, unmatchedAt: null },
+        // CONFIRMED outranks SUGGESTED; among suggestions the newest wins.
+        // Enum order in Prisma sorts by declaration (UNMATCHED < SUGGESTED <
+        // CONFIRMED < EXCLUDED), so `state desc` would put EXCLUDED first —
+        // order explicitly instead.
+        orderBy: [{ createdAt: 'desc' }],
+        include: { transaction: true },
+      });
+      const preferred =
+        row === null || row.state === 'CONFIRMED'
+          ? row
+          : ((await db.match.findFirst({
+              where: { documentId, unmatchedAt: null, state: 'CONFIRMED' },
+              include: { transaction: true },
+            })) ?? row);
+      if (preferred === null || (preferred.state !== 'CONFIRMED' && preferred.state !== 'SUGGESTED')) {
+        return { match: null };
+      }
+
+      return {
+        match: {
+          id: preferred.id,
+          state: preferred.state,
+          kind: preferred.kind,
+          confidence: preferred.confidence,
+          matchedBy: preferred.matchedBy,
+          // The embedded transaction carries ITS confirmed document — this one
+          // when the match is CONFIRMED, nothing otherwise (a SUGGESTED match
+          // fills no matchedDocumentId, the contract's own rule).
+          transaction: toBankTransaction(
+            preferred.transaction,
+            preferred.state === 'CONFIRMED' ? preferred.documentId : null,
+          ),
+        },
+      };
+    });
   }
 }
 

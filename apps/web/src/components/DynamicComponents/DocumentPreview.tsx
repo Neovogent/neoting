@@ -5,6 +5,7 @@ import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
 import { API_ENABLED } from '../../api/config';
 import { isEditableLabel, parseCodingDraft, useDocumentDetail, type DraftProblem } from '../../api/document-detail';
+import { confirmDocumentBankMatch, useDocumentBankMatch } from '../../api/bank-match';
 import type { UpdateCodingPayload } from '@neoting/contracts/model';
 import { currency } from '../../lib/resolver';
 import { BASE_MANDATORY } from '../../lib/selectors';
@@ -83,6 +84,27 @@ const m = defineMessages({
     id: 'documents.documentPreview.readyComplete',
     defaultMessage:
       'Every field Ready requires ({fields}) is present. Confirming the coding without changing a value has no proposal path yet — correcting any value re-checks readiness through Review → Approve.',
+  },
+  matchSuggestedHeading: {
+    id: 'documents.documentPreview.matchSuggestedHeading',
+    defaultMessage: 'Suggested bank match',
+  },
+  matchConfirmedHeading: {
+    id: 'documents.documentPreview.matchConfirmedHeading',
+    defaultMessage: 'Matched bank transaction',
+  },
+  matchLine: {
+    id: 'documents.documentPreview.matchLine',
+    defaultMessage: '{label} · {amount} · {date}',
+  },
+  matchConfirm: { id: 'documents.documentPreview.matchConfirm', defaultMessage: 'Confirm match' },
+  matchConfirmNote: {
+    id: 'documents.documentPreview.matchConfirmNote',
+    defaultMessage: 'Goes through Review → Approve, like every state change.',
+  },
+  matchFailed: {
+    id: 'documents.documentPreview.matchFailed',
+    defaultMessage: 'The match could not be confirmed. It stays suggested — try again, or confirm it from the Bank screen.',
   },
 });
 
@@ -173,6 +195,23 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
   const live = API_ENABLED;
   const isProcessing = doc.status === 'processing';
   const detail = useDocumentDetail({ documentId: doc.id, enabled: live, poll: live && isProcessing });
+  const bankMatch = useDocumentBankMatch(doc.id, live);
+  const [confirmingMatch, setConfirmingMatch] = useState(false);
+  const [matchProblem, setMatchProblem] = useState(false);
+
+  const confirmMatch = async () => {
+    if (bankMatch.match === null) return;
+    setConfirmingMatch(true);
+    setMatchProblem(false);
+    try {
+      await confirmDocumentBankMatch(doc.id, bankMatch.match);
+      bankMatch.refetch();
+    } catch {
+      setMatchProblem(true);
+    } finally {
+      setConfirmingMatch(false);
+    }
+  };
 
   const fields = live ? detail.fields : doc.fields;
   const lineItems = live ? detail.lineItems : doc.lineItems;
@@ -551,6 +590,43 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                     {intl.formatMessage(m.readyComplete, {
                       fields: intl.formatList(BASE_MANDATORY, { type: 'conjunction' }),
                     })}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* The bank-match section PR #230 had to leave out — the read
+                surface exists now (Phase 4). Rendered only when the server
+                actually holds a match; confirming a suggestion is the same
+                three-call Review → Approve ritual the Bank screen uses. */}
+            {live && bankMatch.match !== null && (
+              <div className="mt-6 rounded-2xl border border-white/10 bg-raised/40 p-4">
+                <div className="text-[11px] font-bold text-brand uppercase tracking-widest mb-2">
+                  {intl.formatMessage(bankMatch.match.state === 'CONFIRMED' ? m.matchConfirmedHeading : m.matchSuggestedHeading)}
+                </div>
+                <p className="text-[13px] text-zinc-300 leading-relaxed">
+                  {intl.formatMessage(m.matchLine, {
+                    label: bankMatch.match.label,
+                    amount: currency(Math.abs(bankMatch.match.amount)),
+                    date: bankMatch.match.date,
+                  })}
+                </p>
+                {bankMatch.match.state === 'SUGGESTED' && (
+                  <div className="mt-3 flex items-center gap-3">
+                    <button
+                      onClick={() => void confirmMatch()}
+                      disabled={confirmingMatch}
+                      className="flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <Check size={13} />
+                      {intl.formatMessage(m.matchConfirm)}
+                    </button>
+                    <span className="text-[12px] text-zinc-500">{intl.formatMessage(m.matchConfirmNote)}</span>
+                  </div>
+                )}
+                {matchProblem && (
+                  <p role="alert" className="mt-2 text-[12px] text-red-400">
+                    {intl.formatMessage(m.matchFailed)}
                   </p>
                 )}
               </div>
