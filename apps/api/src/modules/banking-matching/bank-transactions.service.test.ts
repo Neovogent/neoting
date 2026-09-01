@@ -84,6 +84,7 @@ test('the row is projected onto the contract shape, pence untouched', async () =
       classification: 'expense',
       balanceAfterPence: 1_841_255,
       matchState: 'UNMATCHED',
+      matchedDocumentId: null,
       chaseSuppressed: false,
     },
   ]);
@@ -198,6 +199,7 @@ test('the service has no method that writes — the no-side-effect rule, structu
 
   // Confirming a match is a `bank.confirm-match` proposal on the Review →
   // Approve spine (Governance §10). If a mutating method ever appears here,
-  // this fails before a controller can be pointed at it.
-  expect(methods).toEqual(['listBankTransactions']);
+  // this fails before a controller can be pointed at it. Both members are
+  // reads: the list, and the document's bank-match lookup (Phase 4).
+  expect(methods).toEqual(['listBankTransactions', 'getDocumentBankMatch']);
 });

@@ -156,6 +156,7 @@ export function toBankTransactionFixture(txn: LocalBankTransaction): ApiBankTran
     currency: 'GBP',
     descriptionRaw: txn.description,
     merchantName: txn.description.split(' ')[0] ?? null,
+    matchedDocumentId: txn.matchedDocId ?? null,
     classification: txn.isCredit ? 'income' : 'expense',
     balanceAfterPence: null,
     matchState: txn.matchedDocId === undefined ? 'UNMATCHED' : 'CONFIRMED',

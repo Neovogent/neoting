@@ -77,6 +77,39 @@ Three decisions worth knowing before changing anything here:
   second implementation on the read path is how the Bank screen and the chase
   list start disagreeing about which lines have paperwork to chase.
 
+## The automatic match suggester (Phase 4, 1 Sep 2026) — `suggestion/`
+
+`confirm-match.ts` predicted it in code ("the seed (and, later, an automatic
+suggester) writes SUGGESTED rows") and this is it: after extraction, the ingest
+processor runs `PrismaMatchSuggester` for every routed, landed document.
+
+- **One ruler.** The compare is the chase seam's own `chaseMatchesDocument` +
+  tolerances — the predicate auto-close closes on — so a suggestion and a
+  chase-close can never disagree. No second tolerance exists here.
+- **Exactly one candidate, or nothing.** The `field-geometry` stance: two
+  equally-fitting lines (the recurring direct debit) suggest neither, because a
+  SUGGESTED line leaves the chase-detection set and a wrong guess would
+  silently stop chasing a line whose paperwork never came.
+- **Flip-first, compare-and-swap.** `matchState UNMATCHED→SUGGESTED` guarded
+  `updateMany` runs BEFORE the `matches` insert; a race with a concurrent
+  confirm flips nothing and writes no orphan row. Idempotent per document (one
+  live match row max; an `unmatchedAt`-stamped row does not block).
+- **A suggestion gates nothing** (Governance §9.5): `bank.confirm-match`
+  promotes it, humans only. `matchedBy: 'auto-suggester'`, deterministic
+  confidence (1 pence-equal, 0.9 within tolerance), kind EXACT/PROBABILISTIC.
+- Wired as a REQUIRED `ProcessorDeps.matchSuggester` (`NO_MATCH_SUGGESTER` for
+  bankless roots), runs before auto-close, never fails the job. Proven against
+  real RLS in `suggestion/match-suggester.integration.test.ts`.
+
+**Two read surfaces landed with it (LAW ceremony retired 1 Sep — see
+packages/contracts/CLAUDE.md):** `BankTransaction.matchedDocumentId` (the
+CONFIRMED match's document, joined in the list projection — SUGGESTED
+deliberately leaves it null: a suggestion is a question, not evidence) and
+`GET /documents/{documentId}/bank-match` (`getDocumentBankMatch` on the
+service; CONFIRMED outranks newest SUGGESTED; 404-never-403 on an unreachable
+document; the embedded transaction goes through the SAME `toBankTransaction`
+projection — the "second surface" its header predicted).
+
 ## Textract fuses adjacent columns page-by-page (31 Aug 2026)
 
 On a real 29-page statement the header came back as `CREDIT BALANCE` in ONE
@@ -344,12 +377,12 @@ executor writes `matches` and `bank_transactions` through the engine's
       implementation is a provider adapter behind a config-selected `BankFeed`
       seam (interface + fixture + real, chosen by CONFIG not import) writing
       the same `bank_transactions` rows this reads.
-- [ ] **Contract change (Shakib, G7): `BankTransaction` carries `matchState`
-      but not the id of the document that matched it.** The Bank screen needs
-      it — `apps/web`'s local shape uses `matchedDocId` as a real key (one
-      receipt may not answer two lines; `ClientApprovalView` looks a
-      transaction up by it) — so today `apps/web` sets it to `undefined` for
-      server rows and answers "is this matched" from `matchState` instead.
+- [x] **`BankTransaction.matchedDocumentId` landed (Phase 4, 1 Sep 2026).**
+      The CONFIRMED match's document rides the list projection;
+      `apps/web/src/api/bank.ts` maps it onto the local `matchedDocId` key, so
+      the claimed-set and `ClientApprovalView` lookups work on server rows.
+      SUGGESTED stays null by design (the document's bank-match read carries
+      the question).
 - [ ] `bank.unmatch` has no `ProposalKind`, so breaking a confirmed match has
       no approved path. The executor refuses rather than overwriting.
 - [x] **ID-critical (D40/D41): statement upload wiring with the completeness

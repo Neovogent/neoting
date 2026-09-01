@@ -1175,6 +1175,36 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /documents/{documentId}/bank-match:
+    parameters:
+      - $ref: '#/components/parameters/DocumentId'
+    get:
+      operationId: getDocumentBankMatch
+      summary: The document's bank match — suggested or confirmed
+      description: |
+        The one `matches` row that links this document to a bank transaction,
+        with the transaction embedded: a CONFIRMED match when one exists, else
+        the newest SUGGESTED one, else `match: null`. The suggested half is
+        written by the automatic suggester (the same deterministic
+        supplier + amount + date-window compare that auto-closes a chase);
+        confirming it is a `bank.confirm-match` proposal through
+        Review → Approve — this surface is read-only and a suggestion gates
+        nothing (Governance §9.5).
+      tags: [bank]
+      x-nt-side-effect: none
+      responses:
+        '200':
+          description: The match, or null when nothing links this document to a bank line.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentBankMatch' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /documents/{documentId}/extractions:
     parameters:
       - $ref: '#/components/parameters/DocumentId'
@@ -3457,6 +3487,28 @@ components:
       description: Mirrors the Prisma `MatchKind` enum exactly.
       enum: [EXACT, PROBABILISTIC, PARTIAL_PAYMENT, BATCH_PAYMENT, CREDIT_NOTE]
 
+    DocumentBankMatch:
+      type: object
+      description: |
+        `GET /documents/{documentId}/bank-match` — the link between one
+        document and one bank line, or the honest absence of one.
+      required: [match]
+      properties:
+        match:
+          type: [object, 'null']
+          required: [id, state, kind, confidence, matchedBy, transaction]
+          properties:
+            id: { type: string }
+            state: { $ref: '#/components/schemas/MatchState' }
+            kind: { $ref: '#/components/schemas/MatchKind' }
+            confidence:
+              type: [number, 'null']
+              description: The suggesting engine's score. Triage only — it gates nothing (Governance §9.5).
+            matchedBy:
+              type: [string, 'null']
+              description: '`auto-suggester` for machine suggestions; a confirmation records the approver on the proposal instead.'
+            transaction: { $ref: '#/components/schemas/BankTransaction' }
+
     PublishMode:
       type: string
       description: Mirrors the Prisma `PublishMode` enum exactly.
@@ -5442,7 +5494,7 @@ components:
       description: |
         The provider-agnostic normalised schema (SoT Stage 7). Amounts are
         signed integer pence exactly as the feed records them.
-      required: [id, businessId, accountId, bookedAt, amountPence, currency, descriptionRaw, matchState, chaseSuppressed]
+      required: [id, businessId, accountId, bookedAt, amountPence, currency, descriptionRaw, matchState, chaseSuppressed, matchedDocumentId]
       properties:
         id: { type: string }
         businessId: { type: string }
@@ -5452,6 +5504,14 @@ components:
           type: integer
           x-nt-money: true
           description: Signed. Negative is money out.
+        matchedDocumentId:
+          type: [string, 'null']
+          description: |
+            The document a CONFIRMED match links this line to, else null. The
+            id the Bank screen's claimed-set and the approval drill-down key on
+            — a SUGGESTED match deliberately does not fill it (a suggestion is
+            a question, not evidence; `matchState` says one exists and the
+            document's own bank-match read carries the detail).
         currency:
           type: string
           pattern: '^[A-Z]{3}$'

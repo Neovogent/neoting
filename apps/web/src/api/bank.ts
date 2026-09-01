@@ -41,19 +41,16 @@ const MATCH_KIND_TO_API: Record<LocalMatchKind, ApiMatchKind> = {
 /**
  * One API row in the shape the Bank screen already renders.
  *
- * Two things are deliberately absent, and both are honest rather than
- * forgotten:
+ * `matchedDocId` is set from the server row SINCE Phase 4 (1 Sep 2026): the
+ * contract's `BankTransaction` gained `matchedDocumentId` — the CONFIRMED
+ * match's document, exactly the key `matching.ts` builds its `claimed` set
+ * from and `ClientApprovalView` looks a transaction up by. A SUGGESTED match
+ * deliberately arrives as `null` (a suggestion is a question, and the
+ * document's own bank-match read carries it), so the caveat this comment used
+ * to carry is closed for confirmations only.
  *
- *   `matchedDocId` is NEVER set from a server row. The contract's
- *   `BankTransaction` carries `matchState` but not the id of the document that
- *   satisfied it, and that id is used elsewhere as a real key — `matching.ts`
- *   builds a `claimed` set from it so one receipt cannot answer two lines, and
- *   `ClientApprovalView` looks a transaction up BY it. A placeholder would
- *   corrupt both. "Is this matched" is answered by `matchState` instead (see
- *   `isMatched`), and the missing id is a contract change for Shakib (G7).
- *
- *   `missingItemId` likewise has no wire representation. The chase link is the
- *   chase lane's, not the feed's.
+ * `missingItemId` still has no wire representation. The chase link is the
+ * chase lane's, not the feed's.
  */
 export function toLocalTransaction(
   row: ApiBankTransaction,
@@ -87,6 +84,9 @@ export function toLocalTransaction(
     accountId: row.accountId,
     matchState: row.matchState,
     chaseSuppressed: row.chaseSuppressed,
+    // Conditional spread, not `undefined` — exactOptionalPropertyTypes, and
+    // the local shape's convention is that an unmatched line has NO key.
+    ...(row.matchedDocumentId === null ? {} : { matchedDocId: row.matchedDocumentId }),
   };
 }
 
