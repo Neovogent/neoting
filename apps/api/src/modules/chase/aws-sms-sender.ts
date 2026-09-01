@@ -62,9 +62,21 @@ export class AwsSmsSender implements SmsSender {
     this.deps ??= this.factory();
     const { transport, limiter } = await this.deps;
 
+    // Phase 0 — every message must be dialable. An email-only recipient
+    // (legal since 2 Sep 2026) cannot ride the SMS rail; refusing the batch
+    // tells the approver the real fix — register a mobile for the contact —
+    // instead of half-sending around them. Mapped rather than checked in
+    // place so the loops below carry the narrowed type.
+    const dialable = messages.map((message) => {
+      if (message.toE164 === null) {
+        throw refusal('a recipient has no registered mobile — SMS cannot deliver this chase; register a mobile for the contact');
+      }
+      return { ...message, toE164: message.toE164 };
+    });
+
     // Phase 1 — every ceiling, before the first irreversible act. A batch that
     // was going to refuse refuses with nothing sent.
-    for (const message of messages) {
+    for (const message of dialable) {
       const verdict = await limiter.consume({ address: message.toE164, kind: 'document-request' });
       if (!verdict.allowed) {
         throw refusal('a recipient is over the per-number send ceiling — try again later');
@@ -73,7 +85,7 @@ export class AwsSmsSender implements SmsSender {
 
     // Phase 2 + 3 — send, then record onto the exact-text audit surfaces.
     const sent: SentSms[] = [];
-    for (const message of messages) {
+    for (const message of dialable) {
       let messageId: string;
       try {
         ({ messageId } = await transport.sendText(message.toE164, message.body));

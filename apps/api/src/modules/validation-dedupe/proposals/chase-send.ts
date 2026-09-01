@@ -129,9 +129,11 @@ export function chaseSendExecutor(sender: SmsSender): ProposalExecutor<'chase.se
           }
         }
 
-        if (message.recipientE164 == null) {
-          // The compose seam guarantees a recipient; a pre-seam payload without
-          // one has nowhere to send and refuses rather than inventing a number.
+        if (message.recipientE164 == null && message.recipientEmail == null) {
+          // The compose seam guarantees a reachable CHANNEL — a mobile or an
+          // email (2 Sep 2026; intake makes the mobile optional and the live
+          // transport is email). A payload with neither has nowhere to send
+          // and refuses rather than inventing a destination.
           throw new ProposalExecutionRefused('chase.send', 'a message names no recipient');
         }
         const now = new Date();
@@ -169,7 +171,7 @@ export function chaseSendExecutor(sender: SmsSender): ProposalExecutor<'chase.se
             chaseId: chase.id,
             channel: 'sms',
             body: message.body,
-            recipientE164: message.recipientE164,
+            recipientE164: message.recipientE164 ?? null,
           },
           select: { id: true },
         });
@@ -179,7 +181,7 @@ export function chaseSendExecutor(sender: SmsSender): ProposalExecutor<'chase.se
           businessId,
           chaseId: chase.id,
           chaseMessageId: chaseMessage.id,
-          toE164: message.recipientE164,
+          toE164: message.recipientE164 ?? null,
           body: message.body,
         });
       }

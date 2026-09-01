@@ -347,8 +347,16 @@ of the two, the compose seam refuses both/neither) becomes a chase with
 itemCount stays honest at 1, no schema change). `composeStatementRequestSms`
 is the pure copy ("we're missing your bank statement for July 2026"); the
 compose seam stamps `businessId` from the PROPOSAL's anchor and resolves the
-PRIMARY contact when the caller names none (D45 — recipientE164 now defaults
-from the contact's registered mobile; no reachable recipient refuses).
+PRIMARY contact when the caller names none (D45 — recipientE164 defaults from
+the contact's registered mobile). ⚠ **A reachable recipient means a mobile OR
+an email since 2 Sep 2026** — intake makes the mobile optional and the live
+transport is email, so requiring an E164 at compose refused a statement request
+for every email-only contact (found on the first real walkthrough; Sparkle
+Cleaning's contact had no mobile). `recipientE164` is omitted when absent
+(never null — the stored payload re-parses against the generated schema),
+`OutboundSms.toE164` is `string | null`, and the two SMS-only transports
+(demo, aws) refuse a null loudly at THEIR seam, where "cannot deliver" is
+true; the email transport never read it.
 `statementCoversPeriod` is the ONE received/coverage predicate, and
 `closeStatementRequestChases` runs INSIDE the statement lane's ingest
 transaction (banking-matching imports this seam) — a statement that imports
