@@ -2,6 +2,7 @@ import { ReactNode, useEffect, useRef } from 'react';
 import { Mic, Paperclip } from 'lucide-react';
 import { defineMessages, useIntl } from 'react-intl';
 import { IntentRenderer } from './DynamicComponents/IntentRenderer';
+import { ChatDisplayBlocks } from './DynamicComponents/ChatDisplayBlocks';
 import { AssistantMetaLine, AssistantPending } from './DynamicComponents/AssistantActivity';
 import { useAppContext } from '../context/AppContext';
 import { motion } from 'motion/react';
@@ -76,6 +77,10 @@ export function ChatArea() {
                 </span>
               ))}
             </div>
+          )}
+
+          {msg.role === 'assistant' && msg.display !== undefined && msg.display.length > 0 && (
+            <ChatDisplayBlocks blocks={msg.display} />
           )}
 
           {msg.role === 'assistant' && <IntentRenderer message={msg} />}

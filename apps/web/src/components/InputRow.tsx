@@ -13,7 +13,7 @@ import { TypedPlaceholder } from './DynamicComponents/TypedPlaceholder';
 import { DocumentFormats, VoiceIcon } from './DynamicComponents/InputAffordances';
 import { ChatDropOverlay, ChatUploadClientPicker, useChatUpload } from './ChatUpload';
 import { defineMessages, useIntl } from 'react-intl';
-import type { AssistantMeta, Intent, MessagePayload } from '../lib/types';
+import type { AssistantMeta, Intent, Message, MessagePayload } from '../lib/types';
 
 const m = defineMessages({
   listeningPlaceholder: {
@@ -218,6 +218,7 @@ export function InputRow() {
       // that (§9.5).
       let livePayload: Partial<MessagePayload> = {};
       let meta: AssistantMeta | undefined;
+      let display: Message['display'];
       if (API_ENABLED && session.status === 'authenticated') {
         // The attached client, as a SERVER id — live rows key on `biz_*` and the
         // synthetic client ids can never match one (the S14 id bridge).
@@ -248,6 +249,9 @@ export function InputRow() {
           intent = SERVER_INTENT_TO_APP[turn.intent] as Intent;
           response = turn.reply;
           livePayload = mapTurnToPayload(turn, businesses, userMessage);
+          // Server-composed illustrations of a grounded answer — rendered by
+          // ChatDisplayBlocks, values never invented in the browser (§9.4).
+          display = turn.display;
           meta = {
             model: turn.usage.model,
             tier: turn.usage.tier,
@@ -312,6 +316,7 @@ export function InputRow() {
         // Only when a model actually answered. An undefined meta is the honest
         // statement that this reply came from somewhere else.
         ...(meta === undefined ? {} : { meta }),
+        ...(display === undefined ? {} : { display }),
       });
     } finally {
       // Belt to the explicit clear above: whatever happened, the transcript

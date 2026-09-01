@@ -3329,6 +3329,60 @@ components:
             the same doctrine as `documentQuery`, and nothing is created until
             the form itself is submitted through `POST /businesses`.
 
+    ChatDisplayBlock:
+      type: object
+      required: [kind, title]
+      description: |
+        One display block the SERVER composed from the same RLS-scoped records
+        that ground `reply` (§9.4). The model requests only a shape — a kind
+        and a subject — and every value here is filled server-side from real
+        rows, so there is no path for a model-invented figure to reach a cell.
+        A `table` carries `columns` + `rows`; a `barChart` carries `bars`; the
+        other shape's fields are absent, and a renderer ignores what its kind
+        does not use. Bars carry COUNTS only — never money — because a chart
+        of summed money is on the road to the financial statement §9.4 forbids
+        this surface from assembling.
+      properties:
+        kind:
+          type: string
+          enum: [table, barChart]
+        title:
+          type: string
+          maxLength: 120
+        columns:
+          type: array
+          maxItems: 8
+          items:
+            type: object
+            required: [name, cellType]
+            properties:
+              name: { type: string, maxLength: 40 }
+              cellType:
+                type: string
+                enum: [text, pence, date, count]
+                description: |
+                  How a cell in this column renders. Every cell travels as a
+                  string: a `pence` cell carries signed integer pence as
+                  decimal digits and the client's one money boundary turns
+                  them into pounds; a `date` cell carries the ISO calendar
+                  date; an empty string is "unknown" and renders as such.
+        rows:
+          type: array
+          maxItems: 40
+          items:
+            type: array
+            maxItems: 8
+            items: { type: string, maxLength: 200 }
+        bars:
+          type: array
+          maxItems: 12
+          items:
+            type: object
+            required: [label, count]
+            properties:
+              label: { type: string, maxLength: 60 }
+              count: { type: integer, minimum: 0 }
+
     ChatRecordReference:
       type: object
       required: [type, id, label]
@@ -3404,6 +3458,16 @@ components:
         references:
           type: array
           items: { $ref: '#/components/schemas/ChatRecordReference' }
+        display:
+          type: array
+          maxItems: 4
+          items: { $ref: '#/components/schemas/ChatDisplayBlock' }
+          description: |
+            Present when the answer is better shown than said — a table or a
+            bar chart beside the words. The model chose the SHAPE; the server
+            filled every value from the same records `references` cites (see
+            ChatDisplayBlock). Optional and absent on every turn that predates
+            it, so nothing existing changes.
         usage: { $ref: '#/components/schemas/ChatUsage' }
         modelVersion:
           type: string

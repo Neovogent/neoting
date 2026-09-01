@@ -1,0 +1,31 @@
+{
+  "key": "8071f8c41c658c52",
+  "recordedAt": "2026-09-01",
+  "modelId": "anthropic.claude-opus-4-6-v1",
+  "synthetic": true,
+  "description": "chat · first answer fails the schema, §9.2 retry corrects it (SYNTHETIC by design)",
+  "response": {
+    "stop_reason": "tool_use",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_REDACTED",
+        "name": "respond",
+        "input": {
+          "intent": "LIVE_RULE",
+          "reply": "I have parsed that into a rule. It activates only after you review and approve it.",
+          "rule": {
+            "supplier": "Bidfood",
+            "categoryCode": "COST_OF_SALES_FOOD"
+          }
+        }
+      }
+    ],
+    "usage": {
+      "input_tokens": 2811,
+      "output_tokens": 73,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0
+    }
+  }
+}
