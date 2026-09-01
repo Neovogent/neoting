@@ -18,7 +18,7 @@ import type { IntlShape, MessageDescriptor } from 'react-intl';
 import { OTP_LENGTH } from '../../api/onboarding';
 import type { BusinessPortalHome } from '../../api/onboarding';
 import { useAppContext } from '../../context/AppContext';
-import { navigate, useQueryParam } from '../../lib/router';
+import { linkProps, navigate, useQueryParam } from '../../lib/router';
 import { PrivacyNoticeLink } from '../legal/PrivacyNoticeLink';
 import { useOnboardingJourney } from './useOnboardingJourney';
 import type { OnboardingJourney, SubscribeOutcome } from './useOnboardingJourney';
@@ -149,8 +149,16 @@ const m = defineMessages({
   checkoutSuccessDetail: {
     id: 'portal.onboarding.checkoutSuccessDetail',
     defaultMessage:
-      'Stripe is confirming your payment, and your subscription becomes active the moment it does — your accountant can see it from their side. Your VAT invoice comes from Stripe by email. You can close this page.',
+      'Stripe is confirming your payment, and your subscription becomes active the moment it does — your accountant can see it from their side. Your VAT invoice comes from Stripe by email.',
   },
+  /**
+   * 2 Sep 2026 — the screen used to end at "You can close this page", which
+   * was a dead end: the session died with the Stripe redirect (deliberate),
+   * but a client who has just paid wants their portal, and the honest next
+   * step is to sign in again, not to leave. The link claims nothing about the
+   * payment — the portal's own sign-in and subscription state do the talking.
+   */
+  checkoutSuccessAction: { id: 'portal.onboarding.checkoutSuccessAction', defaultMessage: 'Sign in to your portal' },
   checkoutCancelledTitle: { id: 'portal.onboarding.checkoutCancelledTitle', defaultMessage: 'Checkout cancelled' },
   checkoutCancelledDetail: {
     id: 'portal.onboarding.checkoutCancelledDetail',
@@ -233,6 +241,12 @@ export function BusinessOnboardingView() {
       <Shell title={intl.formatMessage(m.checkoutSuccessTitle)}>
         <OutcomeBadge good />
         <p className="text-[14px] text-zinc-400 leading-relaxed">{intl.formatMessage(m.checkoutSuccessDetail)}</p>
+        <a
+          {...linkProps('/portal')}
+          className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-[14px] font-bold text-brand-on bg-brand hover:bg-brand-hover transition-colors shadow-glow-cta"
+        >
+          {intl.formatMessage(m.checkoutSuccessAction)}
+        </a>
       </Shell>
     );
   }
