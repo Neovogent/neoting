@@ -1745,14 +1745,200 @@ current slug `https://central.xero.com/s/article/View-a-document-s-audit-trail-i
 - Visible to anyone who can open the document; explicit audit-visibility rules
   are **not documented**.
 
-### 8.3 Xero Files — almost entirely unverifiable
+### 8.3 Xero Files — **now verified** (was: "almost entirely unverifiable")
 
-**Honest position: Xero Files' UI behaviour could not be verified at all.** The
-article `https://central.xero.com/s/article/Delete-a-file-or-folder-from-Xero`
-exists (slug confirmed via the Wayback CDX index) but every capture is an empty
-JavaScript shell.
+> **⚠ THIS SECTION'S HEADLINE CLAIM IS WITHDRAWN — 2026-09-03.** The paragraph
+> below used to read: *"Honest position: Xero Files' UI behaviour could not be
+> verified at all. The article
+> `https://central.xero.com/s/article/Delete-a-file-or-folder-from-Xero` exists
+> (slug confirmed via the Wayback CDX index) but every capture is an empty
+> JavaScript shell."*
+>
+> **Both halves of that are now wrong.**
+>
+> 1. **The UI behaviour is verified.** Xero Central renders completely under
+>    **headless Chrome** (Playwright driving the system Chrome; see Appendix B).
+>    The article body — including collapsed accordion sections and their warning
+>    banners — is present in the DOM and readable via `textContent` without even
+>    clicking to expand.
+> 2. **That slug does not exist.** `Delete-a-file-or-folder-from-Xero` is
+>    **absent from Xero Central's own sitemap** (3,121 article URLs, see
+>    Appendix B) and requesting it **bounces to the Xero login page**, which is
+>    what Xero Central does for any unknown slug. The real article is
+>    **[`Manage-your-file-library`](https://central.xero.com/s/article/Manage-your-file-library)**,
+>    titled *"Organise your file library"*, with **Delete a file or folder** as
+>    one of its collapsed sections.
+>
+> Anyone who acted on the old paragraph and concluded "Xero Files cannot be
+> researched" should re-read §8.3.1–§8.3.4 below.
 
-What *is* verifiable comes from the public API specification
+#### 8.3.1 Xero Files delete: hard, bulk-capable, and it silently detaches transactions
+
+**The on-screen warning, verbatim.** It is a Warning banner at the head of the
+*Delete a file or folder* section of
+[Manage-your-file-library](https://central.xero.com/s/article/Manage-your-file-library):
+
+> **"Deleting a file from the file library removes the file from all transactions
+> it's attached to. We can't retrieve deleted files. To use a deleted file, you
+> need to upload it again."**
+
+Read that slowly, because it settles three separate questions at once:
+
+- **Hard delete.** "We can't retrieve deleted files." No qualifier, no window, no
+  support-request escape hatch of the kind AutoEntry offers for bank statements.
+- **No trash and no restore.** The article documents no Trash, no Recycle bin, no
+  Deleted folder and no Restore action anywhere in the file library. The library
+  has exactly two locations — **Inbox** and **Archive** (with folders) — and
+  *Archive here means "attached to something", not "deleted"*. **This confirms
+  what §8.3's API-only analysis could previously only call "consistent with hard
+  delete": the Files API has no restore endpoint because the product has no
+  restore.** The inference was right; it is now evidence.
+- **Deleting a library file cascades a detach onto every transaction using it.**
+  This is the most important sentence in the whole comparator research. Xero
+  models the attachment as a *reference to a library file*, so destroying the
+  file destroys the evidence on every bill, invoice and receipt that pointed at
+  it — and the only warning is one line of banner text on a collapsed accordion
+  section. **There is no listing of which transactions will be affected, no
+  count, and no block.** Not verified whether any confirmation dialog follows the
+  Delete click; the article shows none.
+
+**Bulk delete exists, and it is frictionless.** "Select the checkbox next to
+**each file** you want to delete. Click **Delete**."
+([Manage-your-file-library](https://central.xero.com/s/article/Manage-your-file-library))
+So of the four products, **Xero Files has the loosest delete of all**: hard,
+bulk, cascading, unrecoverable, no reason captured, no intermediate state.
+Compare AutoEntry, which for a far less consequential object insists on
+Unpublish → Reject-with-reason → delete one at a time.
+
+**Folder deletion is better designed than file deletion.** Deleting a folder
+prompts: "(Optional) If there are files in the folder, choose to either **delete
+them or move them to the Archive**, then click Delete." That is the
+delete-a-container-without-cascading choice done properly — the same instinct as
+Dext's expense-claim delete (§1.2b) — and it makes the unguarded single-file
+delete look like an oversight rather than a philosophy.
+
+**One object is protected: the Contracts folder.** "You can rename any folder in
+the archive, **except the Contracts folders**" and "You can delete any folder in
+the archive, **except the Contracts folder**." A single system folder is
+undeletable. **No document-level protection of any kind is documented.**
+
+**Mobile delete differs by platform and is worth noting for terminology
+discipline**: on iOS the verb is **Remove** (Options → Remove), on Android it is
+**Delete** with a confirm, and Android additionally supports **multi-select via
+tap-and-hold** then a delete icon and a confirm
+([Manage-your-file-library](https://central.xero.com/s/article/Manage-your-file-library)).
+**Whether iOS "Remove" is the same operation as web "Delete": not verified** —
+the article does not say, and the word choice is exactly the kind of ambiguity
+Neoting's glossary exists to prevent.
+
+#### 8.3.2 What blocks deletion in Xero Files: roles do, and nothing else does
+
+**The role matrix is published in full** — this is the single best-documented
+permission surface in any of the four products
+([User-role-access-to-files-in-Xero](https://central.xero.com/s/article/User-role-access-to-files-in-Xero)):
+
+| Capability | Administrator | Standard | Sales and purchases | Upload only | Viewer |
+|---|---|---|---|---|---|
+| File library — view, **add and remove files** | ✔ | ✔ | – | ✔ ** | – |
+| File library — view, **add and remove folders** | ✔ | ✔ | – | – | – |
+| Add or remove files for transactions/items you can access | ✔ | ✔ | ✔ * | – | – |
+| View or download files for transactions/items you can access | ✔ | ✔ | ✔ | – | ✔ *** |
+
+Footnotes, verbatim from the article:
+
+- \* "Sales and purchases users can add files from the **file library inbox**,
+  including those others have added. Sales and purchases users **can't access any
+  other folders** in the file library."
+- \*\* "**Upload only users can only upload files to the file library and view
+  their own files. Upload only users can't delete, archive, or move any files.**"
+- \*\*\* "Viewer users can only view or download files attached to **spend or
+  receive money transactions in the account transactions tab of a bank account**,
+  not in the individual transaction."
+
+**So the roles blocked from deleting library files are: Sales-and-purchases,
+Upload-only and Viewer.** Only **Administrator** and **Standard** may delete
+files; only those two may delete folders. The article also states the rule
+positively in the file-library overview: "You need the **administrator or
+standard** user role to manage files in the file library."
+
+**Upload-only is the interesting role** and Neoting should steal it outright: a
+principal that can *put documents in* and *see only its own*, and can neither
+delete, archive nor move anything. That is precisely the shape of a client
+uploading receipts into a practice's workspace, and none of Dext, AutoEntry or
+Hubdoc documents an equivalent.
+
+**What does NOT block deletion — all newly checked, all negative:**
+
+- **Lock dates do not block file deletion.** Xero has a well-known lock-date
+  concept, but it is documented against *transactions*, and neither the file
+  library article nor the transaction-files article mentions a lock date, a
+  closed period or a locked financial year as a barrier to deleting a file.
+  **Not verified as a block — and the delete warning's unconditional wording
+  ("removes the file from all transactions it's attached to") implies there is
+  none.** Flagged as an inference, not a fact.
+- **Reconciliation status does not block file deletion.** Not mentioned in any
+  Files article. **Not verified.**
+- **Approval status does not block file deletion.** Xero Central's bill-approval
+  article (`Understand-bill-approval-workflows`) is **`Disallow`ed in
+  central.xero.com/robots.txt and was therefore not fetched**, so approval
+  interactions with file deletion remain **not verified** and were deliberately
+  left unresearched rather than guessed.
+
+#### 8.3.3 Xero Files preview and viewer
+
+- **Side-by-side preview is confirmed and named as such.** Verbatim from the
+  file-library overview: "**Preview files using the side-by-side view.**"
+  ([Manage-your-file-library](https://central.xero.com/s/article/Manage-your-file-library))
+  So Xero Files matches Dext on the one layout property that matters most.
+- **Download**: a **download icon** on the opened file saves the original to the
+  computer; on iOS it is Options → Share → Save to Files, on Android Options →
+  Share → choose an app. **Download-as-PDF as a distinct option from
+  download-original: not verified** — Xero Files stores and returns the file you
+  uploaded, and no conversion is documented. This is the opposite of AutoEntry,
+  which offers PDF-only from the viewer and hides the original on another screen
+  (§8.1).
+- **Zoom, rotate, multi-page navigation, next/previous document, keyboard
+  shortcuts: not verified.** The Files articles document none of these. Note the
+  contrast with **Hubdoc**, whose viewer article explicitly lists zoom, rotate
+  and pan (§8.2.1) — within the same vendor, the Hubdoc viewer is better
+  documented than the Xero Files one.
+
+#### 8.3.4 Structure, and what Xero Files is actually for
+
+The file library is **not a document-processing queue**; it is an attachment
+store, and its two-location model reflects that
+([Manage-your-file-library](https://central.xero.com/s/article/Manage-your-file-library)):
+
+- **Inbox** — "Upload or email files directly to the inbox, then attach them to
+  transactions, items and emails in Xero."
+- **Archive** — "**Once a file is attached to a transaction, it's moved and
+  stored in the archive.**" It "contains a **Contracts** folder, and you can add
+  and manage any additional folders you need."
+- Files move between the two by checkbox + **Archive to** / **Move to**, or by
+  **drag and drop**.
+
+**The critical translation for the implementation team**: in Xero Files,
+**Archive is the state meaning "in use"** — a file lands there *because* it got
+attached to a transaction. In Dext, Archive means "done with, published" (§5.1).
+In Hubdoc, Archived means "successfully published" (§8.2.0). **Three products,
+three incompatible meanings of the same word, and Xero's is the odd one out
+because it is the only one where Archive means the document is *live*.** Added to
+§9.3.
+
+**Renaming exists and is constrained**: files can be renamed but "you can't
+change its file extension". **Rename is not documented in Dext, AutoEntry or
+Hubdoc's web app** (Hubdoc has *Change a document file name*, so call that a
+draw). Renaming a stored document without renaming the stored object is a
+sensible split.
+
+**Split or re-run extraction: neither exists, and cannot.** Xero Files performs
+**no extraction at all** — it is storage. There is no OCR step to re-run and no
+page-splitting feature in any Files article. **This is an absence stated on the
+basis of the product's documented purpose, not a "not verified".**
+
+#### 8.3.5 What the API said, and how it holds up
+
+What *was* verifiable before this round came from the public API specification
 ([xero_files.yaml](https://raw.githubusercontent.com/XeroAPI/Xero-OpenAPI/master/xero_files.yaml)):
 
 - The Files API exposes **`deleteFile`** ("Deletes a specific file"),
@@ -1761,14 +1947,44 @@ What *is* verifiable comes from the public API specification
 - Sorting is supported by **Name, Size, CreatedDateUTC**.
 - **No file-size or storage cap appears in the spec.**
 
-The absence of a restore endpoint is **consistent with hard delete at the API
+~~The absence of a restore endpoint is **consistent with hard delete at the API
 level, but it is not proof of the UI's behaviour** — a product can perfectly well
 have a UI trash that the API does not expose. Do not cite "Xero Files hard
-deletes" as fact.
+deletes" as fact.~~
 
-Also **not verified**: Xero Files search/filter/sort UI, per-plan storage limits
-(the marketing page https://www.xero.com/us/accounting-software/manage-files/ is
-a 404), viewer capabilities, and any audit trail.
+**⚠ SUPERSEDED 2026-09-03 — you may now cite it as fact.** The UI article says
+"**We can't retrieve deleted files**" (§8.3.1). API and UI agree: **Xero Files
+hard-deletes, with no trash and no restore.** The API's shape was a correct
+signal, and the cautious reading above was the right call *at the time* — it is
+recorded here because the reasoning pattern (absence in an API is weak evidence
+about a UI) remains sound even though this particular instance resolved in its
+favour.
+
+Two API facts also gain meaning now that the UI is known:
+
+- **`deleteFileAssociation` exists as a separate endpoint from `deleteFile`.**
+  So the API *can* express "detach this file from this transaction without
+  destroying the file" — the very operation the UI's delete button does **not**
+  offer. **The safe operation exists at the API layer and is missing from the
+  screen.** That is worth copying in reverse: Neoting should surface *detach*
+  next to *delete* wherever a document is attached to something.
+- Sorting by **Name, Size, CreatedDateUTC** in the API, and **no file-size or
+  storage cap in the spec**, remain the only evidence on those points.
+
+**Still not verified for Xero Files after this round**, and now for stated
+reasons rather than for want of a fetcher:
+
+- **Search / filter / sort in the file-library UI** — no Files article describes
+  a search box, filter panel or sort control. The API sorts; the UI is silent.
+- **Per-plan storage limits** — the old marketing page
+  `https://www.xero.com/us/accounting-software/manage-files/` is still a 404, and
+  Xero's current *Store files* page carries no figure.
+- **Any audit trail on a file** — no Files article documents who uploaded a file,
+  when, or who deleted it. **Given that deletion is hard and cascades onto
+  transactions, the absence of a documented file audit trail is the sharpest gap
+  in the whole comparator set** (see §10.4).
+- **Confirmation dialogs**, **duplicate detection**, **notes/tags on files**,
+  and **any recovery path whatsoever**.
 
 ### 8.4 Comparison at a glance
 
