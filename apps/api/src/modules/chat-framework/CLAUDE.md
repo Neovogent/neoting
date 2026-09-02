@@ -223,10 +223,35 @@ a **capability lie** as a field-level miss — #233 was a defensible-looking int
 wrapped around a sentence that sent the user off the product, so the sentence
 needs its own assertion.
 
+## ⚠ Trash is excluded from all three document reads (3 Sep 2026)
+
+Soft delete (`documents.deleted_at`) landed with this module fenced off, so
+every document read here served Trash. All three now spread `notDeleted()` from
+`common/documents/deleted-documents.ts` — the one place "deleted" is spelled,
+never an inline `deletedAt: null`.
+
+⚠ **`archivedAt: null` was already in each of those `where`s and excludes none
+of Trash.** They are different columns: a document can be deleted having never
+been archived, which is the ordinary case. Two clauses, not one.
+
+| File | What was leaking |
+|---|---|
+| `suggestions.service.ts` (`readPracticeState`) | the counts behind the chips and the prompt's practice state — a deleted document offered the accountant a job that no longer exists, and the chip is the thing they click |
+| `grounding.ts` (`retrieveRecords`) | the answer's own evidence. A trashed row here is not merely present, it gets **cited**: the model answers about "the £420 Amazon invoice" with a record id attached to make it credible. It also costs a `RETRIEVAL_LIMIT` slot, crowding out a live row the question may have been about |
+| `display.ts` (`composeDisplay`) | worse in a **chart** than the row count suggests — "Documents by state" is a tally, so a deleted document does not appear as a row a reader could dismiss, it silently inflates a bar |
+
+`chase/detection.ts` reads `bankTransaction.matchState` and never `documents`;
+there was nothing to do there.
+
+The unit tests record the `where` rather than filtering rows by it, deliberately:
+Postgres applies the predicate, and the only thing this layer decides is what the
+predicate says. A fake that re-implemented the matching would stand in for the
+query it is meant to be measuring and pass whatever it was asked.
+
 ## Tests
 
 ```bash
-pnpm --filter @neoting/api test -- chat-framework   # 89 unit tests, no socket, no DB
+pnpm --filter @neoting/api test -- chat-framework   # 94 unit tests, no socket, no DB
 EVAL_PROVIDER=bedrock pnpm test:eval                # the §9.8 gate, needs AWS creds
 ```
 

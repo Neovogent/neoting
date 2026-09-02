@@ -111,3 +111,46 @@ describe('composeDisplay — the empty subject', () => {
     expect(await composeDisplay(db({}), 'biz_1', { kind: 'table', subject: 'chases' })).toBeNull();
   });
 });
+
+/**
+ * ⚠ **Trash is not in a display block** (soft delete, `documents.deleted_at`,
+ * 2 Sep 2026).
+ *
+ * It matters more in a CHART than the row count suggests. A table at least
+ * shows the reader a row they could question; "Documents by state" is a
+ * **tally**, so a deleted document does not appear as anything — it silently
+ * inflates a bar, and the picture disagrees with the documents list on the same
+ * screen with nothing visible to explain the difference.
+ *
+ * The double records the `where` rather than applying it, the discipline the
+ * rest of this file uses: the rows are the (RLS-scoped) client's answer, and
+ * what this layer decides is only what it asked for.
+ */
+describe('composeDisplay — Trash', () => {
+  const recordingDb = (calls: unknown[]) =>
+    ({
+      document: {
+        findMany: async (args: { where: unknown }) => {
+          calls.push(args.where);
+          return DOCS;
+        },
+      },
+      bankTransaction: { findMany: async () => [] },
+      chase: { findMany: async () => [] },
+    }) as unknown as ScopedClient;
+
+  test('⚠ a documents table asks for deletedAt: null alongside archivedAt: null', async () => {
+    const calls: unknown[] = [];
+    await composeDisplay(recordingDb(calls), 'biz_1', { kind: 'table', subject: 'documents' });
+
+    // Two different columns. `archivedAt: null` excludes none of Trash.
+    expect(calls[0]).toEqual({ businessId: 'biz_1', archivedAt: null, deletedAt: null });
+  });
+
+  test('⚠ the bar chart is the SAME query, so a deleted document cannot inflate a bar', async () => {
+    const calls: unknown[] = [];
+    await composeDisplay(recordingDb(calls), 'biz_1', { kind: 'barChart', subject: 'documents' });
+
+    expect(calls[0]).toEqual({ businessId: 'biz_1', archivedAt: null, deletedAt: null });
+  });
+});

@@ -175,3 +175,45 @@ describe('untrusted wrapping of retrieved values (Governance §9.6)', () => {
     expect(wrapped.split('<untrusted_content>')).toHaveLength(2);
   });
 });
+
+/**
+ * ⚠ **A deleted document must not be citable** (soft delete,
+ * `documents.deleted_at`, 2 Sep 2026).
+ *
+ * This retrieval window IS the evidence an answer stands on: `verifyCitations`
+ * above will happily resolve any id that appears in it, and §9.4 then renders
+ * the answer as grounded. So a document in Trash reaching this list does not
+ * merely appear somewhere — it gets CITED, and the assistant tells an
+ * accountant about "the £420 Amazon invoice" with a record id attached to make
+ * it credible, for a document their own firm removed.
+ *
+ * The second cost is the window itself. `RETRIEVAL_LIMIT` is a fixed cap (§9.5
+ * caps token spend per turn, and an unbounded retrieval on a chat turn is the
+ * cost bug that ships quietly), so every trashed row that survives the
+ * predicate displaces a live one the question may actually have been about.
+ *
+ * The double records the `where` rather than applying it: Postgres applies the
+ * predicate, and what this layer decides is what the predicate says.
+ */
+describe('the retrieval window excludes Trash', () => {
+  test('⚠ documents are filtered by deletedAt as well as archivedAt — they are different columns', async () => {
+    const calls: unknown[] = [];
+    const db = {
+      document: {
+        findMany: async (args: { where: unknown }) => {
+          calls.push(args.where);
+          return [];
+        },
+      },
+      bankTransaction: { findMany: async () => [] },
+      chase: { findMany: async () => [] },
+      statement: { findMany: async () => [] },
+    } as unknown as ScopedClient;
+
+    await retrieveRecords(db, 'biz_1');
+
+    // `archivedAt: null` was already here and excludes none of Trash: a
+    // document can be deleted having never been archived.
+    expect(calls[0]).toEqual({ businessId: 'biz_1', archivedAt: null, deletedAt: null });
+  });
+});

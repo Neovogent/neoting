@@ -571,3 +571,127 @@ describe('readStoredLines — the smuggled lineItems key, parsed not trusted', (
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Trash — soft delete (`documents.deleted_at`, 2 Sep 2026)
+// ---------------------------------------------------------------------------
+
+/**
+ * ⚠ **A deleted document does not teach the coding engine, and the exclusion is
+ * RETROACTIVE.**
+ *
+ * The retroactivity is the decision worth recording, because the aggressive
+ * reading is the one that shipped: a document deleted last month stops being
+ * evidence *today*, rather than the coding it contributed being grandfathered
+ * in. Four reasons, in the order they settle it:
+ *
+ * 1. **`archivedAt: null` was already in that `where`.** Archiving is the
+ *    WEAKER act — a duplicate set aside, still in the client's file — and it has
+ *    always retracted evidence retroactively. Two opposite answers to "does
+ *    housekeeping reach backwards" in one predicate would be indefensible
+ *    whichever way each was argued alone.
+ * 2. **Deletion is very often the correction itself.** The documents that get
+ *    deleted are the misfiled, the wrong client's, the duplicate coded to the
+ *    wrong account. Grandfathering keeps exactly the evidence a practice deleted
+ *    in order to be rid of — which is the case this suite builds.
+ * 3. **This is a RECOMMENDATION, not the audit trail.** `document_events` and
+ *    `audit_events` still hold every coding decision that was made and are
+ *    untouched. What `loadHistory` feeds is a claim about the NEXT document, and
+ *    a forward-looking claim may only rest on the file as it stands now.
+ * 4. **It reaches further than one screen.** `history.entries.length` is the
+ *    `times` a supplier RULE proposal counts, and a rule outlives the document
+ *    that argued for it.
+ */
+describe('Trash is not coding evidence', () => {
+  interface TrashableDocument extends DocumentRow {
+    readonly deletedAt: Date | null;
+  }
+
+  let lastWhere: Record<string, unknown> = {};
+
+  /**
+   * ⚠ This double applies exactly ONE clause — `deletedAt` — and applies it only
+   * because that clause is the thing under test. It is deliberately not a
+   * general `where` interpreter: a fake that re-implemented the whole predicate
+   * would be standing in for the query it is meant to be measuring and would
+   * pass whatever it was asked. Everything else (`businessId`, `archivedAt`,
+   * the two `not: null` clauses) is Postgres's job and is proven in
+   * `rules-suggestions.integration.test.ts`.
+   */
+  const trashWorld = (documents: readonly TrashableDocument[]): ScopedClient =>
+    ({
+      business: { findUnique: async () => ({ id: 'biz_1', contextQuestionnaire: CLEANING_AGENCY }) },
+      integration: { findFirst: async () => null },
+      referenceSync: { findUnique: async () => null },
+      rule: { findMany: async () => [] },
+      document: {
+        findMany: async (args: { where: Record<string, unknown> }) => {
+          lastWhere = args.where;
+          return args.where['deletedAt'] === null ? documents.filter((row) => row.deletedAt === null) : documents;
+        },
+      },
+    }) as unknown as ScopedClient;
+
+  const trashed = (over: Partial<DocumentRow> & { id: string }): TrashableDocument => ({
+    ...doc(over),
+    deletedAt: new Date('2026-08-20T00:00:00.000Z'),
+  });
+  const live = (over: Partial<DocumentRow> & { id: string }): TrashableDocument => ({
+    ...doc(over),
+    deletedAt: null,
+  });
+
+  test('⚠ the history query asks for deletedAt: null beside archivedAt: null — different columns', async () => {
+    await service().decide(trashWorld([live({ id: 'd_live' })]), 'biz_1', 'Nisbets Ltd');
+
+    // `archivedAt: null` excludes none of Trash: a document can be deleted
+    // having never been archived, which is the ordinary case.
+    expect(lastWhere['archivedAt']).toBeNull();
+    expect(lastWhere['deletedAt']).toBeNull();
+  });
+
+  /**
+   * The shape this actually protects against, told as the story it is: two
+   * Nisbets receipts were miscoded to OFFICE_COSTS and the practice DELETED
+   * them; one correct coding to consumables remains. If Trash still taught the
+   * engine, the client would look like they had coded this supplier two
+   * different ways — so the engine would decline to answer at all, and go on
+   * declining, on the strength of the very rows the firm removed to fix it.
+   */
+  test('⚠ a coding on a DELETED document does not compete with the live one', async () => {
+    const { decision, history } = await service().decide(
+      trashWorld([
+        live({ id: 'd_live' }),
+        trashed({ id: 'd_trash_1', categoryCode: 'OFFICE_COSTS', extractions: humanCoded('OFFICE_COSTS') }),
+        trashed({ id: 'd_trash_2', categoryCode: 'OFFICE_COSTS', extractions: humanCoded('OFFICE_COSTS') }),
+      ]),
+      'biz_1',
+      'Nisbets Ltd',
+    );
+
+    // One surviving coding, so the client HAS a consistent prior treatment.
+    expect(history.entries.map((entry) => entry.documentId)).toEqual(['d_live']);
+    expect(history.categoryCodes).toEqual(['COS_MATERIALS_AND_CONSUMABLES']);
+
+    expect(decision.outcome).toBe('CODE');
+    if (decision.outcome !== 'CODE') return;
+    expect(decision.authority).toBe('LEARNED_HISTORY');
+    expect(decision.categoryCode).toBe('COS_MATERIALS_AND_CONSUMABLES');
+  });
+
+  test('the count a reason and a rule proposal read is the LIVE count, not the trashed one', async () => {
+    const { decision, history } = await service().decide(
+      trashWorld([live({ id: 'd_live' }), trashed({ id: 'd_trash_1' }), trashed({ id: 'd_trash_2' })]),
+      'biz_1',
+      'Nisbets Ltd',
+    );
+
+    // All three agree on the category here, so the ladder answers either way —
+    // what moves is the STRENGTH. `history.entries.length` is the `times`
+    // `buildSupplierRuleProposal` counts towards its threshold, so trashed
+    // evidence could otherwise carry a standing rule over the line.
+    expect(history.entries).toHaveLength(1);
+    expect(decision.outcome === 'CODE' && decision.reason).toContain('once');
+    expect(decision.outcome === 'CODE' && decision.reason).not.toContain('3 times');
+  });
+});

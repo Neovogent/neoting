@@ -449,6 +449,50 @@ silences, and that the aggregate's `where` carries the export's own clauses) and
 in `api/exports.integration.test.ts` — which also proves the reported dates are a
 period that **actually works**, and that the count cannot cross a practice.
 
+## ⚠ Trash cannot enter an export selection (3 Sep 2026)
+
+Soft delete (`documents.deleted_at`) landed with this module fenced off.
+`publishedWhere()` now spreads `notDeleted()` from
+`common/documents/deleted-documents.ts` — the one place "deleted" is spelled,
+never an inline `deletedAt: null`.
+
+⚠ **`state: 'PUBLISHED'` does not save this query.** Deletion is a **timestamp,
+not a `DocumentState`**, so a Published document keeps its state when it is
+deleted and would otherwise walk straight into a file an accountant hands to a
+client.
+
+**The predicate belongs in `publishedWhere()` and not in `selectDocuments`, and
+that is the whole reason that function exists.** Two callers read it and they
+must count the same set:
+
+- `selectDocuments` — the export's actual selection.
+- `publishedOutsidePeriod` — the `NT-EXP-001` diagnostic's count **and** its
+  `_min`/`_max` period-widening bounds.
+
+Filtering only the selection would have made this the worse bug rather than
+fixing one: the refusal would say *"there are 3 Published documents outside that
+period, widen it to include them"*, the accountant would widen it exactly as
+instructed, and the export would come back empty again — with the suggested
+bounds having been read off a document that can never be selected. **A
+diagnostic that counts a set its own selection cannot reach is advice that
+cannot be followed**, which is the failure the 2 Sep "Nothing to export" work
+existed to end.
+
+`assertEveryNamedIdSurvived` inherits it too, and that is right: a caller naming
+a deleted document's id is **refused** with the existing "not exportable"
+message rather than having it silently dropped from a file that would then look
+complete (§24.3.4).
+
+⚠ **`GET /d/{code}` is deliberately NOT filtered.** D43 requires every exported
+transaction to carry a resolvable link to its source, and an accountant holding
+that URL inside their own ledger must not be affected by housekeeping they
+cannot see. Deletion is reversible and `document.purge` already refuses a
+document that appears in any export, so the link cannot outlive its target.
+
+`exports.service.test.ts` pins it as an identity — everything but the date clause
+must be common to the selection and the diagnostic — so a future clause added to
+one and not the other fails there too.
+
 ## The entry preview — `previewEntries`, and why it cannot drift (2 Sep 2026)
 
 *"Before publishing show the accountant the actual accounting entry that will be

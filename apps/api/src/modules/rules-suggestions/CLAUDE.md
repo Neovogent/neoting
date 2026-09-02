@@ -450,10 +450,54 @@ It imports `clients-team-settings/index.ts` for two pure functions
 (`readBusinessProfile`, `BusinessTypeProfile`); the dependency runs one way and
 needs no NestJS import, which is why `RulesSuggestionsModule` imports nothing.
 
+## ⚠ Trash is not coding evidence, and the exclusion is RETROACTIVE (3 Sep 2026)
+
+`loadHistory` in `coding/supplier-coding.service.ts` now spreads `notDeleted()`
+from `common/documents/deleted-documents.ts` beside its existing
+`archivedAt: null` — different columns, two clauses. Soft delete
+(`documents.deleted_at`) landed with this module fenced off, so a deleted
+document was still teaching the ladder.
+
+**The retroactivity is the decision worth recording**, because the aggressive
+reading is the one that shipped: a document deleted last month stops being
+evidence *today*, rather than the coding it contributed being grandfathered in.
+Four reasons, in the order they settle it:
+
+1. **The line above it already answered the question.** `archivedAt: null` has
+   always excluded archived documents retroactively, and archiving is the
+   **weaker** act — a duplicate set aside, still in the client's file. Two
+   opposite answers to "does housekeeping reach backwards" inside one `where`
+   would be indefensible whichever way each was argued alone.
+2. **Deletion is very often the correction itself.** The documents that get
+   deleted are the misfiled, the wrong client's, the duplicate coded to the wrong
+   account — precisely the codings that must not teach. Grandfathering would keep
+   exactly the evidence a practice deleted in order to be rid of.
+3. **This is a RECOMMENDATION, not the audit trail.** `document_events` and
+   `audit_events` still hold every coding decision that was made and are
+   untouched. What `loadHistory` feeds is a claim about the NEXT document — a
+   forward-looking claim, which may only rest on the file as it stands now.
+   Retroactivity is right for a recommendation and would be wrong for a record.
+4. **It reaches further than one screen.** `history.entries.length` is the
+   `times` `buildSupplierRuleProposal` counts towards its threshold, so trashed
+   evidence could otherwise carry a standing **rule** over the line — and a rule
+   outlives the document that argued for it. `HISTORY_WINDOW` is also finite and
+   filtered in memory, so a deleted row does not merely count, it occupies a slot
+   and can push a real prior coding out of the window.
+
+**The cost, stated honestly:** restoring a document restores its evidence, so a
+delete-and-restore can move a suggestion twice. That is the behaviour
+`archivedAt` already has, and a suggestion that tracks the current file is the
+one a reviewer can check.
+
+⚠ **`resolveForDocument`'s `findUnique` is deliberately NOT filtered.** It is the
+per-document read, the same class as `getDocument` and `listDocumentExtractions`,
+which serve a deleted document on purpose — previewing one is how a person
+decides whether to restore it. Filtering it would turn that into a 404.
+
 ## Tests
 
 ```bash
-pnpm --filter @neoting/api test -- rules-suggestions   # 196 tests: 188 offline + 8 against a real DB
+pnpm --filter @neoting/api test -- rules-suggestions   # 199 tests: 191 offline + 8 against a real DB
 ```
 
 The 85 added on 2 Sep 2026 are the suggestion rung. The five that matter most,

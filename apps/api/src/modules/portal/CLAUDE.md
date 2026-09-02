@@ -997,6 +997,51 @@ the address is the credential channel, and a setup token would add a seven-day
 expiry to a relationship that has none and put a new starter on the owner's
 onboarding journey.
 
+## ⚠ The portal excludes Trash — the list AND the summary (3 Sep 2026)
+
+Soft delete (`documents.deleted_at`) landed with `portal-documents.service.ts`
+and `portal-context.service.ts` fenced off, so **a client could see and be
+counted a document their accountant had deleted.** Both now spread
+`notDeleted()` from `common/documents/deleted-documents.ts` — the one place
+"deleted" is spelled, never an inline `deletedAt: null`.
+
+| Surface | Where | Now |
+|---|---|---|
+| `GET /portal/documents` | `whereFor()` | the deleted row is not listed |
+| `PortalSummary.documentsSent` | the `count` in `getBusinessContext` | it is not counted |
+| `PortalSummary.lastDocumentAt` | the `findFirst` beside it | it cannot date the client's last upload to a row they cannot find |
+
+**The three move together or not at all.** The failure this guards is not any
+one of them — it is two of them **disagreeing**: "41 sent" over a list of 40
+tells a client something they sent has gone missing, which is a worse lie than
+either number alone. `lastDocumentAt` is in the set for the same reason and was
+not on the original defect list; it is the same `documents` read on the same
+screen.
+
+⚠ **This is the one soft-delete surface where the reader is not the deleter.**
+An accountant with a stale count has a Trash tab to check; a client has nothing.
+And there is **no database guarantee here** — both reads run under
+`systemScopeFor` (there is no RLS branch meaning "this client's whole
+business"), so the predicate in the `where` is the entire mechanism, exactly as
+`businessId` is the entire tenancy.
+
+⚠ **`documentsSent` and `lastDocumentAt` still count ARCHIVED, which the list
+excludes.** That divergence PREDATES soft delete and is deliberately left: an
+archived document really was sent, and "how many have I sent you" is a fair
+reading of it. A deleted one is different in kind — the practice has withdrawn
+it — which is the half that had to close.
+
+`portal-trash.integration.test.ts` (prefix **`ptr_`**, disjoint from `p9_`,
+`p9u_`, `pcs_`, `ppl_`; teardown by explicit id list) proves all three against
+real Postgres, and its trashed fixture is `TO_REVIEW` rather than `ARCHIVED` on
+purpose — an archived row would pass the suite with `notDeleted()` deleted.
+
+**Deliberately still served for a deleted document, do not "fix" these:**
+`getDocument`, `getDocumentOriginal`, `listDocumentEvents`,
+`listDocumentExtractions` (previewing is how a person decides whether to
+restore) and `GET /d/{code}` (D43 — an accountant holding an exported line's URL
+must not be affected by housekeeping they cannot see).
+
 ## The client's own document list — `GET /portal/documents` (2 Sep 2026)
 
 `portal-documents.service.ts` + `portal-document-status.ts`. D49 makes the
