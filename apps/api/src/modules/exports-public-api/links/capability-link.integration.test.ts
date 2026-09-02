@@ -54,7 +54,7 @@ const STAFF_B = ScopeContextSchema.parse({ actorId: 'a8x_staffB', practiceId: PR
 
 const STUB_PUBLISHING: PublishGateway = {
   ledger: { publishBill: async () => ({ ok: true, externalRef: 'STUB', attachmentSent: false }) },
-  previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0 } }),
+  previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0, currency: null } }),
 };
 
 // chase.send composition config for tests — a real secret so signed links verify.

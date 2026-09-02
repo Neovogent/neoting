@@ -101,6 +101,34 @@ const m = defineMessages({
       'That period holds more than {cap, number} Published documents, so no file was written — a short export that looked complete would be worse. Export it a month at a time.',
   },
 
+  /**
+   * ⚠ The dead end this closes, reported from the live app: a client with one
+   * Published document dated **12 May 2025**, this screen defaulting to last
+   * month, and a refusal that said only "nothing". The accountant read it as
+   * *published, but it will not export* and concluded the feature was broken.
+   *
+   * Every fact below comes off the server's own `NT-EXP-001`
+   * (`Problem.publishedOutsidePeriod`) — the count and the dates are from the
+   * SAME scoped read the exporter runs. This screen must never compute them: a
+   * second query here could disagree with the predicate the export actually
+   * uses, and would be a second read of a client's records written by someone
+   * not looking at the exporter.
+   */
+  outsidePeriodOne: {
+    id: 'export.exportView.outsidePeriodOne',
+    defaultMessage:
+      'This client has 1 Published document, dated {earliest}. The period picks documents by their own date, not by when they were released — so a document released today but dated last year belongs to last year’s export.',
+  },
+  outsidePeriodMany: {
+    id: 'export.exportView.outsidePeriodMany',
+    defaultMessage:
+      'This client has {count, number} Published documents dated between {earliest} and {latest}. The period picks documents by their own date, not by when they were released — so a document released today but dated last year belongs to last year’s export.',
+  },
+  widenAction: {
+    id: 'export.exportView.widenAction',
+    defaultMessage: 'Use {earliest} – {latest} instead',
+  },
+
   submitVt: { id: 'export.exportView.submitVt', defaultMessage: 'Export for VT' },
   submitCsv: { id: 'export.exportView.submitCsv', defaultMessage: 'Export as CSV' },
   submitting: { id: 'export.exportView.submitting', defaultMessage: 'Building the file…' },
@@ -221,17 +249,47 @@ export function ExportView() {
   const [result, setResult] = useState<Export | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [capHit, setCapHit] = useState(false);
+  /**
+   * The server's answer to "nothing? then where ARE my documents?" — the
+   * `NT-EXP-001` extension member, carried through `NtProblemError`. Null on
+   * every other refusal, and null when the client genuinely has nothing
+   * Published, which is a different sentence and gets no hint.
+   */
+  const [outside, setOutside] = useState<NtProblemError['publishedOutsidePeriod']>(undefined);
 
   const history = useExportHistory({ enabled: liveOn && businessId !== '', businessId: businessId || undefined });
   const historyStatus = sliceStatus(liveOn && businessId !== '', history);
 
   const canSubmit = liveOn && businessId !== '' && periodStart !== '' && periodEnd !== '' && !building;
 
+  /**
+   * The refusal's dates, in the two forms the screen needs: `DD/MM/YYYY` to
+   * read, and `YYYY-MM-DD` to put back in the two date inputs.
+   *
+   * Null unless the server sent both bounds — a count with no dates means every
+   * one of those documents is undated, and there is no period a widening could
+   * reach, so the plain refusal stands on its own.
+   */
+  const outsideSpan = useMemo(() => {
+    if (outside === undefined) return null;
+    const earliest = outside.earliestDocumentDate ?? null;
+    const latest = outside.latestDocumentDate ?? null;
+    if (earliest === null || latest === null) return null;
+    return {
+      count: outside.count,
+      earliest: ukDate(earliest),
+      latest: ukDate(latest),
+      startIso: earliest,
+      endIso: latest,
+    };
+  }, [outside]);
+
   async function onExport() {
     setBuilding(true);
     setResult(null);
     setFailure(null);
     setCapHit(false);
+    setOutside(undefined);
     try {
       const created = await requestExport({ businessId, target, periodStart, periodEnd });
       setResult(created);
@@ -244,6 +302,10 @@ export function ExportView() {
       // problem's `detail`, which is prose the server is free to reword; the
       // `NT-` code is the stable half and is what the runbook is keyed on.
       setCapHit(error instanceof NtProblemError && error.code === 'NT-EXP-003');
+      // Read off the problem, never computed here. The exporter is the only
+      // thing that knows its own predicate, so it is the only thing allowed to
+      // answer where the documents are.
+      setOutside(error instanceof NtProblemError ? error.publishedOutsidePeriod : undefined);
     } finally {
       setBuilding(false);
     }
@@ -393,6 +455,37 @@ export function ExportView() {
                 <p className="mt-2 text-[13px] font-medium text-red-300/80">
                   {intl.formatMessage(m.capHit, { cap: EXPORT_BATCH_CAP })}
                 </p>
+              )}
+              {outsideSpan !== null && (
+                <>
+                  <p className="mt-2 text-[13px] font-medium text-red-300/80">
+                    {outsideSpan.count === 1
+                      ? intl.formatMessage(m.outsidePeriodOne, { earliest: outsideSpan.earliest })
+                      : intl.formatMessage(m.outsidePeriodMany, {
+                          count: outsideSpan.count,
+                          earliest: outsideSpan.earliest,
+                          latest: outsideSpan.latest,
+                        })}
+                  </p>
+                  {/*
+                    The one action that fixes it, with the server's own dates in
+                    it. The alternative — telling the accountant to widen the
+                    period and leaving them to retype two dates read out of a
+                    sentence — is how "nothing to export" stayed a dead end.
+                  */}
+                  <button
+                    type="button"
+                    className="mt-3 self-start px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-[13px] font-bold text-white"
+                    onClick={() => {
+                      setPeriodStart(outsideSpan.startIso);
+                      setPeriodEnd(outsideSpan.endIso);
+                      setFailure(null);
+                      setOutside(undefined);
+                    }}
+                  >
+                    {intl.formatMessage(m.widenAction, { earliest: outsideSpan.earliest, latest: outsideSpan.latest })}
+                  </button>
+                </>
               )}
             </section>
           )}

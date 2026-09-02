@@ -226,9 +226,27 @@ html.light .text-zinc-500 { color: #6b7076; }
 html.light .text-zinc-600 { color: #8b9098; }
 html.light .text-zinc-700 { color: #b4b8bf; }
 
-/* Parts of the app are already light in the dark theme — the Inboxes table, the
-   chat composer. Inside those, the zinc ramp reads correctly as-is, so the
-   inversion has to be undone or their body text turns pale on white. */
+/* One part of the app is still light in the DARK theme: the chat composer
+   (`InputRow`, and the attachment chips in `InputAffordances`). Inside it the
+   zinc ramp reads correctly as-is, so the inversion has to be undone or its
+   body text turns pale on white.
+
+   ⚠ These rules are a WORKAROUND for a bug, not a feature. A `.bg-white` panel
+   is the same colour in both themes, so in dark mode it leaves a white hole in
+   a dark app — which is exactly what was reported against the Inboxes screen.
+   Inboxes was in this list and left it; the Chases board (`ChasesView` and
+   `ChasesLiveBoard`, plus that view's `bg-pale` sub-tab strip and its
+   `bg-white text-black` active pill) followed on 3 Sep 2026 and is `bg-card`
+   with the ordinary ramp throughout. The composer is the last entry, and it is
+   light on purpose rather than by neglect — so this block is now as small as it
+   can get without a decision to darken the composer.
+
+   Do not add a surface to this list — tokenise it instead.
+
+   The other `.bg-white` uses left in the app are deliberately white objects
+   rather than panels, and none of them wants this inversion: the QR code
+   (`views/signup/qr` — dark modules on a light ground or phones will not scan
+   it) and the camera shutter and flash frame on the two capture surfaces. */
 html.light .bg-white .text-zinc-300 { color: #a1a1aa; }
 html.light .bg-white .text-zinc-400 { color: #71717a; }
 html.light .bg-white .text-zinc-500 { color: #71717a; }
@@ -236,23 +254,18 @@ html.light .bg-white .text-zinc-600 { color: #52525b; }
 html.light .bg-white .text-zinc-700 { color: #3f3f46; }
 html.light .bg-white .text-zinc-800 { color: #27272a; }
 
-/* Deliberately dark chips on those light surfaces — the Chases stage pill, the
-   auto-chase policy, the Review & Chase button. They are dark in both themes,
-   so their text has to stay light rather than follow the inverted ramp. */
-html.light .bg-zinc-900,
-html.light .bg-zinc-800 {
-  color: #ffffff;
-}
-html.light .bg-zinc-900.text-white,
-html.light .bg-zinc-800.text-white,
-html.light .bg-zinc-900 .text-white,
-html.light .bg-zinc-800 .text-white {
-  color: #ffffff !important;
-}
-html.light .bg-zinc-900.text-zinc-500,
-html.light .bg-zinc-800.text-zinc-500 { color: #a1a1aa; }
-html.light .bg-zinc-900.text-zinc-400,
-html.light .bg-zinc-800.text-zinc-400 { color: #d4d4d8; }
+/* The `.bg-zinc-900` / `.bg-zinc-800` rescue that stood here is GONE, because
+   the thing it rescued is gone. It served exactly three controls, all on the
+   Chases board — the stage pill, the auto-chase policy chip and the Review &
+   Chase button — which were dark chips sitting on a hardcoded white sheet, and
+   so were the same colour in both themes. That sheet is `bg-card` now and all
+   three are on the ordinary token ramp (`bg-raised` / `bg-brand`), so
+   `grep -r 'bg-zinc-\(800\|900\)' apps/web/src` matches nothing outside this
+   comment. Rules with no possible subject are worse than no rules: they read
+   as a supported pattern and invite the next dark-chip-on-a-white-panel.
+
+   If you find yourself wanting them back, you are about to hardcode a surface
+   that is one colour in both themes. Use a token instead. */
 
 /* Coloured surfaces keep white text — a label on a blue button, not body copy.
    These use exact class selectors, not [class*=…]: a substring match also hits
@@ -310,8 +323,9 @@ html.light .hover\:bg-white\/\[0\.02\]:hover { background-color: color-mix(in sr
 /* "Goes white on hover" means "goes to full-strength text" — which on a light
    page is ink, not white. Genuinely dark chips keep white. */
 html.light .hover\:text-white:hover { color: #0b0d12; }
-html.light .bg-zinc-900.hover\:text-white:hover,
-html.light .bg-zinc-800.hover\:text-white:hover,
+/* `.bg-zinc-900` / `.bg-zinc-800` dropped from this list with the block above —
+   the Chases board was their only caller and it is tokenised now. `.bg-black`
+   stays: it is a genuinely black surface in both themes. */
 html.light .bg-black.hover\:text-white:hover { color: #ffffff; }
 
 /* The workspace hero is a black-to-blue wash built for a dark room. On light it

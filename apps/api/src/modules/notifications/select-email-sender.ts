@@ -2,6 +2,7 @@ import type { Env } from '../../config/env.js';
 import { type EmailRateLimiter, InMemoryEmailRateLimiter, RedisEmailRateLimiter } from './email-rate-limit.js';
 import { DemoEmailSender, type EmailSender } from './email-sender.js';
 import { SesEmailSender } from './ses-email-sender.js';
+import { SmtpEmailSender } from './smtp-email-sender.js';
 
 /**
  * Pick the email sender from config — never by import, the house pattern shared
@@ -32,7 +33,16 @@ import { SesEmailSender } from './ses-email-sender.js';
  * send is a failed send, and the caller decides what that means.
  */
 export function selectEmailSender(
-  env: Pick<Env, 'EMAIL_SENDER' | 'SES_REGION' | 'EMAIL_FROM_ADDRESS' | 'EMAIL_REPLY_TO_ADDRESS' | 'EMAIL_CONFIGURATION_SET'>,
+  env: Pick<
+    Env,
+    | 'EMAIL_SENDER'
+    | 'SES_REGION'
+    | 'EMAIL_FROM_ADDRESS'
+    | 'EMAIL_REPLY_TO_ADDRESS'
+    | 'EMAIL_CONFIGURATION_SET'
+    | 'SMTP_HOST'
+    | 'SMTP_PORT'
+  >,
 ): EmailSender {
   switch (env.EMAIL_SENDER) {
     case 'ses':
@@ -41,6 +51,18 @@ export function selectEmailSender(
         fromAddress: env.EMAIL_FROM_ADDRESS,
         replyToAddress: env.EMAIL_REPLY_TO_ADDRESS,
         configurationSetName: env.EMAIL_CONFIGURATION_SET,
+      });
+    // The local MailHog transport (2 Sep 2026). Not a fallback and never
+    // reached by failure — it is chosen explicitly, and refused in production.
+    case 'smtp':
+      return new SmtpEmailSender({
+        host: env.SMTP_HOST ?? 'localhost',
+        port: env.SMTP_PORT ?? 1025,
+        fromAddress: env.EMAIL_FROM_ADDRESS,
+        // Passed for the same reason SES gets it: one configuration must not
+        // compose two different messages. Dropping it here sent replies to
+        // `no-reply@`, which is the one address mail must not arrive at.
+        replyToAddress: env.EMAIL_REPLY_TO_ADDRESS,
       });
     case 'demo':
     default:

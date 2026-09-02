@@ -1,26 +1,34 @@
-import { useRef, useState } from 'react';
-import { ArrowLeft, Building2, CheckCircle2, Clock, FileText, LogIn, Mail, UploadCloud } from 'lucide-react';
+import { useState } from 'react';
+import { Building2, Clock, LogIn, Mail } from 'lucide-react';
 import { defineMessages, useIntl } from 'react-intl';
 
-import { currency } from '../../lib/resolver';
+import { navigate, useQueryParam, usePath } from '../../lib/router';
 import { PrivacyNoticeLink } from '../legal/PrivacyNoticeLink';
+import { BusinessPortalShell } from './BusinessPortalShell';
+import { LivePortalCapture } from './LivePortalCapture';
+import { LivePortalHome } from './LivePortalHome';
+import { LivePortalSettings } from './LivePortalSettings';
+import { LivePortalUpload } from './LivePortalUpload';
+import type { PortalAsk } from './portalAsk';
+import { pathForSection, pathForTab, sectionFromPath, tabFromPath, type PortalTab } from './portalTabs';
 import { useBusinessPortalSession } from './useBusinessPortalSession';
 
 /**
- * The business portal, against the real API.
+ * The business portal, against the real API — and, since 2 Sep 2026, the same
+ * FOUR-TAB product the prototype describes (D49) rather than one scrolling page
+ * of three cards.
  *
  * ## What this is, and what the surface beside it is
  *
- * `BusinessPortal` (synthetic) is the prototype's four-tab shell driven by
+ * `SyntheticBusinessPortal` is the same shell driven by
  * `AppContext.businessAccounts` — a seeded array that is EMPTY when the API is
  * on. So with a live session that surface rendered a sign-in screen which
  * created an account in local React state and vanished on reload: there was no
- * business portal at all, only a drawing of one.
+ * business portal at all, only a drawing of one. Both now wear
+ * `BusinessPortalShell`, so the live product and the design cannot drift apart
+ * by accident.
  *
- * This is the same journey against the contract: sign in by email and a
- * six-digit code, see what your accountant is waiting for, and send paperwork.
- *
- * ## Three rules this screen may not break
+ * ## Four rules this screen may not break
  *
  * - **It may not say whether an account exists.** `POST /portal/sign-in-codes`
  *   answers `202` whatever happened, so the code step is reached even for an
@@ -28,8 +36,17 @@ import { useBusinessPortalSession } from './useBusinessPortalSession';
  * - **It may not imply a ledger** (D42). Nothing is "posted", "synced" or "sent
  *   to VT" — a client sends paperwork to their accountant, and that is all this
  *   says.
- * - **It says "emailed", never "texted"** (D45/§24.5). There is no SMS on this
- *   journey.
+ * - **It says "emailed", never "texted"** (D45/§24.5). There is no SMS here.
+ * - **The lapsed-subscription state comes BEFORE the upload control** (D48),
+ *   never as a refusal after a receipt has been photographed — and it now
+ *   carries a working Stripe checkout rather than an instruction to telephone
+ *   the accountant.
+ *
+ * ## The tabs are addresses
+ *
+ * `/portal`, `/portal/upload`, `/portal/capture`, `/portal/settings` — so every
+ * tab is linkable and Back does what it looks like it does. The mapping is
+ * `portalTabs.ts`, shared with the synthetic shell and tested there.
  */
 
 const m = defineMessages({
@@ -51,8 +68,7 @@ const m = defineMessages({
   codeSentTitle: { id: 'portal.liveBusinessPortal.codeSentTitle', defaultMessage: 'Check your email' },
   codeSentBody: {
     id: 'portal.liveBusinessPortal.codeSentBody',
-    defaultMessage:
-      'If {email} can be used to sign in, a six-digit code is on its way. It expires in ten minutes.',
+    defaultMessage: 'If {email} can be used to sign in, a six-digit code is on its way. It expires in ten minutes.',
   },
   codeLabel: { id: 'portal.liveBusinessPortal.codeLabel', defaultMessage: 'Six-digit code' },
   codePlaceholder: { id: 'portal.liveBusinessPortal.codePlaceholder', defaultMessage: '000000' },
@@ -60,55 +76,66 @@ const m = defineMessages({
   startOverAction: { id: 'portal.liveBusinessPortal.startOverAction', defaultMessage: 'Use a different address' },
   workingLabel: { id: 'portal.liveBusinessPortal.workingLabel', defaultMessage: 'Working…' },
 
-  subtitle: { id: 'portal.liveBusinessPortal.subtitle', defaultMessage: 'Business portal' },
   signOutAction: { id: 'portal.liveBusinessPortal.signOutAction', defaultMessage: 'Sign out' },
 
-  awaitingTitle: { id: 'portal.liveBusinessPortal.awaitingTitle', defaultMessage: 'Your accountant is waiting for' },
-  awaitingCount: {
-    id: 'portal.liveBusinessPortal.awaitingCount',
-    defaultMessage: '{count, plural, one {# document} other {# documents}}',
-  },
-  askStatement: { id: 'portal.liveBusinessPortal.askStatement', defaultMessage: '{month} bank statement' },
-  askItem: { id: 'portal.liveBusinessPortal.askItem', defaultMessage: 'Receipt for {label} · {amount} · {date}' },
-  askUnnamed: { id: 'portal.liveBusinessPortal.askUnnamed', defaultMessage: 'a card payment' },
-  askWaiting: { id: 'portal.liveBusinessPortal.askWaiting', defaultMessage: 'Waiting' },
-  askReceived: { id: 'portal.liveBusinessPortal.askReceived', defaultMessage: 'Got it' },
-  awaitingNone: {
-    id: 'portal.liveBusinessPortal.awaitingNone',
-    defaultMessage: 'Nothing right now — you are up to date.',
-  },
-  sentTitle: { id: 'portal.liveBusinessPortal.sentTitle', defaultMessage: 'Documents you have sent' },
-  lastSent: { id: 'portal.liveBusinessPortal.lastSent', defaultMessage: 'Last one {when}' },
-  lastSentNever: { id: 'portal.liveBusinessPortal.lastSentNever', defaultMessage: 'Nothing sent yet' },
-
-  uploadTitle: { id: 'portal.liveBusinessPortal.uploadTitle', defaultMessage: 'Send a document' },
-  uploadBody: {
-    id: 'portal.liveBusinessPortal.uploadBody',
-    defaultMessage: 'A receipt, an invoice or a bank statement. Photograph it or choose a file.',
-  },
-  uploadAction: { id: 'portal.liveBusinessPortal.uploadAction', defaultMessage: 'Choose a file' },
-  uploadDone: { id: 'portal.liveBusinessPortal.uploadDone', defaultMessage: 'Sent. Your accountant has it.' },
-
-  // D48 — an upload is refused without a live subscription, so this says so
-  // BEFORE the client photographs a receipt rather than after.
-  subscriptionLapsed: {
-    id: 'portal.liveBusinessPortal.subscriptionLapsed',
+  // ⚠ The session expiry gets its own sentence, and it blames the session.
+  // Before this, the sixty-minute bearer simply began failing and the copy on
+  // whatever the client happened to be doing said "That did not send" — so the
+  // honest reading was that the upload had failed, and clients re-photographed
+  // receipts to fix a sign-in problem.
+  expiredTitle: { id: 'portal.liveBusinessPortal.expiredTitle', defaultMessage: 'Your sign-in has ended' },
+  expiredBody: {
+    id: 'portal.liveBusinessPortal.expiredBody',
     defaultMessage:
-      'Your subscription is not active, so new documents cannot be sent. Your accountant can help you restart it.',
+      'Sign-ins here last about an hour, then stop. Nothing you sent is affected — ask for a new code and carry on.',
+  },
+
+  // Stripe's return leg. The bearer died with the redirect BY DESIGN, so this
+  // resumes nothing and claims nothing: reaching this address is not proof of
+  // payment (the contract's own words on `successUrl`).
+  checkoutSuccessTitle: {
+    id: 'portal.liveBusinessPortal.checkoutSuccessTitle',
+    defaultMessage: 'Stripe is confirming your payment',
+  },
+  checkoutSuccessBody: {
+    id: 'portal.liveBusinessPortal.checkoutSuccessBody',
+    defaultMessage:
+      'Sign in again in a moment and your plan will show as running. If it does not, your accountant can see the same thing you can.',
+  },
+  checkoutCancelledTitle: {
+    id: 'portal.liveBusinessPortal.checkoutCancelledTitle',
+    defaultMessage: 'Nothing has been charged',
+  },
+  checkoutCancelledBody: {
+    id: 'portal.liveBusinessPortal.checkoutCancelledBody',
+    defaultMessage: 'You left the payment page before finishing. Sign in again whenever you are ready.',
   },
 });
 
-export function LiveBusinessPortal({ onExit }: { readonly onExit?: (() => void) | undefined }) {
+export function LiveBusinessPortal() {
   const intl = useIntl();
   const session = useBusinessPortalSession();
   const [address, setAddress] = useState('');
   const [otp, setOtp] = useState('');
-  const [justSent, setJustSent] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [ask, setAsk] = useState<PortalAsk | null>(null);
+  const [checkoutParam, setCheckout] = useQueryParam('checkout');
+  // Only the two outcomes Stripe is sent back with. An address bar carrying
+  // anything else says nothing, so nothing is claimed.
+  const checkout = checkoutParam === 'success' || checkoutParam === 'cancelled' ? checkoutParam : null;
+
+  const segments = usePath();
+  const tab = tabFromPath(segments);
+  const goTo = (next: PortalTab) => navigate(pathForTab(segments, next));
+  // The Settings section is an address too, so `/portal/settings/people` is a
+  // link a client can be sent and can send on. An unrecognised one falls back to
+  // the first section rather than opening a blank panel — `portalTabs.ts` owns
+  // that rule, one level down from the tab's own.
+  const section = sectionFromPath(segments) ?? 'Business';
+  const goToSection = (next: string) => navigate(pathForSection(segments, 'Settings', next));
 
   if (session.step !== 'in' || session.home === null) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-ground px-4 py-10 pt-safe pb-safe">
+      <div className="flex-1 flex flex-col items-center justify-center bg-ground px-4 py-10 pt-safe pb-safe overflow-y-auto">
         <div className="w-full max-w-md">
           <div className="w-12 h-12 rounded-2xl bg-brand flex items-center justify-center text-brand-on mb-5">
             <Building2 size={22} />
@@ -116,22 +143,55 @@ export function LiveBusinessPortal({ onExit }: { readonly onExit?: (() => void) 
           <h1 className="font-sans font-bold text-2xl text-white tracking-tight">
             {intl.formatMessage(m.signInTitle)}
           </h1>
-          <p className="text-[13px] text-zinc-400 mt-2 leading-relaxed">
-            {intl.formatMessage(m.signInSubtitle)}
-          </p>
+          <p className="text-[13px] text-zinc-400 mt-2 leading-relaxed">{intl.formatMessage(m.signInSubtitle)}</p>
+
+          {checkout !== null && (
+            <div
+              role="status"
+              className={`mt-5 rounded-2xl border p-4 ${
+                checkout === 'success'
+                  ? 'border-emerald-500/25 bg-emerald-500/[0.06]'
+                  : 'border-white/10 bg-card'
+              }`}
+            >
+              <div className="font-bold text-[14px] text-white">
+                {intl.formatMessage(checkout === 'success' ? m.checkoutSuccessTitle : m.checkoutCancelledTitle)}
+              </div>
+              <p className="text-[13px] text-zinc-400 mt-1 leading-relaxed">
+                {intl.formatMessage(checkout === 'success' ? m.checkoutSuccessBody : m.checkoutCancelledBody)}
+              </p>
+            </div>
+          )}
+
+          {session.expired && (
+            <div role="status" className="mt-5 rounded-2xl border border-amber-500/25 bg-amber-500/[0.06] p-4">
+              <div className="flex items-center gap-2 font-bold text-[14px] text-amber-300">
+                <Clock size={15} />
+                {intl.formatMessage(m.expiredTitle)}
+              </div>
+              <p className="text-[13px] text-zinc-300 mt-1 leading-relaxed">{intl.formatMessage(m.expiredBody)}</p>
+            </div>
+          )}
 
           {session.step === 'address' ? (
             <form
               className="mt-7 space-y-3"
               onSubmit={(e) => {
                 e.preventDefault();
+                // The banner belongs to the visit that came back from Stripe,
+                // not to the next attempt at signing in.
+                if (checkout !== null) setCheckout(null, { replace: true });
                 void session.requestCode(address.trim());
               }}
             >
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+              <label
+                htmlFor="portal-email"
+                className="block text-[11px] font-bold uppercase tracking-wider text-zinc-500"
+              >
                 {intl.formatMessage(m.emailLabel)}
               </label>
               <input
+                id="portal-email"
                 type="email"
                 required
                 value={address}
@@ -163,10 +223,11 @@ export function LiveBusinessPortal({ onExit }: { readonly onExit?: (() => void) 
                   {intl.formatMessage(m.codeSentBody, { email: session.email })}
                 </p>
               </div>
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+              <label htmlFor="portal-otp" className="block text-[11px] font-bold uppercase tracking-wider text-zinc-500">
                 {intl.formatMessage(m.codeLabel)}
               </label>
               <input
+                id="portal-otp"
                 inputMode="numeric"
                 pattern="[0-9]{6}"
                 maxLength={6}
@@ -210,169 +271,73 @@ export function LiveBusinessPortal({ onExit }: { readonly onExit?: (() => void) 
 
   const home = session.home;
 
+  const sendFor = (next: PortalAsk) => {
+    setAsk(next);
+    goTo('Capture');
+  };
+
   return (
-    <div className="flex-1 flex flex-col min-w-0 h-full bg-ground overflow-hidden">
-      <header className="shrink-0 border-b border-white/5 bg-card px-4 md:px-6 py-3 md:py-4 pt-safe flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-2xl bg-brand flex items-center justify-center text-brand-on shrink-0">
-            <Building2 size={18} />
-          </div>
-          <div className="min-w-0">
-            <div className="font-sans font-bold text-[15px] text-white tracking-tight truncate">
-              {home.businessName}
-            </div>
-            <div className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider">
-              {intl.formatMessage(m.subtitle)}
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={session.signOut}
-            className="px-3 md:px-4 py-2 rounded-full text-[13px] font-bold text-zinc-400 border border-white/5 bg-ground hover:text-white hover:border-white/15 transition-colors"
-          >
-            {intl.formatMessage(m.signOutAction)}
-          </button>
-          {onExit !== undefined && (
-            <button
-              onClick={onExit}
-              aria-label={intl.formatMessage(m.signOutAction)}
-              className="p-2 rounded-full text-zinc-500 hover:text-white"
-            >
-              <ArrowLeft size={16} strokeWidth={2.5} />
-            </button>
-          )}
-        </div>
-      </header>
-
-      <div className="flex-1 overflow-y-auto px-4 md:px-6 py-6 pb-safe-6 space-y-4 max-w-2xl w-full mx-auto">
-        <section className="rounded-3xl bg-card border border-white/5 p-5">
-          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-zinc-500">
-            <Clock size={13} />
-            {intl.formatMessage(m.awaitingTitle)}
-          </div>
-          <div className="mt-2 font-sans font-bold text-3xl text-white tracking-tight">
-            {home.awaitingYou === 0
-              ? intl.formatMessage(m.awaitingNone)
-              : intl.formatMessage(m.awaitingCount, { count: home.awaitingYou })}
-          </div>
-          {/* The itemised asks (Phase 5): the count now NAMES what is wanted —
-              each outstanding line and statement month, so "3 documents" stops
-              being a number the client has to telephone about. Sending any of
-              them goes through the same upload button below. */}
-          {(home.statementRequests.length > 0 || home.items.length > 0) && (
-            <ul className="mt-4 flex flex-col gap-2">
-              {home.statementRequests.map((request) => (
-                <li
-                  key={`stmt-${request.period}`}
-                  className="flex items-center justify-between gap-3 rounded-2xl bg-raised/50 border border-white/5 px-4 py-3"
-                >
-                  <span className="text-[13px] font-semibold text-white">
-                    {intl.formatMessage(m.askStatement, {
-                      month: intl.formatDate(new Date(`${request.period}-01T12:00:00.000Z`), {
-                        month: 'long',
-                        year: 'numeric',
-                        timeZone: 'UTC',
-                      }),
-                    })}
-                  </span>
-                  <span className={`text-[11px] font-bold uppercase tracking-wider ${request.received ? 'text-emerald-400' : 'text-brand'}`}>
-                    {intl.formatMessage(request.received ? m.askReceived : m.askWaiting)}
-                  </span>
-                </li>
-              ))}
-              {home.items.map((ask) => (
-                <li
-                  key={ask.transactionId}
-                  className="flex items-center justify-between gap-3 rounded-2xl bg-raised/50 border border-white/5 px-4 py-3"
-                >
-                  <span className="min-w-0 text-[13px] font-semibold text-white truncate">
-                    {intl.formatMessage(m.askItem, {
-                      label: ask.label ?? intl.formatMessage(m.askUnnamed),
-                      amount: currency(Math.abs(ask.amount)),
-                      date: ask.date,
-                    })}
-                  </span>
-                  <span className={`shrink-0 text-[11px] font-bold uppercase tracking-wider ${ask.received ? 'text-emerald-400' : 'text-brand'}`}>
-                    {intl.formatMessage(ask.received ? m.askReceived : m.askWaiting)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="rounded-3xl bg-card border border-white/5 p-5">
-          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-zinc-500">
-            <FileText size={13} />
-            {intl.formatMessage(m.sentTitle)}
-          </div>
-          <div className="mt-2 font-sans font-bold text-3xl text-white tracking-tight">{home.documentsSent}</div>
-          <p className="text-[12px] text-zinc-500 mt-1">
-            {home.lastDocumentAt === null
-              ? intl.formatMessage(m.lastSentNever)
-              : intl.formatMessage(m.lastSent, {
-                  when: intl.formatDate(home.lastDocumentAt, {
-                    day: 'numeric',
-                    month: 'short',
-                    year: 'numeric',
-                    timeZone: 'Europe/London',
-                  }),
-                })}
-          </p>
-        </section>
-
-        <section className="rounded-3xl bg-card border border-white/5 p-5">
-          <div className="font-bold text-[15px] text-white">{intl.formatMessage(m.uploadTitle)}</div>
-          <p className="text-[13px] text-zinc-400 mt-1 leading-relaxed">{intl.formatMessage(m.uploadBody)}</p>
-
-          {home.subscriptionActive ? (
-            <>
-              <button
-                onClick={() => fileRef.current?.click()}
-                disabled={session.busy}
-                className="mt-4 flex items-center gap-2 px-5 py-3 rounded-full bg-brand text-brand-on text-[14px] font-bold disabled:opacity-50"
-              >
-                <UploadCloud size={16} />
-                {session.busy ? intl.formatMessage(m.workingLabel) : intl.formatMessage(m.uploadAction)}
-              </button>
-              <input
-                ref={fileRef}
-                type="file"
-                className="hidden"
-                // The same set the practice-side statement upload takes: a
-                // photograph is the commonest thing a client actually sends.
-                accept=".pdf,.csv,.xlsx,.jpg,.jpeg,.png,.tif,.tiff"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  e.target.value = '';
-                  if (file === undefined) return;
-                  setJustSent(false);
-                  void session.upload(file).then((ok) => setJustSent(ok));
-                }}
-              />
-            </>
-          ) : (
-            <p role="alert" className="mt-4 text-[13px] text-amber-400 leading-relaxed">
-              {intl.formatMessage(m.subscriptionLapsed)}
-            </p>
-          )}
-
-          {justSent && (
-            <p className="mt-3 flex items-center gap-2 text-[13px] text-emerald-400">
-              <CheckCircle2 size={14} />
-              {intl.formatMessage(m.uploadDone)}
-            </p>
-          )}
-          {session.error !== null && (
-            <p role="alert" className="mt-3 text-[13px] text-rose-400">
-              {session.error}
-            </p>
-          )}
-        </section>
-
-        <PrivacyNoticeLink />
-      </div>
-    </div>
+    <BusinessPortalShell
+      businessName={home.businessName}
+      tab={tab}
+      onTab={goTo}
+      actions={
+        <button
+          onClick={session.signOut}
+          className="px-3 md:px-4 py-2 rounded-full text-[13px] font-bold text-zinc-400 border border-white/5 bg-ground hover:text-white hover:border-white/15 transition-colors"
+        >
+          {intl.formatMessage(m.signOutAction)}
+        </button>
+      }
+    >
+      {tab === 'Home' && (
+        <LivePortalHome
+          home={home}
+          documents={session.documents}
+          documentsFault={session.documentsFault}
+          onGoCapture={() => goTo('Capture')}
+          onGoUpload={() => goTo('Upload')}
+          onSendFor={sendFor}
+        />
+      )}
+      {tab === 'Upload' && (
+        <LivePortalUpload
+          subscriptionActive={home.subscriptionActive}
+          documents={session.documents}
+          documentsFault={session.documentsFault}
+          busy={session.busy}
+          onUpload={(file) => session.upload(file, null)}
+          onSubscribe={() => void session.startCheckout()}
+        />
+      )}
+      {tab === 'Capture' && (
+        <LivePortalCapture
+          ask={ask}
+          subscriptionActive={home.subscriptionActive}
+          busy={session.busy}
+          onSend={(page, transactionId) =>
+            session.send({ filename: page.filename, mimeType: page.blob.type, bytes: page.blob }, transactionId)
+          }
+          onClearAsk={() => setAsk(null)}
+          onSubscribe={() => void session.startCheckout()}
+        />
+      )}
+      {tab === 'Settings' && (
+        <LivePortalSettings
+          home={home}
+          email={session.email}
+          busy={session.busy}
+          fault={session.error}
+          section={section}
+          onSection={goToSection}
+          // The bearer, for the People list. React state only — never
+          // `localStorage`, never a cookie; it dies with the tab.
+          sessionToken={session.token}
+          onSubscribe={() => void session.startCheckout()}
+          onManageBilling={() => void session.manageBilling()}
+          onSignOut={session.signOut}
+        />
+      )}
+    </BusinessPortalShell>
   );
 }

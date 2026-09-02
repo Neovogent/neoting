@@ -48,6 +48,10 @@ export class ProblemFilter implements ExceptionFilter {
         traceId,
         ...(exception.publicDetail === undefined ? {} : { detail: exception.publicDetail }),
         ...(exception.fieldErrors === undefined ? {} : { errors: exception.fieldErrors }),
+        // The contracted extension member, when the refusal carried one.
+        ...(exception.extension?.publishedOutsidePeriod === undefined
+          ? {}
+          : { publishedOutsidePeriod: exception.extension.publishedOutsidePeriod }),
       }));
       return;
     }

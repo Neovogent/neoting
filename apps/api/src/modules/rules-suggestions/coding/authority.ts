@@ -28,11 +28,26 @@ import type { RuleTier } from '@neoting/contracts/model';
  * | `PRACTICE_DEFAULT` | **yes** | an active `rules` row at tier `ACCOUNT_DEFAULT` |
  * | `CLIENT_CONTEXT` | **no, deliberately** | the seeded chart is a *picklist*, not supplier knowledge. It can say which accounts exist and whether a supplier is new; it cannot say what a document is. A rung that guessed from the business type is a wrong code applied silently, which A6's brief names as the thing worse than a human coding it by hand |
  * | `LEARNED_HISTORY` | **yes** | this client's own prior human-confirmed coding of this supplier (§24.4.5: *every accountant correction becomes a labelled example and, where it recurs for a supplier, a deterministic rule*) |
- * | `AI_INFERENCE` | **no** | out of scope by name: *DO NOT build the four-tier rule engine, natural-language rule parsing, or AI coding suggestions* |
+ * | `AI_INFERENCE` | **yes, as a SUGGESTION only** | `coding/ai-suggestion.ts`. It attaches to a `REVIEW` outcome carrying `provenance: 'AI_SUGGESTED'` and a confidence — it never produces a `CODE`, so it cannot become an applied coding by accident |
  *
- * `CLIENT_CONTEXT` and `AI_INFERENCE` stay in the enum because the order is the
- * SoT's, not this release's. Deleting a rung would make the next stage renumber
- * a thing that must not be renumbered.
+ * `CLIENT_CONTEXT` stays in the enum without being filled, because the order is
+ * the SoT's and not this release's. Deleting a rung would make the next stage
+ * renumber a thing that must not be renumbered.
+ *
+ * ## Why the bottom rung was switched on
+ *
+ * A6 left it off by name — *DO NOT build the four-tier rule engine,
+ * natural-language rule parsing, or AI coding suggestions* — and the
+ * consequence, once real documents arrived, was that **a first-time supplier
+ * could not be coded by anything at all**: the extractor is deliberately not
+ * asked to code, `CLIENT_CONTEXT` never wins, and a new supplier has neither a
+ * rule nor a history. The document reached To Review with an empty category and
+ * no explanation, which is worse than a suggestion an accountant can reject in
+ * one click.
+ *
+ * ⚠ Switching it on changed **nothing above it**. Every rung ahead of it
+ * returns before it is consulted, `outranks()` is unchanged, and a human's
+ * correction still locks the document before the ladder is entered at all.
  */
 export const CODING_AUTHORITIES = [
   'ACCOUNTANT_RULE',

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { NtTransportError } from '@neoting/contracts';
 import {
   completeDocumentUpload,
   createPortalSession,
@@ -73,6 +74,27 @@ const responseBody = async (call: Promise<unknown>): Promise<unknown> => await c
 
 /** `Authorization: Bearer …`, the only thing that authenticates a portal call. */
 const bearer = (token: string): RequestInit => ({ headers: { Authorization: `Bearer ${token}` } });
+
+/**
+ * A failure of the ONE call in the journey that does not go to the Neoting API.
+ *
+ * ⚠ **`NtTransportError` with no status is thrown by two different things** —
+ * the generated client when it cannot reach OUR API (`http-client.ts:174`), and
+ * `putBytes` when it cannot reach STORAGE — and the client-facing sentence is
+ * not the same. A cross-origin `fetch` failure is opaque by design (the browser
+ * withholds the status so a page cannot probe another origin), so the stage is
+ * the only thing left to tell them apart, and it is recorded at the call site
+ * rather than inferred from an error message downstream.
+ *
+ * It is a SUBCLASS, so every existing `instanceof NtTransportError` check —
+ * the chase portal's included — goes on matching unchanged.
+ */
+export class PortalStorageError extends NtTransportError {
+  constructor(message: string, status?: number) {
+    super(message, status);
+    this.name = 'PortalStorageError';
+  }
+}
 
 /**
  * The 201 responses have no generated Zod schema — orval emits response
@@ -211,6 +233,15 @@ async function startPortalUpload(
  * bearer there for exactly this reason. One completion path at two trust
  * levels, no second door; the delegated RLS policies keep this session inside
  * the document it was just granted.
+ *
+ * ⚠ **The middle call is re-thrown as `PortalStorageError`, and that is not
+ * tidying.** All three calls fail as `NtTransportError` with no status when the
+ * network is against them, but only one of them goes to the object store — and
+ * "we could not reach storage" and "we could not reach Neo Accounting" send the
+ * client to different places. Nothing but the call site knows which stage threw,
+ * so the stage is recorded here rather than guessed at downstream. The class is
+ * a SUBCLASS of `NtTransportError`, so the chase portal's existing handling is
+ * unchanged.
  */
 export async function sendPortalUpload(
   token: string,
@@ -218,7 +249,16 @@ export async function sendPortalUpload(
   transactionId: string | null,
 ): Promise<{ uploadId: string }> {
   const intent = await startPortalUpload(token, file, transactionId);
-  await putBytes(intent, file.bytes);
+  try {
+    await putBytes(intent, file.bytes);
+  } catch (cause) {
+    // The status is carried across when there is one: a non-2xx from storage
+    // is a different fact from a `fetch` that never got an answer at all.
+    throw new PortalStorageError(
+      cause instanceof Error ? cause.message : 'Upload failed',
+      cause instanceof NtTransportError ? cause.status : undefined,
+    );
+  }
   const request = completeDocumentUploadBody.parse({ byteHash: await sha256Hex(file.bytes) });
   await completeDocumentUpload(intent.uploadId, request, bearer(token));
   return { uploadId: intent.uploadId };

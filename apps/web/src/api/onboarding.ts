@@ -5,13 +5,16 @@ import {
   createPortalOnboardingSession,
   createPortalSignInCode,
   getPortalContext,
+  listPortalDocuments,
 } from '@neoting/contracts/client';
 import {
   createBillingPortalSessionBody,
   createCheckoutSessionBody,
   createPortalOnboardingSessionBody,
   createPortalSignInCodeBody,
+  listPortalDocumentsResponse,
 } from '@neoting/contracts/zod';
+import type { PortalDocumentStatus, SubscriptionStatus } from '@neoting/contracts/model';
 import { unwrapBody } from './envelope';
 import { fromIsoDate, fromPence } from './documents';
 
@@ -151,10 +154,21 @@ const hostedSessionShape = z.object({
  * ⚠ Reaching the success address is NOT proof of payment (the contract's own
  * words): the subscription is active when the webhook says so, and the return
  * screen's copy must claim nothing more than "Stripe is confirming".
+ *
+ * ⚠ THE PATH IS THE CALLER'S, and that is not a tidy-up. It was hard-coded to
+ * `/app/setup`, which is the address of the ONE-TIME setup journey: a client
+ * who restarted a lapsed subscription from inside their own portal was
+ * returned to a setup link they no longer hold, i.e. to a dead end, having
+ * just paid. Every caller passes the address it wants to be brought back to;
+ * the setup journey passes its own and is unchanged.
  */
-function checkoutReturnUrl(outcome: 'success' | 'cancelled'): string {
-  return `${window.location.origin}/app/setup?checkout=${outcome}`;
+function checkoutReturnUrl(returnPath: string, outcome: 'success' | 'cancelled'): string {
+  const separator = returnPath.includes('?') ? '&' : '?';
+  return `${window.location.origin}${returnPath}${separator}checkout=${outcome}`;
 }
+
+/** The setup journey's return address — its own screens read `?checkout=`. */
+export const SETUP_RETURN_PATH = '/app/setup';
 
 /**
  * Mint the Stripe-hosted checkout and hand back its URL. The caller redirects
@@ -164,11 +178,15 @@ function checkoutReturnUrl(outcome: 'success' | 'cancelled'): string {
  * A `409 NT-BIL-002` means the business is already subscribed; card changes
  * and cancellation live in the customer portal, not in a second checkout.
  */
-export async function startSubscriptionCheckout(sessionToken: string, businessId: string): Promise<string> {
+export async function startSubscriptionCheckout(
+  sessionToken: string,
+  businessId: string,
+  returnPath: string = SETUP_RETURN_PATH,
+): Promise<string> {
   const request = createCheckoutSessionBody.parse({
     businessId,
-    successUrl: checkoutReturnUrl('success'),
-    cancelUrl: checkoutReturnUrl('cancelled'),
+    successUrl: checkoutReturnUrl(returnPath, 'success'),
+    cancelUrl: checkoutReturnUrl(returnPath, 'cancelled'),
   });
   const body = hostedSessionShape.parse(unwrapBody(await createCheckoutSession(request, bearer(sessionToken))));
   return body.url;
@@ -178,13 +196,26 @@ export async function startSubscriptionCheckout(sessionToken: string, businessId
  * Mint a Stripe customer-portal session — card changes, invoices and
  * cancellation are all Stripe's pages, deliberately the whole of our billing
  * UI beyond the settings Plan section (launch stage M6, D48).
+ *
+ * ⚠ `sessionToken` is OPTIONAL and its presence decides WHO is asking. Omitted,
+ * the workspace cookie authenticates and this is practice staff opening a
+ * client's billing page. Passed, it is the client themselves from inside their
+ * own portal — which the contract permits as of 2 Sep 2026, and without which
+ * the person D48 makes the PAYER could not change a card, read an invoice or
+ * cancel. Under the bearer the server refuses a `businessId` that is not the
+ * session's own with a **404**, never a 403: a 403 would confirm the other
+ * business exists.
  */
-export async function openBillingPortal(businessId: string): Promise<string> {
+export async function openBillingPortal(businessId: string, sessionToken?: string): Promise<string> {
   const request = createBillingPortalSessionBody.parse({
     businessId,
     returnUrl: `${window.location.origin}${window.location.pathname}`,
   });
-  const body = hostedSessionShape.parse(unwrapBody(await createBillingPortalSession(request)));
+  const response =
+    sessionToken === undefined
+      ? await createBillingPortalSession(request)
+      : await createBillingPortalSession(request, bearer(sessionToken));
+  const body = hostedSessionShape.parse(unwrapBody(response));
   return body.url;
 }
 
@@ -210,6 +241,20 @@ export interface BusinessPortalAsk {
   readonly received: boolean;
 }
 
+/**
+ * The client's own plan, as the server projects it from Stripe.
+ *
+ * Null until the client has been through checkout at all — and a plan panel
+ * that cannot say which of the eight statuses applies has to say so rather
+ * than assume the friendly one.
+ */
+export interface BusinessPortalPlan {
+  readonly status: SubscriptionStatus;
+  readonly plan: string | null;
+  /** ISO instant. The renewal date a settings screen shows. */
+  readonly currentPeriodEnd: string | null;
+}
+
 export interface BusinessPortalHome {
   readonly businessName: string;
   readonly businessId: string | null;
@@ -220,6 +265,18 @@ export interface BusinessPortalHome {
   /** The itemised asks (Phase 5) — what "waiting for N documents" actually names. */
   readonly items: readonly BusinessPortalAsk[];
   readonly statementRequests: readonly { period: string; received: boolean }[];
+  /**
+   * The plan behind `subscriptionActive`, when the server sends one.
+   *
+   * ⚠ Null means "not stated", NOT "no subscription" — an older server omits
+   * the field entirely (the parse is deliberately tolerant), and a Settings
+   * panel that read absence as "you are not subscribed" would tell a paying
+   * client they had never paid. `subscriptionActive` is the entitlement
+   * question and stays the only thing gating the upload button.
+   */
+  readonly plan: BusinessPortalPlan | null;
+  /** The session's own expiry, ISO. The bearer stops working at this instant. */
+  readonly expiresAt: string | null;
 }
 
 /**
@@ -249,12 +306,33 @@ const portalHomeShape = z.object({
     )
     .nullish(),
   statementRequests: z.array(z.object({ period: z.string(), received: z.boolean() })).nullish(),
+  expiresAt: z.string().nullish(),
   summary: z
     .object({
       documentsSent: z.number().int().min(0),
       awaitingYou: z.number().int().min(0),
       subscriptionActive: z.boolean(),
       lastDocumentAt: z.string().nullish(),
+      // The plan (contract change, 2 Sep 2026). `nullish` twice over on
+      // purpose: absent means an older server, null means a client who has
+      // never been through checkout, and the Settings panel says something
+      // different for each.
+      subscription: z
+        .object({
+          status: z.enum([
+            'INCOMPLETE',
+            'INCOMPLETE_EXPIRED',
+            'TRIALING',
+            'ACTIVE',
+            'PAST_DUE',
+            'CANCELED',
+            'UNPAID',
+            'PAUSED',
+          ]),
+          plan: z.string().nullish(),
+          currentPeriodEnd: z.string().nullish(),
+        })
+        .nullish(),
     })
     .nullish(),
 });
@@ -289,5 +367,83 @@ export async function fetchBusinessPortalHome(sessionToken: string): Promise<Bus
       received: item.received,
     })),
     statementRequests: (body.statementRequests ?? []).map((r) => ({ period: r.period, received: r.received })),
+    plan:
+      body.summary.subscription === null || body.summary.subscription === undefined
+        ? null
+        : {
+            status: body.summary.subscription.status,
+            plan: body.summary.subscription.plan ?? null,
+            currentPeriodEnd: body.summary.subscription.currentPeriodEnd ?? null,
+          },
+    expiresAt: body.expiresAt ?? null,
+  };
+}
+
+/* ── What the client has sent ─────────────────────────────────────────────── */
+
+/**
+ * One document, as the person who sent it may see it.
+ *
+ * ⚠ `status` is the SERVER'S word, from a five-value enum that is deliberately
+ * not `DocumentState`. The mapping is made server-side so the five cannot fork
+ * between clients — this module carries the enum through untouched and the
+ * view puts each value through the catalogue. Nothing here derives a
+ * client-facing status from a pipeline state, and nothing may start to.
+ *
+ * ⚠ `supplier` is UNTRUSTED CONTENT — read off a scanned page by a model. It
+ * is rendered as text and never interpolated into anything that executes.
+ */
+export interface PortalSentDocument {
+  readonly id: string;
+  readonly supplier: string | null;
+  /** "09 Aug 2026", or null until extraction has read a date. */
+  readonly date: string | null;
+  /** Pounds, or null when nothing has been read off it yet. */
+  readonly total: number | null;
+  readonly currency: string | null;
+  readonly channel: string;
+  readonly status: PortalDocumentStatus;
+  /** ISO instant — when it reached us. The list's sort key, newest first. */
+  readonly receivedAt: string;
+}
+
+/**
+ * A page of the client's own documents.
+ *
+ * ⚠ `hasMore` is carried through and NOT dropped, because the portal home
+ * derives two of its four counters from these rows. A count over a truncated
+ * page presented as a total is the quiet kind of lie this product exists to
+ * stop telling; the screen says which figures are "of your most recent N".
+ */
+export interface PortalSentPage {
+  readonly rows: readonly PortalSentDocument[];
+  readonly hasMore: boolean;
+}
+
+/**
+ * `GET /portal/documents` — the client's own list, newest first.
+ *
+ * Parsed by the contract's own generated schema rather than a hand-written
+ * shape, because it has one (unlike the 201s elsewhere in this module): a
+ * status value the enum does not admit fails here rather than rendering as a
+ * blank pill three components deep.
+ */
+export async function fetchPortalDocuments(sessionToken: string, limit = 50): Promise<PortalSentPage> {
+  const body = listPortalDocumentsResponse.parse(
+    unwrapBody(await listPortalDocuments({ limit }, bearer(sessionToken))),
+  );
+  return {
+    rows: body.data.map((row) => ({
+      id: row.id,
+      supplier: row.supplierName ?? null,
+      date: row.documentDate === null || row.documentDate === undefined ? null : fromIsoDate(row.documentDate),
+      // The one pence→pounds boundary for this list, as everywhere else.
+      total: row.totalPence === null || row.totalPence === undefined ? null : fromPence(row.totalPence),
+      currency: row.currency ?? null,
+      channel: row.channel,
+      status: row.status,
+      receivedAt: row.receivedAt,
+    })),
+    hasMore: body.pageInfo.hasMore,
   };
 }

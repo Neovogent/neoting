@@ -33,4 +33,11 @@ export const TOTP_ENROLMENT_SERVICE = Symbol('TOTP_ENROLMENT_SERVICE');
  * could spend it.
  */
 export const EMAIL_VERIFICATION_SERVICE = Symbol('EMAIL_VERIFICATION_SERVICE');
+/**
+ * `POST /v1/auth/invitation-preview` + `/invitation-acceptance` — the colleague's
+ * half of the same journey (`invitation-acceptance.service.ts`). Registered on
+ * the SAME controller as the signup chain, because becoming a usable account is
+ * one problem reached through two doors.
+ */
+export const INVITATION_ACCEPTANCE_SERVICE = Symbol('INVITATION_ACCEPTANCE_SERVICE');
 export const PRISMA = Symbol('AUTH_TENANCY_PRISMA');

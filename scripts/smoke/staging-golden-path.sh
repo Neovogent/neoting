@@ -116,12 +116,22 @@ step '4 · who am I, and what can I see'
 code=$(call GET /v1/me)
 if [ "$code" = 200 ]; then
   biz=$(field 'd.businesses.length')
-  ok "$(field 'd.user.email') · $(field 'd.practice.name') · $(field 'd.role') · $biz businesses in scope"
+  owner=$(field 'd.isOwner')
+  ok "$(field 'd.user.email') · $(field 'd.practice.name') · $(field 'd.role') · owner=$owner · $biz businesses in scope"
   if [ "${biz:-0}" -gt 0 ] 2>/dev/null; then
     ok 'the scope is non-empty'
   else
     bad 'no businesses in scope — memberships or the seed are missing'
   fi
+  # D44's other half. The contract makes `isOwner` REQUIRED, the browser parses
+  # /me with a `.strict()` schema, and the release gate is `role AND isOwner` —
+  # so a body that lost the field logs everyone out of a screen that otherwise
+  # looks fine. Asserted as a boolean, not as `true`: whether this account owns
+  # the practice is a fact about the seed, not about the endpoint.
+  case "$owner" in
+    true|false) ok "isOwner is present ($owner)" ;;
+    *) bad 'GET /me carries no isOwner — the contract requires it and the web client rejects the body' ;;
+  esac
 else
   bad "/v1/me expected 200, got $code"
 fi

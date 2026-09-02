@@ -95,12 +95,13 @@ It depends on `js-yaml` and nothing else, on purpose: it has to run before the c
 | Ingestion | upload intent · upload complete · WhatsApp webhook verify + receive |
 | Review → Approve | create proposal · get · review · approve · cancel · **list** (METH S12 #140 — the approval queue; sign-off recorded on the issue) |
 | Auth (minimal, METH Stage 1 #118) | login · logout · `GET /me` |
+| Auth (practice invitations, 2 Sep 2026) | invitation preview · invitation acceptance |
 | Chases (METH Stage 2 #120) | list · get · SMS outbox (`x-demo: true`) |
-| OTP portal (METH Stage 2 #120) | create session · context · delegated upload intent |
+| OTP portal (METH Stage 2 #120, widened 2 Sep 2026) | create session · context · **own document list** · delegated upload intent |
 | Publishing (METH Stage 2 #120) | list publishes |
 | Banking (METH Stage 2 #120) | list bank transactions |
 | Businesses (METH Stage 2 #120) | list with waiting-work counts — **ten** of them since 28 Aug 2026, plus sector and next deadline |
-| Practices (ID LAW batch) | signup |
+| Practices (ID LAW batch, widened 2 Sep 2026) | signup · list practice members · invite a colleague |
 | Clients & team (ID LAW batch) | create client · list members · invite member |
 | Export (ID LAW batch) | list · create · resolve capability link |
 | Billing (ID LAW batch) | checkout session · customer-portal session · Stripe webhook |
@@ -271,6 +272,38 @@ means — and the two producers in this repo both do, `foldCounts` in
 business it sees in any of its four aggregates, and `deriveBusinessSummaries`
 in `apps/web/src/api/businesses.ts` for the synthetic side.
 
+**`BusinessSummary` widened again, 2 Sep 2026 — `primaryContactEmail`.** The
+client's own contact address (`contacts.email` on the row intake writes with
+`is_primary`), nullable, OPTIONAL. It is the first widening after the G7
+ceremony was retired, so there is no issue behind it; the argument is here
+instead.
+
+The gap it closes is the same *shape* as the one two paragraphs above, one
+field down: the client's Settings tab showed LEGAL NAME, INDUSTRY, PRIMARY
+CONTACT, MOBILE, VAT NUMBER and NEXT DEADLINE and **no email** — while ID sends
+its chases by EMAIL and not SMS (launch M8). The one contact detail nothing is
+sent to was on screen, and the one everything is sent to was not, because this
+schema had no field for it. `apps/web` could only have rendered an em dash.
+
+**Optional and nullable, NOT required — the opposite of the seven counts, and
+for a reason that does not contradict them.** A count is required because an
+absent count and a zero count are indistinguishable once drawn, so silence
+about work in hand reads as "nothing to do". An absent email is not ambiguous
+in that way: the invite path creates the workspace before anyone has
+registered, and `contacts.email` is itself nullable (a §3.3 phone-only contact
+is a real record), so "we do not hold one" is a true answer a producer is
+entitled to give. Null renders as an em dash; **no consumer may derive or guess
+an address to fill it.**
+
+**"Primary" is defined, not left to the planner:** `is_primary`, earliest
+`created_at` first. A contact the client added themselves (D45 — their own
+team, written `is_primary: false` by `team.service.ts`) is never promoted into
+this field. `foldPrimaryContactEmails` in
+`apps/api/src/modules/auth-tenancy/businesses.service.ts` is the producer, and
+it matches the two places that already resolve this person —
+`billing.service.ts` and `compose-chase-send.ts` — rather than inventing a
+third opinion.
+
 ⚠ `statementGaps` is contracted and is served as **zero on every path today** —
 nothing in this repo writes `Statement.gapAnalysis`. The field is real and D41
 makes it load-bearing; the number is not available yet, and counting statements
@@ -338,3 +371,237 @@ The handlers already take an `overrideResponse`, so the fix is additive and does
 ### Single file, for now
 
 The spec is one file while it is one surface. It splits into `paths/` + `components/` with a bundle step when it stops being readable — orval bundles `$ref`s across files, so the split is cheap whenever it is wanted.
+
+
+## Practice team-member onboarding (2 Sep 2026)
+
+Four operations, six schemas, one required field added to `Me`, **no new error
+codes**. The G7 ceremony was retired on 1 Sep, so there is no issue behind this;
+the discipline is the diff.
+
+| Surface | Operations |
+|---|---|
+| Practices | `GET`+`POST /practice-members` |
+| Auth | `POST /auth/invitation-preview` · `POST /auth/invitation-acceptance` |
+
+**The gap it closed:** the only member operations in the contract were
+`GET`/`POST /businesses/{businessId}/members` — a CLIENT's own users, whose
+description explicitly REFUSES every practice-level role. So there was no
+operation anywhere that granted a second human access to a practice, and no
+accept-invite operation at all. A firm could only ever have the one person
+`POST /practices` created.
+
+**Five decisions worth knowing before reading the YAML:**
+
+- **`/practice-members` is FLAT, with no path id.** One practice per session,
+  resolved from the verified session's acting membership — convention 1. A
+  `practiceId` in the URL would be a second name for something the session
+  already fixes, and a caller-supplied one is a tenancy question the server would
+  have to re-answer on every request.
+
+- **⚠ `PRACTICE_ADMIN` is REFUSED by name** (`NT-VAL-001`), and the reason is in
+  the operation description rather than left to be inferred. `assertCan`'s
+  release rule is `canRelease(role) && isOwner`; an invited admin would hold
+  `canRelease === true` and `isOwner === false`, so they could neither release nor
+  be told coherently why — the refusal would say *"only your practice's super
+  admin can"* to somebody the screen had just called an admin. There is no
+  ownership-TRANSFER operation to resolve it, and building one is what changes
+  this rule.
+
+- **⚠ `POST /auth/invitation-preview` is a POST that WRITES NOTHING, and it takes
+  no `Idempotency-Key`.** The token is a credential: a `GET` would carry it in
+  the query string, which puts it in browser history, in every access log on the
+  way, and in the `Referer` of the next outbound link on the page. A body is the
+  only place a token may travel. `x-nt-side-effect: none` + no header is the
+  `beginTotpEnrolment` precedent, and the checker agrees.
+
+- **Acceptance issues NO session, and the description pins it.** The account has
+  no second factor, and sign-in fails closed for an account with no enrolment — so
+  a session minted there would be either unusable or a door around the factor for
+  whoever holds an invitation link. It creates the user with `emailVerified:
+  true` (the token was delivered to that address, which is what
+  `POST /auth/email-verification` proves for a self-signup), creates the
+  membership from the invitation's role, stamps `accepted_at`, in ONE
+  transaction.
+
+- **`NT-AUTH-004`/`-005` are REUSED rather than a new family minted.** The split
+  is already exactly right: `-005` names expiry, which is a fact about a
+  credential its holder already had, and `-004` collapses everything else so a
+  guesser learns nothing — including whether the address already has an account.
+
+**`Me.isOwner` is REQUIRED**, which is the ten-counts choice rather than the
+`subscription` one: an omitted boolean and `false` are indistinguishable once
+rendered, so an optional one would let a producer stay silent and have it read as
+"not the owner". It is what lets a screen degrade honestly instead of offering a
+release the server will refuse — a fact for display, never the gate
+(Governance §11.2).
+
+**`PracticeMember` is deliberately NOT `BusinessMember`.** That shape answers
+"who can reach this client", so its `scope` says how they arrive; here every row
+is a colleague by definition and what a screen needs is `businessIds` — **empty
+meaning practice-wide, not none**. One shape for both would have left one field
+meaningless on every row it appeared on.
+
+
+## The client portal becomes a product (2 Sep 2026, D49)
+
+One operation, two schemas, one optional field, two `security:` blocks and one
+response. Entirely additive: nothing was removed, nothing became required, and
+no generated consumer had to change to keep compiling. No issue behind it — the
+G7 ceremony was retired on 1 Sep — so the arguments are here.
+
+The gap: a live client could sign in, read what was being asked of them, and
+upload. **Everything else the design source of record shows had no backend.**
+`PortalSummary` carried the integer `documentsSent`, so a client could be told
+they had sent forty-one documents and nothing whatever about any of them.
+
+| Change | Why |
+|---|---|
+| `GET /portal/documents` (`listPortalDocuments`) | The client's own document list — the home tab's "Recently sent" and the upload tab's "Sent from this portal", one list at two levels of detail. `x-nt-side-effect: none`, `security: [portalSession]`, cursor + limit, `{data, pageInfo}` like every other list. |
+| `PortalDocument` + `PortalDocumentStatus` | Its row shape and its five-word vocabulary. |
+| `PortalSummary.subscription` (optional) | So the Settings tab can state the truth rather than being decorative. |
+| `getDocumentOriginal` gains `security` | So a client can open the receipt they sent. |
+| `createBillingPortalSession` gains `portalSession` | So the payer can change a card, read an invoice or cancel. |
+| `createPortalUpload` gains `402` | The D48 gate has thrown `NT-BIL-001` since S4 and the contract did not say so. |
+
+**Five decisions worth knowing before reading the YAML:**
+
+- **`PortalDocument` is NOT `DocumentSummary`, and the difference is the point.**
+  No `state`, no `inbox`, no `categoryCode`, no `failureCode`, no `retryable`,
+  no `parentDocumentId`. It is the same line `PortalSummary` already draws
+  against `BusinessSummary` — a client has no business seeing where their
+  document sits in the practice's queue or what internal code stopped it — drawn
+  one row down. A client asking "what happened to my receipt" is answered by
+  `status`; "where is it in your queue" is a question about the firm's working
+  state.
+
+- **⚠ `PortalDocumentStatus` is a new enum and is deliberately NOT mirrored from
+  prisma.** `DocumentState` has eight values and most of the distinctions
+  between them are internal: `RECEIVED` vs `PROCESSING` says how busy a queue
+  is, `REJECTED` vs `FAILED` names whose fault it was. What a client can act on
+  is one of five things, so there are five values —
+  `processing · with_accountant · accepted · filed · needs_another_copy`, which
+  are the prototype's own words. It is absent from `MIRRORED_ENUMS` for the
+  `ProposalKind` reason: there is nothing in the schema for it to drift from,
+  because it is a projection OF a schema enum rather than a copy of one. **The
+  mapping is made server-side** so two clients cannot describe one document
+  differently; `portal-document-status.ts` is total over `DocumentState` and a
+  test drives it off the prisma enum object, so a ninth state fails on the day
+  it lands.
+
+- **The operation takes NO `businessId` parameter**, which is a departure from
+  convention 1 (`businessId` is a filter, not a path segment) and is the same
+  departure `PortalUploadRequest` already makes by having no such field. The
+  tenancy is the session's own business, resolved from the `otp_sessions` row.
+  A client holding a forwarded link does not get to name whose paperwork they
+  are reading, and a parameter that must always equal one value is a parameter
+  whose only purpose is to be got wrong.
+
+- **`getDocumentOriginal`'s `security:` block is the contract catching up with
+  itself, not a widening.** Its description has asserted *"a delegated OTP
+  session may only call this for items in its grant"* since the spec was
+  drafted, and `documents_delegated_upload` has permitted exactly that for just
+  as long — with no `security:` block the operation inherited the global
+  `workspaceSession` default, so the sentence described a caller the contract
+  did not admit and no server had a branch for. Under the bearer the boundary is
+  the GRANT and it is SQL's.
+
+- **⚠ `createBillingPortalSession`'s principal came with a GUARD, and could not
+  have come without one.** `BillingPortalSessionRequest` carries a `businessId`
+  and had none of checkout's "the body's business must equal the session's own →
+  404", because until now no session that could name a different business could
+  reach it. Adding the principal alone would have let a client holding one
+  workspace's bearer open another's invoices, card and cancellation. 404 and
+  never 403, for checkout's reason: a 403 confirms the other business exists.
+
+**`PortalSummary.subscription` is optional and nullable**, the
+`BusinessSummary.subscription` choice rather than the ten-counts one, and for
+the same reason: null is an unambiguous, true answer ("this client has not been
+through checkout"), where an absent count and a zero count are indistinguishable
+once drawn. It reuses `BusinessSubscription` rather than minting a client-only
+shape — there is nothing in that projection a client is not entitled to see
+about their own subscription, it already carries no price, and a second copy
+would be one more thing to keep in step with a tax rate.
+
+
+## Document management — Trash, restore, purge, counts (2 Sep 2026)
+
+Four operations, two schemas, one new query parameter, one response field, one
+`ProposalKind`, one error code. No issue behind it — the G7 ceremony was retired
+on 1 Sep — so the arguments are here. **Entirely additive**: nothing removed,
+nothing newly required, every existing consumer keeps compiling.
+
+| Change | Class |
+|---|---|
+| `GET /documents` gains `?deleted` (boolean, default false) | still `none` |
+| `GET /documents/counts` (`getDocumentCounts`) | `none` |
+| `POST /documents/{documentId}/deletion` (`deleteDocument`) | **`ingest`** |
+| `POST /documents/{documentId}/restoration` (`restoreDocument`) | **`ingest`** |
+| `DocumentSummary.deletedAt` (optional, nullable) | — |
+| `DocumentCounts` | — |
+| `ProposalKind` gains `document.purge` + `DocumentPurgePayload` | — |
+| `ErrorCode` gains `NT-DOC-002` | — |
+
+**Five decisions worth knowing before reading the YAML:**
+
+- **⚠ `ingest` on the two mutations, and the word does not obviously fit.** The
+  class list is `none` / `ingest` / `proposal` / `execute`; `none` is false
+  (these write), `proposal` is false (no ActionProposal), and `execute` is
+  reserved for exactly one operation which the checker asserts. So `ingest` is
+  the only admissible value — and it is the established one: `PATCH` and
+  `DELETE /portal/people/{personId}` are both `ingest` and both change an
+  existing record's state. **The header's gloss on `ingest` ("changes no
+  existing record's state") has been narrower than its own use since those
+  landed** — a contract-doc gap recorded rather than silently widened. If a
+  fifth class is ever wanted, `mutate` is the honest name and it is a checker
+  change, not a re-labelling.
+
+- **`?deleted` is a parameter on the EXISTING list, not `/documents/trash`.**
+  Trash is a filter over the same rows; a second path would be a second opinion
+  about what a document is — the argument that already keeps the Costs inbox,
+  the Sales inbox, the Unrouted queue and the Rejected/Failed view on one
+  endpoint. It **composes with `state` rather than overriding it**, because
+  deletion and pipeline state are orthogonal, which is the same fact that makes
+  `deletedAt` a timestamp and not a ninth `DocumentState`. There is no "both"
+  value: a page mixing live and deleted rows has no honest heading.
+
+  ⚠ **orval emits `zod.boolean().optional()` for it, NOT `.default(false)`** —
+  it applies defaults to enums and numbers but not booleans (v7.21; the emitted
+  `listDocumentsQueryDeletedDefault` constant is never used). The server applies
+  the default, which is the right home for it anyway. It is also the FIRST
+  boolean query parameter in this contract, so `apps/api`'s `coerceQuery` grew a
+  `ZodBoolean` branch — accepting `"true"`/`"false"` only, never truthy
+  coercion, under which `?deleted=false` would have served the entire Trash.
+
+- **`DocumentCounts` exists because the header was not true.** `PageInfo` carries
+  no total and cannot (keyset pagination has none), so a browser could only get
+  `total` by walking every page — and `archived` / `inVault` / `expiring` were
+  derived client-side from data never fetched. ⚠ **`inVault` and `expiring`
+  count `vault_items`, not documents**, stated in the field descriptions:
+  `documents` has no expiry or retention column at all, so there is no expiring
+  DOCUMENT and none is approximated. The five counts partition nothing and are
+  not meant to sum.
+
+- **`DocumentSummary.deletedAt` is optional and nullable**, the `archivedAt`
+  choice rather than the ten-counts one. A required field would make every
+  response minted before this existed unparseable by a generated client, and the
+  honest reading of an absent one is "not deleted" — unambiguous in a way an
+  absent count is not.
+
+- **⚠ Trash has NO expiry and there is deliberately no "empty Trash", and the
+  contract says so.** Three independent research passes found that no vendor —
+  Dext, Hubdoc, AutoEntry, Xero — publishes a recovery window at all, so a TTL
+  would be our own invention wearing borrowed authority. The only route out is a
+  reviewed `document.purge` naming explicit ids.
+
+**`document.purge` and `NT-DOC-002`.** No migration — the METH Stage 2
+precedent, `action_proposals.kind` is TEXT so the contract enum is the only
+registry. `DocumentPurgePayload` is `{ documentIds[1..100], reasonCode?, reason? }`:
+**capped at 100 rather than the house 500** because an irreversible batch
+cascading six child tables must fit inside `scopedDb`'s 10 s, and `reasonCode`
+is an optional enum beside the free text — AutoEntry's shape, which makes purges
+countable while the prose stops the enum lying. `NT-DOC-002` is the refusal for a
+document that has been released for export, carries a D43 capability link, or is
+a statement's source file; runbook page shipped in the same change per §13.4.
+⚠ `NT-DOC-001` is deliberately **not** in the enum — it is a
+`documents.failure_code` value that never reaches the wire.

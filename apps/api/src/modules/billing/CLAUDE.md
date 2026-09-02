@@ -41,10 +41,32 @@ other business exists. The upload path dodges this by giving
 contract shares one request schema with the accountant. `billing.controller.test.ts`
 pins all five branches, including that nothing reaches Stripe on a mismatch.
 
-The customer-portal operation deliberately did NOT gain the second principal: it
-is card changes, invoices and cancellation on an already-subscribed business,
-reached from that client's own settings, behind a session that has been through
-more than a setup link.
+## ⚠ The customer portal gained it too (2 Sep 2026)
+
+This section said the opposite — *"the customer-portal operation deliberately
+did NOT gain the second principal: it is card changes, invoices and cancellation
+on an already-subscribed business, reached from that client's own settings,
+behind a session that has been through more than a setup link"* — and that was
+right about #205's scope and wrong about the product. D48 makes the **client**
+the payer and D49 gives them a Settings tab; *"that client's own settings"* IS
+the portal session. Stripe's hosted portal is the only surface in this product
+for changing a card, reading an invoice or cancelling, and the only door to it
+was a workspace cookie no client holds. A subscription its payer cannot leave is
+not one they consented to.
+
+⚠ **`BillingPortalSessionRequest` had none of checkout's businessId guard**,
+because until now no session that could name a different business could reach
+the operation. Adding the principal without the guard would have let a client
+holding one workspace's bearer open ANOTHER's billing portal: every invoice, the
+card, and cancellation. So the principal and the guard arrived in the same edit,
+and both handlers call the SAME `principalFor` — a copy would be a second place
+for the rule to be right, and one of the two would eventually not be.
+
+`billing.controller.test.ts` pins all five branches on this door as well
+(cookie, blank header, own business, mismatched business → 404 with nothing
+reaching Stripe, refused bearer → 401), and
+`modules/portal/portal-client-surface.integration.test.ts` proves the 404
+through the REAL resolver over a REAL `otp_sessions` row.
 
 ## Staging is REAL Stripe now, against a sandbox
 
@@ -85,11 +107,21 @@ the client subscribes at the end of their own onboarding, so no subscription
 means an unfinished signup). `entitlement.test.ts` pins all nine cases.
 
 Enforced at both intent paths: `web-upload.service.ts#createUpload` and
-`portal-upload.service.ts#createPortalUpload`. **Known contract drift:**
-`createPortalUpload` declares no `402` in `openapi.yaml` while
-`createDocumentUpload` does. The behaviour is contracted (the webhook's own
-description says new uploads stop at a lapse); the missing response belongs in
-a contract-change issue, and LAW paths are not edited from here.
+`portal-upload.service.ts#createPortalUpload`. ✅ **The contract drift is
+closed (2 Sep 2026):** `createPortalUpload` now declares its `402`, which it did
+not while `createDocumentUpload` did — so a client generated from the spec had
+no branch for the single most likely refusal on the main ID intake path, and the
+only one the client themselves can fix. The behaviour was always contracted
+(`docs/runbooks/error-codes.md` puts `NT-BIL-001` at 402 on "any
+entitlement-gated operation", and the webhook's own description says new uploads
+stop at a lapse); only the response line was missing, and it stayed missing
+because the G7 ceremony made a one-line spec addition a process. That ceremony
+was retired on 1 Sep 2026.
+
+The portal reads `PortalSummary.subscriptionActive` first, precisely so this
+status is almost never the way a client finds out — and since 2 Sep the same
+summary carries `subscription` (status, plan, renewal date) so the Settings tab
+can say which lapse it is.
 
 ### 2. The webhook has no session, and `businesses` is behind RLS
 

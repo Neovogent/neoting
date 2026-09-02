@@ -70,6 +70,25 @@ const PER_ADDRESS_HOURLY: Readonly<Record<EmailKind, number>> = Object.freeze({
   'sign-in-code': 5,
   'client-invite': 5,
   'document-request': 10,
+  // A colleague invitation, held at the SIGNUP ceiling rather than the client
+  // one. It is the only invitation an authenticated caller can point at an
+  // address of their choosing with no existing relationship behind it — a
+  // client invite at least names a business the practice already onboarded —
+  // so three is the number, matching `email-verification` for the same reason:
+  // a fourth means the first three went somewhere the person cannot read, and
+  // a fifth does not fix that.
+  'team-invite': 3,
+  // A business adding its own staff. Three, matching `team-invite`, and for the
+  // same reason at one remove: it is an invitation an authenticated caller
+  // points at an address of their choosing, and the caller here is a CLIENT
+  // rather than the practice — the least-vetted principal that can send anything
+  // in this product. A fourth invitation in an hour means the first three went
+  // somewhere the person cannot read, and a fifth does not fix that.
+  //
+  // ⚠ It must never be folded into `client-invite`. That ceiling is the
+  // accountant's, and a client burning it would stop their own practice from
+  // onboarding anybody.
+  'business-people-invite': 3,
   // Signup is the one flow an unauthenticated stranger can drive at an address
   // they do not own, so both ceilings are tight. Three verification mails is
   // more than anyone needs — a fourth means the first three went somewhere the

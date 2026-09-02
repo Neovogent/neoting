@@ -267,6 +267,7 @@ test('grantItems pushes only the ids the session does not already hold', async (
     practiceId: 'prac_1',
     systemUserId: 'usr_system_1',
     actorId: 'usr_system_1',
+    contactId: null,
     chaseId: 'chase_1',
     grantedItemIds: ['doc_a'],
     expiresAt: new Date(NOW + PORTAL_SESSION_TTL_MS),

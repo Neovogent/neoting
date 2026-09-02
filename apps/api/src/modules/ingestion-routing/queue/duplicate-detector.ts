@@ -4,6 +4,7 @@ import type { PrismaClient } from '../../../common/db/prisma.js';
 import { resolveSystemActor } from '../../../common/db/resolve-system-actor.js';
 import { systemContext } from '../../../common/db/scope-context.js';
 import { scopedDb } from '../../../common/db/scoped-db.js';
+import { notDeleted } from '../../../common/documents/deleted-documents.js';
 import { hammingDistance, PERCEPTUAL_HASH_MAX_DISTANCE } from '../lib/dedupe/perceptual-hash.js';
 
 /** The nets that can fire on a pair. Extraction-based nets (SoT Stage 6) come later. */
@@ -127,7 +128,14 @@ export class PrismaDuplicateDetector implements DuplicateDetector {
 
     return scopedDb(this.prisma, systemContext(input.practiceId, systemUserId), async (db) => {
       const exactRows = await db.document.findMany({
-        where: { businessId: input.businessId, byteHash: input.byteHash, id: { not: input.documentId } },
+        // ⚠ Trash is excluded from BOTH nets. A `Duplicate` row is a question
+        // put to a human — "is this the same document as that one?" — and
+        // pointing at a document somebody has deleted is a question with no
+        // answer available: the other side of the pair is not on any screen
+        // they can open. Worse, a re-uploaded replacement for a document that
+        // was deleted precisely BECAUSE it was a bad scan would be flagged as a
+        // duplicate of the thing it exists to replace.
+        where: { businessId: input.businessId, byteHash: input.byteHash, id: { not: input.documentId }, ...notDeleted() },
         select: { id: true },
       });
       const exactIds = new Set(exactRows.map((r) => r.id));
@@ -136,7 +144,12 @@ export class PrismaDuplicateDetector implements DuplicateDetector {
       let candidatesTruncated = false;
       if (input.perceptualHash !== null) {
         const candidates = await db.document.findMany({
-          where: { businessId: input.businessId, perceptualHash: { not: null }, id: { not: input.documentId } },
+          where: {
+            businessId: input.businessId,
+            perceptualHash: { not: null },
+            id: { not: input.documentId },
+            ...notDeleted(),
+          },
           select: { id: true, perceptualHash: true },
           // Newest first, and capped — see PERCEPTUAL_CANDIDATE_LIMIT. The order
           // is index-backed; the cap is what keeps this off the unbounded-query

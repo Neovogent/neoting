@@ -97,6 +97,7 @@ Split by **lifetime**, not by team or service. Locking is S3-native (`use_lockfi
 ### Bootstrap resources — deliberately NOT in Terraform state
 
 - S3 `nt-tfstate-staging-252959251643` (versioned, encrypted, PAB on)
+- S3 `nt-dev-docs-252959251643`, `nt-dev-receipts-252959251643`, `nt-dev-exports-252959251643` — the local-development object store (`docs/runbooks/live-local.md`), created by CLI on 31 Aug 2026
 
 Chicken-and-egg: the backend cannot manage itself, and a `terraform destroy` that eats the state bucket is a bad afternoon. Created by CLI, documented here, left alone.
 
@@ -105,6 +106,25 @@ Chicken-and-egg: the backend cannot manage itself, and a `terraform destroy` tha
 ⚠ Read the header of `tfstate.tf` before editing that policy or the shared template. This root's own state lives in the bucket it guards, so a deny that catches the applying principal would apply first and the state write would fail second. Two things keep it safe: every Terraform runner is on the allow list (`user/Mubashir` — there is no `shakib` IAM user — plus `role/nt-*`), and the template denies object actions only, never `s3:PutBucketPolicy`, so a bad policy is recoverable.
 
 **Remaining gap:** the bucket is SSE-S3, not the Neoting CMK, so that deny is the only lock on state — there is no second, independent KMS-policy lock behind it as there is on the documents bucket.
+
+#### `dev-buckets-cors.sh` — the CORS rule the `nt-dev-*` buckets do not inherit
+
+The three dev buckets are bootstrap resources for a **different reason** from the state bucket. There is no chicken-and-egg here: they were created by CLI because a developer needed somewhere to put bytes, and they were simply never adopted. The consequence is that they inherit nothing from `modules/storage` — including the `aws_s3_bucket_cors_configuration` block above, which every browser upload needs and which exists only for the buckets Terraform owns.
+
+**What that costs, found the hard way on 2 Sep 2026.** A client photographed two receipts in the portal, pressed *Send to accountant*, and read *"2 photos did not send"*. The API was blameless: it minted the presigned `PUT` correctly and logged nothing, **because the request never reached us**. With no CORS configuration on the bucket the browser's preflight was answered `403` and the `PUT` was never attempted. That is the shape of this failure and the reason it is worth a paragraph — it produces no server-side evidence at all, so it reads to everyone downstream as an upload that silently did not send, and the client is the only person who sees it.
+
+**`infra/dev-buckets-cors.sh` is that rule, written down.** It was applied by hand to one bucket, recorded nowhere, and a rule applied by hand un-fixes itself on the next environment. Run it when a dev bucket is created or replaced, when a local browser upload fails at the preflight, or when you want to know what is actually on the bucket:
+
+```bash
+AWS_PROFILE=nt ./infra/dev-buckets-cors.sh          # apply
+AWS_PROFILE=nt ./infra/dev-buckets-cors.sh --check  # print, change nothing
+```
+
+Idempotent — `put-bucket-cors` replaces the whole configuration, so running it twice is running it once. `--check` keeps *"there is no rule"* and *"the call failed"* as different answers rather than collapsing them into one confident sentence: a stale SSO token must not send someone off to re-apply a rule that is already there.
+
+⚠ **This is for the dev buckets only, and it must not be "unified" with `modules/storage`.** The methods and headers mirror the module exactly (`PUT`/`GET`, `content-type` the only allowed header, ETag exposed) and the reasoning for those lives at the module rather than being restated. What differs is the origin list: this script allows `http://localhost:5173` and `http://127.0.0.1:5173`, which a browser treats as two different origins. **`localhost` must never appear on a staging or production bucket** — a presigned URL is bearer authority over a client's financial records, which is the same reason `allowed_origins` never contains `*`.
+
+**Remaining gap:** the script names one bucket (`nt-dev-docs-*`), because that is the only one a browser uploads to today. Receipts and exports would need the same treatment the day anything in a browser `PUT`s to them.
 
 ## Usage
 

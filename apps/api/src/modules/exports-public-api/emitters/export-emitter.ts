@@ -31,6 +31,77 @@ export interface ExportEmitter {
    * that puts a wrong number in someone's books.
    */
   emit(rows: readonly CanonicalRow[]): EmittedFile;
+  /**
+   * **The same rows {@link emit} writes, per document, before any of it is a
+   * file.**
+   *
+   * This exists so a human can be shown the bookkeeping entry they are
+   * authorising *before* the release, rather than discovering it inside their
+   * accounting software afterwards. The Review → Approve card is not allowed to
+   * describe an effect it has re-derived — a second implementation of "what
+   * goes in column G" would agree with the emitter until the day it did not —
+   * so the contract on this method is stronger than "returns a preview":
+   *
+   * ⚠ **An implementation MUST build these rows with the same function `emit`
+   * builds them with.** Not the same rules, the same *code*. If the two ever
+   * become two functions, the preview becomes a lie, and a lie on a review card
+   * is worse than showing nothing at all. `emitter.previewEntries` and
+   * `emitter.emit` are checked against each other by test
+   * (`vt-transaction-plus-emitter.test.ts`, which parses the emitted bytes back
+   * and compares them cell by cell), which is the only guard that survives a
+   * refactor.
+   *
+   * Warnings are partitioned per document rather than pooled, so the card can
+   * say what will not travel *for this document* — an unprefixed analysis
+   * account is worth knowing before the release, not after the import.
+   */
+  previewEntries(rows: readonly CanonicalRow[]): ExportEntryPreview;
+}
+
+/**
+ * What one document will contribute to the export file — the contract's
+ * `ExportEntryPreview`, structurally.
+ *
+ * The cells are **positional against {@link ExportEntryPreview.columns}**,
+ * which is how the targets themselves read a file (VT's journal import is
+ * positional and reads a header row as a transaction), and it is also what
+ * keeps the payload a 500-document batch has to carry from multiplying the
+ * column headings by the row count.
+ */
+export interface ExportEntryDocument {
+  readonly documentId: string;
+  /**
+   * Which file inside the export the rows land in. VT writes one file per
+   * (date, direction) because the journal import applies one date to a whole
+   * file; a single-file target sends `''`.
+   */
+  readonly fileName: string;
+  /** The import format the accountant picks for that file, in the target's own words. `''` when it has none. */
+  readonly dataFormat: string;
+  /** One per line the file will carry. A document split across two nominals is two rows. */
+  readonly rows: readonly (readonly string[])[];
+  /** The emitter's own warnings for THIS document. */
+  readonly warnings: readonly ExportWarning[];
+}
+
+/** A document that cannot become a row at all, named rather than dropped. */
+export interface ExportEntryRefusal {
+  readonly documentId: string;
+  readonly code: string;
+  readonly message: string;
+}
+
+export interface ExportEntryPreview {
+  readonly target: ExportTarget;
+  /** The emitter's column names, in the order the file writes them. */
+  readonly columns: readonly string[];
+  readonly documents: readonly ExportEntryDocument[];
+  /**
+   * Filled by the CALLER, not by an emitter: a document that never became a
+   * canonical row never reaches an emitter at all. It is on this shape because
+   * the reviewer needs one list, not two.
+   */
+  readonly refusals?: readonly ExportEntryRefusal[];
 }
 
 export interface EmittedFile {

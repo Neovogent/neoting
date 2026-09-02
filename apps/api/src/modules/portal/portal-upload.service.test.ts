@@ -34,6 +34,7 @@ const FACTS: PortalSessionFacts = {
   practiceId: PRACTICE,
   systemUserId: 'usr_system_1',
   actorId: 'usr_system_1',
+  contactId: null,
   chaseId: 'chase_1',
   grantedItemIds: [],
   expiresAt: new Date('2026-08-19T12:00:00.000Z'),

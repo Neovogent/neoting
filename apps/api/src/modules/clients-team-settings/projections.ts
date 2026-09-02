@@ -1,4 +1,11 @@
-import type { Business, BusinessMember, BusinessSubscription, Invite, WorkspaceRole } from '@neoting/contracts/model';
+import type {
+  Business,
+  BusinessMember,
+  BusinessSubscription,
+  Invite,
+  PracticeMember,
+  WorkspaceRole,
+} from '@neoting/contracts/model';
 import type {
   Business as PrismaBusiness,
   Invite as PrismaInvite,
@@ -81,6 +88,57 @@ export function toBusinessMember(row: MembershipRow): BusinessMember {
     hideFinancialFields: row.hideFinancialFields,
     isOwner: row.isOwner,
     createdAt: row.createdAt.toISOString(),
+  };
+}
+
+/**
+ * One person at the FIRM, folded from every membership they hold in it.
+ *
+ * A colleague scoped to three clients holds three membership rows (one per
+ * client, `practice_id` NULL — which is what makes RLS confine them), and a
+ * team list that printed them three times would be describing memberships
+ * rather than people. So the fold is the projection, and three of its rules are
+ * decisions rather than mechanics:
+ *
+ * - **A practice-WIDE row wins and empties `businessIds`.** Holding one means
+ *   RLS's practice-membership branch already reaches every client, so listing
+ *   the businesses they also hold rows on would understate their access. Empty
+ *   means "all", which is what the contract says and what is true.
+ * - **`isOwner` is true if ANY row carries it.** It is a property of the person,
+ *   not of one membership, and exactly one person per practice has it.
+ * - **`role` and `hideFinancialFields` come from the EARLIEST row.** Rows
+ *   created by one acceptance all agree, so the only way they can differ is a
+ *   membership added by hand — and the oldest is the least surprising answer.
+ */
+export interface PracticeMemberRow {
+  readonly id: string;
+  readonly email: string | null;
+  readonly firstName: string | null;
+  readonly lastName: string | null;
+  /** Ordered OLDEST FIRST by the caller — the fold depends on it. Never empty. */
+  readonly memberships: readonly Pick<PrismaMembership, 'businessId' | 'role' | 'isOwner' | 'hideFinancialFields' | 'createdAt'>[];
+}
+
+export function toPracticeMember(row: PracticeMemberRow): PracticeMember {
+  const earliest = row.memberships[0];
+  // A caller that hands over a person with no memberships has asked the wrong
+  // question — they are not a member of anything. Refusing loudly beats
+  // inventing a role.
+  if (earliest === undefined) throw new Error(`practice member ${row.id} was folded from no memberships`);
+
+  const practiceWide = row.memberships.find((m) => m.businessId === null);
+  const scoped = practiceWide === undefined ? row.memberships.flatMap((m) => (m.businessId === null ? [] : [m.businessId])) : [];
+
+  return {
+    userId: row.id,
+    email: row.email,
+    firstName: row.firstName,
+    lastName: row.lastName,
+    role: (practiceWide ?? earliest).role,
+    isOwner: row.memberships.some((m) => m.isOwner),
+    businessIds: scoped,
+    hideFinancialFields: earliest.hideFinancialFields,
+    createdAt: earliest.createdAt.toISOString(),
   };
 }
 

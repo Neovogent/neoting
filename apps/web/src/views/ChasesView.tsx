@@ -34,12 +34,19 @@ const mStage = defineMessages({
 
 // The table holds descriptors, not text: a hook cannot be called at module
 // scope, so each label is formatted where it is rendered.
-const STAGE_LABEL: Record<Chase['stage'], { label: MessageDescriptor; light: string; dark: string }> = {
-  sent: { label: mStage.sent, light: 'bg-zinc-900 text-white', dark: 'bg-raised text-zinc-300' },
-  'reminder-1': { label: mStage.reminderOne, light: 'bg-amber-100 text-amber-800', dark: 'bg-amber-500/10 text-amber-400' },
-  'reminder-2': { label: mStage.reminderTwo, light: 'bg-amber-200 text-amber-900', dark: 'bg-amber-500/15 text-amber-300' },
-  escalated: { label: mStage.escalated, light: 'bg-brand text-white', dark: 'bg-brand/15 text-brand' },
-  closed: { label: mStage.closed, light: 'bg-emerald-100 text-emerald-700', dark: 'bg-emerald-500/10 text-emerald-400' },
+//
+// There used to be two class strings per stage, `light` and `dark`, because
+// the board rendered on a hardcoded white sheet while the drawer beside it
+// rendered on a `bg-card` one. The sheet is `bg-card` now, so every stage pill
+// sits on a token surface and the light-ground variants (`bg-zinc-900`,
+// `bg-amber-100`, …) had no correct place left to be used — they were the same
+// colour in both themes, which is the bug this file just lost. One string.
+const STAGE_LABEL: Record<Chase['stage'], { label: MessageDescriptor; cls: string }> = {
+  sent: { label: mStage.sent, cls: 'bg-raised text-zinc-300' },
+  'reminder-1': { label: mStage.reminderOne, cls: 'bg-amber-500/10 text-amber-400' },
+  'reminder-2': { label: mStage.reminderTwo, cls: 'bg-amber-500/15 text-amber-300' },
+  escalated: { label: mStage.escalated, cls: 'bg-brand/15 text-brand' },
+  closed: { label: mStage.closed, cls: 'bg-emerald-500/10 text-emerald-400' },
 };
 
 const m = defineMessages({
@@ -290,19 +297,26 @@ function SyntheticChasesBoard() {
         </div>
       </div>
 
-      <div className="flex-1 bg-white rounded-t-[28px] md:rounded-t-[40px] m-2 md:m-4 mt-0 p-3 md:p-8 shadow-2xl flex flex-col overflow-hidden border border-white/10">
+      {/* ⚠ Same bug the Inboxes panel had, and the same fix. This was a
+          hardcoded white sheet — one colour in BOTH themes — so in dark mode
+          the shell went dark and the whole board stayed light, and everything
+          inside it had been coloured for that white ground (zinc-100 fills,
+          zinc-200 hairlines, zinc-900 ink, hover:bg-zinc-50). `bg-card`
+          follows the theme, which is what the rest of this file now assumes.
+          Nothing under here may reintroduce a fixed light surface. */}
+      <div className="flex-1 bg-card rounded-t-[28px] md:rounded-t-[40px] m-2 md:m-4 mt-0 p-3 md:p-8 shadow-2xl flex flex-col overflow-hidden border border-white/10">
         <div className="px-2 py-4 flex items-center justify-between mb-4 gap-4 flex-wrap">
-          <h3 className="font-sans text-xl font-bold text-zinc-900 tracking-tight">{intl.formatMessage(m.tableHeading)}</h3>
-          <div className="flex items-center gap-2 bg-pale p-1.5 rounded-full">
+          <h3 className="font-sans text-xl font-bold text-white tracking-tight">{intl.formatMessage(m.tableHeading)}</h3>
+          <div className="flex items-center gap-2 bg-raised p-1.5 rounded-full">
             <button
               onClick={() => setFilter('all')}
-              className={`px-5 py-2 rounded-full text-sm font-semibold transition-colors ${filter === 'all' ? 'bg-white text-black shadow-sm' : 'text-zinc-500 hover:text-black'}`}
+              className={`px-5 py-2 rounded-full text-sm font-semibold transition-colors ${filter === 'all' ? 'bg-brand text-brand-on shadow-glow-tab' : 'text-zinc-400 hover:text-white'}`}
             >
               {intl.formatMessage(m.filterAll)}
             </button>
             <button
               onClick={() => setFilter('overdue')}
-              className={`px-5 py-2 rounded-full text-sm font-semibold transition-colors ${filter === 'overdue' ? 'bg-white text-black shadow-sm' : 'text-zinc-500 hover:text-black'}`}
+              className={`px-5 py-2 rounded-full text-sm font-semibold transition-colors ${filter === 'overdue' ? 'bg-brand text-brand-on shadow-glow-tab' : 'text-zinc-400 hover:text-white'}`}
             >
               {intl.formatMessage(m.filterOverdue)}
             </button>
@@ -312,7 +326,7 @@ function SyntheticChasesBoard() {
         {/* Phones: one card per client with the same facts and the same two
             actions. The table below it was clipping its Action column on
             anything under ~1000px, which made chasing impossible from a phone. */}
-        <div className="flex-1 overflow-y-auto md:hidden -mx-1 divide-y divide-zinc-100">
+        <div className="flex-1 overflow-y-auto md:hidden -mx-1 divide-y divide-white/5">
           {rows.length === 0 && (
             <div className="px-4 py-12 text-center text-zinc-400 font-medium">
               {intl.formatMessage(m.emptyRows)}
@@ -321,44 +335,44 @@ function SyntheticChasesBoard() {
           {rows.map(({ client, stats, chase }) => (
             <div key={client.id} className="px-3 py-4 flex flex-col gap-3">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-zinc-100 flex items-center justify-center font-bold text-zinc-900 border border-zinc-200 shrink-0">
+                <div className="w-10 h-10 rounded-xl bg-raised flex items-center justify-center font-bold text-white border border-white/10 shrink-0">
                   {client.name.charAt(0)}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-zinc-900 font-bold text-[15px] truncate">{client.name}</div>
+                  <div className="text-white font-bold text-[15px] truncate">{client.name}</div>
                   <div className="text-[12px] text-zinc-500 font-medium">
                     {intl.formatMessage(m.cardLastUpload, { date: chase?.lastUpload ?? '\u2014' })}
                   </div>
                 </div>
                 {stats.overdue > 0 && (
-                  <span className="bg-brand text-white px-3 py-1 rounded-full text-xs font-bold shrink-0">
+                  <span className="bg-brand text-brand-on px-3 py-1 rounded-full text-xs font-bold shrink-0">
                     {intl.formatMessage(m.cardOverdue, { count: stats.overdue })}
                   </span>
                 )}
               </div>
               <dl className="grid grid-cols-3 gap-2 text-center">
-                <div className="rounded-xl bg-zinc-50 border border-zinc-100 py-2">
+                <div className="rounded-xl bg-raised/50 border border-white/5 py-2">
                   <dt className="text-[10px] uppercase tracking-widest font-bold text-zinc-400">{intl.formatMessage(m.columnMissing)}</dt>
-                  <dd className="text-[15px] font-bold text-zinc-900 tabular-nums">{stats.missing}</dd>
+                  <dd className="text-[15px] font-bold text-white tabular-nums">{stats.missing}</dd>
                 </div>
-                <div className="rounded-xl bg-zinc-50 border border-zinc-100 py-2">
+                <div className="rounded-xl bg-raised/50 border border-white/5 py-2">
                   <dt className="text-[10px] uppercase tracking-widest font-bold text-zinc-400">{intl.formatMessage(m.columnRequested)}</dt>
-                  <dd className="text-[15px] font-bold text-zinc-700 tabular-nums">{stats.requested}</dd>
+                  <dd className="text-[15px] font-bold text-zinc-300 tabular-nums">{stats.requested}</dd>
                 </div>
-                <div className="rounded-xl bg-zinc-50 border border-zinc-100 py-2">
+                <div className="rounded-xl bg-raised/50 border border-white/5 py-2">
                   <dt className="text-[10px] uppercase tracking-widest font-bold text-zinc-400">{intl.formatMessage(m.columnOverdue)}</dt>
-                  <dd className="text-[15px] font-bold text-zinc-900 tabular-nums">{stats.overdue}</dd>
+                  <dd className="text-[15px] font-bold text-white tabular-nums">{stats.overdue}</dd>
                 </div>
               </dl>
               <div className="flex items-center gap-2 flex-wrap">
                 {chase ? (
-                  <span className={`inline-flex px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide ${STAGE_LABEL[chase.stage].light}`}>
+                  <span className={`inline-flex px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide ${STAGE_LABEL[chase.stage].cls}`}>
                     {intl.formatMessage(STAGE_LABEL[chase.stage].label)}
                   </span>
                 ) : (
                   <span className="text-zinc-400 text-[12px] font-medium">{intl.formatMessage(m.noChaseSent)}</span>
                 )}
-                <span className="inline-flex px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide bg-zinc-900 text-white">
+                <span className="inline-flex px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide bg-raised text-zinc-300">
                   {chase?.policy ??
                     intl.formatMessage(m.standardPolicy, {
                       first: chasePolicy.reminderOneDays,
@@ -370,7 +384,7 @@ function SyntheticChasesBoard() {
                 {chase && (
                   <button
                     onClick={() => setOpenChase(chase.id)}
-                    className="text-sm font-bold text-zinc-700 px-4 py-2.5 rounded-full bg-zinc-100 hover:bg-zinc-200 transition-colors inline-flex items-center gap-1"
+                    className="text-sm font-bold text-zinc-300 px-4 py-2.5 rounded-full bg-white/5 hover:bg-white/10 transition-colors inline-flex items-center gap-1"
                   >
                     {intl.formatMessage(m.openAction)}
                     <ChevronRight size={14} />
@@ -379,7 +393,7 @@ function SyntheticChasesBoard() {
                 <button
                   onClick={() => chaseOne(client.id)}
                   disabled={stats.missing === 0}
-                  className="flex-1 text-sm font-bold text-white bg-zinc-900 hover:bg-black px-4 py-2.5 rounded-full transition-colors shadow-md disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="flex-1 text-sm font-bold text-brand-on bg-brand hover:bg-brand-hover px-4 py-2.5 rounded-full transition-colors shadow-md disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   {intl.formatMessage(m.reviewAndChaseAction)}
                 </button>
@@ -393,7 +407,7 @@ function SyntheticChasesBoard() {
 
         <div className="hidden md:block flex-1 overflow-y-auto overflow-x-auto">
           <table className="w-full text-left text-sm whitespace-nowrap">
-            <thead className="text-[11px] uppercase tracking-widest font-bold text-zinc-400">
+            <thead className="text-[11px] uppercase tracking-widest font-bold text-zinc-400 border-b border-white/5">
               <tr>
                 <th className="px-4 py-4">{intl.formatMessage(commonLabels.client)}</th>
                 <th className="px-4 py-4 text-right">{intl.formatMessage(m.columnMissing)}</th>
@@ -405,7 +419,7 @@ function SyntheticChasesBoard() {
                 <th className="px-4 py-4 text-right">{intl.formatMessage(m.columnAction)}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100">
+            <tbody className="divide-y divide-white/5">
               {rows.length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-4 py-16 text-center text-zinc-400 font-medium">
@@ -414,30 +428,30 @@ function SyntheticChasesBoard() {
                 </tr>
               )}
               {rows.map(({ client, stats, chase }) => (
-                <tr key={client.id} className="hover:bg-zinc-50 transition-colors group">
+                <tr key={client.id} className="hover:bg-white/[0.02] transition-colors group">
                   <td className="px-4 py-5">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-zinc-100 flex items-center justify-center font-bold text-zinc-900 border border-zinc-200">
+                      <div className="w-10 h-10 rounded-xl bg-raised flex items-center justify-center font-bold text-white border border-white/10">
                         {client.name.charAt(0)}
                       </div>
-                      <span className="text-zinc-900 font-bold text-[15px]">{client.name}</span>
+                      <span className="text-white font-bold text-[15px]">{client.name}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-5 text-right font-semibold text-zinc-900">{stats.missing}</td>
+                  <td className="px-4 py-5 text-right font-semibold text-white">{stats.missing}</td>
                   <td className="px-4 py-5 text-right font-medium text-zinc-500">{stats.requested}</td>
                   <td className="px-4 py-5 text-right font-bold">
                     {/* Both arms render the same count — the branch is styling,
                         not content. The zero used to be typed out as a literal,
                         which is a numeral the locale should format, not copy. */}
                     {stats.overdue > 0 ? (
-                      <span className="bg-brand text-white px-3 py-1 rounded-full text-xs">{stats.overdue}</span>
+                      <span className="bg-brand text-brand-on px-3 py-1 rounded-full text-xs">{stats.overdue}</span>
                     ) : (
                       <span className="text-zinc-400">{stats.overdue}</span>
                     )}
                   </td>
                   <td className="px-4 py-5">
                     {chase ? (
-                      <span className={`inline-flex px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide ${STAGE_LABEL[chase.stage].light}`}>
+                      <span className={`inline-flex px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide ${STAGE_LABEL[chase.stage].cls}`}>
                         {intl.formatMessage(STAGE_LABEL[chase.stage].label)}
                       </span>
                     ) : (
@@ -445,7 +459,7 @@ function SyntheticChasesBoard() {
                     )}
                   </td>
                   <td className="px-4 py-5 text-zinc-600">
-                    <span className="inline-flex px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide bg-zinc-900 text-white">
+                    <span className="inline-flex px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide bg-raised text-zinc-300">
                       {chase?.policy ??
                         intl.formatMessage(m.standardPolicy, {
                           first: chasePolicy.reminderOneDays,
@@ -459,7 +473,7 @@ function SyntheticChasesBoard() {
                       {chase && (
                         <button
                           onClick={() => setOpenChase(chase.id)}
-                          className="text-sm font-bold text-zinc-600 hover:text-black px-3 py-2.5 rounded-full hover:bg-zinc-100 transition-colors inline-flex items-center gap-1"
+                          className="text-sm font-bold text-zinc-400 hover:text-white px-3 py-2.5 rounded-full hover:bg-white/5 transition-colors inline-flex items-center gap-1"
                         >
                           {intl.formatMessage(m.openAction)}
                           <ChevronRight size={14} />
@@ -468,7 +482,7 @@ function SyntheticChasesBoard() {
                       <button
                         onClick={() => chaseOne(client.id)}
                         disabled={stats.missing === 0}
-                        className="text-sm font-bold text-white bg-zinc-900 hover:bg-black px-4 py-2.5 rounded-full transition-colors shadow-md disabled:opacity-30 disabled:cursor-not-allowed"
+                        className="text-sm font-bold text-brand-on bg-brand hover:bg-brand-hover px-4 py-2.5 rounded-full transition-colors shadow-md disabled:opacity-30 disabled:cursor-not-allowed"
                       >
                         {intl.formatMessage(m.reviewAndChaseAction)}
                       </button>
@@ -762,7 +776,7 @@ function ChaseDetail({ chase, onClose }: { chase: Chase; onClose: () => void }) 
               </p>
             </div>
           </div>
-          <span className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wide ${STAGE_LABEL[chase.stage].dark}`}>
+          <span className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wide ${STAGE_LABEL[chase.stage].cls}`}>
             {intl.formatMessage(STAGE_LABEL[chase.stage].label)}
           </span>
         </div>
@@ -1277,7 +1291,7 @@ function StatusPill({ status }: { status: ChaseItemStatus }) {
     requested: { label: mStatus.requested, cls: 'bg-raised text-zinc-300' },
     received: { label: mStatus.received, cls: 'bg-emerald-500/10 text-emerald-400' },
     unavailable: { label: mStatus.unavailable, cls: 'bg-amber-500/10 text-amber-400' },
-    dismissed: { label: mStatus.dismissed, cls: 'bg-zinc-800 text-zinc-500' },
+    dismissed: { label: mStatus.dismissed, cls: 'bg-white/5 text-zinc-500' },
     'cash-coded': { label: mStatus.cashCoded, cls: 'bg-brand/15 text-brand' },
   };
   const s = map[status];

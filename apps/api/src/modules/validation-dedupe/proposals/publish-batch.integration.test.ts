@@ -11,9 +11,11 @@ import { InMemoryIdempotencyStore } from '../../../common/idempotency/idempotenc
 // chase.send composition config for tests — a real secret so signed links verify.
 const TEST_CHASE_COMPOSE = { portalLinkSecret: 'test-portal-link-secret', appOrigin: 'https://app.test' };
 import { ActionProposalsService } from '../../approvals/action-proposals.service.js';
+import { analysisAccountChart, previewExportEntries } from '../../exports-public-api/index.js';
 import { LEDGER_REJECTED, previewPublishBatch } from '../../publishing/index.js';
+import { ChartOfAccountsService } from '../../rules-suggestions/index.js';
 import { ProposalExecutionRefused } from './proposal-executor.js';
-import { createPublishBatchExecutor, type PublishGateway } from './publish-batch.js';
+import { createPublishBatchExecutor, type ExportEntryPreviewer, type PublishGateway } from './publish-batch.js';
 import { buildExecutorRegistry } from './registry.js';
 
 /**
@@ -85,6 +87,25 @@ const PUBLISHING: PublishGateway = {
   previewPublishBatch,
 };
 const executor = createPublishBatchExecutor(PUBLISHING);
+
+/**
+ * The entry previewer, composed **exactly the way `approvals.module.ts` composes
+ * it**: the export's own emitter over the client's own chart of accounts, read
+ * inside the executor's transaction.
+ *
+ * Composing it any other way here would make this suite prove something the
+ * product does not do. `s10_doc_flow` is coded `COST_OF_SALES`, which is
+ * deliberately **not** a code on the seeded chart (`COS_PURCHASES` is) — so the
+ * assertions below see the honest unresolved answer: the bare code, and the
+ * `analysis-account-unprefixed` warning that puts it in front of the accountant
+ * before the release.
+ */
+const ENTRY_PREVIEW: ExportEntryPreviewer = async (db, target, documents) => {
+  const businessId = documents[0]?.businessId ?? null;
+  if (businessId === null) return previewExportEntries(target, documents, null);
+  const chart = await new ChartOfAccountsService(app).resolve(db, businessId);
+  return previewExportEntries(target, documents, analysisAccountChart(chart.categories));
+};
 
 const BUSINESSES = [BIZ, BIZ_BARE, BIZ_LEGACY];
 
@@ -186,11 +207,21 @@ async function seedDocument(id: string, over: DocumentFixture = {}): Promise<voi
   });
 }
 
-/** The server-computed preview, from the same function the proposal path uses. */
+/**
+ * The server-computed preview, from the same function the proposal path uses.
+ *
+ * ⚠ **This projection must match the executor's `DOCUMENT_SELECT`.** It briefly
+ * did not — `currency` was added to the preview and not here — and every test in
+ * this file that reaches the executor refused with "the batch no longer matches
+ * the figures that were reviewed" while quoting two identical sets of figures,
+ * because the thing that differed was the field the message does not print. A
+ * fixture that reads fewer columns than the code under test is not a smaller
+ * fixture, it is a different question.
+ */
 async function previewOf(ids: readonly string[]): Promise<PublishBatchPayload['preview']> {
   const rows = await owner.document.findMany({
     where: { id: { in: [...ids] } },
-    select: { id: true, totalPence: true, taxPence: true, supplierName: true, categoryCode: true },
+    select: { id: true, totalPence: true, taxPence: true, supplierName: true, categoryCode: true, currency: true },
   });
   const outcome = previewPublishBatch(rows);
   if (!outcome.ok) throw new Error('fixture is not publishable');
@@ -427,13 +458,16 @@ describe.skipIf(!enabled)('publish.batch against a real database', () => {
 
   test('the FULL flow: create → review → approve releases the document through the real engine', async () => {
     await seedDocument('s10_doc_flow', { supplierName: 'Adobe Systems', totalPence: 6_199, taxPence: 1_033 });
+    // ⚠ Composed the way `approvals.module.ts` composes it, entry preview
+    // included — see the assertions after the review for what that buys.
     const service = new ActionProposalsService(
       app,
-      buildExecutorRegistry({ publishing: PUBLISHING }),
+      buildExecutorRegistry({ publishing: PUBLISHING, exportEntryPreview: ENTRY_PREVIEW }),
       { detect: async () => ({ findings: [], candidatesTruncated: false }) },
       PUBLISHING,
       new InMemoryIdempotencyStore(),
     TEST_CHASE_COMPOSE,
+      ENTRY_PREVIEW,
     );
 
     const created = await service.create(
@@ -446,10 +480,58 @@ describe.skipIf(!enabled)('publish.batch against a real database', () => {
       's10-key-create',
     );
 
-    // What Read review renders is the server-computed preview, in pounds.
+    // What Read review renders is the server-computed preview, in pounds — and
+    // it is a RELEASE FOR EXPORT, not a publish to anything (D42).
     const review = await service.review(STAFF_A, created.id, 's10-key-review');
-    expect(review.renderedSummary.title).toContain('Publish 1 document');
+    expect(review.renderedSummary.title).toContain('Release 1 document for export');
     expect(review.renderedSummary.title).toContain('61.99');
+
+    /**
+     * ⚠ **The bookkeeping entry, end to end, through a real database.**
+     *
+     * *"Before publishing show the accountant the actual accounting entry that
+     * will be put into the VT software."* The unit tests prove the emitter and
+     * the render; only this proves the whole path — the entry computed at
+     * creation, stored in `jsonb`, re-parsed at review against the contract's
+     * `.strict()` member schema, and rendered.
+     *
+     * That re-parse is the step worth having a test on: `preview` briefly grew
+     * a field the contract did not have, and **every publish review answered
+     * `NT-PRP-006` "the stored payload no longer parses"** — a failure that
+     * surfaced nowhere near the field that caused it.
+     */
+    const sections = review.renderedSummary.sections as { heading: string; entries: { label: string; value: string }[] }[];
+    const entry = sections.find((section) => section.heading.startsWith('Entry 1'));
+    expect(entry?.heading).toBe('Entry 1 — Adobe Systems');
+
+    const cells = new Map(entry?.entries.map((item) => [item.label, item.value]));
+    // The document is 61.99 gross / 10.33 VAT, so the file carries 51.66 net.
+    // These are the emitter's own strings — the review is showing the file.
+    expect(cells.get('Gross amount')).toBe('61.99');
+    expect(cells.get('Input VAT')).toBe('10.33');
+    expect(cells.get('Net amount')).toBe('51.66');
+    expect(cells.get("Bank account name/supplier's name")).toBe('Adobe Systems');
+    // Dated 2026-08-01 and a purchase, so it lands in that day's purchase file.
+    expect(cells.get('Lands in')).toContain('2026-08-01-purchase-invoices.csv');
+
+    // ⚠ And it is the SAME thing the export writes. Not a similar thing: the
+    // rows are compared against what the real emitter produces for the real
+    // canonical row, so a change to either side fails here.
+    const exportable = await owner.document.findUnique({
+      where: { id: 's10_doc_flow' },
+      select: {
+        id: true, businessId: true, inbox: true, docType: true, supplierName: true,
+        customerName: true, documentDate: true, totalPence: true, taxPence: true,
+        reference: true, categoryCode: true,
+      },
+    });
+    const emitted = previewExportEntries('VT_TRANSACTION_PLUS', [exportable as never]);
+    const stored = (review.renderedSummary as unknown as { entryPreview?: unknown }).entryPreview;
+    expect(stored).toBeUndefined(); // it lives on the PAYLOAD, not the render
+    const payload = (await owner.actionProposal.findUnique({ where: { id: created.id } }))?.payload as {
+      entryPreview: { documents: { rows: string[][] }[] };
+    };
+    expect(payload.entryPreview.documents[0]?.rows).toEqual(emitted.documents[0]?.rows.map((row) => [...row]));
 
     // ⚠ D44 / stage A12: today ANY authenticated member of the practice reaches
     // this line. `assertCan(actor, 'publish.release', …)` belongs on the

@@ -23,7 +23,10 @@ answer to it.
 - **Cold start is the named risk** (SoT §21): published evidence puts category
   accuracy around 79% where the category already exists, and it collapses on a
   brand-new client — exactly when the product is being judged. Do not promise
-  past §24.4.7 in UI copy.
+  past §24.4.7 in UI copy. ⚠ The independently published production numbers are
+  **worse** than §24.4.7's: 62.5% top-1, 20.8% on an unseen category, 36%
+  zero-shot. Design to those, not to a vendor's headline — every "99%" in this
+  market is OCR extraction, not categorisation.
 - **§24.4.6 ranks what a coding error actually costs.** The chart in
   `chart-of-accounts/profiles.ts` is organised by that hierarchy and not by
   taxonomy; the reasoning is written into the file.
@@ -42,6 +45,14 @@ acceptability judgement, the versioned §24.4 context pack (a lane-D deliverable
 not this week), and any accountant-facing edit of the chart (**no contract
 operation exists** — see TODO).
 
+⚠ **The third of those was reversed on 2 Sep 2026** — see *The `AI_INFERENCE`
+rung* below. A6's fence was right about the risk and wrong about the
+consequence: with no suggestion rung, a first-time supplier could not be coded
+by anything, and the product answered a real invoice with an empty field. What
+is built is a **suggestion** carrying provenance and a confidence, never a
+coding, and it changed nothing above it on the ladder. The four-tier engine and
+natural-language rule parsing are still not built.
+
 > *A human coding it by hand is an acceptable product; a wrong code applied
 > silently is not.*
 
@@ -53,10 +64,209 @@ operation exists** — see TODO).
 | `chart-of-accounts/chart-of-accounts.service.ts` | The chart in `reference_syncs`. Seeds once, **never overwrites** |
 | `coding/authority.ts` | The authority order, as ranks. Which rungs ID fills, stated |
 | `coding/coding-decision.ts` | The answer shape — including `LOCKED` as a first-class outcome |
-| `coding/supplier-coding.service.ts` | The ladder itself, and the human lock |
+| `coding/supplier-coding.service.ts` | The ladder itself, the human lock, and `readStoredLines` |
 | `coding/rule-proposal.ts` | Decision → `rule.create` payload for the Review → Approve spine |
+| `coding/escalation.ts` | **The two closed sets** — why a coding is declined, and what is worth saying about one that is offered |
+| `coding/capital-revenue.ts` | **The decision rules.** Pure, per line. The capitalisation policy lives here as a value, never a constant |
+| `coding/ai-suggestion.ts` | The `AI_INFERENCE` rung: the document-level fold, the arithmetic hard stop, the confidence table |
+| `coding/coding-instructions.ts` | The same rules in prose for a model, the tool schema, and the strict parse that refuses an off-chart code |
 | `supplier-key.ts` | Supplier-name normalisation. Read its header before using it on a `scopeKey` |
 | `index.ts` | The public seam. Read its header before adding a name |
+
+## The `AI_INFERENCE` rung — switched on 2 Sep 2026, and why
+
+**A real invoice came back with no category at all**, repeatedly: Nexora
+Solutions LLC, a US supplier, USD $54,352.51. Three facts composed into a
+document nothing in the product was allowed to have an opinion about:
+
+1. `extraction/bedrock-extraction-schema.ts` sets `categoryCode` null on purpose
+   — *coding is the rules engine's job*;
+2. `AI_INFERENCE` was off by name (A6's brief: *DO NOT build … AI coding
+   suggestions*), and `CLIENT_CONTEXT` with it;
+3. so **only a deterministic supplier rule could code anything — and a
+   first-time supplier has no rule.**
+
+The document reached To Review with an empty field and no sentence. That is
+worse than a suggestion an accountant rejects in one click, and it is what this
+rung fixes.
+
+### Where it sits, exactly
+
+Last. `decide()` returns on an accountant's rule, then on a practice default,
+then on this client's own learned history; the rung is only reached when all
+three have declined, and `resolveForDocument` checks the human lock before the
+ladder is entered at all. **Nothing above it changed** — `outranks()` is
+untouched and the existing precedence tests still pass unmodified.
+
+### It attaches to `REVIEW`, and that is the safety property
+
+A suggestion is **not** a `CodingDecision` with `outcome: 'CODE'`. `CODE` is
+documented as *"the value that belongs in `documents.category_code`"*, and a
+model opinion is not that. The rung hangs off the `REVIEW` outcome as
+`decision.suggestion`, carrying `provenance: 'AI_SUGGESTED'` and a confidence
+(SoT §13.3), so a surface renders it as an opinion. Accepting it is still a
+`document.update-coding` proposal a human approves. `CODE` and `LOCKED` carry no
+`suggestion` field at all — the type system, not a runtime check, is what stops a
+model opinion riding along beside a rule or second-guessing a human's correction.
+
+### It never answers nothing
+
+Every path ends in a `SUGGEST` (a code, a confidence, a named basis, and a second
+choice where there was a runner-up) or an `ESCALATE` carrying a reason from a
+**closed set** in `coding/escalation.ts`:
+
+`ARITHMETIC_MISMATCH` · `NO_CHART_OF_ACCOUNTS` · `CODE_NOT_ON_CHART` ·
+`NO_LINE_DETAIL` · `SOFTWARE_TERM_UNKNOWN` · `MIXED_CAPITAL_AND_REVENUE` ·
+`MULTIPLE_CATEGORIES_ON_ONE_DOCUMENT` · `THRESHOLD_BOUNDARY` ·
+`NO_MATCH_ON_CHART` · `NEW_SUPPLIER_NO_HISTORY`
+
+They are in **severity order** and the document reports the worst one found, so a
+document whose sums do not reconcile is never categorised on top of them.
+`ai-suggestion.test.ts` asserts the no-null property over a cross product of
+charts, policies and evidence rather than by example.
+
+### The accuracy ceiling it is designed around
+
+Intuit's published research puts QuickBooks' production categoriser at **62.5%
+top-1**, **20.8%** on a category unseen for that company, **36%** zero-shot for a
+brand-new company. Every vendor "99%" in this market is OCR *extraction*, not
+categorisation. So: rules first, a model only for the tail, **human review the
+default**, and a **second choice** offered wherever there was a runner-up —
+published top-2 runs about ten points above top-1.
+
+⚠ **The confidence gates nothing**, and no branch in this repository may compare
+it to a number. `modules/extraction`'s invariant holds here: *thresholds come
+from eval measurements, never from model self-reported confidence.* It exists to
+be displayed.
+
+### The rules that decide the hard cases
+
+Stated once in `capital-revenue.ts` as code and once in `coding-instructions.ts`
+as prose; `coding-instructions.test.ts` fails if a reason or a basis exists in
+one and not the other.
+
+| | |
+|---|---|
+| **Line description beats supplier identity** | a reseller sells subscriptions AND hardware AND services, often on one invoice. The supplier name is consulted only when there is no line detail at all |
+| **Amount decides exactly one thing** | the capitalisation threshold. Never which of two expense accounts. A property test changes the amount by four orders of magnitude and asserts every non-hardware answer is byte-identical |
+| **Subscription ⇒ revenue, whatever the size** | HMRC BIM35805's under-two-years test; a right to *access* hosted software is a service contract (IFRIC, March 2019). A £22,500 annual M365 bill is not a capital item |
+| **Perpetual ⇒ capital** | an intangible, and plant for UK tax (CAA 2001 s.71). ⚠ **The same product name can be either** — "Veeam Backup & Replication Enterprise" is capital if perpetual and revenue if annual, so a line that does not state the term **escalates rather than inferring from the vendor** |
+| **The threshold is per UNIT, not per line** | 2 × $6,150 is two assets of $6,150. Tested as `net ≥ threshold × units` — no division, so no float and no rounding (R5) |
+| **The services line SPLITS** | installing and testing hardware capitalises into the asset (IAS 16.17(d)–(e)); configuring the supplier's hosted software is expensed; **training is NEVER capitalisable** (IAS 16.19(c), IAS 38.69(b)) — one of the very few genuinely bright lines |
+| **Foreign consumption tax is part of the cost** | never a tax control account. ⚠ And for a UK reverse charge it nonetheless *increases* the taxable base (HMRC VATPOSS14600) — both are said, because saying only the first invites the second to be got wrong |
+| **Arithmetic first** | the example invoice does not reconcile ($52,550 + 8.875% = $57,213.81, stated total $54,352.51). A hard stop before any classification |
+
+⚠ **The capitalisation threshold is a `CapitalisationPolicy` VALUE, not a
+constant.** There is no statutory de minimis in UK GAAP or IFRS — it is the
+practice's own accounting policy, so the same monitor is capital at one firm and
+an overhead at another. `SupplierCodingService` takes it as a constructor
+argument and it carries `source: 'PRACTICE' | 'PLATFORM_DEFAULT'` so a card can
+never present our number as theirs. The *persisted* per-practice setting needs a
+column and is therefore a contract-change issue (see TODO).
+
+### Line descriptions are untrusted content
+
+They come off documents strangers send, and since the OCR rung the channel is
+plain text. They are lower-cased and matched against patterns **this repository
+authored** — classifying a string is not obeying it, the same argument
+`chart-of-accounts.ts` makes for `businessActivity` — and they are never
+concatenated into an account name, a category, or a sentence rendered to a user:
+a line is referred to by index, never quoted back. `codingEvidenceBlock()` wraps
+the document with `wrapUntrusted`; the instructions sit outside the wrapper and a
+test pins that a hostile description cannot close it.
+
+### What the chart gained, and why each one
+
+Seven accounts, all core (the example needs `SOFTWARE_AND_SUBSCRIPTIONS`,
+`FA_COMPUTER_EQUIPMENT` and `PROFESSIONAL_FEES`, which already existed):
+
+| Code | Ledger | Justification |
+|---|---|---|
+| `HOSTING_AND_INFRASTRUCTURE` | Expenses | consuming someone else's hardware is a service contract that can never be capital, at any amount — a different reviewer question from a named software product |
+| `IT_SUPPORT_AND_MANAGED_SERVICES` | Expenses | a support contract *reads* like hardware ("24×7 server support") and acquires nothing. Without it those lines capitalised on the strength of the noun *server* |
+| `SOFTWARE_IMPLEMENTATION` | Expenses | configuring the supplier's hosted software is expensed (IFRIC cloud agenda decisions) — the revenue half of the professional-services split |
+| `IT_EQUIPMENT_AND_CONSUMABLES` | Expenses | the **below-threshold** half of the practice's own capitalisation policy, which a chart with only `FA_COMPUTER_EQUIPMENT` cannot express |
+| `FA_SOFTWARE_LICENCES` | Fixed assets | a perpetual licence: an intangible, plant for UK tax (CAA 2001 s.71) |
+| `FA_INSTALLATION_AND_COMMISSIONING` | Fixed assets | third-party work capitalising INTO an asset (IAS 16.17(d)–(e)) — the capital half of the same split |
+| `PREPAYMENTS` | **`Current assets`** | an annual fee paid up front is a prepayment, not an intangible (IFRIC, March 2019) |
+
+⚠ **`Current assets` is a FIFTH ledger**, and `account.ts`'s old rule said there
+would not be one. It carries exactly one account and a test pins that. The cost
+is downstream: VT's Converter maps on the exact string, so an unfamiliar ledger
+name costs **one manual mapping in VT** — the emitter only requires *a* prefix
+and never corrupts a figure. Adding a second balance-sheet account without an ID
+document behind it would be the picklist entry the old rule was protecting
+against.
+
+**Deliberately NOT added: an internally-developed-software account.**
+Capitalising development spend turns on IAS 38.57's six criteria, which are a
+judgement about a project rather than a fact on an invoice. Offering the code
+would invite a bespoke-development line to be capitalised *because an account
+existed for it*. Such a line escalates instead.
+
+## ⚠ The architectural blocker — `Document.categoryCode` cannot hold the answer
+
+**This is the headline finding and it is NOT built.** `prisma/schema.prisma` is
+LAW (G7) and belongs to another lane; this section is the proposal.
+
+`documents.category_code` is **one nullable string with no line-item model**. The
+Nexora invoice needs five different treatments — a subscription (revenue), two
+servers (capital), a licence of unknown term (unanswerable), a services line that
+splits, and training (never capital) — and there is no value of a single string
+that is correct. The rung's `MULTIPLE_CATEGORIES_ON_ONE_DOCUMENT` and
+`MIXED_CAPITAL_AND_REVENUE` escalations exist **because of the schema, not
+because of the rules**: the lines were classified successfully and the answer
+could not be written down.
+
+It also degrades the export. `exports-public-api` already emits *one row per
+analysis line* — the VT mechanism is there — and it is fed a single category, so
+a five-treatment invoice exports as one line whatever the emitter can do.
+
+### The proposal
+
+```prisma
+model DocumentLine {
+  id          String  @id @default(cuid())
+  documentId  String  @map("document_id")
+  ordinal     Int                                  // the order on the page
+  description String                               // UNTRUSTED — never an instruction
+  quantity    Int?                                 // units, for the PER-UNIT threshold test
+  netPence    Int     @map("net_pence")            // integer minor units
+  taxPence    Int     @map("tax_pence")
+  categoryCode String? @map("category_code")       // same free-text convention as the document
+  treatment    String? // CAPITAL | REVENUE — §24.4.6 tier 1, per line
+  provenance   String  // HUMAN_CONFIRMED | DETERMINISTIC | AI_SUGGESTED
+  confidence   Float?  // present for AI_SUGGESTED, null otherwise (contract rule)
+  escalationReason String? @map("escalation_reason") // the closed set, when the line could not be coded
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  @@unique([documentId, ordinal])
+  @@index([documentId])
+  @@map("document_lines")
+}
+```
+
+Four things that make it a real proposal rather than a table:
+
+1. **A checksum, enforced in code at the write site:** `Σ netPence + Σ taxPence`
+   must equal `documents.total_pence` to within a penny per line, and a write
+   that does not balance is refused. Lines that do not sum to the document are
+   worse than no lines — they look authoritative and quietly change a total.
+2. **`documents.category_code` stays, and stays authoritative for a
+   single-treatment document.** It becomes a *projection*: the single distinct
+   line category, or null when there is more than one. Nothing that reads the
+   column today changes, which is what makes the migration additive.
+3. **`document.update-coding` gains a line-scoped variant** so a human corrects
+   line 4 rather than the document, and the human lock becomes per line. Every
+   correction is still an approved ActionProposal.
+4. **The export gains the row-per-line it was built for**, and D43's
+   source-document link is unchanged because every line resolves to the same
+   document.
+
+Until it exists, `readStoredLines()` reads line items out of the `extractions.fields`
+jsonb where the pipeline smuggles them, the rung classifies them in memory, and a
+multi-treatment document is **reported** rather than coded. That is the honest
+behaviour for the schema as it stands, and it is not the answer.
 
 ## The four profiles, and why those four
 
@@ -222,7 +432,9 @@ PR opens. Code follows contracts; contracts never follow code.
 
 - Authority order is absolute: accountant rules, practice defaults, client
   context, learned history, then AI inference. The AI never silently overrides an
-  explicit rule — and in ID there is no AI rung at all.
+  explicit rule — it is reached only when every rung above it has declined, it
+  produces a **suggestion** rather than a coding, and it is structurally unable
+  to appear beside a `CODE` or a `LOCKED`. `CLIENT_CONTEXT` is still unfilled.
 - Every Prisma query goes through `scopedDb(ctx)` (Governance §5.2). **404, never
   403** for an invisible client or document; the detail never echoes the id.
 - Money is integer pence. Nothing in this module touches money.
@@ -241,8 +453,18 @@ needs no NestJS import, which is why `RulesSuggestionsModule` imports nothing.
 ## Tests
 
 ```bash
-pnpm --filter @neoting/api test -- rules-suggestions   # 111 tests: 103 offline + 8 against a real DB
+pnpm --filter @neoting/api test -- rules-suggestions   # 196 tests: 188 offline + 8 against a real DB
 ```
+
+The 85 added on 2 Sep 2026 are the suggestion rung. The five that matter most,
+because each pins a rule the research says is expensive to get wrong: *an annual
+subscription is revenue whatever its size* (a table of four amounts spanning five
+orders of magnitude) · *the threshold is per unit* (2 × $6,150, with the £8,000
+policy where the per-unit and per-line answers genuinely disagree) · *a software
+line with no stated term escalates rather than guessing from the vendor* · *a
+category not on the client's chart is refused, and not matched to the near miss
+it is one character away from* · *no path returns a bare null*, asserted over a
+cross product of three charts, three policies and eleven evidence shapes.
 
 The integration suite owns the **`a6_`** id namespace and tears down by explicit
 id list — never `startsWith`, because Prisma's LIKE leaves `_` a wildcard. It
@@ -264,6 +486,9 @@ deliberately did **not** do:
 - **No change to `extraction-pipeline.ts`.** Its single-tier exact
   `SUPPLIER_CUSTOMER` match is already the half that makes the second invoice
   code itself, and it was outside A6's `Owns` fence.
+  ⚠ **Superseded 2 Sep 2026 — the pipeline now calls `decide()`.** See *The
+  ladder has a caller* below; the sentence above describes A6's fence, not the
+  current wiring.
 
 ## ⚠ Owed to other lanes — one line each, and neither is a correctness blocker
 
@@ -273,16 +498,90 @@ deliberately did **not** do:
    client has its chart (and therefore working chat rule-drafting) from minute
    one. Without it the chart is seeded lazily on the first read instead, which is
    correct but later.
-2. **`extraction/extraction-pipeline.ts`** — if a future stage wants the
-   `LEARNED_HISTORY` rung to code a *first* read as well as a rule,
-   `SupplierCodingService.decide(db, businessId, supplierName)` takes a
-   `ScopedClient` and can be called inside the pipeline's own transaction.
-   ⚠ Doing so writes `categoryCode` on a fresh document, which is the pipeline's
-   existing behaviour and not a recode — but it must never touch a document that
-   already carries a human-confirmed coding.
+2. ~~**`extraction/extraction-pipeline.ts`**~~ — **DONE, 2 Sep 2026.** See
+   *The ladder has a caller* below.
+   ⚠ **The warning this item used to carry was answered by NOT doing the thing
+   it warned about.** It said calling `decide()` from the pipeline "writes
+   `categoryCode` on a fresh document". The call as built writes no category at
+   all: it stores an *opinion* beside the fields and leaves
+   `documents.category_code` to its one existing writer. That is what makes the
+   human-confirmed-coding hazard moot rather than merely avoided.
+
+## The ladder has a caller (2 Sep 2026)
+
+**196 passing tests and nobody calling them.** `decide()` shipped complete and
+the accountant still saw a blank Category with no explanation — the reported
+bug. The wiring is four small pieces and no new column:
+
+| Where | What |
+|---|---|
+| `worker/main.ts` | builds `new SupplierCodingService(prisma, new ChartOfAccountsService(prisma))` and hands it to `PrismaExtractionStep` as `coding`. The composition root is the one place that decides which implementation runs. |
+| `extraction/coding-advice.ts` | the seam. `DocumentCodingAdvisor` is an interface `SupplierCodingService` satisfies **structurally**, so this module has no idea the pipeline exists and a unit test drives the escalation branch with no database. |
+| `extraction/extraction-pipeline.ts` | calls it **inside the existing scoped transaction**, AFTER the rule match and only when that left the document uncoded. Chart, rules and history therefore read from one consistent view — which is what `decide()` takes a `ScopedClient` for. |
+| `common/documents/coding-suggestion.ts` | the stored shape and its parse. |
+
+Three invariants, each pinned by a test in
+`extraction-pipeline.integration.test.ts` against a real database:
+
+- **⚠ Nothing new writes `documents.category_code`.** The header projection is
+  still its one writer, carrying the extractor's value or an accountant's rule.
+- **⚠ A suggestion does not make a document Ready.** The mandatory set (Total +
+  Supplier + Category) is unchanged; a suggestion is not a category, so an
+  advised document lands TO_REVIEW exactly as it did before.
+- **A document a rule already coded is never asked about.** `adviseCoding`
+  returns before the call — a suggestion beside an explicit instruction is
+  pressure to second-guess it, not extra information.
+
+Accepting one is an ordinary `document.update-coding` proposal a human reads and
+approves. There is no shortcut and no second door.
 
 ## TODO
 
+- [ ] ⚠ **`DocumentLine` — the architectural blocker above.** `prisma/` is LAW
+      (G7), so it is a contract-change issue approved before a PR opens, not a
+      quiet edit. Everything needed to write the issue is in that section: the
+      model, the checksum, the projection that keeps the migration additive, and
+      the `document.update-coding` variant it implies.
+- [ ] **The capitalisation threshold has no per-practice home.** It is an
+      accounting policy, not a rule of law, and it is currently a constructor
+      argument defaulting to the platform figure (`PLATFORM_DEFAULT_CAPITALISATION_POLICY`,
+      £1,000, `source: 'PLATFORM_DEFAULT'` so no card can present it as the
+      practice's). Persisting it wants a `practices` column — LAW again — or a
+      practice-settings row. Until then every firm is on our number and is told
+      so.
+- [ ] **No model is wired behind `coding-instructions.ts`.** The instructions,
+      the tool schema and the strict parse exist and are tested offline (the same
+      split as `bedrock-extraction-schema.ts` under `bedrock-extractor.ts`); what
+      runs today is the deterministic rule layer. A Bedrock rung needs the §9.7
+      budget (`common/ai-budget.ts`), a cassette corpus for `replay`, a model pin
+      through `chat-framework/models.ts`, and its own §9.8 eval family — which is
+      a stage, not a line. `CODING_PROMPT_VERSION` is this module's own and is
+      deliberately NOT `chat-framework`'s `PROMPT_VERSION`, so a coding rule can
+      change without dragging the chat eval gate in.
+- [ ] **Nothing consumes the suggestion yet.** `decision.suggestion` is on the
+      seam and no surface reads it: there is no controller (see below) and the
+      extraction pipeline still does not call `decide()`. Rendering it is a
+      §13.3 job — provenance class visible, "show the working" expandable — and
+      it needs a contract change to reach the browser.
+- [ ] ⚠ **THE A7/A9 HANDSHAKE THIS MODULE'S SEAM PROMISES IS NOT WIRED, and it
+      is now visible to accountants.** `index.ts` names the export as consumer
+      one: *"the VT emitter's `Analysis account` column must carry the ledger
+      prefix — literally `Cost of sales: Purchases`. Map a document's
+      `categoryCode` with `resolveAccount` + `analysisAccount`."* Nothing does.
+      `exports-public-api/api/document-to-canonical.ts` passes
+      `documents.category_code` straight through, so the column carries a bare
+      `SUBSCRIPTIONS`, and VT type-guesses a bare code as a NUMBER rather than an
+      account (§24.3.1). The emitter has always raised
+      `analysis-account-unprefixed` for it, but that warning only ever appeared
+      on a finished export nobody re-read.
+      **It is now on the publish review card**, per document, because the entry
+      preview (2 Sep 2026) is built by the real emitter and carries its warnings
+      — so an accountant sees "no ledger prefix" *before* they release. That
+      makes this the sharpest open item on this seam rather than a latent one.
+      The fix is `ChartOfAccountsService.getChartOfAccounts` → `resolveAccount` +
+      `analysisAccount` at the point `document-to-canonical.ts` builds
+      `analysisAccount`; it changes what the export file contains, so it wants
+      its own change and its own round-trip check, not a drive-by edit.
 - [ ] **The accountant cannot edit the chart.** §24.4.1 says it is *owned and
       edited by the accountant thereafter*, and no contract operation exists for
       it. The storage and the never-overwrite guarantee are ready; the endpoint

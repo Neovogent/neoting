@@ -439,6 +439,61 @@ persisted home is still the jsonb (a schema/contract call). The confidence seam
 stays empty (eval-calibrated, does not exist yet) — To-Review is driven by a
 missing field or a failed validator, never an invented threshold.
 
+## The coding rung — the ladder is consulted here now (2 Sep 2026)
+
+**`categoryCode` still stays null in this module.** What changed is that the
+document no longer leaves the pipeline with *nothing said* about why.
+
+`rules-suggestions` shipped `SupplierCodingService.decide()` fully tested with
+no caller, so an uncoded document reached the accountant as a blank Category
+and an em dash. `coding-advice.ts` is the seam that closes that:
+
+- **`DocumentCodingAdvisor`** — one method, satisfied **structurally** by
+  `SupplierCodingService`. The dependency points one way: `rules-suggestions`
+  does not know this module exists, and a unit test drives the escalation
+  branch with four lines and no database.
+- **Given, not constructed.** `PrismaExtractionStepOptions.coding` is optional
+  and its absence is a real configuration, exactly as `ocr`'s is — with no
+  advisor the pipeline behaves precisely as it always did. `worker/main.ts`
+  builds the real ladder.
+- **Called inside the existing transaction**, after the supplier-rule match and
+  only when that left the document uncoded, so the chart, the rules and the
+  client's history read from one consistent view.
+- **Wrapped in a try/catch that degrades to silence + a WARN.** This step is the
+  only thing that moves a document out of PROCESSING, and a suggestion is an
+  optional extra on a document that renders perfectly well without one. The
+  caveat is stated at the call site rather than hidden: a throw that came from
+  Postgres still leaves the enclosing transaction aborted, so the job retries.
+
+**Where it is persisted, and why there is no column.** The suggestion rides in
+the existing `extractions.fields` jsonb under the reserved key
+`codingSuggestion`, the way `lineItems` already does. A suggestion is a *read of
+one extraction run* — same document, same pass, superseded wholesale by the next
+run — which is that row's own lifetime. A `documents.coding_suggestion` column
+would be a second place a document's coding is written down, one that survives a
+re-extraction it no longer describes, and `prisma/` is LAW (G7).
+
+⚠ **The key MUST be stripped from `fields` on the way out**, and
+`common/documents/document-response.ts` does it. This is the `lineItems` bug
+(#137) one key over: the contract types `Extraction.fields` as a strict map of
+`ExtractedField`, so anything else left there fails every `GET /documents/{id}`
+in the browser. It is **parsed, not cast** — a payload an older release wrote
+degrades to "no suggestion" rather than half-rendering an opinion.
+
+The rung also writes its own `document_events` row (`stage: 'code'`, outcome
+`suggested`/`escalated`, `detail.applied: false`), so *"why is this Category
+empty"* is answerable from the record and not only from the current render.
+
+⚠ **Two things this must never do, both pinned in
+`extraction-pipeline.integration.test.ts`:** nothing new writes
+`documents.category_code` (the header projection is still its one writer), and a
+suggestion never makes a document Ready — the mandatory set is unchanged, so an
+advised document lands TO_REVIEW exactly as it did before.
+
+⚠ **No `DemoExtractor` profile can exercise this**, because every one of them
+codes. The integration test therefore uses a small `UncodedExtractor` that
+reproduces the real extractor's silence on coding and nothing else.
+
 ## Replay (`EXTRACTOR=replay`)
 
 `selectExtractor('replay')` builds the real `BedrockExtractor` — store and

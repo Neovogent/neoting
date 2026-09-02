@@ -46,6 +46,7 @@ const KIND_ORDER: readonly ProposalKind[] = [
   'rule.create',
   'document.revoke-link',
   'business.offboard',
+  'document.purge',
 ];
 
 const KNOWN_KINDS = new Set<string>(Object.values(ProposalKind));

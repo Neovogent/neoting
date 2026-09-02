@@ -6,6 +6,8 @@ import type {
 
 import type { Document, DocumentEvent, DocumentSummary, Extraction } from '@neoting/contracts/model';
 
+import { CODING_SUGGESTION_KEY, readStoredCodingSuggestion } from './coding-suggestion.js';
+
 /**
  * Prisma row → contract shape, for every document read surface (#76 wrote the
  * first one, #77 reads through all of them).
@@ -107,6 +109,16 @@ export function toDocumentSummary(row: DocumentRow): DocumentSummary {
     // never a side-effect endpoint on this read surface (Governance §10).
     retryable: row.state === 'REJECTED' || row.state === 'FAILED',
     archivedAt: row.archivedAt === null ? null : row.archivedAt.toISOString(),
+    // Trash (2 Sep 2026). It sits on the SUMMARY rather than only on the detail
+    // shape deliberately: the Trash listing is `GET /documents?deleted=true`,
+    // which returns summaries, and a Trash row that could not say when it was
+    // deleted would be a list with nothing to sort or explain itself by.
+    //
+    // Null for a live document, so `deletedAt !== null` is the client-side test
+    // for "this is in Trash" — the same shape as `archivedAt` one line up, and
+    // for the same reason both are timestamps rather than `DocumentState`
+    // members.
+    deletedAt: row.deletedAt === null ? null : row.deletedAt.toISOString(),
   };
 }
 
@@ -151,8 +163,15 @@ export function toExtraction(row: ExtractionRow): Extraction {
   // `Extraction.lineItems`, optional. So the smuggled key is separated here —
   // surfaced as the contracted array when it holds one, omitted (never nulled)
   // otherwise, and stripped from `fields` either way (METH S7, #137).
+  //
+  // `codingSuggestion` rides in the same jsonb for the same reason and is
+  // separated here for the same one — see `coding-suggestion.ts`. Parsed, not
+  // cast: the column is `Json`, so a payload an older release wrote (or a hand
+  // edit made) degrades to "no suggestion" and the Category row falls back to
+  // what it showed before, rather than half-rendering an opinion.
   const raw: Record<string, unknown> = isJsonObject(row.fields) ? row.fields : {};
-  const { lineItems, ...fields } = raw;
+  const { lineItems, [CODING_SUGGESTION_KEY]: rawCoding, ...fields } = raw;
+  const codingSuggestion = readStoredCodingSuggestion(rawCoding);
 
   return {
     id: row.id,
@@ -175,5 +194,10 @@ export function toExtraction(row: ExtractionRow): Extraction {
     isAccepted: row.isAccepted,
     keyedByUserId: row.keyedByUserId,
     createdAt: row.createdAt.toISOString(),
+    // OMITTED, not nulled, when absent — the same distinction
+    // `validatorResults` makes above, and for the same reason: the key being
+    // missing means the coding ladder was not consulted for this read, which is
+    // different from it having been consulted and having nothing to say.
+    ...(codingSuggestion === null ? {} : { codingSuggestion }),
   };
 }

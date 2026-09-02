@@ -39,7 +39,11 @@
  *    unpublishable in the batch.
  */
 export { buildExecutorRegistry, type ExecutorRegistryDeps } from './proposals/registry.js';
-export { computePublishBatchPayload, type PublishGateway } from './proposals/publish-batch.js';
+export {
+  computePublishBatchPayload,
+  type ExportEntryPreviewer,
+  type PublishGateway,
+} from './proposals/publish-batch.js';
 export { type ChaseComposeConfig, CHASE_LINK_TTL_SECONDS, computeChaseSendPayload } from './proposals/compose-chase-send.js';
 export { runPublishFollowUp } from './proposals/publish-follow-up.js';
 export {

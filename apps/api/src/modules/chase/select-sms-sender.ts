@@ -39,6 +39,9 @@ export type ChaseSenderEnv = Pick<
   | 'EMAIL_FROM_ADDRESS'
   | 'EMAIL_REPLY_TO_ADDRESS'
   | 'EMAIL_CONFIGURATION_SET'
+  // Read only when EMAIL_SENDER=smtp (the local MailHog transport).
+  | 'SMTP_HOST'
+  | 'SMTP_PORT'
   | 'EMAIL_RATE_LIMIT'
   | 'REDIS_URL'
   // Read only when SMS_SENDER=aws (Phase 3).

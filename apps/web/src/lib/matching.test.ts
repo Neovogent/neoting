@@ -8,6 +8,8 @@ import {
   CONFIDENT_MIN,
   DEFAULT_MATCH_SETTINGS,
   daysBetween,
+  isMatched,
+  isUnexplained,
   matchCandidates,
   normaliseMerchant,
   parseDate,
@@ -285,5 +287,107 @@ describe('merchantSimilarity measures overlap, not alignment (#67)', () => {
   it('does not reward a repeated bigram that is not in both', () => {
     expect(sameMerchant('AAAA', 'AA')).toBe(true); // substring rule, not bigrams
     expect(sameMerchant('ABABABAB', 'ZZZZ')).toBe(false);
+  });
+});
+
+/**
+ * ⚠ THREE SURFACES USED TO ANSWER "how many bank lines are unexplained?" WITH
+ * THREE DIFFERENT DEFINITIONS, and an accountant reads them side by side.
+ *
+ * `statsFor` answered from the server's `BusinessSummary.counts`
+ * (`UNMATCHED AND NOT chase_suppressed` — the set the chase engine actually
+ * chases); `BankView`'s header used `!isMatched(t)`, which adds SUGGESTED and
+ * EXCLUDED and ignores suppression entirely; and `AnalyticsView` used
+ * `!t.matchedDocId`, which on live data counts EVERY transaction because a
+ * server row carries no document id until a match is CONFIRMED.
+ *
+ * `isUnexplained` is the one definition. These cases pin it against the
+ * server's, and — the point — against `isMatched`, which answers a different
+ * question and must not be repurposed into this one.
+ */
+describe('isUnexplained — the counting predicate, and not isMatched negated', () => {
+  it('counts a server row the chase engine would chase', () => {
+    expect(isUnexplained(txn({ matchState: 'UNMATCHED', chaseSuppressed: false }))).toBe(true);
+  });
+
+  it('does NOT count a SUGGESTED line, though the matcher still calls it unmatched', () => {
+    const suggested = txn({ matchState: 'SUGGESTED', chaseSuppressed: false });
+    // The two questions, on one row, giving opposite answers — which is the
+    // whole reason there are two functions.
+    expect(isMatched(suggested)).toBe(false);
+    expect(isUnexplained(suggested)).toBe(false);
+  });
+
+  it('does NOT count an EXCLUDED line — a human has already said so out loud', () => {
+    const excluded = txn({ matchState: 'EXCLUDED', chaseSuppressed: false });
+    expect(isMatched(excluded)).toBe(false);
+    expect(isUnexplained(excluded)).toBe(false);
+  });
+
+  it('does NOT count a chase-suppressed line, because no chase can ever bring it down', () => {
+    // SERVICE CHARGE, STRIPE PAYOUT: bank-originated, no paperwork in
+    // existence to find. The server's own `where` excludes them.
+    expect(isUnexplained(txn({ matchState: 'UNMATCHED', chaseSuppressed: true }))).toBe(false);
+  });
+
+  it('does NOT count a CONFIRMED server row that carries no matchedDocId', () => {
+    // The shape that broke AnalyticsView: confirmed on the server, no document
+    // id on the wire, so `!t.matchedDocId` reported it as unexplained.
+    const confirmed = txn({ matchState: 'CONFIRMED', chaseSuppressed: false });
+    expect(confirmed.matchedDocId).toBeUndefined();
+    expect(isUnexplained(confirmed)).toBe(false);
+  });
+
+  it('does NOT count a seeded row with a matchedDocId and no matchState', () => {
+    // The synthetic cast (METH_MODE §1): the local id is the whole of the
+    // truth, so a strict `matchState === 'UNMATCHED'` test would have emptied
+    // the demo instead of fixing live data.
+    const seeded = txn({ matchedDocId: 'd1' });
+    expect(seeded.matchState).toBeUndefined();
+    expect(isUnexplained(seeded)).toBe(false);
+  });
+
+  it('counts a seeded row with neither signal', () => {
+    expect(isUnexplained(txn())).toBe(true);
+  });
+
+  it('agrees with the seed cast wherever the seed cast can speak', () => {
+    // No seeded row carries `matchState` or `chaseSuppressed`, so for the demo
+    // the two predicates are the same set and the tour cannot have changed.
+    expect(seedTransactions.every((t) => t.matchState === undefined)).toBe(true);
+    expect(seedTransactions.filter(isUnexplained)).toEqual(seedTransactions.filter((t) => !isMatched(t)));
+  });
+
+  it('is a strict subset of not-matched, so no count can exceed the list it sits above', () => {
+    const every: BankTransaction[] = [
+      txn({ id: 'a', matchState: 'UNMATCHED', chaseSuppressed: false }),
+      txn({ id: 'b', matchState: 'SUGGESTED', chaseSuppressed: false }),
+      txn({ id: 'c', matchState: 'EXCLUDED', chaseSuppressed: false }),
+      txn({ id: 'd', matchState: 'UNMATCHED', chaseSuppressed: true }),
+      txn({ id: 'e', matchState: 'CONFIRMED', chaseSuppressed: false }),
+      txn({ id: 'f', matchedDocId: 'd1' }),
+      txn({ id: 'g' }),
+    ];
+    for (const t of every) {
+      if (isUnexplained(t)) expect(isMatched(t)).toBe(false);
+    }
+  });
+
+  it('implements the server predicate exactly, on server-shaped rows', () => {
+    const server: BankTransaction[] = [
+      txn({ id: 'a', matchState: 'UNMATCHED', chaseSuppressed: false }),
+      txn({ id: 'b', matchState: 'SUGGESTED', chaseSuppressed: false }),
+      txn({ id: 'c', matchState: 'EXCLUDED', chaseSuppressed: false }),
+      txn({ id: 'd', matchState: 'UNMATCHED', chaseSuppressed: true }),
+      txn({ id: 'e', matchState: 'CONFIRMED', chaseSuppressed: false }),
+    ];
+    // The `where` clause in `apps/api/src/modules/auth-tenancy/businesses.service.ts`,
+    // written out by hand rather than derived from the thing under test.
+    const asTheServerCounts = server.filter((t) => t.matchState === 'UNMATCHED' && t.chaseSuppressed === false);
+
+    expect(server.filter(isUnexplained)).toEqual(asTheServerCounts);
+    // And what the two old definitions would have said about the same rows.
+    expect(server.filter((t) => !isMatched(t))).toHaveLength(4);
+    expect(server.filter((t) => !t.matchedDocId)).toHaveLength(5);
   });
 });

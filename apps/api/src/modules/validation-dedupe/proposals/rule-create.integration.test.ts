@@ -39,7 +39,7 @@ const STAFF = ScopeContextSchema.parse({ actorId: 'p13_user', practiceId: P });
 // required deps and nothing more (their real suites exercise them).
 const STUB_PUBLISHING: PublishGateway = {
   ledger: { publishBill: async () => ({ ok: true, externalRef: 'STUB', attachmentSent: false }) },
-  previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0 } }),
+  previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0, currency: null } }),
 };
 
 // chase.send composition config for tests — a real secret so signed links verify.

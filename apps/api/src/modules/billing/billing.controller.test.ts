@@ -42,6 +42,7 @@ function facts(over: Partial<PortalSessionFacts> = {}): PortalSessionFacts {
     practiceId: 'prac_1',
     systemUserId: 'usr_system_1',
     actorId: 'usr_system_1',
+    contactId: null,
     chaseId: null,
     grantedItemIds: [],
     expiresAt: new Date('2026-08-28T12:00:00Z'),
@@ -58,6 +59,14 @@ function harness(over: { onboarding?: () => Promise<PortalSessionFacts> } = {}) 
     createCheckoutSession: async (ctx: ScopeContext) => {
       seen.push(ctx);
       return { url: 'https://checkout.stripe.com/c/pay/cs_test_1', expiresAt: '2026-08-28T12:00:00Z' };
+    },
+    // The customer portal, which took the second principal on 2 Sep 2026. It
+    // records through the SAME `seen` list as checkout, because the question
+    // both sets of tests ask is the same one: which scope reached the service,
+    // and did anything reach it at all on a refusal.
+    createPortalSession: async (ctx: ScopeContext) => {
+      seen.push(ctx);
+      return { url: 'https://billing.stripe.com/p/session/bps_test_1', expiresAt: null };
     },
   } as unknown as BillingService;
 
@@ -138,13 +147,69 @@ test('a bearer the portal refuses never reaches billing at all', async () => {
   expect(seen).toEqual([]);
 });
 
-test('the customer portal did NOT gain the second principal', async () => {
-  // `createBillingPortalSession` keeps one security scheme in `openapi.yaml`:
-  // it is card changes, invoices and cancellation on a business that is already
-  // subscribed, reached from that client's own settings. The handler takes no
-  // `authorization` argument, and this is what says so if one is added without
-  // the contract moving first.
+/* ── the customer portal, which gained the second principal on 2 Sep 2026 ──── */
+
+test('the customer portal takes the same two principals as checkout', async () => {
+  // ⚠ This test asserted the OPPOSITE until 2 Sep 2026 — "the customer portal
+  // did NOT gain the second principal" — and it was right about #205's scope
+  // and wrong about the product. D48 makes the client the payer and D49 gives
+  // them a Settings tab; Stripe's hosted portal is the ONLY surface in the
+  // product for changing a card, reading an invoice or cancelling; and the only
+  // door to it was a workspace cookie no client holds. A subscription its payer
+  // cannot leave is not one they consented to.
+  //
+  // The arity check stays, inverted: both handlers now take the header, and
+  // dropping it from either would silently return this door to one principal.
   const { controller } = harness();
-  expect(controller.portal.length).toBe(2);
+  expect(controller.portal.length).toBe(3);
   expect(controller.checkout.length).toBe(3);
+});
+
+test('no Authorization header on the customer portal is still the accountant', async () => {
+  const { controller, seen } = harness();
+  await controller.portal({ businessId: 'biz_1', returnUrl: 'https://app.example/back' }, KEY, undefined);
+  expect(seen).toEqual([COOKIE_CTX]);
+});
+
+test('a bearer opens the customer portal for the session\'s OWN business, under the practice SYSTEM scope', async () => {
+  const { controller, seen } = harness();
+  const result = await controller.portal(
+    { businessId: 'biz_1', returnUrl: 'https://app.example/back' },
+    KEY,
+    'Bearer portal.bearer',
+  );
+  expect(result.url).toContain('billing.stripe.com');
+  expect(seen).toEqual([{ actorId: 'usr_system_1', practiceId: 'prac_1', sessionScope: 'user', grantedItemIds: [] }]);
+});
+
+test('⚠ a bearer naming ANOTHER business gets 404 from the customer portal, and nothing reaches Stripe', async () => {
+  // The guard `BillingPortalSessionRequest` never had, added in the same edit as
+  // the principal. Without it, a client holding one workspace's portal bearer
+  // could open ANOTHER workspace's billing portal: every invoice, the card, and
+  // cancellation. `systemScopeFor` sees the whole practice, so RLS narrows
+  // nothing — this comparison is the entire boundary.
+  //
+  // 404 and never 403, for the reason checkout gives: a 403 confirms the other
+  // business exists.
+  const { controller, seen } = harness({ onboarding: async () => facts({ businessId: 'biz_someone_else' }) });
+  const error = await grab(() =>
+    controller.portal({ businessId: 'biz_1', returnUrl: 'https://app.example/back' }, KEY, 'Bearer portal.bearer'),
+  );
+  expect(error.getStatus()).toBe(404);
+  expect(error.code).toBe('NT-VAL-001');
+  expect(seen).toEqual([]);
+});
+
+test('a bearer the portal refuses never reaches the customer portal either', async () => {
+  const { controller, seen } = harness({
+    onboarding: async () => {
+      throw portalSessionRequired('missing or invalid portal session');
+    },
+  });
+  const error = await grab(() =>
+    controller.portal({ businessId: 'biz_1', returnUrl: 'https://app.example/back' }, KEY, 'Bearer forged'),
+  );
+  expect(error.code).toBe('NT-OTP-002');
+  expect(error.getStatus()).toBe(401);
+  expect(seen).toEqual([]);
 });

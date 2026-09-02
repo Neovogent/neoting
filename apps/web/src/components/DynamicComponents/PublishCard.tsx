@@ -111,7 +111,7 @@ export function PublishCard({ clientIds }: { clientIds: string[] }) {
               <span className="text-zinc-400 truncate">
                 {intl.formatMessage(m.itemisedRow, { supplier: d.supplier, category: d.category })}
               </span>
-              <span className="text-white font-bold shrink-0">{currency(d.total)}</span>
+              <span className="text-white font-bold shrink-0">{currency(d.total, d.currency)}</span>
             </div>
           ))}
           {publishable.length === 0 && (

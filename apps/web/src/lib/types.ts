@@ -30,6 +30,20 @@ export interface Client {
   bankConnected: boolean;
   contactName?: string | undefined;
   mobile?: string | undefined;
+  /**
+   * The primary contact's address, from the contract's
+   * `BusinessSummary.primaryContactEmail` on a live row.
+   *
+   * ⚠ **Display only — there is no path that writes it back.** The client
+   * details panel proposes changes through `ClientDetailChange['field']`, which
+   * applies onto this shape locally, and the only server write to a contact is
+   * `POST /businesses` at intake. An editable input here would stage a change
+   * nothing can persist, which this repo's rule ("a button whose write the next
+   * poll reverts is worse than absent") forbids. Chases go out by EMAIL in this
+   * release, so the accountant must be able to READ it; changing it needs a
+   * contract operation that does not exist yet.
+   */
+  email?: string | undefined;
   vatNumber?: string | undefined;
   /** Ltd, LLP, sole trader… — drives the filings the client is subject to. */
   companyType?: string | undefined;
@@ -863,6 +877,11 @@ export type Intent =
   | 'CHASE_MISSING'
   | 'APPROVE_CHASE'
   | 'SHOW_INBOX'
+  // The server's SHOW_STATEMENTS lands here (#233). D40 makes uploaded
+  // statements the only bank input in ID, so "show me the bank statements" is a
+  // request for a screen this product already has — the Bank tab's Statements
+  // sub-tab — and not a question to be refused.
+  | 'SHOW_STATEMENTS'
   | 'SHOW_REJECTED'
   | 'SHOW_APPROVALS'
   | 'APPROVE_ITEMS'
@@ -871,7 +890,12 @@ export type Intent =
   | 'SHOW_DUPLICATES'
   | 'SHOW_MATCHES'
   | 'PUBLISH'
-  | 'INVITE_USER'
+  // ⚠ No `INVITE_USER`. It was removed with the last of its producers (2 Sep
+  // 2026): `UserInviteForm` and its `IntentRenderer` case had already gone, and
+  // the union member was what let the classifier, the tour and a canned reply
+  // keep compiling against a card that no longer existed. Inviting a colleague
+  // is `POST /v1/practice-members` on the Team screen; the server's chat runtime
+  // has never had an intent for it, so nothing live regressed.
   | 'SHOW_ANALYTICS'
   | 'SHOW_AUDIT'
   | 'SHOW_MISSING_TABLE'
@@ -888,6 +912,7 @@ export const READ_ONLY_INTENTS: Intent[] = [
   'GENERAL',
   'SHOW_MISSING',
   'SHOW_INBOX',
+  'SHOW_STATEMENTS',
   'SHOW_REJECTED',
   'SHOW_APPROVALS',
   'REVIEW_DOCUMENT',

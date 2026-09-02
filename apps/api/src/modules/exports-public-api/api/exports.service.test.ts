@@ -9,9 +9,10 @@ import { InMemoryIdempotencyStore } from '../../../common/idempotency/idempotenc
 import type { AppException } from '../../../common/problem/problem.js';
 import type { DocumentStore } from '../../ingestion-routing/index.js';
 import type { CanonicalSourceLink } from '../canonical/canonical-row.js';
+import { VT_LIST_COLUMNS } from '../emitters/vt/vt-transaction-plus-emitter.js';
 import type { DocumentLinkService } from '../links/document-link.service.js';
 
-import { ExportsService, MAX_EXPORT_DOCUMENTS } from './exports.service.js';
+import { type ChartOfAccountsReader, ExportsService, MAX_EXPORT_DOCUMENTS } from './exports.service.js';
 
 const CTX: ScopeContext = { actorId: 'usr_1', practiceId: 'prac_1', sessionScope: 'user', grantedItemIds: [] };
 const NOW = new Date('2026-02-01T09:30:00.000Z');
@@ -59,11 +60,14 @@ function document(id: string, over: Partial<FakeDocument> = {}): FakeDocument {
 
 interface Calls {
   documentFindMany: { where?: unknown; take?: number }[];
+  documentAggregate: { where?: unknown }[];
   exportCreate: { data: Record<string, unknown> }[];
   exportFindMany: { where?: unknown; orderBy?: unknown; take?: number }[];
   put: { contentType: string; workspaceId: string | null; bytes: Buffer }[];
   presignGet: { key: string; expiresInSeconds: number; contentType: string; filename: string }[];
   linksFor: string[][];
+  /** The `businessId` each chart-of-accounts read asked for. One per export. */
+  getChartOfAccounts: string[];
 }
 
 function harness(
@@ -75,16 +79,40 @@ function harness(
     linkable?: (id: string) => boolean;
     /** Object keys that read back as bytes. Defaults to every document's key. */
     storage?: Map<string, Buffer>;
+    /**
+     * This client's Published documents whose date falls OUTSIDE the requested
+     * period — what the `NT-EXP-001` refusal counts so an accountant is told
+     * where their documents actually are.
+     *
+     * A separate list rather than a filter over `documents`, because this fake's
+     * `findMany` deliberately ignores `where` (see the ⚠ on `document` below):
+     * making the aggregate derive the same answer from the same list would be a
+     * fake reimplementing the query it is standing in for, and would pass
+     * whatever the service asked. The real predicate is proven against a real
+     * database in `exports.integration.test.ts`.
+     */
+    publishedOutsidePeriod?: FakeDocument[];
+    /**
+     * The client's chart of accounts, as `{ code, name }` with `name` already
+     * ledger-prefixed — what `ChartOfAccountsService.getChartOfAccounts` hands
+     * over. Absent means no reader at all (the pre-2 Sep 2026 shape, and what a
+     * caller that constructs this service without one gets); `'unavailable'`
+     * makes the read throw, which must degrade to bare codes rather than to a
+     * failed export.
+     */
+    chart?: readonly { code: string; name: string }[] | 'unavailable';
   } = {},
 ) {
   const documents = options.documents ?? [document('doc_1')];
   const calls: Calls = {
     documentFindMany: [],
+    documentAggregate: [],
     exportCreate: [],
     exportFindMany: [],
     put: [],
     presignGet: [],
     linksFor: [],
+    getChartOfAccounts: [],
   };
   const storage = options.storage ?? new Map(documents.map((d) => [d.s3Key, ORIGINAL_BYTES]));
 
@@ -102,6 +130,19 @@ function harness(
       findMany: async (args: { where?: unknown; take?: number }) => {
         calls.documentFindMany.push(args);
         return documents;
+      },
+      aggregate: async (args: { where?: unknown }) => {
+        calls.documentAggregate.push(args);
+        const outside = options.publishedOutsidePeriod ?? [];
+        const dates = outside
+          .map((row) => row.documentDate)
+          .filter((date): date is Date => date !== null)
+          .sort((a, b) => a.getTime() - b.getTime());
+        return {
+          _count: { _all: outside.length },
+          _min: { documentDate: dates[0] ?? null },
+          _max: { documentDate: dates[dates.length - 1] ?? null },
+        };
       },
     },
     export: {
@@ -159,10 +200,23 @@ function harness(
     },
   } as unknown as DocumentLinkService;
 
+  // Structural, exactly as `ChartOfAccountsService` satisfies it — the port is
+  // "give me this client's `{ code, name }` pairs" and nothing else.
+  const charts: ChartOfAccountsReader | null =
+    options.chart === undefined
+      ? null
+      : {
+          getChartOfAccounts: async (_ctx: ScopeContext, businessId: string) => {
+            calls.getChartOfAccounts.push(businessId);
+            if (options.chart === 'unavailable') throw new Error('reference_syncs is unreachable');
+            return { categories: options.chart ?? [] };
+          },
+        };
+
   return {
     calls,
     storage,
-    service: new ExportsService(prisma, store, links, new InMemoryIdempotencyStore(), () => NOW),
+    service: new ExportsService(prisma, store, links, new InMemoryIdempotencyStore(), () => NOW, charts),
   };
 }
 
@@ -361,6 +415,160 @@ test('emitter warnings travel to the caller — a collapsed multi-nominal is not
   expect(result.warnings?.map((w) => w.code)).toContain('analysis-account-unprefixed');
 });
 
+// ---------------------------------------------------------------------------
+// Column G — the nominal, and the defect this service shipped with
+// ---------------------------------------------------------------------------
+
+/**
+ * The client's chart, in the shape `ChartOfAccountsService.getChartOfAccounts`
+ * returns: `{ code, name }` with `name` ALREADY ledger-prefixed.
+ * `analysisAccount()` in `rules-suggestions` is the one place that join
+ * happens, and nothing on this side of the seam rebuilds it — VT's Converter
+ * saves the accountant's mapping against the exact string it was given.
+ */
+const CHART = [
+  { code: 'COS_PURCHASES', name: 'Cost of sales: Purchases' },
+  { code: 'SOFTWARE_AND_SUBSCRIPTIONS', name: 'Expenses: Software and subscriptions' },
+];
+
+/**
+ * Column G of the first emitted row, read back out of the real ZIP.
+ *
+ * ⚠ **Quote-aware, and it has to be.** This fixture's supplier is
+ * `Épicerie Dubois, S.à r.l.` and Column B carries a `·`-joined details string,
+ * so a naive `split(',')` lands on the amount in Column C. The emitter's own
+ * suite has the same parser for the same reason.
+ */
+function analysisAccountCell(calls: Calls): string {
+  const line = emittedCsv(calls).trim().split('\r\n')[0] ?? '';
+  const cells: string[] = [];
+  let cell = '';
+  let quoted = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (quoted) {
+      if (char === '"') {
+        if (line[index + 1] === '"') {
+          cell += '"';
+          index += 1;
+        } else quoted = false;
+      } else cell += char;
+      continue;
+    }
+    if (char === '"') quoted = true;
+    else if (char === ',') {
+      cells.push(cell);
+      cell = '';
+    } else cell += char;
+  }
+  cells.push(cell);
+
+  expect(cells).toHaveLength(VT_LIST_COLUMNS.length);
+  return cells[cells.length - 1] ?? '';
+}
+
+test('the Analysis account column carries the LEDGER-PREFIXED name, not the category code', async () => {
+  /**
+   * ⚠ **THE DEFECT, AND THE ONE ASSERTION THAT PROVES IT GONE.**
+   *
+   * `documents.category_code` holds `COS_PURCHASES`. VT Transaction+ wants
+   * `Cost of sales: Purchases` in Column G — VT's format designer type-guesses
+   * each cell, so a bare code is read as text VT cannot match to a nominal (and
+   * a numeric one, `5001`, renders as the NUMBER `5,001.00`). Until this fix the
+   * service passed the column straight into the column and every client's import
+   * file carried the code.
+   *
+   * This reads the bytes back out of the archive rather than trusting a return
+   * value, because the file is the deliverable.
+   */
+  const { calls, service } = harness({
+    documents: [document('doc_1', { categoryCode: 'COS_PURCHASES' })],
+    chart: CHART,
+  });
+
+  const result = await service.createExport(CTX, request(), KEY);
+
+  expect(analysisAccountCell(calls)).toBe('Cost of sales: Purchases');
+  // And it is not a warning case any more: the prefix is there, so VT matches
+  // the nominal with no mapping at all.
+  expect(result.warnings?.map((w) => w.code) ?? []).not.toContain('analysis-account-unprefixed');
+});
+
+test('a code the client’s chart does not carry is WARNED about, never guessed into a ledger', async () => {
+  /**
+   * The honest unresolvable answer, and the reason it is not a refusal.
+   *
+   * `documents.category_code` is free text in the schema and an accountant's own
+   * explicit rule may legitimately name a code the chart does not carry, so
+   * dropping the row would be the silently-short file §24.3.4 exists to prevent.
+   * Inventing `Expenses: Subscriptions` to make the cell LOOK right would be
+   * worse still — a wrong nominal in somebody's books, which §24.4.6 ranks above
+   * every other coding error.
+   *
+   * So the cell keeps exactly what the column held, and the document is named in
+   * `warnings` — which is the same array the publish review card renders, so the
+   * accountant meets this BEFORE releasing rather than inside VT afterwards.
+   */
+  const { calls, service } = harness({
+    documents: [document('doc_1', { categoryCode: 'SUBSCRIPTIONS' })],
+    chart: CHART,
+  });
+
+  const result = await service.createExport(CTX, request(), KEY);
+
+  const warning = result.warnings?.find((w) => w.code === 'analysis-account-unprefixed');
+  expect(warning).toBeDefined();
+  expect(warning?.documentId).toBe('doc_1');
+  // It names the account so the accountant knows WHICH one to fix.
+  expect(warning?.message).toContain('SUBSCRIPTIONS');
+  expect(warning?.message).toContain('no ledger prefix');
+
+  // The bare code did reach the file — but loudly. What must never appear is a
+  // ledger nobody chose.
+  expect(analysisAccountCell(calls)).toBe('SUBSCRIPTIONS');
+  expect(analysisAccountCell(calls)).not.toContain(':');
+  // And the row is still there: a refusal would have been a short file.
+  expect(result.rowCount).toBe(1);
+});
+
+test('a chart that cannot be read costs the prefix, never the export', async () => {
+  // The chart is a picklist, not the client's money. Losing it must not make a
+  // month unexportable — every row falls back to its bare code and every one of
+  // them warns, which is loud and recoverable in VT's Converter.
+  const { calls, service } = harness({
+    documents: [document('doc_1', { categoryCode: 'COS_PURCHASES' })],
+    chart: 'unavailable',
+  });
+
+  const result = await service.createExport(CTX, request(), KEY);
+
+  expect(result.state).toBe('succeeded');
+  expect(result.rowCount).toBe(1);
+  expect(analysisAccountCell(calls)).toBe('COS_PURCHASES');
+  expect(result.warnings?.map((w) => w.code)).toContain('analysis-account-unprefixed');
+});
+
+test('the chart is read ONCE for the batch, and against the requested client', async () => {
+  // 500 documents is the batch cap and the chart is one client's picklist —
+  // re-reading it per row would be 500 scoped reads inside one synchronous
+  // request (Governance §5.1). The `businessId` is the export's own, so the
+  // nominals come from the books the file is for.
+  const { calls, service } = harness({
+    documents: [
+      document('doc_1', { categoryCode: 'COS_PURCHASES' }),
+      document('doc_2', { categoryCode: 'SOFTWARE_AND_SUBSCRIPTIONS' }),
+      document('doc_3', { categoryCode: 'COS_PURCHASES' }),
+    ],
+    chart: CHART,
+  });
+
+  const result = await service.createExport(CTX, request(), KEY);
+
+  expect(result.rowCount).toBe(3);
+  expect(calls.getChartOfAccounts).toEqual(['biz_1']);
+});
+
 // ── the refusals ────────────────────────────────────────────────────────────
 
 test('nothing Published in the period is NT-EXP-001, and it names the period in UK d/m/y', async () => {
@@ -371,6 +579,150 @@ test('nothing Published in the period is NT-EXP-001, and it names the period in 
   expect(error.code).toBe('NT-EXP-001');
   expect(error.getStatus()).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
   expect(error.publicDetail).toContain('01/01/2026 to 31/01/2026');
+  // A client with genuinely nothing Published gets the plain refusal. "0
+  // documents outside the period" is noise, and an always-present extension
+  // would make its absence meaningless to a consumer.
+  expect(error.extension).toBeUndefined();
+  expect(error.publicDetail).toContain('no Published documents outside that period either');
+});
+
+/**
+ * ⚠ **THE DEAD END THIS FIXES, reported from the live app.**
+ *
+ * A practice had exactly one Published document — supplier *Nexora Solutions
+ * LLC*, **dated 12 May 2025** — and the export screen, defaulting to last
+ * month, answered *"No documents reached Published in 01/08/2026 to 31/08/2026
+ * for this client."* The accountant read that as **published, but it will not
+ * export**, and concluded the feature was broken.
+ *
+ * The code was right: the period selects on the document's own date, and May
+ * 2025 is genuinely outside an August 2026 window. The PRODUCT was unhelpful —
+ * it told the one person who could fix it nothing they could act on. So the
+ * refusal now answers the question it provokes.
+ */
+test('a client whose Published documents sit OUTSIDE the period is told so, with the dates', async () => {
+  const { service } = harness({
+    documents: [],
+    publishedOutsidePeriod: [document('doc_nexora', { documentDate: new Date('2025-05-12T00:00:00.000Z') })],
+  });
+
+  const error = await refusal(() => service.createExport(CTX, request(), KEY));
+
+  expect(error.code).toBe('NT-EXP-001');
+  expect(error.title).toBe('Nothing to export in that period');
+  // The sentence an accountant reads: what is true, why, and what to do.
+  expect(error.publicDetail).toContain('There is 1 Published document');
+  expect(error.publicDetail).toContain('dated 12/05/2025');
+  expect(error.publicDetail).toContain("selects on the document's own date, not on when it was released");
+  expect(error.publicDetail).toContain('Widen the period to include it');
+
+  // And the same fact as DATA, so the screen can offer the period rather than
+  // asking the accountant to parse an English sentence for two dates.
+  expect(error.extension?.publishedOutsidePeriod).toEqual({
+    count: 1,
+    earliestDocumentDate: '2025-05-12',
+    latestDocumentDate: '2025-05-12',
+  });
+});
+
+test('several documents outside the period report the span that would include them all', async () => {
+  const { service, calls } = harness({
+    documents: [],
+    publishedOutsidePeriod: [
+      document('a', { documentDate: new Date('2025-05-12T00:00:00.000Z') }),
+      document('b', { documentDate: new Date('2025-11-30T00:00:00.000Z') }),
+      document('c', { documentDate: new Date('2025-07-01T00:00:00.000Z') }),
+    ],
+  });
+
+  const error = await refusal(() => service.createExport(CTX, request(), KEY));
+
+  expect(error.publicDetail).toContain('There are 3 Published documents');
+  expect(error.publicDetail).toContain('dated between 12/05/2025 and 30/11/2025');
+  expect(error.extension?.publishedOutsidePeriod).toEqual({
+    count: 3,
+    earliestDocumentDate: '2025-05-12',
+    latestDocumentDate: '2025-11-30',
+  });
+
+  // ⚠ The count comes from the SAME predicate the export selects on, with the
+  // date clause and NOTHING else dropped. A different state, a different
+  // business, or a `documentIds` narrowing the export honoured and this did not
+  // would make the refusal describe documents the export would never include.
+  const aggregate = calls.documentAggregate[0]?.where as Record<string, unknown>;
+  expect(aggregate?.['businessId']).toBe('biz_1');
+  expect(aggregate?.['state']).toBe('PUBLISHED');
+  expect(aggregate?.['NOT']).toEqual({ documentDate: { gte: expect.any(Date), lt: expect.any(Date) } });
+});
+
+test('⚠ Trash is excluded from the SELECTION and from the outside-period count — the same set, or the advice cannot be followed', async () => {
+  // Soft delete (`documents.deleted_at`, 2 Sep 2026). `state: 'PUBLISHED'` does
+  // NOT save this query: deletion is a timestamp, not a state, so a Published
+  // document keeps its state when it is deleted and would otherwise walk
+  // straight into an export file an accountant hands to a client.
+  const { service, calls } = harness({
+    documents: [],
+    publishedOutsidePeriod: [document('doc_outside', { documentDate: new Date('2025-05-12T00:00:00.000Z') })],
+  });
+  await refusal(() => service.createExport(CTX, request(), KEY));
+
+  const selection = calls.documentFindMany[0]?.where as Record<string, unknown>;
+  const diagnostic = calls.documentAggregate[0]?.where as Record<string, unknown>;
+
+  expect(selection?.['deletedAt']).toBeNull();
+
+  // ⚠ The count that tells an accountant to WIDEN THE PERIOD must reach the
+  // same set the selection can. Filtering only the selection would make this
+  // the worse bug: the refusal says "there are 3 Published documents outside
+  // that period, widen it to include them", they widen it exactly as
+  // instructed, and the export comes back empty again — with the suggested
+  // bounds having been read off a document that can never be selected. That is
+  // why `publishedWhere()` is one function and why the predicate lives inside
+  // it rather than at either call site.
+  expect(diagnostic?.['deletedAt']).toBeNull();
+
+  // Said as an identity rather than as two separate `toBeNull`s: everything
+  // except the date clause has to be common to both, so a future clause added
+  // to one and not the other fails here too.
+  const { documentDate: _selectionDate, ...selectionRest } = selection;
+  const { NOT: _diagnosticDate, ...diagnosticRest } = diagnostic;
+  expect(selectionRest).toEqual(diagnosticRest);
+});
+
+test('a named id that is not exportable is still NT-VAL-001, and never reaches the outside-period count', async () => {
+  const { service, calls } = harness({
+    documents: [],
+    publishedOutsidePeriod: [document('doc_named', { documentDate: new Date('2025-05-12T00:00:00.000Z') })],
+  });
+
+  const error = await refusal(() => service.createExport(CTX, request({ documentIds: ['doc_named'] }), KEY));
+
+  // Unchanged behaviour, and it is the disclosure-safe one: naming an id that
+  // is not exportable is refused BEFORE anything counts documents, so the new
+  // fact can never become an oracle for "does this id exist, just elsewhere?".
+  expect(error.code).toBe('NT-VAL-001');
+  expect(calls.documentAggregate).toHaveLength(0);
+
+  // When the count IS reached with ids named, it is narrowed to those ids —
+  // "outside the period" means outside it among the ids the caller asked
+  // about, never a count over documents they did not.
+  const empty = harness({ documents: [], publishedOutsidePeriod: [] });
+  await refusal(() => empty.service.createExport(CTX, request({ documentIds: [] }), KEY));
+  expect((empty.calls.documentAggregate[0]?.where as Record<string, unknown>)?.['id']).toEqual({ in: [] });
+});
+
+test('documents Published but undated are counted by neither side — there is no period to widen to', async () => {
+  const { service } = harness({
+    documents: [],
+    publishedOutsidePeriod: [document('doc_undated', { documentDate: null })],
+  });
+
+  const error = await refusal(() => service.createExport(CTX, request(), KEY));
+
+  // The aggregate finds a row and no dates. Naming a range would be inventing
+  // one, so the plain refusal is the honest answer.
+  expect(error.code).toBe('NT-EXP-001');
+  expect(error.extension).toBeUndefined();
 });
 
 test('documents found but none exportable is still NT-EXP-001, carrying the first reason', async () => {

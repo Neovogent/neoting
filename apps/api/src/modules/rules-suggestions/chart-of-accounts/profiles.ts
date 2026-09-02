@@ -42,6 +42,37 @@ import type { ChartAccount } from './account.js';
  *    business entertaining separately from staff welfare, charitable separately
  *    from political donations, depreciation, private use, and every capital
  *    item in its own ledger.
+ *
+ * ## The seven IT/software accounts, and the invoice that earned them
+ *
+ * A real supplier invoice — one US reseller, one document, five different
+ * treatments — came back from the pipeline with no category at all, and the
+ * core chart could not have expressed the right answer even by hand. Rule 2
+ * above is the reason these are seven codes and not one:
+ *
+ * | Code | The distinction it makes representable |
+ * |---|---|
+ * | `HOSTING_AND_INFRASTRUCTURE` | consumption of someone else's hardware — a service contract that can never be capital, at any amount |
+ * | `IT_SUPPORT_AND_MANAGED_SERVICES` | a recurring support contract that *reads* like hardware ("24×7 server support") and acquires nothing |
+ * | `SOFTWARE_IMPLEMENTATION` | configuring the supplier's hosted software — expensed, because the client controls nothing |
+ * | `IT_EQUIPMENT_AND_CONSUMABLES` | the below-threshold half of the practice's own capitalisation policy |
+ * | `FA_SOFTWARE_LICENCES` | a **perpetual** licence: an intangible, and plant for UK tax (CAA 2001 s.71) |
+ * | `FA_INSTALLATION_AND_COMMISSIONING` | third-party work that capitalises INTO an asset (IAS 16.17(d)–(e)) |
+ * | `PREPAYMENTS` | an annual fee paid up front is a prepayment, not an intangible (IFRIC, March 2019) |
+ *
+ * The pair that matters most is the last two-but-one: with only one
+ * "professional fees" code, *"professional services — setup and
+ * configuration"* has no correct answer, because half of it capitalises and
+ * half of it does not. With both, the line is splittable and the coding rules
+ * can say so instead of guessing (`coding/capital-revenue.ts`).
+ *
+ * **Deliberately NOT added: an internally-developed-software / development-costs
+ * account.** Capitalising development spend turns on IAS 38.57's six criteria —
+ * technical feasibility, intention and ability to complete, probable future
+ * benefits, adequate resources, and reliable measurement — which are a
+ * judgement about a project, not a fact on an invoice. Offering the code would
+ * invite a bespoke-development line to be capitalised because an account
+ * existed for it. Such a line escalates instead.
  */
 
 export const BUSINESS_PROFILE_IDS = [
@@ -213,7 +244,94 @@ const CORE_ACCOUNTS: readonly ChartAccount[] = [
     name: 'Software and subscriptions',
     vatTreatment: 'STANDARD',
     taxConsequence: 'ALLOWABLE',
-    keywords: ['software', 'subscription', 'saas', 'licence fee', 'hosting', 'domain'],
+    // ⚠ `hosting` moved to `HOSTING_AND_INFRASTRUCTURE` — the same reasoning as
+    // "premises cleaning" rather than "cleaning" below. A client who says
+    // "hosting" wants the infrastructure account, and leaving the word here put
+    // two accounts on the picklist for one cost with nothing to choose between.
+    keywords: ['software', 'subscription', 'saas', 'licence fee', 'domain', 'per user per month', 'seat licence'],
+    reviewNote:
+      'Revenue, whatever the size of the bill. A right to ACCESS supplier-hosted software is a service contract (IFRIC agenda decision, March 2019) and HMRC BIM35805 treats software with a useful life under two years as revenue — a £22,500 annual licence bill is not a capital item. A perpetual licence is FA_SOFTWARE_LICENCES instead, and the invoice has to SAY which it is.',
+  },
+  {
+    /**
+     * Cloud infrastructure bought by consumption — never capital, and a
+     * different question from a named software product.
+     *
+     * A right to access someone else's hardware is a service contract in the
+     * same sense the IFRIC March 2019 agenda decision makes SaaS one: nothing
+     * is controlled, so there is no asset to recognise, at any amount. Keeping
+     * it apart from `SOFTWARE_AND_SUBSCRIPTIONS` matters because the reviewer
+     * question differs — a software line can be capital if it is perpetual, an
+     * infrastructure line never can be, so a line that lands here needs no
+     * capital/revenue judgement at all.
+     */
+    code: 'HOSTING_AND_INFRASTRUCTURE',
+    ledger: 'Expenses',
+    name: 'Hosting and infrastructure',
+    vatTreatment: 'STANDARD',
+    taxConsequence: 'ALLOWABLE',
+    keywords: ['hosting', 'cloud', 'data centre', 'datacenter', 'colocation', 'bandwidth', 'iaas', 'server hosting', 'backup storage'],
+  },
+  {
+    /**
+     * A recurring support, monitoring or managed-service contract.
+     *
+     * It reads like hardware ("24×7 server support", "firewall management") and
+     * is not: nothing is acquired, so nothing can be capitalised however large
+     * the contract is. Without its own code these lines land on
+     * `FA_COMPUTER_EQUIPMENT` on the strength of the word *server*, which is a
+     * §24.4.6 tier-1 error produced by a noun.
+     */
+    code: 'IT_SUPPORT_AND_MANAGED_SERVICES',
+    ledger: 'Expenses',
+    name: 'IT support and managed services',
+    vatTreatment: 'STANDARD',
+    taxConsequence: 'ALLOWABLE',
+    keywords: ['it support', 'managed service', 'helpdesk', 'support contract', 'maintenance contract', 'monitoring', 'patch management', 'sla'],
+  },
+  {
+    /**
+     * Configuring or customising software the client does NOT control — the
+     * expensed half of the hardest line on an IT invoice.
+     *
+     * The IFRIC agenda decisions on cloud arrangements put configuration and
+     * customisation of a supplier-hosted application on the expense side:
+     * there is no asset to attach the cost to, because the customer never
+     * controls the software. Its sibling — `FA_INSTALLATION_AND_COMMISSIONING`
+     * — is the capital half, and having both is what makes a
+     * "professional services — setup and configuration" line *splittable*
+     * rather than a coin toss.
+     *
+     * ⚠ Training is never in here. See `TRAINING`.
+     */
+    code: 'SOFTWARE_IMPLEMENTATION',
+    ledger: 'Expenses',
+    name: 'Software implementation and configuration',
+    vatTreatment: 'STANDARD',
+    taxConsequence: 'ALLOWABLE',
+    keywords: ['implementation', 'configuration', 'onboarding fee', 'setup fee', 'data migration', 'integration work'],
+    reviewNote:
+      'Expensed because the client controls nothing: configuring the SUPPLIER’s hosted software creates no asset (IFRIC cloud-arrangement agenda decisions). Installing and testing hardware the client owns is the other account — FA_INSTALLATION_AND_COMMISSIONING — and one invoice line often contains both.',
+  },
+  {
+    /**
+     * IT hardware that falls BELOW the practice's capitalisation threshold.
+     *
+     * There is no statutory de minimis in UK GAAP or IFRS — a capitalisation
+     * threshold is the practice's own accounting policy — so the same £180
+     * monitor is capital at one firm and an overhead at another. A chart whose
+     * only home for a keyboard is the `Fixed assets` ledger cannot express the
+     * below-threshold half of its own policy, which is how small hardware ends
+     * up either capitalised or buried in `OFFICE_COSTS` beside the stationery.
+     */
+    code: 'IT_EQUIPMENT_AND_CONSUMABLES',
+    ledger: 'Expenses',
+    name: 'IT equipment and consumables',
+    vatTreatment: 'STANDARD',
+    taxConsequence: 'ALLOWABLE',
+    keywords: ['keyboard', 'mouse', 'cable', 'adapter', 'usb', 'headset', 'webcam', 'toner', 'small it'],
+    reviewNote:
+      'The line between this and FA_COMPUTER_EQUIPMENT is the practice’s capitalisation policy, tested PER UNIT: two servers at £6,150 are two assets of £6,150, not one purchase of £12,300.',
   },
   {
     code: 'OFFICE_COSTS',
@@ -336,6 +454,79 @@ const CORE_ACCOUNTS: readonly ChartAccount[] = [
     taxConsequence: 'CAPITAL',
     keywords: ['car purchase', 'van purchase', 'vehicle purchase'],
     reviewNote: 'Input VAT on a car is blocked; on a commercial van it usually is not. The vehicle type decides it, not the supplier.',
+  },
+  {
+    /**
+     * A **perpetual** software licence — the capital half of the software line.
+     *
+     * UK tax treats computer software as plant (CAA 2001 s.71), and HMRC's own
+     * two-year test (BIM35805) puts software with a useful life of two years or
+     * more on the capital side. In accounting terms a perpetual licence is a
+     * controlled right and therefore an intangible, where a right of ACCESS is
+     * a service.
+     *
+     * ⚠ **The product name does not decide this.** "Veeam Backup & Replication
+     * Enterprise" is capital when it is perpetual and revenue when it is an
+     * annual subscription, and the two invoices can be word-for-word identical
+     * apart from the term. A line that does not state the term escalates
+     * (`SOFTWARE_TERM_UNKNOWN`) rather than being inferred from the vendor.
+     */
+    code: 'FA_SOFTWARE_LICENCES',
+    ledger: 'Fixed assets',
+    name: 'Software licences',
+    vatTreatment: 'STANDARD',
+    taxConsequence: 'CAPITAL',
+    keywords: ['perpetual licence', 'perpetual license', 'software licence purchase'],
+    reviewNote:
+      'Capital ONLY when the licence is perpetual or its term is two years or more (HMRC BIM35805; CAA 2001 s.71 treats software as plant). An annual subscription belongs in SOFTWARE_AND_SUBSCRIPTIONS however large it is.',
+  },
+  {
+    /**
+     * Third-party work that capitalises INTO an asset the client owns.
+     *
+     * IAS 16.17(d)–(e): site preparation, installation and assembly, and the
+     * cost of testing that the asset works, are directly attributable costs and
+     * form part of its carrying amount. That is the only reason a services line
+     * ever belongs in the `Fixed assets` ledger, and it is why "professional
+     * services" is not one account but two.
+     *
+     * ⚠ **Training is never in here.** IAS 16.19(c) and IAS 38.69(b) both name
+     * staff training as a cost that is expensed as incurred — one of the very
+     * few genuinely bright lines in this area.
+     */
+    code: 'FA_INSTALLATION_AND_COMMISSIONING',
+    ledger: 'Fixed assets',
+    name: 'Installation and commissioning',
+    vatTreatment: 'STANDARD',
+    taxConsequence: 'CAPITAL',
+    keywords: ['installation', 'commissioning', 'site preparation', 'racking', 'assembly', 'delivery and install'],
+    reviewNote:
+      'Capitalises into the asset it prepares (IAS 16.17(d)–(e)), so it only exists where there IS a capitalised asset on the same document. Training is never capitalisable (IAS 16.19(c), IAS 38.69(b)) and configuring the supplier’s hosted software is SOFTWARE_IMPLEMENTATION.',
+  },
+
+  // --- Current assets — the one balance-sheet account an ID document lands on
+  {
+    /**
+     * A fee paid in advance of the service it buys.
+     *
+     * The IFRIC March 2019 agenda decision makes a right to access
+     * supplier-hosted software a **service contract**; a twelve-month fee paid
+     * up front is therefore a prepayment for services not yet received, not an
+     * intangible asset. Most of the time the whole invoice is coded to the
+     * expense account and the accountant journals the split at the year end —
+     * which is exactly why this needs to be a code they can pick, and why
+     * nothing suggests it automatically.
+     */
+    code: 'PREPAYMENTS',
+    ledger: 'Current assets',
+    name: 'Prepayments',
+    vatTreatment: 'VARIES',
+    // Not CAPITAL: a prepayment is a TIMING account, not a fixed asset, and the
+    // catalogue test that pins `CAPITAL ⇔ Fixed assets` is right to hold.
+    taxConsequence: 'ALLOWABLE',
+    keywords: ['prepayment', 'paid in advance', 'advance payment'],
+    reviewNote:
+      'A timing account, not a deduction in itself — the cost becomes allowable as the service is received. VAT usually goes with the expense at the tax point, not with the prepaid portion, so the treatment here is whatever the invoice supports.',
   },
 ];
 

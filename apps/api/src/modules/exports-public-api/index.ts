@@ -45,8 +45,41 @@ export {
 
 export { ExportMoneyError, formatPenceDecimal } from './canonical/money.js';
 
-export type { EmittedFile, ExportEmitter } from './emitters/export-emitter.js';
+export type {
+  EmittedFile,
+  ExportEmitter,
+  ExportEntryDocument,
+  ExportEntryPreview,
+  ExportEntryRefusal,
+} from './emitters/export-emitter.js';
 export { selectEmitter } from './emitters/select-emitter.js';
+
+// ── The entry preview (the publish review's "what will the file contain") ───
+//
+// `previewExportEntries` is on the seam and `vtTransactionPlusEmitter` still is
+// not: a caller asks for a TARGET and gets the entry, exactly as `selectEmitter`
+// intends. It is pure — no database, no clock, no config — so the composition
+// root can hand it to the proposal engine as a function rather than as a module.
+export { previewExportEntries } from './api/entry-preview.js';
+export {
+  documentToCanonicalRow,
+  type DocumentRefusalCode,
+  type DocumentRowResult,
+  type ExportableDocumentRow,
+} from './api/document-to-canonical.js';
+
+// The `Analysis account` lookup. On the seam because the PREVIEW's caller has to
+// build one: the export reads the client's chart of accounts itself, and a
+// review card that did not would show a bare `SUBSCRIPTIONS` and a "no ledger
+// prefix" warning for a document the file will carry as
+// `Expenses: Software and subscriptions` with no warning at all. The chart
+// itself comes from `rules-suggestions/index.ts`; this turns its `{ code, name }`
+// pairs into the lookup, and nothing here ever invents an account.
+export {
+  type AnalysisAccountChart,
+  analysisAccountChart,
+  resolveAnalysisAccount,
+} from './api/analysis-account-chart.js';
 
 // ── The capability-URL lane (A8, D43) ───────────────────────────────────────
 export {

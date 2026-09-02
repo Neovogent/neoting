@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { foldCounts } from './businesses.service.js';
+import { foldCounts, foldPrimaryContactEmails } from './businesses.service.js';
 
 /**
  * The counts fold, offline. The integration suite proves the whole read
@@ -96,4 +96,46 @@ test('a state outside the three buckets never leaks into a badge', () => {
   // The where-clause already excludes these; the fold not trusting that is
   // what keeps a widened query from silently inflating `toReview`.
   expect(foldCounts([row('b1', 'RECEIVED', 5), row('b1', 'ARCHIVED', 5)]).size).toBe(0);
+});
+
+/**
+ * `primaryContactEmail` — the fold, offline.
+ *
+ * The query is what enforces `is_primary` and the ordering; what these pin is
+ * the rule the query cannot express: which row wins, and that "no address on
+ * file" survives as null instead of being replaced by somebody else's.
+ */
+
+const contact = (businessId: string, email: string | null) => ({ businessId, email });
+
+test("the primary contact's address is folded per business", () => {
+  const emails = foldPrimaryContactEmails([
+    contact('b1', 'owner@americanburger.test'),
+    contact('b2', 'maria@ananda.test'),
+  ]);
+  expect(emails.get('b1')).toBe('owner@americanburger.test');
+  expect(emails.get('b2')).toBe('maria@ananda.test');
+});
+
+test('the earliest primary contact wins when a client somehow carries several', () => {
+  // The caller orders by `created_at` ascending, so first-wins is the
+  // longest-standing primary. Intake writes exactly one, so this decides a
+  // state nothing in the repo creates — but the field must not change which
+  // person it names between two page loads.
+  const emails = foldPrimaryContactEmails([contact('b1', 'first@client.test'), contact('b1', 'second@client.test')]);
+  expect(emails.get('b1')).toBe('first@client.test');
+});
+
+test('a primary contact with no address on file folds to null, not to another contact', () => {
+  // `contacts.email` is nullable — a phone-only contact is a real record
+  // (SoT §3.3). Skipping past it to the next row would put a different
+  // person's address under the words "primary contact".
+  const emails = foldPrimaryContactEmails([contact('b1', null), contact('b1', 'someone.else@client.test')]);
+  expect(emails.get('b1')).toBeNull();
+});
+
+test('a business with no primary contact is absent, and the caller reads that as null', () => {
+  const emails = foldPrimaryContactEmails([contact('b1', 'owner@client.test')]);
+  expect(emails.has('b2')).toBe(false);
+  expect(emails.get('b2') ?? null).toBeNull();
 });

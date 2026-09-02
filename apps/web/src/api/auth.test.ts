@@ -25,6 +25,9 @@ const ME = {
   user: { id: 'usr_shakib_demo', email: 'shakib@neoting.test', firstName: 'Shakib', lastName: 'Bin Kabir' },
   practice: { id: 'prc_neovogent', name: 'Neovogent Accounting' },
   role: 'PRACTICE_ADMIN',
+  // Required since `Me` gained it: D44's release gate is role AND ownership,
+  // and a body without it is contract drift, which must NOT authenticate.
+  isOwner: true,
   businesses: [{ id: 'biz_burger', name: 'American Burger Ltd' }],
 };
 

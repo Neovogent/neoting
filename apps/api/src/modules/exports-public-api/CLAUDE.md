@@ -386,12 +386,154 @@ it no longer forces a split across two columns.
 - [ ] **The £0.00 split line.** Try the designer’s "Repeated columns" range — several
       analysis triplets on one row would remove the artefact entirely.
 - [ ] **`ExportWarning`’s description in `openapi.yaml` is now wrong** — it cites
-      `analysis-collapsed` and states "VT accepts one nominal per row". LAW, so it needs a
-      contract-change issue rather than an edit here. The `code` field is a free string, so
-      the new codes (`split-analysis-zero-line`, `credit-note-direction-unverified`) are
-      already legal.
+      `analysis-collapsed` and states "VT accepts one nominal per row". The G7 ceremony was
+      retired on 1 Sep 2026, so this is now just an unclaimed edit rather than a blocked
+      one. The `code` field is a free string, so the new codes
+      (`split-analysis-zero-line`, `credit-note-direction-unverified`) are already legal.
+      ⚠ The neighbouring **`POST /exports` `file` description was the same class of stale
+      A10 claim** ("the Universal Input Sheet layout… VT derives debit and credit from
+      `Type`") and **was corrected on 2 Sep 2026**; this one is what is left.
 - [ ] Bank lines still ride the general UIS layout. §24.3.1 notes VT has a dedicated
       bank-statement import mode (Date / Description / Payment / Receipt); that second file
       is not built, and bank statement extraction is on the launch plan's cut list.
 - [ ] The public REST API and signed webhooks are **v1, not ID** (§24.6). Do not build them.
 - [ ] Update this file on exit — it is how the next session picks up.
+
+## ⚠ "Nothing to export" was a dead end, and the code was never the bug (2 Sep 2026)
+
+Reported from the live app. A practice had exactly one Published document —
+supplier *Nexora Solutions LLC*, **dated 12 May 2025**, $54,352.51 — and the
+export screen, on its default period of **01/08/2026 – 31/08/2026**, answered:
+
+> `NT-EXP-001` — No documents reached Published in 01/08/2026 to 31/08/2026 for
+> this client.
+
+The owner read that as *"published, but it will not export"* and concluded the
+feature was broken. **It was not.** `selectDocuments` filters on `documentDate`,
+May 2025 is genuinely outside an August 2026 window, and every line of it was
+correct. What was wrong is that the refusal told the one person who could fix it
+nothing they could act on — no count, no dates, no hint that the document existed
+just outside the window.
+
+**The filter did not change, and must not be changed casually.** Selecting on the
+document's own date is the accounting answer (an invoice belongs to the period it
+is dated in), it is what makes re-exporting a closed month reproducible, and it is
+what the VT journal import needs, since VT applies one date to a whole file
+(§24.3.1). It is now **stated in the contract** on `ExportRequest.periodStart`,
+where it previously was not stated anywhere — that silence is what let the
+ambiguity live.
+
+What changed instead:
+
+| | |
+|---|---|
+| `nothingToExport()` | Builds the refusal. Two sentences: what is true, and what to do. |
+| `publishedOutsidePeriod()` | One `aggregate` — count, `_min`, `_max` — through **the same `scopedDb`** as the export. |
+| `publishedWhere()` / `periodWhere()` | The predicate, split so the export's selection and the refusal's count **cannot drift**. The count is `publishedWhere` + `NOT periodWhere`, so it is literally the export's own query with the date clause removed. |
+| `Problem.publishedOutsidePeriod` | The contract's one RFC 7807 extension member. The web renders it and offers the period as a button; it computes nothing. |
+
+**Three deliberate silences.** Zero outside the period sends no extension at all
+(an always-present one makes its absence meaningless). A count whose documents
+are all UNDATED sends none either — there is no period a widening could reach, so
+naming one would be inventing it. And a named `documentIds` set narrows the count
+to those ids, so the fact can never become an oracle for "does this id exist
+somewhere else?" — though in practice `assertEveryNamedIdSurvived` refuses first.
+
+⚠ **Do not let the web compute this.** The exporter is the only thing that knows
+its own predicate; a second query in the browser could disagree with it and would
+be a second read of a client's records written by someone not looking at this
+file. That is why the fact rides on the refusal rather than on a new endpoint.
+
+Pinned in `api/exports.service.test.ts` (the sentence, the extension, the three
+silences, and that the aggregate's `where` carries the export's own clauses) and
+in `api/exports.integration.test.ts` — which also proves the reported dates are a
+period that **actually works**, and that the count cannot cross a practice.
+
+## The entry preview — `previewEntries`, and why it cannot drift (2 Sep 2026)
+
+*"Before publishing show the accountant the actual accounting entry that will be
+put into the VT software."* The publish review used to show a count and two
+totals; an accountant approving a release was authorising rows they had never
+seen, which is the exact failure Review → Approve exists to prevent.
+
+`ExportEmitter` gained **`previewEntries(rows): ExportEntryPreview`**, and
+`api/entry-preview.ts` composes `documentToCanonicalRow` + `selectEmitter` into
+`previewExportEntries(target, documents)` — the one name on the seam that
+`modules/approvals` uses.
+
+⚠ **The contract on `previewEntries` is stronger than "returns a preview": an
+implementation must build its rows with the same FUNCTION `emit` builds them
+with.** In the VT emitter that is `buildVtFiles`, which now returns rows tagged
+with their `documentId`; `emit` serialises those rows and `previewEntries`
+regroups them, and neither transforms a cell. The generic CSV emitter has the
+same split (`buildGenericRows`). A preview that merely *described* the file would
+pass every test written about it and still be wrong — so
+`vt-transaction-plus-emitter.test.ts` emits the real archive, **parses the bytes
+back out of the ZIP**, and compares cell for cell in both directions. That test
+is the guard that survives a refactor.
+
+## The Analysis account — what the preview exposed, and the fix (2 Sep 2026)
+
+**The defect.** `documentToCanonicalRow` passed `documents.category_code`
+**straight into** the VT `Analysis account` column, so an accountant's import
+file carried a bare `SUBSCRIPTIONS` where VT Transaction+ wants the
+ledger-prefixed `Cost of sales: Purchases`. VT's format designer type-guesses
+each cell, so a bare *numeric* code (`5001`) arrived as the NUMBER `5,001.00`
+rather than an account, and a lettered one still had to be hand-mapped in VT's
+Converter on every import. `rules-suggestions/index.ts` has named this exact
+consumer on its seam since A6 — *"map a document's `categoryCode` with
+`resolveAccount` + `analysisAccount`, or read the ready-made `{ code, name }`
+pairs off `ChartOfAccountsService.getChartOfAccounts(...).categories`"* — and
+nothing called it. A previous agent found it and deliberately left it, because
+changing what an exported file contains is a correctness decision rather than a
+refactor. It is now fixed.
+
+**Where it resolves, and where it must not.** Resolution happens **where the
+rows are assembled** — `api/document-to-canonical.ts`, which takes the chart as
+a third argument — and **never inside an emitter**. `buildVtFiles` is still a
+pure function over canonical rows with no idea a chart exists; giving the writer
+a database read would have put the file's contents behind a query that
+`previewEntries` would then have had to make too, which is exactly how the
+preview and the file come apart. Two callers hand the chart in:
+
+- **`api/exports.service.ts`** — one `getChartOfAccounts` per export, before a
+  single row is built, through the `ChartOfAccountsReader` port that
+  `ChartOfAccountsService` satisfies structurally. `api/exports.module.ts`
+  imports `RulesSuggestionsModule` and injects `CHART_OF_ACCOUNTS_SERVICE`; the
+  seam is the only thing this module names.
+- **`approvals.module.ts`** — the composition root, for the publish review card.
+  It resolves against the batch's own client *inside the executor's own
+  transaction* (`ChartOfAccountsService.resolve` takes a `ScopedClient` for
+  exactly this), so the chart and the documents are one read at one moment.
+  `ExportEntryPreviewer` became async and takes that client for this reason.
+
+`api/analysis-account-chart.ts` is the handshake: `{ code, name }` pairs in, a
+`ReadonlyMap` out. `name` is **already** the emittable form — `analysisAccount()`
+in `rules-suggestions` is the one place `Ledger: Account` is joined, and nothing
+here splits, re-cases or rebuilds it, because VT's Converter saves the
+accountant's mapping against the exact string it was given.
+
+**⚠ When it cannot resolve, the answer is the bare code AND a warning.** Three
+answers were available and two are worse. *Guessing* a ledger for an off-chart
+code puts a wrong nominal in somebody's books (§24.4.6 ranks that above every
+other coding error), and there is no near-miss matching — exact code or nothing.
+*Refusing* the document drops a row an accountant asked for, and a short file
+that looked complete is the failure this whole surface is designed against
+(§24.3.4) — worse here, because `documents.category_code` is free text in the
+schema and an accountant's own explicit rule may legitimately name a code the
+chart does not carry. So the row travels with exactly what the column held and
+the emitter raises `analysis-account-unprefixed` against that document. That
+warning is on the export's warnings panel **and on the publish review card**, so
+it is met before the release rather than inside VT afterwards.
+
+A chart that cannot be read at all degrades the same way — every row keeps its
+bare code and every one of them warns. A picklist is not worth making a client's
+month unexportable over, and D42 makes this the only egress there is.
+
+**`sourceLink` is null in a preview, deliberately.** The D43 capability code is
+minted by the export, later, against a document that has already reached
+PUBLISHED. Minting one here would be a write on a read path and inventing one
+would put a string on a review card that resolves to nothing — so the emitter
+does exactly what it does for any linkless row, raises `source-link-missing`, and
+the card carries that warning. It is now the **only** column that differs from
+the final file, and the one the preview declares it does not yet know.

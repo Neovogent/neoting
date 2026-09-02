@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Search, AlertCircle, CheckCircle2, UploadCloud, Eye, PencilLine, X, Copy, Link2,
   ShieldAlert, Sparkles, Send, Trash2, RefreshCw, Download, ArrowRightLeft, Check, SlidersHorizontal,
@@ -24,6 +24,12 @@ import { EXPORT_HINT, EXPORT_MIN_ROWS } from '../lib/exportRules';
 import { failureOf, reasonText, retryMeaning } from '../lib/failures';
 import { AnalysisModal } from '../components/DynamicComponents/AnalysisModal';
 import { ProposalFlowModal } from '../components/DynamicComponents/ProposalFlowModal';
+/**
+ * The live publish door — see the header of `PublishBatchDialog.tsx`. `lazy()`
+ * so the flow's copy stays off this route and shares one chunk with the copy
+ * ClientInbox opens (the same dialog, the same refusal, the same wording).
+ */
+const PublishBatchDialog = lazy(() => import('../components/DynamicComponents/PublishBatchDialog'));
 import type { CreateActionProposalRequest } from '@neoting/contracts/model';
 import type { DocKind, DocStatus, Document, DuplicatePair } from '../lib/types';
 
@@ -140,9 +146,14 @@ const m = defineMessages({
     id: 'inboxes.inboxesView.markReviewedLiveHint',
     defaultMessage: 'Open the document and correct or confirm a field — the change goes through Review → Approve.',
   },
+  // ⚠ This used to be a DEAD-END tooltip on a disabled button, pointing at a
+  // chat utterance. The button works now, so the hint says what pressing it
+  // does — and it still says that nothing is Published without an approval,
+  // because that is the part a person needs to know before pressing it.
   publishLiveHint: {
     id: 'inboxes.inboxesView.publishLiveHint',
-    defaultMessage: 'Releasing is a Review → Approve action — ask the workspace: "Publish all approved costs".',
+    defaultMessage:
+      'Releasing goes through Review → Approve: this stages the batch and shows the server’s own review. Nothing is Published until it is approved.',
   },
   bulkNoneReadyTitle: { id: 'inboxes.inboxesView.bulkNoneReadyTitle', defaultMessage: 'None of these can move yet' },
   bulkNoneReadyItem: { id: 'inboxes.inboxesView.bulkNoneReadyItem', defaultMessage: '{supplier} — {missing}' },
@@ -382,6 +393,14 @@ export function InboxesView() {
    * modal's request object stays referentially stable.
    */
   const [publishRetry, setPublishRetry] = useState<{ request: CreateActionProposalRequest; clientName: string } | null>(null);
+  /**
+   * A live release being staged over a selection (`PublishBatchDialog`). The
+   * DOCUMENTS, not their ids: the dialog computes its own refusal and its own
+   * per-client batching, and a practice-wide selection can legitimately span
+   * several clients — one `publish.batch` names one business, so the dialog
+   * walks them one at a time, the `document.route` idiom above.
+   */
+  const [publishing, setPublishing] = useState<Document[] | null>(null);
 
   const openPublishRetry = (doc: Document) => {
     setPublishRetry({
@@ -681,14 +700,14 @@ export function InboxesView() {
     }
     const ok = await confirm({
       title: intl.formatMessage(m.markReadyTitle, { supplier: doc.supplier }),
-      detail: intl.formatMessage(m.markReadyDetail, { amount: currency(doc.total), category: doc.category }),
+      detail: intl.formatMessage(m.markReadyDetail, { amount: currency(doc.total, doc.currency), category: doc.category }),
       confirmLabel: intl.formatMessage(m.markReadyConfirm),
     });
     if (!ok) return;
     updateDocumentStatus(doc.id, 'ready');
     logAudit({
       action: intl.formatMessage(m.markReviewedAudit),
-      scope: intl.formatMessage(m.markReviewedAuditScope, { supplier: doc.supplier, amount: currency(doc.total) }),
+      scope: intl.formatMessage(m.markReviewedAuditScope, { supplier: doc.supplier, amount: currency(doc.total, doc.currency) }),
       reviewOpened: true,
     });
   };
@@ -750,8 +769,8 @@ export function InboxesView() {
                       onClick={(e) => { e.stopPropagation(); if (live) return; markReviewed(doc); }}
                       className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold transition-colors ${
                         live
-                          ? 'text-zinc-300 border border-zinc-200 cursor-not-allowed'
-                          : 'bg-zinc-100 text-zinc-700 hover:bg-brand hover:text-white'
+                          ? 'text-zinc-500 border border-white/10 cursor-not-allowed'
+                          : 'bg-raised text-zinc-300 hover:bg-brand hover:text-brand-on'
                       }`}
                       title={intl.formatMessage(live ? m.markReviewedLiveHint : m.markReviewedTitle)}
                     >
@@ -811,10 +830,10 @@ export function InboxesView() {
                         }}
                         className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold transition-colors ${
                           liveExtraction
-                            ? 'text-zinc-300 border border-zinc-200 cursor-not-allowed'
+                            ? 'text-zinc-500 border border-white/10 cursor-not-allowed'
                             : failure.retryHelps
-                              ? 'bg-zinc-100 text-zinc-700 hover:bg-brand hover:text-white'
-                              : 'text-zinc-400 border border-zinc-200 hover:text-zinc-600'
+                              ? 'bg-raised text-zinc-300 hover:bg-brand hover:text-brand-on'
+                              : 'text-zinc-400 border border-white/10 hover:text-white'
                         }`}
                         title={
                           liveExtraction
@@ -835,9 +854,17 @@ export function InboxesView() {
                 })()}
                 {doc.status === 'ready' && (
                   <button
-                    onClick={(e) => { e.stopPropagation(); requestPublish([doc.id]); }}
-                    disabled={blocked.length > 0 || documentsSource === 'api'}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold bg-brand text-white hover:bg-brand-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    // One document is a legitimate release. Live it stages a
+                    // one-item `publish.batch` through the same dialog the bulk
+                    // bar opens, so the row and the bar cannot disagree about
+                    // what publishing means.
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (documentsSource === 'api') { setPublishing([doc]); return; }
+                      requestPublish([doc.id]);
+                    }}
+                    disabled={blocked.length > 0}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold bg-brand text-brand-on hover:bg-brand-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     title={
                       documentsSource === 'api'
                         ? intl.formatMessage(m.publishLiveHint)
@@ -857,7 +884,7 @@ export function InboxesView() {
                     knows is there. */}
                 <button
                   onClick={(e) => { e.stopPropagation(); setPreview(doc); }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-bold text-zinc-500 border border-zinc-200 hover:text-black hover:border-zinc-300 transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-bold text-zinc-400 border border-white/10 hover:text-white hover:border-white/20 transition-colors"
                   title={intl.formatMessage(m.viewTitle)}
                 >
                   <Eye size={14} />
@@ -893,7 +920,7 @@ export function InboxesView() {
               <SlidersHorizontal size={16} />
               {intl.formatMessage(m.requiredFieldsAction)}
               {mandatoryFields.length > 0 && (
-                <span className="px-2 py-0.5 rounded-full bg-brand text-white text-[11px]">{mandatoryFields.length}</span>
+                <span className="px-2 py-0.5 rounded-full bg-brand text-brand-on text-[11px]">{mandatoryFields.length}</span>
               )}
             </button>
             <button
@@ -968,7 +995,14 @@ export function InboxesView() {
         )}
       </header>
 
-      <div className="flex-1 bg-white rounded-t-[28px] md:rounded-t-[40px] m-2 md:m-4 mt-4 md:mt-8 pt-6 md:pt-16 p-3 md:p-8 shadow-2xl flex flex-col overflow-hidden border border-white/10">
+      {/* ⚠ This one element owned the whole bug. It was a hardcoded white
+          surface, which is the same colour in BOTH themes, so in dark mode the
+          shell went dark and the entire middle of the screen stayed light —
+          and every control inside it had been coloured for that light ground
+          (zinc-100 fills, zinc-200 hairlines, zinc-900 ink). `bg-card` follows
+          the theme, which is what the rest of this file now assumes. Nothing
+          under here may reintroduce a fixed light surface. */}
+      <div className="flex-1 bg-card rounded-t-[28px] md:rounded-t-[40px] m-2 md:m-4 mt-4 md:mt-8 pt-6 md:pt-16 p-3 md:p-8 shadow-2xl flex flex-col overflow-hidden border border-white/10">
         {(
           <>
             <div className="flex items-center justify-between shrink-0 mb-6 px-2 gap-4 flex-wrap">
@@ -979,7 +1013,7 @@ export function InboxesView() {
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder={intl.formatMessage(m.searchPlaceholder)}
-                    className="w-full sm:w-64 bg-zinc-100 border-none rounded-full py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder:text-zinc-500 font-medium"
+                    className="w-full sm:w-64 bg-raised border-none rounded-full py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder:text-zinc-500 font-medium"
                   />
                 </div>
                 <LightSelect value={clientFilter} onChange={setClientFilter} options={[{ value: 'all', label: intl.formatMessage(m.filterAllClients) }, ...clients.map((c) => ({ value: c.id, label: c.name }))]} />
@@ -1000,15 +1034,22 @@ export function InboxesView() {
 
               <div className="flex items-center gap-3">
                 <span className="text-[13px] font-bold text-zinc-400">{intl.formatMessage(m.rowCount, { count: rows.length })}</span>
-                {/* Live publishing is a `publish.batch` proposal (METH S10);
-                    this local publish would fake success the next poll
-                    reverts, so live it is disabled and points at the real
-                    path (METH S14 sweep). */}
+                {/* Live publishing is a `publish.batch` proposal (METH S10),
+                    which is now a door rather than a tooltip: the S14 sweep was
+                    right that the LOCAL publish fakes a success the next poll
+                    reverts, but disabling it left no way to reach Published —
+                    and Published is what `ExportView` exports. Live it opens
+                    `PublishBatchDialog` (stage → Read review → Approve);
+                    synthetic keeps `requestPublish` unchanged. */}
                 <button
-                  onClick={() => requestPublish(selected.length ? selected : rows.map((d) => d.id))}
-                  disabled={statusTab !== 'ready' || rows.length === 0 || documentsSource === 'api'}
+                  onClick={() =>
+                    documentsSource === 'api'
+                      ? setPublishing(selected.length ? selectedDocs : rows)
+                      : requestPublish(selected.length ? selected : rows.map((d) => d.id))
+                  }
+                  disabled={statusTab !== 'ready' || rows.length === 0}
                   title={documentsSource === 'api' ? intl.formatMessage(m.publishLiveHint) : undefined}
-                  className="px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="px-6 py-2.5 text-sm font-bold text-brand-on bg-brand hover:bg-brand-hover rounded-full transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {intl.formatMessage(m.publishItemsAction, { count: selected.length ? selected.length : rows.length })}
                 </button>
@@ -1023,8 +1064,8 @@ export function InboxesView() {
                   exit={{ opacity: 0, y: -8, height: 0 }}
                   className="shrink-0 mb-5 mx-2 overflow-visible"
                 >
-                  <div className="flex items-center gap-2 flex-wrap bg-zinc-100 rounded-2xl px-4 py-3">
-                    <span className="text-[13px] font-bold text-zinc-700 mr-2">{intl.formatMessage(m.selectedCount, { count: selected.length })}</span>
+                  <div className="flex items-center gap-2 flex-wrap bg-raised/50 rounded-2xl px-4 py-3">
+                    <span className="text-[13px] font-bold text-zinc-300 mr-2">{intl.formatMessage(m.selectedCount, { count: selected.length })}</span>
                     {/* Live review happens inside the document via a
                         `document.update-coding` proposal; a bulk local flip
                         would revert under the poll (METH S14 sweep). */}
@@ -1084,7 +1125,7 @@ export function InboxesView() {
                             initial={{ opacity: 0, y: -6 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -6 }}
-                            className="absolute top-full left-0 mt-2 w-72 bg-white border border-zinc-200 rounded-2xl shadow-2xl z-50 p-2"
+                            className="absolute top-full left-0 mt-2 w-72 bg-card border border-white/10 rounded-2xl shadow-2xl z-50 p-2"
                           >
                             <div className="px-3 py-2 text-[11px] font-bold text-zinc-400 uppercase tracking-widest">
                               {intl.formatMessage(documentsSource === 'api' ? m.routeMenuHeading : m.moveMenuHeading)}
@@ -1119,14 +1160,14 @@ export function InboxesView() {
                                 edit. On origin/main the whole menu was gated,
                                 which is why this never shipped before. */}
                             {documentsSource !== 'api' && (
-                            <label className="flex items-start gap-2 px-3 py-2 mb-1 rounded-xl cursor-pointer hover:bg-zinc-50">
+                            <label className="flex items-start gap-2 px-3 py-2 mb-1 rounded-xl cursor-pointer hover:bg-white/5">
                               <input
                                 type="checkbox"
                                 checked={teachSender}
                                 onChange={(e) => setTeachSender(e.target.checked)}
                                 className="mt-0.5 accent-brand"
                               />
-                              <span className="text-[12px] font-semibold text-zinc-600 leading-snug">
+                              <span className="text-[12px] font-semibold text-zinc-300 leading-snug">
                                 {intl.formatMessage(m.teachSenderLabel)}
                                 <span className="block text-[11px] font-medium text-zinc-400">
                                   {[...new Set(selectedDocs.map((d) => d.uploader))].slice(0, 2).join(', ') || intl.formatMessage(m.teachSenderFallback)}
@@ -1173,7 +1214,7 @@ export function InboxesView() {
                                     setTeachSender(false);
                                     setSelected([]);
                                   }}
-                                  className="w-full px-3 py-2.5 rounded-xl text-left text-[13px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors"
+                                  className="w-full px-3 py-2.5 rounded-xl text-left text-[13px] font-semibold text-zinc-300 hover:bg-white/5 transition-colors"
                                 >
                                   {c.name}
                                   {mismatch && (
@@ -1202,10 +1243,18 @@ export function InboxesView() {
                         { id: `${Date.now()}-a`, role: 'assistant', content: intl.formatMessage(m.askAiReply), intent: 'REVIEW_DOCUMENT', payload: { documentId: first.id, clientIds: ids, clientNames: names } },
                       ]);
                     }} />
-                    {/* Same gate as the header publish: live publishing is a
-                        proposal, not a local flip (METH S14 sweep). */}
-                    {statusTab === 'ready' && documentsSource !== 'api' && (
-                      <BulkBtn icon={Send} label={intl.formatMessage(m.publishAction)} onClick={() => requestPublish(selected)} />
+                    {/* Same route as the header publish: live it stages a
+                        `publish.batch` proposal, synthetic it is the local
+                        confirm-then-flip. Never hidden live any more — the bar
+                        without it was the reported break. */}
+                    {statusTab === 'ready' && (
+                      <BulkBtn
+                        icon={Send}
+                        label={intl.formatMessage(m.publishAction)}
+                        onClick={() =>
+                          documentsSource === 'api' ? setPublishing(selectedDocs) : requestPublish(selected)
+                        }
+                      />
                     )}
                     {/* Bulk retry stays synthetic-only: live retries are one
                         proposal per failed publish (METH S12), and a bulk
@@ -1269,7 +1318,7 @@ export function InboxesView() {
 
             {/* Phones: a card per document. Same selection, same flags, same
                 verbs; just stacked so the Action column is never off-screen. */}
-            <div className="flex-1 overflow-y-auto md:hidden -mx-1 divide-y divide-zinc-100 pb-safe">
+            <div className="flex-1 overflow-y-auto md:hidden -mx-1 divide-y divide-white/5 pb-safe">
               {rows.length === 0 && (
                 <div className="px-4 py-12 text-center text-zinc-400 font-medium">
                   {intl.formatMessage(m.cardEmpty)}
@@ -1296,7 +1345,7 @@ export function InboxesView() {
                       e.preventDefault();
                       toggleSelected(doc.id);
                     }}
-                    className={`px-3 py-4 flex gap-3 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 ${isSel ? 'bg-brand/[0.06]' : ''}`}
+                    className={`px-3 py-4 flex gap-3 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 ${isSel ? 'bg-brand/10' : ''}`}
                   >
                     <div className="pt-0.5 shrink-0">
                       <LightCheckbox checked={isSel} onChange={() => toggleSelected(doc.id)} />
@@ -1304,14 +1353,14 @@ export function InboxesView() {
                     <div className="flex-1 min-w-0 flex flex-col gap-2.5">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <div className="font-bold text-zinc-900 text-[15px] leading-tight break-words">{doc.supplier}</div>
+                          <div className="font-bold text-white text-[15px] leading-tight break-words">{doc.supplier}</div>
                           {doc.splitFrom && <div className="text-[11px] font-medium text-zinc-400">{doc.splitFrom}</div>}
                           <div className="text-[12px] text-zinc-500 font-medium mt-0.5">{doc.clientName} · {doc.date}</div>
                         </div>
-                        <div className="font-bold text-zinc-900 text-[15px] tabular-nums shrink-0">{currency(doc.total)}</div>
+                        <div className="font-bold text-white text-[15px] tabular-nums shrink-0">{currency(doc.total, doc.currency)}</div>
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold tracking-wide uppercase ${doc.category === '—' ? 'bg-amber-100 text-amber-700' : 'bg-zinc-100 text-zinc-600'}`}>
+                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold tracking-wide uppercase ${doc.category === '—' ? 'bg-amber-100 text-amber-700' : 'bg-raised text-zinc-300'}`}>
                           {doc.category}
                         </span>
                         <StatusBadge doc={doc} blocked={blocked} />
@@ -1325,7 +1374,7 @@ export function InboxesView() {
                             return (
                               <div key={label} className="min-w-0">
                                 <dt className="text-[10px] uppercase tracking-widest font-bold text-zinc-400">{label}</dt>
-                                <dd className={`text-[13px] font-semibold break-words ${filled ? 'text-zinc-700' : 'text-amber-600'}`}>
+                                <dd className={`text-[13px] font-semibold break-words ${filled ? 'text-zinc-300' : 'text-amber-600'}`}>
                                   {filled ? value : intl.formatMessage(m.cardFieldMissing)}
                                 </dd>
                               </div>
@@ -1342,7 +1391,7 @@ export function InboxesView() {
 
             <div className="hidden md:block flex-1 overflow-auto px-2">
               <table className="w-full text-left text-sm whitespace-nowrap">
-                <thead className="text-[11px] uppercase tracking-widest font-bold text-zinc-400 border-b border-zinc-100">
+                <thead className="text-[11px] uppercase tracking-widest font-bold text-zinc-400 border-b border-white/5">
                   <tr>
                     <th className="px-4 py-4 w-12">
                       <LightCheckbox
@@ -1367,7 +1416,7 @@ export function InboxesView() {
                     <th className="px-4 py-4 text-right">{intl.formatMessage(m.columnAction)}</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-100">
+                <tbody className="divide-y divide-white/5">
                   {rows.length === 0 && (
                     <tr>
                       <td colSpan={9 + mandatoryFields.length} className="px-4 py-16 text-center text-zinc-400 font-medium">
@@ -1382,20 +1431,20 @@ export function InboxesView() {
                       <tr
                         key={doc.id}
                         onClick={() => setSelected((p) => (p.includes(doc.id) ? p.filter((x) => x !== doc.id) : [...p, doc.id]))}
-                        className={`transition-colors group cursor-pointer ${isSel ? 'bg-brand/[0.06]' : 'hover:bg-zinc-50'}`}
+                        className={`transition-colors group cursor-pointer ${isSel ? 'bg-brand/10' : 'hover:bg-white/[0.02]'}`}
                       >
                         <td className="px-4 py-5">
                           <LightCheckbox checked={isSel} onChange={() => setSelected((p) => (p.includes(doc.id) ? p.filter((x) => x !== doc.id) : [...p, doc.id]))} />
                         </td>
-                        <td className="px-4 py-5 text-zinc-900 font-bold">{doc.clientName}</td>
-                        <td className="px-4 py-5 font-semibold text-zinc-700">
+                        <td className="px-4 py-5 text-white font-bold">{doc.clientName}</td>
+                        <td className="px-4 py-5 font-semibold text-zinc-300">
                           {doc.supplier}
                           {doc.splitFrom && <span className="block text-[11px] font-medium text-zinc-400">{doc.splitFrom}</span>}
                         </td>
                         <td className="px-4 py-5 text-zinc-500 font-medium">{doc.date}</td>
-                        <td className="px-4 py-5 text-right font-bold text-zinc-900 text-[15px]">{currency(doc.total)}</td>
+                        <td className="px-4 py-5 text-right font-bold text-white text-[15px]">{currency(doc.total, doc.currency)}</td>
                         <td className="px-4 py-5">
-                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold tracking-wide uppercase ${doc.category === '—' ? 'bg-amber-100 text-amber-700' : 'bg-zinc-100 text-zinc-600'}`}>
+                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold tracking-wide uppercase ${doc.category === '—' ? 'bg-amber-100 text-amber-700' : 'bg-raised text-zinc-300'}`}>
                             {doc.category}
                           </span>
                         </td>
@@ -1405,7 +1454,7 @@ export function InboxesView() {
                           return (
                             <td key={label} className="px-4 py-5">
                               <span
-                                className={`text-[13px] font-semibold ${filled ? 'text-zinc-700' : 'text-amber-600'}`}
+                                className={`text-[13px] font-semibold ${filled ? 'text-zinc-300' : 'text-amber-600'}`}
                                 title={filled ? undefined : intl.formatMessage(m.fieldRequiredTitle, { field: label })}
                               >
                                 {filled ? value : intl.formatMessage(m.fieldMissing)}
@@ -1459,6 +1508,24 @@ export function InboxesView() {
             onExecuted={() => void refreshDocuments(queryClient)}
             onClose={advanceRouting}
           />
+        )}
+      </AnimatePresence>
+
+      {/* The live release: stage a `publish.batch` per client and walk the
+          server's Review → Approve card. `refreshDocuments` on settle so an
+          approved batch moves to Published here rather than on the next poll. */}
+      <AnimatePresence>
+        {publishing && (
+          <Suspense fallback={null}>
+            <PublishBatchDialog
+              selection={publishing}
+              onSettled={() => {
+                setSelected([]);
+                void refreshDocuments(queryClient);
+              }}
+              onClose={() => setPublishing(null)}
+            />
+          </Suspense>
         )}
       </AnimatePresence>
 
@@ -1587,7 +1654,7 @@ export function InboxesView() {
                   <button
                     onClick={publishConfirmed}
                     disabled={publishable === 0}
-                    className="px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="px-6 py-2.5 text-sm font-bold text-brand-on bg-brand hover:bg-brand-hover rounded-full transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {intl.formatMessage(m.confirmPublishAction, { count: publishable })}
                   </button>
@@ -1633,7 +1700,7 @@ export function InboxesView() {
                 ))}
               </div>
               <div className="p-4 bg-raised/50 flex justify-end">
-                <button onClick={() => setFieldsOpen(false)} className="px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all">
+                <button onClick={() => setFieldsOpen(false)} className="px-6 py-2.5 text-sm font-bold text-brand-on bg-brand hover:bg-brand-hover rounded-full transition-all">
                   {intl.formatMessage(m.doneAction)}
                 </button>
               </div>
@@ -1663,7 +1730,7 @@ function StatusBadge({ doc, blocked }: { doc: Document; blocked: string[] }) {
 
   if (doc.status === 'processing') {
     return (
-      <span className="inline-flex items-center gap-1.5 text-zinc-600 text-xs font-bold bg-zinc-100 px-3 py-1 rounded-full">
+      <span className="inline-flex items-center gap-1.5 text-zinc-300 text-xs font-bold bg-raised px-3 py-1 rounded-full">
         <span className="w-2 h-2 rounded-full bg-zinc-400 animate-pulse" />
         {intl.formatMessage(mStatus.processing)}
       </span>
@@ -1706,7 +1773,7 @@ function StatusBadge({ doc, blocked }: { doc: Document; blocked: string[] }) {
   return (
     <span
       className={`inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full ${
-        yellow ? 'bg-amber-200 text-zinc-900' : 'bg-brand text-white'
+        yellow ? 'bg-amber-200 text-zinc-900' : 'bg-brand text-brand-on'
       }`}
       title={doc.publishFailed ? doc.statusNote : blocked.length ? intl.formatMessage(mStatus.missingTitle, { fields: blocked.join(', ') }) : undefined}
     >
@@ -1757,7 +1824,7 @@ function FlagIcon({ icon: Icon, tone, title, detail, onClick }: {
   const intl = useIntl();
   const tones = {
     amber: 'bg-amber-100 text-amber-700 hover:bg-amber-200',
-    blue: 'bg-brand/20 text-brand-deep hover:bg-brand/35',
+    blue: 'bg-brand/20 text-brand hover:bg-brand/35',
     red: 'bg-red-100 text-red-600 hover:bg-red-200',
   };
   const shape = `w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${tones[tone]}`;
@@ -1794,7 +1861,7 @@ function InboxPill({ active, onClick, label, count, alert }: { active: boolean; 
       onClick={onClick}
       className={`px-4 py-2 rounded-full text-[13px] font-bold transition-all border flex items-center gap-2 ${
         active
-          ? 'bg-brand text-white border-brand shadow-glow-pill'
+          ? 'bg-brand text-brand-on border-brand shadow-glow-pill'
           : 'bg-card text-zinc-400 border-white/5 hover:text-white hover:border-white/15'
       }`}
     >
@@ -1815,7 +1882,7 @@ function TabButton({ active, onClick, label, count }: { active: boolean; onClick
       aria-pressed={active}
       className={`flex items-center gap-2 px-4 md:px-5 py-2.5 rounded-full text-sm transition-all duration-300 whitespace-nowrap ${
         active
-          ? 'bg-brand text-white font-bold shadow-glow-tab'
+          ? 'bg-brand text-brand-on font-bold shadow-glow-tab'
           : 'text-zinc-400 font-semibold hover:text-white hover:bg-white/5'
       }`}
     >
@@ -1844,7 +1911,7 @@ function BulkBtn({ icon: Icon, label, onClick, danger, minSelected, selectedCoun
       title={short ? disabledHint : undefined}
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       className={`flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent ${
-        danger ? 'text-red-600 hover:bg-red-50' : 'text-zinc-600 hover:bg-white'
+        danger ? 'text-red-500 hover:bg-red-500/10' : 'text-zinc-300 hover:bg-white/5'
       }`}
     >
       <Icon size={15} />
@@ -1858,7 +1925,7 @@ function LightSelect({ value, onChange, options }: { value: string; onChange: (v
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="bg-zinc-100 border-none rounded-full py-2.5 px-4 text-sm font-semibold text-zinc-600 focus:outline-none focus:ring-2 focus:ring-brand transition-all"
+      className="bg-raised border-none rounded-full py-2.5 px-4 text-sm font-semibold text-zinc-300 focus:outline-none focus:ring-2 focus:ring-brand transition-all"
     >
       {options.map((o) => (
         <option key={o.value} value={o.value}>{o.label}</option>
@@ -1872,7 +1939,7 @@ function LightCheckbox({ checked, onChange }: { checked: boolean; onChange: () =
     <button
       onClick={(e) => { e.stopPropagation(); onChange(); }}
       className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${
-        checked ? 'bg-brand border-brand' : 'border-zinc-300 hover:border-black'
+        checked ? 'bg-brand border-brand' : 'border-white/20 hover:border-white/40'
       }`}
     >
       {checked && <Check size={12} strokeWidth={4} className="text-white" />}

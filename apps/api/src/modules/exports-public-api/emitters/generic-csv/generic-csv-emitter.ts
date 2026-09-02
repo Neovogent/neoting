@@ -3,7 +3,7 @@ import type { ExportWarning } from '@neoting/contracts/model';
 import { CanonicalRowsSchema, type CanonicalRow } from '../../canonical/canonical-row.js';
 import { serialiseCsv } from '../csv/csv.js';
 import { encodeCsv } from '../csv/encoding.js';
-import type { EmittedFile, ExportEmitter } from '../export-emitter.js';
+import type { EmittedFile, ExportEmitter, ExportEntryDocument, ExportEntryPreview } from '../export-emitter.js';
 
 /**
  * The generic CSV emitter — the canonical model, written out as it is.
@@ -51,23 +51,31 @@ function formatSignedAmount(signedPence: number): string {
   return `${sign}${Math.trunc(absolute / 100)}.${String(absolute % 100).padStart(2, '0')}`;
 }
 
-class GenericCsvEmitter implements ExportEmitter {
-  readonly target = 'GENERIC_CSV' as const;
-  readonly fileExtension = 'csv';
-  readonly contentType = 'text/csv';
+/** One line, still carrying the document that produced it. The id is never a column. */
+interface GenericRow {
+  readonly documentId: string;
+  readonly cells: readonly string[];
+}
 
-  emit(rows: readonly CanonicalRow[]): EmittedFile {
-    const parsed = CanonicalRowsSchema.parse(rows);
-    const warnings: ExportWarning[] = [];
-    const cells: string[][] = [[...GENERIC_CSV_COLUMNS]];
+/**
+ * ⚠ **The one place a generic-CSV row is built**, for the reason
+ * `vt-transaction-plus-emitter.ts`'s `buildVtFiles` gives at length: `emit` and
+ * `previewEntries` must be one implementation, or the entry a human approves
+ * and the entry the file carries are two things that merely look alike.
+ */
+function buildGenericRows(rows: readonly CanonicalRow[]): GenericRow[] {
+  const parsed = CanonicalRowsSchema.parse(rows);
+  const built: GenericRow[] = [];
 
-    for (const row of parsed) {
-      // ⚠ A8 fills `sourceLink`; it lands in the last two columns unchanged.
-      const code = row.sourceLink?.code ?? '';
-      const url = row.sourceLink?.url ?? '';
+  for (const row of parsed) {
+    // ⚠ A8 fills `sourceLink`; it lands in the last two columns unchanged.
+    const code = row.sourceLink?.code ?? '';
+    const url = row.sourceLink?.url ?? '';
 
-      if (row.family === 'BANK_STATEMENT_LINE') {
-        cells.push([
+    if (row.family === 'BANK_STATEMENT_LINE') {
+      built.push({
+        documentId: row.documentId,
+        cells: [
           row.date,
           'BANK_STATEMENT_LINE',
           `${row.movement}/${row.instrument}`,
@@ -79,12 +87,15 @@ class GenericCsvEmitter implements ExportEmitter {
           formatSignedAmount(row.grossPence),
           code,
           url,
-        ]);
-        continue;
-      }
+        ],
+      });
+      continue;
+    }
 
-      for (const line of row.analysis) {
-        cells.push([
+    for (const line of row.analysis) {
+      built.push({
+        documentId: row.documentId,
+        cells: [
           row.date,
           'TRANSACTION_DOCUMENT',
           `${row.party}/${row.instrument}`,
@@ -96,9 +107,23 @@ class GenericCsvEmitter implements ExportEmitter {
           formatSignedAmount(line.netPence + line.vatPence),
           code,
           url,
-        ]);
-      }
+        ],
+      });
     }
+  }
+
+  return built;
+}
+
+class GenericCsvEmitter implements ExportEmitter {
+  readonly target = 'GENERIC_CSV' as const;
+  readonly fileExtension = 'csv';
+  readonly contentType = 'text/csv';
+
+  emit(rows: readonly CanonicalRow[]): EmittedFile {
+    const warnings: ExportWarning[] = [];
+    const built = buildGenericRows(rows);
+    const cells: string[][] = [[...GENERIC_CSV_COLUMNS], ...built.map((row) => [...row.cells])];
 
     return {
       bytes: encodeCsv(serialiseCsv(cells)),
@@ -106,6 +131,32 @@ class GenericCsvEmitter implements ExportEmitter {
       // carried several nominals — which is the point.
       rowCount: cells.length - 1,
       warnings,
+    };
+  }
+
+  previewEntries(rows: readonly CanonicalRow[]): ExportEntryPreview {
+    const byDocument = new Map<string, ExportEntryDocument & { rows: string[][] }>();
+    for (const row of buildGenericRows(rows)) {
+      const existing = byDocument.get(row.documentId);
+      if (existing === undefined) {
+        // One file, named by the service at download time — so there is no
+        // filename to claim here, and `''` says so rather than inventing one.
+        byDocument.set(row.documentId, {
+          documentId: row.documentId,
+          fileName: '',
+          dataFormat: '',
+          rows: [[...row.cells]],
+          warnings: [],
+        });
+        continue;
+      }
+      existing.rows.push([...row.cells]);
+    }
+
+    return {
+      target: 'GENERIC_CSV',
+      columns: [...GENERIC_CSV_COLUMNS],
+      documents: [...byDocument.values()],
     };
   }
 }

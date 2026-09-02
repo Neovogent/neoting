@@ -59,6 +59,21 @@ export type EmailKind =
   | 'client-invite'
   | 'sign-in-code'
   | 'document-request'
+  // A COLLEAGUE joining the practice, not a client joining a workspace. It is
+  // its own kind rather than a second use of `client-invite` for two reasons:
+  // the copy differs (`composeTeamInvite` — a colleague chooses a password and
+  // a client does not), and the ceilings are per-kind, so an admin re-inviting
+  // a colleague must not be able to exhaust a client's invite budget or the
+  // other way round.
+  | 'team-invite'
+  // A client business inviting its OWN staff — the THIRD invitation
+  // relationship in the product, and its own kind for the same two reasons the
+  // second one is. The copy differs (a portal person never chooses a password,
+  // so `composeTeamInvite`'s central instruction is wrong for them; and the
+  // employer is a BUSINESS, not the practice), and the ceilings are per-kind, so
+  // one restaurant adding kitchen staff cannot exhaust the budget the accountant
+  // needs to invite a client.
+  | 'business-people-invite'
   // The two signup messages. A1 built `SignupMailer` as a seam for these and
   // shipped a recording stand-in; until they existed here, `POST /v1/practices`
   // refused under NODE_ENV=production and staging had no signup at all.

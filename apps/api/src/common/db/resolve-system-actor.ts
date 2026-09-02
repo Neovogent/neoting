@@ -50,6 +50,47 @@ export async function createSystemActor(
   return user.id;
 }
 
+/** One practice and the machine actor that speaks for it. */
+export interface PracticeSystemActor {
+  readonly practiceId: string;
+  readonly systemUserId: string;
+}
+
+/**
+ * Every practice's SYSTEM actor — the first half of **the sanctioned sweep**.
+ *
+ * Some doors are opened by a credential that names no tenant: a chase link, a
+ * client's setup token, a colleague's invitation. To read the row that WOULD
+ * name the tenant, a context is needed — and the context is what the row would
+ * have told us. The sweep breaks that circle without a bypass: take every
+ * practice's machine actor, then ask each context in turn whether RLS lets it
+ * see the row. **RLS answers, not a filter**, so a caller can never be handed a
+ * row from a practice whose policies would have refused it.
+ *
+ * It costs one scoped lookup per practice and runs once per client per journey,
+ * never on a hot path. It cannot widen anything: the token it resolves was
+ * minted by us and names exactly one row.
+ *
+ * Unscoped for the same reason {@link resolveSystemActor} is, and safe for the
+ * same reason: `memberships` and `users` carry no RLS — they are the tables the
+ * policies themselves read, and a policed one would recurse.
+ *
+ * ⚠ Two private copies of this predate it —
+ * `modules/portal/portal-onboarding.service.ts` and
+ * `modules/portal/portal-session.service.ts`. They are collapse candidates and
+ * were left alone because they belong to another lane; this is the home the next
+ * one should use rather than writing a fourth.
+ */
+export async function systemActorsByPractice(prisma: PrismaClient): Promise<readonly PracticeSystemActor[]> {
+  const rows = await prisma.membership.findMany({
+    where: { practiceId: { not: null }, user: { kind: 'SYSTEM' } },
+    select: { practiceId: true, userId: true },
+  });
+  return rows.flatMap((row) =>
+    row.practiceId === null ? [] : [{ practiceId: row.practiceId, systemUserId: row.userId }],
+  );
+}
+
 export async function resolveSystemActor(prisma: PrismaClient, practiceId: string): Promise<string> {
   const membership = await prisma.membership.findFirst({
     where: { practiceId, user: { kind: 'SYSTEM' } },

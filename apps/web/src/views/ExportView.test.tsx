@@ -193,6 +193,107 @@ test('any other refusal is shown with its code, and no download is offered', asy
   expect(document.body.textContent).toContain('01/01/2026 to 31/01/2026');
   expect(document.body.textContent).not.toContain('Export it a month at a time');
   expect(screen.queryByRole('link', { name: /Download/ })).toBeNull();
+  // No hint invented out of nothing: this refusal carried no extension, so the
+  // screen says only what the server said.
+  expect(screen.queryByRole('button', { name: /instead/ })).toBeNull();
+});
+
+// ── "nothing to export" is not allowed to be a dead end ─────────────────────
+
+/**
+ * ⚠ **The bug this closes, reported from the live app.**
+ *
+ * A practice had exactly one Published document — *Nexora Solutions LLC*, dated
+ * **12 May 2025** — and this screen, defaulting to last month, answered *"No
+ * documents reached Published in 01/08/2026 to 31/08/2026 for this client."*
+ * The accountant read it as **published, but it will not export** and concluded
+ * the feature was broken.
+ *
+ * The server was right (the period selects on the document's own date) and the
+ * product was useless. These tests pin the fix, and pin where the facts come
+ * from: the screen renders the server's `publishedOutsidePeriod` and computes
+ * nothing — a second query here could disagree with the exporter's own
+ * predicate, which is the one thing worse than saying nothing.
+ */
+function nothingToExport(publishedOutsidePeriod?: {
+  count: number;
+  earliestDocumentDate?: string | null;
+  latestDocumentDate?: string | null;
+}) {
+  vi.mocked(requestExport).mockRejectedValue(
+    new NtProblemError({
+      status: 422,
+      code: 'NT-EXP-001',
+      title: 'Nothing to export in that period',
+      detail: 'No document dated 01/08/2026 to 31/08/2026 has reached Published for this client.',
+      ...(publishedOutsidePeriod === undefined ? {} : { publishedOutsidePeriod }),
+    }),
+  );
+}
+
+test('an empty export says where the documents actually are, in UK d/m/y', async () => {
+  nothingToExport({ count: 1, earliestDocumentDate: '2025-05-12', latestDocumentDate: '2025-05-12' });
+  renderView();
+  pickClient();
+  await pressExport();
+
+  const text = document.body.textContent ?? '';
+  expect(text).toContain('NT-EXP-001');
+  expect(text).toContain('This client has 1 Published document, dated 12/05/2025');
+  // And WHY, which is the half that stops this reading as a broken feature.
+  expect(text).toContain('by their own date, not by when they were released');
+});
+
+test('the accountant can widen to the period the server named, without retyping it', async () => {
+  nothingToExport({ count: 3, earliestDocumentDate: '2025-05-12', latestDocumentDate: '2025-11-30' });
+  renderView();
+  pickClient();
+  await pressExport();
+
+  expect(document.body.textContent).toContain('3 Published documents dated between 12/05/2025 and 30/11/2025');
+
+  const widen = screen.getByRole('button', { name: 'Use 12/05/2025 – 30/11/2025 instead' });
+  fireEvent.click(widen);
+
+  // The two date inputs now hold the server's own bounds, in wire format — and
+  // the stale refusal is gone rather than sitting under a period it no longer
+  // describes.
+  const dates = screen.getAllByDisplayValue(/^2025-/);
+  expect(dates.map((input) => (input as HTMLInputElement).value)).toEqual(['2025-05-12', '2025-11-30']);
+  expect(document.body.textContent).not.toContain('NT-EXP-001');
+});
+
+test('a count with no dates offers nothing to widen to — there is no period to reach', async () => {
+  // Every one of those documents is undated. Naming a range would be inventing
+  // one, so the plain refusal stands.
+  nothingToExport({ count: 2, earliestDocumentDate: null, latestDocumentDate: null });
+  renderView();
+  pickClient();
+  await pressExport();
+
+  expect(document.body.textContent).toContain('NT-EXP-001');
+  expect(screen.queryByRole('button', { name: /instead/ })).toBeNull();
+});
+
+test('⚠ D42: the empty-export hint still claims nothing was transmitted', async () => {
+  nothingToExport({ count: 1, earliestDocumentDate: '2025-05-12', latestDocumentDate: '2025-05-12' });
+  renderView();
+  pickClient();
+  await pressExport();
+
+  const text = document.body.textContent ?? '';
+  for (const forbidden of [
+    /send(ing)? to VT/i,
+    /sent to VT/i,
+    /publish(ing|ed)? to/i,
+    /\bsync(ed|ing)?\b/i,
+    /\bposted to\b/i,
+    /\bXero\b/i,
+    /\bQuickBooks\b/i,
+    /connect(ed|ion)? to VT/i,
+  ]) {
+    expect(text).not.toMatch(forbidden);
+  }
 });
 
 // ── the success state ───────────────────────────────────────────────────────

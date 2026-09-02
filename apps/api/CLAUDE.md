@@ -130,6 +130,27 @@ Three things changed together, and none of them is sufficient alone:
 | `auth-tenancy/practice-signup.service.ts` | Creates it **inside the signup transaction**. A practice that exists without its actor is one whose first upload lands in a DLQ, so rolling back beats repairing. |
 | `db/backfill-system-actors.ts` | Repairs the practices that predate the fix. Idempotent, insert-only, runs on the **api** task family because it needs no elevated privilege. |
 
+## The second backfill — `db/backfill-import-fingerprints.ts` (2 Sep 2026)
+
+Keys every `bank_transaction` that predates
+`20260902160000_bank_transaction_import_fingerprint`, so re-uploading a
+statement whose lines were imported before the fix adds nothing. Idempotent
+(`WHERE import_fingerprint IS NULL`), reversible in one `UPDATE … SET NULL`, and
+it **deletes nothing** — already-duplicated rows stay and are counted for the
+operator, because removing a line from an accounting ledger is a human's call.
+Same task family and same reasoning as the actor backfill above.
+
+⚠ **Unlike that one it CANNOT read the root client, and the difference is the
+whole trap.** `practices`, `users` and `memberships` carry no RLS; the actor
+backfill therefore works unscoped. `bank_transactions` is in the `direct_tables`
+RLS loop with FORCE ROW LEVEL SECURITY, so the same shape **returns an empty
+list and does not error** — the first draft printed "nothing to do" against a
+database holding six un-keyed rows. It now resolves each practice's SYSTEM actor
+and works inside `scopedDb`, through the same predicate a human's query goes
+through. One transaction per row, deliberately: a unique violation aborts the
+transaction it happens in, so a batched write that hit one would poison every
+statement after it.
+
 ## Definition of Done (Guideline §8.6)
 
 Checks green · Zod on every new boundary · queries through `scopedDb` · money in pence · tests for changed logic with property tests on money paths · seed updated so screens stay honest · module `CLAUDE.md` updated · migration additive or via the contract process · no `# BOOTSTRAP` shim without an issue link.

@@ -1,6 +1,7 @@
 import type { ChatDisplayBlock } from '@neoting/contracts/model';
 
 import type { ScopedClient } from '../../common/db/scoped-db.js';
+import { notDeleted } from '../../common/documents/deleted-documents.js';
 
 /**
  * Display blocks (§9.4 applied to pictures): the model asked for a SHAPE — a
@@ -53,8 +54,13 @@ export async function composeDisplay(
   request: DisplayRequest,
 ): Promise<ChatDisplayBlock | null> {
   if (request.subject === 'documents') {
+    // `notDeleted()` alongside `archivedAt: null`, and it matters more here
+    // than the row count suggests: the "Documents by state" bar chart is a
+    // TALLY, so a deleted document does not appear as a row a reader could
+    // dismiss — it silently inflates a bar, and the chart disagrees with the
+    // documents list the same screen offers with no way to see why.
     const rows = await db.document.findMany({
-      where: { businessId, archivedAt: null },
+      where: { businessId, archivedAt: null, ...notDeleted() },
       orderBy: { receivedAt: 'desc' },
       take: ROW_LIMIT,
       select: { supplierName: true, totalPence: true, documentDate: true, state: true, categoryCode: true },

@@ -75,7 +75,7 @@ let app: PrismaClient;
 /** Neither publish nor SMS is in frame; the stubs satisfy the registry's required deps and nothing more. */
 const STUB_PUBLISHING: PublishGateway = {
   ledger: { publishBill: async () => ({ ok: true, externalRef: 'STUB', attachmentSent: false }) },
-  previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0 } }),
+  previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0, currency: null } }),
 };
 
 function proposals(): ActionProposalsService {

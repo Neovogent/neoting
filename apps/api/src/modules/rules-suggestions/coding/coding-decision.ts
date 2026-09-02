@@ -1,3 +1,4 @@
+import type { AiCodingSuggestion } from './ai-suggestion.js';
 import type { CodingAuthority } from './authority.js';
 
 /**
@@ -110,6 +111,26 @@ export type CodingDecision =
        * for the accountant.
        */
       readonly conflictingCategoryCodes: readonly string[];
+      /**
+       * **The `AI_INFERENCE` rung's answer, and it is never null.**
+       *
+       * This is the fix for the document that came back with no category at
+       * all. `REVIEW` used to mean "nothing to say"; it now means "a human
+       * decides, and here is what was worked out for them" — either a suggested
+       * code with a confidence and the named rule behind it, or a named reason
+       * from `escalation.ts` saying what the document does not state.
+       *
+       * ⚠ It hangs off `REVIEW` rather than becoming a fifth `CODE` authority
+       * **on purpose**. A `CODE` carries *"the value that belongs in
+       * `documents.category_code`"*, and a model opinion is not that. Accepting
+       * one is still a `document.update-coding` proposal a human approves; the
+       * type system is what stops it becoming an applied coding by accident.
+       *
+       * Absent from `LOCKED` and from `CODE` for the same reason: a human's
+       * correction and an accountant's rule are answers, and second-guessing
+       * either of them on the same card is how a suggestion becomes pressure.
+       */
+      readonly suggestion: AiCodingSuggestion;
     });
 
 /** Narrowing helper, so a caller reads `if (isCoded(decision))` rather than comparing strings. */

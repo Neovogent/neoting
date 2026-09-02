@@ -60,3 +60,12 @@ apps/web/lang/
 # main as gitlinks with no .gitmodules (b5c0b11) — a fresh clone got empty directories
 # and errors. Ignored so it cannot happen again.
 .claude/
+
+# Local agent/session scratch — never committed. SESSION_TASKS.md has held a
+# working demo credential, and the npm caches are debug logs from a tool this
+# repo does not use (pnpm only).
+.npm-cache/
+**/.npm-cache/
+.dev-logs/
+SESSION_TASKS.md
+AGENTS.md

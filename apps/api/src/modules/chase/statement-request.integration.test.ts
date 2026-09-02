@@ -47,7 +47,7 @@ const STAFF = ScopeContextSchema.parse({ actorId: OWNER_USER, practiceId: P });
 
 const STUB_PUBLISHING: PublishGateway = {
   ledger: { publishBill: async () => ({ ok: true, externalRef: 'STUB', attachmentSent: false }) },
-  previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0 } }),
+  previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0, currency: null } }),
 };
 
 function service(): ActionProposalsService {
@@ -68,6 +68,8 @@ function factsFor(chaseId: string | null): PortalSessionFacts {
     practiceId: P,
     systemUserId: SYSTEM_USER,
     actorId: SYSTEM_USER,
+    // A chase session names no person on purpose — the link is forwardable.
+    contactId: null,
     chaseId,
     grantedItemIds: [],
     expiresAt: new Date(Date.now() + 60_000),

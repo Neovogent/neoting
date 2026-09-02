@@ -52,10 +52,6 @@ const m = defineMessages({
     id: 'pipeline.resolver.publish',
     defaultMessage: "Here's the publish batch with gross and VAT totals. Read the review before approving.",
   },
-  inviteUser: {
-    id: 'pipeline.resolver.inviteUser',
-    defaultMessage: 'Fill in the invite below — it goes through review before the invitation is sent.',
-  },
   showAudit: {
     id: 'pipeline.resolver.showAudit',
     defaultMessage: 'Every approval is recorded with who, when, and what was shown at the time.',
@@ -135,11 +131,12 @@ const PATTERNS: { intent: Intent; test: RegExp; response: MessageDescriptor }[] 
     test: /\b(publish|push|release|export)\b/i,
     response: m.publish,
   },
-  {
-    intent: 'INVITE_USER',
-    test: /\b(invite|add)\b.*\b(user|colleague|team member|staff|approver)\b/i,
-    response: m.inviteUser,
-  },
+  // ⚠ There is deliberately no `INVITE_USER` pattern. It classified "invite a
+  // colleague" and answered *"Fill in the invite below…"* over an
+  // `IntentRenderer` that returns `null` for it — a promise of a form and then
+  // empty space, because `UserInviteForm` was deleted when the real operation
+  // landed. "Invite a colleague" now falls through to `GENERAL`, whose reply
+  // says what this surface actually does; inviting is on the Team screen.
   {
     intent: 'SHOW_AUDIT',
     test: /\b(audit|audit log|who approved|history of changes|trail)\b/i,
@@ -252,5 +249,25 @@ export function relativeTime(ts: number): string {
   return `${Math.round(days / 7)}w ago`;
 }
 
-export const currency = (n: number) =>
-  `${n < 0 ? '−' : ''}£${Math.abs(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/**
+ * The symbols we are willing to print. Anything else renders as its ISO code
+ * followed by a space (`JPY 1,234.00`) — the same posture the API's own money
+ * helper takes in `chat-framework/grounding.ts`. A currency we cannot name is
+ * shown by its code, never by a borrowed symbol.
+ */
+const CURRENCY_SYMBOLS: Record<string, string> = { GBP: '£', USD: '$', EUR: '€' };
+
+/**
+ * Display money. `code` defaults to GBP, so the ~99 call sites that render a
+ * figure already known to be sterling are unchanged.
+ *
+ * ⚠ PASS THE DOCUMENT'S OWN CURRENCY wherever one exists. A `Document` carries
+ * `currency` because a supplier can invoice in anything, and printing every
+ * total with a £ made a USD invoice read as ~£54k of sterling on the live
+ * inbox — the amber code pill beside it was the only hint, and a pill does not
+ * undo a wrong symbol on the number an accountant is reading.
+ */
+export const currency = (n: number, code = 'GBP') => {
+  const symbol = CURRENCY_SYMBOLS[code] ?? `${code} `;
+  return `${n < 0 ? '−' : ''}${symbol}${Math.abs(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};

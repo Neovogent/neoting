@@ -30,7 +30,19 @@ interface ChaseRowFixture {
 
 interface Fixture {
   readonly chases: Readonly<Record<string, ChaseRowFixture>>;
-  readonly businesses: Readonly<Record<string, { practiceId: string; name: string; subscriptionStatus?: string | null }>>;
+  readonly businesses: Readonly<
+    Record<
+      string,
+      {
+        practiceId: string;
+        name: string;
+        subscriptionStatus?: string | null;
+        /** The two columns `PortalSummary.subscription` adds — Stripe's plan ref and the renewal date. */
+        plan?: string | null;
+        subscriptionCurrentPeriodEnd?: Date | null;
+      }
+    >
+  >;
   readonly transactions: readonly TxnRow[];
   /** Documents this business has sent — only their count and newest date matter. */
   readonly documents?: readonly { businessId: string; createdAt: Date }[];
@@ -80,7 +92,12 @@ function fakePrisma(fixture: Fixture, recorded: Recorded): PrismaClient {
         recorded.businessWhere = where;
         const business = fixture.businesses[where.id];
         if (business === undefined || business.practiceId !== practiceInScope) return null;
-        return { name: business.name, subscriptionStatus: business.subscriptionStatus ?? null };
+        return {
+          name: business.name,
+          subscriptionStatus: business.subscriptionStatus ?? null,
+          plan: business.plan ?? null,
+          subscriptionCurrentPeriodEnd: business.subscriptionCurrentPeriodEnd ?? null,
+        };
       },
     },
     document: {
@@ -140,6 +157,7 @@ function facts(over: Partial<PortalSessionFacts> = {}): PortalSessionFacts {
     practiceId: 'prac_1',
     systemUserId: 'usr_system_1',
     actorId: 'usr_system_1',
+    contactId: null,
     chaseId: 'chase_1',
     grantedItemIds: [],
     expiresAt: EXPIRES,
@@ -386,4 +404,70 @@ test('a lapsed subscription is reported, not hidden', async () => {
   });
   const context = await service(db).getContext(facts({ chaseId: null }));
   expect(context.summary?.subscriptionActive).toBe(false);
+});
+
+/* ── the plan, so the Settings tab can state the truth (D48/D49, 2 Sep 2026) ── */
+
+test('the summary carries the subscription STATE and the renewal date, not just the boolean', async () => {
+  // `subscriptionActive` answers "may I send a document right now" and nothing
+  // else. A plan panel needs the state and the renewal date, and without them
+  // the only honest Settings tab was one with no plan section — so the person
+  // paying for this product could not see what they pay for.
+  const db = fixture({
+    businesses: {
+      biz_burger: {
+        practiceId: 'prac_1',
+        name: 'American Burger',
+        subscriptionStatus: 'ACTIVE',
+        plan: 'price_neoting_id_monthly',
+        subscriptionCurrentPeriodEnd: new Date('2026-10-01T00:00:00.000Z'),
+      },
+    },
+  });
+
+  const context = await service(db).getContext(facts({ chaseId: null }));
+  expect(context.summary?.subscription).toEqual({
+    status: 'ACTIVE',
+    plan: 'price_neoting_id_monthly',
+    currentPeriodEnd: '2026-10-01T00:00:00.000Z',
+  });
+  expect(getPortalContextResponse.safeParse(context).success).toBe(true);
+});
+
+test('a PAST_DUE subscription reports its real state — the panel does not have to lie to match the boolean', async () => {
+  // `subscriptionActive` is false here and `status` is `PAST_DUE`, which are two
+  // different facts: the first says uploads are refused, the second says why and
+  // is what makes "update your card" the obvious next thing rather than a
+  // mystery.
+  const db = fixture({
+    businesses: {
+      biz_burger: { practiceId: 'prac_1', name: 'American Burger', subscriptionStatus: 'PAST_DUE', plan: null },
+    },
+  });
+  const context = await service(db).getContext(facts({ chaseId: null }));
+  expect(context.summary?.subscriptionActive).toBe(false);
+  expect(context.summary?.subscription).toEqual({ status: 'PAST_DUE', plan: null, currentPeriodEnd: null });
+});
+
+test('no subscription at all is NULL, not an invented status', async () => {
+  // `subscription_status` is written ONLY by the Stripe webhook, so a null one
+  // is a signup that has not finished — which is not the same thing as a lapsed
+  // one, and must not render as one. `status` is the required member of the
+  // shape, so there is no honest object to emit without it.
+  const db = fixture({
+    businesses: { biz_burger: { practiceId: 'prac_1', name: 'American Burger', subscriptionStatus: null } },
+  });
+  const context = await service(db).getContext(facts({ chaseId: null }));
+  expect(context.summary?.subscription).toBeNull();
+  expect(context.summary?.subscriptionActive).toBe(false);
+  expect(getPortalContextResponse.safeParse(context).success).toBe(true);
+});
+
+test('a CHASE session gets no summary at all, so it gets no plan either', async () => {
+  // A chase link is forwardable to whoever holds the paperwork. Their business
+  // is not theirs to act on, and whether it is up to date on its subscription is
+  // not a fact they are owed.
+  const db = fixture({});
+  const context = await service(db).getContext(facts());
+  expect(context.summary).toBeNull();
 });

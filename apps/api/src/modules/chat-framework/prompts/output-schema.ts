@@ -32,6 +32,12 @@ export const ChatIntentSchema = z.enum([
   'LIVE_RULE',
   'LIVE_PUBLISH',
   'SHOW_INBOX',
+  // D40's bank input, made reachable (#233). Navigation and nothing else — no
+  // field travels with it, so there is no shape here in which a period, a row
+  // count or an assurance verdict could be invented. The Bank tab's Statements
+  // list reads the real rows from `GET /statements` after the fact, exactly as
+  // SHOW_INBOX's screen reads real documents.
+  'SHOW_STATEMENTS',
   'REVIEW_DOCUMENT',
   'GROUNDED_ANSWER',
   'SCOPE_REFUSAL',

@@ -93,6 +93,13 @@ const LegalView = lazy(() => import('./views/legal/LegalView').then((m) => ({ de
 // enrolment step ever downloads it.
 const SignupView = lazy(() => import('./views/signup/SignupView').then((m) => ({ default: m.SignupView })));
 
+// The invited COLLEAGUE's journey at `/invite?token=…` — its own lazy route, so
+// the workspace never downloads it and it never downloads the workspace. It
+// shares a chunk with `SignupView`, deliberately: it reuses that file's
+// `EnrolStep` unchanged rather than growing a second enrolment screen, and a
+// second one is a second place the two-step could be got wrong.
+const InviteView = lazy(() => import('./views/invite/InviteView').then((m) => ({ default: m.InviteView })));
+
 // The §13.3 context header. Lazy for the budget (the floor sat 0.6 kB over
 // SoT §14's 250 kB on the worst route with it inlined), and mounted only when
 // a session state exists — synthetic mode never downloads it. `fallback` is
@@ -271,6 +278,17 @@ export default function App() {
     return (
       <Suspense fallback={<PortalSkeleton />}>
         <SignupView />
+      </Suspense>
+    );
+  }
+
+  // The invited colleague, before every wall and for the same reason: they do
+  // not have an account yet, and the login wall over this address would lock out
+  // the one person the email was sent to.
+  if (portal === 'invite') {
+    return (
+      <Suspense fallback={<PortalSkeleton />}>
+        <InviteView />
       </Suspense>
     );
   }

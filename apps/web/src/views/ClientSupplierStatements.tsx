@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
 import { ChaseComposer } from '../components/DynamicComponents/ChaseComposer';
-import { Modal } from './ApprovalsView';
+import { Modal } from '../components/DynamicComponents/Modal';
 import { Pill } from '../components/DynamicComponents/DataTable';
 import { currency } from '../lib/resolver';
 import type { Client, SupplierStatement } from '../lib/types';

@@ -21,6 +21,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { z } from 'zod';
 import type { ExtractedField as LocalExtractedField, FieldBoundingBox, LineItem as LocalLineItem } from '../lib/types';
 import { fromIsoDate } from './documents';
+import { currency } from '../lib/resolver';
 import { unwrapBody } from './envelope';
 
 /**
@@ -139,13 +140,31 @@ export const FIELD_PRESENTATION: readonly FieldPresentation[] = [
 
 const PRESENTATION_BY_LABEL = new Map(FIELD_PRESENTATION.map((p) => [p.label, p]));
 
-/** '£1,299.00' — the way the seeds have always written money on a field row. */
-const poundsDisplay = (pence: number): string =>
-  `£${(pence / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/**
+ * The Category row's label, named once.
+ *
+ * It is the row a coding suggestion is about, and `BASE_MANDATORY` matches on
+ * the same string by value — so a caller reaching for that row must not type
+ * the word again. Read off the table rather than written out, which is what
+ * makes it impossible for this constant and the table to disagree.
+ */
+export const CATEGORY_LABEL: string = FIELD_PRESENTATION.find((p) => p.coding === 'categoryCode')?.label ?? 'Category';
 
-function renderValue(kind: DraftKind, value: WireField['value']): string {
+/**
+ * Money on a field row, in the DOCUMENT'S OWN currency.
+ *
+ * ⚠ This was a second, £-only formatter living beside `lib/resolver.ts`'s, and
+ * it is how a USD invoice still read `£54,352.51` on its own detail panel after
+ * the shared helper was fixed. The extraction carries a `currency` field (it is
+ * in `FIELD_PRESENTATION` and rendered as its own row), so the symbol is a fact
+ * we hold, never an assumption. Falls back to GBP only when the extraction
+ * genuinely has no currency.
+ */
+const moneyDisplay = (pence: number, code: string): string => currency(pence / 100, code);
+
+function renderValue(kind: DraftKind, value: WireField['value'], code: string): string {
   if (value === null || value === undefined || value === '') return '—';
-  if (kind === 'money' && typeof value === 'number') return poundsDisplay(value);
+  if (kind === 'money' && typeof value === 'number') return moneyDisplay(value, code);
   if (kind === 'date') return fromIsoDate(String(value));
   return String(value);
 }
@@ -192,11 +211,66 @@ export interface DetailEvent {
   at: string;
 }
 
+/**
+ * What the coding ladder worked out for a document nothing coded — **an
+ * opinion, never a coding** (`CodingSuggestion` in the contract).
+ *
+ * The screen shape is deliberately the wire shape with the nullables settled,
+ * because there is nothing to translate: every sentence on it is composed
+ * server-side by the engine that took the decision. `note` is the rendered
+ * sentence — one of ten escalation prompts, or "Suggested — not applied — as
+ * X, on <rule>", with any advisories already appended. **Do not write UK tax
+ * copy here**: a second wording of "the licence term is not stated on this
+ * document" would be a second opinion, authored by someone who did not read
+ * the document.
+ */
+export interface CodingSuggestionView {
+  outcome: 'SUGGEST' | 'ESCALATE';
+  /** The named rule behind the answer — §13.3's "show the working". */
+  basis: string;
+  /** The engine's own sentence. Rendered verbatim; never re-worded here. */
+  note: string;
+  categoryCode: string | null;
+  analysisAccount: string | null;
+  /** ⚠ For display only (§13.3). Nothing in this app may branch on the value. */
+  confidence: number | null;
+  escalationReason: string | null;
+  /** The codes the lines pointed at when they pointed at several. */
+  candidateCategoryCodes: string[];
+}
+
+/**
+ * The accepted extraction's suggestion, or `null`.
+ *
+ * ⚠ **A suggestion is dropped for a document something already coded.** The
+ * pipeline does not produce one in that case, so this is belt-and-braces for a
+ * row an older release wrote — but the rule matters more than the likelihood:
+ * a suggestion shown beside an accountant's own rule is not extra information,
+ * it is pressure to second-guess an explicit instruction.
+ */
+export function toCodingSuggestion(doc: WireDocument): CodingSuggestionView | null {
+  const wire = doc.acceptedExtraction?.codingSuggestion;
+  if (wire === null || wire === undefined) return null;
+  if (doc.categoryCode !== null && doc.categoryCode !== undefined) return null;
+  return {
+    outcome: wire.outcome,
+    basis: wire.basis,
+    note: wire.note,
+    categoryCode: wire.categoryCode ?? null,
+    analysisAccount: wire.analysisAccount ?? null,
+    confidence: wire.confidence ?? null,
+    escalationReason: wire.escalationReason ?? null,
+    candidateCategoryCodes: [...(wire.candidateCategoryCodes ?? [])],
+  };
+}
+
 export interface DocumentDetailData {
   fields: LocalExtractedField[];
   lineItems: LocalLineItem[];
   state: string;
   businessId: string;
+  /** The ladder's opinion about an uncoded document, or null. Never a coding. */
+  codingSuggestion: CodingSuggestionView | null;
 }
 
 /**
@@ -208,8 +282,14 @@ export interface DocumentDetailData {
  */
 export function toDetailData(doc: WireDocument, ruleId: string | null): DocumentDetailData {
   const extraction = doc.acceptedExtraction;
+  const codingSuggestion = toCodingSuggestion(doc);
   const wireFields: Record<string, WireField> = extraction?.fields ?? {};
   const fields: LocalExtractedField[] = [];
+  // The document's own currency, read once and used for every money row on it.
+  const rawCurrency = wireFields['currency']?.value;
+  const docCurrency = typeof rawCurrency === 'string' && /^[A-Za-z]{3}$/.test(rawCurrency)
+    ? rawCurrency.toUpperCase()
+    : 'GBP';
 
   for (const p of FIELD_PRESENTATION) {
     const field = wireFields[p.key];
@@ -217,7 +297,7 @@ export function toDetailData(doc: WireDocument, ruleId: string | null): Document
       const boundingBox = usableBoundingBox(field.boundingBox);
       fields.push({
         label: p.label,
-        value: renderValue(p.kind, field.value),
+        value: renderValue(p.kind, field.value, docCurrency),
         // The contract pairs confidence with AI_SUGGESTED and nulls it
         // otherwise — a human answer is not a probability. 1 renders that
         // certainty in the existing confidence UI without a special case.
@@ -228,11 +308,34 @@ export function toDetailData(doc: WireDocument, ruleId: string | null): Document
         ...(boundingBox === undefined ? {} : { boundingBox }),
       });
     } else if (p.key === 'categoryCode' && extraction) {
+      // ⚠ **The VALUE stays the em dash when nothing coded the document, even
+      // when there is a suggestion, and that is the whole safety of this row.**
+      // `DocumentPreview`'s Path-to-Ready panel decides what is missing by
+      // testing `value === '—'` against the server's own mandatory set (Total +
+      // Supplier + Category). Writing a suggested code in here would make the
+      // screen say a document is one field from Ready when nothing has coded
+      // it, and the accountant would be reading an opinion as a fact. The
+      // suggestion is rendered as a suggestion, beside the row, and becomes a
+      // value only when an approved `document.update-coding` says so.
       fields.push({
         label: p.label,
         value: doc.categoryCode ?? '—',
-        confidence: ruleId !== null ? 1 : (extraction.overallConfidence ?? 1),
-        provenance: ruleId !== null ? `supplier rule: ${ruleId}` : `AI suggested: ${extraction.modelVersion ?? 'extraction'}`,
+        confidence:
+          ruleId !== null
+            ? 1
+            : codingSuggestion !== null
+              // Display only. `ESCALATE` carries no confidence because there is
+              // no coding to be confident about — zero is the honest number and
+              // it renders the row amber, which is where the eye should go.
+              ? (codingSuggestion.confidence ?? 0)
+              : (extraction.overallConfidence ?? 1),
+        provenance:
+          ruleId !== null
+            ? `supplier rule: ${ruleId}`
+            : // The engine's own sentence, so the band caption explains the
+              // empty field instead of claiming the extractor suggested
+              // something it never produced.
+              (codingSuggestion?.note ?? `AI suggested: ${extraction.modelVersion ?? 'extraction'}`),
       });
     }
   }
@@ -244,7 +347,7 @@ export function toDetailData(doc: WireDocument, ruleId: string | null): Document
     tax: typeof item.taxPence?.value === 'number' ? item.taxPence.value / 100 : 0,
   }));
 
-  return { fields, lineItems, state: doc.state, businessId: doc.businessId };
+  return { fields, lineItems, state: doc.state, businessId: doc.businessId, codingSuggestion };
 }
 
 /** The extract stage's recorded rule, if one coded this document. */
@@ -272,7 +375,7 @@ export interface DocumentDetail extends DocumentDetailData {
   events: DetailEvent[];
 }
 
-const EMPTY: DocumentDetailData = { fields: [], lineItems: [], state: '', businessId: '' };
+const EMPTY: DocumentDetailData = { fields: [], lineItems: [], state: '', businessId: '', codingSuggestion: null };
 
 const firstIssues = (error: z.ZodError): string =>
   error.issues
@@ -364,7 +467,7 @@ function draftToIsoDate(draft: string): string | null {
  * (`1299`, `£1,299.00`), the payload is integer pence, and the conversion
  * happens exactly once, here.
  */
-export function parseCodingDraft(label: string, draft: string): DraftResult {
+export function parseCodingDraft(label: string, draft: string, docCurrency = 'GBP'): DraftResult {
   const presentation = PRESENTATION_BY_LABEL.get(label);
   if (!presentation || presentation.coding === null) return { ok: false, problem: 'not-editable' };
 
@@ -373,10 +476,15 @@ export function parseCodingDraft(label: string, draft: string): DraftResult {
   const coding = presentation.coding;
 
   if (presentation.kind === 'money') {
-    const bare = value.replace(/[£,\s]/g, '');
+    // Strip whatever symbol the row was rendered with, not £ alone — a
+    // corrected USD total arrives as "$1,299.00" and must not be refused as
+    // "not money" because the symbol was not sterling.
+    const bare = value.replace(/[^\d.]/g, '');
     if (!/^\d+(\.\d{1,2})?$/.test(bare)) return { ok: false, problem: 'not-money' };
     const pence = toPence(Number(bare));
-    return { ok: true, coding, fields: { [coding]: pence }, display: poundsDisplay(pence) };
+    // Echoed back in the document's own currency, so the confirmation matches
+    // the row the accountant just edited.
+    return { ok: true, coding, fields: { [coding]: pence }, display: moneyDisplay(pence, docCurrency) };
   }
   if (presentation.kind === 'date') {
     const iso = draftToIsoDate(value);

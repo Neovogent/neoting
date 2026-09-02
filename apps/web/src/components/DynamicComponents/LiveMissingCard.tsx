@@ -3,7 +3,7 @@ import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
 import { API_ENABLED } from '../../api/config';
 import { useChases } from '../../api/chases';
-import { isMatched } from '../../lib/matching';
+import { isUnexplained } from '../../lib/matching';
 import { currency } from '../../lib/resolver';
 import { commonLabels } from '../../i18n/common';
 import { DataTable, Pill } from './DataTable';
@@ -38,8 +38,14 @@ export function LiveMissingCard({ businessId, businessName }: { businessId?: str
   const live = API_ENABLED && session.status === 'authenticated';
   const { chases, isLoading: chasesLoading } = useChases({ enabled: live });
 
+  // `isUnexplained`, which is the server's own chase-detection predicate.
+  //
+  // This was `!isMatched(t) && !t.chaseSuppressed`, which had the suppression
+  // half right and the other half wrong: it also offered SUGGESTED and
+  // EXCLUDED lines as missing paperwork. Nothing will ever chase those, so the
+  // card was naming work the product had already decided not to do.
   const unmatched = transactions.filter(
-    (t) => (businessId ? t.clientId === businessId : true) && !isMatched(t) && !t.chaseSuppressed,
+    (t) => (businessId ? t.clientId === businessId : true) && isUnexplained(t),
   );
   const openChases = chases.filter((c) => c.open && (businessId ? c.businessId === businessId : true));
   const scope = businessName ?? intl.formatMessage(m.allClients);

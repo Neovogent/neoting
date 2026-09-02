@@ -1,10 +1,12 @@
 import { useMemo } from 'react';
-import { approveActionProposal, createActionProposal, reviewActionProposal, useListBankTransactions } from '@neoting/contracts/client';
+import { useQuery } from '@tanstack/react-query';
+import { approveActionProposal, createActionProposal, listBankTransactions, reviewActionProposal } from '@neoting/contracts/client';
 import { listBankTransactionsResponse } from '@neoting/contracts/zod';
 import type { BankTransaction as ApiBankTransaction, ListBankTransactionsParams, MatchKind as ApiMatchKind } from '@neoting/contracts/model';
 import type { BankTransaction as LocalBankTransaction, MatchKind as LocalMatchKind } from '../lib/types';
 import { fromIsoDate, fromPence } from './documents';
 import { unwrapBody } from './envelope';
+import { fetchAllPages, PAGE_LIMIT } from './paged';
 
 /**
  * The bank feed, read from the API (METH Stage 11).
@@ -98,48 +100,82 @@ export interface UseBankTransactionsOptions {
 }
 
 /**
- * The feed, from `GET /bank-transactions`.
+ * The feed, from `GET /bank-transactions` — **every page of it**.
  *
  * Parsed through the generated Zod schema before anything touches it.
  * TypeScript is not a runtime gate — the types describe what the server
  * promised, and this checks what it actually sent, so a contract drift
  * surfaces here with the field named instead of as `undefined is not an
  * object` three components deep.
+ *
+ * ## ⚠ It follows the cursor now, and that is a data-integrity fix
+ *
+ * This used to be `useListBankTransactions` — the generated single-page hook —
+ * and its caller asked for `{ limit: 100 }`. `pageInfo` came back, was returned
+ * from here, and **nothing outside the tests ever read it**. A real client with
+ * 2,288 transactions had 2,188 of them unreachable, with no message and no
+ * control: the table showed 100 rows, and every figure derived from the array
+ * (the "unexplained" total, the unmatched counts, the chase candidates) was
+ * computed over the same 4.4% and looked entirely normal.
+ *
+ * `fetchAllPages` walks `pageInfo.nextCursor` to the end. The contract caps
+ * `limit` at 100 and forbids offset pagination, so there is no larger request
+ * to make — the whole list is the only honest answer, and `truncated` says so
+ * out loud on the rare occasion the safety cap is reached.
+ *
+ * Using the plain generated function inside our own `useQuery` is the
+ * `proposals.ts` idiom, and here it also costs LESS: the generated hook's
+ * query-key and options builders stop being reachable from the bundle floor.
  */
 export function useBankTransactions({ enabled, params, clientNameFor }: UseBankTransactionsOptions) {
-  const query = useListBankTransactions(params, { query: { enabled } });
+  const query = useQuery({
+    queryKey: ['bank-transactions', 'all', params],
+    enabled,
+    queryFn: () =>
+      fetchAllPages((cursor) =>
+        listBankTransactions({ ...params, limit: PAGE_LIMIT, ...(cursor === undefined ? {} : { cursor }) }),
+      ),
+  });
 
   const parsed = useMemo(() => {
     const empty = {
       transactions: [] as LocalBankTransaction[],
       invalid: null as string | null,
-      pageInfo: null as { nextCursor?: string | null; hasMore: boolean } | null,
+      truncated: false,
     };
     if (!query.data) return empty;
 
-    const result = listBankTransactionsResponse.safeParse(unwrapBody(query.data));
-    if (!result.success) {
-      return {
-        ...empty,
-        invalid: result.error.issues
-          .slice(0, 3)
-          .map((i) => `${i.path.join('.') || 'response'}: ${i.message}`)
-          .join('; '),
-      };
+    const transactions: LocalBankTransaction[] = [];
+    for (const body of query.data.bodies) {
+      const result = listBankTransactionsResponse.safeParse(body);
+      if (!result.success) {
+        return {
+          ...empty,
+          invalid: result.error.issues
+            .slice(0, 3)
+            .map((i) => `${i.path.join('.') || 'response'}: ${i.message}`)
+            .join('; '),
+        };
+      }
+      for (const row of result.data.data) {
+        transactions.push(toLocalTransaction(row as ApiBankTransaction, clientNameFor));
+      }
     }
 
-    return {
-      transactions: result.data.data.map((row) => toLocalTransaction(row as ApiBankTransaction, clientNameFor)),
-      invalid: null,
-      pageInfo: result.data.pageInfo,
-    };
+    return { transactions, invalid: null, truncated: query.data.truncated };
   }, [query.data, clientNameFor]);
 
   return {
     transactions: parsed.transactions,
     /** Set when the server's answer did not match the contract. */
     contractError: parsed.invalid,
-    pageInfo: parsed.pageInfo,
+    /**
+     * The safety cap was hit and the server had more. **A screen reading this
+     * slice must SAY so** — `sliceStatus` carries it to `DataSourceBadge`.
+     */
+    truncated: parsed.truncated,
+    /** How many rows are actually in hand, so a count can be honest about itself. */
+    loaded: parsed.transactions.length,
     isLoading: query.isLoading,
     isFetching: query.isFetching,
     error: query.error,

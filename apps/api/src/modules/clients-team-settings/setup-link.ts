@@ -94,21 +94,50 @@ export function setupLinkExpiry(nowMs: number): Date {
 export const SETUP_LINK_PATH = '/app/setup';
 
 /**
- * ⚠ **The origin is a constant here because `apps/api` has no public web origin
- * in its configuration** — `config/env.ts` carries no `APP_ORIGIN` /
- * `PUBLIC_APP_URL` key, and `config/` is not this stage's to change. The value
- * is the one S3 actually deployed (`docs/launch/SHAKIB.md`: *"The app is at
- * `app.neoting.neovogent.com`, not `neoacc.neovogent.com`"*, with the SPA served
- * at `/app`).
+ * The address a COLLEAGUE's invitation lands on, and the query parameter it
+ * arrives as.
  *
- * It is a **constructor parameter** on the service, not a literal at the call
- * site, so promoting it to an environment variable is one line in
- * `clients-team-settings.module.ts` and touches nothing else.
+ * A different path from {@link SETUP_LINK_PATH} because it is a different
+ * journey with a different outcome: `/app/setup` opens a CLIENT's portal with
+ * an emailed six-digit code and never a password, while this one creates a user
+ * who chooses a password and enrols an authenticator. One path serving both
+ * would have to branch on what the token turned out to be — after the screen had
+ * already been drawn.
+ *
+ * `token`, not `setupToken`: the contract's own name for this one
+ * (`InvitationPreviewRequest.token`, `InvitationAcceptanceRequest.token`), so
+ * the screen that reads it off the URL and the endpoints that receive it use one
+ * word.
+ *
+ * ⚠ **The screen must scrub it out of the address bar before its first
+ * request** — it is a credential, and every moment it sits in `location.search`
+ * it is in the history and in the next outbound `Referer`. The same rule
+ * `/signup/verify` follows.
+ */
+export const INVITE_LINK_PATH = '/invite';
+
+/**
+ * The public web origin, as a fallback.
+ *
+ * ✅ **`config/env.ts` HAS an `APP_ORIGIN` key now**, and this constant is no
+ * longer standing in for a missing one — the composition root passes
+ * `env.APP_ORIGIN` and this value is what the schema defaults that variable to.
+ * It stays exported because `setup-link.test.ts` builds links with it and
+ * because a caller constructing the service by hand should not have to invent an
+ * origin.
  */
 export const DEFAULT_APP_ORIGIN = 'https://app.neoting.neovogent.com';
 
-/** `<origin>/app/setup?setupToken=<token>` — the whole of the link. */
+/** `<origin>/app/setup?setupToken=<token>` — the whole of the client's link. */
 export function buildSetupLink(appOrigin: string, token: string): string {
-  const origin = appOrigin.endsWith('/') ? appOrigin.slice(0, -1) : appOrigin;
-  return `${origin}${SETUP_LINK_PATH}?setupToken=${encodeURIComponent(token)}`;
+  return `${trimOrigin(appOrigin)}${SETUP_LINK_PATH}?setupToken=${encodeURIComponent(token)}`;
+}
+
+/** `<origin>/invite?token=<token>` — the whole of the colleague's link. */
+export function buildInviteLink(appOrigin: string, token: string): string {
+  return `${trimOrigin(appOrigin)}${INVITE_LINK_PATH}?token=${encodeURIComponent(token)}`;
+}
+
+function trimOrigin(appOrigin: string): string {
+  return appOrigin.endsWith('/') ? appOrigin.slice(0, -1) : appOrigin;
 }

@@ -28,6 +28,30 @@ const m = defineMessages({
  *     card. A scrim carries the dismiss click, and announcing a click target
  *     as the dialog itself is a lie the a11y sweep already rejected once.
  *
+ * ⚠ THE CARD IS BOUNDED AND SCROLLS ITSELF (`max-h-full` + the inner
+ * `overflow-y-auto`), and both halves are load-bearing. Before this the frame
+ * had neither: a dialog taller than the window — a document detail on a short
+ * viewport, which is most of them — ran off the bottom edge, and on the phone
+ * branch the sheet is anchored with `items-end` + `mt-auto`, where an
+ * overflowing item is aligned by rules nobody should have to reason about and
+ * the scrim's own scrollbar is hidden by the two `[scrollbar-width]` utilities
+ * below. The reported symptom was a Path-to-Ready panel whose last action
+ * button was cut off with no way to reach it. A bounded card cannot do that
+ * whatever the branch: the overflow is inside a real scroll box, keyboard
+ * focus scrolls its own control into view, and `overscroll-contain` stops the
+ * page behind taking over the gesture at the ends.
+ *
+ * ⚠ `[&>*]:w-full` is the other half, and it is a frame rule rather than a
+ * caller's. The wrapper centres its child, so a child that forgets `w-full`
+ * shrink-wraps to its own content and reads as a stray pill floating on the
+ * scrim rather than as a dialog — silent, and invisible to every lint we have.
+ * The child's own `max-w-*` still decides how wide it actually gets.
+ *
+ * The trade is that the scroll box clips what paints outside the card's box —
+ * a card's `shadow-2xl` at the left and right edges. Content that cannot be
+ * reached is the worse of the two, and the close button is deliberately a
+ * sibling of the scroll box so it neither scrolls away nor gets clipped.
+ *
  * It ADDS a frame; it replaces none of the modals that already draw their own.
  */
 export function Modal({
@@ -62,7 +86,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         {...(label === undefined ? {} : { 'aria-label': label })}
-        className={`relative w-full ${width} flex justify-center mt-auto sm:mt-0 pt-12 sm:pt-0 pb-safe sm:pb-0`}
+        className={`relative w-full ${width} flex flex-col max-h-full mt-auto sm:mt-0 pt-12 sm:pt-0 pb-safe sm:pb-0`}
       >
         <button
           onClick={onClose}
@@ -71,7 +95,9 @@ export function Modal({
         >
           <X size={18} />
         </button>
-        {children}
+        <div className="min-h-0 overflow-y-auto overscroll-contain flex flex-col items-center [&>*]:w-full">
+          {children}
+        </div>
       </motion.div>
     </motion.div>
   );

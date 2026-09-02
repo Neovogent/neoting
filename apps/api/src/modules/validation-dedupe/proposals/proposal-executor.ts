@@ -4,6 +4,7 @@ import type {
   ErrorCode,
   BankConfirmMatchPayload,
   ChaseSendPayload,
+  DocumentPurgePayload,
   MoveBusinessPayload,
   ProposalKind,
   PublishBatchPayload,
@@ -47,6 +48,7 @@ export interface ProposalPayloadMap {
   'rule.create': RuleCreatePayload;
   'document.revoke-link': RevokeLinkPayload;
   'business.offboard': BusinessOffboardPayload;
+  'document.purge': DocumentPurgePayload;
 }
 
 export interface ExecutionInput<P> {

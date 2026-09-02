@@ -4,7 +4,7 @@ import { defineMessages, useIntl } from 'react-intl';
 import type { CreateActionProposalRequest } from '@neoting/contracts/model';
 import { useAppContext } from '../../context/AppContext';
 import { composeChaseBody, toE164 } from '../../lib/demoIntents';
-import { isMatched } from '../../lib/matching';
+import { isUnexplained } from '../../lib/matching';
 import { currency } from '../../lib/resolver';
 import { LiveProposalFlow } from './LiveProposalFlow';
 import { ReviewSection } from './ReviewGate';
@@ -62,11 +62,12 @@ export function LiveChaseComposerCard({
   const business = businesses.find((b) => b.id === chosenBusinessId) ?? null;
   const resolvedName = business?.name ?? businessName ?? null;
 
+  // The composer must offer EXACTLY the set the server would chase — see
+  // `isUnexplained`. Offering a SUGGESTED or EXCLUDED line here would put an
+  // item in an approved chase message that the engine will never act on, which
+  // the client then gets asked for and the accountant then has to explain.
   const candidates = useMemo(
-    () =>
-      transactions.filter(
-        (t) => t.clientId === chosenBusinessId && !isMatched(t) && !t.chaseSuppressed,
-      ),
+    () => transactions.filter((t) => t.clientId === chosenBusinessId && isUnexplained(t)),
     [transactions, chosenBusinessId],
   );
 

@@ -83,6 +83,62 @@ export {
 
 export { type CodingDecision, type CodingLock, isCoded, type SupplierContext } from './coding/coding-decision.js';
 
+// The AI_INFERENCE rung — a SUGGESTION, never a coding. Read `ai-suggestion.ts`
+// before rendering one: `provenance` and `confidence` are on it because §13.3
+// requires a surface to show an AI-produced value as one.
+export {
+  type AiCodingSuggestion,
+  CONFIDENCE_FLOOR,
+  type CodingEvidence,
+  documentReconciles,
+  NEW_SUPPLIER_CONFIDENCE_PENALTY,
+  NO_CODING_EVIDENCE,
+  SECOND_CHOICE_CONFIDENCE,
+  suggestCoding,
+  type SuggestionChart,
+} from './coding/ai-suggestion.js';
+
+export {
+  type CapitalisationPolicy,
+  capitalisesAsHardware,
+  classifyLine,
+  CODING_BASES,
+  type CodingBasis,
+  type CodingLine,
+  type LineContext,
+  type LineTreatment,
+  type LineVerdict,
+  PLATFORM_DEFAULT_CAPITALISATION_POLICY,
+  thresholdVerdictFor,
+  treatmentOf,
+} from './coding/capital-revenue.js';
+
+export {
+  ADVISORY_NOTES,
+  CODING_ADVISORIES,
+  CODING_ESCALATION_REASONS,
+  type CodingAdvisory,
+  type CodingEscalationReason,
+  ESCALATION_PROMPTS,
+  escalationSeverity,
+  moreSevere,
+} from './coding/escalation.js';
+
+// The model-facing half: the instructions, the tool schema and the strict parse
+// that refuses an off-chart code. No client, no credentials, no network.
+export {
+  buildCodingInstructions,
+  CODING_DECISION_RULES,
+  CODING_OUTPUT_RULES,
+  CODING_PROMPT_VERSION,
+  CODING_TOOL_NAME,
+  CODING_TOOL_SCHEMA,
+  codingEvidenceBlock,
+  type ModelCodingAnswer,
+  modelCodingAnswer,
+  parseModelCodingSuggestion,
+} from './coding/coding-instructions.js';
+
 export {
   buildSupplierRulePayload,
   buildSupplierRuleProposal,
@@ -92,6 +148,12 @@ export {
 
 export {
   HISTORY_WINDOW,
+  // On the seam because the extraction pipeline consults `decide()` on a
+  // document it has just read but not yet written, so it holds the line items in
+  // memory rather than in `extractions.fields`. Reading them through the SAME
+  // parser `resolveForDocument` uses is what stops the first read and every
+  // later one disagreeing about what the document's lines say.
+  readStoredLines,
   type SupplierCodingResult,
   SupplierCodingService,
   type SupplierHistory,

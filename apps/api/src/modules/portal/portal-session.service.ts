@@ -209,9 +209,18 @@ export class PortalSessionService {
    * lands, `OTP_MODE=totp` means no portal session can be opened — which is the
    * honest state, and is better than the alternative it replaces.
    */
+  /**
+   * ⚠ `demo` accepts the genuine code TOO — see the twin in
+   * `portal-onboarding.service.ts` for the argument. Short version: with a real
+   * local mail transport the client now receives a real code, and a mode that
+   * emailed one and then refused it was answering `NT-OTP-001` for its own
+   * message. `000000` remains so the no-mail-server walkthrough still runs, and
+   * `config/env.ts` refuses this mode in production.
+   */
   private verifyOtp(otp: string, state: AttemptRow | null, nowMs: number): boolean {
-    if (this.config.otpMode === 'demo') return otp === DEMO_OTP_CODE;
-    return otpMatches(state?.otpHash ?? null, state?.otpExpiresAt ?? null, otp, nowMs);
+    const genuine = otpMatches(state?.otpHash ?? null, state?.otpExpiresAt ?? null, otp, nowMs);
+    if (this.config.otpMode === 'demo') return genuine || otp === DEMO_OTP_CODE;
+    return genuine;
   }
 
   /**

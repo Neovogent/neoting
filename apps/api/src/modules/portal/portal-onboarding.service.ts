@@ -472,9 +472,28 @@ export class PortalOnboardingService {
     };
   }
 
+  /**
+   * ⚠ In `demo` mode the REAL code must still work, and that is the whole point
+   * of the `||`.
+   *
+   * `demo` used to accept `000000` and nothing else, which was harmless only
+   * while `EMAIL_SENDER=demo` meant no code ever reached a human. With the
+   * local SMTP transport (2 Sep 2026) the client now receives a genuine
+   * six-digit code by email — and the old branch refused it, answering
+   * `NT-OTP-001` for the very code the product had just sent. A screen that
+   * emails a credential and then rejects it is the "silent lie" class of
+   * failure this codebase refuses everywhere else; here it was self-inflicted.
+   *
+   * Accepting both adds no exposure: `000000` is already accepted from anyone
+   * in this mode, so the genuine code is strictly the narrower credential, and
+   * `config/env.ts` REFUSES `OTP_MODE=demo` under `NODE_ENV=production`. The
+   * fixed code stays so the offline walkthrough (METH_MODE §1) still runs with
+   * no mail server at all.
+   */
   private verifyOtp(otp: string, state: OtpAttemptRow | null, nowMs: number): boolean {
-    if (this.config.otpMode === 'demo') return otp === DEMO_OTP_CODE;
-    return otpMatches(state?.otpHash ?? null, state?.otpExpiresAt ?? null, otp, nowMs);
+    const genuine = otpMatches(state?.otpHash ?? null, state?.otpExpiresAt ?? null, otp, nowMs);
+    if (this.config.otpMode === 'demo') return genuine || otp === DEMO_OTP_CODE;
+    return genuine;
   }
 
   /**
@@ -515,6 +534,20 @@ export class PortalOnboardingService {
    * There is no `isPrimary` condition, deliberately: D45 lets a client add their
    * own team members and lets those people upload, so any contact of the
    * business is a person entitled to sign in to it.
+   *
+   * ⚠ **A DEACTIVATED contact is not found here** (2 Sep 2026), and this is the
+   * door that makes "remove" mean removed for somebody who is not currently
+   * signed in. The other two readers are the ingest sender map (a forwarded
+   * email stops routing to the workspace) and `portal-session-context.ts` (a
+   * bearer they are holding right now stops working). All three are needed:
+   * without this one a revoked person could simply request a fresh code and get
+   * a brand-new hour.
+   *
+   * The caller learns nothing from it. A revoked address falls to
+   * `unknown-address`, which `requestSignInCode` answers with the same silent
+   * `202` it answers everything with — so this endpoint still reports nothing
+   * about who does or does not have access to a workspace, which is the whole
+   * reason it is uniform.
    */
   private async resolveByAddress(
     email: string,
@@ -530,7 +563,7 @@ export class PortalOnboardingService {
         systemContext(candidate.practiceId, candidate.systemUserId),
         (db) =>
           db.contact.findMany({
-            where: { email: { equals: wanted, mode: 'insensitive' } },
+            where: { email: { equals: wanted, mode: 'insensitive' }, deactivatedAt: null },
             select: { id: true, businessId: true },
           }),
       );

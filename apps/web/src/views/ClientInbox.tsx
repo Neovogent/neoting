@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useMemo, useRef, useState } from 'react';
 import {
   Upload, Eye, Copy, CheckCircle, Send, Trash2, RefreshCw, MessageSquare, FileText, Image as ImageIcon,
   Link2, Sparkles, Download, PencilLine, UploadCloud,
@@ -18,6 +18,15 @@ import { blockedReason, partitionByReadiness, readinessOf } from '../lib/readine
 import { currency } from '../lib/resolver';
 import type { Client, DocKind, Document, DuplicatePair } from '../lib/types';
 import { EXPORT_HINT } from '../lib/exportRules';
+
+/**
+ * The live publish door (see the file's own header in
+ * `DynamicComponents/PublishBatchDialog.tsx`). `lazy()` because ClientInbox is
+ * embedded in `ClientDetailView`, the heaviest route in the bundle — every
+ * string of that flow, and `api/proposals.ts` with it, must stay off this
+ * chunk. The pattern is `BankView`'s `RequestStatementDialog`.
+ */
+const PublishBatchDialog = lazy(() => import('../components/DynamicComponents/PublishBatchDialog'));
 
 /**
  * Wireframe screen 8 — a client's Costs inbox. The Sales tab is the same
@@ -387,6 +396,13 @@ export function ClientInbox({ client, kind, onPreview }: {
   const [replacing, setReplacing] = useState<Document | null>(null);
   /** The upload being read on screen. */
   const [analysing, setAnalysing] = useState<{ docIds: string[]; importIds: string[] } | null>(null);
+  /**
+   * The selection a live release is being staged over. Null when the dialog is
+   * shut. It holds the DOCUMENTS rather than ids so the dialog can compute its
+   * own refusal (nothing Ready) and its own batching without re-deriving from a
+   * list that the 5 s poll may have moved underneath it.
+   */
+  const [publishing, setPublishing] = useState<Document[] | null>(null);
 
   // Tolerant of both id worlds (METH S14 bridge): server rows carry opaque
   // business ids, the opened client still keys by seed id.
@@ -583,7 +599,9 @@ export function ClientInbox({ client, kind, onPreview }: {
     render: (d) => (
       <span className="flex items-center justify-end gap-2">
         {d.currency !== 'GBP' && <Pill tone="amber">{d.currency}</Pill>}
-        <span className="text-white font-bold tabular-nums">{currency(d.total)}</span>
+        {/* The document's OWN currency — a USD invoice printed with a £ is a
+            misstatement the amber pill cannot undo. */}
+        <span className="text-white font-bold tabular-nums">{currency(d.total, d.currency)}</span>
       </span>
     ),
   };
@@ -719,7 +737,7 @@ export function ClientInbox({ client, kind, onPreview }: {
           const flag = whyFlagged(d).text;
           const ok = await confirm({
             title: intl.formatMessage(m.readyTitle, { supplier: d.supplier }),
-            detail: intl.formatMessage(m.readyDetail, { amount: currency(d.total), category: d.category }),
+            detail: intl.formatMessage(m.readyDetail, { amount: currency(d.total, d.currency), category: d.category }),
             ...(flag === '—' ? {} : { consequence: intl.formatMessage(m.readyConsequence, { flag }) }),
             confirmLabel: intl.formatMessage(m.readyConfirm),
           });
@@ -942,7 +960,7 @@ export function ClientInbox({ client, kind, onPreview }: {
               const ok = await confirm({
                 tone: 'red',
                 title: intl.formatMessage(m.deleteTitle, { count: sel.length }),
-                detail: sel.map((d) => intl.formatMessage(m.deleteItem, { supplier: d.supplier, amount: currency(d.total) })).slice(0, 4).join(' · '),
+                detail: sel.map((d) => intl.formatMessage(m.deleteItem, { supplier: d.supplier, amount: currency(d.total, d.currency) })).slice(0, 4).join(' · '),
                 consequence: intl.formatMessage(m.deleteConsequence),
                 confirmLabel: intl.formatMessage(m.deleteConfirm),
               });
@@ -1005,10 +1023,31 @@ export function ClientInbox({ client, kind, onPreview }: {
         ]
       : [];
 
+  /**
+   * ⚠ **The live Ready tab now has a real publish action, and it is the whole
+   * point of this file's change.**
+   *
+   * The METH S14 sweep left `bulkActions` EMPTY on every live tab but
+   * Published, on the correct principle that a local `updateDocumentStatus`
+   * flip is reverted by the next 5 s poll. But nothing replaced it: the tooltip
+   * elsewhere pointed at a chat utterance, and *Published is the gate to
+   * Export* — `ExportView` exports only documents that reached Published — so a
+   * client's Costs tab had no reachable route to the VT import file at all.
+   *
+   * This is not that flip restored. It opens `PublishBatchDialog`, which stages
+   * a real `publish.batch` proposal and walks the SERVER's Review → Approve
+   * card; nothing here writes state, and the poll has nothing to revert.
+   * `minSelected` stays 1 — a single receipt is a legitimate release — and the
+   * "nothing Ready" refusal lives in the dialog rather than here so both
+   * surfaces meet the identical wording (and so the strings stay off this
+   * chunk).
+   */
   const bulkActions =
     documentsSource === 'api'
       ? status === 'published'
         ? [{ label: intl.formatMessage(commonActions.exportCsv), icon: Download, minSelected: 2, disabledHint: intl.formatMessage(EXPORT_HINT), onClick: (sel: Document[]) => exportDocuments(sel, client.name) }]
+        : status === 'ready'
+        ? [{ label: intl.formatMessage(m.bulkPublish), icon: Send, primary: true, onClick: (sel: Document[]) => setPublishing(sel) }]
         : []
       : syntheticBulkActions;
 
@@ -1187,6 +1226,15 @@ export function ClientInbox({ client, kind, onPreview }: {
             setStatus(landed);
           }}
         />
+      )}
+
+      {/* The staging surface for a live release. `fallback={null}` because the
+          chunk arrives in a frame or two after an explicit click — a skeleton
+          for a dialog that is about to exist reads as a second dialog. */}
+      {publishing && (
+        <Suspense fallback={null}>
+          <PublishBatchDialog selection={publishing} onClose={() => setPublishing(null)} />
+        </Suspense>
       )}
 
       {comparing && <DuplicateModal pair={comparing} onClose={() => setComparing(null)} />}

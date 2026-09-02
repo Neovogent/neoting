@@ -6,6 +6,7 @@ import type { DocumentUpload, PortalContext } from '@neoting/contracts/model';
 
 import type { AppException } from '../../common/problem/problem.js';
 import type { PortalContextService } from './portal-context.service.js';
+import type { PortalDocumentsService } from './portal-documents.service.js';
 import { type PortalSessionFacts, PortalSessionContextResolver, portalSessionRequired } from './portal-session-context.js';
 import type { PortalSessionService } from './portal-session.service.js';
 import type { PortalUploadIntent, PortalUploadService } from './portal-upload.port.js';
@@ -21,6 +22,7 @@ const FACTS: PortalSessionFacts = {
   practiceId: 'prac_1',
   systemUserId: 'usr_system_1',
   actorId: 'usr_system_1',
+  contactId: null,
   chaseId: 'chase_1',
   grantedItemIds: [],
   expiresAt: EXPIRES,
@@ -53,7 +55,18 @@ interface Calls {
   requestSignInCode: unknown[];
   createOnboardingSession: unknown[];
   resolve: (string | undefined)[];
+  /**
+   * WHICH resolver method each route reached, in order.
+   *
+   * Not bookkeeping: the choice is a security decision on two of these routes.
+   * `getDocuments` must resolve as an OWN-PORTAL session (`resolveOnboarding`),
+   * because a chase link is forwardable and its holder may not read the
+   * client's whole document history — and nothing else in the handler would
+   * catch that regression, since every method returns the same facts.
+   */
+  resolvedVia: string[];
   getContext: PortalSessionFacts[];
+  listDocuments: { facts: PortalSessionFacts; query: { cursor?: string | undefined; limit: number } }[];
   createUpload: { facts: PortalSessionFacts; request: PortalUploadIntent; key: string | undefined }[];
 }
 
@@ -70,7 +83,9 @@ function harness(
     requestSignInCode: [],
     createOnboardingSession: [],
     resolve: [],
+    resolvedVia: [],
     getContext: [],
+    listDocuments: [],
     createUpload: [],
   };
 
@@ -81,18 +96,21 @@ function harness(
     },
   } as unknown as PortalSessionService;
 
-  // Both doors resolve through the WIDENED methods — the context read and the
-  // upload each accept a chase session or a client's own portal session. The
-  // stub records through one list because the controller must reach exactly one
-  // of them per call, and which one is asserted by the endpoint under test.
-  const record = async (header: string | undefined) => {
+  // The context read and the upload resolve through the WIDENED methods — each
+  // accepts a chase session or a client's own portal session. `getDocuments`
+  // deliberately does not, so every method is stubbed SEPARATELY and records
+  // which one was reached: they all return the same facts, so a route silently
+  // switching to a wider door would otherwise pass every assertion.
+  const record = (via: string) => async (header: string | undefined) => {
     calls.resolve.push(header);
+    calls.resolvedVia.push(via);
     return over.resolve === undefined ? FACTS : over.resolve();
   };
   const resolver = {
-    resolve: record,
-    resolveForContext: record,
-    resolveForUpload: record,
+    resolveForContext: record('context'),
+    resolveForUpload: record('upload'),
+    resolveOnboarding: record('onboarding'),
+    resolveForDocumentOriginal: record('document-original'),
   } as unknown as PortalSessionContextResolver;
 
   const context = {
@@ -125,7 +143,18 @@ function harness(
     },
   } as unknown as PortalOnboardingService;
 
-  return { controller: new PortalController(sessions, resolver, context, uploads, onboarding), calls };
+  // `GET /portal/documents`. Records the facts and the parsed query, which is
+  // the whole of what the controller owes it — the tenancy lives in the service
+  // (`portal-documents.service.ts`) and is proven against real RLS in
+  // `portal-client-surface.integration.test.ts`.
+  const documents = {
+    listDocuments: async (facts: PortalSessionFacts, query: { cursor?: string | undefined; limit: number }) => {
+      calls.listDocuments.push({ facts, query });
+      return { data: [], pageInfo: { nextCursor: null, hasMore: false } };
+    },
+  } as unknown as PortalDocumentsService;
+
+  return { controller: new PortalController(sessions, resolver, context, uploads, onboarding, documents), calls };
 }
 
 async function grab(fn: () => Promise<unknown>): Promise<AppException> {
@@ -215,18 +244,19 @@ test('POST /portal/uploads authenticates BEFORE it validates — a bad bearer wi
   expect(calls.createUpload).toEqual([]);
 });
 
-test('the five contracted routes are the WHOLE surface — nothing else is reachable on the portal', () => {
+test('the six contracted routes are the WHOLE surface — nothing else is reachable on the portal', () => {
   // `openapi.yaml` declares exactly `createPortalSession`, `getPortalContext`,
-  // `createPortalUpload`, `createPortalSignInCode` and
+  // `listPortalDocuments`, `createPortalUpload`, `createPortalSignInCode` and
   // `createPortalOnboardingSession` under the `portal` tag. The portal is the
   // smallest surface in the product and the only one a stranger holding a
-  // forwarded link can reach, so a SIXTH handler appearing here is a contract
-  // change (G7), not a convenience — this pins it.
+  // forwarded link can reach, so a SEVENTH handler appearing here is a contract
+  // decision, not a convenience — this pins it.
   //
-  // It read `three` until the S7 walkthrough: the last two were published by
-  // S0's ID LAW batch and implemented by nobody, so an invited client's sign-in
-  // 404'd. Growing this list was the contract being MET, not widened — and it
-  // is the one direction that may be taken without an issue first.
+  // It read `three` until the S7 walkthrough (the invited-client pair was
+  // published by S0's ID LAW batch and implemented by nobody, so a sign-in
+  // 404'd) and `five` until 2 Sep 2026, when `GET /portal/documents` landed —
+  // D49's home and upload tabs read it, and the only server-side fact about a
+  // client's own documents before it was the integer `documentsSent`.
   const handlers = Object.getOwnPropertyNames(PortalController.prototype).filter((name) => name !== 'constructor');
   expect(handlers.sort()).toEqual([
     'createOnboardingSession',
@@ -234,5 +264,55 @@ test('the five contracted routes are the WHOLE surface — nothing else is reach
     'createSignInCode',
     'createUpload',
     'getContext',
+    'getDocuments',
   ]);
+});
+
+test('GET /portal/documents resolves as an OWN-PORTAL session, so a forwarded chase link cannot read the whole file', async () => {
+  // ⚠ The security decision on this route, and the only place it is visible.
+  // A chase link is deliberately forwardable to whoever holds the paperwork
+  // (SoT Stage 8.3); their authority is the chased items and the right to
+  // upload against them. `resolveOnboarding` is what refuses them the client's
+  // entire document history — every supplier, every amount, every date — and it
+  // is the same line `getPortalContext` draws by handing a chase session
+  // `summary: null` and `businessId: null`.
+  const { controller, calls } = harness();
+  await controller.getDocuments('Bearer portal.token', {});
+  expect(calls.resolvedVia).toEqual(['onboarding']);
+  expect(calls.resolve).toEqual(['Bearer portal.token']);
+  expect(calls.listDocuments).toHaveLength(1);
+  expect(calls.listDocuments[0]?.facts).toBe(FACTS);
+});
+
+test('GET /portal/documents coerces the query string — `?limit=25` is a page size, not a 400', async () => {
+  // Express delivers every query value as a string while the generated schema
+  // types `limit` as a number. Without `coerceQuery` the exact shape the portal
+  // sends is a 400 on its first call.
+  const { controller, calls } = harness();
+  await controller.getDocuments('Bearer portal.token', { limit: '25', cursor: 'abc' });
+  expect(calls.listDocuments[0]?.query).toEqual({ limit: 25, cursor: 'abc' });
+});
+
+test('GET /portal/documents defaults the page size rather than serving an unbounded list', async () => {
+  const { controller, calls } = harness();
+  await controller.getDocuments('Bearer portal.token', {});
+  expect(calls.listDocuments[0]?.query.limit).toBe(50);
+});
+
+test('GET /portal/documents authenticates BEFORE it validates — a bad bearer with a bad query is 401, not a 400 that leaks the shape', async () => {
+  const { controller, calls } = harness({ resolve: () => Promise.reject(portalSessionRequired('missing or invalid portal session')) });
+  const error = await grab(() => controller.getDocuments(undefined, { limit: 'not-a-number' }));
+  expect(error.code).toBe('NT-OTP-002');
+  expect(calls.listDocuments).toEqual([]);
+});
+
+test('GET /portal/documents refuses a query parameter the contract does not declare', async () => {
+  // ⚠ `businessId` above all. The operation declares no such parameter for the
+  // reason `PortalUploadRequest` has no `businessId` field: a client does not
+  // get to name whose paperwork they are reading. The generated schema is
+  // `.strict()`, so an unknown key is a 400 rather than a silently ignored one.
+  const { controller, calls } = harness();
+  const error = await grab(() => controller.getDocuments('Bearer portal.token', { businessId: 'biz_someone_else' }));
+  expect(error.getStatus()).toBe(400);
+  expect(calls.listDocuments).toEqual([]);
 });

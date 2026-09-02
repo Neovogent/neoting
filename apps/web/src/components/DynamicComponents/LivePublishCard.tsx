@@ -130,7 +130,7 @@ export function LivePublishCard({
                       <span className="text-zinc-400 truncate">
                         {intl.formatMessage(m.itemRow, { supplier: d.supplier, category: d.category })}
                       </span>
-                      <span className="text-white font-bold shrink-0 tabular-nums">{currency(d.total)}</span>
+                      <span className="text-white font-bold shrink-0 tabular-nums">{currency(d.total, d.currency)}</span>
                     </div>
                   ))}
                 </div>

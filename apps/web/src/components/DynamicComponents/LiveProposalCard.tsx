@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AlertTriangle, Check, ChevronDown, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { defineMessages, useIntl } from 'react-intl';
+import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import { NtProblemError } from '@neoting/contracts';
 import type { ActionProposal } from '@neoting/contracts/model';
 import { useAppContext } from '../../context/AppContext';
@@ -16,6 +16,7 @@ const m = defineMessages({
   stateReviewed: { id: 'proposals.liveCard.stateReviewed', defaultMessage: 'Reviewed' },
   readReview: { id: 'proposals.liveCard.readReview', defaultMessage: 'Read review' },
   opening: { id: 'proposals.liveCard.opening', defaultMessage: 'Opening the review…' },
+  unknownKind: { id: 'proposals.liveCard.unknownKind', defaultMessage: 'A change awaiting your review' },
   approve: { id: 'proposals.liveCard.approve', defaultMessage: 'Approve' },
   approving: { id: 'proposals.liveCard.approving', defaultMessage: 'Executing…' },
   approved: { id: 'proposals.liveCard.approved', defaultMessage: 'Approved and executed — {title}' },
@@ -54,7 +55,19 @@ export function LiveProposalCard({
   const [phase, setPhase] = useState<'idle' | 'opening' | 'reviewed' | 'approving' | 'approved' | 'cancelled'>('idle');
   const [problem, setProblem] = useState<string | null>(null);
 
-  const kindLabel = intl.formatMessage(KIND_LABEL[proposal.kind]);
+  /**
+   * ⚠ `KIND_LABEL` is total over the CONTRACT's kinds — but the queue is served
+   * by a SERVER, which can be ahead of the generated client. A kind added to the
+   * spec and deployed before the web build is regenerated arrives here as a key
+   * the map has not got, and `intl.formatMessage(undefined)` throws: the whole
+   * approval card, and the accountant's only route to Approve, taken down over a
+   * missing label. (`document.purge` was in exactly that gap for the length of
+   * one afternoon while it was being built.) The fallback is honest about what
+   * it does not know, and the SERVER's own review title — which Read review
+   * renders regardless — is the authoritative description either way.
+   */
+  const known = KIND_LABEL[proposal.kind] as MessageDescriptor | undefined;
+  const kindLabel = known === undefined ? intl.formatMessage(m.unknownKind) : intl.formatMessage(known);
   const subtitle = [clientName, kindLabel].filter(Boolean).join(' · ');
   // The kind→copy mapping's second line, plus the queued reason for an
   // offboard — both from the proposal itself, so the card says what approving

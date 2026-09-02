@@ -29,12 +29,23 @@ import { verifyPortalSessionHeader } from './portal-session-token.js';
  * extractions_delegated_upload USING/WITH CHECK (scope='delegated_upload' AND document_id = ANY(granted))
  * ```
  *
- * `chases`, `bank_transactions` and `otp_sessions` have NO delegated branch —
- * their policies go through `app_can_access_business()`, which begins
+ * `chases`, `bank_transactions` and `otp_sessions` have NO delegated branch, and
+ * every one of their policies begins — directly or one call down —
  * `app_session_scope() = 'user'`. **A delegated context reading any of them
  * gets an empty set**, silently. So `GET /portal/context` cannot read the chase
  * under a delegated context, and this resolver cannot read the session row
  * under one either.
+ *
+ * ⚠ Corrected 2 Sep 2026: this comment said `otp_sessions` goes through
+ * `app_can_access_business()`. It does not. The live policy is
+ * `otp_sessions_tenant USING (app_can_access_document(business_id, practice_id))`
+ * — the anchor-pair predicate, because `otp_sessions.business_id` became
+ * NULLABLE for ONBOARDING (D47) and `app_can_access_business(NULL)` is FALSE, so
+ * a pre-client row under the old single-column policy would have been invisible
+ * and unwritable to everyone. The conclusion is unchanged (the business branch
+ * delegates to `app_can_access_business` and the practice branch carries its own
+ * `app_session_scope() = 'user'`), which is why the error survived — but it
+ * named a policy that is not in `rls.sql`.
  *
  * The honest division, and the one this module states everywhere rather than
  * overclaiming:
@@ -60,6 +71,29 @@ export interface PortalSessionFacts {
   readonly systemUserId: string;
   /** The actor a delegated write is attributed to. See `resolveDelegatedActor` in the service for why it is what it is. */
   readonly actorId: string;
+  /**
+   * **WHO is holding this session** — the `contacts` row `otp_sessions.contact_id`
+   * names, or null when the session cannot be attributed to a person.
+   *
+   * ⚠ This is the answer to the question this module could not previously
+   * answer, and the column has held it all along: the claims name a BUSINESS,
+   * `systemScopeFor` acts as the practice's SYSTEM user, and nothing read the
+   * one field that says which human proved control of an address. Both
+   * own-portal sign-in routes write it (`portal-onboarding.service.ts` —
+   * `resolveByAddress` from the contact whose address verified,
+   * `resolveInvite` from the contact the invitation names).
+   *
+   * Null is a real and correct state, not a gap:
+   *
+   * - a CHASE session sets it to NULL deliberately — the link is forwardable and
+   *   *"a guess in an audit column is worse than an absence"*;
+   * - an onboarding session has it null when the invite named an address no
+   *   `contacts` row carries.
+   *
+   * Everything that needs a person **fails closed** on null. Nothing that
+   * previously worked depends on it.
+   */
+  readonly contactId: string | null;
   /** The chase this session exists to answer. **Null on an ONBOARDING session**, which has no chase — nobody has asked an invited client for anything yet. */
   readonly chaseId: string | null;
   /** The document ids this session may touch. Empty until its first upload — see `delegatedScopeFor`. */
@@ -210,6 +244,32 @@ export class PortalSessionContextResolver {
   }
 
   /**
+   * Reading back the ORIGINAL of one document — `GET /documents/{id}/original`,
+   * which `openapi.yaml` puts the portal bearer on beside the workspace cookie
+   * (2 Sep 2026), and which both kinds of session may legitimately call.
+   *
+   * ⚠ **Both kinds, because what decides here is not the scope — it is the
+   * GRANT, and the grant is SQL's.** The caller runs under
+   * `delegatedScopeFor(facts)`, so `documents_delegated_upload`'s
+   * `id = ANY(app_granted_item_ids())` is the whole boundary: a document
+   * outside the session's own grant is invisible to the query rather than
+   * refused by a handler, and the answer is a 404 that never confirms it
+   * exists. Nothing widens a grant except `grantItems`, which the upload path
+   * calls with the id it has just derived — so a session's grant is exactly the
+   * documents it sent ITSELF, whichever kind of session it is.
+   *
+   * A session that has never uploaded has an empty grant, `delegatedScopeFor`
+   * refuses to build a context for it, and it can reach nothing here. That is
+   * correct, not a gap.
+   */
+  resolveForDocumentOriginal(
+    authorizationHeader: string | undefined,
+    nowMs: number = Date.now(),
+  ): Promise<PortalSessionFacts> {
+    return this.factsFor(authorizationHeader, ['DELEGATED_UPLOAD', 'ONBOARDING'], nowMs);
+  }
+
+  /**
    * The same bearer, the same checks, and a DIFFERENT scope — the invited
    * client's onboarding session (contract-change issue #205).
    *
@@ -274,11 +334,15 @@ export class PortalSessionContextResolver {
           id: true,
           businessId: true,
           userId: true,
+          contactId: true,
           scope: true,
           chaseId: true,
           grantedItemIds: true,
           verifiedAt: true,
           expiresAt: true,
+          // The person, joined rather than looked up separately, so the
+          // revocation check below cannot race the session read.
+          contact: { select: { id: true, deactivatedAt: true } },
         },
       }),
     );
@@ -304,10 +368,35 @@ export class PortalSessionContextResolver {
     if (row.expiresAt.getTime() <= nowMs) {
       throw portalSessionRequired(SESSION_EXPIRED_DETAIL);
     }
+    // ⚠ THE SIXTH ROW CHECK, and it is what makes "remove" mean removed.
+    //
+    // A business revoking somebody's access must stop them NOW, not at the end
+    // of the hour their bearer happens to have left — *"they stop being able to
+    // send documents immediately"* is what the screen promises, and a bearer is
+    // a bearer: nothing else in this product can withdraw one. Portal sessions
+    // are not rows that can be deleted per person (`link_token_hash` is unique
+    // per link, not per grant), so revocation is expressed on the CONTACT and
+    // this is where it is honoured.
+    //
+    // It is checked here rather than per endpoint for the reason every other
+    // check on this list is: the resolver is the one door, and a rule enforced
+    // at four call sites is a rule three of them will eventually miss.
+    //
+    // A session with no contact is unaffected — a chase session has no person to
+    // revoke, and refusing it here would break the forwardable-link journey for
+    // a rule that has nothing to say about it.
+    if (row.contact !== null && row.contact.deactivatedAt !== null) {
+      // The uniform detail. Somebody whose access was withdrawn learns that
+      // their session is not valid, which is true, and not that they were
+      // removed — that is their employer's to tell them, and this endpoint
+      // answers the same sentence to a forged bearer.
+      throw portalSessionRequired('missing or invalid portal session');
+    }
 
     return {
       otpSessionId: row.id,
       businessId: row.businessId,
+      contactId: row.contactId,
       practiceId: claims.practiceId,
       systemUserId,
       // `userId` is the contact's provisioned user when the contact has one;

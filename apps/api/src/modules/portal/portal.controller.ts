@@ -1,6 +1,6 @@
-import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Inject, Post } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Inject, Post, Query } from '@nestjs/common';
 
-import type { DocumentUpload, PortalContext, PortalSession } from '@neoting/contracts/model';
+import type { DocumentUpload, PortalContext, PortalDocument, PortalSession } from '@neoting/contracts/model';
 import {
   createPortalOnboardingSessionBody,
   createPortalOnboardingSessionHeader,
@@ -10,17 +10,22 @@ import {
   createPortalSignInCodeHeader,
   createPortalUploadBody,
   createPortalUploadHeader,
+  listPortalDocumentsQueryParams,
 } from '@neoting/contracts/zod';
 
+import type { Page } from '../../common/pagination/cursor.js';
 import { AppException } from '../../common/problem/problem.js';
 import { parseBoundary, parseIdempotencyKey } from '../../common/validation/parse-boundary.js';
+import { coerceQuery } from '../../common/validation/query-coercion.js';
 import type { PortalContextService } from './portal-context.service.js';
+import type { PortalDocumentsService } from './portal-documents.service.js';
 import type { PortalOnboardingService } from './portal-onboarding.service.js';
 import type { PortalSessionContextResolver } from './portal-session-context.js';
 import type { PortalSessionService } from './portal-session.service.js';
 import type { PortalUploadService } from './portal-upload.port.js';
 import {
   PORTAL_CONTEXT_SERVICE,
+  PORTAL_DOCUMENTS_SERVICE,
   PORTAL_ONBOARDING_SERVICE,
   PORTAL_SESSION_CONTEXT,
   PORTAL_SESSION_SERVICE,
@@ -28,10 +33,19 @@ import {
 } from './tokens.js';
 
 /**
- * The three contracted portal operations (METH Stage 9, SoT §4 Stage 8.3): open
- * a session from an SMS link plus six digits, see what is being chased, start an
- * upload against it. Nothing else lives here — the portal is the smallest
- * surface in the product and stays that way.
+ * The **six** contracted portal operations (METH Stage 9, SoT §4 Stage 8.3, D49):
+ * open a session from a link plus six digits, ask for the code that opens one,
+ * open one from a setup link, see what is being chased, see what you have sent,
+ * start an upload. Nothing else lives here — the portal is the smallest surface
+ * in the product and the only one a stranger holding a forwarded link can
+ * reach, so a seventh handler is a contract decision rather than a convenience,
+ * and `portal.controller.test.ts` pins the list.
+ *
+ * It read "three" until 28 Aug 2026 (the two invited-client routes, published by
+ * S0 and implemented by nobody) and again until 2 Sep 2026
+ * (`GET /portal/documents` — the client's own document list, which D49's home
+ * and upload tabs are built on and for which the only server-side fact was the
+ * integer `PortalSummary.documentsSent`).
  *
  * **The credential is a BEARER, not a cookie.** `METH_MODE.md` Stage 9 says
  * "issue portal cookie"; `openapi.yaml` declares `portalSession: {type: http,
@@ -62,6 +76,7 @@ export class PortalController {
     @Inject(PORTAL_CONTEXT_SERVICE) private readonly context: PortalContextService,
     @Inject(PORTAL_UPLOAD_SERVICE) private readonly uploads: PortalUploadService,
     @Inject(PORTAL_ONBOARDING_SERVICE) private readonly onboarding: PortalOnboardingService,
+    @Inject(PORTAL_DOCUMENTS_SERVICE) private readonly documents: PortalDocumentsService,
   ) {}
 
   /**
@@ -175,6 +190,45 @@ export class PortalController {
   async getContext(@Headers('authorization') authorization: string | undefined): Promise<PortalContext> {
     // Both kinds of session read their own context — see `resolveForContext`.
     return this.context.getContext(await this.resolver.resolveForContext(authorization));
+  }
+
+  /**
+   * `GET /portal/documents` — what this client has sent, in their own words
+   * (D49's home and upload tabs).
+   *
+   * ⚠ **`resolveOnboarding`, so a CHASE session is refused — and that is the
+   * whole security decision on this route.** A chase link is deliberately
+   * forwardable to whoever physically holds the paperwork (SoT Stage 8.3), and
+   * its holder's authority is the chased items plus the right to upload against
+   * them. Handing them the client's entire document history — every supplier,
+   * every amount, every date — because they were passed a text is a widening
+   * nothing asked for. It is the same line `getPortalContext` already draws by
+   * returning `summary: null` and `businessId: null` to a chase session: the
+   * workspace is not a chase session's to read.
+   *
+   * The refusal is the uniform `401 NT-OTP-002`, identical to the one a missing
+   * or expired bearer gets, so it says only "not a session for this".
+   *
+   * Authenticate, then validate — a caller with no valid bearer learns nothing
+   * about which of their query parameters we would have objected to.
+   */
+  @Get('documents')
+  @HttpCode(HttpStatus.OK)
+  async getDocuments(
+    @Headers('authorization') authorization: string | undefined,
+    @Query() query: unknown,
+  ): Promise<Page<PortalDocument>> {
+    const facts = await this.resolver.resolveOnboarding(authorization);
+    // `coerceQuery` first: Express delivers every query value as a string while
+    // the generated schema types `limit` as a number, so `?limit=25` — the
+    // exact shape the portal sends — is otherwise a 400. Schema-driven, so it
+    // cannot drift from the contract.
+    const parsed = parseBoundary(
+      listPortalDocumentsQueryParams,
+      coerceQuery(listPortalDocumentsQueryParams, query),
+      'query parameters',
+    );
+    return this.documents.listDocuments(facts, parsed);
   }
 
   /**

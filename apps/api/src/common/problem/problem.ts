@@ -15,6 +15,8 @@ export function buildProblem(args: {
   traceId: string;
   detail?: string;
   errors?: readonly ProblemErrorsItem[];
+  /** The contract's one extension member — `NT-EXP-001` only. See {@link AppException.extension}. */
+  publishedOutsidePeriod?: Problem['publishedOutsidePeriod'];
 }): Problem {
   const base: Problem = {
     type: `https://neoting.com/problems/${args.code}`,
@@ -31,6 +33,10 @@ export function buildProblem(args: {
     // "Validation failed" tells a client nothing about WHICH field it got wrong,
     // and the spec declares the shape, so we send it rather than make them guess.
     ...(args.errors === undefined ? {} : { errors: [...args.errors] }),
+    // RFC 7807 extension member. Contracted (`Problem.publishedOutsidePeriod`)
+    // rather than free-form, so the generated client carries it and the web can
+    // branch on a number instead of parsing an English sentence.
+    ...(args.publishedOutsidePeriod === undefined ? {} : { publishedOutsidePeriod: args.publishedOutsidePeriod }),
   };
 }
 
@@ -47,6 +53,19 @@ export class AppException extends HttpException {
     readonly publicDetail?: string,
     /** Field-level detail, for validation failures. Rendered into `Problem.errors`. */
     readonly fieldErrors?: readonly ProblemErrorsItem[],
+    /**
+     * The one contracted RFC 7807 **extension member**, and it is deliberately
+     * a named field rather than an open bag.
+     *
+     * `NT-EXP-001` is the only refusal that sets it: an export that found
+     * nothing tells the accountant how many Published documents this client has
+     * just outside the period and where they are, because "nothing" on its own
+     * reads as a broken feature rather than as a period to widen. An open
+     * `Record<string, unknown>` here would let any refusal put anything on the
+     * wire; the contract declares this shape, so the generated client carries
+     * it and nothing else can slip through.
+     */
+    readonly extension?: Pick<Problem, 'publishedOutsidePeriod'>,
   ) {
     super(title, status);
   }

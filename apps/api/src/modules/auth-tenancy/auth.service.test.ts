@@ -164,8 +164,13 @@ test('me() projects user + practice + acting role + RLS-visible businesses from 
     membership: {
       findMany: async () => [
         // Business-scoped row FIRST — the practice-wide row must still win the acting role.
-        { practiceId: 'prac_1', businessId: 'biz_burger', role: 'PRACTICE_STANDARD' },
-        { practiceId: 'prac_1', businessId: null, role: 'PRACTICE_ADMIN' },
+        // ⚠ `isOwner` is on every row because the real `select` reads it and the
+        // contract makes it REQUIRED on `/me`: a fixture without it returns
+        // `isOwner: undefined`, which the browser's own `.strict()`
+        // `getMeResponse` rejects as contract drift. Omitting it here made the
+        // suite unable to notice the `select` losing the column.
+        { practiceId: 'prac_1', businessId: 'biz_burger', role: 'PRACTICE_STANDARD', isOwner: false },
+        { practiceId: 'prac_1', businessId: null, role: 'PRACTICE_ADMIN', isOwner: true },
       ],
     },
     practice: { findUnique: async () => ({ id: 'prac_1', name: 'Neovogent Accounting' }) },
@@ -189,7 +194,43 @@ test('me() projects user + practice + acting role + RLS-visible businesses from 
   expect(me.user).toEqual({ id: 'usr_shakib_demo', email: 'shakib@neoting.test', firstName: 'Shakib', lastName: 'Bin Kabir' });
   expect(me.practice).toEqual({ id: 'prac_1', name: 'Neovogent Accounting' });
   expect(me.role).toBe('PRACTICE_ADMIN');
+  // D44's other half, and it is read off the SAME acting membership as `role` —
+  // the release gate is `role AND isOwner`, so a screen that reads one without
+  // the other cannot degrade honestly. The contract makes it required.
+  expect(me.isOwner).toBe(true);
   expect(me.businesses).toEqual([{ id: 'biz_burger', name: 'American Burger Ltd' }]);
+});
+
+test('isOwner follows the ACTING membership — a practice admin who does not own the practice is not the owner', async () => {
+  // Same shape as above with the flag flipped: it must come off the row that
+  // decided the role, not off "any membership with it set".
+  const tx = {
+    $executeRaw: async () => 0,
+    user: {
+      findUnique: async () => ({ id: 'usr_priya', email: 'priya@neoting.test', firstName: 'Priya', lastName: 'Shah' }),
+    },
+    membership: {
+      findMany: async () => [
+        { practiceId: 'prac_1', businessId: 'biz_burger', role: 'PRACTICE_STANDARD', isOwner: true },
+        { practiceId: 'prac_1', businessId: null, role: 'PRACTICE_ADMIN', isOwner: false },
+      ],
+    },
+    practice: { findUnique: async () => ({ id: 'prac_1', name: 'Neovogent Accounting' }) },
+    business: { findMany: async () => [] },
+  };
+  const prisma = {
+    $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx),
+  } as unknown as PrismaClient;
+
+  const me = await new AuthService(prisma, env, new InMemorySignInThrottle()).me({
+    actorId: 'usr_priya',
+    practiceId: 'prac_1',
+    sessionScope: 'user',
+    grantedItemIds: [],
+  });
+
+  expect(me.role).toBe('PRACTICE_ADMIN');
+  expect(me.isOwner).toBe(false);
 });
 
 test('me() for a session whose user vanished mid-flight is a 401, not a 500', async () => {

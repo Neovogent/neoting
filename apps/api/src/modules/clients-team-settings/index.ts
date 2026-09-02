@@ -32,14 +32,24 @@ export {
 } from './business-profile.js';
 
 // D44 — compose is everyone, release is the super admin.
-export { BUSINESS_LEVEL_ROLES, canCompose, canRelease, isBusinessLevelRole, RELEASE_ROLE } from './team-authority.js';
+export {
+  BUSINESS_LEVEL_ROLES,
+  canCompose,
+  canRelease,
+  INVITABLE_PRACTICE_ROLES,
+  isBusinessLevelRole,
+  isPracticeLevelRole,
+  RELEASE_ROLE,
+} from './team-authority.js';
 
 // The setup link. `mintSetupToken` and `buildSetupLink` are intake's; the
 // verifier needs `hashSetupToken` and `setupTokenHashEquals`.
 export {
+  buildInviteLink,
   buildSetupLink,
   DEFAULT_APP_ORIGIN,
   hashSetupToken,
+  INVITE_LINK_PATH,
   mintSetupToken,
   SETUP_LINK_PATH,
   SETUP_LINK_TTL_DAYS,

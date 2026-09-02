@@ -76,3 +76,28 @@ test('the child-list schema coerces its limit the same way', () => {
 test('a non-object query passes through for the schema to reject as it would have', () => {
   expect(listDocumentsQueryParams.safeParse(coerceQuery(listDocumentsQueryParams, 'limit=10')).success).toBe(false);
 });
+
+
+test('a boolean query param is coerced from "true"/"false" and NOTHING else', () => {
+  // `deleted` is the first boolean query parameter in the contract, and
+  // `?deleted=true` arrives from Express as the STRING 'true' — a 400 without
+  // this branch, on the request that opens Trash.
+  const on = listDocumentsQueryParams.safeParse(coerceQuery(listDocumentsQueryParams, { deleted: 'true' }));
+  expect(on.success).toBe(true);
+  if (on.success) expect(on.data.deleted).toBe(true);
+
+  // ⚠ The half that matters. Truthy coercion (`Boolean(value)`) would make
+  // `?deleted=false` mean TRUE — serving the entire Trash in place of the inbox
+  // on the one spelling a caller is most likely to send explicitly.
+  const off = listDocumentsQueryParams.safeParse(coerceQuery(listDocumentsQueryParams, { deleted: 'false' }));
+  expect(off.success).toBe(true);
+  if (off.success) expect(off.data.deleted).toBe(false);
+
+  // Anything else passes through untouched, so Zod reports the honest "expected
+  // boolean" against the field rather than this helper guessing.
+  for (const guess of ['1', 'yes', '', 'TRUE']) {
+    expect(listDocumentsQueryParams.safeParse(coerceQuery(listDocumentsQueryParams, { deleted: guess })).success).toBe(
+      false,
+    );
+  }
+});

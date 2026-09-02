@@ -14,6 +14,7 @@ import {
   NotificationsModule,
 } from '../notifications/index.js';
 import { EmailVerificationService } from './email-verification.service.js';
+import { InvitationAcceptanceService } from './invitation-acceptance.service.js';
 import { NotificationsSignupMailer } from './notifications-signup-mailer.js';
 import { PracticeSignupService } from './practice-signup.service.js';
 import { PracticesController } from './practices.controller.js';
@@ -25,6 +26,7 @@ import {
   AUTH_SERVICE,
   BUSINESSES_SERVICE,
   EMAIL_VERIFICATION_SERVICE,
+  INVITATION_ACCEPTANCE_SERVICE,
   PRACTICE_SIGNUP_SERVICE,
   PRISMA,
   SIGN_IN_THROTTLE,
@@ -44,21 +46,24 @@ import {
  * owns the assembly.
  */
 /**
- * The public web origin the signup verification link points at.
+ * ✅ **The signup verification link's origin is `env.APP_ORIGIN` now.**
  *
- * ⚠ **`neoacc.`, not `app.neoting.` — and the difference is the customer's
- * confidence, not tidiness.** Both names are aliases on the same CloudFront
- * distribution, so either resolves. But a practice signs up at
- * `neoacc.neovogent.com`, and the first thing we send them is a link asking
- * them to click through to confirm their identity. A different hostname in that
- * mail than the one they just used is precisely the shape of a phishing mail,
- * to an audience — accountants — trained to distrust exactly that.
+ * It was the constant `https://neoacc.neovogent.com`, carried here because
+ * `config/env.ts` had no public web origin at the time and `config/` was not
+ * A1's to change. The key exists (the chase lane added it, defaulting to
+ * `https://app.neoting.neovogent.com`), so the constant is gone and this mail,
+ * the client setup link and the chase portal link now all read one value.
  *
- * `clients-team-settings/setup-link.ts` still carries `app.neoting.` for the
- * CLIENT setup link and should follow this. Both remain constants because
- * `config/env.ts` has no `APP_ORIGIN` key, and both point at that same gap.
+ * ⚠ **The argument the constant carried survives as an operator instruction, so
+ * do not lose it.** Both hostnames are aliases on the same CloudFront
+ * distribution, so either resolves — but a practice signs up on ONE of them, and
+ * the first thing we send them is a link asking them to click through and
+ * confirm their identity. A different hostname in that mail from the one they
+ * just used is precisely the shape of a phishing mail, to an audience trained to
+ * distrust exactly that. **`APP_ORIGIN` must be set to the host customers
+ * actually arrive on**, in every environment; the default is a fallback, not a
+ * decision.
  */
-const SIGNUP_APP_ORIGIN = 'https://neoacc.neovogent.com';
 
 @Module({
   imports: [NotificationsModule],
@@ -103,6 +108,16 @@ const SIGNUP_APP_ORIGIN = 'https://neoacc.neovogent.com';
       inject: [PRISMA, ENV, SIGN_IN_THROTTLE],
     },
     {
+      // The colleague's way in. Shares the throttle for the third time, keyed on
+      // a hash of the invitation token under its own `inv:` prefix — three
+      // disjoint key spaces on one counter, so no path can lock another out.
+      // It takes no `Env`: nothing here signs anything, because the invitation
+      // is a database row rather than an HMAC (`setup-link.ts`).
+      provide: INVITATION_ACCEPTANCE_SERVICE,
+      useFactory: (prisma: PrismaClient, throttle: SignInThrottle) => new InvitationAcceptanceService(prisma, throttle),
+      inject: [PRISMA, SIGN_IN_THROTTLE],
+    },
+    {
       // ✅ **THE LINE A1 LEFT FOR S2, CONNECTED.** It said: *"the composition
       // root swaps the implementation when it lands"*. S2 landed and nothing
       // swapped it, so `RecordingSignupMailer` — which sends nothing — stayed
@@ -110,14 +125,13 @@ const SIGNUP_APP_ORIGIN = 'https://neoacc.neovogent.com';
       // NODE_ENV=production, and signup was therefore dead on staging. A14's
       // `POST /v1/auth/email-verification` had no mail to consume either.
       //
-      // The origin is a constant for the reason `setup-link.ts` gives: there is
-      // no APP_ORIGIN key in `config/env.ts`, and adding one is a `config/`
-      // change. It is an argument rather than a literal so promoting it later
-      // is this line and nothing else.
+      // ✅ The origin is `env.APP_ORIGIN` — the one line the old comment here
+      // said promoting it would be. See the note above the class for the
+      // operator instruction that survived the constant.
       provide: SIGNUP_MAILER,
-      useFactory: (notifications: NotificationsService): SignupMailer =>
-        new NotificationsSignupMailer(notifications, SIGNUP_APP_ORIGIN),
-      inject: [NOTIFICATIONS_SERVICE],
+      useFactory: (notifications: NotificationsService, env: Env): SignupMailer =>
+        new NotificationsSignupMailer(notifications, env.APP_ORIGIN),
+      inject: [NOTIFICATIONS_SERVICE, ENV],
     },
     {
       provide: PRACTICE_SIGNUP_SERVICE,

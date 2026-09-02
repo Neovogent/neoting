@@ -23,6 +23,10 @@ const m = defineMessages({
     id: 'shell.dataSourceBadge.error',
     defaultMessage: '{slice}: data could not be loaded',
   },
+  truncated: {
+    id: 'shell.dataSourceBadge.truncated',
+    defaultMessage: '{slice}: showing the first {count, number} — there are more. Narrow the client or the period.',
+  },
 });
 
 export function DataSourceBadge({
@@ -35,6 +39,27 @@ export function DataSourceBadge({
   onRetry?: () => void;
 }) {
   const intl = useIntl();
+
+  /**
+   * ⚠ A SHORTENED list says so. It is not an error, and it is not silence.
+   *
+   * The bug this closes: `AppContext` asked for `{ limit: 100 }`, nothing read
+   * `pageInfo`, and a client with 2,288 bank transactions saw 100 — with the
+   * "unexplained" total, every footer count and the chase-candidate list all
+   * reduced over that 4.4%, looking entirely normal. `api/paged.ts` now follows
+   * the cursor to the end; this is what happens on the one path it cannot,
+   * which is its own safety cap. Silently truncating a client's financial
+   * records is not acceptable; a visible limit is.
+   */
+  if (status.source === 'api' && status.truncated === true) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-amber-500/20 bg-amber-500/10 text-[11px] font-bold text-amber-400 whitespace-nowrap">
+        <AlertTriangle size={12} className="shrink-0" />
+        {intl.formatMessage(m.truncated, { slice, count: status.loaded ?? 0 })}
+      </span>
+    );
+  }
+
   if (status.source !== 'error') return null;
 
   return (

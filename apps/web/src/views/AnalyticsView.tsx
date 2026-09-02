@@ -6,6 +6,7 @@ import { useAppContext } from '../context/AppContext';
 import { commonLabels } from '../i18n/common';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { currency } from '../lib/resolver';
+import { isUnexplained } from '../lib/matching';
 import type { Client, SourceChannel } from '../lib/types';
 
 // The union stays English — it is the `Document.source` value, compared and
@@ -172,7 +173,14 @@ export function AnalyticsView() {
       overdueChases: scopedChases.filter((c) => c.stage === 'escalated').length,
       approvalAge: scopedApprovals.length ? Math.round(scopedApprovals.reduce((n, a) => n + a.waitingDays, 0) / scopedApprovals.length) : 0,
       approvalCount: scopedApprovals.length,
-      unmatched: scopedTxns.filter((t) => !t.matchedDocId).length,
+      // ⚠ This was `!t.matchedDocId`, and on live data it counted EVERY
+      // transaction. A server row carries `matchState` and, until a match is
+      // CONFIRMED, no document id at all — `lib/matching.ts` says in as many
+      // words not to branch on that field. So the tile read the size of the
+      // bank feed while the per-client Unmatched column beside it, which goes
+      // through `statsFor` and therefore through the server's own counts, read
+      // the real figure. `isUnexplained` is what both are on now.
+      unmatched: scopedTxns.filter(isUnexplained).length,
       gaps: statementGaps.filter((g) => scope === 'practice' || g.clientId === scope).length,
       inactive: scopedClients.filter((c) => statsFor(c.id).toReview === 0 && statsFor(c.id).ready === 0).length,
       itemDelay: scopedClients.length

@@ -193,10 +193,14 @@ const m = defineMessages({
   sentViaPortal: { id: 'portal.businessHomeView.sentViaPortal', defaultMessage: 'via this portal' },
   sentViaSource: { id: 'portal.businessHomeView.sentViaSource', defaultMessage: 'via {source}' },
 
+  // ⚠ D42: this said "published to the accounting software", which nothing in
+  // this release does. There is no Xero, no QuickBooks and no auto-publish;
+  // *Published* is an internal state meaning approved and released for export,
+  // and no copy on a client surface may suggest otherwise.
   privacyNote: {
     id: 'portal.businessHomeView.privacyNote',
     defaultMessage:
-      'You only ever see your own business here. Your accountant handles the coding and filing — nothing you send is published to the accounting software until they have reviewed it.',
+      'You only ever see your own business here. Your accountant handles the coding and the filing — nothing you send goes anywhere until they have reviewed it.',
   },
 
   reasonBankTransaction: {

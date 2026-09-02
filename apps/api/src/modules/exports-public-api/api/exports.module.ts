@@ -5,6 +5,7 @@ import { InMemoryIdempotencyStore, type IdempotencyStore } from '../../../common
 import type { Env } from '../../../config/env.js';
 import { ENV } from '../../../config/env.module.js';
 import { selectDocumentStore, type DocumentStore } from '../../ingestion-routing/index.js';
+import { CHART_OF_ACCOUNTS_SERVICE, type ChartOfAccountsService, RulesSuggestionsModule } from '../../rules-suggestions/index.js';
 import { CapabilityLinkModule } from '../links/capability-link.module.js';
 import type { DocumentLinkService } from '../links/document-link.service.js';
 import { DOCUMENT_LINK_SERVICE } from '../links/tokens.js';
@@ -36,9 +37,19 @@ import { DOCUMENT_STORE, EXPORTS_SERVICE, IDEMPOTENCY_STORE, PRISMA } from './to
  * generating an export twice writes a second `exports` row and changes no
  * document state — which is exactly why this surface can live with the gap that
  * a publish could not.
+ *
+ * **`RulesSuggestionsModule` is imported for the CHART OF ACCOUNTS** (2 Sep
+ * 2026), through `rules-suggestions/index.ts` and nothing deeper — the seam that
+ * module's own header names this consumer on. It is what turns
+ * `documents.category_code` into the ledger-prefixed `Analysis account` the VT
+ * import needs; before it, the file carried a bare `SUBSCRIPTIONS` and VT
+ * type-guessed the cell. It is injected HERE rather than constructed, for the
+ * same reason `DocumentLinkService` is: one instance, one chart, one seeding
+ * path (`getChartOfAccounts` writes the client's chart on first read and never
+ * overwrites it) — two would be two things holding one invariant.
  */
 @Module({
-  imports: [CapabilityLinkModule],
+  imports: [CapabilityLinkModule, RulesSuggestionsModule],
   controllers: [ExportsController],
   providers: [
     { provide: PRISMA, useFactory: () => getPrismaClient() },
@@ -51,8 +62,9 @@ import { DOCUMENT_STORE, EXPORTS_SERVICE, IDEMPOTENCY_STORE, PRISMA } from './to
         store: DocumentStore,
         links: DocumentLinkService,
         idempotency: IdempotencyStore,
-      ) => new ExportsService(prisma, store, links, idempotency),
-      inject: [PRISMA, DOCUMENT_STORE, DOCUMENT_LINK_SERVICE, IDEMPOTENCY_STORE],
+        charts: ChartOfAccountsService,
+      ) => new ExportsService(prisma, store, links, idempotency, undefined, charts),
+      inject: [PRISMA, DOCUMENT_STORE, DOCUMENT_LINK_SERVICE, IDEMPOTENCY_STORE, CHART_OF_ACCOUNTS_SERVICE],
     },
   ],
 })

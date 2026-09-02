@@ -35,7 +35,31 @@ import { canonicalStringify, sha256Hex } from './canonical-hash.js';
 export interface AuditEntry {
   readonly businessId: string | null;
   readonly event: string;
-  readonly proposalId: string;
+  /**
+   * The proposal this records, or **null for an event that legitimately has
+   * none**.
+   *
+   * ⚠ It was `string`, and that one word is why two hand-rolled copies of the
+   * chain formula exist in this repository: `auth-tenancy/signup-audit.ts` says
+   * so at the top of its own file — *"`appendAuditEvent` would not have fitted
+   * unchanged anyway: its `AuditEntry` requires a non-null `proposalId`, and a
+   * signup has no proposal"* — and both files carry a TODO to collapse them the
+   * day approvals grew a seam and this became nullable. The seam arrived on
+   * 2 Sep 2026; this is the other half.
+   *
+   * The COLUMN has always been nullable (`audit_events.proposal_id` in
+   * `schema.prisma`), so nothing in the database changes and no existing caller
+   * moves — every one of them passes a real id.
+   *
+   * What made it necessary rather than tidy: a client business managing its own
+   * people writes an audit row per change (the accountant must be able to see
+   * who their client added) and structurally cannot have a proposal —
+   * `createActionProposal` carries `workspaceSession`, which a portal caller
+   * does not hold. A third copy of `sha256(prev_hash + canonical_payload)` was
+   * the alternative, and `signup-audit.ts` states what that costs: *"a chain
+   * whose links were computed two different ways cannot be verified at all."*
+   */
+  readonly proposalId: string | null;
   readonly payloadHash: string;
   readonly renderedSummaryHash: string | null;
   readonly traceId: string | null;

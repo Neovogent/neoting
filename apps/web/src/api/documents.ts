@@ -1,10 +1,12 @@
 import { useMemo } from 'react';
-import { useListDocuments } from '@neoting/contracts/client';
+import { useQuery } from '@tanstack/react-query';
+import { listDocuments } from '@neoting/contracts/client';
 import { listDocumentsResponse } from '@neoting/contracts/zod';
 import type { DocumentSummary, ListDocumentsParams } from '@neoting/contracts/model';
 // The envelope problem and its one answer live in `envelope.ts` (METH S6);
 // this hook shipped violating it (`query.data.data`) and was fixed in METH S7.
-import { unwrapBody } from './envelope';
+// `fetchAllPages` applies it per page — see `paged.ts`.
+import { fetchAllPages, PAGE_LIMIT } from './paged';
 import type { DocKind, Document as LocalDocument, DocStatus, SourceChannel } from '../lib/types';
 
 /**
@@ -134,40 +136,64 @@ export interface UseDocumentsOptions {
  * nothing. Push (SSE/websocket) replaces this post-demo; polling is honest and
  * boring, not a mock. Off entirely when `enabled` is false, which is what keeps
  * the test suite and synthetic mode timer-free.
+ *
+ * ## ⚠ It reads EVERY page, not the first hundred documents
+ *
+ * The same defect the bank feed had, from the same cause: `AppContext` asked
+ * for `{ limit: 100 }` and nothing read `pageInfo`. A practice past a hundred
+ * documents had the rest unreachable — and worse than a short table,
+ * `DocumentsView`'s summary line, both its table footers, `InboxesView`'s item
+ * count and Analytics' whole tile row are `.length` / `.filter().length` over
+ * this array, so each of them silently understated the practice. See
+ * `paged.ts`.
+ *
+ * ⚠ **The poll now costs one round trip per page.** At ID's scale that is two
+ * or three requests every five seconds, which is the price of the counts being
+ * true; the documented replacement for the poll is push, and it retires this
+ * cost with it.
  */
 export function useDocuments({ enabled, params, clientNameFor }: UseDocumentsOptions) {
-  const query = useListDocuments(params, {
-    query: { enabled, refetchInterval: enabled && 5_000 },
+  const query = useQuery({
+    queryKey: ['documents', 'all', params],
+    enabled,
+    refetchInterval: enabled ? 5_000 : false,
+    queryFn: () =>
+      fetchAllPages((cursor) =>
+        listDocuments({ ...params, limit: PAGE_LIMIT, ...(cursor === undefined ? {} : { cursor }) }),
+      ),
   });
 
   const parsed = useMemo(() => {
-    const empty = { documents: [] as LocalDocument[], invalid: null as string | null, pageInfo: null as { nextCursor?: string | null | undefined; hasMore: boolean } | null };
+    const empty = { documents: [] as LocalDocument[], invalid: null as string | null, truncated: false };
     if (!query.data) return empty;
 
-    const result = listDocumentsResponse.safeParse(unwrapBody(query.data));
-    if (!result.success) {
-      return {
-        ...empty,
-        invalid: result.error.issues
-          .slice(0, 3)
-          .map((i) => `${i.path.join('.') || 'response'}: ${i.message}`)
-          .join('; '),
-      };
+    const documents: LocalDocument[] = [];
+    for (const body of query.data.bodies) {
+      const result = listDocumentsResponse.safeParse(body);
+      if (!result.success) {
+        return {
+          ...empty,
+          invalid: result.error.issues
+            .slice(0, 3)
+            .map((i) => `${i.path.join('.') || 'response'}: ${i.message}`)
+            .join('; '),
+        };
+      }
+      for (const row of result.data.data) {
+        documents.push(toLocalDocument(row as DocumentSummary, clientNameFor));
+      }
     }
 
-    return {
-      documents: result.data.data.map((row) => toLocalDocument(row as DocumentSummary, clientNameFor)),
-      invalid: null,
-      pageInfo: result.data.pageInfo,
-    };
+    return { documents, invalid: null, truncated: query.data.truncated };
   }, [query.data, clientNameFor]);
 
   return {
     documents: parsed.documents,
     /** Set when the server's answer did not match the contract. */
     contractError: parsed.invalid,
-    /** Taken from the validated body, not the raw union, which includes Problem. */
-    pageInfo: parsed.pageInfo,
+    /** The safety cap was reached and the server had more. Screens must SAY so. */
+    truncated: parsed.truncated,
+    loaded: parsed.documents.length,
     isLoading: query.isLoading,
     isFetching: query.isFetching,
     error: query.error,

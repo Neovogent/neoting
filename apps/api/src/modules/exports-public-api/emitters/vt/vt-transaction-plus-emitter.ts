@@ -10,7 +10,7 @@ import type {
 import { CanonicalRowsSchema } from '../../canonical/canonical-row.js';
 import { serialiseCsv } from '../csv/csv.js';
 import { encodeCsv } from '../csv/encoding.js';
-import type { EmittedFile, ExportEmitter } from '../export-emitter.js';
+import type { EmittedFile, ExportEmitter, ExportEntryDocument, ExportEntryPreview } from '../export-emitter.js';
 import { formatVtAmount, vtTypeForBankLine, vtTypeForDocument } from './vt-format.js';
 import type { VtType } from './vt-format.js';
 import { assertVtEntryDetailsSafe, breakLongNumericTokens } from './vt-safety.js';
@@ -122,11 +122,25 @@ const VT_DATA_FORMAT_BY_KIND: Readonly<Record<VtFileKind, string>> = Object.free
 
 export const HOW_TO_IMPORT_FILENAME = 'HOW-TO-IMPORT.txt';
 
+/**
+ * One line of the file, still carrying the document that produced it.
+ *
+ * ⚠ **The `documentId` is NOT a column and never reaches the CSV** — `emit`
+ * serialises `cells` and nothing else. It rides along so that
+ * `previewEntries` can say *which* document each row belongs to without a
+ * second pass over the canonical rows, which is the whole mechanism that keeps
+ * the review card and the file the same code.
+ */
+interface VtRow {
+  readonly documentId: string;
+  readonly cells: readonly string[];
+}
+
 interface CsvFile {
   readonly kind: VtFileKind;
   /** `YYYY-MM-DD`, the date the accountant types into VT's journal Date box. */
   readonly date: string;
-  readonly rows: string[][];
+  readonly rows: VtRow[];
 }
 
 /** Free text on its way into a cell: guarded against landmine 1, and the guard's repair reported. */
@@ -197,13 +211,21 @@ function detailsCell(
  * `5,001.00` — a number, not an account. The prefixed form stays text and
  * auto-matches VT's chart with no mapping at all, provided the ledger name
  * matches VT's own (`Expenses:`, not `Overheads:`).
+ *
+ * ⚠ **This emitter does not resolve anything, and must not start.** The
+ * prefixed form is produced upstream, where the rows are assembled and a scoped
+ * database read is legal (`api/document-to-canonical.ts` + the client's chart of
+ * accounts). What arrives here with no prefix is a code that chart did not
+ * carry — the emitter's job is to say so, not to repair it. Repairing it would
+ * mean inventing a ledger, and a guessed ledger is a wrong nominal in somebody's
+ * books.
  */
 function analysisAccountCell(account: string, documentId: string, warnings: ExportWarning[]): string {
   if (!account.includes(':')) {
     warnings.push({
       documentId,
       code: 'analysis-account-unprefixed',
-      message: `The analysis account "${account}" has no ledger prefix. VT reads a bare numeric code as a number rather than an account — send the "Cost of sales: Purchases" form so it matches VT's chart without manual mapping.`,
+      message: `The analysis account "${account}" has no ledger prefix, so it did not resolve to an account on this client's chart of accounts. VT reads a bare code as a number rather than an account, so this row will need mapping by hand on every import — code the document to a chart account (the "Cost of sales: Purchases" form), or add "${account}" to the chart, before releasing it.`,
     });
   }
   return safeText(account, documentId, 'analysis account', warnings);
@@ -224,11 +246,11 @@ function analysisAccountCell(account: string, documentId: string, warnings: Expo
  * below so the accountant is not surprised by it.
  */
 function buildDocumentRows(row: CanonicalTransactionDocument): {
-  rows: string[][];
+  rows: VtRow[];
   warnings: ExportWarning[];
 } {
   const warnings: ExportWarning[] = [];
-  const rows: string[][] = [];
+  const rows: VtRow[] = [];
 
   // Passed through byte-for-byte. VT's Converter saves the supplier mapping
   // against this exact string; re-casing or re-trimming it makes every future
@@ -238,7 +260,9 @@ function buildDocumentRows(row: CanonicalTransactionDocument): {
 
   row.analysis.forEach((line, index) => {
     const first = index === 0;
-    rows.push([
+    rows.push({
+      documentId: row.documentId,
+      cells: [
       primary,
       details,
       first ? formatVtAmount(row.grossPence) : '',
@@ -253,7 +277,8 @@ function buildDocumentRows(row: CanonicalTransactionDocument): {
       // guess to make silently.
       formatVtAmount(line.netPence),
       analysisAccountCell(line.analysisAccount, row.documentId, warnings),
-    ]);
+      ],
+    });
   });
 
   if (row.analysis.length > 1) {
@@ -277,21 +302,24 @@ function buildDocumentRows(row: CanonicalTransactionDocument): {
 }
 
 /** A bank line. One row, one contra account — a statement line has no split to make. */
-function buildBankRows(row: CanonicalBankStatementLine): { rows: string[][]; warnings: ExportWarning[] } {
+function buildBankRows(row: CanonicalBankStatementLine): { rows: VtRow[]; warnings: ExportWarning[] } {
   const warnings: ExportWarning[] = [];
   const details = detailsCell(row.description, row.sourceLink, row.documentId, warnings);
 
   return {
     rows: [
-      [
-        safeText(row.bankAccount, row.documentId, 'bank account name', warnings),
-        details,
-        formatVtAmount(row.grossPence),
-        formatVtAmount(row.vatPence),
-        formatVtAmount(row.netPence),
-        formatVtAmount(row.netPence),
-        analysisAccountCell(row.contraAccount, row.documentId, warnings),
-      ],
+      {
+        documentId: row.documentId,
+        cells: [
+          safeText(row.bankAccount, row.documentId, 'bank account name', warnings),
+          details,
+          formatVtAmount(row.grossPence),
+          formatVtAmount(row.vatPence),
+          formatVtAmount(row.netPence),
+          formatVtAmount(row.netPence),
+          analysisAccountCell(row.contraAccount, row.documentId, warnings),
+        ],
+      },
     ],
     warnings,
   };
@@ -348,45 +376,67 @@ function buildHowTo(files: readonly CsvFile[]): Buffer {
   return Buffer.from(lines.join('\r\n'), 'utf8');
 }
 
+/**
+ * ⚠ **THE ONE PLACE A VT ROW IS BUILT.** Both `emit` and `previewEntries` call
+ * this and neither builds a cell of its own.
+ *
+ * That is not tidiness. A publish review card that showed the accountant a
+ * *re-derivation* of the entry — the same rules, written twice — would agree
+ * with the file until the day somebody changed one of them, and the failure
+ * would be a human authorising rows that are not the rows. The whole value of
+ * showing the entry before the release is that it is the entry; the moment it
+ * is a second opinion it is worse than nothing, because it is a confident one.
+ *
+ * So the split is: this function does the work and returns files of rows; `emit`
+ * serialises those rows into CSV and zips them, and `previewEntries` regroups
+ * exactly the same rows by document. Neither transforms a cell.
+ */
+function buildVtFiles(rows: readonly CanonicalRow[]): { files: CsvFile[]; warnings: ExportWarning[] } {
+  // Rule 4, at the one boundary this module has.
+  const parsed = CanonicalRowsSchema.parse(rows);
+
+  const warnings: ExportWarning[] = [];
+  // Keyed `date|kind`. Insertion-ordered, then sorted, so the archive lists
+  // chronologically rather than in hash order.
+  const grouped = new Map<string, CsvFile>();
+
+  for (const row of parsed) {
+    const kind =
+      row.family === 'TRANSACTION_DOCUMENT'
+        ? FILE_KIND_BY_TYPE[vtTypeForDocument(row)]
+        : FILE_KIND_BY_TYPE[vtTypeForBankLine(row)];
+
+    const built = row.family === 'TRANSACTION_DOCUMENT' ? buildDocumentRows(row) : buildBankRows(row);
+    warnings.push(...built.warnings);
+
+    const key = `${row.date}|${kind}`;
+    const file = grouped.get(key) ?? { kind, date: row.date, rows: [] };
+    file.rows.push(...built.rows);
+    grouped.set(key, file);
+  }
+
+  const files = [...grouped.values()].sort(
+    (a, b) => a.date.localeCompare(b.date) || a.kind.localeCompare(b.kind),
+  );
+  return { files, warnings };
+}
+
 class VtTransactionPlusEmitter implements ExportEmitter {
   readonly target = 'VT_TRANSACTION_PLUS' as const;
   readonly fileExtension = 'zip';
   readonly contentType = 'application/zip';
 
   emit(rows: readonly CanonicalRow[]): EmittedFile {
-    // Rule 4, at the one boundary this module has.
-    const parsed = CanonicalRowsSchema.parse(rows);
+    const { files, warnings } = buildVtFiles(rows);
 
-    const warnings: ExportWarning[] = [];
-    // Keyed `date|kind`. Insertion-ordered, then sorted, so the archive lists
-    // chronologically rather than in hash order.
-    const grouped = new Map<string, CsvFile>();
-
-    for (const row of parsed) {
-      const kind =
-        row.family === 'TRANSACTION_DOCUMENT'
-          ? FILE_KIND_BY_TYPE[vtTypeForDocument(row)]
-          : FILE_KIND_BY_TYPE[vtTypeForBankLine(row)];
-
-      const built = row.family === 'TRANSACTION_DOCUMENT' ? buildDocumentRows(row) : buildBankRows(row);
-      warnings.push(...built.warnings);
-
-      const key = `${row.date}|${kind}`;
-      const file = grouped.get(key) ?? { kind, date: row.date, rows: [] };
-      file.rows.push(...built.rows);
-      grouped.set(key, file);
-    }
-
-    const files = [...grouped.values()].sort(
-      (a, b) => a.date.localeCompare(b.date) || a.kind.localeCompare(b.kind),
-    );
-
-    const entries = files.map((file) => ({
-      name: vtFileName(file.date, file.kind),
-      bytes: encodeCsv(
-        serialiseCsv(VT_CSV_INCLUDE_HEADER ? [[...VT_LIST_COLUMNS], ...file.rows] : file.rows),
-      ),
-    }));
+    const entries = files.map((file) => {
+      // The one place `documentId` is dropped: it was never a column.
+      const cells = file.rows.map((row) => [...row.cells]);
+      return {
+        name: vtFileName(file.date, file.kind),
+        bytes: encodeCsv(serialiseCsv(VT_CSV_INCLUDE_HEADER ? [[...VT_LIST_COLUMNS], ...cells] : cells)),
+      };
+    });
     entries.push({ name: HOW_TO_IMPORT_FILENAME, bytes: buildHowTo(files) });
 
     return {
@@ -396,6 +446,37 @@ class VtTransactionPlusEmitter implements ExportEmitter {
       // document split across nominals, which is the honest direction.
       rowCount: files.reduce((total, file) => total + file.rows.length, 0),
       warnings,
+    };
+  }
+
+  previewEntries(rows: readonly CanonicalRow[]): ExportEntryPreview {
+    const { files, warnings } = buildVtFiles(rows);
+
+    // Insertion-ordered, so the card lists documents in the order the archive
+    // would. A document's rows are always in ONE file — the file key is
+    // (its date, its direction), both of which are facts about the document.
+    const byDocument = new Map<string, ExportEntryDocument & { rows: string[][]; warnings: ExportWarning[] }>();
+    for (const file of files) {
+      for (const row of file.rows) {
+        const existing = byDocument.get(row.documentId);
+        if (existing === undefined) {
+          byDocument.set(row.documentId, {
+            documentId: row.documentId,
+            fileName: vtFileName(file.date, file.kind),
+            dataFormat: VT_DATA_FORMAT_BY_KIND[file.kind],
+            rows: [[...row.cells]],
+            warnings: warnings.filter((warning) => warning.documentId === row.documentId),
+          });
+          continue;
+        }
+        existing.rows.push([...row.cells]);
+      }
+    }
+
+    return {
+      target: 'VT_TRANSACTION_PLUS',
+      columns: [...VT_LIST_COLUMNS],
+      documents: [...byDocument.values()],
     };
   }
 }

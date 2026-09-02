@@ -198,9 +198,12 @@ tags:
       door to close.
   - name: practices
     description: |
-      Creating a practice. Exactly one operation and it is unauthenticated,
-      because it is the only door through which a tenant that does not yet
-      exist can come into being (D39, SoT §24.5).
+      The firm itself, and the people in it. `POST /practices` is
+      unauthenticated because it is the only door through which a tenant that
+      does not yet exist can come into being (D39, SoT §24.5); the
+      `/practice-members` pair is how that firm stops being one person —
+      colleagues, not clients, which is what separates it from
+      `/businesses/{businessId}/members`.
   - name: exports
     description: |
       The sole egress (D42). Export produces a file for the accountant's own
@@ -529,6 +532,146 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /auth/invitation-preview:
+    post:
+      operationId: previewInvitation
+      summary: What is this invitation for
+      description: |
+        Reads a practice invitation token and says who sent it, to which
+        address, and in what role — so the acceptance screen can name the
+        practice instead of asking a stranger to set a password for something
+        unnamed. It writes nothing and consumes nothing; the invitation is
+        still outstanding afterwards.
+
+        **`POST`, not `GET`, and that is the only reason it is a mutation-shaped
+        read.** The token is a credential. A `GET` would carry it in the path or
+        the query string, which puts it in browser history, in the CDN and load
+        balancer access logs, and in the `Referer` header of the very next
+        outbound link on the page. The same rule already governs the sign-in
+        code (`email-copy.ts`: *"the code is not in a link"*), and it is why the
+        invitee's own screen scrubs the token out of the address bar before it
+        makes this call. A body is the only place a token may travel.
+
+        **It therefore takes NO `Idempotency-Key`** — the precedent is
+        `beginTotpEnrolment`, which is `x-nt-side-effect: none` for the same
+        reason: nothing is written, so there is nothing for a replay to do
+        twice, and Governance §3's header requirement is about mutations.
+
+        **The refusals are uniform.** An unknown token, a token belonging to a
+        client-workspace invite rather than a practice one, an accepted one and
+        an expired one are `NT-AUTH-004` — except expiry, which is
+        `NT-AUTH-005`, on exactly the split `POST /auth/email-verification`
+        already makes: an expiry is a fact about a credential its holder
+        already had, and "ask for another" is the only action available to
+        somebody holding a stale one.
+      tags: [auth]
+      x-nt-side-effect: none
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InvitationPreviewRequest' }
+      responses:
+        '200':
+          description: |
+            The invitation, described. Nothing here is secret from the holder
+            of the token — the practice invited this address and emailed them
+            this link — and naming it is what makes the next screen honest.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvitationPreview' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: |
+            The invitation did not resolve — `NT-AUTH-004`, or `NT-AUTH-005`
+            when it was genuinely ours and has expired.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              example:
+                type: https://neoting.com/problems/NT-AUTH-004
+                title: Invitation not valid
+                status: 401
+                code: NT-AUTH-004
+                detail: That invitation link is not valid. Ask whoever invited you to send a new one.
+                traceId: 01J8XN2ZQ5R7TQ9E3M4K6P
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /auth/invitation-acceptance:
+    post:
+      operationId: acceptInvitation
+      summary: Accept a practice invitation
+      description: |
+        Spends a practice invitation: creates the user, creates the membership
+        the invitation's role describes, and stamps `invites.accepted_at`. **One
+        transaction** — a user without their membership resolves to a 401 on
+        every request afterwards, and a stamped invitation with no user behind
+        it can never be retried.
+
+        **The address is created `emailVerified: true`, and that is a claim
+        about the delivery rather than a shortcut.** The token existed in one
+        place only: an email this practice's server sent to that address.
+        Presenting it is proof of control of the mailbox, which is exactly what
+        `POST /auth/email-verification` proves for a self-signup. Sending a
+        second verification mail would ask the invitee to prove twice what they
+        have already proved once.
+
+        **⚠ IT ISSUES NO SESSION.** No cookie, no bearer, nothing. The account
+        has no second factor yet, and sign-in fails closed for an account with
+        no enrolment (`OTP_MODE=totp`), so a session minted here would either be
+        a session that cannot be used or a door around the second factor. The
+        invitee's next call is `POST /auth/totp-enrolment` with the password
+        they have just chosen — the same enrolment journey a practice owner
+        takes after verifying their address, reached from the same screens.
+
+        **The role is the invitation's, never the caller's to choose.** The
+        request body carries no role: what a colleague may do was decided by the
+        admin who invited them, and a body field would let the invitee decide it
+        themselves.
+
+        Refusals are the preview's, uniformly — `NT-AUTH-004` for an
+        invitation that does not resolve, is not a practice invitation or has
+        already been accepted, `NT-AUTH-005` for an expired one, and
+        `NT-AUTH-004` again when an account already exists for the address (the
+        person already has a way in, and saying which would answer "is this
+        address registered here" for whoever holds a stale link).
+      tags: [auth]
+      x-nt-side-effect: ingest
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InvitationAcceptanceRequest' }
+      responses:
+        '201':
+          description: |
+            The account exists. The body carries only the address, so the
+            enrolment screen can be prefilled without asking the person to
+            retype what they just proved control of.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvitationAcceptanceResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: |
+            The invitation did not resolve — `NT-AUTH-004`, or `NT-AUTH-005`
+            when it has expired.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /me:
     get:
       operationId: getMe
@@ -611,10 +754,15 @@ paths:
         checker asserts mechanically.
 
         **What comes back:**
-        - `file` — the target's import file. For `VT_TRANSACTION_PLUS` that is
-          the Universal Input Sheet layout in VT's own on-screen column order,
-          amounts always positive because VT derives debit and credit from
-          `Type` (SoT §24.3.1).
+        - `file` — the target's import file. For `VT_TRANSACTION_PLUS` that is a
+          ZIP of one seven-column CSV per (document date, direction), for
+          `Transaction ▸ Journal ▸ Import…`, amounts always positive. ⚠ This
+          paragraph said "the Universal Input Sheet layout … VT derives debit
+          and credit from `Type`" until A10 read the real VT on 27 Aug 2026:
+          the Universal Input Sheet has **no import command at all**, the
+          journal format has **no `Type` column and no date column**, and VT
+          applies one date to a whole file — which is why the emitter splits by
+          date and why the export is an archive (SoT §24.3.1).
         - `bundle` — a ZIP of the source documents plus a manifest keyed by
           capability code (D43 rung 4). Not a fallback: no established product
           solves matching an exported document bundle back to its exported rows,
@@ -653,6 +801,12 @@ paths:
           description: |
             Nothing to export — `NT-EXP-001` — or more rows than one synchronous
             export may carry, `NT-EXP-003`. Both name the number.
+
+            `NT-EXP-001` additionally carries `publishedOutsidePeriod` whenever
+            the client HAS Published documents and they are simply dated outside
+            the requested period. "Nothing" with no further fact reads as a
+            broken feature; the count and the dates are what turn it into an
+            instruction.
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
@@ -661,8 +815,15 @@ paths:
                 title: Nothing to export
                 status: 422
                 code: NT-EXP-001
-                detail: No documents reached Published in 01/01/2026 to 31/01/2026 for this client.
+                detail: >-
+                  No document dated 01/08/2026 to 31/08/2026 has reached Published for this
+                  client. This client has 1 Published document dated outside that period,
+                  dated 12/05/2025. Widen the period to include it.
                 traceId: 01J8XN2ZQ5R7TQ9E3M4K6P
+                publishedOutsidePeriod:
+                  count: 1
+                  earliestDocumentDate: '2025-05-12'
+                  latestDocumentDate: '2025-05-12'
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
 
@@ -848,6 +1009,29 @@ paths:
         on the checkout operation.
       tags: [billing]
       x-nt-side-effect: ingest
+      # TWO PRINCIPALS, ONE OPERATION — checkout's shape, applied to the door
+      # that comes after it. Declared 2 Sep 2026.
+      #
+      # ⚠ It deliberately did NOT gain the portal principal in #205, and that
+      # note has been overtaken by the portal becoming a four-tab product (D49).
+      # The argument then was that this is "card changes, invoices and
+      # cancellation, reached from that client's own settings" — which is
+      # precisely the Settings tab, and D48 makes the CLIENT the payer. Without
+      # this the client who subscribed through `createCheckoutSession` could not
+      # change a card, read an invoice or cancel: the only surface for any of
+      # those is Stripe's hosted portal, and the only door to it was a cookie
+      # they do not hold. A subscription a payer cannot leave is not a
+      # subscription they consented to.
+      #
+      # ⚠ Under a portal bearer, `businessId` MUST equal the session's own and a
+      # mismatch is a **404, never a 403** — a 403 would confirm the other
+      # business exists. `BillingPortalSessionRequest` shares no shape with
+      # checkout, so that guard had to be added to this handler too rather than
+      # inherited; the RLS context does not narrow it, because the portal path
+      # runs under the practice SYSTEM context.
+      security:
+        - workspaceSession: []
+        - portalSession: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -1017,6 +1201,32 @@ paths:
             names).
           required: false
           schema: { type: string, minLength: 2, maxLength: 200 }
+        # ---- Trash (document management, 2 Sep 2026) ----------------------
+        - name: deleted
+          in: query
+          description: |
+            **The Trash listing, and the only way to reach one.** `false` (the
+            default) excludes every document that has been moved to Trash;
+            `true` returns ONLY those, newest-deleted documents included in
+            whatever the other filters say.
+
+            It is a parameter on THIS operation rather than a second endpoint
+            because Trash is a filter over the same rows, and a `/documents/trash`
+            path would be a second opinion about what a document is — the same
+            argument that keeps the Costs inbox, the Sales inbox, the Unrouted
+            queue and the Rejected/Failed view on one endpoint.
+
+            ⚠ **It composes with `state`, it does not override it.** A deleted
+            ARCHIVED document is in Trash and is `?deleted=true&state=ARCHIVED`;
+            `?deleted=true` alone still applies the ordinary "every state except
+            ARCHIVED" default. Deletion and pipeline state are orthogonal, which
+            is why `deletedAt` is a timestamp rather than a ninth `DocumentState`.
+
+            There is no "both" value on purpose. A page mixing live and deleted
+            rows has no honest heading, and every count on the Documents screen
+            would need to say which of the two it meant.
+          required: false
+          schema: { type: boolean, default: false }
         - name: sort
           in: query
           required: false
@@ -1121,6 +1331,28 @@ paths:
         never rewrite the stored file.
       tags: [documents]
       x-nt-side-effect: none
+      # TWO PRINCIPALS, ONE OPERATION — the shape `completeDocumentUpload` and
+      # `createCheckoutSession` already use.
+      #
+      # ⚠ The `portalSession` entry is not a widening; it is this operation's own
+      # description finally being declared. The paragraph above has asserted "a
+      # delegated OTP session may only call this for items in its grant" since
+      # the spec was drafted, and `documents_delegated_upload` in
+      # `prisma/sql/rls.sql` has permitted exactly that for just as long — but
+      # with no `security:` block the operation inherited the global
+      # `workspaceSession` default, so the sentence described a caller the
+      # contract did not admit and the server had no branch for. Declared
+      # 2 Sep 2026.
+      #
+      # Under a portal bearer the boundary is the GRANT and it is SQL's: the
+      # request runs in a `delegated_upload` scope whose `app_granted_item_ids()`
+      # is the session's own list, so a document outside it is invisible to the
+      # query rather than refused by the handler. A session with an empty grant
+      # (an ONBOARDING row that has never uploaded) can therefore reach nothing
+      # here, which is correct and is a 404.
+      security:
+        - workspaceSession: []
+        - portalSession: []
       responses:
         '200':
           description: A presigned URL and what is behind it.
@@ -1241,6 +1473,227 @@ paths:
                   pageInfo: { $ref: '#/components/schemas/PageInfo' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ==========================================================================
+  # DOCUMENT MANAGEMENT — Trash, restore, and the header counts
+  # (2 Sep 2026. Benchmarked against Dext: a list you can do nothing with is
+  # not document management.)
+  #
+  # ⚠ WHY THESE TWO ARE NOT PROPOSALS, AND PURGE IS.
+  #
+  # Governance §10 forbids a state change outside Review → Approve, and the
+  # line it actually draws is around acts that cannot be taken back. Moving a
+  # document to Trash sets one timestamp; `POST .../restoration` clears it, and
+  # the document returns to its queue in the state it left — nothing is
+  # destroyed and nothing leaves the product. Putting Read review → Approve in
+  # front of pressing Delete on one receipt would make the Approve queue the
+  # place where housekeeping goes to be ignored, and Approve fatigue is how a
+  # release gets waved through.
+  #
+  # PERMANENT deletion is the opposite in every respect, so it is
+  # `document.purge` — an ActionProposal like every other irreversible act, and
+  # there is deliberately NO `DELETE /documents/{documentId}` anywhere in this
+  # contract for it to hide behind.
+  #
+  # ⚠ SIDE-EFFECT CLASS: `ingest`, and the reasoning is written out because the
+  # word does not obviously fit. The four classes are `none` / `ingest` /
+  # `proposal` / `execute`; `none` is false (this writes), `proposal` is false
+  # (no ActionProposal is created), and `execute` is reserved for exactly one
+  # operation in the whole API — `POST /action-proposals/{id}/approval` — which
+  # `check-contract.mjs` asserts. So `ingest` is the only admissible value, and
+  # it is also the established one: `PATCH /portal/people/{personId}` and
+  # `DELETE /portal/people/{personId}` are both `ingest` and both change an
+  # existing record's state, exactly as these do. The header's gloss on
+  # `ingest` ("changes no existing record's state") has been narrower than its
+  # use since those two landed; these follow the precedent rather than invent a
+  # fifth class.
+  # ==========================================================================
+
+  /documents/counts:
+    get:
+      operationId: getDocumentCounts
+      summary: The Documents header counts
+      description: |
+        The four numbers across the top of the Documents screen —
+        `3 documents · 0 archived · 0 in vault · 0 expiring` — plus Trash.
+
+        **It exists because those numbers were not true.** `PageInfo` carries no
+        total (keyset pagination has none to carry, by design — Governance §3
+        forbids offsets), so a browser could only produce `total` by walking
+        every page, and `archived` / `inVault` / `expiring` were being derived
+        client-side from data that was never fetched. A decorative number on a
+        screen an accountant reconciles against is worse than no number.
+
+        Every count is computed by the server over everything the caller's RLS
+        context can see, unbounded by any page — which is the whole point.
+
+        ⚠ **`inVault` and `expiring` count `vault_items`, not documents**, and
+        the field descriptions say so. They are the Vault tab of the same
+        screen. `documents` has no expiry or retention column at all, so there
+        is no "expiring document" this or any other endpoint could honestly
+        report.
+      tags: [documents]
+      x-nt-side-effect: none
+      parameters:
+        - $ref: '#/components/parameters/BusinessIdFilter'
+        - name: expiringWithinDays
+          in: query
+          description: |
+            The horizon `expiring` uses, in days from now. A threshold, not a
+            retention policy: nothing expires anything, and this endpoint runs
+            no sweep — it counts vault items whose `expires_at` already in the
+            database falls inside the window.
+
+            It is a parameter rather than a constant because "expiring soon" is
+            a firm's judgement, and a number baked into a server is one nobody
+            can see or argue with.
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 365, default: 30 }
+      responses:
+        '200':
+          description: The counts, as of now.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentCounts' }
+              example:
+                total: 3
+                archived: 0
+                deleted: 1
+                inVault: 3
+                expiring: 1
+                expiringWithinDays: 30
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /documents/{documentId}/deletion:
+    parameters:
+      - $ref: '#/components/parameters/DocumentId'
+    post:
+      operationId: deleteDocument
+      summary: Move a document to Trash
+      description: |
+        Sets `deletedAt`. The document leaves every working queue, every count,
+        the client portal and any future export selection — and it leaves
+        nothing behind that a person has to clean up later, because it is one
+        timestamp and `POST .../restoration` clears it.
+
+        **Nothing is destroyed.** The bytes stay in object storage, the
+        extraction history, the processing log and the audit trail are all
+        untouched, and the document's `state` is not moved — so a restored
+        document is in the state it left, not a state something guessed for it.
+        Permanent removal is a separate, reviewed act (`document.purge`).
+
+        **Idempotent: deleting a document already in Trash is a `200`, not a
+        `409`.** The caller's goal is already true. The original `deletedAt`
+        survives, because *when* a document was deleted is the only question a
+        Trash listing sorted by deletion date can answer, and a second press of
+        a button that did not visibly do anything must not silently rewrite it.
+
+        A `document_events` row (`stage: "delete"`) and an audit event naming
+        the actor are written in the same transaction as the timestamp, so the
+        processing log has no gap where the document vanished from every screen.
+
+        ⚠ **A PUBLISHED document may be moved to Trash and this is deliberate.**
+        Deletion here is a workspace-tidiness act, entirely reversible, and
+        refusing it would leave an accountant with released rows they cannot get
+        off their screen. What is refused for a released document is the PURGE —
+        see `document.purge`, and D43.
+
+        **The D43 link survives a deletion, which is why no refusal is needed.**
+        `GET /d/{code}` resolves against the document row, and this operation
+        does not remove one — so an accountant holding an exported line's
+        capability URL is unaffected by workspace housekeeping they cannot see.
+        (`docs/research/dext-document-management.md` §10.4 C1 argues that delete
+        must be refused for any document with an export line; that guard exists
+        in AutoEntry because AutoEntry's delete is closer to permanent. Ours
+        cannot break the link, so the refusal belongs one level up, on the purge,
+        where it does.)
+
+        ⚠ **Trash has NO expiry, and nothing sweeps it.** A deleted document is
+        restorable indefinitely; the only route out is a reviewed
+        `document.purge` naming explicit ids. **There is deliberately no "empty
+        Trash".** The research found that no vendor — Dext, Hubdoc, AutoEntry —
+        publishes a recovery window at all, so a TTL here would be our own
+        invention wearing borrowed authority, and a bulk-destroy verb is the
+        hazard that makes a Trash tab worse than a submission ledger
+        (`docs/research/dext-document-management.md` §10.1 A2). A retention
+        window is a product decision for the owner, not an implementation
+        detail — do not add one here.
+      tags: [documents]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: |
+            The document, now carrying `deletedAt`. The row is returned rather
+            than a bare `204` so the screen renders server truth instead of
+            predicting it — the `removePortalPerson` precedent.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Document' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: |
+            `NT-IDM-001` — the `Idempotency-Key` was reused with a different
+            payload, or presented by a different actor. **Never returned for a
+            document that is already deleted**; that is a `200`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /documents/{documentId}/restoration:
+    parameters:
+      - $ref: '#/components/parameters/DocumentId'
+    post:
+      operationId: restoreDocument
+      summary: Restore a document from Trash
+      description: |
+        Clears `deletedAt`. The document returns to its queues **in the state it
+        left** — `state` was never touched by the deletion, so nothing has to be
+        derived, guessed, or read back out of the event log the way an unarchive
+        does.
+
+        **Idempotent: restoring a document that is not in Trash is a `200`.**
+        Same reasoning as deletion, in the other direction.
+
+        Writes a `document_events` row (`stage: "restore"`) and an audit event
+        naming the actor.
+
+        This operation is the reason deletion is not an ActionProposal: the two
+        undo each other exactly, which is the test `RELEASE_KINDS` applies to
+        every internal act (*"archive unarchives, coding is corrected again, a
+        rejection is reprocessed"*).
+      tags: [documents]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: The document, with `deletedAt` back to null.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Document' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: '`NT-IDM-001` — idempotency key reused with a different payload or by a different actor.'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
 
@@ -1987,6 +2440,71 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /portal/documents:
+    get:
+      operationId: listPortalDocuments
+      summary: What this client has sent
+      description: |
+        The client's own document list, newest first — the "Recently sent" panel
+        on the portal home and the "Sent from this portal" list on the Upload
+        tab (D49). Both are the same rows; they differ by filter, not by
+        endpoint.
+
+        **⚠ This is deliberately NOT `DocumentSummary`, and the difference is
+        the point.** A client has no business seeing the practice's internal
+        working state: where a document sits in the review queue, which
+        `DocumentState` it is in, what it was coded to, or the internal failure
+        code that stopped it. Those are the firm's, and the same line
+        `PortalSummary` draws against `BusinessSummary` is drawn again here.
+        What the client gets is their own side of it: who it is from, what it is
+        for, what it cost, how it reached us, and **a status in their own
+        vocabulary** (`PortalDocumentStatus`).
+
+        The mapping from `DocumentState` to that vocabulary is made
+        **server-side** so the five words cannot fork: two browsers, or a
+        browser and a native client, must not be able to describe the same
+        document differently.
+
+        `ARCHIVED` documents are omitted. Archiving is the practice's own
+        housekeeping — a duplicate set aside, a document superseded — and none
+        of the five client-facing words is true of one.
+
+        Tenancy is the session's own business, resolved from the `otp_sessions`
+        row and never from a parameter: there is no `businessId` filter on this
+        operation for the reason `PortalUploadRequest` has no `businessId`
+        field. A client holding a forwarded link does not get to name whose
+        paperwork they are reading.
+      tags: [portal]
+      x-nt-side-effect: none
+      security:
+        - portalSession: []
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of this client's documents, newest first.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pageInfo]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/PortalDocument' }
+                  pageInfo: { $ref: '#/components/schemas/PageInfo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: Portal session missing, invalid or expired — `NT-OTP-002`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /portal/uploads:
     post:
       operationId: createPortalUpload
@@ -2025,6 +2543,24 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401':
           description: Portal session missing, invalid or expired — `NT-OTP-002`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '402':
+          description: |
+            No live subscription on this client business — `NT-BIL-001` (D48).
+
+            Declared here on 2 Sep 2026, having been **behaviour without a
+            contract** since launch stage S4: `portal-upload.service.ts` has
+            refused an unentitled client from the day the gate landed, and
+            `createDocumentUpload` declared the same `402` while this operation
+            did not — so a client generated from this spec had no branch for
+            the single most likely refusal on the main ID intake path.
+
+            Reading and exporting survive a lapse; new uploads do not
+            (`docs/runbooks/error-codes.md`, `NT-BIL-001`). The portal reads
+            `PortalSummary.subscriptionActive` first precisely so this status is
+            almost never the way a client finds out.
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
@@ -2143,6 +2679,287 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401':
           description: Link, address or code failed verification — `NT-OTP-001`, uniformly.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /portal/people:
+    get:
+      operationId: listPortalPeople
+      summary: The people this business has given access to
+      description: |
+        Settings → People, in the client's own portal (D45, D49).
+
+        **The business manages its own people.** Until 2 Sep 2026 this screen
+        read *"Managed by your accountant … they cannot be added from this
+        screen"*, which was wrong: the manager, the HR lead or the owner of a
+        client business is the person who knows who handles their paperwork, and
+        making the accountant the registrar of a restaurant's kitchen staff put
+        a support ticket between a new starter and their first receipt.
+
+        **Everyone with a portal session may READ this list**, including a plain
+        `BUSINESS_STANDARD`. Who else can send paperwork on your employer's
+        behalf is not a secret from you, and hiding the section entirely would
+        be the "pretend the action does not exist" failure Governance §11.2
+        forbids. What a `BUSINESS_STANDARD` does not get is the controls, and
+        `canManagePeople` on this response is how a screen knows — a fact for
+        honest degradation, never the gate. The gate is the server's, on the
+        three mutations below.
+
+        Tenancy is the session's own business, resolved from the `otp_sessions`
+        row and never from a parameter — the same rule, and the same reason, as
+        `listPortalDocuments`.
+
+        **⚠ This response has no `pageInfo` and that is deliberate, not an
+        omission.** A business's own staff list is bounded by the business — the
+        people who handle its paperwork — not by a growing record set like
+        documents or bank lines, and a cursor over a list a client reads in one
+        screen would be ceremony. The array is named `people` rather than `data`
+        so nothing reads it as a page that lost its cursor. The server caps what
+        it serves and says so on `truncated` rather than silently stopping.
+      tags: [portal]
+      x-nt-side-effect: none
+      security:
+        - portalSession: []
+      responses:
+        '200':
+          description: Everyone with access to this workspace, oldest first.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PortalPeople' }
+        '401':
+          description: Portal session missing, invalid or expired — `NT-OTP-002`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+    post:
+      operationId: invitePortalPerson
+      summary: Invite someone into this business's portal
+      description: |
+        The business adds one of its own people (D45).
+
+        **This is an IDENTITY decision, which is exactly why it belongs to the
+        business.** The invitation writes a `contacts` row, and that row is what
+        the ingest router matches a sender against — so the person invited here
+        can immediately forward an invoice from their own mailbox and have it
+        land in the right workspace instead of Unrouted. Nothing else in the
+        product turns an address into a permitted sender for a client.
+
+        **What the invitee receives is a link to the portal sign-in, and no
+        token.** The address is the credential channel: they type it at
+        `/portal`, a six-digit code is emailed, and they are in. A setup token
+        would add a seven-day expiry to a relationship that has none, and would
+        put them on the CLIENT-onboarding journey — company details, then
+        subscribe — which is the owner's journey, not a new starter's.
+
+        **⚠ `ingest`, not `proposal`, and the reason is structural rather than a
+        taxonomy preference.** Governance §10's Review → Approve spine is the
+        PRACTICE's: `createActionProposal` and `approveActionProposal` both
+        carry `workspaceSession` and nothing else, so a portal caller cannot
+        create a proposal at all — and no accountant should have to approve
+        whether a restaurant may add a chef. What replaces the human gate is a
+        server-side authority check on every one of these three mutations, plus
+        an entry in the practice's own audit log for each, so the accountant can
+        see who the client added even though they did not authorise it.
+
+        **The refusal, and what it may not reveal.** A `BUSINESS_STANDARD` is
+        refused `403 NT-PRM-001` before anything is written or sent. An address
+        that is already on this workspace is `400 NT-VAL-001` — safe to say,
+        because the caller can see that person in the list they are looking at.
+        Nothing here reports whether an address exists ANYWHERE ELSE in the
+        product; the invitation mail is what distinguishes the outcomes, and it
+        goes to the address rather than to the caller.
+      tags: [portal]
+      x-nt-side-effect: ingest
+      security:
+        - portalSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PortalPersonInviteRequest' }
+      responses:
+        '201':
+          description: The person, as they now appear in the list.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PortalPerson' }
+        '400':
+          description: |
+            `NT-VAL-001` — the save gate, refused in the order the screen states
+            it: a missing name, a missing or malformed address, an address
+            already on this workspace, or an `access` outside the three
+            business-level roles.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '401':
+          description: Portal session missing, invalid or expired — `NT-OTP-002`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '403':
+          description: |
+            `NT-PRM-001` — this person may see the list and may not change it.
+            The detail names who can, because "ask the owner" is the one thing a
+            refused caller can act on.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429':
+          description: |
+            `NT-RATE-001` — the invitation was recorded and the email was
+            refused by the per-address ceiling. Told plainly: the caller is the
+            business's own admin looking at their own list, and silence would be
+            the worst answer.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /portal/people/{personId}:
+    parameters:
+      - name: personId
+        in: path
+        required: true
+        description: |
+          The `id` from `PortalPerson`. A person on another business is a `404`,
+          never a `403` — a `403` would confirm they exist.
+        schema: { type: string }
+    patch:
+      operationId: updatePortalPerson
+      summary: Change what one of your people may do
+      description: |
+        Rename, retitle, re-authorise. Every field is optional; an omitted one is
+        left alone, and a body that changes nothing is a no-op that still
+        answers the person's current state.
+
+        **⚠ Last-owner protection.** The only `BUSINESS_ADMIN` on a workspace
+        cannot be demoted — `400 NT-VAL-001`, with the fix named: make somebody
+        else an owner first. Without it a business could quietly leave itself
+        with nobody who can ever add or remove anyone again, and there is no
+        route back from inside the portal.
+
+        `email` is deliberately **not** changeable here. The address is the
+        sign-in channel and the sender-map key at once, so changing it is
+        removing one person and inviting another; doing it under the word
+        "update" would silently transfer whatever that person had already sent.
+      tags: [portal]
+      x-nt-side-effect: ingest
+      security:
+        - portalSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PortalPersonUpdateRequest' }
+      responses:
+        '200':
+          description: The person, after the change.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PortalPerson' }
+        '400':
+          description: '`NT-VAL-001` — an invalid `access`, or the last owner being demoted.'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '401':
+          description: Portal session missing, invalid or expired — `NT-OTP-002`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '403':
+          description: '`NT-PRM-001` — this person may see the list and may not change it.'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '404':
+          description: '`NT-VAL-001` — nobody with that id on this workspace.'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+    delete:
+      operationId: removePortalPerson
+      summary: Remove someone's access
+      description: |
+        **A revocation, not a deletion, and the screen says so in as many
+        words:** *"They stop being able to send documents immediately. Anything
+        they already sent stays with your accountant."*
+
+        The `contacts` row is DEACTIVATED, never destroyed. Documents that
+        person already submitted carry their provenance, and a hard delete would
+        either orphan that trail or rewrite it — both of which make a client's
+        own file less honest than it was. What deactivation actually withdraws,
+        the same instant:
+
+        - **the sender map** — a forwarded email from that address stops
+          resolving to this workspace and lands Unrouted (D45);
+        - **new sessions** — `POST /portal/sign-in-codes` no longer finds them,
+          and answers its usual uniform `202` while sending nothing;
+        - **the session they are holding right now** — the resolver re-reads the
+          contact on every request, so a bearer minted a minute ago stops
+          working rather than lasting out its hour.
+
+        **⚠ Two refusals, both `400 NT-VAL-001`.** The last `BUSINESS_ADMIN`
+        cannot be removed (the last-owner rule, mirrored from `PATCH`), and
+        nobody may remove themselves — a person revoking their own authority
+        from a phone has no way back in, and asking another admin costs one
+        message.
+      tags: [portal]
+      x-nt-side-effect: ingest
+      security:
+        - portalSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: |
+            The person, now inactive. The row is returned rather than a bare
+            `204` so the screen renders server truth instead of predicting it.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PortalPerson' }
+        '400':
+          description: '`NT-VAL-001` — the last owner, or the caller themselves.'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '401':
+          description: Portal session missing, invalid or expired — `NT-OTP-002`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '403':
+          description: '`NT-PRM-001` — this person may see the list and may not change it.'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '404':
+          description: '`NT-VAL-001` — nobody with that id on this workspace.'
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
@@ -2440,6 +3257,183 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/IdempotencyConflict' }
         '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ==========================================================================
+  # THE PRACTICE'S OWN TEAM — colleagues, not clients (D44, SoT §3.3)
+  # ==========================================================================
+
+  /practice-members:
+    get:
+      operationId: listPracticeMembers
+      summary: The practice's own people
+      description: |
+        Everyone who works at the firm, and every invitation still outstanding.
+
+        **Flat, with no path id** — one practice per session, resolved from the
+        verified session's acting membership rather than named by the caller
+        (convention 1 in `packages/contracts/CLAUDE.md`: a `practiceId` in the
+        URL would be a second name for something the session already fixes, and
+        a caller-supplied one is a tenancy question the server would have to
+        re-answer on every request).
+
+        **This is NOT `GET /businesses/{businessId}/members`.** That one lists
+        who can reach ONE CLIENT — the client's own staff plus the practice
+        people assigned to them. This lists the FIRM. The two answer different
+        questions and a caller wanting "who works here" has no way to assemble
+        it from the other.
+
+        **SYSTEM users are never listed**, exactly as `listBusinessMembers`
+        excludes them and for the same reason: a worker's actor is a real user
+        row with a real membership (issue #17) so machine writes go through the
+        same predicate as human ones, but it has no email, no password and no
+        sessions, and showing it invites someone to try to invite, seat-count or
+        deactivate it.
+
+        **`pendingInvites` is beside `data`, not folded into it**, because an
+        invitation is not a member: they have no user id, no `isOwner`, and
+        nothing they can do yet. It is on this response rather than an endpoint
+        of its own because an invitation nobody can see is an invitation nobody
+        can chase — an admin who invited a colleague on Monday needs to know on
+        Friday that it is still unaccepted, and a second call the screen might
+        forget to make is how that fact goes missing. Only invitations that are
+        still spendable appear: an accepted one is a member, and an expired one
+        is not something to wait for.
+
+        ⚠ `pageInfo` describes `data` only. `pendingInvites` is unpaginated
+        because a practice with enough outstanding invitations to need a second
+        page has a different problem.
+      tags: [practices]
+      x-nt-side-effect: none
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of colleagues, oldest first, plus every outstanding invitation.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pendingInvites, pageInfo]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/PracticeMember' }
+                  pendingInvites:
+                    type: array
+                    description: Outstanding invitations — not yet accepted, not yet expired.
+                    items: { $ref: '#/components/schemas/Invite' }
+                  pageInfo: { $ref: '#/components/schemas/PageInfo' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+    post:
+      operationId: invitePracticeMember
+      summary: Invite a colleague into the practice
+      description: |
+        Creates an invitation and emails it. This is how a firm gets a second
+        person: before it existed the only user a practice could ever have was
+        the one `POST /practices` created.
+
+        **⚠ THE REFUSAL SET, WHICH IS THE POINT OF THIS OPERATION'S
+        DESCRIPTION.** `role` takes the whole `WorkspaceRole` enum, because
+        there is exactly one copy of it in this contract and a subset schema
+        would be a second copy free to drift from prisma. The narrowing is
+        therefore stated here and enforced server-side, `NT-VAL-001`:
+
+        - **`PRACTICE_STANDARD` and `CLIENT_ADMIN` are accepted.** Those are the
+          two practice-level roles that compose and edit (D44's first half).
+        - **`PRACTICE_ADMIN` is REFUSED, by name.** D44 reserves release
+          authority for the firm's super admin, and `assertCan` reads that as
+          `canRelease(role) && isOwner`. An invited `PRACTICE_ADMIN` would hold
+          `canRelease === true` and `isOwner === false`, so they could not
+          release and the refusal they met would say *"only your practice's
+          super admin can"* — to somebody the screen had just called an admin.
+          There is also no ownership-transfer operation in this contract, so
+          nothing could ever resolve it. When that operation exists, this
+          refusal is the thing to revisit.
+        - **The three business-level roles are refused** — `BUSINESS_ADMIN`,
+          `USER_ADMIN`, `BUSINESS_STANDARD` belong to a client's own team and
+          are granted through `POST /businesses/{businessId}/members`.
+
+        **Only a practice admin may call this.** A colleague who cannot release
+        also cannot recruit; the refusal is `403 NT-PRM-001` and it is a
+        permission failure on a resource the caller can see, not a visibility
+        one.
+
+        **`businessIds` is what makes role-based access real.** For a
+        `PRACTICE_STANDARD` it is the list of clients they may reach, and the
+        server writes one business-scoped membership per id — after which RLS
+        confines them to exactly those workspaces with no further code. Omitted
+        or empty, the colleague joins with practice-wide scope and sees every
+        client. A `businessId` the INVITER cannot see is `404`, never `403`:
+        `403` would confirm the client exists (convention 1).
+
+        A `CLIENT_ADMIN` is always practice-wide and `businessIds` is refused
+        for that role rather than silently ignored — a screen that offered a
+        client picker and had it discarded would be describing a grant that did
+        not happen.
+
+        **The invitation token is never returned.** It exists in the email and
+        in `invites.token_hash`, and nowhere else — an invitation readable from
+        an API response is an invitation anyone with read access can accept.
+      tags: [practices]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PracticeMemberInviteRequest' }
+      responses:
+        '201':
+          description: The invitation. Without its token.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invite' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403':
+          description: |
+            `NT-PRM-001` — the caller is a member of the practice but not one of
+            its admins, so they may not invite. A permission refusal, not a
+            visibility one: the caller can already see the team list this would
+            add to.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              example:
+                type: https://neoting.com/problems/NT-PRM-001
+                title: Not permitted
+                status: 403
+                code: NT-PRM-001
+                detail: Only a practice admin can invite a colleague. Ask one of your admins to send the invitation.
+                traceId: 01J8XN2ZQ5R7TQ9E3M4K6P
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429':
+          description: |
+            The invitation row was written and the EMAIL was refused by the
+            per-address ceiling — `NT-RATE-001`. The row is kept deliberately:
+            it is the durable record of a decision that was made, a retry
+            re-sends rather than re-decides, and an invitation nothing was sent
+            for expires harmlessly.
+          headers:
+            Retry-After: { $ref: '#/components/headers/RetryAfter' }
+            RateLimit-Limit: { $ref: '#/components/headers/RateLimitLimit' }
+            RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+            RateLimit-Reset: { $ref: '#/components/headers/RateLimitReset' }
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
         '500': { $ref: '#/components/responses/InternalError' }
 
   # ==========================================================================
@@ -3054,6 +4048,46 @@ components:
             properties:
               field: { type: string }
               message: { type: string }
+        publishedOutsidePeriod:
+          description: |
+            An RFC 7807 **extension member**, set by exactly one refusal:
+            `NT-EXP-001` from `POST /v1/exports`. It answers the question the
+            bare refusal leaves an accountant with — *"nothing? then where are
+            my documents?"*
+
+            The export selects on the **document's own date** (see
+            `ExportRequest.periodStart`), so a client whose Published documents
+            all sit outside the chosen period gets an empty export that is
+            correct and looks broken. These facts come from the SAME RLS-scoped
+            read the export itself runs, over the same `PUBLISHED` predicate
+            with only the date clause dropped — so they can never describe
+            documents the export would not have included, and they can never
+            cross a tenancy boundary.
+
+            Absent on every other problem. A client must treat absence as "no
+            extra fact", never as zero.
+          type: object
+          required: [count]
+          properties:
+            count:
+              type: integer
+              minimum: 0
+              description: |
+                Published documents for this client whose date falls OUTSIDE the
+                requested period. Capped at the export's own batch ceiling, so a
+                very large number is reported as the ceiling rather than counted
+                without bound.
+            earliestDocumentDate:
+              type: [string, 'null']
+              format: date
+              description: The oldest such document's own date. Null when the count is zero.
+            latestDocumentDate:
+              type: [string, 'null']
+              format: date
+              description: |
+                The newest such document's own date. With `earliestDocumentDate`
+                this is the narrowest period that would include all of them, so a
+                client can offer it as the period to try.
 
     ErrorCode:
       type: string
@@ -3133,6 +4167,12 @@ components:
         # client's card was declined" is two incidents sharing one pager.
         - NT-BIL-001   # this business has no active subscription
         - NT-BIL-002   # this business already has an active subscription
+        # Document lifecycle (DOC family, document management 2 Sep 2026). The
+        # family already exists as a `documents.failure_code` value —
+        # `NT-DOC-001`, "rejected by a reviewer" — and that one is deliberately
+        # NOT in this enum because it never reaches the wire as a problem code
+        # (its runbook page says so). -002 is the first DOC code that does.
+        - NT-DOC-002   # purge refused: something durable still resolves back to this document (D43)
         - NT-PRP-001   # unknown action kind
         - NT-PRP-002   # approve attempted before the review was opened
         - NT-PRP-003   # proposal expired
@@ -3174,6 +4214,13 @@ components:
         # The turn itself changes nothing — the form submits through
         # `POST /businesses` with every check that operation already carries.
         - ADD_CLIENT       # onboard a new client — the UI renders the intake form
+        # D40 makes manual statement upload the ONLY bank input in ID, so the
+        # statements a client has sent are this product's own data. This is
+        # NAVIGATION and nothing else — the same shape as SHOW_INBOX, carrying
+        # no payload a model could put a figure or an id in. The Bank tab's
+        # Statements list already reads live from `GET /statements`; the model
+        # decides only that the accountant asked to see it.
+        - SHOW_STATEMENTS  # navigation — the Bank tab's Statements list (D40/D41)
 
     ChatHistoryTurn:
       type: object
@@ -3293,7 +4340,15 @@ components:
       properties:
         type:
           type: string
-          enum: [document, chase, bankTransaction, publish, extraction]
+          # `statement` was added 2 Sep 2026. Its absence was one of the three
+          # locks that made a statement question structurally unanswerable
+          # (#233): even with statement rows in front of it, a citing turn could
+          # not compose a schema-valid `references` array, so the only shapes
+          # available to the model were a refusal or an invention. D40 makes
+          # uploaded statements the ONLY bank input in ID, which makes them
+          # pipeline records like any other — and a record that can be retrieved
+          # and cannot be cited is a record the surface must lie about.
+          enum: [document, chase, bankTransaction, publish, extraction, statement]
         id: { type: string }
         label:
           type: string
@@ -3715,7 +4770,7 @@ components:
         The context header payload (SoT §13.3). `businesses` is what the
         caller's RLS context can actually see — the practice's clients for
         practice staff, the single workspace for a business login.
-      required: [user, practice, role, businesses]
+      required: [user, practice, role, isOwner, businesses]
       properties:
         user:
           type: object
@@ -3736,6 +4791,24 @@ components:
             - type: 'null'
         role:
           $ref: '#/components/schemas/WorkspaceRole'
+        isOwner:
+          type: boolean
+          description: |
+            `memberships.is_owner` on the acting membership — the one person who
+            created the practice. With `role` it is the whole of D44's release
+            rule (`assertCan`: `canRelease(role) && isOwner`), so this is what
+            lets a screen degrade honestly instead of offering a release the
+            server will refuse with `NT-PRM-001`.
+
+            **Required, not optional**, and for the same reason the ten
+            `BusinessSummary.counts` are: an omitted boolean and `false` are
+            indistinguishable once rendered, so an optional one would let a
+            producer stay silent and have it read as "not the owner". The
+            server answers it from the same membership `role` comes from, so
+            the two can never describe different people.
+
+            It is a fact for DISPLAY, never the gate. Governance §11.2: *"a UI
+            that merely hides the button is not an implementation of this."*
         businesses:
           type: array
           items:
@@ -3803,6 +4876,101 @@ components:
             Whether the Rejected/Failed view should offer a retry. Retrying is
             itself an ActionProposal of kind `document.reprocess`.
         archivedAt: { type: [string, 'null'], format: date-time }
+        # ---- Trash (document management, 2 Sep 2026) ----------------------
+        deletedAt:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When someone moved this document to Trash, or null. **Optional and
+            nullable, exactly as `archivedAt` is** — a required field would make
+            every response minted before this existed unparseable by a generated
+            client, and the honest reading of an absent one is "not deleted".
+
+            Deletion is a TIMESTAMP and deliberately **not** a `DocumentState`
+            member: a READY document that is deleted and restored is READY
+            again, and `state` is what remembers that. It also means no client
+            ever sees a "deleted" status word — `PortalDocumentStatus` is a
+            total mapping over `DocumentState` and a ninth member would have
+            entered the client's vocabulary.
+
+            Non-null here is only ever seen on `GET /documents?deleted=true`
+            (the Trash listing) or on `GET /documents/{documentId}` for a
+            document already in Trash. The default listing excludes them.
+
+    DocumentCounts:
+      type: object
+      description: |
+        The Documents screen's header, served from the server because it was not
+        true when it was not (2 Sep 2026).
+
+        Every number is computed over the caller's whole RLS-visible set, not
+        over a page. `businessId` narrows all five identically, so the header
+        means the same thing whether a client is selected or not.
+
+        ⚠ **The five counts partition nothing and are not meant to sum.**
+        `total` and `archived` are disjoint and both exclude Trash; `deleted`
+        overlaps neither; `inVault` and `expiring` count a different table
+        entirely and `expiring` is a subset of `inVault`. A screen that adds any
+        two of them is reporting a number this endpoint never claimed.
+      required: [total, archived, deleted, inVault, expiring, expiringWithinDays]
+      properties:
+        total:
+          type: integer
+          minimum: 0
+          description: |
+            Documents in the working queues: **every state except `ARCHIVED`,
+            and not in Trash** — exactly the set `GET /documents` returns with
+            no filters, which is what makes the header agree with the list
+            beneath it. It is deliberately not "every document the practice
+            holds": that number would include the archive and contradict the
+            word next to it.
+        archived:
+          type: integer
+          minimum: 0
+          description: |
+            `state = ARCHIVED` and not in Trash. Archiving and deleting are
+            different acts and a document can be both; when it is, it is counted
+            here as deleted only, because Trash is what the screen offers to act
+            on.
+        deleted:
+          type: integer
+          minimum: 0
+          description: |
+            In Trash — `deletedAt` is set — whatever pipeline state it holds.
+            This is the count behind the Trash tab, and the one number here that
+            did not exist in any form before.
+        inVault:
+          type: integer
+          minimum: 0
+          description: |
+            ⚠ **`vault_items` rows, NOT documents.** The Vault is the company
+            paperwork a practice files for a client — certificates, agreements,
+            registrations — and it is a different table with a different
+            lifecycle. It is in this response because it is on the same screen's
+            header, and separating them would leave one number honest and the
+            other rendered from nothing.
+        expiring:
+          type: integer
+          minimum: 0
+          description: |
+            Vault items whose `expires_at` falls within `expiringWithinDays`
+            from now — **including any already past**, because an expired
+            certificate is the most expiring thing on the screen and a window
+            that silently dropped it would be a worse lie than a zero.
+
+            A subset of `inVault`. Items with no expiry date are never counted.
+
+            ⚠ **This is a query, not a retention engine.** Nothing expires
+            anything, nothing is swept, and no document has an expiry at all —
+            `documents` carries no expiry or retention column, so a
+            document-level version of this number does not exist and is not
+            being approximated here.
+        expiringWithinDays:
+          type: integer
+          description: |
+            The horizon `expiring` was computed with, echoed back. A number on a
+            screen that cannot say what window it used is not a number anyone
+            can check.
 
     Document:
       description: |
@@ -3981,6 +5149,111 @@ components:
             available while OCR runs. Such values are marked *keyed by [name]* in
             the UI and carry `HUMAN_CONFIRMED` provenance.
         createdAt: { type: string, format: date-time }
+        # ── region: coding suggestion (rules-suggestions AI_INFERENCE rung) ──
+        codingSuggestion:
+          description: |
+            What the coding ladder worked out for this document when nothing
+            coded it — **an opinion, never a coding.** Optional: present only
+            where the ladder was consulted and the document was left for a human.
+          oneOf:
+            - $ref: '#/components/schemas/CodingSuggestion'
+            - type: 'null'
+        # ── end region ──
+
+    # ── region: coding suggestion (rules-suggestions AI_INFERENCE rung) ──
+    CodingSuggestion:
+      type: object
+      description: |
+        The bottom rung of the coding authority ladder (SoT §24.4), rendered so
+        an accountant sees either a best guess with its working or a named
+        reason why there is none — never an empty Category field.
+
+        ⚠ **This is not a coding.** It never populates `Document.categoryCode`
+        and never makes a document Ready; the mandatory set (Total + Supplier +
+        Category) is unchanged. Accepting one is a `document.update-coding`
+        proposal a human approves, exactly like a typed correction.
+
+        ⚠ **`confidence` gates nothing.** It exists to be displayed (§13.3);
+        thresholds come from eval measurements, never from self-reported
+        confidence, so no client may branch on this number.
+      required: [outcome, provenance, basis, note]
+      properties:
+        outcome:
+          type: string
+          description: |
+            `SUGGEST` carries a `categoryCode` and a `confidence`; `ESCALATE`
+            carries an `escalationReason` and a null confidence. There is no
+            third answer and no empty one.
+          enum: [SUGGEST, ESCALATE]
+        provenance:
+          $ref: '#/components/schemas/ProvenanceClass'
+          description: Always `AI_SUGGESTED`, whatever rule actually decided it.
+        basis:
+          type: string
+          description: |
+            The named rule behind the answer — §13.3's "show the working".
+          examples:
+            ['SUBSCRIPTION_TERM_UNDER_TWO_YEARS', 'HARDWARE_PER_UNIT_AT_OR_ABOVE_THRESHOLD', 'KEYWORD_MATCH_ON_CHART', 'NOTHING_MATCHED']
+        note:
+          type: string
+          description: |
+            The rendered sentence, written to sit next to the field rather than
+            in a log: either "suggested — not applied — as X, on <rule>" or what
+            would resolve the escalation, plus any advisories. Never a JSON blob
+            and never a quoted line description.
+        categoryCode:
+          type: [string, 'null']
+          description: The suggested account code. Null on `ESCALATE`.
+        analysisAccount:
+          type: [string, 'null']
+          description: |
+            The ledger-prefixed emittable form (`Cost of sales: Purchases`), or
+            null when the client's chart cannot prefix the code.
+        confidence:
+          type: [number, 'null']
+          minimum: 0
+          maximum: 1
+          description: For display only. Null on `ESCALATE` — there is no coding to be confident about.
+        treatment:
+          type: [string, 'null']
+          description: Capital or revenue, where the rules settled it.
+          enum: [CAPITAL, REVENUE, null]
+        secondChoice:
+          type: [object, 'null']
+          description: |
+            The runner-up, where the rules had one. Published top-2 accuracy runs
+            about ten points above top-1, which is the cheapest accuracy an
+            interface can buy.
+          required: [categoryCode, confidence]
+          properties:
+            categoryCode: { type: string }
+            analysisAccount: { type: [string, 'null'] }
+            confidence: { type: number, minimum: 0, maximum: 1 }
+        escalationReason:
+          type: [string, 'null']
+          description: |
+            Why no code is offered, from a closed set in severity order:
+            `ARITHMETIC_MISMATCH`, `NO_CHART_OF_ACCOUNTS`, `CODE_NOT_ON_CHART`,
+            `NO_LINE_DETAIL`, `SOFTWARE_TERM_UNKNOWN`,
+            `MIXED_CAPITAL_AND_REVENUE`, `MULTIPLE_CATEGORIES_ON_ONE_DOCUMENT`,
+            `THRESHOLD_BOUNDARY`, `NO_MATCH_ON_CHART`, `NEW_SUPPLIER_NO_HISTORY`.
+            Typed as a string rather than an enum so a new reason is not a
+            breaking change for a client that renders `note`.
+        candidateCategoryCodes:
+          type: array
+          description: |
+            The codes the lines pointed at when they pointed at several — the
+            split that was found, shown rather than hidden behind an empty field.
+          items: { type: string }
+        advisories:
+          type: array
+          description: |
+            Things worth saying about a coding that WAS offered — foreign
+            consumption tax in the cost, a per-unit threshold test, a new
+            supplier. Never blocking; their sentences are already folded into
+            `note`.
+          items: { type: string }
+    # ── end region ──
 
     DocumentEvent:
       type: object
@@ -4118,6 +5391,7 @@ components:
         - rule.create             # create a coding rule; it activates only on approval
         - document.revoke-link    # revoke capability URLs already sitting in someone's ledger
         - business.offboard       # deactivate a client workspace (D32 slice); soft, books retained
+        - document.purge          # PERMANENTLY delete documents already in Trash; refuses anything exported
 
     CreateActionProposalRequest:
       description: |
@@ -4139,6 +5413,7 @@ components:
         - $ref: '#/components/schemas/RuleCreateProposalRequest'
         - $ref: '#/components/schemas/RevokeLinkProposalRequest'
         - $ref: '#/components/schemas/BusinessOffboardProposalRequest'
+        - $ref: '#/components/schemas/DocumentPurgeProposalRequest'
       discriminator:
         propertyName: kind
         mapping:
@@ -4155,6 +5430,7 @@ components:
           rule.create: '#/components/schemas/RuleCreateProposalRequest'
           document.revoke-link: '#/components/schemas/RevokeLinkProposalRequest'
           business.offboard: '#/components/schemas/BusinessOffboardProposalRequest'
+          document.purge: '#/components/schemas/DocumentPurgeProposalRequest'
 
     ProposalRequestBase:
       type: object
@@ -4280,6 +5556,15 @@ components:
             kind: { const: business.offboard }
             payload: { $ref: '#/components/schemas/BusinessOffboardPayload' }
 
+    DocumentPurgeProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: document.purge }
+            payload: { $ref: '#/components/schemas/DocumentPurgePayload' }
+
     RoutePayload:
       type: object
       required: [documentId, inbox]
@@ -4403,6 +5688,117 @@ components:
             data, because that decides whether it can be republished (SoT
             Stage 11).
 
+    DocumentPurgePayload:
+      type: object
+      description: |
+        **Permanently destroy documents that are already in Trash.** The one
+        genuinely irreversible act on a document, which is why it is an
+        ActionProposal and why no `DELETE /documents/{documentId}` exists
+        anywhere in this contract.
+
+        ## What it destroys, stated rather than discovered
+
+        The `documents` row and, by `ON DELETE CASCADE`, its extractions, its
+        `document_events` processing log, its duplicate pairs, its suggestions
+        and its item threads. **The audit trail survives** — `audit_events` is
+        append-only with no delete path — so the record that a named person
+        purged a named document id on a named date outlives the document, which
+        is the only thing that makes this act accountable at all.
+
+        ⚠ **The stored object is NOT deleted, and the review card says so.** An
+        executor runs inside the engine's transaction and may not make an
+        external call (`document.reprocess` records the same limitation for the
+        same reason). Reclaiming the bytes needs an object-lifecycle sweep that
+        does not exist; promising it here and not doing it would be worse than
+        naming it.
+
+        ## The refusal — `NT-DOC-002`, and it is D43
+
+        A document is refused, and the whole batch with it, when it has been
+        `PUBLISHED`, when a `publishes` row exists for it, when any
+        `document_links` row exists for it, or when a `statements` or
+        `supplier_statements` row names it as its source file. All four are
+        checked as ROWS, never inferred from the `state` column: D43 promises
+        that **every exported line resolves back to its source document**, an
+        export mints a capability link per document it carries, and a purged
+        document turns a working URL inside an accountant's VT file into a
+        permanent `410` that nothing in this product would ever surface. `state`
+        alone cannot see a document that was exported and later unarchived out
+        of `PUBLISHED`.
+
+        The statement check is the same failure one table over, and it is
+        sharper because there is **no foreign key** behind
+        `statements.document_id` — Postgres would let the purge leave it
+        dangling. Under D40 manual statement upload is the only bank input in
+        this release, so that column is the sole answer to "which uploaded file
+        produced these bank lines".
+
+        This is the refusal the market's biggest incumbent does not have. Xero
+        Files hard-deletes with no trash and no restore, and its own warning
+        says a library delete *"removes the file from all transactions it's
+        attached to… We can't retrieve deleted files."* In our terms that is an
+        exported line silently losing its source, with nothing to notice
+        afterwards.
+
+        **Refused, never cascaded.** Revoking the links first and purging anyway
+        would be this proposal quietly performing a `document.revoke-link` that
+        nobody reviewed, on rows sitting in somebody else's ledger. The path is
+        to revoke deliberately, or to leave the document in Trash — where it is
+        already invisible to every working surface, which is what the person
+        pressing this actually wanted.
+
+        ## Being in Trash first is required
+
+        A document that has not been deleted cannot be purged. Trash is the
+        undo, and skipping it would make a single approval the whole distance
+        between a live document and no document.
+      required: [documentIds]
+      properties:
+        documentIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { type: string }
+          description: |
+            All-or-nothing: one unreachable, undeleted, published or exported id
+            refuses the entire batch, the rule `document.archive` and
+            `document.reject` already apply. A partially purged batch cannot be
+            re-run to completion, because the successful half no longer exists.
+
+            ⚠ **Capped at 100, not the house 500 the reversible batches use.**
+            A purge cascades across six child tables per document inside one
+            transaction, and `scopedDb` gives it 10 seconds; a batch that timed
+            out would roll back correctly but would be a 500 rather than a
+            refusal. A tighter cap on the one irreversible batch is also the
+            right default for a human reading a review card.
+        reasonCode:
+          type: string
+          enum: [DUPLICATE, UPLOADED_IN_ERROR, WRONG_CLIENT, TEST_DATA, OTHER]
+          description: |
+            Why, from a fixed vocabulary. **Optional**, so a client built before
+            this existed keeps working and a picker can be added when the screen
+            is ready.
+
+            The enum-plus-free-text shape is AutoEntry's, and it is the one
+            thing in its delete flow worth copying (`docs/research/
+            dext-document-management.md` §10.2 B6): the enum makes purges
+            **countable** — "how many documents did we destroy in error last
+            quarter?" is a question a free-text box cannot answer — and the free
+            text below stops the enum from lying about the cases it does not
+            cover. `OTHER` exists so it never has to.
+
+            Deliberately NOT required: a mandatory field on the one irreversible
+            action, with no picker built for it yet, would make the action
+            unreachable rather than more careful.
+        reason:
+          type: string
+          maxLength: 500
+          description: |
+            Why, in a person's own words. Shown verbatim at Read review and
+            carried in the proposal payload — which, since the document itself is
+            about to stop existing, is part of the only surviving explanation of
+            why it is gone (`action_proposals` is immutable after execution).
+
     BusinessOffboardPayload:
       type: object
       description: |
@@ -4496,11 +5892,22 @@ components:
       type: object
       description: |
         `preview` is computed by the server at proposal time — item count,
-        gross and VAT in pence — and is exactly what Read review renders
-        ("Publish 43 bills to Xero — gross £84,925, VAT £10,402"). Execution
+        gross and VAT in pence — and Read review renders it ("Release 43
+        documents for export — gross £84,925, VAT £10,402"). Execution
         re-validates that each item still meets the minimum (Total + Supplier
         + Category); an item that no longer does refuses with `NT-PUB-001`
         rather than publishing half-coded books.
+
+        ⚠ The example above said *"Publish 43 bills to Xero"* until 2 Sep 2026.
+        **D42 supersedes D6 for this release**: there is no ledger connection and
+        nothing is published to a vendor — *Published* is an internal state
+        meaning approved and released for export. The wording was a contract-side
+        instance of exactly the claim D42 forbids a screen from making.
+
+        `entryPreview` is the other half of the same promise, one level down:
+        three totals say how much, and the entry says **what the import file will
+        contain**, line by line, so the human approving a release can see the
+        bookkeeping entry rather than a summary of it.
       required: [documentIds, preview]
       properties:
         documentIds:
@@ -4522,6 +5929,112 @@ components:
             vatPence:
               type: integer
               x-nt-money: true
+            currency:
+              type: [string, 'null']
+              description: |
+                The ONE currency every document in the batch shares, or **null
+                when they differ** — in which case the totals above are not
+                money in any single currency and must be rendered with no
+                symbol at all.
+
+                ⚠ **Null is not sterling.** A USD invoice rendered the approval
+                card as `gross £54352.51` before this field existed, on the one
+                path where the product guarantees that what was shown is what
+                was approved. Summing pence across currencies is meaningless
+                arithmetic; a client that substitutes `£` for a null here
+                reintroduces the defect.
+
+                Optional so that a payload stored before this field existed
+                still parses — `preview` is `.strict()`, and a required
+                addition would make every pending proposal unreviewable.
+        entryPreview:
+          $ref: '#/components/schemas/ExportEntryPreview'
+
+    ExportEntryPreview:
+      type: object
+      description: |
+        **The bookkeeping entry itself**, per document, as the export file will
+        contain it — the rows an accountant is actually authorising when they
+        approve a release.
+
+        `preview` above is three numbers; this is the entry. It is
+        server-computed at proposal time from the SAME emitter that writes the
+        file (`apps/api/src/modules/exports-public-api/emitters/`), never
+        re-derived, so the review cannot drift away from the export. Execution
+        recomputes it and refuses if it no longer matches, exactly as it does
+        for `preview`.
+
+        ⚠ **D42: this describes a FILE, not a ledger.** Nothing here is posted,
+        synced or sent anywhere; the accountant imports the file themselves. A
+        string on this shape implying transmission is a defect, not a copy
+        preference.
+
+        Optional because it is additive: a payload written before this field
+        existed still parses, and execution skips the comparison rather than
+        refusing a proposal that predates the check.
+      required: [target, columns, documents]
+      properties:
+        target: { $ref: '#/components/schemas/ExportTarget' }
+        columns:
+          type: array
+          items: { type: string }
+          description: |
+            The emitter's own column names, in the order the file writes them.
+            Carried once rather than per row: the file is positional, and
+            repeating the headings per document would multiply the payload a
+            reviewer's browser has to carry by the width of the format.
+        documents:
+          type: array
+          maxItems: 500
+          items:
+            type: object
+            required: [documentId, rows]
+            properties:
+              documentId: { type: string }
+              fileName:
+                type: string
+                description: |
+                  The file inside the export this document's rows land in. VT
+                  names one file per (date, direction) because the journal
+                  import applies a single date to a whole file; a target with
+                  one file sends an empty string.
+              dataFormat:
+                type: string
+                description: The import format the accountant selects for that file, in the target's own words. Empty when the target has none.
+              rows:
+                type: array
+                description: |
+                  One entry per line the file will carry — a document coded
+                  across two nominals is two rows, which is how the target
+                  imports a split analysis. Cells are positional against
+                  `columns` and are the exact strings the file will contain,
+                  including the emitter's own money rendering.
+                items:
+                  type: array
+                  items: { type: string }
+              warnings:
+                type: array
+                description: |
+                  What will not travel cleanly for THIS document, from the
+                  emitter's own warnings. On the review card rather than only on
+                  the export, because the moment to learn that an analysis
+                  account carries no ledger prefix is before the release, not
+                  after the import.
+                items: { $ref: '#/components/schemas/ExportWarning' }
+        refusals:
+          type: array
+          description: |
+            Documents that cannot become an export row at all, and why — a
+            missing date, total, counterparty or nominal. They are named rather
+            than dropped: a release whose file would silently omit a document is
+            the short-file failure the whole export surface is designed against.
+          items:
+            type: object
+            required: [documentId, code, message]
+            properties:
+              documentId: { type: string }
+              code: { type: string }
+              message: { type: string }
 
     BankConfirmMatchPayload:
       type: object
@@ -4684,7 +6197,11 @@ components:
           properties:
             title:
               type: string
-              description: What the action is and its scope — "Publish 43 bills to Xero — gross £84,925, VAT £10,402".
+              description: |
+                What the action is and its scope — "Release 43 documents for
+                export — gross £84,925, VAT £10,402". ⚠ This example named a
+                ledger vendor until 2 Sep 2026, which D42 forbids: nothing in
+                this release publishes to accounting software.
             sections:
               type: array
               items:
@@ -5047,6 +6564,237 @@ components:
           type: [string, 'null']
           format: date-time
           description: When this client last sent anything. Null if they never have.
+        subscription:
+          description: |
+            The client's own plan, so the Settings tab can state the truth
+            instead of being decorative (D48, D49). Added 2 Sep 2026.
+
+            `subscriptionActive` above answers exactly one question — *may I
+            send a document right now* — and a plan panel needs two more: what
+            state the subscription is in, and when it renews. Without them the
+            only honest Settings tab was one with no plan section at all, and
+            the client who pays for this product could not see what they pay
+            for.
+
+            **The same `BusinessSubscription` projection the accountant reads**,
+            not a second opinion: it is already the local projection of what
+            Stripe knows, it already carries no price (Stripe's hosted checkout
+            and invoice are where the amount and the VAT are correct), and a
+            client-only copy would be one more thing to keep in step with a tax
+            rate. Optional and nullable — null until the client has been through
+            checkout, which for a chase session is always, since a chase session
+            has no summary at all.
+          oneOf:
+            - $ref: '#/components/schemas/BusinessSubscription'
+            - type: 'null'
+
+    PortalDocumentStatus:
+      type: string
+      description: |
+        A document's state **in the client's own vocabulary** — five words, and
+        the only five (D49's prototype names exactly these).
+
+        ⚠ **It is not `DocumentState` and must never become it.** The pipeline
+        has eight states and most of the distinctions between them are the
+        practice's working state, which is not the client's to see: whether a
+        document is `RECEIVED` or `PROCESSING` says how busy a queue is; whether
+        it is `REJECTED` or `FAILED` names an internal reason. What a client can
+        act on is one of five things, so those are the five values.
+
+        | | means, to the person who sent it |
+        |---|---|
+        | `processing` | We have it and we are reading it. Nothing to do. |
+        | `with_accountant` | Read, and now on your accountant's desk. Nothing to do. |
+        | `accepted` | Your accountant is happy with it. |
+        | `filed` | It has been through and released into your books. |
+        | `needs_another_copy` | We could not use it. Send it again. |
+
+        The mapping is made **server-side**, deliberately: it is the one place
+        it can be made once. A client that mapped it itself would be a second
+        opinion about what a document's state means, and the two would diverge
+        the first time a state was added.
+      enum: [processing, with_accountant, accepted, filed, needs_another_copy]
+
+    PortalDocument:
+      type: object
+      description: |
+        One document, as the person who sent it may see it.
+
+        **The client-facing counterpart of `DocumentSummary`, and much smaller
+        on purpose.** Everything in the practice's row shape that describes the
+        firm's own handling is absent here and its absence is the design:
+        no `state`, no `inbox`, no `categoryCode`, no `failureCode`, no
+        `retryable`, no `parentDocumentId`. A client asking "what happened to my
+        receipt" is answered by `status`; a client asking "where is it in your
+        queue" is asking something they are not entitled to know.
+
+        ⚠ **`supplierName` is UNTRUSTED CONTENT.** It is read off a scanned
+        document by a model, so it is data and never an instruction — rendered
+        as text, never interpolated into a prompt, never trusted to be short,
+        clean or free of markup.
+      required: [id, status, channel, receivedAt]
+      properties:
+        id:
+          type: string
+          description: |
+            Usable as the `documentId` on `GET /documents/{documentId}/original`
+            — but only for a document in this session's grant, which for a
+            portal session means one it sent itself. Anything else is a 404.
+        supplierName:
+          type: [string, 'null']
+          description: Who the document is from, as extracted. Null until extraction has read one. Untrusted content — see above.
+        documentDate:
+          type: [string, 'null']
+          format: date
+          description: A calendar date, not an instant. Null until extraction has read one.
+        totalPence:
+          type: [integer, 'null']
+          x-nt-money: true
+          description: Gross total in integer pence, paired with `currency`. Never a float, and never a formatted string — the portal formats it.
+        currency:
+          type: [string, 'null']
+          pattern: '^[A-Z]{3}$'
+          description: ISO 4217, for `totalPence`. Null exactly when `totalPence` is.
+        channel: { $ref: '#/components/schemas/DocumentChannel' }
+        status: { $ref: '#/components/schemas/PortalDocumentStatus' }
+        receivedAt:
+          type: string
+          format: date-time
+          description: When it reached us. The sort key for this list, newest first.
+
+    PortalPerson:
+      type: object
+      description: |
+        One person the business has given access to its own portal (D45, D49).
+
+        **⚠ It carries TWO different things that both get called "role", and
+        keeping them apart is the whole design of this shape.**
+
+        - `jobTitle` is FREE TEXT — *"a restaurant has a Head Chef and a site has
+          a Foreman, and forcing those into 'Staff' loses the only thing that
+          made the role worth recording"*. It is a label, it decides nothing, and
+          nothing in the server branches on it.
+        - `access` is the AUTHORITY, and it is `WorkspaceRole` — the enum
+          `prisma/schema.prisma` already carries a business-side user
+          administrator in. It decides everything, and the last-owner rule keys
+          on it rather than on a word somebody typed.
+
+        The prototype's single free-text field with Owner/Manager/Staff as
+        suggestions is preserved intact as `jobTitle`; what was lifted out of it
+        is the one meaning that had to be enforceable.
+
+        **This is NOT `BusinessMember`.** That shape answers the accountant's
+        question — who can reach this client, through which membership, at what
+        practice scope — and every one of those fields is about the FIRM. Here
+        the reader is the business, everybody in the list is one of their own
+        people, and `membershipId`/`userId`/`scope` would be null, meaningless or
+        both: a portal person is a `contacts` row and usually has no `users` row
+        at all.
+      required: [id, access, canSendDocuments, canSeeTotals, isYou, isActive, addedAt]
+      properties:
+        id:
+          type: string
+          description: The handle for `PATCH` and `DELETE`. Opaque; it is a `contacts` row id.
+        name: { type: [string, 'null'] }
+        email:
+          type: [string, 'null']
+          format: email
+          description: |
+            How they sign in and how a document they forward is recognised. One
+            address is one person on one workspace — the server refuses a second
+            person carrying an address already here, because two people sharing
+            one would collide on every sign-in code sent.
+        jobTitle:
+          type: [string, 'null']
+          description: Free text. Owner, Manager and Staff are suggestions on the screen, never an enum here.
+        access: { $ref: '#/components/schemas/WorkspaceRole' }
+        canSendDocuments:
+          type: boolean
+          description: |
+            May upload and photograph paperwork for this business. False is a
+            real state — somebody who should see what is outstanding without
+            being able to add to it.
+        canSeeTotals:
+          type: boolean
+          description: |
+            May see amounts. Off for staff photographing receipts — *"staff
+            photographing receipts should not see the company's figures"*.
+        isYou:
+          type: boolean
+          description: |
+            True on exactly one row — the person holding this session, resolved
+            from `otp_sessions.contact_id`. It is what lets the screen say "you"
+            and what makes the self-removal refusal legible before it is hit.
+        isActive:
+          type: boolean
+          description: |
+            False for somebody whose access was revoked. Removal is deactivation,
+            never deletion, so the documents they already sent keep their
+            provenance.
+        addedAt: { type: string, format: date-time }
+
+    PortalPeople:
+      type: object
+      description: |
+        The People screen's whole answer: the list, and what the SERVER would let
+        this session do to it.
+
+        `canManagePeople` is a fact for honest degradation and never a gate
+        (Governance §11.2 — *"a UI that merely hides the button is not an
+        implementation of this"*). The server refuses the mutation regardless of
+        what a browser believes; this field exists so a plain member is shown a
+        readable list with an explanation rather than a section that pretends
+        not to exist.
+      required: [people, canManagePeople, truncated]
+      properties:
+        people:
+          type: array
+          items: { $ref: '#/components/schemas/PortalPerson' }
+          description: Oldest first — the people who were there first read at the top, which is how a small team reads.
+        canManagePeople:
+          type: boolean
+          description: Whether this session may invite, change and remove. `BUSINESS_ADMIN` and `USER_ADMIN`; nobody else.
+        truncated:
+          type: boolean
+          description: |
+            True when the workspace holds more people than one response serves.
+            Said out loud rather than silently stopping — a list that quietly
+            omits somebody with access is worse than a long list.
+
+    PortalPersonInviteRequest:
+      type: object
+      required: [name, email, access]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Required. The screen refuses before this, in the same order the server does.
+        email: { type: string, format: email, maxLength: 254 }
+        jobTitle: { type: [string, 'null'], maxLength: 60 }
+        access:
+          $ref: '#/components/schemas/WorkspaceRole'
+          description: |
+            Only `BUSINESS_ADMIN`, `USER_ADMIN` and `BUSINESS_STANDARD` are
+            accepted; anything else is `NT-VAL-001`. The whole enum is referenced
+            rather than a subset because there is exactly one copy of
+            `WorkspaceRole` in this contract, checked against prisma verbatim,
+            and a subset schema would be a second copy free to drift — the same
+            reasoning `MemberInviteRequest` records.
+        canSendDocuments: { type: boolean, default: true }
+        canSeeTotals: { type: boolean, default: false }
+
+    PortalPersonUpdateRequest:
+      type: object
+      description: |
+        Every field optional; an omitted one is left alone. `email` is absent on
+        purpose — see the operation description.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        jobTitle: { type: [string, 'null'], maxLength: 60 }
+        access: { $ref: '#/components/schemas/WorkspaceRole' }
+        canSendDocuments: { type: boolean }
+        canSeeTotals: { type: boolean }
 
     PortalUploadRequest:
       type: object
@@ -5319,6 +7067,186 @@ components:
         acceptedAt: { type: [string, 'null'], format: date-time }
         createdAt: { type: string, format: date-time }
 
+    # ---- the practice's own team ------------------------------------------
+
+    PracticeMember:
+      type: object
+      description: |
+        One person who works at the firm.
+
+        Deliberately NOT `BusinessMember`. That shape answers "who can reach
+        this client", so its `scope` says whether the person arrives through a
+        practice-wide membership or one on that client alone. Here every row is
+        a colleague by definition, and what a screen needs instead is **which
+        clients they can reach** — `businessIds`, which is empty exactly when
+        they can reach all of them. Reusing one shape for both would have made
+        one of the two fields meaningless on every row it appeared on.
+      required: [userId, role, isOwner, businessIds, createdAt]
+      properties:
+        userId:
+          type: string
+          description: |
+            The person. There is no single `membershipId` here because a
+            client-scoped colleague holds ONE MEMBERSHIP PER CLIENT — the rows
+            are folded into one person, and the id of an arbitrary one of them
+            would be a handle that means nothing.
+        email: { type: [string, 'null'], format: email }
+        firstName: { type: [string, 'null'] }
+        lastName: { type: [string, 'null'] }
+        role: { $ref: '#/components/schemas/WorkspaceRole' }
+        isOwner:
+          type: boolean
+          description: |
+            The firm's super admin — the person who created the practice. With
+            `role` it is the whole of D44's release rule, so it is what a screen
+            reads to say who can release rather than guessing from the role
+            alone. Exactly one member of a practice carries it, and no operation
+            in this contract can move it.
+        businessIds:
+          type: array
+          description: |
+            The clients this colleague is scoped to. **Empty means practice-wide
+            — every client — not "none".** That is the honest reading of the
+            data: a practice-wide membership carries a null `business_id`, and a
+            person with no access at all has no membership and so is not on this
+            list.
+          items: { type: string }
+        hideFinancialFields:
+          type: boolean
+          description: |
+            `memberships.hide_financial_fields` (SoT §3.3), reported as stored.
+
+            ⚠ **Nothing in this release reads it when serving a document.** It
+            is on the row, it is settable at invitation, and the redaction it
+            describes is not implemented — so a screen must not present it as a
+            protection that is in force. It is here because reporting a column
+            that exists is honest and inventing one is not.
+        createdAt:
+          type: string
+          format: date-time
+          description: When they joined — the earliest of their memberships.
+
+    PracticeMemberInviteRequest:
+      type: object
+      description: |
+        An invitation to join the FIRM. Read the operation description before
+        this schema: the refusal set is the interesting part and it lives there,
+        with the reasoning for each refusal.
+      required: [email, role]
+      properties:
+        email: { type: string, format: email }
+        firstName: { type: [string, 'null'], maxLength: 100 }
+        lastName: { type: [string, 'null'], maxLength: 100 }
+        role:
+          $ref: '#/components/schemas/WorkspaceRole'
+          description: |
+            `PRACTICE_STANDARD` or `CLIENT_ADMIN` only. `PRACTICE_ADMIN` is
+            refused by name (`NT-VAL-001`) — see the operation description — and
+            so are the three business-level roles, which belong to a client's
+            own team list.
+        businessIds:
+          type: array
+          maxItems: 200
+          description: |
+            For a `PRACTICE_STANDARD`: the clients this colleague may reach, one
+            business-scoped membership each, after which RLS is the boundary.
+            Omitted or empty grants practice-wide access to every client.
+
+            Refused for `CLIENT_ADMIN`, which is practice-wide by definition —
+            accepting and discarding it would describe a grant that did not
+            happen. A `businessId` the INVITER cannot see is `404`.
+          items: { type: string }
+        hideFinancialFields:
+          type: boolean
+          default: false
+          description: |
+            Stored on the membership the acceptance creates (SoT §3.3).
+            ⚠ See `PracticeMember.hideFinancialFields`: the column is written
+            and nothing in this release reads it, so no screen may present it as
+            a protection currently in force.
+
+    InvitationPreviewRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: |
+            The token from the invitation email, exactly as it appeared in the
+            link. It is a credential: never log it, never echo it back, and
+            never put it anywhere a `Referer` header will carry it — which is
+            why this operation is a `POST` with a body rather than a `GET`.
+
+    InvitationPreview:
+      type: object
+      description: |
+        What the acceptance screen needs in order to be honest about what is
+        being accepted.
+
+        Unlike `/signup/check-email`, this screen MAY name the practice and the
+        role, and the difference is who is reading. That one answers an
+        anonymous caller who typed an address; this one answers somebody holding
+        a token we emailed to the address it names. Every fact below is already
+        in the mail they are reading it from.
+      required: [practiceName, email, role, expiresAt]
+      properties:
+        practiceName:
+          type: string
+          description: The firm doing the inviting. Nobody should set a password for an unnamed employer.
+        email:
+          type: string
+          format: email
+          description: The address invited. The acceptance creates the account with THIS address; it is not a field the invitee may change.
+        role: { $ref: '#/components/schemas/WorkspaceRole' }
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the invitation stops working. Shown, so a stale link is something a person retries rather than reports.
+        invitedByName:
+          type: [string, 'null']
+          description: |
+            Who sent it, when the row records it. Null is a real answer — an
+            invitation predating the column, or an inviter since removed — and
+            the screen simply omits the line rather than inventing a name.
+
+    InvitationAcceptanceRequest:
+      type: object
+      description: |
+        **No `role` and no `email`.** Both come from the invitation: what a
+        colleague may do was decided by the admin who invited them, and the
+        address is the one the token was delivered to. A body field for either
+        would let the person accepting decide it themselves.
+      required: [token, password, firstName, lastName]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        password:
+          type: string
+          minLength: 12
+          maxLength: 256
+          description: |
+            The same twelve-character minimum `PracticeSignupRequest` sets, and
+            for the same reason: length alone beats a composition rule, which
+            reliably produces `Password1!`. Measured in code points, so a
+            twelve-character passphrase is twelve characters in any alphabet.
+        firstName: { type: string, minLength: 1, maxLength: 100 }
+        lastName: { type: string, minLength: 1, maxLength: 100 }
+
+    InvitationAcceptanceResult:
+      type: object
+      description: |
+        The address the account was created with — everything the enrolment
+        screen needs and nothing else. **No session, no token, no user id.** The
+        account has no second factor yet; see the operation description for why
+        nothing here may stand in for one.
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+
     # ---- export and the capability URL (ID LAW batch) ----------------------
 
     ExportRequest:
@@ -5337,10 +7265,24 @@ components:
             Inclusive. A calendar date, not an instant — a period has a first
             day, not a first microsecond. Rendered `DD/MM/YYYY`: `04/08/2026` is
             4 August.
+
+            ⚠ **The period selects on the DOCUMENT'S OWN DATE, not on when it
+            was released for export.** An invoice belongs to the period it is
+            dated in — that is the accounting answer, it is what makes a
+            re-export of a closed month reproducible, and it is what the VT
+            journal import needs, since VT applies one date to a whole file
+            (§24.3.1). A document released today but dated last March is in
+            March's export and in no other.
+
+            The consequence is stated here because it is the one that surprises
+            people: a client whose Published documents all sit outside the
+            chosen period gets `NT-EXP-001`, and the refusal carries
+            `Problem.publishedOutsidePeriod` so the accountant is told where the
+            documents actually are rather than left to guess.
         periodEnd:
           type: string
           format: date
-          description: Inclusive.
+          description: Inclusive. Selects on the document's own date — see `periodStart`.
         documentIds:
           type: array
           maxItems: 500
@@ -5655,6 +7597,35 @@ components:
             and as the "Next" line on the client card.
           type: [string, 'null']
           format: date
+        primaryContactEmail:
+          description: |
+            The primary contact's address — the client's own person, as keyed
+            in at intake (`POST /businesses` writes it to `contacts` with
+            `is_primary`). The Clients board and the client's Settings tab
+            print it beside the mobile, and it is the channel this release
+            actually reaches a client on: chases are sent by EMAIL, so a
+            client record showing only a mobile shows the one contact detail
+            nothing is sent to.
+
+            **Optional and nullable, not required** — and the difference from
+            `counts` is the point. An absent count and a zero count are
+            indistinguishable once drawn, so that shape forces a producer to
+            say which it means. An absent email is not ambiguous in the same
+            way: a business may genuinely have no contact yet (the invite path
+            creates the workspace before anyone has registered), and `contacts`
+            makes the column nullable, so "we do not have one" is a real answer
+            rather than a producer staying silent about work in hand. Null is
+            therefore honest and is rendered as an em dash; a consumer must
+            never derive or guess an address to fill it.
+
+            **The primary contact is the one flagged `is_primary`, earliest
+            first if a client somehow carries several.** A contact the client
+            added themselves (D45 — their own team, written `is_primary:
+            false`) is never promoted into this field: a warehouse assistant's
+            address standing where the accountant expects the business owner's
+            is worse than an em dash.
+          type: [string, 'null']
+          format: email
         counts:
           type: object
           description: |

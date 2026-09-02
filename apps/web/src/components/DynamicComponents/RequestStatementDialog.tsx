@@ -62,7 +62,10 @@ export default function RequestStatementDialog({
 
   return (
     <Modal onClose={onClose} label={intl.formatMessage(m.title)}>
-      <div className="p-6 flex flex-col gap-4">
+      {/* The card surface every other `Modal` child draws. Without it this
+          dialog was bare text on the scrim, and — before the frame forced
+          `w-full` — a wrapper that shrink-wrapped to its own longest line. */}
+      <div className="w-full border border-white/5 rounded-[32px] bg-card shadow-2xl p-6 flex flex-col gap-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl bg-brand/10 text-brand flex items-center justify-center shrink-0">
             <CalendarDays size={18} />

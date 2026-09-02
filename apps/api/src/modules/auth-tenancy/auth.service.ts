@@ -203,7 +203,7 @@ export class AuthService {
       });
       const memberships = await db.membership.findMany({
         where: { userId: ctx.actorId },
-        select: { practiceId: true, businessId: true, role: true },
+        select: { practiceId: true, businessId: true, role: true, isOwner: true },
         orderBy: { createdAt: 'asc' },
       });
       const acting = pickActingMembership(memberships);
@@ -235,6 +235,10 @@ export class AuthService {
         },
         practice,
         role: acting.role,
+        // D44's other half: the release gate is `role AND isOwner`, so a screen
+        // that knows only the role cannot tell a user why Approve refused. It
+        // comes off the ACTING membership, the same row the role does.
+        isOwner: acting.isOwner,
         businesses,
       };
     });

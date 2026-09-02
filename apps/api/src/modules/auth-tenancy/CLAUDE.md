@@ -125,6 +125,59 @@ under a conditional write, and a replayed confirmation meeting `NT-AUTH-007`.
 ⚠ **This did NOT add a "no second factor configured, let them in" branch and
 must never grow one.** It is the door the refusal points at, not a way round it.
 
+### The invited colleague's way in (2 Sep 2026)
+
+`POST /v1/auth/invitation-preview` and `POST /v1/auth/invitation-acceptance`,
+routed from `SignupChainController` — which now serves **five** operations,
+because becoming a usable account is one problem reached through two doors.
+`invitation-acceptance.service.ts` is the other half of
+`POST /v1/practice-members` (`modules/clients-team-settings`).
+
+**It is the deliberate mirror of `practice-signup.service.ts`'s
+`provisionPractice`, and it differs in the one way that matters:** a signup has
+no tenant to be scoped to, and this does. The practice already exists, so nothing
+here runs unscoped — it runs under that practice's own SYSTEM context, found by
+**the sanctioned sweep** (now `systemActorsByPractice` in
+`common/db/resolve-system-actor.ts`, the home the two private copies in
+`modules/portal` should collapse onto). `invites` IS policed, so an unscoped read
+would simply return nothing and a hand-written practice filter would be the
+boundary rather than the database.
+
+Five things that are decisions:
+
+- **⚠ IT ISSUES NO SESSION, AND MUST NEVER GROW ONE.** The account it creates has
+  no second factor, and `OTP_MODE=totp` fails CLOSED for an account with no
+  enrolment — so a session minted here would be either unusable or a door around
+  the factor for anyone holding an invitation link. The invitee's next call is
+  the existing `POST /auth/totp-enrolment` with the password they just chose.
+- **The address is created `emailVerified: true`.** A claim about delivery, not a
+  shortcut: the token existed in one place only, an email this server sent to
+  that address, which is exactly what `POST /auth/email-verification` proves for
+  a self-signup. A second verification mail would ask the invitee to prove twice
+  what they proved once — and an unverified account cannot enrol
+  (`NT-AUTH-006`), so the flow would dead-end.
+- **One transaction, with a `SELECT … FOR UPDATE` on the invitation.** The sweep
+  finds WHICH practice can see the token; the row lock is what makes the
+  decision, because between the two a concurrent acceptance could have spent it.
+  A user without their membership 401s on every request afterwards, and a stamped
+  invitation with no user behind it can never be retried.
+- **`NT-AUTH-004` covers everything but expiry** — unknown token, a CLIENT
+  invitation presented at this door, one already accepted, and an address that
+  already has an account (including the `P2002` race). `NT-AUTH-005` is expiry
+  alone: the same split, and the same reasoning, as email verification. The
+  REASON is logged, because `portal/CLAUDE.md` records what a silent refusal that
+  is also a silent log costs.
+- **The role comes from the invitation, never the body.** What a colleague may do
+  was decided by the admin who invited them; a body field would let the invitee
+  decide it. `isOwner` is always false, so an invited colleague can never
+  release.
+
+`signup-audit.ts` grew `appendPracticeAuditEvent` — the NULL-business chain
+append, extracted when acceptance became its second writer. A third hand-rolled
+copy of the formula is exactly what that file's header warns about. The formula
+is unchanged byte for byte and `practice-signup.integration.test.ts` still
+recomputes it with approvals' canonical-hash.
+
 ### Real MFA and a sign-in lockout (launch stage A2)
 
 Two holes, both wide open until this stage. **The second factor was the literal
@@ -387,6 +440,30 @@ Where each count comes from, because "one cheap aggregate" is now four:
 | `approvals` | `actionProposal.groupBy`, state `CREATED` or `REVIEWED` — the same definition `suggestions.service.ts` uses |
 | `statementGaps` | **always zero.** Nothing in this repo writes `Statement.gapAnalysis`, so zero is the only honest answer; counting statements that merely have the column set would report gaps nobody found. One place to change. |
 
+**Widened again 2 Sep 2026 — `primaryContactEmail`** (contract change; the G7
+ceremony was retired on 1 Sep, so there is no issue behind it). A **fifth** read
+joins the `Promise.all`: `contact.findMany` over the same page of ids, `isPrimary:
+true`, ordered `created_at` ascending. `foldPrimaryContactEmails` (exported for
+its test) takes **first-wins per business**, so the answer is the longest-standing
+primary contact rather than whatever the planner returned first.
+
+Three things about it that are decisions:
+
+- **`contacts` DOES carry RLS** (unlike `memberships`), so the read is inside the
+  same `scopedDb` transaction as everything else and there is no hand-written
+  tenancy clause — the same guarantee the four aggregates have.
+- **No fallback to a non-primary contact.** D45 lets a client add their own team
+  and `team.service.ts` writes those `isPrimary: false`; promoting one would put a
+  warehouse assistant's address where the accountant expects the owner's. This
+  matches `billing.service.ts` and `compose-chase-send.ts`, the two places that
+  already resolve this person.
+- **A primary contact with a null `email` folds to null and does not fall
+  through.** `contacts.email` is nullable (a §3.3 phone-only contact is real), and
+  skipping to the next row would report a different person under the words
+  "primary contact". Both nulls mean the same honest thing and the UI draws an em
+  dash. The gap it closes: the client's Settings tab had no email row at all,
+  while ID chases by EMAIL (M8) — the one channel used was the one not shown.
+
 Four `groupBy`s over the whole page, issued together inside the ONE `scopedDb`
 transaction — the query count is fixed regardless of how many clients a
 practice has, and every aggregate sees the same RLS-visible set the page came
@@ -405,6 +482,24 @@ producer to say which.
 `foldCounts` is exported for its offline test; the RLS/pagination proof lives
 in `auth-session.integration.test.ts` (note its two id namespaces: `s1a_doc_*`
 is the visibility assertion's exact set, `s1a_cnt_*` is the counts cast).
+
+### `GET /me` carries `isOwner`, and all three layers now say so (2 Sep 2026)
+
+The field is REQUIRED by the contract, the browser parses `/me` with a
+`.strict()` schema, and D44's release gate is `role AND isOwner` — so a body that
+lost it is contract drift that logs everyone out of a screen which otherwise
+looks fine. Production was always correct (the `select` reads the column), but
+**no test would have noticed the `select` losing it**: `auth.service.test.ts`
+built its membership rows behind an `as unknown as PrismaClient` cast with no
+`isOwner` on them, so `me()` returned `undefined` in that test and the four
+assertions never looked. Closed at each altitude, because each can break
+independently:
+
+| Layer | What it now asserts |
+|---|---|
+| `auth.service.test.ts` | the fixture carries the flag, `me.isOwner` is asserted, and a second test proves it follows the **acting** membership rather than "any row with it set" |
+| `auth-session.integration.test.ts` | `s1a_mem_mine` is seeded `isOwner: true` — deliberately, not left to the column default, so the assertion cannot pass by coincidence — and read back through real Postgres and the real `select` |
+| `scripts/smoke/staging-golden-path.sh` | step 4 fails if `/v1/me` answers no `isOwner`. Checked as a **boolean**, not as `true`: whether the smoke account owns its practice is a fact about the seed, not about the endpoint |
 
 ## Tests
 
@@ -506,10 +601,14 @@ is declared once, in the mailer, so the mail and the screen that receives the li
 cannot drift. M9's landing page reads `token` from the query and posts it to
 `POST /v1/auth/email-verification`.
 
-⚠ **The origin is still a constant**, duplicated with
-`clients-team-settings/setup-link.ts`'s `DEFAULT_APP_ORIGIN`, because
-`config/env.ts` has no `APP_ORIGIN` key. Both sites point at the same missing
-key; promoting it is one line in each module.
+✅ **The origin is `env.APP_ORIGIN`** as of 2 Sep 2026 — the one line in each
+module that this note predicted. `SIGNUP_APP_ORIGIN` is gone. ⚠ The argument the
+constant carried survives as an OPERATOR instruction rather than a code comment:
+both hostnames are CloudFront aliases, but a verification mail naming a different
+host from the one a practice just signed up on is the phishing shape, to an
+audience trained to distrust exactly that. **Set `APP_ORIGIN` to the host
+customers arrive on, in every environment** — the default is a fallback, not a
+decision.
 
 ### ⚠ The verification link pointed at a route that did not exist (28 Aug 2026)
 

@@ -37,6 +37,7 @@ import {
   seedTeams,
   seedWorkflows,
 } from '../lib/seed2';
+import { resolveInitialTheme, storeTheme } from '../lib/theme-preference';
 import { autoMatches, DEFAULT_MATCH_SETTINGS, sameMerchant, shortLabel, txnLabel } from '../lib/matching';
 import { completeExtraction, ingestFiles, type IngestOptions } from '../lib/ingest';
 import { analyseSheet, readTable, sheetReadMessage } from '../lib/spreadsheet';
@@ -318,7 +319,17 @@ interface AppContextType {
    * as 'landing' and 'legal' — the whole point is that the visitor has no
    * account yet, so their browser must never fire the workspace `/me` probe.
    */
-  portal: 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload' | 'landing' | 'legal' | 'setup' | 'signup';
+  /**
+   * 'invite' is the invited COLLEAGUE's way in: `/invite?token=…`, the address
+   * `POST /v1/practice-members` emails. Distinct from 'setup', which is the
+   * invited CLIENT's — that one signs in with a six-digit code and never holds
+   * a password, this one creates a workspace user who chooses one. Public for
+   * the same reason as 'signup': the person opening the link has no account
+   * yet, so the `/me` probe could only 401.
+   */
+  portal:
+    | 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload'
+    | 'landing' | 'legal' | 'setup' | 'signup' | 'invite';
   /** The approval session the SMS link opened, when portal === 'approval'. */
   openApprovalRequestId: string | null;
   openApprovalLink: (requestId: string) => void;
@@ -627,7 +638,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [root, first, second] = segments;
 
   const portal:
-    | 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload' | 'landing' | 'legal' | 'setup' | 'signup' =
+    | 'accountant' | 'business' | 'approval' | 'registration' | 'chase-upload'
+    | 'landing' | 'legal' | 'setup' | 'signup' | 'invite' =
     // Bare `/` is the public landing page (launch stage M3), so the session
     // probe below never fires for a visitor who has not asked for the app —
     // the workspace root is `/app`.
@@ -649,6 +661,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // so a `/me` probe could only 401 and a login wall over this address
       // would be the door locking the person who came to be let in.
       : root === 'signup' ? 'signup'
+      // `/invite?token=…` — the invited COLLEAGUE's address, emailed by
+      // `POST /v1/practice-members`. Checked BEFORE the accountant fallthrough
+      // for the same reason `/app/setup` is: the person holding the link has no
+      // workspace session, and a login wall over this address would lock out
+      // exactly the person it invited. Like every portal value it keeps
+      // `workspaceApiOn` false, so no `/me` probe fires.
+      : root === 'invite' ? 'invite'
       : root === 'portal' ? 'business'
       : root === 'approve' ? 'approval'
       : root === 'register' ? 'registration'
@@ -697,8 +716,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
    * The businesses slice (METH Stage 6) — the hydration pattern's proof. It
    * lives above the other slices because their row mappers resolve client
    * names through it, and the id bridge below reads it as a dictionary.
+   *
+   * ⚠ **No `limit` any more, and that is the fix, not an omission.** All three
+   * slices in this file asked for `{ limit: 100 }` and nothing here ever read
+   * the `pageInfo` the api layer handed back, so each of them silently stopped
+   * at a hundred rows. The hooks now follow the cursor to the end
+   * (`api/paged.ts`) and set the page size themselves at the contract's own
+   * maximum; a `limit` written here would only cap the FIRST page and make
+   * every request smaller for no gain.
    */
-  const businessesQuery = useBusinesses({ enabled: slicesOn, params: { limit: 100 } });
+  const businessesQuery = useBusinesses({ enabled: slicesOn });
 
   /**
    * The seed↔server client-id bridge (METH S14 hardening).
@@ -787,7 +814,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [localClients, businessesQuery.businesses],
   );
 
-  const documentsQuery = useDocuments({ enabled: slicesOn, clientNameFor, params: { limit: 100 } });
+  // No `limit` — see the businesses slice above. The hook reads every page.
+  const documentsQuery = useDocuments({ enabled: slicesOn, clientNameFor });
 
   useEffect(() => {
     if (!API_ENABLED || documentsQuery.documents.length === 0) return;
@@ -809,8 +837,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
    * ⚠ Server rows carry `matchState` and NOT `matchedDocId` — the contract has
    * no field for the matched document's id. `isMatched()` is what every screen
    * asks instead; see `lib/matching.ts`.
+   *
+   * ⚠ **This line said `params: { limit: 100 }` and was the single worst data
+   * defect in the product.** A real client held 2,288 transactions; this asked
+   * for a hundred and nothing here read the `nextCursor` the api layer was
+   * already handing back, so **95.6% of that client's bank data was unreachable
+   * with no indication of any kind**. It was invisible because the old seed had
+   * 27 rows, and it was not merely a short table: BankView's "unexplained"
+   * total, its footer counts, the Analytics unmatched tile and the chase
+   * candidate lists all reduce over this array. The hook reads every page now
+   * (`api/paged.ts`) and says so when it cannot.
    */
-  const bankQuery = useBankTransactions({ enabled: slicesOn, clientNameFor, params: { limit: 100 } });
+  const bankQuery = useBankTransactions({ enabled: slicesOn, clientNameFor });
   const refetchBank = bankQuery.refetch;
   const refetchDocuments = documentsQuery.refetch;
   const refetchBusinesses = businessesQuery.refetch;
@@ -895,6 +933,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
               missingDocs: stats.missing,
               toReview: stats.toReview,
               deadline: b.nextDeadline == null ? '' : formatDeadline(b.nextDeadline),
+              // The primary contact's address, served since the 2 Sep 2026
+              // widening. `null` (no primary contact, or one with no address on
+              // file) becomes `undefined` so it reads the same as every other
+              // absent field on this shape and renders as an em dash — the
+              // panel must never invent one. It is DISPLAY ONLY: nothing in
+              // this app can write a contact email back (see `Client.email`).
+              email: b.primaryContactEmail ?? undefined,
               bankConnected: true,
               // "Awaiting client registration" — the board prints this where the
               // sector goes, and it is a claim about the CLIENT, not about how
@@ -1085,9 +1130,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // with the API on, the name, intake address and WhatsApp number start empty
   // and the screens say "not set" rather than "Migrate Properly LLP" (launch
   // M8). The behavioural defaults (thresholds, toggles) stand either way.
-  const [settings, setSettings] = useState<AppSettings>(
-    SYNTHETIC ? DEFAULT_SETTINGS : { ...DEFAULT_SETTINGS, practiceName: '', docEmail: '', whatsappNumber: '' },
-  );
+  //
+  // ⚠ `theme` is the one field that does NOT come from `DEFAULT_SETTINGS`. It
+  // is `resolveInitialTheme()` — the stored choice, else the operating
+  // system's `prefers-color-scheme` — because `DEFAULT_SETTINGS.theme` is a
+  // hardcoded 'light' and seeding from it threw every dark-mode user back into
+  // light on every reload. The same answer is computed inline in `index.html`
+  // before the first paint; recomputing it here is what makes React's state
+  // agree with the class already on `<html>`, so the effect in `App.tsx` is a
+  // no-op on load rather than a second, visible flip.
+  const [settings, setSettings] = useState<AppSettings>(() => {
+    const base = SYNTHETIC
+      ? DEFAULT_SETTINGS
+      : { ...DEFAULT_SETTINGS, practiceName: '', docEmail: '', whatsappNumber: '' };
+    return { ...base, theme: resolveInitialTheme() };
+  });
 
   /**
    * Duplicates are derived, never stored: a flag is a live opinion about the
@@ -2649,6 +2706,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addTask = useCallback((task: WorkflowTask) => setTasks((prev) => [task, ...prev]), []);
 
   const updateSettings = useCallback((patch: Partial<AppSettings>) => {
+    // The theme is the ONE setting that outlives the tab, and this is the only
+    // place it is written. Both controls that offer it — the sidebar toggle and
+    // the Settings radio — come through here, and a patch naming a theme is the
+    // only signal in this app that a human picked one. Persisting from the
+    // effect that APPLIES the class would instead write on every mount, pinning
+    // whatever `prefers-color-scheme` happened to say at first load and quietly
+    // never following the operating system again.
+    if (patch.theme) storeTheme(patch.theme);
     setSettings((prev) => ({ ...prev, ...patch }));
   }, []);
 
