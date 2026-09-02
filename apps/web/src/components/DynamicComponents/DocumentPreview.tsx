@@ -366,6 +366,24 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
     });
   };
 
+  /**
+   * ⚠ There is no `scrollIntoView` here any more, and its absence is the fix
+   * rather than the loss of one.
+   *
+   * #243 found that staging a correction "appeared to do nothing" on a phone:
+   * the card rendered INLINE below the Path-to-Ready and bank-match panels, the
+   * row closed still showing the old value (correct — nothing changes before
+   * approval), and the card that explains that sat off-screen. Its answer was a
+   * ref on the inline card plus a smooth scroll to it.
+   *
+   * This branch removed the inline card entirely: the staged correction is
+   * `CodingProposalModal` now (see its header), a scrimmed dialog — a bottom
+   * sheet on a phone, a floating card from 640 up. It cannot be off-screen, so
+   * the symptom #243 fixed cannot occur and there is nothing left to scroll to.
+   * Keeping both would render the correction TWICE, once in the ~300 px column
+   * the dialog exists to escape.
+   */
+
   return (
     <div className="w-full max-w-3xl border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden flex flex-col">
       <div className="p-6 flex items-start justify-between gap-4 border-b border-white/5">

@@ -1,4 +1,5 @@
-import { PencilLine } from 'lucide-react';
+import { useState } from 'react';
+import { AlertTriangle, PencilLine } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { defineMessages, useIntl } from 'react-intl';
 import type { UpdateCodingPayload } from '@neoting/contracts/model';
@@ -29,6 +30,16 @@ const m = defineMessages({
   failedAudit: { id: 'documents.codingProposal.failedAudit', defaultMessage: 'Coding correction was refused' },
   supplierUnread: { id: 'documents.codingProposal.supplierUnread', defaultMessage: 'No supplier read' },
   customerUnread: { id: 'documents.codingProposal.customerUnread', defaultMessage: 'No customer read' },
+  /**
+   * 2 Sep 2026: the refusal used to go ONLY to the audit log, while the gate's
+   * own banner said "Correction approved" — a green lie over a write that
+   * never happened. The failure is on the card now, in front of the person
+   * who has to act on it.
+   */
+  failedOnCard: {
+    id: 'documents.codingProposal.failedOnCard',
+    defaultMessage: 'That correction was NOT saved — {reason}. The value on the document is unchanged. Try again, and tell us if it keeps happening.',
+  },
 });
 
 /**
@@ -86,6 +97,7 @@ export default function CodingProposalCard({
   const intl = useIntl();
   const { updateDocumentField, logAudit } = useAppContext();
   const queryClient = useQueryClient();
+  const [refused, setRefused] = useState<string | null>(null);
 
   // One substitution point, so the subtitle and the audit line can never
   // disagree about which document was corrected.
@@ -96,12 +108,18 @@ export default function CodingProposalCard({
   const approve = () => {
     // Optimistic: every surface deriving from the documents array agrees at
     // once. The refetch below re-asserts server truth either way.
+    setRefused(null);
     updateDocumentField(doc.id, fieldLabel, nextValue);
     void updateCodingProposal({ businessId: doc.clientId, documentId: doc.id, fields })
       .catch((error: unknown) => {
+        const reason = error instanceof Error ? error.message : 'unknown error';
+        // On the CARD as well as in the audit log — the gate has already shown
+        // its success banner by now, and a refusal only a log can see reads as
+        // a save that quietly did nothing (2 Sep 2026, the Groceries bug).
+        setRefused(reason);
         logAudit({
           action: intl.formatMessage(m.failedAudit),
-          scope: `${fieldLabel} — ${error instanceof Error ? error.message : 'unknown error'}`,
+          scope: `${fieldLabel} — ${reason}`,
           reviewOpened: true,
         });
       })
@@ -109,6 +127,17 @@ export default function CodingProposalCard({
         void refreshDocument(queryClient, doc.id);
       });
   };
+
+  if (refused !== null) {
+    return (
+      <div role="alert" className="p-4 rounded-2xl border border-red-500/20 bg-red-500/5">
+        <p className="flex items-start gap-2 text-[13px] font-semibold text-red-400 leading-relaxed">
+          <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+          {intl.formatMessage(m.failedOnCard, { reason: refused })}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <ReviewGate

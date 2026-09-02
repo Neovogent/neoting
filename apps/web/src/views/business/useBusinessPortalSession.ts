@@ -32,13 +32,22 @@ import { mimeTypeFor } from './portalUploadRules';
  * telephoning their accountant. The contract's `setupToken` is optional now, so
  * the address alone names the workspace.
  *
- * ## The bearer lives in React state and nowhere else
+ * ## The bearer lives in React state plus `sessionStorage` — never anywhere durable
  *
- * Not `localStorage`, not a cookie, not a module singleton — the same rule the
- * chase portal follows and for the same reason: it is a credential over a
- * client's financial records held by a person who cannot re-prove anything, and
- * persisting it would leave a standing upload token on a phone that gets handed
- * round the till. It dies with the tab, which is the intended lifetime.
+ * Until 2 Sep 2026 it was React state alone, "the same rule the chase portal
+ * follows", and every reload signed the client out — a fresh emailed code per
+ * F5, found on the first real walkthrough. That was stricter than the rule it
+ * cited: the intended lifetime was always "dies with the tab" (no standing
+ * credential on a phone that gets handed round the till), and losing the
+ * session to a RELOAD was an artifact of where the state lived, not a property
+ * anyone argued for. `sessionStorage` has exactly the stated lifetime — gone
+ * when the tab closes, never shared across tabs, never on disk beyond the
+ * session — so the bearer now survives a reload and nothing else.
+ *
+ * Not `localStorage` and not a cookie, still: both outlive the tab, and the
+ * server-side hour (`PORTAL_SESSION_TTL_MS`) is the backstop, not the fence.
+ * ⚠ The CHASE portal keeps the memory-only rule unchanged — that bearer is an
+ * anonymous delegated grant from a link, and stays as strict as it was.
  *
  * ## Every refusal is the same refusal
  *
@@ -63,7 +72,53 @@ import { mimeTypeFor } from './portalUploadRules';
  *   leave the device.
  */
 
-export type SignInStep = 'address' | 'code' | 'in';
+export type SignInStep = 'address' | 'code' | 'in' | 'resuming';
+
+/**
+ * Where the bearer survives a reload. `sessionStorage`, deliberately — see the
+ * module header. The try/catch is for browsers where storage access throws
+ * (private modes, storage-partitioned iframes); there the portal degrades to
+ * the old behaviour, memory-only.
+ */
+const BEARER_KEY = 'nt-business-portal-bearer';
+
+/**
+ * ⚠ The session's `expiresAt` is stored BESIDE the bearer, and it has to be.
+ * This hook watches the bearer's own clock so the client is told the session
+ * ended rather than discovering it through an upload that fails; restoring a
+ * bearer without its clock would leave that watch inert after exactly the
+ * reload the bearer now survives, and the first thing the client learned would
+ * be a failure again. It is a timestamp, not a credential, and it dies with the
+ * tab like the bearer does.
+ */
+const EXPIRES_KEY = 'nt-business-portal-expires';
+
+function storedBearer(): string | null {
+  try {
+    return window.sessionStorage.getItem(BEARER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storedExpiry(): string | null {
+  try {
+    return window.sessionStorage.getItem(EXPIRES_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storeSession(token: string | null, expiresAt: string | null): void {
+  try {
+    if (token === null) window.sessionStorage.removeItem(BEARER_KEY);
+    else window.sessionStorage.setItem(BEARER_KEY, token);
+    if (expiresAt === null) window.sessionStorage.removeItem(EXPIRES_KEY);
+    else window.sessionStorage.setItem(EXPIRES_KEY, expiresAt);
+  } catch {
+    /* memory-only fallback */
+  }
+}
 
 /**
  * What one send produced.
@@ -110,7 +165,7 @@ export interface BusinessPortalSession {
   /** Stripe's own customer portal — card, invoices, cancellation. Redirects. */
   manageBilling(): Promise<void>;
   signOut(): void;
-  /** The bearer, for the surfaces that need it directly. Never persisted. */
+  /** The bearer, for the surfaces that need it directly. Lives in state + sessionStorage, nowhere durable. */
   readonly token: string | null;
 }
 
@@ -138,22 +193,60 @@ function messageFor(error: unknown, fallback: string): string {
   return fallback;
 }
 
-/** Whether the server has told us this bearer is finished. */
+/**
+ * Whether the server has told us this bearer is finished.
+ *
+ * ⚠ Two tests, not one, and the second is #243's. `NT-OTP-002` is the expiry
+ * the server NAMES; a bare `401` on a portal read is the same fact arriving
+ * without that code, and treating it as an ordinary failure is the trap #243
+ * reported — the dead bearer is held, "we could not refresh this" prints for
+ * ever, and the client has no way to reach the one action that fixes it. Any
+ * 401 here ends the session.
+ */
 function isExpiryRefusal(error: unknown): boolean {
-  return error instanceof NtProblemError && error.code === SESSION_EXPIRED_CODE;
+  if (!(error instanceof NtProblemError)) return false;
+  return error.code === SESSION_EXPIRED_CODE || error.status === 401;
 }
 
 export function useBusinessPortalSession(): BusinessPortalSession {
-  const [step, setStep] = useState<SignInStep>('address');
+  const [token, setToken] = useState<string | null>(storedBearer);
+  const [step, setStep] = useState<SignInStep>(token === null ? 'address' : 'resuming');
   const [email, setEmail] = useState('');
-  const [token, setToken] = useState<string | null>(null);
-  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  // Restored alongside the bearer, so the client-side expiry watch below still
+  // works after a reload rather than only in the tab that signed in.
+  const [expiresAt, setExpiresAt] = useState<string | null>(storedExpiry);
   const [expired, setExpired] = useState(false);
   const [home, setHome] = useState<BusinessPortalHome | null>(null);
   const [documents, setDocuments] = useState<PortalSentPage | null>(null);
   const [documentsFault, setDocumentsFault] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The resume is spent once — a StrictMode double-mount must not ask twice.
+  const resumed = useRef(false);
+
+  useEffect(() => {
+    if (resumed.current || step !== 'resuming' || token === null) return;
+    resumed.current = true;
+    void fetchBusinessPortalHome(token)
+      .then((loaded) => {
+        if (loaded === null) throw new Error('no summary');
+        setHome(loaded);
+        setStep('in');
+      })
+      .catch(() => {
+        // Expired, revoked, or the hour ran out — the stored bearer is dead.
+        // Dropping to the address form with no error banner is deliberate:
+        // "your session ended" is the normal morning-after state, not a fault.
+        // ⚠ Deliberately NOT `expire()`: that raises `expired`, which is the
+        // sentence for a session that ended UNDER the client mid-visit. A
+        // resume that finds yesterday's bearer dead is the ordinary way this
+        // starts, and it must open the sign-in form saying nothing.
+        storeSession(null, null);
+        setToken(null);
+        setExpiresAt(null);
+        setStep('address');
+      });
+  }, [step, token]);
 
   // Nothing may set state after the client has closed the tab or navigated
   // away mid-upload — the sends below outlive a tab change on a phone.
@@ -172,6 +265,9 @@ export function useBusinessPortalSession(): BusinessPortalSession {
    * and a dead credential kept in state is a dead credential kept in state.
    */
   const expire = useCallback(() => {
+    // The stored copy goes with the state copy, or a reload would resume a
+    // bearer this call has just declared dead.
+    storeSession(null, null);
     setToken(null);
     setExpiresAt(null);
     setHome(null);
@@ -225,6 +321,7 @@ export function useBusinessPortalSession(): BusinessPortalSession {
         // the top of this file for what discarding it cost.
         setExpiresAt(session.expiresAt);
         setExpired(false);
+        storeSession(session.token, session.expiresAt);
         setHome(loaded);
         setStep('in');
       } catch (caught) {
@@ -247,6 +344,12 @@ export function useBusinessPortalSession(): BusinessPortalSession {
       if (loaded !== null) setHome(loaded);
     } catch (caught) {
       if (!alive.current) return;
+      // A 401 mid-visit means the server-side hour ran out. Holding the dead
+      // bearer and printing "could not refresh" forever is a trap — end the
+      // session, so the next action is the address form asking for a fresh
+      // code. `expire()` is what does it (it also clears the stored bearer and
+      // raises `expired`, which is the flag the view renders its own react-intl
+      // sentence from — never a hard-coded English string from this hook).
       if (isExpiryRefusal(caught)) {
         expire();
         return;
@@ -418,7 +521,8 @@ export function useBusinessPortalSession(): BusinessPortalSession {
   }, [token, businessId]);
 
   const signOut = useCallback(() => {
-    // The token is only ever in this state, so dropping it IS the sign-out.
+    // Dropping the state and the sessionStorage copy together IS the sign-out.
+    storeSession(null, null);
     setToken(null);
     setExpiresAt(null);
     setExpired(false);

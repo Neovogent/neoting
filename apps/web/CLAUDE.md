@@ -380,11 +380,20 @@ Five things that are decisions, not details:
   telephoning their accountant. Omitted, the address alone names the workspace,
   which the server permits only when it names **exactly one** business. An
   address on two is refused rather than guessed at.
-- **The bearer lives in React state and nowhere else** — not `localStorage`, not
-  a cookie. The same rule and the same reason as the chase portal: it is a
+- **The bearer lives in React state plus `sessionStorage`** — never
+  `localStorage`, never a cookie, both of which outlive the tab. It is a
   credential over a client's financial records, held by someone who cannot
-  re-prove anything, on a phone that gets handed round the till. It dies with
-  the tab.
+  re-prove anything, on a phone that gets handed round the till, so the rule is
+  and always was **"it dies with the tab"** — and `sessionStorage` has exactly
+  that lifetime. It said "React state and nowhere else" until #243, which is
+  stricter than the rule it cited and cost the client a fresh emailed code on
+  every reload. The session's `expiresAt` is stored beside it, so the hook's own
+  expiry watch survives the reload the bearer now survives. ⚠ **The CHASE portal
+  keeps the memory-only rule unchanged** — that bearer is an anonymous delegated
+  grant from a link, and stays as strict as it was. ⚠ `vitest.setup.ts` clears
+  `sessionStorage` after every test for the same reason it resets the viewport:
+  a test that signed in must not decide whether the next one sees a sign-in
+  form.
 - **⚠ NO COPY MAY SAY WHETHER AN ACCOUNT EXISTS.** `sign-in-codes` answers `202`
   whatever happened, so the code step is reached even for an address nothing was
   sent to, and `requestCode` **always** advances the step — branching on the
@@ -1213,6 +1222,13 @@ What did it:
    chunk. Taken anyway: it is a tripwire under any future `lazy()` on those
    tabs. The synthetic portal's 10,408 B came from `BusinessHomeView`'s
    `DocumentPreview` going lazy, not from `Panel`.
+
+⚠ **Re-measured after `origin/main` merged in (3 Sep 2026): every route moved
++41 to +299 B** — main's forgotten-password screens, the `#244` proposal-body
+parse helper and the portal's `sessionStorage` resume, none of it attributable
+to one change. **No route crossed the budget**; the two over it are the same two
+(`AIWorkspaceView` 290,575 · `SyntheticBusinessPortal` 264,309). `InboxesView`
+is 247,703 — **2,297 B of headroom**, still the thinnest on the board.
 
 ⚠ **`InboxesView` has 2,338 B of headroom and is now the thinnest on the board.**
 Its next lever is `AnalysisModal` itself (8,540 B) — a dialog, and lazy-able —

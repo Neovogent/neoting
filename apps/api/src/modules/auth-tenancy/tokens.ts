@@ -40,4 +40,10 @@ export const EMAIL_VERIFICATION_SERVICE = Symbol('EMAIL_VERIFICATION_SERVICE');
  * one problem reached through two doors.
  */
 export const INVITATION_ACCEPTANCE_SERVICE = Symbol('INVITATION_ACCEPTANCE_SERVICE');
+/**
+ * `POST /v1/auth/password-resets` + `POST /v1/auth/password` — the
+ * forgotten-password flow (`password-reset.service.ts`). The third door onto
+ * the same controller, for the same reason as the two above.
+ */
+export const PASSWORD_RESET_SERVICE = Symbol('PASSWORD_RESET_SERVICE');
 export const PRISMA = Symbol('AUTH_TENANCY_PRISMA');

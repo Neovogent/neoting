@@ -94,6 +94,9 @@ const PER_ADDRESS_HOURLY: Readonly<Record<EmailKind, number>> = Object.freeze({
   // more than anyone needs — a fourth means the first three went somewhere the
   // person cannot read, and a fifth does not fix that.
   'email-verification': 3,
+  // Same class and same reasoning as email-verification: a stranger can point
+  // this at any address, and three unread reset mails are not fixed by a fourth.
+  'password-reset': 3,
   // Tighter still. This one is sent *because* someone else typed your address:
   // it exists to make the uninformative 202 honest, and an attacker repeating
   // the signup must not turn that courtesy into a mailbombing service.

@@ -382,7 +382,18 @@ it no longer forces a split across two columns.
 - [ ] **A durable idempotency store.** The in-memory one is per-process; see the note above
       for why this surface can live with that and a publish could not.
 - [x] **A10** — settled, and it rewrote the target rather than two constants. See the
-      section above. Click-through is **still unconfirmed**, so rung 4 stays shipped.
+      section above. ✅ **Click-through CONFIRMED on 2 Sep 2026, from a real export**:
+      the first live client walkthrough released a real document (Sparkle Cleaning's
+      Bidfood receipt), exported it, and the capability URL in Column B
+      (`https://neoacc.neovogent.com/d/<code>`) answered 302 → presigned S3 → 200
+      `image/jpeg` through the production edge, sessionless, on both the web alias
+      and the API origin. Rung 4 stays shipped as belt-and-braces.
+      ⚠ One product finding from the same export: a category set by a coding
+      correction travels as the bare name ("Groceries"), so the emitter raises
+      `analysis-account-unprefixed` and VT will not auto-match it — the correction
+      path has no chart-of-accounts vocabulary yet. Open question for the owner:
+      constrain corrections to the client's chart (the chat rule draft's stance) or
+      accept the manual VT mapping.
 - [ ] **The £0.00 split line.** Try the designer’s "Repeated columns" range — several
       analysis triplets on one row would remove the artefact entirely.
 - [ ] **`ExportWarning`’s description in `openapi.yaml` is now wrong** — it cites

@@ -6,6 +6,7 @@ import type { Response } from 'express';
 import type { AppException } from '../../common/problem/problem.js';
 import type { EmailVerificationService } from './email-verification.service.js';
 import type { InvitationAcceptanceService } from './invitation-acceptance.service.js';
+import type { PasswordResetService } from './password-reset.service.js';
 import { RateLimitedException, SIGN_IN_MAX_FAILURES } from './sign-in-throttle.js';
 import { SignupChainController } from './signup-chain.controller.js';
 import type { TotpEnrolmentService } from './totp-enrolment.service.js';
@@ -27,6 +28,8 @@ interface Calls {
   confirm: unknown[];
   preview: string[];
   accept: unknown[];
+  request: string[];
+  reset: Array<[string, string]>;
 }
 
 const PREVIEW = {
@@ -38,7 +41,7 @@ const PREVIEW = {
 } as const;
 
 function harness(throwing?: Error): { controller: SignupChainController; calls: Calls; headers: Record<string, string> } {
-  const calls: Calls = { verify: [], begin: [], confirm: [], preview: [], accept: [] };
+  const calls: Calls = { verify: [], begin: [], confirm: [], preview: [], accept: [], request: [], reset: [] };
   const raise = (): never => {
     throw throwing;
   };
@@ -76,7 +79,22 @@ function harness(throwing?: Error): { controller: SignupChainController; calls: 
     },
   } as unknown as InvitationAcceptanceService;
 
-  return { controller: new SignupChainController(verification, enrolment, invitations), calls, headers: {} };
+  const passwordReset = {
+    request: async (email: string) => {
+      calls.request.push(email);
+      if (throwing) raise();
+    },
+    reset: async (token: string, newPassword: string) => {
+      calls.reset.push([token, newPassword]);
+      if (throwing) raise();
+    },
+  } as unknown as PasswordResetService;
+
+  return {
+    controller: new SignupChainController(verification, enrolment, invitations, passwordReset),
+    calls,
+    headers: {},
+  };
 }
 
 /** Just enough of express's Response for `@Res({ passthrough: true })`. */

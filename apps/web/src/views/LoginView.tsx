@@ -65,6 +65,8 @@ const m = defineMessages({
    * without an account had nowhere to go.
    */
   noAccount: { id: 'auth.loginView.noAccount', defaultMessage: 'No account yet? Create your practice' },
+  /** 2 Sep 2026 — the door the forgotten-password flow put beside sign-in. */
+  forgotPassword: { id: 'auth.loginView.forgotPassword', defaultMessage: 'Forgotten your password?' },
   wordmarkTitle: {
     id: 'auth.loginView.wordmarkTitle',
     defaultMessage: 'Neo Accounting',
@@ -229,12 +231,20 @@ export function LoginView() {
           </button>
         </form>
 
-        <a
-          {...linkProps('/signup')}
-          className="text-[13px] font-bold text-brand hover:underline self-start"
-        >
-          {intl.formatMessage(m.noAccount)}
-        </a>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
+          <a
+            {...linkProps('/signup')}
+            className="text-[13px] font-bold text-brand hover:underline"
+          >
+            {intl.formatMessage(m.noAccount)}
+          </a>
+          <a
+            {...linkProps('/signup/reset')}
+            className="text-[13px] font-bold text-zinc-500 hover:text-white transition-colors"
+          >
+            {intl.formatMessage(m.forgotPassword)}
+          </a>
+        </div>
 
         <p className="text-[12px] text-zinc-600 leading-relaxed">{intl.formatMessage(m.audit)}</p>
       </div>

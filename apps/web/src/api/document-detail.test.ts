@@ -2,11 +2,14 @@ import { describe, expect, it, test } from 'vitest';
 
 import { getDocumentResponse } from '@neoting/contracts/zod';
 
+import { createActionProposalBody } from '@neoting/contracts/zod';
+
 import {
   CATEGORY_LABEL,
   FIELD_PRESENTATION,
   isEditableLabel,
   parseCodingDraft,
+  parseCreateProposalHalves,
   parseDocumentDetail,
   ruleIdFromEvents,
   toCodingSuggestion,
@@ -417,4 +420,37 @@ test('a genuinely wrong body is still refused, with the field named', () => {
   expect(parsed.ok).toBe(false);
   if (parsed.ok) return;
   expect(parsed.detail.length).toBeGreaterThan(0);
+});
+
+describe('parseCreateProposalHalves — the outbound boundary that actually works', () => {
+  const body = {
+    kind: 'document.update-coding',
+    businessId: 'biz_1',
+    payload: { documentId: 'doc_1', fields: { categoryCode: 'Groceries' } },
+  };
+
+  test('a valid update-coding body passes', () => {
+    expect(() => parseCreateProposalHalves(body)).not.toThrow();
+  });
+
+  test('a body the contract refuses is refused with the kind named, before the network', () => {
+    expect(() =>
+      parseCreateProposalHalves({
+        kind: 'document.update-coding',
+        businessId: 'biz_1',
+        payload: { documentId: 'doc_1', fields: { currency: 'pounds' } },
+      }),
+    ).toThrow(/update-coding/);
+  });
+
+  test('⚠ THE PIN: the generated whole-body parse still rejects every valid body', () => {
+    // orval's strict-intersection gap on the REQUEST side (getChaseResponse's
+    // twin): each union member is strict().and(strict()), so each half refuses
+    // the other half's keys and NO real body can ever pass. This is why
+    // parseCreateProposalHalves exists. It cost a real correction on
+    // 2 Sep 2026 — the parse threw before fetch and the card said "approved".
+    // When orval fixes the generation this test fails, and the halves
+    // workaround gets deleted in favour of the one-line parse.
+    expect(createActionProposalBody.safeParse(body).success).toBe(false);
+  });
 });

@@ -68,24 +68,36 @@ reaching Stripe, refused bearer → 401), and
 `modules/portal/portal-client-surface.integration.test.ts` proves the 404
 through the REAL resolver over a REAL `otp_sessions` row.
 
-## Staging is REAL Stripe now, against a sandbox
+## ⚠ Staging is LIVE-mode Stripe now (found 2 Sep 2026)
 
-**Staging runs `BILLING=stripe` against a SANDBOX since 28 Aug 2026.** It ran
-`demo` until then, and that was not merely a weaker environment: `subscription_status`
-is written ONLY by the Stripe webhook, so on `demo` it stayed null, `mayIngest(null)`
-was false, and every upload 402'd — the walkthrough died at the step after
-sign-in. The "no card can be charged" guarantee moved rather than went away: it
-is now the ACCOUNT, not the adapter, and `4242 4242 4242 4242` is the only card
-that works. See `docs/runbooks/stripe-billing.md` §7 and
-`infra/envs/staging/services.tf`.
+**The paragraph that used to stand here said staging ran against a SANDBOX
+with an `rk_test_` key and that no card could be charged. That is no longer
+true and reading it as true costs somebody real money.** The stored
+`/neoting/staging/stripe` secret carries an `rk_live_…` restricted key —
+discovered when a walkthrough checkout refused `4242 4242 4242 4242` with
+*"Your request was in live mode, but used a known test card"*. The swap was
+made from the dashboard side (the account also carries hand-minted coupons:
+"Live payment test", `DISCOUNT30`), not by a PR, which is why no file said so.
 
-The key is **restricted** (`rk_test_`), with Write on Customers, Checkout
-Sessions and Customer Portal and nothing else — the same three the live-mode
-rule asks for. §4's VAT probe was re-run against it on the deployed
-configuration and still reads **850 / 170 / 1020**, which is also the check that
-the key belongs to the account owning the price: the account has a second
-sandbox whose keys look identical and fail with "No such price" at the moment a
-client presses Subscribe.
+Consequences, all live:
+
+- **A real card at staging checkout is really charged £10.20/month.** Test
+  clients must subscribe through a 100%-off promotion code instead — see
+  below. The test-card guarantee is GONE.
+- The sandbox history (BILLING=stripe since 28 Aug 2026, why `demo` 402'd
+  every upload, the 850/170/1020 VAT probe) still explains the architecture;
+  only the which-account fact changed.
+
+**Minting a promotion code is `scripts/billing/create-promotion-code.ts`** —
+manual-only, BY DESIGN (Shakib, 2 Sep 2026: backend only, no UI; who gets
+money off is a human decision, not a product feature). Defaults are the safe
+test shape: 100% off, duration **forever** (never `once` for a test
+subscription — `once` frees the first invoice and charges the real card the
+full amount a month later), max_redemptions 1. The hosted checkout's existing
+`allow_promotion_codes: true` field is where a code is typed; nothing deploys.
+⚠ The pinned dahlia API version nests the create param
+(`promotion[type]=coupon&promotion[coupon]=…`); a bare `coupon` param is
+refused as unknown.
 
 ## The four things worth knowing before you change anything here
 

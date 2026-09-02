@@ -15,7 +15,8 @@ import {
 } from '../notifications/index.js';
 import { EmailVerificationService } from './email-verification.service.js';
 import { InvitationAcceptanceService } from './invitation-acceptance.service.js';
-import { NotificationsSignupMailer } from './notifications-signup-mailer.js';
+import { PasswordResetService } from './password-reset.service.js';
+import { buildPasswordResetLink, NotificationsSignupMailer } from './notifications-signup-mailer.js';
 import { PracticeSignupService } from './practice-signup.service.js';
 import { PracticesController } from './practices.controller.js';
 import { InMemorySignInThrottle, type SignInThrottle } from './sign-in-throttle.js';
@@ -27,6 +28,7 @@ import {
   BUSINESSES_SERVICE,
   EMAIL_VERIFICATION_SERVICE,
   INVITATION_ACCEPTANCE_SERVICE,
+  PASSWORD_RESET_SERVICE,
   PRACTICE_SIGNUP_SERVICE,
   PRISMA,
   SIGN_IN_THROTTLE,
@@ -132,6 +134,19 @@ import {
       useFactory: (notifications: NotificationsService, env: Env): SignupMailer =>
         new NotificationsSignupMailer(notifications, env.APP_ORIGIN),
       inject: [NOTIFICATIONS_SERVICE, ENV],
+    },
+    {
+      // The forgotten-password flow (2 Sep 2026). Same throttle instance as
+      // sign-in/verification (its keys live in the `pr:` space), same web
+      // origin as the other credential mails — which is `env.APP_ORIGIN` since
+      // the `SIGNUP_APP_ORIGIN` constant was promoted out of this file, so the
+      // reset link and the verification link cannot name different hosts.
+      provide: PASSWORD_RESET_SERVICE,
+      useFactory: (prisma: PrismaClient, env: Env, notifications: NotificationsService, throttle: SignInThrottle) =>
+        new PasswordResetService(prisma, env, notifications, throttle, (token) =>
+          buildPasswordResetLink(env.APP_ORIGIN, token),
+        ),
+      inject: [PRISMA, ENV, NOTIFICATIONS_SERVICE, SIGN_IN_THROTTLE],
     },
     {
       provide: PRACTICE_SIGNUP_SERVICE,

@@ -20,6 +20,8 @@ import {
   beginEnrolment,
   confirmEnrolment,
   faultOf,
+  requestPasswordReset,
+  resetPassword,
   signUpPractice,
   verifyEmail,
   type EnrolmentOffer,
@@ -43,6 +45,8 @@ import { QrCode } from './QrCode';
  *   /signup/verify       the emailed link    → POST /auth/email-verification
  *   /signup/enrol        the authenticator   → POST /auth/totp-enrolment (+ /confirm)
  *   /signup/done         sign in
+ *   /signup/reset        forgotten password  → POST /auth/password-resets, then /auth/password
+ *                        (both halves at one address: no ?token= asks, ?token= sets)
  *
  * ⚠ **THIS IS A PUBLIC SURFACE AND FIRES NO SESSION PROBE.** `portal ===
  * 'signup'` in `AppContext` keeps `workspaceApiOn` false, exactly as 'landing'
@@ -224,6 +228,60 @@ const m = defineMessages({
   enrolConfirmBusy: { id: 'signup.enrol.confirmBusy', defaultMessage: 'Finishing…' },
   enrolBackToCode: { id: 'signup.enrol.backToCode', defaultMessage: 'Show the setup code again' },
 
+  /* the forgotten-password flow (/signup/reset) */
+  resetAskTitle: { id: 'signup.reset.askTitle', defaultMessage: 'Reset your password' },
+  resetAskDetail: {
+    id: 'signup.reset.askDetail',
+    defaultMessage:
+      'Tell us the email you sign in with and we will send it a link to set a new password. Your authenticator app stays as it is.',
+  },
+  resetAskEmail: { id: 'signup.reset.askEmail', defaultMessage: 'Your sign-in email' },
+  resetAskAction: { id: 'signup.reset.askAction', defaultMessage: 'Email me a reset link' },
+  resetAskActionBusy: { id: 'signup.reset.askActionBusy', defaultMessage: 'Sending…' },
+  resetAskBackToSignIn: { id: 'signup.reset.askBackToSignIn', defaultMessage: 'Back to sign in' },
+  resetSentTitle: { id: 'signup.reset.sentTitle', defaultMessage: 'Check your email' },
+  /**
+   * ⚠ The same rule as the signup 202: the API answers identically whether or
+   * not the address has an account, so this screen says only what happens
+   * next, conditionally — never "we sent it", never "no account found".
+   */
+  resetSentDetail: {
+    id: 'signup.reset.sentDetail',
+    defaultMessage:
+      'If {email} can be used to sign in here, a link to set a new password is on its way to it. The link works once, and stops working after 30 minutes.',
+  },
+  resetSentNothing: {
+    id: 'signup.reset.sentNothing',
+    defaultMessage:
+      'Nothing arrived? Check your spam folder, and check the address. For your security we cannot confirm here whether an address is registered.',
+  },
+  resetFormTitle: { id: 'signup.reset.formTitle', defaultMessage: 'Set a new password' },
+  resetFormDetail: {
+    id: 'signup.reset.formDetail',
+    defaultMessage: 'Choose the password you will sign in with from now on. Your authenticator app is unchanged.',
+  },
+  resetFormPassword: { id: 'signup.reset.formPassword', defaultMessage: 'New password' },
+  resetFormAction: { id: 'signup.reset.formAction', defaultMessage: 'Set new password' },
+  resetFormActionBusy: { id: 'signup.reset.formActionBusy', defaultMessage: 'Setting…' },
+  resetDoneTitle: { id: 'signup.reset.doneTitle', defaultMessage: 'Password changed' },
+  resetDoneDetail: {
+    id: 'signup.reset.doneDetail',
+    defaultMessage:
+      'Sign in with your new password and a code from your authenticator app. Any older reset links stopped working the moment this one was used.',
+  },
+  resetInvalidTitle: { id: 'signup.reset.invalidTitle', defaultMessage: 'That link is not valid' },
+  resetInvalidDetail: {
+    id: 'signup.reset.invalidDetail',
+    defaultMessage:
+      'It may have been used already, copied incompletely, or replaced by a newer one. Request a fresh link and use that instead.',
+  },
+  resetExpiredTitle: { id: 'signup.reset.expiredTitle', defaultMessage: 'That link has expired' },
+  resetExpiredDetail: {
+    id: 'signup.reset.expiredDetail',
+    defaultMessage: 'Reset links last 30 minutes. Request a fresh one and use it straight away.',
+  },
+  resetRequestAnother: { id: 'signup.reset.requestAnother', defaultMessage: 'Request another link' },
+
   /* done */
   doneTitle: { id: 'signup.done.title', defaultMessage: 'You are all set' },
   doneDetail: {
@@ -302,6 +360,7 @@ export function SignupView() {
   if (step === 'check-email') return <CheckEmailStep email={sentTo} />;
   if (step === 'verify') return <VerifyStep onVerified={setVerifiedEmail} />;
   if (step === 'enrol') return <EnrolStep initialEmail={verifiedEmail} />;
+  if (step === 'reset') return <ResetStep />;
   if (step === 'done') return <DoneStep />;
 
   return (
@@ -836,6 +895,215 @@ export function EnrolStep({ initialEmail }: { initialEmail: string | null }) {
           {intl.formatMessage(m.enrolBackToCode)}
         </button>
       )}
+    </Shell>
+  );
+}
+
+/* ── the forgotten-password flow (/signup/reset) ─────────────────────────── */
+
+type ResetPhase =
+  | { kind: 'ask' }
+  | { kind: 'sent'; email: string }
+  | { kind: 'form' }
+  | { kind: 'done' }
+  | { kind: 'dead'; expired: boolean; code: string | null };
+
+/**
+ * Both halves of the forgotten-password journey live at one address, exactly
+ * as the emailed link demands: with no `?token=` this is the "email me a
+ * link" form, and with one it is the set-a-new-password form. The mail's side
+ * of the address is `RESET_PASSWORD_PATH` in the API's
+ * `notifications-signup-mailer.ts` — the SPA drift trap the verify path
+ * already fell into once, so the pinning test covers this pair too.
+ *
+ * ⚠ The ask half is under the same rule as `/signup/check-email`: the API
+ * answers the identical `202` whatever happened, so the sent screen says only
+ * what happens next, conditionally. And the token is scrubbed from the
+ * address bar the moment it is read, before any request — it is a credential,
+ * and it must not sit in the history or ride a `Referer`.
+ */
+function ResetStep() {
+  const intl = useIntl();
+  const [urlToken, setUrlToken] = useQueryParam('token');
+  const [token, setToken] = useState<string | null>(null);
+  const [phase, setPhase] = useState<ResetPhase>({ kind: 'ask' });
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [fault, setFault] = useState<SignupFault | null>(null);
+  const claimed = useRef(false);
+
+  useEffect(() => {
+    if (claimed.current || !urlToken) return;
+    claimed.current = true;
+    const value = urlToken;
+    setUrlToken(null, { replace: true });
+    setToken(value);
+    setPhase({ kind: 'form' });
+  }, [urlToken, setUrlToken]);
+
+  const ask = async (event: FormEvent) => {
+    event.preventDefault();
+    if (busy || !email.includes('@')) return;
+    setBusy(true);
+    setFault(null);
+    const wanted = email.trim().toLowerCase();
+    try {
+      await requestPasswordReset(wanted);
+      setPhase({ kind: 'sent', email: wanted });
+    } catch (error) {
+      // Only the caller's own failures can land here — a 400, a 429, or no
+      // answer at all. Never "no such account": the 202 is uniform.
+      setFault(faultOf(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const shortBy = Math.max(0, PASSWORD_MIN_LENGTH - password.length);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (busy || token === null || shortBy > 0) return;
+    setBusy(true);
+    setFault(null);
+    try {
+      await resetPassword(token, password);
+      setPassword('');
+      setPhase({ kind: 'done' });
+    } catch (error) {
+      const next = faultOf(error);
+      // A dead link is a dead end for THIS screen — the only remedy is a
+      // fresh one, so the form gives way to the say-so rather than inviting
+      // retries against a verdict that cannot change.
+      if (next.code === 'NT-AUTH-004' || next.code === 'NT-AUTH-005') {
+        setPhase({ kind: 'dead', expired: next.code === 'NT-AUTH-005', code: next.code });
+      } else {
+        setFault(next);
+      }
+      setBusy(false);
+    }
+  };
+
+  if (phase.kind === 'sent') {
+    return (
+      <Shell title={intl.formatMessage(m.resetSentTitle)} icon={Mail}>
+        <OutcomeBadge good />
+        <p className="text-[14px] text-zinc-400 leading-relaxed">
+          {intl.formatMessage(m.resetSentDetail, { email: phase.email })}
+        </p>
+        <p className="text-[12px] text-zinc-600 leading-relaxed">{intl.formatMessage(m.resetSentNothing)}</p>
+        <a {...linkProps('/app')} className="text-[13px] font-bold text-zinc-500 hover:text-white transition-colors">
+          {intl.formatMessage(m.resetAskBackToSignIn)}
+        </a>
+      </Shell>
+    );
+  }
+
+  if (phase.kind === 'done') {
+    return (
+      <Shell title={intl.formatMessage(m.resetDoneTitle)} icon={BadgeCheck}>
+        <OutcomeBadge good />
+        <p className="text-[14px] text-zinc-400 leading-relaxed">{intl.formatMessage(m.resetDoneDetail)}</p>
+        <a
+          {...linkProps('/app')}
+          className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-[14px] font-bold text-brand-on bg-brand hover:bg-brand-hover transition-colors shadow-glow-cta"
+        >
+          <LogIn size={16} strokeWidth={2.5} aria-hidden="true" />
+          {intl.formatMessage(m.doneAction)}
+        </a>
+      </Shell>
+    );
+  }
+
+  if (phase.kind === 'dead') {
+    return (
+      <Shell title={intl.formatMessage(phase.expired ? m.resetExpiredTitle : m.resetInvalidTitle)}>
+        <OutcomeBadge />
+        <p className="text-[14px] text-zinc-400 leading-relaxed">
+          {intl.formatMessage(phase.expired ? m.resetExpiredDetail : m.resetInvalidDetail)}
+        </p>
+        {phase.code && (
+          <p className="text-[11px] text-zinc-600 font-bold tracking-wide">
+            {intl.formatMessage(m.faultCode, { code: phase.code })}
+          </p>
+        )}
+        <a {...linkProps('/signup/reset')} className="text-[13px] font-bold text-brand hover:underline">
+          {intl.formatMessage(m.resetRequestAnother)}
+        </a>
+      </Shell>
+    );
+  }
+
+  if (phase.kind === 'form') {
+    return (
+      <Shell title={intl.formatMessage(m.resetFormTitle)} icon={KeyRound}>
+        <p className="text-[14px] text-zinc-400 leading-relaxed">{intl.formatMessage(m.resetFormDetail)}</p>
+        <form onSubmit={submit} className="flex flex-col gap-4">
+          <Field
+            id="reset-password"
+            label={intl.formatMessage(m.resetFormPassword)}
+            hint={intl.formatMessage(m.formPasswordHint, { min: PASSWORD_MIN_LENGTH })}
+          >
+            <input
+              id="reset-password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password"
+              minLength={PASSWORD_MIN_LENGTH}
+              maxLength={200}
+              disabled={busy}
+              className={INPUT}
+            />
+            {password.length > 0 && shortBy > 0 && (
+              <p className="text-[12px] font-semibold text-amber-400 mt-2" role="status">
+                {intl.formatMessage(m.formPasswordShort, { count: shortBy })}
+              </p>
+            )}
+          </Field>
+          <Fault fault={fault} passwordMin={shortBy > 0} />
+          <PrimaryButton
+            type="submit"
+            disabled={shortBy > 0}
+            busy={busy}
+            icon={KeyRound}
+            label={intl.formatMessage(busy ? m.resetFormActionBusy : m.resetFormAction)}
+          />
+        </form>
+      </Shell>
+    );
+  }
+
+  return (
+    <Shell title={intl.formatMessage(m.resetAskTitle)} icon={KeyRound}>
+      <p className="text-[14px] text-zinc-400 leading-relaxed">{intl.formatMessage(m.resetAskDetail)}</p>
+      <form onSubmit={ask} className="flex flex-col gap-4">
+        <Field id="reset-email" label={intl.formatMessage(m.resetAskEmail)}>
+          <input
+            id="reset-email"
+            type="email"
+            inputMode="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+            disabled={busy}
+            placeholder={intl.formatMessage(m.formEmailPlaceholder)}
+            className={INPUT}
+          />
+        </Field>
+        <Fault fault={fault} />
+        <PrimaryButton
+          type="submit"
+          disabled={!email.includes('@')}
+          busy={busy}
+          icon={Mail}
+          label={intl.formatMessage(busy ? m.resetAskActionBusy : m.resetAskAction)}
+        />
+      </form>
+      <a {...linkProps('/app')} className="text-[13px] font-bold text-zinc-500 hover:text-white transition-colors">
+        {intl.formatMessage(m.resetAskBackToSignIn)}
+      </a>
     </Shell>
   );
 }

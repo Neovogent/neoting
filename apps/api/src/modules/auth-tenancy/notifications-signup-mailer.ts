@@ -98,3 +98,17 @@ export function buildVerificationLink(appOrigin: string, token: string): string 
  * fails if the two halves drift.
  */
 export const VERIFY_EMAIL_PATH = '/signup/verify';
+
+/** `<origin>/signup/reset?token=<token>` — the forgotten-password mail's whole link. */
+export function buildPasswordResetLink(appOrigin: string, token: string): string {
+  const origin = appOrigin.endsWith('/') ? appOrigin.slice(0, -1) : appOrigin;
+  return `${origin}${RESET_PASSWORD_PATH}?token=${encodeURIComponent(token)}`;
+}
+
+/**
+ * ⚠ The SAME drift trap as `VERIFY_EMAIL_PATH` above — an SPA answers a wrong
+ * route with a 200 and drops the token on the floor. The web half serves this
+ * under the signup view family; `notifications-signup-mailer.test.ts` pins the
+ * pair the same way it pins the verify path.
+ */
+export const RESET_PASSWORD_PATH = '/signup/reset';
