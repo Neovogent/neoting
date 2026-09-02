@@ -771,4 +771,1295 @@ Statutory background at [BIM37010](https://www.gov.uk/hmrc-internal-manuals/busi
 
 ---
 
-*(research sections 1, 2, 4, 7 and 8 below)*
+## 4. Australia / ATO — comparative only
+
+> ⚠ **Read F-INT-4 first.** **Nothing in this product is scoped to Australia.** The root `CLAUDE.md`
+> defines Neoting as a platform *"for UK accounting practices"*; `docs/Source_Of_Truth.md` contains
+> zero occurrences of "Australia", "ATO" or "GST". Verified again by grep on 2026-09-03: the only
+> Australian traces in `modules/rules-suggestions` are the token `\bgst\b` inside the `TAX_LINE`
+> regex (`coding/capital-revenue.ts:231`) and the words *"Australian GST"* in three comment blocks
+> naming it as an example of **foreign** consumption tax. **There is no AU threshold, no
+> instant-asset-write-off figure, no effective-life reference and no AU chart of accounts anywhere
+> in the module.**
+>
+> This section is therefore **comparative and forward-looking research**, requested by the product
+> owner. It answers two questions and no others: *is the capital/revenue architecture accidentally
+> UK-specific in a way that would block a future market?* and *what would an AU expansion actually
+> cost?* **Nothing here describes a capability the product has.** Every figure carries its date so
+> that a stale one is visibly stale.
+>
+> **Method note.** `ato.gov.au` returns **HTTP 403 at the Akamai edge** to this environment, so ATO
+> guidance was retrieved through a text proxy that does reach it; every ATO URL cited is the real
+> canonical one and QC numbers are given so the live page can be found. **All legislation was
+> retrieved directly from `legislation.gov.au`** (OData API and compilation text), including the
+> authorised amending Acts, and the parliamentary passage from `aph.gov.au`. **`austlii.edu.au` and
+> JADE were unreachable** (403 / CAPTCHA), so every case quotation below is taken from an ATO ruling
+> quoting the judgment rather than from the law report — which is arguably the better source for
+> *the ATO's position*, but means the law-report pagination is **not independently verified**.
+> A failed fetch of an ATO URL is **not** evidence that the page does not exist.
+
+### 4.1 ⚠ The instant asset write-off became PERMANENT eight days ago
+
+**This is the single most important fact in this section, and it is eight days old as at today's
+date (2026-09-03).**
+
+| Income year | Threshold | Authority |
+|---|---|---|
+| 2023–24 | $20,000 | Act No. 52/2024, Sch 1 (assent 28 Jun 2024) |
+| 2024–25 | $20,000 | Act No. 29/2025, Sch 4 (assent 27 Mar 2025) |
+| 2025–26 | $20,000 | Act No. 72/2025, Sch 7 (assent 4 Dec 2025) |
+| **2026–27 onward** | **$20,000 — permanent** | **Treasury Laws Amendment (Tax Reform No. 2) Act 2026 (No. 71, 2026), Sch 2 — assent 26 Aug 2026** |
+
+**It is enacted law, not a proposal.** Announced in the 2026–27 Budget on 12 May 2026 and given
+assent on **26 August 2026**. Schedule 2 amends the ITAA 1997 *itself* rather than adding another
+sunsetting transitional provision — the operative instruction is *"Omit `$1,000`, substitute
+`$20,000`"* across **ss 328-170, 328-180, 328-210(1), 328-215(4), 328-250 and 328-253**.
+No bill on this remains before Parliament.
+[Act No. 71 of 2026, full text](https://www.legislation.gov.au/C2026A00071/latest/text)
+
+⚠ **A commencement quirk that looks like a gap and is not.** Schedules 1–4 of the Act commence
+**1 October 2026**, but the Schedule 2 application clause applies the $20,000 figure to assets
+first used or installed ready for use **on or after 1 July 2026**. The consequence for anyone
+reading the statute today: **the 1 July 2026 ITAA 1997 compilation still shows `$1,000`**, because
+the substitution has not yet commenced. Reading the compilation without reading the amending Act
+gives the wrong answer for the whole of the current income year. This is precisely the failure mode
+this document exists to catch.
+
+**Eligibility** (ATO QC 61417, and Div 328 ITAA 1997):
+
+- Aggregated turnover **under $10 million** (not the $50m figure that applied to the 2020–21 era
+  temporary full expensing / earlier IAWO tiers — that generosity is gone).
+- The business must **elect to apply the simplified depreciation rules** in ITAA 1997 Div 328.
+  The write-off is not free-standing; it is a feature of the small-business pool regime.
+- The limit applies **per asset**, so multiple assets each under $20,000 each qualify.
+- **New and second-hand assets both qualify.**
+- The asset must be **first used or installed ready for use** in the income year.
+
+⚠ **Two eligibility details a coding engine would plausibly get wrong, and both are traps:**
+
+1. **The *entire* cost must be below the limit, even where only a business-use portion is
+   deductible.** ATO, verbatim: *"While you can only claim the taxable purpose portion as a
+   deduction, **the entire cost of the asset must be less than the relevant limit**."* And on
+   trade-ins: *"work out the full cost using the asset's purchase price **before any trade-in credit
+   is applied**."* A rule that tested the *claimed* figure, or the net-of-trade-in figure, would let
+   ineligible assets through — and both are exactly the figure that appears on an invoice.
+2. **The threshold is GST-**exclusive** for a GST-registered business and GST-**inclusive** for one
+   that is not** — ATO: if not registered, *"you include the GST amount you paid on the asset in the
+   asset's cost."* So the same invoice can pass or fail the test depending on a fact about the
+   **buyer** that is nowhere on the document. This is structurally the same shape as the UK's "is
+   this practice's threshold £500 or £1,000" problem — see F-INT-1 — and it is the reason a
+   jurisdiction must supply a *policy value*, never a constant.
+3. ⚠ **A separate car limit overrides the whole thing.** ITAA 1997 **s 40-230** caps the first
+   element of cost of a passenger car, and the same figure caps the GST credit at one-eleventh of
+   the limit. **The 2026–27 car limit is `not verified`** — see §4.7; the last confirmed figure is
+   **$69,674**, which applied to **both 2024–25 and 2025–26**.
+
+**Pooling, for completeness** (Subdiv 328-D): assets at or above the limit go to the **general small
+business pool** — **15%** in the first year, **30%** thereafter (ss 328-185, 328-190) — and
+**s 328-210** allows the whole pool to be deducted when its balance is below the threshold, which
+**also rises to $20,000**. The **five-year lock-out rule** in s 328-175(10) remains on the statute
+book but is **suspended**: Sch 2 items 16–17 of the 2026 Act extend the "increased access year"
+window to **30 June 2027**.
+
+### 4.2 ⚠ Effective life — the annual ruling series has STOPPED
+
+This is the trap for anyone who researched this area more than a year ago and cites from memory.
+
+- **TR 2022/1 is the LAST effective-life ruling.** The ATO's long-running annual *TR 20xx/1* series
+  has been discontinued (ATO QC 50914). There is no TR 2023/1, TR 2024/1, TR 2025/1 or TR 2026/1
+  effective-life ruling to cite, and inventing one is easy because the pattern is so regular.
+- **The operative instrument is now a legislative determination**, not a ruling: the **Income Tax
+  Assessment (Effective Life of Depreciating Assets) Determination 2025**, **`F2025L01097`**, made
+  **2 September 2025** by a Deputy Commissioner under **s 40-100(1) ITAA 1997**, registered and in
+  force from **15 September 2025**, with Schedule 1 **repealing the 2015 determination** and
+  Schedule 2 carrying Effective Life Tables **A** (industry-specific, ANZSIC headings, which takes
+  precedence) and **B** (general).
+  [legislation.gov.au F2025L01097](https://www.legislation.gov.au/F2025L01097)
+- ⚠ **The ATO states the practice change explicitly**: effective lives were *"previously also
+  published in tables attached to taxation rulings … a practice that ended with the withdrawal of
+  TR 2022/1. The ATO now uses an on-demand approach"* (ATO QC 50914, last updated 17 Nov 2025).
+  **`TR 2026/1` exists but is a different ruling entirely** — rental property income and deductions.
+  Citing it for effective life would be a confident, plausible, wrong citation.
+
+**Concrete lives** (Determination 2025, Schedule 2 **Table B**), for the asset classes this product
+actually sees: **desktop computers 4 years · laptops and tablets 2 years · servers 4 years ·
+computer monitors 4 years · network equipment 5 years · office desks 20 years · office chairs 10
+years**. ⚠ At a $20,000 write-off threshold a small business entity expenses essentially all of
+these immediately anyway — **effective life matters only for non-SBE clients or assets ≥ $20,000**,
+which is a useful scoping fact.
+
+**The statutory frame:** **s 40-95 ITAA 1997** gives the taxpayer a *choice* — use the
+Commissioner's determination for the asset, or **self-assess** effective life on the facts.
+**s 40-100** is the Commissioner's determination power; **s 40-102** carries the statutory caps that
+override both (the regime that forces, e.g., a shorter life on certain assets regardless of the
+table).
+
+**In-house software** is the case most relevant to this product's domain:
+
+- Statutory effective life **5 years** — **ITAA 1997 s 40-95(7), table item 8**, confirmed in the
+  compilation in force at 1 July 2026 (previously 4 years, for software acquired before 1 July
+  2015). ⚠ Because in-house software sits in that table, **s 40-105 self-assessment is unavailable**
+  (s 40-105(4)(a)): the five years is **mandatory**, prime cost. This is a genuine structural
+  difference from the UK, where useful life is an accounting judgement.
+- The **software development pool** (**Subdiv 40-E**, ss 40-450 to 40-460) is available for
+  expenditure on **developing** in-house software — and s 40-450(1) Note is explicit that it is **not**
+  available for *acquiring* software or a right to use it. Deduction profile is fixed by **s 40-455**:
+  **Nil / 30% / 30% / 30% / 10%** over five years. ⚠ Electing the pool **forfeits the instant asset
+  write-off** for that software (s 328-175(7)(b), (8)).
+- ⚠ **A periodic subscription is a revenue expense, and the authority is a ruling about websites.**
+  There is **no ATO ruling specifically on SaaS or cloud** — I searched
+  [TR 2016/3](https://www.ato.gov.au/law/view/document?docid=TXR/TR20163/NAT/ATO/00001)
+  (*deductibility of expenditure on a commercial website*, 14 Dec 2016) and it contains **no
+  occurrence of "SaaS", "Software as a Service" or "cloud"**. It is nonetheless the closest binding
+  authority, and it is squarely on point: **¶15** *"Expenditure on 'off-the-shelf' software product
+  that is **licensed periodically is a revenue expense**"*; **¶17** *"**Periodic operating,
+  registration, web hosting and licensing fees are revenue expenses** deductible over the period to
+  which the expense relates."* Contrast **¶14** — off-the-shelf software that enhances the
+  profit-yielding structure is capital and may be in-house software under Div 40.
+
+**This is a genuinely useful comparative result.** Australia reaches the same destination as
+§5.5's IFRIC March 2019 agenda decision and §3.1's BIM35805 — *a subscription to use someone else's
+software is a period expense* — by a **third, completely different route**: the periodicity of the
+payment, ruled on in the context of websites, rather than a control-based asset test (IFRIC) or a
+useful-life concession (HMRC). **Three jurisdictions, three unrelated mechanisms, one answer.**
+
+That is the strongest available evidence that the code's
+`SOFTWARE_AND_SUBSCRIPTIONS`-is-always-revenue rule is **not accidentally UK-specific** — it is the
+one rule in the module that three independent tax systems agree on. ⚠ Note the contrast with
+F-UK-1: the *subscription* direction is robust across jurisdictions, while the *perpetual ⇒ capital*
+direction is the one that is wrong even in the UK.
+
+### 4.3 Capital versus revenue — the same question, different case law
+
+| Concept | Australia | UK equivalent (§3) |
+|---|---|---|
+| General deduction | **s 8-1 ITAA 1997** (positive limbs + negative limbs, incl. the capital exclusion) | ITTOIA 2005 s.34 / CTA 2009 s.54, *wholly and exclusively* (BIM37000) |
+| The leading test | ***Sun Newspapers Ltd v FC of T* (1938) 61 CLR 337** — Dixon J's **three matters**: the character of the advantage sought; the manner in which it is to be used/enjoyed; the means adopted to obtain it. Framed as **profit-yielding structure versus its operation** | ***Atherton v British Insulated and Helsby Cables* [1925] 10TC155** — *enduring benefit of a trade* (BIM35010) |
+| Repairs | **s 25-10 ITAA 1997**, elaborated by **TR 97/23** (still current, not withdrawn) | BIM46900 series / PIM2020 (§3.4) |
+| "Blackhole" capital expenditure | **s 40-880** — 5-year straight-line write-off for business capital expenditure not otherwise deductible | *No UK equivalent.* A genuine structural difference |
+
+⚠ **The one substantive divergence a coding engine would have to encode separately is the
+initial-repairs rule — and the two jurisdictions do not merely differ, they expressly disagree.**
+
+[**TR 97/23**](https://www.ato.gov.au/law/view/document?docid=TXR/TR9723/NAT/ATO/00001) (issued
+3 December 1997; **still current — no withdrawal notice exists, and `TR 97/23W` returns 404**),
+**para 59**: expenditure on an initial repair *"in remedying defects, damage or deterioration in
+existence at the date of acquisition, is capital expenditure and is not, therefore, deductible under
+section 25‑10."* Para 60 adds the two conditions: the defect *"existed at the time of acquisition"*
+and *"did not arise from the operations of the person who incurs the expenditure."*
+
+⚠ **Para 61 is the paragraph that matters, and it is the opposite of the UK rule:**
+
+> *"It is immaterial whether at the time of acquisition the taxpayer was aware of the condition of
+> the property, including its need for repair. **It is also immaterial whether the purchase price
+> (or lease rentals) reflected the need for repairs.** We consider that the English Court of Appeal
+> decision in* **Odeon Associated Theatres Ltd v. Jones** *[1972] 1 All ER 681 **is not authority in
+> Australia for a contrary view**. … Initial repair expenditure relates to the establishment of the
+> profit-yielding structure. It is capital expenditure and is not deductible under section 25‑10."*
+
+**Compare §3.3 directly.** The UK's rule at
+[BIM35450](https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim35450) is built on
+***Law Shipping*** and ***Odeon*** — the very case the ATO names and rejects — and turns on exactly
+the fact Australia calls immaterial: whether the purchase price was reduced to reflect the
+condition. HMRC's practical test is *"if you would have treated the repairs as revenue if ownership
+had not changed, then the repairs are normally revenue when expended by the new owner."*
+
+**So: in the UK a post-acquisition repair on an asset bought at an unreduced price is normally
+revenue; in Australia the same expenditure is capital regardless of the price paid.** This is the
+sharpest jurisdictional conflict found anywhere in this document. It is not a threshold that could
+be parameterised — **a single "initial repair" branch cannot serve both**, because the two systems
+take opposite positions on the same authority. Any future AU work must scope this rule, not share
+it.
+
+*(⚠ The Australian "entirety" doctrine is attributed by TR 97/23 ¶37 principally to* **Lindsay v FC
+of T (1960) 106 CLR 377***, not to* W Thomas & Co *— worth noting because the latter attribution is
+a common error. The ATO cites both* Western Suburbs Cinemas *(1952) 86 CLR 102 and* Lindsay *as the
+leading Australian repair cases at ¶109.)*
+
+⚠ **There is no Australian two-year software concession** analogous to BIM35805/BIM35810. The
+`SUBSCRIPTION_TERM_UNDER_TWO_YEARS` basis in `capital-revenue.ts` is a **UK-only artefact** and
+would be meaningless on an Australian document. Under §3.1 it is already half wrong for the UK
+(F-UK-1); it would be wholly inapplicable in Australia.
+
+### 4.4 GST — and why an Australian GST line on a UK client's invoice is a dead end
+
+| Point | Position | Note |
+|---|---|---|
+| Rate | **10%** — *"a broad-based tax of 10% on most goods, services and other items sold or consumed in Australia"* | ✅ |
+| Registration threshold | **$75,000** GST turnover; **$150,000** for non-profit bodies; **any turnover** for taxi/limousine/ride-sourcing | ✅ Registration required within **21 days**; an **ABN is a prerequisite** |
+| **Input-taxed** supplies | Financial supplies; selling or renting residential premises. *"You **can't** claim GST credits for the GST included in the price of your 'inputs'"* | ✅ Div 40. Structurally the UK's **exempt** |
+| **GST-free** supplies | Most basic food, some health/education/childcare, exports, water/sewerage, precious metals, **sales of businesses as going concerns** | ✅ Div 38. *"You **can still claim** credits"* — structurally the UK's **zero-rated** |
+| Tax invoice | Required on request within 28 days unless the sale is **$82.50 (incl GST) or less**; sales of **$1,000 or more** must also show the **buyer's** identity or ABN | ✅ Seven required particulars; eInvoicing via **Peppol** satisfies the "intended to be a tax invoice" test |
+| Input tax credits | **4-year** limit, running from the lodgment due date of the BAS for the period in which the credit could first have been claimed | ✅ *"We have **no discretion** to extend the 4-year credit time limit"* |
+| BAS cycles | **Monthly** if turnover ≥ $20m · **quarterly** if < $20m · **annually** if voluntarily registered | ✅ |
+| Reverse charge (Div 84) | ⚠ **`not verified`** | I asserted in an earlier draft that Div 84 bites only where the purchase is *not fully creditable*, which would make it materially narrower than the UK's B2B general rule (§3.7, VATPOSS06300). **That was not confirmed** and is removed rather than softened |
+| Low-value imported goods | ⚠ **`not verified`** | The A$1,000 point-of-sale rule was not confirmed in this pass |
+| No-ABN withholding | *"withhold **the top rate of tax**"* — the ATO page states **no percentage** | ⚠ The commonly quoted **47%** is **`not verified`** |
+
+⚠ **The finding that matters for the product as it stands today — stated more carefully than in my
+first draft.** A UK business cannot recover Australian GST **through HMRC**: §3.7's **VIT12100**
+establishes that a condition of deduction is that *"the supply took place in the UK"*, so Australian
+GST can never be UK input tax. Recovery, if it existed at all, would have to run through the
+**Australian** system — registration in Australia — not through a UK return.
+
+⚠ **I previously wrote that there is "no 13th-Directive equivalent" and that simplified registration
+"confers no ABN and no input tax credits". Neither was verified, and both are withdrawn.** The
+sourced position is narrower and sufficient: **for a UK client the amount is not UK input VAT, and
+nothing on a UK VAT return can recover it.**
+
+**The code is therefore right.** `escalation.ts` and `capital-revenue.ts` say Australian GST is
+*"part of the cost of what was bought and is never reclaimable UK input VAT"* — which is exactly the
+verified proposition, no more and no less. The `FOREIGN_TAX_IN_COST` advisory is the correct
+treatment. ✅
+
+### 4.5 Australian business structures — the comparative table
+
+| Structure | Tax treatment | Return | Identifier |
+|---|---|---|---|
+| **Sole trader** | Personal marginal rates; business income on the individual return | Individual return, business schedule | TFN + ABN |
+| **Partnership** | **Transparent** — lodges a return, pays no tax; partners taxed on distributions | Partnership return + partner individual returns | Partnership TFN + ABN |
+| **Company** | Separate legal entity; flat company rate; **imputation/franking credits** on distributions | Company return | TFN + **ACN** + ABN |
+| **Trust** | Transparent where income is distributed; trustee assessed on undistributed income | Trust return + beneficiary returns | TFN + ABN |
+
+**Rates, verified from the statute rather than the ATO site.** The ATO's own "Company tax rates"
+page is still titled *"from 2001–02 to 2025–26"* and publishes no 2026–27 table, so the
+***Income Tax Rates Act 1986*, compilation No. 66, in force from 1 July 2026** is the better source:
+
+- **s 23** — company tax is **25%** for a *base rate entity*, **30%** otherwise.
+- **s 23AA** — a base rate entity has **aggregated turnover under $50 million** *and* **no more than
+  80%** of assessable income as *base rate entity passive income* (s 23AB: dividends and franking
+  credits, *"interest …, royalties and rent"*, net capital gains, and flow-through amounts).
+- **s 12(9)** — a trustee assessed under **ITAA 1936 s 99A** on undistributed income is taxed at
+  **45%**.
+
+⚠ **Note the $50m here is a *different* $50m from the one in §4.1.** The base-rate-entity test uses
+$50m; the instant asset write-off uses the **$10m** small-business-entity test in s 328-110. Two
+turnover thresholds, both live, both $10m/$50m-shaped, governing different concessions — a
+well-placed trap for anyone building an AU rules engine.
+
+**Identifiers**, per [ASIC](https://asic.gov.au/for-business/registering-a-company/steps-to-register-a-company/australian-company-numbers/):
+an **ACN is 9 digits, issued by ASIC** on registration; an **ABN is 11 digits, issued by the ATO**,
+and covers *"any type of business, including sole traders and partnerships as well as companies"*.
+Usefully for document processing: *"A company's ABN is often **the same as the ACN but with 2 extra
+numbers at the beginning**."* Corporations Act **s 153** requires the ACN (or ABN) to appear on
+**invoices and statements of account** — so it is a field an extractor can rely on being present.
+⚠ The **TFN** distinction is the structural one: a sole trader *"[uses] your individual tax file
+number (TFN) to lodge tax returns"*, whereas a partnership *"needs its own ABN and tax file
+number"*, as do companies and trusts. ⚠ Return form **NAT numbers** are **`not verified`** — refer to
+returns by name.
+
+The UK/AU mapping is close for sole trader and partnership, and **materially different for the
+company**: Australia's dividend imputation has no UK counterpart, and there is **no Australian
+equivalent of the LLP** as a distinct filing entity.
+
+⚠ **The ATO publishes no canonical chart of accounts.** It fixes only the **return labels** — e.g.
+company return item 6 breaks expenses into *Cost of sales · Superannuation · Bad debts · Lease ·
+Interest · Depreciation · Repairs and maintenance · All other expenses*. Ledger categorisation
+below that is the taxpayer's choice.
+**Flagged honestly: the "no canonical chart" conclusion is an inference from the absence of such a
+publication, not a sourced positive statement — `not verified` as a positive claim.**
+
+**This is the same structural answer as the UK's** (§2: SA103F boxes and the Companies Act formats
+are *return and filing* shapes, not charts of accounts), which is a genuinely reassuring result for
+the architecture: in **both** jurisdictions the chart is the practice's choice and only the
+*mapping out* is prescribed. `profiles.ts`'s stance — *"there is no mandated UK chart of accounts …
+the seed is a starting point, never a claim of correctness"* — generalises without amendment.
+
+### 4.6 What an AU expansion would actually cost — the honest estimate
+
+**Cheap, because the architecture already generalises:**
+
+- `CapitalisationPolicy` as a **value** with a `source` field (§5.9) is exactly the right shape. A
+  jurisdiction supplies a different policy, not a different rule. **This is the single best
+  decision in the module for portability** and it was made for an unrelated reason (no statutory
+  de minimis in UK GAAP or IFRS).
+- The five `LEDGERS`, the `CODING_AUTHORITIES` ladder, the ten escalation reasons and the
+  arithmetic hard stop are all jurisdiction-neutral.
+- The subscription-is-revenue rule survives intact (§4.2), by a different route.
+
+**Expensive, and each of these is a real piece of work:**
+
+| What | Why |
+|---|---|
+| `VAT_TREATMENTS` | `STANDARD / ZERO_OR_EXEMPT / OUTSIDE_SCOPE / BLOCKED / VARIES` is a **UK VAT** vocabulary. AU needs *GST-free* vs *input-taxed* as **distinct** members — collapsing them into `ZERO_OR_EXEMPT` destroys the credit-entitlement difference, which is the whole point of the distinction |
+| `TAX_CONSEQUENCES` | `ALLOWABLE / DISALLOWABLE / CAPITAL` maps acceptably, but "capital" in AU immediately implies a Div 40 effective life and possibly a Div 328 pool, which the model has nowhere to put |
+| `SUBSCRIPTION_TERM_UNDER_TWO_YEARS` | UK-only. Must not fire on an AU document |
+| Initial repairs | §4.3 — a genuinely different rule, not a different threshold |
+| Reverse charge | §4.4 — different trigger, cannot share a branch |
+| The whole chart | CIS, the domestic reverse charge, the cold/hot food zero-rate boundary and the car input-VAT block (§2, §3.7) are **UK statutory artefacts**. `TRADE_AND_CONSTRUCTION` and `RETAIL_AND_HOSPITALITY` would need rebuilding from AU rules, not translating |
+
+**Verdict: the engine ports; the content does not.** That is the right way round, and it is worth
+knowing before anyone proposes it.
+
+### 4.7 ⚠ The AU finding for §7 and §8: absent, not stale
+
+**Checked by grep, 2026-09-03.** The code encodes **no Australian threshold of any kind**. There is
+therefore **nothing stale to correct** — which is the *best* possible answer, and materially better
+than the alternative. Had the module carried a `$20,000` figure it would have been:
+
+- correct for 2023–24 and 2024–25,
+- correct for 2025–26,
+- and — until **26 August 2026, eight days ago** — carrying a sunset that had not yet been
+  legislated away, in a product with no mechanism to notice.
+
+**The lesson generalises past Australia.** The threshold moved by an Act that received assent eight
+days before this document was written, with a commencement date **after** the income year it applies
+to, so that the current statutory compilation shows the *wrong* number. Any jurisdiction figure
+hardcoded in this repository would need a review cadence nobody has committed to.
+
+⚠ **And there is a second, sharper illustration in the same section: the car limit.** ITAA 1997
+**s 40-230** caps the first element of cost of a passenger car and is **indexed annually**; the same
+figure caps the recoverable GST at one-eleventh of it. **The 2026–27 figure could not be
+established**, with direct access to the ATO and to `legislation.gov.au`, after **eight distinct
+attempts** — the ATO's rate index carries no car-limit page, the "Assets and exclusions" table stops
+at 2025–26, and the *Guide to depreciating assets 2027* is not yet published. Last confirmed:
+**$69,674**, which applied to **both 2024–25 and 2025–26**.
+
+⚠ **Do not compute it from CPI.** The 2025–26 indexation factor was **0.997 — below 1.0 — and the
+limit did not fall**, because indexed amounts are not reduced. A naive extrapolation would produce a
+plausible, confident, wrong number. **This is the single best argument in this document against
+hardcoding jurisdiction figures**: a threshold that changes every year, whose current value is not
+reliably published at the time the year is already two months old, and whose obvious derivation is
+booby-trapped.
+
+**Recorded as F-AU-1 in §8: do not add AU figures to this codebase; if AU is ever in scope,
+thresholds arrive as dated policy *data* with a named review owner, never as constants.**
+
+---
+
+## 2. Business types and their charts of accounts
+
+> **Method note for this section.** The web-search budget for this session was exhausted before this
+> section was researched, and the delegated research agent died on an API error. Everything below was
+> therefore verified by **fetching known primary URLs directly**. Two consequences, stated up front:
+> **`legislation.gov.uk` is confirmed unreachable** from this environment (it returns an empty body,
+> not an error — the same symptom the predecessor recorded in §3), and **`web.archive.org` is
+> blocked outright**, so no Wayback fallback was available for the pages that returned 403.
+> Everything I could not reach is marked **not verified** and named.
+
+### 2.0 ⚠ The headline finding: the code has no legal-form axis at all
+
+**This is the most important thing in this section, and it is a finding, not a description.**
+
+`BUSINESS_PROFILE_IDS` has exactly four members — `GENERAL_BUSINESS`, `SERVICES_WITH_STAFF`,
+`TRADE_AND_CONSTRUCTION`, `RETAIL_AND_HOSPITALITY` — and **every one of them is a trade vertical.
+None of them is a legal form.** Verified against `chart-of-accounts/profiles.ts` and against the
+contract: `BusinessContextQuestionnaire` in `packages/contracts/openapi.yaml` (line 6857) has exactly
+six properties — `businessActivity` (required), `typicalSuppliers`, `typicalCosts`, `hasEmployees`,
+`usesSubcontractors`, `notes`. **There is no `legalForm`, no `entityType`, no company-number field,
+and nothing anywhere else in the product captures one** (grepped across
+`modules/clients-team-settings`, `prisma/schema.prisma` and `packages/contracts`, 2026-09-03).
+
+That is a deliberate and defensible design — the contract says so explicitly: *"Free text on
+purpose. A dropdown of industries would be cheaper to store and worth less to a model than one
+honest sentence about what the business actually does."* And for the **operating expense** half of a
+chart of accounts it is the right call, because a plumber's costs are a plumber's costs whether the
+plumber trades through a company or not.
+
+⚠ **But the two axes are genuinely orthogonal, and the second one is missing.** Trade vertical
+determines *cost of sales and the operating expenses*. **Legal form determines how the business's
+own money leaves it** — and that is where every account the chart lacks lives:
+
+| Legal form | The accounts it needs that no trade vertical implies | Present in the code? |
+|---|---|---|
+| Sole trader | **Drawings** (capital account, not an expense) | ❌ |
+| Partnership | **Partners' current and capital accounts**, profit-share allocation | ❌ |
+| Limited company | **Directors' remuneration**, **directors' loan account**, **dividends**, **corporation tax charge**, share capital | ❌ |
+| LLP | **Members' remuneration charged as an expense** vs **profit allocated to members** | ❌ |
+| Charity | The **SoFA** in place of a P&L; **fund accounting** as a dimension | ❌ |
+
+**Assessment.** This is **not** a defect in ID, and I would not open it as one. Every account above
+is a **year-end and equity** account, and ID codes *purchase documents* — a receipt or a supplier
+invoice, never a dividend voucher or a drawings journal. The chart is a picklist for coding incoming
+documents, and for that job the omission is correct.
+
+⚠ **It becomes a defect the moment two things happen**, and both are on the roadmap: an accountant
+gains the ability to **edit the chart** (§24.4.1, an open TODO in the module's `CLAUDE.md`), or the
+chart is used to seed anything that looks like a **trial balance or a set of accounts**. At that
+point a chart with no `DIRECTORS_REMUNERATION` and no `DIVIDENDS` is not a starting point, it is a
+wrong one. **Recorded as F-BT-1 in §8.**
+
+### 2.1 Sole trader — and the form that is the closest thing the UK has to a mandated chart
+
+**Source: the SA103F form itself, tax year 2025–26**, downloaded and text-extracted 2026-09-03:
+[SA103F 2026 (PDF)](https://assets.publishing.service.gov.uk/media/69c2635b13101e9908704b36/SA103F_2026.pdf)
+· [publication page](https://www.gov.uk/government/publications/self-assessment-self-employment-full-sa103f)
+(page last updated 6 April 2026). Form footer: `SA103F 2026 … HMRC 12/25`.
+
+**There is no mandated UK chart of accounts** — `profiles.ts` says so and §4.5 confirms Australia is
+the same. But the SA103F expense boxes are the nearest thing that exists, because **every
+unincorporated business's expenses must eventually be summarised into exactly these fourteen
+lines.** So this is the single most useful benchmark for the core chart, and it maps almost
+perfectly:
+
+| Box | Label, verbatim from the form | Core chart account(s) |
+|---|---|---|
+| 17 | Cost of goods bought for resale or goods used | `COS_PURCHASES` |
+| **18** | **Construction industry – payments to subcontractors** | ⚠ `COS_SUBCONTRACTORS_CIS` — **profile-only** (see below) |
+| 19 | Wages, salaries and other staff costs | `WAGES_AND_SALARIES`, `EMPLOYER_NI_AND_PENSION`, `STAFF_WELFARE` |
+| 20 | Car, van and travel expenses | `MOTOR_EXPENSES`, `TRAVEL_AND_SUBSISTENCE` |
+| 21 | Rent, rates, power and insurance costs | `RENT`, `RATES_AND_WATER`, `LIGHT_HEAT_AND_POWER`, `INSURANCE` |
+| 22 | Repairs and maintenance of property and equipment | `REPAIRS_AND_MAINTENANCE` |
+| 23 | Phone, fax, stationery and other office costs | `TELEPHONE_AND_INTERNET`, `OFFICE_COSTS` |
+| 24 | Advertising and business entertainment costs | `ADVERTISING_AND_MARKETING`, `BUSINESS_ENTERTAINING` |
+| **25** | **Interest on bank and other loans** | ❌ **NO ACCOUNT** |
+| 26 | Bank, credit card and other financial charges | `BANK_CHARGES` |
+| **27** | **Irrecoverable debts written off** | ❌ **NO ACCOUNT** |
+| 28 | Accountancy, legal and other professional fees | `PROFESSIONAL_FEES` |
+| 29 | Depreciation and loss or profit on sale of assets | `DEPRECIATION` |
+| 30 | Other business expenses | *(the catch-all the code deliberately refuses to have)* |
+
+Income boxes: **15** turnover, **16** other business income, **16.1** trading income allowance →
+`SALES`, `OTHER_INCOME`. Net profit/loss: **47 / 48**. Capital allowances: **49–57** (49 AIA;
+50 at 18%; 51 at 6%; 52 zero-emission goods vehicle; 52.1 zero-emission car; 53 SBA; 53.1 Freeport
+and Investment Zones SBA; 54 electric charge-point; 55 100% and other enhanced; 56 on sale or
+cessation; 57 total).
+
+⚠ **Two real gaps, both confirmed by grep against `profiles.ts` (51 distinct codes across all four
+profiles, 2026-09-03):**
+
+1. **Box 25 — interest on bank and other loans has no account.** `BANK_CHARGES` is not it, and
+   conflating them is not harmless: bank *charges* are a service cost, loan *interest* is a finance
+   cost, they sit in different places in a P&L, and for a company interest engages the corporate
+   interest restriction. A loan-interest debit today has nowhere correct to go and will be coded to
+   `BANK_CHARGES` by keyword or escalate as `NO_MATCH_ON_CHART`.
+2. **Box 27 — irrecoverable debts written off has no account.** Lower priority for ID, because a bad
+   debt is a **journal**, not a purchase document, and ID codes purchase documents. Box 25 is not
+   like that: a lender's interest statement is a document a client photographs and sends.
+
+**Recorded as F-BT-2 in §8**, with box 25 as the actionable half.
+
+⚠ **The genuinely interesting structural point is the second column of the form.** Boxes **32–45**
+are a parallel *"Disallowable expenses"* column mirroring boxes 17–30 one-for-one, with box 46 the
+total. **HMRC's model is one account per cost with a disallowable amount beside it. The code's model
+is `taxConsequence: 'ALLOWABLE' | 'DISALLOWABLE' | 'CAPITAL'` as a flag on the account.** These are
+two encodings of the same fact, and the code's is the better one for its purpose: box 24 lumps
+*advertising* and *business entertaining* onto one line even though the first is allowable and the
+second is disallowable in full (§3.6, C10) — the taxpayer is expected to disentangle them into box
+39. **The code splits them into `ADVERTISING_AND_MARKETING` and `BUSINESS_ENTERTAINING` at source,
+which is strictly better than the form it feeds.** That deserves recording as a positive: §0.2's
+"separately identifiable" group is not taxonomy for its own sake, it is box 39 done in advance.
+
+**Other sole-trader facts, verified:**
+
+- **The £90,000 turnover test is printed on the form itself**: *"If your annual turnover was below
+  £90,000, you may just put your total expenses in box 31"* — i.e. below that figure the fourteen-way
+  analysis is optional and a single total will do. This is the same figure as the VAT registration
+  threshold; the form does not say they are linked and I have **not verified** that they are formally
+  tied.
+- **Cash basis is now the default, and the form proves it structurally.** Box **10** reads: *"If you
+  used **traditional accounting rather than cash basis** to calculate your income and expenses, put
+  'X' in the box."* **It is an opt-out box for accruals, which means cash basis is the standing
+  assumption.** [gov.uk cash basis](https://www.gov.uk/simpler-income-tax-cash-basis) describes it as
+  *"the standard way to record your income and expenses if you're a sole trader or partnership
+  without corporate partners"* and confirms *"Some businesses cannot use cash basis, for example,
+  limited companies."* ⚠ **The exact tax year from which it became the default is `not verified`** —
+  neither page states it. (It is widely understood to be 2024–25; I could not source that today and
+  will not assert it.)
+- **Trading income allowance** has its own box (16.1) on the form. The **£1,000** figure is
+  **not verified** — I could not reach the allowances page within budget.
+- **Simplified expenses / flat rates** (mileage, use of home, living at business premises):
+  **not verified** for 2026–27. I did not reach
+  `https://www.gov.uk/simpler-income-tax-simplified-expenses`. **Do not quote 45p/25p from this
+  document.**
+
+⚠ **Why the cash-basis default matters to this module more than it looks.** Under the cash basis a
+cost is recognised **when paid**. `PREPAYMENTS` — the code's fifth ledger, `Current assets`, and the
+`ANNUAL_FEE_MAY_BE_PART_PREPAID` advisory that goes with it — is an **accruals** concept. For a cash-basis
+sole trader an annual subscription paid in advance is simply deductible when paid, and the advisory,
+while never wrong (it never changes a code), is telling the accountant about a journal that will not
+exist. Not a defect; worth knowing before anyone makes that advisory louder.
+
+### 2.2 Partnership
+
+Structurally a sole trader's chart plus an allocation layer. What differs:
+
+- **Partners are not employees.** Partners' "salaries" and interest on capital are **appropriations
+  of profit**, not `WAGES_AND_SALARIES`. A chart that offers only `WAGES_AND_SALARIES` invites a
+  partner drawing to be coded as staff cost — which overstates expenses and understates taxable
+  profit for every partner.
+- **Per-partner capital and current accounts**, and a profit-sharing ratio that allocates the result.
+- **Tax transparency:** the partnership files an SA800 and pays no tax; each partner returns their
+  share on SA104. **URLs and box detail: `not verified`** — I did not reach the SA800/SA104 pages
+  within budget. The structural points above are standard and are not sourced here.
+- Cash basis applies to partnerships too, but only those **"without corporate partners"** — verbatim
+  from the gov.uk cash basis page above.
+
+### 2.3 Limited company
+
+**The size thresholds changed for periods beginning on or after 6 April 2025** (the Companies
+(Accounts and Reports) (Amendment and Transitional Provision) Regulations 2024). Verified on the
+live gov.uk guidance, 2026-09-03:
+[Micro-entities, small and dormant companies](https://www.gov.uk/annual-accounts/microentities-small-and-dormant-companies)
+
+| | Turnover | Balance sheet total | Employees |
+|---|---|---|---|
+| **Micro-entity** | *"a turnover of £1 million or less"* | *"£500,000 or less on its balance sheet"* | *"10 employees or less"* |
+| **Small** | *"a turnover of £15 million or less"* | *"£7.5 million or less on its balance sheet"* | *"50 employees or less"* |
+
+Any **two of the three** must be met. ⚠ The gov.uk page **does not state the effective date** of the
+uplift, and `legislation.gov.uk` is unreachable, so the "periods beginning on or after 6 April 2025"
+commencement is **not verified** from a primary source — only the *figures* are verified, and they
+are the post-uplift ones. The **medium-company** thresholds (£54m / £27m / 250) are **not verified**
+— the page does not carry them.
+
+**What a company's chart has that a sole trader's does not:**
+
+| Account | Why it cannot be borrowed from the sole-trader chart |
+|---|---|
+| **Directors' remuneration** | A director *is* an employee for this purpose, so it is a genuine P&L expense — the opposite of a partner's drawing. Getting this wrong inverts the profit |
+| **Directors' loan account** | A balance-sheet account with its own tax consequences (s.455 charge, benefit-in-kind on beneficial loans). A director's personal spend on a company card belongs here, **not** in `PRIVATE_USE` |
+| **Dividends** | **Not an expense at all** — a distribution of post-tax profit. The most expensive single miscoding available to a small company |
+| **Corporation tax charge** | Has no sole-trader analogue; income tax is personal |
+| **Share capital / reserves** | Equity structure |
+
+⚠ **`PRIVATE_USE` is a sole-trader concept and the chart applies it to everyone.** For an
+unincorporated business, private use is a disallowance/adjustment. For a company the identical
+transaction is a **director's loan** or a **benefit in kind** — a different account, a different
+return, and potentially a P11D. The code's `PRIVATE_USE` (VAT `BLOCKED`, tax `DISALLOWABLE`) is
+correct for the sole trader and **misleading for the company**, and with no legal-form axis (§2.0)
+nothing can tell them apart. **This is the sharpest practical consequence of F-BT-1** and is the
+reason I would rank it above the missing equity accounts.
+
+**Reporting frameworks:** FRS 102 for small and above; **FRS 105** *"The Financial Reporting Standard
+applicable to the Micro-entities Regime"* for micro-entities, with very short prescribed formats
+([FRC](https://www.frc.org.uk/library/standards-codes-policy/accounting-and-reporting/uk-accounting-standards/frs-105/)).
+⚠ The Companies Act **profit and loss account Formats 1 and 2** (SI 2008/410 Sch 1; SI 2008/409 for
+small companies) are **not verified** — `legislation.gov.uk` unreachable. Their existence and
+general shape are standard knowledge and are stated here without a source. The **CT600** return
+itself: **not verified**.
+
+**The tax-scope caveat that is already in §3.1 and belongs here too:** per
+[BIM35801](https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim35801), for
+**companies** software normally falls in the **CTA 2009 Part 8 intangible fixed assets regime**,
+which is accounts-based — so the BIM35805 capital/revenue analysis the code leans on hardest
+*mainly bites for unincorporated businesses*. **The code's most-cited rule is weakest precisely for
+the client type it cannot identify.** See F-UK-2.
+
+### 2.4 LLP
+
+**Current edition: the Statement of Recommended Practice — Accounting by Limited Liability
+Partnerships 2026 ("LLPs SORP"), published by the CCAB on 3 November 2025.**
+[ccab.org.uk](https://www.ccab.org.uk/statement-of-recommended-practice-accounting-by-limited-liability-partnerships-llps-sorp-2026/)
+· [CCAB SORP page](https://www.ccab.org.uk/values/sorp-llps/). CCAB states its aim is to *"deal with
+issues that are specific to LLPs and ensure that, as far as possible, LLPs present financial
+statements that are comparable with those of other entities."*
+⚠ **The effective date (which accounting periods it applies to) is `not verified`** — neither CCAB
+page states it, and I did not open the SORP PDF itself. Given it is the post-Periodic-Review-2024
+edition and FRS 102's amendments are effective 1 January 2026 (§5.10), a 2026 alignment is the
+obvious inference, **but it is an inference and I am not asserting it.**
+
+**The one thing that makes an LLP structurally unlike anything else**, and it is a real charting
+problem: **members' remuneration divides in two** — amounts that are **charged as an expense in
+arriving at profit** (broadly, where the member has no discretion to avoid them) and **profit
+allocated to members** (below the line). The corollary is that members' interests must be classified
+as **debt or equity**, and an LLP's balance sheet can therefore show what looks like a large
+liability to its own members. ⚠ **The SORP paragraph references for this are `not verified`** — the
+CCAB pages carry no detail and I did not fetch the document. **The proposition itself is standard
+and long-standing; treat the description as sound and the citation as owed.**
+
+LLPs file accounts at Companies House like a company, and are taxed transparently like a
+partnership. That combination — company-style filing, partnership-style tax — is why neither the
+sole-trader chart nor the company chart fits.
+
+### 2.5 Charity — the one where "chart of accounts" is the wrong shape entirely
+
+**Current edition: the Charities SORP 2026.** Verified from the Charity Commission's own guidance
+page, updated 19 December 2025:
+[CC15d publication page](https://www.gov.uk/government/publications/charity-reporting-and-accounting-the-essentials-november-2016-cc15d)
+— *"Guidance has been updated to reflect the introduction of SORP 2026 which applies to accounting
+years starting on or after 1 January 2026"*, and the CC15d guidance itself now applies to
+*"accounting periods starting on or after 1 November 2016 and before 1 January 2026"*, with *"New
+guidance … published in 2026 for accounting periods starting on or after 1 January 2026."*
+**So SORP 2026 is in force as at today's date.** ⚠ `charitysorp.org` returns **403 Forbidden** to
+automated retrieval and `web.archive.org` is blocked, so the SORP's own full title and publisher
+line are **not verified**.
+
+**Why a charity is not a chart-of-accounts variant but a different structure:**
+
+1. **A Statement of Financial Activities (SoFA) replaces the profit and loss account.** It is not a
+   renamed P&L. Income is analysed by **source** — donations and legacies; charitable activities;
+   other trading activities; investments; other — and expenditure by **purpose**: raising funds;
+   charitable activities; other. **A charity does not report "expenses by nature" at the top level
+   at all.** The entire `Expenses` ledger in §0.2 is organised by nature — rent, wages, insurance,
+   motor. That is the *wrong axis* for a SoFA.
+2. **Support costs are apportioned across activities.** A single electricity bill does not land in
+   one place; it is allocated across charitable activities and raising funds on a stated basis. **One
+   document, N destinations, by policy** — which the code cannot express even for the simple case
+   (see §9: `documents.category_code` is one nullable string).
+3. ⚠ **Fund accounting is a DIMENSION, not a category.** Every transaction carries a fund —
+   unrestricted, restricted or endowment — **orthogonally to its expense category**. A restricted
+   grant's spend is *both* "charitable activities — premises" *and* "restricted fund", and the second
+   is a legal constraint on the money, not a description of it. **There is no field anywhere in this
+   product that could carry it**: not `categoryCode`, not `ledger`, and not the proposed
+   `DocumentLine` in §9.3.
+
+**Verdict: a charity is out of scope for this chart and should be said to be, explicitly.** Adding
+"a charity profile" to `BUSINESS_PROFILE_IDS` would be the worst available outcome — it would look
+like support for a structure the data model cannot represent. **Recorded as F-BT-3.** The honest
+position is that a charity client is served today by `GENERAL_BUSINESS` producing a nature-based
+picklist that an accountant then re-maps by hand into a SoFA, and nothing in the product should
+imply otherwise.
+
+⚠ **The charity accounting and audit thresholds are `not verified`.** I attempted the CC15c page
+(withdrawn), the CC15d publication page (no figures), two CC15d full-text slug variants (**404**),
+`https://www.gov.uk/running-charity/managing-charity-finances` (**404**),
+`https://www.gov.uk/government/collections/accounting-and-reporting-guidance-for-charities`
+(**404**), `legislation.gov.uk` Charities Act 2011 s.145 (**empty body — unreachable**) and
+`charitysorp.org` (**403**). Six failures on the same fact. **The receipts-and-payments,
+independent-examination and audit thresholds are therefore deliberately omitted from this document
+rather than recalled from memory.** They are stable, widely published figures and a practitioner can
+find them in a minute; an unsourced figure in a document whose whole value is that its figures are
+sourced is worse than a gap.
+
+### 2.6 The trade verticals the code actually profiles
+
+Selection is keyword matching over `businessActivity` and `typicalCosts`, in a **fixed**
+`PROFILE_SELECTION_ORDER` so a tie resolves identically on every run. `GENERAL_BUSINESS` has
+`matches: []` — *"it is where selection LANDS, never something it matches"*. Verticals are
+**additive**: never replacements.
+
+| Profile | Keywords (verbatim, `profiles.ts`) | The statutory artefact that earns it |
+|---|---|---|
+| `SERVICES_WITH_STAFF` | clean · janitorial · housekeeping · facilities · maintenance · care · domiciliary · security · guarding · landscap · gardening · grounds · window · laundry | None — this one is **commercial**, not statutory. Consumables, subcontracted labour and equipment hire are simply invisible in a general chart. *"The first paying client is a cleaning agency"* |
+| `TRADE_AND_CONSTRUCTION` | build · construct · plumb · electric · roof · joiner · carpent · plaster · decorat · scaffold · groundwork · heating engineer · tiling · renovation · refurbish | **CIS** and the **domestic reverse charge** |
+| `RETAIL_AND_HOSPITALITY` | shop · retail · store · cafe · café · coffee · restaurant · takeaway · catering · bakery · deli · `bar ` · pub · salon · barber · hairdress · hospitality · kiosk · market stall | **The cold/hot, takeaway/eat-in zero-rate boundary** |
+
+**Construction is the strongest case of the three, and the SA103F confirms it independently.**
+**Box 18 of the sole-trader return is a dedicated line: *"Construction industry – payments to
+subcontractors"*.** HMRC gives payments to CIS subcontractors their own box out of fourteen — no
+other trade gets that. So the code's `COS_SUBCONTRACTORS_CIS` is not a nicety; it is the account that
+fills a box HMRC prints on the form.
+
+⚠ **And that produces a genuine, checkable defect.** `COS_SUBCONTRACTORS_CIS` exists **only** in the
+`TRADE_AND_CONSTRUCTION` profile. A client whose `businessActivity` misses all fifteen keywords —
+*"we fit kitchens"*, *"shopfitting"*, *"solar panel installation"*, *"drainage"* — gets
+`GENERAL_BUSINESS` and **has no CIS account at all**, while still being fully within CIS and fully
+within the reverse charge. A CIS subcontractor invoice for such a client codes to
+`COS_PURCHASES` or escalates. **Recorded as F-BT-4.** The fix is not more keywords, which is a
+treadmill; it is that CIS applicability is a **fact about the client** (are they a contractor or
+subcontractor for CIS?) that the questionnaire could ask in one boolean, exactly as it already asks
+`usesSubcontractors`.
+
+**CIS rates, verified 2026-09-03**
+([gov.uk, subcontractor guidance](https://www.gov.uk/what-you-must-do-as-a-cis-subcontractor/how-payments-work)):
+registered — *"a contractor must deduct 20% from your payments and pass it to HM Revenue and Customs
+(HMRC)"*; unregistered — *"If you do not register for the scheme, contractors must deduct 30% from
+your payments instead"*; **gross payment status** — deductions are not taken at all (the page frames
+it as an alternative to advance deduction and states no percentage, so **0% is a description, not a
+quoted rate**).
+
+**What counts as construction**, verbatim from
+[gov.uk CIS overview](https://www.gov.uk/what-is-the-construction-industry-scheme): work to *"a
+permanent or temporary building or structure"* and *"civil engineering work like roads and
+bridges"*, including site preparation, demolition and dismantling, building work, alterations,
+repairs and decorating, installing systems for heating, lighting, power, water and ventilation, and
+cleaning interiors after construction work. **Excluded**: architecture, surveying, scaffolding hire
+*without labour*, carpet fitting, material manufacturing and delivery, and non-construction site
+work. ⚠ **"Scaffolding hire without labour" is excluded but `scaffold` is a profile keyword** — a
+scaffolding-hire business would be given a CIS account it may never need. Harmless (a picklist entry,
+not a coding), but it shows keyword matching standing in for a legal test.
+
+**Retail and hospitality** is earned by the VAT boundary alone, and §3.7's C15/C16 already verify it:
+cold takeaway zero-rated, hot and eat-in standard-rated (Notice 709/1, VFOOD4220), and
+`CARD_AND_PLATFORM_FEES` carrying VAT `VARIES` because card processing is **taxable** post-*Bookit*
+while delivery-platform commission is standard-rated (§3.7 C16, and F-UK-3 for the code's looseness
+there). ⚠ **VAT retail schemes** (point of sale, apportionment, direct calculation) and the **Flat
+Rate Scheme** (including the 16.5% limited-cost-trader rate and the £150k/£230k thresholds) are
+**not verified** — not reached within budget. **A flat-rate-scheme client's input VAT treatment
+differs on essentially every purchase document**, so this is a real gap in the research rather than
+a tidy-up, and it is noted as such in §8.
+
+⚠ **Hospitality tipping / troncs** (Employment (Allocation of Tips) Act 2023): **not verified**.
+
+**Professional services has no profile, deliberately**, and I agree with the reasoning: software,
+subscriptions, professional fees, travel and training are all core accounts. The one thing a
+professional-services chart genuinely wants that the core lacks is **work in progress / unbilled
+revenue** — but WIP is a **year-end journal**, not a purchase document, so it is correctly out of
+scope for the same reason drawings and dividends are.
+
+### 2.7 What actually differs, in one table
+
+| Axis | Sole trader | Partnership | Ltd company | LLP | Charity |
+|---|---|---|---|---|---|
+| Operating expense categories | \<--------------------- **substantially identical; driven by trade, not by form** ---------------------\> | | | | ⚠ analysed by **purpose**, not nature |
+| Top-level statement | P&L | P&L + allocation | P&L (CA 2006 format) | P&L + members' division | **SoFA** |
+| How profit reaches the owner | Drawings (capital) | Profit share (capital) | **Salary (expense)** + **dividend (distribution)** | **Split**: expense *and* allocation | n/a — no owners |
+| Owner's personal spend on a business card | `PRIVATE_USE` | Partner's current a/c | **Director's loan a/c** | Member's account | Never acceptable |
+| Tax | Income tax, personal | Transparent | **Corporation tax, entity-level** | Transparent | Largely exempt; not VAT-exempt |
+| Default accounting basis | **Cash basis** | **Cash basis** (no corporate partners) | Accruals only | Accruals | Accruals over threshold |
+| Extra dimension on every transaction | — | Partner | — | Member | ⚠ **Fund** |
+
+**The one-sentence answer to the section's question.** *Expense* categories differ by **trade**, and
+the code models that well with four profiles. *Income*, *equity* and *appropriation* categories
+differ by **legal form**, and the code models that not at all — which is correct for coding purchase
+documents and becomes wrong the moment the chart is used for anything else.
+
+---
+
+## 7. What the code currently encodes — the verdict column
+
+**§0 is the raw inventory, written from the code before any research. This is the verdict.** Every
+row carries one of:
+
+| Mark | Meaning |
+|---|---|
+| ✅ **Confirmed** | Verified against a primary source, cited in §3, §4 or §5 |
+| 🟡 **Imprecise** | The rule is right; the citation or the framing is not |
+| ⚠ **Wrong** | The code's claim contradicts the source. Correct value given, code unchanged |
+| ⬜ **Unsourced — correctly** | No external source exists. A product judgement, and legitimately so |
+| ⬛ **Unsourced — owed** | A judgement presented as though it had a basis, or one that should be stated |
+| ❌ **Stale** | Was right, has been overtaken |
+
+### 7.1 The twenty citations (§0.5, C1–C20)
+
+| # | Claim | Verdict | Where verified |
+|---|---|---|---|
+| **C1** | BIM35805 — software with useful life under two years is revenue | 🟡 **HALF RIGHT — the most-repeated citation in the module** | §3.1. The under-two-years half is confirmed verbatim, *but it is a one-way Inspector's concession, not a test*, and the code's reverse inference (perpetual or ≥2 years ⇒ capital) **is not in the source and is contradicted by it**. → **F-UK-1** |
+| **C2** | CAA 2001 s.71 — computer software is plant | 🟡 **Right in substance, inverted in use** | §3.2, CA23410. s.71 deems software plant **for capital expenditure**; it does not make a licence payment capital. Citing it as a *reason* something is capital inverts the logic. Statutory text **not verified** (legislation.gov.uk unreachable) |
+| **C3** | IFRIC March 2019 — right to access hosted software is a service contract | ✅ **Confirmed, including the date** | §5.5 |
+| **C4** | IFRIC — cloud configuration/customisation is expensed | 🟡 **Narrowed** | §5.6. The decision says *"often would not"* with a named exception (a separate resource the customer controls); the code treats it as always. Defensible product choice, not a restatement → **F-STD-2** |
+| **C5** | IAS 16.17(d)–(e) — site preparation, installation, testing | ⚠ **WRONG SUB-PARAGRAPHS** | §5.1. Site preparation is **(b)**. Correct: **IAS 16.17(b), (d), (e)** read with **16.16(b)** → **F-STD-1** |
+| **C6** | IAS 16.19(c) + IAS 38.69(b) — training expensed | ✅ **Confirmed** (19(c) slightly overstated alone; the pairing the code always uses is right) | §5.2, §5.3 |
+| **C7** | IAS 38.57 — six criteria | ✅ **Confirmed** — exactly six, and *"shall … if and only if"* | §5.4 |
+| **C8** | VATPOSS14600 — foreign tax increases the reverse-charge value | ✅ **CONFIRMED VERBATIM** — the single most load-bearing citation in the module | §3.7 |
+| **C9** | No statutory de minimis in UK GAAP or IFRS | ✅ **Confirmed** (IAS 16.7, FRS 102 17.4, IAS 8.8, FRS 102 2.12) | §5.9 |
+| **C10** | Business entertaining disallowable **and** input VAT blocked | ✅ **Both halves confirmed** | §3.6 |
+| **C11** | Commercial rent exempt unless opted to tax | ✅ Confirmed | §3.7 |
+| **C12** | Insurance VAT-exempt | ✅ Confirmed | §3.7 |
+| **C13** | Input VAT blocked on cars, usually not vans | ✅ Confirmed | §3.7 |
+| **C14** | CIS domestic reverse charge — no VAT for the customer to reclaim | ✅ Confirmed | §3.7. ⚠ Cite the technical guide, **not** Notice 735 |
+| **C15** | Cold takeaway zero-rated; hot / eat-in standard-rated | ✅ Confirmed | §3.7 |
+| **C16** | Card processing is an exempt financial service | ⚠ **TOO LOOSE** — post-*Bookit*/*NEC*, card-processing fees are **taxable** | §3.7 → **F-UK-3** |
+| **C17** | Foreign consumption tax never reclaimable UK input VAT | ✅ **Confirmed twice over** | §3.7 (VIT12100, UK side) **and now §4.4 (Australian side — no refund route exists either)** |
+| **C18** | Charitable donations relieved, not a trading deduction | ✅ Confirmed for companies (CTM09005, CTA 2010 Pt 6); for unincorporated traders they generally fail wholly-and-exclusively | §3.6 |
+| **C19** | Intuit/QuickBooks: 62.5% top-1, 20.8% unseen category, 36% zero-shot; top-2 ≈ +10pts | ✅ **CONFIRMED — primary source located** | §7.2 below. This one was open when §0 was written |
+| **C20** | Repairs vs improvements is the tier-1 UK judgement | ✅ Confirmed, **and the code is cleaner than the brief that commissioned it** — there is no two-year repairs test and the code never claims one | §3.4 |
+
+### 7.2 ✅ C19 — the source, found and read
+
+**The source is `arXiv:2506.09234v1`, *"Transaction Categorization with Relational Deep Learning in
+QuickBooks"*, Dong, Jonnalagedda, Gao, Acharya, Kissa, Flores, Chawla and Das, submitted **10 June
+2025**, most authors affiliated **"Intuit, Mountain View CA 94043, USA"**.**
+[abstract](https://arxiv.org/abs/2506.09234) · [full text](https://arxiv.org/html/2506.09234v1)
+
+**All three of the code's figures are confirmed to two decimal places**, and the module's `CLAUDE.md`
+description of them as *"published research rather than marketing"* is accurate — this is an
+engineering paper reporting its own production baseline:
+
+| Code's figure | Paper | Table |
+|---|---|---|
+| 62.5% top-1 | **62.49** — *Lynx*, Few Shot | Table 1 |
+| 20.8% unseen category | **20.84** — Top-1 on *Historical Unseen* categories, i.e. *"present in the overall dataset but unseen to that company's history"* | Table 2 |
+| 36% zero-shot | **36.07** — *Shorthair*, Zero Shot | Table 1 |
+| top-2 ≈ +10 points (`SECOND_CHOICE_CONFIDENCE = 0.1`) | **68.67 → 78.97 = +10.30 points** (Rel-Cat, Few Shot) | Table 1 |
+
+**✅ The `SECOND_CHOICE_CONFIDENCE = 0.1` design decision is vindicated exactly.** Offering a second
+choice wherever there was a runner-up buys about ten points, and the paper measures it at 10.30.
+This is the best-grounded number in the module.
+
+⚠ **Two framing corrections, neither of which changes a behaviour, both of which change a sentence:**
+
+1. **The three figures are not one system's three settings.** *Shorthair* is *"a population model
+   that employs contrastive learning and Word2Vec embeddings"*; *Lynx* is *"built on top of
+   Shorthair … a logistic regression model customized to a company"*. So **62.49 and 36.07 are two
+   different models**, not one model measured two ways. The code and `CLAUDE.md` present them as
+   *"Intuit/QuickBooks published categoriser accuracy: top-1, unseen-category, zero-shot"*, which
+   reads as one system. **Correct statement:** *"the personalised production model scores 62.5%
+   top-1; the population model, which is what a brand-new company gets, scores 36.1%."* That is
+   actually a **sharper** statement of the cold-start risk (SoT §21) than the one the code makes.
+2. ⚠ **The paper's own new model reaches 68.67% top-1**, and the whole point of the paper is that
+   the 62.5% baseline is beatable. **Designing to 62.5% remains the right call** — it is the
+   *production* figure, and Rel-Cat's 68.67 is a research result on Intuit's own data with Intuit's
+   own graph — but the module should not imply 62.5% is a ceiling for the field. It is a floor that
+   has already been raised in the same document it is cited from.
+
+**F-INT-3 is confirmed and can be closed:** the code's `62.5 / 20.8 / 36` and the SoT §24.4.7's
+`~62 / ~21` are the same numbers, both traceable to this paper. The module `CLAUDE.md`'s claim that
+its figures are *"worse than §24.4.7's"* remains wrong — they are the same figures — and the
+zero-shot 36% is simply an extra one the SoT does not carry. **Recorded as F-AI-1**, a
+documentation correction only.
+
+### 7.3 The numeric constants (§0.3)
+
+| Number | Verdict | Basis |
+|---|---|---|
+| **£1,000** capitalisation threshold | ⬜ **Unsourced — and correctly so.** ✅ §5.9 confirms there is **no** statutory de minimis in IFRS or UK GAAP, so no source can exist. The code says exactly this and marks it `source: 'PLATFORM_DEFAULT'` | ⚠ But **F-INT-1**: the SoT requires it to be per-practice and it is not persisted |
+| **±10%** boundary band | ⬛ **Unsourced — owed a sentence.** Nothing external could support it and nothing needs to; it is the width of a review band. But unlike the £1,000 it carries **no `source` field and no comment saying it is arbitrary**, so a reader may assume it has a basis. It decides how much `THRESHOLD_BOUNDARY` review work every practice gets | **F-TH-1** |
+| **two years** (software) | 🟡 **Half confirmed, half wrong** | §3.1 / C1 → **F-UK-1** |
+| **8.875%** | ⬜ n/a — narrative only, the example invoice's stated rate | §6 |
+| **62.5 / 20.8 / 36** | ✅ **Confirmed** (62.49 / 20.84 / 36.07) | §7.2 |
+| **0.1** `SECOND_CHOICE_CONFIDENCE` | ✅ **Confirmed** — measured +10.30 points | §7.2 |
+| **0.9 … 0.35** `CONFIDENCE_BY_BASIS` | ⬜ **Unsourced — correctly.** Display-only, and **F-INT-2** establishes it must never gate. A number that decides nothing needs no source | |
+| **0.1** new-supplier penalty | ⬜ Unsourced — correctly. Display-only | |
+| **0.3** `CONFIDENCE_FLOOR` | ⬜ Unsourced — correctly. Display-only | |
+| **1 + n pence** tolerance | ⬜ Engineering tolerance, no source applicable. Deliberately generous: §6 shows `documentReconciles()` accepts three readings and fails only when none reconciles | |
+| **200** `HISTORY_WINDOW` | ⬜ Engineering bound, stated as such in the module TODO | |
+
+### 7.4 The category lists (§0.2)
+
+| List | Verdict | Basis |
+|---|---|---|
+| 5 `LEDGERS` | ⬜ **Unsourced — correctly, and now confirmed twice.** §2 establishes there is **no mandated UK chart of accounts** (as `profiles.ts` already claims) and §4.5 finds **the ATO publishes none either**. The chart is legitimately the practice's choice | |
+| 37 core accounts | ✅ **Benchmarked and sound.** Maps cleanly onto **12 of the 14 SA103F expense boxes** | ⚠ **F-BT-2**: box **25** *interest on bank and other loans* and box **27** *irrecoverable debts written off* have **no account** |
+| Absence of a `SUNDRY` catch-all | ✅ **Correct, and it is the one place the code is stricter than HMRC** — SA103F box 30 *is* a catch-all (*"Other business expenses"*), and the code refuses to have one | §2.1 |
+| The separately-identifiable group | ✅ **Better than the form it feeds** — SA103F box 24 merges advertising with entertaining and expects the taxpayer to disentangle them into disallowable box 39; the code splits them at source | §2.1, §3.6 |
+| `VAT_TREATMENTS` (5) | ✅ Correct **for the UK** | ⚠ §4.6: would not port to AU — *GST-free* and *input-taxed* must be distinct members |
+| `TAX_CONSEQUENCES` (3) | ✅ Correct. Structurally it is SA103F's disallowable column expressed as an account flag | §2.1 |
+| `SERVICES_WITH_STAFF` (+5) | ⬜ **Unsourced — correctly.** This profile is commercial, not statutory: no source could confirm it | §2.6 |
+| `TRADE_AND_CONSTRUCTION` (+6) | ✅ **Confirmed, and independently corroborated** — SA103F prints CIS its own box (18) out of fourteen | ⚠ **F-BT-4**: `COS_SUBCONTRACTORS_CIS` exists only in this profile, so a CIS business that misses the keywords has no CIS account |
+| `RETAIL_AND_HOSPITALITY` (+6) | ✅ Confirmed on the food boundary (C15) | ⚠ `CARD_AND_PLATFORM_FEES` — see **F-UK-3** |
+| No professional-services profile | ✅ **Correct.** The only thing such a chart wants that the core lacks is WIP, which is a year-end journal, not a purchase document | §2.6 |
+| No internally-developed-software account | ✅ **Correct, and stronger than the code argues.** Under **FRS 102 18.8H** capitalisation is a **policy choice** (*"may"*), not IAS 38.57's *"shall"* — so for a UK small company it depends on a policy the practice adopted, which is even less a fact on an invoice | §5.4, §5.10 |
+| **No legal-form axis at all** | ⚠ **The structural gap** — four profiles, all trade verticals; no sole trader / company / LLP / charity dimension anywhere in the product | §2.0 → **F-BT-1** |
+
+### 7.5 The decision rules (§0.4, branch order 0–8)
+
+| Branch | Verdict |
+|---|---|
+| 0 · `TAX_LINE` regex ⇒ never a category | ✅ **Confirmed, and §4.4 strengthens it.** Foreign consumption tax is cost, permanently — there is no UK route (VIT12100) *and* no Australian route for a UK claimant |
+| 1 · Training ⇒ revenue, always | ✅ **Confirmed.** IAS 38.69(b) is a genuine bright line (§5.3); FRS 102 17.11(c) mirrors it |
+| 2 · Support/managed services ⇒ revenue | ✅ Sound. A service acquires no asset (CF 4.3/4.20, IAS 38.69 chapeau — §5.7) |
+| 3 · Hosting/cloud ⇒ revenue, *"never capital, at any amount"* | ✅ **Confirmed** (IFRIC March 2019, §5.5). And §4.2 shows Australia reaches the same answer by a different mechanism |
+| 4 · Software: recurring ⇒ revenue | ✅ **Confirmed** — BIM35805 is explicit that periodic payments are revenue |
+| 4 · Software: perpetual ⇒ threshold test ⇒ capital | ⚠ **The reverse inference is WRONG.** BIM35805 contemplates the opposite: benefits may be *"sufficiently transitory to stamp the payment as revenue even though the licence granted is for an indefinite period."* → **F-UK-1** |
+| 4 · Term unknown ⇒ escalate | ✅ **The single best decision in the module.** §6 is right that this is the most consequential unknown on an IT invoice, and F-UK-1 makes it *more* important, not less: since perpetual does not reliably mean capital, guessing the term would compound two errors |
+| 5 · Install ⇒ capital into the asset; configure ⇒ expensed; both ⇒ escalate | ✅ **Rule correct**, ⚠ **citation wrong** (F-STD-1) and ⚠ **the configure half is narrowed** (F-STD-2) |
+| 6 · Small IT before hardware ⇒ revenue | ⬜ Product judgement. Correct given the threshold is a policy |
+| 7 · Hardware — per-unit test `net ≥ threshold × units` | ✅ **Sound, and the arithmetic is right**: integer, no division, so no float and no rounding. ⚠ §4.1 notes AU applies its threshold to the **whole cost even where only part is claimed** — a different rule, were AU ever in scope |
+| 8 · Keyword match on the client's own chart, else escalate | ✅ Correct. Refusing a near miss (§6, `CODE_NOT_ON_CHART`) is right — a near miss on a chart is an invisible error |
+| Doc-level: arithmetic **before** classification | ✅ **Correct and important.** No category is assigned to a number that is not the right number |
+| Doc-level: escalation beats a coded majority | ✅ Correct |
+| Doc-level: `MULTIPLE_CATEGORIES_ON_ONE_DOCUMENT` | ⚠ **A schema artefact, not an accounting rule** — §9 |
+
+### 7.6 Scoreboard
+
+Of the twenty citations: **thirteen confirmed**, **four imprecise**, **two wrong**, **one
+(C19) confirmed against a primary source located during this pass**.
+Of the eleven numeric constants: **two externally confirmed**, **eight unsourced by design and
+legitimately so**, **one owed a sentence**.
+**Nothing in the module is stale**, and — see §4.7 — the reason for that is partly that it encodes no
+jurisdiction figures beyond the UK at all.
+
+**The overall picture is a module whose rules are substantially right and whose citations are the
+weaker half.** Every error found is in a citation string or a framing sentence; **not one of them
+changes what the code does on a document**, with the single exception of F-UK-1, which changes what
+the code *should* do on a perpetual licence.
+
+---
+
+## 8. Findings and recommendations
+
+**Nineteen findings.** Every one carries the correct value and its source, and **none of them was
+acted on — no code was changed.** `modules/rules-suggestions` belongs to another lane, and a silent
+behavioural change to a coding engine must be a deliberate, reviewed decision (G7, Governance §10).
+Several of these are one-line documentation fixes; **two are not**, and those two want an issue.
+
+The internal findings **F-INT-1 … F-INT-4** are written up in full in **§8b** and are not repeated
+here; they appear in the priority table and in the recommendations.
+
+### 8.1 Priority order
+
+| # | Finding | Class | Changes a coding? | Priority |
+|---|---|---|---|---|
+| 1 | **F-UK-1** — perpetual licence ⇒ capital is not what BIM35805 says | ⚠ Wrong | **Yes** | **P1** |
+| 2 | **F-BT-1** — no legal-form axis; `PRIVATE_USE` is wrong for a company | ⚠ Gap | **Yes** | **P1** |
+| 3 | **F-BT-4** — `COS_SUBCONTRACTORS_CIS` exists only in one profile | ⚠ Gap | **Yes** | **P1** |
+| 4 | **F-INT-1** — capitalisation threshold not per-practice (SoT §24.4.6) | ⚠ Unmet requirement | Indirectly | **P1** |
+| 5 | **F-STD-1** — IAS 16.17 wrong sub-paragraphs | ⚠ Citation | No | **P2** |
+| 6 | **F-UK-3** — card processing is taxable, not exempt | ⚠ Citation | No (VAT flag is `VARIES`) | **P2** |
+| 7 | **F-UK-2** — BIM358xx mainly bites for unincorporated businesses | ⚠ Scope | No | **P2** |
+| 8 | **F-STD-3** — FRS 102 18.3B, software integral to hardware, unreflected | ⚠ Gap | Potentially | **P2** |
+| 9 | **F-BT-2** — no account for loan interest (SA103F box 25) | ⚠ Gap | **Yes** | **P2** |
+| 10 | **F-STD-2** — cloud configuration narrowed from *"often would not"* to *always* | 🟡 Narrowing | No | **P3** |
+| 11 | **F-AI-1** — C19 presented as one model's three numbers; it is two models | 🟡 Framing | No | **P3** |
+| 12 | **F-TH-1** — the ±10% band carries no `source` and no "this is arbitrary" note | ⬛ Owed | No | **P3** |
+| 13 | **F-BT-3** — a charity cannot be represented; say so explicitly | ⚠ Scope | No | **P3** |
+| 14 | **F-AU-1** — never hardcode a jurisdiction threshold | ⬜ Policy | No | **P3** |
+| 15 | **F-INT-2** — SoT expects confidence to gate; the code refuses. **The code is right** | ✅ SoT amendment | No | **P3** |
+| 16 | **F-INT-3 / F-AI-1** — accuracy figures internally consistent **and now externally sourced** | ✅ Closed | No | Close |
+| 17 | **F-INT-4** — Australia out of scope everywhere. Correct | ✅ No action | No | Close |
+| 18 | **F-BT-2b** — no account for irrecoverable debts (SA103F box 27) | ⬜ Accept | No | Won't fix |
+| 19 | **§5.2** — IAS 16.19(c) alone does not carry the general training rule | 🟡 Wording | No | **P3** |
+
+### 8.2 P1 — the four that matter
+
+#### ⚠ F-UK-1 · A perpetual licence is not automatically capital
+
+**Where:** `capital-revenue.ts` branch 4; `coding-instructions.ts` rule 4; `FA_SOFTWARE_LICENCES`;
+the `SUBSCRIPTION_TERM_UNDER_TWO_YEARS` basis; module `CLAUDE.md` (*"Perpetual ⇒ capital"*).
+
+**What the code claims:** software with a useful life under two years is revenue; **a perpetual
+licence, or one with a term of two years or more, is capital** — cited to HMRC BIM35805.
+
+**What BIM35805 actually says.** The first half is right and is a **one-way concession**:
+*"where software is expected to have a useful economic life of less than two years Inspectors will
+accept that the expenditure is revenue"*, and [BIM35810](https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim35810)
+instructs staff *"You should not contend that software with an expected useful life of less than two
+years is capital."*
+
+**The second half is not in the source, and the source contemplates its opposite.** The actual test
+is functional: *"a licence is a capital asset if it has a sufficiently enduring nature"* — and
+benefits may be *"sufficiently transitory to stamp the payment as revenue **even though the licence
+granted is for an indefinite period**."*
+[BIM35805](https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim35805)
+
+**Correct rule:** *under two years ⇒ revenue (a safe harbour). Two years or more, or perpetual ⇒
+**not determined by the term** — it turns on enduring nature, which is a judgement.*
+
+**What I would change.** Not the branch, and not to "escalate everything perpetual" — that would
+flood the queue and most perpetual licences over the threshold genuinely are capital. I would:
+
+1. **Fix the citation and the prose.** `coding-instructions.ts` rule 4 and the `capital-revenue.ts`
+   header currently state a rule HMRC does not have. That prose is what a model is shown and what an
+   accountant reads in a `reviewNote`; a wrong rule stated confidently is the thing this module is
+   otherwise excellent at avoiding.
+2. **Rename the basis.** `SUBSCRIPTION_TERM_UNDER_TWO_YEARS` is accurate for the revenue direction
+   and is the *only* direction the two-year test supports. The capital direction should carry a
+   different basis name — it is resting on enduring nature and the threshold, not on the term.
+3. **Add the enduring-nature caveat to `FA_SOFTWARE_LICENCES.reviewNote`**, which is exactly the
+   surface designed to carry it.
+
+⚠ **This raises the value of `SOFTWARE_TERM_UNKNOWN`, it does not lower it.** §6 calls it *"the most
+consequential unknown on an IT invoice"* and that is now more true: since neither direction of the
+two-year test is a clean answer for a long-term licence, inferring the term from the vendor would
+compound a guess with a rule that does not hold.
+
+#### ⚠ F-BT-1 · No legal-form axis — and `PRIVATE_USE` is the sharp end of it
+
+**Where:** `BUSINESS_PROFILE_IDS` (four trade verticals, no legal form);
+`BusinessContextQuestionnaire` (`openapi.yaml` line 6857 — six properties, none of them entity type);
+`PRIVATE_USE` in the core chart.
+
+**The finding.** Full analysis in §2.0 and §2.3. The chart has no `DIRECTORS_REMUNERATION`,
+`DIRECTORS_LOAN_ACCOUNT`, `DIVIDENDS`, `DRAWINGS`, `PARTNERS_CURRENT_ACCOUNT` or corporation-tax
+account, and nothing in the product records whether a client is a sole trader, a company, an LLP or
+a charity.
+
+**Most of that is correct for ID and I would not change it** — those are equity and year-end
+accounts, and ID codes purchase documents.
+
+⚠ **The exception is `PRIVATE_USE`, and it is a live miscoding today.** It is a **sole-trader**
+concept (VAT `BLOCKED`, tax `DISALLOWABLE`). For a limited company the identical transaction — a
+director putting personal spend on the company card — is a **director's loan account** movement or a
+**benefit in kind**: a balance-sheet entry with a potential CTA 2010 s.455 charge and a P11D, not a
+disallowed expense. Coding it to `PRIVATE_USE` produces a P&L disallowance where the correct answer
+is a balance-sheet debit, and **the practice's own director's loan reconciliation will not find it**.
+
+**What I would change**, cheapest first:
+
+1. **Immediately, and it costs nothing:** amend `PRIVATE_USE.reviewNote` to say that for an
+   incorporated client the entry is normally a director's loan account movement, not a disallowable
+   expense. The `reviewNote` mechanism already exists precisely for tier-1 judgements.
+2. **Then**, propose **one optional enum on `BusinessContextQuestionnaire`** — `legalForm`:
+   `SOLE_TRADER | PARTNERSHIP | LIMITED_COMPANY | LLP | CHARITY | OTHER`. That is a
+   `packages/contracts` change and therefore **LAW (G7) — a contract-change issue before a PR**. It
+   is additive and optional, so it does not break the D47 invite path that made the questionnaire
+   optional in the first place. I would argue for it on the strength of `PRIVATE_USE` alone; the
+   equity accounts are a bonus and a later stage.
+3. **Do not** add a `CHARITY` profile to `BUSINESS_PROFILE_IDS` — see F-BT-3.
+
+#### ⚠ F-BT-4 · A CIS business that misses fifteen keywords gets no CIS account
+
+**Where:** `COS_SUBCONTRACTORS_CIS` exists **only** in `TRADE_AND_CONSTRUCTION.additions`.
+
+**The finding.** Profile selection is keyword matching over free text. *"We fit kitchens"*,
+*"shopfitting"*, *"solar panel installation"*, *"drainage contractor"* match none of the fifteen
+keywords, land on `GENERAL_BUSINESS`, and get **no CIS account at all** — while being fully within
+CIS and fully within the domestic reverse charge.
+
+**Why this is P1 and not a nicety.** The module's own file header calls the reverse charge *"a
+§24.4.6 tier-3 error that lands straight on a VAT return"*. A CIS subcontractor invoice for such a
+client codes to `COS_PURCHASES` — which carries `vatTreatment: 'STANDARD'`, whereas
+`COS_SUBCONTRACTORS_CIS` carries `VARIES` **with a reverse-charge note**. So the failure mode is not
+a missing picklist entry; it is **a reverse-charge invoice presented as an ordinary standard-rated
+purchase**, with the advisory that would have flagged it silently absent.
+
+And SA103F corroborates the significance independently: **HMRC gives CIS subcontractor payments
+their own box (18) out of fourteen.** No other trade gets one.
+
+**What I would change.** **Not more keywords** — that is a treadmill, and the `scaffold` keyword
+already shows the limits of the approach (scaffolding hire *without labour* is expressly outside
+CIS, per [gov.uk](https://www.gov.uk/what-is-the-construction-industry-scheme), yet `scaffold` selects
+the CIS profile). CIS applicability is a **fact about the client**, not an inference from a sentence.
+The questionnaire already asks `usesSubcontractors: boolean`. I would propose a sibling
+`withinCIS: boolean` — one optional field, additive, contract-change issue — and make
+`COS_SUBCONTRACTORS_CIS` conditional on it rather than on the trade profile. Until then, the interim
+is a `reviewNote` on `COS_PURCHASES` naming the reverse charge.
+
+**CIS rates for the write-up**, verified 2026-09-03: **20%** registered, **30%** unregistered, gross
+payment status = no deduction ([gov.uk](https://www.gov.uk/what-you-must-do-as-a-cis-subcontractor/how-payments-work)).
+
+#### ⚠ F-INT-1 · The capitalisation threshold is required to be per-practice and is not persisted
+
+Full write-up in **§8b**. **Nothing in the research changes the assessment and one thing sharpens
+it:** §5.9 confirms there is **no statutory de minimis in IFRS or UK GAAP** — IAS 16 rests solely on
+IAS 16.7's qualitative criteria, FRS 102 17.4 the same, and what permits a threshold at all is
+**materiality**, which FRS 102 para 2.12 says is *"an **entity-specific** aspect of relevance."*
+
+**So the SoT's "per-practice, never a hard-coded number" is not a product preference — it is the only
+treatment consistent with the standards.** A single platform figure applied to every practice is,
+strictly, a materiality judgement made by the software vendor on the accountant's behalf. The code's
+`source: 'PLATFORM_DEFAULT'` field is the right interim because it prevents the number being
+presented as the practice's, but it does not make the number right.
+
+**What I would change:** persist it. `source: 'PRACTICE'` is already in the type, so the code change
+is small once a column exists. A `practices` column is **LAW (G7)** → contract-change issue.
+**Priority is higher than it looks**: the ±10% band around £1,000 (£900–£1,100) is where every
+`THRESHOLD_BOUNDARY` escalation is generated, so the platform default currently decides how much
+review work every practice does.
+
+### 8.3 P2 — citation and scope corrections
+
+#### ⚠ F-STD-1 · IAS 16.17 — the code cites (d)–(e) for three things, one of which is (b)
+
+Full analysis §5.1. **Correct citation: IAS 16.17(b) [site preparation], (d) [installation and
+assembly], (e) [testing]**, read with **IAS 16.16(b)**.
+[AASB 116 — verbatim mirror](https://www.aasb.gov.au/admin/file/content105/c9/AASB116_08-15.pdf)
+
+Appears in four places (`profiles.ts`, `capital-revenue.ts`, `coding-instructions.ts`, module
+`CLAUDE.md`). **The rule is right; only the string is wrong.**
+
+⚠ **My recommendation is not simply to fix the letters.** For this product's actual audience — UK
+small companies and unincorporated businesses on FRS 102 — **FRS 102 17.10(b) is the better
+citation**, because it says the whole thing in one reference: directly attributable costs *"can
+include the costs of site preparation, initial delivery and handling, installation and assembly, and
+testing of functionality"*. One reference, no lettering trap, and it is the framework the client's
+accounts are actually prepared under.
+[FRS 102 September 2024](https://www.frc.org.uk/documents/7668/FRS_102_September_2024_tmKYWO6.pdf)
+
+#### ⚠ F-UK-3 · Card processing fees are taxable, not exempt
+
+**What the code says** (`CARD_AND_PLATFORM_FEES`, C16): card processing is an exempt financial
+service.
+
+**What HMRC says.** [VATFIN2450](https://www.gov.uk/hmrc-internal-manuals/vat-finance-manual/vatfin2450):
+after ***Bookit Ltd* (C-607/14)** and ***National Exhibition Centre Ltd* (C-130/15)**, *"fees charged
+for card processing services that enable a customer to pay by debit or credit card are **taxable**
+and do not qualify for exemption."* Core money-transfer services remain exempt (VATA 1994 Sch 9
+Group 5 item 1).
+
+**Mitigating, and it is why this is P2 not P1: the account's `vatTreatment` is already `VARIES`**, so
+the code does not actually assert a recovery position on a document. It is the **explanatory prose**
+that is wrong, and that prose is what a reviewer reads.
+
+**What I would change:** correct the note to *"card processing fees are generally taxable
+post-*Bookit*; core money-transfer services remain exempt; delivery-platform commission is
+standard-rated"*, and cite VATFIN2450. ⚠ **Do not cite Notice 701/49** — it returned **404 on three
+slug variants** and is **not verified**.
+
+#### ⚠ F-UK-2 · The module's most-cited authority mainly applies to unincorporated businesses
+
+[BIM35801](https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim35801): for
+**companies**, software normally falls within the **CTA 2009 Part 8 intangible fixed assets
+regime**, which is **accounts-based** — so the capital/revenue divide is largely irrelevant — except
+where excluded or where a **CTA 2009 s.815 election** is made.
+
+**The consequence is uncomfortable and worth stating plainly: the BIM35805 analysis the code leans
+on hardest is weakest exactly for limited companies, and the code cannot tell whether a client is
+one** (F-BT-1). The two findings compound.
+
+**What I would change:** nothing behavioural. Under Part 8 the tax answer follows the accounts, and
+the code's accounting answer (IFRIC/IAS 38/FRS 102) is the one that then drives it — so the *outcome*
+is usually right even though the *cited reason* does not apply. I would add the caveat to the
+`capital-revenue.ts` header so nobody builds a company-specific rule on a manual page that does not
+govern companies.
+
+#### ⚠ F-STD-3 · FRS 102 18.3B — software integral to hardware is PPE, and the code does not know it
+
+**New para 18.3B**, introduced by the **Periodic Review 2024**
+([FRC amendments, 27 March 2024](https://www.frc.org.uk/documents/7128/Amendments_to_FRS_102_and_other_FRSs.pdf)),
+**effective 1 January 2026 and therefore in force today**: software **integral to hardware** (e.g. a
+machine's operating software) is treated as **PPE**; otherwise as an intangible. Mirrors IAS 38.4.
+
+**What the code does:** software keywords route to `FA_SOFTWARE_LICENCES` (intangible) or
+`SOFTWARE_AND_SUBSCRIPTIONS`; hardware routes to `FA_COMPUTER_EQUIPMENT` / `FA_PLANT_AND_EQUIPMENT`.
+**There is no branch for software that is part of the machine.** Embedded firmware, a CNC
+controller, a till's operating software, a medical device's software — all read as "software" and
+route away from the asset they belong to.
+
+**What I would change:** this is a genuine rule gap, but a **rare** one at ID volumes and one where
+the evidence is usually on the same document as the hardware. The cheapest correct behaviour is
+already available: `hasCapitalHardware` is computed in `LineContext`, and a software line on a
+document that also carries capital hardware is exactly the ambiguity `MIXED_CAPITAL_AND_REVENUE`
+exists for. I would **escalate rather than build a branch** — consistent with how the module already
+handles the install/configure split.
+
+#### ⚠ F-BT-2 · No account for loan interest
+
+SA103F box **25** *"Interest on bank and other loans"* has no counterpart in the 51 codes.
+`BANK_CHARGES` (box 26) is a different box on the form and a different thing in a P&L: bank
+*charges* are a service cost, loan *interest* is a finance cost. A lender's interest statement is a
+document a client photographs and sends, so it will arrive.
+
+**What I would change:** add `INTEREST_PAYABLE` to the core chart — `Expenses`,
+`vatTreatment: 'OUTSIDE_SCOPE'` (interest is not a supply for VAT), `taxConsequence: 'ALLOWABLE'`.
+This is chart **data**, not schema, and is the cheapest fix in this document.
+
+**Box 27 (irrecoverable debts) I would deliberately not add** — a bad debt is a year-end journal,
+never a purchase document, and adding an account nothing can ever suggest is picklist clutter.
+
+### 8.4 P3 — framing, wording and things to write down
+
+| Finding | Recommendation |
+|---|---|
+| **F-STD-2** — cloud configuration | §5.6: the agenda decision says *"often would not"* recognise an intangible, **with a named exception** (a separate resource the customer controls). The code says *always expensed*. **I would keep the behaviour** — the exception needs an internally-developed-software account the chart deliberately lacks (§5.4), and such lines escalate — but **say in the prose that it is a deliberate narrowing**, not a restatement of the standard |
+| **F-AI-1** — C19 framing | §7.2. Restate as *"the personalised production model scores 62.5% top-1; the population model, which is what a brand-new company gets, scores 36.1%"* — two models, not one. Note the same paper's successor reaches **68.67%**, so 62.5% is a production baseline, not a field ceiling. Also correct the module `CLAUDE.md`'s *"worse than §24.4.7's"* — they are the same figures |
+| **F-TH-1** — the ±10% band | Unlike the £1,000 it carries **no `source` field and no comment saying it is arbitrary**. It decides how much review work a practice gets. Add one sentence at the declaration: *no external source supports this; it is the width of a review band, chosen, and it should move with measurement* |
+| **F-BT-3** — charities | §2.5. A charity's SoFA analyses expenditure by **purpose**, support costs are **apportioned across activities**, and **fund** (unrestricted/restricted/endowment) is a **dimension** no field in this product — including the proposed `DocumentLine` — can carry. **State the exclusion explicitly** in `profiles.ts`, the way the file already states why professional services has no profile. ⚠ **Do not add a charity profile.** It would look like support for a structure the data model cannot represent |
+| **F-AU-1** — jurisdiction thresholds | §4.7. The AU instant asset write-off became **permanent at $20,000 on 26 August 2026** — eight days before this document — by an Act that commences **1 October 2026** while applying from **1 July 2026**, so the current statutory compilation still reads `$1,000`. **The code encodes no AU figure and that is the best possible outcome.** If AU is ever in scope, thresholds arrive as **dated policy data with a named review owner**, never as constants — the `CapitalisationPolicy` value-not-constant design already generalises correctly |
+| **F-INT-2** — confidence gating | §8b. **The code is right and the SoT sentence should move.** Raise a SoT wording amendment to §24.4.6 so the next reader does not implement the gate. §7.2 now gives the empirical backing: a production categoriser at 62.5% top-1 gating on self-reported confidence is how silent wrong codings happen |
+| **F-INT-3** | **Closed.** Externally sourced in §7.2 |
+| **F-INT-4** | **Closed.** No action; §4 is written as comparative research and says so |
+| **§5.2** — IAS 16.19(c) | Recommended wording: *"training costs are not directly attributable costs of PPE (IAS 16.19(c)) and are expensed as incurred (IAS 38.69(b))"*. The code already cites both together everywhere, so only the implication that 19(c) alone carries the general rule is loose |
+
+### 8.5 What is NOT wrong — worth recording, because it is most of the module
+
+A findings list reads as a fault list. It is not. Verified sound and, in several places, better than
+it needed to be:
+
+- **The capital/revenue architecture.** `CapitalisationPolicy` as a **value** with a `source` field
+  is the correct response to there being no statutory de minimis (§5.9), and it is the reason §4.6
+  concludes the engine would port to another jurisdiction even though its content would not.
+- **Every VAT claim except one** (C10–C15, C17) confirmed against HMRC manuals and notices.
+- **C8 / VATPOSS14600 confirmed verbatim** — the most load-bearing citation in the module.
+- **The escalation design.** Ten reasons, closed set, severity-ordered, prompts phrased as what
+  would resolve them. §6's argument stands, and §7.2's accuracy figures are its empirical
+  justification.
+- **Refusing a `SUNDRY` catch-all** — stricter than SA103F, which *has* one (box 30).
+- **Splitting entertaining from advertising** — SA103F merges them (box 24) and expects the taxpayer
+  to disentangle them into box 39. The code does it at source.
+- **`TRAINING_NEVER_CAPITAL`** — a genuine bright line, correctly identified as one of very few.
+- **Omitting an internally-developed-software account** — and the reasoning is *stronger* than the
+  code argues, because FRS 102 18.8H makes capitalisation a **policy choice** where IAS 38.57 makes
+  it mandatory.
+- **No two-year repairs test anywhere in the code** (§3.4) — the confusion was in the research brief,
+  not the codebase.
+- **Arithmetic before classification**, and `documentReconciles()` accepting three readings before
+  declaring a mismatch.
+- **`SECOND_CHOICE_CONFIDENCE = 0.1`** — measured at +10.30 points in the source paper (§7.2).
+
+### 8.6 ⚠ What remains unverified, and why
+
+Listed so the next reader does not mistake absence for absence of doubt. **Nothing below was filled
+in from plausibility.**
+
+| Item | Why not verified |
+|---|---|
+| **Charity accounting / audit thresholds** | **Six separate failures on the same fact**: CC15c (withdrawn), CC15d publication page (no figures), two CC15d full-text slugs (404), `running-charity/managing-charity-finances` (404), the charity guidance collection (404), `legislation.gov.uk` Charities Act 2011 s.145 (empty body), `charitysorp.org` (**403**) |
+| **Charities SORP 2026 full title and publisher** | `charitysorp.org` returns **403** to automated retrieval and `web.archive.org` is **blocked**, so there was no fallback. The *effective date* — periods starting on or after **1 January 2026** — **is** verified, from the Charity Commission's CC15d page updated 19 Dec 2025 |
+| **LLP SORP 2026 effective date and paragraph references** | CCAB's two pages give title (*Accounting by Limited Liability Partnerships 2026*) and publication date (**3 November 2025**) but no effective date and no detail. I did not open the SORP PDF. The members'-remuneration split is described from standing knowledge and **the citation is owed** |
+| **Companies Act P&L Formats 1 and 2; CT600; medium-company thresholds** | `legislation.gov.uk` unreachable (empty body, not an error). The micro and small **figures** are verified from live gov.uk; their **6 April 2025 commencement** is not |
+| **Trading allowance £1,000; simplified expenses / mileage rates** | Not reached within the fetch budget. ⚠ **Do not quote 45p/25p from this document** |
+| **The tax year cash basis became the default** | Neither the SA103F form nor the gov.uk cash-basis page states it. The *fact* of the default is verified structurally (box 10 is an **opt-out** for traditional accounting; gov.uk calls cash basis *"the standard way"*) |
+| **VAT retail schemes; Flat Rate Scheme incl. the 16.5% limited-cost-trader rate and £150k/£230k** | Not reached. ⚠ **A material gap**: an FRS client's input VAT treatment differs on essentially every purchase document |
+| **Employment (Allocation of Tips) Act 2023 / troncs** | Not reached |
+| **SA800 / SA104 partnership pages** | Not reached; §2.2's structural points are unsourced standing knowledge |
+| **CAA 2001 s.71, s.11; ITTOIA 2005 s.33; CTA 2009 s.53; VATA 1994 s.24(1)** | `legislation.gov.uk` unreachable throughout. HMRC manuals state the effect and are cited instead |
+| **Notice 701/49** | **404 on three slug variants** (predecessor). Cite VATFIN2450 instead |
+| **Full expensing extended to leased assets; Autumn Budget 2025 measures** | Predecessor could not verify. Neither affects the code, which makes no capital-allowances claim |
+| **"The ATO publishes no canonical chart of accounts"** | An **inference from absence**, flagged as such in §4.5, not a sourced positive statement |
+
+**Method note on the two blocked hosts.** `legislation.gov.uk` returning an **empty body rather than
+an error** is the dangerous failure of the two — a careless fetch reads as "no content found" rather
+than "unreachable". Recorded here because the predecessor hit it in §3 and I hit it again in §2:
+**it is the environment, not the pages.**
+
+---
+
+## 1. Executive summary
+
+*One page. Written last, deliberately. Section numbers are this document's own; the sections appear
+in the order they were researched, not in numerical order.*
+
+**What this document is.** A check of `apps/api/src/modules/rules-suggestions/` against primary
+sources — HMRC manuals, IFRS/IASB and FRC standards, Australian legislation, and the research paper
+the module's accuracy figures come from. **It changes no behaviour and no code.** Where code and
+source disagree the disagreement is written up as a finding with the correct value; the module
+belongs to another lane and a silent change to a coding engine must be a deliberate, reviewed
+decision (G7, Governance §10).
+
+**The headline.** *The rules are substantially right. The citations are the weaker half.* Of the
+twenty citations the code makes, **thirteen are confirmed**, four are imprecise, **two are wrong**,
+and one — the accuracy figures — was unsourced until this pass and is now confirmed against the
+primary paper. **Only one error changes what the code should do on a real document.**
+
+### The five things worth knowing
+
+1. ⚠ **The module's most-repeated citation is half right.** The code says *"a perpetual licence, or
+   one of two years or more, is capital — HMRC BIM35805"*. **BIM35805 does not say that, and
+   contemplates the opposite**: benefits may be *"sufficiently transitory to stamp the payment as
+   revenue even though the licence granted is for an indefinite period."* The under-two-years half
+   **is** right, but it is a one-way Inspector's concession, not a two-way test. **F-UK-1, P1.**
+
+2. ⚠ **`PRIVATE_USE` is wrong for a limited company, and the product cannot tell which clients are
+   companies.** All four business profiles are *trade verticals*; there is **no legal-form axis
+   anywhere** — not in the chart, not in the intake questionnaire, not in the schema. For a sole
+   trader a director-equivalent's personal spend is a disallowable private-use adjustment; for a
+   company the same transaction is a **director's loan account** movement with a possible s.455
+   charge. Today both get the same code. **F-BT-1, P1.**
+
+3. ⚠ **A construction client whose description misses fifteen keywords gets no CIS account** —
+   because `COS_SUBCONTRACTORS_CIS` lives only in the `TRADE_AND_CONSTRUCTION` profile. *"We fit
+   kitchens"* lands on the general chart, and a reverse-charge subcontractor invoice then codes to
+   `COS_PURCHASES` (`vatTreatment: 'STANDARD'`) with the reverse-charge note absent — the module's
+   own header calls that *"a tier-3 error that lands straight on a VAT return"*. CIS status is a
+   fact to ask for, not a keyword to guess. **F-BT-4, P1.**
+
+4. ✅ **The accuracy figures are real, and the second-choice design is measurably right.** The source
+   is **arXiv:2506.09234**, *Transaction Categorization with Relational Deep Learning in QuickBooks*
+   (Intuit, 10 June 2025). 62.5% → **62.49**, 20.8% → **20.84**, 36% → **36.07**. And
+   `SECOND_CHOICE_CONFIDENCE = 0.1` — the bet that offering a runner-up buys about ten points — is
+   measured in the paper at **+10.30**. Two framing corrections in §7.2: the figures are **two
+   different production models**, not one model's three settings, and the same paper's successor
+   model reaches **68.67%**, so 62.5% is a baseline, not a ceiling.
+
+5. ⚠ **Australia is not in scope anywhere in the product, and §4 must not be read as though it
+   were.** The code encodes **no Australian threshold of any kind** — and that is the *best* outcome,
+   not a gap. The instant asset write-off became **permanent at $20,000 on 26 August 2026**, eight
+   days before this document, by an Act that **commences 1 October 2026** while applying from
+   **1 July 2026** — so the current statutory compilation still reads **$1,000**. Any hardcoded
+   jurisdiction figure would have needed a review cadence nobody has committed to. **F-AU-1.**
+
+### How business types actually differ — the one-sentence answer
+
+**Expense categories differ by *trade*; income, equity and appropriation categories differ by *legal
+form*.** The code models the first well, with four profiles and a chart that maps cleanly onto
+**12 of the 14 SA103F expense boxes** — and is in two places *better* than the form it feeds, because
+it refuses a catch-all (SA103F box 30 has one) and splits entertaining from advertising (SA103F box
+24 merges them). It models the second **not at all**, which is correct for coding purchase documents
+and becomes wrong the moment the chart is used for anything else. **A charity is a different shape
+again** — a SoFA analysed by *purpose*, support costs apportioned across activities, and **fund** as
+a *dimension* that no field in this product, including the proposed `DocumentLine`, can carry.
+**§2 recommends saying so explicitly and not adding a charity profile.**
+
+### The two gaps that are not the rules' fault
+
+- **`documents.category_code` is one nullable string with no line-item model.** The invoice that
+  started this work needs **five treatments on one document**. Two of the ten escalation reasons
+  exist **because of the schema, not the rules**: the lines were classified successfully and the
+  answer could not be written down. **§9.**
+- **The capitalisation threshold has no per-practice home.** The SoT requires it to be per-practice;
+  §5.9 confirms *why* — there is **no statutory de minimis in IFRS or UK GAAP**, and what permits a
+  threshold at all is **materiality**, which FRS 102 2.12 calls *"an entity-specific aspect of
+  relevance"*. A single platform figure is a materiality judgement made by the vendor. **§8b F-INT-1.**
+
+Both are **LAW (G7)** and want a contract-change issue, not a PR.
+
+### Where to go next
+
+| You want | Read |
+|---|---|
+| What the code encodes, raw | **§0** |
+| The verdict on each of those, marked confirmed / imprecise / wrong / unsourced | **§7** |
+| Everything to act on, in priority order, with the correct value and what I would change | **§8** |
+| What could not be verified, and why | **§8.6** |
+
+⚠ **Several hosts were unreachable and this shapes what could be checked.**
+`legislation.gov.uk` returns an **empty body rather than an error** — the dangerous failure, because
+a careless fetch reads it as "no content" instead of "unreachable" — so all UK statutory text is
+verified via HMRC's manuals or marked **not verified**. `web.archive.org` is blocked outright, so
+there was no fallback for the pages that returned 403. `ato.gov.au` 403s at the edge (reached via a
+text proxy), and `austlii.edu.au`/JADE were unreachable, so **every Australian case quotation is
+taken from an ATO ruling quoting the judgment**, not from the law report. **Nothing in this document
+was filled in from plausibility; §8.6 lists every gap by name.**
