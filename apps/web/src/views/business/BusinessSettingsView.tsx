@@ -11,6 +11,7 @@ import { newMember } from '../../lib/business';
 import { RolePicker } from '../../components/DynamicComponents/RolePicker';
 import { SectionStrip } from '../../components/DynamicComponents/SectionStrip';
 import { useConfirm } from '../../components/DynamicComponents/ConfirmProvider';
+import { Panel } from './Panel';
 import { useEscape } from '../../lib/useEscape';
 import type { BusinessAccount, BusinessMember } from '../../lib/types';
 
@@ -996,18 +997,6 @@ function BusinessDetailsPanel({ account, onSave }: {
         ) : null}
       </div>
     </Panel>
-  );
-}
-
-function Panel({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-[28px] border border-white/5 bg-card p-6">
-      <div className="mb-4">
-        <h2 className="text-[15px] font-bold text-white tracking-tight">{title}</h2>
-        {subtitle && <p className="text-[12px] text-zinc-500 mt-1">{subtitle}</p>}
-      </div>
-      {children}
-    </section>
   );
 }
 

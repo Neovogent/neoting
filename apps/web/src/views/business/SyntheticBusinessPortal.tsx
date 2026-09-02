@@ -15,6 +15,20 @@ import { BusinessUploadView } from './BusinessUploadView';
 import { pathForTab, tabFromPath, type PortalTab } from './portalTabs';
 
 /**
+ * ⚠ **DO NOT PUT THESE TABS BEHIND `lazy()`.** It was measured on 3 Sep 2026
+ * and it makes the budget WORSE, not better. This chunk is only ever reached
+ * through `BusinessPortal`, so Rollup files the shared shell (`portalTabs`,
+ * `BusinessPortalShell`, `PortalStatusPill`, `portalCamera`, …) in that
+ * guaranteed-ancestor chunk — which also holds the entire LIVE portal, 20,206 B
+ * gzip. Every chunk split off THIS one therefore inherits index + query +
+ * BusinessPortal + SyntheticBusinessPortal ≈ 231 kB before a line of its own
+ * code, so splitting Upload/Capture/Settings out turned one route 14 kB over
+ * budget into three (`BusinessSettingsView` 261,501, `BusinessUploadView`
+ * 254,443, and this one still 251,332). See `apps/web/CLAUDE.md`,
+ * *The synthetic portal pays for the live portal*.
+ */
+
+/**
  * The business portal on seeded data — the whole four-tab shell the demo walks
  * through with no API at all (METH_MODE §1 makes that a standing condition).
  *

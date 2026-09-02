@@ -6,7 +6,7 @@ import { useAppContext } from '../../context/AppContext';
 import { Pill } from '../../components/DynamicComponents/DataTable';
 import { ACCEPTED_EXTENSIONS } from '../../lib/ingest';
 import { PORTAL_UPLOAD_LIMIT } from '../../lib/business';
-import { Panel } from './BusinessHomeView';
+import { Panel } from './Panel';
 import type { BusinessAccount } from '../../lib/types';
 import { PrivacyNoticeLink } from '../legal/PrivacyNoticeLink';
 

@@ -15,7 +15,6 @@ import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { Tooltip } from '../components/DynamicComponents/Tooltip';
 import { blockedReason, describeMissing, partitionByReadiness, readinessOf } from '../lib/readiness';
-import { DocumentPreview } from '../components/DynamicComponents/DocumentPreview';
 import { currency } from '../lib/resolver';
 import { missingMandatory, OPTIONAL_MANDATORY } from '../lib/selectors';
 import { DuplicateModal } from '../components/DynamicComponents/DuplicateModal';
@@ -30,6 +29,16 @@ import { ProposalFlowModal } from '../components/DynamicComponents/ProposalFlowM
  * ClientInbox opens (the same dialog, the same refusal, the same wording).
  */
 const PublishBatchDialog = lazy(() => import('../components/DynamicComponents/PublishBatchDialog'));
+/**
+ * `lazy()` for the same reason it is lazy on Bank and Client detail: eagerly it
+ * put `DocumentPreview` and its `document-detail` client (~9.6 kB gzip) on this
+ * route for a dialog most sessions never open, and this route was over budget.
+ * The `Suspense` sits INSIDE the modal frame below, so the overlay, the card
+ * shell and the close button paint at once and only the document waits.
+ */
+const DocumentPreview = lazy(() =>
+  import('../components/DynamicComponents/DocumentPreview').then((mod) => ({ default: mod.DocumentPreview })),
+);
 import type { CreateActionProposalRequest } from '@neoting/contracts/model';
 import type { DocKind, DocStatus, Document, DuplicatePair } from '../lib/types';
 
@@ -1558,7 +1567,11 @@ export function InboxesView() {
               <button onClick={() => setPreview(null)} className="absolute -top-3 -right-3 z-10 p-2 bg-card hover:bg-raised text-zinc-400 hover:text-white rounded-full border border-white/10 transition-colors shadow-lg">
                 <X size={18} />
               </button>
-              <DocumentPreview document={documents.find((d) => d.id === preview.id) ?? preview} />
+              {/* Suspense INSIDE the frame: the modal itself paints at once and
+                  only the document card waits on its chunk. */}
+              <Suspense fallback={null}>
+                <DocumentPreview document={documents.find((d) => d.id === preview.id) ?? preview} />
+              </Suspense>
             </motion.div>
           </motion.div>
         )}

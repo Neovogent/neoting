@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import { Camera, Upload, AlertCircle, Clock, CheckCircle2, FileText, ShieldCheck, Eye, X, UserPlus, Check } from 'lucide-react';
 import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
@@ -7,10 +7,22 @@ import { Pill } from '../../components/DynamicComponents/DataTable';
 import { currency } from '../../lib/resolver';
 import type { BusinessAccount, MissingItem } from '../../lib/types';
 import { useQueryParam } from '../../lib/router';
-import { DocumentPreview } from '../../components/DynamicComponents/DocumentPreview';
 import { useConfirm } from '../../components/DynamicComponents/ConfirmProvider';
 import { channelLabel } from '../../lib/channels';
+import { Panel } from './Panel';
 import { useEscape } from '../../lib/useEscape';
+
+/**
+ * `lazy()` for the reason it is lazy on Bank, Client detail and Inboxes:
+ * eagerly it put `DocumentPreview` and its `document-detail` client (~9.6 kB
+ * gzip) on the portal route for a dialog most sessions never open, and the
+ * synthetic portal route was over the 250 kB budget. The `Suspense` sits INSIDE
+ * the overlay below, so the backdrop and the Close button paint at once and
+ * only the document card waits on its chunk.
+ */
+const DocumentPreview = lazy(() =>
+  import('../../components/DynamicComponents/DocumentPreview').then((mod) => ({ default: mod.DocumentPreview })),
+);
 
 const m = defineMessages({
   statusProcessing: { id: 'portal.businessHomeView.statusProcessing', defaultMessage: 'Processing' },
@@ -654,7 +666,9 @@ export function BusinessHomeView({
             onClick={(e) => e.stopPropagation()}
             role="presentation"
           >
-            <DocumentPreview document={preview} />
+            <Suspense fallback={null}>
+              <DocumentPreview document={preview} />
+            </Suspense>
             <button
               onClick={() => setPreviewId(null)}
               className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-raised border border-white/10 hover:border-white/25 transition-colors"
@@ -700,26 +714,6 @@ function Stat({
       <div className={`text-2xl font-bold mt-3 tracking-tight ${tones[tone]}`}>{value}</div>
       <div className="text-[11px] text-zinc-500 font-bold uppercase tracking-wider mt-1">{label}</div>
     </div>
-  );
-}
-
-export function Panel({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-[28px] border border-white/5 bg-card p-6">
-      <div className="mb-4">
-        <h2 className="text-[15px] font-bold text-white tracking-tight">{title}</h2>
-        {subtitle && <p className="text-[12px] text-zinc-500 mt-1">{subtitle}</p>}
-      </div>
-      {children}
-    </section>
   );
 }
 

@@ -24,6 +24,19 @@ import { LiveBusinessPortal } from './LiveBusinessPortal';
  * product and has to stay that way.
  *
  * Keep this file's static imports to the LIVE path only.
+ *
+ * ⚠ **THE REVERSE IS NOT TRUE, AND IT COSTS THE SYNTHETIC ROUTE 20,206 B.**
+ * Because this file is the only module that dynamically imports the synthetic
+ * shell, Rollup files everything the two halves SHARE — `BusinessPortalShell`,
+ * `portalTabs`, `PortalStatusPill`, `portalCamera`, `portalUploadRules`, … — in
+ * THIS chunk, which also holds the whole live portal. So a synthetic visitor
+ * downloads the live portal to borrow the shell, and `SyntheticBusinessPortal`
+ * measures 264,010 B against the 250 kB budget. Fixing it means making the two
+ * halves siblings (both `lazy()` from `App.tsx`) or pinning the shared modules
+ * with `manualChunks` — see `apps/web/CLAUDE.md`, *The synthetic portal pays for
+ * the live portal*. Do NOT make `LiveBusinessPortal` lazy here: a nested dynamic
+ * import is not in the parent's preload map, so it would add a serial round trip
+ * to the lightest route in the product to help a demo-only one.
  */
 
 const SyntheticBusinessPortal = lazy(() => import('./SyntheticBusinessPortal'));

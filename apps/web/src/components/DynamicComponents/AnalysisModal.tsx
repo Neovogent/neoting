@@ -1,10 +1,20 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AlertTriangle, ArrowRight, Check, Loader2, ScanLine, Sparkles, Table2, X } from 'lucide-react';
 import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import { commonActions } from '../../i18n/common';
 import { useAppContext } from '../../context/AppContext';
-import { DocumentPreview } from './DocumentPreview';
+
+/**
+ * ⚠ `lazy()`, and it has to stay that way: this module is imported at module
+ * scope by `InboxesView` and `ClientInbox`, so a STATIC import here put
+ * `DocumentPreview` and its `document-detail` client (~9.6 kB gzip) back on
+ * both routes and silently defeated the `lazy()` those screens already had on
+ * it — `InboxesView` was 7,470 B over the 250 kB budget for exactly this
+ * reason. The `Suspense` sits INSIDE this dialog's own frame, so the modal, its
+ * heading and its Confirm bar paint at once and only the figures wait.
+ */
+const DocumentPreview = lazy(() => import('./DocumentPreview').then((mod) => ({ default: mod.DocumentPreview })));
 import type { SheetImport } from '../../lib/tableImport';
 import type { DocKind, Document } from '../../lib/types';
 
@@ -344,7 +354,11 @@ export function AnalysisModal({ docIds, importIds = [], onClose, lockedClientId 
               )}
 
               {/* Every figure it found, in the same preview used everywhere else */}
-              {current && <DocumentPreview document={current} />}
+              {current && (
+                <Suspense fallback={null}>
+                  <DocumentPreview document={current} />
+                </Suspense>
+              )}
 
               {/* Confirm sits under the figures, not above them: the button
                   asks "does this look right?", so it belongs after the thing

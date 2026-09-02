@@ -804,12 +804,12 @@ consequences:
   strip — are now the cost of entry, not nice-to-haves. Whoever takes one gives
   the route back kilobytes rather than bytes; nobody should be hunting for 60.
 
-**Measure before you merge, not after.** A route over budget is a reject (D37), not a warning. The remaining known reclaims: the seed dataset (~67 kB source) leaving the floor when the remaining views move onto the generated client, and the `defaultMessage` strip when a second locale lands. The portal is still the lightest client-facing route by a wide margin — keep it that way: no heavy dependency, and nothing it imports may become shared with a practice screen (`upload-transport.ts` is the sanctioned shared seam, and it is 0.6 kB).
+**Measure before you merge, not after.** A route over budget is a reject (D37), not a warning. The remaining known reclaims: the seed dataset leaving the floor when the remaining views move onto the generated client (**measured 3 Sep 2026 at 9,265 B gzip, not the 67 kB of source this file used to imply**), and the `defaultMessage` strip when a second locale lands. The portal is still the lightest client-facing route by a wide margin — keep it that way: no heavy dependency, and nothing it imports may become shared with a practice screen (`upload-transport.ts` is the sanctioned shared seam, and it is 0.6 kB).
 
 Three things drive the floor, all known:
 
 - `AppContext.tsx` is ~90 kB of source and wraps every route, so it can never be split out;
-- the synthetic dataset (~67 kB of source across the three seed/generate modules) is imported by `AppContext` at module scope and therefore ships to users;
+- the synthetic dataset (~67 kB of source across the three seed/generate modules) is imported by `AppContext` at module scope and therefore ships to users — **but that is 9,265 B of gzip, not 67 kB; see *The seed-dataset reclaim is worth 9,265 B* below before planning anything around it**;
 - every `defaultMessage` is in the bundle. The catalogue is not loaded at runtime yet — `lang/en-GB.json` exists for translators and for the gate. When a second locale arrives, the messages should move to a fetched catalogue and the defaults be stripped at build (`@formatjs/babel-plugin-react-intl` / the SWC equivalent `removeDefaultMessage`), which gives most of the 19.6 kB back.
 
 Most of the seed weight leaves when the views move onto the generated client. Until then, treat **199.5 kB** as the floor a new screen is spending against, and re-measure with `pnpm --filter @neoting/web build` before adding a dependency.
@@ -1054,10 +1054,20 @@ component library. If two screens need the same piece, it moves to
 `components/DynamicComponents/` — importing it from the other screen costs that
 screen's entire chunk. Grep before you merge:
 `grep -rn "from '\./[A-Z].*View'" src` should return nothing but genuine
-composition. It currently returns one real offender —
-`SettingsView.tsx` → `import { LinkTtlField } from './ChasesView'` — which is
-worth ~15.8 kB on the Settings route and was left alone only because
-`ChasesView.tsx` was held by another lane at the time.
+composition. **It is clean as of 3 Sep 2026.** The last two offenders were
+`SettingsView.tsx` → `import { LinkTtlField } from './ChasesView'` (worth
+**28,911 B** on the Settings route — see *The second pass* below) and
+`BusinessUploadView.tsx` → `import { Panel } from './BusinessHomeView'` (worth
+zero today, taken as a tripwire). `LinkTtlField` now lives in
+`components/DynamicComponents/LinkTtlField.tsx`, `Panel` in
+`views/business/Panel.tsx`.
+
+⚠ **The grep is necessary and not sufficient.** `InboxesView` kept paying for
+`DocumentPreview` after its own call site went lazy, because two dialogs it
+imports at module scope (`AnalysisModal`, `DuplicateModal`) imported
+`DocumentPreview` at module scope. Nothing named a view; the closure still had
+it. Grep every static importer of the module you are moving, not just the
+screens.
 
 ### 🚨 The route total is bigger than the four-chunk shorthand says
 
@@ -1124,20 +1134,14 @@ growing by three chunk names — real, and the honest price of the split.)
    Client detail. Both open on a click. The `Suspense` sits INSIDE the `Modal`
    frame, so the dialog and its toolbar paint at once and only the card waits.
 
-**Three routes are still over, all untouched by that work and all pre-existing:**
-`AIWorkspaceView` (40.3 kB over — chat is genuinely the heaviest screen; nothing
-short of the floor reclaims below moves it), `SyntheticBusinessPortal` (24.4 kB
-over — synthetic-mode only, and `BusinessUploadView` importing `Panel` from
-`BusinessHomeView` is the same bug class), and `InboxesView` (7.5 kB over — one
-line: its `DocumentPreview` is in a `Modal` at `InboxesView.tsx:1561` and going
-lazy there is worth ~9.6 kB, the identical fix already applied on Bank and
-Client detail).
-
-⚠ **`SettingsView` has 895 B of headroom** — the thinnest on the board. Its
-remaining lever is `import { LinkTtlField } from './ChasesView'`, worth ~15.8 kB;
-move `LinkTtlField` out of `ChasesView` into a shared module and the route is
-comfortable again. Anything floor-reachable landing before that happens will put
-Settings back over.
+**Three routes were still over after that pass.** `InboxesView` and
+`SettingsView` came off the list on 3 Sep 2026 — see *The second pass* below,
+which supersedes the two paragraphs this note replaces. **Two remain, and both
+are diagnosed there:** `AIWorkspaceView` (40,351 over — chat is genuinely the
+heaviest screen, and the floor reclaim it was waiting on turns out to be worth
+9,265 B, not enough) and `SyntheticBusinessPortal` (14,010 over — synthetic-mode
+only, and its residue is structural: it statically imports the whole live-portal
+chunk).
 
 #### Arrival is not the whole story: measure the CUMULATIVE cost of a tabbed route
 
@@ -1160,10 +1164,126 @@ the first place. ⚠ Note the before column: `ClientDetailView + BankView` and
 its own parent's chunk. When a union equals one of its members, that is the
 signature of exactly this defect — check for it.
 
-**The named next levers on the cumulative figure**, both the same one-line lazy
-already applied elsewhere: `ClientInbox` statically imports `AnalysisModal`
-(8,540 B) and `DocumentPreview` + `document-detail` (9,560 B); both are modals.
-That is ~18.1 kB, which takes the Costs/Sales session to ~261 kB.
+**The named next lever on the cumulative figure** is `ClientInbox`'s
+`AnalysisModal` (8,540 B), still eager. Its other half — `DocumentPreview` +
+`document-detail`, 9,560 B — is **done as of 3 Sep 2026** and took `ClientInbox`
+from 244,306 B to 234,376 B on its own; see the section below.
+
+### The second pass, 3 Sep 2026: two routes off the reject list, two left
+
+Paired A/B again, two builds back to back in one session, same working tree,
+only the change under test between them. `node scripts/measure/route-bundle-closure.mjs --json …`
+
+| route | before | after | vs 250,000 |
+|---|---|---|---|
+| `AIWorkspaceView` | 290,270 | 290,351 | **40,351 OVER** |
+| `SyntheticBusinessPortal` | 274,418 | **264,010** | **14,010 OVER** |
+| `InboxesView` | 257,470 | **247,662** | 2,338 |
+| `SettingsView` | 249,105 | **220,194** | 29,806 |
+| `ClientInbox` | 244,306 | **234,376** | 15,624 |
+| `ChasesView` | 238,854 | 239,362 | 10,638 |
+
+Every other route moved by **+19 to +50 B** — the entry chunk's preload map
+growing by four chunk names, the same honest price the first pass paid.
+`ChasesView`'s +508 B is `LinkTtlField` leaving its chunk for a shared one.
+
+What did it:
+
+1. **`import { LinkTtlField } from './ChasesView'` was worth 28,911 B, not the
+   ~15.8 kB this file predicted** — the `ChasesView` chunk is 15,746 B, but it
+   drags `ChaseComposer` (3,235), `chases` (1,866), `ReviewGate` (1,807),
+   `Tooltip`, `ChaseModal`, `DataSourceBadge` and ~14 icon chunks behind it.
+   `LinkTtlField` now lives in `components/DynamicComponents/LinkTtlField.tsx`
+   and both screens import it from there. That was the last real hit for
+   `grep -rn "from '\./[A-Z].*View'" src`, which now returns only genuine
+   composition (`SyntheticBusinessPortal` composing its own five screens).
+2. **`DocumentPreview` was still eager on `InboxesView` — through two modals,
+   not one.** Making the call site at `InboxesView.tsx:1561` lazy reclaimed
+   **nothing**: `AnalysisModal` and `DuplicateModal` both imported
+   `DocumentPreview` at module scope, and `InboxesView` imports both of THEM at
+   module scope, so the chunk stayed in the closure through the side door. The
+   fix is in the two dialogs — `lazy()` there, `Suspense` inside each dialog's
+   own frame — and it is worth 9,808 B on `InboxesView` and 9,930 B on
+   `ClientInbox`. ⚠ **A `lazy()` at one call site proves nothing.** Grep every
+   static importer of the thing you are moving before you believe a number.
+3. **The portal's `Panel` moved to `views/business/Panel.tsx`.**
+   `BusinessUploadView` imported it from `BusinessHomeView` — the re-export bug
+   by the letter, and worth **zero bytes**, because `SyntheticBusinessPortal`
+   imports all five of its screens statically and Rollup files them in one
+   chunk. Taken anyway: it is a tripwire under any future `lazy()` on those
+   tabs. The synthetic portal's 10,408 B came from `BusinessHomeView`'s
+   `DocumentPreview` going lazy, not from `Panel`.
+
+⚠ **`InboxesView` has 2,338 B of headroom and is now the thinnest on the board.**
+Its next lever is `AnalysisModal` itself (8,540 B) — a dialog, and lazy-able —
+but it renders its own overlay, so there is no frame to put the `Suspense`
+inside and the modal would arrive a beat after the click. That is a behaviour
+change, not packaging; do not take it without asking.
+
+### The synthetic portal pays for the live portal — and cannot be split
+
+`SyntheticBusinessPortal` is **264,010 B, 14,010 over**, and 20,206 B of that is
+the **`BusinessPortal` chunk, which is the entire LIVE portal**
+(`LiveBusinessPortal`, `LivePortalHome/Capture/Upload/Settings`,
+`useBusinessPortalSession`). Read off a `--sourcemap` build's `sources` arrays:
+`BusinessPortal.tsx` is the only module that dynamically imports the synthetic
+shell, so Rollup files every module the two halves SHARE
+(`BusinessPortalShell`, `portalTabs`, `PortalStatusPill`,
+`LapsedSubscriptionNotice`, `portalAsk`, `portalCamera`, `portalUploadRules`,
+`portalSendFault`, `PortalSendFaultNotice` — 47,719 B of source) in the
+guaranteed-ancestor chunk, together with the 123,401 B of live-only source it
+already held. So a synthetic visitor downloads the live portal to borrow the
+shell. The comment in `BusinessPortal.tsx` — "a second `lazy()` decides only one
+of them is FETCHED" — is true of the synthetic half only.
+
+🚨 **DO NOT "fix" this by putting the synthetic portal's tabs behind `lazy()`.
+It was measured on 3 Sep 2026 and it makes the table WORSE.** Every chunk split
+off `SyntheticBusinessPortal` inherits index + query + `BusinessPortal` +
+`SyntheticBusinessPortal` ≈ 231 kB before a line of its own code, so one route
+14 kB over became three: `BusinessSettingsView` **261,501**,
+`BusinessUploadView` **254,443**, and `SyntheticBusinessPortal` still
+**251,332**. Reverted. The warning now sits in the file itself.
+
+The two things that WOULD work, neither of them this lane's call:
+
+- **Make the two halves siblings**, both `lazy()` from `App.tsx` on
+  `API_ENABLED`, so neither is the other's ancestor and the shared shell gets
+  its own chunk. Worth ~14.6 kB, lands the route at ~249.4 kB — **607 B of
+  headroom, which is not margin** — and it deletes `PortalChunkSkeleton` and its
+  `portal.businessPortal.loading` id, so it is a copy change too.
+- **A `manualChunks` entry** pinning the nine shared portal modules to their own
+  chunk. Same ~14.6 kB, no waterfall (Vite's preload helper fetches a dynamic
+  import's static deps in parallel), and no copy change — but it is a
+  build-configuration decision, like the icon consolidation above.
+
+⚠ Making `LiveBusinessPortal` lazy inside `BusinessPortal.tsx` is the one
+variant to reject outright: a nested dynamic import is NOT in the parent's
+preload map, so it adds a serial round trip to the lightest, most
+latency-sensitive route in the product for the benefit of a demo-only one.
+
+### The seed-dataset reclaim is worth 9,265 B, not "67 kB" — measured
+
+This file has quoted "~67 kB of source" for the synthetic dataset leaving the
+floor since launch M2, and readers have been reading it as the big reclaim. It
+is not. Measured 3 Sep 2026 by stubbing the modules and rebuilding clean:
+
+| stub | `index` gzip | off the floor |
+|---|---|---|
+| none (current) | 188,154 | — |
+| `seed.ts` + `seed2.ts` data arrays emptied | 183,241 | **4,913 B** |
+| …plus the nine synthetic-only builders (`buildDocuments`, `buildAccounts`, `buildMissing`, `buildTransactions`, `buildApprovals`, `buildChases`, `buildGaps`, `buildTasks`, `buildVault`) | 178,889 | **9,265 B** |
+
+The dataset is repetitive object literals: 67 kB of source is ~5 kB of gzip.
+**9,265 B does not save either remaining route** — `AIWorkspaceView` would still
+be 31,086 B over and `SyntheticBusinessPortal` 4,745 B over — and in synthetic
+mode the seeds are still fetched, just later, so for the demo it is a paper win
+and a real waterfall. Against that: `buildInitialPipeline` runs inside a
+`useState` initialiser, `SYNTHETIC ? … : []` appears at ~a dozen more places in
+`AppContext`, and there is no "seeds still loading" state anywhere — so doing it
+honestly means either an honest loading state on every screen or gating the
+whole provider on the import. **Not taken.** It remains a genuine ~9.3 kB win
+for LIVE users on every route, and a fair thing to do for its own sake; it is
+not the answer to a route over budget, and this file should stop implying it is.
 
 #### ~60 % of a one-icon chunk is per-chunk gzip overhead — measured
 
