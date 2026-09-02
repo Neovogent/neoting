@@ -81,15 +81,19 @@ const WEB = resolve(HERE, '../../apps/web');
 const BUDGET = 250_000;
 
 function parseArgs(argv) {
-  const opts = { dist: null, json: null, build: true, only: [] };
+  const opts = { dist: null, json: null, build: true, only: [], unions: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--dist') opts.dist = resolve(argv[(i += 1)]);
     else if (a === '--json') opts.json = resolve(argv[(i += 1)]);
     else if (a === '--no-build') opts.build = false;
     else if (a === '--only') opts.only = argv[(i += 1)].split(',');
+    else if (a === '--union') opts.unions.push(argv[(i += 1)].split('+'));
     else if (a === '--help' || a === '-h') {
-      console.log('usage: route-bundle-closure.mjs [--dist DIR] [--json FILE] [--no-build] [--only NameA,NameB]');
+      console.log(
+        'usage: route-bundle-closure.mjs [--dist DIR] [--json FILE] [--no-build]\n' +
+          '                               [--only NameA,NameB] [--union NameA+NameB]',
+      );
       process.exit(0);
     } else throw new Error(`unknown argument: ${a}`);
   }
@@ -205,16 +209,13 @@ function main() {
   let routeNames = readRouteNames();
   if (opts.only.length) routeNames = opts.only;
 
-  const rows = [];
-  for (const name of routeNames) {
-    const key = byName.get(name);
-    if (!key) {
-      rows.push({ route: name, missing: true });
-      continue;
-    }
-    const closure = staticClosure(manifest, key);
-    const files = [...closure].map((k) => manifest[k].file).filter((f) => f.endsWith('.js'));
-    const uniqueFiles = [...new Set(files)];
+  /** Sum the deduplicated closure of one or more start chunks. */
+  const measure = (label, names) => {
+    const keys = names.map((n) => byName.get(n));
+    if (keys.some((k) => !k)) return { route: label, missing: true };
+    const closure = new Set();
+    for (const k of keys) for (const c of staticClosure(manifest, k)) closure.add(c);
+    const uniqueFiles = [...new Set([...closure].map((k) => manifest[k].file).filter((f) => f.endsWith('.js')))];
     let piped = 0;
     let named = 0;
     const parts = [];
@@ -225,10 +226,24 @@ function main() {
       parts.push({ file: f, gzip: p });
     }
     parts.sort((a, b) => b.gzip - a.gzip);
-    rows.push({ route: name, chunks: uniqueFiles.length, gzip: piped, gzipWithFilenameHeader: named, parts });
-  }
+    return { route: label, chunks: uniqueFiles.length, gzip: piped, gzipWithFilenameHeader: named, parts };
+  };
 
+  const rows = routeNames.map((name) => measure(name, [name]));
   rows.sort((a, b) => (b.gzip ?? -1) - (a.gzip ?? -1));
+
+  /**
+   * `--union A+B` — what a SESSION costs, not what an arrival costs.
+   *
+   * A route with lazy sub-tabs is under-described by its arrival closure alone:
+   * `/clients/:id` loads `ClientDetailView`, and the moment the user clicks the
+   * Bank tab the browser additionally fetches `BankView`'s whole closure. The
+   * budget question for that user is the UNION of the two, deduplicated — the
+   * shared floor is paid once, everything else adds. Report both: the arrival
+   * number is what the budget formally governs, the union is what the user
+   * actually ends up holding, and a route can pass the first and fail the second.
+   */
+  const unionRows = opts.unions.map((names) => measure(names.join(' + '), names));
 
   const w = (s, n) => String(s).padEnd(n);
   const r = (s, n) => String(s).padStart(n);
@@ -236,27 +251,35 @@ function main() {
   lines.push(`budget ${BUDGET.toLocaleString('en-GB')} B gzipped JS per route (SoT §14 / D37 — over is a reject)`);
   lines.push(`dist   ${dist}`);
   lines.push('');
-  lines.push(`${w('route', 26)} ${r('chunks', 6)} ${r('gzip B', 10)} ${r('vs budget', 11)}  ${r('(w/ fname hdr)', 14)}`);
-  lines.push('-'.repeat(74));
-  for (const row of rows) {
+  const header = `${w('route', 34)} ${r('chunks', 6)} ${r('gzip B', 10)} ${r('vs budget', 11)}  ${r('(w/ fname hdr)', 14)}`;
+  const emit = (row) => {
     if (row.missing) {
-      lines.push(`${w(row.route, 26)} ${r('—', 6)} ${r('not built', 10)} ${r('', 11)}`);
-      continue;
+      lines.push(`${w(row.route, 34)} ${r('—', 6)} ${r('not built', 10)} ${r('', 11)}`);
+      return;
     }
     const delta = BUDGET - row.gzip;
     const verdict = delta < 0 ? `${r(`${(-delta).toLocaleString('en-GB')} OVER`, 11)}` : r(delta.toLocaleString('en-GB'), 11);
     lines.push(
-      `${w(row.route, 26)} ${r(row.chunks, 6)} ${r(row.gzip.toLocaleString('en-GB'), 10)} ${verdict}  ${r(row.gzipWithFilenameHeader.toLocaleString('en-GB'), 14)}`,
+      `${w(row.route, 34)} ${r(row.chunks, 6)} ${r(row.gzip.toLocaleString('en-GB'), 10)} ${verdict}  ${r(row.gzipWithFilenameHeader.toLocaleString('en-GB'), 14)}`,
     );
+  };
+  lines.push(header);
+  lines.push('-'.repeat(82));
+  for (const row of rows) emit(row);
+  if (unionRows.length) {
+    lines.push('');
+    lines.push('cumulative — a route PLUS a lazy sub-tab the user then opens (deduplicated):');
+    lines.push('-'.repeat(82));
+    for (const row of unionRows) emit(row);
   }
-  const over = rows.filter((x) => !x.missing && x.gzip > BUDGET);
+  const over = [...rows, ...unionRows].filter((x) => !x.missing && x.gzip > BUDGET);
   lines.push('');
   lines.push(over.length ? `OVER BUDGET: ${over.map((x) => x.route).join(', ')}` : 'All routes under budget.');
   const text = lines.join('\n');
   console.log(text);
 
   if (opts.json) {
-    writeFileSync(opts.json, JSON.stringify({ budget: BUDGET, dist, rows }, null, 2));
+    writeFileSync(opts.json, JSON.stringify({ budget: BUDGET, dist, rows, unionRows }, null, 2));
     process.stderr.write(`wrote ${opts.json}\n`);
   }
   return over.length ? 1 : 0;

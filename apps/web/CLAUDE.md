@@ -759,7 +759,15 @@ Two chunk-placement facts S12 measured, for the next stage that wires a surface:
 - **A module's chunk is decided by REACHABILITY, not by usage.** The zod/client barrels are statically imported by floor modules, so every generated sub-module any lazy chunk touches gets hoisted into `index` — a lazy import does not keep generated code off the floor once its barrel is floor-reachable. The marginal cost is per-EXPORT, which is why `proposals.ts` calls the plain generated function inside its own `useQuery` rather than pulling the hook/queryKey machinery.
 - The rest of S12 (`chases.ts`, the view boards, `LiveProposalCard`, `ProposalFlowModal`) landed on lazy chunks as intended: ChasesView 16.7 kB, ApprovalsView 15.5 kB, InboxesView 13.8 kB, `LiveProposalCard` 3.1 kB shared between the Approvals and Inboxes chunks.
 
-### 🚨 THE WORST ROUTE IS OVER BUDGET AS OF 2 Sep 2026 — measured, not projected
+### 🚨 THE WORST ROUTE WAS OVER BUDGET ON 2 Sep 2026 — measured, not projected
+
+> **Resolved 3 Sep 2026, and the figures below are the wrong quantity anyway.**
+> `ClientDetailView` now measures **245,268 B** and `BankView` **237,110 B** by
+> closure — see *The route total is bigger than the four-chunk shorthand says*
+> further down, and `scripts/measure/route-bundle-closure.mjs`. Everything in
+> this section about MEASUREMENT DISCIPLINE (paired builds, clean environment,
+> gzip's own noise) still holds and is why the script exists; the four-chunk
+> arithmetic it uses does not. Kept as the record of how the breach was found.
 
 `ClientDetailView` **exceeds the 250,000 B hard budget with nothing pending**.
 Measured as a tight paired A/B (two builds back to back, exact `gzip -c | wc -c`,
@@ -1030,37 +1038,148 @@ reclaimed nothing while that line pulled it back through the side door.
 Documents route went **256,622 B → 227,827 B** — a **28.8 kB reduction** while
 GAINING the viewer, the Trash tab, purge and the counts.
 
-**Three importers are left, and two of them are not this cheap to fix:**
-`ClientSupplierStatements.tsx` takes only `Modal` and is the same one-line
-reclaim; `ClientDetailView.tsx` also takes `WorkflowCard`/`WorkflowEditor`/
-`blankWorkflow` and `TeamView.tsx`/`SettingsView.tsx` take `Field`/`Toggle`, so
-those need the shared pieces moved OUT of `ApprovalsView` first. That refactor is
-the single biggest known reclaim on the two worst routes.
+**All four importers are gone as of 3 Sep 2026, and the shared pieces now have
+canonical homes.** `Field`/`Toggle` live in
+`components/DynamicComponents/FormControls.tsx`; `WorkflowCard`/`blankWorkflow`
+in `components/DynamicComponents/WorkflowCard.tsx`; `WorkflowEditor` in
+`components/DynamicComponents/WorkflowEditor.tsx`, deliberately its own module so
+both call sites can reach it through `lazy()` — it is a modal, and eagerly it was
+6.9 kB gzip on two routes for a dialog most sessions never open. `ApprovalsView`
+no longer re-exports `Modal`, `Field`, `Toggle`, `WorkflowCard`, `WorkflowEditor`
+or `blankWorkflow`, and **nothing should put those exports back**: the
+re-export is the whole mechanism of this bug.
+
+**The rule this leaves:** a view module (`views/*View.tsx`) is a screen, not a
+component library. If two screens need the same piece, it moves to
+`components/DynamicComponents/` — importing it from the other screen costs that
+screen's entire chunk. Grep before you merge:
+`grep -rn "from '\./[A-Z].*View'" src` should return nothing but genuine
+composition. It currently returns one real offender —
+`SettingsView.tsx` → `import { LinkTtlField } from './ChasesView'` — which is
+worth ~15.8 kB on the Settings route and was left alone only because
+`ChasesView.tsx` was held by another lane at the time.
 
 ### 🚨 The route total is bigger than the four-chunk shorthand says
 
-Measured 2 Sep 2026 as a paired A/B (two builds back to back, one command),
-summing the **transitive closure of STATIC imports** from each route chunk —
-which is what the browser actually fetches — rather than
-`index + query + react + the view`:
+**There is a script now: `scripts/measure/route-bundle-closure.mjs`.** Run it,
+do not re-derive a number by hand:
 
-| route | total JS gz | vs 250,000 |
-|---|---|---|
-| `BankView` | 301,206 | **−51,206 OVER** |
-| `AIWorkspaceView` | 290,288 | **−40,288 OVER** |
-| `ClientDetailView` | 285,215 | **−35,215 OVER** |
-| `InboxesView` | 257,621 | **−7,621 OVER** |
-| `ApprovalsView` | 246,964 | 3,036 |
-| `DocumentsView` | 227,827 | 22,173 |
+```
+node scripts/measure/route-bundle-closure.mjs                  # build + measure every route
+node scripts/measure/route-bundle-closure.mjs --dist DIR       # measure an existing --manifest build
+```
 
-⚠ **Every one of those overages is pre-existing** — the same measurement of the
-tree without this stage reads `BankView` 299,796 and `ClientDetailView` 283,863.
-The shorthand this file has used throughout undercounts by ~40 kB on the client
-routes because `ClientDetailView` statically imports `ApprovalsView`,
-`DocumentPreview`, `ChaseComposer`, `LiveProposalCard`, `DataTable`,
-`ReviewGate`, `Tooltip` and ~20 icon chunks, and `BankView` statically imports
-`ClientDetailView`. **Sum the closure, not four names.** The reclaim above is
-where the kilobytes are.
+It reads Rollup's own chunk graph out of `dist/.vite/manifest.json`, walks the
+**transitive closure of STATIC imports** from each route chunk — which is what
+the browser actually fetches before the route can render — and sums exact
+`gzip -c | wc -c` bytes, deduplicated. It deliberately does NOT follow
+`dynamicImports`: not fetching those on arrival is the point of a `lazy()`. It
+discovers routes itself (every `lazy(() => import(…))` in `App.tsx`, plus any
+that resolves under `src/views/` — which is how `BankView` and `ClientInbox`,
+lazy from `ClientDetailView` rather than from `App.tsx`, get measured at all;
+a route list read from `App.tsx` alone misses the heaviest route in the app).
+
+The shorthand this file used throughout — `index + query + react + the view` —
+**undercounts the client routes by ~40 kB** and must not be used again.
+
+Measured 3 Sep 2026 as a paired A/B, two builds back to back in one session:
+
+| route | before | after | vs 250,000 |
+|---|---|---|---|
+| `AIWorkspaceView` | 289,758 | 290,270 | **40,270 OVER** |
+| `SyntheticBusinessPortal` | 274,431 | 274,418 | **24,418 OVER** |
+| `InboxesView` | 257,163 | 257,470 | **7,470 OVER** |
+| `SettingsView` | 280,029 | **249,105** | 895 |
+| `ClientDetailView` | 284,722 | **245,268** | 4,732 |
+| `ApprovalsView` | 246,483 | 242,685 | 7,315 |
+| `BankView` | 300,696 | **237,110** | 12,890 |
+| `TeamView` | 260,802 | **227,064** | 22,936 |
+| `DocumentsView` | 227,265 | 227,298 | 22,702 |
+
+(Every other route sits between 205 kB and 245 kB; run the script for the full
+table. The uniform ~+30 B on untouched routes is the entry chunk's preload map
+growing by three chunk names — real, and the honest price of the split.)
+
+**Four routes came off the reject list.** What did it, in order of size:
+
+1. **`BankView` was statically importing the whole `ClientDetailView` chunk
+   (30,665 B) to borrow one dialog.** Not a source-level import — nothing in
+   `BankView.tsx` names `ClientDetailView`. Rollup had filed `StatementModal` in
+   the `ClientDetailView` chunk (because `ClientSupplierStatements` imports it),
+   and `BankView` needs the same modal, so the edge dragged the parent screen,
+   both tab screens and `OffboardClientDialog` onto the Bank route. Putting
+   `ClientSupplierStatements` and `ClientExpenseClaims` behind `lazy()` — they
+   are tabs, exactly like the already-lazy `ClientInbox` and `BankView` beside
+   them — moved the shared modal into a chunk of its own and the artefact
+   vanished. ⚠ **Chunk membership is not import membership.** When a number
+   makes no sense, build with `--sourcemap` and read the `sources` array of the
+   chunk's `.map` — that is the only way to see which modules Rollup actually
+   put together.
+2. **The `ApprovalsView` re-export bug, on three more routes** — see the section
+   above. `Field`/`Toggle`/`WorkflowCard`/`WorkflowEditor`/`blankWorkflow` moved
+   to `components/DynamicComponents/`, which is what took `SettingsView` (−30.9 kB)
+   and `TeamView` (−33.7 kB) under budget as a side effect.
+3. **Two modals made lazy**: `WorkflowEditor` (6.9 kB) on Approvals and Client
+   detail, `DocumentPreview` + its `document-detail` client (9.6 kB) on Bank and
+   Client detail. Both open on a click. The `Suspense` sits INSIDE the `Modal`
+   frame, so the dialog and its toolbar paint at once and only the card waits.
+
+**Three routes are still over, all untouched by that work and all pre-existing:**
+`AIWorkspaceView` (40.3 kB over — chat is genuinely the heaviest screen; nothing
+short of the floor reclaims below moves it), `SyntheticBusinessPortal` (24.4 kB
+over — synthetic-mode only, and `BusinessUploadView` importing `Panel` from
+`BusinessHomeView` is the same bug class), and `InboxesView` (7.5 kB over — one
+line: its `DocumentPreview` is in a `Modal` at `InboxesView.tsx:1561` and going
+lazy there is worth ~9.6 kB, the identical fix already applied on Bank and
+Client detail).
+
+⚠ **`SettingsView` has 895 B of headroom** — the thinnest on the board. Its
+remaining lever is `import { LinkTtlField } from './ChasesView'`, worth ~15.8 kB;
+move `LinkTtlField` out of `ChasesView` into a shared module and the route is
+comfortable again. Anything floor-reachable landing before that happens will put
+Settings back over.
+
+#### Arrival is not the whole story: measure the CUMULATIVE cost of a tabbed route
+
+`--union A+B` sums the deduplicated closure of two chunks — what a user actually
+holds after arriving somewhere and then clicking a lazy sub-tab. `/clients/:id`
+is the case that needs it: it arrives on **Overview** (245,268 B, under), and
+each tab adds:
+
+| session | before | after | vs 250,000 |
+|---|---|---|---|
+| `ClientDetailView` alone (arrival, Overview) | 284,722 | **245,268** | 4,732 |
+| `ClientDetailView` + Bank tab | 300,696 | 266,306 | **16,306 OVER** |
+| `ClientDetailView` + Costs/Sales tab | 307,503 | 279,032 | **29,032 OVER** |
+
+D37 budgets **initial** JS per route, so the arrival figure is the one that
+formally passes or fails — and it passes. But a user two clicks in is holding
+267–279 kB, and pretending otherwise is how the four-chunk shorthand happened in
+the first place. ⚠ Note the before column: `ClientDetailView + BankView` and
+`BankView` alone read the SAME 300,696 B, because `BankView` statically imported
+its own parent's chunk. When a union equals one of its members, that is the
+signature of exactly this defect — check for it.
+
+**The named next levers on the cumulative figure**, both the same one-line lazy
+already applied elsewhere: `ClientInbox` statically imports `AnalysisModal`
+(8,540 B) and `DocumentPreview` + `document-detail` (9,560 B); both are modals.
+That is ~18.1 kB, which takes the Costs/Sales session to ~261 kB.
+
+#### ~60 % of a one-icon chunk is per-chunk gzip overhead — measured
+
+`ClientDetailView`'s 15 sub-600 B chunks (nearly all single `lucide-react`
+icons) gzip to **4,478 B separately** but to **1,727 B concatenated** — the same
+6,624 raw bytes. **2,751 B, 61 %, is the cost of them being separate files**:
+gzip cannot share a dictionary across files and each one re-pays a header and a
+cold deflate window. The same arithmetic is worth ~6.1 kB on `AIWorkspaceView`
+(34 such chunks), ~4.6 kB on `InboxesView` (25) and ~3.2 kB on `BankView` (16).
+
+⚠ **This is NOT free money and must not be taken as a to-do.** Those chunks are
+shared BETWEEN routes; inlining them into each route chunk duplicates them and
+trades cross-navigation cache reuse for first-paint bytes. It is also a
+`manualChunks` change in `vite.config.ts`, i.e. every route at once, not a
+packaging fix on one screen. Measure the whole table before and after — with
+this script — and treat it as a build-configuration decision, not a cleanup.
 
 ## DocumentPreview shows the bank match (Phase 4, 1 Sep 2026)
 
