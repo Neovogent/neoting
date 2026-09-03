@@ -17,8 +17,9 @@ holds products from an unrelated project.** The objects in §2 were created in
 that account's **sandbox**, which is fine for proving the integration and is
 where the ids below point.
 
-It is **not** where launch goes. Live mode needs the Neoting company account,
-because that is the account the company verification, the UK VAT registration
+It is **not** where launch goes. Live mode needs the Neoting company account —
+**NEOVOGENT AI SOLUTIONS UK LTD**, company **15946429** (SoT D34; `docs/legal/README.md`
+§7) — because that is the account the company verification, the UK VAT registration
 number and the bank payout details attach to. Creating the live-mode price in a
 personal account puts someone else's name on a client's VAT invoice.
 
@@ -30,12 +31,13 @@ Check before doing anything: `stripe whoami`.
 
 | # | Thing | Blocking what |
 |---|---|---|
-| 1 | A Neoting company Stripe account | Everything below, in live mode |
+| 1 | A Stripe account owned by **NEOVOGENT AI SOLUTIONS UK LTD** (15946429) | Everything below, in live mode |
 | 2 | Company + director verification (days, not hours) | Live mode at all |
 | 3 | **The UK VAT registration number** | The VAT number on invoices |
 | 4 | A head-office address in Tax → Settings | Adding any tax registration |
 
-⚠ **`9286810564` is the company TAX ID, not the VAT registration number.**
+⚠ **`9286810564` was recorded against EXAM BINARY LTD — the superseded entity — and is a
+TAX ID, not a VAT registration number. Do not use it for Neovogent.**
 Stripe's tax-ID field for a UK business expects a `gb_vat` value — the
 nine-digit VAT registration reference. Putting the tax ID there produces
 invoices with the wrong number on them.
