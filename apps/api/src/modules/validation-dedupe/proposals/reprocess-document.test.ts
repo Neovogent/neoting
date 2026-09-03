@@ -115,14 +115,16 @@ test('a rejection over a fully coded document is undone cleanly — reject then 
 });
 
 test('readiness decides the landing state, one field at a time', async () => {
-  // Two of three mandatory fields present is still To Review — `readiness.ts` is
-  // the one place that choice lives and this executor does not re-state it.
+  // Mandatory fields short is To Review — `readiness.ts` is the one place that
+  // choice lives and this executor does not re-state it. A £0.00 total counts
+  // as missing since 2026-09-03 (readiness.ts has the reasoning), so this
+  // fixture is short two fields, not one.
   const { db, map } = harness([failed('doc_1', { totalPence: 0, supplierName: 'Shell' })]);
   await run(db, { documentIds: ['doc_1'] });
   expect(map.get('doc_1')?.state).toBe('TO_REVIEW');
 
-  // A £0.00 total is a real value, not a missing one — with the category it is Ready.
-  const complete = harness([failed('doc_2', { totalPence: 0, supplierName: 'Shell', categoryCode: 'MOTOR' })]);
+  // With a real total and the category it is Ready.
+  const complete = harness([failed('doc_2', { totalPence: 7_250, supplierName: 'Shell', categoryCode: 'MOTOR' })]);
   await run(complete.db, { documentIds: ['doc_2'] });
   expect(complete.map.get('doc_2')?.state).toBe('READY');
 });
