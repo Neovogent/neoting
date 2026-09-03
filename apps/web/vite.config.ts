@@ -81,6 +81,12 @@ export default defineConfig({
   },
 
   server: {
+    /**
+     * Bind the IPv4 loopback explicitly. Left unset, Node 24 resolves
+     * `localhost` to `::1` first and Vite listens there only, so a browser
+     * that connects to 127.0.0.1 (Edge on macOS does) is refused.
+     */
+    host: '127.0.0.1',
     port: 5173,
     /**
      * Dev proxy (METH Stage 6): `/v1` is forwarded to the API on :3000, so the
