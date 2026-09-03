@@ -36,8 +36,23 @@ export interface SliceStatus {
   error: string | null;
 }
 
-/** Every slice the demo route reads. Names match the AppContext arrays. */
-export type SliceName = 'documents' | 'chases' | 'proposals' | 'bankTransactions' | 'publishes' | 'businesses';
+/**
+ * Every slice the demo route reads. Names match the AppContext arrays.
+ *
+ * `expenseClaims` is here because it IS one of those arrays, not because it is
+ * wired: nothing asks the API for a claim and no contract operation exists to
+ * ask. Naming it is what lets the tab report `'seed'` — "the API was never
+ * asked" — instead of having no vocabulary for its own state and rendering an
+ * empty list as though the server had answered with one.
+ */
+export type SliceName =
+  | 'documents'
+  | 'chases'
+  | 'proposals'
+  | 'bankTransactions'
+  | 'publishes'
+  | 'businesses'
+  | 'expenseClaims';
 
 export type SliceStatuses = Record<SliceName, SliceStatus>;
 

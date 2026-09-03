@@ -4,6 +4,7 @@ import { motion } from 'motion/react';
 import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import { commonActions, commonPlaceholders } from '../i18n/common';
 import { useAppContext } from '../context/AppContext';
+import { DataSourceBadge } from '../components/DataSourceBadge';
 import { Pill } from '../components/DynamicComponents/DataTable';
 import { currency } from '../lib/resolver';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
@@ -65,6 +66,27 @@ const m = defineMessages({
       "Spend an employee paid for personally, grouped so it can be reimbursed in one go. A claim only reaches you once someone at the business has approved it — whether a spend was legitimate is the employer's call, not the bookkeeper's. {amount} owed back, {waiting} waiting on you.",
   },
   newClaim: { id: 'analytics.clientExpenseClaims.newClaim', defaultMessage: 'New claim' },
+  /**
+   * The live state. Two messages rather than one for the reason the lead
+   * paragraph is three: they answer different questions — what this screen
+   * knows, and what it can do — and a translator should be able to move the
+   * second without disturbing the first.
+   *
+   * Neither may name a figure, a count or a claim, and neither may say
+   * anything is or is not owed: the array behind this tab is empty in a live
+   * build because nothing ever asked for it, so every one of those sentences
+   * would be an assertion about a client's money made out of an absence.
+   */
+  notWiredLead: {
+    id: 'analytics.clientExpenseClaims.notWiredLead',
+    defaultMessage:
+      'Expense claims are not connected to the API in this build. Nothing on this tab reads a claim from the server, so it cannot say what {client} has claimed, what has been approved or whether anything is owed.',
+  },
+  notWiredActions: {
+    id: 'analytics.clientExpenseClaims.notWiredActions',
+    defaultMessage:
+      'Creating, sending, accepting, reimbursing and deleting a claim are unavailable here — those writes would live only in this browser and be gone on reload. The channel an employee would submit a claim through has not been built.',
+  },
   empty: {
     id: 'analytics.clientExpenseClaims.empty',
     defaultMessage:
@@ -206,10 +228,54 @@ export function ClientExpenseClaims({ client, onPreview }: {
   client: Client;
   onPreview?: (doc: Document) => void;
 }) {
-  const { expenseClaims, saveExpenseClaim, setExpenseClaimStatus, deleteExpenseClaim, ingest, documents } = useAppContext();
+  const {
+    expenseClaims, saveExpenseClaim, setExpenseClaimStatus, deleteExpenseClaim, ingest, documents,
+    documentsSource, slices,
+  } = useAppContext();
   const [editing, setEditing] = useState<ExpenseClaim | null>(null);
   const confirm = useConfirm();
   const intl = useIntl();
+
+  /**
+   * ⚠ This whole surface is synthetic, and in a live build it says so instead
+   * of drawing itself over an empty array (S14's rule, applied here).
+   *
+   * `expenseClaims` is `SYNTHETIC ? seedExpenseClaims : []` in `AppContext`
+   * and no effect fills it, because no endpoint exists to fill it from — the
+   * claim is not in `packages/contracts`, in `prisma/`, or in the API at all.
+   * So with the API on the list below was permanently empty and the lead
+   * paragraph told an accountant "Nothing is currently owed" about data
+   * nobody had asked for, which is the same lie as showing invented rows,
+   * told the other way round (`api/slices.ts`, the note on `'error'`).
+   *
+   * The writers are gone for the S12 reason rather than for a missing read:
+   * they are `setState` and nothing else, so a claim created here survives
+   * exactly until the tab is reloaded. A button whose write nothing keeps is
+   * worse than absent.
+   *
+   * `documentsSource` is the app's demo-vs-live signal (`API_ENABLED ? 'api'
+   * : 'seed'`) — the same one the S14 sweep gated InboxesView, ClientInbox,
+   * BankView and DocumentsView on.
+   */
+  if (documentsSource === 'api') {
+    return (
+      <div className="flex flex-col gap-4">
+        {/* The badge renders only on 'error'. `slices.expenseClaims` is
+            'seed' — nothing was asked — so today it draws nothing; it is
+            mounted so that wiring the slice lights the failure state up
+            without touching this file. */}
+        <DataSourceBadge slice="expense claims" status={slices.expenseClaims} />
+        <div className="border border-white/5 rounded-[32px] bg-card p-4 md:p-10 shadow-2xl flex flex-col gap-3 text-center">
+          <p className="text-[13px] text-zinc-400 leading-relaxed max-w-xl mx-auto">
+            {intl.formatMessage(m.notWiredLead, { client: client.name })}
+          </p>
+          <p className="text-[13px] text-zinc-500 leading-relaxed max-w-xl mx-auto">
+            {intl.formatMessage(m.notWiredActions)}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const mine = expenseClaims.filter((c) => c.clientId === client.id);
   /** The claim is worth what its receipts say, not what was typed beside them. */

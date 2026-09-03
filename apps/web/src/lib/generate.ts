@@ -8,6 +8,7 @@ import type {
   ChaseStage,
   Client,
   Document,
+  ExpenseClaim,
   ExtractedField,
   MissingItem,
   StatementGap,
@@ -266,14 +267,58 @@ const listed = (appliesTo: string, prefix: string) =>
   appliesTo.replace(prefix, '').split(',').map((v) => v.trim().toLowerCase()).filter(Boolean);
 
 /**
+ * The scope strings a workflow can carry, as whole values rather than as the
+ * fall-through's leftovers. `workflowParser` mints all four (`Category: …`,
+ * `All sales items`, `All expense claims`, `All cost items`) and `seed2.ts`
+ * adds `Supplier: …`; the `appliesTo` field in the workflow editor is free
+ * text, so anything else is also reachable.
+ */
+const ALL_SALES = 'All sales items';
+const ALL_EXPENSE_CLAIMS = 'All expense claims';
+const ALL_COSTS = 'All cost items';
+
+/**
+ * The documents that are lines on an expense claim.
+ *
+ * A claim line points at an ordinary document — there is no `kind` or flag on
+ * `Document` that says "this receipt is part of a claim", so the claims
+ * themselves are the only place that fact lives, and a caller that wants an
+ * expense-claim-scoped workflow to fire has to hand them over.
+ */
+export function expenseClaimDocumentIds(claims: ExpenseClaim[]): Set<string> {
+  const ids = new Set<string>();
+  for (const claim of claims) {
+    for (const item of claim.items) if (item.documentId) ids.add(item.documentId);
+  }
+  return ids;
+}
+
+/**
  * The workflow that claims a document, or none at all.
  *
  * Two rules from wireframe screen 12. Approvals are opt-in per client, so a
  * document belonging to a client with no workflow returns nothing and never
  * pauses. And where several could apply, the most specific wins — a rule about
  * one category beats a rule about one supplier, which beats "all costs".
+ *
+ * ⚠ **The scope match is a closed set, and the default is "claims nothing".**
+ * It used to end `return doc.kind === 'cost'`, which meant every scope the
+ * three earlier branches did not name fell into the cost bucket — so a
+ * workflow the parser scoped to `All expense claims` paused *every* cost
+ * document the client had, and a typo in the editor's free-text field did the
+ * same. Under-matching is a workflow nobody notices; over-matching holds a
+ * client's whole purchase ledger at an approval stage it was never meant to
+ * reach. An unrecognised scope therefore claims nothing.
  */
-export function workflowFor(doc: Document, workflows: ApprovalWorkflow[]): ApprovalWorkflow | undefined {
+export function workflowFor(
+  doc: Document,
+  workflows: ApprovalWorkflow[],
+  /**
+   * Which documents are expense-claim lines. Omitted, an expense-claim-scoped
+   * workflow claims nothing — the same safe direction as an unknown scope.
+   */
+  claimDocumentIds: ReadonlySet<string> = new Set<string>(),
+): ApprovalWorkflow | undefined {
   const candidates = workflows.filter((w) => {
     if (!w.active) return false;
     if (!w.clientIds.includes(doc.clientId)) return false;
@@ -284,8 +329,13 @@ export function workflowFor(doc: Document, workflows: ApprovalWorkflow[]): Appro
     if (w.appliesTo.startsWith('Supplier:')) {
       return listed(w.appliesTo, 'Supplier:').some((name) => doc.supplier.toLowerCase().includes(name));
     }
-    if (w.appliesTo === 'All sales items') return doc.kind === 'sales';
-    return doc.kind === 'cost';
+    if (w.appliesTo === ALL_SALES) return doc.kind === 'sales';
+    if (w.appliesTo === ALL_EXPENSE_CLAIMS) return claimDocumentIds.has(doc.id);
+    if (w.appliesTo === ALL_COSTS) return doc.kind === 'cost';
+    // The closed set's default, and the whole point of the note above: an
+    // unrecognised scope claims NOTHING. Falling through to `cost` is what
+    // paused a client's entire purchase ledger under an expense-claim policy.
+    return false;
   });
   return candidates.sort((a, b) => b.specificity - a.specificity)[0];
 }
@@ -299,9 +349,20 @@ export function branchesFor(workflow: ApprovalWorkflow, total: number, newSuppli
   });
 }
 
-/** Builds the approval queue from documents that a live workflow captures. */
-export function buildApprovals(documents: Document[], workflows: ApprovalWorkflow[]): ApprovalItem[] {
+/**
+ * Builds the approval queue from documents that a live workflow captures.
+ *
+ * `claims` is what an `All expense claims` workflow needs in order to fire at
+ * all — see `workflowFor`. Omitted, such a workflow captures nothing, which is
+ * the safe answer rather than the old one (it captured everything).
+ */
+export function buildApprovals(
+  documents: Document[],
+  workflows: ApprovalWorkflow[],
+  claims: ExpenseClaim[] = [],
+): ApprovalItem[] {
   const out: ApprovalItem[] = [];
+  const claimDocumentIds = expenseClaimDocumentIds(claims);
 
   documents.forEach((doc, i) => {
     if (doc.status !== 'ready' && doc.status !== 'review') return;
@@ -310,7 +371,7 @@ export function buildApprovals(documents: Document[], workflows: ApprovalWorkflo
     // the queue is exactly what the active workflows say it should be.
     if (doc.total < 150) return;
 
-    const workflow = workflowFor(doc, workflows);
+    const workflow = workflowFor(doc, workflows, claimDocumentIds);
     if (!workflow) return;
 
     const newSupplier = doc.supplier.length % 7 === 0;
