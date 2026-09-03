@@ -59,6 +59,53 @@ import { logInjectionSignal } from './telemetry.js';
 const MAX_HISTORY_TURNS = 10;
 const MAX_WALL_CLOCK_MS = 180_000;
 
+/**
+ * The one request the intent enum cannot carry, answered honestly (D42, D44).
+ *
+ * "Export all the ready docs for VT" is not a fringe ask — under D42 export is
+ * Initial Delivery's SOLE egress, and VT Transaction+ is the named first
+ * target. But `ChatIntent` (packages/contracts, LAW) has no export value, so
+ * the model's only legal classifications for it are GENERAL or SCOPE_REFUSAL —
+ * and both used to render as "I did not understand you" followed by a list of
+ * five things the accountant did not ask for. Until the contract grows an
+ * export intent (a G7 contract-change issue for Shakib), the service
+ * recognises the ask AFTER the model has declined to route it and replaces the
+ * shrug with the true answer: where the export lives, what it carries, and
+ * what has to happen to a Ready document before it can be in one.
+ *
+ * Composed HERE, deterministically, for three reasons:
+ *
+ * - both providers answer identically — the demo stand-in's keyword table and
+ *   the pinned model fall through to the same sentence, so "the local" and
+ *   staging cannot disagree about the product's own egress;
+ * - the sentences about the approval spine must be exact. Chat performs no
+ *   export (`x-nt-side-effect: none`), a publish batch goes through
+ *   Review → Approve, and release is the super admin's act alone (D44). A
+ *   model paraphrase of that is a risk with no upside — the same reasoning as
+ *   the LIVE_RULE reply below;
+ * - the system prompt is a byte-stable cache prefix behind the §9.8 eval
+ *   recording. Teaching the MODEL about exports is a prompt change with a
+ *   re-record ceremony (Bedrock credentials, a committed recording diff), and
+ *   this answer must not wait for that. When that prompt change ships, this
+ *   override simply stops firing on well-classified turns and keeps catching
+ *   the stragglers.
+ *
+ * It fires only when the MODEL's own intent was GENERAL or SCOPE_REFUSAL —
+ * never over a `decorate()` degradation such as the §9.4 fabricated-citation
+ * fallback, which outranks it. It runs no query, calls no model, and changes
+ * no state: it is words about where the download lives.
+ */
+const EXPORT_ASK = /\bexport(s|ed|ing)?\b|\bvt\b/i;
+
+export const EXPORT_GUIDANCE =
+  "I can't run an export from chat — exports are downloads from the Export tab, " +
+  'where you pick the client and the period and get the VT Transaction+ import ' +
+  'file together with its source documents. An export carries Published ' +
+  'documents only, so Ready ones must be released first: ask me to publish the ' +
+  "ready costs and I'll draft that batch. It goes through Review → Approve, " +
+  "and only your practice's super admin can release it. Nothing leaves the " +
+  'product on its own.';
+
 export interface ChatTurnInput {
   readonly utterance: string;
   readonly businessId?: string | undefined;
@@ -158,7 +205,18 @@ export class ChatService {
       promptVersion: PROMPT_VERSION,
     };
 
-    return this.decorate(context, output, turn, records, categories, businessId);
+    const decorated = await this.decorate(context, output, turn, records, categories, businessId);
+
+    // The model itself did not route it (GENERAL / SCOPE_REFUSAL straight from
+    // the model — `turn.intent`, not a decorate() degradation) and the words
+    // plainly ask for the product's sole egress. Answer with the real thing
+    // rather than a capability list. See EXPORT_GUIDANCE above for the account.
+    if ((turn.intent === 'GENERAL' || turn.intent === 'SCOPE_REFUSAL') && EXPORT_ASK.test(input.utterance)) {
+      decorated.intent = 'GENERAL';
+      decorated.reply = EXPORT_GUIDANCE;
+    }
+
+    return decorated;
   }
 
   /**

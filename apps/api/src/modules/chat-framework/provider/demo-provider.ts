@@ -121,9 +121,16 @@ function classify(text: string): unknown {
     };
   }
 
+  // Name what was asked before listing alternatives — a fallback that ignores
+  // the question reads as not listening, however honest the list is. The echo
+  // is truncated so the reply stays inside ModelTurnSchema's 1200-char cap.
+  // (The real model's GENERAL behaviour is the prompt's to shape; changing
+  // that is a §9.8 re-record, tracked in this module's CLAUDE.md.)
+  const echoed = text.length > 80 ? `${text.slice(0, 79)}…` : text;
   return {
     intent: 'GENERAL',
     reply:
+      `I did not understand "${echoed}". ` +
       'I can show missing paperwork, draft a chase, teach a coding rule, publish approved costs, or open a document.',
   };
 }
