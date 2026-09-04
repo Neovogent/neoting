@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import type { PrismaClient } from '../../../common/db/prisma.js';
 import type { ScopedClient } from '../../../common/db/scoped-db.js';
 import { ChartOfAccountsService } from '../chart-of-accounts/chart-of-accounts.service.js';
-import { documentLockFor, SupplierCodingService } from './supplier-coding.service.js';
+import { documentLockFor, readStoredLines, SupplierCodingService } from './supplier-coding.service.js';
 
 /**
  * The authority ladder, offline.
@@ -440,5 +440,258 @@ describe('documentLockFor — nothing overrides a human’s correction', () => {
       documentLockFor({ state: 'READY', extractions: [{ extractorKind: 'human', fields: { categoryCode: 'a string' } }] }),
     ).toBeNull();
     expect(documentLockFor({ state: 'READY', extractions: [] })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The AI_INFERENCE rung, and where it sits
+// ---------------------------------------------------------------------------
+
+/**
+ * The rung answers LAST. Everything above it must be able to shut it out, and a
+ * suggestion must never look like a coding — those two properties are the whole
+ * of why this was safe to switch on.
+ */
+describe('the AI_INFERENCE rung sits at the bottom and never overtakes anything', () => {
+  const SERVER_LINE = {
+    lines: [{ description: 'Dell PowerEdge R760 rack server', quantity: 2, netPence: 1_230_000, taxPence: null }],
+    currency: 'GBP',
+    totalPence: 1_230_000,
+    taxPence: 0,
+  };
+
+  test('an accountant’s rule answers first, and no suggestion is attached to it', async () => {
+    const { decision } = await service().decide(
+      world({
+        questionnaire: CLEANING_AGENCY,
+        rules: [{ id: 'rule_user', tier: 'USER', scopeKey: 'Nisbets Ltd', sets: { categoryCode: 'COS_PURCHASES' } }],
+      }),
+      'biz_1',
+      'Nisbets Ltd',
+      SERVER_LINE,
+    );
+
+    expect(decision.outcome).toBe('CODE');
+    // A CODE has no `suggestion` field at all — the type system, not a runtime
+    // check, is what stops a model opinion riding along beside a rule.
+    expect('suggestion' in decision).toBe(false);
+  });
+
+  test('this client’s own learned history still answers before it', async () => {
+    const { decision } = await service().decide(
+      { ...world({ questionnaire: CLEANING_AGENCY, documents: [doc({ id: 'd1' })] }) },
+      'biz_1',
+      'Nisbets Ltd',
+      SERVER_LINE,
+    );
+
+    expect(decision.outcome === 'CODE' && decision.authority).toBe('LEARNED_HISTORY');
+    expect('suggestion' in decision).toBe(false);
+  });
+
+  test('with nothing above it, a review now carries a suggestion instead of an empty field', async () => {
+    const { decision } = await service().decide(world({ questionnaire: CLEANING_AGENCY }), 'biz_1', 'Acme Hardware Ltd', SERVER_LINE);
+
+    expect(decision.outcome).toBe('REVIEW');
+    if (decision.outcome !== 'REVIEW') return;
+    expect(decision.suggestion.outcome).toBe('SUGGEST');
+    if (decision.suggestion.outcome !== 'SUGGEST') return;
+    expect(decision.suggestion.categoryCode).toBe('FA_COMPUTER_EQUIPMENT');
+    expect(decision.suggestion.provenance).toBe('AI_SUGGESTED');
+    expect(decision.suggestion.authority).toBe('AI_INFERENCE');
+    // The reason an accountant reads still leads with WHY it is a review.
+    expect(decision.reason).toContain('always review');
+  });
+
+  test('a review with no evidence at all still names a reason rather than saying nothing', async () => {
+    const { decision } = await decide({ questionnaire: CLEANING_AGENCY }, 'Acme Hardware Ltd');
+
+    expect(decision.outcome).toBe('REVIEW');
+    if (decision.outcome !== 'REVIEW') return;
+    expect(decision.suggestion.outcome).toBe('ESCALATE');
+    if (decision.suggestion.outcome !== 'ESCALATE') return;
+    expect(decision.suggestion.reason).toBe('NEW_SUPPLIER_NO_HISTORY');
+  });
+
+  test('the practice’s capitalisation policy is the service’s, not a constant', async () => {
+    const prisma = undefined as unknown as PrismaClient;
+    const generous = new SupplierCodingService(prisma, new ChartOfAccountsService(prisma), {
+      thresholdPence: 5_000_000,
+      currency: 'GBP',
+      boundaryBandPercent: 10,
+      source: 'PRACTICE',
+    });
+
+    const { decision } = await generous.decide(world({ questionnaire: CLEANING_AGENCY }), 'biz_1', 'Acme Hardware Ltd', SERVER_LINE);
+    expect(decision.outcome).toBe('REVIEW');
+    if (decision.outcome !== 'REVIEW' || decision.suggestion.outcome !== 'SUGGEST') throw new Error('expected a suggestion');
+    // The same servers, under a £50,000 policy, are an overhead.
+    expect(decision.suggestion.categoryCode).toBe('IT_EQUIPMENT_AND_CONSUMABLES');
+  });
+});
+
+describe('readStoredLines — the smuggled lineItems key, parsed not trusted', () => {
+  test('reads the ExtractedField wrapper the pipeline actually writes', () => {
+    const lines = readStoredLines({
+      supplierName: { value: 'Acme', provenance: 'AI_SUGGESTED', confidence: 0.9 },
+      lineItems: [
+        {
+          description: { value: 'Dell PowerEdge R760 rack server', provenance: 'AI_SUGGESTED', confidence: 0.9 },
+          quantity: { value: 2, provenance: 'AI_SUGGESTED', confidence: 0.9 },
+          totalPence: { value: 1_230_000, provenance: 'AI_SUGGESTED', confidence: 0.9 },
+          taxPence: { value: null, provenance: 'AI_SUGGESTED', confidence: 0.9 },
+        },
+      ],
+    });
+
+    expect(lines).toEqual([{ description: 'Dell PowerEdge R760 rack server', quantity: 2, netPence: 1_230_000, taxPence: null }]);
+  });
+
+  test('reads a bare-value shape too, because two writers exist', () => {
+    const lines = readStoredLines({ lineItems: [{ description: 'Widget', quantity: 1, totalPence: 500, taxPence: 100 }] });
+    expect(lines).toEqual([{ description: 'Widget', quantity: 1, netPence: 500, taxPence: 100 }]);
+  });
+
+  test('a float in a money slot is dropped, never rounded (R5)', () => {
+    // ⚠ Built rather than written as a literal: `totalPence: 12.5` is itself an
+    // R5 lint error, which is the rule doing its job on the test that proves
+    // the runtime does the same thing.
+    const notAnInteger = 25 / 2;
+    const lines = readStoredLines({ lineItems: [{ description: 'Widget', totalPence: notAnInteger }] });
+    expect(lines[0]?.netPence).toBeNull();
+  });
+
+  test('a line with no readable description is dropped rather than diluting the answer', () => {
+    expect(readStoredLines({ lineItems: [{ description: '' }, { description: null }, { quantity: 2 }] })).toEqual([]);
+  });
+
+  test('anything that is not this shape reads as no lines, and never throws', () => {
+    for (const raw of [null, undefined, 'text', 7, { lineItems: 'nope' }, { lineItems: [1, 2] }]) {
+      expect(readStoredLines(raw)).toEqual([]);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Trash — soft delete (`documents.deleted_at`, 2 Sep 2026)
+// ---------------------------------------------------------------------------
+
+/**
+ * ⚠ **A deleted document does not teach the coding engine, and the exclusion is
+ * RETROACTIVE.**
+ *
+ * The retroactivity is the decision worth recording, because the aggressive
+ * reading is the one that shipped: a document deleted last month stops being
+ * evidence *today*, rather than the coding it contributed being grandfathered
+ * in. Four reasons, in the order they settle it:
+ *
+ * 1. **`archivedAt: null` was already in that `where`.** Archiving is the
+ *    WEAKER act — a duplicate set aside, still in the client's file — and it has
+ *    always retracted evidence retroactively. Two opposite answers to "does
+ *    housekeeping reach backwards" in one predicate would be indefensible
+ *    whichever way each was argued alone.
+ * 2. **Deletion is very often the correction itself.** The documents that get
+ *    deleted are the misfiled, the wrong client's, the duplicate coded to the
+ *    wrong account. Grandfathering keeps exactly the evidence a practice deleted
+ *    in order to be rid of — which is the case this suite builds.
+ * 3. **This is a RECOMMENDATION, not the audit trail.** `document_events` and
+ *    `audit_events` still hold every coding decision that was made and are
+ *    untouched. What `loadHistory` feeds is a claim about the NEXT document, and
+ *    a forward-looking claim may only rest on the file as it stands now.
+ * 4. **It reaches further than one screen.** `history.entries.length` is the
+ *    `times` a supplier RULE proposal counts, and a rule outlives the document
+ *    that argued for it.
+ */
+describe('Trash is not coding evidence', () => {
+  interface TrashableDocument extends DocumentRow {
+    readonly deletedAt: Date | null;
+  }
+
+  let lastWhere: Record<string, unknown> = {};
+
+  /**
+   * ⚠ This double applies exactly ONE clause — `deletedAt` — and applies it only
+   * because that clause is the thing under test. It is deliberately not a
+   * general `where` interpreter: a fake that re-implemented the whole predicate
+   * would be standing in for the query it is meant to be measuring and would
+   * pass whatever it was asked. Everything else (`businessId`, `archivedAt`,
+   * the two `not: null` clauses) is Postgres's job and is proven in
+   * `rules-suggestions.integration.test.ts`.
+   */
+  const trashWorld = (documents: readonly TrashableDocument[]): ScopedClient =>
+    ({
+      business: { findUnique: async () => ({ id: 'biz_1', contextQuestionnaire: CLEANING_AGENCY }) },
+      integration: { findFirst: async () => null },
+      referenceSync: { findUnique: async () => null },
+      rule: { findMany: async () => [] },
+      document: {
+        findMany: async (args: { where: Record<string, unknown> }) => {
+          lastWhere = args.where;
+          return args.where['deletedAt'] === null ? documents.filter((row) => row.deletedAt === null) : documents;
+        },
+      },
+    }) as unknown as ScopedClient;
+
+  const trashed = (over: Partial<DocumentRow> & { id: string }): TrashableDocument => ({
+    ...doc(over),
+    deletedAt: new Date('2026-08-20T00:00:00.000Z'),
+  });
+  const live = (over: Partial<DocumentRow> & { id: string }): TrashableDocument => ({
+    ...doc(over),
+    deletedAt: null,
+  });
+
+  test('⚠ the history query asks for deletedAt: null beside archivedAt: null — different columns', async () => {
+    await service().decide(trashWorld([live({ id: 'd_live' })]), 'biz_1', 'Nisbets Ltd');
+
+    // `archivedAt: null` excludes none of Trash: a document can be deleted
+    // having never been archived, which is the ordinary case.
+    expect(lastWhere['archivedAt']).toBeNull();
+    expect(lastWhere['deletedAt']).toBeNull();
+  });
+
+  /**
+   * The shape this actually protects against, told as the story it is: two
+   * Nisbets receipts were miscoded to OFFICE_COSTS and the practice DELETED
+   * them; one correct coding to consumables remains. If Trash still taught the
+   * engine, the client would look like they had coded this supplier two
+   * different ways — so the engine would decline to answer at all, and go on
+   * declining, on the strength of the very rows the firm removed to fix it.
+   */
+  test('⚠ a coding on a DELETED document does not compete with the live one', async () => {
+    const { decision, history } = await service().decide(
+      trashWorld([
+        live({ id: 'd_live' }),
+        trashed({ id: 'd_trash_1', categoryCode: 'OFFICE_COSTS', extractions: humanCoded('OFFICE_COSTS') }),
+        trashed({ id: 'd_trash_2', categoryCode: 'OFFICE_COSTS', extractions: humanCoded('OFFICE_COSTS') }),
+      ]),
+      'biz_1',
+      'Nisbets Ltd',
+    );
+
+    // One surviving coding, so the client HAS a consistent prior treatment.
+    expect(history.entries.map((entry) => entry.documentId)).toEqual(['d_live']);
+    expect(history.categoryCodes).toEqual(['COS_MATERIALS_AND_CONSUMABLES']);
+
+    expect(decision.outcome).toBe('CODE');
+    if (decision.outcome !== 'CODE') return;
+    expect(decision.authority).toBe('LEARNED_HISTORY');
+    expect(decision.categoryCode).toBe('COS_MATERIALS_AND_CONSUMABLES');
+  });
+
+  test('the count a reason and a rule proposal read is the LIVE count, not the trashed one', async () => {
+    const { decision, history } = await service().decide(
+      trashWorld([live({ id: 'd_live' }), trashed({ id: 'd_trash_1' }), trashed({ id: 'd_trash_2' })]),
+      'biz_1',
+      'Nisbets Ltd',
+    );
+
+    // All three agree on the category here, so the ladder answers either way —
+    // what moves is the STRENGTH. `history.entries.length` is the `times`
+    // `buildSupplierRuleProposal` counts towards its threshold, so trashed
+    // evidence could otherwise carry a standing rule over the line.
+    expect(history.entries).toHaveLength(1);
+    expect(decision.outcome === 'CODE' && decision.reason).toContain('once');
+    expect(decision.outcome === 'CODE' && decision.reason).not.toContain('3 times');
   });
 });

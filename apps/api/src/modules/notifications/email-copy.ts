@@ -3,7 +3,7 @@ import { renderEmailHtml } from './email-html.js';
 import type { SignInCode } from './sign-in-code.js';
 
 /**
- * The three messages, composed. PURE functions of their inputs — no clock, no
+ * The messages, composed (three at S2, six now). PURE functions of their inputs — no clock, no
  * database, no model — for the same reason `chase/sms-copy.ts` is: the text a
  * reviewer approves must be byte-for-byte the text that sends, and neither the
  * caller nor the transport may re-derive it.
@@ -89,6 +89,143 @@ export function composeClientInvite(input: ComposeClientInviteInput): ComposedEm
       SENDER_DISPLAY_NAME,
   );
   return { subject, body, html: renderEmailHtml({ subject, body, linkLabels: { [input.inviteLink]: 'Set up your access' } }) };
+}
+
+// ── 1b · Team invite — a COLLEAGUE, not a client ───────────────────────────
+
+export interface ComposeTeamInviteInput {
+  /** The firm the invitee is being asked to join. */
+  readonly practiceName: string;
+  /**
+   * Who invited them, when the invitation records it. Null is a real answer —
+   * an inviter since removed — and the copy simply drops the clause rather than
+   * writing "someone at".
+   */
+  readonly inviterName: string | null;
+  /** The link carrying the invitation token. The token IS the authorisation. */
+  readonly inviteLink: string;
+  /** When the link stops working. Rendered in Europe/London (Governance §12). */
+  readonly expiresAt: Date;
+}
+
+/**
+ * An admin invites a colleague into the practice.
+ *
+ * ⚠ **THIS CANNOT REUSE {@link composeClientInvite}, AND THE REASON IS ONE
+ * SENTENCE IN IT.** That message says *"There is nothing to install and no
+ * password to choose"*, which is true of a client — they sign in with an emailed
+ * six-digit code and never hold a password — and precisely false of a colleague,
+ * whose whole next action is to choose one. A shared composer would have told
+ * every new member of staff not to do the thing the link exists for. The two
+ * messages also differ in what they are ABOUT: the client one names a business
+ * and describes sending receipts; this one names an employer and a role.
+ *
+ * What it keeps from the client invite, because those parts were right: it is
+ * sent in the PRACTICE's name rather than ours, the link sits on its own line so
+ * a mail client wrapping a long line cannot break it, the expiry is stated as a
+ * date, and it tells an unexpecting reader what to do — which for this message
+ * matters more than most, because an invitation to work somewhere is a plausible
+ * shape for a phishing mail.
+ *
+ * **The role is deliberately not in the copy.** The screen the link opens states
+ * it, read from the invitation itself, so the words a person sees cannot drift
+ * from the grant the server will actually make.
+ */
+export function composeTeamInvite(input: ComposeTeamInviteInput): ComposedEmail {
+  const subject = `${input.practiceName} has invited you to join their team on ${SENDER_DISPLAY_NAME}`;
+  const body = lines(
+      input.inviterName === null
+        ? `You have been invited to join ${input.practiceName} on ${SENDER_DISPLAY_NAME}, the software they use to collect and code their clients' paperwork.`
+        : `${input.inviterName} has invited you to join ${input.practiceName} on ${SENDER_DISPLAY_NAME}, the software they use to collect and code their clients' paperwork.`,
+      '',
+      'Open the link below to choose a password and set up an authenticator app. It takes a couple of minutes, and you will need your phone for the second step.',
+      '',
+      input.inviteLink,
+      '',
+      `This link stops working on ${formatDay(input.expiresAt)}. If it has expired by the time you read this, ask whoever invited you to send another one.`,
+      '',
+      'If you were not expecting this, you can ignore this email — no account is created until the link is opened.',
+      '',
+      SENDER_DISPLAY_NAME,
+  );
+  return { subject, body, html: renderEmailHtml({ subject, body, linkLabels: { [input.inviteLink]: 'Set up your account' } }) };
+}
+
+// ── 1c · A BUSINESS invites its own staff ──────────────────────────────────
+
+export interface ComposeBusinessPeopleInviteInput {
+  /** The employer. **Not the practice** — see the header below. */
+  readonly businessName: string;
+  /**
+   * Who added them, when the business recorded a name for that person. Null is a
+   * real answer — an inviter since removed, or a `contacts` row with no name —
+   * and the copy drops the clause rather than writing "someone at".
+   */
+  readonly inviterName: string | null;
+  /**
+   * The portal's own front door, carrying no token.
+   *
+   * ⚠ That absence is the design. See the composer's header.
+   */
+  readonly portalLink: string;
+}
+
+/**
+ * A client business adds one of its own people — the THIRD invitation
+ * relationship in the product.
+ *
+ * ⚠ **IT CANNOT REUSE EITHER OF THE OTHER TWO, AND EACH REFUSAL IS ONE
+ * SENTENCE.**
+ *
+ * - {@link composeTeamInvite} says *"Open the link below to choose a password
+ *   and set up an authenticator app"*, which is right for a colleague joining a
+ *   firm and flatly wrong here: **portal people have no password.** They sign in
+ *   with a six-digit code emailed to the address this message went to, and
+ *   telling a new starter to choose a password would send them looking for a
+ *   screen that does not exist.
+ * - {@link composeClientInvite} gets the password half right and the
+ *   RELATIONSHIP wrong. It is sent in the PRACTICE's name — correct, because a
+ *   client knows their accountant — and this one is not from the accountant at
+ *   all. The person receiving it works for the business; naming an accounting
+ *   firm they may never have heard of, in the subject line, is how a legitimate
+ *   invitation reads as a phishing attempt. So the employer is named and the
+ *   practice is not mentioned.
+ *
+ * **There is no token in the link, and that is deliberate rather than
+ * unfinished.** The invitation's whole effect is a `contacts` row, and the
+ * portal's tokenless sign-in (`resolveByAddress`) resolves an address to exactly
+ * one business off that row — so the address the mail arrived at is already
+ * everything the sign-in needs. A setup token would add three things nobody
+ * asked for: a seven-day expiry on a relationship that has none, a second
+ * credential travelling by email, and the CLIENT-ONBOARDING journey (company
+ * details, then subscribe), which belongs to the owner and not to somebody hired
+ * to photograph receipts.
+ *
+ * **No enumeration oracle.** This message is only ever sent to an address the
+ * caller typed into their own workspace's People screen, and it says nothing
+ * about whether that address was already known to the product. The API's answer
+ * to the caller is the same whether or not it was.
+ */
+export function composeBusinessPeopleInvite(input: ComposeBusinessPeopleInviteInput): ComposedEmail {
+  const subject = `${input.businessName} has added you on ${SENDER_DISPLAY_NAME}`;
+  const body = lines(
+      input.inviterName === null
+        ? `You have been added to ${input.businessName}'s account on ${SENDER_DISPLAY_NAME}, which they use to send receipts and invoices to their accountant.`
+        : `${input.inviterName} has added you to ${input.businessName}'s account on ${SENDER_DISPLAY_NAME}, which they use to send receipts and invoices to their accountant.`,
+      '',
+      // The two sentences that make the journey work. The address is the
+      // credential channel, so it is named as such — a person who reads "sign in
+      // with this email" knows which of their addresses to type.
+      'You can send a photo, forward an email, or upload a file. There is nothing to install and no password to choose.',
+      '',
+      'Sign in here with this email address, and a six-digit code will be sent to you:',
+      input.portalLink,
+      '',
+      `If you were not expecting this, you can ignore this email — or tell ${input.businessName}, who can remove you.`,
+      '',
+      SENDER_DISPLAY_NAME,
+  );
+  return { subject, body, html: renderEmailHtml({ subject, body, linkLabels: { [input.portalLink]: 'Sign in' } }) };
 }
 
 // ── 2 · Sign-in code ───────────────────────────────────────────────────────

@@ -13,6 +13,7 @@ import {
 import {
   buildSuggestionsMessage,
   derived,
+  readPracticeState,
   SuggestionsService,
   type PracticeState,
 } from './suggestions.service.js';
@@ -176,5 +177,62 @@ describe('the message and the prompt', () => {
     expect(
       SuggestionsTurnSchema.safeParse({ suggestions: MODEL_TURN.suggestions, extra: true }).success,
     ).toBe(false);
+  });
+});
+
+/**
+ * ⚠ **Trash does not become work** (soft delete, `documents.deleted_at`,
+ * 2 Sep 2026).
+ *
+ * `readPracticeState` is where the ambient surface gets its numbers, and those
+ * numbers are the whole product on this seam: they become the "4 documents to
+ * review" chip and the practice state the model is given to reason from. A
+ * deleted document counted here offers an accountant a job that no longer
+ * exists — and because the chip is what they click, the cost is not a wrong
+ * figure on a dashboard, it is a dead end at the end of a click.
+ *
+ * The double records the `where` rather than filtering rows by it. That is
+ * deliberate and is the honest boundary: Postgres applies the predicate, and
+ * the only thing THIS layer decides is what the predicate says. A fake that
+ * re-implemented `deletedAt`/`archivedAt` matching would be a fake standing in
+ * for the query it is meant to be testing, and would pass whatever it was
+ * asked.
+ */
+describe('the practice state a suggestion is built from', () => {
+  const readerFor = (calls: { where: unknown }[]) => {
+    const tx = {
+      $executeRaw: async () => 0,
+      business: { findMany: async () => [] },
+      document: {
+        groupBy: async (args: { where: unknown }) => {
+          calls.push({ where: args.where });
+          return [];
+        },
+      },
+      chase: { count: async () => 0, findFirst: async () => null },
+      actionProposal: { count: async () => 0 },
+    };
+    return { $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx) } as unknown as PrismaClient;
+  };
+
+  test('⚠ the document counts exclude Trash as well as ARCHIVED — two columns, two clauses', async () => {
+    const calls: { where: unknown }[] = [];
+    await readPracticeState(readerFor(calls), CONTEXT, 'biz_1');
+
+    // `archivedAt: null` was already here and is NOT the same column. A
+    // document can be deleted without ever having been archived, so the
+    // existing clause excludes none of Trash.
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.where).toEqual({ businessId: 'biz_1', archivedAt: null, deletedAt: null });
+  });
+
+  test('the whole-practice read (no business selected) is filtered too', async () => {
+    // `businessId === undefined` spreads an EMPTY object into the where, so
+    // this is the branch where a missing predicate would leak across every
+    // client the practice has rather than one.
+    const calls: { where: unknown }[] = [];
+    await readPracticeState(readerFor(calls), CONTEXT, undefined);
+
+    expect(calls[0]?.where).toEqual({ archivedAt: null, deletedAt: null });
   });
 });

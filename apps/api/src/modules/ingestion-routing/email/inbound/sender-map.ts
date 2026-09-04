@@ -115,6 +115,21 @@ export class EmptySenderMapLoader implements SenderMapLoader {
  *
  * A contact with neither an email nor a phone contributes nothing (the WHERE
  * skips it), so it never becomes a null key.
+ *
+ * ⚠ **A DEACTIVATED contact is not a recognised sender** (2 Sep 2026). A client
+ * business can now revoke one of its own people from its portal, and the screen
+ * promises *"they stop being able to send documents immediately"*. This is one
+ * of the three readers that has to honour that — the other two are the portal
+ * sign-in lookup and the session resolver — and it is the one that decides
+ * whether a forwarded email still lands in their employer's workspace.
+ *
+ * Excluding them here means a mail from a revoked address routes UNROUTED
+ * rather than into the business, which is this lane's correct answer for an
+ * unrecognised sender: visible in a queue for a human, never silently dropped
+ * and never silently accepted. It is a WHERE clause rather than a filter over
+ * the built map because a revoked identity must not become a key at all —
+ * `buildSenderMap` collapses duplicates, so a live row and a revoked row on one
+ * address would otherwise merge and the revocation would vanish.
  */
 export class PrismaSenderMapLoader implements SenderMapLoader {
   constructor(private readonly prisma: PrismaClient) {}
@@ -124,7 +139,10 @@ export class PrismaSenderMapLoader implements SenderMapLoader {
 
     const rows = await scopedDb(this.prisma, systemContext(practiceId, systemUserId), (db) =>
       db.contact.findMany({
-        where: { OR: [{ email: { not: null } }, { mobileE164: { not: null } }] },
+        where: {
+          deactivatedAt: null,
+          OR: [{ email: { not: null } }, { mobileE164: { not: null } }],
+        },
         select: { email: true, mobileE164: true, businessId: true },
       }),
     );

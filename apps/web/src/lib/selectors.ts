@@ -1,4 +1,4 @@
-import { isMatched } from './matching';
+import { isUnexplained } from './matching';
 import type {
   ApprovalItem,
   BankTransaction,
@@ -91,10 +91,15 @@ export function deriveClientStats(
   const approvals = data.approvals.filter((a) => a.clientName === client.name).length;
   const unverified = miss.filter((m) => !m.chased).reduce((n, m) => n + m.amount, 0);
 
-  // `isMatched`, not `matchedDocId`: a server-confirmed line carries
-  // `matchState` and no document id, and this count is the one the client card
-  // shows beside the chase list — the two must not disagree (METH Stage 11).
-  const unmatched = data.transactions.filter((t) => t.clientId === client.id && !isMatched(t)).length;
+  // `isUnexplained`, not `!isMatched` and never `matchedDocId`.
+  //
+  // This is the seed-side half of the SAME figure `clientStatsFromCounts`
+  // below takes from the server, so it has to implement the server's own
+  // predicate — `UNMATCHED AND NOT chase_suppressed` — or a seeded client and
+  // a live one would mean two different things by one column heading. It used
+  // to be `!isMatched(t)`, which additionally counted SUGGESTED, EXCLUDED and
+  // suppressed lines.
+  const unmatched = data.transactions.filter((t) => t.clientId === client.id && isUnexplained(t)).length;
   const gaps = data.statementGaps.filter((g) => g.clientId === client.id).length;
 
   return {
@@ -150,6 +155,13 @@ function pipelineHealth(x: {
  * quietly mean two different things depending on which world it was rendering.
  * That is why this reuses `pipelineHealth` rather than recomputing a score
  * beside it.
+ *
+ * `counts.unmatched` is passed through untouched and must stay that way: it is
+ * `businesses.service.ts` counting `matchState: 'UNMATCHED', chaseSuppressed:
+ * false`, which is the AUTHORITATIVE definition of an unexplained line — the
+ * one the chase engine actually chases. `isUnexplained` in `lib/matching.ts`
+ * is that same predicate written for a row in hand, and `deriveClientStats`
+ * above uses it so the seeded half of this column agrees with the live half.
  *
  * Two counts have no server column yet and are honestly zero rather than
  * guessed: `duplicates` (the pair table is not aggregated on this endpoint) and

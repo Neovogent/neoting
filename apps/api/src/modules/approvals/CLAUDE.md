@@ -39,7 +39,9 @@ decides nothing about whether it may happen.
   name (the render must be payload-pure and the payload is `.strict()`), so
   the human name on the queue line is the client surface's to add.
 - `render-summary.ts` — deterministic, pure render of what `[Read review]`
-  shows; `rendered_summary_hash` is `canonicalHash` over it. `chase.send`
+  shows; `rendered_summary_hash` is `canonicalHash` over it.
+  **`publish.batch` now renders the bookkeeping ENTRY, not just three totals**
+  (2 Sep 2026) — see the section below. `chase.send`
   renders every SMS byte-for-byte (the contract's words); `rule.create`
   (METH S13, #142) renders the rule in full — tier, scope, conditions and
   every field it sets — because a reviewer must see what will start coding
@@ -60,6 +62,13 @@ decides nothing about whether it may happen.
   on the proposal row and in `outcome`.
 - `canonical-hash.ts` — canonical JSON (sorted keys, dropped undefined) +
   SHA-256. `payload_hash`, the rendered hash and the audit chain all use it.
+- `index.ts` — **the module's first public seam, added 2 Sep 2026.** It exports
+  the AUTHORITY names from `assert-can.ts` and **nothing else**: no Nest module
+  (the `auth-tenancy/index.ts` circular-boot hazard), no `ActionProposalsService`
+  (creating a proposal from another module is the second door issue #81 exists to
+  prevent), no audit writer yet. It exists because `assert-can.ts` grew a SECOND
+  consumer — `POST /v1/practice-members` in `clients-team-settings` — and the
+  choice was a seam or a second opinion about who may do what.
 - `approvals.module.ts` — builds `buildExecutorRegistry(...)`, the
   `PrismaDuplicateDetector` and the `PublishGateway` INSIDE the service
   factory, through the modules' public seams (`validation-dedupe/index.ts`,
@@ -78,6 +87,81 @@ decides nothing about whether it may happen.
   executor because publishing imports validation-dedupe, and a runtime import
   back would close a cycle between two public seams. The composition root is
   the place allowed to know both.
+
+## `publish.batch` shows the ENTRY now, and two money bugs it uncovered (2 Sep 2026)
+
+*"Before publishing show the accountant the actual accounting entry that will be
+put into the VT software."* The card showed `Publish 43 documents — gross £…,
+VAT £…` and nothing else: a human was authorising rows they had never seen, which
+is the failure this whole module exists to prevent.
+
+**Three things changed together.**
+
+**1. The entry is computed INTO the payload at proposal time**, the pattern this
+file already records for publish previews and `chase.send`. `render-summary.ts`
+is payload-pure and may not read a database, so anything a card must show has to
+arrive in the payload. `computePublishBatchPayload` now also calls
+`previewExportEntries` and stores `entryPreview`; `renderSummary` renders it.
+
+⚠ **It is the EXPORT's emitter, handed in, never re-implemented.**
+`approvals.module.ts` imports `previewExportEntries` from
+`exports-public-api/index.ts` and passes it down — the composition root is the
+only place allowed to know two seams, and `validation-dedupe` takes it as a
+`ExportEntryPreviewer` dependency (`import type` only) for exactly the reason
+`PublishGateway` exists: a runtime import from there into `exports-public-api`
+is the arc that would close a cycle between two public seams. Nothing in this
+module formats a VT cell, picks a file, or decides what goes in the Analysis
+account column. `render-summary.ts` chooses headings and labels; that is all.
+
+**2. Execution re-checks the entry, not only the totals.** Re-coding a document
+from one nominal to another is the commonest edit between propose and approve,
+and it leaves gross and VAT untouched — so the three-integer check cannot see it,
+and `NT-PRP-004` structurally cannot either (review is idempotent, the render is
+payload-pure). `sameEntryPreview` compares the rows. ⚠ It fingerprints through
+**positional arrays**, because `action_proposals.payload` is `jsonb` and Postgres
+normalises object key order — a naive `JSON.stringify` of the two sides reports
+drift on every approval.
+
+**3. Absence is silence, everywhere on this path.** A payload with no
+`entryPreview` reviews with the card it always had; a payload with no
+`preview.currency` skips the currency comparison. Both are newer than rows that
+are already in the database, and a required addition would have made every
+pending proposal unreviewable or unapprovable. `entryPreview` and `currency` are
+therefore both OPTIONAL in the contract, and `preview` is `.strict()` — which is
+the mechanism that made this non-negotiable rather than a preference.
+
+⚠ **The `.strict()` trap, recorded because it cost a full test-suite cascade.**
+`preview` gained `currency` in the API before the contract had it. The generated
+member schema is `.strict()`, `parseStoredProposalPayload` re-parses the stored
+payload at review time, and it failed — so **every publish review answered
+`NT-PRP-006` "the stored payload no longer parses"**, and the failure surfaced
+nowhere near the field that caused it. Anything added to a stored payload needs
+the contract in the same change.
+
+### The two money bugs the card was hiding
+
+- **A USD invoice rendered as `gross £54352.51`.** `penceToGbp` hardcoded the
+  symbol and the preview carried no currency at all. On the one path where the
+  product guarantees that what was shown is what was approved. It is now
+  `penceToMoney(value, code)`, `PublishPreview.currency` is the single shared
+  code **or null**, and ⚠ **null means "these totals are not money in any one
+  currency"** — rendered bare, with the reason on the card. Null is never
+  sterling; substituting `£` reintroduces the defect. Pinned in
+  `render-summary.test.ts` by asserting no symbol survives anywhere in the
+  render, and in `publishing/publish-preview.test.ts` on the collapse rule.
+- **The card said "Publish", which D42 forbids.** The title is now *"Release N
+  documents for export"*. There is no ledger connection in this release and
+  *Published* is an internal state; `render-summary.test.ts` reads the rendered
+  strings and fails on the forbidden vocabulary, mirroring
+  `apps/web/src/views/ExportView.test.tsx`. The contract carried the same claim
+  in two descriptions (*"Publish 43 bills to Xero"*) and both were corrected.
+
+**The gate is untouched.** The entry is part of the review, not a substitute for
+it: Approve is still unreachable until `POST .../review` has run, approve still
+echoes `renderedSummaryHash`, and `LiveProposalCard` still withholds Approve if
+it cannot render a section (`apps/web/src/api/proposals.ts`, fail-closed) — the
+new sections use the same `{heading, entries[{label, value}]}` shape, so nothing
+on the web side had to change to display them.
 
 ## The release gate — D44, stage A12
 
@@ -120,13 +204,12 @@ path. Read its header before changing anything here; the short version:
   `userId` + `practiceId` + `businessId: null` filter **is** the boundary there;
   `ctx.actorId` comes from the verified session.
 
-⚠ **A seeded database has nobody who can release.** `prisma/seed.ts` gives
+✅ **A seeded database CAN now release** (2 Sep 2026). `prisma/seed.ts` gave
 `mem_priya` `isOwner: true` but she has no demo credential, while the login-able
-`mem_shakib_demo` is a `PRACTICE_ADMIN` with the flag unset. So on a seeded
-laptop the account you can sign in as composes but cannot release. Real practices
-are unaffected (signup writes the owner), and the §24.7 walkthrough starts from
-signup — but `prisma/` is LAW, so the one-word fix is a contract-change issue.
-See the TODO.
+`mem_shakib_demo` was a `PRACTICE_ADMIN` with the flag unset — so on a seeded
+laptop the account you could sign in as composed but could not release, and the
+one behaviour this gate exists to protect could be tested by nobody. The flag is
+set on that row. Real practices were never affected (signup writes the owner).
 
 ⚠ **The UI is not the gate, and must not pretend the action does not exist.**
 Governance §11.2 says so in as many words. What the server provides for honest
@@ -134,6 +217,114 @@ degradation is the fact (`BusinessMember.role` / `.scope` / `.isOwner`, A11) and
 a refusal whose `detail` is written to be read by the person who pressed the
 button — *"Only your practice's super admin can release documents for export. Ask
 them to approve it."* Hiding the button instead would be a different lie.
+
+## `team.invite` — the second `PermittedAction` (2 Sep 2026)
+
+`POST /v1/practice-members` is the first operation in the product that grants
+somebody access to a practice, so its gate lives here rather than in the module
+that offers it — the same argument the release gate makes.
+
+**`mayManageTeam(actor)` is `canRelease(role)` WITHOUT the `isOwner`
+narrowing**, and this is the first time the two rules diverge. Three reasons,
+written out at the function rather than left to be inferred from a missing
+conjunct:
+
+1. **Inviting is reversible and internal.** `RELEASE_KINDS` draws its line at
+   acts that reach outside the product and cannot be taken back. An invitation
+   reaches one colleague's inbox, grants nothing until they accept, and expires
+   by itself in seven days. It is D44's *compose and edit* half.
+2. **Ownership would make team management a bus factor of one.** Exactly one
+   membership per practice can carry `isOwner`, and there is no ownership-TRANSFER
+   operation — so a firm whose founder is away could not add the temp they hired
+   that morning, and the fix would be a DBA.
+3. **The cost is bounded by what an invitation can grant.** `PRACTICE_ADMIN` is
+   refused at the invite boundary and acceptance always writes `isOwner: false`,
+   so an invited colleague can never release. The widest thing this permits is an
+   admin adding somebody who composes and edits.
+
+`assertCan` is overloaded: `team.invite` takes **no resource**, because a release
+is authorised against one proposal and inviting is authorised against the
+practice the session already fixes.
+
+## `business.people.manage` — the THIRD `PermittedAction` (2 Sep 2026)
+
+The product owner ruled on 2 Sep 2026 that a client business's own manager, HR
+lead or owner adds and removes their staff from their portal; Settings → People
+said the opposite. That made a third guarded act, and this file's own header says
+what to do with one — the rule is written once, here, and `modules/portal` imports
+it through `index.ts` rather than growing a second opinion beside its service.
+
+**`mayManagePeople(actor)` is `BUSINESS_ADMIN || USER_ADMIN`.** `WorkspaceRole`
+already contained all three business-level roles before any of this was built,
+and the middle one reads as purpose-built: a business-side **user**
+administrator. Nothing had ever granted it, so this is the first surface that
+gives it a meaning.
+
+- **`BUSINESS_ADMIN`** — the owner. Everything, including making somebody else an
+  owner, which is what makes the last-owner rule escapable.
+- **`USER_ADMIN`** — the office manager. The same people authority and nothing
+  else: no billing, no export, no release.
+- **`BUSINESS_STANDARD`** — reads the list, changes nothing. Deliberately not
+  "cannot see it": who else can send paperwork on your employer's behalf is not a
+  secret from you, and hiding the section would be the *"pretend the action does
+  not exist"* failure §11.2 names.
+
+⚠ **`isOwner` is not consulted, and that is not an omission.** For a portal actor
+`isOwner` MIRRORS `BUSINESS_ADMIN` (`portalActorFor` sets it from the role), so a
+conjunct would be a second spelling of the first — tested in both directions.
+
+⚠ **A practice role is refused here, and that is not an oversight.** A
+`PRACTICE_ADMIN` is not a member of the client's staff, and this rule is never
+consulted for one: the only caller is the portal, whose actor is a `contacts` row
+on exactly one business. An accountant adding a client's user is the older,
+separate door (`POST /businesses/{businessId}/members`, workspace cookie), and it
+is unchanged. Two doors onto one outcome is a thing this codebase normally
+refuses — the difference is that these two have different PRINCIPALS, so
+collapsing them would mean one authority checking a credential it cannot hold.
+
+Like `team.invite` it takes **no resource**: the business is fixed by the portal
+session's own `otp_sessions` row before this is reached, so a `businessId`
+argument would be a second answer to a question the session has settled — and the
+one place a caller could get it wrong.
+
+⚠ **The actor is NOT `resolveActor(db, ctx)`.** A portal person usually has no
+`users` row at all (SoT §3.3's phone-only contacts are real), so
+`portalActorFor(contactRow)` builds it and `Actor.actorId` carries a **contacts**
+id. Safe because `assertCan` reads only `role`; honest because a contact id is a
+genuine, stable identifier for the person acting. `role === null` — a chase
+session, whose `contact_id` is deliberately NULL — refuses, as everywhere here.
+
+## `document.purge` — the fourteenth kind (2 Sep 2026)
+
+Permanent document deletion, added with the Trash work in `modules/documents`.
+Executor and full reasoning live in `validation-dedupe/proposals/purge-document.ts`;
+what belongs here is the two decisions this module owns.
+
+**`RELEASE_KINDS['document.purge'] = false`, and it is the most arguable entry
+in that table.** A purge is irreversible, and irreversibility is half of what the
+gate is about. It is ungated because the OTHER half is what the table actually
+selects for: D44's two kinds both **reach outside the product** — a message to
+somebody else's client, a figure released for export — and a purge reaches
+nowhere. It destroys one of the practice's own rows, in their own workspace,
+after a human already put it in Trash.
+
+What protects the D43 promise here is not the approver's rank but the executor's
+refusal: a released document, or one carrying an export link or named by a
+statement, **cannot be purged by anybody, the super admin included**. A
+permission gate would have been a weaker guarantee wearing a stronger word — it
+would let the one person who may release also destroy the link their release
+created. Revisit if a firm asks; the refusal is the part that must not move.
+
+**The review card states the shortfall, not just the intent.** `render-summary.ts`
+renders what is destroyed, what survives, **"Stored files: NOT deleted"**, and
+the refusals as a PROMISE rather than a result — the render is payload-pure and
+may not read a database, so it cannot say whether THESE documents are exported,
+only that the executor will check. The `document.reprocess` precedent
+(*"Reads the document again: No"*), applied to an act nobody can undo.
+
+⚠ `NT-DOC-002` is now in the `ErrorCode` enum. `NT-DOC-001` is **not**, and the
+asymmetry is deliberate: -001 is a `documents.failure_code` value that never
+reaches the wire (its runbook page says so), -002 is a real 409.
 
 ## Enforcement is layered, deliberately
 
@@ -202,6 +393,9 @@ pnpm --filter @neoting/api test -- approvals            # unit, offline
 # integration (needs docker compose up + .env): the METH S3 acceptance —
 # create→review→approve archives + audit chain recomputed; the DB guard
 # refused raw; double-approve exactly-once; cross-practice 404.
+# The `team.invite` half is proven from the other side, in
+# `clients-team-settings/practice-invite.integration.test.ts` — a REAL invited
+# colleague (created through invite + accept) is refused the release.
 # Since A12, `release-gate.integration.test.ts` (prefix `a12g-`, teardown by
 # EXPLICIT id list) proves the refusal has NO effect: a non-owner
 # PRACTICE_ADMIN approving a publish.batch gets 403 NT-PRM-001 while the
@@ -248,23 +442,25 @@ pnpm --filter @neoting/api test -- approvals            # unit, offline
       still propose-anything/approve-anything within the practice, which is D44's
       compose half and is intended. **Still open:** the workspaceSession/CSRF
       requirement on approve awaits the auth hardening pass.
-- [ ] ⚠ **`prisma/seed.ts` leaves the only login-able demo admin unable to
-      release.** `mem_shakib_demo` is a `PRACTICE_ADMIN` with no `isOwner`, and
-      `mem_priya` (who has it) has no demo credential. One word — `isOwner: true`
-      on that seed row — but `prisma/` is LAW, so it needs a contract-change issue
-      (G7). Real practices are unaffected: signup writes the owner.
-- [ ] **No ownership TRANSFER operation exists in the contract.** With release
-      authority narrowed to `isOwner`, a practice whose owner leaves cannot
-      release until a DBA moves the flag. The bus factor is identical today under
-      any reading (only signup mints a `PRACTICE_ADMIN`), so this is not urgent —
-      but it becomes urgent the moment a second admin can be invited, and it is
-      the thing to build alongside that invite path.
+- [x] **`prisma/seed.ts` gives the login-able demo admin `isOwner: true`**
+      (2 Sep 2026, with the practice-invite work). The G7 ceremony was retired on
+      1 Sep, so the one-word fix landed with the change that made it matter.
+- [ ] ⚠ **No ownership TRANSFER operation exists, and this is now the sharpest
+      edge in the module.** An invite path landed (`POST /v1/practice-members`),
+      and the ONLY reason it did not make this urgent is that it REFUSES
+      `PRACTICE_ADMIN` by name — precisely because an invited admin would hold
+      `canRelease === true` and `isOwner === false`, could not release, and would
+      be told *"only your practice's super admin can"* by a screen that had just
+      called them an admin. `team-authority.ts`'s `INVITABLE_PRACTICE_ROLES` is
+      what changes the day transfer exists.
 - [ ] **`memberships.permissions` is not consulted by the gate.** Governance
       §11.1 describes per-permission toggles and `prisma/seed.ts` fills the array,
       but `practice-signup.service.ts` leaves it `[]` — so requiring a `publish`
       string would mean nobody could ever release, and defaulting empty to
       "allowed" would make the field decorative. Role + ownership is the whole
-      rule until a grant surface exists to fill it.
+      rule until a grant surface exists to fill it. ⚠ **`apps/web` removed the
+      per-permission tick-boxes on 2 Sep 2026** for the same reason: a toggle that
+      governs nothing is the same lie as an invite button that sends nothing.
 - [ ] Periodic sweep over `findStaleDedupeFollowUps` (worker concern), and the
       same sweep for QUEUED `publishes` rows whose `runPublishFollowUp` never
       completed. One worker, both follow-ups.

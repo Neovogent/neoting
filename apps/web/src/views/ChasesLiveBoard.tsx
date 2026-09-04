@@ -93,7 +93,7 @@ const stateTone = (state: ChaseState): string =>
   state === 'CLOSED_RECEIVED'
     ? 'bg-emerald-500/10 text-emerald-400'
     : state.startsWith('CLOSED')
-      ? 'bg-zinc-800 text-zinc-500'
+      ? 'bg-white/5 text-zinc-500'
       : state === 'ESCALATED'
         ? 'bg-brand/15 text-brand'
         : 'bg-amber-500/10 text-amber-400';
@@ -151,11 +151,11 @@ export function ChasesLiveBoard({
 
       <div className="flex-1 px-2 md:px-4 pb-4 flex flex-col xl:flex-row gap-4 min-h-0">
         {/* The chase table */}
-        <div className="flex-1 bg-white rounded-[28px] md:rounded-[40px] p-3 md:p-8 shadow-2xl border border-white/10 overflow-y-auto">
+        <div className="flex-1 bg-card rounded-[28px] md:rounded-[40px] p-3 md:p-8 shadow-2xl border border-white/10 overflow-y-auto">
           {loading && (
             <div className="flex flex-col gap-3" aria-hidden>
               {[0, 1, 2].map((i) => (
-                <div key={i} className="h-14 rounded-2xl bg-zinc-100 animate-pulse" />
+                <div key={i} className="h-14 rounded-2xl bg-raised animate-pulse" />
               ))}
             </div>
           )}
@@ -166,14 +166,14 @@ export function ChasesLiveBoard({
               action, because the table's Action column clips well before
               360px — exactly what ChasesView fixes for the synthetic board. */}
           {!loading && chases.length > 0 && (
-            <div className="md:hidden -mx-1 divide-y divide-zinc-100">
+            <div className="md:hidden -mx-1 divide-y divide-white/5">
               {[...open, ...closed].map((chase) => {
                 const first = chase.items[0];
                 return (
                   <div key={chase.id} className="px-3 py-4 flex flex-col gap-2.5">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <div className="font-bold text-zinc-900 text-[15px] truncate">{nameFor(chase.businessId)}</div>
+                        <div className="font-bold text-white text-[15px] truncate">{nameFor(chase.businessId)}</div>
                         <div className="text-[12px] text-zinc-500 font-medium">
                           {chase.state === 'CLOSED_RECEIVED' && chase.closedReason
                             ? intl.formatMessage(m.autoClosed, { reason: chase.closedReason })
@@ -184,7 +184,7 @@ export function ChasesLiveBoard({
                         {intl.formatMessage(STATE_LABEL[chase.state])}
                       </span>
                     </div>
-                    <div className="text-[13px] font-semibold text-zinc-700 break-words">
+                    <div className="text-[13px] font-semibold text-zinc-300 break-words">
                       {first
                         ? intl.formatMessage(m.itemsSummary, {
                             first: `${first.supplier} ${currency(first.amount)}`,
@@ -193,12 +193,12 @@ export function ChasesLiveBoard({
                         : '—'}
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="inline-flex px-2.5 py-1 rounded-full text-[10.5px] font-bold uppercase tracking-wide bg-zinc-100 text-zinc-500">
+                      <span className="inline-flex px-2.5 py-1 rounded-full text-[10.5px] font-bold uppercase tracking-wide bg-raised text-zinc-400">
                         {intl.formatMessage(ENGINE_LABEL[chase.engine])}
                       </span>
                       <button
                         onClick={() => setOpenId(chase.id)}
-                        className="ml-auto text-sm font-bold text-zinc-700 px-4 py-2.5 rounded-full bg-zinc-100 hover:bg-zinc-200 transition-colors inline-flex items-center gap-1"
+                        className="ml-auto text-sm font-bold text-zinc-300 px-4 py-2.5 rounded-full bg-white/5 hover:bg-white/10 transition-colors inline-flex items-center gap-1"
                       >
                         {intl.formatMessage(m.openAction)}
                         <ChevronRight size={14} />
@@ -211,7 +211,7 @@ export function ChasesLiveBoard({
           )}
           {!loading && chases.length > 0 && (
             <table className="hidden md:table w-full text-left text-sm whitespace-nowrap">
-              <thead className="text-[11px] uppercase tracking-widest font-bold text-zinc-400">
+              <thead className="text-[11px] uppercase tracking-widest font-bold text-zinc-400 border-b border-white/5">
                 <tr>
                   <th className="px-4 py-4">{intl.formatMessage(m.columnClient)}</th>
                   <th className="px-4 py-4">{intl.formatMessage(m.columnFoundBy)}</th>
@@ -221,18 +221,18 @@ export function ChasesLiveBoard({
                   <th className="px-4 py-4 text-right">{intl.formatMessage(m.columnAction)}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-100">
+              <tbody className="divide-y divide-white/5">
                 {[...open, ...closed].map((chase) => {
                   const first = chase.items[0];
                   return (
-                    <tr key={chase.id} className="hover:bg-zinc-50 transition-colors">
-                      <td className="px-4 py-5 font-bold text-zinc-900">{nameFor(chase.businessId)}</td>
+                    <tr key={chase.id} className="hover:bg-white/[0.02] transition-colors">
+                      <td className="px-4 py-5 font-bold text-white">{nameFor(chase.businessId)}</td>
                       <td className="px-4 py-5">
-                        <span className="inline-flex px-2.5 py-1 rounded-full text-[10.5px] font-bold uppercase tracking-wide bg-zinc-100 text-zinc-500">
+                        <span className="inline-flex px-2.5 py-1 rounded-full text-[10.5px] font-bold uppercase tracking-wide bg-raised text-zinc-400">
                           {intl.formatMessage(ENGINE_LABEL[chase.engine])}
                         </span>
                       </td>
-                      <td className="px-4 py-5 text-zinc-700 font-semibold">
+                      <td className="px-4 py-5 text-zinc-300 font-semibold">
                         {first
                           ? intl.formatMessage(m.itemsSummary, {
                               first: `${first.supplier} ${currency(first.amount)}`,
@@ -253,7 +253,7 @@ export function ChasesLiveBoard({
                       <td className="px-4 py-5 text-right">
                         <button
                           onClick={() => setOpenId(chase.id)}
-                          className="text-sm font-bold text-zinc-600 hover:text-black px-3 py-2 rounded-full hover:bg-zinc-100 transition-colors inline-flex items-center gap-1"
+                          className="text-sm font-bold text-zinc-400 hover:text-white px-3 py-2 rounded-full hover:bg-white/5 transition-colors inline-flex items-center gap-1"
                         >
                           {intl.formatMessage(m.openAction)}
                           <ChevronRight size={14} />
@@ -307,7 +307,7 @@ export function ChasesLiveBoard({
                       // client's phone" beat, without leaving the machine.
                       window.open(sms.portalPath!, '_blank', 'noopener,width=390,height=760')
                     }
-                    className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold text-white bg-brand hover:bg-brand-hover transition-colors"
+                    className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold text-brand-on bg-brand hover:bg-brand-hover transition-colors"
                   >
                     <Smartphone size={13} />
                     {intl.formatMessage(m.openPortalAction)}

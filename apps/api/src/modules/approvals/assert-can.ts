@@ -75,11 +75,17 @@ import { canRelease } from '../clients-team-settings/index.js';
  */
 
 /**
- * The actions this module authorises. One member today, and it is the contract's
- * own name for it (Governance §11.2) rather than a local coinage — a second
- * member arrives with the surface that needs it.
+ * The actions this module authorises. Both are the contract's own names for
+ * them (Governance §11.2) rather than local coinages.
+ *
+ * A second member arrived with the surface that needed it — `POST
+ * /v1/practice-members`, the first operation in the product that grants
+ * somebody access to a practice. It is here rather than in
+ * `clients-team-settings` on purpose: a permission model with a role check in
+ * every module that offers a guarded act has no single place to read, and the
+ * more permissive of two copies always wins on the day it matters.
  */
-export type PermittedAction = 'publish.release';
+export type PermittedAction = 'publish.release' | 'team.invite' | 'business.people.manage';
 
 /**
  * The acting person, resolved from their membership. Everything needed to answer
@@ -155,6 +161,23 @@ export const RELEASE_KINDS: Readonly<Record<ProposalKind, boolean>> = {
   // later surface, the `bank.unmatch` shape — so revisit this ruling if that
   // asymmetry starts to matter in practice.
   'business.offboard': false,
+  // ⚠ **`document.purge` is `false`, and this one was genuinely arguable.** It
+  // is irreversible — the only irreversible thing that can happen to a document
+  // — and irreversibility is half of what `RELEASE_KINDS` is about. It is
+  // `false` because the OTHER half is what the gate actually selects for:
+  // D44's two kinds both **reach outside the product** — a message to somebody
+  // else's client, a figure released for export — and a purge reaches nowhere.
+  // It destroys one of the practice's own rows, inside their own workspace,
+  // after a human already put it in Trash.
+  //
+  // What protects the outward promise here is not the approver's rank but the
+  // executor's refusal: a document that has been published or that carries a
+  // D43 capability link **cannot be purged by anybody**, super admin included.
+  // A permission gate would have been a weaker guarantee wearing a stronger
+  // word — it would let the one person who may release also destroy the link
+  // their release created. Revisit if a firm asks for it; the refusal is the
+  // part that must not move.
+  'document.purge': false,
 };
 
 /** Does approving this kind need release authority? */
@@ -165,6 +188,93 @@ export function requiresReleaseAuthority(kind: ProposalKind): boolean {
 /** D44's whole rule, in one expression: the release role AND the ownership flag. */
 export function mayRelease(actor: Actor): boolean {
   return actor.role !== null && canRelease(actor.role) && actor.isOwner;
+}
+
+/**
+ * May this actor invite a colleague into the practice?
+ *
+ * **The release ROLE, and deliberately NOT the `isOwner` narrowing** —
+ * `canRelease(role)` alone. The two rules diverge here for the first time, so
+ * the reasoning is written out rather than left to be inferred from the missing
+ * conjunct:
+ *
+ * 1. **Inviting is reversible and internal.** {@link RELEASE_KINDS} draws its
+ *    line at acts that reach outside the product and cannot be taken back — a
+ *    message to somebody else's client, a figure released for export. An
+ *    invitation reaches one colleague's inbox, grants nothing until they accept,
+ *    and expires by itself in seven days. It is D44's *compose and edit* half,
+ *    not its release half.
+ * 2. **Requiring ownership would make team management a bus factor of one.**
+ *    Exactly one membership in a practice can ever carry `isOwner` (signup
+ *    writes it and nothing moves it), and there is no ownership-TRANSFER
+ *    operation in the contract. Under the stricter rule, a firm whose founder is
+ *    on holiday could not add the temp they hired that morning — and the fix
+ *    would be a DBA, which is not a permission model, it is an outage.
+ * 3. **The cost is bounded by what an invitation can grant.**
+ *    `PRACTICE_ADMIN` is refused at the invite boundary, so no admin can mint a
+ *    second admin, and an invited colleague can never release: `mayRelease`
+ *    still requires `isOwner`, which acceptance never sets. So the widest thing
+ *    this permits is a `PRACTICE_ADMIN` adding someone who composes and edits —
+ *    which is what an admin is for.
+ *
+ * `role === null` refuses, as everywhere here: a client-workspace user and a
+ * membership deactivated between sign-in and this request both arrive that way,
+ * and both must fail closed.
+ */
+export function mayManageTeam(actor: Actor): boolean {
+  return actor.role !== null && canRelease(actor.role);
+}
+
+/**
+ * May this actor manage the PEOPLE of a client business — invite one, change
+ * what they may do, revoke their access?
+ *
+ * ## Why it is here and not in the portal
+ *
+ * The product owner's ruling on 2 Sep 2026 was that a client's manager, HR lead
+ * or owner adds their own staff; the portal's Settings → People screen said the
+ * opposite. That made a THIRD guarded act, and this file's own header says what
+ * to do with one: *"a permission model with a role check in every module that
+ * offers a guarded act has no single place to read, and the more permissive of
+ * two copies always wins on the day it matters."* So the rule is written once,
+ * here, and `modules/portal` imports it through the seam rather than growing a
+ * second opinion beside its service.
+ *
+ * ## The two roles, and why not the third
+ *
+ * `WorkspaceRole` already contained `BUSINESS_ADMIN`, `USER_ADMIN` and
+ * `BUSINESS_STANDARD` before any of this was built, and the middle one reads as
+ * purpose-built: a business-side **user** administrator. Nothing had ever
+ * granted it, so this is the first surface that gives it a meaning.
+ *
+ * - **`BUSINESS_ADMIN`** — the owner. Everything, including making somebody else
+ *   an owner, which is what makes the last-owner rule escapable.
+ * - **`USER_ADMIN`** — the office manager or HR lead. The same people-management
+ *   authority and nothing else; it grants no billing, no export, no release.
+ * - **`BUSINESS_STANDARD`** — reads the list and cannot change it. Deliberately
+ *   not "cannot see it": who else can send paperwork on your employer's behalf
+ *   is not a secret from you, and hiding the section would be the *"pretend the
+ *   action does not exist"* failure Governance §11.2 names. The screen shows the
+ *   list, states who can change it, and the SERVER is what refuses.
+ *
+ * ## Practice roles are refused here, and that is not an oversight
+ *
+ * A `PRACTICE_ADMIN` is not a member of the client's staff, and this rule is
+ * never consulted for one: the only caller is the portal, whose actor is a
+ * `contacts` row on exactly one business. An accountant adding a client's user
+ * on the client's behalf is the older, separate door
+ * (`POST /businesses/{businessId}/members`, carrying the workspace cookie), and
+ * it is unchanged. Two doors onto one outcome is a thing this codebase normally
+ * refuses — the difference is that these two have different PRINCIPALS, so
+ * collapsing them would mean one of the two authorities checking a credential it
+ * cannot hold.
+ *
+ * `role === null` refuses, as everywhere here — a portal session whose
+ * `otp_sessions.contact_id` is null cannot be resolved to a person at all, and an
+ * unidentifiable caller must fail closed.
+ */
+export function mayManagePeople(actor: Actor): boolean {
+  return actor.role === 'BUSINESS_ADMIN' || actor.role === 'USER_ADMIN';
 }
 
 /**
@@ -192,13 +302,54 @@ export function mayRelease(actor: Actor): boolean {
  * stale — those are answers to a question they were not allowed to ask. The
  * detail names the authority, never the proposal id.
  */
-export function assertCan(actor: Actor, action: PermittedAction, resource: ProposalResource): void {
-  if (action === 'publish.release' && mayRelease(actor)) return;
+export function assertCan(actor: Actor, action: 'publish.release', resource: ProposalResource): void;
+/**
+ * `team.invite` takes NO resource, and the missing argument is the shape of the
+ * decision rather than an omission. A release is authorised against one
+ * proposal; inviting is authorised against the practice the session already
+ * fixes, and there is no record for a caller to name — which is also why the
+ * refusal below can be written once instead of per subject.
+ */
+export function assertCan(actor: Actor, action: 'team.invite'): void;
+/**
+ * `business.people.manage` takes no resource either, and for the same reason
+ * one level down: the business is fixed by the portal session's own
+ * `otp_sessions` row before this is reached, so there is nothing for a caller to
+ * name. A `businessId` argument here would be a second answer to a question the
+ * session has already settled — and the one place a caller could get it wrong.
+ */
+export function assertCan(actor: Actor, action: 'business.people.manage'): void;
+export function assertCan(actor: Actor, action: PermittedAction, resource?: ProposalResource): void {
+  if (action === 'business.people.manage') {
+    if (mayManagePeople(actor)) return;
+    throw new AppException(
+      'NT-PRM-001',
+      HttpStatus.FORBIDDEN,
+      'Not permitted',
+      // Written to be read by the person who pressed the button, not by us. It
+      // names what they can do (see the list) and the one action available to
+      // them (ask somebody who can), and it never says which of the people on
+      // screen those are — the list already shows that.
+      'Only an owner or a user administrator at your business can add or remove people. Ask one of them.',
+    );
+  }
+
+  if (action === 'team.invite') {
+    if (mayManageTeam(actor)) return;
+    throw new AppException(
+      'NT-PRM-001',
+      HttpStatus.FORBIDDEN,
+      'Not permitted',
+      'Only a practice admin can invite a colleague. Ask one of your admins to send the invitation.',
+    );
+  }
+
+  if (mayRelease(actor)) return;
   throw new AppException(
     'NT-PRM-001',
     HttpStatus.FORBIDDEN,
     'Not permitted',
-    resource.kind === 'chase.send'
+    resource?.kind === 'chase.send'
       ? "Only your practice's super admin can authorise a message to a client. Ask them to approve it."
       : "Only your practice's super admin can release documents for export. Ask them to approve it.",
   );

@@ -1,6 +1,7 @@
 import type { PrismaClient } from '../../common/db/prisma.js';
 import type { ScopeContext } from '../../common/db/scope-context.js';
 import { scopedDb, type ScopedClient } from '../../common/db/scoped-db.js';
+import { notDeleted } from '../../common/documents/deleted-documents.js';
 import { currentTraceId } from '../../common/trace/trace-context.js';
 import { wrapUntrusted } from '../../common/untrusted-content.js';
 import type { AiBudget } from '../../common/ai-budget.js';
@@ -149,9 +150,13 @@ export async function readPracticeState(
 
     const [businesses, docStates, openChases, oldestOpen, pendingProposals] = await Promise.all([
       db.business.findMany({ select: { name: true }, orderBy: { name: 'asc' }, take: 6 }),
+      // `archivedAt` and `deletedAt` are separate columns and both have to be
+      // said. These counts become the suggestion chips ("12 to review") and the
+      // prompt's own practice state, so a deleted document left in here offers
+      // the accountant work that is not there and then loses them the click.
       db.document.groupBy({
         by: ['state'],
-        where: { ...scoped, archivedAt: null },
+        where: { ...scoped, archivedAt: null, ...notDeleted() },
         _count: { _all: true },
       }),
       db.chase.count({ where: { ...scoped, state: { in: [...OPEN_CHASE_STATES] } } }),

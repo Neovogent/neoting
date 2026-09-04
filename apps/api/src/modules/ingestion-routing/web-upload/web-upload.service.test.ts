@@ -31,7 +31,7 @@ const DOCUMENT_DEFAULTS = {
   docType: null, supplierName: null, customerName: null, documentDate: null, dueDate: null,
   currency: null, totalPence: null, taxPence: null, reference: null, categoryCode: null,
   description: null, projectRef: null, parentDocumentId: null, failureCode: null,
-  failureMessage: null, archivedAt: null, perceptualHash: null, submitterLabel: null,
+  failureMessage: null, archivedAt: null, deletedAt: null, perceptualHash: null, submitterLabel: null,
   receivedLocal: null, routingDecision: null, routingConfidence: null, pageRange: null,
   receivedAt: NOW, createdAt: NOW, updatedAt: NOW,
 };

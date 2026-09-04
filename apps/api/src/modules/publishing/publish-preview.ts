@@ -36,6 +36,8 @@ export const PUBLISH_MINIMUM_CODE = 'NT-PUB-001';
 export interface PublishPreviewItem extends ReadinessInput {
   readonly id: string;
   readonly taxPence: number | null;
+  /** ISO code off the document. Null when the row does not carry one. */
+  readonly currency?: string | null;
 }
 
 /** The `PublishBatchPayload.preview` object, exactly. Integer pence, both. */
@@ -43,6 +45,18 @@ export interface PublishPreview {
   readonly itemCount: number;
   readonly grossPence: number;
   readonly vatPence: number;
+  /**
+   * The ONE currency every document in the batch shares, or null when they
+   * differ (or none is recorded).
+   *
+   * ⚠ Null does not mean sterling. It means **the totals above are not money in
+   * any single currency** and must not be rendered with a symbol. A USD invoice
+   * rendered the approval card as "gross £54352.51" — on the Review → Approve
+   * path, which is the one place the product promises that what was shown is
+   * what was approved. Summing pence across currencies is meaningless
+   * arithmetic; saying so is the only honest option.
+   */
+  readonly currency: string | null;
 }
 
 /** One document that may not enter a batch, and precisely why. */
@@ -105,11 +119,16 @@ export function checkPublishMinimum(item: PublishPreviewItem): PublishItemRefusa
 export function computePublishPreview(items: readonly PublishPreviewItem[]): PublishPreview {
   let grossPence = 0;
   let vatPence = 0;
+  const codes = new Set<string>();
   for (const item of items) {
     grossPence += item.totalPence ?? 0;
     vatPence += item.taxPence ?? 0;
+    if (typeof item.currency === 'string' && item.currency !== '') codes.add(item.currency.toUpperCase());
   }
-  return { itemCount: items.length, grossPence, vatPence };
+  // One shared code, or null. See `PublishPreview.currency` for why a mixed
+  // batch must NOT fall back to sterling.
+  const currency = codes.size === 1 ? ([...codes][0] as string) : null;
+  return { itemCount: items.length, grossPence, vatPence, currency };
 }
 
 /**

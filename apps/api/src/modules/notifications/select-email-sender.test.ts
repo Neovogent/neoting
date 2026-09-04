@@ -4,16 +4,22 @@ import { InMemoryEmailRateLimiter } from './email-rate-limit.js';
 import { DemoEmailSender } from './email-sender.js';
 import { selectEmailRateLimiter, selectEmailSender } from './select-email-sender.js';
 import { SesEmailSender } from './ses-email-sender.js';
+import { SmtpEmailSender } from './smtp-email-sender.js';
 
 const base = {
   SES_REGION: 'eu-west-2',
   EMAIL_FROM_ADDRESS: 'no-reply@neoting.neovogent.com',
   EMAIL_REPLY_TO_ADDRESS: 'support@neovogent.com',
   EMAIL_CONFIGURATION_SET: 'nt-staging-default',
+  SMTP_HOST: 'localhost',
+  SMTP_PORT: 1025,
 } as const;
 
 test('the sender is chosen by config, never by import', () => {
   expect(selectEmailSender({ ...base, EMAIL_SENDER: 'demo' })).toBeInstanceOf(DemoEmailSender);
+  // The local MailHog transport is chosen the same way — explicitly, never as
+  // a fallback from a failed `ses` send.
+  expect(selectEmailSender({ ...base, EMAIL_SENDER: 'smtp' })).toBeInstanceOf(SmtpEmailSender);
   expect(selectEmailSender({ ...base, EMAIL_SENDER: 'ses' })).toBeInstanceOf(SesEmailSender);
 });
 

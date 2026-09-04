@@ -1,19 +1,218 @@
 # documents — the read surface
 
-**Source of Truth:** SoT §4 Stage 5 · **Added by:** issue #77 · **Contract:** `GET /v1/documents`, `/documents/{documentId}`, `/{documentId}/original`, `/{documentId}/events`, `/{documentId}/extractions`
+**Source of Truth:** SoT §4 Stage 5 · **Added by:** issue #77, widened by document management (2 Sep 2026) · **Contract:** `GET /v1/documents` (now with `?deleted`), `/documents/counts`, `/documents/{documentId}`, `/{documentId}/original`, `/{documentId}/events`, `/{documentId}/extractions`, `POST /{documentId}/deletion`, `POST /{documentId}/restoration`
 
 ## Purpose
 
-Five GETs and nothing else: the queue lists, one document, a short-lived link to
-its original bytes, its processing log, and its extraction history.
+Six GETs and two POSTs: the queue lists, one document, a short-lived link to its
+original bytes, its processing log, its extraction history, the screen's header
+counts — and Trash / restore.
 
-**There is no write on this module, and that is structural.** A retry is a
-`document.reprocess` proposal on the Review → Approve spine (Governance §10), not
-a `POST /documents/{id}/retry` here. Because the service class has no mutating
-method, there is no side-effect path for one to hide in — the invariant is
-enforced by the absence of code rather than by a promise in prose. All five
-operations are `x-nt-side-effect: none` in `openapi.yaml`, which
-`check-contract.mjs` reads during `pnpm lint`.
+**`DocumentsService` still has no mutating method, and that is still
+structural.** The two writes live in a SECOND class,
+`DocumentManagementService`, whose entire surface is the pair — so "what on this
+module can write?" is answered by reading one small file rather than by trusting
+a claim. A retry is still a `document.reprocess` proposal, and permanent deletion
+is still a `document.purge` proposal; **there is no `DELETE /documents/{id}`
+anywhere in the contract and none may be added.**
+
+## Document management — Trash, restore, counts (2 Sep 2026)
+
+The product owner asked for *"proper document management here, like delete
+option, preview option"*, benchmarked against Dext. What landed:
+
+| Operation | Class |
+|---|---|
+| `GET /v1/documents?deleted=true` | `none` — a new optional param on the EXISTING list, default false |
+| `POST /v1/documents/{id}/deletion` | `ingest` |
+| `POST /v1/documents/{id}/restoration` | `ingest` |
+| `GET /v1/documents/counts` | `none` |
+
+### ⚠ The mechanism is `documents.deleted_at`, NOT a `DocumentState` member
+
+Migration `20260902220000_document_soft_delete`, additive, writes no data. A
+ninth enum value would have broken `portal-document-status.ts` — a deliberately
+TOTAL mapping onto the five words a CLIENT is shown, where "deleted" must never
+appear — plus `LEGAL_TRANSITIONS`' 8×8 matrix and the contract's own
+`DocumentState`, which `check-contract.mjs` mirrors from prisma verbatim.
+
+The deeper reason is that deletion is **orthogonal to pipeline state**: a READY
+document that is deleted and restored is READY again, and `state` is what
+remembers that. A state member would have had to destroy the answer in order to
+record the question — which is exactly why restore here has nothing to derive,
+unlike unarchive, which reads its target back out of the event log.
+
+### ⚠ `x-nt-side-effect: ingest`, and why the word does not obviously fit
+
+The four classes are `none` / `ingest` / `proposal` / `execute`. `none` is false
+(these write), `proposal` is false (no ActionProposal is created), and `execute`
+is reserved for exactly ONE operation in the whole API — the checker asserts it.
+So `ingest` is the only admissible value, **and it is also the established
+one**: `PATCH /portal/people/{personId}` and `DELETE /portal/people/{personId}`
+are both `ingest` and both change an existing record's state. The spec header's
+gloss on `ingest` ("changes no existing record's state") has been narrower than
+its own use since those landed; recorded as a contract-doc gap rather than
+silently widened.
+
+**Why not proposals.** `RELEASE_KINDS` states the test: *"internal and reversible
+by a further proposal — archive unarchives, coding is corrected again, a
+rejection is reprocessed."* Delete and restore undo each other exactly. Putting
+Read review → Approve in front of pressing Delete on one receipt would fill the
+Approve queue with housekeeping, and Approve fatigue is how a real release gets
+waved through.
+
+⚠ `docs/research/dext-document-management.md` §10.2 **B2 suggests the
+opposite** — restore as an Approve-ceremony action, and delete as a proposal for
+any approved document. That is a live disagreement with the shipped shape, taken
+because the build brief specified ordinary mutations. It is a product decision,
+not a defect; flagged rather than settled.
+
+### The one predicate — `common/documents/deleted-documents.ts`
+
+`notDeleted()` / `onlyDeleted()` / `deletedFilterFor(deleted)`. The
+`PORTAL_HIDDEN_DOCUMENT_STATE` shape, for the same reason: **a list filter and a
+count that spell the same exclusion twice will eventually disagree, and the more
+permissive one wins on the day it matters.** This module already proves the
+point — "hidden" is spelled THREE ways across the codebase (`state: { not:
+'ARCHIVED' }` here, `PORTAL_HIDDEN_DOCUMENT_STATE` in the portal,
+`archivedAt: null` in the chat and coding paths) and they are not equivalent.
+
+Two functions rather than one boolean-taking one, deliberately: `notDeleted()`
+beside `onlyDeleted()` cannot be got the wrong way round by a misplaced `!`, and
+they have different TYPES so a swap is a compile error.
+
+⚠ **It is not a tenancy boundary.** Tenancy is RLS; this is a product predicate
+on top of the already-scoped set.
+
+### What deliberately does NOT exclude Trash
+
+`getDocument`, `getDocumentOriginal`, `listDocumentEvents`,
+`listDocumentExtractions` — **all four still serve a deleted document.**
+Previewing one is exactly how a person decides whether to restore it (the
+"preview option" half of the ask), and both mutations return `Document` for a
+row that is or has just been deleted. The exclusion belongs to the surfaces that
+answer *"what is there"*, never to the ones that answer *"show me this one"*.
+
+`GET /d/{code}` (the D43 capability link) also still resolves for a deleted
+document, and that is load-bearing rather than an oversight: an accountant
+holding an exported line's URL must not be affected by workspace housekeeping
+they cannot see. `docs/research/dext-document-management.md` §10.4 C1 argues
+delete should be REFUSED for any document with an export line — that guard
+exists in AutoEntry because AutoEntry's delete is closer to permanent. Ours
+cannot break the link, so the refusal lives one level up, on `document.purge`.
+
+### ⚠ Trash has no expiry, and there is no "empty Trash"
+
+Three independent research passes found that **no vendor — Dext, Hubdoc,
+AutoEntry, Xero — publishes a recovery window at all.** A TTL here would be our
+own invention wearing borrowed authority. The only route out of Trash is a
+reviewed `document.purge` naming explicit ids; a bulk-destroy verb is precisely
+Hubdoc's mistake (its only hard-delete primitive is "Empty Trash" for the whole
+organisation) and would be worse with our stakes. **Do not add one.**
+
+### Idempotency, and where it actually comes from
+
+Deleting a deleted document is a `200`, not a `409`, and **the original
+`deletedAt` is not rewritten** — *when* a document was deleted is the only
+question a Trash listing sorted by deletion can answer, and a second press of a
+button that appeared to do nothing must not silently move it.
+
+The row-level compare-and-swap (`updateMany` guarded on the current condition)
+is what makes that true; the `Idempotency-Key` is required by the checker for
+every non-`none` mutation and is honoured with an **actor-scoped** fingerprint,
+copied from `action-proposals.service.ts`'s A12 fix. Without the actor, the
+process-wide in-memory store would let one caller replay another's document past
+RLS — a disclosure hole, not a double-effect one, since the writes are natively
+idempotent.
+
+### Both directions write TWO durable records
+
+A `document_events` row (`stage: 'delete' | 'restore'`, outcome `DELETED` /
+`RESTORED`) **and** an `audit_events` hash-chain row naming the actor, in the
+same transaction as the timestamp. `stage` is not `'state'`, because this is not
+a `DocumentState` transition and labelling it one would make the log claim an
+edge the machine never took. `appendAuditEvent` comes through the approvals
+seam — never a second copy of the formula, because a chain whose links were
+computed two ways cannot be verified at all.
+
+⚠ Neither row carries untrusted content: ids and a state name only. A test
+asserts a supplier-style filename never reaches either.
+
+This is the gap the market leaves open. Hubdoc's per-document "audit trail" is a
+provenance panel — upload source, who, when — recording **no** deletion and no
+restore, so once its Trash is emptied a removal leaves no trace at all.
+
+### `GET /documents/counts` — the header, served honestly
+
+The screen read `3 documents · 0 archived · 0 in vault · 0 expiring` and three
+of those four were not answers. See the TRUTH table in the service header. All
+five counts run in ONE `scopedDb` transaction so they share a snapshot.
+
+⚠ **`inVault` and `expiring` count `vault_items`, not documents**, and the
+contract says so in the field descriptions. `documents` has **no expiry or
+retention column at all**, so there is no expiring document to count and none is
+approximated. `expiring` includes items already past their date — an expired
+certificate is the most expiring thing on the screen — and echoes back the
+`expiringWithinDays` horizon it used.
+
+⚠ **`@Get('counts')` MUST stay declared above `@Get(':documentId')`.** Nest
+matches in declaration order, so the other way round `GET /documents/counts`
+resolves as "the document whose id is `counts`" and 404s forever. That is also
+why the counts handler is on `DocumentsController` rather than beside the other
+two management operations: ordering ACROSS controllers depends on the module's
+`controllers` array, which is far easier to reorder by accident.
+
+## ⚠ `getDocumentOriginal` has TWO principals (2 Sep 2026)
+
+It is the only operation in this module that does, and the change is the
+contract catching up with itself rather than a widening. The operation's own
+description has said *"a delegated OTP session may only call this for items in
+its grant (Governance §5.2); the RLS context decides, not the handler"* since
+the spec was drafted, and `documents_delegated_upload` in `prisma/sql/rls.sql`
+has permitted exactly that for just as long — but the operation carried **no
+`security:` block**, so it inherited the global `workspaceSession` default. A
+client could not open the receipt they had just sent, and the sentence in the
+spec described a caller nothing admitted.
+
+`documents.controller.ts#principalFor` is the whole of the choice, and it is the
+`billing.controller.ts` shape: **an `Authorization` header means the portal**
+(judged as a portal session on its own merits — the resolver re-reads the
+`otp_sessions` row and re-checks scope, verification and expiry), no header at
+all is the accountant, and a blank header falls to the accountant.
+
+**On the portal path the boundary is SQL, and it is the ONLY one** — which makes
+this different from every other portal read in the product. The request runs
+under `delegatedScopeFor(facts)`, so
+`documents_delegated_upload`'s `id = ANY(app_granted_item_ids())` decides: a
+document outside the grant is invisible to `findUnique`, the service's existing
+`null` check raises 404, and the presign never happens (this module already reads
+before it signs, and a test pins that). No ownership check is added, because a
+check that *could* answer 403 would confirm the document exists.
+
+A session with an EMPTY grant — an onboarding session that has never uploaded —
+cannot have a delegated context built for it at all (`ScopeContextSchema`
+refuses one: an empty grant reads as "no restriction" to a human and denies
+everything in SQL). It gets a 404 that is **word for word** the service's own,
+so a caller cannot tell "your session may reach no documents" from "that
+document is not yours".
+
+⚠ The consequence for the client portal, stated plainly: a client may open the
+original of a document **they sent through the portal**, and not one that
+arrived by email or that their accountant uploaded, because that is what a grant
+contains. Widening it means either a new RLS branch (a `prisma/` change) or
+reading originals under the practice SYSTEM context — which would trade a
+database guarantee for an application one on the single endpoint that hands out
+bearer-authority URLs to raw bytes.
+
+The other four reads did **not** gain a principal, and
+`documents.controller.test.ts` pins their arity so one cannot be given a header
+without the contract moving first: `getDocument` returns the practice's full
+record including the coding, `listDocuments` is the inbox, and the two child
+lists are the internal processing log.
+
+`DocumentsModule` therefore `imports: [PortalModule]`, reached through
+`modules/portal`'s public seam. One-way — `PortalModule` does not import this
+one — so there is no Nest cycle.
 
 ## Tenancy: RLS, and deliberately no second mechanism
 
@@ -207,6 +406,15 @@ document-response.test.ts`, including the malformed-value refusals.
 pnpm --filter @neoting/api test        # unit, offline
 ```
 
+`documents.controller.test.ts` covers the second principal on
+`getDocumentOriginal`: which context each caller runs under, that a blank
+`Authorization` header falls to the cookie, that an empty grant is an
+indistinguishable 404 with nothing reaching the service, and that the other four
+reads still take no header. What the DATABASE then does with the delegated
+context — the grant actually bounding the read, and nothing being signed outside
+it — is `modules/portal/portal-client-surface.integration.test.ts`, because only
+Postgres can answer it.
+
 `documents.service.test.ts` drives a recording fake Prisma: the assertions are on
 the `where` / `orderBy` / `take` that reach the database, not on Prisma working.
 The two that exist for security rather than behaviour are *"NOTHING is signed for
@@ -224,6 +432,40 @@ The service-level tests cover the branching; what is *not* covered is the
 controller → guard → service → RLS path end to end.
 
 ## TODO
+
+- [ ] ⚠ **FOUR CALL SITES IN FENCED MODULES STILL SERVE DELETED DOCUMENTS.** The
+      helper exists and every site this lane owns uses it, but
+      `modules/{portal,exports-public-api,chat-framework,rules-suggestions}` were
+      off-limits to the agent that built this (other agents live in them), so
+      each still needs a one-line `...notDeleted()` added to an existing `where`:
+
+      | File | Line | What leaks |
+      |---|---|---|
+      | `portal/portal-documents.service.ts` | `whereFor()` ~125 | **A deleted document is still visible to the CLIENT in their portal** — the sharpest of the four |
+      | `portal/portal-context.service.ts` | `count` ~185 | `PortalSummary.documentsSent` counts Trash |
+      | `exports-public-api/api/exports.service.ts` | `publishedWhere()` ~523 | Trash can enter an export selection. Mitigated but not closed: `publish.batch` already refuses to RELEASE a deleted document, so nothing new can reach `PUBLISHED` while deleted |
+      | `chat-framework/suggestions.service.ts` ~152, `grounding.ts` ~85, `display.ts` ~56 | | Chat counts and grounding see Trash |
+      | `rules-suggestions/coding/supplier-coding.service.ts` ~547 | | Coding history learns from deleted documents |
+
+- [ ] **Retention/expiry for DOCUMENTS does not exist and was not invented.**
+      `documents` has no expiry or retention column; `vault_items.expires_at` is
+      the only domain expiry in the schema and is what `expiring` counts. A real
+      document-retention feature (D12's six-year clock) would need: a column or
+      a per-practice policy table, a scheduled sweep, a
+      notice-before-destruction surface, and a decision about what happens to a
+      document whose retention expires while an export link still resolves to it
+      — which is the same D43 question `document.purge` answers by refusing.
+      AutoEntry publishes a concrete "minimum seven years, 13 months after
+      cancellation"; Xero says only that it "varies by region". A concrete
+      published number would be a genuine differentiator. **Not built. Scope
+      discipline over completeness.**
+
+- [ ] Consider AutoEntry's *"delete is refused while extraction is in flight"*
+      guard (`docs/research/dext-document-management.md` §10.4 C1) for
+      `RECEIVED`/`PROCESSING`. Deliberately NOT added: our delete is reversible
+      and the row survives, so a pipeline finishing against a soft-deleted row is
+      harmless, and adding a refusal the parallel frontend is not coded for would
+      break it. Revisit with the screen in front of you.
 
 - [ ] **Blocked, needs approval:** add `@nestjs/testing` + `supertest` as
       devDependencies so the cross-practice 404 can be proven through HTTP. This

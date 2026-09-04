@@ -31,6 +31,23 @@ export class NtProblemError extends Error {
   readonly detail?: string | undefined;
   readonly traceId?: string | undefined;
   readonly fieldErrors?: Array<{ field: string; message: string }> | undefined;
+  /**
+   * The contract's one RFC 7807 **extension member** (`Problem.
+   * publishedOutsidePeriod`), carried through rather than dropped.
+   *
+   * Only `NT-EXP-001` sets it. It is here because the alternative was for the
+   * export screen to answer *"then where ARE my documents?"* with a second
+   * speculative query of its own — one that could disagree with the predicate
+   * the exporter actually used, and would be a second read of another
+   * practice's data waiting to be got wrong. The exporter is the only thing
+   * that knows its own filter, so the exporter says it.
+   *
+   * Everything else on a problem body is still dropped on purpose: this class
+   * is the contract's shape, not a passthrough for whatever a server sends.
+   */
+  readonly publishedOutsidePeriod?:
+    | { count: number; earliestDocumentDate?: string | null; latestDocumentDate?: string | null }
+    | undefined;
 
   constructor(problem: {
     status: number;
@@ -39,6 +56,7 @@ export class NtProblemError extends Error {
     detail?: string;
     traceId?: string;
     errors?: Array<{ field: string; message: string }>;
+    publishedOutsidePeriod?: { count: number; earliestDocumentDate?: string | null; latestDocumentDate?: string | null };
   }) {
     super(problem.detail ?? problem.title);
     this.name = 'NtProblemError';
@@ -48,6 +66,7 @@ export class NtProblemError extends Error {
     this.detail = problem.detail;
     this.traceId = problem.traceId;
     this.fieldErrors = problem.errors;
+    this.publishedOutsidePeriod = problem.publishedOutsidePeriod;
   }
 }
 

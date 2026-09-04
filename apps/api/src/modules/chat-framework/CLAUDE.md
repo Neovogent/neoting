@@ -22,7 +22,7 @@ no second door to close.
 | `models.ts` | 9.1 | **Governance names this path.** Pinned Bedrock IDs, the task→(model, effort) map, per-family decoding params, task budgets, tier rates, the config revision |
 | `../../common/ai-budget.ts` | 9.7 | Per-practice daily ceiling in Redis. Warn 80%, hard stop 100%. **Moved out of this module by S5 (27 Aug 2026)** — `modules/extraction` is now a second spender, `no-cross-module-internals` forbids it reaching in here, and re-exporting a Redis-backed ledger through this module's seam would break that seam's own rule (it carries configuration, not behaviour). `common/` is the one place both may import from |
 | `chat.service.ts` | — | The orchestrator. Loop caps, retrieval, assembly, citation checks, draft building |
-| `grounding.ts` | 9.4 | RLS-scoped retrieval, the client's chart of accounts, **citation verification** |
+| `grounding.ts` | 9.4 | RLS-scoped retrieval (documents · bank transactions · **statements** · chases), the client's chart of accounts, **citation verification** |
 | `prompts/system-prompt.ts` | 9.6, 9.8 | The versioned prompt. A byte-stable cache prefix |
 | `prompts/output-schema.ts` | 9.2 | Strict Zod + the JSON Schema for the forced tool |
 | `invoke-structured.ts` | 9.2, 9.3 | Retry-once-on-schema-failure, the degrade ladder, the breaker |
@@ -65,6 +65,62 @@ nothing else changes.
 Retrying a schema problem on a *less* capable tier spends money to get a worse
 answer, and counting it as a provider failure would take chat down for 60 s over
 a prompt bug. Only `ModelUnavailableError` (5xx / timeout / 429) does either.
+
+## #233 — the capability lie, and the three locks that made it structural
+
+**2 Sep 2026.** Asked for a client's bank statements, the assistant answered:
+
+> *"This workspace handles the document pipeline — receipts, invoices, and
+> purchase records — not bank statements. You'd need to pull those from your
+> banking or accounting platform directly."*
+
+Every clause of that is false. **D40 makes manual statement upload the ONLY bank
+input in this release** — the product ingests statements, D41 grades them, the
+Bank tab lists them, and `GET /v1/statements` serves them. The chat sent a paying
+accountant to an external platform for rows in our own `statements` table.
+
+⚠ **This was not a prompt-tone problem, and no amount of re-wording would have
+fixed it.** Three independent locks made the honest answer unreachable, and all
+three had to move:
+
+| Lock | Why the honest answer was impossible |
+|---|---|
+| `retrieveRecords` read documents, bank transactions and chases — **not statements** | A statement question reached the model with zero statement records, so §9.4's grounded path was structurally unavailable. The model was answering honestly about what it could see |
+| `ChatRecordReference.type` was `[document, chase, bankTransaction, publish, extraction]` | Even *with* statement rows supplied, a citing turn could not compose a schema-valid `references` array. A record that can be retrieved and cannot be cited is one the surface must lie about |
+| The pinned prompt predated D40 and never mentioned statements | With no scope sentence, the model inferred "not this product" and wrote the referral itself |
+
+The fix is one retrieval, two additive enum values (`statement`,
+`SHOW_STATEMENTS`) and one prompt section. **The lesson worth keeping is the
+diagnosis, not the patch:** when this surface refuses something the product
+demonstrably does, check the retrieval and the citation enum *before* the prompt.
+A model with nothing in front of it and no shape to cite is not hallucinating a
+refusal — it is describing the context it was actually given.
+
+### What a statement's grounding line says, and why
+
+```
+[stm_x] bank statement · period 2026-08-01 to 2026-08-31 · 128 transactions imported
+  · completeness PROVEN — every line is accounted for, checked by balance continuity to the penny
+```
+
+Period, row count, and **D41's verdict spelled out in words the model can repeat
+without softening**. The three verdicts are `completeness PROVEN`,
+`completeness COULD NOT BE CHECKED` and `completeness CHECKED AND FAILED`, and
+they are not degrees of one thing. "We read every line and proved none is
+missing" versus "we could not check whether any line is missing" is the single
+distinction an accountant acts on, and under D40 it is load-bearing: a dropped
+transaction is a payment nobody will ever be chased for, because there is no feed
+to reconcile against later.
+
+⚠ **An unreadable `gapAnalysis` reports `reduced`, never `complete`** —
+`readVerdict` mirrors `statements.service.ts` deliberately. The column is `Json?`,
+so a row from an older build may carry anything, and claiming a statement was
+proven whole because its proof could not be parsed is the exact lie D41 exists to
+prevent. Finding text is wrapped (§9.6): it quotes the uploaded file.
+
+`SHOW_STATEMENTS` carries **no payload** — the same shape as `SHOW_INBOX`. The
+model decides only that the accountant asked to see the list; the Bank tab's
+Statements sub-tab reads every period, count and verdict from the server itself.
 
 ## Model IDs are LAW-adjacent — read this before changing one
 
@@ -137,10 +193,65 @@ pnpm test:eval                                                     # the gate
 AWS_PROFILE=nt EVAL_PROVIDER=bedrock EVAL_RECORD=1 pnpm test:eval  # re-record
 ```
 
+⚠ **Run the re-record from `evals/`, not from the repo root.** Turbo's env
+filtering strips `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, so a root
+invocation reaches Bedrock with no credentials. `AWS_REGION=eu-west-2`. The whole
+corpus is ~39 live judgment-tier calls at ~2p each — under £1.
+
+⚠ **A recorded run is not a passing run.** `EVAL_RECORD=1` writes whatever came
+back, including nothing: a single 30 s `chatWorkspace` timeout (`TASK_BUDGETS`)
+on one case recorded 38 of 39 turns and scored that case as a failure, dropping
+intent accuracy below the threshold for a reason that had nothing to do with the
+model's judgement. Check the recorded count against the case count before
+believing a figure. Re-recording overwrites the whole file, so a second run is
+the fix and leaves nothing half-updated.
+
+**Current figures** (prompt `chat-workspace/2026-09-02.4`, opus-4-6, 2 Sep 2026):
+29 rule cases — **intent 93.1%**, **fields 100%**; injection 10 cases, **0 leaks**.
+Before the #233 work, on 26 cases: intent 92.3%, fields 100%, 0 leaks. The two
+standing intent misses are `general-001` ("what is the meaning of life?" →
+`SCOPE_REFUSAL`, expected `GENERAL`) and `general-002` ("add Franco Pizza as a
+client" → `ADD_CLIENT`, expected `GENERAL`). **`general-002`'s expectation is
+stale, not the model's answer** — it predates `ADD_CLIENT` existing, and the
+prompt now names that exact utterance shape. Left alone deliberately: editing an
+eval expectation to raise a number is the one move that makes this gate stop
+measuring anything. Fix it as its own change, with its own reasoning.
+
+Adding a case that needs different retrieval? `RuleCase.fixture` selects the
+synthetic client (`noStatements` today), and `expect.forbidReplyContains` scores
+a **capability lie** as a field-level miss — #233 was a defensible-looking intent
+wrapped around a sentence that sent the user off the product, so the sentence
+needs its own assertion.
+
+## ⚠ Trash is excluded from all three document reads (3 Sep 2026)
+
+Soft delete (`documents.deleted_at`) landed with this module fenced off, so
+every document read here served Trash. All three now spread `notDeleted()` from
+`common/documents/deleted-documents.ts` — the one place "deleted" is spelled,
+never an inline `deletedAt: null`.
+
+⚠ **`archivedAt: null` was already in each of those `where`s and excludes none
+of Trash.** They are different columns: a document can be deleted having never
+been archived, which is the ordinary case. Two clauses, not one.
+
+| File | What was leaking |
+|---|---|
+| `suggestions.service.ts` (`readPracticeState`) | the counts behind the chips and the prompt's practice state — a deleted document offered the accountant a job that no longer exists, and the chip is the thing they click |
+| `grounding.ts` (`retrieveRecords`) | the answer's own evidence. A trashed row here is not merely present, it gets **cited**: the model answers about "the £420 Amazon invoice" with a record id attached to make it credible. It also costs a `RETRIEVAL_LIMIT` slot, crowding out a live row the question may have been about |
+| `display.ts` (`composeDisplay`) | worse in a **chart** than the row count suggests — "Documents by state" is a tally, so a deleted document does not appear as a row a reader could dismiss, it silently inflates a bar |
+
+`chase/detection.ts` reads `bankTransaction.matchState` and never `documents`;
+there was nothing to do there.
+
+The unit tests record the `where` rather than filtering rows by it, deliberately:
+Postgres applies the predicate, and the only thing this layer decides is what the
+predicate says. A fake that re-implemented the matching would stand in for the
+query it is meant to be measuring and pass whatever it was asked.
+
 ## Tests
 
 ```bash
-pnpm --filter @neoting/api test -- chat-framework   # 79 unit tests, no socket, no DB
+pnpm --filter @neoting/api test -- chat-framework   # 101 unit tests, no socket, no DB
 EVAL_PROVIDER=bedrock pnpm test:eval                # the §9.8 gate, needs AWS creds
 ```
 

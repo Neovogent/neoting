@@ -258,6 +258,72 @@ describe.skipIf(!enabled)('A9 — Export for VT, against a real database', () =>
   });
 });
 
+/**
+ * ⚠ **The dead end, against a real database and a real RLS policy.**
+ *
+ * Reported from the live app: a client with one Published document dated **12
+ * May 2025**, an export screen defaulting to last month, and the answer *"No
+ * documents reached Published in 01/08/2026 to 31/08/2026 for this client."*
+ * Correct — the period selects on the document's own date — and useless.
+ *
+ * The unit tests prove the sentence. These prove the two things only a real
+ * database can: that the count comes from the **same RLS-scoped read** the
+ * export runs, and that it therefore cannot cross a practice boundary.
+ */
+describe.skipIf(!enabled)('NT-EXP-001 tells the accountant where the documents actually are', () => {
+  const MARCH = { periodStart: '2026-03-01', periodEnd: '2026-03-31' } as const;
+
+  test('an empty period names the count and the span of what is Published outside it', async () => {
+    const error = await refusal(() => service().createExport(STAFF_A, request(MARCH), key()));
+
+    expect(error.code).toBe('NT-EXP-001');
+    expect(error.getStatus()).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
+
+    // DOC_IN (14 Jan) and DOC_OUT (3 Feb) are Published and outside March.
+    // DOC_READY is not Published, so it is not counted — the extension is
+    // narrowed by exactly the predicate the export itself uses, minus the date.
+    expect(error.extension?.publishedOutsidePeriod).toEqual({
+      count: 2,
+      earliestDocumentDate: '2026-01-14',
+      latestDocumentDate: '2026-02-03',
+    });
+    expect(error.publicDetail).toContain('There are 2 Published documents');
+    expect(error.publicDetail).toContain('dated between 14/01/2026 and 03/02/2026');
+    expect(error.publicDetail).toContain('Widen the period');
+  });
+
+  test('the dates it reports are a period that actually works', async () => {
+    // The whole point of the extension: the accountant (or the screen) uses the
+    // span, re-runs, and gets a file. If this ever fails, the refusal is
+    // pointing somewhere the export cannot follow.
+    const widened = await service().createExport(
+      STAFF_A,
+      request({ periodStart: '2026-01-14', periodEnd: '2026-02-03' }),
+      key(),
+    );
+
+    expect(widened.state).toBe('succeeded');
+    // Both documents are IN the import file, which is what the widened period
+    // promised. `documentCount` is the BUNDLE's count and is 1 here, because
+    // this fixture only stores bytes for one of them — a storage gap the export
+    // reports as a warning rather than a missing row (D43 rung 4).
+    expect(widened.rowCount).toBe(2);
+  });
+
+  test('⚠ the count never crosses a practice — it is the export\'s own scoped read, not a second one', async () => {
+    // Practice B has a business of its own with nothing in it. If the count
+    // were a second query written outside the RLS session, this is where
+    // practice A's two documents would leak into practice B's refusal.
+    const error = await refusal(() =>
+      service().createExport(STAFF_B, request({ ...MARCH, businessId: BIZ_B }), key()),
+    );
+
+    expect(error.code).toBe('NT-EXP-001');
+    expect(error.extension).toBeUndefined();
+    expect(error.publicDetail).toContain('no Published documents outside that period either');
+  });
+});
+
 describe.skipIf(!enabled)('⚠ tenancy — the export surface is policed by RLS and nothing else', () => {
   test('another practice cannot export this client, and learns nothing: 404, never 403', async () => {
     const error = await refusal(() => service().createExport(STAFF_B, request(), key()));

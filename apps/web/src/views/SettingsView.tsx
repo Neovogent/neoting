@@ -7,8 +7,8 @@ import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
 import { SectionStrip } from '../components/DynamicComponents/SectionStrip';
 import { fromSlug, slug, useSegment } from '../lib/router';
-import { Field, Toggle } from './ApprovalsView';
-import { LinkTtlField } from './ChasesView';
+import { Field, Toggle } from '../components/DynamicComponents/FormControls';
+import { LinkTtlField } from '../components/DynamicComponents/LinkTtlField';
 import { Pill } from '../components/DynamicComponents/DataTable';
 import { OPTIONAL_MANDATORY } from '../lib/selectors';
 

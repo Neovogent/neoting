@@ -101,22 +101,36 @@ export function ReviewGate({
   const accentBg = accent === 'red' ? 'bg-red-500/10 text-red-500 border-red-500/20' : 'bg-raised text-white border-white/5';
 
   return (
-    <div className="w-full max-w-xl border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden flex flex-col">
+    // ⚠ The header's breakpoints are CONTAINER queries, not viewport ones, and
+    // that is the whole responsiveness of this card. It renders in places whose
+    // width has nothing to do with the window's — a document detail's right-hand
+    // column is ~300 px on a 1600 px desktop — and under `sm:` the row layout
+    // applied there anyway: the title truncated to "Upd…", the uppercase
+    // subtitle wrapped to four lines and [Read review] collided with it. `@md`
+    // (28rem) reads the card's own width, so the same card stacks when it is
+    // narrow and sits in a row when it is wide, wherever it is mounted.
+    <div className="@container w-full max-w-xl border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden flex flex-col">
       {/* Header — scope only. No Approve button exists at this point. */}
-      <div className="p-4 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 border-b border-white/5">
-        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-          <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center shrink-0 border shadow-inner ${accentBg}`}>
+      <div className="p-4 @md:p-6 flex flex-col @md:flex-row @md:items-center justify-between gap-3 @md:gap-4 border-b border-white/5">
+        <div className="flex items-center gap-3 @md:gap-4 min-w-0">
+          <div className={`w-10 h-10 @md:w-12 @md:h-12 rounded-2xl flex items-center justify-center shrink-0 border shadow-inner ${accentBg}`}>
             <Icon size={20} />
           </div>
           <div className="min-w-0">
-            <h3 className="font-sans font-bold text-lg sm:text-xl text-white tracking-tight break-words sm:truncate">{title}</h3>
-            <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">{subtitle}</p>
+            {/* Wrapped, never clipped, and both carry their full text as a
+                title — the DocumentPreview discipline. */}
+            <h3 title={title} className="font-sans font-bold text-lg @md:text-xl text-white tracking-tight break-words">
+              {title}
+            </h3>
+            <p title={subtitle} className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider break-words">
+              {subtitle}
+            </p>
           </div>
         </div>
         {!isExpanded && (
           <button
             onClick={() => setIsExpanded(true)}
-            className="shrink-0 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold text-white bg-brand rounded-full w-full sm:w-auto hover:bg-brand-hover transition-all shadow-glow-btn-soft"
+            className="shrink-0 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold text-white bg-brand rounded-full w-full @md:w-auto hover:bg-brand-hover transition-all shadow-glow-btn-soft"
           >
             {intl.formatMessage(m.readReview)}
             <ChevronDown size={16} strokeWidth={2.5} />
@@ -132,7 +146,7 @@ export function ReviewGate({
             exit={{ height: 0, opacity: 0 }}
             className="border-b border-white/5 bg-raised/30 overflow-hidden"
           >
-            <div className="p-6 space-y-6">{detail}</div>
+            <div className="p-4 @md:p-6 space-y-6">{detail}</div>
           </motion.div>
         )}
       </AnimatePresence>

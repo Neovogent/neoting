@@ -119,7 +119,7 @@ model Business {
   /// ---- Subscription (D48, ID only) ----------------------------------------
   ///
   /// Four columns rather than a `subscriptions` table, deliberately: ID sells
-  /// ONE flat plan per client business (€8.50/month + VAT), so a business has
+  /// ONE flat plan per client business (£8.50/month + VAT), so a business has
   /// at most one subscription and a child table would buy a join for nothing.
   /// Stripe owns the invoices, the dunning and the card; this is the local
   /// projection the product reads to answer "is this workspace entitled".
@@ -214,6 +214,7 @@ model User {
   memberships       Membership[]
   sessions          Session[]
   otpSessions       OtpSession[]
+  sentInvites       Invite[]         @relation("InviteSentBy")
   approvals         Approval[]
   actionProposals   ActionProposal[] @relation("ProposalCreatedBy")
   approvedProposals ActionProposal[] @relation("ProposalApprovedBy")
@@ -288,6 +289,50 @@ model Contact {
   receivesChases   Boolean   @default(true) @map("receives_chases")
   whatsappOptIn    Boolean   @default(false) @map("whatsapp_opt_in")
 
+  /// ---- The business's own people (D45, 2 Sep 2026) -------------------------
+  ///
+  /// A client business manages its own staff from its own portal — invite, give
+  /// a role, control what they can do, remove. These four columns are what that
+  /// needs, and they live HERE rather than on `memberships` for one hard reason:
+  /// a `Membership` requires a `users` row, `users.email` is globally UNIQUE, and
+  /// a portal person is an address with no password. Minting a shadow user per
+  /// contact would collide the first time one person worked for two clients.
+  /// `contacts` is already the row D45's sender map keys on, so one person on one
+  /// workspace stays one row.
+  ///
+  /// ⚠ `role` above is FREE TEXT and stays that way — it is the job title, and a
+  /// site's Foreman must not be flattened into "Staff". `portalRole` is the
+  /// AUTHORITY, and it is the enum the schema already had.
+  ///
+  /// **Nullable, with NO backfill, and the derivation is the reason.** The
+  /// effective authority is `portalRole ?? (isPrimary ? BUSINESS_ADMIN :
+  /// BUSINESS_STANDARD)` — written once, in
+  /// `modules/portal/portal-people-authority.ts`. Intake writes exactly one
+  /// primary contact per business, so every workspace that already exists has
+  /// exactly one owner the moment this column ships, and a migration that writes
+  /// no data is one that cannot damage a database holding real client records.
+  /// A `@default(BUSINESS_STANDARD)` would have been the opposite: every existing
+  /// business with nobody able to manage anyone.
+  portalRole WorkspaceRole? @map("portal_role")
+
+  /// May upload for this business. Default true because every contact that
+  /// predates this column already could (D45), and a column that silently
+  /// removed a permission on deploy would be a regression wearing a migration.
+  canSendDocuments Boolean @default(true) @map("can_send_documents")
+
+  /// May see amounts. *"Staff photographing receipts should not see the
+  /// company's figures."* Default true for the same reason as above — nothing
+  /// hides totals from an existing contact today, so the column starts by
+  /// describing what is already true and new invitations choose explicitly.
+  canSeeTotals Boolean @default(true) @map("can_see_totals")
+
+  /// Revoked, not deleted. Removing a person must not orphan or rewrite the
+  /// provenance of documents they already sent, so this is a soft flag that
+  /// three readers honour: the sender map (D45), the portal sign-in lookup, and
+  /// the session resolver — which re-reads it on every request, so a live bearer
+  /// dies with the revocation rather than lasting out its hour.
+  deactivatedAt DateTime? @map("deactivated_at")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -297,6 +342,10 @@ model Contact {
 
   @@index([businessId])
   @@index([mobileE164])
+  /// The People list and the sender map both read "this business's LIVE
+  /// contacts", so the flag ships in the same migration as the query pattern
+  /// that needs it (Governance §5.3).
+  @@index([businessId, deactivatedAt])
   @@map("contacts")
 }
 
@@ -313,10 +362,53 @@ model Invite {
   acceptedAt DateTime?     @map("accepted_at")
   createdAt  DateTime      @default(now()) @map("created_at")
 
-  practice Practice? @relation(fields: [practiceId], references: [id], onDelete: Cascade)
-  business Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  /// Carried from the invitation onto the membership acceptance creates
+  /// (SoT §3.3). It has to live here rather than being asked for again at
+  /// acceptance: the person deciding a colleague is a non-finance submitter is
+  /// the admin who invited them, not the colleague.
+  ///
+  /// ⚠ The column is WRITTEN and nothing in this release READS it when serving
+  /// a document. `POST /businesses/{id}/members` already accepted the field and
+  /// silently discarded it, which is worse — an accepted setting that governs
+  /// nothing. Storing it is the honest half; the redaction is owed.
+  hideFinancialFields Boolean @default(false) @map("hide_financial_fields")
+
+  /// The clients an invited PRACTICE_STANDARD is scoped to, carried from the
+  /// invitation to the memberships acceptance creates — one BUSINESS-SCOPED
+  /// membership per id, which is where RLS starts confining them.
+  ///
+  /// **An array column rather than N invitation rows**, because the invitation
+  /// is one decision reached by one email carrying one token, and `token_hash`
+  /// is `@unique`: N rows would need N tokens or a shared one, and a shared one
+  /// makes "spend this invitation" ambiguous. **Empty means practice-wide** —
+  /// every client — which is also what a CLIENT_ADMIN always gets.
+  ///
+  /// No foreign key: Postgres has no FK on an array element, and the ids are
+  /// re-checked against RLS at acceptance anyway, so a client offboarded between
+  /// the invitation and its acceptance is simply not granted.
+  businessIds String[] @default([]) @map("business_ids")
+
+  /// Who sent it. Nullable because invitations predating this column have no
+  /// answer, and `SetNull` because an inviter who leaves must not take the
+  /// outstanding invitations with them — the invitation is the practice's, not
+  /// theirs. Read only to name them on the acceptance screen.
+  invitedByUserId String? @map("invited_by_user_id")
+
+  practice  Practice? @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+  business  Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  invitedBy User?     @relation("InviteSentBy", fields: [invitedByUserId], references: [id], onDelete: SetNull)
 
   @@index([businessId])
+  /// The practice team list filters `practice_id` with `business_id IS NULL`,
+  /// and `invites_tenant`'s practice branch compares `practice_id` on every row
+  /// it policies. Neither had an index; `@@index([businessId])` covers only the
+  /// client-invite half.
+  ///
+  /// ⚠ Deliberately NOT `@@unique([practiceId, email])`. `team.service.ts`
+  /// documents a create-if-absent pattern that assumes re-inviting the same
+  /// address is legal, and it is: an invitation that was never opened must be
+  /// re-sendable without an admin first having to find and delete the old row.
+  @@index([practiceId])
   @@map("invites")
 }
 
@@ -525,8 +617,29 @@ model Document {
   pageRange        String? @map("page_range")
 
   archivedAt DateTime? @map("archived_at")
-  createdAt  DateTime  @default(now()) @map("created_at")
-  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  /// Trash. NULL means not deleted, and that is the DEFAULT LISTING PREDICATE
+  /// everywhere — `common/documents/deleted-documents.ts` is the one place it is
+  /// spelled, the `PORTAL_HIDDEN_DOCUMENT_STATE` shape, so a list filter and a
+  /// count cannot drift apart.
+  ///
+  /// ⚠ **Deliberately NOT a ninth `DocumentState` member.** "Deleted" is
+  /// orthogonal to where a document sits in the pipeline: a READY document that
+  /// is deleted and restored is READY again, and `state` is what remembers
+  /// that — a state member would have to destroy the answer in order to record
+  /// the question. It would also be a compile break in every total mapping over
+  /// `DocumentState` (`portal-document-status.ts`, `LEGAL_TRANSITIONS`) and a
+  /// new word in the CLIENT-facing status vocabulary, which is the one place it
+  /// must never appear. Same shape and same reasoning as `archivedAt`.
+  ///
+  /// Reversible by `POST /v1/documents/{id}/restoration`. Permanent removal is
+  /// a `document.purge` proposal, which REFUSES a PUBLISHED document or one
+  /// that appears in any export (D43 — every exported line must resolve back to
+  /// its source).
+  deletedAt DateTime? @map("deleted_at")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
   practice Practice?  @relation(fields: [practiceId], references: [id], onDelete: Restrict)
   business Business?  @relation(fields: [businessId], references: [id], onDelete: Restrict)
@@ -550,6 +663,10 @@ model Document {
   @@index([businessId, byteHash])
   @@index([businessId, supplierName, documentDate])
   @@index([parentDocumentId])
+  /// Trash: `WHERE business_id = ? AND deleted_at IS NOT NULL`. Every index
+  /// above leads with a pipeline column after `business_id`, so none of them can
+  /// serve it. Ships with the query pattern it exists for (expand-contract).
+  @@index([businessId, deletedAt])
   /// The Unrouted queue: "everything this practice has received that nobody has
   /// routed yet". Every existing index above leads with business_id, which is
   /// precisely NULL for the rows this query wants, so none of them can serve it.
@@ -826,6 +943,14 @@ model BankTransaction {
   standingOrderRef      String?   @map("standing_order_ref")
   importBatchId         String?   @map("import_batch_id")
   rawPayloadRef         String?   @map("raw_payload_ref")
+  /// Deterministic identity for a line that came out of an UPLOADED file
+  /// (D40), so re-importing a statement adds nothing. Content-derived —
+  /// account + date + pence + normalised description + the occurrence ordinal
+  /// within that file — so two identical purchases stay two rows while the
+  /// same line imported twice collides. Null for a feed row, which carries a
+  /// real `providerTransactionId` instead. See
+  /// `banking-matching/statement-ingest/row-identity.ts`.
+  importFingerprint     String?   @map("import_fingerprint")
 
   matchState      MatchState @default(UNMATCHED) @map("match_state")
   /// Bank-originated lines with no paperwork to chase (SoT Stage 7).
@@ -840,6 +965,11 @@ model BankTransaction {
   chases   Chase[]
 
   @@unique([accountId, providerTransactionId])
+  /// ⚠ The constraint above is INERT for the statement lane: D40 has no
+  /// provider, so every uploaded row's `providerTransactionId` is NULL and
+  /// Postgres treats NULLs as distinct. This is the one that actually holds a
+  /// re-uploaded statement out.
+  @@unique([accountId, importFingerprint])
   @@index([businessId, matchState])
   @@index([businessId, bookedAt])
   @@index([accountId, bookedAt])

@@ -157,6 +157,11 @@ export const SERVER_INTENT_TO_APP = {
   LIVE_RULE: 'LIVE_RULE',
   LIVE_PUBLISH: 'LIVE_PUBLISH',
   SHOW_INBOX: 'SHOW_INBOX',
+  // D40's bank input, reachable from chat since #233. Navigation, like
+  // SHOW_INBOX: the card is a way into the Bank tab's Statements list, which
+  // reads `GET /statements` itself. Nothing about a statement — period, row
+  // count, assurance — travels through the model to get here.
+  SHOW_STATEMENTS: 'SHOW_STATEMENTS',
   REVIEW_DOCUMENT: 'REVIEW_DOCUMENT',
   // Both grounded shapes render as plain assistant text — the answer IS the
   // card. References ride along in the payload for the reference chips.

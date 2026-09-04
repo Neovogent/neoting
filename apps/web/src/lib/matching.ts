@@ -378,6 +378,54 @@ export function isMatched(txn: BankTransaction): boolean {
 }
 
 /**
+ * Whether a line is UNEXPLAINED — the one definition every count on this
+ * screen, the Clients board and Analytics is allowed to use.
+ *
+ * ⚠ **This is not `isMatched` negated, and it must never be collapsed into
+ * one function.** They answer two different questions:
+ *
+ * - `isMatched` asks *"does this line already have its evidence?"* — the
+ *   matching engine's question. `SUGGESTED` is deliberately NOT matched there,
+ *   because a suggestion is a question waiting for a human and the matcher
+ *   still has work to offer on it.
+ * - `isUnexplained` asks *"is this one of the lines the product is going to go
+ *   and chase?"* — the counting question. A suggestion is already in front of
+ *   a human, so it is not chased and must not be counted.
+ *
+ * It mirrors the SERVER's definition byte for byte, because the server's is the
+ * one that governs: `businesses.service.ts` folds `BusinessSummary.counts`
+ * from `bankTransaction.groupBy({ where: { matchState: 'UNMATCHED',
+ * chaseSuppressed: false } })`, and the same predicate is what chase detection
+ * selects on. Anything a screen counts by a different rule is a number no
+ * amount of work by the accountant can ever bring down — a suppressed line
+ * (bank interest, a card fee) has no paperwork in existence to find, and an
+ * `EXCLUDED` line has had a human say so out loud.
+ *
+ * **It is truthful on both casts, which is why it is not simply
+ * `matchState === 'UNMATCHED'`.** A seeded transaction (`lib/seed.ts`,
+ * `lib/generate.ts`) carries `matchedDocId` and NO `matchState` at all, so the
+ * strict server test would report every synthetic row as explained and empty
+ * the demo (METH_MODE §1 — the app must walk end to end with no API). For that
+ * cast the local id is the whole of the truth, and `SUGGESTED`/`EXCLUDED` do
+ * not exist in it: the seed's suggestions are computed at render time by
+ * `assessTransaction` and never stored.
+ *
+ * The `isMatched` guard is deliberate rather than duplicated logic: it makes
+ * "unexplained is a strict subset of not-matched" true by construction, so a
+ * count can never exceed the list the screen is showing.
+ */
+export function isUnexplained(txn: BankTransaction): boolean {
+  // Nothing to chase and nothing to find: excluded from the server's count for
+  // the same reason, and the flag is on the row so the screen can say why.
+  if (txn.chaseSuppressed === true) return false;
+  // Already has its evidence — by either cast's signal.
+  if (isMatched(txn)) return false;
+  // Server rows say which of the remaining states they are in; seeded rows say
+  // nothing, and for them "not matched" is the whole answer.
+  return txn.matchState === undefined || txn.matchState === 'UNMATCHED';
+}
+
+/**
  * Every transaction the matcher can settle on its own. Run once over the
  * starting data so the queue only ever contains genuine questions.
  */

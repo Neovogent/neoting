@@ -403,6 +403,94 @@ What each `undefined` means, because they are different:
 the completion is null. That is harmless in practice: extraction failing means
 `docType` was never written, so this step answers "not mine" before it looks.
 
+### 🚨 Re-uploading a statement used to DOUBLE a client's bank data (fixed 2 Sep 2026)
+
+**The most serious data defect this product has had.** A real client held
+**2,288** `bank_transactions` that were 1,144 rows imported **twice** —
+identical `booked_at`, `amount_pence`, `description_raw` and `account_id` — from
+two `statements` rows covering the identical 2025-08-01 → 2026-07-31 period,
+`row_count` 1144 each, created **nine seconds apart**. Half of that client's
+ledger was a duplicate; every figure derived from it was wrong; nothing noticed.
+
+Three defences existed and **all three were inert**:
+
+| Defence | Why it did nothing |
+|---|---|
+| `bank_transactions_account_id_provider_transaction_id_key` | D40 has no provider, so every statement row's `provider_transaction_id` is NULL — and Postgres treats NULLs as **distinct** in a plain unique index. Not weak for this lane: **absent**, and this lane is the ONLY bank input in ID |
+| the `documentId` key in `ingestStatement` | Two uploads of one period are two DOCUMENTS. It never fired |
+| exact-byte dedupe upstream | Same reason: the two source PDFs had different `byte_hash` |
+
+**The fix is `statement-ingest/row-identity.ts` + a real unique index.** Every
+row now carries `bank_transactions.import_fingerprint`:
+
+```
+"v1:" + sha256( accountId ⋮ bookedOn ⋮ currency ⋮ amountPence ⋮ normalisedDescription ⋮ ordinal )
+```
+
+⚠ **The `ordinal` is the whole mechanism, and it is what separates the two
+failures that look identical from one row's point of view.** It is the 1-based
+occurrence of that exact tuple **within the file being imported**, in file order:
+
+- **a business really can buy the same coffee twice** — two identical lines in
+  ONE statement take ordinals 1 and 2, hash differently, and **both survive**.
+  Collapsing them would delete a real payment out of an accounting ledger, which
+  is a worse failure than showing two;
+- **the same file imported again** replays the same lines in the same order, so
+  it reproduces ordinals 1 and 2 — the same hashes — and the unique index
+  rejects both. `createMany({ skipDuplicates: true })` therefore skips only rows
+  that are provably the same line, never rows that merely look alike.
+
+The ordinal is a property of the FILE, never of the database. Deriving it from a
+count of rows already stored would give the second import ordinals 3 and 4 and
+double the data again.
+
+Deliberately **not** in the hash, each for a reason: `balanceAfterPence` (a
+statement with no balance column is a supported class — hashing it would double
+the period when a client sends a balance-less CSV and then a proper PDF of the
+same month), `sourceLine` (a CSV and a Textract grid put one transaction on
+different lines), `documentId`/`byteHash` (those are what already failed).
+
+⚠ **The one false-skip it can cause, stated rather than hidden:** D40 gives a
+business ONE implicit account, so two of a client's *different* bank accounts
+carrying a byte-identical description on the same day for the same pence would
+collide and the second would be skipped. Rare, strictly less wrong than doubling
+every ledger, and **never silent** — see below.
+
+**Three things carry the truth to a surface**, because a structural defence
+nobody can see is how this gets rediscovered in a year:
+
+| | |
+|---|---|
+| `Statement.rowCount` | now the count actually **imported**, which is what the contract says it is. The doubled client's two statement rows BOTH claimed 1,144, which is exactly what made it look normal on the Statements tab. A re-upload reports 0 |
+| two new findings | `alreadyImported` ("every one of the N transactions in this file was already imported … this looks like the same statement uploaded twice") and `periodOverlap`. Both ride `gapAnalysis.findings` and reach `GET /v1/statements` with **no contract change** — `StatementFinding.kind` is a free string |
+| `gapAnalysis` | gains `parsedRowCount` / `importedRowCount` / `alreadyPresentRowCount`, so the file's line count and the import result can never be confused for one another again |
+
+**The period-overlap check REPORTS, it does not refuse** (`overlapFindings`).
+Refusing would break a corrected re-issue, a period that overlaps by a day, and
+the ordinary longer-file-extends-a-shorter-one case — all of which the
+fingerprint index already makes harmless. The remaining job is visibility.
+
+`BankTransaction.importBatchId` — declared in `init` and written by nothing
+until now — carries the source `Statement.id`, so "which rows came from that
+file" is answerable for provenance today and a repair tool later.
+
+**Migration `20260902160000_bank_transaction_import_fingerprint`** adds the
+nullable column and `@@unique([accountId, importFingerprint])` and **writes no
+data at all** — safe against the local database holding real client rows however
+duplicated. Keying the rows that predate it is a separate, idempotent, reversible
+pass: `apps/api/src/db/backfill-import-fingerprints.ts`. ⚠ It runs **per practice
+through `scopedDb`** — the first draft read the root client and reported "nothing
+to do" against six un-keyed rows, because `bank_transactions` is in the
+`direct_tables` RLS loop and a query with no GUCs matches nothing rather than
+erroring. It **deletes nothing**: already-doubled data stays and is counted for
+an operator, because removing a line from an accounting ledger is a human's
+decision.
+
+Tests: `row-identity.test.ts` (unit — the coffee-twice property, the
+re-import property, and what does and does not change an identity) and
+`statement-reimport.integration.test.ts` (real database, `stre-` prefix,
+teardown by explicit id list).
+
 ### ⚠ The READ happens outside the transaction, and it must
 
 `ingestStatement` did the read itself, inside `scopedDb` — a Prisma

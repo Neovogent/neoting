@@ -18,11 +18,22 @@ interface OtpRow {
   readonly id: string;
   readonly businessId: string;
   readonly userId: string | null;
+  /** WHO is holding this session. Null on a chase row, deliberately — the link is forwardable. */
+  readonly contactId: string | null;
   readonly scope: string;
   readonly chaseId: string | null;
   readonly grantedItemIds: string[];
   readonly verifiedAt: Date | null;
   readonly expiresAt: Date;
+  /**
+   * The joined `contacts` row, which the resolver reads for the SIXTH row check.
+   *
+   * ⚠ It is joined rather than looked up separately so the revocation check
+   * cannot race the session read, and it is on this double because the resolver
+   * selects it — a double that omits a selected relation is not a stand-in for
+   * the query, it is a different query.
+   */
+  readonly contact: { readonly id: string; readonly deactivatedAt: Date | null } | null;
 }
 
 function row(over: Partial<OtpRow> = {}): OtpRow {
@@ -30,11 +41,13 @@ function row(over: Partial<OtpRow> = {}): OtpRow {
     id: 'otp_1',
     businessId: 'biz_burger',
     userId: null,
+    contactId: null,
     scope: 'DELEGATED_UPLOAD',
     chaseId: 'chase_1',
     grantedItemIds: [],
     verifiedAt: new Date(NOW - 1000),
     expiresAt: EXPIRES,
+    contact: null,
     ...over,
   };
 }
@@ -80,6 +93,9 @@ test('a live bearer resolves to the session facts, taking the tenant from the RO
     // No contact user on the row, so the delegated actor is the practice SYSTEM
     // actor — the same actor every WhatsApp/email document already carries.
     actorId: 'usr_system_1',
+    // A chase row names no person on purpose: the link is forwardable and a
+    // guess in an audit column is worse than an absence.
+    contactId: null,
     chaseId: 'chase_1',
     grantedItemIds: ['doc_a'],
     expiresAt: EXPIRES,
@@ -169,6 +185,7 @@ const FACTS: PortalSessionFacts = {
   practiceId: 'prac_1',
   systemUserId: 'usr_system_1',
   actorId: 'usr_system_1',
+  contactId: null,
   chaseId: 'chase_1',
   grantedItemIds: [],
   expiresAt: EXPIRES,
@@ -243,4 +260,55 @@ test('an ONBOARDING row still fails every other check a session has to pass', as
 
   const expired = await grab(() => resolver(onboarding({ expiresAt: new Date(NOW) })).resolveOnboarding(bearer(), NOW));
   expect(expired.publicDetail).toBe('This portal session has expired. Open the link in your email again.');
+});
+
+/**
+ * ⚠ THE SIXTH ROW CHECK — what makes "remove" mean removed.
+ *
+ * A business revoking somebody's access must stop them NOW, not at the end of
+ * the hour their bearer happens to have left: *"they stop being able to send
+ * documents immediately"* is what the People screen promises, and a bearer is a
+ * bearer — nothing else in this product can withdraw one. Portal sessions are
+ * not rows that can be deleted per person (`link_token_hash` is unique per LINK,
+ * not per grant), so revocation is expressed on the CONTACT and honoured here.
+ *
+ * It is checked in the resolver rather than per endpoint for the reason every
+ * other check on this list is: this is the one door, and a rule enforced at four
+ * call sites is a rule three of them will eventually miss.
+ */
+test('a REVOKED person\'s live bearer stops working, on every door', async () => {
+  const revoked = row({
+    scope: 'ONBOARDING',
+    chaseId: null,
+    contactId: 'con_gone',
+    contact: { id: 'con_gone', deactivatedAt: new Date(NOW - 60_000) },
+  });
+
+  for (const door of ['resolveForContext', 'resolveForUpload', 'resolveOnboarding'] as const) {
+    const error = await grab(() => resolver(revoked)[door](bearer(), NOW));
+    // The uniform detail. Somebody whose access was withdrawn learns that their
+    // session is not valid, which is true — not that they were removed, which is
+    // their employer's to tell them.
+    expect(error.code).toBe('NT-OTP-002');
+    expect(error.publicDetail).toBe('missing or invalid portal session');
+  }
+
+  // The row itself is untouched and still live: the CONTACT is what refuses it.
+  expect(revoked.expiresAt.getTime()).toBeGreaterThan(NOW);
+});
+
+test('a LIVE person passes, and their contactId reaches the facts', async () => {
+  // The answer to "who is doing this", which the session could not previously
+  // give — and which everything on the People surface is derived from.
+  const facts = await resolver(
+    row({ scope: 'ONBOARDING', chaseId: null, contactId: 'con_boss', contact: { id: 'con_boss', deactivatedAt: null } }),
+  ).resolveOnboarding(bearer(), NOW);
+  expect(facts.contactId).toBe('con_boss');
+});
+
+test('a session with NO contact is unaffected — a chase link has nobody to revoke', async () => {
+  // Refusing it here would break the forwardable-link journey for a rule that
+  // has nothing to say about it.
+  const facts = await resolver(row()).resolveForUpload(bearer(), NOW);
+  expect(facts.contactId).toBeNull();
 });

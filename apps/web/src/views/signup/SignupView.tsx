@@ -689,6 +689,14 @@ type EnrolStage = 'credentials' | 'save' | 'confirm';
 /**
  * Enrolment, in the three parts A14's two-step makes possible.
  *
+ * ⚠ **EXPORTED, and reused UNCHANGED by the invited colleague's journey**
+ * (`views/invite/InviteView.tsx`). A second enrolment screen would be a second
+ * place the two-step could be got wrong — and getting it wrong costs the
+ * account, because this release has no re-enrolment or reset flow. The two
+ * journeys differ in how the account came to exist and are identical from the
+ * moment it does, so they share this step and the `/signup/done` screen after
+ * it. Do not fork it: change it here, for both.
+ *
  * ⚠ **`begin` WRITES NOTHING; `confirm` IS WHAT SWITCHES THE FACTOR ON.** That
  * is why the user is made to type a real code before this finishes, and it is
  * the difference between a mis-scanned QR costing thirty seconds and costing
@@ -700,7 +708,7 @@ type EnrolStage = 'credentials' | 'save' | 'confirm';
  * being the one pair of routes that cannot require a second factor. It is never
  * written anywhere else, and it dies with the tab.
  */
-function EnrolStep({ initialEmail }: { initialEmail: string | null }) {
+export function EnrolStep({ initialEmail }: { initialEmail: string | null }) {
   const intl = useIntl();
   const [stage, setStage] = useState<EnrolStage>('credentials');
   const [email, setEmail] = useState(initialEmail ?? '');

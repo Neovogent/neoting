@@ -2,6 +2,8 @@ import type { PublishBatchPayload } from '@neoting/contracts/model';
 import type { DocumentState } from '@prisma/client';
 
 import type { ScopedClient } from '../../../common/db/scoped-db.js';
+import { notDeleted } from '../../../common/documents/deleted-documents.js';
+import type { ExportEntryPreview, ExportableDocumentRow } from '../../exports-public-api/index.js';
 import {
   type ExportDestination,
   isExportDestination,
@@ -166,6 +168,56 @@ export interface PublishGateway {
 }
 
 /**
+ * **The entry the accountant is authorising**, handed over rather than imported
+ * — the `PublishGateway` reasoning, applied a second time.
+ *
+ * This is `exports-public-api`'s `previewExportEntries`, and it is a dependency
+ * for one mechanical reason: `revoke-link.ts` records that a runtime import from
+ * this module into `exports-public-api/index.ts` is the arc that CLOSES a cycle
+ * between two public seams the day that module needs anything back from this one
+ * (it needs `ProposalExecutionRefused` for exactly one executor). The SHAPE comes
+ * in as `import type` — erased, no arc — and the FUNCTION arrives from
+ * `approvals.module.ts`, which is the composition root and is allowed to know
+ * both.
+ *
+ * ⚠ **Optional, and absence is silence rather than a hole.** A registry built
+ * without it produces proposals with no `entryPreview`, and execution then skips
+ * the comparison instead of refusing — which is also what makes a proposal
+ * created before this field existed still approvable. Every other executor
+ * dependency is required for the opposite reason (no safe default); here the
+ * safe default is *not making a claim*.
+ *
+ * ⚠ **It takes THIS executor's open `ScopedClient` and is async** (2 Sep 2026).
+ * The `Analysis account` column carries a ledger-prefixed account name resolved
+ * against the client's own chart of accounts, so composing the entry needs one
+ * scoped read — and it must be the SAME read, in the same transaction and at the
+ * same moment, as the documents it is composed from. A chart fetched separately
+ * could see a different world than the rows, which is the drift this whole
+ * preview exists to remove. The composition root owns that read
+ * (`approvals.module.ts`); this file passes it a client and nothing else.
+ */
+export interface ExportEntryPreviewer {
+  (
+    db: ScopedClient,
+    target: 'VT_TRANSACTION_PLUS' | 'GENERIC_CSV',
+    documents: readonly ExportableDocumentRow[],
+  ): Promise<ExportEntryPreview>;
+}
+
+/**
+ * ⚠ **The preview is computed for VT Transaction+, and the card says so.**
+ *
+ * There is no server-side fact that decides which target a release will
+ * eventually be exported as: `POST /exports` takes `target` from the accountant
+ * on the export screen, and a client's `integrations` row records a
+ * *destination* (`VT`/`MANUAL`), never a file format. So the preview names the
+ * target it previewed rather than guessing at one, and it names the one the
+ * release exists for — VT is ID's primary emitter and the first client's
+ * software (SoT §24.3.1).
+ */
+const PREVIEW_TARGET = 'VT_TRANSACTION_PLUS' as const;
+
+/**
  * `<proposalId>:<documentId>`. Globally unique because `publishes.idempotency_key`
  * is (the schema's `@@unique`, whose own comment is "Republishing must never
  * create a duplicate vendor or double-post a bill"), and one row per item per
@@ -176,7 +228,15 @@ export function publishIdempotencyKey(proposalId: string, documentId: string): s
   return `${proposalId}:${documentId}`;
 }
 
-/** The document projection this executor reads. */
+/**
+ * The document projection this executor reads.
+ *
+ * The first block is the publish minimum's (`evaluateReadiness` over total,
+ * supplier and category) plus identity and VAT. The second is what an EXPORT ROW
+ * needs — `exports-public-api`'s `ExportableDocumentRow`, structurally, so the
+ * entry preview is built from the same read the minimum is checked against
+ * rather than from a second query that could see a different moment.
+ */
 const DOCUMENT_SELECT = {
   id: true,
   state: true,
@@ -185,6 +245,15 @@ const DOCUMENT_SELECT = {
   categoryCode: true,
   totalPence: true,
   taxPence: true,
+  // The document's own ISO code — the preview refuses to print a symbol
+  // unless every document in the batch agrees on one (publish-preview.ts).
+  currency: true,
+
+  inbox: true,
+  docType: true,
+  customerName: true,
+  documentDate: true,
+  reference: true,
 } as const;
 
 /**
@@ -201,9 +270,18 @@ export async function computePublishBatchPayload(
   db: ScopedClient,
   publishing: PublishGateway,
   payload: PublishBatchPayload,
+  previewEntries?: ExportEntryPreviewer,
 ): Promise<PublishBatchPayload> {
   const documents = await db.document.findMany({
-    where: { id: { in: [...payload.documentIds] } },
+    // ⚠ `notDeleted()` is part of REACHABILITY here, not a display filter. A
+    // document in Trash must not be released for export: release is the act
+    // that lets a figure leave the product (D42), and a figure whose source
+    // document a person deleted is one nobody can produce when asked. It folds
+    // into the count check below, so a named-but-deleted id refuses the whole
+    // batch with the same message an unreachable one gets — which is right:
+    // both mean "not available to this batch", and distinguishing them would
+    // answer a question about a document the caller may not be entitled to ask.
+    where: { id: { in: [...payload.documentIds] }, ...notDeleted() },
     select: DOCUMENT_SELECT,
   });
   // Same refusal for unreachable, absent and named-twice (404-never-403): a
@@ -216,10 +294,28 @@ export async function computePublishBatchPayload(
   if (!outcome.ok) {
     throw new ProposalExecutionRefused('publish.batch', minimumRefusal(outcome.refusals), PUBLISH_MINIMUM_CODE);
   }
-  return { ...payload, preview: outcome.preview };
+  const withTotals: PublishBatchPayload = { ...payload, preview: outcome.preview };
+  if (previewEntries === undefined) return withTotals;
+
+  // The ENTRY, beside the three numbers. Same read, same moment, same ordering —
+  // and produced by the export's own emitter, so the rows on the card are the
+  // rows in the file rather than a description of them.
+  //
+  // The cast is `readonly` → mutable and nothing else: the emitter returns deep
+  // `readonly` arrays (nothing downstream may edit a cell) and the generated
+  // contract model is mutable, which is orval's shape for every DTO in the repo.
+  return {
+    ...withTotals,
+    entryPreview: (await previewEntries(db, PREVIEW_TARGET, documents)) as unknown as NonNullable<
+      PublishBatchPayload['entryPreview']
+    >,
+  };
 }
 
-export function createPublishBatchExecutor(publishing: PublishGateway): ProposalExecutor<'publish.batch', PublishBatchPayload> {
+export function createPublishBatchExecutor(
+  publishing: PublishGateway,
+  previewEntries?: ExportEntryPreviewer,
+): ProposalExecutor<'publish.batch', PublishBatchPayload> {
   return {
     kind: 'publish.batch',
 
@@ -245,7 +341,12 @@ export function createPublishBatchExecutor(publishing: PublishGateway): Proposal
       }
 
       const documents = await db.document.findMany({
-        where: { id: { in: [...payload.documentIds] } },
+        // Re-applied at EXECUTION, not only at proposal time — a document can
+        // be moved to Trash between propose and approve, and this is the only
+        // place that drift is visible (`NT-PRP-004` cannot see it: review is
+        // idempotent and the render is payload-pure, the same reasoning the
+        // entry-preview re-check is built on).
+        where: { id: { in: [...payload.documentIds] }, ...notDeleted() },
         select: DOCUMENT_SELECT,
       });
       // Same refusal for unreachable, absent and named-twice: a batch that
@@ -281,12 +382,45 @@ export function createPublishBatchExecutor(publishing: PublishGateway): Proposal
       if (
         preview.itemCount !== payload.preview.itemCount ||
         preview.grossPence !== payload.preview.grossPence ||
-        preview.vatPence !== payload.preview.vatPence
+        preview.vatPence !== payload.preview.vatPence ||
+        // The currency is part of what was READ, not decoration on it: a batch
+        // that was one currency at review and is two at approve shows the same
+        // three integers under a symbol that has stopped being true.
+        //
+        // ⚠ **Absent is not the same as null, and conflating them would refuse
+        // every proposal already pending.** `currency` is newer than the rows in
+        // the database: a payload written before it existed carries no key at
+        // all, has therefore never claimed a currency, and has nothing to have
+        // drifted from — so it is skipped, exactly as `entryPreview` is. An
+        // EXPLICIT null is a claim ("these documents share no currency") and is
+        // compared like any other.
+        (payload.preview.currency !== undefined && preview.currency !== payload.preview.currency)
       ) {
         throw new ProposalExecutionRefused(
           'publish.batch',
           `the batch no longer matches the figures that were reviewed (reviewed ${payload.preview.itemCount} items, gross ${payload.preview.grossPence}p, VAT ${payload.preview.vatPence}p; now ${preview.itemCount} items, gross ${preview.grossPence}p, VAT ${preview.vatPence}p) — propose the release again so a human approves what would actually be released`,
         );
+      }
+
+      // The same drift check, one level finer. `preview` is three totals, so a
+      // re-coding that moves a document from one nominal to another — the most
+      // common edit there is between proposing and approving — passes it
+      // untouched while changing the entry a human actually read. The entry
+      // preview is the only thing that can see that, and it is checked for the
+      // same reason: `NT-PRP-004` cannot, because review is idempotent and the
+      // render is payload-pure.
+      //
+      // Skipped when the payload carries no entry preview — one written before
+      // the field existed, or a registry composed without the previewer. A
+      // refusal there would be refusing a proposal for not making a claim.
+      if (payload.entryPreview !== undefined && previewEntries !== undefined) {
+        const current = await previewEntries(db, PREVIEW_TARGET, documents);
+        if (!sameEntryPreview(payload.entryPreview, current)) {
+          throw new ProposalExecutionRefused(
+            'publish.batch',
+            'the bookkeeping entry these documents produce is no longer the one that was reviewed — something was re-coded after the review. Propose the release again so a human approves the entry that would actually be exported',
+          );
+        }
       }
 
       const destination = await resolveExportDestination(db, businessId, payload.integrationId ?? null);
@@ -331,6 +465,62 @@ export function createPublishBatchExecutor(publishing: PublishGateway): Proposal
       };
     },
   };
+}
+
+/**
+ * Are these the same rows?
+ *
+ * Structural, over the cells — because the cells ARE the claim. Comparing
+ * anything less (a document count, a hash of the ids) would let the thing that
+ * changed be the thing that is not compared, which is how the totals check
+ * misses a re-coding in the first place.
+ *
+ * `refusals` is included: a document that silently became un-exportable between
+ * review and approve changes what the file will contain just as much as one that
+ * changed nominal.
+ */
+function sameEntryPreview(
+  reviewed: NonNullable<PublishBatchPayload['entryPreview']>,
+  current: ExportEntryPreview,
+): boolean {
+  return entryFingerprint(reviewed) === entryFingerprint(current);
+}
+
+/**
+ * ⚠ **Arrays, not objects, and that is the whole of why this function exists
+ * instead of a `JSON.stringify` of the two previews.**
+ *
+ * `action_proposals.payload` is `jsonb`, and Postgres jsonb does not preserve
+ * object key order — it normalises it. So the reviewed side comes back out of
+ * the database with its keys in whatever order jsonb chose, while the
+ * freshly-computed side has them in construction order, and a naive stringify
+ * would report drift on every single approval. Positional arrays have no key
+ * order to lose.
+ */
+function entryFingerprint(preview: {
+  readonly target: string;
+  readonly columns: readonly string[];
+  readonly documents: readonly {
+    readonly documentId: string;
+    readonly fileName?: string | undefined;
+    readonly dataFormat?: string | undefined;
+    readonly rows: readonly (readonly string[])[];
+    readonly warnings?: readonly { documentId?: string | null; code: string; message: string }[] | undefined;
+  }[];
+  readonly refusals?: readonly { documentId: string; code: string; message: string }[] | undefined;
+}): string {
+  return JSON.stringify([
+    preview.target,
+    preview.columns,
+    preview.documents.map((document) => [
+      document.documentId,
+      document.fileName ?? '',
+      document.dataFormat ?? '',
+      document.rows,
+      (document.warnings ?? []).map((warning) => [warning.documentId ?? null, warning.code, warning.message]),
+    ]),
+    (preview.refusals ?? []).map((refusal) => [refusal.documentId, refusal.code, refusal.message]),
+  ]);
 }
 
 /** The refusal message for `NT-PUB-001`, naming every failing item and every missing field. */

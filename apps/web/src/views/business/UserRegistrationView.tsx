@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Smartphone, ArrowLeft, ImagePlus, X, Check, ShieldCheck } from 'lucide-react';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
+import { API_ENABLED } from '../../api/config';
 import { useAppContext } from '../../context/AppContext';
 import { Pill } from '../../components/DynamicComponents/DataTable';
 
@@ -10,6 +11,16 @@ const m = defineMessages({
   linkNotFoundDetail: {
     id: 'portal.userRegistrationView.linkNotFoundDetail',
     defaultMessage: 'This registration link is no longer valid. Ask whoever invited you to send a new one.',
+  },
+  // The live refusal. It names the release, not the link — see the guard.
+  unavailableTitle: {
+    id: 'portal.userRegistrationView.unavailableTitle',
+    defaultMessage: 'This link cannot be opened yet',
+  },
+  unavailableDetail: {
+    id: 'portal.userRegistrationView.unavailableDetail',
+    defaultMessage:
+      'Adding extra people to a business is not part of this release, so there is nothing behind this address. Your accountant can send documents on your behalf in the meantime.',
   },
   doneTitle: { id: 'portal.userRegistrationView.doneTitle', defaultMessage: "You're set up" },
   doneDetail: {
@@ -104,6 +115,24 @@ export function UserRegistrationView() {
   });
   const [done, setDone] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // ⚠ THIS SURFACE DOES NOT EXIST LIVE, AND SAYS SO RATHER THAN LYING ABOUT
+  // THE LINK.
+  //
+  // `/register/:accountId/:memberId` is routed outside the `API_ENABLED`
+  // branch, so with a live session `businessAccounts` is empty and this always
+  // fell through to "Link not found" — which sends the invitee back to whoever
+  // invited them for a link that was never broken. There is no contracted
+  // per-user registration for a client business in this release; the honest
+  // answer names the release.
+  if (API_ENABLED) {
+    return (
+      <Shell title={intl.formatMessage(m.unavailableTitle)}>
+        <p className="text-[14px] text-zinc-400 leading-relaxed">{intl.formatMessage(m.unavailableDetail)}</p>
+        <Back onClick={exitBusinessPortal} />
+      </Shell>
+    );
+  }
 
   if (!account || !member) {
     return (

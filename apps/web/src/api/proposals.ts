@@ -47,6 +47,7 @@ export const KIND_LABEL: Record<ProposalKind, MessageDescriptor> = defineMessage
   'rule.create': { id: 'proposals.kindLabel.ruleCreate', defaultMessage: 'Create a rule' },
   'document.revoke-link': { id: 'proposals.kindLabel.documentRevokeLink', defaultMessage: 'Revoke document links' },
   'business.offboard': { id: 'proposals.kindLabel.businessOffboard', defaultMessage: 'Remove a client' },
+  'document.purge': { id: 'proposals.kindLabel.documentPurge', defaultMessage: 'Delete documents permanently' },
 });
 
 /**
@@ -63,6 +64,20 @@ export const KIND_NOTE: Partial<Record<ProposalKind, MessageDescriptor>> = defin
     id: 'proposals.kindNote.businessOffboard',
     defaultMessage:
       'Once approved, the client leaves the client list and every working surface. Documents, books and the audit trail are retained — nothing is deleted.',
+  },
+  /**
+   * The mirror image of the one above, and it earns its sentence for the same
+   * reason: the contract pins the invariant it states. `document.purge` really
+   * does destroy the row and cascade to its extractions, its processing log and
+   * its duplicate pairs — and the audit trail really does survive, because
+   * `audit_events` is append-only with no delete path. A card that said only
+   * "Delete documents permanently" would leave a reader guessing which of those
+   * two halves was true.
+   */
+  'document.purge': {
+    id: 'proposals.kindNote.documentPurge',
+    defaultMessage:
+      'Once approved, the documents and everything read from them are destroyed and cannot be restored. The audit record of who deleted what, and when, is kept.',
   },
 });
 

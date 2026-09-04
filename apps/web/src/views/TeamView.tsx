@@ -1,16 +1,29 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   Shield, Plus, Trash2, Check, CircleSlash, AlertTriangle, Sparkles, MapPin, Users,
-  KeyRound, ImagePlus, X, UserPlus, Pencil, LucideIcon,
+  KeyRound, ImagePlus, X, UserPlus, Pencil, Loader2, LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
+import { NtProblemError } from '@neoting/contracts';
+import type { WorkspaceRole } from '@neoting/contracts/model';
 import { commonActions, commonLabels, commonPlaceholders } from '../i18n/common';
 import { useAppContext } from '../context/AppContext';
 import { fromSlug, slug, useSegment } from '../lib/router';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
-import { Modal, Field, Toggle } from './ApprovalsView';
+import { DataSourceBadge, SliceLoadError } from '../components/DataSourceBadge';
+import { Tooltip } from '../components/DynamicComponents/Tooltip';
+import {
+  INVITABLE_ROLES,
+  inviteColleague,
+  mayInviteColleague,
+  memberLabel,
+  type PracticeMember,
+  usePracticeTeam,
+} from '../api/team';
+import { Modal } from '../components/DynamicComponents/Modal';
+import { Field, Toggle } from '../components/DynamicComponents/FormControls';
 import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
 import type { Colleague, ColleagueRole, Team, WorkflowTask } from '../lib/types';
 
@@ -29,12 +42,29 @@ const TAB_LABELS = defineMessages({
   Tasks: { id: 'team.teamView.tabTasks', defaultMessage: 'Tasks' },
 });
 
-// Not extracted, deliberately: these are the stored values of `ColleagueRole`
-// and of `Colleague.permissions`, rendered straight from the record elsewhere
-// in this file (`<Pill>{c.role}</Pill>`). Translating the picker but not the
-// record would make one row disagree with the chip that set it.
+// Not extracted, deliberately: these are the stored values of `ColleagueRole`,
+// rendered straight from the record elsewhere in this file
+// (`<Pill>{c.role}</Pill>`). Translating the picker but not the record would
+// make one row disagree with the chip that set it.
 const ROLES: ColleagueRole[] = ['Practice Admin', 'Client Admin', 'Standard User'];
-const PERMISSIONS = ['Publish', 'Approve', 'Chase', 'Export', 'Delete'];
+
+/**
+ * ⚠ **THE PER-PERMISSION TICK-BOXES ARE GONE, AND THEIR ABSENCE IS THE POINT.**
+ *
+ * This file used to offer `['Publish', 'Approve', 'Chase', 'Export', 'Delete']`
+ * as a row of toggles on every colleague. `memberships.permissions[]` is read by
+ * NOTHING in this product — `approvals/assert-can.ts` says so in as many words
+ * and explains why it cannot start reading it (`practice-signup.service.ts`
+ * leaves the array empty, so requiring a `publish` string would mean nobody
+ * could ever release, and defaulting empty to "allowed" would make the field
+ * decorative). Three different vocabularies for it existed across the seed, this
+ * screen and the chat invite card, and none of them governed anything.
+ *
+ * A toggle that governs nothing is the same lie as an invite button that sends
+ * nothing. Both were fixed in the same change. What decides authority is the
+ * ROLE, which is shown, and `isOwner`, which is shown — and the server refuses
+ * with `NT-PRM-001` regardless of what any screen displays.
+ */
 
 const m = defineMessages({
   heading: { id: 'team.teamView.heading', defaultMessage: 'Team' },
@@ -178,14 +208,106 @@ const m = defineMessages({
     id: 'team.teamView.auditAssignedTasksScope',
     defaultMessage: '{count} task(s) → {assignee}',
   },
+
+  // ── The live team ────────────────────────────────────────────────────────
+  sliceLabel: { id: 'team.teamView.sliceLabel', defaultMessage: 'Team' },
+  loadFailed: { id: 'team.teamView.loadFailed', defaultMessage: 'Your team could not be loaded.' },
+  liveEmpty: {
+    id: 'team.teamView.liveEmpty',
+    defaultMessage: 'It is just you so far. Invite a colleague and they will appear here once they have set up their account.',
+  },
+  liveFooter: {
+    id: 'team.teamView.liveFooter',
+    defaultMessage: 'Roles are set per account · only the practice owner can release documents for export',
+  },
+  colClients: { id: 'team.teamView.colClients', defaultMessage: 'Client access' },
+  owner: { id: 'team.teamView.owner', defaultMessage: 'Owner' },
+  ownerHint: {
+    id: 'team.teamView.ownerHint',
+    defaultMessage: 'The person who created the practice. Only they can release documents for export.',
+  },
+  roleAdmin: { id: 'team.teamView.roleAdmin', defaultMessage: 'Practice admin' },
+  roleClientAdmin: { id: 'team.teamView.roleClientAdmin', defaultMessage: 'Client admin' },
+  roleStandard: { id: 'team.teamView.roleStandard', defaultMessage: 'Standard user' },
+  roleBusinessAdmin: { id: 'team.teamView.roleBusinessAdmin', defaultMessage: 'Client workspace admin' },
+  roleUserAdmin: { id: 'team.teamView.roleUserAdmin', defaultMessage: 'Client user admin' },
+  roleBusinessStandard: { id: 'team.teamView.roleBusinessStandard', defaultMessage: 'Client workspace user' },
+  clientsAll: { id: 'team.teamView.clientsAll', defaultMessage: 'All clients' },
+  clientsSome: {
+    id: 'team.teamView.clientsSome',
+    defaultMessage: '{count, plural, one {# client} other {# clients}}',
+  },
+
+  // Outstanding invitations. An invitation nobody can see is one nobody chases.
+  pendingHeading: {
+    id: 'team.teamView.pendingHeading',
+    defaultMessage: '{count, plural, one {# invitation outstanding} other {# invitations outstanding}}',
+  },
+  pendingPill: { id: 'team.teamView.pendingPill', defaultMessage: 'Invited — awaiting setup' },
+  pendingExpiry: { id: 'team.teamView.pendingExpiry', defaultMessage: 'Link works until {date}' },
+  pendingNote: {
+    id: 'team.teamView.pendingNote',
+    defaultMessage: 'They join the list above once they have chosen a password and set up an authenticator app.',
+  },
+
+  // The S14 rule: a control whose write the next reload reverts is worse than
+  // absent, so live it says why rather than disappearing without explanation.
+  notAvailableLive: {
+    id: 'team.teamView.notAvailableLive',
+    defaultMessage: 'Not available yet',
+  },
+  notAvailableLiveDetail: {
+    id: 'team.teamView.notAvailableLiveDetail',
+    defaultMessage: 'There is no operation behind this yet, so anything typed here would be lost on the next reload.',
+  },
+  syntheticOnly: {
+    id: 'team.teamView.syntheticOnly',
+    defaultMessage: 'Teams and tasks are demo data. They have no server behind them yet, so nothing here is saved.',
+  },
+  inviteNotPermitted: {
+    id: 'team.teamView.inviteNotPermitted',
+    defaultMessage: 'Only a practice admin can invite a colleague.',
+  },
 });
+
+/**
+ * The contract's `WorkspaceRole` in the words a person reads.
+ *
+ * Total over the enum, so a role added to the contract fails the build here
+ * rather than rendering as a raw `BUSINESS_STANDARD` in a table cell. The three
+ * business-level ones cannot appear on a PRACTICE team list — they are a
+ * client's own people — but the map is total because the type is.
+ */
+const ROLE_LABELS = {
+  PRACTICE_ADMIN: m.roleAdmin,
+  CLIENT_ADMIN: m.roleClientAdmin,
+  PRACTICE_STANDARD: m.roleStandard,
+  BUSINESS_ADMIN: m.roleBusinessAdmin,
+  USER_ADMIN: m.roleUserAdmin,
+  BUSINESS_STANDARD: m.roleBusinessStandard,
+} satisfies Record<WorkspaceRole, { id: string; defaultMessage: string }>;
 
 export function TeamView() {
   const {
     colleagues, teams, tasks, clients, statsFor, saveColleague, removeColleague,
     sendPasswordReset, saveTeam, removeTeam, setTaskStatus, assignTask, addTask,
-    startConversation, logAudit,
+    startConversation, logAudit, session,
   } = useAppContext();
+
+  /**
+   * **Live is "there is a session", not "some other slice answered".**
+   *
+   * The practice team has its own query and its own failure, so it computes its
+   * own status rather than reading `slices` — which names the demo route's
+   * context arrays and would put this module on the shared bundle floor
+   * (`api/team.ts` carries the argument). The gate for hiding the local writers
+   * below is the same `live`: with a session, every one of them writes into
+   * React state the next reload discards.
+   */
+  const live = session.status === 'authenticated';
+  const { team, status: teamStatus, refetch: refetchTeam } = usePracticeTeam({ enabled: live });
+  const canInvite = live && mayInviteColleague(session.status === 'authenticated' ? session.me.role : undefined);
+  const [inviting, setInviting] = useState(false);
 
   // The sub-tab is the second path segment, so every one has a link.
   const intl = useIntl();
@@ -262,15 +384,8 @@ export function TeamView() {
       key: 'clients', label: intl.formatMessage(commonLabels.clientAccess), align: 'right', sortValue: (c) => c.clientIds.length,
       render: (c) => (c.role === 'Standard User' ? <span className="tabular-nums text-zinc-300">{c.clientIds.length}</span> : <Pill>{intl.formatMessage(m.allAccess)}</Pill>),
     },
-    {
-      key: 'permissions', label: intl.formatMessage(commonLabels.permissions),
-      render: (c) => (
-        <span className="flex flex-wrap gap-1">
-          {c.permissions.slice(0, 3).map((p) => <Pill key={p}>{p}</Pill>)}
-          {c.permissions.length > 3 && <Pill>+{c.permissions.length - 3}</Pill>}
-        </span>
-      ),
-    },
+    // The `permissions` column is gone — see the note above `ROLES`. It rendered
+    // an array nothing in the product reads.
     {
       key: 'hide', label: intl.formatMessage(m.colFields),
       render: (c) => (c.hideFinanceFields ? <Pill tone="amber">{intl.formatMessage(m.financeHidden)}</Pill> : <span className="text-zinc-700">—</span>),
@@ -289,34 +404,71 @@ export function TeamView() {
             <div className="w-12 h-12 rounded-2xl bg-raised flex items-center justify-center text-white border border-white/5 shadow-inner">
               <Shield size={22} />
             </div>
-            <div>
+            <div className="flex flex-col gap-1.5">
               <h1 className="font-sans text-2xl md:text-3xl font-semibold text-white tracking-tight">{intl.formatMessage(m.heading)}</h1>
-              <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
+              <p className="text-[12px] text-zinc-500 font-semibold uppercase tracking-wider">
                 {intl.formatMessage(m.subtitle, {
-                  active: colleagues.filter((c) => c.active).length,
+                  active: live ? team.members.length : colleagues.filter((c) => c.active).length,
                   teams: teams.length,
                   open: tasks.filter((t) => t.status === 'open').length,
                 })}
               </p>
+              {/* Visible in EVERY build (launch M2): a slice that could not be
+                  loaded says so rather than showing nothing and looking empty. */}
+              <DataSourceBadge slice={intl.formatMessage(m.sliceLabel)} status={teamStatus} onRetry={refetchTeam} />
             </div>
           </div>
           {tab === 'Colleagues' && (
-            <button
-              onClick={() => setEditing(blankColleague())}
-              className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
-            >
-              <Plus size={16} strokeWidth={2.5} />
-              {intl.formatMessage(m.inviteColleague)}
-            </button>
+            live ? (
+              // Gated on the role AND handled honestly when the server refuses
+              // anyway — `mayInviteColleague` is presentation, `NT-PRM-001` is
+              // the rule (Governance §11.2).
+              canInvite ? (
+                <button
+                  onClick={() => setInviting(true)}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
+                >
+                  <Plus size={16} strokeWidth={2.5} />
+                  {intl.formatMessage(m.inviteColleague)}
+                </button>
+              ) : (
+                <Tooltip label={intl.formatMessage(m.inviteNotPermitted)}>
+                  <span className="flex items-center gap-2 px-6 py-2.5 bg-card border border-white/5 text-zinc-600 text-sm font-bold rounded-full cursor-not-allowed">
+                    <Plus size={16} strokeWidth={2.5} />
+                    {intl.formatMessage(m.inviteColleague)}
+                  </span>
+                </Tooltip>
+              )
+            ) : (
+              <button
+                onClick={() => setEditing(blankColleague())}
+                className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
+              >
+                <Plus size={16} strokeWidth={2.5} />
+                {intl.formatMessage(m.inviteColleague)}
+              </button>
+            )
           )}
+          {/* S14: with the API on, "Create team" writes into React state the next
+              reload discards — there is no teams operation in the contract — so
+              it is disabled with the reason rather than quietly saving nothing. */}
           {tab === 'Teams' && (
-            <button
-              onClick={() => setEditingTeam(blankTeam())}
-              className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
-            >
-              <Plus size={16} strokeWidth={2.5} />
-              {intl.formatMessage(m.createTeam)}
-            </button>
+            live ? (
+              <Tooltip label={intl.formatMessage(m.notAvailableLive)} detail={intl.formatMessage(m.notAvailableLiveDetail)}>
+                <span className="flex items-center gap-2 px-6 py-2.5 bg-card border border-white/5 text-zinc-600 text-sm font-bold rounded-full cursor-not-allowed">
+                  <Plus size={16} strokeWidth={2.5} />
+                  {intl.formatMessage(m.createTeam)}
+                </span>
+              </Tooltip>
+            ) : (
+              <button
+                onClick={() => setEditingTeam(blankTeam())}
+                className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
+              >
+                <Plus size={16} strokeWidth={2.5} />
+                {intl.formatMessage(m.createTeam)}
+              </button>
+            )
           )}
           {tab === 'Tasks' && (
             <div className="flex items-center gap-3">
@@ -328,13 +480,22 @@ export function TeamView() {
                 <option value="all">{intl.formatMessage(m.allClients)}</option>
                 {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
-              <button
-                onClick={() => setNewTask(true)}
-                className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
-              >
-                <Plus size={16} strokeWidth={2.5} />
-                {intl.formatMessage(m.newTask)}
-              </button>
+              {live ? (
+                <Tooltip label={intl.formatMessage(m.notAvailableLive)} detail={intl.formatMessage(m.notAvailableLiveDetail)}>
+                  <span className="flex items-center gap-2 px-6 py-2.5 bg-card border border-white/5 text-zinc-600 text-sm font-bold rounded-full cursor-not-allowed">
+                    <Plus size={16} strokeWidth={2.5} />
+                    {intl.formatMessage(m.newTask)}
+                  </span>
+                </Tooltip>
+              ) : (
+                <button
+                  onClick={() => setNewTask(true)}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
+                >
+                  <Plus size={16} strokeWidth={2.5} />
+                  {intl.formatMessage(m.newTask)}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -360,19 +521,30 @@ export function TeamView() {
       <div className="flex-1 overflow-y-auto px-4 md:px-10 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           {tab === 'Colleagues' && (
-            <DataTable<Colleague>
-              className="max-w-none"
-              columns={colleagueColumns}
-              rows={colleagues}
-              rowId={(c) => c.id}
-              onRowClick={(c) => setEditing(c)}
-              emptyMessage={intl.formatMessage(m.colleaguesEmpty)}
-              footer={intl.formatMessage(m.colleaguesFooter)}
-            />
+            live ? (
+              <LiveColleagues status={teamStatus} team={team} onRetry={refetchTeam} />
+            ) : (
+              <DataTable<Colleague>
+                className="max-w-none"
+                columns={colleagueColumns}
+                rows={colleagues}
+                rowId={(c) => c.id}
+                onRowClick={(c) => setEditing(c)}
+                emptyMessage={intl.formatMessage(m.colleaguesEmpty)}
+                footer={intl.formatMessage(m.colleaguesFooter)}
+              />
+            )
           )}
 
           {tab === 'Teams' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Said once, at the top, rather than on every card: with the API
+                  on these are demo rows with no contract operation behind them. */}
+              {live && (
+                <p className="lg:col-span-2 text-[13px] text-amber-400/90 font-semibold px-5 py-3.5 rounded-2xl border border-amber-500/20 bg-amber-500/5">
+                  {intl.formatMessage(m.syntheticOnly)}
+                </p>
+              )}
               {teams.map((team) => (
                 <div key={team.id} className="border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
                   <div className="p-6 flex items-start justify-between gap-4 border-b border-white/5">
@@ -387,13 +559,18 @@ export function TeamView() {
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <Pill>{intl.formatMessage(m.teamMembers, { count: team.memberIds.length })}</Pill>
-                      <button
-                        onClick={() => setEditingTeam(team)}
-                        title={intl.formatMessage(m.editTeam)}
-                        className="w-8 h-8 rounded-lg border border-white/5 text-zinc-500 hover:text-white hover:border-white/20 flex items-center justify-center transition-colors"
-                      >
-                        <Pencil size={13} />
-                      </button>
+                      {/* Hidden rather than disabled: the banner above already
+                          says why, and a row of dead pencils says it again once
+                          per card. */}
+                      {!live && (
+                        <button
+                          onClick={() => setEditingTeam(team)}
+                          title={intl.formatMessage(m.editTeam)}
+                          className="w-8 h-8 rounded-lg border border-white/5 text-zinc-500 hover:text-white hover:border-white/20 flex items-center justify-center transition-colors"
+                        >
+                          <Pencil size={13} />
+                        </button>
+                      )}
                     </div>
                   </div>
                   <div className="p-6 flex flex-col gap-2">
@@ -428,6 +605,14 @@ export function TeamView() {
           )}
 
           {tab === 'Tasks' && (
+            <div className="flex flex-col gap-4">
+              {/* Same statement as the Teams tab, and the same reason: the
+                  checklist is seeded and no contract operation moves it. */}
+              {live && (
+                <p className="text-[13px] text-amber-400/90 font-semibold px-5 py-3.5 rounded-2xl border border-amber-500/20 bg-amber-500/5">
+                  {intl.formatMessage(m.syntheticOnly)}
+                </p>
+              )}
             <DataTable<WorkflowTask>
               className="max-w-none"
               columns={[
@@ -454,6 +639,8 @@ export function TeamView() {
                   render: (t) => (
                     <select
                       value={assignees.includes(t.assignee) ? t.assignee : ''}
+                      disabled={live}
+                      title={live ? intl.formatMessage(m.notAvailableLiveDetail) : undefined}
                       onClick={(e) => e.stopPropagation()}
                       onChange={(e) => {
                         assignTask(t.id, e.target.value);
@@ -463,7 +650,7 @@ export function TeamView() {
                           reviewOpened: false,
                         });
                       }}
-                      className="bg-ground border border-white/5 rounded-lg py-1.5 px-2.5 text-[12px] font-semibold text-zinc-300 focus:outline-none focus:border-brand"
+                      className="bg-ground border border-white/5 rounded-lg py-1.5 px-2.5 text-[12px] font-semibold text-zinc-300 focus:outline-none focus:border-brand disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       {!assignees.includes(t.assignee) && <option value="">{t.assignee || intl.formatMessage(m.unassigned)}</option>}
                       {assignees.map((a) => <option key={a} value={a} className="bg-card">{a}</option>)}
@@ -489,11 +676,17 @@ export function TeamView() {
                 },
                 {
                   key: 'actions', label: '', align: 'right',
+                  // Hidden live rather than disabled: three dead icons per row,
+                  // on every row, is noise where one banner already said it.
                   render: (t) => (
                     <span className="flex items-center gap-1.5 justify-end">
-                      <IconBtn icon={Check} title={intl.formatMessage(m.actionComplete)} onClick={() => setTaskStatus(t.id, 'complete')} />
-                      <IconBtn icon={AlertTriangle} title={intl.formatMessage(m.actionCompleteWithIssues)} onClick={() => setTaskStatus(t.id, 'complete-with-issues')} />
-                      <IconBtn icon={CircleSlash} title={intl.formatMessage(m.actionNotApplicable)} onClick={() => setTaskStatus(t.id, 'not-applicable')} />
+                      {!live && (
+                        <>
+                          <IconBtn icon={Check} title={intl.formatMessage(m.actionComplete)} onClick={() => setTaskStatus(t.id, 'complete')} />
+                          <IconBtn icon={AlertTriangle} title={intl.formatMessage(m.actionCompleteWithIssues)} onClick={() => setTaskStatus(t.id, 'complete-with-issues')} />
+                          <IconBtn icon={CircleSlash} title={intl.formatMessage(m.actionNotApplicable)} onClick={() => setTaskStatus(t.id, 'not-applicable')} />
+                        </>
+                      )}
                     </span>
                   ),
                 },
@@ -503,12 +696,18 @@ export function TeamView() {
               selectable
               emptyMessage={intl.formatMessage(m.tasksEmpty)}
               bulkActions={[
-                { label: intl.formatMessage(m.bulkMarkComplete), icon: Check, onClick: (sel) => sel.forEach((t) => setTaskStatus(t.id, 'complete')) },
-                {
-                  label: intl.formatMessage(m.bulkAssignAction),
-                  icon: UserPlus,
-                  onClick: (sel) => setBulkAssign(sel.map((t) => t.id)),
-                },
+                // The two local writers go; "Ask AI about workload" stays,
+                // because opening a chat scoped to a client is real either way.
+                ...(live
+                  ? []
+                  : [
+                      { label: intl.formatMessage(m.bulkMarkComplete), icon: Check, onClick: (sel: WorkflowTask[]) => sel.forEach((t) => setTaskStatus(t.id, 'complete')) },
+                      {
+                        label: intl.formatMessage(m.bulkAssignAction),
+                        icon: UserPlus,
+                        onClick: (sel: WorkflowTask[]) => setBulkAssign(sel.map((t) => t.id)),
+                      },
+                    ]),
                 {
                   label: intl.formatMessage(m.bulkAskAi),
                   icon: Sparkles,
@@ -518,11 +717,23 @@ export function TeamView() {
               ]}
               footer={intl.formatMessage(m.tasksFooter)}
             />
+            </div>
           )}
         </motion.div>
       </div>
 
       <AnimatePresence>
+        {inviting && (
+          <InviteColleagueForm
+            clients={clients}
+            onClose={() => setInviting(false)}
+            onInvited={() => {
+              setInviting(false);
+              refetchTeam();
+            }}
+          />
+        )}
+
         {editing && (
           <ColleagueEditor
             colleague={editing}
@@ -1079,20 +1290,10 @@ function ColleagueEditor({ colleague, onSave, onRemove, onResetPassword, onClose
             </div>
           </div>
 
-          <div>
-            <Label>{intl.formatMessage(commonLabels.permissions)}</Label>
-            <div className="flex flex-wrap gap-2">
-              {PERMISSIONS.map((p) => (
-                <Chip
-                  key={p}
-                  active={draft.permissions.includes(p)}
-                  onClick={() => set('permissions', draft.permissions.includes(p) ? draft.permissions.filter((x) => x !== p) : [...draft.permissions, p])}
-                >
-                  {p}
-                </Chip>
-              ))}
-            </div>
-          </div>
+          {/* The per-permission tick-boxes were here. They are gone — see the
+              note above `ROLES`: `memberships.permissions[]` is read by nothing,
+              and a toggle that governs nothing is the same lie as an invite
+              button that sends nothing. */}
 
           {!isAdmin && (
             <div>
@@ -1176,5 +1377,344 @@ function IconBtn({ icon: Icon, title, onClick }: { icon: LucideIcon; title: stri
     >
       <Icon size={14} />
     </button>
+  );
+}
+
+/* ── the live team ────────────────────────────────────────────────────────── */
+
+/**
+ * The practice's real colleagues, and the invitations still outstanding.
+ *
+ * **A different table from the synthetic one, and the fork is deliberate** —
+ * which is the opposite call from the Clients board, so the reason matters. M7
+ * deleted `LiveClientsView` because it rendered a REDUCED board: every column
+ * the real one showed existed as a fact and simply had no field, and the answer
+ * was to widen the endpoint rather than keep two screens. Here the missing
+ * columns are location, job title, avatar and per-permission chips, and none of
+ * them is a fact this product holds about a colleague — three do not exist in
+ * the schema at all and the fourth is read by nothing. Widening the contract to
+ * carry them would be inventing data to fill a table.
+ *
+ * ⚠ **`hideFinancialFields` is deliberately NOT rendered.** The column exists,
+ * the invitation carries it, and NOTHING in this release reads it when serving a
+ * document — so a "Finance hidden" pill would announce a protection that is not
+ * in force. Storing the intent is honest; drawing it as active is not. It comes
+ * back the day the redaction does.
+ */
+function LiveColleagues({
+  status,
+  team,
+  onRetry,
+}: {
+  status: ReturnType<typeof usePracticeTeam>['status'];
+  team: ReturnType<typeof usePracticeTeam>['team'];
+  onRetry: () => void;
+}) {
+  const intl = useIntl();
+
+  if (status.source === 'error') {
+    return <SliceLoadError heading={intl.formatMessage(m.loadFailed)} error={status.error} onRetry={onRetry} />;
+  }
+
+  if (status.loading) {
+    return (
+      <div className="flex flex-col gap-3" role="status" aria-busy="true" aria-label={intl.formatMessage(m.sliceLabel)}>
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="h-16 rounded-2xl bg-card border border-white/5 animate-pulse" style={{ animationDelay: `${i * 90}ms` }} />
+        ))}
+      </div>
+    );
+  }
+
+  const columns: Column<PracticeMember>[] = [
+    {
+      key: 'name', label: intl.formatMessage(m.colColleague), sortValue: (p) => memberLabel(p),
+      render: (p) => (
+        <span className="flex items-center gap-3">
+          <span className="w-9 h-9 rounded-xl bg-raised border border-white/5 flex items-center justify-center font-bold text-white text-[13px] shrink-0">
+            {memberLabel(p).charAt(0).toUpperCase()}
+          </span>
+          <span className="min-w-0">
+            <span className="block text-white font-semibold truncate">{memberLabel(p)}</span>
+            <span className="block text-[11px] text-zinc-500 truncate">{p.email}</span>
+          </span>
+        </span>
+      ),
+    },
+    {
+      key: 'role', label: intl.formatMessage(commonLabels.role), sortValue: (p) => p.role,
+      render: (p) => (
+        <span className="flex flex-wrap items-center gap-1.5">
+          <Pill tone={p.role === 'PRACTICE_ADMIN' ? 'blue' : 'neutral'}>{intl.formatMessage(ROLE_LABELS[p.role])}</Pill>
+          {/* D44's other half, shown rather than implied: the release rule is
+              role AND ownership, so a screen showing only the role cannot say
+              why Approve refuses. */}
+          {p.isOwner && (
+            <Tooltip label={intl.formatMessage(m.owner)} detail={intl.formatMessage(m.ownerHint)}>
+              <span><Pill tone="green">{intl.formatMessage(m.owner)}</Pill></span>
+            </Tooltip>
+          )}
+        </span>
+      ),
+    },
+    {
+      key: 'clients', label: intl.formatMessage(m.colClients), align: 'right', sortValue: (p) => p.businessIds.length,
+      // ⚠ EMPTY MEANS ALL, not none — a practice-wide membership names no
+      // business because RLS reaches every one of them.
+      render: (p) => (p.businessIds.length === 0
+        ? <Pill>{intl.formatMessage(m.clientsAll)}</Pill>
+        : <span className="tabular-nums text-zinc-300">{intl.formatMessage(m.clientsSome, { count: p.businessIds.length })}</span>),
+    },
+  ];
+
+  return (
+    <div className="flex flex-col gap-6">
+      <DataTable<PracticeMember>
+        className="max-w-none"
+        columns={columns}
+        rows={team.members}
+        rowId={(p) => p.userId}
+        emptyMessage={intl.formatMessage(m.liveEmpty)}
+        footer={intl.formatMessage(m.liveFooter)}
+      />
+
+      {/* An invitation nobody can see is an invitation nobody chases. */}
+      {team.pendingInvites.length > 0 && (
+        <section className="border border-white/5 rounded-[32px] bg-card overflow-hidden">
+          <h2 className="px-6 pt-5 pb-4 text-[12px] font-bold text-zinc-500 uppercase tracking-widest border-b border-white/5">
+            {intl.formatMessage(m.pendingHeading, { count: team.pendingInvites.length })}
+          </h2>
+          <ul className="p-4 flex flex-col gap-2">
+            {team.pendingInvites.map((invite) => (
+              <li key={invite.id} className="flex items-center justify-between gap-4 flex-wrap p-4 rounded-2xl bg-ground/60 border border-white/5">
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-bold text-white truncate">{invite.email}</span>
+                  <span className="block text-[11px] text-zinc-500">{intl.formatMessage(ROLE_LABELS[invite.role])}</span>
+                </span>
+                <span className="flex items-center gap-3 shrink-0">
+                  <span className="text-[11px] text-zinc-500">
+                    {intl.formatMessage(m.pendingExpiry, {
+                      // Europe/London: a UTC instant late in the evening names
+                      // the wrong UK day (Governance §12).
+                      date: intl.formatDate(invite.expiresAt, { day: 'numeric', month: 'short', timeZone: 'Europe/London' }),
+                    })}
+                  </span>
+                  <Pill tone="amber">{intl.formatMessage(m.pendingPill)}</Pill>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="px-6 pb-5 text-[12px] text-zinc-600">{intl.formatMessage(m.pendingNote)}</p>
+        </section>
+      )}
+    </div>
+  );
+}
+
+const inviteFormM = defineMessages({
+  heading: { id: 'team.inviteColleague.heading', defaultMessage: 'Invite a colleague' },
+  subtitle: { id: 'team.inviteColleague.subtitle', defaultMessage: 'They choose their own password and set up an authenticator app' },
+  emailLabel: { id: 'team.inviteColleague.emailLabel', defaultMessage: 'Work email' },
+  emailPlaceholder: { id: 'team.inviteColleague.emailPlaceholder', defaultMessage: 'sam@practice.co.uk' },
+  emailHint: {
+    id: 'team.inviteColleague.emailHint',
+    defaultMessage: 'The invitation goes here, and this becomes their sign-in.',
+  },
+  roleLabel: { id: 'team.inviteColleague.roleLabel', defaultMessage: 'Role' },
+  roleHint: {
+    id: 'team.inviteColleague.roleHint',
+    defaultMessage:
+      'A colleague cannot be invited as a practice admin: releasing documents for export belongs to whoever created the practice, and there is no way to hand that over yet.',
+  },
+  clientsLabel: { id: 'team.inviteColleague.clientsLabel', defaultMessage: 'Which clients they can reach' },
+  clientsHint: {
+    id: 'team.inviteColleague.clientsHint',
+    defaultMessage: 'Pick none to give them every client. A client admin always reaches all of them.',
+  },
+  send: { id: 'team.inviteColleague.send', defaultMessage: 'Send invitation' },
+  sending: { id: 'team.inviteColleague.sending', defaultMessage: 'Sending…' },
+
+  faultForbidden: {
+    id: 'team.inviteColleague.faultForbidden',
+    defaultMessage: 'Only a practice admin can invite a colleague. Ask one of your admins to send it.',
+  },
+  faultValidation: {
+    id: 'team.inviteColleague.faultValidation',
+    defaultMessage: 'The server would not accept those details. Check the address and the role, and try again.',
+  },
+  faultRateLimited: {
+    id: 'team.inviteColleague.faultRateLimited',
+    defaultMessage: 'The invitation was recorded but the email was rate limited. Try again shortly.',
+  },
+  faultNotFound: {
+    id: 'team.inviteColleague.faultNotFound',
+    defaultMessage: 'One of the clients you picked is no longer there. Close this, reload, and try again.',
+  },
+  faultServer: {
+    id: 'team.inviteColleague.faultServer',
+    defaultMessage: 'The server refused that. Try again, and tell us if it keeps happening.',
+  },
+  faultUnreachable: {
+    id: 'team.inviteColleague.faultUnreachable',
+    defaultMessage: 'We could not reach the server. Check your connection and try again.',
+  },
+  faultCode: { id: 'team.inviteColleague.faultCode', defaultMessage: 'Reference: {code}' },
+});
+
+/**
+ * The real invite form — it collects **only what the contract carries**.
+ *
+ * No job title, no location, no avatar, no per-permission toggles. Every one of
+ * those was on the editor this replaces, none of them reaches a column, and a
+ * field whose value is discarded is a question asked in bad faith.
+ *
+ * ⚠ **The name fields went for exactly that reason** (2 Sep 2026). They were
+ * here as "First name (optional)" / "Last name (optional)", the client put them
+ * on the wire, and the server read neither — `invites` has no column for a name,
+ * and acceptance asks the invitee for their own as a REQUIRED field, so the
+ * admin's spelling would have been overwritten by the person it named. The rule
+ * this file already states applied to them and had simply not been noticed.
+ * `api/team.ts` carries the contract half that is still owed.
+ *
+ * ⚠ **The role picker offers TWO roles.** `PRACTICE_ADMIN` is refused by the
+ * server with a named reason, so it is not offered and the reason is printed
+ * under the picker instead — a chip that produced a `400` would teach the user
+ * nothing about why.
+ */
+function InviteColleagueForm({
+  clients,
+  onClose,
+  onInvited,
+}: {
+  clients: { id: string; name: string }[];
+  onClose: () => void;
+  onInvited: () => void;
+}) {
+  const intl = useIntl();
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<WorkspaceRole>('PRACTICE_STANDARD');
+  const [businessIds, setBusinessIds] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [fault, setFault] = useState<string | null>(null);
+  const [code, setCode] = useState<string | null>(null);
+
+  const ready = email.trim().includes('@');
+  // A client admin reaches everything by definition, and the server REFUSES a
+  // client list for that role rather than ignoring one — so the picker is not
+  // shown for it, and the state it left behind is not sent.
+  const scoped = role === 'PRACTICE_STANDARD';
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!ready || busy) return;
+    setBusy(true);
+    setFault(null);
+    setCode(null);
+    try {
+      await inviteColleague({ email, role, businessIds: scoped ? businessIds : [] });
+      onInvited();
+    } catch (error) {
+      const problem = error instanceof NtProblemError ? error : null;
+      setCode(problem?.code ?? null);
+      setFault(
+        intl.formatMessage(
+          problem === null
+            ? inviteFormM.faultUnreachable
+            : problem.code === 'NT-PRM-001'
+              ? inviteFormM.faultForbidden
+              : problem.code === 'NT-VAL-001'
+                ? problem.status === 404
+                  ? inviteFormM.faultNotFound
+                  : inviteFormM.faultValidation
+                : problem.code === 'NT-RATE-001'
+                  ? inviteFormM.faultRateLimited
+                  : inviteFormM.faultServer,
+        ),
+      );
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal onClose={onClose}>
+      <form onSubmit={submit} className="w-full max-w-lg border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
+        <div className="p-6 border-b border-white/5">
+          <h3 className="font-sans font-bold text-xl text-white tracking-tight">{intl.formatMessage(inviteFormM.heading)}</h3>
+          <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
+            {intl.formatMessage(inviteFormM.subtitle)}
+          </p>
+        </div>
+
+        <div className="p-6 flex flex-col gap-5 max-h-[55dvh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <Field
+            label={intl.formatMessage(inviteFormM.emailLabel)}
+            value={email}
+            onChange={setEmail}
+            placeholder={intl.formatMessage(inviteFormM.emailPlaceholder)}
+          />
+          <p className="text-[12px] text-zinc-500 -mt-3">{intl.formatMessage(inviteFormM.emailHint)}</p>
+
+          <div>
+            <Label>{intl.formatMessage(inviteFormM.roleLabel)}</Label>
+            <div className="flex flex-wrap gap-2">
+              {INVITABLE_ROLES.map((r) => (
+                <Chip key={r} active={role === r} onClick={() => setRole(r)}>
+                  {intl.formatMessage(ROLE_LABELS[r])}
+                </Chip>
+              ))}
+            </div>
+            <p className="text-[12px] text-zinc-500 leading-relaxed mt-2.5">{intl.formatMessage(inviteFormM.roleHint)}</p>
+          </div>
+
+          {scoped && clients.length > 0 && (
+            <div>
+              <Label>{intl.formatMessage(inviteFormM.clientsLabel)}</Label>
+              <div className="flex flex-wrap gap-2">
+                {clients.map((c) => (
+                  <Chip
+                    key={c.id}
+                    active={businessIds.includes(c.id)}
+                    onClick={() =>
+                      setBusinessIds(businessIds.includes(c.id) ? businessIds.filter((x) => x !== c.id) : [...businessIds, c.id])
+                    }
+                  >
+                    {c.name}
+                  </Chip>
+                ))}
+              </div>
+              <p className="text-[12px] text-zinc-500 leading-relaxed mt-2.5">{intl.formatMessage(inviteFormM.clientsHint)}</p>
+            </div>
+          )}
+
+          {fault && (
+            <div role="alert" className="p-4 rounded-2xl border border-red-500/20 bg-red-500/5">
+              <p className="flex items-start gap-2 text-[13px] font-semibold text-red-400 leading-relaxed">
+                <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+                {fault}
+              </p>
+              {code && (
+                <p className="text-[11px] text-zinc-600 font-bold mt-2 ml-[23px] tracking-wide">
+                  {intl.formatMessage(inviteFormM.faultCode, { code })}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="p-4 bg-raised/50 flex justify-end gap-3">
+          <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-full text-sm font-bold text-zinc-400 hover:text-white transition-colors">
+            {intl.formatMessage(commonActions.cancel)}
+          </button>
+          <button
+            type="submit"
+            disabled={!ready || busy}
+            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+          >
+            {busy ? <Loader2 size={15} className="animate-spin" /> : <UserPlus size={15} />}
+            {intl.formatMessage(busy ? inviteFormM.sending : inviteFormM.send)}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }

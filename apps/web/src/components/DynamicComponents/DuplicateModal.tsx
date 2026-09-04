@@ -1,10 +1,19 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Copy, X, Trash2, Layers, GitCompare, ArrowRight } from 'lucide-react';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import { commonActions, commonLabels } from '../../i18n/common';
 import { useAppContext } from '../../context/AppContext';
-import { DocumentPreview } from './DocumentPreview';
+
+/**
+ * ⚠ `lazy()` for the same reason as `AnalysisModal`: this module is imported at
+ * module scope by `InboxesView` and `ClientInbox`, so a static import of
+ * `DocumentPreview` here lands it (and its `document-detail` client) on both
+ * routes whatever those screens do at their own call sites. The expanded
+ * comparison is behind a click inside a dialog that is itself behind a click;
+ * the `Suspense` is inside the frame, so only that panel waits.
+ */
+const DocumentPreview = lazy(() => import('./DocumentPreview').then((mod) => ({ default: mod.DocumentPreview })));
 import { Pill } from './DataTable';
 import { currency } from '../../lib/resolver';
 import { useEscape } from '../../lib/useEscape';
@@ -215,7 +224,9 @@ export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose
             </div>
             <div className="flex justify-center">
               {(expanded === 'left' ? left : right) ? (
-                <DocumentPreview document={(expanded === 'left' ? left : right)!} />
+                <Suspense fallback={null}>
+                  <DocumentPreview document={(expanded === 'left' ? left : right)!} />
+                </Suspense>
               ) : (
                 <p className="text-[13px] text-zinc-500">{intl.formatMessage(m.gone)}</p>
               )}

@@ -5,6 +5,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import { commonActions, commonLabels } from '../../i18n/common';
+import { API_ENABLED } from '../../api/config';
 import { useAppContext } from '../../context/AppContext';
 import { DocumentPreview } from '../../components/DynamicComponents/DocumentPreview';
 import { Pill } from '../../components/DynamicComponents/DataTable';
@@ -18,6 +19,16 @@ const m = defineMessages({
   linkNotFoundDetail: {
     id: 'portal.clientApprovalView.linkNotFoundDetail',
     defaultMessage: 'This approval link is no longer valid. Ask your accountant to send a new one.',
+  },
+  // The live refusal. It names the release, not the link — see the guard.
+  unavailableTitle: {
+    id: 'portal.clientApprovalView.unavailableTitle',
+    defaultMessage: 'Approvals are not open to clients yet',
+  },
+  unavailableDetail: {
+    id: 'portal.clientApprovalView.unavailableDetail',
+    defaultMessage:
+      'Your accountant approves everything on their own side in this release, so there is nothing for you to sign off here. If they asked you to check something, they can send it to you directly.',
   },
   allDoneTitle: { id: 'portal.clientApprovalView.allDoneTitle', defaultMessage: 'All done' },
   allDoneDetail: {
@@ -78,10 +89,15 @@ const m = defineMessages({
   },
   lineItemsHeading: { id: 'portal.approvalCard.lineItemsHeading', defaultMessage: 'Line items' },
   historyHeading: { id: 'portal.approvalCard.historyHeading', defaultMessage: 'Who approved before you' },
+  // ⚠ D42: both this and `confirmApproveConsequence` said the item is
+  // "published to the accounting software". Nothing in this release writes to
+  // a ledger — *Published* is an internal state meaning approved and released
+  // for export, and telling a client their books have moved when they have not
+  // is the worst lie this product can tell.
   lastStageNote: {
     id: 'portal.approvalCard.lastStageNote',
     defaultMessage:
-      'This is the last stage. Approving locks the item — the figures above can no longer be edited — and publishes it to the accounting software.',
+      'This is the last stage. Approving locks the item — the figures above can no longer be edited — and releases it for your accountant to export.',
   },
   rejectReasonLabel: {
     id: 'portal.approvalCard.rejectReasonLabel',
@@ -117,7 +133,7 @@ const m = defineMessages({
   confirmApproveConsequence: {
     id: 'portal.approvalCard.confirmApproveConsequence',
     defaultMessage:
-      'This is the last stage — the item locks, the figures can no longer be changed, and it publishes to the accounting software.',
+      'This is the last stage — the item locks, the figures can no longer be changed, and it is released for your accountant to export.',
   },
   confirmApproveLabel: { id: 'portal.approvalCard.confirmApproveLabel', defaultMessage: 'Yes, approve it' },
   confirmRejectTitle: { id: 'portal.approvalCard.confirmRejectTitle', defaultMessage: 'Reject {supplier}?' },
@@ -168,6 +184,26 @@ export function ClientApprovalView() {
     [request, approvals],
   );
   const pending = items.filter((a) => a.state === 'pending');
+
+  // ⚠ THIS SURFACE DOES NOT EXIST LIVE, AND SAYS SO RATHER THAN LYING ABOUT
+  // THE LINK.
+  //
+  // A portal holder can approve NOTHING: `approveActionProposal` carries its
+  // own `security: [- workspaceSession: []]`, so there is no contracted client
+  // approval and building one would be inventing an authority the server does
+  // not grant. This address is routed outside the `API_ENABLED` branch, so with
+  // a live session `approvalRequests` is empty and the screen fell through to
+  // "Link not found" — which tells the client their link is broken when in fact
+  // the feature is not in this release. That sends them to their accountant
+  // about the wrong thing.
+  if (API_ENABLED) {
+    return (
+      <Shell title={intl.formatMessage(m.unavailableTitle)}>
+        <p className="text-[14px] text-zinc-400 leading-relaxed">{intl.formatMessage(m.unavailableDetail)}</p>
+        <BackButton onClick={exitBusinessPortal} />
+      </Shell>
+    );
+  }
 
   if (!request) {
     return (

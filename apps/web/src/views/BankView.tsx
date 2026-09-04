@@ -17,9 +17,14 @@ import { sendWorkspaceUploads } from '../api/uploads';
 import { StatementModal, downloadBank } from '../components/DynamicComponents/StatementModal';
 import { ChaseModal } from '../components/DynamicComponents/ChaseModal';
 import { currency } from '../lib/resolver';
-import { assessTransaction, isMatched, txnLabel, type Candidate, type MatchVerdict } from '../lib/matching';
+import { assessTransaction, isMatched, isUnexplained, txnLabel, type Candidate, type MatchVerdict } from '../lib/matching';
 import { summariseRemoval } from '../lib/statementRemoval';
-import { DocumentPreview } from '../components/DynamicComponents/DocumentPreview';
+// Lazy, like the filter panel and the statement dialog below it: this is a
+// modal that opens on a click, and eagerly it put itself plus the
+// `document-detail` client — 9.6 kB gzip — on the static graph of a route that
+// was 50,627 B OVER the 250,000 B budget. Measure with
+// `scripts/measure/route-bundle-closure.mjs`, not the four-chunk shorthand.
+const DocumentPreview = lazy(() => import('../components/DynamicComponents/DocumentPreview').then((m) => ({ default: m.DocumentPreview })));
 import type { BankAccount, BankTransaction, Document, Match, Statement, StatementGap } from '../lib/types';
 import { EXPORT_HINT } from '../lib/exportRules';
 // Type-only on purpose — erased at build. The refinement machinery itself
@@ -419,7 +424,15 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
       // Tolerant of both id worlds: server rows carry opaque business ids,
       // the embedding client detail still keys by seed id (METH S14 bridge).
       if (clientFilter !== 'all' && !isSameClient(t.clientId, clientFilter)) return false;
-      if (evidenceFilter === 'needs-you' && (isMatched(t) || verdicts.get(t.id)?.kind !== 'confused')) return false;
+      // 'needs-you' is the only filter that wears a COUNT, so it is the only
+      // one on the counting predicate — it has to select exactly the set
+      // `needsYouCount` below counts, or the pill lies about its own list.
+      if (evidenceFilter === 'needs-you' && (!isUnexplained(t) || verdicts.get(t.id)?.kind !== 'confused')) return false;
+      // 'unmatched'/'matched' stay on `isMatched` deliberately: these are a
+      // lens on the matcher's question — "does this line have its evidence" —
+      // and they carry no number. A SUGGESTED or EXCLUDED line still belongs in
+      // front of the accountant here even though nothing will chase it, and
+      // hiding it would leave it reachable only from 'all'.
       if (evidenceFilter === 'unmatched' && isMatched(t)) return false;
       if (evidenceFilter === 'matched' && !isMatched(t)) return false;
       if (evidenceFilter === 'credits' && !t.isCredit) return false;
@@ -484,20 +497,35 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
   const scopedGaps = statementGaps.filter((g) => clientFilter === 'all' || g.clientId === clientFilter);
   const scopedAccounts = accounts.filter((a) => clientFilter === 'all' || a.clientId === clientFilter);
 
-  // The number the whole screen is about, and the one that has to agree with
-  // chase detection: the server's unmatched set is `match_state != CONFIRMED`,
-  // which is exactly what `isMatched` negates.
-  const unmatchedCount = scopedTxns.filter((t) => !isMatched(t)).length;
-  const unexplained = scopedTxns.filter((t) => !isMatched(t)).reduce((n, t) => n + Math.abs(t.amount), 0);
+  // The number the whole screen is about, and it is `isUnexplained`, NOT
+  // `!isMatched`.
+  //
+  // ⚠ This was `!isMatched(t)` under a comment claiming the server's unmatched
+  // set is `match_state != CONFIRMED`. It is not: `businesses.service.ts`
+  // counts `matchState: 'UNMATCHED' AND chaseSuppressed: false`, so the header
+  // was adding SUGGESTED, EXCLUDED and every chase-suppressed line — bank
+  // interest, card fees — to a figure the client card beside it (`statsFor`,
+  // which answers from those same server counts) was reporting without them.
+  // Two numbers on one screen, both labelled "unexplained", by construction.
+  // See the doc comment on `isUnexplained` for why the two predicates are
+  // deliberately different functions rather than one.
+  const unmatchedCount = scopedTxns.filter(isUnexplained).length;
+  const unexplained = scopedTxns.filter(isUnexplained).reduce((n, t) => n + Math.abs(t.amount), 0);
 
   // Counted across the client scope rather than the current filter, so the tab
   // does not read "Needs you (0)" while it is the tab you are looking at.
+  //
+  // On `isUnexplained` for the same reason as the header, and the `needs-you`
+  // FILTER above moved with it: a pill whose number disagrees with the list it
+  // opens is the same defect one level down. Every `isUnexplained` row is a
+  // `!isMatched` row by construction, so `verdicts` — which is keyed on the
+  // matcher's question and stays there — always has an entry to look up.
   const needsYouCount = useMemo(
     () =>
       transactions.filter(
         (t) =>
           (clientFilter === 'all' || isSameClient(t.clientId, clientFilter)) &&
-          !isMatched(t) &&
+          isUnexplained(t) &&
           verdicts.get(t.id)?.kind === 'confused',
       ).length,
     [transactions, clientFilter, verdicts, isSameClient],
@@ -1177,7 +1205,11 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
         )}
         {previewDoc && (
           <Modal onClose={() => setPreviewDoc(null)}>
-            <DocumentPreview document={documents.find((d) => d.id === previewDoc.id) ?? previewDoc} />
+            {/* Suspense INSIDE the frame: the modal itself paints at once and
+                only the document card waits on its chunk. */}
+            <Suspense fallback={null}>
+              <DocumentPreview document={documents.find((d) => d.id === previewDoc.id) ?? previewDoc} />
+            </Suspense>
           </Modal>
         )}
       </AnimatePresence>

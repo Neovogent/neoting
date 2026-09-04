@@ -77,9 +77,6 @@ const m = {
   chatRuleTitle: 'Teach it a rule',
   chatRuleBody: 'Describe a rule in words — supplier, conditions, what to code it to — and it is built for you, with any conflict called out. Choose whether it also applies to what is already in the inbox.',
   chatRuleAsk: 'Always code Shell receipts for American Burger to Motor expenses',
-  chatInviteTitle: 'Bring a colleague in',
-  chatInviteBody: 'Inviting someone is a form in the chat: role, permissions, which clients. Everything people-related — colleagues, teams, client users — can start here.',
-  chatInviteAsk: 'Invite Sam as a standard user with access to American Burger',
   chatAnalyticsTitle: 'Ask how things are going',
   chatAnalyticsBody: 'Pipeline health, correction rate, chase response times — as tiles and a chart, scoped to whoever is attached.',
   chatAnalyticsAsk: 'How is the pipeline doing?',
@@ -187,8 +184,11 @@ const m = {
   analyticsBody: 'Documents processed, correction rate, missing and overdue, per-client health. Scope to one client or the whole practice; export as CSV.',
   analyticsAsk: 'How is the pipeline doing this month?',
   teamTitle: 'Colleagues and teams',
-  teamBody: 'Roles, permissions, client access, and whether finance fields are hidden. Teams group people around a set of clients.',
-  teamAsk: 'Invite a colleague',
+  teamBody: 'Roles, client access, and every invitation still outstanding. Inviting a colleague happens here — the button on this screen — and the link they receive lets them choose their own password and set up an authenticator.',
+  // ⚠ There is deliberately no `teamAsk`. It read *"Or just ask: Invite a
+  // colleague"*, which walked the viewer into a chat intent that no longer
+  // exists — see the note where the `chat-invite` step used to be. A step with
+  // no `ask` simply omits the line, which several already do.
   teamTasksTitle: 'Tasks',
   teamTasksBody: 'Workflow tasks across every client, assignable from the row. Ask the AI about workload and it balances them.',
   teamTasksAsk: 'Who has the most open tasks?',
@@ -220,7 +220,6 @@ const replies = {
   publish: 'Everything marked Ready, checked and bundled. Approve to release it for export.',
   showMatches: 'Bank lines matched to documents. Anything marked probable needs a look.',
   createRule: "Here's the rule as I understood it. Approve it and it applies from now on.",
-  inviteUser: 'Fill in who they are and what they can do, and I will send the invite.',
   showAnalytics: 'The pipeline at a glance.',
   addClient: 'Two ways to add them — send a registration link, or set them up yourself.',
   general: 'Done.',
@@ -299,7 +298,6 @@ function replyFor(intent: Intent): string {
     case 'PUBLISH': return replies.publish;
     case 'SHOW_MATCHES': return replies.showMatches;
     case 'CREATE_RULE': return replies.createRule;
-    case 'INVITE_USER': return replies.inviteUser;
     case 'SHOW_ANALYTICS': return replies.showAnalytics;
     case 'ADD_CLIENT': return replies.addClient;
     default: return replies.general;
@@ -399,16 +397,15 @@ export const TOUR_STEPS: TourStep[] = [
     target: 'chat-card',
     settle: 500,
   },
-  {
-    id: 'chat-invite',
-    section: s.fromTheChat,
-    title: m.chatInviteTitle,
-    body: m.chatInviteBody,
-    ask: m.chatInviteAsk,
-    setup: (ctx) => seedChat(ctx, m.chatInviteAsk, 'INVITE_USER'),
-    target: 'chat-card',
-    settle: 500,
-  },
+  // ⚠ The `chat-invite` step is gone (2 Sep 2026), and it is worth saying why
+  // rather than leaving a gap in the section. It seeded an `INVITE_USER` turn
+  // whose card — `UserInviteForm` — had been deleted, so `IntentRenderer`'s
+  // `default` returned `null`: the step spotlit an EMPTY bubble under the words
+  // "Inviting someone is a form in the chat". The missing-target path could not
+  // catch it either, because `chat-card` anchors the bubble WRAPPER, which is
+  // present and visible whether or not a card rendered inside it. Inviting is a
+  // real operation now and it lives on the Team screen, which the `team` step
+  // already covers.
   {
     id: 'chat-analytics',
     section: s.fromTheChat,
@@ -774,7 +771,6 @@ export const TOUR_STEPS: TourStep[] = [
     section: s.team,
     title: m.teamTitle,
     body: m.teamBody,
-    ask: m.teamAsk,
     route: '/team',
     target: 'team-header',
   },

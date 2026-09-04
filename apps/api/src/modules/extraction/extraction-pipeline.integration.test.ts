@@ -1,8 +1,10 @@
 import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
+import { toExtraction } from '../../common/documents/document-response.js';
+import { ChartOfAccountsService, SupplierCodingService } from '../rules-suggestions/index.js';
 import { DemoExtractor } from './demo-extractor.js';
-import type { DocumentExtractor } from './document-extractor.js';
+import type { DocumentExtractor, ExtractedDocument } from './document-extractor.js';
 import { PrismaExtractionStep } from './extraction-pipeline.js';
 
 /**
@@ -305,4 +307,139 @@ describe.skipIf(!DATABASE_URL || !OWNER_URL)('extraction pipeline against a real
     // Nothing was invented on the way past.
     expect(await owner.extraction.count({ where: { documentId: id } })).toBe(0);
   });
+
+/**
+ * **What the REAL extractor does: read the document and code NOTHING.**
+ *
+ * `BedrockExtractor` leaves `categoryCode` null on purpose — *a model opinion
+ * written straight into a category is an unreviewed change to a ledger* — so
+ * the coding ladder is the only thing that has anything to say about the
+ * Category field. Every `DemoExtractor` profile codes, which is precisely why
+ * the ladder could never be exercised through one, and why this stand-in
+ * exists: it reproduces the real extractor's silence on coding and nothing
+ * else.
+ */
+class UncodedExtractor implements DocumentExtractor {
+  readonly kind = 'bedrock';
+  readonly modelVersion = 'anthropic.test';
+  async extract(): Promise<{ ok: true; document: ExtractedDocument }> {
+    const field = (value: unknown) => ({ value, provenance: 'AI_SUGGESTED' as const, confidence: 0.9, source: 'anthropic.test' });
+    return {
+      ok: true,
+      document: {
+        docType: 'INVOICE',
+        supplierName: 'Nexora Solutions LLC',
+        customerName: null,
+        documentDate: '2026-05-12',
+        dueDate: null,
+        currency: 'GBP',
+        totalPence: 129_900,
+        taxPence: 21_650,
+        reference: 'NX-1',
+        vatNumber: null,
+        // ⚠ THE POINT OF THIS FIXTURE.
+        categoryCode: null,
+        fields: {
+          supplierName: field('Nexora Solutions LLC'),
+          totalPence: field(129_900),
+          taxPence: field(21_650),
+          documentDate: field('2026-05-12'),
+          currency: field('GBP'),
+        },
+        lineItems: [],
+        validatorResults: {},
+        validatorFailed: false,
+        overallConfidence: 0.9,
+        suggestions: [],
+      } as unknown as ExtractedDocument,
+    };
+  }
+}
+
+/** The worker composition root's own wiring, built the same way it builds it. */
+function advisedStep(): PrismaExtractionStep {
+  return new PrismaExtractionStep(app, new UncodedExtractor(), {
+    sleep: async () => {},
+    coding: new SupplierCodingService(app, new ChartOfAccountsService(app)),
+  });
+}
+
+/**
+ * **The bug this whole change exists to close, proven against a real database:
+ * an accountant seeing a blank Category with no explanation.**
+ *
+ * The ladder shipped fully tested with nobody calling it. These assertions are
+ * the call — and the two things the answer must never do.
+ */
+describe('the coding ladder reaches the document, and codes nothing', () => {
+  test('an uncoded document carries the ladder’s answer, stays TO_REVIEW, and its category_code is untouched', async () => {
+    const id = 'p4_advised';
+    await seedReceived(id, { businessId: B, byteHash: 'a'.repeat(64), filename: 'nexora-invoice.pdf' });
+    await advisedStep().run({ documentId: id, practiceId: P, businessId: B, traceId: `trace-${id}`, finalAttempt: false });
+
+    const row = await owner.document.findUnique({ where: { id } });
+    // ⚠ NOTHING NEW WRITES `documents.category_code`. The header projection is
+    // still its one writer and it only ever carries the extractor's value or an
+    // accountant's rule — neither of which exists here.
+    expect(row?.categoryCode).toBeNull();
+    // ⚠ AND A SUGGESTION DOES NOT MAKE A DOCUMENT READY. The mandatory set is
+    // Total + Supplier + Category; a suggestion is not a category.
+    expect(row?.state).toBe('TO_REVIEW');
+    // The rest of the header still landed, so this is a document one field from
+    // Ready — which is exactly what the screen must say.
+    expect(row?.supplierName).toBe('Nexora Solutions LLC');
+    expect(row?.totalPence).toBe(129_900);
+
+    // The suggestion rides in the existing `fields` jsonb under its reserved
+    // key — no column, no migration.
+    const extraction = await owner.extraction.findFirst({ where: { documentId: id, isAccepted: true } });
+    const stored = (extraction?.fields as Record<string, unknown> | null)?.['codingSuggestion'] as Record<string, unknown> | undefined;
+    expect(stored).toBeDefined();
+    expect(stored?.['provenance']).toBe('AI_SUGGESTED');
+    // Whatever it decided, it said something a person can read.
+    expect(String(stored?.['note']).length).toBeGreaterThan(0);
+    expect(['SUGGEST', 'ESCALATE']).toContain(stored?.['outcome']);
+
+    // The read projection separates it onto the contract property AND strips it
+    // from `fields` — the #137 bug class, which fails every document read in
+    // the browser when it regresses.
+    const projected = toExtraction(extraction!);
+    expect(projected.codingSuggestion).toBeDefined();
+    expect(Object.keys(projected.fields)).not.toContain('codingSuggestion');
+
+    // The coding rung is its own line in the per-document processing log, so
+    // "why is this Category empty" is answerable from the record.
+    const event = await owner.documentEvent.findFirst({ where: { documentId: id, stage: 'code' } });
+    expect(event).not.toBeNull();
+    expect(['suggested', 'escalated']).toContain(event?.outcome);
+    // Said out loud on every row: this stage applied nothing.
+    expect((event?.detail as Record<string, unknown>)?.['applied']).toBe(false);
+  });
+
+  test('a document a rule already coded is never asked about', async () => {
+    const id = 'p4_advised_ruled';
+    await owner.rule.create({
+      data: {
+        id: 'p4_rule_nexora',
+        businessId: B,
+        tier: 'SUPPLIER_CUSTOMER',
+        scopeKey: 'Nexora Solutions LLC',
+        sets: { categoryCode: 'OFFICE_EQUIPMENT' },
+        isActive: true,
+      },
+    });
+    await seedReceived(id, { businessId: B, byteHash: 'b'.repeat(64), filename: 'nexora-invoice-2.pdf' });
+    await advisedStep().run({ documentId: id, practiceId: P, businessId: B, traceId: `trace-${id}`, finalAttempt: false });
+
+    const row = await owner.document.findUnique({ where: { id } });
+    // The accountant's own instruction won, and no opinion rode along beside it:
+    // a suggestion there is not extra information, it is pressure to
+    // second-guess an explicit instruction.
+    expect(row?.categoryCode).toBe('OFFICE_EQUIPMENT');
+    const extraction = await owner.extraction.findFirst({ where: { documentId: id, isAccepted: true } });
+    expect((extraction?.fields as Record<string, unknown> | null)?.['codingSuggestion']).toBeUndefined();
+    expect(await owner.documentEvent.count({ where: { documentId: id, stage: 'code' } })).toBe(0);
+  });
+});
+
 });

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { DocumentPreview } from './DocumentPreview';
@@ -84,6 +84,9 @@ function liveDetail(over: Partial<DocumentDetail> = {}): DocumentDetail {
     lineItems: [{ description: LONG_DESCRIPTION, quantity: 150, total: 22500, tax: 0 }],
     state: 'TO_REVIEW',
     businessId: 'biz_burger',
+    // The default is the world before this change: an uncoded document with
+    // nothing said about why. Individual tests override it.
+    codingSuggestion: null,
     isLoading: false,
     contractError: null,
     image: { url: 'https://example.test/original.png', mimeType: 'image/png', filename: 'invoice.png' },
@@ -92,11 +95,11 @@ function liveDetail(over: Partial<DocumentDetail> = {}): DocumentDetail {
   };
 }
 
-function renderPreview() {
+function renderPreview(over: Partial<Document> = {}) {
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <AppIntlProvider>
-        <DocumentPreview document={doc} />
+        <DocumentPreview document={{ ...doc, ...over }} />
       </AppIntlProvider>
     </QueryClientProvider>,
   );
@@ -245,6 +248,70 @@ test('the Ready panel names the missing mandatory field and its edit stages the 
   });
 });
 
+/** Stage a correction on Category and hand back the dialog it opens. */
+async function stageCategoryCorrection(value = '5100') {
+  fireEvent.click(screen.getByRole('button', { name: 'Add Category' }));
+  const input = screen.getByRole('textbox');
+  fireEvent.change(input, { target: { value } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  return screen.findByRole('dialog');
+}
+
+test('the staged correction is presented as a dialog, and Approve is STILL unmounted until Read review is opened', async () => {
+  detail = liveDetail();
+  renderPreview();
+
+  // Nothing is on top of the document until a correction is staged.
+  expect(screen.queryByRole('dialog')).toBeNull();
+
+  const dialog = await stageCategoryCorrection();
+
+  // The gate is the gate, in the dialog exactly as it was inline: the review
+  // has not been opened, so [Approve change] does not exist to be pressed —
+  // and nothing has reached the network either.
+  expect(within(dialog).getByText('Update coding')).toBeTruthy();
+  expect(within(dialog).queryByRole('button', { name: /Approve change/ })).toBeNull();
+  expect(updateCodingProposal).not.toHaveBeenCalled();
+
+  fireEvent.click(within(dialog).getByRole('button', { name: /Read review/ }));
+  expect(within(dialog).getByRole('button', { name: /Approve change/ })).toBeTruthy();
+});
+
+test('Escape closes the dialog, creates nothing, and leaves the correction re-stageable', async () => {
+  detail = liveDetail();
+  renderPreview();
+
+  await stageCategoryCorrection();
+
+  // The dialog owns the key through the useEscape stack.
+  fireEvent.keyDown(document, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+  // Closing undecided is free: the proposal is minted by Approve and by
+  // nothing else, so there is no pending record to cancel and no duplicate to
+  // mint on the next visit.
+  expect(updateCodingProposal).not.toHaveBeenCalled();
+
+  // The door is still open — the Path-to-Ready button stages it again.
+  const dialog = await stageCategoryCorrection();
+  expect(within(dialog).getByText('Update coding')).toBeTruthy();
+});
+
+test('the dialog carries the review header without clipping it — full title and subtitle, both keyboard reachable', async () => {
+  detail = liveDetail();
+  renderPreview();
+
+  const dialog = await stageCategoryCorrection();
+
+  // The collision this dialog exists to end: the title read "Upd…" and the
+  // subtitle wrapped under the button. Both are whole, and both carry their
+  // own text as a title attribute rather than relying on width.
+  expect(within(dialog).getByTitle('Update coding').textContent).toBe('Update coding');
+  expect(within(dialog).getByTitle('Nexora Solutions LLC · Category')).toBeTruthy();
+  // The frame's own dismissal is a real button, not a click-only scrim.
+  expect(within(dialog).getByRole('button', { name: 'Close' })).toBeTruthy();
+});
+
 test('with every required field present the panel is honest about the missing confirm path and offers no dead button', () => {
   detail = liveDetail({
     fields: [
@@ -342,4 +409,97 @@ test('a CONFIRMED match renders as matched, with no confirm button', () => {
   expect(screen.getByText('Matched bank transaction')).toBeTruthy();
   expect(screen.queryByRole('button', { name: /Confirm match/ })).toBeNull();
   bankMatch = { match: null, loading: false, error: false, refetch: () => {} };
+});
+
+/* ── the coding ladder's answer, on the screen that had an em dash ────────── */
+
+const SUGGESTION = {
+  outcome: 'SUGGEST' as const,
+  basis: 'SUBSCRIPTION_TERM_UNDER_TWO_YEARS',
+  note: 'Suggested — not applied — as Software subscriptions, on an annual term stated on the document.',
+  categoryCode: 'SOFTWARE_SUBSCRIPTIONS',
+  analysisAccount: 'Overheads: Software subscriptions',
+  confidence: 0.82,
+  escalationReason: null,
+  candidateCategoryCodes: [],
+};
+
+const ESCALATION = {
+  outcome: 'ESCALATE' as const,
+  basis: 'NOTHING_MATCHED',
+  note: 'The licence term is not stated on this document, so it cannot be settled as capital or revenue.',
+  categoryCode: null,
+  analysisAccount: null,
+  confidence: null,
+  escalationReason: 'SOFTWARE_TERM_UNKNOWN',
+  candidateCategoryCodes: [],
+};
+
+test('an ESCALATION renders the engine’s sentence where the blank Category was — the reported bug', () => {
+  detail = liveDetail({ codingSuggestion: ESCALATION });
+  renderPreview();
+
+  // What the accountant used to get: an em dash and nothing else. What they get
+  // now: the named reason, worded by the engine that took the decision.
+  expect(screen.getByText('No category suggested — here is why')).toBeTruthy();
+  expect(screen.getByText(ESCALATION.note)).toBeTruthy();
+  expect(screen.getByText(/NOTHING_MATCHED/)).toBeTruthy();
+
+  // ⚠ An escalation offers no accept — there is nothing to accept.
+  expect(screen.queryByRole('button', { name: /Accept this category/ })).toBeNull();
+
+  // ⚠ And it is still honestly missing: a reason is not a category.
+  expect(screen.getByText(/Ready needs a value for Category/)).toBeTruthy();
+});
+
+test('a SUGGESTION shows the code, its confidence and its working — and the Category row still reads “—”', () => {
+  detail = liveDetail({ codingSuggestion: SUGGESTION });
+  renderPreview();
+
+  const panel = screen.getByTestId('coding-suggestion');
+  expect(within(panel).getByText('Suggested category — not applied')).toBeTruthy();
+  expect(within(panel).getByText(SUGGESTION.note)).toBeTruthy();
+  expect(within(panel).getByText(/Overheads: Software subscriptions/)).toBeTruthy();
+  expect(within(panel).getByText('82% confident')).toBeTruthy();
+  expect(within(panel).getByText(/SUBSCRIPTION_TERM_UNDER_TWO_YEARS/)).toBeTruthy();
+
+  // ⚠ THE INVARIANT. A suggestion is an opinion, so the document is exactly as
+  // far from Ready as it was before the ladder said anything.
+  expect(screen.getByText(/Ready needs a value for Category/)).toBeTruthy();
+});
+
+test('accepting a suggestion goes through Read review → Approve — unchanged, and not shortcut', async () => {
+  detail = liveDetail({ codingSuggestion: SUGGESTION });
+  renderPreview();
+
+  fireEvent.click(screen.getByRole('button', { name: /Accept this category/ }));
+
+  // The SAME gate a typed correction meets: Approve is not merely disabled
+  // before the review is opened — it is not in the DOM.
+  expect(await screen.findByText('Update coding')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /Approve change/ })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: /Read review/ }));
+  fireEvent.click(screen.getByRole('button', { name: /Approve change/ }));
+
+  // The suggested CODE is what travels, never the analysis account label and
+  // never a note — the same `UpdateCodingPayload` a typed correction carries.
+  expect(updateCodingProposal).toHaveBeenCalledExactlyOnceWith({
+    businessId: 'biz_burger',
+    documentId: 'doc_f404e752a4fbb629b203dc04',
+    fields: { categoryCode: 'SOFTWARE_SUBSCRIPTIONS' },
+  });
+});
+
+test('a published document is offered no accept — its coding is locked server-side', () => {
+  detail = liveDetail({ codingSuggestion: SUGGESTION });
+  renderPreview({ status: 'published' });
+
+  // The affordance goes rather than the refusal being discovered on approve.
+  expect(screen.queryByTestId('coding-suggestion')).toBeNull();
+});
+
+test('no suggestion renders no panel at all', () => {
+  detail = liveDetail();
+  renderPreview();
+  expect(screen.queryByTestId('coding-suggestion')).toBeNull();
 });

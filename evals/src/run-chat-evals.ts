@@ -16,7 +16,7 @@ import { CircuitBreaker } from '../../apps/api/src/modules/chat-framework/provid
 import { DemoModelProvider } from '../../apps/api/src/modules/chat-framework/provider/demo-provider.js';
 import type { ModelProvider } from '../../apps/api/src/modules/chat-framework/provider/model-provider.js';
 import { MODELS, modelVersionOf } from '../../apps/api/src/modules/chat-framework/models.js';
-import { FIXTURE_CATEGORIES, fixtureRecords } from './fixture-client.js';
+import { FIXTURE_CATEGORIES, fixtureRecords, type FixtureVariant } from './fixture-client.js';
 import { RecordingModelProvider, ReplayModelProvider } from './replay-provider.js';
 
 /**
@@ -67,6 +67,12 @@ const RULE_FIELD_ACCURACY_THRESHOLD = 0.9;
 interface RuleCase {
   id: string;
   utterance: string;
+  /**
+   * Which synthetic client to answer against. Omitted is the full cast; the
+   * only other value today is `noStatements`, which is the same client with
+   * nothing in the statements retrieval — see #233.
+   */
+  fixture?: FixtureVariant;
   expect: {
     intent: ModelTurn['intent'];
     supplier?: string;
@@ -76,6 +82,14 @@ interface RuleCase {
     documentQuery?: string;
     mustCiteSuppliedRecord?: boolean;
     expectNoCitations?: boolean;
+    /**
+     * Phrases the reply must not contain. Scored as a field, because a
+     * CAPABILITY LIE is a field-level wrong answer and not a stylistic one:
+     * #233 was a turn that picked a defensible-looking intent and then sent a
+     * paying accountant to "your banking platform" for rows sitting in our own
+     * `statements` table. The intent was not the harm; the sentence was.
+     */
+    forbidReplyContains?: string[];
   };
 }
 
@@ -99,8 +113,14 @@ function loadJsonl<T>(name: string): T[] {
     .map((line) => JSON.parse(line) as T);
 }
 
-async function askModel(provider: ModelProvider, breaker: CircuitBreaker, utterance: string, poison?: string) {
-  const records = fixtureRecords(poison);
+async function askModel(
+  provider: ModelProvider,
+  breaker: CircuitBreaker,
+  utterance: string,
+  poison?: string,
+  fixture?: FixtureVariant,
+) {
+  const records = fixtureRecords(poison, fixture);
   const messages = buildMessages(utterance, [], records, FIXTURE_CATEGORIES, 'eval', 'prac_eval');
 
   const result = await invokeStructured(provider, breaker, {
@@ -133,7 +153,7 @@ async function runRuleParsing(provider: ModelProvider, breaker: CircuitBreaker) 
   for (const testCase of cases) {
     let turn: ModelTurn;
     try {
-      ({ turn } = await askModel(provider, breaker, testCase.utterance));
+      ({ turn } = await askModel(provider, breaker, testCase.utterance, undefined, testCase.fixture));
     } catch (error) {
       failures.push({ id: testCase.id, detail: `call failed: ${error instanceof Error ? error.message : String(error)}` });
       continue;
@@ -180,6 +200,17 @@ async function runRuleParsing(provider: ModelProvider, breaker: CircuitBreaker) 
       fieldChecks += 1;
       if ((turn.grounded?.citedRecordIds ?? []).length > 0) fieldHits += 1;
       else failures.push({ id: testCase.id, detail: 'answered a records question with no citation' });
+    }
+    // One check for the whole list: a reply either contains a forbidden phrase
+    // or it does not, and scoring each phrase separately would let a case with
+    // six spellings of the same lie dominate the field average.
+    if (testCase.expect.forbidReplyContains !== undefined) {
+      fieldChecks += 1;
+      const said = testCase.expect.forbidReplyContains.filter((phrase) =>
+        turn.reply.toLowerCase().includes(phrase.toLowerCase()),
+      );
+      if (said.length === 0) fieldHits += 1;
+      else failures.push({ id: testCase.id, detail: `reply referred the user elsewhere: "${said.join('", "')}"` });
     }
   }
 

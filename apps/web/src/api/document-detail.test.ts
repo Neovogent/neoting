@@ -5,12 +5,14 @@ import { getDocumentResponse } from '@neoting/contracts/zod';
 import { createActionProposalBody } from '@neoting/contracts/zod';
 
 import {
+  CATEGORY_LABEL,
   FIELD_PRESENTATION,
   isEditableLabel,
   parseCodingDraft,
   parseCreateProposalHalves,
   parseDocumentDetail,
   ruleIdFromEvents,
+  toCodingSuggestion,
   toDetailData,
   usableBoundingBox,
 } from './document-detail';
@@ -171,6 +173,112 @@ describe('toDetailData', () => {
     // preview's fallback is the whole-frame band either way.
     expect(detail.fields.find((f) => f.label === 'Total')?.boundingBox).toBeUndefined();
     expect(detail.fields.find((f) => f.label === 'Document date')?.boundingBox).toBeUndefined();
+  });
+});
+
+/**
+ * The coding suggestion crossing the boundary — **the bug this closes is a
+ * blank Category with no explanation**, so the assertions are about what the
+ * accountant is shown and about the two things a suggestion must never do.
+ */
+describe('toCodingSuggestion — an opinion, never a coding', () => {
+  /** An uncoded document, which is the only kind the ladder answers about. */
+  const uncoded = (codingSuggestion: unknown) =>
+    ({
+      ...WIRE_DOC,
+      categoryCode: null,
+      acceptedExtraction: { ...WIRE_DOC.acceptedExtraction!, codingSuggestion },
+    }) as typeof WIRE_DOC;
+
+  const SUGGEST = {
+    outcome: 'SUGGEST',
+    provenance: 'AI_SUGGESTED',
+    basis: 'SUBSCRIPTION_TERM_UNDER_TWO_YEARS',
+    note: 'Suggested — not applied — as Software subscriptions, on an annual term stated on the document.',
+    categoryCode: 'SOFTWARE_SUBSCRIPTIONS',
+    analysisAccount: 'Overheads: Software subscriptions',
+    confidence: 0.82,
+    treatment: 'REVENUE',
+    secondChoice: null,
+    escalationReason: null,
+    candidateCategoryCodes: [],
+    advisories: [],
+  };
+
+  const ESCALATE = {
+    outcome: 'ESCALATE',
+    provenance: 'AI_SUGGESTED',
+    basis: 'NOTHING_MATCHED',
+    note: 'The licence term is not stated on this document, so it cannot be settled as capital or revenue.',
+    categoryCode: null,
+    analysisAccount: null,
+    confidence: null,
+    treatment: null,
+    secondChoice: null,
+    escalationReason: 'SOFTWARE_TERM_UNKNOWN',
+    candidateCategoryCodes: [],
+    advisories: [],
+  };
+
+  it('carries the engine’s own sentence through unchanged, for both outcomes', () => {
+    // The whole point of the change: the words an accountant reads are composed
+    // by the engine that took the decision, never re-worded on the way out.
+    expect(toCodingSuggestion(uncoded(SUGGEST))?.note).toBe(SUGGEST.note);
+    expect(toCodingSuggestion(uncoded(ESCALATE))?.note).toBe(ESCALATE.note);
+    expect(toCodingSuggestion(uncoded(ESCALATE))?.escalationReason).toBe('SOFTWARE_TERM_UNKNOWN');
+  });
+
+  it('is absent when the ladder said nothing', () => {
+    expect(toCodingSuggestion(uncoded(null))).toBeNull();
+    expect(toCodingSuggestion(uncoded(undefined))).toBeNull();
+  });
+
+  it('is DROPPED for a document something already coded', () => {
+    // A suggestion beside an accountant's own rule is not extra information —
+    // it is pressure to second-guess an explicit instruction.
+    const coded = { ...uncoded(SUGGEST), categoryCode: 'OFFICE_EQUIPMENT' } as typeof WIRE_DOC;
+    expect(toCodingSuggestion(coded)).toBeNull();
+  });
+
+  it('⚠ NEVER fills the Category value — a suggestion must not make a document Ready', () => {
+    // `DocumentPreview`'s Path-to-Ready panel decides what is missing by testing
+    // `value === '—'` against the mandatory set. A suggested code written into
+    // this row would tell an accountant a document is one field from Ready when
+    // nothing has coded it. This is the assertion that stops that.
+    const detail = toDetailData(uncoded(SUGGEST), null);
+    const category = detail.fields.find((f) => f.label === CATEGORY_LABEL);
+    expect(category?.value).toBe('—');
+    expect(detail.codingSuggestion?.categoryCode).toBe('SOFTWARE_SUBSCRIPTIONS');
+  });
+
+  it('replaces the row’s invented provenance with the suggestion’s working (§13.3)', () => {
+    // Before this change the row claimed `AI suggested: demo-extractor-1` over
+    // an EMPTY value — a provenance for a value that did not exist.
+    const suggested = toDetailData(uncoded(SUGGEST), null).fields.find((f) => f.label === CATEGORY_LABEL);
+    expect(suggested?.provenance).toBe(SUGGEST.note);
+    expect(suggested?.confidence).toBe(0.82);
+
+    // ESCALATE carries no confidence, because there is no coding to be
+    // confident about; zero is the honest number and renders the row amber.
+    const escalated = toDetailData(uncoded(ESCALATE), null).fields.find((f) => f.label === CATEGORY_LABEL);
+    expect(escalated?.provenance).toBe(ESCALATE.note);
+    expect(escalated?.confidence).toBe(0);
+  });
+
+  it('leaves a rule-coded row exactly as it was', () => {
+    // Regression guard on the branch above the suggestion: a rule still wins,
+    // and still cites itself.
+    const withRule = toDetailData(WIRE_DOC, 'rule_bidfood').fields.find((f) => f.label === CATEGORY_LABEL);
+    expect(withRule?.provenance).toBe('supplier rule: rule_bidfood');
+    expect(withRule?.value).toBe('OFFICE_EQUIPMENT');
+  });
+
+  it('parses through the contract’s own schema, suggestion and all', () => {
+    // The `fields` map is parsed STRICTLY by the generated client, so a smuggled
+    // key left in place fails every document read in the browser (#137). This is
+    // the pin that the separated key is genuinely contract-shaped.
+    const parsed = parseDocumentDetail(uncoded(SUGGEST));
+    expect(parsed.ok).toBe(true);
   });
 });
 

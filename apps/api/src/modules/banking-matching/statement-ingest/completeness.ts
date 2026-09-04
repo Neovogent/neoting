@@ -39,7 +39,21 @@ export type Assurance =
   | 'incomplete';
 
 export interface CompletenessFinding {
-  readonly kind: 'balanceBreak' | 'skippedLine' | 'duplicateLine' | 'dateOutOfOrder' | 'noBalanceColumn';
+  readonly kind:
+    | 'balanceBreak'
+    | 'skippedLine'
+    | 'duplicateLine'
+    | 'dateOutOfOrder'
+    | 'noBalanceColumn'
+    // The last two are NOT produced here. They are import-time facts, so
+    // `statement-ingest.ts` appends them after the database has been asked —
+    // this file stays pure over the parsed file, which is what makes it
+    // unit-testable without a connection. `StatementFinding.kind` is a free
+    // string in the contract, so neither needs a contract change.
+    /** This file's period touches one already imported for the account. */
+    | 'periodOverlap'
+    /** Lines the account already held under the same identity, not re-added. */
+    | 'alreadyImported';
   /** The 1-based source line the finding is about, when it has one. */
   readonly sourceLine: number | null;
   /** Plain English, for the accountant — never a code on its own. */

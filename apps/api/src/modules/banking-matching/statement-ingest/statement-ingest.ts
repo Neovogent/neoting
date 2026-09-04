@@ -1,4 +1,5 @@
-import { assessCompleteness, type CompletenessReport } from './completeness.js';
+import { assessCompleteness, type CompletenessFinding, type CompletenessReport } from './completeness.js';
+import { importFingerprintsFor } from './row-identity.js';
 import { formatFor } from './sheet-reader.js';
 import { parseStatement, parseStatementGrid, type ParsedStatement, type ParseResult } from './statement-parser.js';
 import { isOcrMedia, type DocumentOcr, type OcrFailure } from '../../../common/ocr/document-ocr.js';
@@ -28,13 +29,37 @@ import { closeStatementRequestChases } from '../../chase/index.js';
  * left exactly as it is. A redelivery must not double a client's bank feed,
  * and "did this job already run" is answered from the database rather than
  * from a processed-set that a restart would forget.
+ *
+ * ## ⚠ …and idempotent on the CONTENT too, since 2 Sep 2026
+ *
+ * The `documentId` key above is necessary and was never sufficient. A real
+ * client held **2,288** transactions that were 1,144 rows imported twice, from
+ * two `statements` rows covering the identical 2025-08-01 → 2026-07-31 period
+ * nine seconds apart. Two uploads of the same period are two DOCUMENTS with two
+ * `byte_hash` values, so neither the key above nor exact-hash dedupe fired — and
+ * `bank_transactions_account_id_provider_transaction_id_key` is inert for this
+ * lane, because D40 has no provider and Postgres treats NULLs as distinct.
+ *
+ * Every row now carries an `importFingerprint` (`row-identity.ts`) under a real
+ * unique index, so the second import of a line adds nothing while two identical
+ * purchases on ONE statement stay two rows. Overlapping periods are additionally
+ * *reported* — see `overlapFindings` — because a structural defence that nobody
+ * can see is how the accountant finds out a year later.
  */
 
 /** Just enough of Prisma for this step — narrow so a test can hand it a fake. */
 export interface StatementScopedClient {
   statement: {
     findFirst(args: unknown): Promise<{ id: string } | null>;
+    /** The period-overlap read — see `overlapFindings`. */
+    findMany(args: unknown): Promise<{ id: string; periodStart: Date | null; periodEnd: Date | null; createdAt: Date }[]>;
     create(args: unknown): Promise<{ id: string }>;
+    /**
+     * The row is created BEFORE its transactions (they carry its id as their
+     * `importBatchId`) and its counts are only known AFTER them, so the honest
+     * numbers are written back in a second call inside the same transaction.
+     */
+    update(args: unknown): Promise<unknown>;
   };
   bankAccount: {
     findFirst(args: unknown): Promise<{ id: string } | null>;
@@ -70,7 +95,17 @@ export interface StatementIngestInput {
 }
 
 export type StatementIngestOutcome =
-  | { status: 'ingested'; statementId: string; rowCount: number; report: CompletenessReport }
+  | {
+      status: 'ingested';
+      statementId: string;
+      /** Transactions this import actually ADDED. Never the file's line count. */
+      rowCount: number;
+      /** Lines the account already held under the same identity, so not re-added. */
+      duplicateRowCount: number;
+      /** Lines read out of the file, whether or not they were new. */
+      parsedRowCount: number;
+      report: CompletenessReport;
+    }
   | { status: 'alreadyIngested'; statementId: string }
   | { status: 'refused'; reason: string };
 
@@ -176,16 +211,24 @@ export async function ingestStatement(
   const report = assessCompleteness(parsed.statement);
   const accountId = await accountFor(db, input.businessId);
 
+  const periodStart = new Date(`${parsed.statement.periodStart}T00:00:00.000Z`);
+  const periodEnd = new Date(`${parsed.statement.periodEnd}T00:00:00.000Z`);
+
+  // BEFORE the statement row is created, or it would find itself.
+  const overlaps = await overlapFindings(db, accountId, periodStart, periodEnd);
+
   const statement = await db.statement.create({
     data: {
       businessId: input.businessId,
       accountId,
       documentId: input.documentId,
-      periodStart: new Date(`${parsed.statement.periodStart}T00:00:00.000Z`),
-      periodEnd: new Date(`${parsed.statement.periodEnd}T00:00:00.000Z`),
+      periodStart,
+      periodEnd,
       openingBalancePence: parsed.statement.openingBalancePence,
       closingBalancePence: parsed.statement.closingBalancePence,
-      rowCount: report.rowCount,
+      // Provisional. The honest number is what the insert below ADDS, and that
+      // is not known yet — see the write-back after `createMany`.
+      rowCount: 0,
       // ⚠ The FIRST writer of `gapAnalysis` in this repo. `businesses.service.ts`
       // reports `statementGaps: 0` on `GET /businesses` precisely because
       // nothing wrote this column; that count can start reading it now.
@@ -199,8 +242,15 @@ export async function ingestStatement(
     select: { id: true },
   });
 
+  // One content-derived identity per line, ordinal assigned in FILE order —
+  // `row-identity.ts` carries the whole argument. Two identical coffees on one
+  // statement get ordinals 1 and 2 and both survive; the same file imported
+  // again reproduces the same ordinals, so every line collides and none is
+  // added.
+  const fingerprints = importFingerprintsFor(accountId, 'GBP', parsed.statement.rows);
+
   const written = await db.bankTransaction.createMany({
-    data: parsed.statement.rows.map((row) => ({
+    data: parsed.statement.rows.map((row, index) => ({
       businessId: input.businessId,
       accountId,
       bookedAt: new Date(`${row.bookedOn}T00:00:00.000Z`),
@@ -208,6 +258,7 @@ export async function ingestStatement(
       currency: 'GBP',
       descriptionRaw: row.description,
       balanceAfterPence: row.balanceAfterPence,
+      importFingerprint: fingerprints[index],
       // The provenance stamp: which statement created this line. The column
       // predates this writer and nothing else fills it. It is what makes
       // `bank.remove-statement` able to enumerate a statement's rows PROVABLY
@@ -221,6 +272,44 @@ export async function ingestStatement(
       matchState: 'UNMATCHED' as const,
       chaseSuppressed: false,
     })),
+    // ⚠ `ON CONFLICT DO NOTHING` against `(account_id, import_fingerprint)`.
+    //
+    // This is NOT "drop anything that looks like a duplicate" — that would lose
+    // a genuine repeat purchase, and losing a real payment out of an accounting
+    // ledger is worse than showing two. It skips only rows whose fingerprint is
+    // already present, and the ordinal in that fingerprint means two identical
+    // purchases have DIFFERENT fingerprints. The only thing it can suppress is
+    // the same line, imported twice.
+    skipDuplicates: true,
+  });
+
+  const duplicateRowCount = parsed.statement.rows.length - written.count;
+
+  // The honest counts, written back now that they exist. `rowCount` is what the
+  // contract says it is — "transactions imported from this statement" — so a
+  // re-upload of a period already held reports 0 and says why, rather than
+  // claiming 1,144 rows it did not add. That claim is exactly what made the
+  // doubled client look normal on the Statements tab.
+  await db.statement.update({
+    where: { id: statement.id },
+    data: {
+      rowCount: written.count,
+      gapAnalysis: {
+        assurance: report.assurance,
+        provenBy: report.provenBy,
+        findings: [
+          ...report.findings,
+          ...overlaps,
+          ...duplicateFindings(written.count, duplicateRowCount, parsed.statement.rows.length),
+        ],
+        mapping: parsed.statement.mapping,
+        // The file's own line count, kept beside the import result so the two
+        // numbers can never be confused for one another again.
+        parsedRowCount: parsed.statement.rows.length,
+        importedRowCount: written.count,
+        alreadyPresentRowCount: duplicateRowCount,
+      },
+    },
   });
 
   // The statement document's own link, so the Bank screen can open the file a
@@ -249,9 +338,101 @@ export async function ingestStatement(
 
   logger.log(
     `statement-ingest: ${input.documentId} → statement ${statement.id}, ` +
-      `${written.count} transaction(s), assurance=${report.assurance}`,
+      `${written.count} transaction(s) imported, ${duplicateRowCount} already present ` +
+      `of ${parsed.statement.rows.length} read, assurance=${report.assurance}`,
   );
-  return { status: 'ingested', statementId: statement.id, rowCount: written.count, report };
+  if (duplicateRowCount > 0) {
+    // WARN, not log. A statement whose lines were already held is either a
+    // re-upload or an overlapping period, and both are things an operator
+    // should be able to see in the logs without reading the database.
+    logger.warn(
+      `statement-ingest: ${input.documentId} — ${duplicateRowCount} line(s) were already imported ` +
+        `for account ${accountId} and were not added again`,
+    );
+  }
+  return {
+    status: 'ingested',
+    statementId: statement.id,
+    rowCount: written.count,
+    duplicateRowCount,
+    parsedRowCount: parsed.statement.rows.length,
+    report,
+  };
+}
+
+/** `YYYY-MM-DD` in UTC — the stored instant, said as the date it is. */
+function isoDate(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+/**
+ * Statements already held for this account whose period touches this one.
+ *
+ * ## Why this REPORTS rather than refuses
+ *
+ * Refusing an overlapping upload would break three legitimate things: a bank
+ * that re-issues a corrected statement, a period boundary that overlaps by a
+ * day, and the ordinary case of a longer file that extends a shorter one. The
+ * fingerprint index already makes the overlap *harmless* — the shared lines
+ * cannot be inserted twice — so the remaining job here is to make it VISIBLE.
+ *
+ * ⚠ That visibility is the half the doubled client did not have. Two statements
+ * covering 2025-08-01 → 2026-07-31, nine seconds apart, both claiming 1,144
+ * rows, and no surface said the second one was a repeat of the first.
+ *
+ * Capped at five: a client who has uploaded a year in monthly files has twelve
+ * overlaps with a whole-year file, and twelve identical findings is noise. The
+ * count in the `alreadyImported` finding carries the magnitude.
+ */
+async function overlapFindings(
+  db: StatementScopedClient,
+  accountId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<CompletenessFinding[]> {
+  const priors = await db.statement.findMany({
+    // Two closed intervals overlap iff each starts on or before the other ends.
+    where: { accountId, periodStart: { lte: periodEnd }, periodEnd: { gte: periodStart } },
+    select: { id: true, periodStart: true, periodEnd: true, createdAt: true },
+    orderBy: { createdAt: 'asc' },
+    take: 5,
+  });
+
+  return priors.map((prior) => ({
+    kind: 'periodOverlap' as const,
+    sourceLine: null,
+    detail:
+      `This file covers ${isoDate(periodStart)} to ${isoDate(periodEnd)}, which overlaps a statement ` +
+      `already imported for this account on ${isoDate(prior.createdAt)}` +
+      (prior.periodStart === null || prior.periodEnd === null
+        ? ''
+        : ` covering ${isoDate(prior.periodStart)} to ${isoDate(prior.periodEnd)}`) +
+      '. Lines this account already held were not imported a second time.',
+  }));
+}
+
+/**
+ * What the fingerprint index actually did, in words.
+ *
+ * A skip is only ever a line the account already held under the same identity —
+ * never a genuine repeat purchase, which carries a different occurrence ordinal
+ * and is inserted normally. Saying so out loud matters: silently adding nothing
+ * is indistinguishable from silently adding everything twice, from the outside.
+ */
+function duplicateFindings(imported: number, duplicates: number, parsed: number): CompletenessFinding[] {
+  if (duplicates === 0) return [];
+  return [
+    {
+      kind: 'alreadyImported',
+      sourceLine: null,
+      detail:
+        imported === 0
+          ? `Every one of the ${parsed} transactions in this file was already imported for this account, ` +
+            'so nothing was added. This looks like the same statement uploaded twice.'
+          : `${duplicates} of the ${parsed} transactions in this file were already imported for this account ` +
+            `and were not added again; ${imported} new transaction(s) were imported.`,
+    },
+  ];
 }
 
 /**

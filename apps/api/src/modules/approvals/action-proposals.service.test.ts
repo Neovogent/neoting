@@ -42,7 +42,7 @@ interface ProposalRow {
 }
 
 const ARCHIVE_PAYLOAD = { documentIds: ['doc_1'], archived: true };
-const PUBLISH_PAYLOAD = { documentIds: ['doc_1'], preview: { itemCount: 1, grossPence: 12_000, vatPence: 2_000 } };
+const PUBLISH_PAYLOAD = { documentIds: ['doc_1'], preview: { itemCount: 1, grossPence: 12_000, vatPence: 2_000, currency: null } };
 
 /** The firm's super admin: the release role AND the ownership flag (A12, D44). */
 const OWNER_MEMBERSHIP = { role: 'PRACTICE_ADMIN', isOwner: true };
@@ -172,7 +172,7 @@ const TEST_CHASE_COMPOSE = { portalLinkSecret: 'test-portal-link-secret', appOri
     // the gate-ladder assertions independent of METH S10's wiring.
     {
       ledger: { publishBill: async () => ({ ok: true, externalRef: 'STUB', attachmentSent: false }) },
-      previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0 } }),
+      previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0, currency: null } }),
     },
     new InMemoryIdempotencyStore(),
     TEST_CHASE_COMPOSE,

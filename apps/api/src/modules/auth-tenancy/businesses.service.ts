@@ -8,6 +8,7 @@ import type { Business as BusinessRow, ChaseState, DocumentState } from '@prisma
 import type { PrismaClient } from '../../common/db/prisma.js';
 import type { ScopeContext } from '../../common/db/scope-context.js';
 import { scopedDb } from '../../common/db/scoped-db.js';
+import { notDeleted } from '../../common/documents/deleted-documents.js';
 import { type Page, type PageRequest, pageQuery, scalarField, toPage } from '../../common/pagination/cursor.js';
 import { toBusinessSubscription } from '../billing/index.js';
 
@@ -113,7 +114,7 @@ export class BusinessesService {
     };
     const seek = pageQuery(request);
 
-    const { rows, grouped, chases, unmatched, approvals, statementGaps } = await scopedDb(this.prisma, ctx, async (db) => {
+    const { rows, grouped, chases, unmatched, approvals, statementGaps, primaryContacts } = await scopedDb(this.prisma, ctx, async (db) => {
       const rows = await db.business.findMany({
         // NOT a tenancy clause (RLS alone decides reach) — a STATE filter:
         // an offboarded workspace (`business.offboard` flipped `isActive`
@@ -135,12 +136,19 @@ export class BusinessesService {
       // practice has. They are issued together — inside the one `scopedDb`
       // transaction, so every one of them sees the same RLS-visible set the
       // page itself came from, and none can widen it.
-      const [grouped, chases, unmatched, approvals, statementGaps] = await Promise.all([
+      const [grouped, chases, unmatched, approvals, statementGaps, primaryContacts] = await Promise.all([
         db.document.groupBy({
           by: ['businessId', 'state'],
           where: {
             businessId: { in: ids },
             state: { in: Object.keys(COUNTED) as DocumentState[] },
+            // Trash is excluded from every count, through the one helper that
+            // spells the predicate (`common/documents/deleted-documents.ts`).
+            // A document a person deleted must not keep a client's "3 to
+            // review" badge lit on the Clients board — that badge is a
+            // to-do list, and an item on it that no screen will ever show is
+            // work nobody can do.
+            ...notDeleted(),
           },
           _count: { _all: true },
         }),
@@ -183,11 +191,40 @@ export class BusinessesService {
           },
           _count: { _all: true },
         }),
+        // The primary contact's address, for `primaryContactEmail`. A fifth
+        // read over the same page of ids rather than a nested `include` on the
+        // findMany above — same reason the four aggregates are shaped this way:
+        // the query count stays fixed no matter how many clients a practice
+        // has, and it runs inside the same `scopedDb` transaction, so
+        // `contacts_tenant` decides what it can see. `contacts` DOES carry RLS
+        // (unlike `memberships`), so there is no hand-written tenancy clause
+        // here and there must not be one.
+        //
+        // ⚠ `isPrimary: true` with NO fallback to any other contact, matching
+        // `billing.service.ts` and `compose-chase-send.ts` — the two places
+        // that already resolve this person. D45 lets a client add their own
+        // team members and `team.service.ts` writes them `isPrimary: false`;
+        // promoting one of those would put a warehouse assistant's address
+        // where the accountant expects the business owner's, on the panel the
+        // accountant reads to know who they are dealing with. A client with no
+        // primary contact reports null, which the contract says is a real
+        // answer and the UI renders as an em dash.
+        db.contact.findMany({
+          where: { businessId: { in: ids }, isPrimary: true },
+          select: { businessId: true, email: true },
+          // Earliest first, so `foldPrimaryContactEmails`' first-wins is
+          // "the primary contact this client has had longest" rather than
+          // whichever row the planner happened to return first. Intake writes
+          // exactly one primary, so this only decides a case that should not
+          // arise — but "should not arise" is not an ordering guarantee.
+          orderBy: { createdAt: 'asc' },
+        }),
       ]);
-      return { rows, grouped, chases, unmatched, approvals, statementGaps };
+      return { rows, grouped, chases, unmatched, approvals, statementGaps, primaryContacts };
     });
 
     const counts = foldCounts(grouped, chases, unmatched, approvals, statementGaps);
+    const primaryContactEmails = foldPrimaryContactEmails(primaryContacts);
     const page = toPage(rows, request);
     return {
       data: page.data.map((row) => ({
@@ -201,6 +238,12 @@ export class BusinessesService {
         // client is working towards a filing date.
         industry: row.industry,
         nextDeadline: row.nextDeadline === null ? null : toIsoDate(row.nextDeadline),
+        // Null for a client with no primary contact, and null for a primary
+        // contact with no address on file (`contacts.email` is nullable — a
+        // §3.3 phone-only contact is a real record). Both are the same honest
+        // answer: we do not hold an email for this client. Nothing derives one
+        // from the practice, the trading name or a team member.
+        primaryContactEmail: primaryContactEmails.get(row.id) ?? null,
         counts: counts.get(row.id) ?? ZERO_COUNTS,
         // The D48 projection, from the four columns already on the row — no
         // second query and no second round-trip. `error-codes.md` asks for it
@@ -226,6 +269,35 @@ export class BusinessesService {
  */
 function toIsoDate(value: Date): string {
   return value.toISOString().slice(0, 10);
+}
+
+/**
+ * The primary contact's address per business, from the page's contacts read.
+ *
+ * **First row wins**, and the caller orders by `created_at` ascending, so that
+ * is the longest-standing primary contact. Intake writes exactly one primary
+ * per business (`client-intake.service.ts`), so a second is a state no path in
+ * this repo creates — which is precisely why the tie is broken by a rule rather
+ * than left to the planner: a field that silently changed which person it named
+ * between two page loads would be worse than one that never populated.
+ *
+ * A contact whose `email` is null still WINS its business and contributes null.
+ * That is deliberate. This field names one person's address, and skipping past
+ * a primary contact with no address on file to report the next contact's would
+ * put a different person's email under the words "primary contact" — the
+ * misattribution the contract description forbids.
+ *
+ * Exported for its test.
+ */
+export function foldPrimaryContactEmails(
+  contacts: ReadonlyArray<{ businessId: string; email: string | null }>,
+): Map<string, string | null> {
+  const byBusiness = new Map<string, string | null>();
+  for (const contact of contacts) {
+    if (byBusiness.has(contact.businessId)) continue;
+    byBusiness.set(contact.businessId, contact.email);
+  }
+  return byBusiness;
 }
 
 /**

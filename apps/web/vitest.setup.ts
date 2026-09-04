@@ -48,6 +48,32 @@ if (typeof window !== 'undefined') {
   installMatchMedia();
   afterEach(resetViewport);
 
+  /**
+   * ⚠ A SIGNED-IN PORTAL SESSION MUST NOT LEAK INTO THE NEXT TEST, and since
+   * 2 Sep 2026 it can.
+   *
+   * `useBusinessPortalSession` persists the business portal's bearer in
+   * `sessionStorage` so a client's session survives a reload (#243) — it is the
+   * only `sessionStorage` user in the app. jsdom hands the whole file one
+   * storage area, so the first test that completes a sign-in leaves a bearer
+   * behind and every later test in that file starts at the `resuming` step
+   * instead of the sign-in form: nine of `LiveBusinessPortal.test.tsx`'s eleven
+   * cases failed on a missing "Your email address" field, which reads as a
+   * broken screen rather than as a leaked session.
+   *
+   * Same argument as `resetViewport` above — what one test signed into cannot
+   * be allowed to decide what the next one renders. `localStorage` is left
+   * alone deliberately: `theme-preference` and `signed-in-hint` live there and
+   * are a preference and a hint, not a session.
+   */
+  afterEach(() => {
+    try {
+      window.sessionStorage.clear();
+    } catch {
+      /* a jsdom with storage access blocked has nothing to clear */
+    }
+  });
+
   window.ResizeObserver ??= class {
     observe() {}
     unobserve() {}

@@ -20,8 +20,16 @@ asking and what they may touch* lives here.
 ## Contracts it must honour
 
 - `packages/contracts/openapi.yaml` — `createPortalSession`, `getPortalContext`,
-  `createPortalUpload`, the `portalSession` security scheme, `NT-OTP-001` /
-  `NT-OTP-002` (**LAW**, G7)
+  `listPortalDocuments`, `createPortalUpload`, `createPortalSignInCode`,
+  `createPortalOnboardingSession`, the `portalSession` security scheme,
+  `NT-OTP-001` / `NT-OTP-002`, and the four operations in other modules that put
+  the portal bearer beside the workspace cookie (`completeDocumentUpload`,
+  `getDocumentOriginal`, `createCheckoutSession`, `createBillingPortalSession`).
+  ⚠ **The G7 ceremony was retired by the owner on 1 Sep 2026** — contract
+  changes no longer wait on an approved issue (`packages/contracts/CLAUDE.md`).
+  Several sentences below still say "G7" or "a contract change (LAW)"; read
+  those as "the contract moves first, in the same PR", which is the discipline
+  that remains.
 - `prisma/` — `otp_sessions`, and the delegated policies in `prisma/sql/rls.sql`
   (**LAW**, G7). Stage 9 changed **nothing** in `prisma/`: the model and the
   policies were already there and were built to.
@@ -47,11 +55,31 @@ documents_delegated_upload    USING (scope='delegated_upload' AND id = ANY(grant
 extractions_delegated_upload  USING/WITH CHECK (scope='delegated_upload' AND document_id = ANY(granted))
 ```
 
-`chases`, `bank_transactions` and `otp_sessions` have **no** delegated branch.
-Their policies go through `app_can_access_business()`, which begins
+`chases`, `bank_transactions` and `otp_sessions` have **no** delegated branch,
+and every one of their policies begins — directly or one call down —
 `app_session_scope() = 'user'`. **A delegated context reading any of them gets an
 empty set, silently.** So `GET /portal/context` cannot read the chase under a
 delegated context, and the bearer resolver cannot read the session row under one.
+
+⚠ **Corrected 2 Sep 2026: this file said `otp_sessions` goes through
+`app_can_access_business()`. It does not, and had not since the ID LAW batch.**
+The live policy is
+
+```
+otp_sessions_tenant  USING/WITH CHECK (app_can_access_document(business_id, practice_id))
+```
+
+— the **anchor-pair** predicate, the same one `documents_tenant` uses, because
+`otp_sessions.business_id` became NULLABLE for `ONBOARDING` (D47) and
+`app_can_access_business(NULL)` is FALSE: under the old single-column policy a
+pre-client session row would have been invisible and unwritable to everyone.
+
+The CONCLUSION above is unchanged, which is why the error survived so long —
+`app_can_access_document`'s business branch delegates to
+`app_can_access_business` and its practice branch carries its own explicit
+`app_session_scope() = 'user'`, so a delegated context still sees nothing. But
+the sentence named the wrong function, and anyone reading it before touching
+`prisma/sql/rls.sql` would have gone looking for a policy that is not there.
 
 The honest division — say it this way, do not overclaim:
 
@@ -80,8 +108,10 @@ else.
 
 | File | What it is |
 |---|---|
-| `portal.controller.ts` | The three contracted routes, and **exactly** those three. Thin: resolve the bearer, parse with the generated zod, call ONE service, map dates to ISO. A test pins the handler list, because a fourth route on this surface is a contract change (G7), not a convenience. |
-| `portal-context.service.ts` | `GET /portal/context`. The chase + its transactions + the business name, read under the practice SYSTEM context and constrained to `facts.chaseId`, projected through the **chase module's own** `toChaseItem`. |
+| `portal.controller.ts` | The **six** contracted routes, and exactly those six. Thin: resolve the bearer, parse with the generated zod, call ONE service, map dates to ISO. A test pins the handler list, because a seventh route on this surface is a contract decision, not a convenience. (This row said "three" until 2 Sep 2026, two routes after that stopped being true — see the endpoint table below.) |
+| `portal-context.service.ts` | `GET /portal/context`. The chase + its transactions + the business name, read under the practice SYSTEM context and constrained to `facts.chaseId`, projected through the **chase module's own** `toChaseItem`. Also the own-portal branch: the summary, the itemised asks, and (2 Sep 2026) the client's own subscription. |
+| `portal-documents.service.ts` | `GET /portal/documents` — the client's own document list (D49). Cursor-paginated, newest first, under `systemScopeFor` with an explicit `businessId`. See "The client's own document list" below. |
+| `portal-document-status.ts` | `DocumentState` → the five words a client is shown. Pure, total, and the ONLY place that mapping is made. |
 | `portal-upload.port.ts` | The `PortalUploadService` interface + `PortalUploadIntent`. The controller depends on this, not on the implementation, so it unit-tests with no object store, no Prisma and no signing secret. |
 | `portal-upload.service.ts` | `PrismaPortalUploadService.createPortalUpload(facts, request, key)` — the delegated intent. Mirrors web upload's `createUpload` from ingestion-routing's *mechanisms*, and **grants the derived document id to the session before returning**. See "The delegated upload path" below. |
 | `portal-session-token.ts` | The bearer. `base64url(claims).base64url(hmac)` — the house format, fourth instance. Claims `{otpSessionId, businessId, practiceId, expiresAtMs}`, secret `PORTAL_SESSION_SECRET`, TTL **60 min**. Missing/malformed/forged collapse to one `invalid`; `expired` stays distinct. Empty secret refuses to sign *and* to verify. |
@@ -92,6 +122,9 @@ else.
 | `portal-upload-notifier.ts` | The accountant's `portal.upload` notification row (SoT §4 Stage 8.8). |
 | `otp-attempts.ts` | **A2** — the attempt counter, the lockout and the minted-code compare. Pure. See below. |
 | `portal-onboarding.service.ts` | **The invited client's way in** — `requestSignInCode` + `createOnboardingSession`, the two operations `openapi.yaml` published and no controller implemented until the S7 walkthrough hit the 404. Mints the code, hashes it, emails it, and exchanges it for a bearer. See below. |
+| `portal-people-authority.ts` | **The business's own people, as a pure decision** (D45, D49). Effective role, last-owner, one-email-one-person, the projection, the name split. No Prisma, no session — a test drives it directly. |
+| `portal-people.service.ts` | The four People operations. Reads under `systemScopeFor` constrained to `facts.businessId`; asks `assertCan(actor, 'business.people.manage')`; writes an audit row per change. |
+| `portal-people.controller.ts` | `GET`/`POST /portal/people` and `PATCH`/`DELETE /portal/people/{personId}`. A **second** controller — see below. |
 | `portal.module.ts` / `tokens.ts` / `index.ts` | Wiring, DI symbols, the public seam. |
 
 ## The OTP is real, and it is counted (launch stage A2)
@@ -154,27 +187,39 @@ whoever landed either route would have to do. The CHASE half still does not:
 `OTP_MODE=totp` a chase link opens no session. That is still the honest state,
 and it is now one gap rather than two.
 
-## The five endpoints, and the decisions inside them
+## The six endpoints, and the decisions inside them
 
 | Route | Auth | Side effect | Failure |
 |---|---|---|---|
 | `POST /v1/portal/sessions` | public (`security: []`) | `ingest` | one `401 NT-OTP-001` for every verification failure |
 | `GET /v1/portal/context` | `portalSession` bearer | `none` | `401 NT-OTP-002` |
-| `POST /v1/portal/uploads` | `portalSession` bearer | `ingest` | `401 NT-OTP-002` |
+| `GET /v1/portal/documents` | `portalSession` bearer (**own-portal only**) | `none` | `401 NT-OTP-002` |
+| `POST /v1/portal/uploads` | `portalSession` bearer | `ingest` | `401 NT-OTP-002`; **`402 NT-BIL-001`** when the subscription has lapsed |
 | `POST /v1/portal/sign-in-codes` | public (`security: []`) | `ingest` | **none — `202`, always** |
 | `POST /v1/portal/onboarding-sessions` | public (`security: []`) | `ingest` | one `401 NT-OTP-001` for every verification failure |
 
-This table read **three** rows until 28 Aug 2026. `openapi.yaml` published them in
-S0's ID LAW batch, M6 built the screens against them, and no controller
-implemented them — so the setup link an invited client was emailed reached a
-screen whose first request 404'd. Growing this surface to five is the contract
-being MET, not widened, which is the one direction that needs no issue first.
-`portal.controller.test.ts` pins the list at five; a sixth is a G7 conversation.
+Two other operations outside this module also take the portal bearer, and they
+belong on this map because they are portal surface even though their controllers
+are elsewhere:
+
+| Route | Module | What bounds the portal caller |
+|---|---|---|
+| `POST /v1/document-uploads/{uploadId}/complete` | `ingestion-routing/web-upload` | the delegated grant (RLS) |
+| `GET /v1/documents/{documentId}/original` | `documents` | the delegated grant (RLS) — **added 2 Sep 2026** |
+| `POST /v1/billing/checkout-sessions` | `billing` | `businessId` must equal the session's → 404 |
+| `POST /v1/billing/portal-sessions` | `billing` | same guard — **added 2 Sep 2026** |
+
+This table read **three** rows until 28 Aug 2026. `openapi.yaml` published the
+invited-client pair in S0's ID LAW batch, M6 built the screens against them, and
+no controller implemented them — so the setup link an invited client was emailed
+reached a screen whose first request 404'd. It grew to six on 2 Sep 2026 with
+`GET /portal/documents`. `portal.controller.test.ts` pins the list at six.
 
 Every write here is legitimately outside Review → Approve: the contract marks
-all four `x-nt-side-effect: ingest`, the same standing as web upload —
+all four mutations `x-nt-side-effect: ingest`, the same standing as web upload —
 submitting evidence, or opening a session for yourself, creates a new record and
-changes no existing one. No chase and no document moves state from here.
+changes no existing one. No chase and no document moves state from here. The two
+reads are `none`.
 
 **`Idempotency-Key` on `POST /portal/sessions` is required, parsed, and
 deliberately NOT replay-cached.** The header is contract-required on every
@@ -188,13 +233,27 @@ call is not a duplicated side effect — each is an hour of its own. (The
 *upload* mutation does pass its key through to the upload service, which is
 bearer-authenticated.)
 
-**`GET /portal/context` never returns an empty list.** `PortalContext.items` is
-`minItems: 1`, and the `chase.send` executor resolved every transaction at
-approve time — so no reachable item means a row that should not exist, not a
-legitimate empty result. That is a **500 `NT-SRV-001`** (declared on the
-operation), never a 200 the generated client would reject and never a 4xx that
-blames the client. A missing business row is the same answer for the same
-reason: `businessName` is required and is never invented.
+**A CHASE session's `GET /portal/context` never returns an empty ask.** If the
+chase resolves to no transaction items AND no statement request, that is a row
+which should not exist — the `chase.send` executor resolved every item at
+approve time — so it is a **500 `NT-SRV-001`** (declared on the operation),
+never a 4xx that blames the client. A missing business row is the same answer
+for the same reason: `businessName` is required and is never invented.
+
+⚠ **Corrected 2 Sep 2026: this rule used to be justified by
+`PortalContext.items` carrying `minItems: 1`. It no longer does — the contract
+dropped that constraint on 28 Aug 2026**, because an own-portal session has no
+chase and its only honest answer is a list of length zero. So the shape now
+permits what the chase branch still refuses, and the refusal is the SERVICE's
+judgement rather than the schema's. Two consequences worth knowing:
+
+- The check is `items.length === 0 && statementRequests.length === 0`, and it is
+  **inside the chase branch only**. An own-portal session with nothing
+  outstanding legitimately returns `items: []` and a 200, which is what a client
+  who is up to date should be told.
+- Nothing mechanical enforces it any more. If the chase branch ever stops
+  raising, the contract will not notice — `portal-context.service.test.ts` is
+  what does.
 
 **Order of checks on `POST /portal/uploads`: authenticate, then validate.** A
 caller with no valid bearer gets `401 NT-OTP-002` and learns nothing about which
@@ -362,6 +421,14 @@ again"* in the same change. There is no SMS in ID (D40/D47) — `apps/web` swept
 that claim at launch M8, and this was the server-side copy that pass could not
 see.
 
+⚠ **There was a THIRD instance, swept 2 Sep 2026.**
+`portal-upload.service.ts` said the same sentence on its unreachable-business
+refusal. Two sweeps had each fixed the copy they could see and neither found
+this one, which is the shape of thing worth recording: the sentence is now
+`"Open the link in your email again."` in both server files, and the only
+remaining occurrences of *"text message"* in `apps/api/src` are the two comments
+recording that it used to be there.
+
 ## The `otp_sessions` write shape
 
 ```
@@ -492,11 +559,13 @@ unreadable We couldn't read that document, but we need the £600 Google transact
 there is no £420. The extracted supplier is untrusted content on its way into a
 sentence: whitespace-collapsed, clamped to 60 characters, never shown to a model.
 
-**⚠ Nothing routes to the status service yet, and the gate left it that way.**
-`openapi.yaml` publishes three portal operations and **no** status path (LAW,
-G7), so no request can reach it: it is an in-module library — built, tested,
-waiting for a path — and it is deliberately **not** a Nest provider, because a
-provider nothing injects claims a live surface that does not exist.
+**⚠ Nothing routes to the status service yet.** `openapi.yaml` publishes six
+portal operations and **no per-document status path**, so no request can reach
+it: it is an in-module library — built, tested, waiting for a path — and it is
+deliberately **not** a Nest provider, because a provider nothing injects claims
+a live surface that does not exist. (`GET /portal/documents` is *not* that path:
+it is the list, in the client's five-word vocabulary, and carries no
+chase verdict. `describeChaseMismatch`'s sentence still waits.)
 
 - `statusFor(facts, documentId)` — one document, or a **404** when the session
   was never granted it (404-never-403, and the absence is RLS's, not a filter's).
@@ -565,12 +634,25 @@ forced to invalidate the other.
 
 ## Boundaries
 
-`index.ts` is the seam. The one cross-module consumer the contract itself
-creates: `POST /v1/document-uploads/{uploadId}/complete` accepts the portal
-bearer alongside the workspace session, so `ingestion-routing/web-upload` needs
-`PortalSessionContextResolver` + `delegatedScopeFor` — and nothing else from in
-here. The three portal endpoints live **inside** this module and import the
-files directly.
+`index.ts` is the seam, and every consumer of it exists because the CONTRACT put
+the portal bearer beside the workspace session on an operation whose controller
+lives elsewhere. There are three, and they need the same two things
+(`PortalSessionContextResolver`, plus one of `delegatedScopeFor` /
+`systemScopeFor`) and nothing else from in here:
+
+| Module | Operation | Resolver + scope |
+|---|---|---|
+| `ingestion-routing/web-upload` | `completeDocumentUpload` | `resolveForUpload` → `delegatedScopeFor` |
+| `documents` | `getDocumentOriginal` (2 Sep 2026) | `resolveForDocumentOriginal` → `delegatedScopeFor` |
+| `billing` | `createCheckoutSession`, `createBillingPortalSession` (2 Sep 2026) | `resolveOnboarding` → `systemScopeFor` + the businessId→404 guard |
+
+The six portal endpoints themselves live **inside** this module and import the
+files directly; they are not consumers of the seam.
+
+⚠ **The dependency is one-way in every case** — `documents` and `billing` import
+`PortalModule`, and `PortalModule` imports neither. Making any of them mutual is
+a Nest cycle, which is why the upload path reuses ingestion-routing's
+*mechanisms* rather than injecting its service.
 
 Portal endpoints do **not** use `common/context`'s `RequestContext`: that
 resolver reads the `nt_session` cookie into a practice-staff context, and a
@@ -604,6 +686,7 @@ pnpm --filter @neoting/api vitest run src/modules/portal/          # unit, offli
 pnpm --filter @neoting/api vitest run src/modules/portal/portal.integration.test.ts   # + real Postgres
 pnpm --filter @neoting/api vitest run src/modules/portal/portal-upload-feedback.integration.test.ts
 pnpm --filter @neoting/api vitest run src/modules/portal/portal-delegated-upload.integration.test.ts
+pnpm --filter @neoting/api vitest run src/modules/portal/portal-client-surface.integration.test.ts
 ```
 
 The unit suites use a Prisma stand-in that **simulates the practice scoping** (it
@@ -670,6 +753,29 @@ Storage is `InMemoryDocumentStore` on purpose: the presigned *signature* is
 `web-upload.integration.test.ts`'s question (it PUTs to real MinIO), and needing
 `RUN_S3_INTEGRATION=1` here would leave the tenancy assertions unrun on an
 ordinary `pnpm test` with docker up.
+
+`portal-client-surface.integration.test.ts` (prefix **`pcs_`** — disjoint from
+`p9_` and `p9u_`) is the CLIENT's own surface (D49), and it answers three
+questions of three different kinds:
+
+1. **`GET /portal/documents` shows this client's documents and no other's.** Two
+   businesses in **one practice**, because that is the only pair that isolates
+   the `where` clause from RLS: a second practice would be hidden anyway and the
+   test would pass with the filter deleted. Both directions are asserted — each
+   session sees its own business and not the other's — so the filter is proven
+   to be derived from the session rather than constant.
+2. **`GET /documents/{id}/original` honours the grant, and Postgres is what
+   honours it.** A granted document opens; an **ungranted one in the same
+   business** 404s, which is the delegated policy and nothing else. The store is
+   a recording double that would sign anything, so the assertion is that
+   **nothing was signed** — a 404 alone would still pass against a refactor that
+   presigned before the lookup, and object storage has no RLS to undo that.
+3. **`POST /billing/portal-sessions` 404s a body naming another business**, with
+   nothing reaching Stripe, through the REAL resolver over a REAL session row.
+
+⚠ **Its teardown deletes by EXPLICIT ID LIST, never by prefix scan.** This local
+Postgres now holds real data pulled from staging, so a `deleteMany` broader than
+this suite's own ids is not a slow test, it is data loss.
 
 ## TODO — what Stage 9 still owes
 
@@ -741,10 +847,319 @@ ordinary `pnpm test` with docker up.
       codes are single-use like onboarding's.
       `portal-chase-code.integration.test.ts` proves link → code → totp session
       → single-use → lockout counting → silent refusals against real Postgres.
-- [ ] **`PortalSession` has no `businessId`, so an onboarding session cannot
-      reach checkout.** A contract-change issue for Shakib (G7); the web half is
-      already written to accept the field the day it lands.
+- [x] ~~**`PortalSession` has no `businessId`, so an onboarding session cannot
+      reach checkout.**~~ **This landed as contract change #205 on 28 Aug 2026**
+      and this list said so nowhere while the section above recorded it as done.
+      Corrected 2 Sep 2026 — an unchecked TODO contradicting a ✅ four hundred
+      lines up is worse than either alone, because a reader picks whichever one
+      they found first.
+- [x] **`GET /portal/documents` (2 Sep 2026).** The client's own document list,
+      which D49's home and upload tabs read and for which the only server-side
+      fact was the integer `documentsSent`. See the section below.
+- [x] **`getDocumentOriginal` takes the portal bearer (2 Sep 2026).** The
+      operation's own description already claimed it did; only the `security:`
+      block and the handler branch were missing.
+- [x] **`PortalSummary.subscription` (2 Sep 2026)** — status, plan and renewal
+      date, so the Settings tab is not decorative.
+- [x] **`createBillingPortalSession` takes the portal bearer (2 Sep 2026)**,
+      with the businessId→404 guard added in the same edit.
+- [x] **`createPortalUpload` declares its `402` (2 Sep 2026).** The D48 gate has
+      thrown `NT-BIL-001` since S4 and the contract did not say so.
 - [ ] Update this file on exit — it is how the next session picks up.
+
+## The business manages its own people — `/portal/people` (2 Sep 2026, D45/D49)
+
+Settings → People said *"Managed by your accountant … they cannot be added from
+this screen."* The product owner ruled that wrong: **the client's own manager, HR
+lead or owner adds and removes their staff**, with roles. A restaurant's manager
+knows who photographs the receipts; an accounting firm does not, and making them
+the registrar put a support ticket between a new starter and their first receipt.
+
+### ⚠ The blocker: a portal session identified a BUSINESS, not a PERSON
+
+The bearer carries `{otpSessionId, businessId, practiceId, expiresAtMs}` and the
+server acts as the practice SYSTEM actor — so for every read the portal made, the
+acting identity was *the workspace*. Fine for "show me my documents", useless for
+"may you remove Tom".
+
+**The row already knew.** `otp_sessions.contact_id` is written by both own-portal
+sign-in routes (`resolveByAddress` from the contact whose address verified,
+`resolveInvite` from the contact the invitation names) and was never read back
+out. `PortalSessionFacts.contactId` now carries it, resolved **from the ROW** on
+every request like every other portal fact — never from the token.
+
+⚠ **The role is deliberately NOT on the bearer.** It would be a seventh fact the
+row could contradict, for up to an hour, in the direction that matters: an owner
+demoted at 10:00 would still hold an owner's bearer at 10:59.
+
+⚠ **`contactId` null fails closed.** A chase session sets it NULL on purpose (the
+link is forwardable), so `portalActorFor(null)` yields `role: null`, which every
+branch of `assertCan` refuses. `resolveOnboarding` has already refused the chase
+session before any of this is reached.
+
+### The authority model
+
+`assertCan(actor, 'business.people.manage')` — the **third** `PermittedAction`,
+in `modules/approvals/assert-can.ts` with the other two, because *"a permission
+model with a role check in every module that offers a guarded act has no single
+place to read"*. This module ASKS; it holds no opinion of its own.
+
+| Role | May |
+|---|---|
+| `BUSINESS_ADMIN` | everything, including making somebody else an owner — which is what makes the last-owner rule escapable |
+| `USER_ADMIN` | the same people-management authority and nothing else. **The first surface in the product ever to grant this role** |
+| `BUSINESS_STANDARD` | **read the list**, and change nothing |
+
+⚠ **A `BUSINESS_STANDARD` reads the list, and the section is never hidden.** Who
+else can send paperwork on your employer's behalf is not a secret from you, and
+hiding it would be the *"pretend the action does not exist"* failure Governance
+§11.2 names. `PortalPeople.canManagePeople` is a fact for honest degradation and
+is **never the gate**.
+
+### The two things both called "role"
+
+- **`contacts.role` is FREE TEXT** — the job title. *"A restaurant has a Head Chef
+  and a site has a Foreman, and forcing those into 'Staff' loses the only thing
+  that made the role worth recording."* Nothing branches on it.
+- **`contacts.portal_role` is `WorkspaceRole`** — the AUTHORITY. The last-owner
+  rule keys on it, because a protection defeated by retyping a label is not one.
+
+### No backfill, and that is the safety argument
+
+`portal_role` is nullable with no default. The effective authority is
+`portalRole ?? (isPrimary ? BUSINESS_ADMIN : BUSINESS_STANDARD)`, written once in
+`portal-people-authority.ts`, so every workspace that already exists gets exactly
+one owner — the primary contact intake wrote — with **no UPDATE touching a table
+holding real client records**. A `@default(BUSINESS_STANDARD)` would have been the
+opposite: every existing business with nobody able to manage anyone.
+
+### Removal is REVOCATION, and three readers honour it
+
+*"They stop being able to send documents immediately. Anything they already sent
+stays with your accountant."* The row is deactivated, never destroyed. All three
+are needed:
+
+| Reader | What stops |
+|---|---|
+| `email/inbound/sender-map.ts` | a forwarded email stops resolving to this workspace and lands Unrouted (D45) |
+| `resolveByAddress` (`portal-onboarding.service.ts`) | no new session — the uniform `202` still answers, and sends nothing |
+| `portal-session-context.ts`, the **sixth row check** | the bearer they hold RIGHT NOW stops working, rather than lasting out its hour |
+
+Without the second, a revoked person requests a fresh code and gets a new hour.
+
+### ⚠ Tenancy is an APPLICATION guarantee here, like `GET /portal/documents`
+
+`contacts` has no RLS branch meaning "this client's whole business", so the read
+runs under `systemScopeFor(facts)` — which sees the whole practice — and
+`where: { businessId: facts.businessId }` is the only thing narrowing it. What
+makes that safe is that the filter cannot be omitted or influenced: it is
+`facts.businessId` off the row, **no operation takes a `businessId` argument** and
+the contract declares none, and one `whereFor` builds it.
+
+`portal-people.integration.test.ts` (prefix **`ppl_`**, disjoint from `p9_`,
+`p9u_`, `pcs_`) proves it with **a second business in the SAME practice** — a
+second practice proves nothing, because RLS hides it anyway and the test would
+pass with the filter deleted.
+
+⚠ Its teardown must **disable `audit_events_no_update` for the length of one
+delete** (the house pattern, four other suites) — the chain is append-only even
+for the migration role, and `audit_events.business_id` has a real FK, so the rows
+neither can be left nor deleted without it. The `finally` is not decoration: a
+throw between the two statements leaves the guarantee OFF for the whole run.
+
+### Every change writes to the practice audit log
+
+`appendAuditEvent` with **`proposalId: null`** — the nullability that landed for
+this feature. A portal caller structurally cannot have a proposal
+(`createActionProposal` carries `workspaceSession`), and no accountant should have
+to approve whether a restaurant may add a chef. What replaces the human gate is
+the server-side authority check plus `business.person.invited` / `.updated` /
+`.removed` in the firm's own chain, carrying the acting `contacts` id — never the
+address.
+
+### ⚠ A SECOND controller, and why
+
+`portal.controller.ts` documents itself as "the six contracted routes, and exactly
+those six" with a test pinning the list, and it is already 257 lines against
+`apps/api`'s 200-line cap. Four more would have taken it to ~380. The split is by
+SURFACE: that file is the session and the documents, this one is the people who
+may send them. **Each pins its own handler list**, so neither can grow a route in
+silence. Both are in `portal.module.ts`.
+
+### The invitation is a THIRD relationship
+
+Not `composeClientInvite` (accountant→client, sent in the practice's name) and
+not `composeTeamInvite` (whose *"choose a password"* is flatly wrong — portal
+people have no password). Own `EmailKind` (`business-people-invite`), own
+composer, own ceiling (**3**/hour, the tightest tier: the caller is a CLIENT, the
+least-vetted principal that can send anything). **The link carries no token** —
+the address is the credential channel, and a setup token would add a seven-day
+expiry to a relationship that has none and put a new starter on the owner's
+onboarding journey.
+
+## ⚠ The portal excludes Trash — the list AND the summary (3 Sep 2026)
+
+Soft delete (`documents.deleted_at`) landed with `portal-documents.service.ts`
+and `portal-context.service.ts` fenced off, so **a client could see and be
+counted a document their accountant had deleted.** Both now spread
+`notDeleted()` from `common/documents/deleted-documents.ts` — the one place
+"deleted" is spelled, never an inline `deletedAt: null`.
+
+| Surface | Where | Now |
+|---|---|---|
+| `GET /portal/documents` | `whereFor()` | the deleted row is not listed |
+| `PortalSummary.documentsSent` | the `count` in `getBusinessContext` | it is not counted |
+| `PortalSummary.lastDocumentAt` | the `findFirst` beside it | it cannot date the client's last upload to a row they cannot find |
+
+**The three move together or not at all.** The failure this guards is not any
+one of them — it is two of them **disagreeing**: "41 sent" over a list of 40
+tells a client something they sent has gone missing, which is a worse lie than
+either number alone. `lastDocumentAt` is in the set for the same reason and was
+not on the original defect list; it is the same `documents` read on the same
+screen.
+
+⚠ **This is the one soft-delete surface where the reader is not the deleter.**
+An accountant with a stale count has a Trash tab to check; a client has nothing.
+And there is **no database guarantee here** — both reads run under
+`systemScopeFor` (there is no RLS branch meaning "this client's whole
+business"), so the predicate in the `where` is the entire mechanism, exactly as
+`businessId` is the entire tenancy.
+
+⚠ **`documentsSent` and `lastDocumentAt` still count ARCHIVED, which the list
+excludes.** That divergence PREDATES soft delete and is deliberately left: an
+archived document really was sent, and "how many have I sent you" is a fair
+reading of it. A deleted one is different in kind — the practice has withdrawn
+it — which is the half that had to close.
+
+`portal-trash.integration.test.ts` (prefix **`ptr_`**, disjoint from `p9_`,
+`p9u_`, `pcs_`, `ppl_`; teardown by explicit id list) proves all three against
+real Postgres, and its trashed fixture is `TO_REVIEW` rather than `ARCHIVED` on
+purpose — an archived row would pass the suite with `notDeleted()` deleted.
+
+**Deliberately still served for a deleted document, do not "fix" these:**
+`getDocument`, `getDocumentOriginal`, `listDocumentEvents`,
+`listDocumentExtractions` (previewing is how a person decides whether to
+restore) and `GET /d/{code}` (D43 — an accountant holding an exported line's URL
+must not be affected by housekeeping they cannot see).
+
+## The client's own document list — `GET /portal/documents` (2 Sep 2026)
+
+`portal-documents.service.ts` + `portal-document-status.ts`. D49 makes the
+prototype the design source of record, and its Home tab shows "Recently sent"
+with a per-document status while its Upload tab shows "Sent from this portal".
+Neither had a backend: `PortalSummary` carried the integer `documentsSent` and
+nothing else, so a client could be told they had sent forty-one documents and
+nothing whatever about any of them.
+
+**⚠ Its tenancy is the QUERY, not SQL, and this is the one thing to understand
+before changing it.** The read runs under `systemScopeFor(facts)` — the practice
+SYSTEM context — for exactly the reason `portal-context.service.ts` gives for
+every fact it returns: the two delegated RLS branches key on GRANTED DOCUMENT
+IDS, and a session's grant is the documents it sent *itself*. Under the
+delegated context this list could only ever show a client their own portal
+uploads and never the email, WhatsApp or accountant-uploaded documents that make
+up most of their file. **There is no RLS branch meaning "this client's whole
+business", and adding one is a `prisma/` change and a stop-and-ask.**
+
+So the SYSTEM context sees the whole practice and `where: { businessId }` is the
+only thing narrowing it. What makes that safe to rely on is that the filter
+cannot be omitted or influenced:
+
+- it is `facts.businessId`, off the `otp_sessions` row the server wrote and the
+  resolver re-checks on every request;
+- `listDocuments` takes no `businessId` argument and the operation declares no
+  such parameter — the same move `PortalUploadRequest` makes by having no
+  `businessId` field, so there is nothing to forget to pass and nothing for a
+  caller to supply;
+- one function (`whereFor`) builds it, and every query in the class uses it.
+
+`portal-client-surface.integration.test.ts` proves it with **a second business
+in the same practice** — a second *practice* would have proved nothing, because
+RLS would have hidden it anyway and the test would still pass with the filter
+deleted.
+
+**⚠ `resolveOnboarding`, so a CHASE session is refused — the security decision
+on this route.** A chase link is deliberately forwardable to whoever physically
+holds the paperwork; their authority is the chased items plus the right to
+upload against them. Handing them the client's entire document history — every
+supplier, every amount, every date — because somebody passed them a link is a
+widening nothing asked for. It is the same line `getPortalContext` already draws
+by answering a chase session `summary: null` and `businessId: null`.
+
+**The projection is `PortalDocument`, never `DocumentSummary`.** No `state`, no
+`inbox`, no `categoryCode`, no `failureCode`, no `retryable`. The client's
+question is "what happened to my receipt" and `status` is the whole answer;
+"where is it in your review queue" is a question about the firm's working state.
+`apps/web/src/api/onboarding.ts` drew this line for the summary and this is the
+same line one row down.
+
+**The five words, and where the mapping lives.** `portal-document-status.ts` is
+pure, total over `DocumentState`, and the ONLY place the mapping is made — a
+browser that mapped it would be a second opinion, and the two would diverge the
+first time a state was added, with the client's version being the one a person
+read.
+
+```
+RECEIVED  PROCESSING -> processing           REJECTED FAILED -> needs_another_copy
+TO_REVIEW            -> with_accountant      READY           -> accepted
+PUBLISHED            -> filed                ARCHIVED        -> (not served)
+```
+
+- `RECEIVED`/`PROCESSING` and `REJECTED`/`FAILED` collapse deliberately: each
+  pair differs only by something internal (how busy a queue is; whose fault it
+  was) and what the sender can DO about either half is identical.
+- The three good outcomes stay apart. "On a human's desk", "the accountant is
+  happy with it" and "released into your books" are three different answers, and
+  only the last means the client can stop thinking about it.
+- **`ARCHIVED` is excluded from the list**, matching `GET /documents`'s own
+  contracted default. Archiving is the practice's housekeeping — a duplicate set
+  aside — and calling it `filed` would claim it reached the client's books,
+  which is false in the direction that stops a client re-sending something we
+  need. Its mapping branch exists only because a total function is the point of
+  that file; `PORTAL_HIDDEN_DOCUMENT_STATE` is shared with the `where` clause so
+  the two cannot drift.
+
+**Money travels as a pair or not at all.** `total_pence` and `currency` are
+independently nullable columns, and an amount with no currency is a number a
+screen renders with whichever symbol it feels like. A row carrying one without
+the other reports neither, which is "we have not read a total off this yet".
+
+**`supplierName` is untrusted content** — it comes off a scanned document. It is
+data on its way to a text node, never an instruction, and nothing on this path
+interprets it.
+
+## `GET /documents/{id}/original` takes the portal bearer (2 Sep 2026)
+
+The cheapest real capability on this surface, and the one that was already
+promised. The operation's description has said *"a delegated OTP session may
+only call this for items in its grant"* since the spec was drafted, and
+`documents_delegated_upload` has permitted exactly that for just as long — but
+the operation carried **no `security:` block**, so it inherited the global
+`workspaceSession` default and a client could not open the receipt they had just
+sent. Both principals are now declared and `documents.controller.ts` honours
+them.
+
+**Unlike everything else the portal reads, this boundary is a DATABASE
+guarantee.** The request runs under `delegatedScopeFor(facts)`, so
+`id = ANY(app_granted_item_ids())` decides: a document outside the grant is
+invisible to `findUnique`, the service's existing null check answers 404, and
+nothing is signed for it. Verified against real Postgres rather than taken from
+the policy text — `portal-client-surface.integration.test.ts` reads a granted
+document and is refused an **ungranted one in the same business**, which is the
+only pair that isolates the grant from the tenancy.
+
+A session whose grant is empty (an onboarding session that has never uploaded)
+can have no delegated context built for it at all, and gets the same 404 —
+word for word the service's own, so a caller cannot tell "your session may reach
+nothing" from "that document is not yours".
+
+⚠ **The consequence for the UI, stated plainly:** a client can open the original
+of a document **they sent through the portal**, and not one that arrived by
+email or that their accountant uploaded. That is the grant, and widening it
+would mean either a new RLS branch (a `prisma/` change) or reading originals
+under the SYSTEM context, which would trade a database guarantee for an
+application one on the single endpoint that hands out bearer-authority URLs to
+raw bytes.
 
 ## Signing in WITHOUT a setup link (29 Aug 2026)
 
@@ -780,7 +1195,7 @@ did not involve telephoning their accountant.
   unscoped read over `memberships` for each practice's SYSTEM actor, then RLS
   answers per practice. It runs once per sign-in, never on a hot path.
 
-## ⚠ All three portal doors take BOTH kinds of session (29 Aug 2026)
+## ⚠ Which doors take BOTH kinds of session (29 Aug 2026, extended 2 Sep)
 
 The context read, the upload intent and the completion each called
 `resolver.resolve(...)`, which accepted `DELEGATED_UPLOAD` only. So a client who
@@ -793,7 +1208,17 @@ endpoints written for them, and `getBusinessContext` was unreachable code.
 | `GET /portal/context` | `resolveForContext` | chase **and** own-portal |
 | `POST /portal/uploads` | `resolveForUpload` | chase **and** own-portal |
 | `POST /document-uploads/{id}/complete` | `resolveForUpload` | chase **and** own-portal |
+| `GET /documents/{id}/original` | `resolveForDocumentOriginal` | chase **and** own-portal — the GRANT decides, not the scope |
+| `GET /portal/documents` | `resolveOnboarding` | own-portal **only** |
 | `POST /billing/checkout-sessions` | `resolveOnboarding` | own-portal **only** |
+| `POST /billing/portal-sessions` | `resolveOnboarding` | own-portal **only** |
+
+The split is not "reads are wide, writes are narrow" — `GET /portal/documents`
+is a read and is narrow. The rule is **what the answer is ABOUT**: a chase
+session may see the things it was opened to collect and the documents it sent
+itself, and may not see the workspace. `resolveForDocumentOriginal` is wide
+because its boundary is not the scope at all — it is `app_granted_item_ids()`,
+and a chase session's grant contains only its own uploads.
 
 **⚠ There is deliberately no bare `resolve` any more.** It is the name a reader
 reaches for by default, and the default must not be the variant that silently
@@ -806,7 +1231,8 @@ nothing from the session but that same id — it takes no chase and files agains
 no other business. The holder proved control of an address registered as a
 contact of exactly one business (D45).
 
-What did **not** widen: the billing door, which is how a subscription is paid
-for, and `delegatedScopeFor`, which still refuses a session with no granted
-items. A chase session's `chaseId` is still the only thing that makes the
-context return chase items.
+What did **not** widen: the two billing doors, which are how a subscription is
+paid for and left; `GET /portal/documents`, which is the workspace's own file;
+and `delegatedScopeFor`, which still refuses a session with no granted items. A
+chase session's `chaseId` is still the only thing that makes the context return
+chase items.

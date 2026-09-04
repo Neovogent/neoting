@@ -8,7 +8,10 @@ import { ENV } from '../../config/env.module.js';
 import { type DocumentStore, selectDocumentStore } from '../ingestion-routing/index.js';
 import { NotificationsModule, NOTIFICATIONS_SERVICE, type NotificationsService } from '../notifications/index.js';
 import { PortalContextService } from './portal-context.service.js';
+import { PortalDocumentsService } from './portal-documents.service.js';
 import { PortalOnboardingService } from './portal-onboarding.service.js';
+import { PortalPeopleController } from './portal-people.controller.js';
+import { PortalPeopleService } from './portal-people.service.js';
 import { PortalSessionContextResolver } from './portal-session-context.js';
 import { PortalSessionService } from './portal-session.service.js';
 import { PortalUploadNotifier } from './portal-upload-notifier.js';
@@ -17,7 +20,9 @@ import { PortalController } from './portal.controller.js';
 import {
   PORTAL_CONTEXT_SERVICE,
   PORTAL_DOCUMENT_STORE,
+  PORTAL_DOCUMENTS_SERVICE,
   PORTAL_IDEMPOTENCY_STORE,
+  PORTAL_PEOPLE_SERVICE,
   PORTAL_SESSION_CONTEXT,
   PORTAL_ONBOARDING_SERVICE,
   PORTAL_SESSION_SERVICE,
@@ -62,7 +67,10 @@ import {
  */
 @Module({
   imports: [NotificationsModule],
-  controllers: [PortalController],
+  // TWO controllers, split by surface: the session and the documents, and the
+  // people who may send them. See `portal-people.controller.ts`'s header for
+  // why four more handlers did not go on the first one.
+  controllers: [PortalController, PortalPeopleController],
   providers: [
     {
       // The invited client's way in. It needs the notifications seam because
@@ -94,6 +102,22 @@ import {
     },
     { provide: PRISMA, useFactory: () => getPrismaClient() },
     { provide: PORTAL_CONTEXT_SERVICE, useFactory: (prisma: PrismaClient) => new PortalContextService(prisma), inject: [PRISMA] },
+    // `GET /portal/documents` (D49). It needs nothing but Prisma: the tenancy is
+    // the session's own `businessId` in the `where`, and there is no store, no
+    // secret and no clock in the read.
+    { provide: PORTAL_DOCUMENTS_SERVICE, useFactory: (prisma: PrismaClient) => new PortalDocumentsService(prisma), inject: [PRISMA] },
+    // Settings → People (D45, D49). Notifications for the invitation — its own
+    // `EmailKind` and its own composer, because a portal person never chooses a
+    // password and the employer is a BUSINESS rather than the practice. The
+    // idempotency store is the module's shared one, namespaced by session inside
+    // the service. `APP_ORIGIN` builds the portal front door the mail links to,
+    // which deliberately carries no token.
+    {
+      provide: PORTAL_PEOPLE_SERVICE,
+      useFactory: (prisma: PrismaClient, notifications: NotificationsService, idempotency: IdempotencyStore, env: Env) =>
+        new PortalPeopleService(prisma, notifications, idempotency, { appOrigin: env.APP_ORIGIN }),
+      inject: [PRISMA, NOTIFICATIONS_SERVICE, PORTAL_IDEMPOTENCY_STORE, ENV],
+    },
     { provide: PORTAL_DOCUMENT_STORE, useFactory: (env: Env) => selectDocumentStore(env), inject: [ENV] },
     { provide: PORTAL_IDEMPOTENCY_STORE, useFactory: (): IdempotencyStore => new InMemoryIdempotencyStore() },
     {

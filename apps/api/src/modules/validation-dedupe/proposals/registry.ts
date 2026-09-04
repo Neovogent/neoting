@@ -5,13 +5,14 @@ import { archiveDocumentExecutor } from './archive-document.js';
 import { chaseSendExecutor } from './chase-send.js';
 import { confirmMatchExecutor } from './confirm-match.js';
 import { offboardBusinessExecutor } from './offboard-business.js';
+import { purgeDocumentExecutor } from './purge-document.js';
 import {
   type ExecutorRegistry,
   ProposalNotImplementedError,
   type ProposalExecutor,
   type ProposalPayloadMap,
 } from './proposal-executor.js';
-import { createPublishBatchExecutor, type PublishGateway } from './publish-batch.js';
+import { createPublishBatchExecutor, type ExportEntryPreviewer, type PublishGateway } from './publish-batch.js';
 import { rejectDocumentExecutor } from './reject-document.js';
 import { reprocessDocumentExecutor } from './reprocess-document.js';
 import { revokeLinkExecutor } from './revoke-link.js';
@@ -36,6 +37,15 @@ export interface ExecutorRegistryDeps {
   readonly smsSender?: SmsSender;
   /** What `publish.batch` executes through (METH S10) — no safe default exists. */
   readonly publishing: PublishGateway;
+  /**
+   * The export's own entry preview, for the publish review card. **Optional,
+   * unlike `publishing`, and for the opposite reason**: the safe default here is
+   * making no claim. Without it a `publish.batch` proposal simply carries no
+   * `entryPreview`, and execution skips the entry-drift comparison rather than
+   * refusing — which is also what keeps a proposal created before this existed
+   * approvable. See `ExportEntryPreviewer` in `publish-batch.ts`.
+   */
+  readonly exportEntryPreview?: ExportEntryPreviewer;
 }
 
 /**
@@ -70,7 +80,7 @@ export function buildExecutorRegistry(deps: ExecutorRegistryDeps): ExecutorRegis
     // dependency it must not import: publishing imports this module, so
     // importing publishing back would close a cycle between two public seams
     // (publish-batch.ts's header has the full reasoning).
-    'publish.batch': createPublishBatchExecutor(deps.publishing),
+    'publish.batch': createPublishBatchExecutor(deps.publishing, deps.exportEntryPreview),
     'document.move-business': notImplemented('document.move-business'),
     // reprocess and reject landed with stage A12. Both were day-one needs the
     // read surface already advertised — `documents.retryable` offers a Retry
@@ -102,6 +112,14 @@ export function buildExecutorRegistry(deps: ExecutorRegistryDeps): ExecutorRegis
     // books/documents/audit retained (six-year clock, D12). One guarded UPDATE
     // on `businesses.is_active`; the executor's header carries the discipline.
     'business.offboard': offboardBusinessExecutor,
+    // document.purge — permanent deletion, the only irreversible thing that can
+    // happen to a document, and therefore the only document deletion on this
+    // spine. Moving one to Trash is an ordinary mutation because restoring it
+    // undoes it exactly; this undoes nothing. It REFUSES a document that has
+    // been released for export or that carries a D43 capability link, reading
+    // `publishes` and `document_links` as rows rather than trusting `state` —
+    // the executor's header carries the argument.
+    'document.purge': purgeDocumentExecutor,
   };
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import type { ClientChartOfAccounts } from '../chart-of-accounts/chart-of-accounts.service.js';
+import type { AiCodingSuggestion } from './ai-suggestion.js';
 import type { CodingDecision } from './coding-decision.js';
 import { buildSupplierRuleProposal, buildSupplierRulePayload } from './rule-proposal.js';
 import type { SupplierCodingResult, SupplierHistory } from './supplier-coding.service.js';
@@ -24,6 +25,24 @@ const CHART: ClientChartOfAccounts = {
 };
 
 const SUPPLIER = { name: 'Nisbets Ltd', key: 'nisbets', isNew: false };
+
+/**
+ * A `REVIEW` now always carries the `AI_INFERENCE` rung's answer — never null,
+ * by construction (`ai-suggestion.ts`). It changes nothing here: a suggestion
+ * is not a human's confirmed coding, so it is not something a standing rule may
+ * be learned from, and `buildSupplierRuleProposal` still refuses.
+ */
+const NO_SUGGESTION: AiCodingSuggestion = {
+  outcome: 'ESCALATE',
+  authority: 'AI_INFERENCE',
+  provenance: 'AI_SUGGESTED',
+  basis: 'NOTHING_MATCHED',
+  reason: 'NO_MATCH_ON_CHART',
+  candidateCategoryCodes: [],
+  confidence: null,
+  advisories: [],
+  note: 'nothing matched',
+};
 
 function history(over: Partial<SupplierHistory> = {}): SupplierHistory {
   return {
@@ -172,6 +191,7 @@ describe('when there is nothing to propose, it says so instead', () => {
         conflictingCategoryCodes: ['A', 'B'],
         supplier: SUPPLIER,
         nearMissRuleScopeKeys: [],
+        suggestion: NO_SUGGESTION,
         reason: 'This client has coded Nisbets Ltd to more than one account before.',
       }),
     );

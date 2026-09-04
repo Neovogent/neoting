@@ -134,7 +134,7 @@ export function InboxTable({
         },
         { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date },
         { key: 'category', label: intl.formatMessage(commonLabels.category), sortValue: (d) => d.category },
-        { key: 'total', label: intl.formatMessage(commonLabels.total), align: 'right', sortValue: (d) => d.total, render: (d) => <span className="text-white font-bold tabular-nums">{currency(d.total)}</span> },
+        { key: 'total', label: intl.formatMessage(commonLabels.total), align: 'right', sortValue: (d) => d.total, render: (d) => <span className="text-white font-bold tabular-nums">{currency(d.total, d.currency)}</span> },
         {
           key: 'status',
           label: intl.formatMessage(commonLabels.status),

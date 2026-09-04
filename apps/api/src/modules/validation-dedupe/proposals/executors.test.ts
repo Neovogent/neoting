@@ -21,7 +21,7 @@ import { routeDocumentExecutor } from './route-document.js';
  */
 const STUB_PUBLISHING: PublishGateway = {
   ledger: { publishBill: async () => ({ ok: true, externalRef: 'STUB', attachmentSent: false }) },
-  previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0 } }),
+  previewPublishBatch: () => ({ ok: true, preview: { itemCount: 0, grossPence: 0, vatPence: 0, currency: null } }),
 };
 
 const CTX: ScopeContext = ScopeContextSchema.parse({ actorId: 'usr_1', practiceId: 'prac_1' });

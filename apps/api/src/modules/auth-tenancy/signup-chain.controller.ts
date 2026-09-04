@@ -1,11 +1,19 @@
 import { Body, Controller, Headers, HttpCode, HttpStatus, Inject, Post, Res } from '@nestjs/common';
 import type { Response } from 'express';
 
-import type { EmailVerificationResult, TotpEnrolmentOffer as TotpEnrolmentOfferDto } from '@neoting/contracts/model';
+import type {
+  EmailVerificationResult,
+  InvitationAcceptanceResult,
+  InvitationPreview,
+  TotpEnrolmentOffer as TotpEnrolmentOfferDto,
+} from '@neoting/contracts/model';
 import {
+  acceptInvitationBody,
+  acceptInvitationHeader,
   beginTotpEnrolmentBody,
   confirmTotpEnrolmentBody,
   confirmTotpEnrolmentHeader,
+  previewInvitationBody,
   requestPasswordResetBody,
   requestPasswordResetHeader,
   resetPasswordBody,
@@ -16,10 +24,16 @@ import {
 
 import { parseBoundary, parseIdempotencyKey } from '../../common/validation/parse-boundary.js';
 import type { EmailVerificationService } from './email-verification.service.js';
+import type { InvitationAcceptanceService } from './invitation-acceptance.service.js';
 import type { PasswordResetService } from './password-reset.service.js';
 import { applyRateLimitHeaders } from './rate-limit-headers.js';
 import { RateLimitedException } from './sign-in-throttle.js';
-import { EMAIL_VERIFICATION_SERVICE, PASSWORD_RESET_SERVICE, TOTP_ENROLMENT_SERVICE } from './tokens.js';
+import {
+  EMAIL_VERIFICATION_SERVICE,
+  INVITATION_ACCEPTANCE_SERVICE,
+  PASSWORD_RESET_SERVICE,
+  TOTP_ENROLMENT_SERVICE,
+} from './tokens.js';
 import type { TotpEnrolmentService } from './totp-enrolment.service.js';
 
 /**
@@ -34,7 +48,14 @@ import type { TotpEnrolmentService } from './totp-enrolment.service.js';
  * pointed at an endpoint nobody had built. Not "no new customers": nobody able
  * to sign in at all.
  *
- * ⚠ **ALL THREE ARE `security: []`, AND EACH HAS ITS OWN REASON.** This
+ * **Two more operations joined it** with the practice-invite work — the
+ * COLLEAGUE's half of the same journey. An invited colleague lands on
+ * `/invite?token=…`, previews what they are accepting, chooses a password, and
+ * then walks the same two enrolment steps as the founder. One controller,
+ * because it is one problem — becoming an account somebody can sign in as —
+ * reached through two doors.
+ *
+ * ⚠ **ALL FIVE ARE `security: []`, AND EACH HAS ITS OWN REASON.** This
  * controller injects no `RequestContext` and must never call `require()` —
  * there is nothing here that could accidentally read one.
  *
@@ -44,6 +65,10 @@ import type { TotpEnrolmentService } from './totp-enrolment.service.js';
  *     This is the one authenticated route that cannot require a second factor,
  *     because its entire purpose is that the caller does not have one. See
  *     `totp-enrolment.service.ts` for the window that opens and what bounds it.
+ *   - **Both invitation steps** — the token is the authorisation, and the user
+ *     acceptance creates does not exist until it succeeds. ⚠ Acceptance issues
+ *     NO session; `invitation-acceptance.service.ts` says why nothing here may
+ *     stand in for a second factor the account does not have yet.
  *
  * ⚠ **THE `Idempotency-Key` IS REQUIRED AND PARSED, AND DELIBERATELY NOT
  * REPLAY-CACHED** — the same call `portal.controller.ts` makes on
@@ -51,13 +76,14 @@ import type { TotpEnrolmentService } from './totp-enrolment.service.js';
  * header on every mutation (Governance §3), so a missing or non-UUID one is a
  * `400` here rather than a silent non-idempotent write. But a replay cache
  * keyed on a *caller-supplied header* on a *public* endpoint hands the first
- * caller's response to the second, and on `verifyEmailAddress` that response
- * names an email address. Both operations are already idempotent where it
- * matters, and by construction rather than by cache: verification flips a
- * one-way flag under a conditional write, and a replayed confirmation meets
- * `NT-AUTH-007` because the ref it would write is already there. The contract
- * still declares the `409` because that is the shape of the header, and a
- * durable store would produce it.
+ * caller's response to the second, and on `verifyEmailAddress` — and now on
+ * `acceptInvitation` — that response names an email address. All three
+ * mutations are already idempotent where it matters, and by construction rather
+ * than by cache: verification flips a one-way flag under a conditional write, a
+ * replayed confirmation meets `NT-AUTH-007` because the ref it would write is
+ * already there, and a replayed acceptance meets an `accepted_at` stamped under
+ * a `SELECT … FOR UPDATE`. The contract still declares the `409` because that is
+ * the shape of the header, and a durable store would produce it.
  *
  * Thin by design (`apps/api/CLAUDE.md`): parse with the generated schemas, call
  * ONE service method, map the result.
@@ -67,8 +93,50 @@ export class SignupChainController {
   constructor(
     @Inject(EMAIL_VERIFICATION_SERVICE) private readonly verification: EmailVerificationService,
     @Inject(TOTP_ENROLMENT_SERVICE) private readonly enrolment: TotpEnrolmentService,
+    @Inject(INVITATION_ACCEPTANCE_SERVICE) private readonly invitations: InvitationAcceptanceService,
     @Inject(PASSWORD_RESET_SERVICE) private readonly passwordReset: PasswordResetService,
   ) {}
+
+  /**
+   * `POST /v1/auth/invitation-preview` — what the link in a colleague's
+   * invitation email is FOR.
+   *
+   * ⚠ **`POST` and not `GET`, and it is the only reason a read lives on this
+   * verb.** The token is a credential; a `GET` would carry it in the query
+   * string, which puts it in browser history, in every access log on the way,
+   * and in the `Referer` header of the next outbound link on the page. A body is
+   * the only place a token may travel. It writes nothing
+   * (`x-nt-side-effect: none`) and therefore takes **no `Idempotency-Key`** —
+   * the `beginTotpEnrolment` precedent above.
+   */
+  @Post('auth/invitation-preview')
+  @HttpCode(HttpStatus.OK)
+  async previewInvitation(@Body() body: unknown, @Res({ passthrough: true }) res: Response): Promise<InvitationPreview> {
+    const input = parseBoundary(previewInvitationBody, body, 'request body');
+    return this.withRateLimitHeaders(res, () => this.invitations.preview(input.token));
+  }
+
+  /**
+   * `POST /v1/auth/invitation-acceptance` — the colleague's account exists after
+   * this and not before.
+   *
+   * `201` with the address alone. ⚠ **No session is issued**: the account has no
+   * second factor yet, and sign-in fails closed without one, so anything
+   * session-shaped returned here would be either useless or a way round the
+   * factor. The next call is `POST /auth/totp-enrolment` with the password they
+   * just chose.
+   */
+  @Post('auth/invitation-acceptance')
+  @HttpCode(HttpStatus.CREATED)
+  async acceptInvitation(
+    @Body() body: unknown,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<InvitationAcceptanceResult> {
+    parseIdempotencyKey(acceptInvitationHeader, idempotencyKey);
+    const input = parseBoundary(acceptInvitationBody, body, 'request body');
+    return this.withRateLimitHeaders(res, () => this.invitations.accept(input));
+  }
 
   /**
    * `POST /v1/auth/password-resets` — the forgotten-password door (2 Sep

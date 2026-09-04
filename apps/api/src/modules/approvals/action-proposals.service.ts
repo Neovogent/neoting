@@ -34,6 +34,7 @@ import {
   type ExecutionInput,
   type ExecutionResult,
   type ExecutorRegistry,
+  type ExportEntryPreviewer,
   type FollowUp,
   ProposalExecutionRefused,
   ProposalNotImplementedError,
@@ -111,6 +112,18 @@ export class ActionProposalsService {
      * the publish preview — the reviewed link is a link that verifies.
      */
     private readonly chaseCompose: ChaseComposeConfig,
+    /**
+     * The export's own entry preview — what the VT import file will CONTAIN,
+     * per document, computed into the payload at proposal time so Read review
+     * can render it (D42: a file, never a ledger; nothing is transmitted).
+     *
+     * Optional so a test can build the engine without it. When absent the
+     * proposal simply carries no entry preview and the card falls back to the
+     * three totals it always showed; the alternative — an engine that refused
+     * to create a publish proposal because it could not describe the file — is
+     * a worse failure than a quieter card.
+     */
+    private readonly exportEntryPreview?: ExportEntryPreviewer,
   ) {}
 
   async create(ctx: ScopeContext, request: CreateProposalRequest, idempotencyKey: string): Promise<ActionProposal> {
@@ -162,6 +175,7 @@ export class ActionProposalsService {
             db,
             this.publishing,
             request.payload as unknown as PublishBatchPayload,
+            this.exportEntryPreview,
           )) as unknown as Record<string, unknown>;
         } catch (error) {
           if (error instanceof ProposalExecutionRefused) {

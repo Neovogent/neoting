@@ -13,6 +13,10 @@ export const PORTAL_DOCUMENT_STORE = Symbol('PORTAL_DOCUMENT_STORE');
 export const PORTAL_IDEMPOTENCY_STORE = Symbol('PORTAL_IDEMPOTENCY_STORE');
 /** `GET /v1/portal/context` — the chased items this session may see (METH Stage 9). */
 export const PORTAL_CONTEXT_SERVICE = Symbol('PORTAL_CONTEXT_SERVICE');
+/** `GET /v1/portal/documents` — what this client has sent, in their own words (D49). */
+export const PORTAL_DOCUMENTS_SERVICE = Symbol('PORTAL_DOCUMENTS_SERVICE');
+/** Settings → People — the business's own access list (D45, D49, `portal-people.service.ts`). */
+export const PORTAL_PEOPLE_SERVICE = Symbol('PORTAL_PEOPLE_SERVICE');
 // No token for `portal-upload-status.service.ts`: the contract publishes no
 // status path, so nothing injects it (see the note in `portal.module.ts`).
 /** The accountant's `portal.upload` notification (SoT §4 Stage 8.8, `portal-upload-notifier.ts`). */

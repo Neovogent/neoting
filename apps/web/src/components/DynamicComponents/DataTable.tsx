@@ -42,6 +42,23 @@ const m = defineMessages({
     id: 'shell.dataTable.bulkHint',
     defaultMessage: '{action} needs {count, plural, one {# row} other {# rows}} selected',
   },
+  /**
+   * ⚠ The eighth, and it closes a real complaint: on the Documents screen the
+   * only two bulk actions read as permanently greyed out. They were disabled
+   * because NOTHING WAS SELECTED — every action needs at least one row — and
+   * the screen said so nowhere a person could read it. `selectHint` is a hover
+   * `title`, which is invisible on a phone and unfindable on a desktop unless
+   * you already suspect the answer; `bulkHint` only appears once a selection
+   * has begun. A bar of disabled buttons with no stated reason teaches an
+   * accountant that the feature is broken.
+   *
+   * It names the shift-range too, because that is the affordance nobody
+   * discovers by accident and the one that makes a bulk bar worth having.
+   */
+  selectNothing: {
+    id: 'shell.dataTable.selectNothing',
+    defaultMessage: 'Nothing is selected. Tick a row to act on it — or tick one and shift-click another to take the range.',
+  },
 });
 
 export interface Column<T> {
@@ -151,6 +168,8 @@ export function DataTable<T>({
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [selected, setSelected] = useState<string[]>([]);
+  /** The last row toggled without shift — one end of a shift-click range. */
+  const [anchorId, setAnchorId] = useState<string | null>(null);
 
   const sorted = useMemo(() => {
     if (!sortKey) return rows;
@@ -180,8 +199,30 @@ export function DataTable<T>({
   const selectedRows = rows.filter((r) => selected.includes(rowId(r)));
 
   const toggleAll = () => setSelected(allSelected ? [] : allIds);
-  const toggleOne = (id: string) =>
+
+  /**
+   * Shift-click takes a RANGE, from the last row toggled to this one, in the
+   * order the table is currently sorted in — which is the order on screen, and
+   * the only order a person could mean. It ADDS rather than toggling: dragging
+   * a selection open and having half of it close again is the behaviour every
+   * file manager decided against decades ago.
+   *
+   * The anchor is the last row toggled without shift. A shift-click with no
+   * anchor (the first click on a fresh table) is an ordinary toggle rather than
+   * nothing happening.
+   */
+  const toggleOne = (id: string, extend = false) => {
+    const anchorIndex = anchorId === null ? -1 : allIds.indexOf(anchorId);
+    const targetIndex = allIds.indexOf(id);
+    if (extend && anchorIndex !== -1 && targetIndex !== -1 && anchorIndex !== targetIndex) {
+      const [from, to] = anchorIndex < targetIndex ? [anchorIndex, targetIndex] : [targetIndex, anchorIndex];
+      const range = allIds.slice(from, to + 1);
+      setSelected((prev) => [...prev, ...range.filter((x) => !prev.includes(x))]);
+      return;
+    }
+    setAnchorId(id);
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
 
   const emptyText = emptyMessage ?? intl.formatMessage(m.empty);
 
@@ -209,6 +250,13 @@ export function DataTable<T>({
       })
     : undefined;
 
+  /**
+   * The reason EVERY action is off, said where a reason belongs. See the note
+   * on `m.selectNothing`: this is the line whose absence made the Documents
+   * screen's bulk bar read as broken.
+   */
+  const nothingSelected = selectable && bulkActions.length > 0 && selected.length === 0 && rows.length > 0;
+
   /** One definition, rendered above and/or below the rows. */
   const actionButtons = bulkActions.map((a) => {
     const need = a.minSelected ?? 1;
@@ -220,10 +268,25 @@ export function DataTable<T>({
         disabled={short}
         title={short ? hoverHint(a) : undefined}
         onClick={() => a.onClick(selectable ? selectedRows : rows)}
-        className={`flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-bold rounded-2xl transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+        /*
+         * `whitespace-nowrap` + `shrink-0`: the labels were WRAPPING — "Move to
+         * / client", "Export / CSV" — because the strip stretched each button
+         * to an equal share of a narrow bar and then let the words break. A
+         * bulk bar is a row of named actions; a name broken across two lines
+         * reads as two controls. The strip scrolls sideways instead (see the
+         * footer below), which is what `scroll-x` exists for.
+         *
+         * ⚠ The disabled state is a real state, not a faded one. `opacity-40`
+         * over zinc-on-card put these controls near-unreadable, and disabled is
+         * what most of them are most of the time — an accountant cannot read a
+         * label they might want. So disabled is an explicit token pair with
+         * legible contrast, and what it MEANS is said in words under the bar
+         * rather than encoded in a shade.
+         */
+        className={`flex shrink-0 whitespace-nowrap items-center justify-center gap-2 px-5 py-2.5 text-sm font-bold rounded-2xl transition-all disabled:cursor-not-allowed disabled:shadow-none ${
           a.primary
-            ? 'text-white bg-brand hover:bg-brand-hover shadow-glow-btn-soft'
-            : 'text-zinc-400 hover:text-white hover:bg-white/5 border border-white/5 bg-card shadow-inner'
+            ? 'text-white bg-brand hover:bg-brand-hover shadow-glow-btn-soft disabled:bg-raised disabled:text-zinc-400 disabled:border disabled:border-white/10'
+            : 'text-zinc-400 hover:text-white hover:bg-white/5 border border-white/5 bg-card shadow-inner disabled:bg-raised disabled:text-zinc-400 disabled:border-white/10'
         }`}
       >
         {a.icon && <a.icon size={16} />}
@@ -298,7 +361,11 @@ export function DataTable<T>({
         {sorted.map((row) => {
           const id = rowId(row);
           const isSel = selected.includes(id);
-          const activate = onRowClick ? () => onRowClick(row) : selectable ? () => toggleOne(id) : undefined;
+          const activate: ((e?: { shiftKey?: boolean }) => void) | undefined = onRowClick
+            ? () => onRowClick(row)
+            : selectable
+              ? (e) => toggleOne(id, e?.shiftKey === true)
+              : undefined;
           return (
             <div
               key={id}
@@ -325,7 +392,7 @@ export function DataTable<T>({
             >
               {selectable && (
                 <div className="pt-0.5 shrink-0">
-                  <Checkbox checked={isSel} onChange={() => toggleOne(id)} />
+                  <Checkbox checked={isSel} onChange={(e) => toggleOne(id, e.shiftKey)} />
                 </div>
               )}
               <div className="flex-1 min-w-0 flex flex-col gap-2.5">
@@ -411,14 +478,20 @@ export function DataTable<T>({
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: Math.min(i * 0.03, 0.3) }}
-                  onClick={onRowClick ? () => onRowClick(row) : selectable ? () => toggleOne(id) : undefined}
+                  onClick={
+                    onRowClick
+                      ? () => onRowClick(row)
+                      : selectable
+                        ? (e) => toggleOne(id, e.shiftKey)
+                        : undefined
+                  }
                   className={`border-b border-white/5 last:border-0 transition-colors ${
                     selectable || onRowClick ? 'cursor-pointer' : ''
                   } ${isSel ? 'bg-brand/[0.07]' : 'hover:bg-white/[0.02]'}`}
                 >
                   {selectable && (
                     <td className="px-5 py-3.5">
-                      <Checkbox checked={isSel} onChange={() => toggleOne(id)} />
+                      <Checkbox checked={isSel} onChange={(e) => toggleOne(id, e.shiftKey)} />
                     </td>
                   )}
                   {columns.map((c) => (
@@ -438,31 +511,63 @@ export function DataTable<T>({
         </table>
       </div>
 
+      {/*
+        ⚠ **One footer block at the end of the table, and everything in it.**
+        The count, the actions and the sentence explaining why the actions are
+        off are one thing — a bulk bar. They used to be three: the hints sat
+        OUTSIDE the grey bar, below it, unattached to anything, colliding with
+        whatever the table was sitting on. A reason floating loose under a
+        control is not an explanation of that control.
+      */}
       {(bulkActions.length > 0 || footer) && (
         <div data-tour="bulk-bar" className="@max-3xl:sticky @max-3xl:bottom-0 z-10 bg-card border-t border-white/5">
-          <div className="flex items-center justify-between gap-3 bg-raised/50 p-3 @3xl:p-4 flex-wrap">
-            <div className="text-[12px] text-zinc-500 font-semibold px-2 min-w-0">
-              {footer ?? intl.formatMessage(m.footerCount, { count: rows.length })}
+          <div className="bg-raised/50 p-3 @3xl:p-4 flex flex-col gap-2.5">
+            <div className="flex flex-col @3xl:flex-row @3xl:items-center @3xl:justify-between gap-2.5 @3xl:gap-4">
+              <div className="text-[12px] text-zinc-400 font-semibold px-1 min-w-0">
+                {footer ?? intl.formatMessage(m.footerCount, { count: rows.length })}
+              </div>
+              {bulkActions.length > 0 && (
+                // Sideways, never wrapped: `scroll-x` hides its own scrollbar
+                // and contains the overscroll, which is the responsive layer's
+                // established answer for a strip too wide for its container.
+                <div className="scroll-x flex items-center gap-2 @3xl:gap-3 min-w-0 -mx-1 px-1">
+                  {actionButtons}
+                </div>
+              )}
             </div>
-            <div className="flex items-center gap-2 @3xl:gap-3 flex-wrap w-full @3xl:w-auto [&>button]:flex-1 @3xl:[&>button]:flex-none">
-              {actionButtons}
-            </div>
+
+            {/* Attached to the bar it explains, and never both at once: the
+                amber one names an action that is short of rows, the quiet one
+                answers the question a bar of disabled buttons asks. */}
+            {(shortHint !== undefined || nothingSelected) && (
+              <p
+                className={`text-[12px] font-semibold px-1 leading-relaxed ${
+                  shortHint === undefined ? 'text-zinc-400' : 'text-amber-400'
+                }`}
+              >
+                {shortHint ?? intl.formatMessage(m.selectNothing)}
+              </p>
+            )}
           </div>
-          {shortHint && (
-            <div className="px-5 pb-3 -mt-1 text-[12px] text-amber-400 font-semibold">{shortHint}</div>
-          )}
         </div>
       )}
     </div>
   );
 }
 
-function Checkbox({ checked, onChange }: { checked: boolean; onChange: () => void }) {
+function Checkbox({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  /** The event is passed so a caller can read `shiftKey` for a range. */
+  onChange: (e: React.MouseEvent) => void;
+}) {
   return (
     <button
       onClick={(e) => {
         e.stopPropagation();
-        onChange();
+        onChange(e);
       }}
       aria-pressed={checked}
       className={`hit-area w-[18px] h-[18px] rounded-md border flex items-center justify-center transition-all ${

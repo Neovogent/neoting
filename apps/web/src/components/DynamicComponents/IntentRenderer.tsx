@@ -13,7 +13,7 @@ import { MatchCard } from './MatchCard';
 import { PipelineStats } from './PipelineStats';
 import { PublishCard } from './PublishCard';
 import { RuleBuilderCard } from './RuleBuilderCard';
-import { UserInviteForm } from './UserInviteForm';
+import { StatementsCard } from './StatementsCard';
 import { ApprovalsTable, AuditTable, InboxTable, MissingTable, RejectedTable } from './Tables';
 import type { Message } from '../../lib/types';
 
@@ -49,6 +49,11 @@ export function IntentRenderer({ message }: { message: Message }) {
 
     case 'SHOW_INBOX':
       return <InboxTable clientIds={clientIds} clientNames={clientNames} statusFilter={payload.statusFilter} />;
+
+    // D40's bank input (#233). Reads `GET /statements` itself — the model
+    // picked the intent and nothing else.
+    case 'SHOW_STATEMENTS':
+      return <StatementsCard businessId={payload.businessId} businessName={payload.businessName} />;
 
     // The METH Stage 13 golden paths — real data, and every state change
     // through the real proposal engine (the cards say how).
@@ -94,9 +99,6 @@ export function IntentRenderer({ message }: { message: Message }) {
 
     case 'PUBLISH':
       return <PublishCard clientIds={clientIds} />;
-
-    case 'INVITE_USER':
-      return <UserInviteForm />;
 
     case 'SHOW_ANALYTICS':
       return <PipelineStats scopeName={scopeName} />;

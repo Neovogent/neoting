@@ -47,6 +47,122 @@ needed, `practices` already admits its own tenant). Landed under the owner's
 1 Sep 2026 ruling that retired the G7 issue ceremony; recorded in
 `packages/contracts/CLAUDE.md`.
 
+## `Document.deletedAt` — `20260902220000_document_soft_delete` (2 Sep 2026)
+
+One nullable column and one index. **Writes no data**: every existing row keeps
+NULL, which is exactly "not deleted", so the new default listing predicate
+(`deleted_at IS NULL`) admits every row visible today and product behaviour is
+unchanged the moment it lands. No UPDATE, no DELETE, no NOT NULL, no DEFAULT
+that would rewrite the table, nothing dropped or renamed — safe against the
+local database holding real client data pulled from staging.
+
+Expand-contract: this is the EXPAND step and **no contract step is owed**,
+because nothing is being replaced. Reversing it is one `DROP COLUMN`, and
+reversing it after deletions would restore those documents to their queues
+rather than lose anything.
+
+| Column / index | Why |
+|---|---|
+| `deleted_at TIMESTAMP(3) NULL` | Trash. NULL means not deleted. `TIMESTAMP(3)` and not `TIMESTAMPTZ` — every timestamp in this schema is `TIMESTAMP(3)` (Prisma's `DateTime` mapping), the repo rule is UTC in storage with London applied at render, and `archived_at` two lines above it is `TIMESTAMP(3)`. ⚠ A lone `TIMESTAMPTZ` is ALSO permanent drift: `migrate diff` reports it as an altered column forever, so every later migration would open with a spurious ALTER. This was written `TIMESTAMPTZ` first and the drift check caught it. |
+| `documents_business_id_deleted_at_idx` | `GET /v1/documents?deleted=true` is `WHERE business_id = ? AND deleted_at IS NOT NULL`, and every one of the five existing indexes leads with `business_id` followed by a PIPELINE column, so none can serve it. Ships with the query pattern that needs it. NOT partial (`WHERE deleted_at IS NOT NULL`) despite Trash being the only reader: Prisma's `@@index` cannot express a predicate, so a hand-written partial index drifts out of `schema.prisma` — the same reasoning recorded on `bank_transactions_account_id_import_fingerprint_key`. |
+
+⚠ **NOT a ninth `DocumentState` member, and the enum was the obvious wrong
+choice.** `DocumentState` is a TOTAL domain in three places that would have
+broken quietly rather than loudly: `portal-document-status.ts` maps every member
+onto one of five words a CLIENT is shown (and "deleted" must never be one of
+them), `LEGAL_TRANSITIONS` is a total 8×8 matrix, and `check-contract.mjs`
+mirrors the enum into `openapi.yaml` verbatim, so the value would have entered
+the public API's state vocabulary too.
+
+The deeper reason is that deletion is **orthogonal to pipeline state**: a READY
+document deleted and restored is READY again, and `state` is what remembers
+that. A state member would have had to destroy the answer in order to record the
+question. `archived_at` sits beside `state` for the same reason, so the shape
+has a precedent in this very table.
+
+**No RLS change.** `documents` is already in the policed set with FORCE ROW
+LEVEL SECURITY, and a policy is written over the ROW, not its columns. Deletion
+is a product predicate applied on top of what RLS already narrowed to —
+`apps/api/src/common/documents/deleted-documents.ts` is the one place it is
+spelled — never a tenancy boundary.
+
+⚠ **Two `document_id` columns in this schema still have NO foreign key**:
+`statements.document_id` and `supplier_statements.document_id`. `document.purge`
+therefore checks them explicitly before destroying anything, because Postgres
+would happily leave them dangling. Adding those FKs is a real follow-up.
+
+## Practice invitations — `20260902120000_practice_invites` (2 Sep 2026)
+
+Additive throughout, no policy change, and the last part is the point:
+`invites_tenant` already admits a practice-level row (`business_id IS NULL AND
+practice_id = app_practice_id()`), which is exactly the shape a colleague
+invitation has — so **per-client scoping for an invited `PRACTICE_STANDARD` is
+enforced by policies that already existed.**
+
+| Column / index | Why |
+|---|---|
+| `hide_financial_fields BOOLEAN NOT NULL DEFAULT false` | SoT §3.3, carried onto the membership acceptance creates. ⚠ **Written and read by nothing** when a document is served — `POST /businesses/{id}/members` accepted it and silently DISCARDED it, which is worse. Storing the intent is the honest half; the redaction is owed, and no screen may present it as a protection in force |
+| `business_ids TEXT[] NOT NULL DEFAULT '{}'` | The clients a scoped colleague is assigned. An array rather than N invitation rows: one decision, one email, one token — and `token_hash` is UNIQUE, so N rows would need N tokens. **Empty means practice-wide.** No FK: Postgres has none on an array element, and the ids are re-checked against RLS at acceptance anyway |
+| `invited_by_user_id TEXT` → `users(id)` **ON DELETE SET NULL** | So the acceptance screen can name a person. `SET NULL` and not `CASCADE`, deliberately: an invitation belongs to the practice, not to the colleague who sent it — cascading would silently withdraw every outstanding invitation the moment an admin was removed, invisible to the people holding the links |
+| `invites_practice_id_idx` | The practice team list filters it and `invites_tenant`'s practice branch compares it on every row. `invites_business_id_idx` covers only the client half |
+
+⚠ **NOT `@@unique([practiceId, email])`.** `team.service.ts` documents a
+create-if-absent pattern that assumes re-inviting an address is legal, and it is:
+an invitation nobody opened must be re-sendable without an admin first finding
+and deleting the old row.
+
+⚠ **A scoped colleague's memberships carry `practice_id = NULL`**, and that null
+is the whole mechanism rather than an omission. `app_can_access_business()`'s
+third branch grants a user access to EVERY business of any practice they hold a
+`practice_id` on — so a scoped colleague whose rows also carried one would see
+exactly the clients the scope exists to withhold.
+`clients-team-settings/practice-invite.integration.test.ts` proves the confinement
+against real Postgres, and it would pass for the wrong reason if the shape
+changed.
+
+**`seed.ts` changed with it**: `mem_shakib_demo` now carries `isOwner: true`.
+It is the only login-able demo admin, D44's release rule is `canRelease(role) &&
+isOwner`, and without the flag nobody on a seeded machine could release — so the
+one behaviour the release gate exists to protect could be tested by nobody.
+
+## `BankTransaction.importFingerprint` — `20260902160000` (2 Sep 2026)
+
+**The NULL-is-distinct trap, in the one table where it cost a client half a
+ledger.** `bank_transactions_account_id_provider_transaction_id_key` looked like
+a dedupe guarantee and was inert: D40 makes manual statement upload the ONLY
+bank input, so every row's `provider_transaction_id` is NULL, and Postgres
+treats NULLs as **distinct** in a plain unique index. A real client held 2,288
+transactions that were 1,144 rows imported twice, from two statements covering
+the identical period nine seconds apart, and nothing in the schema objected.
+
+| Change | Why |
+|---|---|
+| `import_fingerprint TEXT` (nullable) | Content-derived identity for a line from an uploaded file: sha256 over account + booked date + currency + signed pence + normalised description + **the occurrence ordinal of that tuple within its own source file**. The ordinal is what keeps two genuinely identical purchases as two rows while making the same line, imported twice, collide. NULL for a feed row, which carries a real `provider_transaction_id` |
+| `@@unique([accountId, importFingerprint])` | The one that actually holds. NOT partial — a plain unique index already leaves NULL rows unconstrained, Prisma's `@@unique` cannot express a predicate, and a hand-written partial index would drift out of `schema.prisma` on the next `migrate diff` |
+
+⚠ **This migration writes NO data**, and that is the safety argument in full: an
+`ADD COLUMN` with no default and a unique index over a column that is NULL on
+every existing row. No UPDATE, no DELETE, no NOT NULL, no table rewrite — so it
+is safe against a database holding real, and already duplicated, client rows.
+
+**Keying the rows that predate it is deliberately NOT in the migration.**
+`apps/api/src/db/backfill-import-fingerprints.ts` does it — idempotent (`WHERE
+import_fingerprint IS NULL`), reversible in one statement (`UPDATE
+bank_transactions SET import_fingerprint = NULL`), and it **deletes nothing**.
+Doing it in SQL would mean re-implementing the normalisation and the hash of
+`banking-matching/statement-ingest/row-identity.ts` in a second language, and
+the two would eventually disagree about what a line's identity is — which is the
+one thing that must never happen.
+
+⚠ **It runs per practice through `scopedDb`, and the first draft did not.**
+`bank_transactions` is in the `direct_tables` RLS loop with FORCE ROW LEVEL
+SECURITY, so a query with no GUCs set matches **no rows and does not error** —
+the backfill reported "nothing to do" against six un-keyed rows. That is the
+same class of silence as the `otp_sessions` note below: a policy answering
+nothing looks exactly like there being nothing. `backfill-system-actors.ts` gets
+away with a root-client read only because `practices`, `users` and `memberships`
+carry no policies at all.
+
 ## Documents are practice-anchored until they are business-anchored
 
 Issue #17. `documents.business_id` is **nullable** and `documents.practice_id` was added, because `inbox` defaults to `UNROUTED` — a document from a sender we do not recognise has no business until routing says so, and a NOT NULL `business_id` made that state unwritable.

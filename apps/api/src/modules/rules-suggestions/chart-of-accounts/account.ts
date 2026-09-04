@@ -38,18 +38,38 @@ import { z } from 'zod';
  */
 
 /**
- * The ledgers this release seeds into. Deliberately the four an income-and-
- * expenditure chart needs: ID codes purchase documents and sales documents, so
- * a balance-sheet ledger beyond `Fixed assets` (which exists because §24.4.6's
- * tier-1 error is capital-versus-revenue) would be a picklist entry no ID
- * document can legitimately land on.
+ * The ledgers this release seeds into.
+ *
+ * Four of them are the income-and-expenditure chart ID codes against, plus
+ * `Fixed assets` because §24.4.6's tier-1 error is capital-versus-revenue.
+ *
+ * ## `Current assets` is the fifth, and it was added for one account
+ *
+ * The rule this list used to state — *no balance-sheet ledger beyond `Fixed
+ * assets`, because nothing an ID document carries can legitimately land on
+ * one* — turns out to have one real exception, and it is the commonest invoice
+ * in a software-heavy business. **An annual subscription paid up front is a
+ * prepayment.** A right to access supplier-hosted software is a service
+ * contract (IFRIC agenda decision, March 2019), not an intangible; a fee paid
+ * in advance of that service is a payment for a service not yet received, and
+ * the portion falling after the year end sits in current assets. Without a
+ * ledger for it the chart can express *capital* and *revenue* and nothing in
+ * between, which is precisely the distinction a twelve-month invoice crossing
+ * a year end turns on.
+ *
+ * ⚠ It carries exactly one account (`PREPAYMENTS`) and it is not an invitation
+ * to add more. A second balance-sheet account with no ID document behind it is
+ * the picklist entry the old rule was protecting against.
  *
  * ⚠ These strings travel **into an accountant's VT import file**. VT's
  * Converter saves the mapping against the exact string it was given, so
  * renaming one silently makes every future import manual for every client
  * already using it (§24.3.1). Treat this array as data with a migration cost.
+ * The VT emitter itself only requires *a* prefix (it warns on a bare name and
+ * nothing else), so an unfamiliar ledger name costs one manual mapping in VT's
+ * Converter — it never corrupts a figure.
  */
-export const LEDGERS = ['Sales', 'Cost of sales', 'Expenses', 'Fixed assets'] as const;
+export const LEDGERS = ['Sales', 'Cost of sales', 'Expenses', 'Fixed assets', 'Current assets'] as const;
 
 export type Ledger = (typeof LEDGERS)[number];
 

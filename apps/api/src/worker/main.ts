@@ -26,6 +26,7 @@ import { createRedisConnection } from '../modules/ingestion-routing/queue/redis-
 import { selectMediaFetcher } from '../modules/ingestion-routing/queue/select-media-fetcher.js';
 import type { MediaIntakeDeps } from '../modules/ingestion-routing/queue/whatsapp-media-intake.js';
 import { PrismaMatchSuggester, PrismaStatementStep } from '../modules/banking-matching/index.js';
+import { ChartOfAccountsService, SupplierCodingService } from '../modules/rules-suggestions/index.js';
 import { selectDocumentStore } from '../modules/ingestion-routing/storage/select-document-store.js';
 import { PrismaUploadSanitisationStep } from '../modules/ingestion-routing/web-upload/prisma-upload-sanitisation.js';
 
@@ -81,8 +82,23 @@ function bootstrap(): void {
   const ocrReader = selectOcrReader(env, ocrLogger);
   logger.log(`document reader: ${env.STATEMENT_READER}`);
 
+  // The coding ladder (A6), consulted by extraction for a document nothing
+  // coded — an accountant's rule first, then a practice default, then this
+  // client's own history, and only then a **suggestion** carrying its provenance
+  // and a confidence.
+  //
+  // ⚠ Built here, in the composition root, for the reason every other seam on
+  // this page is: the pipeline takes it as a dependency so a unit test can drive
+  // the escalation branch without a database, and so exactly one place decides
+  // which implementation runs. It writes nothing a human did not approve —
+  // `documents.category_code` still has one writer, and a suggestion is not a
+  // coding. Until this line existed the whole rung was dead code: 196 passing
+  // tests and no caller.
+  const codingAdvisor = new SupplierCodingService(getPrismaClient(), new ChartOfAccountsService(getPrismaClient()));
+
   const extractor = new PrismaExtractionStep(getPrismaClient(), selectExtractor(env, documentStore, aiBudget), {
     logger: ocrLogger,
+    coding: codingAdvisor,
     ...(ocrReader === undefined ? {} : { ocr: ocrReader, store: documentStore }),
   });
   // Auto-close on inbound match (chase, METH Stage 8) — runs after extraction for

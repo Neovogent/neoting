@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Fragment, lazy, Suspense, useMemo, useState } from 'react';
 import {
   ArrowLeft, Sparkles, Send, Activity, Star,
   RefreshCw, CheckCircle, Eye, Users, Settings as SettingsIcon, Download, Smartphone,
@@ -10,15 +10,36 @@ import { defineMessages, useIntl, type IntlShape, type MessageDescriptor } from 
 import { commonActions, commonLabels, commonPlaceholders } from '../i18n/common';
 import { useAppContext } from '../context/AppContext';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
-import { DocumentPreview } from '../components/DynamicComponents/DocumentPreview';
-import { Modal, WorkflowCard, WorkflowEditor, blankWorkflow } from './ApprovalsView';
+import { Modal } from '../components/DynamicComponents/Modal';
+import { WorkflowCard, blankWorkflow } from '../components/DynamicComponents/WorkflowCard';
 import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
 import { RolePicker } from '../components/DynamicComponents/RolePicker';
-import { ClientInbox } from './ClientInbox';
+// ⚠ EVERY SUB-TAB IS LAZY, and that is a budget decision, not a style. This is
+// the worst route in the app and the honest measurement — the transitive static
+// import closure, `scripts/measure/route-bundle-closure.mjs`, not the
+// four-chunk shorthand that undercounts it by ~40 kB — had it 34,659 B OVER the
+// 250,000 B budget. Each of these is a whole screen behind a tab nobody has
+// opened yet: the same argument `App.tsx` makes for routes, one level down.
+// They keep NAMED exports for their other call sites, so the `.then` unwrap is
+// the shape `lazy()` needs.
+//
+// Statements and Expense Claims joined the list because of what they were
+// costing SOMEONE ELSE. `ClientSupplierStatements` imports `StatementModal`, so
+// Rollup filed `StatementModal` in THIS chunk — and `BankView`, which needs the
+// same modal, then statically imported the whole `ClientDetailView` chunk
+// (30,665 B: this file, both tab screens and `OffboardClientDialog`) to reach
+// it. A route paying 30 kB to borrow one dialog from its own parent is the
+// chunking artefact, not a design. Behind `lazy()` the shared modal lands in a
+// chunk of its own and neither route carries the other.
+// The two modals on this route are lazy for the same reason the tabs are: both
+// open on a click, neither is needed to paint the screen.
+const DocumentPreview = lazy(() => import('../components/DynamicComponents/DocumentPreview').then((m) => ({ default: m.DocumentPreview })));
+const WorkflowEditor = lazy(() => import('../components/DynamicComponents/WorkflowEditor').then((m) => ({ default: m.WorkflowEditor })));
+const ClientInbox = lazy(() => import('./ClientInbox').then((m) => ({ default: m.ClientInbox })));
 import { ChaseComposer } from '../components/DynamicComponents/ChaseComposer';
-import { BankView } from './BankView';
-import { ClientSupplierStatements } from './ClientSupplierStatements';
-import { ClientExpenseClaims } from './ClientExpenseClaims';
+const BankView = lazy(() => import('./BankView').then((m) => ({ default: m.BankView })));
+const ClientSupplierStatements = lazy(() => import('./ClientSupplierStatements').then((m) => ({ default: m.ClientSupplierStatements })));
+const ClientExpenseClaims = lazy(() => import('./ClientExpenseClaims').then((m) => ({ default: m.ClientExpenseClaims })));
 import { currency } from '../lib/resolver';
 import { healthTone } from '../lib/selectors';
 import { fromSlug, slug, useQueryParam, useSegment } from '../lib/router';
@@ -514,6 +535,20 @@ const CHANNEL_LABEL: Record<Document['source'], MessageDescriptor> = defineMessa
   csv: { id: 'clients.clientDetailView.channelCsv', defaultMessage: 'CSV import' },
 });
 
+/**
+ * What a lazy tab shows while its chunk arrives. A skeleton, not a spinner —
+ * frontend-ten item 5 — and `aria-hidden`, because the shape carries no
+ * information a screen reader needs; the tab it belongs to is already named.
+ */
+function TabSkeleton() {
+  return (
+    <div aria-hidden="true" className="flex flex-col gap-3 animate-pulse">
+      <div className="h-11 rounded-2xl bg-card" />
+      <div className="h-64 rounded-2xl bg-card" />
+    </div>
+  );
+}
+
 export function ClientDetailView() {
   const {
     clients, openClientId, openClient, statsFor, documents, missing,
@@ -650,6 +685,19 @@ export function ClientDetailView() {
     : 0;
   const businessAccount = businessAccounts.find((a) => a.clientId === client.id);
   const businessMembers = businessAccount?.members ?? [];
+  /**
+   * The client's email, resolved ONCE for both surfaces that print it — the
+   * Overview's Client contact panel and the Settings tab's Client details.
+   * Two lookups would be two answers the day one of them is changed.
+   *
+   * Live it is `Client.email`, mapped in `AppContext` from the contract's
+   * `BusinessSummary.primaryContactEmail` (the `contacts` row intake writes
+   * with `is_primary`). Synthetic it falls back to the seeded portal account,
+   * which is where this app held a client email before the field existed.
+   * Empty when neither has one — the panels render an em dash rather than
+   * deriving an address from the name or the practice domain.
+   */
+  const contactEmail = client.email ?? businessAccount?.email ?? '';
   const clientConversations = conversations.filter(
     (c) => c.attachedClientIds.includes(client.id) && c.messages.length > 0,
   );
@@ -894,6 +942,11 @@ export function ClientDetailView() {
                   <div className="flex flex-col gap-2.5 text-[13px]">
                     <Row label={intl.formatMessage(m.rowPrimaryContact)} value={client.contactName ?? '—'} />
                     <Row label={intl.formatMessage(commonLabels.mobile)} value={client.mobile ?? '—'} />
+                    {/* Email is the channel chases actually go out on (M8 — there
+                        is no SMS), so it belongs beside the mobile. Resolved once
+                        as `contactEmail`; see its comment for where each mode's
+                        value comes from. */}
+                    <Row label={intl.formatMessage(commonLabels.email)} value={contactEmail || '—'} />
                     <Row label={intl.formatMessage(commonLabels.vatNumber)} value={client.vatNumber ?? '—'} />
                     <Row label={intl.formatMessage(commonLabels.nextDeadline)} value={client.deadline} />
                     <Row label={intl.formatMessage(m.rowChasePolicy)} value={chase?.policy ?? intl.formatMessage(m.chasePolicyDefault)} />
@@ -910,7 +963,9 @@ export function ClientDetailView() {
           {/* Wireframe screen 8. Both inboxes are the same component over
               opposite sides of the ledger. */}
           {(tab === 'Costs' || tab === 'Sales') && (
-            <ClientInbox client={client} kind={tab === 'Costs' ? 'cost' : 'sales'} onPreview={setPreview} />
+            <Suspense fallback={<TabSkeleton />}>
+              <ClientInbox client={client} kind={tab === 'Costs' ? 'cost' : 'sales'} onPreview={setPreview} />
+            </Suspense>
           )}
 
           {/* Wireframe: "[AI] tab = same chat as screen 3, pre-scoped to this
@@ -985,15 +1040,27 @@ export function ClientDetailView() {
           {/* Supplier statements — the supplier's own list of what they
               invoiced, reconciled against what we hold. Bank statements are a
               different thing and live on the Bank tab. */}
-          {tab === 'Supplier Statements' && <ClientSupplierStatements client={client} />}
+          {tab === 'Supplier Statements' && (
+            <Suspense fallback={<TabSkeleton />}>
+              <ClientSupplierStatements client={client} />
+            </Suspense>
+          )}
 
-          {tab === 'Expense Claims' && <ClientExpenseClaims client={client} onPreview={setPreview} />}
+          {tab === 'Expense Claims' && (
+            <Suspense fallback={<TabSkeleton />}>
+              <ClientExpenseClaims client={client} onPreview={setPreview} />
+            </Suspense>
+          )}
 
           {/* The whole bank surface, pinned to this client. There is no
               practice-wide Bank any more — bank data is always one client's,
               so matching, cash coding, match rules, statement upload and gap
               detection all live here. */}
-          {tab === 'Bank' && <BankView clientId={client.id} />}
+          {tab === 'Bank' && (
+            <Suspense fallback={<TabSkeleton />}>
+              <BankView clientId={client.id} />
+            </Suspense>
+          )}
 
           {tab === 'Chases' && (
             <DataTable<MissingItem>
@@ -1475,6 +1542,7 @@ export function ClientDetailView() {
             <div data-tour="client-settings" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <ClientDetailsPanel
                 client={client}
+                email={contactEmail}
                 pending={pendingChanges}
                 onPropose={proposeClientDetailChanges}
               />
@@ -1638,11 +1706,13 @@ export function ClientDetailView() {
           />
         )}
         {editingWorkflow && (
-          <WorkflowEditor
-            workflow={editingWorkflow}
-            onSave={(w) => { saveWorkflow(w); setEditingWorkflow(null); }}
-            onClose={() => setEditingWorkflow(null)}
-          />
+          <Suspense fallback={null}>
+            <WorkflowEditor
+              workflow={editingWorkflow}
+              onSave={(w) => { saveWorkflow(w); setEditingWorkflow(null); }}
+              onClose={() => setEditingWorkflow(null)}
+            />
+          </Suspense>
         )}
         {preview && (
           <Modal onClose={() => setPreview(null)}>
@@ -1663,7 +1733,15 @@ export function ClientDetailView() {
                 </button>
               </div>
               {/* Kept live from state so a correction made here shows immediately. */}
-              <DocumentPreview document={documents.find((d) => d.id === preview.id) ?? preview} />
+              {/* Lazy, and the Suspense is INSIDE the frame on purpose: the
+                  modal, its toolbar and Download paint at once, and only the
+                  document card waits on its chunk. Eager, the preview and the
+                  document-detail client were 9.6 kB gzip on a route that was
+                  over the 250,000 B budget, downloaded by everyone who opened a
+                  client whether or not they ever opened a document. */}
+              <Suspense fallback={null}>
+                <DocumentPreview document={documents.find((d) => d.id === preview.id) ?? preview} />
+              </Suspense>
             </div>
           </Modal>
         )}
@@ -1802,8 +1880,17 @@ const detailsPanelMessages = defineMessages({
  * business's facts, and a wrong mobile means the next chase reaches a stranger.
  * So the accountant fills the form and the business confirms.
  */
-function ClientDetailsPanel({ client, pending, onPropose }: {
+function ClientDetailsPanel({ client, email, pending, onPropose }: {
   client: Client;
+  /**
+   * The client's email, already resolved by the view (live server value, or the
+   * seeded portal account in synthetic mode). Empty renders as an em dash.
+   *
+   * A PROP rather than a seventh entry in `FIELDS`: that list is typed
+   * `ClientDetailChange['field']` and every member of it is editable and
+   * proposable. This one is neither — see the render below.
+   */
+  email: string;
   pending: ClientDetailChange[];
   onPropose: (
     clientId: string,
@@ -1876,27 +1963,53 @@ function ClientDetailsPanel({ client, pending, onPropose }: {
 
       <div className="flex flex-col gap-4">
         {FIELDS.map((f) => (
-          <div key={f.field}>
-            <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
-              {intl.formatMessage(f.label)}
-              {f.hint && (
-                <span className="ml-2 normal-case tracking-normal text-zinc-600">
-                  {intl.formatMessage(detailsPanelMessages.fieldHint, { hint: intl.formatMessage(f.hint) })}
-                </span>
+          <Fragment key={f.field}>
+            <div>
+              <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
+                {intl.formatMessage(f.label)}
+                {f.hint && (
+                  <span className="ml-2 normal-case tracking-normal text-zinc-600">
+                    {intl.formatMessage(detailsPanelMessages.fieldHint, { hint: intl.formatMessage(f.hint) })}
+                  </span>
+                )}
+              </div>
+              {editing ? (
+                <input
+                  value={draft[f.field]}
+                  onChange={(e) => setDraft({ ...draft, [f.field]: e.target.value })}
+                  className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors"
+                />
+              ) : (
+                <div className="w-full bg-ground/60 border border-white/5 rounded-xl px-4 py-2.5 text-sm text-zinc-300">
+                  {String(client[f.field] ?? '') || '—'}
+                </div>
               )}
             </div>
-            {editing ? (
-              <input
-                value={draft[f.field]}
-                onChange={(e) => setDraft({ ...draft, [f.field]: e.target.value })}
-                className="w-full bg-ground border border-white/5 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors"
-              />
-            ) : (
-              <div className="w-full bg-ground/60 border border-white/5 rounded-xl px-4 py-2.5 text-sm text-zinc-300">
-                {String(client[f.field] ?? '') || '—'}
+            {/* Email sits directly under the mobile because that is where the
+                accountant looks for "how do I reach this client", and in this
+                release the answer is email — chases are sent by email, not SMS
+                (launch M8). It was missing from this panel entirely.
+
+                ⚠ READ-ONLY IN BOTH MODES, AND DELIBERATELY OUTSIDE `FIELDS`.
+                That list is typed `ClientDetailChange['field']` and drives the
+                propose-to-the-client flow, which applies onto the local `Client`
+                shape; the only server write to a contact is `POST /businesses`
+                at intake, and no contract operation edits one afterwards. An
+                input here would stage a change nothing could persist and the
+                next poll would revert — worse than absent. Changing a client's
+                contact email is a contract change (a new operation, or a
+                `contact.update` proposal kind), not a field on this form. */}
+            {f.field === 'mobile' && (
+              <div>
+                <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
+                  {intl.formatMessage(commonLabels.email)}
+                </div>
+                <div className="w-full bg-ground/60 border border-white/5 rounded-xl px-4 py-2.5 text-sm text-zinc-300">
+                  {email || '—'}
+                </div>
               </div>
             )}
-          </div>
+          </Fragment>
         ))}
       </div>
 

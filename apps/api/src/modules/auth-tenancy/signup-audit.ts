@@ -50,19 +50,6 @@ export interface TermsAcceptance {
 export const TERMS_ACCEPTED_EVENT = 'practice.terms-accepted';
 
 export async function appendTermsAcceptanceEvent(tx: TransactionClient, acceptance: TermsAcceptance): Promise<void> {
-  const chain = 'audit:(no-business)';
-  // Parameter is bound, never interpolated. `$executeRaw`, not `$queryRaw`:
-  // the lock function returns `void`, which Prisma's row deserializer refuses.
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${chain}, 0))`;
-
-  const previous = await tx.auditEvent.findFirst({
-    where: { businessId: null },
-    orderBy: { seq: 'desc' },
-    select: { seq: true, hash: true },
-  });
-  const seq = (previous?.seq ?? 0n) + 1n;
-  const previousHash = previous?.hash ?? null;
-
   // The ADDRESS goes into the hash, not into a column. `audit_events` is
   // append-only by policy AND by trigger, so anything written here can never be
   // erased — and a mailbox is personal data with an erasure right attached. The
@@ -78,23 +65,72 @@ export async function appendTermsAcceptanceEvent(tx: TransactionClient, acceptan
     }),
   );
 
-  const outcome = {
-    practiceId: acceptance.practiceId,
-    userId: acceptance.userId,
-    acceptedTermsVersion: acceptance.acceptedTermsVersion,
-    acceptedAt: acceptance.acceptedAt.toISOString(),
-  };
+  await appendPracticeAuditEvent(tx, {
+    event: TERMS_ACCEPTED_EVENT,
+    payloadHash,
+    outcome: {
+      practiceId: acceptance.practiceId,
+      userId: acceptance.userId,
+      acceptedTermsVersion: acceptance.acceptedTermsVersion,
+      acceptedAt: acceptance.acceptedAt.toISOString(),
+    },
+    traceId: acceptance.traceId,
+  });
+}
+
+/** One append onto the NULL-business chain. */
+export interface PracticeAuditEvent {
+  /** Stable — it is what a later erasure or consent query greps for. */
+  readonly event: string;
+  /** `sha256(canonicalStringify(...))` of whatever the caller decides may not be stored in the clear. */
+  readonly payloadHash: string;
+  /** The durable, readable record. Anything here is permanent — `audit_events` is append-only. */
+  readonly outcome: Record<string, unknown>;
+  readonly traceId: string | null;
+}
+
+/**
+ * The chain append itself, shared by every NULL-business event this module
+ * writes.
+ *
+ * Extracted when the invitation-acceptance path became the second writer. A
+ * third hand-rolled copy of the hash formula would have been the thing this
+ * file's own header warns about — *"a chain whose links were computed two
+ * different ways cannot be verified at all"* — so the SHAPE is written once and
+ * only the payload differs.
+ *
+ * ⚠ The formula is unchanged, byte for byte, and
+ * `practice-signup.integration.test.ts` recomputes it with **approvals'**
+ * canonical-hash to prove the copy still agrees with the original.
+ */
+export async function appendPracticeAuditEvent(tx: TransactionClient, entry: PracticeAuditEvent): Promise<void> {
+  const chain = 'audit:(no-business)';
+  // Parameter is bound, never interpolated. `$executeRaw`, not `$queryRaw`:
+  // the lock function returns `void`, which Prisma's row deserializer refuses.
+  //
+  // ⚠ `seq` is `@@unique([businessId, seq])` and SQL NULLs are distinct, so for
+  // the NULL-business chain the unique constraint protects nothing and this lock
+  // is the ONLY thing making `max(seq)+1` race-free. Do not remove it.
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${chain}, 0))`;
+
+  const previous = await tx.auditEvent.findFirst({
+    where: { businessId: null },
+    orderBy: { seq: 'desc' },
+    select: { seq: true, hash: true },
+  });
+  const seq = (previous?.seq ?? 0n) + 1n;
+  const previousHash = previous?.hash ?? null;
 
   const hash = sha256Hex(
     (previousHash ?? '') +
       canonicalStringify({
         businessId: null,
         seq: seq.toString(),
-        event: TERMS_ACCEPTED_EVENT,
+        event: entry.event,
         proposalId: null,
-        payloadHash,
+        payloadHash: entry.payloadHash,
         renderedSummaryHash: null,
-        outcome,
+        outcome: entry.outcome,
       }),
   );
 
@@ -104,15 +140,15 @@ export async function appendTermsAcceptanceEvent(tx: TransactionClient, acceptan
       seq,
       previousHash,
       hash,
-      event: TERMS_ACCEPTED_EVENT,
-      // No proposal: signup is the one operation that PRECEDES the tenant, so
-      // there is no practice for a proposal to have been reviewed inside of.
-      // The account does not exist until this transaction commits.
+      event: entry.event,
+      // No proposal: these are the events that happen OUTSIDE the Review →
+      // Approve spine — a signup precedes the tenant, and an invitation is
+      // accepted by somebody who has no session to propose with.
       proposalId: null,
-      payloadHash,
+      payloadHash: entry.payloadHash,
       renderedSummaryHash: null,
-      traceId: acceptance.traceId,
-      outcome: outcome as Prisma.InputJsonObject,
+      traceId: entry.traceId,
+      outcome: entry.outcome as Prisma.InputJsonObject,
     },
   });
 }

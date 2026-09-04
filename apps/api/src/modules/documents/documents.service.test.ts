@@ -53,6 +53,7 @@ const DOCUMENT_DEFAULTS = {
   failureCode: null,
   failureMessage: null,
   archivedAt: null,
+  deletedAt: null,
   pageRange: null,
   createdAt: NOW,
   updatedAt: NOW,
@@ -66,6 +67,7 @@ interface Calls {
   documentFindMany: { where?: unknown; orderBy?: unknown; take?: number }[];
   childFindMany: unknown[];
   presignGet: unknown[];
+  counts: { model: string; where?: unknown }[];
 }
 
 /**
@@ -82,7 +84,7 @@ function harness(
     children?: { id: string; createdAt: Date }[];
   } = {},
 ) {
-  const calls: Calls = { documentFindMany: [], childFindMany: [], presignGet: [] };
+  const calls: Calls = { documentFindMany: [], childFindMany: [], presignGet: [], counts: [] };
   const rows =
     options.documents ??
     (options.document === undefined ? [doc('doc_1')] : options.document === null ? [] : [options.document]);
@@ -109,6 +111,20 @@ function harness(
         return children;
       },
     },
+    // The header counts. Each fake returns a distinct number so a test can tell
+    // which query produced which field — a header that silently paired the
+    // right number with the wrong word is the exact defect this endpoint
+    // replaces.
+    vaultItem: {
+      count: async (args: { where?: unknown }) => {
+        calls.counts.push({ model: 'vaultItem', where: args.where });
+        return calls.counts.length * 10;
+      },
+    },
+  };
+  (tx.document as Record<string, unknown>)['count'] = async (args: { where?: unknown }) => {
+    calls.counts.push({ model: 'document', where: args.where });
+    return calls.counts.length;
   };
 
   const prisma = {
@@ -184,6 +200,11 @@ test('filters are ANDed into the where clause, and absent ones add nothing', asy
   await service.listDocuments(CTX, listQuery({ state: ['READY', 'FAILED'], businessId: 'biz_9' }));
 
   expect(calls.documentFindMany[0]?.where).toEqual({
+    // `deletedAt: null` is present in EVERY listing where clause and is not a
+    // filter the caller asked for — it is the Trash exclusion, applied by
+    // `deletedFilterFor(query.deleted ?? false)` because the default belongs to
+    // the server rather than to what a caller remembered to send.
+    deletedAt: null,
     businessId: 'biz_9',
     state: { in: ['READY', 'FAILED'] },
   });
@@ -200,7 +221,7 @@ test('a businessId filter is a FILTER, never a tenancy guard — no manual pract
   // claim is about what must be ABSENT.
   const { calls, service } = harness();
   await service.listDocuments(CTX, listQuery());
-  expect(Object.keys(calls.documentFindMany[0]?.where ?? {})).toEqual(['state']);
+  expect(Object.keys(calls.documentFindMany[0]?.where ?? {})).toEqual(['deletedAt', 'state']);
 });
 
 test('an omitted state filter excludes ARCHIVED; asking for ARCHIVED by name returns it', async () => {
@@ -209,11 +230,36 @@ test('an omitted state filter excludes ARCHIVED; asking for ARCHIVED by name ret
   // default exclusion every working queue grows forever.
   const bare = harness();
   await bare.service.listDocuments(CTX, listQuery());
-  expect(bare.calls.documentFindMany[0]?.where).toEqual({ state: { not: 'ARCHIVED' } });
+  expect(bare.calls.documentFindMany[0]?.where).toEqual({ deletedAt: null, state: { not: 'ARCHIVED' } });
 
   const explicit = harness();
   await explicit.service.listDocuments(CTX, listQuery({ state: ['ARCHIVED'] }));
-  expect(explicit.calls.documentFindMany[0]?.where).toEqual({ state: { in: ['ARCHIVED'] } });
+  expect(explicit.calls.documentFindMany[0]?.where).toEqual({ deletedAt: null, state: { in: ['ARCHIVED'] } });
+});
+
+test('the default listing excludes Trash, and ?deleted=true returns ONLY Trash', async () => {
+  // The whole soft-delete guarantee, at the layer that decides it. `deletedAt`
+  // is a nullable timestamp and NOT a ninth `DocumentState` member, so the two
+  // predicates are independent — which is what the third assertion pins.
+  const bare = harness();
+  await bare.service.listDocuments(CTX, listQuery());
+  expect(bare.calls.documentFindMany[0]?.where).toMatchObject({ deletedAt: null });
+
+  const trash = harness();
+  await trash.service.listDocuments(CTX, listQuery({ deleted: true }));
+  expect(trash.calls.documentFindMany[0]?.where).toMatchObject({ deletedAt: { not: null } });
+
+  // Deletion is ORTHOGONAL to state: asking for Trash still applies the
+  // contract's "every state except ARCHIVED" default, rather than replacing it.
+  expect(trash.calls.documentFindMany[0]?.where).toEqual({
+    deletedAt: { not: null },
+    state: { not: 'ARCHIVED' },
+  });
+
+  // An explicit `false` is the default, not a third behaviour.
+  const explicitFalse = harness();
+  await explicitFalse.service.listDocuments(CTX, listQuery({ deleted: false }));
+  expect(explicitFalse.calls.documentFindMany[0]?.where).toEqual(bare.calls.documentFindMany[0]?.where);
 });
 
 test('an unreachable businessId is an empty page — not 404, not 403', async () => {
@@ -287,7 +333,7 @@ test("page 1's own cursor is accepted by page 2 and seeks past the last row", as
   // seek, ANDed under the same filters rather than replacing them.
   expect(second.calls.documentFindMany[0]?.where).toEqual({
     AND: [
-      { state: { in: ['READY'] } },
+      { deletedAt: null, state: { in: ['READY'] } },
       {
         OR: [
           { receivedAt: { lt: NOW } }, // a Date, never the ISO string — Postgres would compare text
@@ -451,4 +497,52 @@ test("an events cursor is refused by extractions — the list's identity is in t
   );
   expect((err as AppException).getStatus()).toBe(HttpStatus.BAD_REQUEST);
   expect((err as AppException).code).toBe('NT-VAL-001');
+});
+
+
+// ---- the header counts ----
+
+test('getDocumentCounts issues five counts in ONE transaction, and each asks the right question', async () => {
+  // The header read `3 documents · 0 archived · 0 in vault · 0 expiring` and
+  // three of those four were not answers. Every number here is the server's,
+  // over the whole RLS-visible set rather than over a page — `PageInfo` carries
+  // no total and keyset pagination has none to carry.
+  const { calls, service } = harness();
+  const counts = await service.getDocumentCounts(CTX, { businessId: 'biz_9', expiringWithinDays: 30 } as never);
+
+  expect(calls.counts.map((c) => c.model)).toEqual(['document', 'document', 'document', 'vaultItem', 'vaultItem']);
+
+  // `total` is EXACTLY what `GET /documents` serves with no filters — not
+  // deleted, not ARCHIVED — so the header and the list beneath it cannot
+  // disagree. It is deliberately not "every document the practice holds".
+  expect(calls.counts[0]?.where).toEqual({ businessId: 'biz_9', deletedAt: null, state: { not: 'ARCHIVED' } });
+  expect(calls.counts[1]?.where).toEqual({ businessId: 'biz_9', deletedAt: null, state: 'ARCHIVED' });
+  // Trash, whatever pipeline state it holds — deletion is orthogonal to state.
+  expect(calls.counts[2]?.where).toEqual({ businessId: 'biz_9', deletedAt: { not: null } });
+  // ⚠ The last two are `vault_items`, NOT documents. `documents` has no expiry
+  // or retention column at all, so there is no expiring DOCUMENT to count and
+  // none is being approximated.
+  expect(calls.counts[3]?.where).toEqual({ businessId: 'biz_9' });
+
+  expect(counts).toMatchObject({ total: 1, archived: 2, deleted: 3, inVault: 40, expiring: 50 });
+  // The horizon is echoed back: a number on a screen that cannot say which
+  // window produced it is not one anyone can check.
+  expect(counts.expiringWithinDays).toBe(30);
+});
+
+test('expiring counts vault items ALREADY past their date as well as those approaching it', async () => {
+  // An expired certificate is the most expiring thing on the screen. A window
+  // with a lower bound would silently drop it, which is a worse lie than the
+  // zero this replaces.
+  const { calls, service } = harness();
+  await service.getDocumentCounts(CTX, { expiringWithinDays: 14 } as never);
+
+  const expiring = calls.counts[4]?.where as { expiresAt?: { not?: unknown; lt?: Date }; businessId?: string };
+  expect(expiring.expiresAt?.not).toBeNull(); // items with no expiry never count
+  expect(expiring.expiresAt?.lt).toBeInstanceOf(Date);
+  expect(expiring).not.toHaveProperty('businessId'); // omitted filter narrows nothing
+  // Fourteen days out, not thirty: the horizon is the caller's.
+  const horizonMs = (expiring.expiresAt?.lt as Date).getTime() - Date.now();
+  expect(horizonMs).toBeGreaterThan(13.9 * 24 * 60 * 60 * 1000);
+  expect(horizonMs).toBeLessThan(14.1 * 24 * 60 * 60 * 1000);
 });

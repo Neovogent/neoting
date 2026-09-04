@@ -123,21 +123,29 @@ export class PrismaPortalUploadService implements PortalUploadService {
       // missing document — and `NT-OTP-002` is the only 4xx this operation
       // declares besides validation. A 404 would also be off-contract here.
       this.logger.warn(`portal session ${facts.otpSessionId} names unreachable business ${facts.businessId}`);
-      throw portalSessionRequired('This portal session is no longer valid. Open the link from your text message again.');
+      // ⚠ It said "Open the link from your text message again" until 2 Sep 2026.
+      // There is no SMS in Initial Delivery — S2 made email the transport and
+      // A13 sends chases through it (D40/D47) — so that sentence pointed a
+      // client at a message that was never sent. `apps/web` swept the same claim
+      // at launch M8 and `portal-session-context.ts` swept its own copy on
+      // 28 Aug; this was the third instance, which neither pass could see.
+      throw portalSessionRequired('This portal session is no longer valid. Open the link in your email again.');
     }
 
     // ENTITLEMENT (D48). The client is the payer under D48, so the surface the
     // client uploads through is exactly where the rule has to bite — gating
     // only the accountant's own upload would leave the main ID path open.
     //
-    // ⚠ CONTRACT DRIFT, flagged rather than hidden: `createPortalUpload`
-    // declares 400/401/409/413/415/429/500 and no 402, while
-    // `createDocumentUpload` does declare one. `docs/runbooks/error-codes.md`
-    // puts `NT-BIL-001` at 402 on "any entitlement-gated operation" and the
-    // Stripe webhook's own contract text says new uploads stop at a lapse, so
-    // the behaviour is contracted even where this status code is not listed.
-    // Adding the response belongs in a contract-change issue (LAW, G7); it is
-    // not edited here.
+    // ✅ **The 402 is DECLARED now** (2 Sep 2026). `createPortalUpload` listed
+    // 400/401/409/413/415/429/500 and no 402 while `createDocumentUpload`
+    // declared one — so a client generated from the spec had no branch for the
+    // single most likely refusal on the main ID intake path, and the one the
+    // client themselves can fix. The behaviour was always contracted
+    // (`docs/runbooks/error-codes.md` puts `NT-BIL-001` at 402 on "any
+    // entitlement-gated operation", and the Stripe webhook's own description
+    // says new uploads stop at a lapse); only the response was missing, and it
+    // stayed missing because the G7 ceremony made a one-line spec addition a
+    // process. That ceremony was retired on 1 Sep.
     assertMayIngest(business);
 
     const key = uploadIntentKey(facts.businessId, randomUUID());

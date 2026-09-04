@@ -97,8 +97,43 @@ describe('the catalogue itself', () => {
     expect(new Set(emitted).size).toBe(emitted.length);
   });
 
-  test('every ledger used is one of the four declared', () => {
+  test('every ledger used is one of the declared ones', () => {
     for (const account of accountCatalogue()) expect(LEDGERS).toContain(account.ledger);
+  });
+
+  /**
+   * `Current assets` was added for ONE account and must stay that way. A second
+   * balance-sheet account with no ID document behind it is the picklist entry
+   * the ledger list's original rule was protecting against.
+   */
+  test('the Current assets ledger carries exactly one account, and it is the prepayment', () => {
+    const currentAssets = accountCatalogue().filter((account) => account.ledger === 'Current assets');
+    expect(currentAssets.map((account) => account.code)).toEqual(['PREPAYMENTS']);
+  });
+
+  /**
+   * The capital/revenue split is only expressible if BOTH halves of each pair
+   * have a code. Without the second column of this table, a
+   * "professional services — setup and configuration" line has no right answer.
+   */
+  test('every capital/revenue pair the research named has both halves', () => {
+    const codes = new Set(coreAccounts().map((account) => account.code));
+    for (const [revenue, capital] of [
+      ['SOFTWARE_AND_SUBSCRIPTIONS', 'FA_SOFTWARE_LICENCES'],
+      ['SOFTWARE_IMPLEMENTATION', 'FA_INSTALLATION_AND_COMMISSIONING'],
+      ['IT_EQUIPMENT_AND_CONSUMABLES', 'FA_COMPUTER_EQUIPMENT'],
+    ] as const) {
+      expect(codes.has(revenue), `${revenue} missing`).toBe(true);
+      expect(codes.has(capital), `${capital} missing`).toBe(true);
+      expect(coreAccounts().find((a) => a.code === revenue)?.taxConsequence).toBe('ALLOWABLE');
+      expect(coreAccounts().find((a) => a.code === capital)?.taxConsequence).toBe('CAPITAL');
+    }
+  });
+
+  test('a service contract that can never be capital has its own code, apart from software', () => {
+    const codes = coreAccounts().map((account) => account.code);
+    expect(codes).toContain('HOSTING_AND_INFRASTRUCTURE');
+    expect(codes).toContain('IT_SUPPORT_AND_MANAGED_SERVICES');
   });
 
   /**

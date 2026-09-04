@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 
 import type { CanonicalSourceLink } from '../canonical/canonical-row.js';
 
+import { analysisAccountChart } from './analysis-account-chart.js';
 import { documentToCanonicalRow, type ExportableDocumentRow } from './document-to-canonical.js';
 
 const LINK: CanonicalSourceLink = { code: 'K7QM2XZ4', url: 'https://neoacc.neovogent.com/d/K7QM2XZ4' };
@@ -149,4 +150,61 @@ test('a zero-total document is exportable — 0 is a real total, null is not', (
   const canonical = built({ totalPence: 0, taxPence: 0 });
   expect(canonical.grossPence).toBe(0);
   expect(canonical.netPence).toBe(0);
+});
+
+// ---------------------------------------------------------------------------
+// The Analysis account — `category_code` in, a ledger-prefixed name out
+// ---------------------------------------------------------------------------
+
+/**
+ * The client's chart, in the shape `ChartOfAccountsService.getChartOfAccounts`
+ * hands over. `name` is already `Ledger: Account` — `analysisAccount()` in
+ * `rules-suggestions` is the one place that join happens, and nothing here
+ * rebuilds it.
+ */
+const CHART = analysisAccountChart([
+  { code: 'COS_PURCHASES', name: 'Cost of sales: Purchases' },
+  { code: 'SOFTWARE_AND_SUBSCRIPTIONS', name: 'Expenses: Software and subscriptions' },
+]);
+
+test('a category code is resolved to the ledger-prefixed account VT wants', () => {
+  // ⚠ THE DEFECT THIS FIXES. `documents.category_code` holds a CODE; the VT
+  // `Analysis account` column wants the account NAME with its ledger prefix.
+  // This function used to pass the column straight through, so an accountant's
+  // import file carried a bare `SOFTWARE_AND_SUBSCRIPTIONS` and VT type-guessed
+  // the cell (§24.3.1).
+  const result = documentToCanonicalRow(row({ categoryCode: 'SOFTWARE_AND_SUBSCRIPTIONS' }), LINK, CHART);
+  if (!result.ok || result.row.family !== 'TRANSACTION_DOCUMENT') throw new Error('expected a transaction document');
+
+  expect(result.row.analysis[0]?.analysisAccount).toBe('Expenses: Software and subscriptions');
+});
+
+test('an off-chart code keeps the bare code — a guessed ledger is a wrong nominal', () => {
+  // The row still travels: `category_code` is free text in the schema and an
+  // accountant's own rule may name a code the chart does not carry, so dropping
+  // it would be the silently-short file §24.3.4 designs against. What it must
+  // NOT do is invent `Expenses: Subscriptions` to make the cell look right.
+  const result = documentToCanonicalRow(row({ categoryCode: 'SUBSCRIPTIONS' }), LINK, CHART);
+  if (!result.ok || result.row.family !== 'TRANSACTION_DOCUMENT') throw new Error('expected a transaction document');
+
+  expect(result.row.analysis[0]?.analysisAccount).toBe('SUBSCRIPTIONS');
+  // Nothing on the chart is a near-miss winner either — exact match only.
+  expect(result.row.analysis[0]?.analysisAccount).not.toContain(':');
+});
+
+test('no chart resolves nothing, and never throws — the export still ships', () => {
+  // A picklist that could not be read must not make a client's month
+  // unexportable. Every row then carries its bare code and the emitter warns on
+  // each, which is loud and recoverable; silence is what is not available.
+  const result = documentToCanonicalRow(row({ categoryCode: 'COS_PURCHASES' }), LINK, null);
+  if (!result.ok || result.row.family !== 'TRANSACTION_DOCUMENT') throw new Error('expected a transaction document');
+
+  expect(result.row.analysis[0]?.analysisAccount).toBe('COS_PURCHASES');
+});
+
+test('the code is trimmed before it is looked up, so stored whitespace still resolves', () => {
+  const result = documentToCanonicalRow(row({ categoryCode: '  COS_PURCHASES  ' }), LINK, CHART);
+  if (!result.ok || result.row.family !== 'TRANSACTION_DOCUMENT') throw new Error('expected a transaction document');
+
+  expect(result.row.analysis[0]?.analysisAccount).toBe('Cost of sales: Purchases');
 });

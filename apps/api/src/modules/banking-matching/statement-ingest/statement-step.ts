@@ -188,7 +188,8 @@ export class PrismaStatementStep implements StatementStep {
 
       if (outcome.status === 'ingested') {
         this.logger.log(
-          `statement-step: ${input.documentId} imported ${outcome.rowCount} transaction(s), ` +
+          `statement-step: ${input.documentId} imported ${outcome.rowCount} transaction(s) ` +
+            `of ${outcome.parsedRowCount} read (${outcome.duplicateRowCount} already present), ` +
             `assurance=${outcome.report.assurance} (trace=${input.traceId})`,
         );
       }

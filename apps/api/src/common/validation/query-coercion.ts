@@ -26,6 +26,13 @@ import type { z } from 'zod';
  * - a key the schema types as a number, holding a string that parses as one →
  *   converted. A string that does NOT parse (`?limit=abc`) is passed through
  *   untouched so Zod reports the honest "expected number" against the field;
+ * - a key the schema types as a boolean, holding exactly `"true"` or `"false"`
+ *   → converted. **Only those two spellings**, and deliberately not the truthy
+ *   coercion `Boolean(value)` would give: under that rule `?deleted=false` is
+ *   `true`, which on `GET /documents` is the entire Trash served in place of
+ *   the inbox. `"1"`, `"yes"` and `""` are passed through untouched so Zod
+ *   reports "expected boolean" rather than this helper guessing. Added with the
+ *   first boolean query parameter in the contract (`deleted`, 2 Sep 2026);
  * - a key the schema does not know → passed through untouched, so `.strict()`
  *   rejects it BY NAME rather than this helper silently dropping it;
  * - anything that is not an object at all → passed through for the schema to
@@ -56,6 +63,8 @@ export function coerceQuery(
       out[key] = [value];
     } else if (name === 'ZodNumber' && typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Number(value))) {
       out[key] = Number(value);
+    } else if (name === 'ZodBoolean' && (value === 'true' || value === 'false')) {
+      out[key] = value === 'true';
     } else {
       out[key] = value;
     }

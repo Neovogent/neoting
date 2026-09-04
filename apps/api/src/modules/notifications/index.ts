@@ -26,6 +26,7 @@
 // The service — the one door outbound email leaves by.
 export {
   NotificationsService,
+  type SendBusinessPeopleInviteInput,
   type SendClientInviteInput,
   type SendContext,
   type SendDocumentRequestInput,
@@ -33,6 +34,7 @@ export {
   type SendEmailVerificationInput,
   type SendOutcome,
   type SendSignInCodeInput,
+  type SendTeamInviteInput,
 } from './notifications.service.js';
 
 // The DI tokens, so a consuming module can `imports: [NotificationsModule]` and
@@ -76,6 +78,8 @@ export {
 // text that will send WITHOUT sending it — the same guarantee `composeChaseSms`
 // gives the SMS lane.
 export {
+  type ComposeBusinessPeopleInviteInput,
+  composeBusinessPeopleInvite,
   type ComposeClientInviteInput,
   type ComposedEmail,
   composeClientInvite,
@@ -86,5 +90,7 @@ export {
   composeEmailVerification,
   type ComposeSignInCodeInput,
   composeSignInCode,
+  type ComposeTeamInviteInput,
+  composeTeamInvite,
   SENDER_DISPLAY_NAME,
 } from './email-copy.js';

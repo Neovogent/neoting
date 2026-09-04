@@ -2,6 +2,8 @@ import { Logger } from '@nestjs/common';
 
 import { addressDomain, type EmailAddress, parseEmailAddress } from './email-address.js';
 import {
+  type ComposeBusinessPeopleInviteInput,
+  composeBusinessPeopleInvite,
   type ComposeClientInviteInput,
   type ComposedEmail,
   composeClientInvite,
@@ -14,6 +16,8 @@ import {
   type ComposePasswordResetInput,
   type ComposeSignInCodeInput,
   composeSignInCode,
+  type ComposeTeamInviteInput,
+  composeTeamInvite,
 } from './email-copy.js';
 import type { EmailRateLimiter } from './email-rate-limit.js';
 import type { EmailKind, EmailSender } from './email-sender.js';
@@ -72,6 +76,16 @@ export interface SendClientInviteInput extends ComposeClientInviteInput {
   readonly to: string;
 }
 
+export interface SendTeamInviteInput extends ComposeTeamInviteInput {
+  /** The colleague's address, unvalidated. Parsed here — this is the boundary (R4). */
+  readonly to: string;
+}
+
+export interface SendBusinessPeopleInviteInput extends ComposeBusinessPeopleInviteInput {
+  /** The new starter's address, unvalidated. Parsed here — this is the boundary (R4). */
+  readonly to: string;
+}
+
 export interface SendSignInCodeInput extends ComposeSignInCodeInput {
   readonly to: string;
 }
@@ -104,6 +118,43 @@ export class NotificationsService {
   /** S2 message 1 — the accountant adds a client, the client gets a link. */
   sendClientInvite(input: SendClientInviteInput, context: SendContext = {}): Promise<SendOutcome> {
     return this.#deliver('client-invite', input.to, context, () => composeClientInvite(input));
+  }
+
+  /**
+   * A practice admin invites a COLLEAGUE — the message that lets a firm stop
+   * being one person.
+   *
+   * Its own kind and its own composer, never `sendClientInvite`: that copy says
+   * there is "no password to choose", which is right for a client and exactly
+   * wrong for a member of staff whose next action is to choose one. Like the
+   * client invite it reports a rate-limit refusal as a VALUE rather than
+   * throwing — the caller is a trusted authenticated admin looking at their own
+   * team list, and `practice-team.service.ts` turns the refusal into a `429`
+   * that says the invitation was recorded and the email was not sent.
+   */
+  sendTeamInvite(input: SendTeamInviteInput, context: SendContext = {}): Promise<SendOutcome> {
+    return this.#deliver('team-invite', input.to, context, () => composeTeamInvite(input));
+  }
+
+  /**
+   * A CLIENT BUSINESS invites its own staff — the third invitation relationship
+   * (D45, 2 Sep 2026).
+   *
+   * Its own kind and its own composer for the reasons {@link
+   * composeBusinessPeopleInvite} sets out at length: a portal person never
+   * chooses a password, so `sendTeamInvite`'s copy would send a new starter
+   * looking for a screen that does not exist; and the employer is a business
+   * rather than the practice, so `sendClientInvite`'s "your accountant has
+   * invited you" names a firm the reader may never have heard of.
+   *
+   * The refusal is a VALUE here, like both other invitations: the caller is the
+   * business's own admin looking at their own People list, and
+   * `portal-people.service.ts` turns a rate-limit refusal into a `429` that says
+   * the person was added and the email was not sent. Silence would be the worst
+   * answer — they would re-invite, and the row already exists.
+   */
+  sendBusinessPeopleInvite(input: SendBusinessPeopleInviteInput, context: SendContext = {}): Promise<SendOutcome> {
+    return this.#deliver('business-people-invite', input.to, context, () => composeBusinessPeopleInvite(input));
   }
 
   /** S2 message 2 — six digits, short expiry, single use. */

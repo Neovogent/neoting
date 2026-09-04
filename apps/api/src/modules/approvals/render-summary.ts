@@ -99,19 +99,40 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
     case 'publish.batch': {
       const ids = stringArray(payload['documentIds']);
       const preview = isObject(payload['preview']) ? payload['preview'] : {};
-      const gross = penceToGbp(preview['grossPence']);
-      const vat = penceToGbp(preview['vatPence']);
-      return summary(`Publish ${count(ids.length, 'document')} — gross ${gross}, VAT ${vat}`, [
+      // Null when the batch mixes currencies — the totals are then rendered
+      // without a symbol and the card says why, rather than picking one.
+      const code = typeof preview['currency'] === 'string' ? (preview['currency'] as string) : null;
+      const gross = penceToMoney(preview['grossPence'], code);
+      const vat = penceToMoney(preview['vatPence'], code);
+      const mixed = code === null;
+      const entries = entryPreviewSections(payload['entryPreview']);
+      return summary(
+        mixed
+          ? `Release ${count(ids.length, 'document')} for export — gross ${gross}, VAT ${vat} (mixed currencies)`
+          : `Release ${count(ids.length, 'document')} for export — gross ${gross}, VAT ${vat}`,
+        [
         {
           heading: 'Server-computed preview',
           entries: [
             { label: 'Items', value: String(ids.length) },
             { label: 'Gross', value: gross },
             { label: 'VAT', value: vat },
+            ...(mixed
+              ? [{
+                  label: 'Currency',
+                  value: 'These documents are not all in one currency, so the totals above carry no symbol.',
+                }]
+              : [{ label: 'Currency', value: code }]),
           ],
         },
+        ...entries,
+        // Still listed, and still last. The entry sections above name each
+        // document too, but an id that produced NO rows — refused, or a payload
+        // written before the entry preview existed — would otherwise vanish
+        // from the card entirely.
         { heading: 'Documents', entries: ids.map((id, i) => ({ label: `Document ${i + 1}`, value: id })) },
-      ]);
+      ],
+      );
     }
     case 'document.reject': {
       // The reason VERBATIM, as its own entry — the contract calls it
@@ -123,6 +144,46 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
           heading: 'Reason, exactly as it will be recorded',
           entries: [{ label: 'Reason', value: text(payload['reason']) }],
         },
+        { heading: 'Documents', entries: ids.map((id, i) => ({ label: `Document ${i + 1}`, value: id })) },
+      ]);
+    }
+    case 'document.purge': {
+      // ⚠ The one card on this surface where "what will happen" is not
+      // recoverable afterwards, so it says everything: what is destroyed, what
+      // survives, and — the `document.reprocess` precedent — what it does NOT
+      // do despite what a reader would reasonably assume.
+      //
+      // The refusal is on the card too, and deliberately as a promise rather
+      // than a result: `render-summary.ts` is payload-pure and may not read a
+      // database, so it CANNOT tell this reviewer whether these particular
+      // documents are exported. What it can honestly say is that the executor
+      // will check and will refuse, which is the fact the reviewer needs in
+      // order to know an approval here is safe to give.
+      const ids = stringArray(payload['documentIds']);
+      const reason = payload['reason'];
+      return summary(`Permanently delete ${count(ids.length, 'document')}`, [
+        {
+          heading: 'This cannot be undone',
+          entries: [
+            { label: 'Document records', value: 'Destroyed' },
+            { label: 'Extractions, processing log, duplicate pairs', value: 'Destroyed with them' },
+            { label: 'Audit trail', value: 'Kept — the record of this deletion outlives the documents' },
+            { label: 'Stored files', value: 'NOT deleted — the bytes stay in storage; no sweep exists yet' },
+          ],
+        },
+        {
+          heading: 'What will be refused',
+          entries: [
+            {
+              label: 'Released for export, or carrying an export link',
+              value: 'Refused — the whole batch, checked against the export and link records at the moment you approve',
+            },
+            { label: 'Not already in Trash', value: 'Refused — delete it first, which is reversible' },
+          ],
+        },
+        ...(typeof reason === 'string' && reason.length > 0
+          ? [{ heading: 'Reason, exactly as it will be recorded', entries: [{ label: 'Reason', value: text(reason) }] }]
+          : []),
         { heading: 'Documents', entries: ids.map((id, i) => ({ label: `Document ${i + 1}`, value: id })) },
       ]);
     }
@@ -219,6 +280,137 @@ function summary(title: string, sections: readonly RenderedSection[]): RenderedS
   return { title, sections, warnings: [] };
 }
 
+/**
+ * **The bookkeeping entry, on the card.**
+ *
+ * The owner's ask, in his words: *"before publishing show the accountant the
+ * actual accounting entry that will be put into the VT software."* Until this,
+ * `publish.batch`'s review showed a count and two totals — a person pressing
+ * Approve was authorising rows they had never seen, which is the failure the
+ * whole Review → Approve pattern exists to prevent.
+ *
+ * ⚠ **Nothing here formats a cell.** Every string below comes out of
+ * `payload.entryPreview`, which the engine computed at proposal time by calling
+ * the EXPORT'S OWN EMITTER (`exports-public-api`'s `previewExportEntries` →
+ * `emitter.previewEntries`, built by the same function as `emitter.emit`). This
+ * function chooses headings and labels; it does not decide what goes in a
+ * column, how money is rendered, which file a document lands in, or what
+ * warnings apply. A render that re-derived any of those would be a second
+ * opinion about the file, and a confident second opinion on a review card is
+ * worse than no card at all.
+ *
+ * ⚠ **D42 vocabulary is load-bearing here, not stylistic.** This release has no
+ * ledger connection: the file is downloaded and the accountant imports it
+ * themselves. Nothing in these strings may say or imply posted, synced, sent, or
+ * that anything reaches accounting software on its own. `render-summary.test.ts`
+ * reads the rendered strings and fails on the vocabulary, mirroring
+ * `apps/web/src/views/ExportView.test.tsx`.
+ *
+ * Absent `entryPreview` renders nothing rather than an apology — a payload
+ * written before the field existed still reviews, with the card it always had.
+ */
+function entryPreviewSections(value: unknown): RenderedSection[] {
+  if (!isObject(value)) return [];
+  const columns = stringArray(value['columns']);
+  const documents = Array.isArray(value['documents']) ? value['documents'] : [];
+  const refusals = Array.isArray(value['refusals']) ? value['refusals'] : [];
+  if (columns.length === 0 && documents.length === 0 && refusals.length === 0) return [];
+
+  const sections: RenderedSection[] = [];
+  const totalRows = documents.reduce(
+    (total, document) => total + (isObject(document) && Array.isArray(document['rows']) ? document['rows'].length : 0),
+    0,
+  );
+
+  sections.push({
+    heading: 'The accounting entry this release will put in the import file',
+    entries: [
+      { label: 'Import file', value: targetName(value['target']) },
+      { label: 'Columns, in the order the file writes them', value: columns.join(' · ') },
+      // Rows, not documents: a document coded across two nominals is two lines,
+      // and the number an accountant reconciles against their own software's
+      // preview is the line count.
+      { label: 'Lines the file will carry', value: String(totalRows) },
+      {
+        label: 'What approving does',
+        value:
+          'Releases these documents for export. The file is produced when you download it on the Export screen, and you import it yourself — nothing here reaches accounting software.',
+      },
+    ],
+  });
+
+  documents.forEach((document, index) => {
+    if (!isObject(document)) return;
+    const rows = Array.isArray(document['rows']) ? document['rows'] : [];
+    const entries: { label: string; value: string }[] = [
+      { label: 'Document', value: text(document['documentId']) },
+    ];
+
+    const fileName = typeof document['fileName'] === 'string' ? document['fileName'] : '';
+    if (fileName !== '') {
+      const dataFormat = typeof document['dataFormat'] === 'string' ? document['dataFormat'] : '';
+      entries.push({
+        label: 'Lands in',
+        value: dataFormat === '' ? fileName : `${fileName} — data format "${dataFormat}"`,
+      });
+    }
+
+    rows.forEach((row, line) => {
+      const cells = stringArray(row);
+      cells.forEach((cell, column) => {
+        entries.push({
+          // The column's own name, so the reviewer reads the file's vocabulary
+          // and not ours. Prefixed with the line only when there is more than
+          // one, because a split analysis is the case where "which line?" is a
+          // real question and a single-line entry is the case where it is noise.
+          label: rows.length > 1 ? `Line ${line + 1} · ${columns[column] ?? `Column ${column + 1}`}` : (columns[column] ?? `Column ${column + 1}`),
+          // ⚠ VERBATIM. This is the exact string the file will contain,
+          // including the emitter's own money rendering — an empty continuation
+          // cell shows as empty, because that is what the file carries.
+          value: cell,
+        });
+      });
+    });
+
+    const warnings = Array.isArray(document['warnings']) ? document['warnings'] : [];
+    for (const warning of warnings) {
+      if (!isObject(warning)) continue;
+      entries.push({ label: `Check before you import — ${text(warning['code'])}`, value: text(warning['message']) });
+    }
+
+    sections.push({
+      // The counterparty is the first cell in every target this release has, and
+      // it is what an accountant recognises. Falling back to the index rather
+      // than to the opaque id, which is already the first entry.
+      heading: `Entry ${index + 1}${firstCell(rows) === '' ? '' : ` — ${firstCell(rows)}`}`,
+      entries,
+    });
+  });
+
+  if (refusals.length > 0) {
+    sections.push({
+      heading: 'Documents that would produce no line in the file',
+      entries: refusals.filter(isObject).map((refusal) => ({
+        label: text(refusal['documentId']),
+        value: text(refusal['message']),
+      })),
+    });
+  }
+
+  return sections;
+}
+
+/** The target, in the words the accountant's own software uses. Never a claim about a connection. */
+function targetName(target: unknown): string {
+  if (target === 'VT_TRANSACTION_PLUS') return 'VT Transaction+ — Transaction ▸ Journal ▸ Import…';
+  if (target === 'GENERIC_CSV') return 'Generic CSV';
+  return text(target);
+}
+
+function firstCell(rows: readonly unknown[]): string {
+  return stringArray(rows[0])[0] ?? '';
+}
+
 function count(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? '' : 's'}`;
 }
@@ -243,9 +435,25 @@ function isObject(value: unknown): value is Record<string, unknown> {
  * ever touches a monetary value, even transiently in a formatter (the repo's
  * most-guarded invariant, applied to rendering too).
  */
-function penceToGbp(value: unknown): string {
+/** Symbols we will print. Anything else is stated by its ISO code. */
+const CURRENCY_SYMBOLS: Record<string, string> = { GBP: '£', USD: '$', EUR: '€' };
+
+/**
+ * Integer pence → the figure a human approves.
+ *
+ * ⚠ **`code` is not optional in spirit.** This printed `£` unconditionally, so
+ * a USD invoice rendered on the approval card as `gross £54352.51` — a wrong
+ * currency on the Review → Approve path, which is the one place the product
+ * guarantees that what was shown is what was approved. `null` means the batch
+ * mixes currencies, and then no symbol is honest: the amount is rendered bare
+ * with the reason said in words beside it (see the `publish.batch` case).
+ */
+function penceToMoney(value: unknown, code: string | null): string {
   if (typeof value !== 'number' || !Number.isInteger(value)) return '—';
   const sign = value < 0 ? '-' : '';
   const digits = String(Math.abs(value)).padStart(3, '0');
-  return `${sign}£${digits.slice(0, -2)}.${digits.slice(-2)}`;
+  const amount = `${digits.slice(0, -2)}.${digits.slice(-2)}`;
+  if (code === null) return `${sign}${amount}`;
+  const symbol = CURRENCY_SYMBOLS[code] ?? `${code} `;
+  return `${sign}${symbol}${amount}`;
 }

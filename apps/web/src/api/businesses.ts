@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
-import { useListBusinesses } from '@neoting/contracts/client';
+import { useQuery } from '@tanstack/react-query';
+import { listBusinesses } from '@neoting/contracts/client';
 import { listBusinessesResponse } from '@neoting/contracts/zod';
 import type { BusinessSummary, ListBusinessesParams } from '@neoting/contracts/model';
-import { unwrapBody } from './envelope';
+import { fetchAllPages, PAGE_LIMIT } from './paged';
 
 /**
  * The businesses slice, read from `GET /businesses` (METH Stage 6).
@@ -29,32 +30,55 @@ export interface UseBusinessesOptions {
  * The caller's client workspaces, parsed through the generated Zod schema
  * before anything touches them — a contract drift surfaces here with the
  * field named, not as `undefined is not an object` in the header.
+ *
+ * ## ⚠ Every page, not the first hundred clients
+ *
+ * The third instance of the same defect: the caller asked for `{ limit: 100 }`
+ * and nothing read `pageInfo`. It is the widest of the three, because this
+ * slice is not merely a list — it is the DICTIONARY. `clientNameFor`, the
+ * seed↔server id bridge and `statsFor` all resolve through it, so a client past
+ * position 100 lost its name, lost its upload target, and fell off
+ * `liveStats` onto a derived-from-nothing zero score. See `paged.ts`.
  */
 export function useBusinesses({ enabled, params }: UseBusinessesOptions) {
-  const query = useListBusinesses(params, { query: { enabled } });
+  const query = useQuery({
+    queryKey: ['businesses', 'all', params],
+    enabled,
+    queryFn: () =>
+      fetchAllPages((cursor) =>
+        listBusinesses({ ...params, limit: PAGE_LIMIT, ...(cursor === undefined ? {} : { cursor }) }),
+      ),
+  });
 
   const parsed = useMemo(() => {
-    const empty = { businesses: [] as BusinessSummary[], invalid: null as string | null };
+    const empty = { businesses: [] as BusinessSummary[], invalid: null as string | null, truncated: false };
     if (!query.data) return empty;
 
-    const result = listBusinessesResponse.safeParse(unwrapBody(query.data));
-    if (!result.success) {
-      return {
-        ...empty,
-        invalid: result.error.issues
-          .slice(0, 3)
-          .map((i) => `${i.path.join('.') || 'response'}: ${i.message}`)
-          .join('; '),
-      };
+    const businesses: BusinessSummary[] = [];
+    for (const body of query.data.bodies) {
+      const result = listBusinessesResponse.safeParse(body);
+      if (!result.success) {
+        return {
+          ...empty,
+          invalid: result.error.issues
+            .slice(0, 3)
+            .map((i) => `${i.path.join('.') || 'response'}: ${i.message}`)
+            .join('; '),
+        };
+      }
+      businesses.push(...(result.data.data as BusinessSummary[]));
     }
 
-    return { businesses: result.data.data as BusinessSummary[], invalid: null };
+    return { businesses, invalid: null, truncated: query.data.truncated };
   }, [query.data]);
 
   return {
     businesses: parsed.businesses,
     /** Set when the server's answer did not match the contract. */
     contractError: parsed.invalid,
+    /** The safety cap was reached and the server had more. Screens must SAY so. */
+    truncated: parsed.truncated,
+    loaded: parsed.businesses.length,
     isLoading: query.isLoading,
     isFetching: query.isFetching,
     error: query.error,

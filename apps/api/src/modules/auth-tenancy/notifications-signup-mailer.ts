@@ -37,11 +37,11 @@ export class NotificationsSignupMailer implements SignupMailer {
     /**
      * The public web origin the verification link points at.
      *
-     * ⚠ A constant at the composition root, for the reason `setup-link.ts`
-     * gives at length: `config/env.ts` carries no `APP_ORIGIN` key, and adding
-     * one is a `config/` change. It is a constructor parameter rather than a
-     * literal so promoting it to an environment variable is one line in
-     * `auth-tenancy.module.ts` and touches nothing else.
+     * ✅ **`env.APP_ORIGIN`**, passed in by the composition root. It was a
+     * constant standing in for a key `config/env.ts` did not have; the key
+     * exists, and promoting it was the one line in `auth-tenancy.module.ts`
+     * this comment predicted. Still a constructor parameter, so a test can
+     * pin the link without an environment.
      */
     private readonly appOrigin: string,
   ) {}

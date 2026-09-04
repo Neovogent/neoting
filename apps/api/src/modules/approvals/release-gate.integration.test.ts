@@ -181,7 +181,9 @@ describe.skipIf(!enabled)('the release gate against a real database (A12, D44)',
     // half and neither is gated.
     const created = await svc.create(ADMIN_CTX, { kind: 'publish.batch', businessId: BIZ, payload: { documentIds: [DOC_1] } }, 'a12g-key-create');
     const review = await svc.review(ADMIN_CTX, created.id, 'a12g-key-review');
-    expect(review.renderedSummary.title).toContain('Publish 1 document');
+    // "Release … for export", not "Publish …" — D42: the act is an internal
+    // release, and no surface may imply a ledger.
+    expect(review.renderedSummary.title).toContain('Release 1 document for export');
 
     const refused = await problem(svc.approve(ADMIN_CTX, created.id, { renderedSummaryHash: review.renderedSummaryHash }, 'a12g-key-approve'));
     expect(refused.code).toBe('NT-PRM-001');

@@ -1,11 +1,24 @@
 import { CanonicalTransactionDocumentSchema, type CanonicalRow, type CanonicalSourceLink } from '../canonical/canonical-row.js';
 
+import { type AnalysisAccountChart, resolveAnalysisAccount } from './analysis-account-chart.js';
+
 /**
  * Prisma `documents` row → one canonical export row (A9).
  *
  * **Pure. No database, no clock, no config.** It is the one place a stored
  * document becomes something an emitter can write, so what the VT file says and
  * what the D43 manifest says cannot disagree about the same document.
+ *
+ * ## The nominal is RESOLVED here, and this is the only place it is
+ *
+ * `Analysis account` must carry the ledger prefix — literally
+ * `Cost of sales: Purchases` — and until 2 Sep 2026 this function passed
+ * `documents.category_code` straight into it, so the file carried a bare
+ * `SUBSCRIPTIONS` and VT type-guessed it (§24.3.1). The chart now arrives as a
+ * parameter: resolution happens where the ROWS are assembled, never inside the
+ * emitter, which stays a pure function over rows with no idea a chart exists.
+ * See `analysis-account-chart.ts` for why it arrives as data rather than as an
+ * import of `rules-suggestions`.
  *
  * ## Every refusal is reported, never silently skipped
  *
@@ -102,6 +115,7 @@ function signFor(instrument: 'INVOICE' | 'CREDIT_NOTE'): 1 | -1 {
 export function documentToCanonicalRow(
   document: ExportableDocumentRow,
   sourceLink: CanonicalSourceLink | null,
+  chart: AnalysisAccountChart | null = null,
 ): DocumentRowResult {
   if (document.businessId === null) {
     // `document_links` requires a business and so does `exports`. A document
@@ -136,13 +150,34 @@ export function documentToCanonicalRow(
     );
   }
 
-  const analysisAccount = document.categoryCode?.trim() ?? '';
-  if (analysisAccount === '') {
+  const categoryCode = document.categoryCode?.trim() ?? '';
+  if (categoryCode === '') {
     return refuse(
       'document-missing-category',
       'This document has not been coded to a nominal, so it was left out rather than exported to a guessed one.',
     );
   }
+
+  /**
+   * ⚠ **The unresolvable case falls back to the bare code, and is never
+   * silent.**
+   *
+   * Three answers were available and two of them are worse. *Guessing* a ledger
+   * for an off-chart code puts a wrong nominal in somebody's books, which is the
+   * one thing §24.4.6 ranks above every other coding error. *Refusing* the
+   * document drops a row an accountant asked for, and a short export file that
+   * looked complete is the failure this whole surface is designed against
+   * (§24.3.4) — worse still here, because `documents.category_code` is free text
+   * in the schema and an accountant's own explicit rule may legitimately name a
+   * code the chart does not carry.
+   *
+   * So the row travels carrying exactly what the column holds, and the emitter
+   * raises `analysis-account-unprefixed` against this document. That warning is
+   * on the publish review card (the entry preview is built by the real emitter),
+   * so the accountant sees it BEFORE the release rather than discovering an
+   * unmatched nominal inside VT afterwards.
+   */
+  const analysisAccount = resolveAnalysisAccount(chart, categoryCode) ?? categoryCode;
 
   const instrument = document.docType === 'CREDIT_NOTE' ? 'CREDIT_NOTE' : 'INVOICE';
   const sign = signFor(instrument);

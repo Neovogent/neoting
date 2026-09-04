@@ -1,13 +1,16 @@
 import { Module } from '@nestjs/common';
 
+import type { ScopedClient } from '../../common/db/scoped-db.js';
 import { getPrismaClient, type PrismaClient } from '../../common/db/prisma.js';
 import { InMemoryIdempotencyStore } from '../../common/idempotency/idempotency-store.js';
 import type { Env } from '../../config/env.js';
 import { ENV } from '../../config/env.module.js';
 import { selectSmsSender } from '../chase/index.js';
+import { analysisAccountChart, previewExportEntries } from '../exports-public-api/index.js';
 import { PrismaDuplicateDetector } from '../ingestion-routing/index.js';
 import { LEDGER_ADAPTER, type LedgerAdapter, previewPublishBatch, PublishingModule } from '../publishing/index.js';
-import { buildExecutorRegistry, type PublishGateway } from '../validation-dedupe/index.js';
+import { ChartOfAccountsService } from '../rules-suggestions/index.js';
+import { buildExecutorRegistry, type ExportEntryPreviewer, type PublishGateway } from '../validation-dedupe/index.js';
 import { ActionProposalsController } from './action-proposals.controller.js';
 import { ActionProposalsService } from './action-proposals.service.js';
 import { ACTION_PROPOSALS_SERVICE, PRISMA } from './tokens.js';
@@ -51,18 +54,63 @@ import { ACTION_PROPOSALS_SERVICE, PRISMA } from './tokens.js';
         // ONE gateway object for both halves: the executor re-validates the
         // batch with it and the post-commit follow-up publishes through it.
         const publishing: PublishGateway = { ledger, previewPublishBatch };
+
+        /**
+         * The entry the accountant is authorising — **the export's own emitter,
+         * over the export's own chart of accounts.**
+         *
+         * Two public seams meet here and nowhere else, which is this file's
+         * whole job. `exports-public-api` owns what a VT row looks like;
+         * `rules-suggestions` owns the chart, and `analysisAccount()` inside it
+         * is the ONE place `Cost of sales: Purchases` is produced. Without the
+         * chart the card would show a bare `SUBSCRIPTIONS` and an
+         * `analysis-account-unprefixed` warning for a document the export file
+         * will carry ledger-prefixed and unremarked — a review card raising an
+         * alarm about a defect that no longer exists, which is how a reviewer
+         * learns to skip the warnings that matter.
+         *
+         * ⚠ **It resolves against the batch's OWN client, in the executor's own
+         * transaction** (`resolve` takes a `ScopedClient` for exactly this), so
+         * the chart and the documents are one read at one moment. A batch with
+         * no routed client resolves nothing; so does a chart that cannot be
+         * read. Both degrade to the bare code plus the warning — the honest
+         * failure — rather than to a refused release, because a picklist is not
+         * worth blocking a month's books over.
+         */
+        const charts = new ChartOfAccountsService(prisma);
+        const exportEntryPreview: ExportEntryPreviewer = async (db: ScopedClient, target, documents) => {
+          const businessId = documents[0]?.businessId ?? null;
+          if (businessId === null) return previewExportEntries(target, documents, null);
+          try {
+            const chart = await charts.resolve(db, businessId);
+            return previewExportEntries(target, documents, analysisAccountChart(chart.categories));
+          } catch {
+            return previewExportEntries(target, documents, null);
+          }
+        };
+
         return new ActionProposalsService(
           prisma,
           // The chase.send executor "sends" through the config-selected sender
           // (SMS_SENDER=demo → the outbox writer; no Twilio) — built here, not
           // given a token, so no executor is reachable from a controller.
-          buildExecutorRegistry({ smsSender: selectSmsSender(env), publishing }),
+          buildExecutorRegistry({
+            smsSender: selectSmsSender(env),
+            publishing,
+            exportEntryPreview,
+          }),
           new PrismaDuplicateDetector(prisma),
           publishing,
           new InMemoryIdempotencyStore(),
           // chase.send composition at creation: the engine signs the portal
           // link into the reviewed body (compose-chase-send.ts has the story).
           { portalLinkSecret: env.PORTAL_LINK_SECRET, appOrigin: env.APP_ORIGIN },
+          // The entry preview, from the EXPORT's own emitter (D42's sole
+          // egress). Composed here rather than in the executor for the same
+          // mechanical reason `previewPublishBatch` is: the composition root is
+          // the only place allowed to know two public seams at once — and since
+          // the chart of accounts joined it, that is three.
+          exportEntryPreview,
         );
       },
       inject: [PRISMA, ENV, LEDGER_ADAPTER],

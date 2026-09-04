@@ -79,3 +79,48 @@ export const BUSINESS_LEVEL_ROLES: readonly WorkspaceRole[] = [
 export function isBusinessLevelRole(role: WorkspaceRole): boolean {
   return BUSINESS_LEVEL_ROLES.includes(role);
 }
+
+/**
+ * The two roles `POST /v1/practice-members` accepts — and the notable absence
+ * is the whole point of the constant.
+ *
+ * **`PRACTICE_ADMIN` is a practice-level role and is NOT here.** The refusal is
+ * named rather than implied, because a reader counting the six `WorkspaceRole`
+ * members will otherwise assume an omission:
+ *
+ * - `assertCan`'s release rule is `canRelease(role) && isOwner`, and exactly one
+ *   membership per practice can carry `isOwner` — signup writes it and no
+ *   operation in the contract moves it. An invited `PRACTICE_ADMIN` would
+ *   therefore hold `canRelease === true` and `isOwner === false`: they could not
+ *   release, and the refusal they met would tell them *"only your practice's
+ *   super admin can"* — to somebody the team screen had just labelled an admin.
+ *   Two true statements that cannot both be believed is the worst thing a
+ *   permission model can say.
+ * - There is no ownership-TRANSFER operation, so nothing could resolve that
+ *   state afterwards. `approvals/CLAUDE.md` carries it as the thing to build
+ *   alongside an admin invite path — **when it exists, this constant is what
+ *   changes.**
+ *
+ * `CLIENT_ADMIN` is here despite reading like a client role, and is refused by
+ * {@link isBusinessLevelRole} for the same reason from the other side: SoT §3.3
+ * makes it practice staff who administer clients, not a client's own person.
+ * The two predicates partition the enum minus `PRACTICE_ADMIN`, which neither
+ * invite path may grant.
+ */
+export const INVITABLE_PRACTICE_ROLES: readonly WorkspaceRole[] = [
+  WorkspaceRole.PRACTICE_STANDARD,
+  WorkspaceRole.CLIENT_ADMIN,
+];
+
+/**
+ * May this role be granted through the PRACTICE's own team list?
+ *
+ * Named `isPracticeLevelRole` to sit beside {@link isBusinessLevelRole}, and it
+ * is deliberately narrower than its name reads on its own: `PRACTICE_ADMIN` IS
+ * a practice-level role and this returns false for it. See
+ * {@link INVITABLE_PRACTICE_ROLES} — the alternative was a name so long it would
+ * be abbreviated at the call site anyway, and the call site is one service.
+ */
+export function isPracticeLevelRole(role: WorkspaceRole): boolean {
+  return INVITABLE_PRACTICE_ROLES.includes(role);
+}

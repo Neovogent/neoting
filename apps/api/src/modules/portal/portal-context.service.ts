@@ -1,9 +1,12 @@
 import { HttpStatus } from '@nestjs/common';
 
-import type { PortalContext } from '@neoting/contracts/model';
+import type { SubscriptionStatus } from '@prisma/client';
+
+import type { BusinessSubscription, PortalContext } from '@neoting/contracts/model';
 
 import type { PrismaClient } from '../../common/db/prisma.js';
 import { scopedDb } from '../../common/db/scoped-db.js';
+import { notDeleted } from '../../common/documents/deleted-documents.js';
 import { AppException } from '../../common/problem/problem.js';
 import {
   chaseItemRefs,
@@ -168,14 +171,36 @@ export class PortalContextService {
     return scopedDb(this.prisma, systemScopeFor(facts), async (db) => {
       const business = await db.business.findUnique({
         where: { id: facts.businessId },
-        select: { name: true, subscriptionStatus: true },
+        // `plan` and `subscriptionCurrentPeriodEnd` join `subscriptionStatus`
+        // for `PortalSummary.subscription` — see `toClientSubscription`.
+        select: {
+          name: true,
+          subscriptionStatus: true,
+          plan: true,
+          subscriptionCurrentPeriodEnd: true,
+        },
       });
       if (business === null) throw contextUnavailable();
 
+      // ⚠ `notDeleted()` on BOTH document reads, and they have to move
+      // together. `documentsSent` and `lastDocumentAt` are two facts about one
+      // set — the client's own file — and `GET /portal/documents` now lists
+      // that set without Trash. A count that still included it would say "41
+      // sent" over a list of 40, and a `lastDocumentAt` that still included it
+      // would date the client's last upload to a document they cannot find.
+      // Both are the client's own words for their own file, and neither is a
+      // number the practice's housekeeping should be visible in.
+      //
+      // ⚠ These two still count ARCHIVED, which the list excludes, so the two
+      // surfaces are not yet identical sets. That divergence PREDATES soft
+      // delete and is left alone here on purpose: an archived document really
+      // was sent, and "how many have I sent you" is a fair reading of it. A
+      // deleted one is different in kind — the practice has withdrawn it from
+      // the file — so it is the half that had to close.
       const [documentsSent, latest, openChases] = await Promise.all([
-        db.document.count({ where: { businessId: facts.businessId } }),
+        db.document.count({ where: { businessId: facts.businessId, ...notDeleted() } }),
         db.document.findFirst({
-          where: { businessId: facts.businessId },
+          where: { businessId: facts.businessId, ...notDeleted() },
           orderBy: { createdAt: 'desc' },
           select: { createdAt: true },
         }),
@@ -237,11 +262,57 @@ export class PortalContextService {
           // says so before the client photographs a receipt rather than after.
           subscriptionActive: business.subscriptionStatus === 'ACTIVE' || business.subscriptionStatus === 'TRIALING',
           lastDocumentAt: latest?.createdAt.toISOString() ?? null,
+          subscription: toClientSubscription(business),
         },
         expiresAt: facts.expiresAt.toISOString(),
       };
     });
   }
+}
+
+/**
+ * The client's own plan, for the portal's Settings tab (D48/D49, 2 Sep 2026).
+ *
+ * ## Why this is here and not derived in the browser
+ *
+ * `subscriptionActive` answers exactly one question — *may I send a document
+ * right now* — and a plan panel needs two more: what state the subscription is
+ * in, and when it renews. Without them the only honest Settings tab was one
+ * with no plan section at all, so the person who PAYS for this product could
+ * not see what they pay for, and the client who wanted to cancel had nothing to
+ * cancel from.
+ *
+ * ## What a client may see of it, and what they may not
+ *
+ * The **same `BusinessSubscription` projection the accountant reads** — the
+ * local projection of what Stripe knows — rather than a second, client-only
+ * opinion that would drift from it. Nothing is added and nothing is redacted,
+ * because there is nothing in that shape a client is not entitled to: it is
+ * their own subscription, and it deliberately carries no price (the amount, the
+ * VAT and the gross are Stripe's hosted checkout's and Stripe's invoice's, which
+ * is where they are correct).
+ *
+ * `stripeCustomerId` is emphatically NOT in it and must not be added. It is the
+ * key `POST /webhooks/stripe` resolves a tenant by, and it is not a fact about
+ * a plan.
+ *
+ * **Null until the client has been through checkout.** `subscriptionStatus` is
+ * written ONLY by the Stripe webhook (`modules/billing`), so a null status is a
+ * signup that has not finished — a true statement, and not the same as a lapsed
+ * one. `status` is the required member of the shape, so there is no honest way
+ * to emit an object without it.
+ */
+function toClientSubscription(business: {
+  readonly subscriptionStatus: SubscriptionStatus | null;
+  readonly plan: string | null;
+  readonly subscriptionCurrentPeriodEnd: Date | null;
+}): BusinessSubscription | null {
+  if (business.subscriptionStatus === null) return null;
+  return {
+    status: business.subscriptionStatus,
+    plan: business.plan,
+    currentPeriodEnd: business.subscriptionCurrentPeriodEnd?.toISOString() ?? null,
+  };
 }
 
 /**

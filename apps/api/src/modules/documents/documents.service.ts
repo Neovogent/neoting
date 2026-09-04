@@ -3,8 +3,16 @@ import type { z } from 'zod';
 
 import type { Prisma, Document as DocumentRow } from '@prisma/client';
 
-import type { Document, DocumentEvent, DocumentSummary, Extraction, FileAccess } from '@neoting/contracts/model';
 import type {
+  Document,
+  DocumentCounts,
+  DocumentEvent,
+  DocumentSummary,
+  Extraction,
+  FileAccess,
+} from '@neoting/contracts/model';
+import type {
+  getDocumentCountsQueryParams,
   listDocumentEventsQueryParams,
   listDocumentExtractionsQueryParams,
   listDocumentsQueryParams,
@@ -13,6 +21,7 @@ import type {
 import type { PrismaClient } from '../../common/db/prisma.js';
 import type { ScopeContext } from '../../common/db/scope-context.js';
 import { scopedDb } from '../../common/db/scoped-db.js';
+import { deletedFilterFor, notDeleted } from '../../common/documents/deleted-documents.js';
 import {
   toDocumentEvent,
   toDocumentResponse,
@@ -34,6 +43,9 @@ import type { DocumentStore } from '../ingestion-routing/index.js';
 type ListQuery = z.infer<typeof listDocumentsQueryParams>;
 type EventsQuery = z.infer<typeof listDocumentEventsQueryParams>;
 type ExtractionsQuery = z.infer<typeof listDocumentExtractionsQueryParams>;
+type CountsQuery = z.infer<typeof getDocumentCountsQueryParams>;
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
  * How long a presigned link to an original stays valid.
@@ -127,7 +139,91 @@ export class DocumentsService {
     return { data: page.data.map(toDocumentSummary), pageInfo: page.pageInfo };
   }
 
-  /** `GET /documents/{documentId}` — the full record, plus its accepted extraction. */
+  /**
+   * `GET /documents/counts` — the Documents screen's header, served honestly.
+   *
+   * ## Why this endpoint exists
+   *
+   * The header read `3 documents · 0 archived · 0 in vault · 0 expiring`, and
+   * three of those four numbers were not answers. `archived` was a browser-side
+   * filter for `status === 'published'` over a list that never asks the server
+   * for `state=ARCHIVED`, so it was structurally always zero AND it moved when
+   * someone typed in the search box, while `total` beside it did not. `inVault`
+   * and `expiring` were the length of a client-only array that no API call ever
+   * fills. A decorative number on a screen an accountant reconciles against is
+   * worse than no number at all.
+   *
+   * `PageInfo` carries no total and cannot: Governance §3 mandates keyset
+   * pagination, which has no count to hand back. So a truthful header needs a
+   * count query, and this is it.
+   *
+   * ## What backed each number before this — measured, not assumed
+   *
+   * | Header word | What backed it | Verdict |
+   * |---|---|---|
+   * | `N documents` | `documents.length` in the browser, from walking every page of `GET /documents` (100/page, capped at 50 pages = 5,000) | Real, but bounded, and silently EXCLUDES `ARCHIVED` while the surrounding copy claimed "every document the practice holds" |
+   * | `N archived` | a client-side filter for `status === 'published'` over a list that never requests `state=ARCHIVED` | **Structurally always 0.** Worse: it also narrowed with the search box while `total` beside it did not, so two numbers in one sentence were computed over different sets |
+   * | `N in vault` | `vault.length`, a client-only array with no fetch anywhere | **Hardcoded 0** in every API-on build |
+   * | `N expiring` | `vault.filter(daysToExpiry <= 14)`, over that same array, with dates generated from a frozen 12 Aug 2026 epoch | **Hardcoded 0**, and time-frozen even in synthetic mode |
+   *
+   * All four are now the server's, plus `deleted`.
+   *
+   * ## The five counts, and the one honest limit
+   *
+   * `total` and `archived` and `deleted` are `documents`. **`inVault` and
+   * `expiring` are `vault_items`** — a different table, on the same screen's
+   * header, and the contract's field descriptions say so out loud. `documents`
+   * has no expiry or retention column at all, so there is no such thing as an
+   * expiring document to count; `vault_items.expires_at` is a real, indexed
+   * column (`@@index([businessId, expiresAt])`) and this reads it. **Nothing
+   * here expires anything.** This is a query, not a retention engine.
+   *
+   * Five counts in ONE `scopedDb` transaction, so every number is read against
+   * the same snapshot and the same GUCs — a header whose parts were counted in
+   * five transactions can show a document in neither `total` nor `deleted`
+   * because it was deleted in between.
+   */
+  async getDocumentCounts(ctx: ScopeContext, query: CountsQuery): Promise<DocumentCounts> {
+    const business = query.businessId === undefined ? {} : { businessId: query.businessId };
+    // Always present: the generated schema carries the contract's `default: 30`
+    // (orval emits `.default()` for numbers, though not for booleans — see
+    // `buildFilters`). It is echoed back in the response, because a number on a
+    // screen that cannot say which window produced it is not checkable.
+    const horizon = query.expiringWithinDays;
+    const expiringBefore = new Date(Date.now() + horizon * MS_PER_DAY);
+
+    const [total, archived, deleted, inVault, expiring] = await scopedDb(this.prisma, ctx, async (db) =>
+      Promise.all([
+        // Exactly the set `GET /documents` serves with no filters, so the header
+        // and the list beneath it cannot disagree: not deleted, not ARCHIVED.
+        db.document.count({ where: { ...business, ...notDeleted(), state: { not: 'ARCHIVED' } } }),
+        db.document.count({ where: { ...business, ...notDeleted(), state: 'ARCHIVED' } }),
+        // Trash, whatever pipeline state it holds — deletion is orthogonal to
+        // state, which is the whole reason it is a timestamp.
+        db.document.count({ where: { ...business, deletedAt: { not: null } } }),
+        db.vaultItem.count({ where: business }),
+        // `lt` and no lower bound: an ALREADY-expired certificate is the most
+        // expiring thing on this screen, and a window that quietly dropped it
+        // would be a worse lie than the zero this replaces. Items with no
+        // expiry date are excluded by the comparison itself.
+        db.vaultItem.count({ where: { ...business, expiresAt: { not: null, lt: expiringBefore } } }),
+      ]),
+    );
+
+    return { total, archived, deleted, inVault, expiring, expiringWithinDays: horizon };
+  }
+
+  /**
+   * `GET /documents/{documentId}` — the full record, plus its accepted extraction.
+   *
+   * ⚠ **This deliberately does NOT exclude Trash**, and neither do
+   * `getDocumentOriginal` or the two child lists. A document in Trash must
+   * still be openable — previewing it is exactly how a person decides whether
+   * to restore it, and the delete and restore operations both return this shape
+   * for a document that is (or just was) deleted. The exclusion belongs to the
+   * LIST, the counts, the portal and the export selection: the surfaces that
+   * answer "what is there", not the ones that answer "show me this one".
+   */
   async getDocument(ctx: ScopeContext, documentId: string): Promise<Document> {
     const row = await scopedDb(this.prisma, ctx, async (db) =>
       db.document.findUnique({
@@ -289,6 +385,15 @@ const EXTRACTION_SORT = dateField<{ id: string; createdAt: Date }>('createdAt', 
  */
 function buildFilters(query: ListQuery): Prisma.DocumentWhereInput {
   return {
+    // Trash, and it comes FIRST because it is the predicate that decides which
+    // universe the rest of these filters narrow. `deleted` defaults to false in
+    // the contract, but orval emits `zod.boolean().optional()` for it rather
+    // than `.default(false)` (it applies defaults to enums and numbers and not
+    // to booleans — the emitted `listDocumentsQueryDeletedDefault` constant is
+    // never used), so **the default is applied HERE**. That is the right home
+    // for it anyway: "the default listing excludes Trash" has to be a fact
+    // about the server, not about what a caller remembered to send.
+    ...deletedFilterFor(query.deleted ?? false),
     ...(query.businessId !== undefined ? { businessId: query.businessId } : {}),
     ...(query.inbox !== undefined && query.inbox.length > 0 ? { inbox: { in: query.inbox } } : {}),
     // The contract's default is NOT "everything": the `state` parameter says

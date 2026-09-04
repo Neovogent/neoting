@@ -211,7 +211,13 @@ async function main() {
 
       // METH Stage 5 (§7) demo login memberships. Practice-WIDE (no businessId)
       // so pickActingMembership resolves them to the full practice scope.
-      { id: 'mem_shakib_demo', userId: 'usr_shakib_demo', practiceId: 'prac_ledgerline', role: 'PRACTICE_ADMIN', permissions: ['publish', 'approve', 'chase', 'connect_bank', 'export'] },
+      // ⚠ `isOwner: true`, and it is not decoration. D44's release rule is
+      // `canRelease(role) && isOwner` (`approvals/assert-can.ts`), and this is
+      // the ONLY login-able demo account — `mem_priya` carries the flag and has
+      // no credential. Without it, nobody on a seeded machine could release a
+      // publish batch or a chase, so the one behaviour the release gate exists
+      // to protect could not be exercised by anyone who could sign in.
+      { id: 'mem_shakib_demo', userId: 'usr_shakib_demo', practiceId: 'prac_ledgerline', role: 'PRACTICE_ADMIN', isOwner: true, permissions: ['publish', 'approve', 'chase', 'connect_bank', 'export'] },
       { id: 'mem_abdullah_demo', userId: 'usr_abdullah_demo', practiceId: 'prac_ledgerline', role: 'PRACTICE_STANDARD', permissions: ['chase'] },
       { id: 'mem_tom_burger', userId: 'usr_tom', practiceId: 'prac_ledgerline', businessId: 'biz_burger', role: 'PRACTICE_STANDARD', permissions: ['chase', 'publish'] },
       { id: 'mem_dee', userId: 'usr_dee', businessId: 'biz_burger', role: 'BUSINESS_ADMIN', permissions: ['export'] },

@@ -397,3 +397,148 @@ describe('amounts', () => {
     expect(rows[0]?.[5]).toBe('50.00');
   });
 });
+
+// ---------------------------------------------------------------------------
+// The entry preview — and the assertion that makes it impossible for the
+// publish review card and the export file to drift apart
+// ---------------------------------------------------------------------------
+
+/** Every CSV in the archive, parsed. The how-to is not a data file. */
+function emittedCells(rows: Parameters<typeof vtTransactionPlusEmitter.emit>[0]): Map<string, string[][]> {
+  const archive = vtTransactionPlusEmitter.emit(rows).bytes;
+  const files = new Map<string, string[][]>();
+  for (const name of readZip(archive).keys()) {
+    if (name === HOW_TO_IMPORT_FILENAME) continue;
+    files.set(name, csvIn(archive, name));
+  }
+  return files;
+}
+
+/**
+ * ⚠ **THIS IS WHAT MAKES THE PUBLISH REVIEW HONEST.**
+ *
+ * `previewEntries` exists so an accountant can see the bookkeeping entry before
+ * approving a release, instead of discovering it inside VT afterwards. That is
+ * only worth anything if the preview IS the file. Both come out of
+ * `buildVtFiles` — one function, no second implementation — and the test below
+ * is the guard that survives a refactor: it emits the real archive, **parses the
+ * bytes back out of the ZIP**, and compares them to the preview cell for cell,
+ * in both directions.
+ *
+ * A preview that merely *described* the file would pass every test written about
+ * it and still be wrong. That is why the comparison is against emitted bytes and
+ * never against a fixture.
+ */
+describe('previewEntries is the file, not a description of it', () => {
+  test('every previewed cell is a cell the emitted CSV carries, and nothing is previewed that is not written', () => {
+    const rows = [
+      supplierInvoice(),
+      supplierInvoice({ documentId: 'doc_2', date: '2026-08-05', primaryAccount: 'Nisbets Ltd', reference: 'INV-2' }),
+      supplierInvoice({
+        documentId: 'doc_3',
+        instrument: 'CREDIT_NOTE',
+        grossPence: -12000,
+        vatPence: -2000,
+        netPence: -10000,
+        analysis: [{ analysisAccount: 'Cost of sales: Purchases', netPence: -10000, vatPence: -2000 }],
+      }),
+      bankPayment(),
+    ];
+
+    const preview = vtTransactionPlusEmitter.previewEntries(rows);
+    const files = emittedCells(rows);
+
+    // The columns the preview advertises are the columns the file is written
+    // in — and the file carries NO header row, so those column names are a
+    // labelling of positional cells rather than a claim about line 1.
+    expect(preview.columns).toEqual([...VT_LIST_COLUMNS]);
+    expect(VT_CSV_INCLUDE_HEADER).toBe(false);
+
+    // Forward: every previewed document names a real file in the archive, and
+    // each of its rows appears there verbatim.
+    for (const document of preview.documents) {
+      const emitted = files.get(document.fileName);
+      expect(emitted, `${document.fileName} is in the archive`).toBeDefined();
+      for (const row of document.rows) {
+        expect(emitted).toContainEqual([...row]);
+      }
+    }
+
+    // Backward: every line the archive carries was previewed. A preview that
+    // quietly dropped a row is the silently-short-file failure this whole
+    // surface is designed against, one screen earlier.
+    const previewed = preview.documents.flatMap((document) => document.rows.map((row) => row.join('')));
+    const written = [...files.values()].flat().map((row) => row.join(''));
+    expect([...previewed].sort()).toEqual([...written].sort());
+    expect(written).toHaveLength(vtTransactionPlusEmitter.emit(rows).rowCount);
+  });
+
+  test('a split analysis previews both lines, keeping the empty continuation cells the file carries', () => {
+    const split = supplierInvoice({
+      grossPence: 24000,
+      vatPence: 0,
+      netPence: 24000,
+      analysis: [
+        { analysisAccount: 'Cost of sales: Purchases', netPence: 15000, vatPence: 0 },
+        { analysisAccount: 'Expenses: Software', netPence: 9000, vatPence: 0 },
+      ],
+    });
+
+    const preview = vtTransactionPlusEmitter.previewEntries([split]);
+    const rows = preview.documents[0]?.rows ?? [];
+
+    expect(rows).toHaveLength(2);
+    // VT reads gross and input VAT off the first line only; the continuation
+    // line repeats column A and carries its own net. Both facts are on the card
+    // because both are in the file.
+    expect(rows[0]?.[2]).toBe('240.00');
+    expect(rows[1]?.[2]).toBe('');
+    expect(rows[1]?.[0]).toBe('Café Noir, Ltd');
+    expect(rows[1]?.[4]).toBe('90.00');
+    expect(emittedCells([split]).get(vtFileName('2026-08-04', 'purchase-invoices'))).toEqual(rows.map((row) => [...row]));
+  });
+
+  test('each document carries its OWN warnings, so the card says what will not travel for THIS document', () => {
+    const unprefixed = supplierInvoice({
+      documentId: 'doc_bare',
+      analysis: [{ analysisAccount: 'SUBSCRIPTIONS', netPence: 10000, vatPence: 2000 }],
+    });
+    const clean = supplierInvoice({ documentId: 'doc_clean', date: '2026-09-01' });
+
+    const preview = vtTransactionPlusEmitter.previewEntries([unprefixed, clean]);
+    const byId = new Map(preview.documents.map((document) => [document.documentId, document]));
+
+    expect(byId.get('doc_bare')?.warnings.map((warning) => warning.code)).toContain('analysis-account-unprefixed');
+    expect(byId.get('doc_clean')?.warnings).toEqual([]);
+    // The same warning the export raises — one implementation, partitioned.
+    expect(vtTransactionPlusEmitter.emit([unprefixed, clean]).warnings.map((warning) => warning.code)).toContain(
+      'analysis-account-unprefixed',
+    );
+  });
+
+  test('the preview names the file and the data format the accountant must pick', () => {
+    const preview = vtTransactionPlusEmitter.previewEntries([
+      supplierInvoice(),
+      supplierInvoice({ documentId: 'doc_sales', party: 'CUSTOMER' }),
+    ]);
+    const byId = new Map(preview.documents.map((document) => [document.documentId, document]));
+
+    // Purchases and sales go to different files with different data formats —
+    // mixing them posts sales as purchases (§24.3.1, constraint 2).
+    expect(byId.get('doc_1')?.fileName).toBe(vtFileName('2026-08-04', 'purchase-invoices'));
+    expect(byId.get('doc_1')?.dataFormat).toBe('Payments list/purchase invoices list');
+    expect(byId.get('doc_sales')?.fileName).toBe(vtFileName('2026-08-04', 'sales-invoices'));
+    expect(byId.get('doc_sales')?.dataFormat).toBe('Receipts list/sales invoices list');
+  });
+
+  test('a linkless row is previewed as the file will carry it, and SAYS the link is missing', () => {
+    // At publish time the D43 capability code has not been minted — the export
+    // mints it later. The preview must not invent one, and must not pretend the
+    // column is complete: `previewExportEntries` passes null, and the emitter's
+    // own `source-link-missing` warning is what tells the reviewer.
+    const preview = vtTransactionPlusEmitter.previewEntries([supplierInvoice({ sourceLink: null })]);
+
+    expect(preview.documents[0]?.rows[0]?.[1]).toBe(`INV-1042 · ${VT_PROVENANCE_TAG}`);
+    expect(preview.documents[0]?.warnings.map((warning) => warning.code)).toContain('source-link-missing');
+  });
+});

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { HttpStatus } from '@nestjs/common';
+import { HttpStatus, Logger } from '@nestjs/common';
 import type { z } from 'zod';
 
 import type { Prisma, Export as ExportRow } from '@prisma/client';
@@ -11,6 +11,7 @@ import type { createExportBody, listExportsQueryParams } from '@neoting/contract
 import type { PrismaClient } from '../../../common/db/prisma.js';
 import type { ScopeContext } from '../../../common/db/scope-context.js';
 import { scopedDb } from '../../../common/db/scoped-db.js';
+import { notDeleted } from '../../../common/documents/deleted-documents.js';
 import { fingerprint, type IdempotencyStore } from '../../../common/idempotency/idempotency-store.js';
 import {
   dateField,
@@ -27,6 +28,7 @@ import type { CanonicalRow, CanonicalSourceLink } from '../canonical/canonical-r
 import { selectEmitter } from '../emitters/select-emitter.js';
 import { DocumentLinkService, MAX_LINKS_PER_CALL } from '../links/document-link.service.js';
 
+import { type AnalysisAccountChart, analysisAccountChart } from './analysis-account-chart.js';
 import { documentToCanonicalRow, type ExportableDocumentRow } from './document-to-canonical.js';
 import {
   type ExportFiltersRecord,
@@ -148,13 +150,48 @@ type SelectedDocument = ExportableDocumentRow & {
   readonly byteHash: string;
 };
 
+/**
+ * What this service needs from `rules-suggestions` — **the client's chart of
+ * accounts, and nothing else**.
+ *
+ * Structural, the way `buildSourceDocumentBundle` takes `{ read }` rather than a
+ * `DocumentStore`: `ChartOfAccountsService` satisfies it without knowing this
+ * interface exists, the unit harness satisfies it with an object literal, and
+ * `exports.module.ts` is the only place the two modules are named together —
+ * through `rules-suggestions/index.ts`, its public seam.
+ *
+ * ⚠ **`categories` is already the emittable form.** `name` is
+ * `Cost of sales: Purchases`, produced by `analysisAccount()` in
+ * `rules-suggestions/chart-of-accounts/account.ts`, which is the ONE place that
+ * join happens. Nothing here splits it, re-cases it or rebuilds it: VT's
+ * Converter saves the accountant's mapping against the exact string it was
+ * given, so a second producer of that string is a second import going manual
+ * months later.
+ */
+export interface ChartOfAccountsReader {
+  getChartOfAccounts(
+    ctx: ScopeContext,
+    businessId: string,
+  ): Promise<{ readonly categories: readonly { readonly code: string; readonly name: string }[] }>;
+}
+
 export class ExportsService {
+  private readonly logger = new Logger(ExportsService.name);
+
   constructor(
     private readonly prisma: PrismaClient,
     private readonly store: DocumentStore,
     private readonly links: DocumentLinkService,
     private readonly idempotency: IdempotencyStore,
     private readonly now: () => Date = () => new Date(),
+    /**
+     * Optional, and absence degrades to the pre-2 Sep 2026 behaviour rather than
+     * to a failure: every row carries its bare `category_code` and every one of
+     * them raises `analysis-account-unprefixed`. That is loud, and it is
+     * recoverable; refusing to export a client's month because a picklist could
+     * not be read would not be.
+     */
+    private readonly charts: ChartOfAccountsReader | null = null,
   ) {}
 
   /**
@@ -217,14 +254,7 @@ export class ExportsService {
     await this.assertBusinessReachable(ctx, request.businessId);
 
     const documents = await this.selectDocuments(ctx, request);
-    if (documents.length === 0) {
-      throw new AppException(
-        'NT-EXP-001',
-        HttpStatus.UNPROCESSABLE_ENTITY,
-        'Nothing to export',
-        `No documents reached Published in ${ukDate(request.periodStart)} to ${ukDate(request.periodEnd)} for this client.`,
-      );
-    }
+    if (documents.length === 0) throw await this.nothingToExport(ctx, request);
     if (documents.length > MAX_EXPORT_DOCUMENTS) {
       throw new AppException(
         'NT-EXP-003',
@@ -243,13 +273,18 @@ export class ExportsService {
       documents.map((document) => document.id),
     );
 
+    // Once for the batch, before a single row is built. `Analysis account` is
+    // resolved HERE — where a scoped read is legal — and never inside the
+    // emitter, which stays a pure function over rows.
+    const chart = await this.chartFor(ctx, request.businessId);
+
     const warnings: ExportWarning[] = [];
     const rows: CanonicalRow[] = [];
     const bundleDocuments: BundleDocument[] = [];
 
     for (const document of documents) {
       const link = linksByDocument.get(document.id) ?? null;
-      const built = documentToCanonicalRow(document, link);
+      const built = documentToCanonicalRow(document, link, chart);
       if (!built.ok) {
         warnings.push({ documentId: document.id, code: built.code, message: built.message });
         continue;
@@ -330,22 +365,137 @@ export class ExportsService {
   }
 
   /**
+   * `NT-EXP-001`, with the fact that turns it from a dead end into an
+   * instruction.
+   *
+   * ## The problem this exists to fix, reported from the live app
+   *
+   * A practice had exactly one Published document — dated **12 May 2025** — and
+   * the export screen, defaulting to last month, answered *"No documents reached
+   * Published in 01/08/2026 to 31/08/2026 for this client."* The accountant read
+   * that as *published, but it will not export*, and concluded the feature was
+   * broken. **The code was right and the product was unhelpful**: the period
+   * selects on the document's own date (see {@link selectDocuments}), May 2025
+   * is genuinely outside an August 2026 window, and the refusal gave the one
+   * person who could fix it nothing to act on.
+   *
+   * So the refusal now answers the question it provokes — *"then where ARE my
+   * documents?"* — with a count and the dates they actually sit on.
+   *
+   * ## Why the count comes from HERE and not from the browser
+   *
+   * The export is the only thing that knows its own predicate. A second query in
+   * the web could disagree with it — a different state clause, a different date
+   * column, a `documentIds` narrowing it did not know about — and would be a
+   * second read of a client's records written by someone who was not looking at
+   * this file. **It runs through the same `scopedDb` as the export**, over the
+   * same `PUBLISHED` predicate and the same `businessId`, with the date clause
+   * and nothing else dropped. So it cannot report a document the export would
+   * have refused, and it cannot cross a practice boundary: RLS decides both
+   * reads identically because it is the same read.
+   *
+   * ## What it deliberately does not say
+   *
+   * Nothing when the count is zero — a client with no Published documents at all
+   * gets the plain refusal, because "0 documents outside the period" is noise,
+   * and because a named `documentIds` set that matched nothing must not become a
+   * way to probe for documents by id. The count is capped at the export's own
+   * ceiling rather than counted without bound (Governance §5.1).
+   */
+  private async nothingToExport(ctx: ScopeContext, request: CreateExportRequest): Promise<AppException> {
+    const period = `${ukDate(request.periodStart)} to ${ukDate(request.periodEnd)}`;
+    const outside = await this.publishedOutsidePeriod(ctx, request);
+
+    if (outside === null) {
+      return new AppException(
+        'NT-EXP-001',
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        'Nothing to export',
+        `No document dated ${period} has reached Published for this client, and this client has no Published documents outside that period either. A document is exportable once it has been released for export.`,
+      );
+    }
+
+    const range =
+      outside.earliestDocumentDate === outside.latestDocumentDate
+        ? `dated ${ukDate(outside.earliestDocumentDate)}`
+        : `dated between ${ukDate(outside.earliestDocumentDate)} and ${ukDate(outside.latestDocumentDate)}`;
+
+    return new AppException(
+      'NT-EXP-001',
+      HttpStatus.UNPROCESSABLE_ENTITY,
+      'Nothing to export in that period',
+      `No document dated ${period} has reached Published for this client. ${
+        outside.count === 1 ? 'There is 1 Published document' : `There are ${outside.count} Published documents`
+      } outside that period, ${range} — the export selects on the document's own date, not on when it was released. Widen the period to include ${outside.count === 1 ? 'it' : 'them'}.`,
+      undefined,
+      { publishedOutsidePeriod: outside },
+    );
+  }
+
+  /**
+   * How many Published documents this client has whose date is outside the
+   * requested period, and the span they cover — or `null` when there are none.
+   *
+   * One aggregate, same scope, same predicate minus the date clause. `_min` and
+   * `_max` are the narrowest period that would include every one of them, which
+   * is exactly what a "try this period instead" affordance needs.
+   */
+  private async publishedOutsidePeriod(
+    ctx: ScopeContext,
+    request: CreateExportRequest,
+  ): Promise<{ count: number; earliestDocumentDate: string; latestDocumentDate: string } | null> {
+    const where: Prisma.DocumentWhereInput = {
+      ...this.publishedWhere(request),
+      // Everything Published for this client that the period clause excluded —
+      // including a document with NO date at all, which cannot be in any period
+      // and would otherwise be invisible on both sides of this answer.
+      NOT: { documentDate: this.periodWhere(request) },
+    };
+
+    const aggregate = await scopedDb(this.prisma, ctx, async (db) =>
+      db.document.aggregate({
+        where,
+        _count: { _all: true },
+        _min: { documentDate: true },
+        _max: { documentDate: true },
+      }),
+    );
+
+    const count = aggregate._count._all;
+    const earliest = aggregate._min.documentDate;
+    const latest = aggregate._max.documentDate;
+    // A count with no dates means every one of them is undated — real, and not
+    // a period any widening would reach. The plain refusal is the honest answer.
+    if (count === 0 || earliest === null || latest === null) return null;
+
+    return {
+      count: Math.min(count, MAX_EXPORT_DOCUMENTS),
+      earliestDocumentDate: calendarDate(earliest),
+      latestDocumentDate: calendarDate(latest),
+    };
+  }
+
+  /**
    * The documents this export covers.
    *
    * **Only `PUBLISHED`, always** — that is where the human authorisation lives
    * (D44), and it is the contract's own first rule for this operation. The state
    * clause is not a filter the caller can widen.
+   *
+   * ⚠ **The period selects on `documentDate` — the document's own date — and
+   * NOT on when it reached Published.** That is the accounting answer (an
+   * invoice belongs to the period it is dated in), it is what makes a re-export
+   * of a closed month reproducible, and the VT journal import needs it because
+   * VT applies one date to a whole file (§24.3.1). The contract states it on
+   * `ExportRequest.periodStart`. The cost is that a client whose Published
+   * documents are all dated outside the chosen period gets an empty export that
+   * is correct and reads as broken — which is what {@link nothingToExport}
+   * exists to answer.
    */
   private async selectDocuments(ctx: ScopeContext, request: CreateExportRequest): Promise<SelectedDocument[]> {
-    const periodWhere = {
-      gte: startOfUtcDay(request.periodStart),
-      lt: startOfNextUtcDay(request.periodEnd),
-    };
     const where: Prisma.DocumentWhereInput = {
-      businessId: request.businessId,
-      state: 'PUBLISHED',
-      documentDate: periodWhere,
-      ...(request.documentIds === undefined ? {} : { id: { in: request.documentIds } }),
+      ...this.publishedWhere(request),
+      documentDate: this.periodWhere(request),
     };
 
     const rows = await scopedDb(this.prisma, ctx, async (db) =>
@@ -362,6 +512,50 @@ export class ExportsService {
 
     if (request.documentIds !== undefined) this.assertEveryNamedIdSurvived(request.documentIds, rows, request);
     return rows;
+  }
+
+  /**
+   * Everything the export's predicate says EXCEPT the date, written once so the
+   * refusal's count and the export's own selection cannot drift apart. The
+   * `documentIds` narrowing is included deliberately: when a caller named ids,
+   * "outside the period" means outside it *among the ids they named*, never a
+   * count over documents they did not ask about.
+   *
+   * ⚠ **`notDeleted()` belongs HERE and not in `selectDocuments`, and that is
+   * the whole point of this function existing.** Two callers read it and they
+   * must count the same set:
+   *
+   * - {@link selectDocuments} — the export's actual selection. A trashed
+   *   document must not reach a file an accountant hands to a client, and
+   *   `PUBLISHED` does not save us: deletion is a timestamp, not a state, so a
+   *   Published document keeps its state when it is deleted.
+   * - {@link publishedOutsidePeriod} — the `NT-EXP-001` diagnostic's count AND
+   *   its `_min`/`_max` period-widening bounds. Filtering only the selection
+   *   would make this the worse bug rather than fixing one: the refusal would
+   *   say *"there are 3 Published documents outside that period, widen it to
+   *   include them"*, the accountant would widen it exactly as instructed, and
+   *   the export would come back empty again — with the suggested bounds having
+   *   been derived from a document that can never be selected. A diagnostic that
+   *   counts a set its own selection cannot reach is advice that cannot be
+   *   followed.
+   *
+   * `assertEveryNamedIdSurvived` inherits it too, which is right: a caller who
+   * names a deleted document's id is refused with the existing "not
+   * exportable" message rather than having it silently dropped from a file that
+   * would then look complete.
+   */
+  private publishedWhere(request: CreateExportRequest): Prisma.DocumentWhereInput {
+    return {
+      businessId: request.businessId,
+      state: 'PUBLISHED',
+      ...notDeleted(),
+      ...(request.documentIds === undefined ? {} : { id: { in: request.documentIds } }),
+    };
+  }
+
+  /** The half-open day range the inclusive period means. */
+  private periodWhere(request: CreateExportRequest): Prisma.DateTimeFilter {
+    return { gte: startOfUtcDay(request.periodStart), lt: startOfNextUtcDay(request.periodEnd) };
   }
 
   /**
@@ -408,6 +602,51 @@ export class ExportsService {
         'No such client',
         'No client business with that id is reachable.',
       );
+    }
+  }
+
+  /**
+   * The client's chart of accounts, as the `Analysis account` lookup — or
+   * `null`.
+   *
+   * ## This is the defect the export shipped with until 2 Sep 2026
+   *
+   * `documents.category_code` holds a code (`SUBSCRIPTIONS`); VT Transaction+
+   * wants an account name with its ledger prefix (`Cost of sales: Purchases`).
+   * `document-to-canonical.ts` passed the column straight into the column, so
+   * every import file carried the code — and VT type-guesses a bare cell, so a
+   * numeric one arrives as a *number* rather than an account (§24.3.1).
+   * `rules-suggestions/index.ts` has named this consumer on its seam since A6:
+   * *"read the ready-made `{ code, name }` pairs off
+   * `ChartOfAccountsService.getChartOfAccounts(...).categories`, where `name` is
+   * already in that form."* This is that call.
+   *
+   * ## Why a failure here is a warning and not a 500
+   *
+   * The chart is a picklist. It is not the client's money, it is not the
+   * document, and the export is ID's ONLY egress (D42) — an accountant's month
+   * must not become unexportable because a reference list could not be read.
+   * Losing it costs the prefix on every row, and every one of those rows then
+   * raises `analysis-account-unprefixed`, which lands on the export's warnings
+   * panel and on the publish review card. Loud, per document, and recoverable in
+   * VT's Converter. Silence is the thing that is not available.
+   *
+   * ⚠ **It never substitutes a chart from somewhere else.** Not the platform's
+   * generic profile, not another client's, not the accounts a code "looks like"
+   * — `getChartOfAccounts` seeds this client's own on first read (it is
+   * idempotent and never overwrites), and if that cannot be reached the answer
+   * is `null`, which resolves nothing.
+   */
+  private async chartFor(ctx: ScopeContext, businessId: string): Promise<AnalysisAccountChart | null> {
+    if (this.charts === null) return null;
+    try {
+      const chart = await this.charts.getChartOfAccounts(ctx, businessId);
+      return analysisAccountChart(chart.categories);
+    } catch (error) {
+      this.logger.warn(
+        `chart of accounts unavailable for business ${businessId} — the export will carry bare category codes and warn on each: ${String(error)}`,
+      );
+      return null;
     }
   }
 
@@ -519,7 +758,19 @@ function targetSlug(target: string): string {
  * Three substrings rearranged; no `Date` is constructed, for the reason
  * `formatVtDate` gives.
  */
-function ukDate(calendarDate: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(calendarDate);
-  return match === null ? calendarDate : `${match[3]}/${match[2]}/${match[1]}`;
+function ukDate(isoDate: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
+  return match === null ? isoDate : `${match[3]}/${match[2]}/${match[1]}`;
+}
+
+/**
+ * A stored instant → the calendar date it is, read in **UTC**.
+ *
+ * The same read `document-to-canonical.ts` makes, and for the same reason: a
+ * document date was a calendar date before the column widened it into a
+ * `timestamptz`, and re-interpreting midnight UTC in Europe/London during BST
+ * turns 12 May into 11 May in the sentence an accountant is asked to act on.
+ */
+function calendarDate(instant: Date): string {
+  return instant.toISOString().slice(0, 10);
 }

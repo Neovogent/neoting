@@ -252,6 +252,70 @@ reject and reprocess undo each other, which is why neither needs the super admin
 
 ---
 
+## `NT-DOC-002` — purge refused: something still resolves back to this document
+
+**Status:** `409` · **Surface:** `POST /v1/action-proposals/{id}/approval`, kind
+`document.purge` · **Added by:** document management, 2 Sep 2026
+
+**Symptom.** Somebody approves a permanent deletion and is told one or more of
+the documents has been released for export, carries an export link, or is a
+statement's source file. Nothing is destroyed; the proposal is not consumed and
+can be approved again once the situation changes.
+
+**What it means.** **The refusal is the feature.** D43 promises that every
+exported line resolves back to its source document. An export mints a
+`document_links` capability code per document it carries, and an accountant
+reads that code out of a CSV column inside VT Transaction+ — outside this
+product, with no session of ours, weeks later. Destroying the document turns
+that URL into a permanent `410`, and **nothing in this product would ever
+surface that it had happened**, because nobody here is watching the
+accountant's file. Silent, remote and permanent is the combination that
+justifies refusing rather than warning.
+
+Four conditions raise it, and all four are read as **rows**, never inferred from
+`documents.state`:
+
+| Condition | Why the state column cannot answer it |
+|---|---|
+| `state = 'PUBLISHED'` | Released for export right now — the only one `state` does answer |
+| a `publishes` row exists | It **has** been released even if `state` moved on: unarchive demotes a published document to READY/TO_REVIEW, and publish-batch's retry edge takes a REJECTED one through PROCESSING |
+| a `document_links` row exists | The D43 code itself — the thing that actually breaks. Revoked and expired links count: a revoked link is a `410` an operator can explain, and destroying the row turns the same URL into "no such code", which is indistinguishable from a typo |
+| a `statements` / `supplier_statements` row names it | ⚠ **There is no foreign key on `document_id`**, so Postgres would let the purge leave the reference dangling and nothing would notice. Under D40 manual statement upload is the only bank input, so that column is the sole answer to "which uploaded file produced these bank lines" |
+
+**Diagnose.**
+
+```sql
+SELECT d.id, d.state, d.deleted_at,
+       (SELECT count(*) FROM publishes       p WHERE p.document_id = d.id) AS publishes,
+       (SELECT count(*) FROM document_links  l WHERE l.document_id = d.id) AS links,
+       (SELECT count(*) FROM statements      s WHERE s.document_id = d.id) AS statements
+  FROM documents d WHERE d.id = ANY(:document_ids);
+```
+
+**Fix.** There is usually nothing to fix — the document is already in Trash,
+which is where the person wanted it, and Trash has **no expiry**, so leaving it
+there costs nothing and is the intended resting place. If the links genuinely
+must die, approve a `document.revoke-link` proposal **first and deliberately**;
+the purge still refuses afterwards on the `publishes` row, and that is also
+intended.
+
+⚠ **Do not "fix" this by making the purge cascade.** `publishes.document` and
+`document_links.document` are both `ON DELETE CASCADE`, so a purge that ran on a
+released document would erase the record that it was ever released — which is
+Dext's *Clear Publishing Data*, the one behaviour
+`docs/research/dext-document-management.md` §10.3 refuses absolutely, arrived at
+by a different door and with no prompt at all. Afterwards the system cannot tell
+"never released" from "released, then erased". **Release is an append-only
+fact.**
+
+**Prevention.** Not applicable, and deliberately not alerted on. This firing
+means the guard worked. It is worth noting that the market's largest incumbent
+has no such guard: Xero Files hard-deletes with no trash and no restore, and its
+own warning states that deleting a file *"removes the file from all transactions
+it's attached to… We can't retrieve deleted files."*
+
+---
+
 ## `NT-AUTH-004` — email verification link not valid
 
 **Status:** `401` · **Surface:** `POST /v1/auth/email-verification` · **Added by:** stage A14

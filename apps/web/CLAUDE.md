@@ -37,13 +37,22 @@ SoT v1.6 §24 scopes the first paid client release. Five of its decisions land s
 
 1. **Split at the route.** Every screen is `lazy()`-loaded from `App.tsx` so opening one downloads one. This replaced "Server Components by default", and it inherits that rule's job: keeping per-route weight down. (Guideline v1.2 §7.4.)
 2. **Tokens only** — no hex, no arbitrary px, no rgb()/rgba(). Done for colour: the palette AND the shadow/glow ramp live in the `@theme` block of `src/index.css` (issues #64, #85, #86); alpha steps derive from the base tokens via `color-mix`. Light mode is a variable redefinition plus the documented per-utility exceptions in that file. `scripts/check-colors.mjs` fails `pnpm lint` on any rgb()/rgba() literal anywhere under `src`, including the stylesheet ESLint cannot see. The prototype wrote its spotlight and shadow work as raw alpha literals; every one of them was re-expressed as `color-mix` over a palette token on the way in, which is also what makes a brand change reach the tour ring instead of leaving one stale mint value behind. ⚠ One trap worth knowing before you write a fade-from-brand keyframe: **`color-mix(… var(--color-brand) 0%, transparent)` collapses to transparent BLACK** and greys the whole ramp — that is what `--color-brand-fade` exists for, and why the `tour-ring` keyframe uses it instead of `0%`. New animation also carries a `prefers-reduced-motion: reduce` opt-out, as `.tour-spot` / `.tour-box` do.
+
+   ⚠ **`bg-white` is the hole in this rule, and nothing lints it.** `check-colors.mjs` fails on `rgb()`/`rgba()` literals only; a Tailwind `bg-white` / `bg-zinc-100` / `border-zinc-200` / `text-zinc-900` sails straight through, and those classes are the SAME colour in both themes — so a panel built from them stays light while the shell around it goes dark. That is the defect reported against the Inboxes screen on 2 Sep 2026 ("this page should be full dark mode if in dark mode, the middle part missed that"): `InboxesView`'s main panel was one `<div className="flex-1 bg-white rounded-t-[28px] …">`, everything inside it was transparent and inherited the white, and the controls had been coloured for that white ground. Measured in the browser, dark theme: `body` was `rgb(10,10,12)` and that one div was `rgb(255,255,255)`. It is now `bg-card` and its contents use the ordinary ramp. **The shell was never the problem** — `Sidebar`, `ContextHeader`, `BottomNav` and `App.tsx` carry only `bg-ground`/`bg-card` and follow the theme in both directions.
+   Two things follow. **First, the Chases board carried the identical bug and no longer does (3 Sep 2026).** `ChasesView.tsx` and `ChasesLiveBoard.tsx` were the last two `bg-white` PANELS in the app; both are `bg-card` now, along with that view's `bg-pale` sub-tab strip (`bg-raised`), its `bg-white text-black` active pill (`bg-brand text-brand-on shadow-glow-tab`) and roughly thirty controls inside them that had been coloured for a white ground. Measured in headless Chrome over CDP, dark theme: the panel was `rgb(255,255,255)` over 587,640 px² of a `rgb(10,10,12)` body and is now `rgb(22,22,26)`; light is `rgb(255,255,255)` as it always was. A DOM audit for "opaque **and light** background while `html` has no `light` class" now reports **zero** offenders on all ten workspace routes — write that audit rather than grepping, and note that it must read the background through a canvas readback, because Chrome returns `oklab()`/`oklch()` for alpha and chromatic utilities and a regex for `rgb()` silently skips a 90 %-opaque white panel.
+
+   Three deliberate exceptions survive that audit and must not be "fixed": the chat composer (`InputRow.tsx` + `InputAffordances.tsx`) is light in dark mode on purpose and is the *only* thing the `html.light .bg-white .text-zinc-*` block in `index.css` now serves; the signup QR code is black-on-white in both themes or phones will not scan it; and the camera shutter and flash frame on the two capture surfaces are white objects, not panels. That block should shrink to nothing rather than grow. Its companion `.bg-zinc-900` / `.bg-zinc-800` rescue is **deleted** — the Chases stage pill, policy chip and Review & Chase button were its only three subjects, and a rule with no possible subject reads as a supported pattern.
+
+   **Second, `bg-brand` is mint in BOTH themes, so ink on it is `text-brand-on`, never `text-white`** (white on mint is 1.4:1; `--color-brand-on` measures 11.7:1, and every brand control on `/chases` measures **10.13:1** in both themes). `index.css` has a `.bg-brand.text-white { … !important }` rescue, but it does not reach `hover:bg-brand` + `hover:text-white`, which is how a real 1.4:1 hover state shipped here. There is currently **no such pair left anywhere in `apps/web/src`** — grep before assuming otherwise. Several screens still lean on the rescue (`ClientsView`, `ApprovalsView`, `DocumentsView`, `DataTable`, `Sidebar`'s logomark); prefer the explicit token.
+
+   ⚠ **One mirror-image defect is known and NOT fixed**: the settings toggle knob is `bg-white` on a `bg-white/10` track (`ChasesView.tsx`, `InboxesView.tsx`), which is invisible in **light** mode. It is not a one-line token change — `bg-white` is deliberately literal for the composer, and `bg-raised`/`bg-ground` land within a couple of RGB steps of the track in one theme or the other. It needs a knob token that inverts, which is a palette decision. Likewise `text-amber-*` / `text-red-*` have no `html.light` overrides, so dark-native ink measures ~2.6:1 in light, app-wide.
 3. Chat renders **component-grammar primitives only**. If the grammar lacks a card, that is a G7 conversation, not a one-off `<div>`. The grammar is being derived from the imported components rather than imposed on them.
 4. Every user-facing string through a catalogue (en-GB); the lint rule blocks literals. **Done — issue #65.** The library is **react-intl** (§12.6 leaves the library open and fixes the behaviour; react-intl is ICU-MessageFormat and framework-agnostic, which is what D37 needed). `defineMessages` per component, ids on `domain.component.purpose`, and `lang/en-GB.json` extracted from source by `pnpm i18n:extract` — **generated, never hand-edited.** Two gates, at different altitudes: `neoting/no-literal-string-in-jsx` works on source and blocks the next literal someone types, `pnpm i18n:check` works on the catalogue and blocks a message with no default, an off-convention key, a silently-overwritten duplicate id or invalid ICU. **2,846 messages** (136 local ids collapsed into 22 `common.*` ids in issue #94; the prototype port added ~490, of which ~206 were the demo tour — 192 of those came back out when the tour went English-only, see *The demo tour*, leaving exactly eight ids under `tour.*`, all of them the overlay's chrome; launch M5's Xero purge then retired ~95 connection/ledger ids; launch A9's export screen added 38 under `export.exportView.*`; M7's live intake and M9's signup journey took it the rest of the way, the latter adding 76 under `signup.*`, and `pnpm i18n:check` now reads **3,168**). Re-extract rather than trusting that figure: `pnpm --filter @neoting/web i18n:extract` rewrites the catalogue. See *i18n* below before adding a string.
 5. All four states per screen: empty (teaches the next action), loading (skeletons, no spinners on primary surfaces), error (plain English + `NT-` code), success.
 6. Accessibility on every PR: full keyboard path, visible focus, `aria-live="polite"` on chat updates, contrast from tokens, error text never colour-only. `jsx-a11y` (recommended set) and `react-hooks` (`rules-of-hooks` + `exhaustive-deps`) are now enforced at error in `eslint.config.js`, and the pre-existing findings are swept: backdrops are `role="presentation"` with Escape as the keyboard dismissal (`lib/useEscape.ts` — a stack, because dialogs nest; read it before adding a listener of your own), row-click targets carry real button semantics, and the three `autoFocus` uses carry reasoned disables (focus following an explicit user action is the dialog pattern, not focus theft). **Axe before review is still owed on every PR** — the linter cannot see computed contrast or focus order. The nine `exhaustive-deps` disables in `AppContext.tsx` are deliberate inventory, not fixes: each names its omitted-but-stable dep (`logAudit`, `setActiveConversationId`), and they come out together in a stable-callback sweep of that file — do not fix one in passing, and do not add a tenth.
 7. Motion by the numbers (tokens `CLAUDE.md`). `motion` (Framer), not CSS transitions, for anything stateful.
 8. **< 250 KB gzipped JS per route.** The portal is the lightest surface in the product and takes no heavy dependencies, ever — it must load fast on a bad connection in a car park. See *Bundle* below for where this actually stands.
-9. Optimistic UI with rollback toasts. The Approve button literally cannot render before Read-review opens — the grammar enforces it; don't work around it.
+9. Optimistic UI with rollback toasts. The Approve button literally cannot render before Read-review opens — the grammar enforces it; don't work around it. ⚠ **The review card's content is the SERVER's**, not this app's: `LiveProposalCard` renders exactly the sections `POST .../review` returned and `api/proposals.ts` fails closed on a section it cannot render. That is why the release review's per-document bookkeeping entry (2 Sep 2026 — the rows the VT import file will contain, built by the export's own emitter) cost **zero** web bytes and needed no component change: it arrived as more of the same `{heading, entries[{label, value}]}` sections. It also means the D42 copy rule has to hold *server-side* — `LiveProposalCard.test.tsx` reads `document.body.textContent` after opening a review and asserts the forbidden vocabulary is absent, the `ExportView.test.tsx` way, so a wording change in `render-summary.ts` fails here too.
 10. Component tests for anything with logic.
 
 ## Data
@@ -190,6 +199,8 @@ Six things about it that are decisions, not details:
 - **`slices.ts` was NOT widened.** `SliceName` has no `exports` member and should not: it names the demo route's context arrays, and an export is not one. The view computes its own `sliceStatus` from its own query (the `ChasesView` model) and passes any label it likes to `DataSourceBadge`, whose `slice` prop is already a plain `string`. That is also what keeps `api/exports.ts` off the bundle floor.
 - **Export history carries no download links, and says so.** The URLs are presigned and minutes long by contract, so a row from last week has none live; the honest answer is a line telling the accountant to export the period again, which reuses the same capability codes and therefore produces a file their saved VT conversion table still matches.
 - **The two download anchors carry `rel="noreferrer noopener"`.** The signed URL is bearer authority over a client's whole month of financial records with no session behind it, and a `Referer` header would carry it wherever the tab goes next. Pinned by test.
+- **⚠ "Nothing to export" is no longer allowed to be a dead end (2 Sep 2026).** Reported from the live app: a client with exactly one Published document — dated **12 May 2025** — and this screen, defaulting to `previousCalendarMonth`, answering *"No documents reached Published in 01/08/2026 to 31/08/2026 for this client."* The product owner read that as **published, but it will not export**. The server was right (the export period selects on the document's own date, which is the accounting answer and is now stated in the contract) and the screen was useless. It now renders the refusal's `publishedOutsidePeriod` — how many Published documents sit outside the chosen period and the dates they span — plus **one button that sets both date inputs to the server's own bounds**, so nobody retypes two dates read out of a sentence.
+  ⚠ **The screen computes none of that, and must never start.** The facts ride on the `NT-EXP-001` problem (`NtProblemError.publishedOutsidePeriod`, the contract's one RFC 7807 extension member) because the exporter is the only thing that knows its own predicate; a second query here could disagree with it and would be a second read of a client's records written by someone not looking at the exporter. Two silences are deliberate and pinned by test: a client with genuinely nothing Published gets no hint (the extension is absent, not zero), and a count whose documents are all **undated** offers no button, because there is no period a widening could reach. `previousCalendarMonth` is unchanged — the default is fine once the dead end is not one.
 
 Colour is tokens throughout — `bg-ground` / `bg-card` / `bg-raised` for surfaces, `bg-brand` + **`text-brand-on`** for the primary buttons (not `text-white`: white on mint is 1.4:1, and `--color-brand-on` exists for exactly this), and the established amber/red/emerald ramps for degraded/failure/settled. **Nothing lints a hex literal in a className**, so it was checked by grepping the two new files for `#[0-9a-fA-F]{3,8}` — zero — and by listing every `bg-`/`text-`/`border-` class in the view against the `@theme` block.
 
@@ -385,11 +396,20 @@ Five things that are decisions, not details:
   telephoning their accountant. Omitted, the address alone names the workspace,
   which the server permits only when it names **exactly one** business. An
   address on two is refused rather than guessed at.
-- **The bearer lives in React state and nowhere else** — not `localStorage`, not
-  a cookie. The same rule and the same reason as the chase portal: it is a
+- **The bearer lives in React state plus `sessionStorage`** — never
+  `localStorage`, never a cookie, both of which outlive the tab. It is a
   credential over a client's financial records, held by someone who cannot
-  re-prove anything, on a phone that gets handed round the till. It dies with
-  the tab.
+  re-prove anything, on a phone that gets handed round the till, so the rule is
+  and always was **"it dies with the tab"** — and `sessionStorage` has exactly
+  that lifetime. It said "React state and nowhere else" until #243, which is
+  stricter than the rule it cited and cost the client a fresh emailed code on
+  every reload. The session's `expiresAt` is stored beside it, so the hook's own
+  expiry watch survives the reload the bearer now survives. ⚠ **The CHASE portal
+  keeps the memory-only rule unchanged** — that bearer is an anonymous delegated
+  grant from a link, and stays as strict as it was. ⚠ `vitest.setup.ts` clears
+  `sessionStorage` after every test for the same reason it resets the viewport:
+  a test that signed in must not decide whether the next one sees a sign-in
+  form.
 - **⚠ NO COPY MAY SAY WHETHER AN ACCOUNT EXISTS.** `sign-in-codes` answers `202`
   whatever happened, so the code step is reached even for an address nothing was
   sent to, and `requestCode` **always** advances the step — branching on the
@@ -404,13 +424,155 @@ Five things that are decisions, not details:
   needs no change: `POST /portal/uploads` keys off the session's business, and an
   ONBOARDING-scoped session has one. One upload path at two trust levels.
 
-Bundle: `LiveBusinessPortal` lands on the `BusinessPortal` chunk (24.1 kB gzip),
-not the floor. Portal route ~225.6 kB against the 250 kB budget.
+#### It is a FOUR-TAB product again (2 Sep 2026, D49)
 
-⚠ **Still on seed data, and still owed:** the Capture (camera) tab, the Settings
-tab's plan panel, and per-user registration. The live portal has the three things
-that make it a portal — sign in, see what is wanted, send a document — and says
-nothing it cannot do.
+The live portal was one scrolling page of three cards while the design source of
+record is Home · Upload · Capture · Settings. The rich shell existed and rendered
+**only on synthetic seed data** — `BusinessPortal.tsx` branched to
+`LiveBusinessPortal` before it touched anything — so every real client got the
+short page and the demo got the product.
+
+Both shells now wear **`BusinessPortalShell`** (header, the ≥768px tab row with
+its animated underline, the phone thumb bar) and share **`portalTabs.ts`**, whose
+pure `tabFromPath`/`pathForTab` serve two different address shapes: the live
+portal is `/portal(/upload|capture|settings)`, the synthetic one is
+`/portal/:accountId/…`, and the tab is the last segment when it names one. The
+synthetic shell moved out to `SyntheticBusinessPortal.tsx`.
+
+What each live tab does with real data:
+
+- **Home** — the outstanding asks named (`items` + `statementRequests` off
+  `GET /portal/context`), a 2×2/1×4 counter row, two action tiles, and
+  **Recently sent** off `GET /portal/documents`.
+- **Upload** — dropzone, per-file refusals with named reasons, "Just sent", and
+  the portal's own documents (`channel === 'SMS_PORTAL'`).
+- **Capture** — the camera, which had no live equivalent at all. `idle |
+  starting | live | error`, an 80px shutter, a multi-page tray, and the device
+  camera fallback that every fault points at. ⚠ Unlike the prototype it uploads
+  the **real bytes**: a frame goes through `lib/capture.ts`'s constants and
+  `dataUrlToBlob` (`portalCamera.ts` → `frameToPage`), so there is still exactly
+  one compressor in this app.
+- **Settings** — Business / Plan / Sending / Notifications / People / Security.
+
+Five things that are decisions, not details:
+
+- **⚠ The five status words come from the SERVER.** `PortalDocumentStatus`
+  (`processing | with_accountant | accepted | filed | needs_another_copy`) is
+  deliberately not `DocumentState`; the mapping is made server-side so it cannot
+  fork between clients, and `PortalStatusPill.tsx` only supplies the wording (so
+  it stays translatable). **Never render a raw `DocumentState` on a client
+  surface, and never derive one of the five here.**
+- **⚠ `transactionId` on a per-ask upload is a DECLARATION, not an
+  instruction.** It reaches the signed upload claims and a `document_events` row,
+  and then auto-close **re-derives** the match from supplier + amount + date
+  against every open chase (`apps/api/src/modules/chase/auto-close.ts`). Verified
+  before the UI was written, which is why "Send it" says *"the request stays open
+  until it matches"* and never that it closes the row it started from.
+- **The lapsed state carries a working checkout.** It used to read *"your
+  accountant can help you restart it"* while `POST /billing/checkout-sessions`
+  sat implemented and portal-authorised. `checkoutReturnUrl` also stopped
+  hard-coding `/app/setup` — every caller passes its own return path, or a client
+  who had just paid was returned to a one-time setup link they no longer hold.
+- **The session watches its own expiry.** `openOnboardingSession` returns
+  `expiresAt` and the hook discarded it, so the bearer just began failing and the
+  copy blamed the upload (*"That did not send"*) — clients re-photographed
+  receipts to fix a sign-in problem. Expiry is its own state with its own
+  sentence, and `NT-OTP-002` maps onto it.
+- **It polls `GET /portal/context` every 20 s**, paused while the tab is hidden
+  and caught up on `visibilitychange`. Nothing polled before, so an ask raised
+  while the tab was open never appeared. Slower than the practice app's 5 s on
+  purpose: this runs on mobile data.
+
+**⚠ Panels that were deliberately NOT built, because no server path exists:**
+business details editing, notification preferences, and the Upload tab's "note
+for your accountant" (`PortalUploadRequest` has no note field). Each is a
+read-only statement of what is true instead. The repo rule holds — a control
+whose write the next poll reverts is worse than absent.
+
+⚠ **Member management LEFT that list on 2 Sep 2026** — it has a server path now
+(four contracted operations), so the rule is satisfied rather than bent. See
+*Settings → People* below.
+The plan panel IS correct here, unlike in the prototype: D48 makes the client the
+payer, and `PortalSummary.subscription` plus a portal-authorised
+`POST /billing/portal-sessions` make it real.
+
+#### Settings → People, and every section is an address (2 Sep 2026, D45/D49)
+
+The panel said *"Managed by your accountant … they cannot be added from this
+screen."* The product owner ruled that wrong: **the client's own manager, HR lead
+or owner adds and removes their staff.** `views/business/LivePortalPeople.tsx`
+over `api/portalPeople.ts` (four contracted operations) is that panel; the two
+retired ids are `portal.livePortalSettings.peopleSubtitle` and `…peopleBody`.
+
+**⚠ The section is an ADDRESS now, not `useState`.** It was local state, so
+`/portal/settings` always opened on Business and **People could not be linked at
+all** — an accountant telling a client "go to Settings, then People" had no
+address to send. `portalTabs.ts` was EXTENDED rather than given a sibling:
+`PORTAL_SECTIONS` is a `Record<PortalTab, readonly string[]>` (total by the mapped
+type, so a fifth tab must answer whether it has sections), and
+`sectionFromPath` / `pathForSection` join `tabFromPath` / `pathForTab`. Four
+things that are decisions:
+
+- **`tabFromPath` reads the last segment and then the one before it**, which is
+  what makes `/portal/settings/people` a Settings address. Two positions and no
+  more — scanning the whole list would make `/portal/settings/a/b/c` resolve to
+  Settings, which is a dead end wearing a working tab.
+- **An unrecognised section is the FIRST section**, never a blank panel and never
+  a 404 — the file's own tab-level rule, one level down. A tab that has NO
+  sections cannot claim a trailing segment at all, so `/portal/upload/nonsense`
+  still falls Home and stays recoverable.
+- **The slug is machine-derived from the key**, never the translated label —
+  otherwise a French client's link would open nothing for an English one.
+  `LivePortalSettings` keys its icon/label `Record` off `sectionsForTab('Settings')`,
+  so a section added in one place and forgotten in the other fails to compile.
+- **The phone strip auto-scrolls the active pill in when opened from the URL** for
+  free: `SectionStrip`'s effect has already run `scrollIntoView` on mount, and it
+  now has a section from the address rather than a constant `'Business'`.
+
+**Honest degradation, not a hidden section** (Governance §11.2). A plain
+`BUSINESS_STANDARD` sees the whole list plus one line naming who can change it;
+`canManagePeople` is a fact and never a gate, and the SERVER refuses all three
+mutations regardless. The Remove button is **disabled with an explanatory
+`title`** for the last owner and for yourself, rather than vanishing.
+
+**Roles are free text with suggestions.** `jobTitle` is a `<datalist>` — Owner /
+Manager / Staff — never a `<select>`: *"a restaurant has a Head Chef and a site
+has a Foreman."* `access` is the separate enum the last-owner rule keys on, and
+only the three business-level roles are offered (a client cannot hold a practice
+role, and the server refuses one).
+
+⚠ **`gateFor` is exported and unit-tested rather than reached through the DOM**,
+because the ORDER is the thing being pinned — name → email → valid email →
+duplicate email → last-owner, the same order the server applies. A render test
+can only observe whichever message came out first.
+
+**Bundle:** `LivePortalPeople` is `lazy()` from `LivePortalSettings` and is its
+own **4,506 B** gzip chunk, so `api/portalPeople.ts` and the four generated client
+functions are fetched only when a client actually opens People. That is a budget
+rule, not a tidy-up — the portal is the surface this product promises will load on
+a bad connection in a car park. Measured with the People chunk NOT fetched, the
+portal route is **225,210 B** against the 250,000 B budget (~24.8 kB headroom).
+⚠ Other lanes had uncommitted work in this tree during the measurement, so treat
+that as the route's standing rather than an attributable delta.
+
+`/approve/:requestId` and `/register/:accountId/:memberId` now **refuse honestly
+under `API_ENABLED`** rather than falling through to "Link not found": both are
+routed outside the live branch, so with a session their seed arrays are empty and
+the old copy told the client their link was broken when the feature is simply not
+in this release. A portal holder can approve nothing —
+`approveActionProposal` carries `security: [- workspaceSession: []]` — and no
+client-approval path was built.
+
+Bundle: **the synthetic shell is behind a second `lazy()`**, which is a budget
+rule, not a tidy-up. `BusinessPortal.tsx` imported all six synthetic views at
+module scope *above* the `API_ENABLED` branch, so every real client downloaded
+~2,900 lines of demo shell they can never reach. `API_ENABLED` is a runtime read,
+so both halves are in the build; the second `lazy()` decides only one is
+**fetched**. Measured (exact `gzip -c | wc -c`, floor + `BusinessPortal`): the
+portal route went **227,470 B → 221,955 B** while gaining four tabs, a camera and
+a plan panel, with `SyntheticBusinessPortal` a 20.9 kB chunk a live client never
+requests. ⚠ Other lanes were committing during both measurements; treat the
+−5.5 kB as the shape of the reclaim, not a laboratory figure.
 
 ### The setup journey (`/app/setup`) — launch stage M6
 
@@ -471,7 +633,9 @@ Five things about it that are decisions, not details:
 
 `src/tour/` — `TourProvider` (state + `useTour`), `TourOverlay` (spotlight and card), `steps.ts`, `bus.ts`.
 
-**Three different numbers, and they are not interchangeable.** `steps.ts` defines **58 steps**; **56 of them carry a `target`** (welcome and done are deliberately targetless centred cards); those 56 targets name **43 distinct anchor keys**, because a key is reused wherever the same surface is explained twice (`chat-card` alone answers seven steps, `client-subtabs` five, `datatable` four). The step counter in the overlay reads **1 / 58** — that is the figure a viewer sees. 43 is the number to check against the DOM; 58 is the number to check against the script. (Launch M5 dropped the five Xero steps — chat-publish, costs-ready-publish, costs-published, integrations, settings-connections — the figures were 63 / 61 / 45 before it.)
+**Three different numbers, and they are not interchangeable.** `steps.ts` defines **57 steps**; **55 of them carry a `target`** (welcome and done are deliberately targetless centred cards); those 55 targets name **43 distinct anchor keys**, because a key is reused wherever the same surface is explained twice (`chat-card` alone answers six steps, `client-subtabs` five, `datatable` four). The step counter in the overlay reads **1 / 57** — that is the figure a viewer sees. 43 is the number to check against the DOM; 57 is the number to check against the script. (Launch M5 dropped the five Xero steps — chat-publish, costs-ready-publish, costs-published, integrations, settings-connections — the figures were 63 / 61 / 45 before it; 2 Sep 2026 dropped `chat-invite`, which was 58 / 56 / 43.)
+
+⚠ **`chat-invite` is gone, and the way it failed is the lesson.** It seeded an `INVITE_USER` turn whose card had been deleted, so `IntentRenderer`'s `default` returned `null` and the step confidently spotlit an **empty bubble** under the words *"Inviting someone is a form in the chat"*. The missing-target path could not save it: `chat-card` anchors the bubble **wrapper** (`ChatArea.tsx`), which is present and visible whether or not a card rendered inside it — so an anchor that resolves is not evidence that a step has anything to show. The `team` step also lost its `ask` (*"Or just ask: Invite a colleague"*), which walked the viewer into the same dead path; a step with no `ask` simply omits the line, which several already do.
 
 **Entered from the button in `ContextBar`, which renders only when `documentsSource !== 'api'`** — the app's existing demo-vs-live signal (`API_ENABLED ? 'api' : 'seed'`). The script routes to `/clients/1`, narrates American Burger by name and seeds canned assistant turns, so against a real firm's data it points at the wrong rows. `/demo` and `/demo?step=n` carry the SAME gate since launch M2: with the API on, the address is only a redirect home. The deliberate-door reasoning did not survive M2's trust audit — a live-reachable route that starts a scripted story over a real firm's data is the kind of surprise the stage exists to remove.
 
@@ -484,6 +648,22 @@ Five things about it that are decisions, not details:
 - **Never slugify a label into an anchor.** The prototype derived `bulk-publish-selected` from an English button caption; a key derived from copy moves with the copy and strands the step. `DataTable`'s `BulkAction` carries an explicit `tourKey` instead — that is the mechanism, use it. It survives the English-only decision unchanged: the reason is that an anchor must not be derived from anything a writer can edit, which has nothing to do with how many locales there are.
 - A step whose `target` resolves to nothing degrades to a centred card **and prints a visible amber "missing target" line**, so a broken anchor is loud rather than silent. All 43 anchor keys exist in the source; two are reached indirectly and will not turn up in a grep for `data-tour="…"` — `client-card` (`ClientsView` passes `tourKey` into `ClientCard`) and `client-subtabs` (the literal lives on the shared `SubTabs` frame, not in any view). Grep for `tourKey` as well before concluding an anchor is missing. Six anchors exist that no step targets (`bulk-bar`, `bulk-publish-selected` — a `tourKey` on ClientInbox's synthetic bulk action, orphaned when M5 dropped the `costs-ready-publish` step — `client-users`, `composer-generate`, `inboxes-upload`, `tour-button`), which is harmless. Note `inbox-upload` (ClientInbox, targeted) and `inboxes-upload` (InboxesView, not targeted) are different keys that read almost identically — check which one you mean.
 
+## The theme persists, and there is exactly one key in `localStorage` for it (3 Sep 2026)
+
+**It did not.** `index.html` shipped `class="light"`, `DEFAULT_SETTINGS.theme` was a hardcoded `'light'`, and `settings` is React state — so the sidebar toggle and the Settings radio both worked and both lasted exactly as long as the tab. Every reload threw the user back into light. It was reported alongside the Chases board being white in dark mode and was very likely half of what was actually being experienced.
+
+`src/lib/theme-preference.ts` is the whole of it, and it deliberately copies the shape of `lib/signed-in-hint.ts` — the only other `localStorage` key in this app. Read that file's header too; the argument for why a key is allowed to exist is made there at length. Five things that are decisions, not details:
+
+- **⚠ ONE KEY, `nt.theme`, HOLDING ONE OF TWO WORDS.** `nt_session` is HttpOnly on purpose and the portal bearers live in React state and die with the tab, precisely so a credential over a client's financial records is never left on a shared phone. The bar for a second preference key is the bar this one cleared: **it must be worthless to an attacker.** Read it and you learn which of two stylesheets somebody prefers.
+- **The class goes on before the first paint, from an inline synchronous script in `index.html`.** `/src/main.tsx` is a module and modules are deferred by definition, so anything React does happens *after* the browser has painted — which is the white flash this change exists to remove. Verified in headless Chrome: at `first-contentful-paint` the class and the `body` background are already correct in all five scenarios (never-chosen ×2, stored-against-the-OS ×2, junk value). The script is a hand-inlined copy of the module's read half and the duplication is the point; an import would be the deferred module being got ahead of.
+- **⚠ DO NOT WRITE A LITERAL `head` OR `script` TAG INSIDE A COMMENT IN `index.html`.** `@vitejs/plugin-react` injects its refresh preamble immediately after the first opening head tag *in the raw source*, so a mention of it in prose swallows the preamble into the comment and the dev server serves an app that never mounts (`can't detect preamble`). This cost a debugging cycle; the file now says so in its own comment.
+- **Never chosen is not chosen-light.** With no stored value the answer is `prefers-color-scheme`. That is also why `storeTheme` is called ONLY from `updateSettings` when the patch names a theme — the one signal in this app that a human picked one — and never from the effect in `App.tsx` that *applies* the class. Persisting on mount would pin whatever the OS happened to say at first load and silently stop following it.
+- **Storage access can never take the app down.** `localStorage` throws rather than returning null in a browser with site data blocked, and this runs before React mounts. Every access is guarded; the reader answers `null`, the resolver falls through to the OS, and the toggle still works for the session with the failed write swallowed. Verified in a browser with the `localStorage` getter replaced by a throwing one: the app mounts, `/chases` renders, zero uncaught exceptions.
+
+`theme-preference.test.ts` pins the failure cases, because they are the whole point of the module — a blocked store, a junk value, an absent `matchMedia`, and the never-chosen rule.
+
+⚠ **One inconsistency left deliberately**: the two `<meta name="theme-color">` tags key off `prefers-color-scheme` media queries, so a user who *stores* dark on a light-set machine gets a light status bar on iOS. Fixing it means the inline script rewriting those tags, which is more machinery than the symptom justifies; noted rather than done.
+
 ## The brand lockup
 
 The product is **Neo Accounting** on every user-facing surface (launch stage M1); "Neoting" survives only in identifiers — `@neoting/*` package names, `nt-*` infra names, database identifiers, env vars, import paths — which are deliberately NOT renamed (that is a Terraform migration and a package-rename cascade, refused mid-launch). `src/assets/Wordmark.tsx` is the lockup: `BrandMark` (the N drawn as one continuous stroke with a ring node at each end, stroking `currentColor` through the `text-brand` token) beside the name as real text in the app's own face — never an image, never a font embedded in an SVG, which silently falls back. The name lives in one message, `brand.wordmark.name`, whose `<strong>` tags carry the Neo/Accounting weight split; it is a brand name and stays untranslated. Used in `ContextHeader`, `LoginView` and the landing page (`LandingView`, header and footer). The tab title and PWA identity (`index.html`, `manifest.webmanifest`) renamed with it. The chat system prompt **still says "Neoting", and M8 deliberately left it** — it is a byte-exact cache prefix with a pinned `PROMPT_VERSION` and an eval gate, all in `apps/api/src/modules/chat-framework`, which is outside M8's web-only fence, and the eval half of the ceremony needs Bedrock. Flagged on the M8 PR; the rename plus version bump plus eval run is still owed as its own change.
@@ -493,6 +673,8 @@ The product is **Neo Accounting** on every user-facing surface (launch stage M1)
 Both are additive — they replace none of the modals that already draw their own chrome.
 
 **`DynamicComponents/Modal`** — the one dialog frame: scrim, close button, Escape, placement. On a phone it is a bottom-anchored sheet, full width, safe-area aware, with the close button *inside* the card where a thumb reaches; from 640 up the card floats near the top. Props are `{ children, onClose, width?, label? }`. Render it inside an `AnimatePresence` or the exit animation will not play. Two departures from the ported frame, both load-bearing: Escape goes through `lib/useEscape` (a **stack** — a `ConfirmStep` opened over a Modal owns the key, so Escape mid-confirm cancels the confirm and not the surface underneath; two naive `window` listeners fire outer-first and close the wrong one), and the scrim is `role="presentation"` with `role="dialog"` on the card, because announcing a click target as the dialog itself is a lie the a11y sweep already rejected once.
+
+⚠ **The card is BOUNDED and scrolls itself (2 Sep 2026), and both halves are the frame's job rather than a caller's.** It had neither: a dialog taller than the window — a document detail on a short viewport, which is most of them — ran off the bottom edge, and on the phone branch the sheet is anchored with `items-end` + `mt-auto`, where an overflowing item aligns by rules nobody should have to reason about and the scrim's own scrollbar is hidden by its two `[scrollbar-width]` utilities. Reported from the live app as a Path-to-Ready panel whose last action button was cut off with nothing to scroll. So the wrapper carries `max-h-full` and the children sit in an `overflow-y-auto overscroll-contain` box; the close button is deliberately a SIBLING of that box, so it neither scrolls away nor gets clipped. The trade is that the box clips what paints outside a card's own edges — a `shadow-2xl` at the left and right — and unreachable content is the worse of the two. The same wrapper now forces `[&>*]:w-full`, because a child that forgets `w-full` shrink-wraps to its own content and reads as a stray pill on the scrim; `RequestStatementDialog` was the one call site doing it, and it was additionally drawing no `bg-card` at all. Pinned by `CodingProposalModal.test.tsx` — jsdom computes no layout, so the class contract is the only mechanical guard the fix has.
 
 **`DynamicComponents/SectionStrip`** — a row of section pills that scrolls sideways instead of wrapping, for the places a side list or a wide tab row used to be. It scrolls the active pill into view whenever it changes, so a deep link never lands on a strip whose selection is off-screen. **`StripItem.label` is REQUIRED here, unlike the frame it was ported from**, which rendered `item.label ?? item.key` and so leaked a raw machine key (`'vat-returns'`) into the UI the moment a caller forgot one — untranslated, and untranslatable because nothing would ever flag it. `key` is identity and is never rendered; `label` is copy and every call site passes `intl.formatMessage(...)`.
 
@@ -602,12 +784,57 @@ Two chunk-placement facts S12 measured, for the next stage that wires a surface:
 - **A module's chunk is decided by REACHABILITY, not by usage.** The zod/client barrels are statically imported by floor modules, so every generated sub-module any lazy chunk touches gets hoisted into `index` — a lazy import does not keep generated code off the floor once its barrel is floor-reachable. The marginal cost is per-EXPORT, which is why `proposals.ts` calls the plain generated function inside its own `useQuery` rather than pulling the hook/queryKey machinery.
 - The rest of S12 (`chases.ts`, the view boards, `LiveProposalCard`, `ProposalFlowModal`) landed on lazy chunks as intended: ChasesView 16.7 kB, ApprovalsView 15.5 kB, InboxesView 13.8 kB, `LiveProposalCard` 3.1 kB shared between the Approvals and Inboxes chunks.
 
-**Measure before you merge, not after.** A route over budget is a reject (D37), not a warning. The remaining known reclaims: the seed dataset (~67 kB source) leaving the floor when the remaining views move onto the generated client, and the `defaultMessage` strip when a second locale lands. The portal is still the lightest client-facing route by a wide margin — keep it that way: no heavy dependency, and nothing it imports may become shared with a practice screen (`upload-transport.ts` is the sanctioned shared seam, and it is 0.6 kB).
+### 🚨 THE WORST ROUTE WAS OVER BUDGET ON 2 Sep 2026 — measured, not projected
+
+> **Resolved 3 Sep 2026, and the figures below are the wrong quantity anyway.**
+> `ClientDetailView` now measures **245,268 B** and `BankView` **237,110 B** by
+> closure — see *The route total is bigger than the four-chunk shorthand says*
+> further down, and `scripts/measure/route-bundle-closure.mjs`. Everything in
+> this section about MEASUREMENT DISCIPLINE (paired builds, clean environment,
+> gzip's own noise) still holds and is why the script exists; the four-chunk
+> arithmetic it uses does not. Kept as the record of how the breach was found.
+
+`ClientDetailView` **exceeds the 250,000 B hard budget with nothing pending**.
+Measured as a tight paired A/B (two builds back to back, exact `gzip -c | wc -c`,
+`index-*` + `query-*` + `react-*` + `ClientDetailView-*`):
+
+| | bytes | vs 250,000 |
+|---|---|---|
+| the route with **no** uncommitted client-details work | **250,233** | **−233 OVER** |
+| the same route plus the `primaryContactEmail` slice | **250,305** | **−305 OVER** |
+
+So the deficit is **not** the email field: that costs **+72 B** in total (~6 B of
+it the contract widening — `api/businesses.ts`'s barrel is floor-reachable, so
+one nullable string is nearly free; the rest is the two render sites). The route
+was already over before it was touched.
+
+⚠ **The absolute number is a MOVING TARGET, and that is the finding.** The same
+"without" baseline measured **249,967** fifteen minutes earlier in the same
+session — roughly **+270 B drifted onto the route while one change was being
+written**, from concurrent work in other lanes (`Tables.tsx`, `resolver.ts`,
+`ClientInbox.tsx`, `DocumentPreview.tsx`, the Phase 4/5 surfaces above). Three
+consequences:
+
+- **Measure paired, in one command, or not at all.** Two builds minutes apart on
+  this repo are measuring other people's commits as much as your own. Two
+  attempts to shave bytes off the email slice both measured *worse* than the
+  thing they optimised, purely from drift — the noise now exceeds a whole small
+  feature.
+- **One trap worth keeping: reuse the EXACT className string.** Adding `mt-4` to
+  an otherwise-identical Tailwind string cost ~230 B, because gzip was
+  deduplicating the repeated literal and a one-token change broke the match.
+  Cheaper to wrap in a Fragment than to make a class string unique.
+- **The next change on this route cannot be additive.** The known reclaims —
+  the seed dataset (~67 kB of source) leaving the floor, or the `defaultMessage`
+  strip — are now the cost of entry, not nice-to-haves. Whoever takes one gives
+  the route back kilobytes rather than bytes; nobody should be hunting for 60.
+
+**Measure before you merge, not after.** A route over budget is a reject (D37), not a warning. The remaining known reclaims: the seed dataset leaving the floor when the remaining views move onto the generated client (**measured 3 Sep 2026 at 9,265 B gzip, not the 67 kB of source this file used to imply**), and the `defaultMessage` strip when a second locale lands. The portal is still the lightest client-facing route by a wide margin — keep it that way: no heavy dependency, and nothing it imports may become shared with a practice screen (`upload-transport.ts` is the sanctioned shared seam, and it is 0.6 kB).
 
 Three things drive the floor, all known:
 
 - `AppContext.tsx` is ~90 kB of source and wraps every route, so it can never be split out;
-- the synthetic dataset (~67 kB of source across the three seed/generate modules) is imported by `AppContext` at module scope and therefore ships to users;
+- the synthetic dataset (~67 kB of source across the three seed/generate modules) is imported by `AppContext` at module scope and therefore ships to users — **but that is 9,265 B of gzip, not 67 kB; see *The seed-dataset reclaim is worth 9,265 B* below before planning anything around it**;
 - every `defaultMessage` is in the bundle. The catalogue is not loaded at runtime yet — `lang/en-GB.json` exists for translators and for the gate. When a second locale arrives, the messages should move to a fetched catalogue and the defaults be stripped at build (`@formatjs/babel-plugin-react-intl` / the SWC equivalent `removeDefaultMessage`), which gives most of the 19.6 kB back.
 
 Most of the seed weight leaves when the views move onto the generated client. Until then, treat **199.5 kB** as the floor a new screen is spending against, and re-measure with `pnpm --filter @neoting/web build` before adding a dependency.
@@ -645,6 +872,466 @@ contact server-side):
   asks — `BusinessPortalHome` gained `items` + `statementRequests`
   (`api/onboarding.ts`, tolerant parse so an older server sends neither), and
   the awaiting card lists each line/month with Waiting/Got-it state.
+
+## The document lists can publish again (2 Sep 2026)
+
+**The METH S14 sweep left live mode with no reachable publish action, and
+*Published is the gate to Export*.** `ExportView` exports only documents that
+reached Published (D42/D43), so a client's Costs tab with `documentsSource ===
+'api'` — `bulkActions` empty on every tab but Published (`ClientInbox`), the
+header and bulk-bar publish disabled-with-tooltip (`InboxesView`) — meant the
+accountant could never produce the VT import file. The tooltips pointed at a
+chat utterance, which is a real path but not a discoverable one. Reported by
+the user as *"there is no option to publish it, if not published then there is
+no option to export it for VT software."*
+
+The sweep's principle was right and is unchanged: **a local
+`updateDocumentStatus` flip is reverted by the next 5 s poll.** What was missing
+was the replacement, and it is `DynamicComponents/PublishBatchDialog.tsx` —
+`lazy()` on both surfaces, its own **3,394 B gzip** chunk shared between the
+ClientDetailView and InboxesView routes, so none of its copy and none of
+`api/proposals.ts` lands on either. Read that file's header before changing any
+of it. Four things that are decisions:
+
+- **It stages, it does not write.** `LiveProposalFlow` makes only the CREATE
+  call; `LiveProposalCard` is the server's own Review → Approve card, so Approve
+  is not merely disabled before `POST …/review` returns — it is not in the DOM —
+  and it echoes `renderedSummaryHash` verbatim. Pinned by
+  `PublishBatchDialog.test.tsx`.
+- **One `publish.batch` names ONE business**, so a practice-wide selection
+  spanning clients becomes one batch per client, walked one at a time — the
+  `document.route` idiom from bulk Move to client.
+- **The "nothing Ready" refusal lives in the DIALOG, not in the callers.** Both
+  surfaces therefore meet identical wording (mirroring
+  `shell.inboxTable.nothingToPublish*` in `Tables.tsx`), it counts Published
+  apart from not-yet-Ready and names both, and the strings stay off the worst
+  route.
+- **D44 degrades honestly and never hides.** Creating is composing and is every
+  member's; the server refuses the APPROVE with `NT-PRM-001`
+  (`modules/approvals/assert-can.ts` — `PRACTICE_ADMIN` **and** `is_owner`).
+  `/me` carries no `is_owner`, so the dialog can never claim the permission IS
+  held: it names who releases, says so more plainly when the session's role is
+  not the release role, and the refusal arrives on the card with its code.
+
+⚠ The `publish.batch` preview sent at creation is a placeholder the engine
+DISCARDS (METH S10) — never present a draft figure as the one being approved.
+`inboxes.inboxesView.publishLiveHint` is no longer a dead-end tooltip; it
+describes what the enabled button does. Synthetic mode is byte-for-byte
+unchanged on every one of these paths (METH_MODE §1).
+
+## The two CSV export doors on Documents disagreed about what they were (2 Sep 2026)
+
+`DocumentsView` offers the same client-side CSV on the register ("All documents")
+and on Archive, and **neither is the D42/D43 export** — that is `ExportView`,
+which serves Published only and produces the VT import file plus resolvable links
+to the sources. The bug was not the offer, it was the name on the tin: both wrote
+**`archive.csv`**, so selecting `processing`, `review` or `rejected` rows on the
+register produced a file whose own name says they had been published and released
+for export.
+
+The rule now, and it is the rule every other CSV in this app already followed
+(`inbox.csv`, `bank-transactions.csv`, `clients.csv`, `<client>-published.csv`):
+**the file is a dump of the table you are looking at, and it is named after that
+table.** The register writes `documents.csv`, Archive keeps `archive.csv`
+(there the name is true — its rows are `published` by construction), and the
+shared `exportDocs(rows, filename)` gained two columns: **Status**, so a row's
+state travels with it, and **Currency**, for the reason `currency()` carries at
+length. Every field goes through the quote-escaper `ClientInbox` already had; the
+old bare-quote wrapping broke the column count on a supplier named `Bob "Bobby"
+Ltd`. Three tests in `DocumentsView.test.tsx` pin the filename per tab, the
+header row and the escaping.
+
+Gating the register to Published was the other option and is worse: the point of
+that tab is every state, and an accountant who wants the published subset can say
+so in the status filter above it and export that.
+
+## The Category row explains itself (2 Sep 2026)
+
+**The reported bug: a blank Category with no explanation.** The coding ladder
+(`apps/api/src/modules/rules-suggestions`) now answers for an uncoded document,
+and `Extraction.codingSuggestion` carries the answer — additive and optional.
+
+`api/document-detail.ts` maps it (`toCodingSuggestion`) and `DocumentPreview`
+renders it in a panel beside the field list, the `bankMatch` section's shape.
+Two outcomes, one panel: `SUGGEST` shows the code, its analysis-account label, a
+confidence dot and a one-tap **Accept this category**; `ESCALATE` shows the
+named reason instead of the em dash.
+
+Five things that are decisions, not details:
+
+- **⚠ THE CATEGORY ROW'S `value` STAYS `'—'`, EVEN WHEN THERE IS A SUGGESTION,
+  AND THAT IS THE WHOLE SAFETY OF IT.** `missingForReady` decides what a
+  document still needs by testing `value === '—'` against `BASE_MANDATORY`.
+  Writing a suggested code into that row would make the Path-to-Ready panel say
+  a document is one field from Ready when nothing has coded it, and the
+  accountant would be reading an opinion as a fact. Pinned in both test files.
+- **⚠ EVERY SENTENCE ABOUT THE DECISION IS THE SERVER'S**, rendered as a
+  variable (`suggestion.note`). The engine words ten escalation reasons and six
+  advisories and appends the advisories itself. What is in the catalogue is only
+  the chrome — headings, the accept button, the code labels. A second wording of
+  *"the licence term is not stated on this document"* here would be a second
+  opinion written by someone who did not read the document, and the two would
+  drift. Seven new `documents.documentPreview.coding*` ids, all chrome.
+- **Accept is the ORDINARY correction path, not a shortcut through it.** The
+  suggested code goes through `parseCodingDraft` — the same boundary a typed
+  correction crosses — into the same `pending` state and the same
+  `CodingProposalModal`: create → Read review → Approve, echoing the server's
+  `renderedSummaryHash`. Approve is not merely disabled beforehand, it is not in
+  the DOM. The one thing the tap saves is typing a code you are looking at.
+- **The row's provenance line becomes the suggestion's note, and its confidence
+  the suggestion's** (§13.3). Before this the row claimed
+  `AI suggested: demo-extractor-1` over an EMPTY value — a provenance for a
+  value that did not exist. `ESCALATE` carries no confidence, so the row reads
+  zero and goes amber: there is no coding to be confident about.
+- **No panel on a published document** — its coding is locked server-side, so
+  the affordance goes rather than the refusal being discovered on approve.
+
+`CATEGORY_LABEL` is exported from `api/document-detail.ts` and read off
+`FIELD_PRESENTATION` rather than typed out, so it cannot disagree with the table
+that `BASE_MANDATORY` matches on by value.
+
+## Documents got a viewer, a Trash and real counts (2 Sep 2026)
+
+The register listed documents and offered almost nothing you could DO with one.
+The product owner asked for *"proper document management here, like delete
+option, preview option"*. Five things landed, and four of them are notes the
+next person needs.
+
+| File | What it is |
+|---|---|
+| `DynamicComponents/DocumentViewer.tsx` | the viewer — lazy, **4.9 kB gz** on its own chunk |
+| `DynamicComponents/PurgeDocumentsDialog.tsx` | permanent delete as a `document.purge` proposal — lazy, **3.0 kB gz** |
+| `api/document-lifecycle.ts` | deletion / restoration / the Trash listing / the header counts |
+
+- **⚠ The viewer is BESIDE `DocumentPreview`, not composed out of it, and the
+  reason is the provenance band.** `DocumentPreview` already renders "the
+  original beside its extracted fields", and reusing it was tried first. It
+  cannot take zoom or rotation: its `<img>` is welded to `scanBandFrame`'s
+  letterbox maths, which assume an UNROTATED, UNSCALED `object-contain` image in
+  a fixed 3:4 frame. A transform applied from outside desynchronises the hover
+  band from the value it claims to mark — the screen pointing at the wrong part
+  of a client's invoice and saying "this is where we read it". Making the band
+  transform-aware means editing that file, which belonged to another lane. So
+  the viewer owns the STAGE (zoom, rotation, paging, download) and
+  `DocumentPreview` stays the one place a correction is composed, reached from
+  [Correct a field] one dialog up the `useEscape` stack. Nothing about
+  extraction, coding or proposals is written twice. **If the band ever becomes
+  transform-aware, this fork can collapse.**
+- **The presigned original reaches the DOM three ways and all three carry the
+  rule**: `rel="noreferrer noopener"` on the download anchor and the
+  open-original fallback, `referrerPolicy="no-referrer"` on the PDF `<iframe>`.
+  The URL is bearer authority over a client's financial record with no session
+  behind it; `ExportView` carries the identical rule for the identical reason.
+  Pinned in `DocumentViewer.test.tsx`.
+- **Delete is a CALL; purge is a PROPOSAL, and the split is the contract's.**
+  `POST …/deletion` and `…/restoration` undo each other exactly, so there is
+  nothing for a Review → Approve to protect and they are ingest-class. Purging
+  is irreversible, so it is `document.purge` and there is deliberately no
+  `DELETE /documents/{id}` in the contract for it to hide behind. **⚠ No
+  client-side rule decides what may be purged**: the server refuses a document
+  released for export or already linked from an export file (`NT-DOC-002`, D43),
+  and that refusal is rendered with its own code and its own sentence — the
+  `publishedOutsidePeriod` lesson, applied before it had to be learned twice.
+- **The confirmation copy is the point, not the chrome.** Moving to Trash is
+  reversible, so it is `tone: 'brand'`, says "Move to Trash", and states that
+  nothing is lost. It carries **no recovery window** — no vendor in this
+  category publishes one and nothing here enforces one, so a figure would be a
+  promise the product does not keep. A reversible act dressed as an irreversible
+  one is how people learn to click through the warning that matters, which is
+  the purge one.
+- **The header counts are the SERVER's** (`GET /documents/counts`), and that
+  endpoint exists because they were not true: `PageInfo` carries no total, so
+  `total` could only be produced by walking every page and the other three were
+  derived from data that had not been fetched. The local derivations survive as
+  the pre-answer fallback and as the whole answer in synthetic mode. `deleted`
+  has no honest local derivation live, so the summary line has **two whole
+  sentences** — with and without the Trash clause — rather than a fragment
+  bolted on, and prints no zero for a count nobody has measured.
+
+### ⚠ `import { Modal } from './ApprovalsView'` costs ~32 kB gzip a route
+
+`ApprovalsView` re-exports `Modal` "so existing importers keep working".
+Rollup cannot shake a whole view module down to one re-exported component, so a
+chunk importing it emits a bare side-effect `import"./ApprovalsView-*.js"` and
+the browser fetches **the entire ApprovalsView chunk (15.9 kB)** plus
+`DocumentPreview` (9.4 kB), `LiveProposalCard` (3.6 kB), `ReviewGate` (1.8 kB)
+and `Tooltip` (1.0 kB) before the route can render. It also silently defeated
+this stage's `lazy()`: moving `DocumentPreview` behind the viewer chunk
+reclaimed nothing while that line pulled it back through the side door.
+
+`DocumentsView` now imports the canonical `DynamicComponents/Modal`, and the
+Documents route went **256,622 B → 227,827 B** — a **28.8 kB reduction** while
+GAINING the viewer, the Trash tab, purge and the counts.
+
+**All four importers are gone as of 3 Sep 2026, and the shared pieces now have
+canonical homes.** `Field`/`Toggle` live in
+`components/DynamicComponents/FormControls.tsx`; `WorkflowCard`/`blankWorkflow`
+in `components/DynamicComponents/WorkflowCard.tsx`; `WorkflowEditor` in
+`components/DynamicComponents/WorkflowEditor.tsx`, deliberately its own module so
+both call sites can reach it through `lazy()` — it is a modal, and eagerly it was
+6.9 kB gzip on two routes for a dialog most sessions never open. `ApprovalsView`
+no longer re-exports `Modal`, `Field`, `Toggle`, `WorkflowCard`, `WorkflowEditor`
+or `blankWorkflow`, and **nothing should put those exports back**: the
+re-export is the whole mechanism of this bug.
+
+**The rule this leaves:** a view module (`views/*View.tsx`) is a screen, not a
+component library. If two screens need the same piece, it moves to
+`components/DynamicComponents/` — importing it from the other screen costs that
+screen's entire chunk. Grep before you merge:
+`grep -rn "from '\./[A-Z].*View'" src` should return nothing but genuine
+composition. **It is clean as of 3 Sep 2026.** The last two offenders were
+`SettingsView.tsx` → `import { LinkTtlField } from './ChasesView'` (worth
+**28,911 B** on the Settings route — see *The second pass* below) and
+`BusinessUploadView.tsx` → `import { Panel } from './BusinessHomeView'` (worth
+zero today, taken as a tripwire). `LinkTtlField` now lives in
+`components/DynamicComponents/LinkTtlField.tsx`, `Panel` in
+`views/business/Panel.tsx`.
+
+⚠ **The grep is necessary and not sufficient.** `InboxesView` kept paying for
+`DocumentPreview` after its own call site went lazy, because two dialogs it
+imports at module scope (`AnalysisModal`, `DuplicateModal`) imported
+`DocumentPreview` at module scope. Nothing named a view; the closure still had
+it. Grep every static importer of the module you are moving, not just the
+screens.
+
+### 🚨 The route total is bigger than the four-chunk shorthand says
+
+**There is a script now: `scripts/measure/route-bundle-closure.mjs`.** Run it,
+do not re-derive a number by hand:
+
+```
+node scripts/measure/route-bundle-closure.mjs                  # build + measure every route
+node scripts/measure/route-bundle-closure.mjs --dist DIR       # measure an existing --manifest build
+```
+
+It reads Rollup's own chunk graph out of `dist/.vite/manifest.json`, walks the
+**transitive closure of STATIC imports** from each route chunk — which is what
+the browser actually fetches before the route can render — and sums exact
+`gzip -c | wc -c` bytes, deduplicated. It deliberately does NOT follow
+`dynamicImports`: not fetching those on arrival is the point of a `lazy()`. It
+discovers routes itself (every `lazy(() => import(…))` in `App.tsx`, plus any
+that resolves under `src/views/` — which is how `BankView` and `ClientInbox`,
+lazy from `ClientDetailView` rather than from `App.tsx`, get measured at all;
+a route list read from `App.tsx` alone misses the heaviest route in the app).
+
+The shorthand this file used throughout — `index + query + react + the view` —
+**undercounts the client routes by ~40 kB** and must not be used again.
+
+Measured 3 Sep 2026 as a paired A/B, two builds back to back in one session:
+
+| route | before | after | vs 250,000 |
+|---|---|---|---|
+| `AIWorkspaceView` | 289,758 | 290,270 | **40,270 OVER** |
+| `SyntheticBusinessPortal` | 274,431 | 274,418 | **24,418 OVER** |
+| `InboxesView` | 257,163 | 257,470 | **7,470 OVER** |
+| `SettingsView` | 280,029 | **249,105** | 895 |
+| `ClientDetailView` | 284,722 | **245,268** | 4,732 |
+| `ApprovalsView` | 246,483 | 242,685 | 7,315 |
+| `BankView` | 300,696 | **237,110** | 12,890 |
+| `TeamView` | 260,802 | **227,064** | 22,936 |
+| `DocumentsView` | 227,265 | 227,298 | 22,702 |
+
+(Every other route sits between 205 kB and 245 kB; run the script for the full
+table. The uniform ~+30 B on untouched routes is the entry chunk's preload map
+growing by three chunk names — real, and the honest price of the split.)
+
+**Four routes came off the reject list.** What did it, in order of size:
+
+1. **`BankView` was statically importing the whole `ClientDetailView` chunk
+   (30,665 B) to borrow one dialog.** Not a source-level import — nothing in
+   `BankView.tsx` names `ClientDetailView`. Rollup had filed `StatementModal` in
+   the `ClientDetailView` chunk (because `ClientSupplierStatements` imports it),
+   and `BankView` needs the same modal, so the edge dragged the parent screen,
+   both tab screens and `OffboardClientDialog` onto the Bank route. Putting
+   `ClientSupplierStatements` and `ClientExpenseClaims` behind `lazy()` — they
+   are tabs, exactly like the already-lazy `ClientInbox` and `BankView` beside
+   them — moved the shared modal into a chunk of its own and the artefact
+   vanished. ⚠ **Chunk membership is not import membership.** When a number
+   makes no sense, build with `--sourcemap` and read the `sources` array of the
+   chunk's `.map` — that is the only way to see which modules Rollup actually
+   put together.
+2. **The `ApprovalsView` re-export bug, on three more routes** — see the section
+   above. `Field`/`Toggle`/`WorkflowCard`/`WorkflowEditor`/`blankWorkflow` moved
+   to `components/DynamicComponents/`, which is what took `SettingsView` (−30.9 kB)
+   and `TeamView` (−33.7 kB) under budget as a side effect.
+3. **Two modals made lazy**: `WorkflowEditor` (6.9 kB) on Approvals and Client
+   detail, `DocumentPreview` + its `document-detail` client (9.6 kB) on Bank and
+   Client detail. Both open on a click. The `Suspense` sits INSIDE the `Modal`
+   frame, so the dialog and its toolbar paint at once and only the card waits.
+
+**Three routes were still over after that pass.** `InboxesView` and
+`SettingsView` came off the list on 3 Sep 2026 — see *The second pass* below,
+which supersedes the two paragraphs this note replaces. **Two remain, and both
+are diagnosed there:** `AIWorkspaceView` (40,351 over — chat is genuinely the
+heaviest screen, and the floor reclaim it was waiting on turns out to be worth
+9,265 B, not enough) and `SyntheticBusinessPortal` (14,010 over — synthetic-mode
+only, and its residue is structural: it statically imports the whole live-portal
+chunk).
+
+#### Arrival is not the whole story: measure the CUMULATIVE cost of a tabbed route
+
+`--union A+B` sums the deduplicated closure of two chunks — what a user actually
+holds after arriving somewhere and then clicking a lazy sub-tab. `/clients/:id`
+is the case that needs it: it arrives on **Overview** (245,268 B, under), and
+each tab adds:
+
+| session | before | after | vs 250,000 |
+|---|---|---|---|
+| `ClientDetailView` alone (arrival, Overview) | 284,722 | **245,268** | 4,732 |
+| `ClientDetailView` + Bank tab | 300,696 | 266,306 | **16,306 OVER** |
+| `ClientDetailView` + Costs/Sales tab | 307,503 | 279,032 | **29,032 OVER** |
+
+D37 budgets **initial** JS per route, so the arrival figure is the one that
+formally passes or fails — and it passes. But a user two clicks in is holding
+267–279 kB, and pretending otherwise is how the four-chunk shorthand happened in
+the first place. ⚠ Note the before column: `ClientDetailView + BankView` and
+`BankView` alone read the SAME 300,696 B, because `BankView` statically imported
+its own parent's chunk. When a union equals one of its members, that is the
+signature of exactly this defect — check for it.
+
+**The named next lever on the cumulative figure** is `ClientInbox`'s
+`AnalysisModal` (8,540 B), still eager. Its other half — `DocumentPreview` +
+`document-detail`, 9,560 B — is **done as of 3 Sep 2026** and took `ClientInbox`
+from 244,306 B to 234,376 B on its own; see the section below.
+
+### The second pass, 3 Sep 2026: two routes off the reject list, two left
+
+Paired A/B again, two builds back to back in one session, same working tree,
+only the change under test between them. `node scripts/measure/route-bundle-closure.mjs --json …`
+
+| route | before | after | vs 250,000 |
+|---|---|---|---|
+| `AIWorkspaceView` | 290,270 | 290,351 | **40,351 OVER** |
+| `SyntheticBusinessPortal` | 274,418 | **264,010** | **14,010 OVER** |
+| `InboxesView` | 257,470 | **247,662** | 2,338 |
+| `SettingsView` | 249,105 | **220,194** | 29,806 |
+| `ClientInbox` | 244,306 | **234,376** | 15,624 |
+| `ChasesView` | 238,854 | 239,362 | 10,638 |
+
+Every other route moved by **+19 to +50 B** — the entry chunk's preload map
+growing by four chunk names, the same honest price the first pass paid.
+`ChasesView`'s +508 B is `LinkTtlField` leaving its chunk for a shared one.
+
+What did it:
+
+1. **`import { LinkTtlField } from './ChasesView'` was worth 28,911 B, not the
+   ~15.8 kB this file predicted** — the `ChasesView` chunk is 15,746 B, but it
+   drags `ChaseComposer` (3,235), `chases` (1,866), `ReviewGate` (1,807),
+   `Tooltip`, `ChaseModal`, `DataSourceBadge` and ~14 icon chunks behind it.
+   `LinkTtlField` now lives in `components/DynamicComponents/LinkTtlField.tsx`
+   and both screens import it from there. That was the last real hit for
+   `grep -rn "from '\./[A-Z].*View'" src`, which now returns only genuine
+   composition (`SyntheticBusinessPortal` composing its own five screens).
+2. **`DocumentPreview` was still eager on `InboxesView` — through two modals,
+   not one.** Making the call site at `InboxesView.tsx:1561` lazy reclaimed
+   **nothing**: `AnalysisModal` and `DuplicateModal` both imported
+   `DocumentPreview` at module scope, and `InboxesView` imports both of THEM at
+   module scope, so the chunk stayed in the closure through the side door. The
+   fix is in the two dialogs — `lazy()` there, `Suspense` inside each dialog's
+   own frame — and it is worth 9,808 B on `InboxesView` and 9,930 B on
+   `ClientInbox`. ⚠ **A `lazy()` at one call site proves nothing.** Grep every
+   static importer of the thing you are moving before you believe a number.
+3. **The portal's `Panel` moved to `views/business/Panel.tsx`.**
+   `BusinessUploadView` imported it from `BusinessHomeView` — the re-export bug
+   by the letter, and worth **zero bytes**, because `SyntheticBusinessPortal`
+   imports all five of its screens statically and Rollup files them in one
+   chunk. Taken anyway: it is a tripwire under any future `lazy()` on those
+   tabs. The synthetic portal's 10,408 B came from `BusinessHomeView`'s
+   `DocumentPreview` going lazy, not from `Panel`.
+
+⚠ **Re-measured after `origin/main` merged in (3 Sep 2026): every route moved
++41 to +299 B** — main's forgotten-password screens, the `#244` proposal-body
+parse helper and the portal's `sessionStorage` resume, none of it attributable
+to one change. **No route crossed the budget**; the two over it are the same two
+(`AIWorkspaceView` 290,575 · `SyntheticBusinessPortal` 264,309). `InboxesView`
+is 247,703 — **2,297 B of headroom**, still the thinnest on the board.
+
+⚠ **`InboxesView` has 2,338 B of headroom and is now the thinnest on the board.**
+Its next lever is `AnalysisModal` itself (8,540 B) — a dialog, and lazy-able —
+but it renders its own overlay, so there is no frame to put the `Suspense`
+inside and the modal would arrive a beat after the click. That is a behaviour
+change, not packaging; do not take it without asking.
+
+### The synthetic portal pays for the live portal — and cannot be split
+
+`SyntheticBusinessPortal` is **264,010 B, 14,010 over**, and 20,206 B of that is
+the **`BusinessPortal` chunk, which is the entire LIVE portal**
+(`LiveBusinessPortal`, `LivePortalHome/Capture/Upload/Settings`,
+`useBusinessPortalSession`). Read off a `--sourcemap` build's `sources` arrays:
+`BusinessPortal.tsx` is the only module that dynamically imports the synthetic
+shell, so Rollup files every module the two halves SHARE
+(`BusinessPortalShell`, `portalTabs`, `PortalStatusPill`,
+`LapsedSubscriptionNotice`, `portalAsk`, `portalCamera`, `portalUploadRules`,
+`portalSendFault`, `PortalSendFaultNotice` — 47,719 B of source) in the
+guaranteed-ancestor chunk, together with the 123,401 B of live-only source it
+already held. So a synthetic visitor downloads the live portal to borrow the
+shell. The comment in `BusinessPortal.tsx` — "a second `lazy()` decides only one
+of them is FETCHED" — is true of the synthetic half only.
+
+🚨 **DO NOT "fix" this by putting the synthetic portal's tabs behind `lazy()`.
+It was measured on 3 Sep 2026 and it makes the table WORSE.** Every chunk split
+off `SyntheticBusinessPortal` inherits index + query + `BusinessPortal` +
+`SyntheticBusinessPortal` ≈ 231 kB before a line of its own code, so one route
+14 kB over became three: `BusinessSettingsView` **261,501**,
+`BusinessUploadView` **254,443**, and `SyntheticBusinessPortal` still
+**251,332**. Reverted. The warning now sits in the file itself.
+
+The two things that WOULD work, neither of them this lane's call:
+
+- **Make the two halves siblings**, both `lazy()` from `App.tsx` on
+  `API_ENABLED`, so neither is the other's ancestor and the shared shell gets
+  its own chunk. Worth ~14.6 kB, lands the route at ~249.4 kB — **607 B of
+  headroom, which is not margin** — and it deletes `PortalChunkSkeleton` and its
+  `portal.businessPortal.loading` id, so it is a copy change too.
+- **A `manualChunks` entry** pinning the nine shared portal modules to their own
+  chunk. Same ~14.6 kB, no waterfall (Vite's preload helper fetches a dynamic
+  import's static deps in parallel), and no copy change — but it is a
+  build-configuration decision, like the icon consolidation above.
+
+⚠ Making `LiveBusinessPortal` lazy inside `BusinessPortal.tsx` is the one
+variant to reject outright: a nested dynamic import is NOT in the parent's
+preload map, so it adds a serial round trip to the lightest, most
+latency-sensitive route in the product for the benefit of a demo-only one.
+
+### The seed-dataset reclaim is worth 9,265 B, not "67 kB" — measured
+
+This file has quoted "~67 kB of source" for the synthetic dataset leaving the
+floor since launch M2, and readers have been reading it as the big reclaim. It
+is not. Measured 3 Sep 2026 by stubbing the modules and rebuilding clean:
+
+| stub | `index` gzip | off the floor |
+|---|---|---|
+| none (current) | 188,154 | — |
+| `seed.ts` + `seed2.ts` data arrays emptied | 183,241 | **4,913 B** |
+| …plus the nine synthetic-only builders (`buildDocuments`, `buildAccounts`, `buildMissing`, `buildTransactions`, `buildApprovals`, `buildChases`, `buildGaps`, `buildTasks`, `buildVault`) | 178,889 | **9,265 B** |
+
+The dataset is repetitive object literals: 67 kB of source is ~5 kB of gzip.
+**9,265 B does not save either remaining route** — `AIWorkspaceView` would still
+be 31,086 B over and `SyntheticBusinessPortal` 4,745 B over — and in synthetic
+mode the seeds are still fetched, just later, so for the demo it is a paper win
+and a real waterfall. Against that: `buildInitialPipeline` runs inside a
+`useState` initialiser, `SYNTHETIC ? … : []` appears at ~a dozen more places in
+`AppContext`, and there is no "seeds still loading" state anywhere — so doing it
+honestly means either an honest loading state on every screen or gating the
+whole provider on the import. **Not taken.** It remains a genuine ~9.3 kB win
+for LIVE users on every route, and a fair thing to do for its own sake; it is
+not the answer to a route over budget, and this file should stop implying it is.
+
+#### ~60 % of a one-icon chunk is per-chunk gzip overhead — measured
+
+`ClientDetailView`'s 15 sub-600 B chunks (nearly all single `lucide-react`
+icons) gzip to **4,478 B separately** but to **1,727 B concatenated** — the same
+6,624 raw bytes. **2,751 B, 61 %, is the cost of them being separate files**:
+gzip cannot share a dictionary across files and each one re-pays a header and a
+cold deflate window. The same arithmetic is worth ~6.1 kB on `AIWorkspaceView`
+(34 such chunks), ~4.6 kB on `InboxesView` (25) and ~3.2 kB on `BankView` (16).
+
+⚠ **This is NOT free money and must not be taken as a to-do.** Those chunks are
+shared BETWEEN routes; inlining them into each route chunk duplicates them and
+trades cross-navigation cache reuse for first-paint bytes. It is also a
+`manualChunks` change in `vite.config.ts`, i.e. every route at once, not a
+packaging fix on one screen. Measure the whole table before and after — with
+this script — and treat it as a build-configuration decision, not a cleanup.
 
 ## DocumentPreview shows the bank match (Phase 4, 1 Sep 2026)
 
@@ -708,6 +1395,77 @@ edge (a G7 gap, reported, not bent) — and no bank-match section exists
 because no read surface exposes a document's suggested match (same: G7 gap,
 named in the offboard hand-back).
 
+## 🚨 The lists read EVERY page now (2 Sep 2026) — they used to stop at 100, silently
+
+`AppContext` asked for `{ limit: 100 }` on **all three** of its API slices, and
+**nothing outside the tests ever read `nextCursor` or `hasMore`.** `pageInfo` was
+parsed, plumbed through `api/bank.ts` and `api/documents.ts`, returned from every
+hook — and dropped at the call site. So a real client holding **2,288** bank
+transactions had **95.6% of their financial records unreachable in the product**,
+with no message, no control and no indication of any kind.
+
+It was invisible because the old seed held 27 transactions: every screen was
+correct on demo data and silently wrong on real data. And it was never only a
+short table — these arrays are what the derived figures reduce over:
+
+| Figure | Where |
+|---|---|
+| the **"unexplained" total and count** — the headline of the whole Bank screen | `BankView.tsx` (`scopedTxns.filter(...).reduce(...)`) |
+| the transactions table footer, the "Needs you" pill | `BankView.tsx` |
+| the **Unmatched** KPI tile and every document tile | `AnalyticsView.tsx` |
+| the documents summary line and both table footers | `DocumentsView.tsx` |
+| "N items" above every table (the `DataTable` default footer) | `DataTable.tsx` |
+| "{count} clients in scope" | `ContextHeader.tsx` |
+| the live chase-candidate lists — **items that would never be chased** | `LiveMissingCard.tsx`, `LiveChaseComposerCard.tsx` |
+
+**`api/paged.ts` is the fix.** `fetchAllPages` follows `pageInfo.nextCursor` to
+the end; the three hooks call the **plain generated function** inside their own
+`useQuery` (the `proposals.ts` idiom) instead of the generated single-page hook.
+Four things to know:
+
+- **`limit` is capped at 100 by the contract** (`Limit`, `maximum: 100`) and the
+  envelopes are keyset-paginated because Governance §3 forbids offset paging.
+  There is no bigger number to ask for — reading the whole list is the only
+  honest answer, which is why this is not "raise the limit".
+- **`AppContext` passes no `params` at all now.** A `limit` written there would
+  only cap the FIRST page; the hooks set the page size themselves at the
+  contract's maximum.
+- **The cap is `MAX_PAGES = 50` (5,000 rows) and reaching it is VISIBLE.**
+  `truncated` rides into `SliceStatus` and `DataSourceBadge` renders an amber
+  "showing the first N — there are more" (`shell.dataSourceBadge.truncated`), so
+  every screen that already mounts the badge gets the truth for one message.
+  Silently truncating a client's financial records is not acceptable; a visible
+  limit is.
+- ⚠ **The documents poll now costs one round trip per page**, every five
+  seconds. Two or three requests at ID's scale, and the price of the counts being
+  true; the documented replacement for the poll is push, which retires it.
+
+**The three-definition disagreement this section reported is FIXED** — see
+*"Unexplained" is one predicate now* below.
+
+**Bundle** — measured as a tight paired A/B, two builds back to back in one
+session, exact `gzip -c | wc -c`:
+
+| | baseline | with the fix | delta |
+|---|---|---|---|
+| shared JS floor (`index` + stub + `query` + `react`) | 203,398 B | 203,604 B | **+206 B** |
+| worst route (`AIWorkspaceView`) | 238,572 B | 238,787 B | **+215 B** |
+| `ClientDetailView` | 234,061 B | 234,279 B | +218 B |
+
+**Worst route 238,787 B against the 250,000 B budget — 11,213 B of headroom.**
+The floor moved by only 206 B because dropping the three generated single-page
+hooks (`useListBankTransactions`/`useListDocuments`/`useListBusinesses`, with
+their query-key and options builders) paid for most of `paged.ts` — the
+reachability rule below, working in the useful direction for once.
+
+⚠ **`ClientDetailView` is no longer the worst route and the 🚨 section below is
+stale.** It reads 30,687 B on its own chunk because `BankView` (11,550 B) is now
+a chunk of its own; the embedded-bank view therefore pulls ~245.8 kB, still under
+budget. `AIWorkspaceView` (35,183 B) is the heaviest single route today. None of
+that is attributable to this change — other agents have uncommitted work in this
+tree, which is exactly why the numbers above are a paired delta and not two
+independent measurements.
+
 ## Tests
 
 `pnpm test` (vitest, jsdom). **Offline by construction** (Governance §15.1): every suite either exercises pure functions and the MSW handler bodies directly, or renders the shell against jsdom with the API query disabled — nothing opens a socket and nothing waits on a timer. Tests sit beside what they test, as `*.test.ts(x)`.
@@ -724,8 +1482,10 @@ What is covered today, and why those:
 | `src/api/chases.test.ts` | The chase boundary (METH S12): the strict-intersection pin (`getChaseResponse` refuses a VALID body — when orval fixes it this fails and the halves workaround gets deleted), the open/closed split pinned against the contract's `ChaseState`, signed pence → unsigned display pounds, Europe/London instants, and `portalPathFrom` re-homing whatever the SMS carried as `/p/<token>`. |
 | `src/api/proposals.test.ts` | The queue boundary (METH S12), recorder-fetch style: `KIND_LABEL` total over the contract's `ProposalKind`; [Read review] returning the sections and the hash; a section the card cannot render failing the WHOLE review (no Approve out of a half-read card); approve echoing the hash verbatim; create parsed by the contract schema with drift named. |
 | `src/lib/demoIntents.test.ts` | The demo script itself (METH S13): the five scripted utterances land on their live intents with the right payloads — the Bidfood rule draft byte-exact against what the extractor honours — dictated variants land too, and unknown input falls through to the graceful card. Plus the SMS draft's copy shape, money/day formatting and E.164 normalisation. |
+| `src/lib/resolver.currency.test.ts` | `currency()`, which lives in **`resolver.ts`** — the file was `currency.test.ts` beside a `currency.ts` that does not exist, so the only way to find the function was to read the test's import. Pins the USD-rendered-as-£ bug and that the fix changed nothing for sterling. ⚠ Zero-decimal currencies (JPY) are a stated GAP rather than an assertion: the old `currency(1234,'JPY') === 'JPY 1,234.00'` case enshrined an accounting error, and the fix belongs at the pence→pounds boundary — which divides by 100 for a currency that has no minor unit — not in a display helper. |
 | `src/lib/spreadsheet.test.ts` | Money parsing (`2.000,00` is two thousand), quoted CSV fields, and the Net·VAT·Total column race. |
 | `src/lib/tableImport.test.ts` | XLSX date serials, day-first UK dates, totals lines refused rather than booked, signed ledgers where a positive row is a refund. |
+| `src/api/paged.test.ts` | The truncation regression, at the size it was found at: 2,288 rows come back as 2,288 and not 100, in 23 requests, each carrying the cursor the last one returned. Plus the three ways a cursor-follower goes wrong — an exactly-full page still asking the server rather than inferring from the row count, `hasMore: true` with no cursor STOPPING instead of re-fetching the same page forever, and the cap being reported as `truncated` while stopping exactly at the end is not (a permanent "there are more" badge on a complete list teaches accountants to ignore the one warning that matters). |
 | `src/lib/matching.test.ts` | Whether a transaction is settled or handed to a human, and the merchant bar that keeps Costco off Costa. |
 | `src/lib/dedupe.test.ts` | The two Dext gaps this exists to close: a pair survives a failed extraction, and an invoice matches its receipt twin. |
 | `src/context/AppContext.test.tsx` | The #87 regression: nine rapid route changes with conversation churn interleaved, asserting the tree survives, the address is not yanked back mid-render, and no setState-during-render warning fires. The one suite that renders the whole shell. |
@@ -745,6 +1505,7 @@ What is covered today, and why those:
 | `src/views/signup/qr.test.ts` | **The whole warrant for a hand-written QR encoder** (launch M9). Two transcribed number tables cross-checked against the published byte capacities for all fourteen versions; both BCH routines pinned against the published format and version strings; and every version round-tripped through a decoder written independently in the test, which is the only thing that covers the data zigzag, the block interleave and the mask. Plus the refusal: a payload one byte past the limit throws instead of truncating, because an encoder that drops the tail produces a QR that scans cleanly into a broken secret. |
 | `src/views/signup/SignupView.test.tsx` | Three of these are not render tests. **The check-your-email screen is a COPY test** — the `202` is uniform on purpose, so six phrasings that would turn it into an enumeration oracle are asserted absent. **The verification token is scrubbed from the address**, checked after the call. **`NT-AUTH-008` restarts the enrolment** rather than dead-ending, with the superseded recovery codes off the screen. Plus the form gate (twelve characters and the terms tick, refused before the network), all ten codes shown once behind a confirm, six digits before Finish, and each of `NT-AUTH-003/004/005/006/007` saying the one thing that tells the user what to do next. |
 | `src/api/signup.test.ts` | The request this module composes and the parse it puts the answer through. `TERMS_VERSION` pinned as a **literal** against the server's `TERMS_VERSION_IN_FORCE` — a test that read the constant back from the constant would pass however far it had drifted, and what it files is an append-only audit row about a real person. Plus: the address normalised the way `normaliseEmail` does server-side (`users.email` is unique on the literal bytes), both response parses through the contract's own Zod with drift throwing, both envelope shapes, and the deliberate asymmetry — a password length rule on signup and none on enrolment. |
+| `src/components/DynamicComponents/PublishBatchDialog.test.tsx` | The two rules that make a publish action safe rather than merely present. **Approve is ABSENT — not disabled — until `POST …/review` returns**, and then echoes the review's `renderedSummaryHash` verbatim; the server and a DB trigger enforce the same rule, so this pins the one of three implementations that could silently drift. Plus the refusal (nothing Ready, counting Published apart from not-yet-Ready and naming both), a D42 **copy** test in the `ExportView.test.tsx` shape, and D44 degrading honestly — a role that cannot release is told who can and still gets the staging action. |
 | `eslint/no-literal-string-in-jsx.test.js` | The one suite that tests a *gate* rather than the product: real copy still fails the literal rule, punctuation still passes. The cases are lifted verbatim from the views. Not under `src/`, because the rule is not application code — which also keeps it out of `tsc`'s include and out of the bundle. |
 
 Component tests are still owed for anything with logic (frontend ten, item 10) — the AppContext suite is the first, not the last.
@@ -786,3 +1547,208 @@ So the harness sets **both**, and they are budgets for transform contention rath
 ## Previews
 
 Vercel previews are a **viewing tool, not hosting** (G6). Synthetic data only. **Deployment Protection must be on before the first preview ships** — an unprotected preview URL is a leaked credential and an instant reject (G10/R16).
+
+
+## "Unexplained" is one predicate now (2 Sep 2026)
+
+**Three surfaces answered "how many bank lines are unexplained?" with three
+different definitions, and an accountant read them side by side.** Measured on a
+freshly seeded database, American Burger Ltd:
+
+| Surface | Said | Definition it used |
+|---|---|---|
+| the client card / ClientDetail tile / Accounts tab (`statsFor`) | **6** | the server's `BusinessSummary.counts` |
+| the Bank screen's headline | **10 unexplained · £8,725.44 without evidence** | `!isMatched(t)` |
+| the Analytics **Unmatched** tile | **10** | `!t.matchedDocId` |
+
+All three now read **6**, and the Bank header reads *"6 unexplained · £2,868.04
+without evidence"*. The £5,857.40 that left the figure was two Stripe/Just Eat
+payouts, a service charge (all `chaseSuppressed`) and two `SUGGESTED` lines —
+none of which any amount of chasing could ever have brought down.
+
+**`isUnexplained` in `lib/matching.ts` is the one definition**, beside
+`isMatched` and deliberately not merged into it. Read its doc comment before
+touching either. The short version:
+
+- **`isMatched` asks "does this line already have its evidence?"** — the
+  matching engine's question, where `SUGGESTED` is deliberately NOT matched
+  because a suggestion is a question waiting for a human.
+- **`isUnexplained` asks "is this one of the lines the product will go and
+  chase?"** — the counting question. It mirrors the server's own `where`
+  (`businesses.service.ts`: `matchState: 'UNMATCHED', chaseSuppressed: false`),
+  which is the AUTHORITATIVE one because it is what the chase engine chases.
+
+It lives in `matching.ts` rather than `selectors.ts` so the contrast is visible
+in one screen of code — `selectors.ts` already imports from `matching.ts`, and
+the reverse would be a cycle. Both modules are floor-resident, so placement cost
+nothing either way.
+
+Four things that are decisions, not details:
+
+- **It is truthful on BOTH casts, which is why it is not `matchState === 'UNMATCHED'`.**
+  A seeded row carries `matchedDocId` and no `matchState` at all, so the strict
+  server test would have emptied the demo (METH_MODE §1). It guards on
+  `isMatched` first, which also makes "unexplained is a strict subset of
+  not-matched" true by construction — a count can never exceed the list above
+  it. Synthetic mode is byte-for-byte unchanged: no seeded row carries
+  `matchState` or `chaseSuppressed`, pinned by test.
+- **Moved onto it:** `AnalyticsView`'s tile; `deriveClientStats` (the seeded
+  half of the per-client `unmatched` column — the live half was already the
+  server's, so the tile and the column had been disagreeing with each other
+  too); `BankView`'s unexplained total, count, table footer and "Needs you"
+  pill; and the two chase-candidate lists, `LiveMissingCard` and
+  `LiveChaseComposerCard`, which had the suppression half right and were still
+  offering `SUGGESTED`/`EXCLUDED` lines nothing would ever chase.
+- **`BankView`'s matched/unmatched evidence LENSES stay on `isMatched`**, and
+  the `needs-you` lens moved with its pill. A lens is the matcher's question and
+  carries no number; the one that carries a number has to select exactly what
+  that number counts.
+- **`chaseSuppressed` does reach the browser** — it is required on the
+  contract's `BankTransaction` and `api/bank.ts` maps it through. No fallback
+  was needed. It is `boolean | undefined` in `lib/types.ts` only because the
+  seeded cast omits it, which the predicate treats as "not suppressed".
+
+⚠ **One claim in the old follow-up note was already stale.** It said
+`AnalyticsView`'s `!t.matchedDocId` "counts every transaction on live data".
+That was true until Phase 4 (1 Sep 2026) taught `toLocalTransaction` to fill
+`matchedDocId` from the contract's new `matchedDocumentId`; since then the id is
+set on exactly the CONFIRMED rows, so the tile was wrong by the SUGGESTED,
+EXCLUDED and suppressed lines (10 vs 6) rather than by the whole feed.
+
+**Bundle** — paired A/B, two builds back to back, exact `gzip -c | wc -c`:
+floor 203,481 → 203,522 B (**+41 B**); worst route (`ClientDetailView` + its
+embedded `BankView` chunk) 244,997 → **245,050 B**, i.e. **+53 B** and
+**4,950 B of headroom** against the 250,000 B budget.
+
+## Bundle: the Chases dark-mode fix + theme persistence (3 Sep 2026)
+
+Paired A/B, two builds back to back in one session, exact `gzip -c | wc -c`. Worst route is `ClientDetailView` plus its separate `BankView` chunk on top of the shared floor.
+
+| | baseline | with both changes | delta |
+|---|---|---|---|
+| shared JS floor (`index` + stub + `query` + `react`) | 205,075 B | 205,208 B | **+133 B** |
+| `ClientDetailView` + `BankView` | 41,547 B | 41,533 B | −14 B |
+| **worst route, total JS** | **246,622 B** | **246,741 B** | **+119 B** |
+| `ChasesView` chunk | 15,896 B | 15,769 B | **−127 B** |
+| `index.css` (not in the JS budget) | 16,503 B | 16,388 B | −115 B |
+
+**Worst route 246,741 B against the 250,000 B budget — 3,259 B of headroom.** The whole +133 B of floor is the theme work (`theme-preference.ts` plus the two AppContext call sites); the colour fix is *negative* on its own route, because it reuses `InboxesView`'s class strings byte-for-byte and because collapsing `STAGE_LABEL` from `{light, dark}` to one `cls` deleted five dead light-ground strings. The CSS shrank because Tailwind no longer generates `bg-zinc-50/100/200`, `divide-zinc-100`, `bg-pale`, `text-black` or `hover:bg-black` for anything.
+
+⚠ **The baseline measured 246,622 B against the 246,438 B this file's neighbours were quoting a day earlier — +184 B of drift from other lanes, with nothing of mine in it.** That is why the table above is a paired delta and not two independent measurements, and it is why an unpaired "before" from an earlier session is worth less than it looks. ⚠ Mid-run the build broke on `WorkflowEditor` not being exported from `ApprovalsView` — another lane mid-refactor — and resolved on its own within a minute; the numbers are from after that.
+
+## The practice team is live, and `/invite` exists (2 Sep 2026)
+
+**The Team screen was a drawing.** "Invite colleague" opened a local record
+editor whose `onSave` reached `AppContext`'s `saveColleague` — a bare
+`setColleagues(...)` that evaporated on reload — and the chat surface's
+`UserInviteForm` rendered *"Invitation sent to {email} as {role}."* over an
+`onApprove={() => undefined}`. Neither had an operation behind it, because until
+this change the contract had none: the only member endpoints were a CLIENT's own
+users, which explicitly refuse every practice-level role.
+
+| File | What it is |
+|---|---|
+| `api/team.ts` | `GET`/`POST /v1/practice-members` — the firm's own people |
+| `api/invitation.ts` | the invitee's two calls, kept apart from the Team screen's |
+| `views/invite/InviteView.tsx` | `/invite?token=…`, its own lazy route |
+
+Seven things that are decisions, not details:
+
+- **`SliceName` was NOT widened**, and `api/team.ts` computes its own
+  `sliceStatus` — the `ExportView` precedent. `slices.ts` names the demo route's
+  context arrays; a member would put this module on the shared bundle floor for
+  every route (the reachability rule under *Bundle*). `DataSourceBadge`'s `slice`
+  prop is already a plain `string`.
+
+- **⚠ THE PER-PERMISSION TICK-BOXES ARE GONE.** `memberships.permissions[]` is
+  read by NOTHING — `approvals/assert-can.ts` says so and explains why it cannot
+  start reading it — and three incompatible vocabularies for it existed across
+  the seed, this screen and the chat card. A toggle that governs nothing is the
+  same lie as an invite button that sends nothing; both were fixed together. What
+  decides authority is the ROLE and `isOwner`, and both are now shown.
+
+- **`UserInviteForm.tsx` is DELETED**, and as of 2 Sep 2026 so is the
+  **`INVITE_USER` intent itself, end to end.** Deleting the card left four live
+  producers with no consumer, all synthetic-only and therefore silent: the
+  classifier in `lib/resolver.ts` still matched "invite a colleague" and answered
+  *"Fill in the invite below…"* over an `IntentRenderer` `default` that returns
+  `null`; the tour seeded the intent AND told the viewer to type it; and the
+  union member in `lib/types.ts` was what let all of that keep compiling. All
+  four are gone — the pattern, its reply message, the `chat-invite` step, the
+  `team` step's `ask`, the canned `replies.inviteUser`, and the union member.
+  "Invite a colleague" now falls through to `GENERAL`, whose reply says what the
+  chat actually does; inviting is the Team screen's button. ⚠ **`docs/Source_Of_Truth.md`
+  §378 still lists "user invite" among the chat forms** — the SoT is a governance
+  document and is Shakib's to amend, so the divergence is reported, not edited.
+
+- **The live colleagues table is a genuine fork from the synthetic one, and that
+  is the OPPOSITE call from the Clients board — so the reason matters.** M7
+  deleted `LiveClientsView` because it rendered a REDUCED board: every column
+  existed as a fact and simply had no field, and the answer was to widen the
+  endpoint. Here the missing columns are location, job title, avatar and
+  permission chips — three do not exist in the schema at all and the fourth is
+  read by nothing. Widening the contract to carry them would be inventing data to
+  fill a table.
+
+- **⚠ `hideFinancialFields` is carried by the contract and deliberately NOT
+  rendered.** Nothing in this release reads it when serving a document, so a
+  "Finance hidden" pill would announce a protection that is not in force. It
+  comes back the day the redaction does.
+
+- **⚠ The invite form's NAME fields went for exactly that reason** (2 Sep 2026).
+  It asked for "First name (optional)" / "Last name (optional)", `api/team.ts`
+  put them on the wire, and `practice-team.service.ts` read neither — `invites`
+  has no column for a name. `InviteView` then asks the invitee for their own as
+  **required** fields, so even a persisted value would be overwritten by the
+  person it describes. The rule this screen already states ("a field whose value
+  is discarded is a question asked in bad faith") applied to them and had simply
+  not been noticed. `api/team.test.ts` now asserts the whole key set, so a re-add
+  meets a test. Removing them from `PracticeMemberInviteRequest` is the contract
+  half and is still owed (G7).
+
+- **Pending invitations are on the same response and on the same screen**, with
+  an amber "Invited — awaiting setup" pill and the expiry in Europe/London. An
+  invitation nobody can see is an invitation nobody chases: an admin who invited
+  someone on Monday needs to know on Friday it is still unaccepted.
+
+- **The S14 rule is applied to every remaining local writer.** With a session,
+  the colleague editor (and with it `saveColleague`, `removeColleague`,
+  `sendPasswordReset` and the avatar picker) never renders; "Create team", "New
+  task", the per-team edit pencil, the assignee select, the row status buttons and
+  the two local bulk actions are hidden or disabled-with-tooltip, and each tab
+  carries one banner saying why rather than repeating it per control. "Ask AI
+  about workload" stays — opening a scoped chat is real either way.
+
+### `/invite?token=…` — the invited colleague's journey
+
+`portal === 'invite'` in `AppContext`, checked **before** the `'accountant'`
+fallthrough and keeping `workspaceApiOn` false — the `/app/setup` precedent, and
+the same reason: the person holding the link has no account, so a `/me` probe
+could only 401 and a login wall would lock out exactly who the email invited.
+
+M9's rules are inherited verbatim:
+
+- **The token is scrubbed with `replaceState` BEFORE the first request**, so it is
+  never in the history and never in the next outbound `Referer`. Pinned by a test
+  that captures `location.search` from inside the mocked call.
+- **`faultMessageFor`'s rule**: "check your connection" appears only for
+  `code === null`. A code means a reply came back over the connection that
+  sentence would blame. Pinned by test.
+- **`EnrolStep` and `views/signup/qr.ts` are REUSED UNCHANGED** — `EnrolStep` is
+  now exported from `SignupView.tsx`. A second enrolment screen is a second place
+  the two-step could be got wrong, and getting it wrong costs the account: this
+  release has no re-enrolment or reset flow. `NT-AUTH-008` therefore restarts
+  enrolment here too, because it is literally the same component.
+- **Unlike `/signup/check-email` this screen MAY name things** — the practice, the
+  address, the role, who invited them. That one answers an anonymous caller who
+  typed an address; this one answers somebody holding a token we emailed to the
+  address it names, and every fact is already in the message they are reading it
+  from. A password form for an unnamed employer is the phishing shape, not the
+  safe one.
+
+**Bundle.** `InviteView` is **4,207 B gzip** on its own chunk and shares
+`SignupView` (9,690 B) because it imports `EnrolStep` from it — so the `/invite`
+route is floor + 13,897 B. Measured clean with `gzip -c | wc -c`. ⚠ Other agents
+have uncommitted work in this tree, so the absolute floor and worst-route numbers
+in the table above are not attributable to any one change; re-measure on a clean
+checkout before quoting a delta.

@@ -21,6 +21,7 @@ in both directions") are still unbuilt — see TODO.
 |---|---|
 | `email-sender.ts` | The `EmailSender` seam + `OutboundEmail`/`SentEmail` + `DemoEmailSender` (in-memory outbox) |
 | `ses-email-sender.ts` | The real one — Amazon SES v2, eu-west-2 |
+| `smtp-email-sender.ts` | The local MailHog transport. **Development only** — no auth, no TLS, refused under `NODE_ENV=production` |
 | `select-email-sender.ts` | Config selection for BOTH the sender and the rate limiter |
 | `email-copy.ts` | The three messages, pure functions |
 | `email-address.ts` | The address boundary — validation, CR/LF refusal, the rate-limit identity |
@@ -29,6 +30,68 @@ in both directions") are still unbuilt — see TODO.
 | `notifications.service.ts` | The one door outbound email leaves by |
 
 **The three messages** (S2): client invite · sign-in code · document request.
+Plus the two signup messages (27 Aug) and, since 2 Sep 2026, the **team
+invite**.
+
+### ⚠ `composeTeamInvite` could NOT reuse `composeClientInvite`
+
+A colleague joining the practice is not a client joining a workspace, and the
+difference is one sentence in the client copy: *"There is nothing to install and
+no password to choose."* That is true of a client — they sign in with an emailed
+six-digit code and never hold a password — and precisely FALSE of a colleague,
+whose entire next action is to choose one. A shared composer would have told
+every new member of staff not to do the thing the link exists for. The two also
+differ in subject: one names a business and describes sending receipts, the other
+names an employer.
+
+| Kind | Composer | Per-address ceiling |
+|---|---|---|
+| `team-invite` | `composeTeamInvite` | **3**/hour |
+
+Held at the SIGNUP ceiling rather than the client-invite one: it is the only
+invitation an authenticated caller can point at an address of their choosing with
+no existing relationship behind it. The role is deliberately NOT in the copy —
+the screen the link opens states it, read from the invitation itself, so the
+words a person sees cannot drift from the grant the server will make.
+
+### ⚠ And `composeBusinessPeopleInvite` could reuse NEITHER (2 Sep 2026)
+
+The **THIRD** invitation relationship: a client business adding its own staff
+(D45, D49 — `modules/portal/portal-people.service.ts`). Each refusal is one
+sentence:
+
+- **`composeTeamInvite`** says *"open the link below to choose a password and set
+  up an authenticator app"*, which is right for a colleague joining a firm and
+  flatly wrong here — **portal people have no password.** They sign in with a
+  six-digit code emailed to the address the message went to, so that instruction
+  would send a new starter looking for a screen that does not exist.
+- **`composeClientInvite`** gets the password half right and the RELATIONSHIP
+  wrong. It is sent in the PRACTICE's name — correct, because a client knows
+  their accountant — and this one is not from the accountant at all. The reader
+  works for the BUSINESS; naming an accounting firm they may never have heard of,
+  in the subject line, is how a legitimate invitation reads as phishing. So the
+  employer is named and the practice is not mentioned.
+
+| Kind | Composer | Per-address ceiling |
+|---|---|---|
+| `business-people-invite` | `composeBusinessPeopleInvite` | **3**/hour |
+
+Three, matching `team-invite`, for the same reason at one remove: the caller here
+is a **CLIENT** — the least-vetted principal that can send anything in this
+product — so one restaurant adding kitchen staff must not be able to exhaust the
+budget the accountant needs to invite a client.
+
+⚠ **The link carries NO token, and that absence is the design.** The invitation's
+whole effect is a `contacts` row, and the portal's tokenless sign-in resolves an
+address to exactly one business off that row — so the address the mail arrived at
+is already everything the sign-in needs. A setup token would add a seven-day
+expiry to a relationship that has none, a second credential travelling by email,
+and the CLIENT-ONBOARDING journey (company details, then subscribe), which
+belongs to the owner and not to somebody hired to photograph receipts.
+
+**No enumeration oracle.** It is only ever sent to an address the caller typed
+into their own workspace's People screen, and it says nothing about whether that
+address was already known to the product.
 
 ## The rules that matter more than the feature
 
@@ -56,6 +119,32 @@ in both directions") are still unbuilt — see TODO.
 - **What reaches the logs:** the kind, the provider message id, and the recipient's *domain*.
   Never the address (Governance §11.6), never the body.
 - **No message may claim a ledger was written to** (D42). Asserted in `email-copy.test.ts`.
+
+### The SMTP sender's three asymmetries, closed (2 Sep 2026)
+
+It shipped with headers CRLF-stripped and the DATA block dot-stuffed — both
+right — while three things around them were not, and each was a case of one half
+of the file being careful and the other half not.
+
+- **The COMMAND lines interpolated raw.** `MAIL FROM:<${fromAddress}>` and
+  `RCPT TO:<${to}>` are CRLF-terminated commands, so a newline in an address
+  ends the command and begins another: header injection's sibling, and the worse
+  of the two, because what is injected is a verb. `commandAddress()` strips CR,
+  LF and angle brackets and refuses an address that empties. **Nothing reachable
+  trips it** — both values are already parsed by `email-address.ts`, which
+  refuses CR/LF — and that is the point: an asymmetry is a thing the next reader
+  has to re-derive the safety of every time.
+- **`timeoutMs` claimed to be a ceiling on the whole conversation.**
+  `socket.setTimeout` measures **inactivity**, and the clock restarts on every
+  reply. The comment now says which, and says what the timeout does guarantee (a
+  sink that stops answering fails the send rather than hanging the request). A
+  real whole-conversation deadline would be a second timer and is not worth one
+  against a `localhost` sink production refuses.
+- **`EMAIL_REPLY_TO_ADDRESS` was silently dropped** while SES honoured it, so one
+  configuration composed two different messages and a reply typed on a laptop
+  went to `no-reply@` — the address this module exists to keep mail out of. The
+  header is now emitted, omitted when the value is empty, exactly as SES omits
+  `ReplyToAddresses`.
 
 ## Boundaries
 
@@ -124,6 +213,7 @@ empty.
 - [ ] Per-event notification preferences (SoT §4 Stage 8.8) — granular, both directions.
 - [ ] Wire the consumers: A1/A11 (`sendClientInvite`), A2 (`sendSignInCode`),
       A14 (`sendDocumentRequest`, cut-listed at hour 22).
+      ✅ `sendTeamInvite` is wired — `clients-team-settings/practice-team.service.ts`.
 - [ ] Update this file on exit — it is how the next session picks up.
 
 ## ✅ The signup messages — the seam A1 left, connected (27 Aug 2026)

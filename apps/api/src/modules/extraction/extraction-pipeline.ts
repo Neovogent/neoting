@@ -24,7 +24,10 @@ import type { PrismaClient } from '../../common/db/prisma.js';
 import { resolveSystemActor } from '../../common/db/resolve-system-actor.js';
 import { systemContext } from '../../common/db/scope-context.js';
 import { scopedDb, type ScopedClient } from '../../common/db/scoped-db.js';
+import type { StoredCodingSuggestion } from '../../common/documents/coding-suggestion.js';
+import { CODING_SUGGESTION_KEY } from '../../common/documents/coding-suggestion.js';
 import { resolveProcessedState, transitionDocument } from '../validation-dedupe/index.js';
+import { adviseCoding, type DocumentCodingAdvisor } from './coding-advice.js';
 import {
   DEMO_EXTRACTOR_KIND,
   type DocumentExtractor,
@@ -160,6 +163,18 @@ export interface PrismaExtractionStepOptions {
    */
   readonly ocr?: DocumentOcrReader;
   readonly store?: ExtractionBytesSource;
+  /**
+   * The coding ladder (`modules/rules-suggestions`), consulted for a document
+   * nothing coded.
+   *
+   * ⚠ **Optional, and the absence is a real configuration rather than a broken
+   * one** — the same stance `ocr` takes. With no advisor the pipeline behaves
+   * exactly as it always did: the supplier-rule match still runs, the header is
+   * still written, and a document nothing codes still lands in To Review. What
+   * an advisor adds is the *sentence* next to the empty Category field, never a
+   * category. Nothing downstream branches on having one.
+   */
+  readonly coding?: DocumentCodingAdvisor;
 }
 
 export class PrismaExtractionStep implements ExtractionStep {
@@ -171,6 +186,9 @@ export class PrismaExtractionStep implements ExtractionStep {
   /** Where the bytes are, for the OCR rung's synchronous (image) path. */
   private readonly store: ExtractionBytesSource | undefined;
 
+  /** The coding ladder. Absent = no suggestion is offered, and nothing else changes. */
+  private readonly coding: DocumentCodingAdvisor | undefined;
+
   constructor(
     private readonly prisma: PrismaClient,
     private readonly extractor: DocumentExtractor,
@@ -180,6 +198,7 @@ export class PrismaExtractionStep implements ExtractionStep {
     this.logger = options.logger ?? NOOP_LOGGER;
     this.ocrReader = options.ocr;
     this.store = options.store;
+    this.coding = options.coding;
   }
 
   /**
@@ -433,7 +452,14 @@ export class PrismaExtractionStep implements ExtractionStep {
             });
       const ruleCategory = rule === null ? null : categoryFromRule(rule.sets);
       if (ruleCategory !== null) categoryCode = ruleCategory;
-      await this.writeExtraction(db, input, extracted, rule?.id ?? null, categoryCode);
+      // The coding ladder, in THIS transaction — the chart, the rules and the
+      // client's own history read from one consistent view, which is what
+      // `SupplierCodingService.decide` takes a `ScopedClient` for. It runs
+      // AFTER the rule match and only when that left the document uncoded, so
+      // it can never be consulted about a document an accountant's rule already
+      // answered.
+      const coding = await this.adviseCoding(db, input, extracted, categoryCode);
+      await this.writeExtraction(db, input, extracted, rule?.id ?? null, categoryCode, coding);
     } else {
       // Defensive, not a live path: the extraction write and the final transition
       // below share THIS transaction, so "accepted extraction present but still
@@ -464,19 +490,67 @@ export class PrismaExtractionStep implements ExtractionStep {
     };
   }
 
+  /**
+   * Ask the coding ladder what it makes of a document nothing coded — and never
+   * let the answer be able to break the document.
+   *
+   * ## Why the try/catch, and what it costs
+   *
+   * This step is the only thing that moves a document out of PROCESSING, so
+   * anything it does that can throw is a candidate for stranding one — the
+   * failure `runExtractor` exists to close, reached through a different door. A
+   * suggestion is an *optional extra on a document that renders perfectly well
+   * without one*, so the honest failure mode is silence plus a WARN, exactly as
+   * `readOcr` treats a failed OCR read.
+   *
+   * ⚠ **One caveat, stated rather than hidden:** a throw that came from Postgres
+   * rather than from our own validation leaves the enclosing transaction
+   * aborted, so the write below fails and the job retries. The realistic case is
+   * `ChartOfAccountsService.resolve`'s documented seeding race, which the retry
+   * then finds already settled. Swallowing the error here still buys the case
+   * that matters — a decision that throws in *our* code (a bad chart payload, an
+   * invisible business) costs the document nothing.
+   */
+  private async adviseCoding(
+    db: ScopedClient,
+    input: ExtractionInput,
+    extracted: ExtractedDocument,
+    categoryCode: string | null,
+  ): Promise<StoredCodingSuggestion | null> {
+    if (this.coding === undefined) return null;
+    try {
+      return await adviseCoding(this.coding, db, input.businessId, categoryCode, extracted);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`extract: coding advice failed for ${input.documentId} (${reason}, trace=${input.traceId})`);
+      return null;
+    }
+  }
+
   private async writeExtraction(
     db: ScopedClient,
     input: ExtractionInput,
     extracted: ExtractedDocument,
     sourceRuleId: string | null,
     categoryCode: string | null,
+    coding: StoredCodingSuggestion | null,
   ): Promise<void> {
     // Line items ride in the existing `fields` jsonb (METH_MODE §3.2: "store it in
     // an existing jsonb field... and note it"). The Extraction row has no
     // line-item column; the contract carries `Extraction.lineItems` but the read
     // projection does not surface it yet — a real gap, flagged on the PR, not
     // papered over. // DEMO-MOCK: proper line-item persistence is a schema/contract call.
-    const fields = { ...extracted.fields, lineItems: extracted.lineItems } as unknown as Prisma.InputJsonValue;
+    //
+    // The coding suggestion rides in the same jsonb under its own reserved key
+    // (`common/documents/coding-suggestion.ts` explains why it is not a column),
+    // and is OMITTED rather than nulled when there is none — an explicit null
+    // would claim the ladder was consulted and had nothing to say, which is a
+    // different thing from it not having been consulted.
+    const fields = {
+      ...extracted.fields,
+      lineItems: extracted.lineItems,
+      ...(coding === null ? {} : { [CODING_SUGGESTION_KEY]: coding }),
+    } as unknown as Prisma.InputJsonValue;
 
     await db.extraction.create({
       data: {
@@ -543,6 +617,34 @@ export class PrismaExtractionStep implements ExtractionStep {
         } as Prisma.InputJsonValue,
       },
     });
+
+    // The coding rung as its own line in the per-document processing log, so
+    // "why is this Category empty" is answerable from the record and not only
+    // from the current render. `stage: 'code'` is new; the log is free text by
+    // contract (`DocumentEvent.stage` carries examples, not an enum) and the
+    // detail screen renders whatever stages it is given.
+    if (coding !== null) {
+      await db.documentEvent.create({
+        data: {
+          documentId: input.documentId,
+          stage: 'code',
+          outcome: coding.outcome === 'SUGGEST' ? 'suggested' : 'escalated',
+          traceId: input.traceId,
+          detail: {
+            provenance: coding.provenance,
+            basis: coding.basis,
+            ...(coding.categoryCode === null ? {} : { categoryCode: coding.categoryCode }),
+            ...(coding.confidence === null ? {} : { confidence: coding.confidence }),
+            ...(coding.escalationReason === null ? {} : { escalationReason: coding.escalationReason }),
+            // ⚠ Said out loud on every row: this stage writes no category. The
+            // one writer of `documents.category_code` is the header projection
+            // above, and it only ever carries the extractor's value or an
+            // accountant's rule.
+            applied: false,
+          } as Prisma.InputJsonValue,
+        },
+      });
+    }
   }
 }
 

@@ -345,7 +345,23 @@ const EnvSchema = z.object({
   // exists. With SMS cut for Initial Delivery, email is the client's ONLY
   // channel, so a production `demo` sender is a client who can never sign in
   // and a workspace where nothing looks wrong.
-  EMAIL_SENDER: z.enum(['demo', 'ses']).default('demo'),
+  //
+  // `smtp` is the DEVELOPMENT transport added 2 Sep 2026: a real SMTP
+  // conversation with the MailHog container `docker-compose` has always run
+  // (`SMTP_HOST`/`SMTP_PORT`, read below). It exists because `demo` made the
+  // portal journey unwalkable on a laptop — the sign-in code a client needs
+  // goes into a private in-memory array, so nobody can read it and nobody can
+  // sign in. It carries NO auth and NO TLS, because MailHog offers neither, and
+  // it is therefore refused under `NODE_ENV=production` alongside `demo`.
+  EMAIL_SENDER: z.enum(['demo', 'smtp', 'ses']).default('demo'),
+
+  // Where `EMAIL_SENDER=smtp` delivers. OPTIONAL rather than defaulted: these
+  // are read by one sender that is refused in production, and a `.default()`
+  // would put two more required keys on every `Env` fixture in the test suite
+  // for a value only the local transport ever reads. `SmtpEmailSender` owns
+  // MailHog's defaults instead.
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().positive().optional(),
 
   // The Bedrock knobs' reasoning, applied to SES: a separate region variable
   // makes "where is client mail processed" answerable from configuration rather
@@ -588,6 +604,20 @@ const EnvSchema = z.object({
       path: ['EMAIL_SENDER'],
       message:
         'EMAIL_SENDER=demo sends into an in-memory outbox — every send reports success and no email is delivered. Set EMAIL_SENDER=ses (S2)',
+    });
+  }
+
+  // `smtp` is refused for a DIFFERENT reason than `demo`, and the difference is
+  // worth stating: demo delivers nothing, while smtp delivers in clear text
+  // over an unauthenticated connection. Against MailHog on localhost that is
+  // correct and deliberate; against anything reachable it would put sign-in
+  // codes and client financial correspondence on the wire unencrypted.
+  if (env.NODE_ENV === 'production' && env.EMAIL_SENDER === 'smtp') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['EMAIL_SENDER'],
+      message:
+        'EMAIL_SENDER=smtp is the local MailHog transport — no auth, no TLS, credentials in clear text. Set EMAIL_SENDER=ses',
     });
   }
 

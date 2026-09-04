@@ -63,7 +63,11 @@ describe.skipIf(DATABASE_URL === undefined || OWNER_URL === undefined)('session 
     });
     await owner.membership.createMany({
       data: [
-        { id: 's1a_mem_mine', userId: U_MINE, practiceId: P_MINE, role: 'PRACTICE_ADMIN' },
+        // `isOwner` set deliberately rather than left to the column default:
+        // this is the shape signup writes (the practice's creator holds D44's
+        // release authority), and a fixture that leaves it false would let
+        // `/me` pass its assertion by coincidence.
+        { id: 's1a_mem_mine', userId: U_MINE, practiceId: P_MINE, role: 'PRACTICE_ADMIN', isOwner: true },
         { id: 's1a_mem_biz', userId: U_BIZ, businessId: 's1a_biz_1', role: 'BUSINESS_ADMIN' },
         { id: 's1a_mem_gone', userId: U_GONE, practiceId: P_MINE, role: 'PRACTICE_STANDARD' },
       ],
@@ -135,6 +139,11 @@ describe.skipIf(DATABASE_URL === undefined || OWNER_URL === undefined)('session 
     expect(me.user.id).toBe(U_MINE);
     expect(me.practice).toEqual({ id: P_MINE, name: 'S1A Mine LLP' });
     expect(me.role).toBe('PRACTICE_ADMIN');
+    // D44's other half, read out of real Postgres through the real `select`:
+    // the release gate is `role AND isOwner`, and the contract makes the flag
+    // required — a `/me` that lost the column would answer `undefined`, which
+    // the browser's `.strict()` `getMeResponse` rejects as contract drift.
+    expect(me.isOwner).toBe(true);
     expect(me.businesses.map((b) => b.id).sort()).toEqual(['s1a_biz_1', 's1a_biz_2']); // never s1a_biz_other
   });
 

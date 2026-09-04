@@ -457,6 +457,63 @@ structural) and decides nothing about whether it may happen.
   authorisation, Governance §9.5). A test pins the absence of any `Pence` field
   in everything it writes.
 
+- **`document.purge`** (2 Sep 2026, document management) —
+  `purge-document.ts`. **The only irreversible thing that can happen to a
+  document, and therefore the only document deletion on this spine.** Moving one
+  to Trash is an ordinary `ingest` mutation (`POST /v1/documents/{id}/deletion`,
+  `modules/documents`) because `POST .../restoration` undoes it exactly; this
+  undoes nothing. There is **no `DELETE /documents/{documentId}` anywhere in the
+  contract** — the `document.revoke-link` shape, for the same reason.
+
+  ⚠ **The refusal is the point, and it is D43.** Four conditions refuse the whole
+  batch with **`NT-DOC-002`** (runbook page in `docs/runbooks/error-codes.md`),
+  and every one is read as a ROW rather than inferred from `state`:
+
+  | Checked | Why `state` cannot answer it |
+  |---|---|
+  | `state = 'PUBLISHED'` | the only one it does answer |
+  | a `publishes` row | it HAS been released even if `state` moved on — unarchive demotes a published document, and publish-batch's retry edge takes a REJECTED one through PROCESSING, so an exported document can be sitting in any of five states |
+  | a `document_links` row | the D43 code itself, the thing that actually breaks. Revoked and expired ones count: destroying the row turns a `410` an operator can explain into "no such code", indistinguishable from a typo |
+  | a `statements` / `supplier_statements` row | ⚠ **no foreign key exists** on those `document_id` columns, so Postgres would leave them dangling and nothing would notice. Under D40 manual statement upload is the only bank input, so that column is the sole answer to "which file produced these bank lines" |
+
+  **Refused, never cascaded.** Revoking the links first and purging anyway would
+  be this executor performing a `document.revoke-link` nobody reviewed, on rows
+  inside somebody else's ledger.
+
+  ⚠ **The refusal is also what keeps release an APPEND-ONLY FACT.**
+  `publishes.document` and `document_links.document` are both `ON DELETE
+  CASCADE`, so a purge on a released document would erase the record that it was
+  ever released — which is Dext's *Clear Publishing Data*, the one behaviour
+  `docs/research/dext-document-management.md` §10.3 R1 refuses absolutely,
+  arrived at by a different door and with no prompt at all. **Do not "fix" the
+  cascade to make purge work.** The cascade is not the problem.
+
+  Requires the document to be **in Trash first** — skipping that would make one
+  approval the whole distance between a live document and no document.
+  All-or-nothing, capped at **100** rather than the house 500 (an irreversible
+  batch cascading six child tables must fit inside `scopedDb`'s 10 s), never
+  `alreadyApplied` (a replay cannot reach the delete — the ids are gone, so the
+  reachability check refuses first, which is the correct answer).
+
+  ⚠ **The stored objects are NOT deleted and the review card says so** — an
+  executor may not make an external call, the `document.reprocess` precedent.
+  ⚠ **`document_events` cascades, so the document's own history dies with it**;
+  what survives is the immutable `action_proposals` row (`payload.documentIds`,
+  `approved_by_user_id`, `outcome.changed`) plus the audit-chain row. That is
+  deliberately better than the market — Hubdoc's per-document audit panel records
+  provenance only, so once its Trash is emptied a removal leaves no trace at all.
+
+  **Ungated** (`RELEASE_KINDS: false`), and it was the most arguable entry in
+  that table — see `approvals/assert-can.ts`. The short version: the gate selects
+  for acts that reach OUTSIDE the product, and what protects D43 here is the
+  refusal, which binds the super admin too.
+
+- **Trash excluded from `publish.batch`** (2 Sep 2026). Both the proposal-time
+  preview and the execution selection now carry `...notDeleted()`, so a deleted
+  document cannot be released for export, and a document moved to Trash between
+  propose and approve refuses at execution — the only place that drift is
+  visible, the same reasoning as the entry-preview re-check.
+
 ### `bank.remove-statement` (3 Sep 2026) — built, tested, DORMANT
 
 `remove-statement.ts` + `remove-statement.test.ts` (15 tests, offline). An

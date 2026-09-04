@@ -1,10 +1,10 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import { Check, ExternalLink, FileText, Lock, PencilLine, X } from 'lucide-react';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
 import { API_ENABLED } from '../../api/config';
-import { isEditableLabel, parseCodingDraft, useDocumentDetail, type DraftProblem } from '../../api/document-detail';
+import { CATEGORY_LABEL, isEditableLabel, parseCodingDraft, useDocumentDetail, type DraftProblem } from '../../api/document-detail';
 import { confirmDocumentBankMatch, useDocumentBankMatch } from '../../api/bank-match';
 import type { UpdateCodingPayload } from '@neoting/contracts/model';
 import { currency } from '../../lib/resolver';
@@ -13,11 +13,12 @@ import { Pill } from './DataTable';
 import type { Document, ExtractedField, FieldBoundingBox } from '../../lib/types';
 
 /**
- * Lazy: the correction card (and its proposal wiring) loads at the moment of
- * the first edit, not with the screen — the document routes are measured
- * against the per-route bundle budget.
+ * Lazy: the correction dialog — the `ReviewGate` card, its proposal wiring and
+ * the shared `Modal` frame — loads at the moment of the first edit, not with
+ * the screen. The document routes are measured against the per-route bundle
+ * budget, and `ClientDetailView` (which mounts this preview) is the worst one.
  */
-const CodingProposalCard = lazy(() => import('./CodingProposalCard'));
+const CodingProposalModal = lazy(() => import('./CodingProposalModal'));
 
 const m = defineMessages({
   meta: { id: 'documents.documentPreview.meta', defaultMessage: '{client} • {date} • {total}' },
@@ -47,6 +48,36 @@ const m = defineMessages({
   },
   lineItemAmount: { id: 'documents.documentPreview.lineItemAmount', defaultMessage: '{quantity} × {unit}' },
   uploadedBy: { id: 'documents.documentPreview.uploadedBy', defaultMessage: 'Uploaded by {uploader}' },
+
+  /* ── the coding ladder's answer for an uncoded document (§24.4) ─────────
+     ⚠ Every sentence a person READS about the decision itself is the
+     engine's (`suggestion.note`), rendered as a variable. What is in this
+     catalogue is only the chrome around it — headings, the accept button, the
+     labels on the codes. Wording the ten escalation reasons a second time
+     here would be a second opinion written by someone who did not read the
+     document, and the two would drift. */
+  codingSuggestedHeading: {
+    id: 'documents.documentPreview.codingSuggestedHeading',
+    defaultMessage: 'Suggested category — not applied',
+  },
+  codingEscalatedHeading: {
+    id: 'documents.documentPreview.codingEscalatedHeading',
+    defaultMessage: 'No category suggested — here is why',
+  },
+  codingSuggestedCode: {
+    id: 'documents.documentPreview.codingSuggestedCode',
+    defaultMessage: 'Suggested: {code}',
+  },
+  codingBasis: { id: 'documents.documentPreview.codingBasis', defaultMessage: 'Rule: {basis}' },
+  codingCandidates: {
+    id: 'documents.documentPreview.codingCandidates',
+    defaultMessage: 'The lines pointed at {count, plural, one {# account} other {# accounts}}: {codes}',
+  },
+  codingAccept: { id: 'documents.documentPreview.codingAccept', defaultMessage: 'Accept this category' },
+  codingAcceptNote: {
+    id: 'documents.documentPreview.codingAcceptNote',
+    defaultMessage: 'Accepting stages a correction you read and approve — nothing is coded until you do.',
+  },
   originalAlt: { id: 'documents.documentPreview.originalAlt', defaultMessage: 'The original document as received' },
   openOriginal: { id: 'documents.documentPreview.openOriginal', defaultMessage: 'Open the original file' },
   loadingDetail: { id: 'documents.documentPreview.loadingDetail', defaultMessage: 'Loading the extraction…' },
@@ -215,7 +246,7 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
 
   const fields = live ? detail.fields : doc.fields;
   const lineItems = live ? detail.lineItems : doc.lineItems;
-  const metaText = intl.formatMessage(m.meta, { client: doc.clientName, date: doc.date, total: currency(doc.total) });
+  const metaText = intl.formatMessage(m.meta, { client: doc.clientName, date: doc.date, total: currency(doc.total, doc.currency) });
 
   /**
    * The honest path from To Review to Ready (live only): the server's own
@@ -263,6 +294,17 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
     setDraft(f.value === '—' ? '' : f.value);
   };
 
+  /**
+   * [Edit] on the staged card: close the dialog and hand the value back to the
+   * field it came from, so the button changes something instead of only
+   * collapsing a panel. Nothing was created, so there is nothing to cancel.
+   */
+  const reopenEdit = (label: string) => {
+    const field = fields.find((f) => f.label === label);
+    setPending(null);
+    if (field !== undefined) startEdit(field);
+  };
+
   const commit = (label: string) => {
     if (!live) {
       updateDocumentField(doc.id, label, draft.trim() || '—');
@@ -286,15 +328,61 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
     setEditing(null);
   };
 
-  // The staged card renders BELOW the Path-to-Ready and bank-match panels, so
-  // on a phone the tick appeared to do nothing — the row closes showing the
-  // OLD value (correct: nothing changes before approval) and the card that
-  // explains this sat off-screen. Found on the first real walkthrough
-  // (2 Sep 2026): "after clicking save, it doesn't get saved."
-  const stagedRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (pending !== null) stagedRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [pending]);
+  /**
+   * The coding ladder's answer, shown only where it is an answer about THIS
+   * screen's document: live, and never over a published one (its coding is
+   * locked server-side, so an accept could only be refused).
+   */
+  const suggestion = live && doc.status !== 'published' ? detail.codingSuggestion : null;
+
+  /**
+   * One tap on a suggestion — **and it is the ordinary correction path, not a
+   * shortcut through it.**
+   *
+   * The suggested code goes through `parseCodingDraft`, the same pounds/dates/
+   * codes boundary a typed correction crosses, and lands in the same `pending`
+   * state, which renders the same `CodingProposalModal`: create → Read review →
+   * Approve, with the server's own review card and its `renderedSummaryHash`
+   * echoed back. Nothing here writes a category. The one thing the tap saves
+   * the accountant is typing a code they are looking at.
+   */
+  const acceptSuggestion = () => {
+    if (suggestion === null || suggestion.categoryCode === null) return;
+    const parsed = parseCodingDraft(CATEGORY_LABEL, suggestion.categoryCode);
+    // A suggested code the correction boundary refuses is a bug in the engine,
+    // not something to route around: the field simply stays uncoded and the
+    // accountant still has the manual edit.
+    if (!parsed.ok) {
+      setDraftProblem(parsed.problem);
+      return;
+    }
+    setDraftProblem(null);
+    setEditing(null);
+    setPending({
+      label: CATEGORY_LABEL,
+      currentValue: fields.find((f) => f.label === CATEGORY_LABEL)?.value ?? '—',
+      nextValue: parsed.display,
+      fields: parsed.fields,
+    });
+  };
+
+  /**
+   * ⚠ There is no `scrollIntoView` here any more, and its absence is the fix
+   * rather than the loss of one.
+   *
+   * #243 found that staging a correction "appeared to do nothing" on a phone:
+   * the card rendered INLINE below the Path-to-Ready and bank-match panels, the
+   * row closed still showing the old value (correct — nothing changes before
+   * approval), and the card that explains that sat off-screen. Its answer was a
+   * ref on the inline card plus a smooth scroll to it.
+   *
+   * This branch removed the inline card entirely: the staged correction is
+   * `CodingProposalModal` now (see its header), a scrimmed dialog — a bottom
+   * sheet on a phone, a floating card from 640 up. It cannot be off-screen, so
+   * the symptom #243 fixed cannot occur and there is nothing left to scroll to.
+   * Keeping both would render the correction TWICE, once in the ~300 px column
+   * the dialog exists to escape.
+   */
 
   return (
     <div className="w-full max-w-3xl border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden flex flex-col">
@@ -605,6 +693,89 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
               </div>
             )}
 
+            {/* ── The coding ladder's answer for a document nothing coded ──
+                The bug this closes: a blank Category with no explanation. It
+                is now either a best guess an accountant accepts in one tap, or
+                the engine's named reason there is none.
+
+                ⚠ Nothing in this block writes a category, and the Path-to-Ready
+                panel above still lists Category as missing — because it IS.
+                A suggestion is an opinion; only an approved correction codes. */}
+            {suggestion !== null && (
+              <div
+                data-testid="coding-suggestion"
+                className={`mt-6 rounded-2xl border p-4 ${
+                  suggestion.outcome === 'SUGGEST' ? 'border-brand/20 bg-brand/5' : 'border-white/10 bg-raised/40'
+                }`}
+              >
+                <div
+                  className={`text-[11px] font-bold uppercase tracking-widest mb-2 ${
+                    suggestion.outcome === 'SUGGEST' ? 'text-brand' : 'text-zinc-400'
+                  }`}
+                >
+                  {intl.formatMessage(
+                    suggestion.outcome === 'SUGGEST' ? m.codingSuggestedHeading : m.codingEscalatedHeading,
+                  )}
+                </div>
+
+                {/* The engine's own sentence, verbatim. This is the copy that
+                    replaces the em dash — one of ten worded escalation reasons
+                    ("the licence term is not stated on this document"), or the
+                    suggestion with its rule, advisories already appended. */}
+                <p className="text-[13px] text-zinc-300 leading-relaxed">{suggestion.note}</p>
+
+                {suggestion.categoryCode !== null && (
+                  <div className="mt-3 flex items-center gap-2 flex-wrap">
+                    <span
+                      title={suggestion.analysisAccount ?? suggestion.categoryCode}
+                      className="min-w-0 max-w-full truncate px-3 py-1.5 rounded-lg bg-ground text-sm font-bold text-white border border-white/5"
+                    >
+                      {intl.formatMessage(m.codingSuggestedCode, {
+                        code: suggestion.analysisAccount ?? suggestion.categoryCode,
+                      })}
+                    </span>
+                    {suggestion.confidence !== null && (
+                      <span className="flex items-center gap-2">
+                        <ConfidenceDot value={suggestion.confidence} />
+                        <span className="text-[11px] text-zinc-600 font-semibold">
+                          {intl.formatMessage(m.confidence, { percent: Math.round(suggestion.confidence * 100) })}
+                        </span>
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* The split the engine found, shown rather than hidden behind
+                    an empty field — these are the accounts the lines pointed at
+                    when they pointed at several. */}
+                {suggestion.candidateCategoryCodes.length > 0 && (
+                  <p className="mt-2 text-[12px] text-zinc-500">
+                    {intl.formatMessage(m.codingCandidates, {
+                      count: suggestion.candidateCategoryCodes.length,
+                      codes: intl.formatList(suggestion.candidateCategoryCodes, { type: 'conjunction' }),
+                    })}
+                  </p>
+                )}
+
+                <p className="mt-2 text-[11px] text-zinc-600 font-semibold uppercase tracking-wider">
+                  {intl.formatMessage(m.codingBasis, { basis: suggestion.basis })}
+                </p>
+
+                {suggestion.outcome === 'SUGGEST' && suggestion.categoryCode !== null && canEdit(CATEGORY_LABEL) && (
+                  <div className="mt-3 flex items-center gap-3 flex-wrap">
+                    <button
+                      onClick={acceptSuggestion}
+                      className="flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold text-brand-on bg-brand hover:bg-brand-hover transition-colors"
+                    >
+                      <Check size={13} />
+                      {intl.formatMessage(m.codingAccept)}
+                    </button>
+                    <span className="text-[12px] text-zinc-500">{intl.formatMessage(m.codingAcceptNote)}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* The bank-match section PR #230 had to leave out — the read
                 surface exists now (Phase 4). Rendered only when the server
                 actually holds a match; confirming a suggestion is the same
@@ -642,24 +813,6 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
               </div>
             )}
 
-            {/* The staged correction — a real proposal in live mode, through
-                the same gate as everything else. Keyed so a new correction
-                gets a fresh card rather than an already-approved one. */}
-            {live && pending && (
-              <Suspense fallback={null}>
-                <div className="mt-6" ref={stagedRef}>
-                  <CodingProposalCard
-                    key={`${pending.label}:${pending.nextValue}`}
-                    document={doc}
-                    fieldLabel={pending.label}
-                    currentValue={pending.currentValue}
-                    nextValue={pending.nextValue}
-                    fields={pending.fields}
-                  />
-                </div>
-              </Suspense>
-            )}
-
             {lineItems.length > 0 && (
               <div className="mt-6">
                 <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-3">
@@ -692,6 +845,32 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
       <div className="flex items-center gap-3 bg-raised/50 p-4 text-[12px] text-zinc-500 font-semibold">
         {intl.formatMessage(m.uploadedBy, { uploader: doc.uploader })}
       </div>
+
+      {/* The staged correction — a real proposal in live mode, through the same
+          gate as everything else, now presented in the shared dialog frame
+          rather than squeezed into the overlay column (which is ~300 px wide
+          wherever this preview is a side panel, and clipped the card's title,
+          wrapped its subtitle to four lines and put [Read review] on top of
+          it). Keyed so a new correction gets a fresh card rather than an
+          already-approved one; `AnimatePresence` so the dialog's exit plays.
+          Closing stages nothing and cancels nothing — the proposal is not
+          created until Approve. */}
+      <AnimatePresence>
+        {live && pending && (
+          <Suspense fallback={null}>
+            <CodingProposalModal
+              key={`${pending.label}:${pending.nextValue}`}
+              document={doc}
+              fieldLabel={pending.label}
+              currentValue={pending.currentValue}
+              nextValue={pending.nextValue}
+              fields={pending.fields}
+              onEdit={() => reopenEdit(pending.label)}
+              onClose={() => setPending(null)}
+            />
+          </Suspense>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
