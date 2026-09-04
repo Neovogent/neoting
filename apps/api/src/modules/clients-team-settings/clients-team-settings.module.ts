@@ -4,6 +4,7 @@ import { getPrismaClient, type PrismaClient } from '../../common/db/prisma.js';
 import { type IdempotencyStore, InMemoryIdempotencyStore } from '../../common/idempotency/idempotency-store.js';
 import type { Env } from '../../config/env.js';
 import { ENV } from '../../config/env.module.js';
+import { createAwsSmsTransport } from '../chase/index.js';
 import { NotificationsModule, NOTIFICATIONS_SERVICE, type NotificationsService } from '../notifications/index.js';
 import { ClientIntakeService } from './client-intake.service.js';
 import { ClientsTeamSettingsController } from './clients-team-settings.controller.js';
@@ -39,7 +40,20 @@ import { CLIENT_INTAKE_SERVICE, IDEMPOTENCY_STORE, PRACTICE_TEAM_SERVICE, PRISMA
     {
       provide: CLIENT_INTAKE_SERVICE,
       useFactory: (prisma: PrismaClient, notifications: NotificationsService, idempotency: IdempotencyStore, env: Env) =>
-        new ClientIntakeService(prisma, notifications, idempotency, { appOrigin: env.APP_ORIGIN }),
+        new ClientIntakeService(
+          prisma,
+          notifications,
+          idempotency,
+          { appOrigin: env.APP_ORIGIN },
+          undefined,
+          // The registration SMS (finding 3, 4 Sep 2026) — the REAL wire only.
+          // Under demo/email the invite travels by email alone; the day carrier
+          // registration clears, the SMS_SENDER=aws flip turns this on with no
+          // code change (invite-sms.ts carries the argument).
+          env.SMS_SENDER === 'aws'
+            ? createAwsSmsTransport({ region: env.SMS_REGION, originationIdentity: env.SMS_ORIGINATION_IDENTITY })
+            : undefined,
+        ),
       inject: [PRISMA, NOTIFICATIONS_SERVICE, IDEMPOTENCY_STORE, ENV],
     },
     {
