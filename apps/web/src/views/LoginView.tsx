@@ -38,7 +38,7 @@ const m = defineMessages({
   totpPlaceholder: { id: 'auth.loginView.totpPlaceholder', defaultMessage: '000000' },
   totpHint: {
     id: 'auth.loginView.totpHint',
-    defaultMessage: 'Six digits. The server checks it — not this page.',
+    defaultMessage: 'Six digits from your authenticator — or, if you have lost the phone, one of your recovery codes. The server checks it, not this page.',
   },
   action: { id: 'auth.loginView.action', defaultMessage: 'Sign in' },
   actionBusy: { id: 'auth.loginView.actionBusy', defaultMessage: 'Signing in…' },
@@ -74,7 +74,18 @@ const m = defineMessages({
   },
 });
 
-const TOTP_LENGTH = 6;
+/**
+ * What the second-factor field accepts before the network: six digits from
+ * the authenticator, or one of the recovery codes minted at enrolment (four
+ * groups of four, hyphens and spaces forgiven — the server's own normaliser
+ * strips them). Mirrors the contract's `SessionCreateRequest.totp` pattern;
+ * the server is still the verifier (4 Sep 2026 — the lost-phone route in).
+ */
+const TOTP_RE = /^[0-9]{6}$/;
+const RECOVERY_RE = /^[a-zA-Z0-9]{4}([\s-]?[a-zA-Z0-9]{4}){3}$/;
+const secondFactorShaped = (value: string): boolean => TOTP_RE.test(value) || RECOVERY_RE.test(value);
+/** Long enough for `xxxx-xxxx-xxxx-xxxx` plus a stray space; short enough to stay a code. */
+const TOTP_MAX_LENGTH = 24;
 
 interface LoginFault {
   kind: 'credentials' | 'refused' | 'unreachable';
@@ -96,7 +107,7 @@ export function LoginView() {
   const [busy, setBusy] = useState(false);
   const [fault, setFault] = useState<LoginFault | null>(null);
 
-  const ready = email.trim().includes('@') && password.length > 0 && totp.length === TOTP_LENGTH;
+  const ready = email.trim().includes('@') && password.length > 0 && secondFactorShaped(totp.trim());
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -197,8 +208,10 @@ export function LoginView() {
             <input
               id="login-totp"
               value={totp}
-              onChange={(e) => setTotp(e.target.value.replace(/\D/g, '').slice(0, TOTP_LENGTH))}
-              inputMode="numeric"
+              // Letters stay: a recovery code carries them. Only characters
+              // neither shape can hold are dropped, so the numeric-only feel
+              // of typing a TOTP is unchanged.
+              onChange={(e) => setTotp(e.target.value.replace(/[^a-zA-Z0-9\s-]/g, '').slice(0, TOTP_MAX_LENGTH))}
               autoComplete="one-time-code"
               disabled={busy}
               placeholder={intl.formatMessage(m.totpPlaceholder)}

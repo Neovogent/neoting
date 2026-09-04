@@ -124,6 +124,23 @@ test('createUpload rejects a MIME off the allowlist with 415 NT-ING-002', async 
   expect((err as AppException).code).toBe('NT-ING-002');
 });
 
+test('a bank statement MIME is admitted at the door — csv, xlsx, and the legacy Excel alias (finding 6)', async () => {
+  // D40 makes manual statement upload the ONLY bank input, the Bank tab's picker
+  // offers .csv/.xlsx, and until 4 Sep 2026 all three of these were 415'd —
+  // the primary path for the primary input, closed at the door.
+  const { service } = harness();
+  for (const mimeType of [
+    'text/csv',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    // What a Windows browser with Excel installed declares for a .csv — a
+    // registry fact, not a content one. The sniff decides the real type later.
+    'application/vnd.ms-excel',
+  ]) {
+    const result = await service.createUpload(CTX, request({ mimeType }));
+    expect(result.upload.method).toBe('PUT');
+  }
+});
+
 test('a business the caller cannot reach is 404 and nothing is signed', async () => {
   // The tenancy guard on the presign path: RLS returns no row, so no URL into
   // that business's S3 prefix is ever minted. 404, not 403 — a 403 would confirm

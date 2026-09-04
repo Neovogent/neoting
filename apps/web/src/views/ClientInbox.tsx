@@ -6,6 +6,7 @@ import {
 import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import { commonActions, commonLabels } from '../i18n/common';
 import { useAppContext } from '../context/AppContext';
+import { onStatusTab } from '../api/documents';
 import { runWorkspaceDrop } from '../api/uploads';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { SubTabs } from '../components/DynamicComponents/SubTabs';
@@ -407,8 +408,10 @@ export function ClientInbox({ client, kind, onPreview }: {
   // Tolerant of both id worlds (METH S14 bridge): server rows carry opaque
   // business ids, the opened client still keys by seed id.
   const mine = documents.filter((d) => isSameClient(d.clientId, client.id) && d.kind === kind);
+  // `onStatusTab`, not a bare status compare: statements are excluded from
+  // To Review and Ready — their home is the Statements panel (4 Sep 2026).
   const counts = Object.fromEntries(
-    STATUSES.map((st) => [st, mine.filter((d) => d.status === st).length]),
+    STATUSES.map((st) => [st, mine.filter((d) => onStatusTab(d, st)).length]),
   ) as Record<Status, number>;
 
   /**
@@ -458,7 +461,7 @@ export function ClientInbox({ client, kind, onPreview }: {
   };
 
   const rows = useMemo(() => {
-    const list = mine.filter((d) => d.status === status);
+    const list = mine.filter((d) => onStatusTab(d, status));
     // Only the review queue is uncertainty-ranked; the others read better in
     // the order they arrived.
     return status === 'review' ? [...list].sort((a, b) => uncertainty(a) - uncertainty(b)) : list;

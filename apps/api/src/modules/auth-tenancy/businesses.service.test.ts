@@ -9,8 +9,8 @@ import { foldCounts, foldPrimaryContactEmails } from './businesses.service.js';
  * and getting it wrong renders as a badge quietly lying on every screen.
  */
 
-const row = (businessId: string | null, state: string, count: number) =>
-  ({ businessId, state, _count: { _all: count } }) as Parameters<typeof foldCounts>[0][number];
+const row = (businessId: string | null, state: string, count: number, docType?: string) =>
+  ({ businessId, state, ...(docType === undefined ? {} : { docType }), _count: { _all: count } }) as Parameters<typeof foldCounts>[0][number];
 
 const chaseRow = (businessId: string, state: string, count: number) =>
   ({ businessId, state, _count: { _all: count } }) as NonNullable<Parameters<typeof foldCounts>[1]>[number];
@@ -35,6 +35,18 @@ const zero = {
 test('REJECTED and FAILED fold into one `failed` — the contract says together', () => {
   const counts = foldCounts([row('b1', 'REJECTED', 2), row('b1', 'FAILED', 3)]);
   expect(counts.get('b1')).toEqual({ ...zero, failed: 5 });
+});
+
+test('a STATEMENT document lights no toReview/ready badge — but its failures still count (4 Sep 2026)', () => {
+  const counts = foldCounts([
+    row('b1', 'TO_REVIEW', 2, 'STATEMENT'),
+    row('b1', 'TO_REVIEW', 3, 'INVOICE'),
+    row('b1', 'READY', 1, 'STATEMENT'),
+    // A statement whose READ failed is real work and stays visible.
+    row('b1', 'FAILED', 1, 'STATEMENT'),
+    row('b1', 'PUBLISHED', 1, 'STATEMENT'),
+  ]);
+  expect(counts.get('b1')).toEqual({ ...zero, toReview: 3, failed: 1, published: 1 });
 });
 
 test('each counted state lands in its own bucket, per business', () => {

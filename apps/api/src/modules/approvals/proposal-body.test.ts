@@ -25,6 +25,24 @@ export const VALID_EXAMPLES: Record<ProposalKind, Record<string, unknown>> = {
   },
   'publish.batch': { documentIds: ['doc_1'], preview: { itemCount: 1, grossPence: 129_900, vatPence: 21_650 } },
   'bank.confirm-match': { transactionId: 'txn_1', documentId: 'doc_1', matchKind: 'EXACT' },
+  'bank.remove-statement': {
+    statementIds: ['stm_1'],
+    preview: {
+      statements: [
+        {
+          statementId: 'stm_1',
+          documentId: 'doc_1',
+          fileName: 'statement.csv',
+          periodStart: '2026-08-01',
+          periodEnd: '2026-08-28',
+          transactionCount: 16,
+          matchedCount: 0,
+          openChaseCount: 0,
+        },
+      ],
+      totalTransactions: 16,
+    },
+  },
   'rule.create': { tier: 'SUPPLIER_CUSTOMER', scopeKey: 'bidfood', sets: { categoryCode: 'COS_FOOD' } },
   'document.revoke-link': { documentLinkIds: ['dlk_1'], reason: 'Exported to the wrong client' },
   'business.offboard': { businessId: 'biz_1', reason: 'Client moved to another practice' },

@@ -439,6 +439,31 @@ persisted home is still the jsonb (a schema/contract call). The confidence seam
 stays empty (eval-calibrated, does not exist yet) — To-Review is driven by a
 missing field or a failed validator, never an invented threshold.
 
+## A spreadsheet never reaches the model (4 Sep 2026 — walkthrough finding 6)
+
+`spreadsheet-statement-extractor.ts` + one branch in `extraction-pipeline.ts`:
+a document whose stored MIME is `text/csv` or the xlsx type is classified
+`STATEMENT` deterministically, with every header field honestly null (→
+TO_REVIEW), and the configured extractor is never called. Three reasons, each
+sufficient:
+
+- **`BedrockExtractor` honestly refuses `text/csv`** (`NT-EXT-003`, images and
+  PDFs only), so once ingestion started admitting CSV (D40's manual statement
+  upload — see `ingestion-routing/CLAUDE.md`), every uploaded statement would
+  have landed FAILED and the statement lane — which keys on `docType ===
+  'STATEMENT'` — would never have fired.
+- **A CSV is already the data.** A model reading a grid the statement parser
+  reads exactly is a probabilistic opinion where D41 demands arithmetic proof.
+- **It costs nothing.** No Bedrock call, no OCR (`isOcrMedia` excludes it), no
+  budget spend.
+
+⚠ **The pipeline now chooses the extractor PER DOCUMENT** and threads the
+chosen one into `finish`/`writeExtraction`, so `extractions.extractor_kind`
+names whichever reader actually ran (`deterministic-spreadsheet` /
+`spreadsheet-statement-1` on this branch) — the same honesty rule that stopped
+bedrock reads being stamped as the demo fixture. The fixture-latency sleep also
+keys on the CHOSEN extractor, so a spreadsheet skips the demo delay.
+
 ## The coding rung — the ladder is consulted here now (2 Sep 2026)
 
 **`categoryCode` still stays null in this module.** What changed is that the
@@ -493,6 +518,44 @@ advised document lands TO_REVIEW exactly as it did before.
 ⚠ **No `DemoExtractor` profile can exercise this**, because every one of them
 codes. The integration test therefore uses a small `UncodedExtractor` that
 reproduces the real extractor's silence on coding and nothing else.
+
+## Accuracy, measured (4 Sep 2026 — walkthrough finding 7)
+
+`scripts/measure/extraction-accuracy.ts` — the accuracy sibling of the cost
+probe beside it, built because "confidence up to 98%" was said out loud with no
+measurement anywhere behind it. It runs the REAL `BedrockExtractor` over the
+synthetic corpus in `fixtures/synthetic/`, scored per field against the
+expected-values manifest (`docs/testing/gpt-test-document-prompts.md` §9).
+
+Measured 4 Sep 2026 on `anthropic.claude-sonnet-4-6`, eu-west-2 — 9 documents,
+5 fields each (supplier · date · total · VAT · reference):
+
+| Corpus | Fields | Accuracy |
+|---|---|---|
+| born-digital PDFs (pixels ARE the prompt) | 30/30 | **100%** |
+| generated images (the "hard read" set) | 14/15 | 93.3% |
+| whole corpus | 44/45 | **97.8%** |
+
+The one miss is an honest null (VAT unread on the deliberately-hard handwritten
+Fresh Direct image), not a wrong number.
+
+⚠ **Three caveats before anyone quotes this externally:**
+
+- **n = 45 field reads over synthetic documents.** It replaces an invented
+  number with a taken one; it is not a calibration corpus. `evals/` still owes
+  the real extraction dataset its README names.
+- **The ~62.5–79% on record elsewhere is CATEGORISATION accuracy**
+  (`docs/research/business-types-and-accounts.md`), a different question this
+  probe does not measure. Do not average the two.
+- **One real watch item it surfaced:** the Bidfood receipt PNG (printed total
+  £482.40) read correctly here from the raw bytes, but the PRODUCT path — which
+  sanitises PNG→JPEG before the model sees it — read £456.72 on both occasions
+  it was tried (the 4 Sep walkthrough and a live re-upload the same evening).
+  Same file, same model, different answer after recompression. The synthetic
+  receipt's own line items do not sum to its printed total, which may be
+  provoking the model into reconciling; a real receipt's arithmetic adds up.
+  Worth a re-check with an arithmetically consistent fixture before treating
+  it as a sanitisation defect.
 
 ## Replay (`EXTRACTOR=replay`)
 

@@ -566,21 +566,23 @@ pnpm --filter @neoting/api vitest run src/modules/auth-tenancy/   # unit, offlin
       A14** (#195). `POST /v1/auth/totp-enrolment` and `/confirm` hand the user
       the QR and then write the enrolment. A14 also found and fixed that the
       two-step was not actually two-step — see the A14 section above.
-- [ ] **⚠ Contract gap #2 (G7) — STILL OPEN, and A14 makes it the sharpest edge
-      left in this module.** `SessionCreateRequest.totp` is
-      `pattern: '^[0-9]{6}$'`, so a 19-character RECOVERY code is a `400` at the
-      controller and never reaches the verifier that would accept it. The codes
-      are minted, hashed, verified and spent correctly, and are shown to the
-      user at enrolment as *"the only way back in"* — **which is currently not
-      true, because there is no route in.** Combined with `NT-AUTH-007`
-      (enrolment refuses an account that already has one), a user who loses
-      their phone has **no self-service route back into their own workspace**
-      (the 2 Sep 2026 password-reset flow closes the forgotten-PASSWORD half
-      only — it deliberately leaves TOTP untouched); the only remedy is an
-      operator clearing
-      `users.totp_secret_ref`, which `docs/runbooks/error-codes.md` now spells
-      out under `NT-AUTH-007`. The fix is a widened field or a recovery
-      operation of its own, and it needs a contract-change issue.
+- [x] **Contract gap #2 — the recovery-code route in is OPEN (4 Sep 2026).**
+      `SessionCreateRequest.totp` now admits the recovery shape (four groups of
+      four, hyphens and case forgiven) alongside six digits, so *"the only way
+      back in"* is finally true: a lost-phone user types a recovery code at the
+      ordinary login and the verifier that always minted, hashed, verified and
+      spent them correctly is finally reachable over HTTP. `LoginView` accepts
+      both shapes and says so; proven live (a recovery-shaped code reaches the
+      verifier and answers `401 NT-AUTH-003`, not the old `400`).
+      ⚠ **The second half is still owed**: signing in spends one of ten codes,
+      and `NT-AUTH-007` still refuses re-enrolment while an enrolment exists —
+      so a recovered user cannot yet REPLACE the lost factor themselves. A
+      re-enrolment operation for an authenticated user (or an operator-guided
+      reset) is the remaining piece; `docs/runbooks/error-codes.md` under
+      `NT-AUTH-007` still describes the operator remedy. ⚠ Under
+      `OTP_MODE=demo` the demo branch compares the literal `000000` only, so
+      recovery login is exercisable on `totp` environments (staging) and in the
+      service tests, not on a demo laptop.
 - [ ] **The throttle is IN-PROCESS, and A14 gave it three more callers.**
       Production runs more than one API task, so ten-per-address is really ten
       per task — now across sign-in, both enrolment steps and email
@@ -633,6 +635,11 @@ from A1 until today. A1 said *"the composition root swaps the implementation whe
 
 `notifications-signup-mailer.ts` is the adapter. It translates A1's two messages
 into the notifications module's two, and holds the public web origin.
+
+Since 4 Sep 2026 the verification mail also carries the terms-of-service and
+privacy-notice links (walkthrough finding 1) — built by
+`buildLegalLinks(appOrigin)` from the notifications seam, which owns the paths
+and the drift pin against the web app's `/legal/*` routes.
 
 ⚠ **A refused verification THROWS; a refused duplicate notice does not.**
 `NotificationsService` reports a rate-limit refusal as a value rather than an

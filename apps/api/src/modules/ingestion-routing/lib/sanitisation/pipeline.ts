@@ -79,7 +79,7 @@ export async function sanitise(
   if (detected === 'unknown') {
     return {
       ok: false,
-      rejection: reject('type_not_allowed', 'This file type is not one we can accept. Accepted: images, PDF, Word, ODT, RTF and ZIP.'),
+      rejection: reject('type_not_allowed', 'This file type is not one we can accept. Accepted: images, PDF, Word, ODT, RTF, ZIP, and CSV or XLSX for bank statements.'),
     };
   }
   if (extensionContradicts(filename, detected)) {

@@ -150,6 +150,14 @@ export const RELEASE_KINDS: Readonly<Record<ProposalKind, boolean>> = {
   'document.reject': false,
   'document.split': false,
   'bank.confirm-match': false,
+  // Not a release: removal destroys DERIVED rows only — the source document
+  // stays in the vault and re-import re-proves D41, so it is internal and
+  // reversible in the sense that matters. What protects a client's bank data
+  // is the executor's refusals (confirmed matches, open chases, unprovable
+  // provenance), which bind the super admin too — the document.purge
+  // precedent. The banking design note recommended `false`; flagged for human
+  // ratification like every entry in this table (it is permission logic).
+  'bank.remove-statement': false,
   'rule.create': false,
   'document.revoke-link': false,
   // Not a release: offboarding is soft and entirely internal — it flips

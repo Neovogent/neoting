@@ -55,11 +55,23 @@ test('the gate is real: nothing submits until email, password and six digits are
   await type(password, 'demo-neoting-2026');
   expect(button).toBeDisabled();
 
-  // Five digits is not six; non-digits never reach the field; six enables.
+  // Five digits is not six; six enables.
   await type(totp, '00000');
   expect(button).toBeDisabled();
+  await type(totp, '000000');
+  expect(button).toBeEnabled();
+
+  // A recovery code is the OTHER accepted shape (4 Sep 2026 — the lost-phone
+  // route): letters stay in the field now, hyphens and spaces forgiven.
+  await type(totp, 'abcd-efgh-jkmn-2345');
+  expect(button).toBeEnabled();
+
+  // Neither shape: letters mixed into digits is not a TOTP and not a recovery
+  // code, so the gate stays shut — and punctuation outside both never lands.
   await type(totp, '00a0000b00');
-  expect(totp.value).toBe('000000');
+  expect(button).toBeDisabled();
+  await type(totp, 'abcd!efgh@jkmn#2345');
+  expect(totp.value).toBe('abcdefghjkmn2345');
   expect(button).toBeEnabled();
 
   // The gate refuses before the network — nothing was sent while it was shut.

@@ -1,9 +1,10 @@
-import type { ProposalKind } from '@neoting/contracts/model';
+import type { BankRemoveStatementPayload } from '@neoting/contracts/model';
 
 import type { ScopedClient } from '../../../common/db/scoped-db.js';
 import {
   type ExecutionInput,
   type ExecutionResult,
+  type ProposalExecutor,
   ProposalExecutionRefused,
 } from './proposal-executor.js';
 
@@ -11,16 +12,11 @@ import {
  * `bank.remove-statement` — an accountant takes a wrongly-uploaded statement
  * back out, with every transaction that upload created.
  *
- * ⚠ **DORMANT — the kind is not in the contract yet.** `ProposalKind` is LAW
- * (G7), and `bank.remove-statement` is a contract-change issue for Shakib
- * before any of this is reachable: it is not in `buildExecutorRegistry`, not in
- * `ProposalPayloadMap`, and no boundary parses its payload. The full LAW delta
- * and the mechanical wiring that follows it are written out in
- * `modules/banking-matching/CLAUDE.md` ("Removing a statement — design note").
- * Both the registry and the payload map are total over `ProposalKind`, so the
- * moment the enum grows this file's absence is a compile error — which is the
- * intended reminder. The `as ProposalKind` cast below is the one concession to
- * dormancy and comes off with the same change.
+ * **LIVE since 4 Sep 2026** — the kind is in the contract's `ProposalKind`,
+ * this executor is in `buildExecutorRegistry` and `ProposalPayloadMap`,
+ * `proposal-body.ts` parses the payload, and `action-proposals.service.ts`
+ * computes the server preview at creation. The design note that specified all
+ * of it is `modules/banking-matching/CLAUDE.md` ("Removing a statement").
  *
  * ## Why a proposal and not a DELETE
  *
@@ -84,8 +80,8 @@ import {
  * present nor marked refuses without confirming whether it ever existed.
  */
 
-/** Becomes the plain enum literal when the contract adds the kind (G7). */
-const KIND = 'bank.remove-statement' as ProposalKind;
+/** The plain enum literal — in the contract since 4 Sep 2026. */
+const KIND = 'bank.remove-statement' as const;
 
 /** The house batch cap (`ArchivePayload`/`ReprocessPayload` declare 500 for
  * documents; a statement is up to ~1,500 transactions, so 50 statements is
@@ -99,33 +95,11 @@ const OPEN_CHASE_STATES = ['DETECTED', 'PROPOSED', 'APPROVED', 'SENT', 'REMINDED
 /**
  * One statement's share of the blast radius, computed by the SERVER at
  * proposal creation and stored in the payload — never trusted from a caller.
- *
- * These shapes move to `@neoting/contracts/model` (`BankRemoveStatementPayload`)
- * when the LAW change lands; they are declared here so the executor and its
- * tests are real in the meantime.
+ * The shape is the CONTRACT's since 4 Sep 2026 (`BankRemoveStatementPayload`);
+ * the alias keeps this file's vocabulary while the model stays the authority.
  */
-export interface RemoveStatementPreviewEntry {
-  readonly statementId: string;
-  /** The source document — the vault keeps it, and re-import starts from it. */
-  readonly documentId: string;
-  readonly fileName: string | null;
-  readonly periodStart: string | null;
-  readonly periodEnd: string | null;
-  /** Rows provably created by this statement (`importBatchId` = statementId). */
-  readonly transactionCount: number;
-  /** Lines carrying a CONFIRMED match. Non-zero refuses — see the header. */
-  readonly matchedCount: number;
-  /** Lines inside an open chase. Non-zero refuses — see the header. */
-  readonly openChaseCount: number;
-}
-
-export interface BankRemoveStatementPayload {
-  readonly statementIds: readonly string[];
-  readonly preview: {
-    readonly statements: readonly RemoveStatementPreviewEntry[];
-    readonly totalTransactions: number;
-  };
-}
+export type RemoveStatementPreviewEntry = BankRemoveStatementPayload['preview']['statements'][number];
+export type { BankRemoveStatementPayload };
 
 interface StatementRow {
   readonly id: string;
@@ -298,12 +272,8 @@ export async function computeRemoveStatementPayload(
 /**
  * The effect. Runs inside the ENGINE's open `scopedDb` transaction; decides
  * nothing about whether it may happen (the #81 seam).
- *
- * Satisfies `ProposalExecutor<'bank.remove-statement', BankRemoveStatementPayload>`
- * the day the kind exists; until then it is structurally identical and typed
- * locally so nothing here depends on the LAW change to compile.
  */
-export const removeStatementExecutor = {
+export const removeStatementExecutor: ProposalExecutor<'bank.remove-statement', BankRemoveStatementPayload> = {
   kind: KIND,
 
   async execute(db: ScopedClient, input: ExecutionInput<BankRemoveStatementPayload>): Promise<ExecutionResult> {

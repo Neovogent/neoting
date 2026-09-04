@@ -43,6 +43,7 @@ const KIND_ORDER: readonly ProposalKind[] = [
   'chase.send',
   'publish.batch',
   'bank.confirm-match',
+  'bank.remove-statement',
   'rule.create',
   'document.revoke-link',
   'business.offboard',

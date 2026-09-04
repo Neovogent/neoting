@@ -4,8 +4,15 @@
  * (root CLAUDE.md: "extensions are never trusted").
  *
  * Accepted formats (senior brief / SoT §4 Stage 1):
- *   JPG, PNG, GIF, BMP, TIFF, HEIC, PDF, DOC/DOCX, ODT, RTF, ZIP.
- * (CSV/XLSX are structured imports handled elsewhere, not by this pipeline.)
+ *   JPG, PNG, GIF, BMP, TIFF, HEIC, PDF, DOC/DOCX, ODT, RTF, ZIP — and, since
+ *   4 Sep 2026, CSV and XLSX.
+ *
+ * ⚠ The line this replaces read "CSV/XLSX are structured imports handled
+ * elsewhere, not by this pipeline" — written before D40 routed manual bank
+ * statements through this exact pipeline. The Bank tab's picker offered `.csv`,
+ * the Statements panel said "CSV and XLSX read exactly", and the door answered
+ * 415 — the only working format for the only bank input in Initial Delivery,
+ * refused at its only entrance (walkthrough finding 6, 4 Sep 2026).
  */
 
 export type AcceptedFormat =
@@ -20,10 +27,12 @@ export type AcceptedFormat =
   | 'docx'
   | 'odt'
   | 'rtf'
-  | 'zip';
+  | 'zip'
+  | 'csv'
+  | 'xlsx';
 
 export const ACCEPTED_FORMATS: ReadonlySet<AcceptedFormat> = new Set<AcceptedFormat>([
-  'jpeg', 'png', 'gif', 'bmp', 'tiff', 'heic', 'pdf', 'doc', 'docx', 'odt', 'rtf', 'zip',
+  'jpeg', 'png', 'gif', 'bmp', 'tiff', 'heic', 'pdf', 'doc', 'docx', 'odt', 'rtf', 'zip', 'csv', 'xlsx',
 ]);
 
 /** Result of sniffing: a concrete accepted format, or `unknown` (matched nothing). */
@@ -43,6 +52,8 @@ const EXTENSIONS: Readonly<Record<AcceptedFormat, readonly string[]>> = {
   odt: ['odt'],
   rtf: ['rtf'],
   zip: ['zip'],
+  csv: ['csv'],
+  xlsx: ['xlsx'],
 };
 
 function startsWith(bytes: Buffer, sig: readonly number[], offset = 0): boolean {
@@ -88,22 +99,57 @@ export function sniff(bytes: Buffer): SniffResult {
     return refineZipContainer(bytes);
   }
 
+  // CSV last, because plain text has no magic bytes to be more specific about:
+  // anything a binary signature claimed above is not text, and what remains is
+  // either delimited text or unknown.
+  if (looksLikeDelimitedText(bytes)) return 'csv';
+
   return 'unknown';
 }
 
 /**
- * DOCX and ODT are ZIP containers, so PK bytes alone cannot tell them apart
- * from a plain ZIP. Cheap, dep-free heuristics on the leading bytes:
+ * A CSV has no signature — it is plain text, which is exactly why it sat
+ * unsniffable and therefore refused for so long (finding 6, 4 Sep 2026). The
+ * cheap honest test: NUL-free, overwhelmingly printable, and carrying at least
+ * one delimiter (comma, semicolon or tab) in the head. That admits some
+ * non-CSV text (prose with a comma sniffs as csv), which is the safe
+ * direction: the statement parser downstream refuses a non-statement grid with
+ * a named reason, and D46 says flag, never block. A single-column CSV with no
+ * delimiter stays `unknown` — a file with no delimiter and no header row is
+ * indistinguishable from any text file, and the statement lane could not read
+ * it as a grid either.
+ */
+function looksLikeDelimitedText(bytes: Buffer): boolean {
+  if (bytes.length === 0) return false;
+  const head = bytes.subarray(0, Math.min(bytes.length, 4096));
+  let printable = 0;
+  let delimiter = false;
+  for (const b of head) {
+    if (b === 0x00) return false; // a NUL is binary, whatever else it looks like
+    if (b === 0x2c || b === 0x3b || b === 0x09) delimiter = true; // , ; tab
+    if (b === 0x09 || b === 0x0a || b === 0x0d || b >= 0x20) printable += 1;
+  }
+  return delimiter && printable / head.length > 0.97;
+}
+
+/**
+ * DOCX, XLSX and ODT are ZIP containers, so PK bytes alone cannot tell them
+ * apart from a plain ZIP. Cheap, dep-free heuristics on the leading bytes:
  *  - ODT stores an uncompressed `mimetype` entry first, so its media type
  *    string sits near the top of the file.
+ *  - XLSX carries its workbook under `xl/`, whose entry names appear in the
+ *    early local file headers. ⚠ Checked BEFORE the Content_Types test: an
+ *    XLSX also contains `[Content_Types].xml`, so the old order sniffed every
+ *    spreadsheet as a Word document and stored it mislabelled (finding 6).
  *  - DOCX always contains `[Content_Types].xml`, whose name appears in the
  *    first local file header.
  * A full central-directory parse happens in the ZIP-safety step; this is only
  * enough to route the type. Anything else PK-shaped is treated as `zip`.
  */
 function refineZipContainer(bytes: Buffer): AcceptedFormat {
-  const head = bytes.toString('latin1', 0, Math.min(bytes.length, 2048));
+  const head = bytes.toString('latin1', 0, Math.min(bytes.length, 4096));
   if (head.includes('application/vnd.oasis.opendocument.text')) return 'odt';
+  if (head.includes('xl/workbook.xml') || head.includes('xl/_rels')) return 'xlsx';
   if (head.includes('[Content_Types].xml')) return 'docx';
   return 'zip';
 }
@@ -142,6 +188,8 @@ const MIME_BY_FORMAT: Readonly<Record<AcceptedFormat, string>> = {
   odt: 'application/vnd.oasis.opendocument.text',
   rtf: 'application/rtf',
   zip: 'application/zip',
+  csv: 'text/csv',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 };
 
 /**

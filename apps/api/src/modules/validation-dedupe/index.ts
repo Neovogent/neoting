@@ -45,6 +45,11 @@ export {
   type PublishGateway,
 } from './proposals/publish-batch.js';
 export { type ChaseComposeConfig, CHASE_LINK_TTL_SECONDS, computeChaseSendPayload } from './proposals/compose-chase-send.js';
+// The creation-time half of bank.remove-statement (4 Sep 2026): the engine
+// computes the blast radius the reviewer reads, discarding the caller's
+// preview — the computePublishBatchPayload pattern. The EXECUTOR stays off the
+// seam like every other one; only the compute travels.
+export { computeRemoveStatementPayload, MAX_REMOVE_STATEMENT_BATCH } from './proposals/remove-statement.js';
 export { runPublishFollowUp } from './proposals/publish-follow-up.js';
 export {
   type ExecutionInput,

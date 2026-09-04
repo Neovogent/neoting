@@ -9,6 +9,7 @@ import { defineMessages, useIntl } from 'react-intl';
 import { useQueryClient } from '@tanstack/react-query';
 import { commonActions, commonLabels } from '../i18n/common';
 import { useAppContext } from '../context/AppContext';
+import { onStatusTab } from '../api/documents';
 import { refreshDocuments, runWorkspaceDrop } from '../api/uploads';
 import { useTourAction } from '../tour/bus';
 import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
@@ -483,7 +484,9 @@ export function InboxesView() {
     });
   }, [inKind, clientFilter, channelFilter, query, isSameClient]);
 
-  const rows = useMemo(() => filtered.filter((d) => d.status === statusTab), [filtered, statusTab]);
+  // `onStatusTab`, not a bare status compare: a STATEMENT document is excluded
+  // from To Review and Ready — its home is the Statements panel (4 Sep 2026).
+  const rows = useMemo(() => filtered.filter((d) => onStatusTab(d, statusTab)), [filtered, statusTab]);
 
   // The demo tour opens the first document and asks to publish; every step
   // change fires `tour:reset`, which closes whatever the tour opened.
@@ -533,8 +536,10 @@ export function InboxesView() {
     });
   };
 
-  // Tab counts track the active filters so they always agree with the table.
-  const counts = (s: DocStatus) => filtered.filter((d) => d.status === s).length;
+  // Tab counts track the active filters so they always agree with the table —
+  // the same `onStatusTab` predicate the rows use, so a statement excluded
+  // from the list cannot keep the badge lit.
+  const counts = (s: DocStatus) => filtered.filter((d) => onStatusTab(d, s)).length;
 
   const selectedDocs = documents.filter((d) => selected.includes(d.id));
   const allSelected = rows.length > 0 && rows.every((d) => selected.includes(d.id));

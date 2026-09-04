@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Modal } from '../components/DynamicComponents/Modal';
 import { defineMessages, useIntl } from 'react-intl';
 import { commonActions, commonLabels } from '../i18n/common';
+import { requestRemoveStatementsProposal } from '../api/proposals';
 import { useStatements } from '../api/statements';
 import { useAppContext } from '../context/AppContext';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
@@ -190,16 +191,23 @@ const m = defineMessages({
     id: 'bank.bankView.openStatementSourceAction',
     defaultMessage: 'Open the file this statement was read from',
   },
-  // Live removal is disabled WEARING ITS REASON (the S14 rule), never hidden
-  // and never a button whose write the next poll reverts: destroying imported
-  // bank data is a state change, so it belongs to Review → Approve, and the
-  // `bank.remove-statement` proposal kind is not in the contract yet (LAW, G7
-  // — the design note in apps/api/src/modules/banking-matching/CLAUDE.md
-  // carries the exact change and this is the line it names for the live wiring).
-  removeStatementLiveHint: {
-    id: 'bank.bankView.removeStatementLiveHint',
+  // Live removal STAGES a `bank.remove-statement` proposal (4 Sep 2026 — the
+  // contract gained the kind, so the disabled-wearing-its-reason gate this
+  // block used to carry is retired). The confirm dialog states the queue
+  // posture; the release is the Approvals queue's move (D44).
+  removeStatementsQueuedConsequence: {
+    id: 'bank.bankView.removeStatementsQueuedConsequence',
     defaultMessage:
-      'Removing a statement deletes imported bank data, so it goes through Review → Approve — and that approval path has not shipped yet.',
+      'This queues the removal for approval — nothing is deleted until it is approved in Approvals. {rows, plural, =0 {} one {On approval, # imported transaction is removed with the statement.} other {On approval, # imported transactions are removed with the statements.}} The uploaded {count, plural, one {file stays in the vault, so the period can be imported again} other {files stay in the vault, so the periods can be imported again}}.',
+  },
+  removeStatementsQueued: {
+    id: 'bank.bankView.removeStatementsQueued',
+    defaultMessage:
+      'Removal of {count, plural, one {# statement} other {# statements}} is queued — it runs when approved in the Approvals queue.',
+  },
+  removeStatementsFault: {
+    id: 'bank.bankView.removeStatementsFault',
+    defaultMessage: 'The removal could not be queued: {reason}',
   },
   removeStatementsTitle: {
     id: 'bank.bankView.removeStatementsTitle',
@@ -455,23 +463,24 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
   );
 
   /**
-   * Remove statements — the SYNTHETIC writer only, and the gate is honest.
+   * Remove statements — live it STAGES a `bank.remove-statement` proposal
+   * (4 Sep 2026 — the kind entered the contract); synthetic keeps the local
+   * writer. Removal destroys the transactions an upload imported — the most
+   * consequential change on this screen — so live the deletion itself belongs
+   * to Review → Approve (Governance §10): creation here is composing, the
+   * release is the Approvals queue's move (D44), and the confirm's consequence
+   * copy says QUEUED, never removed. The engine computes the real blast radius
+   * at creation over the provenance-stamped rows and Read review renders it;
+   * the placeholder preview this sends is discarded (the publish.batch
+   * pattern).
    *
-   * Live, removal destroys the transactions an upload imported — the most
-   * consequential change on this screen — so it belongs to Review → Approve
-   * (Governance §10), and the `bank.remove-statement` proposal kind is not in
-   * the contract yet (LAW, G7). Until that lands the live affordance is
-   * disabled wearing its reason (`removeStatementLiveHint`), never a button
-   * whose write the next poll reverts. The executor, its server-computed
-   * blast-radius preview and the exact LAW delta are already written — see
-   * `apps/api/src/modules/banking-matching/CLAUDE.md`, the removal design note.
-   *
-   * The confirmation states the REAL blast radius — how many transactions,
-   * from which files — because a generic "Are you sure?" over a thousand-row
-   * import tells the person confirming nothing they can weigh.
+   * The confirmation still states the blast radius the screen knows — how many
+   * transactions, from which files — because a generic "Are you sure?" over a
+   * thousand-row import tells the person confirming nothing they can weigh.
    */
+  const [removalNotice, setRemovalNotice] = useState<string | null>(null);
   const confirmRemoveStatements = async (sel: Statement[]) => {
-    if (statementsLive || sel.length === 0) return;
+    if (sel.length === 0) return;
     const summary = summariseRemoval(sel);
     const ok = await confirm({
       tone: 'red',
@@ -480,13 +489,29 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
         names: summary.namedFiles.join(', '),
         more: summary.moreCount,
       }),
-      consequence: intl.formatMessage(m.removeStatementsConsequence, {
+      consequence: intl.formatMessage(statementsLive ? m.removeStatementsQueuedConsequence : m.removeStatementsConsequence, {
         rows: summary.totalRows,
         count: summary.count,
       }),
       confirmLabel: intl.formatMessage(m.removeStatementsConfirmLabel, { count: summary.count }),
     });
     if (ok !== true) return;
+    if (statementsLive) {
+      try {
+        await requestRemoveStatementsProposal(sel.map((s) => s.id));
+        setRemovalNotice(intl.formatMessage(m.removeStatementsQueued, { count: sel.length }));
+      } catch (error) {
+        // The engine refuses everything refusable at creation (a confirmed
+        // match, an open chase, unprovable provenance) — the reason is the
+        // server's own sentence and belongs on screen verbatim.
+        setRemovalNotice(
+          intl.formatMessage(m.removeStatementsFault, {
+            reason: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      }
+      return;
+    }
     removeStatements(sel.map((s) => s.id));
     logAudit({
       action: intl.formatMessage(m.removeStatementsAudit),
@@ -980,6 +1005,11 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
 
           {tab === 'Statements' && (
             <div className="flex flex-col gap-6">
+              {removalNotice !== null && (
+                <p role="status" className="px-4 py-3 rounded-2xl border border-brand/20 bg-brand/5 text-[13px] font-semibold text-zinc-300">
+                  {removalNotice}
+                </p>
+              )}
               {scopedGaps.length > 0 && (
                 <div className="border border-amber-500/20 rounded-[32px] bg-amber-500/[0.06] overflow-hidden">
                   <div className="p-6 pb-4 flex items-center gap-3 border-b border-amber-500/15">
@@ -1098,9 +1128,8 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                           )}
                           <StatementButton
                             icon={Trash2}
-                            title={intl.formatMessage(statementsLive ? m.removeStatementLiveHint : m.removeStatementAction)}
+                            title={intl.formatMessage(m.removeStatementAction)}
                             onClick={() => { void confirmRemoveStatements([s]); }}
-                            disabled={statementsLive}
                           />
                         </span>
                       );
@@ -1114,11 +1143,10 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                   {
                     label: intl.formatMessage(m.removeStatementAction),
                     icon: Trash2,
+                    // Live this stages a bank.remove-statement proposal — see
+                    // confirmRemoveStatements; the disabled-wearing-its-reason
+                    // gate retired when the kind entered the contract.
                     onClick: (sel: Statement[]) => { void confirmRemoveStatements(sel); },
-                    // Live: disabled wearing its reason — see confirmRemoveStatements.
-                    ...(statementsLive
-                      ? { disabled: true, disabledHint: intl.formatMessage(m.removeStatementLiveHint) }
-                      : {}),
                   },
                 ]}
                 emptyMessage={intl.formatMessage(m.statementsEmpty)}

@@ -3,7 +3,7 @@ import type { z } from 'zod';
 import type { BusinessSummary } from '@neoting/contracts/model';
 import type { listBusinessesQueryParams } from '@neoting/contracts/zod';
 import { Prisma } from '@prisma/client';
-import type { Business as BusinessRow, ChaseState, DocumentState } from '@prisma/client';
+import type { Business as BusinessRow, ChaseState, DocumentState, DocumentType } from '@prisma/client';
 
 import type { PrismaClient } from '../../common/db/prisma.js';
 import type { ScopeContext } from '../../common/db/scope-context.js';
@@ -138,7 +138,11 @@ export class BusinessesService {
       // page itself came from, and none can widen it.
       const [grouped, chases, unmatched, approvals, statementGaps, primaryContacts] = await Promise.all([
         db.document.groupBy({
-          by: ['businessId', 'state'],
+          // `docType` rides in the grouping so the fold can exclude STATEMENT
+          // documents from toReview/ready — the review tabs exclude them too
+          // (`onStatusTab`, apps/web), and a badge that counts rows the tab
+          // will never show is a to-do list nobody can clear (4 Sep 2026).
+          by: ['businessId', 'state', 'docType'],
           where: {
             businessId: { in: ids },
             state: { in: Object.keys(COUNTED) as DocumentState[] },
@@ -311,7 +315,7 @@ export function foldPrimaryContactEmails(
  * Exported for its test.
  */
 export function foldCounts(
-  grouped: ReadonlyArray<{ businessId: string | null; state: DocumentState; _count: { _all: number } }>,
+  grouped: ReadonlyArray<{ businessId: string | null; state: DocumentState; docType?: DocumentType | null; _count: { _all: number } }>,
   chases: ReadonlyArray<{ businessId: string; state: ChaseState; _count: { _all: number } }> = [],
   unmatched: ReadonlyArray<{ businessId: string | null; _count: { _all: number } }> = [],
   approvals: ReadonlyArray<{ businessId: string | null; _count: { _all: number } }> = [],
@@ -338,6 +342,11 @@ export function foldCounts(
   for (const row of grouped) {
     const bucket = COUNTED[row.state];
     if (row.businessId === null || bucket === undefined) continue;
+    // A STATEMENT document is not on the To Review or Ready tabs (its home is
+    // the Statements panel and the D41 verdict), so it must not light their
+    // badges either. It STAYS counted in failed/published — a statement whose
+    // READ failed is real work, and hiding it would be the worse direction.
+    if (row.docType === 'STATEMENT' && (bucket === 'toReview' || bucket === 'ready')) continue;
     bucketFor(row.businessId)[bucket] += row._count._all;
   }
   for (const row of chases) {

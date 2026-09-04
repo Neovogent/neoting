@@ -3,6 +3,7 @@ import type {
   BusinessOffboardPayload,
   ErrorCode,
   BankConfirmMatchPayload,
+  BankRemoveStatementPayload,
   ChaseSendPayload,
   DocumentPurgePayload,
   MoveBusinessPayload,
@@ -45,6 +46,7 @@ export interface ProposalPayloadMap {
   'chase.send': ChaseSendPayload;
   'publish.batch': PublishBatchPayload;
   'bank.confirm-match': BankConfirmMatchPayload;
+  'bank.remove-statement': BankRemoveStatementPayload;
   'rule.create': RuleCreatePayload;
   'document.revoke-link': RevokeLinkPayload;
   'business.offboard': BusinessOffboardPayload;

@@ -61,6 +61,10 @@ export interface ComposeClientInviteInput {
   readonly inviteLink: string;
   /** When the link stops working. Rendered in Europe/London (Governance §12). */
   readonly expiresAt: Date;
+  /** The public terms-of-service page — built by the caller (`buildLegalLinks`), like every other link here. */
+  readonly termsLink: string;
+  /** The public privacy notice, same maker. */
+  readonly privacyLink: string;
 }
 
 /**
@@ -86,8 +90,18 @@ export function composeClientInvite(input: ComposeClientInviteInput): ComposedEm
       '',
       `This link stops working on ${formatDay(input.expiresAt)}. If you were not expecting it, you can ignore this email — nothing happens until you open the link.`,
       '',
+      // Findings 1 and 4 (4 Sep 2026): the client has accepted nothing yet, so
+      // the invite is where the terms must be readable. Both pages are public
+      // (`/legal/*` renders outside every wall), so the reader needs no session.
+      `Using ${SENDER_DISPLAY_NAME} is covered by our terms of service and privacy notice:`,
+      input.termsLink,
+      input.privacyLink,
+      '',
       SENDER_DISPLAY_NAME,
   );
+  // The legal pair carries NO label on purpose: a labelled link renders as a
+  // button (email-html.ts), and two more mint buttons would compete with the
+  // one action this message exists for. Unlabelled, they render as plain links.
   return { subject, body, html: renderEmailHtml({ subject, body, linkLabels: { [input.inviteLink]: 'Set up your access' } }) };
 }
 
@@ -335,6 +349,10 @@ export interface ComposeEmailVerificationInput {
    */
   readonly verifyLink: string;
   readonly expiresAt: Date;
+  /** The public terms-of-service page — built by the caller (`buildLegalLinks`), like the verify link. */
+  readonly termsLink: string;
+  /** The public privacy notice, same maker. */
+  readonly privacyLink: string;
 }
 
 /**
@@ -361,10 +379,18 @@ export function composeEmailVerification(input: ComposeEmailVerificationInput): 
       '',
       `This link stops working on ${formatDay(input.expiresAt)}. If it has expired by the time you read this, start the signup again and a new one will be sent.`,
       '',
+      // Finding 1 (4 Sep 2026): acceptance happened on the signup form; the
+      // confirmation restates where the accepted documents live, permanently.
+      'The terms of service and privacy notice you accepted at signup are always available to read:',
+      input.termsLink,
+      input.privacyLink,
+      '',
       'If you did not create this account you can ignore this email. Nothing has been set up, and the address cannot be used until the link is opened.',
       '',
       SENDER_DISPLAY_NAME,
   );
+  // The legal pair is unlabelled for the same reason as the client invite's:
+  // only the confirm action earns a button.
   return { subject, body, html: renderEmailHtml({ subject, body, linkLabels: { [input.verifyLink]: 'Confirm email address' } }) };
 }
 

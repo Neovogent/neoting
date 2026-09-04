@@ -11,7 +11,7 @@ import { scopedDb } from '../../common/db/scoped-db.js';
 import { fingerprint, type IdempotencyStore } from '../../common/idempotency/idempotency-store.js';
 import { dateField, type Page, type PageRequest, pageQuery, toPage } from '../../common/pagination/cursor.js';
 import { AppException } from '../../common/problem/problem.js';
-import type { NotificationsService } from '../notifications/index.js';
+import { buildLegalLinks, type NotificationsService } from '../notifications/index.js';
 import { type MembershipRow, toBusinessMember, toInvite } from './projections.js';
 import { buildSetupLink, hashSetupToken, mintSetupToken, setupLinkExpiry } from './setup-link.js';
 import { isBusinessLevelRole } from './team-authority.js';
@@ -201,6 +201,8 @@ export class TeamService {
       businessName,
       inviteLink: buildSetupLink(this.config.appOrigin, setupToken),
       expiresAt,
+      // Same legal pair as intake's invite (finding 4, 4 Sep 2026).
+      ...buildLegalLinks(this.config.appOrigin),
     });
     if (!outcome.sent) {
       // Told plainly, and the contract declares the status. The accountant is a

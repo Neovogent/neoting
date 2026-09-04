@@ -2,6 +2,7 @@ import { HttpStatus, Logger } from '@nestjs/common';
 
 import type {
   ActionProposal,
+  BankRemoveStatementPayload,
   ChaseSendPayload,
   ErrorCode,
   ProposalKind,
@@ -30,6 +31,7 @@ import {
   type ChaseComposeConfig,
   computeChaseSendPayload,
   computePublishBatchPayload,
+  computeRemoveStatementPayload,
   type DedupeDetection,
   type ExecutionInput,
   type ExecutionResult,
@@ -177,6 +179,28 @@ export class ActionProposalsService {
             request.payload as unknown as PublishBatchPayload,
             this.exportEntryPreview,
           )) as unknown as Record<string, unknown>;
+        } catch (error) {
+          if (error instanceof ProposalExecutionRefused) {
+            throw new AppException(
+              error.code ?? 'NT-PRP-006',
+              HttpStatus.UNPROCESSABLE_ENTITY,
+              'Proposal is not executable',
+              error.message,
+            );
+          }
+          throw error;
+        }
+      }
+      // And for `bank.remove-statement` (4 Sep 2026): the blast radius Read
+      // review renders — per-statement transaction counts, file names, the
+      // total — is computed by the SERVER over the provenance-stamped rows;
+      // the caller's preview is discarded, and everything refusable (confirmed
+      // matches, open chases, cross-workspace, unprovable provenance) refuses
+      // NOW rather than at approve.
+      if (request.kind === 'bank.remove-statement') {
+        try {
+          const asked = request.payload as unknown as BankRemoveStatementPayload;
+          payload = (await computeRemoveStatementPayload(db, asked.statementIds)) as unknown as Record<string, unknown>;
         } catch (error) {
           if (error instanceof ProposalExecutionRefused) {
             throw new AppException(

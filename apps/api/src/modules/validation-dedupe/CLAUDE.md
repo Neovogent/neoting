@@ -514,7 +514,7 @@ structural) and decides nothing about whether it may happen.
   propose and approve refuses at execution — the only place that drift is
   visible, the same reasoning as the entry-preview re-check.
 
-### `bank.remove-statement` (3 Sep 2026) — built, tested, DORMANT
+### `bank.remove-statement` (3 Sep 2026) — LIVE since 4 Sep 2026
 
 `remove-statement.ts` + `remove-statement.test.ts` (15 tests, offline). An
 accountant takes a wrongly-uploaded statement back out: hard delete of the
@@ -528,23 +528,27 @@ the `computePublishBatchPayload` pattern). Replay is answered from the
 `DocumentEvent` (`stage: 'statement'`, `outcome: 'removed'`,
 `detail.proposalId`) because removal leaves no surviving row to ask.
 
-⚠ **It is NOT in the registry and CANNOT be**: the kind is not in the
-contract's `ProposalKind` (LAW, G7). The exact contract delta and the
-mechanical wiring that follows it are in
-`modules/banking-matching/CLAUDE.md`, "Removing a statement — design note".
-The registry's and payload map's totality make its absence a compile error the
-moment the enum grows.
+**The LAW change landed 4 Sep 2026** and every wire the design note listed is
+in: the `ProposalKind` value + `BankRemoveStatementPayload` +
+`BankRemoveStatementProposalRequest` in the contract, the registry and
+`ProposalPayloadMap` entries, `proposal-body.ts`'s `KIND_ORDER`, the creation
+branch in `action-proposals.service.ts` (`computeRemoveStatementPayload`,
+exported on this module's seam — the executor stays off it), a shaped
+`render-summary.ts` card, `RELEASE_KINDS: false` (internal; re-import reverses;
+what protects the data is the executor's refusals, which bind the super admin
+too — flagged for human ratification like every entry in that table), and the
+web flip (`BankView.tsx` stages the proposal live; `KIND_LABEL`/`KIND_NOTE`).
+Proven live 4 Sep 2026: the matched August statement REFUSED with the
+confirmed-match sentence on screen; the clean July one queued → shaped review
+card ("Remove 1 statement and 8 imported transactions") → owner approve → rows
+gone, statement gone, removal marker on the source document.
 
 ## TODO
 
-- [ ] **`bank.remove-statement` awaits its LAW change** (Shakib, G7): the
-      `ProposalKind` value, `BankRemoveStatementPayload` and the
-      `CreateActionProposalRequest` member — the delta is written out in
-      `modules/banking-matching/CLAUDE.md`. The executor above is built and
-      tested; wiring is registry + payload map + `proposal-body.ts` member +
-      the creation branch in `action-proposals.service.ts` + `RELEASE_KINDS`
-      (recommended `false` — internal, reversible by re-import) +
-      `render-summary.ts` card + the web flip in `BankView.tsx`.
+- [x] **`bank.remove-statement` — LAW change landed and fully wired, 4 Sep
+      2026.** See the section above; `RELEASE_KINDS: false` per the design
+      note's recommendation, awaiting Shakib's ratification like every entry
+      in that table.
 - [ ] The **two** unimplemented executors — `move-business` and `split`; each
       needs its own issue. The registry already
       types and names them all. `update-coding` landed with the engine (METH S3,

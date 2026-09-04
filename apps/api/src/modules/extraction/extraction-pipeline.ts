@@ -36,6 +36,7 @@ import {
   type ExtractionRequest,
 } from './document-extractor.js';
 import { withFieldGeometry } from './field-geometry.js';
+import { isSpreadsheetMime, spreadsheetStatementExtractor } from './spreadsheet-statement-extractor.js';
 
 export interface ExtractionInput {
   readonly documentId: string;
@@ -245,6 +246,13 @@ export class PrismaExtractionStep implements ExtractionStep {
     const started = await scopedDb(this.prisma, ctx, (db) => this.begin(db, input));
     if (started === null) return null;
 
+    // A spreadsheet never reaches the model (finding 6, 4 Sep 2026): a CSV/XLSX
+    // is a bank statement under D40, `BedrockExtractor` honestly refuses
+    // `text/csv`, and the statement lane keys on the `docType` this deterministic
+    // branch writes. Chosen PER DOCUMENT so the audit columns
+    // (`extractions.extractor_kind`) name whichever reader actually ran.
+    const extractor = isSpreadsheetMime(started.mimeType) ? spreadsheetStatementExtractor : this.extractor;
+
     // Phase 2 — the read itself. Deliberately OUTSIDE any transaction: the read
     // must not hold a DB row locked for its whole duration.
     //
@@ -257,7 +265,7 @@ export class PrismaExtractionStep implements ExtractionStep {
     // is. Keyed on the extractor's `kind`, the same self-description the audit
     // columns use, so a future fixture extractor gets it and a future real one
     // does not, without anyone editing this line.
-    if (this.extractor.kind === DEMO_EXTRACTOR_KIND) {
+    if (extractor.kind === DEMO_EXTRACTOR_KIND) {
       await this.sleep(extractionLatencyMs(started.byteHash));
     }
 
@@ -271,7 +279,7 @@ export class PrismaExtractionStep implements ExtractionStep {
       );
     }
 
-    const outcome = await this.runExtractor(ocr === undefined ? started : { ...started, ocr }, input);
+    const outcome = await this.runExtractor(extractor, ocr === undefined ? started : { ...started, ocr }, input);
     // A retryable throw on a job with attempts left: leave the document in
     // PROCESSING and let BullMQ come back. `begin()` treats PROCESSING as
     // re-entrant precisely so the next attempt picks up here.
@@ -291,7 +299,7 @@ export class PrismaExtractionStep implements ExtractionStep {
     // (the header + final state) is what the caller hands the auto-close hook; it
     // is null for a FAILED read, so a chase never closes on a document we could
     // not read.
-    const completion = await scopedDb(this.prisma, ctx, (db) => this.finish(db, input, placed));
+    const completion = await scopedDb(this.prisma, ctx, (db) => this.finish(db, input, placed, extractor));
     if (completion === null || ocr === undefined) return completion;
     return { ...completion, ocr };
   }
@@ -328,9 +336,13 @@ export class PrismaExtractionStep implements ExtractionStep {
    * Returning `null` means "handled, stop" — used only for the FAILED path,
    * where `finish` must not also run.
    */
-  private async runExtractor(request: ExtractionRequest, input: ExtractionInput): Promise<ExtractionOutcome | null> {
+  private async runExtractor(
+    extractor: DocumentExtractor,
+    request: ExtractionRequest,
+    input: ExtractionInput,
+  ): Promise<ExtractionOutcome | null> {
     try {
-      return await this.extractor.extract(request);
+      return await extractor.extract(request);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       if (!input.finalAttempt) {
@@ -407,7 +419,12 @@ export class PrismaExtractionStep implements ExtractionStep {
     return identity;
   }
 
-  private async finish(db: ScopedClient, input: ExtractionInput, outcome: ExtractionOutcome): Promise<ExtractionCompletion | null> {
+  private async finish(
+    db: ScopedClient,
+    input: ExtractionInput,
+    outcome: ExtractionOutcome,
+    by: DocumentExtractor,
+  ): Promise<ExtractionCompletion | null> {
     const doc = await db.document.findUnique({ where: { id: input.documentId }, select: { id: true, state: true } });
     if (doc === null || doc.state !== 'PROCESSING') return null; // a concurrent worker finalised it — no-op
     const from = { id: doc.id, state: 'PROCESSING' as const };
@@ -459,7 +476,7 @@ export class PrismaExtractionStep implements ExtractionStep {
       // it can never be consulted about a document an accountant's rule already
       // answered.
       const coding = await this.adviseCoding(db, input, extracted, categoryCode);
-      await this.writeExtraction(db, input, extracted, rule?.id ?? null, categoryCode, coding);
+      await this.writeExtraction(db, input, extracted, rule?.id ?? null, categoryCode, coding, by);
     } else {
       // Defensive, not a live path: the extraction write and the final transition
       // below share THIS transaction, so "accepted extraction present but still
@@ -534,6 +551,9 @@ export class PrismaExtractionStep implements ExtractionStep {
     sourceRuleId: string | null,
     categoryCode: string | null,
     coding: StoredCodingSuggestion | null,
+    // The extractor that ACTUALLY ran — per-document since the spreadsheet
+    // branch, so the audit columns cannot claim a model read a CSV.
+    by: DocumentExtractor,
   ): Promise<void> {
     // Line items ride in the existing `fields` jsonb (METH_MODE §3.2: "store it in
     // an existing jsonb field... and note it"). The Extraction row has no
@@ -560,8 +580,8 @@ export class PrismaExtractionStep implements ExtractionStep {
         // demo constants here made every EXTRACTOR=bedrock read claim to be the
         // fixture one in the column you query to answer "which model produced
         // this value".
-        extractorKind: this.extractor.kind,
-        modelVersion: this.extractor.modelVersion,
+        extractorKind: by.kind,
+        modelVersion: by.modelVersion,
         overallConfidence: extracted.overallConfidence,
         validatorResults: extracted.validatorResults as unknown as Prisma.InputJsonValue,
         isAccepted: true,
@@ -581,7 +601,7 @@ export class PrismaExtractionStep implements ExtractionStep {
             ? `Coded by an active supplier rule for ${extracted.supplierName ?? 'this supplier'}.`
             : suggestion.reasoning,
           ...(ruleWon ? { sourceRuleId } : {}),
-          modelVersion: this.extractor.modelVersion,
+          modelVersion: by.modelVersion,
         };
       }),
     });
@@ -611,8 +631,8 @@ export class PrismaExtractionStep implements ExtractionStep {
         outcome: 'extracted',
         traceId: input.traceId,
         detail: {
-          extractorKind: this.extractor.kind,
-          modelVersion: this.extractor.modelVersion,
+          extractorKind: by.kind,
+          modelVersion: by.modelVersion,
           ...(sourceRuleId === null ? {} : { sourceRuleId }),
         } as Prisma.InputJsonValue,
       },

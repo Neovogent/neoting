@@ -3,7 +3,7 @@ import { DocumentChannel, DocumentState } from '@neoting/contracts/model';
 import type { DocumentSummary } from '@neoting/contracts/model';
 
 import { listDocumentsResponse } from '@neoting/contracts/zod';
-import { fromIsoDate, fromPence, toLocalDocument } from './documents';
+import { fromIsoDate, fromPence, onStatusTab, toLocalDocument } from './documents';
 import { unwrapBody } from './envelope';
 import { documentFixtures, toPence } from './mocks/fixtures';
 import type { DocStatus, SourceChannel } from '../lib/types';
@@ -152,6 +152,25 @@ describe('state mapping', () => {
   it('carries the stable failure code through, so screens can tell the stages apart', () => {
     expect(toLocalDocument(row({ state: 'FAILED', failureCode: 'NT-EXT-0004' }), nameFor).failureCode).toBe('NT-EXT-0004');
     expect(toLocalDocument(row({ state: 'READY' }), nameFor).failureCode).toBeUndefined();
+  });
+
+  it('marks a STATEMENT document, and only a STATEMENT document (4 Sep 2026)', () => {
+    expect(toLocalDocument(row({ docType: 'STATEMENT' }), nameFor).isStatement).toBe(true);
+    expect(toLocalDocument(row({ docType: 'RECEIPT' }), nameFor).isStatement).toBeUndefined();
+    expect(toLocalDocument(row({ docType: null }), nameFor).isStatement).toBeUndefined();
+  });
+
+  it('onStatusTab hides a statement from To Review and Ready and NOWHERE else', () => {
+    const statement = toLocalDocument(row({ docType: 'STATEMENT', state: 'TO_REVIEW' }), nameFor);
+    expect(onStatusTab(statement, 'review')).toBe(false);
+    expect(onStatusTab({ ...statement, status: 'ready' }, 'ready')).toBe(false);
+    // A failed statement READ is real work and stays visible.
+    expect(onStatusTab({ ...statement, status: 'rejected' }, 'rejected')).toBe(true);
+    expect(onStatusTab({ ...statement, status: 'processing' }, 'processing')).toBe(true);
+    // An ordinary document is unaffected, and so is a synthetic row (no flag).
+    const invoice = toLocalDocument(row({ docType: 'INVOICE', state: 'TO_REVIEW' }), nameFor);
+    expect(onStatusTab(invoice, 'review')).toBe(true);
+    expect(onStatusTab({ status: 'review' }, 'review')).toBe(true);
   });
 
   it('shows the server’s own reason rather than a generic line', () => {

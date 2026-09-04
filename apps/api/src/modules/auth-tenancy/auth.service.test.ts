@@ -423,11 +423,11 @@ test('A2 REFUSAL: the SAME code cannot be replayed inside its own window', async
 });
 
 test('A2: a recovery code signs in ONCE — it is removed from the envelope, and the second use fails', async () => {
-  // ⚠ Service-level, and it has to be: `SessionCreateRequest.totp` is
-  // `pattern: '^[0-9]{6}$'` in the contract, so a nineteen-character recovery
-  // code is a 400 at the controller and never reaches here over HTTP. The
-  // mechanism is correct and unreachable — the gap is recorded in `totp.ts` and
-  // in the A2 report, and `packages/contracts` is LAW.
+  // Reachable over HTTP since 4 Sep 2026: `SessionCreateRequest.totp` was
+  // `pattern: '^[0-9]{6}$'`, which 400'd a nineteen-character recovery code at
+  // the controller and made "the only way back in" untrue. The pattern now
+  // admits the recovery shape too, so this service-level pin covers the live
+  // login path rather than a mechanism nothing could reach.
   const { service, enrolment, updates } = enrolled();
   const [first, second] = enrolment.recoveryCodes as readonly [string, string, ...string[]];
   const credentials = { email: 'priya@ledgerline.test', password: PASSPHRASE, totp: first };

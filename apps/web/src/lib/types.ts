@@ -248,6 +248,15 @@ export interface Document {
   classifyKind?: boolean | undefined;
   /** Set when nobody named a client at upload — extraction reads the addressee. */
   classifyClient?: boolean | undefined;
+  /**
+   * True when extraction classified this a bank STATEMENT (4 Sep 2026). A
+   * statement has no supplier, no single total and no category — it can never
+   * become Ready — so the To Review and Ready tabs exclude it (`onStatusTab`
+   * in `api/documents.ts`); its home is the Bank tab's Statements panel, which
+   * carries the D41 verdict. Undefined on the synthetic cast, which keeps
+   * synthetic mode byte-for-byte unchanged (METH_MODE §1).
+   */
+  isStatement?: boolean | undefined;
   /** The original file name, kept only until extraction has used it. */
   uploadFileName?: string | undefined;
   fields: ExtractedField[];
