@@ -4759,10 +4759,19 @@ components:
         password: { type: string, minLength: 1 }
         totp:
           type: string
-          pattern: '^[0-9]{6}$'
+          pattern: '^([0-9]{6}|[a-zA-Z0-9]{4}([ -]?[a-zA-Z0-9]{4}){3})$'
           description: |
-            Six digits. Demo builds verify against a fixed code
-            (`OTP_MODE=demo`); real TOTP replaces the verifier, not this shape.
+            Six digits from the authenticator — or one of the ten single-use
+            recovery codes minted at enrolment (four groups of four, hyphens
+            and case forgiven). The codes were shown to the user as "the only
+            way back in", and until 4 Sep 2026 this pattern was `^[0-9]{6}$`,
+            which made that untrue: a nineteen-character recovery code was a
+            400 at the controller and never reached the verifier that mints,
+            hashes, verifies and spends them correctly. Demo builds verify
+            against a fixed code (`OTP_MODE=demo`); real TOTP replaces the
+            verifier, not this shape. ⚠ The enrolment-confirm field below
+            deliberately stays six digits — a recovery code proves nothing
+            about whether the authenticator app received the seed.
 
     # ---- the signup chain (launch stage A14, issue #195) ------------------
 
