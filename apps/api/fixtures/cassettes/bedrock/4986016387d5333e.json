@@ -1,6 +1,6 @@
 {
   "key": "4986016387d5333e",
-  "recordedAt": "2026-09-02",
+  "recordedAt": "2026-09-04",
   "modelId": "anthropic.claude-opus-4-6-v1",
   "synthetic": true,
   "description": "chat · one turn, valid on the first answer",

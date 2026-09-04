@@ -77,6 +77,12 @@ export interface OnboardingJourney {
   verify: (otp: string) => Promise<boolean>;
   /** welcome → subscribe. No request — just the journey moving on. */
   beginSubscription: () => void;
+  /**
+   * True when the session itself said the business is already entitled — the
+   * skip in `beginSubscription` lands on the subscribed step without
+   * `subscribe()` ever running, so the view cannot learn it from an outcome.
+   */
+  alreadySubscribed: boolean;
   subscribe: () => Promise<SubscribeOutcome>;
   /** Into the business portal shell. Seed data only — live, the tab is with Stripe by then. */
   enterPortal: () => void;
@@ -172,8 +178,17 @@ export function useOnboardingJourney(setupToken: string | null): OnboardingJourn
 
   const beginSubscription = useCallback(() => {
     setFault(null);
+    // An already-entitled business skips the subscribe step (5 Sep 2026): a
+    // client who reopens their setup link after paying used to be walked back
+    // to the £8.50 screen and only learn at the checkout click (the
+    // NT-BIL-002 refusal, which remains the server-side guard). The status
+    // came with the session, so the journey can say so up front instead.
+    if (session?.subscriptionStatus === 'ACTIVE' || session?.subscriptionStatus === 'TRIALING') {
+      setStep('subscribed');
+      return;
+    }
     setStep('subscribe');
-  }, []);
+  }, [session]);
 
   const subscribe = useCallback(async (): Promise<SubscribeOutcome> => {
     setBusy(true);
@@ -261,6 +276,7 @@ export function useOnboardingJourney(setupToken: string | null): OnboardingJourn
     changeEmail,
     verify,
     beginSubscription,
+    alreadySubscribed: session?.subscriptionStatus === 'ACTIVE' || session?.subscriptionStatus === 'TRIALING',
     subscribe,
     enterPortal,
   };

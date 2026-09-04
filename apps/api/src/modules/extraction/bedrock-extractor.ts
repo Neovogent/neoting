@@ -324,6 +324,13 @@ export class BedrockExtractor implements DocumentExtractor {
       response = await this.client.messages.create({
       model: EXTRACTION_MODEL_ID,
       max_tokens: 4096,
+      // ⚠ Zero, and it was MISSING until 5 Sep 2026 — the request sampled at
+      // the model's default temperature, which is how a perfectly legible
+      // £482.40 was once read as £456.72 (the walkthrough's accuracy watch
+      // item; the same bytes read correctly six times in a row once pinned
+      // down). Extraction is a READING task: the only acceptable variance
+      // between two runs over one document is none.
+      temperature: 0,
       system: SYSTEM_PROMPT,
       tools: [
         {

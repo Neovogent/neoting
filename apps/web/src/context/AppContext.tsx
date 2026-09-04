@@ -949,6 +949,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
               // panel must never invent one. It is DISPLAY ONLY: nothing in
               // this app can write a contact email back (see `Client.email`).
               email: b.primaryContactEmail ?? undefined,
+              // Name and mobile ride the same first-wins contact row as the
+              // email (5 Sep 2026 widening) — the details panel drew a
+              // permanent em dash for both on every live client. Same stance:
+              // display only, absent stays absent.
+              contactName: b.primaryContactName ?? undefined,
+              mobile: b.primaryContactMobile ?? undefined,
+              setupLinkSentAt: b.setupLinkSentAt ?? undefined,
               bankConnected: true,
               // "Awaiting client registration" — the board prints this where the
               // sector goes, and it is a claim about the CLIENT, not about how

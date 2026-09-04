@@ -1,6 +1,7 @@
 import { randomInt } from 'node:crypto';
 
 import { Logger } from '@nestjs/common';
+import type { SubscriptionStatus } from '@prisma/client';
 
 import type { PrismaClient } from '../../common/db/prisma.js';
 import { systemContext } from '../../common/db/scope-context.js';
@@ -94,6 +95,14 @@ export interface IssuedOnboardingSession {
   readonly expiresAt: Date;
   /** The business this session was opened for — the contract's optional `PortalSession.businessId` (#205). */
   readonly businessId: string;
+  /**
+   * The business's subscription status at open (5 Sep 2026) — so the journey
+   * can skip the subscribe step for an already-entitled client instead of
+   * walking them back to the £8.50 screen. Absent when the business has never
+   * been through checkout; `NT-BIL-002` on the checkout call remains the
+   * server-side guard either way.
+   */
+  readonly subscriptionStatus?: SubscriptionStatus;
 }
 
 /**
@@ -442,7 +451,7 @@ export class PortalOnboardingService {
     }
 
     const expiresAt = new Date(nowMs + PORTAL_SESSION_TTL_MS);
-    const otpSessionId = await this.withInviteScope(resolved, async (db) => {
+    const { otpSessionId, subscriptionStatus } = await this.withInviteScope(resolved, async (db) => {
       const row = await db.otpSession.update({
         where: { linkTokenHash },
         // The code is spent. Clearing the hash is what makes it single-use —
@@ -451,7 +460,14 @@ export class PortalOnboardingService {
         data: { verifiedAt: new Date(nowMs), otpHash: null, expiresAt, ...OTP_ATTEMPTS_CLEARED },
         select: { id: true },
       });
-      return row.id;
+      // The subscription state at open (5 Sep 2026) — read inside the SAME
+      // scoped call, so the journey's skip decision and the session it rides
+      // on come from one view of the row.
+      const business = await db.business.findUnique({
+        where: { id: resolved.businessId },
+        select: { subscriptionStatus: true },
+      });
+      return { otpSessionId: row.id, subscriptionStatus: business?.subscriptionStatus ?? null };
     });
 
     // §11: the session and the tenant, never the token, the code or the address.
@@ -469,6 +485,9 @@ export class PortalOnboardingService {
       ),
       expiresAt,
       businessId: resolved.businessId,
+      // Omitted, never null, when the business has not been through checkout
+      // (`exactOptionalPropertyTypes` — an absent key is the honest shape).
+      ...(subscriptionStatus === null ? {} : { subscriptionStatus }),
     };
   }
 

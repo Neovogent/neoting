@@ -587,6 +587,39 @@ The invited client's way in (SoT §24.5, D45/D47/D48): the accountant adds a cli
 - **Stripe's return leg is two standalone screens** (`?checkout=success|cancelled`). The bearer died with the redirect — by design — so they resume nothing, and the success copy claims only "Stripe is confirming": reaching the URL is not proof of payment (the contract's own words on `successUrl`).
 - **The settings Plan section** (`BusinessSettingsView` → `PlanPanel`) is the whole of the billing UI beyond checkout: status, renewal date, the price as copy, and a button that mints a Stripe customer-portal session (`POST /billing/portal-sessions`) — card changes, invoices and cancellation are Stripe's pages, deliberately none of ours. Disabled with the demo note on seed data (the S12 rule: a button whose action cannot happen is worse than absent). `BusinessAccount.subscription` (`BusinessPlan` in `lib/types.ts`) is the seed-side stand-in for the contract's `BusinessSubscription`.
 
+### Three staging findings closed together (5 Sep 2026)
+
+One contract widening served all three (`BusinessSummary` gains
+`primaryContactName` / `primaryContactMobile` / `setupLinkSentAt`, `PortalSession`
+gains an optional `subscriptionStatus`; the server halves are in
+`auth-tenancy/businesses.service.ts` and `portal/portal-onboarding.service.ts`):
+
+- **Client details showed "—" for contact name and mobile on every live row.**
+  `AppContext.liveClients` now maps `contactName`/`mobile` from the widened
+  summary — the same first-wins primary-contact row as the email, display only.
+- **The setup-link panel lied twice live.** The synthetic branch reads the
+  seeded `OnboardingLink` array, which is EMPTY with the API on, so every real
+  client read "No setup link has been sent — add a mobile number first": false
+  (intake emails the link at creation) and doubly false (the link travels by
+  EMAIL, M8). `SetupLinkLivePanel` in `ClientDetailView.tsx` is the live half —
+  sent date off `Client.setupLinkSentAt`, re-send through the REAL
+  `inviteBusinessMember` (`api/setup-link.ts`: a fresh invite IS the re-send;
+  the server's create-if-absent contact rule means nothing accumulates; a 429
+  renders with its code because the invite row was recorded and the email was
+  not sent). Gated on the contact EMAIL, never a mobile. The synthetic branch
+  is untouched (METH_MODE §1).
+- **Onboarding re-offered the £8.50 subscribe step to an ACTIVE client.**
+  `openOnboardingSession` now carries `subscriptionStatus` through the parse
+  (`api/onboarding.ts`, `.nullish()` on the non-strict shape — keep it
+  tolerant), and `useOnboardingJourney.beginSubscription` skips straight to the
+  subscribed step on `ACTIVE`/`TRIALING`, exposing `alreadySubscribed` so the
+  view shows the "already subscribed" copy without `subscribe()` ever running.
+  `NT-BIL-002` remains the server-side guard either way.
+
+Bundle: `ClientDetailView`'s closure measured **247,578 B** after the change
+(node-zlib closure walk over the manifest — the measure script's `gzip` shell-out
+does not run on Windows), under the 250,000 budget with ~2.4 kB of headroom.
+
 ### The chase portal (`/p/:linkToken`) — METH Stage 9
 
 The narrowest surface in the product, and the only one wired to the API today. No account, no password, no browsing: a delegated session that may see the items one chase asked for and add documents to them.

@@ -181,6 +181,10 @@ export class PortalController {
       token: issued.token,
       expiresAt: issued.expiresAt.toISOString(),
       businessId: issued.businessId,
+      // The subscription state at open (5 Sep 2026) — the journey skips the
+      // subscribe step for an already-entitled business instead of walking
+      // them back to the £8.50 screen. Omitted when never subscribed.
+      ...(issued.subscriptionStatus === undefined ? {} : { subscriptionStatus: issued.subscriptionStatus }),
     };
   }
 

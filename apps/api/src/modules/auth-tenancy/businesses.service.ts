@@ -114,7 +114,7 @@ export class BusinessesService {
     };
     const seek = pageQuery(request);
 
-    const { rows, grouped, chases, unmatched, approvals, statementGaps, primaryContacts } = await scopedDb(this.prisma, ctx, async (db) => {
+    const { rows, grouped, chases, unmatched, approvals, statementGaps, primaryContacts, inviteTimes } = await scopedDb(this.prisma, ctx, async (db) => {
       const rows = await db.business.findMany({
         // NOT a tenancy clause (RLS alone decides reach) — a STATE filter:
         // an offboarded workspace (`business.offboard` flipped `isActive`
@@ -136,7 +136,7 @@ export class BusinessesService {
       // practice has. They are issued together — inside the one `scopedDb`
       // transaction, so every one of them sees the same RLS-visible set the
       // page itself came from, and none can widen it.
-      const [grouped, chases, unmatched, approvals, statementGaps, primaryContacts] = await Promise.all([
+      const [grouped, chases, unmatched, approvals, statementGaps, primaryContacts, inviteTimes] = await Promise.all([
         db.document.groupBy({
           // `docType` rides in the grouping so the fold can exclude STATEMENT
           // documents from toReview/ready — the review tabs exclude them too
@@ -215,20 +215,35 @@ export class BusinessesService {
         // answer and the UI renders as an em dash.
         db.contact.findMany({
           where: { businessId: { in: ids }, isPrimary: true },
-          select: { businessId: true, email: true },
-          // Earliest first, so `foldPrimaryContactEmails`' first-wins is
+          // Name and mobile joined the select on 5 Sep 2026: the client's
+          // Settings tab rendered PRIMARY CONTACT and MOBILE rows this
+          // response had no fields for, so intake-captured facts drew as
+          // permanent em dashes and the setup-link panel gated its send button
+          // on a mobile it could never see.
+          select: { businessId: true, email: true, firstName: true, lastName: true, mobileE164: true },
+          // Earliest first, so `foldPrimaryContacts`' first-wins is
           // "the primary contact this client has had longest" rather than
           // whichever row the planner happened to return first. Intake writes
           // exactly one primary, so this only decides a case that should not
           // arise — but "should not arise" is not an ordering guarantee.
           orderBy: { createdAt: 'asc' },
         }),
+        // The send FACT for `setupLinkSentAt` (5 Sep 2026): the latest invite's
+        // own timestamp, per business — never the token, which lives hashed.
+        // The panel used to read a synthetic array and therefore claimed "no
+        // setup link has been sent" straight after intake emailed one.
+        db.invite.groupBy({
+          by: ['businessId'],
+          where: { businessId: { in: ids } },
+          _max: { createdAt: true },
+        }),
       ]);
-      return { rows, grouped, chases, unmatched, approvals, statementGaps, primaryContacts };
+      return { rows, grouped, chases, unmatched, approvals, statementGaps, primaryContacts, inviteTimes };
     });
 
     const counts = foldCounts(grouped, chases, unmatched, approvals, statementGaps);
-    const primaryContactEmails = foldPrimaryContactEmails(primaryContacts);
+    const contactsByBusiness = foldPrimaryContacts(primaryContacts);
+    const setupLinkTimes = new Map(inviteTimes.map((row) => [row.businessId, row._max.createdAt]));
     const page = toPage(rows, request);
     return {
       data: page.data.map((row) => ({
@@ -247,7 +262,13 @@ export class BusinessesService {
         // §3.3 phone-only contact is a real record). Both are the same honest
         // answer: we do not hold an email for this client. Nothing derives one
         // from the practice, the trading name or a team member.
-        primaryContactEmail: primaryContactEmails.get(row.id) ?? null,
+        primaryContactEmail: contactsByBusiness.get(row.id)?.email ?? null,
+        // Name and mobile from the SAME first-wins row as the email — three
+        // facts about one person, never three lookups that could disagree.
+        primaryContactName: contactsByBusiness.get(row.id)?.name ?? null,
+        primaryContactMobile: contactsByBusiness.get(row.id)?.mobile ?? null,
+        // The latest invite's own timestamp, or null when none was ever sent.
+        setupLinkSentAt: setupLinkTimes.get(row.id)?.toISOString() ?? null,
         counts: counts.get(row.id) ?? ZERO_COUNTS,
         // The D48 projection, from the four columns already on the row — no
         // second query and no second round-trip. `error-codes.md` asks for it
@@ -293,13 +314,33 @@ function toIsoDate(value: Date): string {
  *
  * Exported for its test.
  */
-export function foldPrimaryContactEmails(
-  contacts: ReadonlyArray<{ businessId: string; email: string | null }>,
-): Map<string, string | null> {
-  const byBusiness = new Map<string, string | null>();
+export interface PrimaryContactFacts {
+  readonly email: string | null;
+  readonly name: string | null;
+  readonly mobile: string | null;
+}
+
+export function foldPrimaryContacts(
+  contacts: ReadonlyArray<{
+    businessId: string;
+    email: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+    mobileE164?: string | null;
+  }>,
+): Map<string, PrimaryContactFacts> {
+  const byBusiness = new Map<string, PrimaryContactFacts>();
   for (const contact of contacts) {
     if (byBusiness.has(contact.businessId)) continue;
-    byBusiness.set(contact.businessId, contact.email);
+    // "Ana Rossi", "Ana", "Rossi" — whatever the row holds, joined; null when
+    // it holds neither half. A contact with no name is a real §3.3 record and
+    // the panel renders an em dash rather than the email retyped as a name.
+    const name = [contact.firstName, contact.lastName].filter((part) => part != null && part !== '').join(' ');
+    byBusiness.set(contact.businessId, {
+      email: contact.email,
+      name: name === '' ? null : name,
+      mobile: contact.mobileE164 ?? null,
+    });
   }
   return byBusiness;
 }

@@ -95,6 +95,14 @@ export interface OnboardingSession {
    * it. See the note on {@link onboardingSessionShape}.
    */
   businessId: string | null;
+  /**
+   * The subscription status at open (5 Sep 2026) — `ACTIVE`/`TRIALING` lets
+   * the journey skip the subscribe step instead of walking an already-paying
+   * client back to the £8.50 screen. Null until the server sends it (an older
+   * server, or a business that has never been through checkout); the checkout
+   * call's `NT-BIL-002` refusal remains the guard either way.
+   */
+  subscriptionStatus: string | null;
 }
 
 /**
@@ -120,6 +128,9 @@ const onboardingSessionShape = z.object({
   token: z.string().min(1),
   expiresAt: z.string(),
   businessId: z.string().min(1).nullish(),
+  // Same stance as businessId: optional in the contract (a chase session never
+  // carries it), tolerant here so an older server still parses.
+  subscriptionStatus: z.string().min(1).nullish(),
 });
 
 /**
@@ -137,7 +148,12 @@ export async function openOnboardingSession(
   const request = setupToken === undefined ? { email, otp } : { email, otp, setupToken };
   createPortalOnboardingSessionBody.parse(request);
   const body = onboardingSessionShape.parse(unwrapBody(await createPortalOnboardingSession(request)));
-  return { token: body.token, expiresAt: body.expiresAt, businessId: body.businessId ?? null };
+  return {
+    token: body.token,
+    expiresAt: body.expiresAt,
+    businessId: body.businessId ?? null,
+    subscriptionStatus: body.subscriptionStatus ?? null,
+  };
 }
 
 /** A Stripe-hosted URL. One shape for checkout and the customer portal. */

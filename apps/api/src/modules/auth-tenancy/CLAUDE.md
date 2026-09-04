@@ -506,6 +506,19 @@ Three things about it that are decisions:
   dash. The gap it closes: the client's Settings tab had no email row at all,
   while ID chases by EMAIL (M8) — the one channel used was the one not shown.
 
+**Widened again 5 Sep 2026 — the same contact row now carries three facts, plus
+`setupLinkSentAt`** (staging finding: the details panel drew a permanent em dash
+for contact name and mobile on every live client, and the setup-link panel
+claimed no link had ever been sent). `foldPrimaryContactEmails` became
+`foldPrimaryContacts`, returning `{email, name, mobile}` off the SAME first-wins
+row — never three lookups, or the name and the mobile could belong to different
+people (pinned by test). `name` is firstName+lastName joined, null when both are
+empty — never the email retyped. A **sixth** read joins the `Promise.all`:
+`invite.groupBy` per business, `_max(createdAt)` → `setupLinkSentAt` — the
+newest invite is when the setup link was last emailed, the fact intake's A11
+records and nothing exposed. All three new fields are nullable in the contract
+and display-only in the web app.
+
 Four `groupBy`s over the whole page, issued together inside the ONE `scopedDb`
 transaction — the query count is fixed regardless of how many clients a
 practice has, and every aggregate sees the same RLS-visible set the page came

@@ -44,6 +44,13 @@ export interface Client {
    * contract operation that does not exist yet.
    */
   email?: string | undefined;
+  /**
+   * When the newest setup invite was created for this business (ISO instant),
+   * from `BusinessSummary.setupLinkSentAt` on a live row. Lets the setup-link
+   * panel say "sent on {date}" instead of the false "no link has been sent" it
+   * showed for every live client. Display only, like the contact fields.
+   */
+  setupLinkSentAt?: string | undefined;
   vatNumber?: string | undefined;
   /** Ltd, LLP, sole trader… — drives the filings the client is subject to. */
   companyType?: string | undefined;

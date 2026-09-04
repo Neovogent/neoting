@@ -6564,6 +6564,20 @@ components:
             ⚠ It is an ANSWER, never an instruction. A caller who sends a
             different `businessId` on a portal-authenticated checkout gets a
             404, because the session decides whose subscription this is.
+        subscriptionStatus:
+          oneOf:
+            - $ref: '#/components/schemas/SubscriptionStatus'
+            - type: 'null'
+          description: |
+            The business's subscription status at the moment the ONBOARDING
+            session opened — present only on `createPortalOnboardingSession`
+            answers, like `businessId` above, and added 5 Sep 2026 so the
+            journey can skip the subscribe step for a business that is already
+            entitled. Before it, a client who reopened their setup link was
+            walked to the £8.50 screen again and only learned at the checkout
+            click (the `NT-BIL-002` refusal, which remains the server-side
+            guard either way). Null when the business has never been through
+            checkout; a chase session never carries it.
 
     StatementAssurance:
       type: string
@@ -7809,6 +7823,35 @@ components:
             is worse than an em dash.
           type: [string, 'null']
           format: email
+        primaryContactName:
+          description: |
+            The primary contact's display name, from the same `contacts` row as
+            `primaryContactEmail` and under the same rules: optional and
+            nullable because "we do not hold one" is a true answer, first-wins
+            on `is_primary` + earliest `created_at`, never derived. Added
+            5 Sep 2026 because the client's Settings tab rendered a PRIMARY
+            CONTACT row this schema had no field for — a permanent em dash over
+            a name intake had captured.
+          type: [string, 'null']
+        primaryContactMobile:
+          description: |
+            The primary contact's registered mobile (`contacts.mobile_e164`),
+            same row and same rules as the name. The MOBILE row beside it had
+            the identical permanent-em-dash defect — worse here, because the
+            setup-link panel gated its send button on this value and told the
+            accountant to "add a mobile number first" about a client whose
+            mobile intake had stored.
+          type: [string, 'null']
+        setupLinkSentAt:
+          description: |
+            When the most recent setup invite for this business was created
+            (`invites.created_at`, latest first), or null when none has ever
+            been sent. Added 5 Sep 2026 because the setup-link panel could only
+            read a synthetic array and therefore told the accountant "No setup
+            link has been sent" immediately after intake emailed exactly that
+            link. This is the send FACT, not the link — no token travels here.
+          type: [string, 'null']
+          format: date-time
         counts:
           type: object
           description: |

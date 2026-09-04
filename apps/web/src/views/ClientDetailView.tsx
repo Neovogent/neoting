@@ -46,6 +46,8 @@ import { fromSlug, slug, useQueryParam, useSegment } from '../lib/router';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { OffboardClientDialog } from '../components/DynamicComponents/OffboardClientDialog';
 import { channelLabel } from '../lib/channels';
+import { resendClientSetupLink } from '../api/setup-link';
+import { errorLabel } from '../api/slices';
 import type { ApprovalWorkflow, BusinessMemberRole, Client, ClientDetailChange, Colleague, Document, Intent, MissingItem, SetupTask, WorkflowTask } from '../lib/types';
 
 /**
@@ -448,6 +450,41 @@ const m = defineMessages({
     id: 'clients.clientDetailView.setupNeedsMobile',
     defaultMessage: 'Add a mobile number first.',
   },
+  // The live panel (5 Sep 2026). The synthetic branch reads the seeded
+  // OnboardingLink array, which is EMPTY with the API on — so every real
+  // client was told "No setup link has been sent … add a mobile number
+  // first", both halves false: intake emails the link at creation (A11), and
+  // it travels by EMAIL, not SMS (M8). These ids serve the facts the server
+  // actually has.
+  setupSentLive: {
+    id: 'clients.clientDetailView.setupSentLive',
+    defaultMessage:
+      'The setup link was emailed when this client was added. Signing in with it is how they register and subscribe.',
+  },
+  setupExpiresDaysValue: {
+    id: 'clients.clientDetailView.setupExpiresDaysValue',
+    defaultMessage: '{days} days from sending',
+  },
+  setupNoLinkSentLive: {
+    id: 'clients.clientDetailView.setupNoLinkSentLive',
+    defaultMessage: 'No setup link has been sent yet.',
+  },
+  resendSetupLiveDetail: {
+    id: 'clients.clientDetailView.resendSetupLiveDetail',
+    defaultMessage: 'A fresh setup link will be emailed to {email}. Links already sent keep working until they expire.',
+  },
+  setupResendSent: {
+    id: 'clients.clientDetailView.setupResendSent',
+    defaultMessage: 'A fresh setup link was emailed to {email}.',
+  },
+  setupResendFailed: {
+    id: 'clients.clientDetailView.setupResendFailed',
+    defaultMessage: 'That did not send. Try again.',
+  },
+  setupNeedsEmail: {
+    id: 'clients.clientDetailView.setupNeedsEmail',
+    defaultMessage: 'This client has no contact email on file, so a setup link cannot be emailed.',
+  },
 
   // ── Modals ──────────────────────────────────────────────────────────────
   chaseReviewNote: {
@@ -592,7 +629,8 @@ export function ClientDetailView() {
    * product never performed — the button is disabled with the reason (the
    * PlanPanel posture) rather than wired to a lie.
    */
-  const canOffboard = slices.businesses.source === 'api';
+  const businessesLive = slices.businesses.source === 'api';
+  const canOffboard = businessesLive;
   const [removing, setRemoving] = useState(false);
   /** The proposal is queued — the client stays until Approvals decides it. */
   const [removalQueued, setRemovalQueued] = useState(false);
@@ -1551,7 +1589,14 @@ export function ClientDetailView() {
                   every connection from onboarding, so there is nothing else a
                   client could be asked to do. */}
               <Panel title={intl.formatMessage(m.panelSetupLink)} icon={Smartphone}>
-                {setupLink ? (
+                {/* Live rows come from the server (setupLinkSentAt, the
+                    primary contact's email); the synthetic branches below read
+                    the seeded OnboardingLink array, which is EMPTY with the
+                    API on and used to render a false "no link has been sent —
+                    add a mobile number first" for every real client. */}
+                {businessesLive ? (
+                  <SetupLinkLivePanel clientId={client.id} email={contactEmail} sentAt={client.setupLinkSentAt} />
+                ) : setupLink ? (
                   <>
                     <div className="flex flex-col gap-2.5 text-[13px]">
                       <Row label={intl.formatMessage(m.rowSentTo)} value={intl.formatMessage(m.setupSentToValue, { name: setupLink.recipientName, mobile: setupLink.recipientMobile })} />
@@ -1873,6 +1918,89 @@ const detailsPanelMessages = defineMessages({
       "These are the business's own facts, so {client} confirms any change before it takes effect. It appears in their portal alongside anything else waiting on them.",
   },
 });
+
+/**
+ * The setup-link panel's LIVE half (5 Sep 2026, staging finding). It renders
+ * the contract's own facts — `setupLinkSentAt` off the businesses slice, the
+ * primary contact's email — and re-sends through the real invite operation:
+ * a fresh invite IS the re-send (`api/setup-link.ts` carries the argument).
+ * There is no false gate on a mobile number here; the link travels by email.
+ * The synthetic half is untouched (METH_MODE §1).
+ */
+function SetupLinkLivePanel({ clientId, email, sentAt }: { clientId: string; email: string; sentAt: string | undefined }) {
+  const intl = useIntl();
+  const confirm = useConfirm();
+  const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<{ kind: 'sent' } | { kind: 'failed'; label: string } | null>(null);
+
+  const send = async () => {
+    // The confirm's copy must not claim the old link stops working — the
+    // server keeps every un-expired invite live, deliberately (a client mid-
+    // journey on the first link is not knocked off it by an impatient resend).
+    if (sentAt !== undefined) {
+      const ok = await confirm({
+        title: intl.formatMessage(m.resendSetupLink),
+        detail: intl.formatMessage(m.resendSetupLiveDetail, { email }),
+        confirmLabel: intl.formatMessage(m.resendConfirmLabel),
+      });
+      if (!ok) return;
+    }
+    setBusy(true);
+    setOutcome(null);
+    try {
+      await resendClientSetupLink(clientId, email);
+      setOutcome({ kind: 'sent' });
+    } catch (error) {
+      // A 429 means the invite row was recorded and the EMAIL was refused —
+      // the label keeps the NT- code in front of the server's own words, so
+      // the accountant is never told an email left when it did not.
+      setOutcome({ kind: 'failed', label: errorLabel(error) ?? intl.formatMessage(m.setupResendFailed) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <p className="text-[13px] text-zinc-500 leading-relaxed">
+        {intl.formatMessage(sentAt === undefined ? m.setupNoLinkSentLive : m.setupSentLive)}
+      </p>
+      {sentAt !== undefined && (
+        <div className="flex flex-col gap-2.5 text-[13px] mt-4">
+          <Row label={intl.formatMessage(m.rowSentTo)} value={email || '—'} />
+          <Row
+            label={intl.formatMessage(m.rowSent)}
+            value={intl.formatDate(new Date(sentAt), { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Europe/London' })}
+          />
+          {/* 7 is the server's SETUP_LINK_TTL_DAYS — the contract carries no
+              expiry field, so the figure is stated rather than read. */}
+          <Row label={intl.formatMessage(m.rowExpires)} value={intl.formatMessage(m.setupExpiresDaysValue, { days: 7 })} />
+        </div>
+      )}
+      <button
+        onClick={() => void send()}
+        disabled={!email || busy}
+        className="mt-4 flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-brand-on bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+      >
+        <Send size={15} />
+        {intl.formatMessage(sentAt === undefined ? m.sendSetupLink : m.resendSetupLink)}
+      </button>
+      {!email && (
+        <p className="text-[12px] text-amber-400 font-semibold mt-3">{intl.formatMessage(m.setupNeedsEmail)}</p>
+      )}
+      {outcome?.kind === 'sent' && (
+        <p role="status" className="text-[12px] text-brand font-semibold mt-3">
+          {intl.formatMessage(m.setupResendSent, { email })}
+        </p>
+      )}
+      {outcome?.kind === 'failed' && (
+        <p role="alert" className="text-[12px] text-amber-400 font-semibold mt-3">
+          {outcome.label}
+        </p>
+      )}
+    </>
+  );
+}
 
 /**
  * The client's own record. Editing it here is a proposal, not a write: a legal

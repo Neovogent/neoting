@@ -1,0 +1,25 @@
+{
+  "key": "e0886ec7ff3b04b7",
+  "recordedAt": "2026-09-04",
+  "modelId": "anthropic.claude-sonnet-4-6",
+  "synthetic": true,
+  "description": "extraction · OCR text path · malformed model output (SYNTHETIC by design)",
+  "response": {
+    "stop_reason": "tool_use",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_REDACTED",
+        "name": "record_extraction",
+        "input": {
+          "docType": "NOT_A_TYPE",
+          "supplierName": "Acme Ltd"
+        }
+      }
+    ],
+    "usage": {
+      "input_tokens": 640,
+      "output_tokens": 41
+    }
+  }
+}
