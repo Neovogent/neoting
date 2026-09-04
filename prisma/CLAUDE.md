@@ -163,6 +163,29 @@ nothing looks exactly like there being nothing. `backfill-system-actors.ts` gets
 away with a root-client read only because `practices`, `users` and `memberships`
 carry no policies at all.
 
+## `chat_conversations` — `20260905190000_chat_conversations` (5 Sep 2026)
+
+One new table, additive, writes no data (review item 9 — saved workspace-chat
+transcripts). The schema doc comment carries the design; what belongs here:
+
+- **The RLS lesson above was applied FORWARD for once**: `business_id` is
+  nullable (a conversation with no client attached), so the table joins the
+  FORCE-RLS loop but NOT `direct_tables` — its policy is the anchor-pair
+  `app_can_access_document(business_id, practice_id)`, written out beside
+  `otp_sessions_tenant`. A third nullable-anchor table, and the first added
+  with the right policy on day one.
+- **`messages` is one JSONB column, not a child table** — a transcript is read
+  and replaced whole (PUT-upsert, ≤200 messages by contract), and a message
+  table would need its own policy for rows carrying no tenant column.
+- **`@@unique([practiceId, createdByUserId, clientKey])`** namespaces the
+  CALLER's own conversation id — the web app's `/chat/:id` segment — so it
+  carries no cross-tenant authority. WHO within the practice may read a row is
+  the service's `createdByUserId` filter, an application guarantee on top of
+  the policy, same shape as the portal's chase boundary.
+- ⚠ Index names in the migration are Prisma's own 63-char truncations
+  (`…client_ke_key`, `…updated_a_idx`) — hand-shortening them differently makes
+  `migrate diff` report renames forever.
+
 ## Documents are practice-anchored until they are business-anchored
 
 Issue #17. `documents.business_id` is **nullable** and `documents.practice_id` was added, because `inbox` defaults to `UNROUTED` — a document from a sender we do not recognise has no business until routing says so, and a NOT NULL `business_id` made that state unwritable.

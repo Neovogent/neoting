@@ -5,7 +5,9 @@ import type { WorkspaceRole } from '@neoting/contracts/model';
 import { useAppContext } from '../context/AppContext';
 import { useEscape } from '../lib/useEscape';
 import { Wordmark } from '../assets/Wordmark';
+import { API_ENABLED } from '../api/config';
 import { DataSourceBadge } from './DataSourceBadge';
+import { NotificationsBell } from './NotificationsBell';
 
 /**
  * The persistent context header (SoT §13.3, METH Stage 6): who is signed in,
@@ -111,6 +113,10 @@ export function ContextHeader() {
 
       <span className="flex items-center gap-3 min-w-0">
         {badges}
+        {/* The bell (review item 12): live sign of document arrival. Inside the
+            authenticated branch, and only with the API on — synthetic mode has
+            no server to have written a notification row. */}
+        {API_ENABLED && <NotificationsBell />}
         <span className="relative shrink-0">
           <button
             onClick={() => setMenuOpen((open) => !open)}

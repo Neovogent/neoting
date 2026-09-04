@@ -884,6 +884,14 @@ export interface Conversation {
   attachedClientIds: string[];
   pinned: boolean;
   updatedAt: number;
+  /**
+   * Set on a conversation hydrated from `GET /chat/conversations` whose
+   * transcript has not been fetched yet (the list is summaries only — review
+   * item 9, 5 Sep 2026). The drawer treats a row with a remote count as
+   * "started" even while `messages` is still empty, and opening it is what
+   * fetches the detail.
+   */
+  remoteMessageCount?: number | undefined;
 }
 
 export type Intent =
@@ -915,6 +923,10 @@ export type Intent =
   | 'SHOW_ANALYTICS'
   | 'SHOW_AUDIT'
   | 'SHOW_MISSING_TABLE'
+  // Review item 9 (5 Sep 2026): the server's SHOW_EXPORTS lands here —
+  // navigation to the Export screen, D42's sole egress. Payload-free like
+  // SHOW_STATEMENTS; the Export screen reads its own data.
+  | 'SHOW_EXPORTS'
   // The METH Stage 13 golden paths — emitted only by the canned demo table
   // when the workspace session is live, rendered by the LIVE cards whose
   // state changes go through the real proposal engine.
@@ -937,6 +949,7 @@ export const READ_ONLY_INTENTS: Intent[] = [
   'SHOW_ANALYTICS',
   'SHOW_AUDIT',
   'SHOW_MISSING_TABLE',
+  'SHOW_EXPORTS',
   'LIVE_MISSING',
 ];
 

@@ -162,6 +162,11 @@ export const SERVER_INTENT_TO_APP = {
   // reads `GET /statements` itself. Nothing about a statement — period, row
   // count, assurance — travels through the model to get here.
   SHOW_STATEMENTS: 'SHOW_STATEMENTS',
+  // Review item 9 (5 Sep 2026): the two navigation intents that close the
+  // standing dead ends — the export ask (prose until now) and the approvals
+  // ask (fell to GENERAL). Both payload-free; the screens read their own data.
+  SHOW_EXPORTS: 'SHOW_EXPORTS',
+  SHOW_APPROVALS: 'SHOW_APPROVALS',
   REVIEW_DOCUMENT: 'REVIEW_DOCUMENT',
   // Both grounded shapes render as plain assistant text — the answer IS the
   // card. References ride along in the payload for the reference chips.

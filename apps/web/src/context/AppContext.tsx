@@ -458,6 +458,17 @@ interface AppContextType {
   // Conversation actions
   addMessage: (msg: Message) => void;
   setMessages: (msgs: Message[]) => void;
+  /**
+   * Server-persisted conversations (review item 9, 5 Sep 2026). Both are
+   * HYDRATION entry points called by `api/chatConversations.ts`'s sync hook,
+   * which lives on the AI-workspace chunk — the generated conversations client
+   * must never land on the bundle floor, and these two functions are why it
+   * does not have to: AppContext owns the state, the lazy chunk owns the wire.
+   */
+  hydrateConversations: (
+    summaries: readonly { id: string; title: string; pinned: boolean; businessId: string | null; messageCount: number; updatedAt: string }[],
+  ) => void;
+  hydrateConversationMessages: (id: string, msgs: Message[]) => void;
   newConversation: () => void;
   selectConversation: (id: string) => void;
   deleteConversation: (id: string) => void;
@@ -1353,6 +1364,54 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const togglePinConversation = useCallback((id: string) => {
     setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, pinned: !c.pinned } : c)));
   }, []);
+
+  /**
+   * Merge the server's saved conversations into the drawer (review item 9,
+   * 5 Sep 2026). ADD-ONLY for ids already present: the open tab's local state
+   * is newer than any summary — a reload is when the server's copy matters,
+   * and on a reload nothing local exists to lose. Summaries carry no
+   * transcript; `remoteMessageCount` is what tells the drawer a row is real
+   * and tells the sync hook the messages still need fetching.
+   */
+  const hydrateConversations = useCallback(
+    (
+      summaries: readonly {
+        id: string;
+        title: string;
+        pinned: boolean;
+        businessId: string | null;
+        messageCount: number;
+        updatedAt: string;
+      }[],
+    ) => {
+      setConversations((prev) => {
+        const present = new Set(prev.map((c) => c.id));
+        const added = summaries
+          .filter((s) => !present.has(s.id))
+          .map((s) => ({
+            id: s.id,
+            title: s.title,
+            messages: [],
+            attachedClientIds: s.businessId === null ? [] : [s.businessId],
+            pinned: s.pinned,
+            updatedAt: Date.parse(s.updatedAt) || Date.now(),
+            remoteMessageCount: s.messageCount,
+          }));
+        return added.length === 0 ? prev : [...prev, ...added];
+      });
+    },
+    [],
+  );
+
+  /** The fetched transcript for a hydrated summary — messages land, the needs-loading marker clears. */
+  const hydrateConversationMessages = useCallback(
+    (id: string, msgs: Message[]) => {
+      setConversations((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, messages: msgs, remoteMessageCount: undefined } : c)),
+      );
+    },
+    [],
+  );
 
   const attachClient = useCallback(
     (id: string) => {
@@ -2922,6 +2981,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setAssistantPending,
         addMessage,
         setMessages,
+        hydrateConversations,
+        hydrateConversationMessages,
         newConversation: startFresh,
         selectConversation,
         deleteConversation,

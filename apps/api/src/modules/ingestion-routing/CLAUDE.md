@@ -137,6 +137,17 @@ loads the map for the RESOLVED practice and hands it to `processEmail`; the
 loader is optional (absent → empty map = prior behaviour). `decideRouting` and
 the schema are untouched. See `email/CLAUDE.md`.
 
+### The sink writes the bell's row (5 Sep 2026, review item 12)
+
+`document-sink.ts` writes a `document.received` notification — same transaction
+as the document, `created`-guarded so a redelivery writes no second toast —
+for a ROUTED email/WhatsApp arrival. UNROUTED is skipped (no business to hang
+the row on; the Unrouted queue is its own surface), and the accountant's own
+WEB_UPLOAD/CHAT_UPLOAD never reach the sink. This joins the portal notifier's
+`portal.upload` and auto-close's `chase.closed` on the one `notifications`
+table, which `modules/notifications`' new inbox surface now serves to the web
+header's bell. Pinned in `document-sink.integration.test.ts`.
+
 ### Document persistence through `scopedDb` (issue #20)
 
 `queue/document-sink.ts` — the worker now *writes*. `DocumentSink.persist(input)`

@@ -45,6 +45,13 @@ export const ChatIntentSchema = z.enum([
   // transcript. The turn itself creates nothing — submission goes through
   // `POST /businesses` with every check that operation already carries.
   'ADD_CLIENT',
+  // Review item 9 (5 Sep 2026) — the two standing dead ends, both navigation
+  // and nothing else (the SHOW_STATEMENTS shape: no field a figure or an id
+  // could travel in). SHOW_EXPORTS points at D42's sole egress screen — the
+  // chat may only ever describe or navigate around an export, never create
+  // one. SHOW_APPROVALS points at the Review → Approve queue.
+  'SHOW_EXPORTS',
+  'SHOW_APPROVALS',
 ]);
 
 export type ChatIntentValue = z.infer<typeof ChatIntentSchema>;

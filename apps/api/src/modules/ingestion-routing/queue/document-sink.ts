@@ -146,6 +146,32 @@ export class PrismaDocumentSink implements DocumentSink {
         },
       });
 
+      // The bell's row (review item 12, 5 Sep 2026): a document arriving by
+      // email or WhatsApp writes the same `notifications` row a portal upload
+      // has written since Stage 9 (`portal.upload`) — one inbox, three writers.
+      // Same transaction as the document, so a notification can never name a
+      // row that was rolled back; same `created`-guard as everything above, so
+      // a redelivery writes no second toast.
+      //
+      // An UNROUTED document (businessId null) is deliberately skipped:
+      // `notifications.business_id` is NOT NULL, the Unrouted queue is its own
+      // visible surface, and routing it later is the moment it becomes a
+      // client's document. The accountant's own WEB_UPLOAD/CHAT_UPLOAD never
+      // reach this sink, so nothing here notifies a person about their own act.
+      if (input.businessId !== null) {
+        await db.notification.create({
+          data: {
+            businessId: input.businessId,
+            event: 'document.received',
+            payload: {
+              documentId,
+              channel: input.channel,
+              traceId: input.traceId,
+            } as Prisma.InputJsonValue,
+          },
+        });
+      }
+
       return { documentId, created: true };
     });
   }

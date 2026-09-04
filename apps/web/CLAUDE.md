@@ -84,6 +84,57 @@ SoT v1.6 §24 scopes the first paid client release. Five of its decisions land s
 - ⚠ `getChaseResponse` is orval's strict-intersection `allOf` gap (see `packages/contracts/CLAUDE.md`): the generated schema rejects every valid `Chase`. `chases.ts` parses the two halves separately (`parseChaseDetail`), pinned by test; a detail that still fails degrades to its list-validated summary with items/messages withheld rather than felling the board (known case: seeded `chs_003` serves `items: []` against the contract's `minItems: 1` — flagged as a pass-3 contract question).
 - The outbox panel builds the tappable link with `portalPathFrom` — last path segment of whatever followed `Upload securely: `, re-homed as `/p/<token>` — and opens it in a phone-sized window (the demo's "client's phone" beat). The first two fill the array every existing mutator already writes to rather than becoming a second source beside it: the pipeline derives approvals, chases, duplicates and every client statistic from those arrays, so a parallel list would have half the app disagreeing with the other half about what exists. All are behind `VITE_API_ENABLED` — and, since S6, additionally gated on the session being authenticated (see *The session and the login wall* above); when the gate is shut the query never runs and the seeds stand. Outside `AppContext` entirely, the chase portal (`/p/:linkToken`, METH Stage 9) is fully wired — see *Client-facing surfaces* below. It was deliberately the first full surface: it is the narrowest, its three operations are contracted, and nothing else in the app derives anything from it, so it could move without taking the pipeline's derived state with it.
 
+### The bell, and saved conversations (5 Sep 2026 — review items 12 and 9)
+
+**The bell** (`components/NotificationsBell.tsx` over `api/notifications.ts`) is
+the live sign of document arrival: `GET /v1/notifications` polled at 10 s + on
+focus, badge = the server's whole-practice `unreadCount` (never a page-derived
+count), dropdown in the ContextHeader's own hand-rolled pattern (fixed backdrop,
+absolute panel, `useEscape`), "Mark all read" through
+`POST /v1/notifications/read-receipts` then a refetch — server truth, never a
+prediction. Rendered only in the authenticated branch and only with
+`API_ENABLED` (synthetic has no server to have written a row). An event this
+build does not know renders the honest generic line, so a new server-side
+writer shows up rather than vanishing. Clicking a row opens the client.
+
+**Saved conversations** (`api/chatConversations.ts`, mounted as
+`useConversationSync()` from `AIWorkspaceView` — the lazy chunk, deliberately:
+the generated conversations client must stay off the floor, which is why
+AppContext only grew two hydration entry points, `hydrateConversations` and
+`hydrateConversationMessages`). The drawer hydrates from
+`GET /chat/conversations` (summaries; `Conversation.remoteMessageCount` marks a
+row whose transcript is unfetched and keeps it visible in `LeftPanel`'s
+started-filter), the active transcript is fetched on open, and a debounced
+reconciler PUTs each changed conversation whole (`saveChatConversation` —
+title, pin, scope, messages; text + intent name ONLY, never a payload/draft —
+`fingerprintOf` says exactly what a save covers and its test pins that payload
+churn does not re-PUT) and posts a deletion for known ids that disappear.
+`POST /chat/turns` stays side-effect-free; persistence is this caller's own
+act. Synthetic mode never runs any of it. A restored transcript renders text
+bubbles (plus payload-free navigation cards where the intent alone suffices) —
+the cards' payloads were deliberately not kept, because a replayed card would
+re-offer an action whose proposal already lives in the Approvals queue.
+
+**Two new server intents render** (review item 9): `SHOW_EXPORTS` →
+`ExportsCard` (navigation to the Export screen, D42 vocabulary throughout —
+never "send to VT"/"sync"/"posted") and `SHOW_APPROVALS` → the synthetic
+`ApprovalsTable` plus an always-present "Open the Approvals queue" button,
+because live the context's approvals array is empty by design and the REAL
+queue is the Approvals screen's.
+
+**Bundle (5 Sep 2026, node-zlib closure walk at gzip level 6 — the measure
+script's `gzip` shell-out does not run on Windows, the ClientDetailView
+precedent; NOT a paired A/B, other lanes' drift baked in):** floor 206,883 B ·
+`InboxesView` **249,752 B (248 B headroom — the thinnest on the board; the
+next byte spent on the floor puts it over)** · `ClientDetailView` 248,328 B ·
+`BankView` 242,318 B · `AIWorkspaceView` **294,275 B — the pre-existing breach,
+deepened ~3.7 kB by the conversations sync + ExportsCard, both of which belong
+on that chunk by the reachability rule**. The floor cost of this whole change
+is the two AppContext hydration callbacks (a few hundred bytes); the generated
+conversations client and the notifications client are on the chat chunk and the
+ContextHeader chunk respectively, not the floor. The known reclaims
+(`AIWorkspaceView`'s section above) remain the route's only way back under.
+
 ### The chat, and where classification actually happens
 
 **The canned intent table is gone.** With a live session `InputRow` calls

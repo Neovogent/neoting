@@ -605,3 +605,33 @@ document that has been released for export, carries a D43 capability link, or is
 a statement's source file; runbook page shipped in the same change per §13.4.
 ⚠ `NT-DOC-001` is deliberately **not** in the enum — it is a
 `documents.failure_code` value that never reaches the wire.
+
+## The bell and saved conversations (5 Sep 2026 — review items 12 and 9)
+
+Six operations, one enum widening, one migration alongside; the G7 ceremony is
+retired (owner, 1 Sep 2026) and the discipline that remains — the contract
+moved first, in the same PR — was followed.
+
+**Notifications (item 12):** `listNotifications` (cursor-paginated, `unread`
+filter, `unreadCount` on the envelope — the badge needs the whole-reach number
+even when the list is one page) and `markNotificationsRead` (`ingest`-class;
+omitted `notificationIds` means everything unread; the response is the new
+`unreadCount`, the render-server-truth posture). `NotificationItem.event` is a
+FREE STRING deliberately — a new pipeline writer is additive, and the UI words
+what it knows and renders an honest generic line for what it does not.
+
+**Chat conversations (item 9):** `listChatConversations` /
+`getChatConversation` / `saveChatConversation` (PUT-upsert of the WHOLE
+conversation — replace-not-merge is the idempotency argument) /
+`deleteChatConversation` (idempotent 204). The path parameter is the CALLER's
+own id (`^[A-Za-z0-9_-]{1,64}$`), namespaced per (practice, user) server-side.
+`ChatStoredMessage` is text + intent name + timestamp and NOTHING else — no
+draft, no navigation, no display block — so a saved transcript cannot re-stage
+an action. ⚠ `ChatConversationDetail` repeats the summary's fields instead of
+`allOf`-composing them: orval's strict allOf intersection rejects valid bodies
+(the `getChaseResponse` gap, documented above).
+
+**`ChatIntent` grew `SHOW_EXPORTS` and `SHOW_APPROVALS`** — navigation-only,
+the SHOW_STATEMENTS shape (no field a model could put a figure or an id in).
+`POST /chat/turns` remains `x-nt-side-effect: none`; conversation persistence
+is the caller's own act through the CRUD above, never the model's side effect.

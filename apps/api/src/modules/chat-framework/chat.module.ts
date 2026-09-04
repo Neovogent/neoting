@@ -1,16 +1,28 @@
 import { Module } from '@nestjs/common';
 
 import { getPrismaClient, type PrismaClient } from '../../common/db/prisma.js';
+import { InMemoryIdempotencyStore, type IdempotencyStore } from '../../common/idempotency/idempotency-store.js';
 import type { Env } from '../../config/env.js';
 import { ENV } from '../../config/env.module.js';
 import { type AiBudget, InMemoryAiBudget, RedisAiBudget } from '../../common/ai-budget.js';
+import { ChatConversationsController } from './chat-conversations.controller.js';
+import { ChatConversationsService } from './chat-conversations.service.js';
 import { ChatController } from './chat.controller.js';
 import { ChatService } from './chat.service.js';
 import { CircuitBreaker } from './provider/circuit-breaker.js';
 import type { ModelProvider } from './provider/model-provider.js';
 import { selectModelProvider } from './provider/select-model-provider.js';
 import { SuggestionsService } from './suggestions.service.js';
-import { AI_BUDGET, CHAT_SERVICE, CIRCUIT_BREAKER, MODEL_PROVIDER, PRISMA, SUGGESTIONS_SERVICE } from './tokens.js';
+import {
+  AI_BUDGET,
+  CHAT_CONVERSATIONS_SERVICE,
+  CHAT_IDEMPOTENCY_STORE,
+  CHAT_SERVICE,
+  CIRCUIT_BREAKER,
+  MODEL_PROVIDER,
+  PRISMA,
+  SUGGESTIONS_SERVICE,
+} from './tokens.js';
 
 /**
  * The AI runtime module (Governance §9).
@@ -30,7 +42,11 @@ import { AI_BUDGET, CHAT_SERVICE, CIRCUIT_BREAKER, MODEL_PROVIDER, PRISMA, SUGGE
  *    can accidentally spend money.
  */
 @Module({
-  controllers: [ChatController],
+  // Two controllers: the AI runtime's single operation, and the saved-
+  // conversations CRUD (review item 9, 5 Sep 2026) — no model on the second's
+  // path, ever; persistence is the caller's act, so `POST /chat/turns` keeps
+  // its side-effect-free standing.
+  controllers: [ChatController, ChatConversationsController],
   providers: [
     { provide: PRISMA, useFactory: () => getPrismaClient() },
     { provide: MODEL_PROVIDER, useFactory: (env: Env) => selectModelProvider(env), inject: [ENV] },
@@ -54,6 +70,13 @@ import { AI_BUDGET, CHAT_SERVICE, CIRCUIT_BREAKER, MODEL_PROVIDER, PRISMA, SUGGE
       useFactory: (prisma: PrismaClient, provider: ModelProvider, breaker: CircuitBreaker, budget: AiBudget) =>
         new SuggestionsService(prisma, provider, breaker, budget),
       inject: [PRISMA, MODEL_PROVIDER, CIRCUIT_BREAKER, AI_BUDGET],
+    },
+    { provide: CHAT_IDEMPOTENCY_STORE, useFactory: () => new InMemoryIdempotencyStore() },
+    {
+      provide: CHAT_CONVERSATIONS_SERVICE,
+      useFactory: (prisma: PrismaClient, idempotency: IdempotencyStore) =>
+        new ChatConversationsService(prisma, idempotency),
+      inject: [PRISMA, CHAT_IDEMPOTENCY_STORE],
     },
   ],
 })
