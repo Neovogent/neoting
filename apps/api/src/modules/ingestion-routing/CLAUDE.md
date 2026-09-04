@@ -393,6 +393,44 @@ per-change `phone_number_id`, the controller media/practice path, and a **real-D
 integration test** (`queue/whatsapp-intake.integration.test.ts`) proving the
 WhatsApp lane persists through `scopedDb` with the caption kept wrapped.
 
+### CSV/XLSX are accepted formats now (4 Sep 2026 — walkthrough finding 6)
+
+**The Bank tab's statement upload was refused at its own door.** `formats.ts`
+carried "CSV/XLSX are structured imports handled elsewhere, not by this
+pipeline" — written before D40 routed manual bank statements through this exact
+pipeline — so the picker offered `.csv`, the Statements panel promised "CSV and
+XLSX read exactly", and `POST /document-uploads` answered
+`415 NT-ING-002`. The only working format for the only bank input in Initial
+Delivery, closed at its only entrance. Three layers changed together, because
+opening the door alone would just have moved the refusal into the worker:
+
+- **`formats.ts`**: `csv` and `xlsx` join `ACCEPTED_FORMATS`, `EXTENSIONS` and
+  `MIME_BY_FORMAT`. CSV has no magic bytes, so `sniff` gained
+  `looksLikeDelimitedText` (NUL-free, ≥97% printable, at least one `,`/`;`/tab
+  in the head) as the LAST check before `unknown` — prose with a comma sniffs
+  as csv, which is the safe direction (the statement parser refuses a
+  non-grid with a named reason; D46 says flag, never block).
+  ⚠ **`refineZipContainer` tests `xl/` BEFORE `[Content_Types].xml`** — an
+  XLSX also contains Content_Types, so the old order would have sniffed every
+  spreadsheet as a Word document and stored it mislabelled.
+- **`upload-policy.ts`**: the derived allowlist now admits `text/csv` and the
+  xlsx MIME automatically, plus one DECLARED alias, `application/vnd.ms-excel`
+  — what a Windows browser with Excel installed declares for a `.csv` (a
+  registry fact, not a content one). The alias opens the door only; the sniff
+  decides what is stored.
+- **Spreadsheets never reach the model** — `modules/extraction`'s
+  `spreadsheet-statement-extractor.ts` classifies them `STATEMENT`
+  deterministically (see that module's CLAUDE.md), so the statement lane fires
+  and `BedrockExtractor`'s honest `NT-EXT-003` ("images and PDFs only") is
+  never met.
+
+In the pipeline, csv/xlsx join NEITHER `IMAGE_FORMATS` nor `DOCUMENT_FORMATS`
+(nothing decodes, guards or explodes them; the bytes pass through untouched),
+and an xlsx deliberately skips the ZIP caps exactly as docx does. Proven live
+4 Sep 2026: a browser-shaped `text/csv` upload → 201 intent → presigned PUT →
+complete → worker sanitise → deterministic STATEMENT → 8 transactions imported,
+D41 `assurance: complete` proven by balance continuity.
+
 ### Web upload — the first HTTP surface in this lane (issue #76)
 
 `web-upload/` — a lane with its own `CLAUDE.md`; read that before changing it.

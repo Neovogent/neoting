@@ -439,6 +439,31 @@ persisted home is still the jsonb (a schema/contract call). The confidence seam
 stays empty (eval-calibrated, does not exist yet) — To-Review is driven by a
 missing field or a failed validator, never an invented threshold.
 
+## A spreadsheet never reaches the model (4 Sep 2026 — walkthrough finding 6)
+
+`spreadsheet-statement-extractor.ts` + one branch in `extraction-pipeline.ts`:
+a document whose stored MIME is `text/csv` or the xlsx type is classified
+`STATEMENT` deterministically, with every header field honestly null (→
+TO_REVIEW), and the configured extractor is never called. Three reasons, each
+sufficient:
+
+- **`BedrockExtractor` honestly refuses `text/csv`** (`NT-EXT-003`, images and
+  PDFs only), so once ingestion started admitting CSV (D40's manual statement
+  upload — see `ingestion-routing/CLAUDE.md`), every uploaded statement would
+  have landed FAILED and the statement lane — which keys on `docType ===
+  'STATEMENT'` — would never have fired.
+- **A CSV is already the data.** A model reading a grid the statement parser
+  reads exactly is a probabilistic opinion where D41 demands arithmetic proof.
+- **It costs nothing.** No Bedrock call, no OCR (`isOcrMedia` excludes it), no
+  budget spend.
+
+⚠ **The pipeline now chooses the extractor PER DOCUMENT** and threads the
+chosen one into `finish`/`writeExtraction`, so `extractions.extractor_kind`
+names whichever reader actually ran (`deterministic-spreadsheet` /
+`spreadsheet-statement-1` on this branch) — the same honesty rule that stopped
+bedrock reads being stamped as the demo fixture. The fixture-latency sleep also
+keys on the CHOSEN extractor, so a spreadsheet skips the demo delay.
+
 ## The coding rung — the ladder is consulted here now (2 Sep 2026)
 
 **`categoryCode` still stays null in this module.** What changed is that the

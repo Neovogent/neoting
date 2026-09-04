@@ -42,7 +42,13 @@ export function capChannelFor(channel: DocumentChannel): Channel {
 // The declared-MIME allowlist is the MIME of every format the sanitiser accepts.
 // A declared type off it is 415 — a cheap pre-filter at the door; magic bytes
 // still decide the real type after the bytes land (Governance §11.4).
-const ALLOWED_MIME: ReadonlySet<string> = new Set([...ACCEPTED_FORMATS].map(mimeForFormat));
+//
+// Plus the declared-only aliases: a Windows browser with Excel installed
+// declares `application/vnd.ms-excel` for a `.csv` (a registry fact, not a
+// content one — finding 6, 4 Sep 2026). The alias is admitted at the door only;
+// the sniff decides what the bytes really are and the row stores that.
+const DECLARED_ALIASES: readonly string[] = ['application/vnd.ms-excel'];
+const ALLOWED_MIME: ReadonlySet<string> = new Set([...[...ACCEPTED_FORMATS].map(mimeForFormat), ...DECLARED_ALIASES]);
 
 export function isAllowedMime(declaredMime: string): boolean {
   // Strip any `; charset=…` parameter and normalise before matching.

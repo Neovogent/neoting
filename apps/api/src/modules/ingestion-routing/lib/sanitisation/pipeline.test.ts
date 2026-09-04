@@ -29,6 +29,29 @@ test('an unrecognised file type is rejected as not allowed (NT-ING-002)', async 
   }
 });
 
+test('a CSV bank statement is accepted, untouched, with a byte hash (finding 6)', async () => {
+  const bytes = Buffer.from('Date,Description,Amount,Balance\n01/08/2026,BIDFOOD,-456.72,5784.47\n');
+  const r = await sanitise({ bytes, filename: 'statement.csv', channel: 'accountant_upload' });
+  expect(r.ok).toBe(true);
+  if (r.ok) {
+    expect(r.document.detectedType).toBe('csv');
+    // Steps 5–7 do not apply to a spreadsheet: nothing decodes, guards or
+    // explodes it, so the bytes come out exactly as they went in.
+    expect(r.document.bytes.equals(bytes)).toBe(true);
+    expect(r.document.sha256).toMatch(/^[0-9a-f]{64}$/);
+  }
+});
+
+test('an XLSX is accepted and detected as xlsx, not docx (finding 6)', async () => {
+  const bytes = Buffer.concat([
+    Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+    Buffer.from('xxx[Content_Types].xml...xl/workbook.xml...'),
+  ]);
+  const r = await sanitise({ bytes, filename: 'statement.xlsx', channel: 'accountant_upload' });
+  expect(r.ok).toBe(true);
+  if (r.ok) expect(r.document.detectedType).toBe('xlsx');
+});
+
 test('a spoofed extension (PDF bytes named .jpg) is rejected (NT-ING-004)', async () => {
   const r = await sanitise({ bytes: Buffer.from('%PDF-1.4 body'), filename: 'photo.jpg', channel: 'client' });
   expect(r.ok).toBe(false);
