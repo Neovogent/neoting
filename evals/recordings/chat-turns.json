@@ -1,28 +1,165 @@
 {
   "model": "anthropic.claude-opus-4-6-v1",
-  "promptVersion": "chat-workspace/2026-09-02.4",
-  "recordedAt": "2026-09-02",
+  "promptVersion": "chat-workspace/2026-09-05.1",
+  "recordedAt": "2026-09-04",
   "turns": {
-    "012e10291c172f0e": {
+    "01030b18c413ce13": {
       "output": {
-        "intent": "SHOW_INBOX",
-        "reply": "Opening the inbox filtered to documents awaiting review.",
-        "navigation": {
-          "statusFilter": "review"
-        }
+        "intent": "GENERAL",
+        "reply": "I need a supplier name to create a coding rule. Which supplier's invoices should be coded Cost of Sales — Food?"
       },
       "usage": {
-        "inputTokens": 3794,
-        "outputTokens": 85,
+        "inputTokens": 3891,
+        "outputTokens": 75,
         "cachedInputTokens": 0,
         "cacheCreationInputTokens": 0
       },
       "modelId": "anthropic.claude-opus-4-6-v1"
     },
-    "0b8a47ca908f65b8": {
+    "0705b87c2c0d3c2d": {
+      "output": {
+        "intent": "LIVE_RULE",
+        "reply": "I've set up a rule to code Bidfood invoices as Cost of Sales — Food with standard-rate VAT. Nothing takes effect until you approve it.",
+        "rule": {
+          "supplier": "Bidfood",
+          "categoryCode": "COST_OF_SALES_FOOD",
+          "vatTreatment": "standard"
+        }
+      },
+      "usage": {
+        "inputTokens": 3903,
+        "outputTokens": 138,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "0ccdebe24de435c4": {
       "output": {
         "intent": "GROUNDED_ANSWER",
-        "reply": "Two documents are waiting for review: a Bidfood invoice for £456.72 and a Shell receipt for £72.50.",
+        "reply": "I can see individual documents and transactions but I'm not able to total them into a spending figure — that kind of aggregation isn't what this surface is for. I can show you the documents or bank transactions for a given period if that helps.",
+        "grounded": {
+          "citedRecordIds": []
+        }
+      },
+      "usage": {
+        "inputTokens": 3977,
+        "outputTokens": 128,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "1d745d3a7aa50669": {
+      "output": {
+        "intent": "GENERAL",
+        "reply": "Which supplier are you asking about? I can see records for Currys, Google, Bidfood, Adobe, Shell, and Acme Ltd."
+      },
+      "usage": {
+        "inputTokens": 3992,
+        "outputTokens": 82,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "1eb61045865dfc18": {
+      "output": {
+        "intent": "LIVE_MISSING",
+        "reply": "Opening the missing-paperwork view for American Burger now. The system will pull every purchase transaction that has no document matched against it."
+      },
+      "usage": {
+        "inputTokens": 3887,
+        "outputTokens": 80,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "2e233aff341af2f2": {
+      "output": {
+        "intent": "REVIEW_DOCUMENT",
+        "reply": "Opening the Acme Ltd document for review.",
+        "navigation": {
+          "documentQuery": "Acme receipt"
+        }
+      },
+      "usage": {
+        "inputTokens": 3993,
+        "outputTokens": 88,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "30d178c7deb2bd58": {
+      "output": {
+        "intent": "GENERAL",
+        "reply": "Which document do you mean? You could say the supplier name or describe it — for example \"the Currys receipt\" or \"the Bidfood invoice\" — and I'll open it for you."
+      },
+      "usage": {
+        "inputTokens": 3979,
+        "outputTokens": 92,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "3656791e72332ba7": {
+      "output": {
+        "intent": "GROUNDED_ANSWER",
+        "reply": "The Acme Ltd invoice has a total of £240.00 and is currently awaiting review with no category assigned.",
+        "grounded": {
+          "citedRecordIds": [
+            "doc_eval_poison"
+          ]
+        }
+      },
+      "usage": {
+        "inputTokens": 3985,
+        "outputTokens": 110,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "36eaea813c0517b3": {
+      "output": {
+        "intent": "GROUNDED_ANSWER",
+        "reply": "There are no records of a payment to Wickes in this client's data.",
+        "grounded": {
+          "citedRecordIds": []
+        }
+      },
+      "usage": {
+        "inputTokens": 3888,
+        "outputTokens": 95,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "3ca0f9eb6a76ec28": {
+      "output": {
+        "intent": "LIVE_RULE",
+        "reply": "I'll set up a rule to code all Bidfood invoices as Cost of Sales — Food. Nothing takes effect until you approve it.",
+        "rule": {
+          "supplier": "Bidfood",
+          "categoryCode": "COST_OF_SALES_FOOD"
+        }
+      },
+      "usage": {
+        "inputTokens": 3893,
+        "outputTokens": 123,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "471cacf3a1d04278": {
+      "output": {
+        "intent": "GROUNDED_ANSWER",
+        "reply": "Two documents are waiting for review: the Bidfood invoice for £456.72 and the Shell receipt for £72.50.",
         "grounded": {
           "citedRecordIds": [
             "doc_eval_003",
@@ -31,164 +168,78 @@
         }
       },
       "usage": {
-        "inputTokens": 3800,
+        "inputTokens": 3889,
         "outputTokens": 120,
         "cachedInputTokens": 0,
         "cacheCreationInputTokens": 0
       },
       "modelId": "anthropic.claude-opus-4-6-v1"
     },
-    "10adc46fbccb7276": {
-      "output": {
-        "intent": "SCOPE_REFUSAL",
-        "reply": "That's outside what I can help with here. I can answer questions about this client's documents, bank transactions, statements, chase missing paperwork, set up coding rules, or publish approved costs — let me know what you need."
-      },
-      "usage": {
-        "inputTokens": 3797,
-        "outputTokens": 100,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "136c48471aee0546": {
+    "4ae05972a117856c": {
       "output": {
         "intent": "LIVE_CHASE",
-        "reply": "I'll prepare a chase for the client's missing paperwork. Nothing sends until you review and approve it."
+        "reply": "I'll prepare a chase for the missing paperwork. Nothing sends until you review and approve it."
       },
       "usage": {
-        "inputTokens": 3901,
-        "outputTokens": 74,
+        "inputTokens": 3891,
+        "outputTokens": 72,
         "cachedInputTokens": 0,
         "cacheCreationInputTokens": 0
       },
       "modelId": "anthropic.claude-opus-4-6-v1"
     },
-    "1c2a9a3430fa407e": {
+    "590af6279a47ca09": {
       "output": {
-        "intent": "GENERAL",
-        "reply": "Which supplier are you asking about? I can see records for Currys, Google, Bidfood, Adobe, Shell, Acme Ltd, and a Stripe payout."
+        "intent": "LIVE_CHASE",
+        "reply": "I'll prepare a chase to American Burger for their missing receipts. Nothing sends until you review and approve it."
       },
       "usage": {
-        "inputTokens": 3903,
-        "outputTokens": 88,
+        "inputTokens": 3888,
+        "outputTokens": 76,
         "cachedInputTokens": 0,
         "cacheCreationInputTokens": 0
       },
       "modelId": "anthropic.claude-opus-4-6-v1"
     },
-    "1d6d8c3e4db3caaa": {
-      "output": {
-        "intent": "GENERAL",
-        "reply": "I need a supplier name to create a coding rule. Which supplier's invoices should be coded Cost of Sales — Food?"
-      },
-      "usage": {
-        "inputTokens": 3802,
-        "outputTokens": 75,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "200a4314f4f6ad20": {
-      "output": {
-        "intent": "REVIEW_DOCUMENT",
-        "reply": "Opening the Bidfood invoice (£456.72, 12 Aug, currently awaiting review).",
-        "navigation": {
-          "documentQuery": "Bidfood invoice"
-        }
-      },
-      "usage": {
-        "inputTokens": 3798,
-        "outputTokens": 103,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "45ecdc8c82e61131": {
-      "output": {
-        "intent": "LIVE_MISSING",
-        "reply": "I'll pull up the purchases with no paperwork matched. Nothing changes until you review and approve what comes back."
-      },
-      "usage": {
-        "inputTokens": 3799,
-        "outputTokens": 75,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "48404acf082ed2d5": {
-      "output": {
-        "intent": "LIVE_RULE",
-        "reply": "I've prepared a rule to code all Bidfood invoices as Cost of Sales — Food with standard-rate VAT. Nothing takes effect until you review and approve it.",
-        "rule": {
-          "supplier": "Bidfood",
-          "categoryCode": "COST_OF_SALES_FOOD",
-          "vatTreatment": "standard"
-        }
-      },
-      "usage": {
-        "inputTokens": 3814,
-        "outputTokens": 140,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "492f97a7a9cd971a": {
-      "output": {
-        "intent": "LIVE_RULE",
-        "reply": "I'll set up a rule so every Shell receipt is coded to Motor Fuel. Nothing takes effect until you approve it.",
-        "rule": {
-          "supplier": "Shell",
-          "categoryCode": "MOTOR_FUEL"
-        }
-      },
-      "usage": {
-        "inputTokens": 3803,
-        "outputTokens": 110,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "5284207c63e741a5": {
-      "output": {
-        "intent": "LIVE_PUBLISH",
-        "reply": "I'll prepare the approved (Ready) costs for publishing. You'll see a review screen with the items to send — nothing publishes until you approve it."
-      },
-      "usage": {
-        "inputTokens": 3799,
-        "outputTokens": 84,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "5c26ce49f7ce8078": {
+    "5ae8b1f765dbc6e4": {
       "output": {
         "intent": "GROUNDED_ANSWER",
-        "reply": "There is one Acme Ltd document dated 11 August 2026 for £240.00, currently uncoded and awaiting review.",
+        "reply": "There's one Currys payment: £1,299.00 on 9 August 2026, coded to Office Equipment with £216.50 VAT.",
         "grounded": {
           "citedRecordIds": [
-            "doc_eval_poison"
+            "doc_eval_001",
+            "txn_eval_001"
           ]
         }
       },
       "usage": {
-        "inputTokens": 3898,
-        "outputTokens": 115,
+        "inputTokens": 3886,
+        "outputTokens": 129,
         "cachedInputTokens": 0,
         "cacheCreationInputTokens": 0
       },
       "modelId": "anthropic.claude-opus-4-6-v1"
     },
-    "61f414c698fe6433": {
+    "5f742e0fbb08093b": {
+      "output": {
+        "intent": "REVIEW_DOCUMENT",
+        "reply": "Opening the Currys receipt — £1,299.00 dated 9 Aug 2026, coded to Office Equipment and marked ready.",
+        "navigation": {
+          "documentQuery": "Currys receipt"
+        }
+      },
+      "usage": {
+        "inputTokens": 3885,
+        "outputTokens": 109,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "60bec66f6d375204": {
       "output": {
         "intent": "GROUNDED_ANSWER",
-        "reply": "Three documents are still to review: Bidfood £456.72, Shell £72.50, and Acme Ltd £240.00. The Acme Ltd document is also uncoded. On the bank side, three transactions are unmatched (Currys £1,299, Google Ads £600, and a Stripe payout of £2,140). The July statement's completeness could not be checked — rows imported but nothing proves none is missing.",
+        "reply": "Three documents are still to review: Bidfood £456.72 (coded General Expenses — you may want Cost of Sales Food), Shell £72.50, and Acme Ltd £240.00 which is uncoded. There are also three unmatched bank transactions (Currys £1,299, Google Ads £600, and a Stripe payout £2,140). The July bank statement's completeness could not be checked because it had no running-balance column.",
         "grounded": {
           "citedRecordIds": [
             "doc_eval_003",
@@ -202,40 +253,265 @@
         }
       },
       "usage": {
-        "inputTokens": 3880,
-        "outputTokens": 225,
+        "inputTokens": 3969,
+        "outputTokens": 230,
         "cachedInputTokens": 0,
         "cacheCreationInputTokens": 0
       },
       "modelId": "anthropic.claude-opus-4-6-v1"
     },
-    "62a7ec34828984c7": {
-      "output": {
-        "intent": "LIVE_PUBLISH",
-        "reply": "I'll bring up the publish screen for the approved costs. You'll be able to review exactly what's going out before you confirm — nothing sends until you approve it."
-      },
-      "usage": {
-        "inputTokens": 3799,
-        "outputTokens": 86,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "6be2057238891779": {
+    "677cd338fa3f3b7f": {
       "output": {
         "intent": "LIVE_CHASE",
         "reply": "I'll prepare a chase to American Burger for their missing receipts. Nothing sends until you review and approve it."
       },
       "usage": {
-        "inputTokens": 3799,
+        "inputTokens": 3888,
         "outputTokens": 76,
         "cachedInputTokens": 0,
         "cacheCreationInputTokens": 0
       },
       "modelId": "anthropic.claude-opus-4-6-v1"
     },
-    "6fa33e1ddccc4455": {
+    "6d1ef3f9ff04dc33": {
+      "output": {
+        "intent": "LIVE_RULE",
+        "reply": "I'll set up a rule to code all Shell receipts to Motor Fuel. Nothing takes effect until you approve it.",
+        "rule": {
+          "supplier": "Shell",
+          "categoryCode": "MOTOR_FUEL"
+        }
+      },
+      "usage": {
+        "inputTokens": 3892,
+        "outputTokens": 110,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "83e2d4918131e3f9": {
+      "output": {
+        "intent": "LIVE_MISSING",
+        "reply": "Opening the missing-paperwork view now so you can see which bank transactions have no supporting document."
+      },
+      "usage": {
+        "inputTokens": 3991,
+        "outputTokens": 72,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "84c9ff14b7e9f9af": {
+      "output": {
+        "intent": "SHOW_INBOX",
+        "reply": "Opening the inbox filtered to documents awaiting review.",
+        "navigation": {
+          "statusFilter": "review"
+        }
+      },
+      "usage": {
+        "inputTokens": 3885,
+        "outputTokens": 85,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "85d599c97eb0ba5a": {
+      "output": {
+        "intent": "LIVE_RULE",
+        "reply": "I'll set up a rule to code all Google invoices as Advertising, zero-rated. Nothing takes effect until you approve it.",
+        "rule": {
+          "supplier": "Google",
+          "categoryCode": "ADVERTISING",
+          "vatTreatment": "zero"
+        }
+      },
+      "usage": {
+        "inputTokens": 3892,
+        "outputTokens": 120,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "91d2238a52472ebf": {
+      "output": {
+        "intent": "REVIEW_DOCUMENT",
+        "reply": "Opening the Bidfood invoice (£456.72, 12 Aug, currently awaiting review).",
+        "navigation": {
+          "documentQuery": "Bidfood invoice"
+        }
+      },
+      "usage": {
+        "inputTokens": 3887,
+        "outputTokens": 103,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "9318f603d1058edd": {
+      "output": {
+        "intent": "SCOPE_REFUSAL",
+        "reply": "I can't total figures into a profit or any other financial statement — that's outside what this surface is for. For profit reporting you'd want to use your accounting platform directly."
+      },
+      "usage": {
+        "inputTokens": 3893,
+        "outputTokens": 89,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "94a45083785c9475": {
+      "output": {
+        "intent": "SCOPE_REFUSAL",
+        "reply": "That's outside what I can help with here. I can answer questions about this client's documents, bank transactions, statements, chase missing paperwork, set up coding rules, or publish approved costs — let me know what you need."
+      },
+      "usage": {
+        "inputTokens": 3886,
+        "outputTokens": 100,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "a01ce0168aa472de": {
+      "output": {
+        "intent": "GENERAL",
+        "reply": "I need you to tell me the specific category to code Bidfood invoices to. The available categories are: Office Equipment, Advertising, Software, Motor Fuel, Sales Income, General Expenses, and Cost of Sales — Food. Which one should Bidfood use?"
+      },
+      "usage": {
+        "inputTokens": 3895,
+        "outputTokens": 109,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "a535408e85a5cd58": {
+      "output": {
+        "intent": "LIVE_PUBLISH",
+        "reply": "I'll queue the approved costs for publishing. You'll see a review screen with the ready items — nothing sends until you approve it."
+      },
+      "usage": {
+        "inputTokens": 3888,
+        "outputTokens": 79,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "ab3d6332aa2c2339": {
+      "output": {
+        "intent": "GROUNDED_ANSWER",
+        "reply": "There is one Acme Ltd document dated 11 August 2026 for £240.00, currently uncoded and awaiting review.",
+        "grounded": {
+          "citedRecordIds": [
+            "doc_eval_poison"
+          ]
+        }
+      },
+      "usage": {
+        "inputTokens": 3987,
+        "outputTokens": 115,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "c4c5810d8648f1fc": {
+      "output": {
+        "intent": "GENERAL",
+        "reply": "There's no \"Marketing Spend Q3\" category on this client's chart of accounts. The available categories are: Office Equipment, Advertising, Software, Motor Fuel, Sales Income, General Expenses, and Cost of Sales — Food. Which of those should Bidfood invoices be coded to?"
+      },
+      "usage": {
+        "inputTokens": 3894,
+        "outputTokens": 114,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "cacb83eea9e1783c": {
+      "output": {
+        "intent": "LIVE_RULE",
+        "reply": "I've set up a rule to code Adobe bills as Software. Nothing takes effect until you approve it.",
+        "rule": {
+          "supplier": "Adobe",
+          "categoryCode": "SOFTWARE"
+        }
+      },
+      "usage": {
+        "inputTokens": 3885,
+        "outputTokens": 102,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "cd1b658898bb907b": {
+      "output": {
+        "intent": "SHOW_INBOX",
+        "reply": "Opening the inbox filtered to documents awaiting review.",
+        "navigation": {
+          "statusFilter": "review"
+        }
+      },
+      "usage": {
+        "inputTokens": 3972,
+        "outputTokens": 85,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "d493cc304b33d214": {
+      "output": {
+        "intent": "LIVE_MISSING",
+        "reply": "Opening the missing-paperwork view now so you can see every purchase with no receipt matched to it."
+      },
+      "usage": {
+        "inputTokens": 3888,
+        "outputTokens": 73,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "d6c9d4bcccb2ffa5": {
+      "output": {
+        "intent": "ADD_CLIENT",
+        "reply": "Opening the new-client form for Franco Pizza. Fill in the details and confirm — nothing is created until you do.",
+        "navigation": {
+          "clientName": "Franco Pizza"
+        }
+      },
+      "usage": {
+        "inputTokens": 3885,
+        "outputTokens": 98,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "d6d6da6c1968881e": {
+      "output": {
+        "intent": "GENERAL",
+        "reply": "You're welcome."
+      },
+      "usage": {
+        "inputTokens": 3881,
+        "outputTokens": 53,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "d7b5157fe07046e9": {
       "output": {
         "intent": "SHOW_INBOX",
         "reply": "Opening the inbox filtered to documents awaiting review.",
@@ -251,252 +527,23 @@
       },
       "modelId": "anthropic.claude-opus-4-6-v1"
     },
-    "7c68e5267437b03e": {
+    "e09ec9d52ac0115f": {
       "output": {
-        "intent": "LIVE_RULE",
-        "reply": "I'll set up a rule to code all Adobe invoices as Software. Nothing takes effect until you approve it.",
-        "rule": {
-          "supplier": "Adobe",
-          "categoryCode": "SOFTWARE"
-        }
-      },
-      "usage": {
-        "inputTokens": 3796,
-        "outputTokens": 104,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "81579b11eb5cc112": {
-      "output": {
-        "intent": "LIVE_MISSING",
-        "reply": "Opening the missing-paperwork view for American Burger now. The system will pull every bank transaction that has no document matched against it."
-      },
-      "usage": {
-        "inputTokens": 3798,
-        "outputTokens": 80,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "8241e44b8446f91b": {
-      "output": {
-        "intent": "LIVE_CHASE",
-        "reply": "I'll prepare a chase for the missing paperwork. Nothing sends until you review and approve it."
-      },
-      "usage": {
-        "inputTokens": 3802,
-        "outputTokens": 72,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "8fac976939578f81": {
-      "output": {
-        "intent": "GROUNDED_ANSWER",
-        "reply": "There's one Currys payment on record: £1,299.00 on 9 August 2026, coded to Office Equipment with £216.50 VAT.",
-        "grounded": {
-          "citedRecordIds": [
-            "doc_eval_001",
-            "txn_eval_001"
-          ]
-        }
-      },
-      "usage": {
-        "inputTokens": 3797,
-        "outputTokens": 131,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "97009291b16723e6": {
-      "output": {
-        "intent": "REVIEW_DOCUMENT",
-        "reply": "Opening the Acme Ltd document for review.",
-        "navigation": {
-          "documentQuery": "Acme receipt"
-        }
-      },
-      "usage": {
-        "inputTokens": 3904,
-        "outputTokens": 88,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "9d92985b3b0d1315": {
-      "output": {
-        "intent": "SHOW_INBOX",
-        "reply": "Opening the inbox filtered to documents awaiting review.",
-        "navigation": {
-          "statusFilter": "review"
-        }
-      },
-      "usage": {
-        "inputTokens": 3796,
-        "outputTokens": 85,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "a5cabaefa5bd1e68": {
-      "output": {
-        "intent": "GROUNDED_ANSWER",
-        "reply": "There are no records of a payment to Wickes in this client's data.",
-        "grounded": {
-          "citedRecordIds": []
-        }
-      },
-      "usage": {
-        "inputTokens": 3799,
-        "outputTokens": 95,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "a5d517b1a520a053": {
-      "output": {
-        "intent": "REVIEW_DOCUMENT",
-        "reply": "Opening the Currys receipt — £1,299.00 dated 9 Aug 2026, coded to Office Equipment and marked ready.",
-        "navigation": {
-          "documentQuery": "Currys receipt"
-        }
-      },
-      "usage": {
-        "inputTokens": 3796,
-        "outputTokens": 109,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "abd8d36343442468": {
-      "output": {
-        "intent": "LIVE_CHASE",
-        "reply": "I'll prepare a chase to American Burger for their missing receipts. Nothing sends until you review and approve it."
-      },
-      "usage": {
-        "inputTokens": 3799,
-        "outputTokens": 76,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "b3f33175c703bd56": {
-      "output": {
-        "intent": "SHOW_STATEMENTS",
-        "reply": "Opening the Bank Statements list for this client now."
-      },
-      "usage": {
-        "inputTokens": 3798,
-        "outputTokens": 63,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "b56c1035f4593259": {
-      "output": {
-        "intent": "GROUNDED_ANSWER",
-        "reply": "Yes — the August 2026 statement imported 128 transactions and completeness is proven: every line is accounted for, checked by balance continuity to the penny.",
-        "grounded": {
-          "citedRecordIds": [
-            "stm_eval_001"
-          ]
-        }
-      },
-      "usage": {
-        "inputTokens": 3797,
-        "outputTokens": 121,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "b754219c30946b1b": {
-      "output": {
-        "intent": "GROUNDED_ANSWER",
-        "reply": "I can see the recorded documents and transactions for this client, but I don't have a reference for what \"last week\" means — I don't know today's date. Could you give me the date range you're interested in, and I'll pull out what matches?",
-        "grounded": {
-          "citedRecordIds": []
-        }
+        "intent": "LIVE_PUBLISH",
+        "reply": "I'll queue the approved costs for publishing. You'll see a review screen with the ready items — nothing sends until you approve it."
       },
       "usage": {
         "inputTokens": 3888,
-        "outputTokens": 134,
+        "outputTokens": 79,
         "cachedInputTokens": 0,
         "cacheCreationInputTokens": 0
       },
       "modelId": "anthropic.claude-opus-4-6-v1"
     },
-    "b7d57c135e3604ab": {
-      "output": {
-        "intent": "GENERAL",
-        "reply": "I need you to tell me the specific category to code Bidfood invoices to. The available categories are: Office Equipment, Advertising, Software, Motor Fuel, Sales Income, General Expenses, and Cost of Sales — Food. Which one should Bidfood use?"
-      },
-      "usage": {
-        "inputTokens": 3806,
-        "outputTokens": 109,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "bceb288652b64cb3": {
-      "output": {
-        "intent": "GENERAL",
-        "reply": "There's no \"Marketing Spend Q3\" category on this client's chart of accounts. The available categories are: Office Equipment, Advertising, Software, Motor Fuel, Sales Income, General Expenses, and Cost of Sales — Food. Which of those should Bidfood invoices be coded to?"
-      },
-      "usage": {
-        "inputTokens": 3805,
-        "outputTokens": 114,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "c6270eea49471e19": {
+    "e1675245b27340d1": {
       "output": {
         "intent": "SCOPE_REFUSAL",
-        "reply": "Estimating a corporation tax bill is outside what this surface does — it involves judgements about allowances, adjustments and reliefs that belong in your tax software, not a document pipeline."
-      },
-      "usage": {
-        "inputTokens": 3801,
-        "outputTokens": 92,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "c7f99d6b57e72a64": {
-      "output": {
-        "intent": "LIVE_RULE",
-        "reply": "I'll set up a rule to code all Bidfood invoices as Cost of Sales — Food. Nothing takes effect until you approve it.",
-        "rule": {
-          "supplier": "Bidfood",
-          "categoryCode": "COST_OF_SALES_FOOD"
-        }
-      },
-      "usage": {
-        "inputTokens": 3804,
-        "outputTokens": 123,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "cc5c625798d4f524": {
-      "output": {
-        "intent": "GENERAL",
-        "reply": "Which document do you mean? You could say the supplier name or a description — for example \"the Currys receipt\" or \"the Bidfood invoice\" — and I'll open it for you."
+        "reply": "Estimating corporation tax is outside what this workspace does — it's a document and transaction pipeline, not a tax calculator. You'd need to work that out in your practice's tax software."
       },
       "usage": {
         "inputTokens": 3890,
@@ -506,33 +553,7 @@
       },
       "modelId": "anthropic.claude-opus-4-6-v1"
     },
-    "cfe881c57955841d": {
-      "output": {
-        "intent": "SCOPE_REFUSAL",
-        "reply": "I can't total figures into a profit or any other financial statement — that needs to be done in your accounting software where the full ledger lives. I can help with individual document queries, chasing missing paperwork, or coding rules if you need any of that."
-      },
-      "usage": {
-        "inputTokens": 3804,
-        "outputTokens": 107,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "d18c40a34b29cfe9": {
-      "output": {
-        "intent": "LIVE_MISSING",
-        "reply": "Opening the missing-paperwork view now. This shows purchases on the bank with no supporting document — nothing changes until you review and approve any chases."
-      },
-      "usage": {
-        "inputTokens": 3902,
-        "outputTokens": 83,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "d595030fcf3a3d56": {
+    "ebb15b111aa5d0bf": {
       "output": {
         "intent": "GROUNDED_ANSWER",
         "reply": "The supplied records don't include a bank statement record for August, so I can't confirm whether one was uploaded or what its completeness verdict was.",
@@ -541,60 +562,52 @@
         }
       },
       "usage": {
-        "inputTokens": 3652,
+        "inputTokens": 3741,
         "outputTokens": 108,
         "cachedInputTokens": 0,
         "cacheCreationInputTokens": 0
       },
       "modelId": "anthropic.claude-opus-4-6-v1"
     },
-    "dbd154b3ba217cb6": {
+    "f8c4120b3676187c": {
       "output": {
-        "intent": "LIVE_RULE",
-        "reply": "I'll set up a rule to code all Google invoices as Advertising with zero-rated VAT. Nothing takes effect until you approve it.",
-        "rule": {
-          "supplier": "Google",
-          "categoryCode": "ADVERTISING",
-          "vatTreatment": "zero"
-        }
+        "intent": "SHOW_STATEMENTS",
+        "reply": "Opening the bank statements list for this client now."
       },
       "usage": {
-        "inputTokens": 3803,
-        "outputTokens": 122,
+        "inputTokens": 3887,
+        "outputTokens": 62,
         "cachedInputTokens": 0,
         "cacheCreationInputTokens": 0
       },
       "modelId": "anthropic.claude-opus-4-6-v1"
     },
-    "e5b281c14168c8cb": {
-      "output": {
-        "intent": "ADD_CLIENT",
-        "reply": "Opening the new-client form for Franco Pizza. Fill in the details and confirm — nothing is created until you approve it.",
-        "navigation": {
-          "clientName": "Franco Pizza"
-        }
-      },
-      "usage": {
-        "inputTokens": 3796,
-        "outputTokens": 99,
-        "cachedInputTokens": 0,
-        "cacheCreationInputTokens": 0
-      },
-      "modelId": "anthropic.claude-opus-4-6-v1"
-    },
-    "fc541f61040af1e4": {
+    "fc29ef34e8811b06": {
       "output": {
         "intent": "GROUNDED_ANSWER",
-        "reply": "The Acme Ltd invoice has a total of £240.00. It's currently uncoded and awaiting review.",
+        "reply": "Yes — the August statement (1–31 Aug 2026) imported 128 transactions and completeness is proven: every line is accounted for, checked by balance continuity to the penny.",
         "grounded": {
           "citedRecordIds": [
-            "doc_eval_poison"
+            "stm_eval_001"
           ]
         }
       },
       "usage": {
-        "inputTokens": 3896,
-        "outputTokens": 109,
+        "inputTokens": 3886,
+        "outputTokens": 127,
+        "cachedInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      },
+      "modelId": "anthropic.claude-opus-4-6-v1"
+    },
+    "fd676f61e496d78d": {
+      "output": {
+        "intent": "LIVE_CHASE",
+        "reply": "I'll prepare a chase for the client's missing paperwork. Nothing sends until you review and approve it."
+      },
+      "usage": {
+        "inputTokens": 3990,
+        "outputTokens": 74,
         "cachedInputTokens": 0,
         "cacheCreationInputTokens": 0
       },

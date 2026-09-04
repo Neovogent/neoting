@@ -111,10 +111,20 @@ export class PrismaStatementStep implements StatementStep {
       const document = await scopedDb(this.prisma, ctx, (db) =>
         db.document.findUnique({
           where: { id: input.documentId },
-          select: { docType: true, originalFilename: true, s3Key: true, businessId: true, mimeType: true },
+          // `customerName` is the account holder extraction read off the page —
+          // the left-hand side of the whose-statement-is-this check (item 14).
+          select: { docType: true, originalFilename: true, s3Key: true, businessId: true, mimeType: true, customerName: true },
         }),
       );
       if (document === null || document.docType !== 'STATEMENT') return;
+
+      const businessId = document.businessId ?? jobBusinessId;
+      // The right-hand side of the holder check: every name this business goes
+      // by. A missing row degrades to no check, never to a refusal — the flag
+      // is D46's, and the import must not fail over a lookup.
+      const business = await scopedDb(this.prisma, ctx, (db) =>
+        db.business.findUnique({ where: { id: businessId }, select: { name: true, tradingName: true } }),
+      );
 
       // Idempotency BEFORE the read, in its own short transaction. A
       // redelivery that re-read the file would spend a real Textract charge
@@ -136,13 +146,17 @@ export class PrismaStatementStep implements StatementStep {
         // The row's own business, not the job payload's: routing may have
         // moved the document since the job was enqueued, and the lines must
         // land on the client the document actually belongs to now.
-        businessId: document.businessId ?? jobBusinessId,
+        businessId,
         fileName: document.originalFilename,
         bytes,
         // The SNIFFED type off the row, never the client's declared one.
         mimeType: document.mimeType,
         // Textract's multi-page path reads from storage, not from bytes.
         s3Key: document.s3Key,
+        accountHolder: document.customerName,
+        businessNames: [business?.name, business?.tradingName].filter(
+          (name): name is string => typeof name === 'string' && name.trim() !== '',
+        ),
       };
 
       // ⚠ THE READ HAPPENS OUTSIDE THE TRANSACTION, and it must. Textract takes

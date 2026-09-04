@@ -1,0 +1,30 @@
+{
+  "key": "6495e2ab7e2bc5bd",
+  "recordedAt": "2026-09-04",
+  "modelId": "anthropic.claude-opus-4-6-v1",
+  "synthetic": true,
+  "description": "chat · one turn, valid on the first answer",
+  "response": {
+    "stop_reason": "tool_use",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_REDACTED",
+        "name": "respond",
+        "input": {
+          "intent": "SHOW_INBOX",
+          "reply": "Here is everything waiting for review.",
+          "navigation": {
+            "statusFilter": "review"
+          }
+        }
+      }
+    ],
+    "usage": {
+      "input_tokens": 2681,
+      "output_tokens": 64,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0
+    }
+  }
+}
