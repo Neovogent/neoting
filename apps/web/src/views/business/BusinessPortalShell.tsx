@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { Building2, Camera, Home, Settings, Upload } from 'lucide-react';
+import { Building2, Camera, Home, Moon, Settings, Sun, Upload } from 'lucide-react';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 
+import { storeTheme } from '../../lib/theme-preference';
 import { PORTAL_TABS, type PortalTab } from './portalTabs';
 
 /**
@@ -29,6 +31,11 @@ import { PORTAL_TABS, type PortalTab } from './portalTabs';
  */
 
 const m = defineMessages({
+  // The theme toggle (5 Sep 2026 review finding: the workspace had a switcher
+  // and the client portal had none). Labels name the DESTINATION, like the
+  // sidebar's.
+  toDarkMode: { id: 'portal.businessPortal.toDarkMode', defaultMessage: 'Switch to dark mode' },
+  toLightMode: { id: 'portal.businessPortal.toLightMode', defaultMessage: 'Switch to light mode' },
   tabHome: { id: 'portal.businessPortal.tabHome', defaultMessage: 'Home' },
   tabUpload: { id: 'portal.businessPortal.tabUpload', defaultMessage: 'Upload' },
   tabCapture: { id: 'portal.businessPortal.tabCapture', defaultMessage: 'Capture' },
@@ -66,6 +73,19 @@ export function BusinessPortalShell({
   readonly children: ReactNode;
 }) {
   const intl = useIntl();
+  // The theme toggle (5 Sep 2026 review finding: the workspace had a switcher
+  // and the client portal had none). Deliberately NOT through AppContext —
+  // the portal is a client surface with no workspace settings behind it, so
+  // the toggle flips the `<html>` class itself and writes the same one-key
+  // `nt.theme` preference the workspace toggle persists. The class read is
+  // state so the icon re-renders; the DOM class is the truth it mirrors.
+  const [isLight, setIsLight] = useState(() => document.documentElement.classList.contains('light'));
+  const toggleTheme = () => {
+    const next = isLight ? 'dark' : 'light';
+    document.documentElement.classList.toggle('light', next === 'light');
+    storeTheme(next);
+    setIsLight(next === 'light');
+  };
 
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full bg-ground overflow-hidden">
@@ -81,7 +101,17 @@ export function BusinessPortalShell({
             </div>
           </div>
         </div>
-        {actions !== undefined && <div className="flex items-center gap-2">{actions}</div>}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={toggleTheme}
+            title={intl.formatMessage(isLight ? m.toDarkMode : m.toLightMode)}
+            aria-label={intl.formatMessage(isLight ? m.toDarkMode : m.toLightMode)}
+            className="hit-area w-9 h-9 rounded-2xl flex items-center justify-center text-zinc-400 hover:text-white bg-raised border border-white/5 transition-colors"
+          >
+            {isLight ? <Moon size={16} /> : <Sun size={16} />}
+          </button>
+          {actions}
+        </div>
       </header>
 
       <nav

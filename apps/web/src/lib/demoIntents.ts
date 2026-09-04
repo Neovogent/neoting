@@ -77,5 +77,11 @@ export function composeChaseBody(businessName: string, items: readonly DemoChase
 /** "+44 7700 900123" → "+447700900123", or null when it cannot be an E.164 number. */
 export function toE164(mobile: string): string | null {
   const compact = mobile.replace(/[\s()-]/g, '');
+  // A UK national mobile (07…) is rewritten, not refused (5 Sep 2026 review
+  // finding: the hint demanded "+447700900001" of a UK accountant). This is a
+  // deterministic rule, not a guess — an 11-digit 07 number is a UK mobile and
+  // nothing else, and this product is UK-first. Other countries stay
+  // +-prefixed until a locale-aware rewrite is a real requirement.
+  if (/^07[0-9]{9}$/.test(compact)) return `+44${compact.slice(1)}`;
   return /^\+[1-9][0-9]{6,14}$/.test(compact) ? compact : null;
 }

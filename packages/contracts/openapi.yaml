@@ -2786,6 +2786,100 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /portal/setup-previews:
+    post:
+      operationId: previewPortalSetup
+      summary: What a setup link names, for prefilling the sign-in screen
+      description: |
+        Exchanges a setup token for the registered email address and the
+        business name, so the screen the emailed link lands on can PREFILL the
+        address instead of asking the client to retype it (5 Sep 2026 review
+        finding: a client typed a different address than the one registered,
+        and the uniform `202` on `createPortalSignInCode` meant nothing arrived
+        and nothing said why).
+
+        **Why answering is safe when `createPortalSignInCode` must stay
+        silent:** that operation answers an anonymous caller who typed an
+        address, so any signal is an enumeration oracle. This one answers the
+        holder of a token WE emailed to the address it names — every fact in
+        the response is already in the message they are reading the link out
+        of. The same argument admits `POST /auth/invitation-preview` for the
+        practice-colleague invite; this is that operation one trust level down.
+
+        A token that verifies nothing — unknown, expired, already accepted —
+        is one uniform `401 NT-OTP-001`, the portal's stance. The caller's
+        screen degrades to the empty field it had anyway; the refusal is a
+        prefill withheld, never a dead end.
+      tags: [portal]
+      x-nt-side-effect: none
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PortalSetupPreviewRequest' }
+      responses:
+        '200':
+          description: What the token names.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PortalSetupPreview' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: The token verifies nothing — `NT-OTP-001`, uniformly.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /portal/business-profile:
+    put:
+      operationId: updatePortalBusinessProfile
+      summary: The business fills in its own record
+      description: |
+        The setup journey's "tell us about your business" step (5 Sep 2026
+        review finding: the emailed link said the client would fill in their
+        account information, and the journey asked them nothing). The invited
+        client — the registered primary contact, whose effective authority is
+        the workspace owner's (`portal-people-authority.ts`) — completes the
+        company facts intake could not know: trading name, company number,
+        legal structure, sector, website, VAT registration.
+
+        **Every field is optional and an omitted field is UNCHANGED** — the
+        step is skippable by design, because a missing company number must
+        never stand between a client and sending their first receipt. Sending
+        a field with `null` (or `false` for `vatRegistered`) is an explicit
+        answer and is written.
+
+        Like the people operations, this is a direct write with an audit row,
+        not a proposal: a business stating its own company number is not a
+        judgement an accountant should have to approve (the
+        `business.person.invited` argument). `NT-PRM-001` refuses a session
+        whose contact does not hold the owner authority; a CHASE session is
+        refused before that, by the resolver.
+      tags: [portal]
+      x-nt-side-effect: ingest
+      security:
+        - portalSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PortalBusinessProfileUpdate' }
+      responses:
+        '204':
+          description: Written. The portal context reflects it on its next read.
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /portal/people:
     get:
       operationId: listPortalPeople
@@ -7695,6 +7789,52 @@ components:
           description: |
             The six digits from the email. Single use, short expiry, attempt
             limited. Never logged, never in a URL, never in a response.
+
+    PortalBusinessProfileUpdate:
+      type: object
+      description: |
+        The business's own record, filled in by the business (the setup
+        journey's details step, 5 Sep 2026). **Every field optional; omitted is
+        UNCHANGED; sent-as-null is an explicit clearing.** Free text throughout
+        — a company number is validated by Companies House, not by a regex that
+        refuses the formats it forgot — except `vatRegistered`, which is the
+        one boolean, and `vatNumber`, which is capped like the rest. All of it
+        is untrusted content on its way into a workspace record: rendered as
+        data, never instructions.
+      properties:
+        tradingName: { type: [string, 'null'], maxLength: 200 }
+        companyNumber: { type: [string, 'null'], maxLength: 20 }
+        legalStructure:
+          type: [string, 'null']
+          maxLength: 60
+          description: Ltd, LLP, sole trader, partnership — free text with suggestions client-side.
+        industry: { type: [string, 'null'], maxLength: 120 }
+        website: { type: [string, 'null'], maxLength: 200 }
+        vatRegistered: { type: boolean }
+        vatNumber: { type: [string, 'null'], maxLength: 20 }
+
+    PortalSetupPreviewRequest:
+      type: object
+      required: [setupToken]
+      properties:
+        setupToken:
+          type: string
+          description: The token from the emailed setup link. See `previewPortalSetup`.
+
+    PortalSetupPreview:
+      type: object
+      description: |
+        What the setup token names — enough to prefill the sign-in screen and
+        greet the client by workspace, nothing more. No ids, no contact record,
+        no invite metadata: the holder already has both facts in the email the
+        link arrived in, and this response must never grow one they do not.
+      required: [email, businessName]
+      properties:
+        email:
+          type: string
+          format: email
+          description: The registered address the invite names — the ONLY address `createPortalSignInCode` will mail (D45).
+        businessName: { type: string }
 
     # ---- publishing (SoT Stage 10 — METH Stage 2, issue #120) ---------------
 

@@ -42,6 +42,10 @@ const m = defineMessages({
   headerNavLabel: { id: 'landing.landingView.headerNavLabel', defaultMessage: 'Landing page' },
   headerPricing: { id: 'landing.landingView.headerPricing', defaultMessage: 'Pricing' },
   headerSignIn: { id: 'landing.landingView.headerSignIn', defaultMessage: 'Sign in' },
+  // Two front doors for two audiences (5 Sep 2026 review finding: a client had
+  // no way to reach their portal from the home page). "Sign in" stays the
+  // practice's; this one is the client's, and the label says whose it is.
+  headerClientSignIn: { id: 'landing.landingView.headerClientSignIn', defaultMessage: 'Client portal' },
 
   heroTitle: {
     id: 'landing.landingView.heroTitle',
@@ -229,6 +233,12 @@ export function LandingView() {
               className="px-3 py-2 text-[13px] font-semibold text-zinc-400 hover:text-white transition-colors rounded-full"
             >
               {intl.formatMessage(m.headerPricing)}
+            </a>
+            <a
+              {...linkProps('/portal')}
+              className="px-3 py-2 text-[13px] font-semibold text-zinc-400 hover:text-white transition-colors rounded-full"
+            >
+              {intl.formatMessage(m.headerClientSignIn)}
             </a>
             <a
               {...linkProps('/app')}

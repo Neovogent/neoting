@@ -1157,10 +1157,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // M8). The behavioural defaults (thresholds, toggles) stand either way.
   //
   // ⚠ `theme` is the one field that does NOT come from `DEFAULT_SETTINGS`. It
-  // is `resolveInitialTheme()` — the stored choice, else the operating
-  // system's `prefers-color-scheme` — because `DEFAULT_SETTINGS.theme` is a
-  // hardcoded 'light' and seeding from it threw every dark-mode user back into
-  // light on every reload. The same answer is computed inline in `index.html`
+  // is `resolveInitialTheme()` — the stored choice, else light (the owner's
+  // 5 Sep 2026 ruling: default is light and only the switcher changes it; the
+  // OS preference is deliberately not consulted). What the indirection still
+  // buys over `DEFAULT_SETTINGS.theme` is PERSISTENCE: seeding from the
+  // constant threw every dark-mode user back into light on every reload.
+  // The same answer is computed inline in `index.html`
   // before the first paint; recomputing it here is what makes React's state
   // agree with the class already on `<html>`, so the effect in `App.tsx` is a
   // no-op on load rather than a second, visible flip.

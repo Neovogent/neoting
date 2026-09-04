@@ -4,7 +4,6 @@ import {
   readStoredTheme,
   resolveInitialTheme,
   storeTheme,
-  systemTheme,
   THEME_STORAGE_KEY,
 } from './theme-preference';
 
@@ -15,7 +14,10 @@ import {
  * white screen rather than degrading to a preference that does not stick.
  *
  * So the interesting cases are all failure cases, plus the one behavioural
- * rule that is easy to get backwards: NEVER CHOSEN is not CHOSEN-LIGHT.
+ * rule: NEVER CHOSEN IS LIGHT — the owner's 5 Sep 2026 ruling ("default color
+ * mode should be white mode, can be changed manually using switcher"), which
+ * REVERSED this suite's earlier pin that never-chosen followed the OS. The OS
+ * preference is deliberately not consulted anywhere in the module now.
  */
 
 /** Replace `window.localStorage` with something that throws on every access. */
@@ -65,7 +67,7 @@ describe('readStoredTheme', () => {
   it('ignores a value that is not one of the two themes', () => {
     // Someone else's key collision, a half-written value, a hand-edited
     // devtools entry. Anything but the two words is "no choice made", which
-    // falls through to the operating system rather than to a broken class.
+    // falls through to the default rather than to a broken class.
     window.localStorage.setItem(THEME_STORAGE_KEY, 'purple');
     expect(readStoredTheme()).toBeNull();
   });
@@ -95,44 +97,29 @@ describe('storeTheme', () => {
   });
 });
 
-describe('systemTheme', () => {
-  it('follows prefers-color-scheme in both directions', () => {
-    setSystemDark(true);
-    expect(systemTheme()).toBe('dark');
-    vi.restoreAllMocks();
-    setSystemDark(false);
-    expect(systemTheme()).toBe('light');
-  });
-
-  it('falls back to light when matchMedia is unavailable', () => {
-    vi.spyOn(window, 'matchMedia').mockImplementation(() => {
-      throw new Error('no matchMedia here');
-    });
-    expect(systemTheme()).toBe('light');
-  });
-});
-
 describe('resolveInitialTheme', () => {
-  it('prefers an explicit choice over the operating system', () => {
-    setSystemDark(true);
+  it('prefers an explicit choice, in both directions', () => {
+    storeTheme('dark');
+    expect(resolveInitialTheme()).toBe('dark');
     storeTheme('light');
     expect(resolveInitialTheme()).toBe('light');
   });
 
-  it('⚠ falls back to the OS when the user has never chosen — not to light', () => {
-    // This is the rule the old code got wrong: `DEFAULT_SETTINGS.theme` was a
-    // hardcoded 'light', so a machine set to dark opened light and every
-    // reload undid the toggle.
-    setSystemDark(true);
+  it('⚠ never chosen is LIGHT, even on an OS set to dark', () => {
+    // The owner's ruling (5 Sep 2026). A dark-set machine still opens light
+    // until the switcher is used — prefers-color-scheme must not be consulted,
+    // so the spy also proves matchMedia is never even asked.
+    const media = setSystemDark(true);
     expect(readStoredTheme()).toBeNull();
-    expect(resolveInitialTheme()).toBe('dark');
+    expect(resolveInitialTheme()).toBe('light');
+    expect(media).not.toHaveBeenCalled();
   });
 
-  it('still answers a usable theme with storage blocked', () => {
+  it('still answers light with storage blocked', () => {
     setSystemDark(true);
     const restore = blockStorage();
     try {
-      expect(resolveInitialTheme()).toBe('dark');
+      expect(resolveInitialTheme()).toBe('light');
     } finally {
       restore();
     }

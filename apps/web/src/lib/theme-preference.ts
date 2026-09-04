@@ -27,14 +27,17 @@
  * makes the same argument at greater length. This module deliberately copies
  * its shape — guarded access, fail back to a default, never throw.
  *
- * ## Never chosen is not the same as chosen-light
+ * ## Never chosen means LIGHT — an owner's decision, not an accident
  *
- * If the key is absent the answer is the operating system's own
- * `prefers-color-scheme`, not a hardcoded light. That is why `storeTheme` is
- * called ONLY from an explicit user action (`updateSettings({ theme })`, which
- * is what both the sidebar toggle and the Settings radio call) and never from
- * the effect that applies the class: writing on mount would pin whatever the OS
- * happened to be saying at first load and silently stop following it after.
+ * With no stored key the answer is `'light'`, full stop. It was the operating
+ * system's `prefers-color-scheme` until 5 Sep 2026, when the product owner
+ * ruled otherwise in review: "Default color mode should be white mode, can be
+ * changed manually using switcher." So the OS preference is deliberately NOT
+ * consulted — the product opens light for everyone until they flip the
+ * switcher, and only that explicit flip is persisted. `storeTheme` is still
+ * called ONLY from `updateSettings({ theme })` (the sidebar toggle and the
+ * Settings radio) and never from the effect that applies the class, so the
+ * absent-key state survives until a human genuinely chooses.
  *
  * ## Every access is guarded
  *
@@ -86,17 +89,9 @@ export function storeTheme(theme: Theme): void {
   }
 }
 
-/** What the operating system asks for, defaulting to light if it will not say. */
-export function systemTheme(): Theme {
-  try {
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  } catch {
-    return 'light';
-  }
-}
-
 /**
- * The theme to start in: the stored choice, else the operating system's.
+ * The theme to start in: the stored choice, else light (the header explains
+ * why the OS preference is deliberately not consulted).
  *
  * Read once, to seed `settings.theme`. `index.html` computes the same answer
  * inline so the class is on `<html>` before the first paint; this call is what
@@ -104,5 +99,5 @@ export function systemTheme(): Theme {
  * class-applying effect is a no-op on load instead of a second flash.
  */
 export function resolveInitialTheme(): Theme {
-  return readStoredTheme() ?? systemTheme();
+  return readStoredTheme() ?? 'light';
 }

@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Inject, Post, Query } from '@nestjs/common';
 
-import type { DocumentUpload, PortalContext, PortalDocument, PortalSession } from '@neoting/contracts/model';
+import type { DocumentUpload, PortalContext, PortalDocument, PortalSession, PortalSetupPreview } from '@neoting/contracts/model';
 import {
   createPortalOnboardingSessionBody,
   createPortalOnboardingSessionHeader,
@@ -11,6 +11,7 @@ import {
   createPortalUploadBody,
   createPortalUploadHeader,
   listPortalDocumentsQueryParams,
+  previewPortalSetupBody,
 } from '@neoting/contracts/zod';
 
 import type { Page } from '../../common/pagination/cursor.js';
@@ -33,19 +34,21 @@ import {
 } from './tokens.js';
 
 /**
- * The **six** contracted portal operations (METH Stage 9, SoT §4 Stage 8.3, D49):
- * open a session from a link plus six digits, ask for the code that opens one,
- * open one from a setup link, see what is being chased, see what you have sent,
- * start an upload. Nothing else lives here — the portal is the smallest surface
- * in the product and the only one a stranger holding a forwarded link can
- * reach, so a seventh handler is a contract decision rather than a convenience,
- * and `portal.controller.test.ts` pins the list.
+ * The **seven** contracted portal operations (METH Stage 9, SoT §4 Stage 8.3,
+ * D49): open a session from a link plus six digits, ask for the code that opens
+ * one, open one from a setup link, preview what a setup link names, see what is
+ * being chased, see what you have sent, start an upload. Nothing else lives
+ * here — the portal is the smallest surface in the product and the only one a
+ * stranger holding a forwarded link can reach, so an eighth handler is a
+ * contract decision rather than a convenience, and `portal.controller.test.ts`
+ * pins the list.
  *
  * It read "three" until 28 Aug 2026 (the two invited-client routes, published by
- * S0 and implemented by nobody) and again until 2 Sep 2026
+ * S0 and implemented by nobody), "six" until 2 Sep 2026
  * (`GET /portal/documents` — the client's own document list, which D49's home
  * and upload tabs are built on and for which the only server-side fact was the
- * integer `PortalSummary.documentsSent`).
+ * integer `PortalSummary.documentsSent`), and grew the setup preview on
+ * 5 Sep 2026 (the review finding on the sign-in screen's empty email field).
  *
  * **The credential is a BEARER, not a cookie.** `METH_MODE.md` Stage 9 says
  * "issue portal cookie"; `openapi.yaml` declares `portalSession: {type: http,
@@ -186,6 +189,34 @@ export class PortalController {
       // them back to the £8.50 screen. Omitted when never subscribed.
       ...(issued.subscriptionStatus === undefined ? {} : { subscriptionStatus: issued.subscriptionStatus }),
     };
+  }
+
+  /**
+   * `POST /portal/setup-previews` — public. Setup token → the registered
+   * address and the business name, so the sign-in screen can PREFILL the email
+   * instead of asking the client to retype the one fact a mistype silently
+   * kills (the uniform 202 sends nothing and says nothing — 5 Sep 2026 review
+   * finding, and it happened to a real client the day before).
+   *
+   * Safe to answer where `sign-in-codes` must stay silent: the caller holds a
+   * token WE emailed to the address the answer names — the invitation-preview
+   * argument, one trust level down. Every refusal is the uniform `NT-OTP-001`.
+   * No Idempotency-Key: `x-nt-side-effect: none`, nothing is written.
+   */
+  @Post('setup-previews')
+  @HttpCode(HttpStatus.OK)
+  async previewSetup(@Body() body: unknown): Promise<PortalSetupPreview> {
+    const request = parseBoundary(previewPortalSetupBody, body, 'request body');
+    const preview = await this.onboarding.previewSetup(request.setupToken);
+    if (preview === null) {
+      throw new AppException(
+        'NT-OTP-001',
+        HttpStatus.UNAUTHORIZED,
+        'Verification failed',
+        'That setup link did not verify. Ask your accountant to send a fresh one if it has expired.',
+      );
+    }
+    return preview;
   }
 
   /** `GET /portal/context` — the chased items this session exists to collect, and nothing else. */

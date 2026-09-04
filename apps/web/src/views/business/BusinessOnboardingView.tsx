@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -384,6 +384,14 @@ function LinkEntry() {
 function EmailStep({ journey }: { journey: OnboardingJourney }) {
   const intl = useIntl();
   const [address, setAddress] = useState(journey.email);
+  // The registered address, prefilled once it arrives (5 Sep 2026 finding:
+  // a client retyped a DIFFERENT address, and the uniform 202 silently sent
+  // nothing). It arrives async, so it cannot be the useState initial value —
+  // and it never overwrites something the client has already typed.
+  const [touched, setTouched] = useState(false);
+  useEffect(() => {
+    if (!touched && address === '' && journey.prefilledEmail !== null) setAddress(journey.prefilledEmail);
+  }, [journey.prefilledEmail, touched, address]);
   const ready = looksLikeEmail(address);
 
   return (
@@ -401,7 +409,10 @@ function EmailStep({ journey }: { journey: OnboardingJourney }) {
             inputMode="email"
             autoComplete="email"
             value={address}
-            onChange={(e) => setAddress(e.target.value)}
+            onChange={(e) => {
+              setTouched(true);
+              setAddress(e.target.value);
+            }}
             onKeyDown={(e) => e.key === 'Enter' && ready && void journey.sendCode(address.trim())}
             placeholder={intl.formatMessage(m.emailPlaceholder)}
             className="w-full bg-ground border border-white/5 rounded-2xl py-3.5 pl-11 pr-4 text-[14px] text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors"

@@ -60,7 +60,7 @@ const m = defineMessages({
   },
   dropDetail: {
     id: 'portal.livePortalUpload.dropDetail',
-    defaultMessage: 'PDF, JPG, PNG, HEIC or a Word document · up to {limit}MB each.',
+    defaultMessage: 'PDF, JPG, PNG, HEIC, a Word document or a CSV/Excel statement · up to {limit}MB each.',
   },
   sending: { id: 'portal.livePortalUpload.sending', defaultMessage: 'Sending…' },
 

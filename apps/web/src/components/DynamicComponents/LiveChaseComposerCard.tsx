@@ -21,10 +21,19 @@ const m = defineMessages({
     id: 'shell.liveChaseComposer.noItems',
     defaultMessage: 'Nothing to chase — every unmatched transaction for this client is either suppressed or already has its paperwork.',
   },
-  recipientLabel: { id: 'shell.liveChaseComposer.recipientLabel', defaultMessage: 'Recipient mobile' },
+  recipientLabel: { id: 'shell.liveChaseComposer.recipientLabel', defaultMessage: 'Recipient mobile (optional)' },
+  // UK-first wording (5 Sep 2026 review): the audience is a UK practice, so
+  // the example is a UK mobile in both shapes `toE164` accepts. Other
+  // countries still work with their + prefix; a per-locale example is the
+  // translator's to write, which is what the catalogue is for.
   recipientInvalid: {
     id: 'shell.liveChaseComposer.recipientInvalid',
-    defaultMessage: 'Enter an international mobile number, e.g. +447700900001.',
+    defaultMessage: 'Enter a UK mobile — 07700 900123 or +44 7700 900123 — or leave it blank.',
+  },
+  recipientOptionalNote: {
+    id: 'shell.liveChaseComposer.recipientOptionalNote',
+    defaultMessage:
+      'Left blank, the chase goes to the registered primary contact by email. A mobile adds SMS once it is switched on for your practice.',
   },
   draftSection: { id: 'shell.liveChaseComposer.draftSection', defaultMessage: 'Draft message' },
   draftNote: {
@@ -32,6 +41,19 @@ const m = defineMessages({
     defaultMessage: 'The portal link is minted when the message is composed server-side; this draft carries the portal address without a signed token.',
   },
   stage: { id: 'shell.liveChaseComposer.stage', defaultMessage: 'Stage for review' },
+  // The statement-request half (5 Sep 2026 review finding: "ask Zeplow for
+  // their bank statement" landed on this card, whose only ask was receipts —
+  // a client with no bank data yet gave it nothing to stage and the button
+  // was a dead end). Same engine (c) request BankView's dialog stages; the
+  // body is composed server-side at creation like every chase.
+  statementSection: { id: 'shell.liveChaseComposer.statementSection', defaultMessage: 'Or request a bank statement' },
+  statementNote: {
+    id: 'shell.liveChaseComposer.statementNote',
+    defaultMessage:
+      'Asks the client for one month’s statement — the email carries their secure upload link, and the message is composed at review.',
+  },
+  statementMonthLabel: { id: 'shell.liveChaseComposer.statementMonthLabel', defaultMessage: 'Statement month' },
+  stageStatement: { id: 'shell.liveChaseComposer.stageStatement', defaultMessage: 'Stage statement request' },
 });
 
 /**
@@ -87,6 +109,25 @@ export function LiveChaseComposerCard({
   });
   const recipientE164 = toE164(recipient);
 
+  // Last calendar month, the obvious default for "send me your statement".
+  const [statementMonth, setStatementMonth] = useState(() => {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+
+  // Engine (c): the body is a placeholder the compose seam DISCARDS — the
+  // month, the working portal link and the primary recipient are all stamped
+  // server-side at creation (`requestStatementProposal` in api/proposals.ts is
+  // the same request; this builds it inline so LiveProposalFlow owns staging).
+  const buildStatementRequest = (): CreateActionProposalRequest =>
+    ({
+      kind: 'chase.send',
+      businessId: chosenBusinessId,
+      payload: { messages: [{ statementPeriod: statementMonth, body: 'Composed at review.' }] },
+    }) as CreateActionProposalRequest;
+
   const body =
     resolvedName === null
       ? ''
@@ -96,13 +137,20 @@ export function LiveChaseComposerCard({
           `${window.location.origin}/p/`,
         );
 
+  // The mobile is OPTIONAL (5 Sep 2026 review finding: the card said "by
+  // email" and then refused to stage without a mobile). Blank, the key is
+  // OMITTED and the compose seam resolves the business's PRIMARY contact —
+  // an email-only contact is a reachable recipient (#245), and the engine
+  // stamps the registered mobile itself when one is on file. A typed value
+  // must still be a real E.164 — a mangled number silently dropped would be
+  // worse than a refusal.
   const buildRequest = (): CreateActionProposalRequest => ({
     kind: 'chase.send',
     businessId: chosenBusinessId,
     payload: {
       messages: [
         {
-          recipientE164: recipientE164 ?? '',
+          ...(recipientE164 === null ? {} : { recipientE164 }),
           body,
           transactionIds: selected.map((t) => t.id),
         },
@@ -193,9 +241,10 @@ export function LiveChaseComposerCard({
                 onChange={(e) => setRecipient(e.target.value)}
                 className="w-full max-w-xs bg-raised border border-white/10 rounded-2xl px-4 py-2.5 text-[14px] text-white focus:outline-none focus:border-brand"
               />
-              {recipientE164 === null && (
+              {recipient.trim() !== '' && recipientE164 === null && (
                 <p className="text-[12px] text-amber-400">{intl.formatMessage(m.recipientInvalid)}</p>
               )}
+              <p className="text-[12px] text-zinc-500">{intl.formatMessage(m.recipientOptionalNote)}</p>
             </div>
 
             {selected.length > 0 && (
@@ -211,8 +260,34 @@ export function LiveChaseComposerCard({
               buildRequest={buildRequest}
               clientName={resolvedName}
               stageLabel={intl.formatMessage(m.stage)}
-              disabled={selected.length === 0 || recipientE164 === null}
+              // Blank is fine (the engine resolves the registered contact);
+              // only a TYPED value that is not a real number blocks staging.
+              disabled={selected.length === 0 || (recipient.trim() !== '' && recipientE164 === null)}
             />
+
+            {/* The statement-request half — its own flow, staged independently
+                of the receipts above, because a client with NO bank data yet
+                (the 5 Sep 2026 review case) has nothing unmatched to chase and
+                a statement is exactly what is being asked for. */}
+            <ReviewSection title={intl.formatMessage(m.statementSection)}>
+              <p className="text-[12px] text-zinc-500 mb-3">{intl.formatMessage(m.statementNote)}</p>
+              <label htmlFor="chase-statement-month" className="text-[13px] font-bold text-zinc-400 block mb-2">
+                {intl.formatMessage(m.statementMonthLabel)}
+              </label>
+              <input
+                id="chase-statement-month"
+                type="month"
+                value={statementMonth}
+                onChange={(e) => setStatementMonth(e.target.value)}
+                className="w-full max-w-xs bg-raised border border-white/10 rounded-2xl px-4 py-2.5 text-[14px] text-white focus:outline-none focus:border-brand mb-4"
+              />
+              <LiveProposalFlow
+                buildRequest={buildStatementRequest}
+                clientName={resolvedName}
+                stageLabel={intl.formatMessage(m.stageStatement)}
+                disabled={!/^\d{4}-\d{2}$/.test(statementMonth)}
+              />
+            </ReviewSection>
           </>
         )}
       </div>

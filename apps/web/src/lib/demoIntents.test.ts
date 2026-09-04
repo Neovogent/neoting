@@ -47,7 +47,12 @@ describe('the SMS draft (display-tier — the payload carries only ids and text)
   test('recipient numbers normalise to E.164 or refuse', () => {
     expect(toE164('+44 7700 900123')).toBe('+447700900123');
     expect(toE164('+447700900001')).toBe('+447700900001');
-    expect(toE164('07700 900123')).toBeNull(); // no country code — refused, not guessed
+    // A UK national mobile is REWRITTEN, not refused (5 Sep 2026 review) —
+    // deterministic for a UK-first product; this pin used to assert the
+    // opposite and the owner's review reversed it.
+    expect(toE164('07700 900123')).toBe('+447700900123');
+    // Too short to be a UK mobile and carrying no country code — still refused.
+    expect(toE164('0770 090')).toBeNull();
     expect(toE164('not a number')).toBeNull();
   });
 });
