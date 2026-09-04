@@ -304,3 +304,54 @@ test('the chased transaction the client picked travels in the claims — a hint,
 function derivedId(uploadId: string): string {
   return `doc_${createHash('sha256').update(uploadId).digest('hex').slice(0, 24)}`;
 }
+
+test('the client\'s note becomes the document\'s NAME — keeping the real extension the statement lane reads (review item 11)', async () => {
+  const { service } = harness();
+
+  const named = await service.createPortalUpload(FACTS, request({ note: 'July fuel receipt' }), randomUUID());
+
+  // The display half: IMG-style names give way to the client's own words, with
+  // the declared extension kept — `formatFor` picks the CSV/XLSX reader off the
+  // filename, so a renamed statement must still read as one.
+  // The record half: the unedited note rides beside it, so completion can put
+  // what the client SAID on the provenance event.
+  expect(claimsOf(named.uploadId)).toMatchObject({
+    filename: 'July fuel receipt.jpg',
+    portalNote: 'July fuel receipt',
+  });
+});
+
+test('no note changes nothing — the declared filename travels exactly as before', async () => {
+  const { service } = harness();
+
+  const plain = await service.createPortalUpload(FACTS, request(), randomUUID());
+  const explicitNull = await service.createPortalUpload(FACTS, request({ note: null }), randomUUID());
+
+  expect(claimsOf(plain.uploadId)).toMatchObject({ filename: 'currys-receipt.jpg' });
+  expect(claimsOf(plain.uploadId)).not.toHaveProperty('portalNote');
+  expect(claimsOf(explicitNull.uploadId)).toMatchObject({ filename: 'currys-receipt.jpg' });
+  expect(claimsOf(explicitNull.uploadId)).not.toHaveProperty('portalNote');
+});
+
+test('a note that survives sanitisation as nothing falls back to the declared filename — a rename must never cost the upload', async () => {
+  const { service } = harness();
+
+  const blank = await service.createPortalUpload(FACTS, request({ note: '   ' }), randomUUID());
+  const separatorsOnly = await service.createPortalUpload(FACTS, request({ note: '///\\' }), randomUUID());
+
+  expect(claimsOf(blank.uploadId)).toMatchObject({ filename: 'currys-receipt.jpg' });
+  expect(claimsOf(separatorsOnly.uploadId)).toMatchObject({ filename: 'currys-receipt.jpg' });
+});
+
+test('path separators in a note are stripped from the NAME and kept verbatim in the RECORD', async () => {
+  const { service } = harness();
+
+  const hostile = await service.createPortalUpload(FACTS, request({ note: '../secret/name' }), randomUUID());
+
+  const claims = claimsOf(hostile.uploadId);
+  // The filename carries no separator a downstream path-join could obey…
+  expect(String(claims['filename'])).not.toMatch(/[\/]/);
+  expect(String(claims['filename']).endsWith('.jpg')).toBe(true);
+  // …while the provenance record keeps the client's words unedited, as data.
+  expect(claims['portalNote']).toBe('../secret/name');
+});

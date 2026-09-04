@@ -72,9 +72,46 @@ const m = defineMessages({
   },
   welcomeNext: {
     id: 'portal.onboarding.welcomeNext',
-    defaultMessage: 'One thing left to do: set up your subscription.',
+    defaultMessage: 'Two things left to do: tell us about your business, then set up your subscription.',
   },
   welcomeAction: { id: 'portal.onboarding.welcomeAction', defaultMessage: 'Continue' },
+
+  detailsTitle: { id: 'portal.onboarding.detailsTitle', defaultMessage: 'Your business details' },
+  detailsDetail: {
+    id: 'portal.onboarding.detailsDetail',
+    defaultMessage:
+      'A few facts about your business help your accountant code your paperwork correctly. Everything here is optional — you can skip it and fill it in later, in your portal settings.',
+  },
+  detailsTradingNameLabel: { id: 'portal.onboarding.detailsTradingNameLabel', defaultMessage: 'Trading name' },
+  detailsTradingNamePlaceholder: {
+    id: 'portal.onboarding.detailsTradingNamePlaceholder',
+    defaultMessage: 'If you trade under a different name',
+  },
+  detailsCompanyNumberLabel: { id: 'portal.onboarding.detailsCompanyNumberLabel', defaultMessage: 'Company number' },
+  detailsCompanyNumberPlaceholder: {
+    id: 'portal.onboarding.detailsCompanyNumberPlaceholder',
+    defaultMessage: 'Your Companies House number, if you have one',
+  },
+  detailsLegalStructureLabel: { id: 'portal.onboarding.detailsLegalStructureLabel', defaultMessage: 'Legal structure' },
+  detailsLegalStructurePlaceholder: {
+    id: 'portal.onboarding.detailsLegalStructurePlaceholder',
+    defaultMessage: 'Limited company, sole trader…',
+  },
+  detailsIndustryLabel: { id: 'portal.onboarding.detailsIndustryLabel', defaultMessage: 'What the business does' },
+  detailsIndustryPlaceholder: {
+    id: 'portal.onboarding.detailsIndustryPlaceholder',
+    defaultMessage: 'Restaurant, plumbing, consultancy…',
+  },
+  detailsWebsiteLabel: { id: 'portal.onboarding.detailsWebsiteLabel', defaultMessage: 'Website' },
+  detailsWebsitePlaceholder: { id: 'portal.onboarding.detailsWebsitePlaceholder', defaultMessage: 'yourbusiness.co.uk' },
+  detailsVatLabel: { id: 'portal.onboarding.detailsVatLabel', defaultMessage: 'VAT registered?' },
+  detailsVatUnanswered: { id: 'portal.onboarding.detailsVatUnanswered', defaultMessage: 'Skip this' },
+  detailsVatYes: { id: 'portal.onboarding.detailsVatYes', defaultMessage: 'Yes' },
+  detailsVatNo: { id: 'portal.onboarding.detailsVatNo', defaultMessage: 'No' },
+  detailsVatNumberLabel: { id: 'portal.onboarding.detailsVatNumberLabel', defaultMessage: 'VAT number' },
+  detailsVatNumberPlaceholder: { id: 'portal.onboarding.detailsVatNumberPlaceholder', defaultMessage: 'GB123456789' },
+  detailsAction: { id: 'portal.onboarding.detailsAction', defaultMessage: 'Save and continue' },
+  detailsSkipAction: { id: 'portal.onboarding.detailsSkipAction', defaultMessage: 'Skip for now' },
 
   subscribeTitle: { id: 'portal.onboarding.subscribeTitle', defaultMessage: 'Your subscription' },
   subscribePrice: { id: 'portal.onboarding.subscribePrice', defaultMessage: '£8.50 + VAT' },
@@ -273,11 +310,13 @@ export function BusinessOnboardingView() {
         <OutcomeBadge good />
         <p className="text-[14px] text-zinc-400 leading-relaxed">{intl.formatMessage(m.welcomeDetail)}</p>
         <p className="text-[14px] font-semibold text-white leading-relaxed">{intl.formatMessage(m.welcomeNext)}</p>
-        <PrimaryButton onClick={journey.beginSubscription} label={intl.formatMessage(m.welcomeAction)} icon={ArrowRight} />
+        <PrimaryButton onClick={journey.beginDetails} label={intl.formatMessage(m.welcomeAction)} icon={ArrowRight} />
         <SyntheticNote live={journey.live} onExit={exitBusinessPortal} />
       </Shell>
     );
   }
+
+  if (journey.step === 'details') return <DetailsStep journey={journey} />;
 
   if (journey.step === 'subscribe') {
     return (
@@ -483,7 +522,108 @@ function CodeStep({ journey }: { journey: OnboardingJourney }) {
   );
 }
 
-/* ── ④ their own workspace, once they are in ──────────────────────────────── */
+/* ── ④ the business's own details (5 Sep 2026, review item 4) ─────────────── */
+
+/**
+ * The setup journey's details step, between welcome and subscribe. The emailed
+ * link told the client they would "fill in their account information", and
+ * until this step the journey asked them nothing between the code and the
+ * payment.
+ *
+ * Every field is OPTIONAL and the step is skippable — a missing company number
+ * must never stand between a client and their first receipt. Only what was
+ * answered travels (`PUT /portal/business-profile`: an omitted key is
+ * unchanged), so leaving a field blank states nothing rather than clearing it.
+ */
+function DetailsStep({ journey }: { journey: OnboardingJourney }) {
+  const intl = useIntl();
+  const [tradingName, setTradingName] = useState('');
+  const [companyNumber, setCompanyNumber] = useState('');
+  const [legalStructure, setLegalStructure] = useState('');
+  const [industry, setIndustry] = useState('');
+  const [website, setWebsite] = useState('');
+  // Tri-state on purpose: unanswered OMITS the key, the intake form's rule —
+  // a `false` nobody asserted must not be filed as an answer.
+  const [vatRegistered, setVatRegistered] = useState<boolean | null>(null);
+  const [vatNumber, setVatNumber] = useState('');
+
+  const draft = () => ({
+    ...(tradingName.trim() === '' ? {} : { tradingName: tradingName.trim() }),
+    ...(companyNumber.trim() === '' ? {} : { companyNumber: companyNumber.trim() }),
+    ...(legalStructure.trim() === '' ? {} : { legalStructure: legalStructure.trim() }),
+    ...(industry.trim() === '' ? {} : { industry: industry.trim() }),
+    ...(website.trim() === '' ? {} : { website: website.trim() }),
+    ...(vatRegistered === null ? {} : { vatRegistered }),
+    ...(vatRegistered === true && vatNumber.trim() !== '' ? { vatNumber: vatNumber.trim() } : {}),
+  });
+
+  const field = (
+    id: string,
+    label: string,
+    placeholder: string,
+    value: string,
+    onChange: (next: string) => void,
+  ) => (
+    <div>
+      <label htmlFor={id} className="block text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
+        {label}
+      </label>
+      <input
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full bg-ground border border-white/5 rounded-2xl px-4 py-3.5 text-[14px] text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors"
+      />
+    </div>
+  );
+
+  const vatChoice = (label: string, value: boolean | null) => (
+    <button
+      key={label}
+      onClick={() => setVatRegistered(value)}
+      aria-pressed={vatRegistered === value}
+      className={`px-4 py-2 rounded-full text-[13px] font-bold transition-colors ${
+        vatRegistered === value ? 'bg-brand text-brand-on shadow-glow-tab' : 'bg-ground border border-white/5 text-zinc-400 hover:text-white'
+      }`}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <Shell title={intl.formatMessage(m.detailsTitle)} subtitle={journey.businessName ?? undefined}>
+      <p className="text-[14px] text-zinc-400 leading-relaxed">{intl.formatMessage(m.detailsDetail)}</p>
+      {field('onboarding-trading-name', intl.formatMessage(m.detailsTradingNameLabel), intl.formatMessage(m.detailsTradingNamePlaceholder), tradingName, setTradingName)}
+      {field('onboarding-company-number', intl.formatMessage(m.detailsCompanyNumberLabel), intl.formatMessage(m.detailsCompanyNumberPlaceholder), companyNumber, setCompanyNumber)}
+      {field('onboarding-legal-structure', intl.formatMessage(m.detailsLegalStructureLabel), intl.formatMessage(m.detailsLegalStructurePlaceholder), legalStructure, setLegalStructure)}
+      {field('onboarding-industry', intl.formatMessage(m.detailsIndustryLabel), intl.formatMessage(m.detailsIndustryPlaceholder), industry, setIndustry)}
+      {field('onboarding-website', intl.formatMessage(m.detailsWebsiteLabel), intl.formatMessage(m.detailsWebsitePlaceholder), website, setWebsite)}
+      <div>
+        <span className="block text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
+          {intl.formatMessage(m.detailsVatLabel)}
+        </span>
+        <div className="flex items-center gap-2">
+          {vatChoice(intl.formatMessage(m.detailsVatYes), true)}
+          {vatChoice(intl.formatMessage(m.detailsVatNo), false)}
+          {vatChoice(intl.formatMessage(m.detailsVatUnanswered), null)}
+        </div>
+      </div>
+      {vatRegistered === true &&
+        field('onboarding-vat-number', intl.formatMessage(m.detailsVatNumberLabel), intl.formatMessage(m.detailsVatNumberPlaceholder), vatNumber, setVatNumber)}
+      <Fault fault={journey.fault} />
+      <PrimaryButton
+        onClick={() => void journey.saveDetails(draft())}
+        busy={journey.busy}
+        label={intl.formatMessage(m.detailsAction)}
+        icon={ArrowRight}
+      />
+      <SecondaryButton onClick={journey.skipDetails} label={intl.formatMessage(m.detailsSkipAction)} />
+    </Shell>
+  );
+}
+
+/* ── ⑤ their own workspace, once they are in ──────────────────────────────── */
 
 /**
  * The client's portal home (SoT D47, §24.5).

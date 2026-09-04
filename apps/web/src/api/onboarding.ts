@@ -7,6 +7,7 @@ import {
   getPortalContext,
   listPortalDocuments,
   previewPortalSetup,
+  updatePortalBusinessProfile,
 } from '@neoting/contracts/client';
 import {
   createBillingPortalSessionBody,
@@ -14,8 +15,9 @@ import {
   createPortalOnboardingSessionBody,
   createPortalSignInCodeBody,
   listPortalDocumentsResponse,
+  updatePortalBusinessProfileBody,
 } from '@neoting/contracts/zod';
-import type { PortalDocumentStatus, SubscriptionStatus } from '@neoting/contracts/model';
+import type { PortalBusinessProfileUpdate, PortalDocumentStatus, SubscriptionStatus } from '@neoting/contracts/model';
 import { unwrapBody } from './envelope';
 import { fromIsoDate, fromPence } from './documents';
 
@@ -113,6 +115,29 @@ export async function fetchSetupPreview(setupToken: string): Promise<SetupPrevie
   } catch {
     return null;
   }
+}
+
+/**
+ * What the details step may state about the business — every field optional,
+ * the contract's `PortalBusinessProfileUpdate` exactly: an omitted key is
+ * UNCHANGED server-side, so the caller sends only what was answered. The
+ * generated MODEL type rather than the zod output, for `requestSignInCode`'s
+ * reason: under `exactOptionalPropertyTypes` an optional zod output carries
+ * `| undefined`, which the generated request type refuses.
+ */
+export type BusinessProfileUpdate = PortalBusinessProfileUpdate;
+
+/**
+ * `PUT /portal/business-profile` (5 Sep 2026, review item 4) — the setup
+ * journey's details step. 204 on success; the answer is the portal context's
+ * on its next read. Owner-only server-side (`NT-PRM-001` for anyone else) —
+ * which an invited client always is, because the invite names the primary
+ * contact. Validated in place (the parse still throws on drift), then the
+ * original object travels.
+ */
+export async function updateBusinessProfile(token: string, profile: PortalBusinessProfileUpdate): Promise<void> {
+  updatePortalBusinessProfileBody.parse(profile);
+  await updatePortalBusinessProfile(profile, bearer(token));
 }
 
 export interface OnboardingSession {

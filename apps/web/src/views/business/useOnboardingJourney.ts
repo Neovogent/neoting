@@ -7,8 +7,9 @@ import {
   openOnboardingSession,
   requestSignInCode,
   startSubscriptionCheckout,
+  updateBusinessProfile,
 } from '../../api/onboarding';
-import type { BusinessPortalHome, OnboardingSession, SetupPreview } from '../../api/onboarding';
+import type { BusinessPortalHome, BusinessProfileUpdate, OnboardingSession, SetupPreview } from '../../api/onboarding';
 import { useAppContext } from '../../context/AppContext';
 import type { BusinessAccount } from '../../lib/types';
 import { storeSession } from './portal-session-store';
@@ -21,9 +22,12 @@ import type { PortalFault } from './usePortalJourney';
  * the app's own business-account state, and the view has one code path so the
  * synthetic demo keeps working end to end (METH_MODE §1).
  *
- * The steps, in the order §24.5 walks them:
+ * The steps, in the order §24.5 walks them — plus the details step (5 Sep
+ * 2026, review item 4: the emailed link told the client they would fill in
+ * their account information, and the journey asked them nothing between the
+ * code and the payment):
  *
- *   email → code → welcome → subscribe → subscribed
+ *   email → code → welcome → details → subscribe → subscribed
  *
  * The bearer lives in this hook's state and nowhere else — the standing
  * portal rule (`api/portal.ts` has the argument in full). A page refresh ends
@@ -31,7 +35,7 @@ import type { PortalFault } from './usePortalJourney';
  * intended recovery, not a failure.
  */
 
-export type OnboardingStep = 'email' | 'code' | 'welcome' | 'subscribe' | 'subscribed';
+export type OnboardingStep = 'email' | 'code' | 'welcome' | 'details' | 'subscribe' | 'subscribed';
 
 export type SubscribeOutcome =
   /** The tab is being handed to Stripe's hosted checkout. */
@@ -85,7 +89,19 @@ export interface OnboardingJourney {
   changeEmail: () => void;
   /** The six digits. True opens the session and lands on the welcome step. */
   verify: (otp: string) => Promise<boolean>;
-  /** welcome → subscribe. No request — just the journey moving on. */
+  /** welcome → details. No request — just the journey moving on. */
+  beginDetails: () => void;
+  /**
+   * The details step's Continue: send what was answered (PUT
+   * /portal/business-profile), then move on. An EMPTY draft sends nothing at
+   * all — the step is skippable by design, because a missing company number
+   * must never stand between a client and their first receipt. False only on
+   * a fault, and the journey stays on the step so nothing typed is lost.
+   */
+  saveDetails: (profile: BusinessProfileUpdate) => Promise<boolean>;
+  /** The details step's Skip — straight on, nothing sent, nothing lost. */
+  skipDetails: () => void;
+  /** details → subscribe. No request — just the journey moving on. */
   beginSubscription: () => void;
   /**
    * True when the session itself said the business is already entitled — the
@@ -212,6 +228,11 @@ export function useOnboardingJourney(setupToken: string | null): OnboardingJourn
     [setupToken, email, synthetic],
   );
 
+  const beginDetails = useCallback(() => {
+    setFault(null);
+    setStep('details');
+  }, []);
+
   const beginSubscription = useCallback(() => {
     setFault(null);
     // An already-entitled business skips the subscribe step (5 Sep 2026): a
@@ -225,6 +246,35 @@ export function useOnboardingJourney(setupToken: string | null): OnboardingJourn
     }
     setStep('subscribe');
   }, [session]);
+
+  const saveDetails = useCallback(
+    async (profile: BusinessProfileUpdate): Promise<boolean> => {
+      setBusy(true);
+      setFault(null);
+      try {
+        // Only what was answered travels; an empty draft sends nothing at all
+        // — the server's own empty-body rule, honoured before the wire. Live
+        // only: synthetic mode has no record to write and the step simply
+        // walks on (METH_MODE §1).
+        if (API_ENABLED && session !== null && Object.keys(profile).length > 0) {
+          await updateBusinessProfile(session.token, profile);
+        }
+        if (!alive.current) return false;
+        // The same forward move as Skip — including the already-subscribed
+        // jump straight to the subscribed step.
+        beginSubscription();
+        return true;
+      } catch (error) {
+        if (alive.current) setFault(faultFrom(error));
+        return false;
+      } finally {
+        if (alive.current) setBusy(false);
+      }
+    },
+    [session, beginSubscription],
+  );
+
+  const skipDetails = beginSubscription;
 
   const subscribe = useCallback(async (): Promise<SubscribeOutcome> => {
     setBusy(true);
@@ -321,6 +371,9 @@ export function useOnboardingJourney(setupToken: string | null): OnboardingJourn
     resendCode,
     changeEmail,
     verify,
+    beginDetails,
+    saveDetails,
+    skipDetails,
     beginSubscription,
     alreadySubscribed: session?.subscriptionStatus === 'ACTIVE' || session?.subscriptionStatus === 'TRIALING',
     subscribe,

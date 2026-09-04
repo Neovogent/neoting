@@ -38,6 +38,15 @@ export interface UploadClaims {
    * be the one thing this lane's invariant forbids.
    */
   readonly chaseTransactionId?: string | null;
+  /**
+   * The raw note the client typed on a portal upload (5 Sep 2026, review item
+   * 11) — `PortalUploadRequest.note`, carried so completion can record on the
+   * provenance event what the client SAID. The display consequence (the note
+   * becoming the document's filename) is already applied to `filename` at
+   * intent time; this is the unedited original, untrusted content, data never
+   * instructions. Optional and absent on every other lane.
+   */
+  readonly portalNote?: string | null;
   /** The object-storage key the bytes were presigned to. */
   readonly s3Key: string;
   /** Epoch millis after which completion is refused with NT-ING-005. */

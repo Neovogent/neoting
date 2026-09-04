@@ -396,6 +396,10 @@ export class WebUploadService {
               // `UploadClaims.chaseTransactionId`. Auto-close compares the
               // extraction against every open chase regardless.
               declaredTransactionId: claims.chaseTransactionId ?? null,
+              // The client's own words about the document (review item 11) —
+              // recorded verbatim as data; the display half already landed on
+              // the row's filename at intent time.
+              clientNote: claims.portalNote ?? null,
             },
           },
         }),

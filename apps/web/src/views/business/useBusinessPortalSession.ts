@@ -117,7 +117,7 @@ export interface BusinessPortalSession {
   /** Re-read the home figures and the document list. */
   refresh(): Promise<void>;
   /** A picked file: compressed if it is an image, then sent. */
-  upload(file: File, transactionId: string | null): Promise<PortalSendOutcome>;
+  upload(file: File, transactionId: string | null, note?: string | null): Promise<PortalSendOutcome>;
   /** Bytes already in hand — a camera frame the Capture tab encoded. */
   send(file: PortalUploadFile, transactionId: string | null): Promise<PortalSendOutcome>;
   /** Stripe-hosted checkout for a lapsed subscription (D48). Redirects the tab. */
@@ -383,7 +383,7 @@ export function useBusinessPortalSession(): BusinessPortalSession {
   /* ── sending ────────────────────────────────────────────────────────────── */
 
   const send = useCallback(
-    async (file: PortalUploadFile, transactionId: string | null): Promise<PortalSendOutcome> => {
+    async (file: PortalUploadFile, transactionId: string | null, note: string | null = null): Promise<PortalSendOutcome> => {
       if (token === null) {
         // No bearer at all: the session ended before the client pressed send.
         // `expire()` returns the whole portal to the sign-in step, which is the
@@ -399,7 +399,7 @@ export function useBusinessPortalSession(): BusinessPortalSession {
         // from the extraction (supplier + amount + date) — so this closes an
         // ask only if the document really answers it, and no copy on this
         // surface may promise that a send closes the row it was started from.
-        await sendPortalUpload(token, file, transactionId);
+        await sendPortalUpload(token, file, transactionId, note);
         await refresh();
         return { ok: true, fault: null };
       } catch (caught) {
@@ -422,7 +422,7 @@ export function useBusinessPortalSession(): BusinessPortalSession {
   );
 
   const upload = useCallback(
-    async (file: File, transactionId: string | null): Promise<PortalSendOutcome> => {
+    async (file: File, transactionId: string | null, note: string | null = null): Promise<PortalSendOutcome> => {
       // A modern phone photograph is 4–8 MB of receipt that reads perfectly
       // well at a tenth of that, and this is the surface most likely to be on
       // bad mobile data. Non-images pass through untouched — re-encoding a PDF
@@ -432,7 +432,7 @@ export function useBusinessPortalSession(): BusinessPortalSession {
       // browser that hands over an empty `type` — iOS, routinely, for HEIC —
       // would otherwise turn the commonest phone photograph into a 400.
       const mimeType = page.blob.type || mimeTypeFor(file);
-      return send({ filename: page.filename, mimeType, bytes: page.blob }, transactionId);
+      return send({ filename: page.filename, mimeType, bytes: page.blob }, transactionId, note);
     },
     [send],
   );
