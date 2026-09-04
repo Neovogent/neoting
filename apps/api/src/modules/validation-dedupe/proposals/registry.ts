@@ -14,6 +14,7 @@ import {
 } from './proposal-executor.js';
 import { createPublishBatchExecutor, type ExportEntryPreviewer, type PublishGateway } from './publish-batch.js';
 import { rejectDocumentExecutor } from './reject-document.js';
+import { removeStatementExecutor } from './remove-statement.js';
 import { reprocessDocumentExecutor } from './reprocess-document.js';
 import { revokeLinkExecutor } from './revoke-link.js';
 import { routeDocumentExecutor } from './route-document.js';
@@ -54,7 +55,7 @@ export interface ExecutorRegistryDeps {
  * runtime `NT-PRP-001` guard for a wire value outside the enum stays the
  * second line of defence, not the first.
  *
- * Eleven real executors, two honest holes: a registry with named
+ * Twelve real executors, two honest holes: a registry with named
  * unimplemented kinds beats half-executors, and it means the engine (METH S3,
  * #122) wires against the full enum on day one. Each hole throws
  * `ProposalNotImplementedError` carrying its kind — loudly, before any write.
@@ -94,6 +95,12 @@ export function buildExecutorRegistry(deps: ExecutorRegistryDeps): ExecutorRegis
     // Twilio. The engine may inject the config-selected sender.
     'chase.send': chaseSendExecutor(deps.smsSender ?? new DemoSmsSender()),
     'bank.confirm-match': confirmMatchExecutor,
+    // bank.remove-statement — take a wrongly-uploaded statement back out, with
+    // every transaction it provably imported (`importBatchId` provenance).
+    // Hard delete of DERIVED rows only; the source document stays and re-import
+    // re-proves D41. Built 3 Sep 2026, dormant until the kind entered the
+    // contract on 4 Sep; the executor's header carries the refusal discipline.
+    'bank.remove-statement': removeStatementExecutor,
     // rule.create landed with METH S13 (#142): the chat's rule beat, activated
     // only by the approved proposal it records as `actionProposalId`.
     'rule.create': ruleCreateExecutor,

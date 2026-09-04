@@ -237,10 +237,20 @@ would remove another statement's lines.
 `statementGaps` on `GET /businesses` needs no change: it counts `gapAnalysis`
 off statement rows, and a deleted row simply stops contributing.
 
-### ⚠ LAW changes required (G7 — one contract-change issue for Shakib)
+### ✅ The LAW changes LANDED on 4 Sep 2026 — removal is live end to end
 
-Everything below is **built and dormant** until these land; nothing else is
-missing.
+Every item below shipped exactly as specified (the G7 ceremony was retired
+1 Sep): the enum value, `BankRemoveStatementPayload`, the request member +
+discriminator mapping, and the whole mechanical wiring list (registry, payload
+map, `proposal-body.ts`, `computeRemoveStatementPayload` branch, shaped review
+card, `RELEASE_KINDS: false` per the recommendation below — awaiting human
+ratification — `KIND_LABEL`/`KIND_NOTE`, and the live Bank-screen Remove, which
+now stages the proposal with queue-posture copy). Proven live the same day:
+the matched statement refused by name, the clean one queued → reviewed →
+approved → its 8 provenance-stamped rows deleted with the removal marker on the
+source document. The section is kept below as the design record.
+
+### The original design note (LAW delta as specified — now landed)
 
 1. `packages/contracts/openapi.yaml` — `ProposalKind` enum gains
    `bank.remove-statement` (# remove an uploaded statement and the transactions it imported).

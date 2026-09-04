@@ -187,6 +187,53 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
         { heading: 'Documents', entries: ids.map((id, i) => ({ label: `Document ${i + 1}`, value: id })) },
       ]);
     }
+    case 'bank.remove-statement': {
+      // The blast radius, per statement, in the server's own numbers — the
+      // payload's preview was computed at creation over the provenance-stamped
+      // rows and the caller's figures were discarded (the publish.batch
+      // pattern). The reviewer recognises a statement by its FILE NAME, so it
+      // leads each entry; the executor recomputes at approve and refuses on
+      // drift, which the card states as a promise (the document.purge
+      // precedent — this render is payload-pure and cannot check live facts).
+      const preview = payload['preview'] as
+        | {
+            statements?: readonly {
+              statementId?: string;
+              fileName?: string | null;
+              periodStart?: string | null;
+              periodEnd?: string | null;
+              transactionCount?: number;
+            }[];
+            totalTransactions?: number;
+          }
+        | undefined;
+      const statements = Array.isArray(preview?.statements) ? preview.statements : [];
+      return summary(`Remove ${count(statements.length, 'statement')} and ${count(preview?.totalTransactions ?? 0, 'imported transaction')}`, [
+        {
+          heading: 'What this removes, and what it keeps',
+          entries: [
+            { label: 'The statement and its imported bank lines', value: 'Removed — hard delete of the derived rows' },
+            { label: 'The uploaded file', value: 'Kept in the vault — re-uploading re-imports and re-proves completeness (D41)' },
+            { label: 'Closed chases', value: 'Kept — the record of what was asked survives' },
+          ],
+        },
+        {
+          heading: 'What will be refused at the moment you approve',
+          entries: [
+            { label: 'A line matched to a document', value: 'Refused — a confirmed match is an accountant’s assertion' },
+            { label: 'A line a client is being chased about', value: 'Refused — close the chase first' },
+            { label: 'Counts that changed since this review', value: 'Refused — propose it again over the current facts' },
+          ],
+        },
+        {
+          heading: 'Statements',
+          entries: statements.map((entry, i) => ({
+            label: entry.fileName ?? entry.statementId ?? `Statement ${i + 1}`,
+            value: `${count(entry.transactionCount ?? 0, 'transaction')}${entry.periodStart != null && entry.periodEnd != null ? ` · ${entry.periodStart} → ${entry.periodEnd}` : ''}`,
+          })),
+        },
+      ]);
+    }
     case 'document.reprocess': {
       // ⚠ The card states the LIMIT, not just the intent. `reprocess-document.ts`
       // clears the failure and re-decides readiness; it does not read the bytes

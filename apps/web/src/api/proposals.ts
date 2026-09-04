@@ -44,6 +44,7 @@ export const KIND_LABEL: Record<ProposalKind, MessageDescriptor> = defineMessage
   'chase.send': { id: 'proposals.kindLabel.chaseSend', defaultMessage: 'Send chase email' },
   'publish.batch': { id: 'proposals.kindLabel.publishBatch', defaultMessage: 'Release for export' },
   'bank.confirm-match': { id: 'proposals.kindLabel.bankConfirmMatch', defaultMessage: 'Confirm a bank match' },
+  'bank.remove-statement': { id: 'proposals.kindLabel.bankRemoveStatement', defaultMessage: 'Remove bank statements' },
   'rule.create': { id: 'proposals.kindLabel.ruleCreate', defaultMessage: 'Create a rule' },
   'document.revoke-link': { id: 'proposals.kindLabel.documentRevokeLink', defaultMessage: 'Revoke document links' },
   'business.offboard': { id: 'proposals.kindLabel.businessOffboard', defaultMessage: 'Remove a client' },
@@ -74,6 +75,17 @@ export const KIND_NOTE: Partial<Record<ProposalKind, MessageDescriptor>> = defin
    * "Delete documents permanently" would leave a reader guessing which of those
    * two halves was true.
    */
+  /**
+   * Removal destroys the DERIVED rows only — the uploaded file survives and
+   * re-uploading re-imports it under the D41 gates. Without the sentence,
+   * "Remove bank statements" reads as destroying a client's bank data, and the
+   * mirror-image mistake (assuming the transactions survive) is worse.
+   */
+  'bank.remove-statement': {
+    id: 'proposals.kindNote.bankRemoveStatement',
+    defaultMessage:
+      'Once approved, the imported transactions are removed with the statement. The uploaded file is kept — re-uploading it imports the lines again, with completeness re-proven.',
+  },
   'document.purge': {
     id: 'proposals.kindNote.documentPurge',
     defaultMessage:
@@ -245,6 +257,37 @@ export async function requestStatementProposal(businessId: string, period: strin
     kind: 'chase.send',
     businessId,
     payload: { messages: [{ statementPeriod: period, body: 'Composed at review.' }] },
+  } as CreateActionProposalRequest);
+}
+
+/**
+ * Queue the removal of uploaded statements (4 Sep 2026) — one
+ * `bank.remove-statement` proposal. The preview sent here is a placeholder the
+ * ENGINE discards: the blast radius Read review renders (per-statement
+ * transaction counts, file names) is computed server-side at creation over the
+ * provenance-stamped rows, and everything refusable — a confirmed match, an
+ * open chase, unprovable provenance — refuses at creation with the server's
+ * own sentence. Creation only; the release is the Approvals queue's move.
+ */
+export async function requestRemoveStatementsProposal(statementIds: readonly string[]): Promise<ActionProposal> {
+  return createProposal({
+    kind: 'bank.remove-statement',
+    payload: {
+      statementIds: [...statementIds],
+      preview: {
+        statements: statementIds.map((statementId) => ({
+          statementId,
+          documentId: 'computed-at-creation',
+          fileName: null,
+          periodStart: null,
+          periodEnd: null,
+          transactionCount: 0,
+          matchedCount: 0,
+          openChaseCount: 0,
+        })),
+        totalTransactions: 0,
+      },
+    },
   } as CreateActionProposalRequest);
 }
 

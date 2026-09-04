@@ -5497,6 +5497,7 @@ components:
         - chase.send              # send composed chase SMS; review shows every message verbatim
         - publish.batch           # publish reviewed documents to the ledger; review shows the server-computed preview
         - bank.confirm-match      # confirm a suggested document ↔ transaction match
+        - bank.remove-statement   # remove an uploaded statement and every transaction it imported; review shows the server-computed blast radius
         - rule.create             # create a coding rule; it activates only on approval
         - document.revoke-link    # revoke capability URLs already sitting in someone's ledger
         - business.offboard       # deactivate a client workspace (D32 slice); soft, books retained
@@ -5519,6 +5520,7 @@ components:
         - $ref: '#/components/schemas/ChaseSendProposalRequest'
         - $ref: '#/components/schemas/PublishBatchProposalRequest'
         - $ref: '#/components/schemas/BankConfirmMatchProposalRequest'
+        - $ref: '#/components/schemas/BankRemoveStatementProposalRequest'
         - $ref: '#/components/schemas/RuleCreateProposalRequest'
         - $ref: '#/components/schemas/RevokeLinkProposalRequest'
         - $ref: '#/components/schemas/BusinessOffboardProposalRequest'
@@ -5536,6 +5538,7 @@ components:
           chase.send: '#/components/schemas/ChaseSendProposalRequest'
           publish.batch: '#/components/schemas/PublishBatchProposalRequest'
           bank.confirm-match: '#/components/schemas/BankConfirmMatchProposalRequest'
+          bank.remove-statement: '#/components/schemas/BankRemoveStatementProposalRequest'
           rule.create: '#/components/schemas/RuleCreateProposalRequest'
           document.revoke-link: '#/components/schemas/RevokeLinkProposalRequest'
           business.offboard: '#/components/schemas/BusinessOffboardProposalRequest'
@@ -5628,6 +5631,77 @@ components:
           properties:
             kind: { const: publish.batch }
             payload: { $ref: '#/components/schemas/PublishBatchPayload' }
+
+    BankRemoveStatementProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: bank.remove-statement }
+            payload: { $ref: '#/components/schemas/BankRemoveStatementPayload' }
+
+    BankRemoveStatementPayload:
+      type: object
+      description: |
+        Remove an uploaded statement and every transaction it provably imported
+        (`BankTransaction.importBatchId` is the provenance link). The source
+        DOCUMENT is never touched: the rows are a projection of the file, the
+        file stays in the vault, and removal frees it for re-import — which
+        re-runs the D41 completeness gate, so restored data is re-proven rather
+        than trusted.
+
+        `preview` is computed by the SERVER at proposal creation (the
+        `publish.batch` pattern): the caller's figures are discarded, and what
+        Read review renders is the real blast radius — how many transactions,
+        per statement, with the file name a reviewer recognises. Execution
+        recomputes and refuses on drift; a CONFIRMED match, an open chase, a
+        cross-workspace batch or rows that cannot be provably enumerated refuse
+        at creation AND again at approve.
+      required: [statementIds, preview]
+      properties:
+        statementIds:
+          type: array
+          minItems: 1
+          maxItems: 50
+          uniqueItems: true
+          items: { type: string }
+        preview:
+          type: object
+          required: [statements, totalTransactions]
+          properties:
+            statements:
+              type: array
+              minItems: 1
+              maxItems: 50
+              items:
+                type: object
+                required: [statementId, documentId, fileName, periodStart, periodEnd, transactionCount, matchedCount, openChaseCount]
+                properties:
+                  statementId: { type: string }
+                  documentId:
+                    type: string
+                    description: The source document — the vault keeps it, and re-import starts from it.
+                  fileName: { type: [string, 'null'] }
+                  # `YYYY-MM-DD` when the ingest recorded a period. Deliberately
+                  # NOT `format: date` — orval's msw generator mistypes a
+                  # nullable date inside a request union (string | undefined
+                  # against the model's string | null) and the build fails.
+                  periodStart: { type: [string, 'null'] }
+                  periodEnd: { type: [string, 'null'] }
+                  transactionCount:
+                    type: integer
+                    minimum: 0
+                    description: Rows provably created by this statement. A COUNT, not money.
+                  matchedCount:
+                    type: integer
+                    minimum: 0
+                    description: Lines carrying a CONFIRMED match. Non-zero refuses — a match is an accountant's assertion.
+                  openChaseCount:
+                    type: integer
+                    minimum: 0
+                    description: Lines an open chase is asking the client about. Non-zero refuses.
+            totalTransactions: { type: integer, minimum: 0 }
 
     BankConfirmMatchProposalRequest:
       allOf:
