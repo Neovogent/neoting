@@ -17,6 +17,8 @@ const ALL = [
     businessName: 'Sparkle Cleaning Ltd',
     inviteLink: 'https://neoacc.neovogent.com/invite/abc123',
     expiresAt: new Date('2026-09-02T09:00:00Z'),
+    termsLink: 'https://neoacc.neovogent.com/legal/terms-of-service',
+    privacyLink: 'https://neoacc.neovogent.com/legal/privacy-notice',
   }),
   composeSignInCode({ code: SignInCode.parse('482913'), expiresInMinutes: 10 }),
   composeDocumentRequest({
@@ -97,6 +99,8 @@ test('the invite renders its expiry in Europe/London, not UTC', () => {
     inviteLink: 'https://example.test/i',
     // 23:30 UTC in BST is 00:30 on the FOLLOWING day in London.
     expiresAt: new Date('2026-09-02T23:30:00Z'),
+    termsLink: 'https://example.test/legal/terms-of-service',
+    privacyLink: 'https://example.test/legal/privacy-notice',
   });
   expect(body).toContain('3 Sep');
   expect(body).not.toContain('2 Sep');
@@ -105,6 +109,14 @@ test('the invite renders its expiry in Europe/London, not UTC', () => {
 test('the invite offers no connections (D47)', () => {
   const { body } = ALL[0] as { body: string };
   expect(body).not.toMatch(/connect your bank|open banking|link your|accounting software/i);
+});
+
+test('the invite carries the terms of service and privacy notice, each on its own line (finding 4)', () => {
+  const { body } = ALL[0] as { body: string };
+  const lines = body.split('\n');
+  expect(lines).toContain('https://neoacc.neovogent.com/legal/terms-of-service');
+  expect(lines).toContain('https://neoacc.neovogent.com/legal/privacy-notice');
+  expect(body).toMatch(/terms of service and privacy notice/i);
 });
 
 // ── 2 · Sign-in code ───────────────────────────────────────────────────────
@@ -177,6 +189,8 @@ describe('verify your email address', () => {
     practiceName: 'Ledgerline',
     verifyLink: 'https://app.neoting.neovogent.com/app/verify-email?token=tok_abc',
     expiresAt: new Date('2026-08-06T09:00:00Z'),
+    termsLink: 'https://app.neoting.neovogent.com/legal/terms-of-service',
+    privacyLink: 'https://app.neoting.neovogent.com/legal/privacy-notice',
   };
 
   test('states the link on its own line, so it survives a mail client wrapping it', () => {
@@ -196,6 +210,14 @@ describe('verify your email address', () => {
 
   test('the subject carries no token', () => {
     expect(composeEmailVerification(input).subject).not.toContain('tok_abc');
+  });
+
+  test('restates where the accepted terms live, each link on its own line (finding 1)', () => {
+    const { body } = composeEmailVerification(input);
+    const lines = body.split('\n');
+    expect(lines).toContain(input.termsLink);
+    expect(lines).toContain(input.privacyLink);
+    expect(body).toMatch(/accepted at signup/i);
   });
 });
 

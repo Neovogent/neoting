@@ -1,4 +1,4 @@
-import type { NotificationsService } from '../notifications/index.js';
+import { buildLegalLinks, type NotificationsService } from '../notifications/index.js';
 
 import type {
   DuplicateSignupMessage,
@@ -53,6 +53,8 @@ export class NotificationsSignupMailer implements SignupMailer {
       practiceName: message.practiceName,
       verifyLink: buildVerificationLink(this.appOrigin, message.token),
       expiresAt: message.expiresAt,
+      // The public legal pages (finding 1, 4 Sep 2026) — same origin, no session needed.
+      ...buildLegalLinks(this.appOrigin),
     });
 
     if (!outcome.sent) {

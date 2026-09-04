@@ -221,6 +221,14 @@ registered in `app.module.ts`. Three things it deliberately did **not** do:
 - [ ] Update this file on exit — it is how the next session picks up.
 
 
+## The client invite carries the legal links (4 Sep 2026 — walkthrough finding 4)
+
+Both `sendClientInvite` callers (`client-intake.service.ts`,
+`team.service.ts`) now spread `buildLegalLinks(this.config.appOrigin)` into the
+send — the composer's `termsLink`/`privacyLink` are REQUIRED, so a new caller
+cannot forget them. The paths and the SPA drift pin live in
+`notifications/legal-links.ts`; nothing here knows a legal address.
+
 ## The practice's own team — `GET`/`POST /v1/practice-members` (2 Sep 2026)
 
 **Before this, a firm could only ever have the one person `POST /practices`

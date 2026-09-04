@@ -10,7 +10,7 @@ import type { ScopeContext } from '../../common/db/scope-context.js';
 import { scopedDb } from '../../common/db/scoped-db.js';
 import { fingerprint, type IdempotencyStore } from '../../common/idempotency/idempotency-store.js';
 import { AppException } from '../../common/problem/problem.js';
-import type { NotificationsService } from '../notifications/index.js';
+import { buildLegalLinks, type NotificationsService } from '../notifications/index.js';
 import { type BusinessTypeProfile, readBusinessProfile, toStoredProfile } from './business-profile.js';
 import { toBusiness } from './projections.js';
 import { buildSetupLink, hashSetupToken, mintSetupToken, setupLinkExpiry } from './setup-link.js';
@@ -298,6 +298,9 @@ export class ClientIntakeService {
       businessName: input.businessName,
       inviteLink: buildSetupLink(this.config.appOrigin, input.setupToken),
       expiresAt: input.expiresAt,
+      // The public legal pages (finding 4, 4 Sep 2026) — the client has
+      // accepted nothing yet, so the invite is where the terms must be readable.
+      ...buildLegalLinks(this.config.appOrigin),
     });
     if (!outcome.sent) {
       this.logger.warn(

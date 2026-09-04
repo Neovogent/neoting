@@ -634,6 +634,11 @@ from A1 until today. A1 said *"the composition root swaps the implementation whe
 `notifications-signup-mailer.ts` is the adapter. It translates A1's two messages
 into the notifications module's two, and holds the public web origin.
 
+Since 4 Sep 2026 the verification mail also carries the terms-of-service and
+privacy-notice links (walkthrough finding 1) — built by
+`buildLegalLinks(appOrigin)` from the notifications seam, which owns the paths
+and the drift pin against the web app's `/legal/*` routes.
+
 ⚠ **A refused verification THROWS; a refused duplicate notice does not.**
 `NotificationsService` reports a rate-limit refusal as a value rather than an
 exception, which is right for sign-in — that endpoint must answer identically

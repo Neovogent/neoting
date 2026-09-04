@@ -18,6 +18,8 @@ const invite = {
   businessName: 'Sparkle Cleaning Ltd',
   inviteLink: 'https://neoacc.neovogent.com/invite/abc123',
   expiresAt: new Date('2026-09-02T09:00:00Z'),
+  termsLink: 'https://neoacc.neovogent.com/legal/terms-of-service',
+  privacyLink: 'https://neoacc.neovogent.com/legal/privacy-notice',
 };
 
 test('a send composes, transports, and reports the provider id', async () => {

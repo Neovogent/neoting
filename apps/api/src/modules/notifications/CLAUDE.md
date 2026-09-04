@@ -189,6 +189,33 @@ credentials in memory, which is one more reason the production gate exists.
 pnpm --filter @neoting/api test -- notifications
 ```
 
+## The invite and the verification carry the legal links (4 Sep 2026 — walkthrough findings 1 and 4)
+
+Neither message gave its reader any way to reach the terms: the accountant
+accepted them on the signup form and the email said nothing about where they
+live, and the CLIENT invite carried nothing at all for someone who has accepted
+nothing yet. Both composers now take **required** `termsLink`/`privacyLink`
+inputs and render them on their own lines — deliberately UNLABELLED, because a
+labelled link renders as a mint button (`email-html.ts`) and only the message's
+one action earns a button; the legal pair renders as plain links.
+
+- **`legal-links.ts`** is the one maker: `buildLegalLinks(appOrigin)` →
+  `<origin>/legal/terms-of-service` + `<origin>/legal/privacy-notice`, exported
+  on `index.ts`. The paths mirror `apps/web/src/views/legal/documents.ts`
+  (`legalPath`), and `/legal/*` renders OUTSIDE every wall (M4) — a reader with
+  no session, which is exactly who both emails reach.
+- ⚠ **The SAME SPA drift trap as `VERIFY_EMAIL_PATH`**: a moved legal route
+  answers these links 200 with the app shell. `legal-links.test.ts` reads the
+  web package's own source and fails if the halves drift.
+- **Callers build the links**, as they build every other link here:
+  `auth-tenancy/notifications-signup-mailer.ts` (verification) and both
+  `sendClientInvite` callers in `clients-team-settings`
+  (`client-intake.service.ts`, `team.service.ts`) spread
+  `buildLegalLinks(appOrigin)`.
+- The team invite and business-people invite are deliberately untouched — the
+  findings named the two messages above, and widening the sweep is a copy
+  decision, not a fix.
+
 ## Verified against the real thing (26 Aug 2026)
 
 SES account: production access GRANTED, 50,000/day, 14/s, `SendingEnabled`, enforcement

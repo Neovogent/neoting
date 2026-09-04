@@ -52,6 +52,11 @@ export { REDACTED, SignInCode } from './sign-in-code.js';
 // service throw on a user's typo.
 export { type EmailAddress, EmailAddressSchema, parseEmailAddress } from './email-address.js';
 
+// The legal-page links the invite and verification messages must carry
+// (findings 1 and 4, 4 Sep 2026). Built by the CALLER from the app origin —
+// the same split as every other link the composers take.
+export { buildLegalLinks, type LegalLinks, PRIVACY_NOTICE_PATH, TERMS_OF_SERVICE_PATH } from './legal-links.js';
+
 // The transport seam and its config selector — for the worker composition roots,
 // which assemble their own graph rather than going through Nest.
 export {
