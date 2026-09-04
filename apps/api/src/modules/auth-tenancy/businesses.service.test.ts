@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { foldCounts, foldPrimaryContactEmails } from './businesses.service.js';
+import { foldCounts, foldPrimaryContacts } from './businesses.service.js';
 
 /**
  * The counts fold, offline. The integration suite proves the whole read
@@ -121,12 +121,12 @@ test('a state outside the three buckets never leaks into a badge', () => {
 const contact = (businessId: string, email: string | null) => ({ businessId, email });
 
 test("the primary contact's address is folded per business", () => {
-  const emails = foldPrimaryContactEmails([
+  const emails = foldPrimaryContacts([
     contact('b1', 'owner@americanburger.test'),
     contact('b2', 'maria@ananda.test'),
   ]);
-  expect(emails.get('b1')).toBe('owner@americanburger.test');
-  expect(emails.get('b2')).toBe('maria@ananda.test');
+  expect(emails.get('b1')?.email).toBe('owner@americanburger.test');
+  expect(emails.get('b2')?.email).toBe('maria@ananda.test');
 });
 
 test('the earliest primary contact wins when a client somehow carries several', () => {
@@ -134,20 +134,31 @@ test('the earliest primary contact wins when a client somehow carries several', 
   // longest-standing primary. Intake writes exactly one, so this decides a
   // state nothing in the repo creates — but the field must not change which
   // person it names between two page loads.
-  const emails = foldPrimaryContactEmails([contact('b1', 'first@client.test'), contact('b1', 'second@client.test')]);
-  expect(emails.get('b1')).toBe('first@client.test');
+  const emails = foldPrimaryContacts([contact('b1', 'first@client.test'), contact('b1', 'second@client.test')]);
+  expect(emails.get('b1')?.email).toBe('first@client.test');
 });
 
 test('a primary contact with no address on file folds to null, not to another contact', () => {
   // `contacts.email` is nullable — a phone-only contact is a real record
   // (SoT §3.3). Skipping past it to the next row would put a different
   // person's address under the words "primary contact".
-  const emails = foldPrimaryContactEmails([contact('b1', null), contact('b1', 'someone.else@client.test')]);
-  expect(emails.get('b1')).toBeNull();
+  const emails = foldPrimaryContacts([contact('b1', null), contact('b1', 'someone.else@client.test')]);
+  expect(emails.get('b1')?.email).toBeNull();
 });
 
 test('a business with no primary contact is absent, and the caller reads that as null', () => {
-  const emails = foldPrimaryContactEmails([contact('b1', 'owner@client.test')]);
+  const emails = foldPrimaryContacts([contact('b1', 'owner@client.test')]);
   expect(emails.has('b2')).toBe(false);
   expect(emails.get('b2') ?? null).toBeNull();
+});
+
+test('name and mobile ride the SAME first-wins row as the email — never three lookups (5 Sep 2026)', () => {
+  const facts = foldPrimaryContacts([
+    { businessId: 'b1', email: 'ana@sparkle.test', firstName: 'Ana', lastName: 'Rossi', mobileE164: '+447700900123' },
+    { businessId: 'b1', email: 'late@sparkle.test', firstName: 'Late', lastName: 'Arrival', mobileE164: '+447700900999' },
+  ]);
+  expect(facts.get('b1')).toEqual({ email: 'ana@sparkle.test', name: 'Ana Rossi', mobile: '+447700900123' });
+  // A nameless §3.3 contact folds to a null name, never the email retyped.
+  const nameless = foldPrimaryContacts([{ businessId: 'b2', email: 'x@y.test', firstName: null, lastName: null, mobileE164: null }]);
+  expect(nameless.get('b2')).toEqual({ email: 'x@y.test', name: null, mobile: null });
 });

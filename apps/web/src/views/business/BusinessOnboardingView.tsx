@@ -313,7 +313,7 @@ export function BusinessOnboardingView() {
     <Shell title={intl.formatMessage(m.subscribedTitle)} subtitle={journey.businessName ?? undefined}>
       <OutcomeBadge good />
       <p className="text-[14px] text-zinc-400 leading-relaxed">
-        {outcome?.kind === 'already'
+        {outcome?.kind === 'already' || journey.alreadySubscribed
           ? intl.formatMessage(m.alreadySubscribedDetail)
           : journey.renewsOn
             ? intl.formatMessage(m.subscribedDetail, { date: journey.renewsOn })

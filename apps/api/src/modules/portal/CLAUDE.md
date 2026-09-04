@@ -353,6 +353,17 @@ carries no chase. That matters for what it can do: the delegated RLS branches ke
 on granted DOCUMENT ids and this session has none, so it is a proof of identity
 and not yet a grant. `GET /portal/context` needs a chase and will refuse it.
 
+**`PortalSession` also carries an optional `subscriptionStatus` (5 Sep 2026,
+staging finding).** An already-ACTIVE client who reopened their setup link was
+walked back to the £8.50 subscribe screen and only learned at the checkout
+click (`NT-BIL-002`, which remains the server-side guard). `createOnboardingSession`
+now reads `business.subscriptionStatus` inside the same scoped transaction that
+resolved the session and returns it on the response; a null column is an ABSENT
+key on the wire (the controller spreads it conditionally), and a CHASE session
+never carries it. The web journey skips the subscribe step on
+`ACTIVE`/`TRIALING` (`useOnboardingJourney.beginSubscription`) — the statuses
+`billing/entitlement.ts`'s `ENTITLED` set names.
+
 ✅ **The subscribe step is unblocked** — contract change **#205**, approved and
 landed 28 Aug 2026. `PortalSession` gained an OPTIONAL `businessId` and
 `createCheckoutSession` gained `portalSession` beside `workspaceSession`, so the

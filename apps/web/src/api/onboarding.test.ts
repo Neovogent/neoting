@@ -68,17 +68,29 @@ test('openOnboardingSession refuses a short code before any request is made', as
   expect(calls).toHaveLength(0);
 });
 
-test('openOnboardingSession returns the bearer, and businessId only when the server sends one', async () => {
+test('openOnboardingSession returns the bearer, and businessId/subscriptionStatus only when the server sends them', async () => {
   const calls = stubFetch([
     { body: { token: 'bearer-1', expiresAt: '2026-08-27T12:00:00.000Z' }, status: 201 },
-    { body: { token: 'bearer-2', expiresAt: '2026-08-27T12:00:00.000Z', businessId: 'biz_clean' }, status: 201 },
+    {
+      body: { token: 'bearer-2', expiresAt: '2026-08-27T12:00:00.000Z', businessId: 'biz_clean', subscriptionStatus: 'ACTIVE' },
+      status: 201,
+    },
   ]);
 
+  // An older server (or a business that never reached checkout) sends neither
+  // optional field; both fold to null rather than failing the parse.
   const bare = await openOnboardingSession('maria@anandagroup.co.uk', '123456', 'setup-tok');
-  expect(bare).toEqual({ token: 'bearer-1', expiresAt: '2026-08-27T12:00:00.000Z', businessId: null });
+  expect(bare).toEqual({
+    token: 'bearer-1',
+    expiresAt: '2026-08-27T12:00:00.000Z',
+    businessId: null,
+    subscriptionStatus: null,
+  });
 
   const named = await openOnboardingSession('maria@anandagroup.co.uk', '123456', 'setup-tok');
   expect(named.businessId).toBe('biz_clean');
+  // What lets the journey skip the £8.50 screen for an already-paying client.
+  expect(named.subscriptionStatus).toBe('ACTIVE');
 
   expect(calls[0]!.url).toContain('/v1/portal/onboarding-sessions');
 });

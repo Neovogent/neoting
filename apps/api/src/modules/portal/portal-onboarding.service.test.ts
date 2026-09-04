@@ -47,6 +47,8 @@ function harness(
     practices?: readonly { practiceId: string; userId: string }[];
     /** What `contacts` holds for the address — the tokenless route's only input. */
     contacts?: readonly { id: string; businessId: string }[];
+    /** The business's subscription status at session open. Null = never subscribed. */
+    subscriptionStatus?: 'ACTIVE' | 'TRIALING' | 'CANCELED' | null;
   } = {},
 ) {
   const invite = {
@@ -101,6 +103,14 @@ function harness(
     },
     membership: {
       findMany: async () => over.practices ?? [{ practiceId: 'prac_1', userId: 'usr_sys' }],
+    },
+    // The session-open path reads the business's subscription status inside
+    // the same scoped transaction (5 Sep 2026) so the journey can skip the
+    // subscribe step for an already-paying client. The double answers for the
+    // invite's own business and nothing else.
+    business: {
+      findUnique: async ({ where }: { where: { id: string } }) =>
+        where.id === 'biz_1' ? { subscriptionStatus: over.subscriptionStatus ?? null } : null,
     },
     // `scopedDb` sets the RLS context with a tagged template on the
     // TRANSACTION client before it runs the callback. The double has one
@@ -205,6 +215,21 @@ describe('exchanging the code for a session', () => {
       expect(verdict.claims.businessId).toBe('biz_1');
       expect(verdict.claims.practiceId).toBe('prac_1');
     }
+  });
+
+  test('the session carries subscriptionStatus when the business has one, and OMITS the key when it never subscribed', async () => {
+    // The optional key is what lets the journey skip the £8.50 screen for an
+    // already-paying client (5 Sep 2026). Never-subscribed is null in the
+    // column and an ABSENT key on the wire (exactOptionalPropertyTypes) — the
+    // controller spreads it conditionally, so the distinction starts here.
+    const active = harness({ row: live('123456'), subscriptionStatus: 'ACTIVE' });
+    const issuedActive = await active.service.createOnboardingSession({ setupToken: TOKEN, email: EMAIL, otp: '123456' }, NOW);
+    expect(issuedActive?.subscriptionStatus).toBe('ACTIVE');
+
+    const never = harness({ row: live('123456') });
+    const issuedNever = await never.service.createOnboardingSession({ setupToken: TOKEN, email: EMAIL, otp: '123456' }, NOW);
+    expect(issuedNever).not.toBeNull();
+    expect(issuedNever !== null && 'subscriptionStatus' in issuedNever).toBe(false);
   });
 
   test('⚠ the code is single-use — the hash is cleared once it has opened a session', async () => {
