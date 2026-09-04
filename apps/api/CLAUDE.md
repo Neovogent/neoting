@@ -94,7 +94,25 @@ Consequently staging sets `EXTRACTOR=bedrock`, `OTP_MODE=totp` and `DOCUMENT_GUA
 
 ⚠ `infra/envs/prod/services.tf` sets none of these and does not set `AI_CHAT` either, so it already described an environment that could not boot before S1 — prod was destroyed on 25 Aug 2026 and its rebuild has to reconcile more than this stage. Do not read it as a working example.
 
-**Launch stage S4 added `BILLING=demo` to that stated set, and 28 Aug 2026 flipped it to `BILLING=stripe`.** `demo` was not merely a weaker environment: `businesses.subscription_status` is written ONLY by the Stripe webhook, so it stayed null, `mayIngest(null)` was false, and every upload 402'd — the client walkthrough died at the step after sign-in, with no way for anyone to fix it from inside the product. Staging now runs the real `HttpStripeClient` against a Stripe **sandbox**: Checkout, the webhook and the subscription lifecycle are all real, and **no card can still be charged** because the guarantee is now the ACCOUNT rather than the adapter (`4242 4242 4242 4242` is the only card that works). Entitlement is read from `subscription_status` either way, so neither value ever meant "free". Live mode is a different account and is blocked on company verification and the UK VAT registration number — `docs/runbooks/stripe-billing.md` §0 and §1.
+**Launch stage S4 added `BILLING=demo` to that stated set, and 28 Aug 2026 flipped it to `BILLING=stripe`.** `demo` was not merely a weaker environment: `businesses.subscription_status` is written ONLY by the Stripe webhook, so it stayed null, `mayIngest(null)` was false, and every upload 402'd — the client walkthrough died at the step after sign-in, with no way for anyone to fix it from inside the product. Staging runs the real `HttpStripeClient`. Entitlement is read from `subscription_status` either way, so neither value ever meant "free".
+
+⚠ **The staging Stripe key is `rk_live_…` — LIVE MODE, whatever this paragraph
+used to say about a sandbox** (the secret is `/neoting/staging/stripe`;
+`scripts/billing/create-promotion-code.ts` records the same correction, and the
+4 Sep 2026 staging pass confirmed it from a real checkout session — `cs_live_`,
+no Sandbox badge, real cards only). Consequences: `4242 4242 4242 4242` does
+NOT work on staging; a completed checkout charges a real card; test
+subscriptions travel on 100%-off coupons (`NEOTEST100`, or the script). One
+more measured fact from that pass: **the hosted checkout's "Add promotion
+code" field refuses every code when Stripe's adaptive-pricing currency
+conversion is active** (a non-GBP visitor sees BDT/etc.), so a coupon for a
+test subscription has to be attached SERVER-SIDE (`discounts[0][coupon]` on
+the session or subscription), not typed at checkout. The full lifecycle is
+proven live end to end: session (£8.50 + VAT rendered correctly) → webhook →
+`ACTIVE` → portal Plan panel → cancel → `CANCELED`. ⚠ The webhook resolves its
+tenant from the SUBSCRIPTION's `metadata.practiceId` — an API-created
+subscription must stamp `businessId` AND `practiceId` or every event for it is
+refused by name.
 
 **Seeding a deployed environment** — `docs/runbooks/staging-demo.md` §3. `src/db/seed-environment.ts` is the guard, and it is worth reading before touching it: `prisma/seed.ts` refuses under `NODE_ENV=production`, which staging sets for build parity, so the wrapper asserts the real property (`NEOTING_ENV` is in an allow-list of synthetic-data environments) and only then relaxes `NODE_ENV` for the child process. Assert, *then* relax — in that order, or the seed can reach production.
 
