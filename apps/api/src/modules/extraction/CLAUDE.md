@@ -547,15 +547,18 @@ Fresh Direct image), not a wrong number.
 - **The ~62.5–79% on record elsewhere is CATEGORISATION accuracy**
   (`docs/research/business-types-and-accounts.md`), a different question this
   probe does not measure. Do not average the two.
-- **One real watch item it surfaced:** the Bidfood receipt PNG (printed total
-  £482.40) read correctly here from the raw bytes, but the PRODUCT path — which
-  sanitises PNG→JPEG before the model sees it — read £456.72 on both occasions
-  it was tried (the 4 Sep walkthrough and a live re-upload the same evening).
-  Same file, same model, different answer after recompression. The synthetic
-  receipt's own line items do not sum to its printed total, which may be
-  provoking the model into reconciling; a real receipt's arithmetic adds up.
-  Worth a re-check with an arithmetically consistent fixture before treating
-  it as a sanitisation defect.
+- **The watch item this probe surfaced is RESOLVED (5 Sep 2026), and the
+  culprit was neither sanitisation nor the image.** The £456.72 misread of the
+  £482.40 receipt happened ONCE (a second sighting of the same document was
+  miscounted as a second read). Chasing it: the exact stored post-sanitisation
+  bytes are perfectly legible and read £482.40 six consecutive times — raw
+  PNG, sanitised output and q90 JPEG all agree. The real defect was that
+  `bedrock-extractor.ts` set **no `temperature`**, so extraction sampled at
+  the model's default and a busy receipt occasionally sampled a wrong number.
+  `temperature: 0` is now pinned in the request — extraction is a reading
+  task, and the only acceptable variance between two runs over one document
+  is none. (The request change orphaned the cassettes, which is the
+  eval-recording mechanism working; re-recorded.)
 
 ## Replay (`EXTRACTOR=replay`)
 
