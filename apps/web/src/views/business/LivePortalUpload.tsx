@@ -32,12 +32,14 @@ import type { PortalSendOutcome } from './useBusinessPortalSession';
  *   listed with its own reason. A business that thinks a receipt went through
  *   and has not is exactly how paperwork goes missing.
  *
- * ⚠ **There is deliberately no "note for your accountant" field**, which the
- * prototype has. `PortalUploadRequest` carries `filename`, `mimeType`,
- * `byteSize` and `transactionId` and nothing else, so a note would be typed
- * into a box, dropped on the floor, and believed. This repo's rule is absolute:
- * a control whose write goes nowhere is worse than no control. It comes back
- * the day the contract carries it.
+ * **Files STAGE on selection and send on an explicit Upload press** (5 Sep
+ * 2026, review item 11). Fire-on-select gave the client no moment to name a
+ * document or to notice they picked the wrong file — and on mobile data an
+ * accidental pick was already megabytes gone. Each staged file carries an
+ * OPTIONAL name; the day it was refused here ("a control whose write goes
+ * nowhere is worse than no control") ended when `PortalUploadRequest.note`
+ * entered the contract — the server makes it the document's display filename
+ * and records the client's words on the provenance event.
  */
 
 const m = defineMessages({
@@ -60,9 +62,25 @@ const m = defineMessages({
   },
   dropDetail: {
     id: 'portal.livePortalUpload.dropDetail',
-    defaultMessage: 'PDF, JPG, PNG, HEIC or a Word document · up to {limit}MB each.',
+    defaultMessage: 'PDF, JPG, PNG, HEIC, a Word document or a CSV/Excel statement · up to {limit}MB each.',
   },
   sending: { id: 'portal.livePortalUpload.sending', defaultMessage: 'Sending…' },
+
+  stagedTitle: { id: 'portal.livePortalUpload.stagedTitle', defaultMessage: 'Ready to send' },
+  stagedSubtitle: {
+    id: 'portal.livePortalUpload.stagedSubtitle',
+    defaultMessage: 'Nothing has been sent yet — name anything you like, then press Upload.',
+  },
+  stagedNameLabel: { id: 'portal.livePortalUpload.stagedNameLabel', defaultMessage: 'Document name (optional)' },
+  stagedNamePlaceholder: {
+    id: 'portal.livePortalUpload.stagedNamePlaceholder',
+    defaultMessage: 'e.g. July fuel receipt',
+  },
+  stagedRemove: { id: 'portal.livePortalUpload.stagedRemove', defaultMessage: 'Remove {name}' },
+  uploadAction: {
+    id: 'portal.livePortalUpload.uploadAction',
+    defaultMessage: 'Upload {count, plural, one {# file} other {# files}}',
+  },
 
   refusedHeading: {
     id: 'portal.livePortalUpload.refusedHeading',
@@ -136,7 +154,7 @@ export function LivePortalUpload({
   readonly documents: PortalSentPage | null;
   readonly documentsFault: string | null;
   readonly busy: boolean;
-  readonly onUpload: (file: File) => Promise<PortalSendOutcome>;
+  readonly onUpload: (file: File, note: string | null) => Promise<PortalSendOutcome>;
   readonly onSubscribe: () => void;
 }) {
   const intl = useIntl();
@@ -150,22 +168,38 @@ export function LivePortalUpload({
   // `unsupported-type` row with `fault: true` to suppress the wrong sentence,
   // which told the client nothing and told the next reader something false.
   const [sendFaults, setSendFaults] = useState<readonly PortalSendFault[]>([]);
+  // Selection STAGES; the Upload button sends (review item 11). Keyed so a
+  // name typed against one file survives another being removed.
+  const [staged, setStaged] = useState<{ key: number; file: File; name: string }[]>([]);
+  const nextKey = useRef(0);
 
-  const submit = async (files: readonly File[]) => {
+  const stage = (files: readonly File[]) => {
     if (files.length === 0) return;
     const { accepted, refused: screened } = screenPortalFiles(files);
     setRefused(screened);
+    setStaged((prev) => [...prev, ...accepted.map((file) => ({ key: nextKey.current++, file, name: '' }))]);
+  };
+
+  const uploadStaged = async () => {
+    const batch = staged;
+    if (batch.length === 0) return;
     setSendFaults([]);
 
-    for (const file of accepted) {
+    for (const item of batch) {
       // One at a time, on purpose: a phone on mobile data with four receipts in
       // flight at once is four requests competing for the same handful of
       // kilobits, and the first failure would be indistinguishable from the
       // rest.
-      const outcome = await onUpload(file);
+      const note = item.name.trim();
+      const outcome = await onUpload(item.file, note === '' ? null : note);
       if (outcome.ok) {
-        setSent((prev) => [{ name: file.name, size: file.size }, ...prev].slice(0, 12));
+        // Shown under the name the client gave it, which is the name the
+        // accountant now sees too.
+        setSent((prev) => [{ name: note === '' ? item.file.name : note, size: item.file.size }, ...prev].slice(0, 12));
+        setStaged((prev) => prev.filter((s) => s.key !== item.key));
       } else {
+        // A failed file STAYS staged — the bytes never landed, and clearing it
+        // would make retrying mean finding the file again.
         const fault = outcome.fault;
         if (fault !== null) setSendFaults((prev) => [...prev, fault]);
       }
@@ -213,7 +247,7 @@ export function LivePortalUpload({
             onDrop={(e) => {
               e.preventDefault();
               setDragging(false);
-              void submit(Array.from(e.dataTransfer.files));
+              stage(Array.from(e.dataTransfer.files));
             }}
             onClick={() => inputRef.current?.click()}
             data-tour="portal-upload"
@@ -246,10 +280,63 @@ export function LivePortalUpload({
               onChange={(e) => {
                 const picked = Array.from(e.target.files ?? []);
                 e.target.value = '';
-                void submit(picked);
+                stage(picked);
               }}
             />
           </div>
+
+          {/* Staged, named, sent on an explicit press — never on selection. */}
+          <AnimatePresence>
+            {staged.length > 0 && (
+              <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+                <Panel title={intl.formatMessage(m.stagedTitle)} subtitle={intl.formatMessage(m.stagedSubtitle)}>
+                  <div className="flex flex-col gap-2">
+                    {staged.map((item) => (
+                      <div
+                        key={item.key}
+                        className="flex flex-col sm:flex-row sm:items-center gap-2 p-3.5 rounded-2xl bg-ground/60 border border-white/5"
+                      >
+                        <span className="flex items-center gap-3 min-w-0 sm:flex-1">
+                          <UploadCloud size={16} className="text-zinc-500 shrink-0" />
+                          <span className="text-[13px] font-semibold text-white truncate">{item.file.name}</span>
+                          <span className="text-[11px] text-zinc-500 font-semibold shrink-0">
+                            {intl.formatMessage(m.fileSize, { size: (item.file.size / 1024 / 1024).toFixed(1) })}
+                          </span>
+                        </span>
+                        <span className="flex items-center gap-2 sm:w-64">
+                          <input
+                            value={item.name}
+                            maxLength={280}
+                            onChange={(e) =>
+                              setStaged((prev) => prev.map((s) => (s.key === item.key ? { ...s, name: e.target.value } : s)))
+                            }
+                            aria-label={intl.formatMessage(m.stagedNameLabel)}
+                            placeholder={intl.formatMessage(m.stagedNamePlaceholder)}
+                            className="flex-1 min-w-0 bg-ground border border-white/5 rounded-xl px-3 py-2 text-[13px] text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors"
+                          />
+                          <button
+                            onClick={() => setStaged((prev) => prev.filter((s) => s.key !== item.key))}
+                            aria-label={intl.formatMessage(m.stagedRemove, { name: item.file.name })}
+                            className="text-zinc-500 hover:text-white hit-area"
+                          >
+                            <X size={15} />
+                          </button>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => void uploadStaged()}
+                    disabled={busy}
+                    className="mt-3 w-full flex items-center justify-center gap-2 px-6 py-3 rounded-full text-[14px] font-bold text-brand-on bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-glow-cta"
+                  >
+                    <UploadCloud size={16} strokeWidth={2.5} />
+                    {busy ? intl.formatMessage(m.sending) : intl.formatMessage(m.uploadAction, { count: staged.length })}
+                  </button>
+                </Panel>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </>
       )}
 

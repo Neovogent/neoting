@@ -7,11 +7,13 @@ import { PORTAL_UPLOAD_LIMIT } from '../../lib/business';
  *
  * `POST /portal/uploads` checks the declared MIME against the sanitiser's
  * `ACCEPTED_FORMATS` (`apps/api/src/modules/ingestion-routing/lib/sanitisation/
- * formats.ts`) and answers `400` for anything else. The live portal's file
- * picker offered `.csv` and `.xlsx` — **neither of which is on that list** — so
- * a client sending a spreadsheet met a refusal after the upload rather than a
- * picker that never offered it. Offering a format and then refusing it is worse
- * than not offering it.
+ * formats.ts`) and answers `400` for anything else. This mirror has been
+ * WRONG IN BOTH DIRECTIONS in its life: the picker once offered `.csv` and
+ * `.xlsx` while the server refused them, and then — after the server gained
+ * both on 28 Aug 2026 for D40's statement upload — this list was never
+ * re-widened, so a client whose bank exports only CSV could not send it
+ * (5 Sep 2026 review finding). When the two drift, the SERVER file is the
+ * truth; fix this one.
  *
  * Screening here is a courtesy, never the enforcement: the server refuses
  * regardless, and this exists so the refusal arrives instantly, names the file,
@@ -40,6 +42,13 @@ export const PORTAL_MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
   odt: 'application/vnd.oasis.opendocument.text',
   rtf: 'application/rtf',
   zip: 'application/zip',
+  // Spreadsheets (5 Sep 2026): the server has accepted both since D40 made
+  // manual statement upload the only bank input — some clients' banks export
+  // nothing else. `.xls` declares the legacy alias the server's DECLARED_ALIASES
+  // admits at the door; the byte sniff decides what it really is.
+  csv: 'text/csv',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  xls: 'application/vnd.ms-excel',
 };
 
 /**

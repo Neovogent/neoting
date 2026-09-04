@@ -78,6 +78,25 @@ export interface PortalUploadConfig {
  */
 const PORTAL_CHANNEL = 'SMS_PORTAL';
 
+/** The contract's own ceiling on `PortalUploadRequest.filename`. */
+const FILENAME_MAX = 255;
+
+/**
+ * The client's note as the document's display filename (review item 11):
+ * whitespace-collapsed, path separators stripped (the `safeBasename` concern),
+ * the REAL extension kept, clamped to the contract's 255. A note that survives
+ * none of that falls back to the declared filename — a rename must never cost
+ * the upload.
+ */
+function displayFilename(note: string | null | undefined, filename: string): string {
+  if (note === null || note === undefined) return filename;
+  const safe = note.replace(/[\\/]/gu, ' ').replace(/\s+/gu, ' ').trim();
+  if (safe === '') return filename;
+  const dot = filename.lastIndexOf('.');
+  const extension = dot > 0 ? filename.slice(dot) : '';
+  return `${safe.slice(0, FILENAME_MAX - extension.length)}${extension}`;
+}
+
 export class PrismaPortalUploadService implements PortalUploadService {
   private readonly logger = new Logger(PrismaPortalUploadService.name);
 
@@ -161,7 +180,12 @@ export class PrismaPortalUploadService implements PortalUploadService {
       businessId: facts.businessId,
       practiceId: business.practiceId,
       channel: PORTAL_CHANNEL,
-      filename: request.filename,
+      // The client's own name for the document, when they gave one (review
+      // item 11): "July fuel receipt.jpg" instead of IMG_2937.jpg, keeping the
+      // REAL extension — `formatFor` picks the statement lane's reader off it,
+      // and a renamed CSV must still read as one. No note → the filename as
+      // declared, exactly as before.
+      filename: displayFilename(request.note, request.filename),
       mimeType: request.mimeType,
       byteSize: request.byteSize,
       // Nothing splits yet (web-upload's own out-of-scope note), and a phone
@@ -171,6 +195,10 @@ export class PrismaPortalUploadService implements PortalUploadService {
       ...(request.transactionId === undefined || request.transactionId === null
         ? {}
         : { chaseTransactionId: request.transactionId }),
+      // The unedited note rides too, so completion can record what the client
+      // SAID on the provenance event — carried, never trusted, like the
+      // transaction declaration above it.
+      ...(request.note === undefined || request.note === null ? {} : { portalNote: request.note }),
       s3Key: key,
       expiresAtMs,
     };

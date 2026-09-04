@@ -6,6 +6,8 @@ import {
   createPortalSignInCode,
   getPortalContext,
   listPortalDocuments,
+  previewPortalSetup,
+  updatePortalBusinessProfile,
 } from '@neoting/contracts/client';
 import {
   createBillingPortalSessionBody,
@@ -13,8 +15,9 @@ import {
   createPortalOnboardingSessionBody,
   createPortalSignInCodeBody,
   listPortalDocumentsResponse,
+  updatePortalBusinessProfileBody,
 } from '@neoting/contracts/zod';
-import type { PortalDocumentStatus, SubscriptionStatus } from '@neoting/contracts/model';
+import type { PortalBusinessProfileUpdate, PortalDocumentStatus, SubscriptionStatus } from '@neoting/contracts/model';
 import { unwrapBody } from './envelope';
 import { fromIsoDate, fromPence } from './documents';
 
@@ -84,6 +87,57 @@ export async function requestSignInCode(email: string, setupToken?: string): Pro
   const request = setupToken === undefined ? { email } : { email, setupToken };
   createPortalSignInCodeBody.parse(request);
   await createPortalSignInCode(request);
+}
+
+/**
+ * What a setup token names (5 Sep 2026 review finding). The sign-in screen
+ * PREFILLS the registered address from it, because retyping is how a client
+ * types a different one — and the uniform 202 on the code request then sends
+ * nothing and says nothing (it happened to a real client the day before).
+ */
+export interface SetupPreview {
+  email: string;
+  businessName: string;
+}
+
+const setupPreviewShape = z.object({ email: z.string().min(1), businessName: z.string().min(1) });
+
+/**
+ * Null on ANY failure — an expired or unknown token, a network error, a body
+ * that does not parse. The preview is a prefill, never a gate: the journey
+ * carries on with the empty field it always had, and the real refusals stay
+ * where they were (the uniform 202, then `NT-OTP-001` at the code exchange).
+ */
+export async function fetchSetupPreview(setupToken: string): Promise<SetupPreview | null> {
+  try {
+    const parsed = setupPreviewShape.safeParse(unwrapBody(await previewPortalSetup({ setupToken })));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What the details step may state about the business — every field optional,
+ * the contract's `PortalBusinessProfileUpdate` exactly: an omitted key is
+ * UNCHANGED server-side, so the caller sends only what was answered. The
+ * generated MODEL type rather than the zod output, for `requestSignInCode`'s
+ * reason: under `exactOptionalPropertyTypes` an optional zod output carries
+ * `| undefined`, which the generated request type refuses.
+ */
+export type BusinessProfileUpdate = PortalBusinessProfileUpdate;
+
+/**
+ * `PUT /portal/business-profile` (5 Sep 2026, review item 4) — the setup
+ * journey's details step. 204 on success; the answer is the portal context's
+ * on its next read. Owner-only server-side (`NT-PRM-001` for anyone else) —
+ * which an invited client always is, because the invite names the primary
+ * contact. Validated in place (the parse still throws on drift), then the
+ * original object travels.
+ */
+export async function updateBusinessProfile(token: string, profile: PortalBusinessProfileUpdate): Promise<void> {
+  updatePortalBusinessProfileBody.parse(profile);
+  await updatePortalBusinessProfile(profile, bearer(token));
 }
 
 export interface OnboardingSession {

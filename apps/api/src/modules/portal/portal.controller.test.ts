@@ -141,6 +141,10 @@ function harness(
       calls.createOnboardingSession.push(input);
       return over.onboarding === undefined ? { token: 'portal.bearer', expiresAt: EXPIRES } : over.onboarding();
     },
+    // The setup preview (5 Sep 2026). `null` is every refusal at once — the
+    // service's rules live in `portal-onboarding.service.test.ts`.
+    previewSetup: async (setupToken: string) =>
+      setupToken === 'known-token' ? { email: 'ana@zeplow.test', businessName: 'Zeplow Inc.' } : null,
   } as unknown as PortalOnboardingService;
 
   // `GET /portal/documents`. Records the facts and the parsed query, which is
@@ -244,19 +248,36 @@ test('POST /portal/uploads authenticates BEFORE it validates — a bad bearer wi
   expect(calls.createUpload).toEqual([]);
 });
 
-test('the six contracted routes are the WHOLE surface — nothing else is reachable on the portal', () => {
+test('POST /portal/setup-previews answers what a real token names, and one uniform NT-OTP-001 for everything else', async () => {
+  const { controller } = harness();
+
+  // The prefill: the address and the workspace, nothing more.
+  expect(await controller.previewSetup({ setupToken: 'known-token' })).toEqual({
+    email: 'ana@zeplow.test',
+    businessName: 'Zeplow Inc.',
+  });
+
+  // Unknown, expired, accepted — the service collapses them to null and the
+  // controller may not re-distinguish them.
+  const refused = await grab(() => controller.previewSetup({ setupToken: 'guessed-token' }));
+  expect(refused.code).toBe('NT-OTP-001');
+  expect(refused.getStatus()).toBe(401);
+});
+
+test('the seven contracted routes are the WHOLE surface — nothing else is reachable on the portal', () => {
   // `openapi.yaml` declares exactly `createPortalSession`, `getPortalContext`,
-  // `listPortalDocuments`, `createPortalUpload`, `createPortalSignInCode` and
-  // `createPortalOnboardingSession` under the `portal` tag. The portal is the
-  // smallest surface in the product and the only one a stranger holding a
-  // forwarded link can reach, so a SEVENTH handler appearing here is a contract
-  // decision, not a convenience — this pins it.
+  // `listPortalDocuments`, `createPortalUpload`, `createPortalSignInCode`,
+  // `createPortalOnboardingSession` and `previewPortalSetup` under the `portal`
+  // tag (the people routes have their own controller and their own pin). The
+  // portal is the smallest surface in the product and the only one a stranger
+  // holding a forwarded link can reach, so an EIGHTH handler appearing here is
+  // a contract decision, not a convenience — this pins it.
   //
   // It read `three` until the S7 walkthrough (the invited-client pair was
   // published by S0's ID LAW batch and implemented by nobody, so a sign-in
-  // 404'd) and `five` until 2 Sep 2026, when `GET /portal/documents` landed —
-  // D49's home and upload tabs read it, and the only server-side fact about a
-  // client's own documents before it was the integer `documentsSent`.
+  // 404'd), `five` until 2 Sep 2026 (`GET /portal/documents`), and `six` until
+  // 5 Sep 2026, when the setup preview landed off the review finding that the
+  // sign-in screen made a client retype the one fact a mistype silently kills.
   const handlers = Object.getOwnPropertyNames(PortalController.prototype).filter((name) => name !== 'constructor');
   expect(handlers.sort()).toEqual([
     'createOnboardingSession',
@@ -265,6 +286,7 @@ test('the six contracted routes are the WHOLE surface — nothing else is reacha
     'createUpload',
     'getContext',
     'getDocuments',
+    'previewSetup',
   ]);
 });
 

@@ -211,12 +211,17 @@ async function startPortalUpload(
   token: string,
   file: PortalUploadFile,
   transactionId: string | null,
+  note: string | null,
 ): Promise<DocumentUpload> {
   const request: PortalUploadRequest = {
     filename: file.filename,
     mimeType: file.mimeType,
     byteSize: file.bytes.size,
     transactionId,
+    // The client's own name for the document (5 Sep 2026, review item 11).
+    // Server-side it becomes the display filename and a provenance record;
+    // null and omitted both mean "none".
+    note,
   };
   // Parsed on the way out as well as in: the contract's own schema is what
   // decides that 255 characters and a byte count of at least 1 are the rules,
@@ -247,8 +252,9 @@ export async function sendPortalUpload(
   token: string,
   file: PortalUploadFile,
   transactionId: string | null,
+  note: string | null = null,
 ): Promise<{ uploadId: string }> {
-  const intent = await startPortalUpload(token, file, transactionId);
+  const intent = await startPortalUpload(token, file, transactionId, note);
   try {
     await putBytes(intent, file.bytes);
   } catch (cause) {

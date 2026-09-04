@@ -324,8 +324,41 @@ bank input in ID, so the one input the release has was a mock end to end.
 | `sheet-reader.ts` | CSV + XLSX → grid, on `node:zlib`. **No new dependency** — adding one is on the root stop-and-ask list, and `apps/web/src/lib/spreadsheet.ts` already proved the subset is worth owning |
 | `statement-parser.ts` | grid → dated, signed, integer-pence rows |
 | `completeness.ts` | the D41 gate |
+| `account-holder.ts` | **whose statement is this** (5 Sep 2026) — see the section below |
 | `statement-ingest.ts` | persistence: `Statement` + `BankTransaction[]`, idempotent on `documentId` |
 | `statement-step.ts` | the ingest job's step, exported through `index.ts` |
+
+### 🚨 A statement can land in the WRONG BUSINESS, and until 5 Sep 2026 it did so silently
+
+The second named data-integrity event in this lane: a real 1,491-row NatWest
+statement of **American Burger Ltd** was uploaded into **Zeplow Inc**'s
+workspace and imported without a word — every defence here is about the FILE
+(completeness, duplicates, overlap) and none asked whether the file belongs to
+the business it is landing in. The extractor had read the holder's name off the
+page (`documents.customer_name`, which the statement-briefed prompt now asks
+for explicitly — `extraction/CLAUDE.md`); nothing compared it to anything.
+
+`statement-ingest/account-holder.ts` is the check, and it is pure:
+
+- **The step supplies both sides.** `statement-step.ts` selects `customerName`
+  off the document row and reads the business's `name` + `tradingName` beside
+  it; both ride `StatementIngestInput` as optional fields (`accountHolder`,
+  `businessNames`).
+- **Match is token-SUBSET after suffix strip, in either direction** — "Zeplow"
+  matches "Zeplow Digital Inc"; "American Pie Ltd" does NOT match "American
+  Burger Ltd" on the shared word. The safe failure direction is a missed flag
+  (the status quo), never a false one dressed as a fact.
+- **A mismatch FLAGS, it never blocks** (D46): an `accountHolderMismatch`
+  finding — FIRST in `gapAnalysis.findings`, because "wrong client" outranks
+  every line-level finding — plus a WARN. The finding names both sides (the
+  holder clamped to 60 chars, the chase-verdict rule for untrusted names) and
+  points at removal, whose approved path is `bank.remove-statement`.
+- **No holder read means no finding.** A spreadsheet statement has
+  `customerName` hard-coded null, and an older extraction may carry none — the
+  check only speaks when it can prove disagreement, D41's ethos one lane over.
+
+`account-holder.test.ts` pins the incident verbatim, both match directions, the
+subset rule, and the clamp.
 
 **No new endpoint was needed, and that is the design.** `DocumentType.STATEMENT`
 already existed in prisma and the contract, and `Statement.documentId` already

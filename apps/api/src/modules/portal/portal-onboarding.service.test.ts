@@ -110,7 +110,7 @@ function harness(
     // invite's own business and nothing else.
     business: {
       findUnique: async ({ where }: { where: { id: string } }) =>
-        where.id === 'biz_1' ? { subscriptionStatus: over.subscriptionStatus ?? null } : null,
+        where.id === 'biz_1' ? { subscriptionStatus: over.subscriptionStatus ?? null, name: 'Biz One Ltd' } : null,
     },
     // `scopedDb` sets the RLS context with a tagged template on the
     // TRANSACTION client before it runs the callback. The double has one
@@ -391,5 +391,31 @@ describe('a returning client, with no setup token', () => {
     // overwrite each other's code.
     expect(rows.size).toBe(2);
     expect(rows.has(hashSetupToken(TOKEN))).toBe(true);
+  });
+});
+
+describe('the setup preview — a token answers WITHOUT the address (5 Sep 2026)', () => {
+  test('a live token names the registered email and the business, for the prefill', async () => {
+    const { service } = harness();
+    expect(await service.previewSetup(TOKEN, NOW)).toEqual({ email: EMAIL, businessName: 'Biz One Ltd' });
+  });
+
+  test('every refusal is one null — unknown, expired, accepted, business-less', async () => {
+    const { service } = harness();
+    expect(await service.previewSetup('not-our-token', NOW)).toBeNull();
+
+    const expired = harness({ invite: { expiresAt: new Date(NOW - 1) } });
+    expect(await expired.service.previewSetup(TOKEN, NOW)).toBeNull();
+
+    const accepted = harness({ invite: { acceptedAt: new Date(NOW - 1) } });
+    expect(await accepted.service.previewSetup(TOKEN, NOW)).toBeNull();
+
+    const orphan = harness({ invite: { businessId: null } });
+    expect(await orphan.service.previewSetup(TOKEN, NOW)).toBeNull();
+  });
+
+  test('a tenant with no machine actor is refused, not crashed', async () => {
+    const { service } = harness({ practices: [] });
+    expect(await service.previewSetup(TOKEN, NOW)).toBeNull();
   });
 });

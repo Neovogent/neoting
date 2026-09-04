@@ -3,13 +3,16 @@ import { NtProblemError } from '@neoting/contracts';
 import { API_ENABLED } from '../../api/config';
 import {
   fetchBusinessPortalHome,
+  fetchSetupPreview,
   openOnboardingSession,
   requestSignInCode,
   startSubscriptionCheckout,
+  updateBusinessProfile,
 } from '../../api/onboarding';
-import type { BusinessPortalHome, OnboardingSession } from '../../api/onboarding';
+import type { BusinessPortalHome, BusinessProfileUpdate, OnboardingSession, SetupPreview } from '../../api/onboarding';
 import { useAppContext } from '../../context/AppContext';
 import type { BusinessAccount } from '../../lib/types';
+import { storeSession } from './portal-session-store';
 import type { PortalFault } from './usePortalJourney';
 
 /**
@@ -19,9 +22,12 @@ import type { PortalFault } from './usePortalJourney';
  * the app's own business-account state, and the view has one code path so the
  * synthetic demo keeps working end to end (METH_MODE §1).
  *
- * The steps, in the order §24.5 walks them:
+ * The steps, in the order §24.5 walks them — plus the details step (5 Sep
+ * 2026, review item 4: the emailed link told the client they would fill in
+ * their account information, and the journey asked them nothing between the
+ * code and the payment):
  *
- *   email → code → welcome → subscribe → subscribed
+ *   email → code → welcome → details → subscribe → subscribed
  *
  * The bearer lives in this hook's state and nowhere else — the standing
  * portal rule (`api/portal.ts` has the argument in full). A page refresh ends
@@ -29,7 +35,7 @@ import type { PortalFault } from './usePortalJourney';
  * intended recovery, not a failure.
  */
 
-export type OnboardingStep = 'email' | 'code' | 'welcome' | 'subscribe' | 'subscribed';
+export type OnboardingStep = 'email' | 'code' | 'welcome' | 'details' | 'subscribe' | 'subscribed';
 
 export type SubscribeOutcome =
   /** The tab is being handed to Stripe's hosted checkout. */
@@ -46,6 +52,14 @@ export interface OnboardingJourney {
   step: OnboardingStep;
   /** The address the code went to — rendered back in the step-two copy. */
   email: string;
+  /**
+   * The REGISTERED address, off the setup token (5 Sep 2026). The email step
+   * prefills from it, because a retyped address that differs from the
+   * registered one fails silently by design — the uniform 202 sends nothing
+   * and may not say why. Null while loading, on any failure, and always in
+   * synthetic mode; the field is still editable either way.
+   */
+  prefilledEmail: string | null;
   /**
    * The business being set up.
    *
@@ -75,7 +89,19 @@ export interface OnboardingJourney {
   changeEmail: () => void;
   /** The six digits. True opens the session and lands on the welcome step. */
   verify: (otp: string) => Promise<boolean>;
-  /** welcome → subscribe. No request — just the journey moving on. */
+  /** welcome → details. No request — just the journey moving on. */
+  beginDetails: () => void;
+  /**
+   * The details step's Continue: send what was answered (PUT
+   * /portal/business-profile), then move on. An EMPTY draft sends nothing at
+   * all — the step is skippable by design, because a missing company number
+   * must never stand between a client and their first receipt. False only on
+   * a fault, and the journey stays on the step so nothing typed is lost.
+   */
+  saveDetails: (profile: BusinessProfileUpdate) => Promise<boolean>;
+  /** The details step's Skip — straight on, nothing sent, nothing lost. */
+  skipDetails: () => void;
+  /** details → subscribe. No request — just the journey moving on. */
   beginSubscription: () => void;
   /**
    * True when the session itself said the business is already entitled — the
@@ -119,6 +145,24 @@ export function useOnboardingJourney(setupToken: string | null): OnboardingJourn
 
   const clearFault = useCallback(() => setFault(null), []);
 
+  /**
+   * The setup preview — what the token names, fetched once so the email step
+   * can prefill the registered address and the shell can greet the client by
+   * workspace before any session exists. A failure is deliberately silent:
+   * the preview is a prefill, never a gate (`api/onboarding.ts`).
+   */
+  const [preview, setPreview] = useState<SetupPreview | null>(null);
+  useEffect(() => {
+    if (!API_ENABLED || setupToken === null) return;
+    let cancelled = false;
+    void fetchSetupPreview(setupToken).then((value) => {
+      if (!cancelled) setPreview(value);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [setupToken]);
+
   const requestCode = useCallback(
     async (address: string): Promise<boolean> => {
       setBusy(true);
@@ -160,6 +204,14 @@ export function useOnboardingJourney(setupToken: string | null): OnboardingJourn
           const opened = await openOnboardingSession(email, otp, setupToken);
           if (!alive.current) return false;
           setSession(opened);
+          // Adopt the session into the client portal's own sessionStorage slot
+          // (5 Sep 2026). An onboarding session IS an own-portal session — the
+          // same code-to-the-registered-address credential /portal mints — and
+          // sessionStorage is what survives the whole-tab Stripe redirect, so
+          // the return leg and the "Open your portal" button land the client
+          // INSIDE their portal instead of at a second sign-in. #243's rule
+          // stands: sessionStorage, never localStorage, dies with the tab.
+          storeSession(opened.token, opened.expiresAt);
         } else {
           synthetic.signIn();
         }
@@ -176,6 +228,11 @@ export function useOnboardingJourney(setupToken: string | null): OnboardingJourn
     [setupToken, email, synthetic],
   );
 
+  const beginDetails = useCallback(() => {
+    setFault(null);
+    setStep('details');
+  }, []);
+
   const beginSubscription = useCallback(() => {
     setFault(null);
     // An already-entitled business skips the subscribe step (5 Sep 2026): a
@@ -189,6 +246,35 @@ export function useOnboardingJourney(setupToken: string | null): OnboardingJourn
     }
     setStep('subscribe');
   }, [session]);
+
+  const saveDetails = useCallback(
+    async (profile: BusinessProfileUpdate): Promise<boolean> => {
+      setBusy(true);
+      setFault(null);
+      try {
+        // Only what was answered travels; an empty draft sends nothing at all
+        // — the server's own empty-body rule, honoured before the wire. Live
+        // only: synthetic mode has no record to write and the step simply
+        // walks on (METH_MODE §1).
+        if (API_ENABLED && session !== null && Object.keys(profile).length > 0) {
+          await updateBusinessProfile(session.token, profile);
+        }
+        if (!alive.current) return false;
+        // The same forward move as Skip — including the already-subscribed
+        // jump straight to the subscribed step.
+        beginSubscription();
+        return true;
+      } catch (error) {
+        if (alive.current) setFault(faultFrom(error));
+        return false;
+      } finally {
+        if (alive.current) setBusy(false);
+      }
+    },
+    [session, beginSubscription],
+  );
+
+  const skipDetails = beginSubscription;
 
   const subscribe = useCallback(async (): Promise<SubscribeOutcome> => {
     setBusy(true);
@@ -234,7 +320,16 @@ export function useOnboardingJourney(setupToken: string | null): OnboardingJourn
     }
   }, [session, synthetic]);
 
-  const enterPortal = useCallback(() => synthetic.enterPortal(), [synthetic]);
+  // Live, the session was adopted into the portal's sessionStorage at verify,
+  // so the portal address simply resumes it — a real navigation, because the
+  // portal is a different shell, not a step of this journey.
+  const enterPortal = useCallback(() => {
+    if (API_ENABLED) {
+      window.location.assign('/portal');
+      return;
+    }
+    synthetic.enterPortal();
+  }, [synthetic]);
 
   /**
    * The client's own workspace, read once the session exists.
@@ -265,7 +360,8 @@ export function useOnboardingJourney(setupToken: string | null): OnboardingJourn
     live: API_ENABLED,
     step,
     email,
-    businessName: API_ENABLED ? home?.businessName ?? null : synthetic.businessName,
+    prefilledEmail: API_ENABLED ? preview?.email ?? null : null,
+    businessName: API_ENABLED ? home?.businessName ?? preview?.businessName ?? null : synthetic.businessName,
     home,
     renewsOn,
     busy,
@@ -275,6 +371,9 @@ export function useOnboardingJourney(setupToken: string | null): OnboardingJourn
     resendCode,
     changeEmail,
     verify,
+    beginDetails,
+    saveDetails,
+    skipDetails,
     beginSubscription,
     alreadySubscribed: session?.subscriptionStatus === 'ACTIVE' || session?.subscriptionStatus === 'TRIALING',
     subscribe,

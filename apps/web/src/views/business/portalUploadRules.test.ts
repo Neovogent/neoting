@@ -16,10 +16,12 @@ import {
  * business that believes a receipt went through and has not is exactly how
  * paperwork goes missing, and it is invisible until a VAT return is wrong.
  *
- * It also pins the two things this screening got wrong before it existed: the
- * picker offered `.csv` and `.xlsx`, which the server's own allowlist refuses,
- * and the declared MIME was taken from the browser alone, which hands over an
- * empty string for the commonest phone photograph on earth.
+ * It also pins what this screening got wrong before it existed: the declared
+ * MIME was taken from the browser alone, which hands over an empty string for
+ * the commonest phone photograph on earth. (This suite's other original pin —
+ * `.csv`/`.xlsx` refused — REVERSED on 5 Sep 2026: the server's allowlist was
+ * widened for D40's statement upload back in August, this mirror was never
+ * re-widened, and a client whose bank exports only CSV could not send it.)
  */
 
 const file = (name: string, size = 1024, type = '') => ({ name, size, type });
@@ -60,11 +62,12 @@ describe('screenPortalFile', () => {
   // ⚠ The picker used to offer these two. The server's allowlist is the
   // sanitiser's accepted formats and neither is on it, so offering them meant
   // a refusal AFTER the client had spent their data uploading.
-  test('refuses the spreadsheet formats the portal channel does not take', () => {
-    expect(screenPortalFile(file('statement.csv'))?.reason).toBe('unsupported-type');
-    expect(screenPortalFile(file('statement.xlsx'))?.reason).toBe('unsupported-type');
-    expect(PORTAL_ACCEPT).not.toContain('.csv');
-    expect(PORTAL_ACCEPT).not.toContain('.xlsx');
+  test('accepts the spreadsheet formats the server takes — a bank that exports only CSV is not a refusal (5 Sep 2026)', () => {
+    expect(screenPortalFile(file('statement.csv'))).toBeNull();
+    expect(screenPortalFile(file('statement.xlsx'))).toBeNull();
+    expect(screenPortalFile(file('statement.xls'))).toBeNull();
+    expect(PORTAL_ACCEPT).toContain('.csv');
+    expect(PORTAL_ACCEPT).toContain('.xlsx');
   });
 
   test('refuses an unknown type and names the extension it was refused for', () => {
@@ -98,7 +101,7 @@ describe('screenPortalFiles', () => {
   test('splits a pick and keeps every refusal, in order', () => {
     const { accepted, refused } = screenPortalFiles([
       file('a.jpg'),
-      file('b.csv'),
+      file('b.xyz'),
       file('c.pdf', PORTAL_UPLOAD_LIMIT + 1),
       file('d.png', 0),
     ]);
@@ -108,7 +111,7 @@ describe('screenPortalFiles', () => {
     // each one is named with its own reason so the client knows which of the
     // four they still have to deal with.
     expect(refused.map((r) => [r.name, r.reason])).toEqual([
-      ['b.csv', 'unsupported-type'],
+      ['b.xyz', 'unsupported-type'],
       ['c.pdf', 'too-large'],
       ['d.png', 'empty'],
     ]);

@@ -1,3 +1,4 @@
+import { accountHolderFinding } from './account-holder.js';
 import { assessCompleteness, type CompletenessFinding, type CompletenessReport } from './completeness.js';
 import { importFingerprintsFor } from './row-identity.js';
 import { formatFor } from './sheet-reader.js';
@@ -92,6 +93,15 @@ export interface StatementIngestInput {
   readonly mimeType: string;
   /** Where the object lives, for Textract's multi-page path. */
   readonly s3Key: string | null;
+  /**
+   * The account holder extraction read off the page (`documents.customer_name`),
+   * for the whose-statement-is-this check (`account-holder.ts`, review item 14).
+   * Null/absent means none was read — a spreadsheet, or an older extraction —
+   * and the check stays silent rather than guessing.
+   */
+  readonly accountHolder?: string | null;
+  /** Every name the business goes by (`businesses.name`, `trading_name`) — the check's right-hand side. */
+  readonly businessNames?: readonly string[];
 }
 
 export type StatementIngestOutcome =
@@ -209,6 +219,22 @@ export async function ingestStatement(
   }
 
   const report = assessCompleteness(parsed.statement);
+
+  // Whose statement is this? (review item 14 — 1,491 rows of another business's
+  // NatWest statement imported silently). A mismatch FLAGS and the import
+  // proceeds (D46); removal is `bank.remove-statement`'s approved path. FIRST
+  // in the findings list, because "wrong client" outranks every line-level
+  // finding a human would otherwise read first.
+  const holderFinding = accountHolderFinding(input.accountHolder, input.businessNames ?? []);
+  if (holderFinding !== null) {
+    logger.warn(`statement-ingest: ${input.documentId} — ${holderFinding.detail}`);
+  }
+  const importFindings = (extra: CompletenessFinding[]): CompletenessFinding[] => [
+    ...(holderFinding === null ? [] : [holderFinding]),
+    ...report.findings,
+    ...extra,
+  ];
+
   const accountId = await accountFor(db, input.businessId);
 
   const periodStart = new Date(`${parsed.statement.periodStart}T00:00:00.000Z`);
@@ -235,7 +261,7 @@ export async function ingestStatement(
       gapAnalysis: {
         assurance: report.assurance,
         provenBy: report.provenBy,
-        findings: report.findings,
+        findings: importFindings([]),
         mapping: parsed.statement.mapping,
       },
     },
@@ -297,11 +323,10 @@ export async function ingestStatement(
       gapAnalysis: {
         assurance: report.assurance,
         provenBy: report.provenBy,
-        findings: [
-          ...report.findings,
+        findings: importFindings([
           ...overlaps,
           ...duplicateFindings(written.count, duplicateRowCount, parsed.statement.rows.length),
-        ],
+        ]),
         mapping: parsed.statement.mapping,
         // The file's own line count, kept beside the import result so the two
         // numbers can never be confused for one another again.

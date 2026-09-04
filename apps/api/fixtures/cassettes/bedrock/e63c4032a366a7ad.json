@@ -1,0 +1,60 @@
+{
+  "key": "e63c4032a366a7ad",
+  "recordedAt": "2026-09-04",
+  "modelId": "anthropic.claude-sonnet-4-6",
+  "synthetic": true,
+  "description": "extraction · byte path (image block) · happy read",
+  "response": {
+    "stop_reason": "tool_use",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_REDACTED",
+        "name": "record_extraction",
+        "input": {
+          "docType": "RECEIPT",
+          "supplierName": "BIDFOOD WHOLESALE LTD",
+          "customerName": null,
+          "documentDate": "2026-08-04",
+          "dueDate": null,
+          "currency": "GBP",
+          "totalPence": 28296,
+          "taxPence": 4716,
+          "netPence": 23580,
+          "reference": "BF-2026-118374",
+          "vatNumber": "GB 412 8836 21",
+          "lineItems": [
+            {
+              "description": "12 x Beef patties 6oz (case)",
+              "quantity": 12,
+              "totalPence": 8460,
+              "taxPence": null
+            },
+            {
+              "description": "8 x Brioche buns (pack of 48)",
+              "quantity": 8,
+              "totalPence": 3920,
+              "taxPence": null
+            },
+            {
+              "description": "4 x Vegetable oil 20L",
+              "quantity": 4,
+              "totalPence": 11200,
+              "taxPence": null
+            }
+          ],
+          "confidence": {
+            "supplier": 0.97,
+            "date": 0.96,
+            "total": 0.98,
+            "tax": 0.95
+          }
+        }
+      }
+    ],
+    "usage": {
+      "input_tokens": 3122,
+      "output_tokens": 424
+    }
+  }
+}

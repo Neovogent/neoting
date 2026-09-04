@@ -560,6 +560,24 @@ Fresh Direct image), not a wrong number.
   is none. (The request change orphaned the cassettes, which is the
   eval-recording mechanism working; re-recorded.)
 
+## The prompt briefs STATEMENTS and OTHER now (5 Sep 2026, review items 13/14)
+
+The tool schema always offered `docType: STATEMENT` and the prompt never
+mentioned statements — so a photographed or PDF bank statement arriving through
+the portal could be classified INVOICE with a confident supplier and a "total"
+that was really a balance, and the statement lane (which keys on
+`docType === 'STATEMENT'`) never fired. Review item 13, found by a real client
+sending exactly that.
+
+`SYSTEM_PROMPT` now says: a bank statement is `STATEMENT`, `customerName` is
+the ACCOUNT HOLDER as printed (which is the left-hand side of
+`banking-matching`'s whose-statement-is-this check — item 14), and no supplier,
+total or line items are reported for one — a statement's rows are the separate
+reader's, gated on provable completeness (D41). A non-financial document is
+`OTHER` with every financial field null. The prompt change orphaned the replay
+cassettes, which is the mechanism working; re-recorded (synthetic) in the same
+change.
+
 ## Replay (`EXTRACTOR=replay`)
 
 `selectExtractor('replay')` builds the real `BedrockExtractor` — store and

@@ -17,31 +17,26 @@
          after the browser has already painted the page — which is the white
          flash a dark-mode user got on every single reload.
 
-         It is a hand-inlined copy of `readStoredTheme() ?? systemTheme()` from
+         It is a hand-inlined copy of `resolveInitialTheme()` from
          `src/lib/theme-preference.ts`, and the duplication is deliberate: an
          import here would be the deferred module we are trying to get ahead of.
          The key 'nt.theme' and the class 'light' are the two things that must
          stay in step with that file.
 
-         `localStorage` THROWS in a browser with site data blocked, so the whole
-         thing is wrapped: on a throw we fall through to prefers-color-scheme,
-         and if even that is unavailable we land on light. The app is never
-         allowed to fail to render over a preference. -->
+         No stored choice means LIGHT — the owner's ruling (5 Sep 2026), so
+         prefers-color-scheme is deliberately not consulted here; the switcher
+         is the only way into dark. `localStorage` THROWS in a browser with
+         site data blocked, so the read is wrapped and a throw is treated as
+         no stored choice. The app is never allowed to fail to render over a
+         preference. -->
     <script>
       (function () {
-        var theme;
+        var theme = 'light';
         try {
           var stored = window.localStorage.getItem('nt.theme');
           if (stored === 'dark' || stored === 'light') theme = stored;
         } catch (e) {
           /* Storage blocked — treat as no stored choice. */
-        }
-        if (!theme) {
-          try {
-            theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-          } catch (e) {
-            theme = 'light';
-          }
         }
         document.documentElement.classList.toggle('light', theme === 'light');
       })();
@@ -62,10 +57,14 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Neo Accounting" />
     <link rel="icon" type="image/png" href="/favicon.png" />
-    <!-- Two theme colours rather than one brand colour: the bar above the app
-         should be the page ground it sits on, in whichever theme is showing. -->
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f5f7" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0a0c" />
+    <!-- One theme colour, the light ground: the app defaults to light for
+         everyone (owner's ruling, 5 Sep 2026) and the OS preference no longer
+         decides anything, so media-keyed pairs would paint a dark bar over a
+         light app for every dark-OS visitor. The residual mismatch — a user
+         who STORED dark gets a light bar — is the same class of gap the old
+         pair had in the other direction, and fixing it means the inline
+         script rewriting this tag; noted rather than done. -->
+    <meta name="theme-color" content="#f4f5f7" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&display=swap" rel="stylesheet">

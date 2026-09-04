@@ -15,6 +15,11 @@ import {
 import { sendPortalUpload, type PortalUploadFile } from '../../api/portal';
 import { compressImage } from '../../lib/capture';
 import { SESSION_EXPIRED_CODE, sendFaultFor, type PortalSendFault } from './portalSendFault';
+// The bearer's home in sessionStorage — and, since 5 Sep 2026, where the setup
+// journey ADOPTS its own session so Stripe's return leg lands the client inside
+// their portal. `portal-session-store.ts` carries the argument; the extraction
+// exists so the onboarding chunk does not import this whole hook.
+import { storedBearer, storedExpiry, storeSession } from './portal-session-store';
 import { mimeTypeFor } from './portalUploadRules';
 
 /**
@@ -74,51 +79,6 @@ import { mimeTypeFor } from './portalUploadRules';
 
 export type SignInStep = 'address' | 'code' | 'in' | 'resuming';
 
-/**
- * Where the bearer survives a reload. `sessionStorage`, deliberately — see the
- * module header. The try/catch is for browsers where storage access throws
- * (private modes, storage-partitioned iframes); there the portal degrades to
- * the old behaviour, memory-only.
- */
-const BEARER_KEY = 'nt-business-portal-bearer';
-
-/**
- * ⚠ The session's `expiresAt` is stored BESIDE the bearer, and it has to be.
- * This hook watches the bearer's own clock so the client is told the session
- * ended rather than discovering it through an upload that fails; restoring a
- * bearer without its clock would leave that watch inert after exactly the
- * reload the bearer now survives, and the first thing the client learned would
- * be a failure again. It is a timestamp, not a credential, and it dies with the
- * tab like the bearer does.
- */
-const EXPIRES_KEY = 'nt-business-portal-expires';
-
-function storedBearer(): string | null {
-  try {
-    return window.sessionStorage.getItem(BEARER_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function storedExpiry(): string | null {
-  try {
-    return window.sessionStorage.getItem(EXPIRES_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function storeSession(token: string | null, expiresAt: string | null): void {
-  try {
-    if (token === null) window.sessionStorage.removeItem(BEARER_KEY);
-    else window.sessionStorage.setItem(BEARER_KEY, token);
-    if (expiresAt === null) window.sessionStorage.removeItem(EXPIRES_KEY);
-    else window.sessionStorage.setItem(EXPIRES_KEY, expiresAt);
-  } catch {
-    /* memory-only fallback */
-  }
-}
 
 /**
  * What one send produced.
@@ -157,7 +117,7 @@ export interface BusinessPortalSession {
   /** Re-read the home figures and the document list. */
   refresh(): Promise<void>;
   /** A picked file: compressed if it is an image, then sent. */
-  upload(file: File, transactionId: string | null): Promise<PortalSendOutcome>;
+  upload(file: File, transactionId: string | null, note?: string | null): Promise<PortalSendOutcome>;
   /** Bytes already in hand — a camera frame the Capture tab encoded. */
   send(file: PortalUploadFile, transactionId: string | null): Promise<PortalSendOutcome>;
   /** Stripe-hosted checkout for a lapsed subscription (D48). Redirects the tab. */
@@ -423,7 +383,7 @@ export function useBusinessPortalSession(): BusinessPortalSession {
   /* ── sending ────────────────────────────────────────────────────────────── */
 
   const send = useCallback(
-    async (file: PortalUploadFile, transactionId: string | null): Promise<PortalSendOutcome> => {
+    async (file: PortalUploadFile, transactionId: string | null, note: string | null = null): Promise<PortalSendOutcome> => {
       if (token === null) {
         // No bearer at all: the session ended before the client pressed send.
         // `expire()` returns the whole portal to the sign-in step, which is the
@@ -439,7 +399,7 @@ export function useBusinessPortalSession(): BusinessPortalSession {
         // from the extraction (supplier + amount + date) — so this closes an
         // ask only if the document really answers it, and no copy on this
         // surface may promise that a send closes the row it was started from.
-        await sendPortalUpload(token, file, transactionId);
+        await sendPortalUpload(token, file, transactionId, note);
         await refresh();
         return { ok: true, fault: null };
       } catch (caught) {
@@ -462,7 +422,7 @@ export function useBusinessPortalSession(): BusinessPortalSession {
   );
 
   const upload = useCallback(
-    async (file: File, transactionId: string | null): Promise<PortalSendOutcome> => {
+    async (file: File, transactionId: string | null, note: string | null = null): Promise<PortalSendOutcome> => {
       // A modern phone photograph is 4–8 MB of receipt that reads perfectly
       // well at a tenth of that, and this is the surface most likely to be on
       // bad mobile data. Non-images pass through untouched — re-encoding a PDF
@@ -472,7 +432,7 @@ export function useBusinessPortalSession(): BusinessPortalSession {
       // browser that hands over an empty `type` — iOS, routinely, for HEIC —
       // would otherwise turn the commonest phone photograph into a 400.
       const mimeType = page.blob.type || mimeTypeFor(file);
-      return send({ filename: page.filename, mimeType, bytes: page.blob }, transactionId);
+      return send({ filename: page.filename, mimeType, bytes: page.blob }, transactionId, note);
     },
     [send],
   );

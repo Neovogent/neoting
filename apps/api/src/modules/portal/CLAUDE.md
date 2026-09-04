@@ -21,7 +21,9 @@ asking and what they may touch* lives here.
 
 - `packages/contracts/openapi.yaml` — `createPortalSession`, `getPortalContext`,
   `listPortalDocuments`, `createPortalUpload`, `createPortalSignInCode`,
-  `createPortalOnboardingSession`, the `portalSession` security scheme,
+  `createPortalOnboardingSession`, `previewPortalSetup` (5 Sep 2026),
+  `updatePortalBusinessProfile` (5 Sep 2026), the four People operations
+  (2 Sep 2026), the `portalSession` security scheme,
   `NT-OTP-001` / `NT-OTP-002`, and the four operations in other modules that put
   the portal bearer beside the workspace cookie (`completeDocumentUpload`,
   `getDocumentOriginal`, `createCheckoutSession`, `createBillingPortalSession`).
@@ -108,7 +110,7 @@ else.
 
 | File | What it is |
 |---|---|
-| `portal.controller.ts` | The **six** contracted routes, and exactly those six. Thin: resolve the bearer, parse with the generated zod, call ONE service, map dates to ISO. A test pins the handler list, because a seventh route on this surface is a contract decision, not a convenience. (This row said "three" until 2 Sep 2026, two routes after that stopped being true — see the endpoint table below.) |
+| `portal.controller.ts` | The **seven** contracted routes on the main surface, and exactly those seven. Thin: resolve the bearer, parse with the generated zod, call ONE service, map dates to ISO. A test pins the handler list, because an extra route on this surface is a contract decision, not a convenience. (This row said "three" until 2 Sep 2026 and "six" until 5 Sep 2026, when `POST /portal/setup-previews` joined — see the endpoint table below.) |
 | `portal-context.service.ts` | `GET /portal/context`. The chase + its transactions + the business name, read under the practice SYSTEM context and constrained to `facts.chaseId`, projected through the **chase module's own** `toChaseItem`. Also the own-portal branch: the summary, the itemised asks, and (2 Sep 2026) the client's own subscription. |
 | `portal-documents.service.ts` | `GET /portal/documents` — the client's own document list (D49). Cursor-paginated, newest first, under `systemScopeFor` with an explicit `businessId`. See "The client's own document list" below. |
 | `portal-document-status.ts` | `DocumentState` → the five words a client is shown. Pure, total, and the ONLY place that mapping is made. |
@@ -125,7 +127,9 @@ else.
 | `portal-people-authority.ts` | **The business's own people, as a pure decision** (D45, D49). Effective role, last-owner, one-email-one-person, the projection, the name split. No Prisma, no session — a test drives it directly. |
 | `portal-people.service.ts` | The four People operations. Reads under `systemScopeFor` constrained to `facts.businessId`; asks `assertCan(actor, 'business.people.manage')`; writes an audit row per change. |
 | `portal-people.controller.ts` | `GET`/`POST /portal/people` and `PATCH`/`DELETE /portal/people/{personId}`. A **second** controller — see below. |
-| `portal.module.ts` / `tokens.ts` / `index.ts` | Wiring, DI symbols, the public seam. |
+| `portal-business-profile.service.ts` | **The business fills in its own record** (5 Sep 2026) — `PUT /portal/business-profile`, the setup journey's details step. The people service's shape: acting contact resolved from the row, `assertCan(actor, 'business.profile.manage')` (the FOURTH `PermittedAction`, **`BUSINESS_ADMIN` only** — deliberately narrower than people management), write under `systemScopeFor` bounded by `where: { id: facts.businessId }`, an audit row per change (`proposalId: null`). An omitted field is UNCHANGED, a null clears, an empty body writes and audits nothing; replay cache namespaced by session, key-reuse-with-different-payload is `409 NT-IDM-001`. |
+| `portal-business-profile.controller.ts` | `PUT /portal/business-profile` → `204`. A **THIRD** controller, split by surface for the people controller's reason; `resolveOnboarding` only (a chase link must not rewrite a company number). |
+| `portal.module.ts` / `tokens.ts` / `index.ts` | Wiring, DI symbols, the public seam. **Three controllers** since 5 Sep 2026. |
 
 ## The OTP is real, and it is counted (launch stage A2)
 
@@ -187,7 +191,7 @@ whoever landed either route would have to do. The CHASE half still does not:
 `OTP_MODE=totp` a chase link opens no session. That is still the honest state,
 and it is now one gap rather than two.
 
-## The six endpoints, and the decisions inside them
+## The main controller's seven endpoints, and the decisions inside them
 
 | Route | Auth | Side effect | Failure |
 |---|---|---|---|
@@ -197,6 +201,12 @@ and it is now one gap rather than two.
 | `POST /v1/portal/uploads` | `portalSession` bearer | `ingest` | `401 NT-OTP-002`; **`402 NT-BIL-001`** when the subscription has lapsed |
 | `POST /v1/portal/sign-in-codes` | public (`security: []`) | `ingest` | **none — `202`, always** |
 | `POST /v1/portal/onboarding-sessions` | public (`security: []`) | `ingest` | one `401 NT-OTP-001` for every verification failure |
+| `POST /v1/portal/setup-previews` (5 Sep 2026) | public (`security: []`) | `none` | one `401 NT-OTP-001` — a token that names nothing learns nothing |
+
+Beside them, the OTHER TWO controllers on this module's surface: the four
+People operations (`portal-people.controller.ts`) and
+`PUT /portal/business-profile` (`portal-business-profile.controller.ts`,
+5 Sep 2026 — `204`, `resolveOnboarding` only, owner-only in the service).
 
 Two other operations outside this module also take the portal bearer, and they
 belong on this map because they are portal surface even though their controllers
@@ -213,7 +223,11 @@ This table read **three** rows until 28 Aug 2026. `openapi.yaml` published the
 invited-client pair in S0's ID LAW batch, M6 built the screens against them, and
 no controller implemented them — so the setup link an invited client was emailed
 reached a screen whose first request 404'd. It grew to six on 2 Sep 2026 with
-`GET /portal/documents`. `portal.controller.test.ts` pins the list at six.
+`GET /portal/documents`, and to seven on 5 Sep 2026 with
+`POST /portal/setup-previews` (the sign-in screen prefills the REGISTERED
+address off the token — a retyped address that differs fails silently by
+design, and it happened to a real client). `portal.controller.test.ts` pins
+the list at seven.
 
 Every write here is legitimately outside Review → Approve: the contract marks
 all four mutations `x-nt-side-effect: ingest`, the same standing as web upload —
@@ -519,6 +533,17 @@ would carry the other session's `businessId`.
 extraction against every open chase (SoT Stage 8.5), so a client who taps the
 wrong item still gets the right outcome. It is recorded rather than dropped
 because this lane's invariant is that nothing is silently dropped.
+
+**`note` is the client's own name for the document (5 Sep 2026, review item
+11).** `PortalUploadRequest.note` (nullable, ≤280) does two things at intent
+time: `displayFilename` composes it into the claims' `filename` — path
+separators stripped, whitespace collapsed, **the real extension kept**, because
+`formatFor` picks the statement lane's reader off the filename and a renamed
+CSV must still read as one — and the unedited words ride as
+`UploadClaims.portalNote`, which completion records on the provenance event as
+`clientNote`. Untrusted content both times: data, never instructions. A note
+that sanitises to nothing falls back to the declared filename — a rename must
+never cost the upload. Pinned in `portal-upload.service.test.ts`.
 
 ## The post-upload half — chase validation, status, and the accountant
 

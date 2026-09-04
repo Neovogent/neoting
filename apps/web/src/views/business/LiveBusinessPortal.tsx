@@ -319,7 +319,7 @@ export function LiveBusinessPortal() {
           documents={session.documents}
           documentsFault={session.documentsFault}
           busy={session.busy}
-          onUpload={(file) => session.upload(file, null)}
+          onUpload={(file, note) => session.upload(file, null, note)}
           onSubscribe={() => void session.startCheckout()}
         />
       )}

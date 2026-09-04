@@ -252,6 +252,23 @@ export async function createProposal(request: CreateActionProposalRequest): Prom
  * creation, and Read review shows the real text verbatim. Creation only — the
  * release is the Approvals queue's move (D44).
  */
+/**
+ * Queue a receipts chase for named bank lines (5 Sep 2026, review item 15 —
+ * selecting transactions on the Bank tab now arms a real Chase). The body is
+ * a placeholder the compose seam DISCARDS: the message text, the signed portal
+ * link and the recipient are all stamped server-side at proposal creation
+ * (`ChaseSendPayload`'s own words — "never free-typed by a caller"), and the
+ * engine refuses ids that are matched or suppressed with its own sentence.
+ * Creation only; the release is the Approvals queue's move (D44).
+ */
+export async function requestChaseProposal(businessId: string, transactionIds: readonly string[]): Promise<ActionProposal> {
+  return createProposal({
+    kind: 'chase.send',
+    businessId,
+    payload: { messages: [{ transactionIds: [...transactionIds], body: 'Composed at review.' }] },
+  } as CreateActionProposalRequest);
+}
+
 export async function requestStatementProposal(businessId: string, period: string): Promise<ActionProposal> {
   return createProposal({
     kind: 'chase.send',

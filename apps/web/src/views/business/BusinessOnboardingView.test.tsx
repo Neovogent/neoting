@@ -107,6 +107,13 @@ test('six digits sign in, the subscription is one VAT-labelled price, and the jo
   expect(await screen.findByRole('heading', { name: 'You’re signed in' })).toBeInTheDocument();
   await click('Continue');
 
+  // The details step (5 Sep 2026, review item 4): every field optional, and
+  // skippable — a missing company number must never stand between a client and
+  // their first receipt. Offline, Skip walks the same forward move as Save.
+  expect(await screen.findByRole('heading', { name: 'Your business details' })).toBeInTheDocument();
+  expect(screen.getByText(/Everything here is optional/)).toBeInTheDocument();
+  await click('Skip for now');
+
   // One price, exclusive of VAT and labelled as such. No tiers to pick from.
   expect(await screen.findByRole('heading', { name: 'Your subscription' })).toBeInTheDocument();
   expect(screen.getByText('£8.50 + VAT')).toBeInTheDocument();

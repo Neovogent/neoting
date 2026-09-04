@@ -509,6 +509,55 @@ export class PortalOnboardingService {
    * fixed code stays so the offline walkthrough (METH_MODE §1) still runs with
    * no mail server at all.
    */
+  /**
+   * `POST /portal/setup-previews` — what a setup token names, so the screen
+   * the emailed link lands on can PREFILL the registered address (5 Sep 2026
+   * review finding: a client typed a different address, and the uniform `202`
+   * on the code request meant nothing arrived and nothing said why).
+   *
+   * ⚠ **This is the one place a setup token answers WITHOUT the address**, and
+   * the reason it may is the `invitation-preview` argument one trust level
+   * down: the caller holds a token we emailed to the address the answer names,
+   * so every fact in the response is already in the message they read the link
+   * out of. It answers strictly LESS than that operation (no role, no ids).
+   *
+   * The gates are `resolveInvite`'s own, minus the address check: unknown,
+   * expired, accepted and business-less tokens are one `null`, which the
+   * controller turns into the uniform `NT-OTP-001`. The caller's screen
+   * degrades to the empty field it had anyway.
+   */
+  async previewSetup(setupToken: string, nowMs: number = Date.now()): Promise<{ email: string; businessName: string } | null> {
+    const tokenHash = hashSetupToken(setupToken);
+    const candidates = await this.systemActorsByPractice();
+    if (candidates.length === 0) {
+      this.logger.warn('setup preview refused: no practice has a SYSTEM actor');
+      return null;
+    }
+    for (const candidate of candidates) {
+      const found = await scopedDb(
+        this.prisma,
+        systemContext(candidate.practiceId, candidate.systemUserId),
+        async (db) => {
+          const invite = await db.invite.findUnique({
+            where: { tokenHash },
+            select: { businessId: true, email: true, expiresAt: true, acceptedAt: true },
+          });
+          if (invite === null || invite.businessId === null || invite.email === null) return null;
+          if (invite.expiresAt.getTime() <= nowMs) return null;
+          if (invite.acceptedAt !== null) return null;
+          const business = await db.business.findUnique({
+            where: { id: invite.businessId },
+            select: { name: true },
+          });
+          if (business === null) return null;
+          return { email: invite.email, businessName: business.name };
+        },
+      );
+      if (found !== null) return found;
+    }
+    return null;
+  }
+
   private verifyOtp(otp: string, state: OtpAttemptRow | null, nowMs: number): boolean {
     const genuine = otpMatches(state?.otpHash ?? null, state?.otpExpiresAt ?? null, otp, nowMs);
     if (this.config.otpMode === 'demo') return genuine || otp === DEMO_OTP_CODE;

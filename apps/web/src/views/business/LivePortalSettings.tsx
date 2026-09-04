@@ -146,7 +146,7 @@ const m = defineMessages({
   sendingLimitBody: {
     id: 'portal.livePortalSettings.sendingLimitBody',
     defaultMessage:
-      'Up to 25MB per document — PDF, JPG, PNG, HEIC or a Word document. Photographs are made smaller on your phone before they are sent, so a bad signal is not a bad receipt.',
+      'Up to 25MB per document — PDF, JPG, PNG, HEIC, a Word document or a CSV/Excel statement. Photographs are made smaller on your phone before they are sent, so a bad signal is not a bad receipt.',
   },
 
   notificationsTitle: { id: 'portal.livePortalSettings.notificationsTitle', defaultMessage: 'When we contact you' },
