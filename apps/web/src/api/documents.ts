@@ -42,6 +42,25 @@ import type { DocKind, Document as LocalDocument, DocStatus, SourceChannel } fro
 /** Integer pence to the pounds the local shape carries. */
 export const fromPence = (pence: number | null | undefined): number => (pence == null ? 0 : pence / 100);
 
+/**
+ * Does a document belong on a status tab? (4 Sep 2026)
+ *
+ * One predicate for the tab lists AND the tab counts, so they cannot disagree.
+ * A STATEMENT document is excluded from To Review and Ready: it has no
+ * supplier, no single total and no category, so it can never leave To Review
+ * and it clutters the accountant's to-do list with rows nothing can be done
+ * to — its home is the Statements panel, which carries the D41 verdict. It
+ * stays visible on processing/published/rejected (a failed statement READ
+ * still matters) and on the Documents register, which shows every state.
+ * Synthetic rows carry no `isStatement`, so synthetic mode is unchanged.
+ */
+export function onStatusTab(doc: Pick<LocalDocument, 'status' | 'isStatement'>, tab: DocStatus | 'duplicates'): boolean {
+  // `'duplicates'` is ClientInbox's pseudo-tab: no document's status ever
+  // equals it, so it falls through the compare exactly as it always did.
+  if ((doc.status as string) !== tab) return false;
+  return !(doc.isStatement === true && (tab === 'review' || tab === 'ready'));
+}
+
 const STATE_TO_STATUS: Record<string, DocStatus> = {
   RECEIVED: 'processing',
   PROCESSING: 'processing',
@@ -104,6 +123,7 @@ export function toLocalDocument(row: DocumentSummary, clientNameFor: (businessId
     fields: [],
     lineItems: [],
     splitFrom: row.parentDocumentId ? row.originalFilename : undefined,
+    ...(row.docType === 'STATEMENT' ? { isStatement: true } : {}),
     // A failed PUBLISH is `REJECTED` + an NT-PUB code (the follow-up's only
     // failure exit from READY); `FAILED` is extraction. This flag said
     // `state === 'FAILED'` until METH S12, which branded every unreadable
