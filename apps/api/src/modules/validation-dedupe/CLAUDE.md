@@ -94,8 +94,33 @@ Five properties, each pinned by a test:
 `readiness.ts` — READY requires **Total + Supplier + Category** off the
 denormalised header fields; anything missing is returned by name and the
 document belongs in TO_REVIEW (`resolveProcessedState` is the one place that
-choice lives). `null` and `0` pence differ on purpose — a £0.00 credit is a
-confirmed value. A failed deterministic validator blocks READY with zero
+choice lives). **Hardened 2026-09-03, in two ways, after documents missing all
+three fields surfaced on the Ready tab as "Ready — blocked":**
+
+- **A placeholder is not a value.** The literal `Unknown`, `—`, `-`, `n/a`,
+  `extracting…` and whitespace count as MISSING for supplier and category —
+  the `READINESS_PLACEHOLDERS` set, which mirrors the web's `EMPTY` list
+  (`apps/web/src/lib/readiness.ts`); the two lists must move together. An
+  extractor that cannot read a field does not always answer null, and a
+  placeholder that classified READY here was refused by every publish gate —
+  the tab said "nothing left to do", the badge said there was.
+- **A zero total counts as missing, reversing the earlier "a £0.00 credit is a
+  confirmed value" stance.** Both publish gates (web `missingMandatory` /
+  `readinessOf`) always refused a zero total, so a 0p document was READY here
+  and unpublishable there; and readiness cannot tell a placeholder zero from a
+  confirmed one. A genuine £0.00 document goes TO_REVIEW, where a human
+  archives or rejects it. **Negative pence (a credit) is a real total and
+  passes.** `publish-preview.ts` (NT-PUB-001) moved with it automatically — it
+  IS this rule.
+
+⚠ Documents already STORED in the wrong state are not re-classified by this —
+state is a stored column; the rule fires on the next pass through
+`resolveProcessedState` (a reprocess proposal or an update-coding). ⚠ Known
+residual: readiness checks `supplierName` only, but the web renders a SALES
+row's party from `customerName` — a sales document with no customer can still
+be READY yet flagged by the web gate. Widening the rule to the SALES party is
+a rule redefinition (NT-PUB-001 wording, `ReadinessInput` consumers) and needs
+its own decision. A failed deterministic validator blocks READY with zero
 missing fields. **The confidence seam is deliberately empty**: thresholds are
 eval-calibrated and do not exist yet — do not invent numbers (the seam is
 marked in the file header).
@@ -432,8 +457,37 @@ structural) and decides nothing about whether it may happen.
   authorisation, Governance §9.5). A test pins the absence of any `Pence` field
   in everything it writes.
 
+### `bank.remove-statement` (3 Sep 2026) — built, tested, DORMANT
+
+`remove-statement.ts` + `remove-statement.test.ts` (15 tests, offline). An
+accountant takes a wrongly-uploaded statement back out: hard delete of the
+DERIVED rows (`Statement` + the `BankTransaction`s stamped with its id via
+`importBatchId`), source document untouched so re-import re-proves D41. Refuses
+a CONFIRMED match (an accountant's assertion; no `bank.unmatch` exists — the
+confirm-match rule), an open chase (checked through `itemRefs`, not just the
+column), a cross-workspace batch, rows with no provenance stamp, and live-fact
+drift since review (`computeRemoveStatementPayload` is the creation-time half,
+the `computePublishBatchPayload` pattern). Replay is answered from the
+`DocumentEvent` (`stage: 'statement'`, `outcome: 'removed'`,
+`detail.proposalId`) because removal leaves no surviving row to ask.
+
+⚠ **It is NOT in the registry and CANNOT be**: the kind is not in the
+contract's `ProposalKind` (LAW, G7). The exact contract delta and the
+mechanical wiring that follows it are in
+`modules/banking-matching/CLAUDE.md`, "Removing a statement — design note".
+The registry's and payload map's totality make its absence a compile error the
+moment the enum grows.
+
 ## TODO
 
+- [ ] **`bank.remove-statement` awaits its LAW change** (Shakib, G7): the
+      `ProposalKind` value, `BankRemoveStatementPayload` and the
+      `CreateActionProposalRequest` member — the delta is written out in
+      `modules/banking-matching/CLAUDE.md`. The executor above is built and
+      tested; wiring is registry + payload map + `proposal-body.ts` member +
+      the creation branch in `action-proposals.service.ts` + `RELEASE_KINDS`
+      (recommended `false` — internal, reversible by re-import) +
+      `render-summary.ts` card + the web flip in `BankView.tsx`.
 - [ ] The **two** unimplemented executors — `move-business` and `split`; each
       needs its own issue. The registry already
       types and names them all. `update-coding` landed with the engine (METH S3,

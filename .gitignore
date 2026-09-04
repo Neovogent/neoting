@@ -60,3 +60,6 @@ apps/web/lang/
 # main as gitlinks with no .gitmodules (b5c0b11) — a fresh clone got empty directories
 # and errors. Ignored so it cannot happen again.
 .claude/
+
+# npm cache directories created by tooling runs
+.npm-cache/

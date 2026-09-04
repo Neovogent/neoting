@@ -140,7 +140,7 @@ AWS_PROFILE=nt EVAL_PROVIDER=bedrock EVAL_RECORD=1 pnpm test:eval  # re-record
 ## Tests
 
 ```bash
-pnpm --filter @neoting/api test -- chat-framework   # 63 unit tests, no socket, no DB
+pnpm --filter @neoting/api test -- chat-framework   # 79 unit tests, no socket, no DB
 EVAL_PROVIDER=bedrock pnpm test:eval                # the §9.8 gate, needs AWS creds
 ```
 
@@ -149,8 +149,41 @@ EVAL_PROVIDER=bedrock pnpm test:eval                # the §9.8 gate, needs AWS 
 **Built and wired** (replacing the METH S13 client-side canned table, which is
 gone from `apps/web/src/lib/demoIntents.ts`). Live on `POST /v1/chat/turns`.
 
+**The export ask is answered server-side (3 Sep 2026).** "Export all the ready
+docs for VT" used to fall through to the GENERAL capability list — the
+contract's `ChatIntent` (LAW) has no export value, so the model cannot route
+the product's SOLE egress (D42) and its only legal answers were GENERAL or
+SCOPE_REFUSAL. `chat.service.ts` now recognises an export ask AFTER the model
+returns one of those two and replaces the reply with `EXPORT_GUIDANCE`: the
+Export tab is where exports live, an export carries Published documents only,
+and Ready → Published is a publish batch through Review → Approve with the
+super admin's release (D44). Deterministic, no model call, no prompt edit —
+which is why the §9.8 recording needed no re-record for it. It keys on the
+MODEL's own intent, so `decorate()`'s degradations (the §9.4 citation
+fallback) outrank it, and it can never fire over a routed turn. The demo
+stand-in's GENERAL fallback also now names what was asked before listing
+capabilities, instead of ignoring the question.
+
 ## Not built yet — and why, so nobody rediscovers it
 
+- **A real EXPORT intent.** `ChatIntent` in `packages/contracts` (LAW) has no
+  export value and `ChatNavigation` has no way to address the Export screen, so
+  the `EXPORT_GUIDANCE` override in `chat.service.ts` is the honest stand-in.
+  Doing it properly is a G7 contract-change issue for Shakib (an enum value,
+  and probably a navigation target for the Export view), then the prompt
+  teaches the model the new intent — a `PROMPT_VERSION` bump and a §9.8
+  re-record. ADD_CLIENT (573a2e1) is the worked precedent for exactly this
+  shape of change. Note the chat may only ever *describe or draft* around an
+  export — `POST /v1/exports` releases client data as a download, and this
+  surface is `x-nt-side-effect: none`.
+- **⚠ The §9.8 recording is STALE and the replay gate is red — pre-existing.**
+  `evals/recordings/chat-turns.json` is `chat-workspace/2026-08-21.1`; the
+  prompt has been `chat-workspace/2026-08-28.1` since ADD_CLIENT (573a2e1),
+  whose own commit message records the owed re-record. Every replay key misses
+  and `pnpm test:eval` FAILs on all 36 cases (26 rule-parsing, 10 injection). The export work touched no hash
+  input (prompt, tool schema, `buildMessages`, fixtures all byte-identical) —
+  re-record with `AWS_PROFILE=<profile> EVAL_PROVIDER=bedrock EVAL_RECORD=1
+  pnpm test:eval` and commit the diff.
 - **`chase.send` and `publish.batch` drafts.** Chat returns the intent; the
   existing web cards build those payloads. `chase.send` needs every SMS
   byte-for-byte *including the signed portal link*, and the contract says

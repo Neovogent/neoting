@@ -3,9 +3,10 @@ import { describe, expect, test } from 'vitest';
 import type { PrismaClient } from '../../common/db/prisma.js';
 import type { ScopeContext } from '../../common/db/scope-context.js';
 import { InMemoryAiBudget } from '../../common/ai-budget.js';
-import { buildMessages, ChatService } from './chat.service.js';
+import { buildMessages, ChatService, EXPORT_GUIDANCE } from './chat.service.js';
 import type { CategoryOption, GroundedRecord } from './grounding.js';
 import { CircuitBreaker } from './provider/circuit-breaker.js';
+import { DemoModelProvider } from './provider/demo-provider.js';
 import { ModelAccessError, type ModelProvider, type ModelResponse } from './provider/model-provider.js';
 
 const CONTEXT: ScopeContext = {
@@ -100,6 +101,81 @@ describe('the turn, end to end', () => {
 
     expect(turn.intent).toBe('GENERAL');
     expect(turn.navigation?.documentId).toBeUndefined();
+  });
+});
+
+describe('the export ask — the sole egress must not fall through to a shrug (D42)', () => {
+  test('the local stand-in answers "export all the ready docs for vt software", end to end', async () => {
+    // The observed defect verbatim: AI_CHAT=demo classified this GENERAL and
+    // listed five capabilities the accountant did not ask for. The service now
+    // answers with where the export actually lives.
+    const turn = await service(new DemoModelProvider()).createTurn(CONTEXT, {
+      utterance: 'export all the ready docs for vt software',
+    });
+
+    expect(turn.intent).toBe('GENERAL');
+    expect(turn.reply).toBe(EXPORT_GUIDANCE);
+    expect(turn.draft).toBeUndefined();
+  });
+
+  test('a GENERAL from the real model on an export ask gets the guidance', async () => {
+    const turn = await service(
+      providerReturning({ intent: 'GENERAL', reply: 'I can help with paperwork.' }),
+    ).createTurn(CONTEXT, { utterance: 'export September for VT please' });
+
+    expect(turn.reply).toBe(EXPORT_GUIDANCE);
+  });
+
+  test('a SCOPE_REFUSAL on an export ask gets the guidance too — the product does do this', async () => {
+    const turn = await service(
+      providerReturning({ intent: 'SCOPE_REFUSAL', reply: 'That is not something this surface does.' }),
+    ).createTurn(CONTEXT, { utterance: 'can you export the published documents' });
+
+    expect(turn.intent).toBe('GENERAL');
+    expect(turn.reply).toBe(EXPORT_GUIDANCE);
+  });
+
+  test('a GENERAL that asks for nothing export-shaped keeps the model reply', async () => {
+    const turn = await service(providerReturning(GENERAL)).createTurn(CONTEXT, { utterance: 'hello' });
+    expect(turn.reply).toBe('I can help with paperwork.');
+  });
+
+  test('the §9.4 fabricated-citation fallback outranks the export guidance', async () => {
+    // The model ROUTED this (GROUNDED_ANSWER) and then failed citation
+    // verification. That degradation is a literal fallback the guidance must
+    // never paper over — the override keys on the model's own intent.
+    const turn = await service(
+      providerReturning({
+        intent: 'GROUNDED_ANSWER',
+        reply: 'You exported £412.66 in July.',
+        grounded: { citedRecordIds: ['doc_invented'] },
+      }),
+    ).createTurn(CONTEXT, { utterance: 'what did the last export contain' });
+
+    expect(turn.reply).toBe("Information not available in this client's records.");
+  });
+
+  test('the guidance changes nothing and claims nothing was changed (D42/D44)', async () => {
+    const turn = await service(new DemoModelProvider()).createTurn(CONTEXT, {
+      utterance: 'export everything to vt',
+    });
+
+    expect(turn.draft).toBeUndefined();
+    // The D42 vocabulary discipline: no claim of transmission, no claim the
+    // export happened, and the human release path named rather than implied.
+    expect(turn.reply).not.toMatch(/\bexported\b|sent to|sync|posted|connect/i);
+    expect(turn.reply).toMatch(/super admin/);
+    expect(turn.reply).toMatch(/Review → Approve/);
+  });
+
+  test('the unrecognised fallback now names what was asked before listing alternatives', async () => {
+    const turn = await service(new DemoModelProvider()).createTurn(CONTEXT, {
+      utterance: 'Make me a sandwich',
+    });
+
+    expect(turn.intent).toBe('GENERAL');
+    expect(turn.reply).toContain('make me a sandwich');
+    expect(turn.reply).toContain('missing paperwork');
   });
 });
 

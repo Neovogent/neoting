@@ -208,6 +208,13 @@ export async function ingestStatement(
       currency: 'GBP',
       descriptionRaw: row.description,
       balanceAfterPence: row.balanceAfterPence,
+      // The provenance stamp: which statement created this line. The column
+      // predates this writer and nothing else fills it. It is what makes
+      // `bank.remove-statement` able to enumerate a statement's rows PROVABLY
+      // — period+account overlap is a guess, and two uploads of the same month
+      // would claim each other's lines. A statement whose rows lack the stamp
+      // refuses removal by name rather than deleting by guess.
+      importBatchId: statement.id,
       // UNMATCHED is the default and is stated anyway: this set IS the chase
       // list's set, so a line arriving in any other state would be a payment
       // silently exempted from ever being chased for its receipt.

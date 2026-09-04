@@ -134,6 +134,11 @@ system with a fake vendor, not a fake system. Nothing here opens a socket, and
   `NT-PUB-001` has to name *which* fields are missing. `previewPublishBatch` is the
   composition both call sites use — proposal time and the contract-mandated
   re-validation at execution time — and returns **every** refusal, not the first.
+  ⚠ The reuse means the minimum moved when readiness hardened on 2026-09-03: a
+  **zero total** and a **placeholder supplier/category** (`Unknown`, `—`, `n/a`, …)
+  now refuse with `NT-PUB-001` like a null does — the reasoning and the placeholder
+  list live in `validation-dedupe/readiness.ts`, and `publish-preview.test.ts`
+  pins the new behaviour (it used to pin "£0.00 is a confirmed value").
 - **`select-ledger-adapter.ts` + `LEDGER_ADAPTER` env** — mirrors `EXTRACTOR` /
   `MEDIA_FETCH` exactly: `z.enum(['demo']).default('demo')`, selected by config, never
   by import. `publishing.module.ts` provides and exports the `LEDGER_ADAPTER` token so

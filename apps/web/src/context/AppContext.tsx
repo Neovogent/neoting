@@ -240,6 +240,15 @@ interface AppContextType {
   /** Cash coding: an unmatched transaction becomes a cost item in the pipeline. */
   cashCode: (txnId: string, category: string) => void;
   uploadStatement: (fileName: string, clientId: string) => void;
+  /**
+   * Takes wrongly-uploaded statements back out — the SYNTHETIC writer only,
+   * like `uploadStatement` above. Live rows never reach it: removing real bank
+   * data is a `bank.remove-statement` proposal on the Review → Approve spine,
+   * whose kind is not in the contract yet, so BankView disables the live
+   * affordance instead (the S14 rule). See
+   * `apps/api/src/modules/banking-matching/CLAUDE.md`, the removal design note.
+   */
+  removeStatements: (ids: string[]) => void;
 
   /**
    * Supplier statements — a supplier's own list of what they invoiced in a
@@ -968,6 +977,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
    * views compute their own `sliceStatus` and wear their own badge; the
    * synthetic `chases`/`approvals` arrays keep feeding everything else.
    * `publishes` has no reading screen yet.
+   *
+   * `expenseClaims` is 'seed' for a stronger reason than the rest: there is no
+   * endpoint to ask. The array below is `SYNTHETIC ? seedExpenseClaims : []`,
+   * so with the API on it is permanently empty and no effect will ever fill
+   * it — the tab says so rather than presenting an empty list as an answer.
    */
   const slices: SliceStatuses = {
     documents: sliceStatus(slicesOn, documentsQuery),
@@ -976,6 +990,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     chases: SEED_SLICE,
     proposals: SEED_SLICE,
     publishes: SEED_SLICE,
+    expenseClaims: SEED_SLICE,
   };
 
   /**
@@ -1014,7 +1029,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [itemMessages, setItemMessages] = useState<ItemMessage[]>([]);
   const [approvalWorkflows, setApprovalWorkflows] = useState<ApprovalWorkflow[]>(SYNTHETIC ? seedWorkflows : []);
   const [approvals, setApprovals] = useState<ApprovalItem[]>(() =>
-    SYNTHETIC ? buildApprovals(initial.documents, seedWorkflows) : [],
+    // The claims go in because a workflow scoped to `All expense claims` can
+    // only be answered by them — a claim line is the one place the fact "this
+    // receipt belongs to a claim" is recorded (`workflowFor`).
+    SYNTHETIC ? buildApprovals(initial.documents, seedWorkflows, seedExpenseClaims) : [],
   );
   const [approvalRequests, setApprovalRequests] = useState<ApprovalRequest[]>([]);
   const [clientDetailChanges, setClientDetailChanges] = useState<ClientDetailChange[]>([]);
@@ -1979,6 +1997,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [clients, accounts],
   );
 
+  /** The synthetic half of statement removal — see the interface note above. */
+  const removeStatements = useCallback((ids: string[]) => {
+    setStatements((prev) => prev.filter((s) => !ids.includes(s.id)));
+  }, []);
+
   const reauthAccount = useCallback((accountId: string) => {
     setAccounts((prev) =>
       prev.map((a) => (a.id === accountId ? { ...a, status: 'live', reauthDays: 90, lastSync: 'just now' } : a)),
@@ -2762,6 +2785,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         unmatchTransaction,
         cashCode,
         uploadStatement,
+        removeStatements,
         supplierStatements,
         uploadSupplierStatement,
         deleteSupplierStatement,

@@ -1,25 +1,27 @@
-> ### ⚠ CONTRACTING ENTITY IS TEMPORARY — READ BEFORE PUBLISHING
+> ### ⚠ CONTRACTING ENTITY — STRIPE MUST MATCH BEFORE PUBLISHING
 >
-> For the **first customer only**, the contracting entity and merchant of record is
-> **EXAM BINARY LTD**, because that is the company holding the live Stripe account
-> (`acct_1RQtbxGMdHp4NCWv`). Decision taken 26 Aug 2026.
+> The contracting entity and merchant of record is **NEOVOGENT AI SOLUTIONS UK LTD**
+> (company no. 15946429, incorporated 10 September 2024, registered office Suite 5,
+> The Cloisters, 11–12 George Road, Edgbaston, Birmingham B15 1NP). Decision taken
+> 3 Sep 2026, superseding the 26 Aug 2026 decision that named EXAM BINARY LTD.
 >
 > This matters and is not cosmetic:
-> - The customer's **card statement** will read Exam Binary. If the contract named a
+> - The customer's **card statement** must read Neovogent AI Solutions. If it names a
 >   different company, an accountant who does not recognise the name raises a chargeback.
-> - The **VAT invoice comes from Exam Binary's VAT registration**, because HMRC requires the
->   invoice to come from the entity that made the supply. Neovogent's VAT number is not the
->   one that belongs on it.
+> - The **VAT invoice must come from NEOVOGENT AI SOLUTIONS UK LTD's own VAT
+>   registration**, because HMRC requires the invoice to come from the entity that made
+>   the supply.
 >
-> So every reference below names Exam Binary. **When Stripe moves to
-> NEOVOGENT AI SOLUTIONS UK LTD** (company no. 15946429, registered office Suite 5,
-> The Cloisters, 11–12 George Road, Edgbaston, Birmingham B15 1NP), these documents change
-> back in the same commit as the Stripe migration — not before, and not after.
+> **So the Stripe live-mode account must be opened under this same entity.** No live
+> charging exists yet — live mode is blocked on company verification and the VAT number
+> (`docs/runbooks/stripe-billing.md` §1) — so there is no mismatch today, and this is the
+> moment the two are aligned at zero cost. Do not publish these documents, and do not take
+> a payment, until Stripe is verified under company 15946429.
 
 > ### ⚠ NOT PART OF THE PUBLISHED DOCUMENT — REMOVE THIS BLOCK BEFORE PUBLICATION
 >
 > This is a **drafting aid**, not legal advice. It was prepared from the product's own
-> documented behaviour and from the facts supplied by Exam Binary. It has **not** been
+> documented behaviour and from the facts supplied by Neovogent AI Solutions. It has **not** been
 > reviewed by a qualified lawyer. It **must be reviewed and approved by a qualified UK
 > solicitor before it is published, linked from the website, or presented to any
 > customer**. Every `[PLACEHOLDER: ...]` must be resolved or deleted first — a published
@@ -75,7 +77,7 @@
 
 ## In plain English, before the formal wording
 
-This document is the contract between your accounting practice and Exam Binary for the use
+This document is the contract between your accounting practice and Neovogent AI Solutions for the use
 of Neo Accounting. Neo Accounting collects your clients' business documents — receipts,
 supplier invoices, bank statements — reads them, suggests how each one should be coded,
 and produces an import file for VT Transaction+. **It reads documents using AI, and AI
@@ -123,11 +125,11 @@ sign up.
 
 1.1 This agreement is between:
 
-- **EXAM BINARY LTD**, a company registered in
+- **NEOVOGENT AI SOLUTIONS UK LTD**, a company registered in
   England and Wales, company number
-  16261850, tax ID **9286810564**, VAT registration number [PLACEHOLDER: EXAM BINARY LTD’s UK VAT registration number — nine digits, format GB123456789. Not on Companies House; take it from the company’s VAT certificate or HMRC online account. `9286810564` is a TAX ID and is NOT it. Stripe’s tax-ID field expects a `gb_vat` value, and an invoice carrying the wrong registration number is not a valid VAT invoice.], whose
+  15946429, tax ID **[PLACEHOLDER: NEOVOGENT AI SOLUTIONS UK LTD’s tax ID. ⚠ `9286810564` was recorded against EXAM BINARY LTD — it must NOT be carried over. Confirm this company’s own reference, or delete the field.]**, VAT registration number [PLACEHOLDER: NEOVOGENT AI SOLUTIONS UK LTD’s UK VAT registration number — nine digits, format GB123456789. Not on Companies House; take it from the company’s VAT certificate or HMRC online account. ⚠ `9286810564` was recorded against EXAM BINARY LTD and is neither a VAT number nor this company’s — do not reuse it. Stripe’s tax-ID field expects a `gb_vat` value, and an invoice carrying the wrong registration number is not a valid VAT invoice.], whose
   registered office is in Birmingham at Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham, West Midlands B15 1NP
-  ("**Exam Binary**", "**we**", "**us**", "**our**"); and
+  ("**Neovogent AI Solutions**", "**we**", "**us**", "**our**"); and
 - the accounting practice named on the account ("**you**", "**your**", "**the
   practice**").
 
@@ -300,7 +302,7 @@ account.
 shown separately on the invoice.
 
 9.3 Payment is by card, taken by **Stripe**, our payment processor. Checkout is hosted by
-Stripe. **Card details never reach Exam Binary's systems and we do not store them.** Your
+Stripe. **Card details never reach Neovogent AI Solutions’ systems and we do not store them.** Your
 use of Stripe's checkout is also subject to Stripe's own terms.
 
 9.4 Billing is monthly in advance. £8.50 plus VAT per client business per month, billed to your card in advance. The charge is taken on the anniversary of the day the client business was added, so a client business added mid-month is billed from that day rather than pro-rated. Removing a client business stops its charge from the next renewal; the month already paid for runs to its end. There is no minimum term.
@@ -619,12 +621,12 @@ You can save and print this page at any time.
 
 ## 24. Who we are, and how to contact us
 
-**EXAM BINARY LTD**
+**NEOVOGENT AI SOLUTIONS UK LTD**
 Registered in England and Wales, company number
-**16261850**
+**15946429**
 Registered office: Suite 5, The Cloisters, 11–12 George Road, Edgbaston, Birmingham, West Midlands B15 1NP
-Tax ID: **9286810564**
-VAT registration number: [PLACEHOLDER: EXAM BINARY LTD’s UK VAT registration number — nine digits, format GB123456789. Not on Companies House; take it from the company’s VAT certificate or HMRC online account. `9286810564` is a TAX ID and is NOT it. Stripe’s tax-ID field expects a `gb_vat` value, and an invoice carrying the wrong registration number is not a valid VAT invoice.]
+Tax ID: **[PLACEHOLDER: NEOVOGENT AI SOLUTIONS UK LTD’s tax ID. ⚠ `9286810564` was recorded against EXAM BINARY LTD — it must NOT be carried over. Confirm this company’s own reference, or delete the field.]**
+VAT registration number: [PLACEHOLDER: NEOVOGENT AI SOLUTIONS UK LTD’s UK VAT registration number — nine digits, format GB123456789. Not on Companies House; take it from the company’s VAT certificate or HMRC online account. ⚠ `9286810564` was recorded against EXAM BINARY LTD and is neither a VAT number nor this company’s — do not reuse it. Stripe’s tax-ID field expects a `gb_vat` value, and an invoice carrying the wrong registration number is not a valid VAT invoice.]
 
 **Support and general enquiries:** support@neovogent.com
 **Response time:** within 24 hours, 06:00–18:00 UK time

@@ -215,6 +215,10 @@ describe.skipIf(!enabled)('statement import, against a real database', () => {
     // a payment silently exempted from ever being chased for its receipt.
     expect(rows.every((r) => r.matchState === 'UNMATCHED')).toBe(true);
     expect(rows.every((r) => r.chaseSuppressed === false)).toBe(true);
+    // The provenance stamp removal enumerates by: every row names the
+    // statement that created it, so `bank.remove-statement` can take exactly
+    // this upload back out and nothing else.
+    expect(rows.every((r) => r.importBatchId === outcome.statementId)).toBe(true);
   });
 
   test('the statement row records the period, the balances and the assurance', async () => {
