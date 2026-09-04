@@ -3,10 +3,17 @@
  *
  * SoT specifies the shape exactly:
  *
- *   "American Burger Accounts: we're missing the receipt for Currys £1,299 on
- *    9 Aug. Upload securely: [link]"
+ *   "American Burger Accounts: we're missing the receipt for Currys on 9 Aug.
+ *    Upload securely: [link]"
  *
- * and: **grouped per client, not one text per receipt**. So one message per
+ * ⚠ **No amount in the copy — an owner ruling of 4 Sep 2026 amending §8.2,
+ * which used to show "Currys £1,299 on 9 Aug".** A chase travels by SMS/email
+ * to a phone whose lock screen previews it; the supplier and the day identify
+ * the receipt without putting a client's spending on that screen. The amounts
+ * still exist everywhere identity-gated: the portal's item list (behind the
+ * OTP), the accountant's review card sections, and the workspace boards.
+ *
+ * And: **grouped per client, not one text per receipt**. So one message per
  * client covers every unmatched item, and the link is the portal token for that
  * client's grant.
  *
@@ -42,10 +49,10 @@ export interface ComposeChaseInput {
 }
 
 /**
- * The composed SMS for one client. Verbatim per SoT Stage 8.2 for the
- * single-item case; the multi-item case lists each "<supplier> £x on <date>"
- * with the same framing, because the SoT rule is one grouped text, not one per
- * receipt.
+ * The composed SMS for one client. Verbatim per SoT Stage 8.2 (as amended
+ * 4 Sep 2026 — no amounts) for the single-item case; the multi-item case lists
+ * each "<supplier> on <date>" with the same framing, because the SoT rule is
+ * one grouped text, not one per receipt.
  */
 export function composeChaseSms(input: ComposeChaseInput): string {
   const greeting = `${input.businessName} Accounts:`;
@@ -54,9 +61,13 @@ export function composeChaseSms(input: ComposeChaseInput): string {
   return `${greeting} we're missing ${noun} for ${list}. Upload securely: ${input.portalLink}`;
 }
 
-/** "Currys £1,299 on 9 Aug" — supplier, magnitude in pounds, Europe/London day. */
+/**
+ * "Currys on 9 Aug" — supplier and the Europe/London day, NO amount (the
+ * 4 Sep 2026 ruling). `ChaseItem.amountPence` stays on the type: the portal's
+ * item list and the review card's sections still show it, behind identity.
+ */
 function describeItem(item: ChaseItem): string {
-  return `${item.supplierLabel} ${formatGbp(item.amountPence)} on ${formatDay(item.bookedAt)}`;
+  return `${item.supplierLabel} on ${formatDay(item.bookedAt)}`;
 }
 
 /** "a", "a and b", "a, b and c" — a natural list, not a comma dump. */

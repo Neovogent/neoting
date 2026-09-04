@@ -58,10 +58,16 @@ export function shortDay(displayDate: string): string {
 /**
  * The SoT §8.2 copy shape, verbatim — grouped per client, one text covering
  * every item: "American Burger Accounts: we're missing the receipt for Currys
- * £1,299 on 9 Aug. Upload securely: <link>".
+ * on 9 Aug. Upload securely: <link>".
+ *
+ * ⚠ NO amount in the copy — the 4 Sep 2026 §8.2 amendment, mirrored from the
+ * server's `chase/sms-copy.ts`: a lock-screen preview must not carry a
+ * client's spending. `formatPoundsForSms` stays exported — the composer CARD
+ * still shows the amounts to the accountant beside the checkboxes; they just
+ * never enter the message.
  */
 export function composeChaseBody(businessName: string, items: readonly DemoChaseItem[], portalLink: string): string {
-  const parts = items.map((i) => `${i.supplier} ${formatPoundsForSms(i.amount)} on ${shortDay(i.date)}`);
+  const parts = items.map((i) => `${i.supplier} on ${shortDay(i.date)}`);
   const list =
     parts.length <= 1 ? (parts[0] ?? '') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1] ?? ''}`;
   const noun = items.length === 1 ? 'the receipt' : 'the receipts';

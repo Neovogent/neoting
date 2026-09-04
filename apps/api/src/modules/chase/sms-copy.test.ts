@@ -12,11 +12,12 @@ test('the single-item copy is the SoT Stage 8.2 shape, verbatim', () => {
     portalLink: 'https://n.to/abc',
     items: [{ transactionId: 'txn_currys', amountPence: -129900, bookedAt: AUG_9, supplierLabel: 'Currys' }],
   });
-  // SoT: "American Burger Accounts: we're missing the receipt for Currys £1,299
-  //       on 9 Aug. Upload securely: [link]"
+  // SoT §8.2 as amended 4 Sep 2026: NO amount — a lock-screen preview must not
+  // carry a client's spending. Supplier + day identify the receipt.
   expect(sms).toBe(
-    "American Burger Accounts: we're missing the receipt for Currys £1,299 on 9 Aug. Upload securely: https://n.to/abc",
+    "American Burger Accounts: we're missing the receipt for Currys on 9 Aug. Upload securely: https://n.to/abc",
   );
+  expect(sms).not.toContain('£');
 });
 
 test('grouped per client: many receipts become ONE text, not one per receipt', () => {
@@ -29,7 +30,7 @@ test('grouped per client: many receipts become ONE text, not one per receipt', (
     ],
   });
   expect(sms).toBe(
-    "American Burger Accounts: we're missing the receipts for Currys £1,299 on 9 Aug and Google Ads £600 on 5 Aug. Upload securely: https://n.to/abc",
+    "American Burger Accounts: we're missing the receipts for Currys on 9 Aug and Google Ads on 5 Aug. Upload securely: https://n.to/abc",
   );
 });
 
