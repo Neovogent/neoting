@@ -1,7 +1,8 @@
 # Mubashir review — running notes
 
 Started 2026-09-05. Items are logged here one by one as they arrive, before any fix work begins.
-Previous round: 15 items, 13 landed in #253 (`6105dad`).
+Previous round: **15 of 15 done** — 13 landed in #253 (`6105dad`), the last two halves (item 9's
+chat system, item 12's live arrival bell) in #254 (`d9c6d98`).
 
 Format per item:
 - **Original** — what Mubashir said, verbatim (translated if the source was Bengali, with the original kept).
@@ -14,7 +15,7 @@ Format per item:
 
 ## Items 1–15 — backlog, reconstructed from PR #253 (`6105dad`)
 
-Mubashir's original words and screenshots for these were not captured in this file (the round predates it); the descriptions below are reconstructed from the PR body and commit messages. **13 of 15 landed in #253; two halves remain open, blocked on scope from Shakib.**
+Mubashir's original words and screenshots for these were not captured in this file (the round predates it); the descriptions below are reconstructed from the PR body and commit messages. **All 15 are done: 13 landed in #253, and the two halves that were parked as scope questions (item 9's chat system, item 12's live arrival signal) landed in #254 once Shakib supplied the verbatim wording and waived the ceremony.**
 
 | # | Item (reconstructed) | Status | Where it landed |
 |---|---|---|---|
@@ -644,7 +645,7 @@ The Tasks tab is a known, honestly-labelled mock (the S14 sweep disabled its wri
 
 Work shape (feature-sized, plan before PR):
 1. **Contract + schema (G7):** a `tasks` model (title, client scope, assignee = practice member, due date, status, recurrence) and CRUD operations. Decide the write path: task create/assign is plausibly ingest-class (`x-nt-side-effect: ingest`, like intake — a task is coordination, not a client-state change), which keeps it off the Review → Approve spine; that's a Governance call to confirm with Shakib rather than assume.
-2. **Assignment realities:** assignees come from the live practice-members read (`api/team.ts`, already real); notification on assignment wants the email seam (and ties into item 12's blocked notifications question — a task bell and a document bell are the same missing read surface).
+2. **Assignment realities:** assignees come from the live practice-members read (`api/team.ts`, already real); notification on assignment wants the email seam — and the in-app half is no longer missing: item 12's notifications read surface landed in #254 (`GET /v1/notifications` + the header bell), so a task-assignment notice is one more `notifications` row with its own `event` string and one more copy branch in `NotificationsBell.tsx` (an unknown event already renders an honest generic line).
 3. **Web:** the table, filters and per-client scoping already exist as the synthetic board — wiring is the ClientsView/M7 pattern (widen the real endpoint, one board, live rows through the same components; the synthetic cast stays for demo mode).
 4. **Recurring checklists** (the footer's own promise, and the sub-tab's stated job — "recurring per-client checklists scoped to this product's job"): monthly/quarterly per-client recurrence generating task instances — needs a worker tick; decide whether recurrence ships in v1 of this feature or the doc explicitly defers it.
 5. **Cross-refs:** the Teams sub-tab is the same mock family (its writers were disabled in the same sweep) — the plan should say whether Teams ships with Tasks or stays out; and "Ask AI about workload" stays real either way. Deliverable: a short design doc for Shakib (scope, contract delta, side-effect class), then build.
@@ -746,7 +747,7 @@ The chat reported a completed upload and the Inbox shows nothing — either the 
 Whichever half it is, the fix includes the copy: "Uploaded 1 document… they land in Inboxes" may only render after the complete call succeeded, and a failure names its code.
 
 **✅ RESOLVED (Mubashir, same session):** the file **arrived later** — it was pipeline latency (extraction + the board's poll), not a lost upload. The id-bridge theory is off the table for this one. What survives from this item:
-1. **Copy fix stands:** the chat's success message should set the expectation honestly — where the document lands *and* that it takes a moment ("Extraction is running — it appears in {client}'s inbox within a minute or two"), so a user checking immediately doesn't read absence as loss. An "it's arrived" follow-up notification would be the real fix (item 12's blocked notifications surface, again).
+1. **Copy fix stands:** the chat's success message should set the expectation honestly — where the document lands *and* that it takes a moment ("Extraction is running — it appears in {client}'s inbox within a minute or two"), so a user checking immediately doesn't read absence as loss. The "it's arrived" half now exists: item 12's bell landed in #254 — though note the sink deliberately writes `document.received` only for client channels (email/WhatsApp/portal), not the accountant's own WEB_UPLOAD/CHAT_UPLOAD, so a chat upload still relies on the copy plus the 5 s inbox poll; notifying on *extraction landing* (state leaving RECEIVED) would be the follow-up if the copy alone doesn't settle it.
 2. **Follow-up correction (his words: "in the inbox tab show the Received via column too"):** the client Costs tab shows **Received via**; the **Inboxes screen's** tables don't. Add the same channel column there (`InboxesView` — the data is already on every document row; it's a column definition, plus the honest labels from item 21). Small, standalone, do it with item 21's channel-label sweep so the column arrives showing true words rather than `sms-link` slugs.
 
 ## Item 61 — There's a Trash button but no visible Trash for the client; define how the trash holds files
@@ -761,3 +762,18 @@ Whichever half it is, the fix includes the copy: "Uploaded 1 document… they la
 Two halves:
 1. **Reachability.** A Trash *does* exist — the practice **Documents** screen gained a Trash tab (2 Sep, `api/document-lifecycle.ts`: deletion/restoration/the Trash listing) — but from the client context where the button lives, the trashed document just disappears with no visible destination. Fix: make the trash reachable from where things are trashed — a Trash view scoped to the client (a sub-tab on the client's Documents/Costs area, or his suggestion: under the client's Settings tab), listing that client's deleted documents with **Restore** and (permission-gated) **Delete permanently**, reusing the existing lifecycle endpoints and the `document.purge` proposal. Same-surface rule as item 35: the count/affordance and the list belong together.
 2. **"How will the trash hold the file? Clear that out" — the retention policy doesn't exist and must be written.** The 2 Sep work deliberately promised **no recovery window** ("a figure would be a promise the product does not keep" — nothing enforces one). Mubashir is now asking for exactly that promise, so it's a product decision for Shakib: how long a trashed document is held (e.g. 30 days then auto-purge? held forever until purged by hand?), whether auto-purge respects D43 (a document linked from an export file refuses purging — `NT-DOC-002` — so auto-purge must skip those or the policy must say "held forever once exported"), and then the confirmation copy states the real policy. If auto-purge is chosen, it's a worker tick + audit trail; if held-forever, the Trash view needs the storage story said out loud. Either answer is fine; an unstated one isn't.
+
+## Item 62 — Accountant's own upload on the client Documents tab and the Inboxes screen (physical/personal-channel documents)
+
+**Original (verbatim):**
+> There could be situation where the client will send the doc to the accountant in personal channel, or hand it over in physical way, so then the accountant might need to enter the document by himself, so provide a option to upload document by accountant himself in client->document tab and in the inbox tab
+
+**Image:**
+- `C:\Users\shaki\Downloads\WhatsApp Image 2026-09-05 at 04.54.00.jpeg` — Zeplow → Costs → To Review: the tab **does** have an Upload button (top-left) and now shows the Received via column (chat / sms-link rows visible).
+
+**Brief:**
+The scenario is real — WhatsApp to a personal number, paper handed over at a meeting — and the accountant needs a first-class way to enter those. What already exists vs. the gap:
+1. **Exists:** the client's Costs/Sales tables have Upload (`runWorkspaceDrop` — the real intent → PUT → complete journey, `channel: 'WEB_UPLOAD'`-family), and the Inboxes screen accepts drag-drop with a required client choice (plus the add-a-client-first dialog). His screenshot is of a tab that already has the button.
+2. **Gaps to close:** the client's **Documents tab** (the per-client register) has no upload affordance — add the same button/drop there; and the **Inboxes screen** should have a *visible* Upload button (drag-drop-only is undiscoverable — if the dialog exists behind a button today, verify it's present on every inbox tab and obvious). One shared flow, three doors.
+3. **Provenance for the physical case:** a manual accountant upload should record *who* entered it and read honestly in Received via ("Uploaded by {accountant}" / "Manual — practice"), distinct from client channels — this is item 21's channel sweep meeting item 43's uploader identity, on the practice side. Optional but valuable for his stated scenario: a "received on paper / personal channel" note at upload (the item-11 `note` seam already carries display-name words).
+4. **Camera capture for paper:** the portal has a Capture surface; the practice app doesn't. If accountants really take paper at meetings, a capture-from-webcam/phone path on the practice side is the natural follow-on — note it for Shakib as scope, don't assume it.
