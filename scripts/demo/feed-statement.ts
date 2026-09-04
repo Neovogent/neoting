@@ -25,6 +25,7 @@
  *   pnpm tsx scripts/demo/feed-statement.ts --business 'Neovogent'
  *   pnpm tsx scripts/demo/feed-statement.ts --cleanup
  */
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 
@@ -124,29 +125,39 @@ async function main(): Promise<void> {
   const csv = readFileSync(csvPath);
   const ctx = ScopeContextSchema.parse({ actorId: actor.userId, practiceId: business.practiceId });
 
-  const makeDoc = (id: string, file: string, mime: string, size: number) =>
+  const makeDoc = (id: string, file: string, mime: string, bytes: Buffer) =>
     owner.document.create({
       data: {
         id,
         practiceId: business.practiceId,
         businessId: business.id,
         s3Key: `w/${business.id}/documents/${id}`,
-        byteHash: `feed-${id}`,
+        // ⚠ The REAL hash of the real bytes. The first draft wrote `feed-<id>`,
+        // which violates the contract's `^[a-f0-9]{64}$` — every one of these
+        // documents then failed the detail parse in the web app with
+        // "byteHash: Invalid" (walkthrough finding 8, 4 Sep 2026). A fixture
+        // row that is read back through the contract has to satisfy it.
+        byteHash: createHash('sha256').update(bytes).digest('hex'),
         mimeType: mime,
-        byteSize: size,
+        byteSize: bytes.length,
         channel: 'WEB_UPLOAD',
         originalFilename: file,
-        inbox: 'COSTS',
-        state: 'READY',
+        // ⚠ TO_REVIEW, not READY — the truthful state, and what the real path
+        // produces: a statement has no supplier, no total and no category, so
+        // `resolveProcessedState` lands it TO_REVIEW. Hand-setting READY put
+        // rows on the accountant's Ready tab reading "Ready — blocked", £0.00,
+        // "Unknown" (the same finding 8).
+        state: 'TO_REVIEW',
         // What the extractor would have written. `statement-step` keys on this
         // and answers "not mine" for anything else.
         docType: 'STATEMENT',
+        inbox: 'COSTS',
       },
     });
 
   /* ── 1 · the CSV, through the real ingest ──────────────────────────────── */
   console.log(`\n1 · Ingesting ${basename(csvPath)} (${(csv.length / 1024).toFixed(0)} KB)`);
-  await makeDoc(DOC_ID, basename(csvPath), 'text/csv', csv.length);
+  await makeDoc(DOC_ID, basename(csvPath), 'text/csv', csv);
 
   const input = {
     documentId: DOC_ID,
@@ -184,7 +195,7 @@ async function main(): Promise<void> {
   let pdfRefusal = 'not attempted';
   try {
     const pdf = readFileSync(pdfPath);
-    await makeDoc(PDF_DOC_ID, basename(pdfPath), 'application/pdf', pdf.length);
+    await makeDoc(PDF_DOC_ID, basename(pdfPath), 'application/pdf', pdf);
     const pdfInput = {
       documentId: PDF_DOC_ID,
       businessId: business.id,
