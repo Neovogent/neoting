@@ -85,7 +85,7 @@ import { canRelease } from '../clients-team-settings/index.js';
  * every module that offers a guarded act has no single place to read, and the
  * more permissive of two copies always wins on the day it matters.
  */
-export type PermittedAction = 'publish.release' | 'team.invite' | 'business.people.manage';
+export type PermittedAction = 'publish.release' | 'team.invite' | 'business.people.manage' | 'business.profile.manage';
 
 /**
  * The acting person, resolved from their membership. Everything needed to answer
@@ -286,6 +286,18 @@ export function mayManagePeople(actor: Actor): boolean {
 }
 
 /**
+ * Who may restate the business's own record (the setup journey's details step,
+ * 5 Sep 2026). **`BUSINESS_ADMIN` only — deliberately narrower than
+ * `business.people.manage`.** A `USER_ADMIN` was granted exactly people
+ * management and nothing else (that role's whole definition, portal-people);
+ * a company number, a VAT registration and a legal structure are the owner's
+ * facts to state. `role === null` refuses, as everywhere here.
+ */
+export function mayManageProfile(actor: Actor): boolean {
+  return actor.role === 'BUSINESS_ADMIN';
+}
+
+/**
  * Governance §11.2's check. Throws {@link AppException} `NT-PRM-001` (403) when
  * the actor may not perform `action` on `resource`; returns silently otherwise.
  *
@@ -327,7 +339,23 @@ export function assertCan(actor: Actor, action: 'team.invite'): void;
  * session has already settled — and the one place a caller could get it wrong.
  */
 export function assertCan(actor: Actor, action: 'business.people.manage'): void;
+/**
+ * `business.profile.manage` — no resource, the `business.people.manage`
+ * argument verbatim: the portal session's row fixes the business before this
+ * is reached.
+ */
+export function assertCan(actor: Actor, action: 'business.profile.manage'): void;
 export function assertCan(actor: Actor, action: PermittedAction, resource?: ProposalResource): void {
+  if (action === 'business.profile.manage') {
+    if (mayManageProfile(actor)) return;
+    throw new AppException(
+      'NT-PRM-001',
+      HttpStatus.FORBIDDEN,
+      'Not permitted',
+      'Only an owner at your business can change its own details. Ask them.',
+    );
+  }
+
   if (action === 'business.people.manage') {
     if (mayManagePeople(actor)) return;
     throw new AppException(

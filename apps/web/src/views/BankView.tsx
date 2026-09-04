@@ -7,7 +7,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Modal } from '../components/DynamicComponents/Modal';
 import { defineMessages, useIntl } from 'react-intl';
 import { commonActions, commonLabels } from '../i18n/common';
-import { requestRemoveStatementsProposal } from '../api/proposals';
+import { requestChaseProposal, requestRemoveStatementsProposal } from '../api/proposals';
+import { errorLabel } from '../api/slices';
 import { useStatements } from '../api/statements';
 import { useAppContext } from '../context/AppContext';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
@@ -124,6 +125,21 @@ const m = defineMessages({
     defaultMessage: 'No transactions — upload a bank statement to bring them in.',
   },
   chaseBulkAction: { id: 'bank.bankView.chaseBulkAction', defaultMessage: 'Chase for evidence' },
+  // The LIVE selection chase (5 Sep 2026, review item 15). "Queued", never
+  // "sent" — the message is composed at review and released from Approvals.
+  chaseQueued: {
+    id: 'bank.bankView.chaseQueued',
+    defaultMessage:
+      'Chase queued for {count, plural, one {# transaction} other {# transactions}} — the message is composed at review and sends when it is approved in Approvals.',
+  },
+  chaseQueueFailed: {
+    id: 'bank.bankView.chaseQueueFailed',
+    defaultMessage: 'The chase could not be queued. Nothing was sent — try again.',
+  },
+  chaseNothingUnexplained: {
+    id: 'bank.bankView.chaseNothingUnexplained',
+    defaultMessage: 'Select at least one line without evidence — matched or suppressed lines are never chased.',
+  },
   transactionsFooter: {
     id: 'bank.bankView.transactionsFooter',
     defaultMessage: '{count} transactions • {unmatched} without evidence',
@@ -399,6 +415,38 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
   const [requestStatementOpen, setRequestStatementOpen] = useState(false);
   const [uploadFor, setUploadFor] = useState<string | null>(null);
   const [chasing, setChasing] = useState<string[] | null>(null);
+  /**
+   * The LIVE chase path off row selection (5 Sep 2026, review item 15): the
+   * selected unexplained lines become one `chase.send` proposal per business,
+   * composed server-side and released from Approvals (D44). This is the
+   * RequestStatementDialog posture — "queued", never "sent" — inlined because
+   * the selection IS the form.
+   */
+  const [chaseOutcome, setChaseOutcome] = useState<
+    { kind: 'queued'; count: number } | { kind: 'failed'; label: string } | null
+  >(null);
+  const stageLiveChase = async (sel: readonly BankTransaction[]) => {
+    const chaseable = sel.filter((t) => isUnexplained(t));
+    if (chaseable.length === 0) {
+      setChaseOutcome({ kind: 'failed', label: intl.formatMessage(m.chaseNothingUnexplained) });
+      return;
+    }
+    const byBusiness = new Map<string, string[]>();
+    for (const t of chaseable) {
+      const ids = byBusiness.get(t.clientId) ?? [];
+      ids.push(t.id);
+      byBusiness.set(t.clientId, ids);
+    }
+    setChaseOutcome(null);
+    try {
+      for (const [businessId, ids] of byBusiness) {
+        await requestChaseProposal(businessId, ids);
+      }
+      setChaseOutcome({ kind: 'queued', count: chaseable.length });
+    } catch (error) {
+      setChaseOutcome({ kind: 'failed', label: errorLabel(error) ?? intl.formatMessage(m.chaseQueueFailed) });
+    }
+  };
   const confirm = useConfirm();
   // ?statement=<id> — linkable like every other overlay.
   const [viewingStatement, setViewingStatement] = useQueryParam('statement');
@@ -881,6 +929,16 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                 )}
               </AnimatePresence>
 
+              {chaseOutcome !== null && (
+                <p
+                  role={chaseOutcome.kind === 'failed' ? 'alert' : 'status'}
+                  className={`text-[12px] font-semibold mb-3 ${chaseOutcome.kind === 'failed' ? 'text-amber-400' : 'text-brand'}`}
+                >
+                  {chaseOutcome.kind === 'queued'
+                    ? intl.formatMessage(m.chaseQueued, { count: chaseOutcome.count })
+                    : chaseOutcome.label}
+                </p>
+              )}
               <DataTable<BankTransaction>
                 className="max-w-none"
                 columns={txnColumns}
@@ -889,11 +947,19 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                 selectable
                 emptyMessage={intl.formatMessage(m.transactionsEmpty)}
                 bulkActions={[
-                  // The synthetic composer's chase never reaches the live
-                  // board — live chasing is the workspace's chase.send
-                  // proposal (METH S14 sweep).
+                  // Live, the selection stages a REAL chase.send per business
+                  // (5 Sep 2026, review item 15 — this action used to vanish
+                  // live, so selecting unmatched lines armed nothing).
+                  // Synthetic keeps the local composer.
                   ...(liveBank
-                    ? []
+                    ? [
+                        {
+                          label: intl.formatMessage(m.chaseBulkAction),
+                          icon: Send,
+                          primary: true,
+                          onClick: (sel: BankTransaction[]) => void stageLiveChase(sel),
+                        },
+                      ]
                     : [
                         {
                           label: intl.formatMessage(m.chaseBulkAction),

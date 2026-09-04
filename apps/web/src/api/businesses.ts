@@ -44,6 +44,13 @@ export function useBusinesses({ enabled, params }: UseBusinessesOptions) {
   const query = useQuery({
     queryKey: ['businesses', 'all', params],
     enabled,
+    // The board's counts move without a reload (5 Sep 2026, review item 12: a
+    // portal upload landed and nothing on the accountant's side ever changed).
+    // 30 s, not the documents slice's 5 s — this is a whole-practice aggregate
+    // read, and the clients board is a glanceable summary, not a live queue.
+    // TanStack structural sharing makes an unchanged poll re-render nothing.
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
     queryFn: () =>
       fetchAllPages((cursor) =>
         listBusinesses({ ...params, limit: PAGE_LIMIT, ...(cursor === undefined ? {} : { cursor }) }),

@@ -7,6 +7,8 @@ import type { Env } from '../../config/env.js';
 import { ENV } from '../../config/env.module.js';
 import { type DocumentStore, selectDocumentStore } from '../ingestion-routing/index.js';
 import { NotificationsModule, NOTIFICATIONS_SERVICE, type NotificationsService } from '../notifications/index.js';
+import { PortalBusinessProfileController } from './portal-business-profile.controller.js';
+import { PortalBusinessProfileService } from './portal-business-profile.service.js';
 import { PortalContextService } from './portal-context.service.js';
 import { PortalDocumentsService } from './portal-documents.service.js';
 import { PortalOnboardingService } from './portal-onboarding.service.js';
@@ -18,6 +20,7 @@ import { PortalUploadNotifier } from './portal-upload-notifier.js';
 import { PrismaPortalUploadService } from './portal-upload.service.js';
 import { PortalController } from './portal.controller.js';
 import {
+  PORTAL_BUSINESS_PROFILE_SERVICE,
   PORTAL_CONTEXT_SERVICE,
   PORTAL_DOCUMENT_STORE,
   PORTAL_DOCUMENTS_SERVICE,
@@ -67,10 +70,12 @@ import {
  */
 @Module({
   imports: [NotificationsModule],
-  // TWO controllers, split by surface: the session and the documents, and the
-  // people who may send them. See `portal-people.controller.ts`'s header for
-  // why four more handlers did not go on the first one.
-  controllers: [PortalController, PortalPeopleController],
+  // THREE controllers, split by surface: the session and the documents, the
+  // people who may send them, and the business they work for. See
+  // `portal-people.controller.ts`'s header for why the extra handlers did not
+  // go on the first one — each pins its own handler list, so none can grow a
+  // route in silence.
+  controllers: [PortalController, PortalPeopleController, PortalBusinessProfileController],
   providers: [
     {
       // The invited client's way in. It needs the notifications seam because
@@ -117,6 +122,15 @@ import {
       useFactory: (prisma: PrismaClient, notifications: NotificationsService, idempotency: IdempotencyStore, env: Env) =>
         new PortalPeopleService(prisma, notifications, idempotency, { appOrigin: env.APP_ORIGIN }),
       inject: [PRISMA, NOTIFICATIONS_SERVICE, PORTAL_IDEMPOTENCY_STORE, ENV],
+    },
+    // Settings → Business, and the setup journey's details step (5 Sep 2026).
+    // Prisma and the module's shared idempotency store, nothing else: the
+    // business is the session's own, the authority is `assertCan`'s, and there
+    // is no mail, no secret and no clock in the write.
+    {
+      provide: PORTAL_BUSINESS_PROFILE_SERVICE,
+      useFactory: (prisma: PrismaClient, idempotency: IdempotencyStore) => new PortalBusinessProfileService(prisma, idempotency),
+      inject: [PRISMA, PORTAL_IDEMPOTENCY_STORE],
     },
     { provide: PORTAL_DOCUMENT_STORE, useFactory: (env: Env) => selectDocumentStore(env), inject: [ENV] },
     { provide: PORTAL_IDEMPOTENCY_STORE, useFactory: (): IdempotencyStore => new InMemoryIdempotencyStore() },

@@ -15,6 +15,8 @@ import { navigate, path, useQueryParam, useSegment } from '../lib/router';
 import { failureOf, reasonText, retryMeaning } from '../lib/failures';
 import { AnalysisModal } from '../components/DynamicComponents/AnalysisModal';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
+import { applyToEach, softDeleteDocument } from '../api/document-lifecycle';
+import { errorLabel } from '../api/slices';
 import { blockedReason, partitionByReadiness, readinessOf } from '../lib/readiness';
 import { currency } from '../lib/resolver';
 import type { Client, DocKind, Document, DuplicatePair } from '../lib/types';
@@ -251,6 +253,24 @@ const m = defineMessages({
   approveConfirm: { id: 'analytics.clientInbox.approveConfirm', defaultMessage: 'Yes, accept them' },
 
   bulkDelete: { id: 'analytics.clientInbox.bulkDelete', defaultMessage: 'Delete' },
+  // The LIVE delete (5 Sep 2026, review item 13: a client "will definitely
+  // send stupid documents continuously", and this tab had no way to clear
+  // one). It is the register's Move to Trash — reversible, so tone brand,
+  // never red — through the same POST …/deletion the Documents screen uses.
+  bulkTrash: { id: 'analytics.clientInbox.bulkTrash', defaultMessage: 'Move to Trash' },
+  trashTitle: {
+    id: 'analytics.clientInbox.trashTitle',
+    defaultMessage: 'Move {count, plural, one {this document} other {# documents}} to Trash?',
+  },
+  trashConsequence: {
+    id: 'analytics.clientInbox.trashConsequence',
+    defaultMessage: 'Nothing is lost — Trash is on the Documents screen, and restoring puts a document straight back.',
+  },
+  trashConfirm: { id: 'analytics.clientInbox.trashConfirm', defaultMessage: 'Move to Trash' },
+  trashFailed: {
+    id: 'analytics.clientInbox.trashFailed',
+    defaultMessage: 'That could not be moved to Trash — {error}',
+  },
   deleteTitle: {
     id: 'analytics.clientInbox.deleteTitle',
     defaultMessage: 'Delete {count, plural, one {# document} other {# documents}}?',
@@ -1045,13 +1065,46 @@ export function ClientInbox({ client, kind, onPreview }: {
    * surfaces meet the identical wording (and so the strings stay off this
    * chunk).
    */
+  /**
+   * The live Move to Trash (5 Sep 2026, review item 13). A REAL call, not a
+   * local flip the poll reverts: `POST /documents/{id}/deletion` is reversible
+   * by construction (restoration undoes it exactly), so it is ingest-class and
+   * needs no proposal — the same split the Documents screen documents. A
+   * failure names the document it stopped at; the rows already deleted stay
+   * deleted, which is the honest reading of a partial batch.
+   */
+  const trashSelected = async (sel: Document[]) => {
+    if (sel.length === 0) return;
+    const ok = await confirm({
+      tone: 'brand',
+      title: intl.formatMessage(m.trashTitle, { count: sel.length }),
+      detail: sel.map((d) => d.supplier).slice(0, 4).join(' · '),
+      consequence: intl.formatMessage(m.trashConsequence),
+      confirmLabel: intl.formatMessage(m.trashConfirm),
+    });
+    if (!ok) return;
+    const result = await applyToEach(sel.map((d) => d.id), softDeleteDocument);
+    if (result.failedId !== null) {
+      await confirm({
+        tone: 'red',
+        title: intl.formatMessage(m.bulkTrash),
+        detail: intl.formatMessage(m.trashFailed, { error: errorLabel(result.error) ?? '' }),
+        confirmLabel: intl.formatMessage(m.trashConfirm),
+      });
+    }
+  };
+  const liveTrashAction = { label: intl.formatMessage(m.bulkTrash), icon: Trash2, onClick: (sel: Document[]) => void trashSelected(sel) };
+
   const bulkActions =
     documentsSource === 'api'
       ? status === 'published'
-        ? [{ label: intl.formatMessage(commonActions.exportCsv), icon: Download, minSelected: 2, disabledHint: intl.formatMessage(EXPORT_HINT), onClick: (sel: Document[]) => exportDocuments(sel, client.name) }]
+        ? [
+            { label: intl.formatMessage(commonActions.exportCsv), icon: Download, minSelected: 2, disabledHint: intl.formatMessage(EXPORT_HINT), onClick: (sel: Document[]) => exportDocuments(sel, client.name) },
+            liveTrashAction,
+          ]
         : status === 'ready'
-        ? [{ label: intl.formatMessage(m.bulkPublish), icon: Send, primary: true, onClick: (sel: Document[]) => setPublishing(sel) }]
-        : []
+        ? [{ label: intl.formatMessage(m.bulkPublish), icon: Send, primary: true, onClick: (sel: Document[]) => setPublishing(sel) }, liveTrashAction]
+        : [liveTrashAction]
       : syntheticBulkActions;
 
   const s = statsFor(client.id);
