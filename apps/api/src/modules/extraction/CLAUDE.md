@@ -519,6 +519,44 @@ advised document lands TO_REVIEW exactly as it did before.
 codes. The integration test therefore uses a small `UncodedExtractor` that
 reproduces the real extractor's silence on coding and nothing else.
 
+## Accuracy, measured (4 Sep 2026 — walkthrough finding 7)
+
+`scripts/measure/extraction-accuracy.ts` — the accuracy sibling of the cost
+probe beside it, built because "confidence up to 98%" was said out loud with no
+measurement anywhere behind it. It runs the REAL `BedrockExtractor` over the
+synthetic corpus in `fixtures/synthetic/`, scored per field against the
+expected-values manifest (`docs/testing/gpt-test-document-prompts.md` §9).
+
+Measured 4 Sep 2026 on `anthropic.claude-sonnet-4-6`, eu-west-2 — 9 documents,
+5 fields each (supplier · date · total · VAT · reference):
+
+| Corpus | Fields | Accuracy |
+|---|---|---|
+| born-digital PDFs (pixels ARE the prompt) | 30/30 | **100%** |
+| generated images (the "hard read" set) | 14/15 | 93.3% |
+| whole corpus | 44/45 | **97.8%** |
+
+The one miss is an honest null (VAT unread on the deliberately-hard handwritten
+Fresh Direct image), not a wrong number.
+
+⚠ **Three caveats before anyone quotes this externally:**
+
+- **n = 45 field reads over synthetic documents.** It replaces an invented
+  number with a taken one; it is not a calibration corpus. `evals/` still owes
+  the real extraction dataset its README names.
+- **The ~62.5–79% on record elsewhere is CATEGORISATION accuracy**
+  (`docs/research/business-types-and-accounts.md`), a different question this
+  probe does not measure. Do not average the two.
+- **One real watch item it surfaced:** the Bidfood receipt PNG (printed total
+  £482.40) read correctly here from the raw bytes, but the PRODUCT path — which
+  sanitises PNG→JPEG before the model sees it — read £456.72 on both occasions
+  it was tried (the 4 Sep walkthrough and a live re-upload the same evening).
+  Same file, same model, different answer after recompression. The synthetic
+  receipt's own line items do not sum to its printed total, which may be
+  provoking the model into reconciling; a real receipt's arithmetic adds up.
+  Worth a re-check with an arithmetically consistent fixture before treating
+  it as a sanitisation defect.
+
 ## Replay (`EXTRACTOR=replay`)
 
 `selectExtractor('replay')` builds the real `BedrockExtractor` — store and
