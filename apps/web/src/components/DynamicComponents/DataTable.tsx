@@ -98,6 +98,13 @@ export interface BulkAction<T> {
   /** Shown on hover when the selection is too small. */
   disabledHint?: string;
   /**
+   * Force the action off regardless of the selection — for an action whose
+   * write has no live path yet (the S14 rule: a disabled button wearing its
+   * reason beats one whose write the next poll reverts, and beats hiding a
+   * real affordance). `disabledHint` carries the reason.
+   */
+  disabled?: boolean;
+  /**
    * Stable `data-tour` anchor. Explicit rather than derived from `label`,
    * which the frame this came from did: `label` is translated copy here, so a
    * derived key would be a different key in every locale and the tour would
@@ -233,7 +240,7 @@ export function DataTable<T>({
   // because unlike the title it is not attached to the button.
   const shortAction =
     selectable && selected.length > 0
-      ? bulkActions.find((a) => selected.length < (a.minSelected ?? 1))
+      ? bulkActions.find((a) => a.disabled === true || selected.length < (a.minSelected ?? 1))
       : undefined;
   const shortHint = shortAction
     ? shortAction.disabledHint ??
@@ -253,7 +260,7 @@ export function DataTable<T>({
   /** One definition, rendered above and/or below the rows. */
   const actionButtons = bulkActions.map((a) => {
     const need = a.minSelected ?? 1;
-    const short = selectable && selected.length < need;
+    const short = a.disabled === true || (selectable && selected.length < need);
     return (
       <button
         key={a.label}

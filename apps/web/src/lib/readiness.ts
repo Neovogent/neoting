@@ -21,7 +21,16 @@ const m = defineMessages({
   outstanding: { id: 'pipeline.readiness.outstanding', defaultMessage: 'Something is still outstanding' },
 });
 
-/** The placeholders extraction leaves behind when it could not read a value. */
+/**
+ * The placeholders extraction leaves behind when it could not read a value.
+ *
+ * ⚠ Mirrored by the SERVER's readiness rule
+ * (`apps/api/src/modules/validation-dedupe/readiness.ts`,
+ * `READINESS_PLACEHOLDERS`) since 2026-09-03 — a value on this list never
+ * classifies a document READY server-side either, which is what keeps the
+ * Ready tab and this gate agreeing. Change the two lists together, or a
+ * document lands in Ready wearing "Ready — blocked" again.
+ */
 const EMPTY = ['', '—', '-', 'n/a', 'unknown', 'extracting…', 'extracting...'];
 
 const isBlank = (value: string | undefined) => !value || EMPTY.includes(value.trim().toLowerCase());

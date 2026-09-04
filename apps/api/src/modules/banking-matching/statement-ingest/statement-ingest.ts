@@ -259,9 +259,12 @@ export async function ingestStatement(
       descriptionRaw: row.description,
       balanceAfterPence: row.balanceAfterPence,
       importFingerprint: fingerprints[index],
-      // Which import put this line here. The column has existed and been unused
-      // since `init`; writing it is what makes "the rows from that statement"
-      // answerable — for provenance today and for a repair tool later.
+      // The provenance stamp: which statement created this line. The column
+      // predates this writer and nothing else fills it. It is what makes
+      // `bank.remove-statement` able to enumerate a statement's rows PROVABLY
+      // — period+account overlap is a guess, and two uploads of the same month
+      // would claim each other's lines. A statement whose rows lack the stamp
+      // refuses removal by name rather than deleting by guess.
       importBatchId: statement.id,
       // UNMATCHED is the default and is stated anyway: this set IS the chase
       // list's set, so a line arriving in any other state would be a payment

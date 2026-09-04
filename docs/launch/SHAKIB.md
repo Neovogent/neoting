@@ -337,8 +337,13 @@ TWO ENDPOINTS:
 - POST /v1/billing/checkout-sessions (authenticated) -> { url }
 - POST /v1/webhooks/stripe -> verify signature, update the business
 
-ALREADY DONE, do not redo: the Stripe CLI is installed and logged in, against the
-Exambinary account acct_1RQtbxGMdHp4NCWv. `stripe login` is not a step you need.
+ALREADY DONE, do not redo: the Stripe CLI is installed and logged in, against
+acct_1RQtbxGMdHp4NCWv. `stripe login` is not a step you need.
+
+⚠ That account is NOT the launch account. `docs/runbooks/stripe-billing.md` §0 records it
+as a personal account (mubasshirkhan231@gmail.com) holding unrelated products, and its
+objects live in sandbox. Live mode goes under NEOVOGENT AI SOLUTIONS UK LTD (15946429) —
+see docs/legal/README.md §7.
 
 ⚠ THE SIGNING SECRET FROM `stripe listen` IS NOT THE ONE IN THE DASHBOARD. They are
 different values for the same account, and this is the single most common hour lost in a
@@ -457,8 +462,9 @@ tomorrow morning, or S7 cannot run end to end. Decide this first thing.
 
 **Ordering that follows from the above:** S5 now → A9 (Abdullah) → A10 → S6 → S7 last.
 S6 is not cosmetic: `/legal/terms` and `/legal/privacy` already return 200, behind a draft
-banner, with 87 `[PLACEHOLDER…]` markers still in the four documents — four of them the
-Exambinary identity fields that block the pack going live at all.
+banner, with 65 `[PLACEHOLDER…]` markers still in the four documents — among them the
+NEOVOGENT AI SOLUTIONS UK LTD identity fields (VAT registration number and tax ID) that
+block the pack going live at all.
 
 ---
 

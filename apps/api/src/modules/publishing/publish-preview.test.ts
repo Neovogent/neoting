@@ -80,8 +80,15 @@ test('a batch recording no currency at all is null, never assumed sterling', () 
   expect(computePublishPreview([{ id: 'a', supplierName: 'Bidfood', categoryCode: 'Food', totalPence: 100, taxPence: 0, currency: '' }]).currency).toBeNull();
 });
 
-test('a £0.00 total is a confirmed value, not a missing one', () => {
-  expect(checkPublishMinimum({ id: 'd', supplierName: 'Bidfood', categoryCode: 'Cost of Sales — Food', totalPence: 0, taxPence: 0 })).toBeNull();
+test('a £0.00 total refuses like a missing one — the minimum follows readiness (2026-09-03)', () => {
+  // This pinned the opposite ("a £0.00 total is a confirmed value"). The
+  // readiness rule now counts a zero total as missing — see the reasoning in
+  // validation-dedupe/readiness.ts — and the publish minimum IS that rule, so
+  // it moves with it rather than becoming the second-opinion drift the
+  // publish-preview header warns about. A credit in negative pence still passes.
+  const refusal = checkPublishMinimum({ id: 'd', supplierName: 'Bidfood', categoryCode: 'Cost of Sales — Food', totalPence: 0, taxPence: 0 });
+  expect(refusal?.missing).toEqual(['total']);
+  expect(checkPublishMinimum({ id: 'd', supplierName: 'Bidfood', categoryCode: 'Cost of Sales — Food', totalPence: -8_840, taxPence: 0 })).toBeNull();
 });
 
 test('a document with no category refuses with NT-PUB-001 naming the field', () => {

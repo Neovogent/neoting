@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useMemo, useRef, useState } from 'react';
 import {
   Landmark, Search, Link2, Unlink, Send, UploadCloud, SlidersHorizontal,
-  AlertTriangle, RefreshCw, Check, FileText, Wand2, Download, Eye, Plus,
+  AlertTriangle, RefreshCw, Check, FileText, Wand2, Download, Eye, Plus, Trash2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Modal } from '../components/DynamicComponents/Modal';
@@ -18,6 +18,7 @@ import { StatementModal, downloadBank } from '../components/DynamicComponents/St
 import { ChaseModal } from '../components/DynamicComponents/ChaseModal';
 import { currency } from '../lib/resolver';
 import { assessTransaction, isMatched, isUnexplained, txnLabel, type Candidate, type MatchVerdict } from '../lib/matching';
+import { summariseRemoval } from '../lib/statementRemoval';
 // Lazy, like the filter panel and the statement dialog below it: this is a
 // modal that opens on a click, and eagerly it put itself plus the
 // `document-detail` client — 9.6 kB gzip — on the static graph of a route that
@@ -184,6 +185,42 @@ const m = defineMessages({
     defaultMessage: 'Download the extracted data as CSV',
   },
   statementsEmpty: { id: 'bank.bankView.statementsEmpty', defaultMessage: 'No statements uploaded.' },
+  removeStatementAction: { id: 'bank.bankView.removeStatementAction', defaultMessage: 'Remove' },
+  openStatementSourceAction: {
+    id: 'bank.bankView.openStatementSourceAction',
+    defaultMessage: 'Open the file this statement was read from',
+  },
+  // Live removal is disabled WEARING ITS REASON (the S14 rule), never hidden
+  // and never a button whose write the next poll reverts: destroying imported
+  // bank data is a state change, so it belongs to Review → Approve, and the
+  // `bank.remove-statement` proposal kind is not in the contract yet (LAW, G7
+  // — the design note in apps/api/src/modules/banking-matching/CLAUDE.md
+  // carries the exact change and this is the line it names for the live wiring).
+  removeStatementLiveHint: {
+    id: 'bank.bankView.removeStatementLiveHint',
+    defaultMessage:
+      'Removing a statement deletes imported bank data, so it goes through Review → Approve — and that approval path has not shipped yet.',
+  },
+  removeStatementsTitle: {
+    id: 'bank.bankView.removeStatementsTitle',
+    defaultMessage: '{count, plural, one {Remove this statement?} other {Remove # statements?}}',
+  },
+  removeStatementsDetail: {
+    id: 'bank.bankView.removeStatementsDetail',
+    defaultMessage: '{names}{more, plural, =0 {} other { and # more}}',
+  },
+  // The REAL blast radius, never a generic "Are you sure?": a statement can be
+  // a thousand-row import, and the person confirming must read that number.
+  removeStatementsConsequence: {
+    id: 'bank.bankView.removeStatementsConsequence',
+    defaultMessage:
+      '{rows, plural, =0 {No imported transactions are recorded against the selection.} one {# imported transaction is deleted from the bank feed.} other {# imported transactions are deleted from the bank feed.}} {count, plural, one {The uploaded file itself stays in the vault, so the period can be imported again.} other {The uploaded files themselves stay in the vault, so the periods can be imported again.}}',
+  },
+  removeStatementsConfirmLabel: {
+    id: 'bank.bankView.removeStatementsConfirmLabel',
+    defaultMessage: '{count, plural, one {Yes, remove it} other {Yes, remove them}}',
+  },
+  removeStatementsAudit: { id: 'bank.bankView.removeStatementsAudit', defaultMessage: 'Removed bank statement' },
   // Statement freshness, not feed health: D40 makes uploaded statements the
   // only bank input in this release, so the account card must not speak of
   // feeds, consent or credentials (launch M8).
@@ -263,7 +300,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
   const {
     clients, transactions, matches, documents, accounts, statements, statementGaps,
     matchSettings, setMatchSettings, matchTransaction, unmatchTransaction, cashCode,
-    uploadStatement, logAudit, statsFor, isSameClient, slices,
+    uploadStatement, removeStatements, logAudit, statsFor, isSameClient, slices,
     refetchBank, serverClientIdFor,
   } = useAppContext();
   const intl = useIntl();
@@ -412,9 +449,51 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
   // so the comparison goes through the same tolerant bridge every other
   // client-scoped filter on this screen uses.
   const allStatements = liveStatements.source === 'api' ? liveStatements.statements : statements;
+  const statementsLive = liveStatements.source === 'api';
   const scopedStatements = allStatements.filter(
     (s) => clientFilter === 'all' || isSameClient(s.clientId, clientFilter),
   );
+
+  /**
+   * Remove statements — the SYNTHETIC writer only, and the gate is honest.
+   *
+   * Live, removal destroys the transactions an upload imported — the most
+   * consequential change on this screen — so it belongs to Review → Approve
+   * (Governance §10), and the `bank.remove-statement` proposal kind is not in
+   * the contract yet (LAW, G7). Until that lands the live affordance is
+   * disabled wearing its reason (`removeStatementLiveHint`), never a button
+   * whose write the next poll reverts. The executor, its server-computed
+   * blast-radius preview and the exact LAW delta are already written — see
+   * `apps/api/src/modules/banking-matching/CLAUDE.md`, the removal design note.
+   *
+   * The confirmation states the REAL blast radius — how many transactions,
+   * from which files — because a generic "Are you sure?" over a thousand-row
+   * import tells the person confirming nothing they can weigh.
+   */
+  const confirmRemoveStatements = async (sel: Statement[]) => {
+    if (statementsLive || sel.length === 0) return;
+    const summary = summariseRemoval(sel);
+    const ok = await confirm({
+      tone: 'red',
+      title: intl.formatMessage(m.removeStatementsTitle, { count: summary.count }),
+      detail: intl.formatMessage(m.removeStatementsDetail, {
+        names: summary.namedFiles.join(', '),
+        more: summary.moreCount,
+      }),
+      consequence: intl.formatMessage(m.removeStatementsConsequence, {
+        rows: summary.totalRows,
+        count: summary.count,
+      }),
+      confirmLabel: intl.formatMessage(m.removeStatementsConfirmLabel, { count: summary.count }),
+    });
+    if (ok !== true) return;
+    removeStatements(sel.map((s) => s.id));
+    logAudit({
+      action: intl.formatMessage(m.removeStatementsAudit),
+      scope: summary.namedFiles.join(', '),
+      reviewOpened: true,
+    });
+  };
   const scopedGaps = statementGaps.filter((g) => clientFilter === 'all' || g.clientId === clientFilter);
   const scopedAccounts = accounts.filter((a) => clientFilter === 'all' || a.clientId === clientFilter);
 
@@ -1002,16 +1081,46 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                     // Every upload can be opened and taken away — a statement
                     // nobody can look at is just a filename in a list.
                     key: 'actions', label: '', align: 'right',
-                    render: (s: Statement) => (
-                      <span className="flex items-center justify-end gap-1.5">
-                        <StatementButton icon={Eye} title={intl.formatMessage(m.viewStatementAction)} onClick={() => setViewingStatement(s.id)} />
-                        <StatementButton icon={Download} title={intl.formatMessage(m.downloadStatementAction)} onClick={() => downloadBank(s)} />
-                      </span>
-                    ),
+                    render: (s: Statement) => {
+                      // D43's link back to the source file: live rows carry the
+                      // document id, and the hydrated documents slice has the
+                      // row. Rendered only when it resolves — a button that
+                      // silently does nothing is worse than absent.
+                      const sourceDoc = s.documentId === undefined
+                        ? undefined
+                        : documents.find((d) => d.id === s.documentId);
+                      return (
+                        <span className="flex items-center justify-end gap-1.5">
+                          <StatementButton icon={Eye} title={intl.formatMessage(m.viewStatementAction)} onClick={() => setViewingStatement(s.id)} />
+                          <StatementButton icon={Download} title={intl.formatMessage(m.downloadStatementAction)} onClick={() => downloadBank(s)} />
+                          {sourceDoc !== undefined && (
+                            <StatementButton icon={FileText} title={intl.formatMessage(m.openStatementSourceAction)} onClick={() => setPreviewDoc(sourceDoc)} />
+                          )}
+                          <StatementButton
+                            icon={Trash2}
+                            title={intl.formatMessage(statementsLive ? m.removeStatementLiveHint : m.removeStatementAction)}
+                            onClick={() => { void confirmRemoveStatements([s]); }}
+                            disabled={statementsLive}
+                          />
+                        </span>
+                      );
+                    },
                   },
                 ]}
                 rows={scopedStatements}
                 rowId={(s) => s.id}
+                selectable
+                bulkActions={[
+                  {
+                    label: intl.formatMessage(m.removeStatementAction),
+                    icon: Trash2,
+                    onClick: (sel: Statement[]) => { void confirmRemoveStatements(sel); },
+                    // Live: disabled wearing its reason — see confirmRemoveStatements.
+                    ...(statementsLive
+                      ? { disabled: true, disabledHint: intl.formatMessage(m.removeStatementLiveHint) }
+                      : {}),
+                  },
+                ]}
                 emptyMessage={intl.formatMessage(m.statementsEmpty)}
               />
             </div>
@@ -1378,14 +1487,22 @@ function CashCodePanel({ txn, customCategories, onAddCategory, onConfirm }: {
   );
 }
 
-/** A view/download verb on a statement row. */
-function StatementButton({ icon: Icon, title, onClick }: { icon: typeof Eye; title: string; onClick: () => void }) {
+/** A view/download/remove verb on a statement row. `disabled` keeps the title,
+ * so the reason an action is off is readable where the action is (the
+ * InboxesView disabled-with-tooltip pattern). */
+function StatementButton({ icon: Icon, title, onClick, disabled = false }: {
+  icon: typeof Eye;
+  title: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
   return (
     <button
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       title={title}
       aria-label={title}
-      className="p-2 rounded-lg border border-white/5 text-zinc-400 hover:text-white hover:border-white/20 hover:bg-white/5 transition-colors"
+      disabled={disabled}
+      className="p-2 rounded-lg border border-white/5 text-zinc-400 hover:text-white hover:border-white/20 hover:bg-white/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-zinc-400 disabled:hover:border-white/5 disabled:hover:bg-transparent"
     >
       <Icon size={14} />
     </button>

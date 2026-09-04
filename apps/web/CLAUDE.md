@@ -236,6 +236,22 @@ uploaded"*, and **D41's verdict on it reached nobody**. Three things about it:
 - **Pence → pounds happens in `api/statements.ts` and nowhere else**, like every
   other money boundary in this app.
 
+**The Statements tab gained management actions on 3 Sep 2026**: row selection
+with a bulk **Remove**, a per-row Remove, and an open-the-source-document button
+(rendered only when the id resolves in the hydrated documents slice). Removal
+works in SYNTHETIC mode (`removeStatements` in AppContext, the
+`deleteSupplierStatement` pattern) behind a confirmation that states the REAL
+blast radius — statement count, total imported rows, file names, composed by
+`lib/statementRemoval.ts` — never a generic "Are you sure?". **Live it is
+disabled wearing its reason** (`BulkAction` grew an optional `disabled` +
+`disabledHint` for exactly this): removing real bank data is a
+`bank.remove-statement` proposal on the Review → Approve spine, and that kind is
+not in the contract yet (LAW, G7 — the design note in
+`apps/api/src/modules/banking-matching/CLAUDE.md` carries the delta; the
+server-side executor is built and dormant). When the kind lands, `KIND_LABEL` in
+`api/proposals.ts` fails compile as the reminder, and the flip is staging the
+proposal from `confirmRemoveStatements` in `BankView.tsx`.
+
 Two things to know:
 
 - **`accept` is `.pdf,.csv,.xlsx` plus the four raster types**, widened back on

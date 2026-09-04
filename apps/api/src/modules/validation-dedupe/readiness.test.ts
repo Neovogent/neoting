@@ -19,12 +19,47 @@ test('each missing field is named, and any missing field blocks READY', () => {
   expect(resolveProcessedState({ ...complete, supplierName: null })).toBe('TO_REVIEW');
 });
 
-test('zero pence is a real total; whitespace is not a real supplier or category', () => {
-  // A £0.00 credit line is extracted data; an unextracted total is null. The
-  // distinction is the difference between "confirmed zero" and "unknown".
-  expect(evaluateReadiness({ ...complete, totalPence: 0 }).ready).toBe(true);
+test('a zero total blocks READY — the publish gates have never accepted £0.00', () => {
+  // This pinned the opposite until 2026-09-03 ("a £0.00 credit line is a real
+  // total"). Both publish surfaces refuse a zero total, so a 0p document
+  // classified READY here rendered "Ready — blocked" there — a document in the
+  // nothing-left-to-do tab wearing a something-left-to-do badge. Readiness
+  // cannot tell a placeholder zero from a confirmed one; TO_REVIEW can.
+  expect(evaluateReadiness({ ...complete, totalPence: 0 }).missing).toEqual(['total']);
+  expect(resolveProcessedState({ ...complete, totalPence: 0 })).toBe('TO_REVIEW');
+  // A credit stored as negative pence is a real total.
+  expect(evaluateReadiness({ ...complete, totalPence: -8_840 }).ready).toBe(true);
   expect(evaluateReadiness({ ...complete, supplierName: '   ' }).missing).toEqual(['supplier']);
   expect(evaluateReadiness({ ...complete, categoryCode: '' }).missing).toEqual(['category']);
+});
+
+test('placeholder junk is not a supplier and not a category', () => {
+  // What an extractor leaves where a value should be — the literal word
+  // "Unknown", an "n/a", a "—" — counts as missing exactly like null does,
+  // matching the web's EMPTY list (apps/web/src/lib/readiness.ts). Before this,
+  // a placeholder classified READY and the publish gate refused it: the
+  // "Ready — blocked" contradiction.
+  for (const junk of ['Unknown', 'unknown', ' UNKNOWN ', '—', '-', 'n/a', 'N/A', 'extracting…', 'Extracting...']) {
+    expect(evaluateReadiness({ ...complete, supplierName: junk }).missing).toEqual(['supplier']);
+    expect(evaluateReadiness({ ...complete, categoryCode: junk }).missing).toEqual(['category']);
+  }
+  // A real name that merely contains a placeholder word is untouched.
+  expect(evaluateReadiness({ ...complete, supplierName: 'Unknown Pleasures Ltd' }).ready).toBe(true);
+});
+
+test('a placeholder-filled document is TO_REVIEW; filling the fields makes it READY', () => {
+  // The observed defect, end to end at the unit: supplier "Unknown", £0.00,
+  // category "—" must never classify READY — it belongs in To Review, the
+  // queue for a human to finish it. Supplying real values flips the answer.
+  const placeholders = { totalPence: 0, supplierName: 'Unknown', categoryCode: '—' };
+  expect(evaluateReadiness(placeholders).missing).toEqual(['total', 'supplier', 'category']);
+  expect(resolveProcessedState(placeholders)).toBe('TO_REVIEW');
+
+  // Each fill removes exactly its own name from the answer…
+  expect(evaluateReadiness({ ...placeholders, totalPence: 12_750 }).missing).toEqual(['supplier', 'category']);
+  expect(evaluateReadiness({ ...placeholders, totalPence: 12_750, supplierName: 'Bidfood' }).missing).toEqual(['category']);
+  // …and the last one moves the document to READY.
+  expect(resolveProcessedState({ totalPence: 12_750, supplierName: 'Bidfood', categoryCode: 'Cost of Sales — Food' })).toBe('READY');
 });
 
 test('a failed validator blocks READY even with every field present', () => {

@@ -156,6 +156,126 @@ demonstrate, and demonstrating it needs a surface.
   UPLOADING one; a write door here would be a second way to create bank data,
   and the two would disagree.
 
+## Removing a statement — design note, 3 Sep 2026
+
+An accountant must be able to take a wrongly-uploaded statement back out —
+one at a time or several at once. **The mechanism is a proposal, and only a
+proposal**: a new `bank.remove-statement` kind on the Review → Approve spine,
+executed by `validation-dedupe/proposals/remove-statement.ts` beside the other
+eleven. The "no POST and none may be added" rule above extends to deletion
+unchanged: there is **no `DELETE /v1/statements/{id}`** and none may exist. A
+statement is created by one door (upload → ingest) and destroyed by one door
+(the engine), so the two can never disagree — a bare DELETE endpoint is exactly
+the side-effect path Governance §10 forbids.
+
+### Hard delete of the DERIVED rows, and why not a soft delete
+
+The `Statement` + `BankTransaction` rows are a **projection of the uploaded
+file**, and the file — the source document — is never touched by removal. That
+is what decides hard-vs-soft:
+
+- **The reversal path is re-import, and it is better than un-hiding.** The
+  document stays in the vault, `statementAlreadyIngested` keys on `documentId`,
+  so removal frees the document for re-ingest — and a re-import re-runs the D41
+  gate, so restored data is re-PROVEN rather than trusted. A soft-deleted row
+  set would either block re-ingest forever or allow a second `Statement` for
+  the same document, and un-deleting the first would double the feed.
+- **Every reader agrees automatically.** A `deletedAt` flag must be honoured by
+  the bank feed, chase detection, the match suggester, `GET /statements` and
+  the `statementGaps` count on `GET /businesses` — and the one reader that
+  misses the filter chases a client by email for a line the accountant removed.
+  That two-doors-disagree failure is this module's central hazard ("the
+  unmatched set is the chase list's set"). Deleted rows disagree with nobody.
+- **The schema already votes for it.** `Match.transactionId` is
+  `onDelete: Cascade` (a suggestion dies with its line); `Chase.transactionId`
+  is `onDelete: SetNull` (the record of a sent email survives, `itemRefs` keeps
+  the ids as history). A soft delete would additionally need `deletedAt` on two
+  models — a prisma **LAW** change the hard delete does not need.
+
+What must NOT be silently destroyed is protected by refusals, not by a flag —
+see the guards below. The audit record of what was removed is the proposal row
+itself (payload + rendered review + outcome), the engine's audit event, and a
+`DocumentEvent` (`stage: 'statement'`, `outcome: 'removed'`) on the source
+document, written in the effect transaction.
+
+### Provenance: `importBatchId` is the link, written at ingest since 3 Sep 2026
+
+`BankTransaction.importBatchId` existed in the schema and **nothing wrote it**
+— so there was no provable link from a transaction to the statement that
+created it (period+account overlap is a guess, and two uploads of the same
+month would claim each other's rows). `ingestStatement` now stamps
+`importBatchId: statement.id` on every row it creates. No schema change: the
+column was already there.
+
+**A statement whose rows predate the stamp cannot be provably enumerated and
+its removal REFUSES by name** (`rowCount > 0` with no provenance rows, or a
+provenance count that disagrees with `rowCount`). Deleting by period guess
+would remove another statement's lines.
+
+### The guards (each one a refusal with the numbers in it)
+
+- **A CONFIRMED match blocks removal.** A match is an accountant's assertion,
+  and breaking one has no approved path (`bank.unmatch` has no `ProposalKind` —
+  the standing TODO below). The refusal names how many lines are matched.
+  Checked at proposal creation AND re-checked at execution.
+- **An open chase blocks removal.** A client has been asked for paperwork
+  against a line; deleting the line under an in-flight chase leaves the portal
+  pointing at nothing. Closed chases are history and survive via `SetNull`.
+  The guard reads `itemRefs`, not just `transactionId` — a grouped chase
+  carries only its first id in the column.
+- **A batch spans ONE business** (the chase.send rule) and is capped at 50.
+- **The preview is the server's, twice** (the publish.batch pattern): creation
+  computes `{transactionCount, matchedCount, openChaseCount}` per statement and
+  stores it in the payload — the caller's figures are discarded — and the
+  executor recomputes at approve and refuses on drift. `NT-PRP-004` cannot see
+  live-fact drift; the executor is the only place it is visible.
+- **Idempotent replay** is answered from the `DocumentEvent` stamped with the
+  proposalId (the statement row is gone, so the event is the durable marker) —
+  a redelivery deletes nothing twice and never mistakes "already removed by
+  this proposal" for "not yours".
+
+`statementGaps` on `GET /businesses` needs no change: it counts `gapAnalysis`
+off statement rows, and a deleted row simply stops contributing.
+
+### ⚠ LAW changes required (G7 — one contract-change issue for Shakib)
+
+Everything below is **built and dormant** until these land; nothing else is
+missing.
+
+1. `packages/contracts/openapi.yaml` — `ProposalKind` enum gains
+   `bank.remove-statement` (# remove an uploaded statement and the transactions it imported).
+2. `packages/contracts/openapi.yaml` — new schema `BankRemoveStatementPayload`:
+   `statementIds` (string array, 1..50, uniqueItems) + `preview` (server-computed:
+   per-statement `statementId`, `documentId`, `fileName`, `periodStart`,
+   `periodEnd`, `transactionCount`, `matchedCount`, `openChaseCount`, plus
+   `totalTransactions`), with the `PublishBatchPayload.preview` language: the
+   caller's preview is discarded and the server's stored.
+3. `packages/contracts/openapi.yaml` — new `BankRemoveStatementProposalRequest`
+   member (`ProposalRequestBase` + `kind: {const: bank.remove-statement}` +
+   the payload), added to `CreateActionProposalRequest`'s `oneOf` AND its
+   discriminator mapping.
+4. **No `prisma/` change** (hard delete; `ActionProposal.kind` is a plain
+   `String`; `importBatchId` already exists). **No `packages/validators`
+   change.** No new endpoint.
+5. Refusals ride the engine's existing `NT-PRP-006`; a named code (e.g. for
+   "matched lines block removal") is optional and NOT requested.
+
+Mechanical wiring once the kind exists (not LAW, listed so nothing is lost):
+registry entry + `ProposalPayloadMap` member (both are compile errors the
+moment the enum grows — by design); the `oneOf` member parse in
+`approvals/proposal-body.ts`; a creation-time
+`computeRemoveStatementPayload` branch in `action-proposals.service.ts` (the
+`publish.batch` branch is the template); a shaped card in
+`render-summary.ts` (until then the fallback names payload members — the
+preview's numbers ARE the members, so even the fallback shows the blast
+radius); the `RELEASE_KINDS` total record in `assert-can.ts` forces a decision
+— **recommended `false`**: removal is internal and reversible by re-import,
+unlike D44's two outward irreversible acts, but that is Shakib's call to
+confirm; `KIND_LABEL` in `apps/web/src/api/proposals.ts` (also a compile
+error); and the live wiring of the Bank screen's Remove action
+(`apps/web/src/views/BankView.tsx` — today it is disabled-with-tooltip on live
+rows, the S14 rule, and works locally in synthetic mode).
+
 ## Tenancy: RLS, and deliberately no second mechanism
 
 Every query runs inside `scopedDb`. The `businessId` filter **narrows** a set
@@ -472,7 +592,19 @@ executor writes `matches` and `bank_transactions` through the engine's
       SUGGESTED stays null by design (the document's bank-match read carries
       the question).
 - [ ] `bank.unmatch` has no `ProposalKind`, so breaking a confirmed match has
-      no approved path. The executor refuses rather than overwriting.
+      no approved path. The executor refuses rather than overwriting. **It now
+      also blocks statement removal** — `bank.remove-statement` refuses a
+      statement with confirmed matches, so a matched statement is un-removable
+      until this lands. The two kinds belong in one contract-change issue.
+- [ ] **Contract change (Shakib, G7): `bank.remove-statement`** — the removal
+      design note above carries the exact delta. Everything server-side is
+      built and tested (`validation-dedupe/proposals/remove-statement.ts`,
+      dormant) and the ingest now stamps `BankTransaction.importBatchId` with
+      the statement id (3 Sep 2026, no schema change — the column existed
+      unwritten). ⚠ Statements ingested BEFORE the stamp cannot be provably
+      enumerated and refuse removal by name; re-seeding or a one-off backfill
+      by period+account is a human decision, not something the executor
+      guesses at.
 - [x] **ID-critical (D40/D41): statement upload wiring with the completeness
       gates — DONE, 28 Aug 2026.** See *Statement import* below.
 - [ ] **ID-critical, still open**: cash coding, partial/batch payments

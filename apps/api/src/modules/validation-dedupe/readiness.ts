@@ -10,6 +10,18 @@ import type { Document as DocumentRow } from '@prisma/client';
  * finishes what the pipeline could not, and nothing half-read is ever
  * presented as ready to publish.
  *
+ * ⚠ A PLACEHOLDER IS NOT A VALUE. An extractor that cannot read a field does
+ * not always answer null — a model may answer the literal word "Unknown", a
+ * spreadsheet import an "n/a", a display layer a "—" — and every one of those
+ * used to count as *present* here while every publish surface counted it as
+ * *missing*. The result was the contradiction this rule exists to prevent: a
+ * document classified READY (the tab that means "nothing left to do") wearing
+ * a "Ready — blocked" badge and an unpublishable tooltip naming the very
+ * fields readiness had just accepted. {@link READINESS_PLACEHOLDERS} mirrors
+ * the web's `EMPTY` list (apps/web/src/lib/readiness.ts) — the product's one
+ * definition of "the placeholders extraction leaves behind". Change them
+ * together or the two gates disagree again.
+ *
  * ⚠ THE CONFIDENCE SEAM IS DELIBERATELY EMPTY. SoT Stage 5 gates readiness on
  * per-field confidence thresholds that are EVAL-CALIBRATED — they come out of
  * `pnpm test:eval` runs over the labelled corpus, and they do not exist yet.
@@ -24,6 +36,27 @@ export type ReadinessField = (typeof READY_REQUIRED_FIELDS)[number];
 
 /** What readiness reads off a document. A projection, so fakes stay small. */
 export type ReadinessInput = Pick<DocumentRow, 'totalPence' | 'supplierName' | 'categoryCode'>;
+
+/**
+ * The placeholder residue a pipeline leaves where a value should be. Compared
+ * case-insensitively after trimming. ⚠ Mirrors the web's `EMPTY` list in
+ * `apps/web/src/lib/readiness.ts` — the two must move together (see the file
+ * header for why).
+ */
+const READINESS_PLACEHOLDERS: ReadonlySet<string> = new Set([
+  '',
+  '—',
+  '-',
+  'n/a',
+  'unknown',
+  'extracting…',
+  'extracting...',
+]);
+
+/** Absent, whitespace-only, or placeholder junk — none of them an answer. */
+function isBlank(value: string | null): boolean {
+  return value === null || READINESS_PLACEHOLDERS.has(value.trim().toLowerCase());
+}
 
 export interface ReadinessContext {
   /**
@@ -44,12 +77,19 @@ export interface Readiness {
 
 export function evaluateReadiness(document: ReadinessInput, context: ReadinessContext = {}): Readiness {
   const missing: ReadinessField[] = [];
-  // null and 0 differ on purpose: a £0.00 credit line is a real total, an
-  // unextracted one is not. Supplier and category are trimmed because a
-  // whitespace-only value is an extraction artefact, not an answer.
-  if (document.totalPence === null) missing.push('total');
-  if (document.supplierName === null || document.supplierName.trim() === '') missing.push('supplier');
-  if (document.categoryCode === null || document.categoryCode.trim() === '') missing.push('category');
+  // A zero total blocks READY alongside null, since 2026-09-03. This file used
+  // to call £0.00 "a confirmed zero, a real total" — but both publish gates
+  // (web `missingMandatory` and `readinessOf`) have ALWAYS refused a zero
+  // total, so a 0p document classified READY here and sat unpublishable there:
+  // "Ready — blocked", the tab and the badge contradicting each other. An
+  // extractor that cannot read a total may also answer 0 rather than null, and
+  // this projection cannot tell a placeholder zero from a confirmed one — so
+  // the rare genuine £0.00 document goes to TO_REVIEW, where a human decides
+  // (archive or reject; there is nothing worth releasing on a £0.00 line).
+  // Negative pence (a credit) is a real total and passes.
+  if (document.totalPence === null || document.totalPence === 0) missing.push('total');
+  if (isBlank(document.supplierName)) missing.push('supplier');
+  if (isBlank(document.categoryCode)) missing.push('category');
 
   const blockedByValidator = context.validatorFailed === true;
   return { ready: missing.length === 0 && !blockedByValidator, missing, blockedByValidator };
