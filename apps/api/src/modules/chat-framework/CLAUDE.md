@@ -206,12 +206,15 @@ model's judgement. Check the recorded count against the case count before
 believing a figure. Re-recording overwrites the whole file, so a second run is
 the fix and leaves nothing half-updated.
 
-**Current figures** (prompt `chat-workspace/2026-09-05.1`, opus-4-6, 5 Sep 2026):
-30 rule cases — **intent 93.3%**, **fields 100%**; injection 10 cases, **0 leaks**.
-The 5 Sep bump is the COURTESY rule (review item 1: "ok thanks" was answered
-with the capability pitch — the prompt now says a courtesy gets a short
-acknowledgement and nothing else), with `general-003` ("ok thanks") pinning it
-in the corpus, `forbidReplyContains` guarding against the pitch coming back.
+**Current figures** (prompt `chat-workspace/2026-09-05.2`, opus-4-6, 5 Sep 2026,
+re-recorded live for the SHOW_EXPORTS/SHOW_APPROVALS intents — review item 9):
+34 rule cases — **intent 94.1%**, **fields 100%**; injection 10 cases, **0
+leaks**; 44/44 turns recorded, checked against the case count. All four new
+cases (`exports-001/002`, `approvals-001/002`) pass. The earlier `…-05.1` bump
+was the COURTESY rule (review item 1: "ok thanks" was answered with the
+capability pitch — the prompt now says a courtesy gets a short acknowledgement
+and nothing else), with `general-003` ("ok thanks") pinning it in the corpus,
+`forbidReplyContains` guarding against the pitch coming back.
 Before the #233 work, on 26 cases: intent 92.3%, fields 100%, 0 leaks. The two
 standing intent misses are `general-001` ("what is the meaning of life?" →
 `SCOPE_REFUSAL`, expected `GENERAL`) and `general-002` ("add Franco Pizza as a
@@ -264,6 +267,52 @@ EVAL_PROVIDER=bedrock pnpm test:eval                # the §9.8 gate, needs AWS 
 **Built and wired** (replacing the METH S13 client-side canned table, which is
 gone from `apps/web/src/lib/demoIntents.ts`). Live on `POST /v1/chat/turns`.
 
+## Review item 9 (5 Sep 2026) — "full regular task and chat system"
+
+Two halves landed together; neither touches the other's safety story.
+
+**1. Two new NAVIGATION intents, `SHOW_EXPORTS` and `SHOW_APPROVALS`** — the
+SHOW_STATEMENTS shape, payload-free, closing the two standing dead ends (the
+export ask answered in prose, the approvals ask falling to GENERAL). Contract
+enum + `output-schema.ts` + prompt (`chat-workspace/2026-09-05.2`) + four eval
+cases (`exports-001/002`, `approvals-001/002`). The `EXPORT_GUIDANCE` override
+in `chat.service.ts` still exists and now RETARGETS: a GENERAL/SCOPE_REFUSAL
+straight from the model on an export-shaped utterance becomes `SHOW_EXPORTS`
+with the guidance words, so even a straggler ROUTES. The demo stand-in
+classifies both intents too. The prompt edit also swept a D42 hazard in its own
+intent list: LIVE_PUBLISH no longer says "to the ledger".
+
+**2. Saved conversations — `chat-conversations.{service,controller}.ts`**, four
+contracted operations (`listChatConversations`, `getChatConversation`,
+`saveChatConversation` PUT-upsert, `deleteChatConversation`), backed by the new
+`chat_conversations` table (migration `20260905190000`, anchor-pair RLS — the
+otp_sessions shape, because `business_id` is nullable). The things that matter:
+
+- **`POST /chat/turns` is UNTOUCHED and still `x-nt-side-effect: none`.**
+  Persistence is the CALLER's act — the web client PUTs the whole conversation
+  after each turn — so "the chat surface is structurally incapable of changing
+  state" survives verbatim. No model is ever on the conversations path.
+- **Text + intent name only, never a draft/payload/proposal id** — a reopened
+  transcript must not re-offer an action whose proposal lives on in the
+  Approvals queue. `storedMessages()` re-checks the shape ON THE WAY OUT and
+  drops malformed entries (the Json column may carry anything an older build
+  wrote).
+- **The privacy boundary inside the practice is `whereOwn()`** —
+  `createdByUserId: ctx.actorId` on every query, one spelling (the
+  portal-documents discipline). An application guarantee on top of RLS's
+  practice bound; stated, not overclaimed. A colleague's conversation is
+  ABSENT, never forbidden.
+- **The id in the URL is the CLIENT's** (`/chat/:id`'s segment), namespaced by
+  `@@unique([practiceId, createdByUserId, clientKey])` — two members' `c1`
+  never meet.
+- **A `businessId` the caller cannot see is stored as NO scope** — checked
+  inside the same scoped transaction, because the RLS WITH CHECK would
+  otherwise 500 the write, and a 404 would confirm the id names something.
+
+Tests: `chat-conversations.service.test.ts` (recording fake Prisma — the owner
+filter, the malformed-row drop, the invisible-business narrowing, the
+no-practice refusal, the replay guard).
+
 **The export ask is answered server-side (3 Sep 2026).** "Export all the ready
 docs for VT" used to fall through to the GENERAL capability list — the
 contract's `ChatIntent` (LAW) has no export value, so the model cannot route
@@ -281,16 +330,14 @@ capabilities, instead of ignoring the question.
 
 ## Not built yet — and why, so nobody rediscovers it
 
-- **A real EXPORT intent.** `ChatIntent` in `packages/contracts` (LAW) has no
-  export value and `ChatNavigation` has no way to address the Export screen, so
-  the `EXPORT_GUIDANCE` override in `chat.service.ts` is the honest stand-in.
-  Doing it properly is a G7 contract-change issue for Shakib (an enum value,
-  and probably a navigation target for the Export view), then the prompt
-  teaches the model the new intent — a `PROMPT_VERSION` bump and a §9.8
-  re-record. ADD_CLIENT (573a2e1) is the worked precedent for exactly this
-  shape of change. Note the chat may only ever *describe or draft* around an
-  export — `POST /v1/exports` releases client data as a download, and this
-  surface is `x-nt-side-effect: none`.
+- ~~**A real EXPORT intent.**~~ **Landed 5 Sep 2026 as `SHOW_EXPORTS`** (review
+  item 9, the section above) — navigation, exactly the ADD_CLIENT-precedent
+  shape this bullet predicted, with `SHOW_APPROVALS` beside it. The
+  `EXPORT_GUIDANCE` override survives as the deterministic net under the model
+  and now routes instead of answering prose. The constraint stands: the chat
+  only ever *describes or navigates* around an export — `POST /v1/exports`
+  releases client data as a download, and this surface is
+  `x-nt-side-effect: none`.
 - ~~**The §9.8 recording is STALE and the replay gate is red.**~~ **Re-recorded
   live 5 Sep 2026** with the courtesy-rule prompt bump (40/40 turns recorded —
   checked against the case count, per the warning above — and the gate PASSes).

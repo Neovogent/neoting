@@ -112,6 +112,22 @@ function classify(text: string): unknown {
   if (/\b(to|for|needs?|awaiting)\s+review\b/.test(text)) {
     return { intent: 'SHOW_INBOX', reply: 'Here is everything waiting for review.', navigation: { statusFilter: 'review' } };
   }
+  // Review item 9 (5 Sep 2026): the two navigation intents the enum grew. The
+  // export ask is ALSO caught downstream by the deterministic override in
+  // chat.service.ts, so the demo branch mainly keeps the stand-in honest about
+  // what the real model is now taught.
+  if (/\bapproval(s)?\b|\bapprove\s+queue\b/.test(text)) {
+    return { intent: 'SHOW_APPROVALS', reply: 'Here is the approvals queue — everything staged and waiting for a decision.' };
+  }
+  if (/\bexport(s|ed|ing)?\b|\bvt\b/.test(text)) {
+    return {
+      intent: 'SHOW_EXPORTS',
+      reply:
+        'Exports live on the Export tab — pick the client and the period and download the VT import file. ' +
+        'An export carries Published documents only; releasing Ready ones goes through Review → Approve, ' +
+        "and only your practice's super admin can release. Nothing leaves the product on its own.",
+    };
+  }
   const named = /\b(?:open|show me|pull up)\s+(?:the\s+)?(.+?)\s+(?:receipt|invoice|bill|document)\b/.exec(text)?.[1];
   if (named !== undefined) {
     return {

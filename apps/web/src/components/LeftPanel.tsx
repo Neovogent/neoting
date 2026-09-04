@@ -66,8 +66,11 @@ export function LeftPanel() {
   );
 
   const filteredConversations = useMemo(() => {
-    // Empty drafts stay out of history until they have a first message.
-    const started = conversations.filter((c) => c.messages.length > 0);
+    // Empty drafts stay out of history until they have a first message. A
+    // server-hydrated conversation whose transcript has not been fetched yet
+    // (review item 9) is STARTED — the summary's count says so — and hiding it
+    // would make the drawer forget everything on every reload.
+    const started = conversations.filter((c) => c.messages.length > 0 || (c.remoteMessageCount ?? 0) > 0);
     const list = q
       ? started.filter(
           (c) => c.title.toLowerCase().includes(q) || c.messages.some((m) => m.content.toLowerCase().includes(q)),

@@ -1,6 +1,7 @@
 import { LeftPanel } from '../components/LeftPanel';
 import { Workspace } from '../components/Workspace';
 import { useAppContext } from '../context/AppContext';
+import { useConversationSync } from '../api/chatConversations';
 import { useViewport } from '../lib/useViewport';
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
@@ -15,6 +16,11 @@ const m = defineMessages({
 export function AIWorkspaceView() {
   const intl = useIntl();
   const { isHistoryVisible, messages, toggleHistory } = useAppContext();
+  // Server-persisted conversations (review item 9): hydrate the drawer, fetch
+  // the open transcript, reconcile turns/pins/deletions back up. Mounted HERE
+  // — a lazy chunk — so the generated conversations client stays off the
+  // bundle floor; it no-ops entirely in synthetic mode.
+  useConversationSync();
   const { desktop } = useViewport();
   const isEmpty = messages.length === 0;
   const showHistory = isHistoryVisible && isEmpty;

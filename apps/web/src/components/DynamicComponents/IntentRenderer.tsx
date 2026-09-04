@@ -1,3 +1,5 @@
+import { ArrowRight } from 'lucide-react';
+import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
 import { ActionCard } from './ActionCard';
 import { ApprovalBatchCard } from './ApprovalBatchCard';
@@ -5,6 +7,7 @@ import { ChaseComposer } from './ChaseComposer';
 import { ClientIntakeForm } from './ClientIntakeForm';
 import { DocumentPreview } from './DocumentPreview';
 import { DuplicateCompare } from './DuplicateCompare';
+import { ExportsCard } from './ExportsCard';
 import { LiveChaseComposerCard } from './LiveChaseComposerCard';
 import { LiveMissingCard } from './LiveMissingCard';
 import { LivePublishCard } from './LivePublishCard';
@@ -17,13 +20,18 @@ import { StatementsCard } from './StatementsCard';
 import { ApprovalsTable, AuditTable, InboxTable, MissingTable, RejectedTable } from './Tables';
 import type { Message } from '../../lib/types';
 
+const m = defineMessages({
+  openApprovals: { id: 'shell.intentRenderer.openApprovals', defaultMessage: 'Open the Approvals queue' },
+});
+
 /**
  * Maps an assistant message's intent + payload onto the interface component
  * that answers it. This is what "the AI answers with real UI, not paragraphs"
  * means in practice (PRD section 8).
  */
 export function IntentRenderer({ message }: { message: Message }) {
-  const { documents, duplicates, matches, clients } = useAppContext();
+  const { documents, duplicates, matches, clients, setActiveTab } = useAppContext();
+  const intl = useIntl();
 
   const payload = message.payload ?? {};
   const clientIds: string[] = payload.clientIds ?? [];
@@ -75,7 +83,27 @@ export function IntentRenderer({ message }: { message: Message }) {
       return <RejectedTable clientIds={clientIds} clientNames={clientNames} />;
 
     case 'SHOW_APPROVALS':
-      return <ApprovalsTable clientIds={clientIds} clientNames={clientNames} />;
+      // Server turns land here too since 5 Sep 2026 (review item 9). The table
+      // is the synthetic cast's — live, the context array is empty by design —
+      // so the card always carries the way to the REAL queue, which reads
+      // `GET /action-proposals` itself.
+      return (
+        <div className="w-full flex flex-col gap-3">
+          <ApprovalsTable clientIds={clientIds} clientNames={clientNames} />
+          <button
+            onClick={() => setActiveTab('Approvals')}
+            className="self-start flex items-center gap-1.5 text-[12px] font-bold text-brand hover:text-brand-hover transition-colors"
+          >
+            {intl.formatMessage(m.openApprovals)}
+            <ArrowRight size={13} />
+          </button>
+        </div>
+      );
+
+    // Review item 9 (5 Sep 2026): the export ask routes here — navigation to
+    // D42's sole egress, nothing created from chat.
+    case 'SHOW_EXPORTS':
+      return <ExportsCard />;
 
     case 'APPROVE_ITEMS':
       return <ApprovalBatchCard query={query} clientIds={clientIds} />;

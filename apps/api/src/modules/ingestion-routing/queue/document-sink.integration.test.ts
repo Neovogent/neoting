@@ -25,6 +25,10 @@ const P_B = 'p20_prac_b';
 
 async function cleanup(): Promise<void> {
   await owner.document.deleteMany({ where: { practiceId: { in: [P_A, P_B] } } });
+  // Notifications cascade with the business; the explicit-id delete keeps the
+  // teardown inside this suite's own rows (`businesses.practice_id` is
+  // ON DELETE RESTRICT, so the business must go before its practice).
+  await owner.business.deleteMany({ where: { id: 'p20_biz_a' } });
   await owner.membership.deleteMany({ where: { id: { startsWith: 'p20_' } } });
   await owner.user.deleteMany({ where: { id: { startsWith: 'p20_' } } });
   await owner.practice.deleteMany({ where: { id: { startsWith: 'p20_' } } });
@@ -38,6 +42,7 @@ beforeAll(async () => {
 
   await cleanup();
   await owner.practice.createMany({ data: [{ id: P_A, name: 'P20 A' }, { id: P_B, name: 'P20 B' }] });
+  await owner.business.create({ data: { id: 'p20_biz_a', practiceId: P_A, name: 'P20 Biz A' } });
   await owner.user.createMany({
     data: [
       { id: 'p20_user_a', email: 'p20a@example.test' },
@@ -98,6 +103,32 @@ describe.skipIf(!DATABASE_URL || !OWNER_URL)('PrismaDocumentSink', () => {
     expect(events).toHaveLength(1);
     expect(events[0]?.stage).toBe('ingest');
     expect(events[0]?.traceId).toBe('t-int');
+
+    // UNROUTED writes NO notification — there is no business to hang the row
+    // on and the Unrouted queue is its own visible surface (review item 12).
+    const notifications = await owner.notification.findMany({
+      where: { payload: { path: ['documentId'], equals: documentId } },
+    });
+    expect(notifications).toHaveLength(0);
+  });
+
+  test('a ROUTED document writes the document.received notification once, and a redelivery adds none', async () => {
+    const sink = new PrismaDocumentSink(app);
+    const routed = input('p20-k-notify', { businessId: 'p20_biz_a', channel: 'WHATSAPP', routing: { kind: 'matched' } });
+    const { documentId, created } = await sink.persist(routed);
+    expect(created).toBe(true);
+
+    const notifications = await owner.notification.findMany({ where: { businessId: 'p20_biz_a' } });
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0]?.event).toBe('document.received');
+    expect(notifications[0]?.readAt).toBeNull();
+    expect(notifications[0]?.payload).toMatchObject({ documentId, channel: 'WHATSAPP', traceId: 't-int' });
+
+    // The same job again is the idempotent no-op end to end: no second
+    // document, no second event, no second toast.
+    const replay = await sink.persist(routed);
+    expect(replay.created).toBe(false);
+    expect(await owner.notification.count({ where: { businessId: 'p20_biz_a' } })).toBe(1);
   });
 
   test('an unrouted document is visible to its own practice and invisible to another', async () => {

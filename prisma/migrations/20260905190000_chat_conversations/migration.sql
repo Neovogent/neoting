@@ -1,3 +1,53 @@
+-- chat_conversations — a practice member's saved workspace-chat transcript
+-- (review item 9, 5 Sep 2026: "full regular task and chat system"; a
+-- conversation that evaporates on reload is not a system).
+--
+-- ADDITIVE ONLY: one new table, no existing table touched, no data written.
+-- Reversible in one DROP TABLE.
+--
+-- Shape notes (the schema.prisma doc comment carries the full argument):
+--   * messages is ONE JSONB column, not a second table — a transcript is read
+--     and replaced whole (PUT upsert, capped at 200 messages in the contract),
+--     and a message table would need its own RLS policy for rows carrying no
+--     tenant column.
+--   * (practice_id, created_by_user_id, client_key) is the caller-facing
+--     identity: the id in the URL is the CLIENT's own name for the
+--     conversation, namespaced per practice member, so it carries no
+--     cross-tenant authority.
+--   * business_id is nullable (a conversation with no client attached), which
+--     is why the RLS policy below is the otp_sessions anchor-pair shape and
+--     not the single-column loop predicate.
+
+-- CreateTable
+CREATE TABLE "chat_conversations" (
+    "id" TEXT NOT NULL,
+    "practice_id" TEXT NOT NULL,
+    "business_id" TEXT,
+    "created_by_user_id" TEXT NOT NULL,
+    "client_key" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "pinned" BOOLEAN NOT NULL DEFAULT false,
+    "messages" JSONB NOT NULL DEFAULT '[]',
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "chat_conversations_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "chat_conversations_practice_id_created_by_user_id_client_ke_key" ON "chat_conversations"("practice_id", "created_by_user_id", "client_key");
+
+-- CreateIndex
+CREATE INDEX "chat_conversations_practice_id_created_by_user_id_updated_a_idx" ON "chat_conversations"("practice_id", "created_by_user_id", "updated_at");
+
+-- AddForeignKey
+ALTER TABLE "chat_conversations" ADD CONSTRAINT "chat_conversations_practice_id_fkey" FOREIGN KEY ("practice_id") REFERENCES "practices"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- ===========================================================================
+-- prisma/sql/rls.sql, re-appended in full below, as every migration that
+-- touches RLS does — the new table joins the FORCE-RLS list and gains the
+-- anchor-pair policy.
+-- ===========================================================================
 -- NEOTING — row-level security policies (Sprint-0 contract, LAW per G7/D15)
 --
 -- Governance §5.2. This file is the tenancy guarantee. Prisma cannot express

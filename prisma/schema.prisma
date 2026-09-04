@@ -75,6 +75,7 @@ model Practice {
   documents   Document[]
   proposals   ActionProposal[]
   otpSessions OtpSession[]
+  chatConversations ChatConversation[]
 
   @@map("practices")
 }
@@ -1474,6 +1475,50 @@ model Notification {
 
   @@index([businessId, recipientUserId, readAt])
   @@map("notifications")
+}
+
+/// A practice member's saved workspace-chat transcript (review item 9,
+/// 5 Sep 2026 — "full regular task and chat system": a conversation that
+/// evaporates on reload is not a system).
+///
+/// The MESSAGES ARE A JSON COLUMN, not a second table, deliberately: a
+/// transcript is read and replaced whole (the PUT is an upsert of the entire
+/// conversation, capped at 200 messages), never queried line-by-line, and a
+/// second table would need a second RLS policy for rows that carry no tenant
+/// column of their own. Text + intent name only — no draft payloads, no
+/// proposal ids — so nothing stored here can re-stage an action.
+///
+/// Tenancy is the otp_sessions anchor-pair shape: `practice_id` NOT NULL,
+/// `business_id` nullable (a conversation with no client attached), policy
+/// `app_can_access_document(business_id, practice_id)` in rls.sql. WHO may see
+/// it is narrower than the policy: every query additionally filters on
+/// `created_by_user_id` — a transcript is one member's working note, not a
+/// practice record — and that is an application guarantee, stated rather than
+/// overclaimed, same as the portal's chase boundary.
+///
+/// `client_key` is the CALLER's own name for the conversation (the web app's
+/// `/chat/:id` address segment), unique per (practice, creator) — so two
+/// members' `c1` never meet and the id carries no cross-tenant authority.
+model ChatConversation {
+  id         String  @id @default(cuid())
+  practiceId String  @map("practice_id")
+  businessId String? @map("business_id")
+
+  createdByUserId String @map("created_by_user_id")
+  clientKey       String @map("client_key")
+
+  title    String
+  pinned   Boolean @default(false)
+  messages Json    @default("[]")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  practice Practice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+
+  @@unique([practiceId, createdByUserId, clientKey])
+  @@index([practiceId, createdByUserId, updatedAt])
+  @@map("chat_conversations")
 }
 
 model SmsLog {

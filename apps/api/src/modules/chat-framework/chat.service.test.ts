@@ -107,14 +107,15 @@ describe('the turn, end to end', () => {
 describe('the export ask — the sole egress must not fall through to a shrug (D42)', () => {
   test('the local stand-in answers "export all the ready docs for vt software", end to end', async () => {
     // The observed defect verbatim: AI_CHAT=demo classified this GENERAL and
-    // listed five capabilities the accountant did not ask for. The service now
-    // answers with where the export actually lives.
+    // listed five capabilities the accountant did not ask for. Since 5 Sep 2026
+    // (review item 9) the stand-in classifies SHOW_EXPORTS itself — the Export
+    // screen opens — so the deterministic override never needs to fire here.
     const turn = await service(new DemoModelProvider()).createTurn(CONTEXT, {
       utterance: 'export all the ready docs for vt software',
     });
 
-    expect(turn.intent).toBe('GENERAL');
-    expect(turn.reply).toBe(EXPORT_GUIDANCE);
+    expect(turn.intent).toBe('SHOW_EXPORTS');
+    expect(turn.reply).toMatch(/Export tab/);
     expect(turn.draft).toBeUndefined();
   });
 
@@ -131,7 +132,7 @@ describe('the export ask — the sole egress must not fall through to a shrug (D
       providerReturning({ intent: 'SCOPE_REFUSAL', reply: 'That is not something this surface does.' }),
     ).createTurn(CONTEXT, { utterance: 'can you export the published documents' });
 
-    expect(turn.intent).toBe('GENERAL');
+    expect(turn.intent).toBe('SHOW_EXPORTS');
     expect(turn.reply).toBe(EXPORT_GUIDANCE);
   });
 

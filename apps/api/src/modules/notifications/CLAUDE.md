@@ -4,6 +4,53 @@
 
 ## Purpose
 
+**Two halves since 5 Sep 2026, one domain.** The OUTBOUND half (everything below
+this section) is transactional email. The INBOX half is the in-app notification
+read surface — the bell.
+
+## The in-app inbox — `GET /v1/notifications` + `POST /v1/notifications/read-receipts` (5 Sep 2026, review item 12)
+
+The `notifications` TABLE had three writers (`portal.upload` from the portal
+notifier, `chase.closed` from auto-close/statement-request, and — new in the
+same change — `document.received` from `ingestion-routing`'s `document-sink.ts`
+for routed EMAIL/WHATSAPP arrivals) and **no reader**: a client's upload landed
+and nothing on the accountant's side changed except by poll. This is the read
+half, and the web header's bell is its consumer (10 s poll + window focus).
+
+| File | What it is |
+|---|---|
+| `inbox.service.ts` | `list` (keyset-paginated newest-first via `common/pagination/cursor`, business name joined, whole-reach `unreadCount` in the same transaction) + `markRead` (the FIRST writer of `readAt` — guarded on `readAt: null`, so the timestamp is set once and never rewritten; omitted ids mean everything unread) |
+| `inbox.controller.ts` | The two contracted routes, thin: `coerceQuery` → `parseBoundary` → one service call |
+
+Decisions worth knowing:
+
+- **The "No controller" rule below is RETIRED, and only because the contract
+  moved first** — `openapi.yaml` now publishes the two operations. The outbound
+  half still has no endpoint and still writes nothing to the database.
+- **`documentId`/`chaseId` are read DEFENSIVELY off the `payload` Json** — each
+  writer shapes its own payload, so a non-string value or missing key projects
+  `null` rather than felling the bell on an old row.
+- **No `businessId` filter, by design** — the bell is a practice-wide surface;
+  RLS bounds the set (`notifications_tenant`), and the module rule of no second
+  tenancy mechanism holds.
+- **`markRead` honours its `Idempotency-Key` actor-scoped** (the
+  `DocumentManagementService#replayed` pattern): the write is natively
+  idempotent, so the guard is against disclosure and key-misuse (`409
+  NT-IDM-001`), not double effect.
+- **`document.received` is written in the SINK's transaction**
+  (`ingestion-routing/queue/document-sink.ts`), not here — same transaction as
+  the document so a toast can never name a rolled-back row; UNROUTED documents
+  are skipped (no business to hang the row on, and the Unrouted queue is its own
+  surface); the accountant's own WEB_UPLOAD/CHAT_UPLOAD never reach the sink, so
+  nobody is notified about their own act.
+
+Tests: `inbox.service.test.ts` (recording fake Prisma — the `where`s, the
+projection, the replay guard) and the routed-notification case in
+`ingestion-routing/queue/document-sink.integration.test.ts` (real Postgres:
+once per document, none on redelivery, none for unrouted).
+
+## The outbound half
+
 **Outbound transactional email, and the first thing in this repository that sends any.**
 
 Before S2 a repo-wide grep for `SESClient`, `sendEmail`, `nodemailer`, `SendEmailCommand`

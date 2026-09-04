@@ -98,13 +98,12 @@ const MAX_WALL_CLOCK_MS = 180_000;
 const EXPORT_ASK = /\bexport(s|ed|ing)?\b|\bvt\b/i;
 
 export const EXPORT_GUIDANCE =
-  "I can't run an export from chat — exports are downloads from the Export tab, " +
-  'where you pick the client and the period and get the VT Transaction+ import ' +
-  'file together with its source documents. An export carries Published ' +
-  'documents only, so Ready ones must be released first: ask me to publish the ' +
-  "ready costs and I'll draft that batch. It goes through Review → Approve, " +
-  "and only your practice's super admin can release it. Nothing leaves the " +
-  'product on its own.';
+  "Exports live on the Export tab — I've opened it. Pick the client and the " +
+  'period and you get the VT Transaction+ import file together with its source ' +
+  'documents. An export carries Published documents only, so Ready ones must be ' +
+  "released first: ask me to publish the ready costs and I'll draft that batch. " +
+  "It goes through Review → Approve, and only your practice's super admin can " +
+  'release it. Nothing leaves the product on its own.';
 
 export interface ChatTurnInput {
   readonly utterance: string;
@@ -209,10 +208,13 @@ export class ChatService {
 
     // The model itself did not route it (GENERAL / SCOPE_REFUSAL straight from
     // the model — `turn.intent`, not a decorate() degradation) and the words
-    // plainly ask for the product's sole egress. Answer with the real thing
-    // rather than a capability list. See EXPORT_GUIDANCE above for the account.
+    // plainly ask for the product's sole egress. Since 5 Sep 2026 the enum has
+    // a real SHOW_EXPORTS the prompt teaches, so the trained path is the model
+    // returning it directly and this override catches the stragglers — and now
+    // ROUTES them (intent SHOW_EXPORTS, the Export screen opens) instead of
+    // answering prose about where the screen is. See EXPORT_GUIDANCE above.
     if ((turn.intent === 'GENERAL' || turn.intent === 'SCOPE_REFUSAL') && EXPORT_ASK.test(input.utterance)) {
-      decorated.intent = 'GENERAL';
+      decorated.intent = 'SHOW_EXPORTS';
       decorated.reply = EXPORT_GUIDANCE;
     }
 
