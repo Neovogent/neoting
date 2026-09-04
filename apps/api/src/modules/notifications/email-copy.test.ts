@@ -158,21 +158,22 @@ test('the chase groups every item into ONE message, one line each (SoT Stage 8.2
   });
 
   expect(subject).toBe("Sparkle Cleaning: we're missing 2 receipts");
-  expect(body).toContain('- Currys £1,299 on 9 Aug');
-  expect(body).toContain('- Screwfix £42.50 on 11 Aug');
+  expect(body).toContain('- Currys on 9 Aug');
+  expect(body).toContain('- Screwfix on 11 Aug');
   expect(body).toContain('https://neoacc.neovogent.com/p/xyz789');
 });
 
-test('the chase money comes from formatGbp — whole pounds drop the pence, and the magnitude is shown', () => {
-  const { body } = composeDocumentRequest({
+test('the chase names NO amount — §8.2 as amended 4 Sep 2026', () => {
+  // An email preview on a lock screen must not carry a client's spending.
+  // Supplier + day identify the receipt; the amounts stay on the OTP-gated
+  // portal list and the accountant's review card.
+  const { subject, body } = composeDocumentRequest({
     businessName: 'Sparkle Cleaning',
-    // Signed pence: a payment OUT. The minus is not part of a sentence
-    // addressed to the person who spent it.
     items: [item('Costa', -3_60, '2026-08-09T12:00:00Z')],
     portalLink: 'https://example.test/p',
   });
-  expect(body).toContain('- Costa £3.60 on 9 Aug');
-  expect(body).not.toContain('-£');
+  expect(body).toContain('- Costa on 9 Aug');
+  expect(`${subject}\n${body}`).not.toContain('£');
 });
 
 test('the single-item chase reads as one thing, not as a list of one', () => {

@@ -13,10 +13,12 @@ import { composeChaseBody, formatPoundsForSms, shortDay, toE164 } from './demoIn
  */
 
 describe('the SMS draft (display-tier — the payload carries only ids and text)', () => {
-  test('the SoT §8.2 copy shape, verbatim for one item', () => {
-    expect(
-      composeChaseBody('American Burger', [{ supplier: 'Currys', amount: 1299.0, date: '09 Aug 2026' }], 'https://x/p/'),
-    ).toBe("American Burger Accounts: we're missing the receipt for Currys £1,299 on 9 Aug. Upload securely: https://x/p/");
+  test('the SoT §8.2 copy shape, verbatim for one item — NO amount (amended 4 Sep 2026)', () => {
+    const body = composeChaseBody('American Burger', [{ supplier: 'Currys', amount: 1299.0, date: '09 Aug 2026' }], 'https://x/p/');
+    expect(body).toBe("American Burger Accounts: we're missing the receipt for Currys on 9 Aug. Upload securely: https://x/p/");
+    // A lock-screen preview must not carry a client's spending; the composer
+    // CARD still shows the amounts to the accountant, the message never does.
+    expect(body).not.toContain('£');
   });
 
   test('grouped per client — one text, a natural list, plural noun', () => {
@@ -28,7 +30,7 @@ describe('the SMS draft (display-tier — the payload carries only ids and text)
       ],
       'https://x/p/',
     );
-    expect(body).toContain("we're missing the receipts for Currys £1,299 on 9 Aug and Google £600 on 5 Aug.");
+    expect(body).toContain("we're missing the receipts for Currys on 9 Aug and Google on 5 Aug.");
   });
 
   test('pounds keep pence only when they carry information', () => {

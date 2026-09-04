@@ -141,7 +141,9 @@ describe.skipIf(!enabled)('chase.send end to end through the engine', () => {
 
     const composed = (created.payload as { messages: Record<string, unknown>[] }).messages[0] ?? {};
     const body = String(composed['body']);
-    expect(body).toContain("we're missing the receipt for Currys £1,299 on 9 Aug");
+    // §8.2 as amended 4 Sep 2026: supplier + day, NO amount in the message.
+    expect(body).toContain("we're missing the receipt for Currys on 9 Aug");
+    expect(body).not.toContain('£');
     expect(body).toBe(
       composeChaseSms({
         businessName: 'American Burger',

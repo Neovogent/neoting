@@ -11,6 +11,7 @@ import { scopedDb } from '../../common/db/scoped-db.js';
 import { fingerprint, type IdempotencyStore } from '../../common/idempotency/idempotency-store.js';
 import { AppException } from '../../common/problem/problem.js';
 import { buildLegalLinks, type NotificationsService } from '../notifications/index.js';
+import { composeClientInviteSms, type InviteSmsWire } from './invite-sms.js';
 import { type BusinessTypeProfile, readBusinessProfile, toStoredProfile } from './business-profile.js';
 import { toBusiness } from './projections.js';
 import { buildSetupLink, hashSetupToken, mintSetupToken, setupLinkExpiry } from './setup-link.js';
@@ -117,6 +118,12 @@ export class ClientIntakeService {
     private readonly idempotency: IdempotencyStore,
     private readonly config: { readonly appOrigin: string },
     private readonly now: () => number = () => Date.now(),
+    /**
+     * The real SMS wire, present only under `SMS_SENDER=aws` (invite-sms.ts).
+     * Absent, the invite travels by email alone — under `demo`/`email` a
+     * second copy of the same email wearing an SMS's name would be noise.
+     */
+    private readonly inviteSms?: InviteSmsWire,
   ) {}
 
   async createClient(ctx: ScopeContext, request: CreateClientRequest, idempotencyKey?: string): Promise<Business> {
@@ -238,6 +245,12 @@ export class ClientIntakeService {
       expiresAt,
       businessId: business.id,
     });
+    await this.sendSetupSms({
+      mobileE164: request.primaryContact.mobileE164 ?? null,
+      practiceName,
+      setupToken,
+      businessId: business.id,
+    });
 
     const response = toBusiness(business);
     await this.remember(idempotencyKey, request, response);
@@ -306,6 +319,34 @@ export class ClientIntakeService {
       this.logger.warn(
         `client created but the setup email was not sent · businessId=${input.businessId} reason=${outcome.reason} retryAfter=${outcome.retryAfterSeconds}s`,
       );
+    }
+  }
+
+  /**
+   * The registration SMS (finding 3, 4 Sep 2026) — the same setup link, by
+   * text, when the intake captured a mobile AND the real wire is configured
+   * (`SMS_SENDER=aws`; invite-sms.ts carries the argument). Best effort like
+   * the email beside it and for the same reason: the client is created either
+   * way, and the accountant's re-send path exists. A refusal — including a
+   * STOP'd number — is logged without the number (Governance §11.6's stance,
+   * applied to phones) and never argued with.
+   */
+  private async sendSetupSms(input: {
+    readonly mobileE164: string | null;
+    readonly practiceName: string;
+    readonly setupToken: string;
+    readonly businessId: string;
+  }): Promise<void> {
+    if (this.inviteSms === undefined || input.mobileE164 === null) return;
+    try {
+      const body = composeClientInviteSms({
+        practiceName: input.practiceName,
+        setupLink: buildSetupLink(this.config.appOrigin, input.setupToken),
+      });
+      await this.inviteSms.sendText(input.mobileE164, body);
+    } catch (error) {
+      const reason = error instanceof Error ? error.name : 'unknown';
+      this.logger.warn(`client created but the setup SMS was not sent · businessId=${input.businessId} reason=${reason}`);
     }
   }
 

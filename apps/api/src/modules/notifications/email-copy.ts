@@ -1,4 +1,4 @@
-import { type ChaseItem, formatDay, formatGbp } from '../chase/index.js';
+import { type ChaseItem, formatDay } from '../chase/index.js';
 import { renderEmailHtml } from './email-html.js';
 import type { SignInCode } from './sign-in-code.js';
 
@@ -320,10 +320,11 @@ export function composeDocumentRequest(input: ComposeDocumentRequestInput): Comp
   const body = lines(
       `We're missing ${input.items.length === 1 ? 'the paperwork' : 'paperwork'} for ${input.items.length === 1 ? 'this payment' : 'these payments'} on the ${input.businessName} account:`,
       '',
-      // "- Currys £1,299 on 9 Aug", one per line. The magnitude, not the sign:
-      // a payment out is money the client spent, and a minus in front of it in
-      // a sentence addressed to them is noise.
-      ...input.items.map((item) => `- ${item.supplierLabel} ${formatGbp(item.amountPence)} on ${formatDay(item.bookedAt)}`),
+      // "- Currys on 9 Aug", one per line — NO amount, the 4 Sep 2026 §8.2
+      // ruling: an email preview on a lock screen must not carry a client's
+      // spending. Supplier + day identify the receipt; the amounts stay on the
+      // OTP-gated portal list and the accountant's review card.
+      ...input.items.map((item) => `- ${item.supplierLabel} on ${formatDay(item.bookedAt)}`),
       '',
       'A photo of the receipt is enough. Upload securely here:',
       input.portalLink,

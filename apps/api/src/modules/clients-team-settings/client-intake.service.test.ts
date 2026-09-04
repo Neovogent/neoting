@@ -39,7 +39,7 @@ const SENT: SendOutcome = { sent: true, kind: 'client-invite', providerMessageId
  * every send. The assertions are on what reaches the database and the email —
  * not on Prisma or SES working.
  */
-function harness(options: { outcome?: SendOutcome; practiceName?: string | null } = {}) {
+function harness(options: { outcome?: SendOutcome; practiceName?: string | null; sms?: 'records' | 'throws' } = {}) {
   const writes: { model: string; data: Record<string, unknown> }[] = [];
   const emails: SendClientInviteInput[] = [];
   let sequence = 0;
@@ -91,12 +91,24 @@ function harness(options: { outcome?: SendOutcome; practiceName?: string | null 
     },
   } as unknown as NotificationsService;
 
+  const texts: { toE164: string; body: string }[] = [];
+  const smsWire =
+    options.sms === undefined
+      ? undefined
+      : {
+          sendText: async (toE164: string, body: string) => {
+            if (options.sms === 'throws') throw new Error('DESTINATION_PHONE_NUMBER_OPTED_OUT');
+            texts.push({ toE164, body });
+            return { messageId: 'aws-msg-1' };
+          },
+        };
+
   const service = new ClientIntakeService(prisma, notifications, new InMemoryIdempotencyStore(), {
     appOrigin: 'https://app.example.test',
-  }, () => NOW);
+  }, () => NOW, smsWire);
 
   const of = (model: string) => writes.filter((write) => write.model === model).map((write) => write.data);
-  return { service, writes, emails, of };
+  return { service, writes, emails, texts, of };
 }
 
 async function refusal(promise: Promise<unknown>): Promise<AppException> {
@@ -269,4 +281,51 @@ test('a client RLS cannot see has no profile to read — 404, never 403', async 
   // And the id is never echoed back: a 404 that quotes the id is a 404 that
   // confirms what was asked for.
   expect(JSON.stringify(error)).not.toContain('biz_elsewhere');
+});
+
+// ── the registration SMS (finding 3, 4 Sep 2026) ────────────────────────────
+
+test('a mobile plus the real wire sends the setup link by TEXT too — in the practice’s name, no credential', async () => {
+  const { service, texts } = harness({ sms: 'records' });
+
+  await service.createClient(
+    CTX,
+    request({ primaryContact: { firstName: 'Ana', lastName: 'Rossi', email: 'ana@sparkle.test', mobileE164: '+447700900123' } }),
+    'key-sms-1',
+  );
+
+  expect(texts).toHaveLength(1);
+  expect(texts[0]?.toE164).toBe('+447700900123');
+  expect(texts[0]?.body).toContain('Mercer & Co has invited you');
+  expect(texts[0]?.body).toContain('https://app.example.test/app/setup?setupToken=');
+  // The setup token IS the authorisation; the sign-in code travels separately.
+  expect(texts[0]?.body).not.toMatch(/code|password/i);
+});
+
+test('no mobile, no SMS — and no wire, no SMS, however many mobiles', async () => {
+  const withWire = harness({ sms: 'records' });
+  await withWire.service.createClient(CTX, request(), 'key-sms-2');
+  expect(withWire.texts).toHaveLength(0);
+
+  const withoutWire = harness();
+  await withoutWire.service.createClient(
+    CTX,
+    request({ primaryContact: { firstName: 'Ana', lastName: 'Rossi', email: 'ana@sparkle.test', mobileE164: '+447700900123' } }),
+    'key-sms-3',
+  );
+  expect(withoutWire.texts).toHaveLength(0);
+});
+
+test('a refused SMS — a STOP’d number — never fails the intake: the client exists and the email went', async () => {
+  const { service, emails, of } = harness({ sms: 'throws' });
+
+  const business = await service.createClient(
+    CTX,
+    request({ primaryContact: { firstName: 'Ana', lastName: 'Rossi', email: 'ana@sparkle.test', mobileE164: '+447700900123' } }),
+    'key-sms-4',
+  );
+
+  expect(business.id).toBeDefined();
+  expect(emails).toHaveLength(1);
+  expect(of('invite')).toHaveLength(1);
 });
