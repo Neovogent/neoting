@@ -294,6 +294,24 @@ id. Safe because `assertCan` reads only `role`; honest because a contact id is a
 genuine, stable identifier for the person acting. `role === null` — a chase
 session, whose `contact_id` is deliberately NULL — refuses, as everywhere here.
 
+## `business.profile.manage` — the FOURTH `PermittedAction` (5 Sep 2026)
+
+`PUT /portal/business-profile` (the setup journey's details step, review item 4)
+is a client business restating its own record — trading name, company number,
+legal structure, industry, website, VAT facts. The rule lives here with the
+other three, for this file's standing reason.
+
+**`mayManageProfile(actor)` is `BUSINESS_ADMIN` only — deliberately NARROWER
+than `business.people.manage`.** A `USER_ADMIN` was granted exactly people
+management and nothing else (that role's whole definition); a company number, a
+VAT registration and a legal structure are the owner's facts to state.
+`role === null` refuses, as everywhere here. Like the other two portal-facing
+actions it takes **no resource**: the portal session's `otp_sessions` row fixes
+the business before this is reached. The refusal is `NT-PRM-001` with its own
+sentence ("Only an owner at your business can change its own details").
+Consumer: `modules/portal/portal-business-profile.service.ts`, through
+`index.ts`.
+
 ## `document.purge` — the fourteenth kind (2 Sep 2026)
 
 Permanent document deletion, added with the Trash work in `modules/documents`.

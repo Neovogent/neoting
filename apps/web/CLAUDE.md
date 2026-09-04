@@ -484,14 +484,25 @@ Five things that are decisions, not details:
   purpose: this runs on mobile data.
 
 **⚠ Panels that were deliberately NOT built, because no server path exists:**
-business details editing, notification preferences, and the Upload tab's "note
-for your accountant" (`PortalUploadRequest` has no note field). Each is a
-read-only statement of what is true instead. The repo rule holds — a control
-whose write the next poll reverts is worse than absent.
+notification preferences — a read-only statement of what is true. The repo rule
+holds — a control whose write the next poll reverts is worse than absent.
 
 ⚠ **Member management LEFT that list on 2 Sep 2026** — it has a server path now
 (four contracted operations), so the rule is satisfied rather than bent. See
 *Settings → People* below.
+
+⚠ **Business details and the upload note LEFT it on 5 Sep 2026**, both by the
+contract growing the path rather than the rule bending. `PUT
+/portal/business-profile` gave the onboarding journey a skippable,
+every-field-optional details step between welcome and subscribe (`DetailsStep`
+in `BusinessOnboardingView.tsx`; only answered fields travel — omitted is
+UNCHANGED server-side — and an already-subscribed client still skips straight
+to subscribed; a Settings-tab edit panel is still open). `PortalUploadRequest`
+gained `note`, and with it the Upload tab STAGES files on selection — per-file
+optional name, remove, and an explicit **Upload** button in
+`LivePortalUpload.tsx` — instead of firing on select; a failed file stays
+staged. The server makes the name the display filename (real extension kept)
+and records the client's words on the provenance event.
 The plan panel IS correct here, unlike in the prototype: D48 makes the client the
 payer, and `PortalSummary.subscription` plus a portal-authorised
 `POST /billing/portal-sessions` make it real.

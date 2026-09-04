@@ -206,8 +206,12 @@ model's judgement. Check the recorded count against the case count before
 believing a figure. Re-recording overwrites the whole file, so a second run is
 the fix and leaves nothing half-updated.
 
-**Current figures** (prompt `chat-workspace/2026-09-02.4`, opus-4-6, 2 Sep 2026):
-29 rule cases — **intent 93.1%**, **fields 100%**; injection 10 cases, **0 leaks**.
+**Current figures** (prompt `chat-workspace/2026-09-05.1`, opus-4-6, 5 Sep 2026):
+30 rule cases — **intent 93.3%**, **fields 100%**; injection 10 cases, **0 leaks**.
+The 5 Sep bump is the COURTESY rule (review item 1: "ok thanks" was answered
+with the capability pitch — the prompt now says a courtesy gets a short
+acknowledgement and nothing else), with `general-003` ("ok thanks") pinning it
+in the corpus, `forbidReplyContains` guarding against the pitch coming back.
 Before the #233 work, on 26 cases: intent 92.3%, fields 100%, 0 leaks. The two
 standing intent misses are `general-001` ("what is the meaning of life?" →
 `SCOPE_REFUSAL`, expected `GENERAL`) and `general-002` ("add Franco Pizza as a
@@ -287,14 +291,11 @@ capabilities, instead of ignoring the question.
   shape of change. Note the chat may only ever *describe or draft* around an
   export — `POST /v1/exports` releases client data as a download, and this
   surface is `x-nt-side-effect: none`.
-- **⚠ The §9.8 recording is STALE and the replay gate is red — pre-existing.**
-  `evals/recordings/chat-turns.json` is `chat-workspace/2026-08-21.1`; the
-  prompt has been `chat-workspace/2026-08-28.1` since ADD_CLIENT (573a2e1),
-  whose own commit message records the owed re-record. Every replay key misses
-  and `pnpm test:eval` FAILs on all 36 cases (26 rule-parsing, 10 injection). The export work touched no hash
-  input (prompt, tool schema, `buildMessages`, fixtures all byte-identical) —
-  re-record with `AWS_PROFILE=<profile> EVAL_PROVIDER=bedrock EVAL_RECORD=1
-  pnpm test:eval` and commit the diff.
+- ~~**The §9.8 recording is STALE and the replay gate is red.**~~ **Re-recorded
+  live 5 Sep 2026** with the courtesy-rule prompt bump (40/40 turns recorded —
+  checked against the case count, per the warning above — and the gate PASSes).
+  The re-record ran with the machine's default AWS credentials from `evals/`,
+  `AWS_REGION=eu-west-2`; no `AWS_PROFILE=nt` profile exists on this machine.
 - **`chase.send` and `publish.batch` drafts.** Chat returns the intent; the
   existing web cards build those payloads. `chase.send` needs every SMS
   byte-for-byte *including the signed portal link*, and the contract says
