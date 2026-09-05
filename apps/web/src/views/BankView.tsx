@@ -78,10 +78,16 @@ const m = defineMessages({
   heading: { id: 'bank.bankView.heading', defaultMessage: 'Bank' },
   bankLoading: { id: 'bank.bankView.loading', defaultMessage: 'Loading the bank feed…' },
   bankError: { id: 'bank.bankView.loadError', defaultMessage: 'Could not load the bank feed — {error}' },
-  matchesLiveNote: {
-    id: 'bank.bankView.matchesLiveNote',
+  matchesLiveEmpty: {
+    id: 'bank.bankView.matchesLiveEmpty',
     defaultMessage:
-      'Confirmed matches live on the transaction rows in this build — confirm a suggested match and the row flips to Matched, through Review → Approve.',
+      'No confirmed matches yet. Confirm a suggested match from the Transactions tab — through Review → Approve — and it lists here.',
+  },
+  matchLivePill: { id: 'bank.bankView.matchLivePill', defaultMessage: 'Confirmed' },
+  matchOpenDocument: { id: 'bank.bankView.matchOpenDocument', defaultMessage: 'Open document' },
+  matchDocumentUnavailable: {
+    id: 'bank.bankView.matchDocumentUnavailable',
+    defaultMessage: 'The matched document is not in view — find it on the client’s Documents tab.',
   },
   unexplainedSummary: {
     id: 'bank.bankView.unexplainedSummary',
@@ -459,6 +465,12 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
    */
   const verdicts = useMemo(() => {
     const map = new Map<string, MatchVerdict>();
+    // One receipt cannot answer two bank lines: a document already claimed by
+    // a match is out of every other transaction's candidate pool (item 32 —
+    // the dialog offered a matched-and-published document as "Probable" for a
+    // second line). Live, `matchedDocId` rides exactly the CONFIRMED rows
+    // (Phase 4), which is precisely the claimed set.
+    const claimed = new Set(transactions.filter((t) => t.matchedDocId !== undefined).map((t) => t.matchedDocId as string));
     for (const t of transactions) {
       // `isMatched`, not `matchedDocId`, everywhere the question is "does this
       // line already have its evidence". A server-confirmed row carries
@@ -466,7 +478,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
       // so keying on the id alone would show every persisted match as
       // unmatched the moment the screen ran on real data (METH Stage 11).
       if (isMatched(t)) continue;
-      map.set(t.id, assessTransaction(intl, t, documents, matchSettings));
+      map.set(t.id, assessTransaction(intl, t, documents, matchSettings, claimed));
     }
     return map;
   }, [intl, transactions, documents, matchSettings]);
@@ -501,6 +513,22 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
   const scopedMatches = matches.filter(
     (match) => clientFilter === 'all' || clients.find((c) => c.id === clientFilter)?.name === match.clientName,
   );
+  // The LIVE matches list is derived from the feed itself — the rows whose
+  // `isMatched` is true, joined to the hydrated documents slice by
+  // `matchedDocId` (on the wire for exactly the CONFIRMED rows, Phase 4).
+  // Until 5 Sep 2026 (review item 35) the live tab was a pointer card and its
+  // count was `scopedMatches.length` over the SYNTHETIC array — empty in every
+  // live build — so a client with a confirmed match read "Matches 0" and the
+  // tab said matches lived somewhere else. `transactions` is what the confirm
+  // refetch updates, so a new confirmation appears here on the same read that
+  // flips its row.
+  const liveMatches = useMemo(() => {
+    if (!liveBank) return [];
+    return transactions
+      .filter((t) => (clientFilter === 'all' || isSameClient(t.clientId, clientFilter)) && isMatched(t))
+      .map((t) => ({ txn: t, doc: t.matchedDocId === undefined ? undefined : documents.find((d) => d.id === t.matchedDocId) }));
+  }, [liveBank, transactions, clientFilter, isSameClient, documents]);
+  const matchesCount = liveBank ? liveMatches.length : scopedMatches.length;
   // Live rows are keyed by the SERVER's business id, seeded ones by the seed's,
   // so the comparison goes through the same tolerant bridge every other
   // client-scoped filter on this screen uses.
@@ -582,8 +610,20 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
   // Two numbers on one screen, both labelled "unexplained", by construction.
   // See the doc comment on `isUnexplained` for why the two predicates are
   // deliberately different functions rather than one.
-  const unmatchedCount = scopedTxns.filter(isUnexplained).length;
-  const unexplained = scopedTxns.filter(isUnexplained).reduce((n, t) => n + Math.abs(t.amount), 0);
+  //
+  // ⚠ Counted over the CLIENT SCOPE, never over `scopedTxns` — which folds in
+  // the evidence lens, the search box and the refinement panel. It did until
+  // 5 Sep 2026 (review item 35): selecting the Matched lens made the header
+  // read "0 unexplained · £0.00" beside a non-zero "Needs you", because a
+  // matched row is never unexplained BY CONSTRUCTION. The headline is a claim
+  // about the client's position, and a filter changes what is listed, not what
+  // is true.
+  const clientScopedTxns = useMemo(
+    () => transactions.filter((t) => clientFilter === 'all' || isSameClient(t.clientId, clientFilter)),
+    [transactions, clientFilter, isSameClient],
+  );
+  const unmatchedCount = clientScopedTxns.filter(isUnexplained).length;
+  const unexplained = clientScopedTxns.filter(isUnexplained).reduce((n, t) => n + Math.abs(t.amount), 0);
 
   // Counted across the client scope rather than the current filter, so the tab
   // does not read "Needs you (0)" while it is the tab you are looking at.
@@ -594,14 +634,8 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
   // `!isMatched` row by construction, so `verdicts` — which is keyed on the
   // matcher's question and stays there — always has an entry to look up.
   const needsYouCount = useMemo(
-    () =>
-      transactions.filter(
-        (t) =>
-          (clientFilter === 'all' || isSameClient(t.clientId, clientFilter)) &&
-          isUnexplained(t) &&
-          verdicts.get(t.id)?.kind === 'confused',
-      ).length,
-    [transactions, clientFilter, verdicts, isSameClient],
+    () => clientScopedTxns.filter((t) => isUnexplained(t) && verdicts.get(t.id)?.kind === 'confused').length,
+    [clientScopedTxns, verdicts],
   );
 
   /** Composed here — the transaction is already chosen. */
@@ -626,7 +660,21 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
       render: (t) => {
         if (isMatched(t)) {
           const match = matches.find((x) => x.transactionId === t.id);
-          return <Pill tone="green">{intl.formatMessage(match?.auto ? m.matchedByAi : m.matchedByHand)}</Pill>;
+          // The matched DOCUMENT beside the verdict (item 35): live rows carry
+          // `matchedDocId` for exactly the CONFIRMED matches, and the hydrated
+          // documents slice knows its name. A pill alone says "matched" and
+          // leaves "to what?" a trip to another tab.
+          const matchedDoc = t.matchedDocId === undefined ? undefined : documents.find((d) => d.id === t.matchedDocId);
+          return (
+            <span className="flex flex-col items-start gap-1">
+              <Pill tone="green">{intl.formatMessage(match?.auto ? m.matchedByAi : m.matchedByHand)}</Pill>
+              {matchedDoc !== undefined && (
+                <span className="text-[11px] text-zinc-500 font-medium">
+                  {matchedDoc.supplier} · {currency(Math.abs(matchedDoc.total))}
+                </span>
+              )}
+            </span>
+          );
         }
         const v = verdictFor(t);
         if (v.kind === 'confused') {
@@ -656,7 +704,22 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
           // offering a button that silently does nothing is not, and that is
           // what the old `if (!match) return` inside the handler would have
           // become the moment the screen ran on real data.
-          if (!match || t.matchState !== undefined) return null;
+          //
+          // What a live matched row CAN offer is its evidence (item 35): the
+          // matched document opens in preview when the slice resolves it.
+          if (!match || t.matchState !== undefined) {
+            const matchedDoc = t.matchedDocId === undefined ? undefined : documents.find((d) => d.id === t.matchedDocId);
+            if (matchedDoc === undefined) return null;
+            return (
+              <button
+                onClick={(e) => { e.stopPropagation(); setPreviewDoc(matchedDoc); }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-bold text-zinc-400 hover:text-white hover:bg-white/5 border border-white/5 transition-colors"
+              >
+                <Eye size={12} />
+                {intl.formatMessage(m.matchOpenDocument)}
+              </button>
+            );
+          }
           return (
             <button
               onClick={async (e) => {
@@ -834,8 +897,10 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
               key: t,
               label: intl.formatMessage(TAB_LABELS[t]),
               // A count only exists on Matches, and SubTab asks for the key to
-              // be absent rather than present and undefined.
-              ...(t === 'Matches' ? { count: scopedMatches.length } : {}),
+              // be absent rather than present and undefined. `matchesCount` is
+              // the same set the tab lists — live or synthetic — so the number
+              // can never disagree with the list it opens (item 35).
+              ...(t === 'Matches' ? { count: matchesCount } : {}),
               alert: t === 'Statements' && scopedGaps.length > 0,
               badge:
                 t === 'Statements' && scopedGaps.length > 0 ? (
@@ -860,7 +925,7 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                 }`}
               >
                 {intl.formatMessage(TAB_LABELS[t])}
-                {t === 'Matches' && scopedMatches.length > 0 && <span className="ml-2 opacity-60">{scopedMatches.length}</span>}
+                {t === 'Matches' && matchesCount > 0 && <span className="ml-2 opacity-60">{matchesCount}</span>}
                 {t === 'Statements' && scopedGaps.length > 0 && (
                   <span className="ml-2 text-amber-400">
                     {intl.formatMessage(m.gapBadge, { count: scopedGaps.length })}
@@ -982,12 +1047,72 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
               two on a laptop, three on a wide screen. */}
           {tab === 'Matches' && (
             // The seed match cards point at seed transactions the live rows
-            // replaced — meaningless against the feed. Live, this tab says
-            // where matches actually live (METH S14 sweep).
+            // replaced — meaningless against the feed. Live, the list is
+            // derived from the feed itself (`liveMatches`): the CONFIRMED rows
+            // joined to the hydrated documents slice. This replaced the S14
+            // pointer card on 5 Sep 2026 (review item 35) — the pointer was
+            // honest when no live match could exist; with real confirmations
+            // in the data, a tab saying "matches live elsewhere" beside a
+            // count of 0 was two lies about one row.
             liveBank ? (
-              <div className="border border-white/5 rounded-[32px] bg-card p-4 md:p-10 text-center text-zinc-500 text-[13px] shadow-2xl">
-                {intl.formatMessage(m.matchesLiveNote)}
-              </div>
+              liveMatches.length === 0 ? (
+                <div className="border border-white/5 rounded-[32px] bg-card p-4 md:p-10 text-center text-zinc-500 text-[13px] shadow-2xl">
+                  {intl.formatMessage(m.matchesLiveEmpty)}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
+                  {liveMatches.map(({ txn: t, doc }) => (
+                    <div
+                      key={t.id}
+                      className="border border-white/5 rounded-[24px] bg-card shadow-2xl overflow-hidden flex flex-col"
+                    >
+                      <div className="p-5 flex items-center justify-between gap-3 flex-wrap border-b border-white/5">
+                        {/* The state, not a provenance guess: the wire carries
+                            matchState + matchedDocumentId and neither says who
+                            decided (a contract gap noted in apps/web/CLAUDE.md).
+                            "Confirmed" is exactly what the server holds. */}
+                        <Pill tone="green">{intl.formatMessage(m.matchLivePill)}</Pill>
+                        <span className="text-[13px] font-bold text-white tabular-nums">{currency(Math.abs(t.amount))}</span>
+                      </div>
+                      <div className="p-5 flex flex-col gap-3 flex-1">
+                        <div>
+                          <div className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest mb-1">
+                            {intl.formatMessage(m.documentSection)}
+                          </div>
+                          {doc !== undefined ? (
+                            <div className="text-[13px] text-white font-semibold leading-snug">
+                              {doc.supplier} · {currency(Math.abs(doc.total))} · {doc.date}
+                            </div>
+                          ) : (
+                            <div className="text-[12px] text-zinc-500 leading-snug">
+                              {intl.formatMessage(m.matchDocumentUnavailable)}
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <div className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest mb-1">
+                            {intl.formatMessage(m.transactionSection)}
+                          </div>
+                          <div className="text-[13px] text-zinc-400 leading-snug">
+                            {t.description} · {t.date} · {t.clientName}
+                          </div>
+                        </div>
+                      </div>
+                      {doc !== undefined && (
+                        <div className="p-4 bg-raised/50 flex items-center justify-end">
+                          <button
+                            onClick={() => setPreviewDoc(doc)}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold text-zinc-400 hover:text-white hover:bg-white/5 border border-white/5 transition-colors"
+                          >
+                            <Eye size={12} />
+                            {intl.formatMessage(m.matchOpenDocument)}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )
             ) : scopedMatches.length === 0 ? (
               <div className="border border-white/5 rounded-[32px] bg-card p-4 md:p-10 text-center text-zinc-500 text-[13px] shadow-2xl">
                 {intl.formatMessage(m.matchesEmpty)}
@@ -1275,7 +1400,19 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
                 setMatchFor(null);
               }}
               onCashCode={() => { setCashFor(matchFor); setMatchFor(null); }}
-              onChase={() => { chase([matchFor.clientId]); setMatchFor(null); }}
+              // Live, "Chase for it" stages the REAL server-composed
+              // `chase.send` proposal — the same seam the bulk selection uses
+              // (item 15), narrowed to this one transaction. It used to open
+              // the synthetic composer, which computes over the seeded
+              // `missing` array — empty by design in a live build — so the
+              // button did nothing an accountant could see (review item 33).
+              // The queued/failed outcome renders in the banner above the
+              // table, same as the bulk path.
+              onChase={() => {
+                if (liveBank) void stageLiveChase([matchFor]);
+                else chase([matchFor.clientId]);
+                setMatchFor(null);
+              }}
             />
           </Modal>
         )}

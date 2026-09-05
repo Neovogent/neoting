@@ -446,6 +446,23 @@ interface AppContextType {
   startConversation: (clientIds: string[], seed?: Message[]) => void;
 
   /**
+   * A question queued for the REAL chat lane — set beside `startConversation`
+   * by a drill-in whose answer must come from the server, consumed once by
+   * `InputRow`, which submits it through the same path a typed utterance takes.
+   *
+   * It exists because the alternative shipped as review item 25 (5 Sep 2026):
+   * ClientDetailView's AI-tab prompts fabricated the whole exchange locally —
+   * a canned user message, "Here you go:", and a card computed over the
+   * synthetic context arrays, which with the API on are EMPTY by design — so
+   * "What is still missing for Zeplow Inc.?" answered "Nothing missing" while
+   * the Bank screen showed a page of undocumented lines. No data was ever
+   * read. Live, the prompts now ask the model like any typed question;
+   * synthetic keeps the injected-card flow (METH_MODE §1).
+   */
+  pendingUtterance: string | null;
+  setPendingUtterance: (utterance: string | null) => void;
+
+  /**
    * Set while a server-answered reply is in flight, so the transcript can show
    * that something is coming instead of a silent gap. Null when nothing is
    * pending. `businessName` is the client whose records the server is reading,
@@ -1323,6 +1340,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setFallbackConversationId(conversation.id);
     navigate(path('chat', conversation.id));
   }, []);
+
+  // See the interface comment: the drill-in → real-chat bridge (review item
+  // 25). Plain state — InputRow consumes it once, with a ref guarding the
+  // StrictMode double-effect.
+  const [pendingUtterance, setPendingUtterance] = useState<string | null>(null);
 
   const startFresh = useCallback(() => {
     const draft = newDraft(active?.attachedClientIds ?? ['1']);
@@ -2977,6 +2999,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         messages,
         attachedClients,
         startConversation,
+        pendingUtterance,
+        setPendingUtterance,
         assistantPending,
         setAssistantPending,
         addMessage,

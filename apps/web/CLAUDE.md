@@ -1715,6 +1715,87 @@ floor 203,481 → 203,522 B (**+41 B**); worst route (`ClientDetailView` + its
 embedded `BankView` chunk) 244,997 → **245,050 B**, i.e. **+53 B** and
 **4,950 B of headroom** against the 250,000 B budget.
 
+## The matching-lane data-truth package (5 Sep 2026 — review items 25/30/32/33/34/35)
+
+Six surfaces showed matching data that disagreed with what the server held, and
+a **staging read proved the server right first**: Zeplow's confirmed match WAS
+`CONFIRMED` with its `matches` row, and the one genuine server defect was
+statement ingest never writing `chaseSuppressed` (fixed in its own lane — 631
+settlement credits were legitimately "unexplained" until then). Everything else
+was this app's, and each fix is a decision worth knowing:
+
+- **The Bank headline is computed over the CLIENT SCOPE, never over
+  `scopedTxns`** (`clientScopedTxns` in `BankView.tsx`). It used to fold in the
+  evidence lens, the search box and the refinement panel, so selecting the
+  Matched lens made the header claim "0 unexplained · £0.00" beside a non-zero
+  "Needs you" — a lens changes what is LISTED, not what is true.
+  `needsYouCount` shares the same base, so the header, the pill and the lens
+  can no longer disagree.
+- **The Matches sub-tab derives from the feed** when live:
+  `transactions.filter(isMatched)` joined to the hydrated documents slice by
+  `matchedDocId`, one derivation for the count and the cards, replacing the S14
+  pointer card (honest when no live match could exist; a lie once real
+  confirmations existed) and the synthetic `matches.length` count (always 0
+  live). The live card's pill says **"Confirmed"**, not who decided — the wire
+  carries `matchState` + `matchedDocumentId` and no provenance; a `matchedBy`
+  on `BankTransaction` is the recorded contract follow-up. Matched rows in the
+  Transactions table also show the document's name and an "Open document"
+  preview button.
+- **The candidate dialog's "Chase for it" stages the REAL chase when live** —
+  `stageLiveChase([txn])`, item 15's server-composed `chase.send` seam narrowed
+  to one transaction, outcome in the banner above the table. It used to open
+  the synthetic composer over the seeded `missing` array, which live is empty
+  by design, so the button visibly did nothing (item 33).
+- **`lib/matching.ts`: the probable tier is split by SIGN, and the claimed set
+  is consulted on the dialog path** (item 32). A DEBIT probable requires amount
+  agreement (`PROBABLE_AMOUNT_TOLERANCE`, 10%, confidence scaled by the gap) —
+  a weekly supplier makes name-only hits the EXPECTED collision, so the
+  £674-vs-£994 shape yields no candidate instead of "Probable 48%". A CREDIT
+  keeps the name-only question (a partial refund genuinely differs from its
+  invoice — the seeded Bidfood-refund pin). `matchCandidates`/`assessTransaction`
+  take optional `claimedDocIds`; BankView builds it from `matchedDocId` (live:
+  exactly the CONFIRMED rows) so one receipt can never be offered for two
+  lines. Still display-tier float pounds; the pence rewrite stays owed.
+- **The chat drill-ins go through the REAL chat lane when live.**
+  ClientDetailView's AI-tab prompts used to fabricate the whole exchange —
+  canned user text, "Here you go:", and a card over the EMPTY live context
+  arrays, which is how "What is still missing?" answered "Nothing missing" over
+  data nobody read (item 25). Live they set `pendingUtterance` (AppContext) and
+  `InputRow` consumes it ONCE (a ref guards StrictMode's double effect; a
+  signed-out session clears it rather than falling to `classifyLocally`) and
+  submits through `POST /chat/turns`. Synthetic keeps the injected-card flow
+  byte-for-byte. ⚠ ClientsView's drill columns still fabricate
+  (`SHOW_MISSING_TABLE`/`SHOW_MATCHES` over empty live arrays) — flagged, not
+  fixed.
+- **`LiveMissingCard` and `LiveChaseComposerCard` may only claim emptiness over
+  a genuinely read set.** Both consult `slices.bankTransactions`: a failed or
+  never-made read renders "I can't verify" / "could not be read" (`role=alert`),
+  loading says so, truncation is named, and the missing card refuses a
+  `businessId` that resolves to no server business (the id-bridge failure
+  shape) instead of answering about nobody. **The composer defaults UNTICKED**
+  — an `included` set replaced the pre-ticked `excluded` one; chasing is opt-in
+  per line (deliberate behaviour change, item 30) and staging stays disabled
+  until a line is picked.
+- **`DocumentPreview`'s bank-match section ALWAYS answers when live** (item
+  34): the match, an explicit "No bank match found yet", a loading line, or a
+  visible retryable read failure. It rendered only when a match existed, so
+  "unmatched" and "panel broken" were the same blank — and the fail-closed
+  parse rendered as nothing, which is fail-closed only to someone reading the
+  code. The old test pinning the silence pinned the defect and was replaced.
+
+Component tests: `LiveMissingCard.test.tsx`, `LiveChaseComposerCard.test.tsx`,
+the three new `DocumentPreview.test.tsx` states, and the item-32 shapes in
+`matching.test.ts` verbatim. Verified in the real app end to end (screenshots
+in `docs/reviews/assets/2026-09-05-matching-lane/`).
+
+**Bundle (closure walk over dist static imports, gzip level 6 — NOT a paired
+A/B; other lanes' drift baked in):** floor 206,973 B (+90 B vs the 5 Sep
+baseline — the AppContext `pendingUtterance` bridge and the matching.ts
+additions), `InboxesView` 249,773 B (still the thinnest, **227 B headroom**),
+`ClientDetailView` 248,436 B, `BankView` 242,733 B, `AIWorkspaceView`
+**295,282 B — the pre-existing breach, deepened ~1 kB** by the two cards'
+honesty states, which belong on that chunk by the reachability rule.
+
 ## The correction-integrity package (5 Sep 2026 — review items 22/36/46/47, feeding 29)
 
 A reviewer typed £9,000 of tax onto a £994 zero-rated invoice, "jhngbhf" into
