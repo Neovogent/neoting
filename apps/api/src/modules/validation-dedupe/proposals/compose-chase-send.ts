@@ -90,10 +90,35 @@ export async function computeChaseSendPayload(
       const requestedIds = [...new Set(message.transactionIds)];
       const transactions = await db.bankTransaction.findMany({
         where: { id: { in: requestedIds } },
-        select: { id: true, businessId: true, amountPence: true, bookedAt: true, descriptionRaw: true, merchantName: true },
+        select: {
+          id: true,
+          businessId: true,
+          amountPence: true,
+          bookedAt: true,
+          descriptionRaw: true,
+          merchantName: true,
+          matchState: true,
+          chaseSuppressed: true,
+        },
       });
       if (transactions.length !== requestedIds.length) {
         throw new ProposalExecutionRefused('chase.send', 'a chased transaction is not reachable');
+      }
+      // The chase-detection predicate, enforced at COMPOSE (5 Sep 2026). The
+      // caller's list is a courtesy, never the decision: a CONFIRMED line has
+      // its evidence on file, a SUGGESTED one is already in front of a human,
+      // and a suppressed line (a settlement credit, a bank charge) has no
+      // receipt in existence — a client asked for any of these gets a request
+      // the accountant then has to apologise for. Mirrors detection.ts's
+      // `matchState: 'UNMATCHED', chaseSuppressed: false`; refuses the whole
+      // message (the batch discipline) so the reviewer never reads a body
+      // quietly missing lines the caller named.
+      const unchaseable = transactions.filter((t) => t.matchState !== 'UNMATCHED' || t.chaseSuppressed);
+      if (unchaseable.length > 0) {
+        throw new ProposalExecutionRefused(
+          'chase.send',
+          `${unchaseable.length} of the ${transactions.length} lines cannot be chased: already matched, suggested, or a line with no paperwork to ask for (a credit or a bank charge)`,
+        );
       }
       const businessIds = new Set(transactions.map((t) => t.businessId));
       const first = transactions[0]?.businessId;

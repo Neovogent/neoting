@@ -4,7 +4,7 @@ import { importFingerprintsFor } from './row-identity.js';
 import { formatFor } from './sheet-reader.js';
 import { parseStatement, parseStatementGrid, type ParsedStatement, type ParseResult } from './statement-parser.js';
 import { isOcrMedia, type DocumentOcr, type OcrFailure } from '../../../common/ocr/document-ocr.js';
-import { closeStatementRequestChases } from '../../chase/index.js';
+import { closeStatementRequestChases, isChaseSuppressed } from '../../chase/index.js';
 
 /**
  * An uploaded bank statement becomes `Statement` + `BankTransaction` rows.
@@ -296,7 +296,26 @@ export async function ingestStatement(
       // list's set, so a line arriving in any other state would be a payment
       // silently exempted from ever being chased for its receipt.
       matchState: 'UNMATCHED' as const,
-      chaseSuppressed: false,
+      // ⚠ The suppression VERDICT is written here, at the row's creation,
+      // because the column is what every counting surface reads
+      // (`businesses.service.ts`'s unexplained count, the web's
+      // `isUnexplained`, chase detection's own `where`). This wrote a literal
+      // `false` until 5 Sep 2026, so on real data — where this lane is the
+      // ONLY writer of bank rows (D40) — no line was EVER suppressed: a
+      // client's 631 settlement credits (Worldpay, Just Eat) sat in the
+      // unexplained count and were offered to the chase composer as receipts
+      // to ask for. Detection alone re-scanned descriptors at read time and
+      // silently disagreed with every count beside it — the exact two-doors
+      // drift `bank-transactions.service.ts` warns about.
+      //
+      // Two rules, one writer:
+      // - a CREDIT (money in — a payout, a settlement, a customer payment)
+      //   has no purchase receipt in existence to chase;
+      // - the SoT Stage 7 descriptor list (`chase/suppression.ts`, imported
+      //   through the chase seam — the rules stay the chase lane's).
+      // Suppression gates CHASING and the unexplained counts only — a
+      // suppressed line still lists, still matches, still reconciles.
+      chaseSuppressed: row.amountPence > 0 || isChaseSuppressed(row.description),
     })),
     // ⚠ `ON CONFLICT DO NOTHING` against `(account_id, import_fingerprint)`.
     //

@@ -58,7 +58,15 @@ Twilio, ever), not a fake system.
   SUMUP · WORLDPAY · STRIPE PAYOUT`) + `isChaseSuppressed(descriptionRaw)`, a
   pure case-insensitive substring predicate. The per-client extension SoT names
   is a recorded seam (needs a schema column, G7). Nobody is chased for a receipt
-  that cannot exist.
+  that cannot exist. ⚠ **Since 5 Sep 2026 it has a second consumer through the
+  seam: statement ingest** (`banking-matching/statement-ingest/`) writes the
+  `chaseSuppressed` COLUMN with this predicate (plus "a credit is suppressed" —
+  money in has no purchase receipt) at row creation. Until then the column had
+  no live writer at all, detection's read-time descriptor scan was the only
+  thing standing, and every counting surface disagreed with it — the review
+  items 25/30 incident. Changing this list now changes what ingest STORES, not
+  just what detection skips; `db/backfill-chase-suppression.ts` is the shape a
+  list change would re-run to re-derive old rows.
 - **`detection.ts`** — `detectUnmatchedChases(db, businessId)`, **engine (a)
   only**. Takes a `ScopedClient` (the caller opens `scopedDb`, RLS decides
   visibility). **Four gates since A13**, each closing a different way of asking

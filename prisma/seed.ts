@@ -558,7 +558,11 @@ async function main() {
         merchantName: t.merchant ?? t.desc.split(' ')[0] ?? null,
         classification: t.pounds > 0 ? 'income' : 'expense',
         matchState: t.state,
-        chaseSuppressed: suppressed.some((s) => t.desc.includes(s)),
+        // The SAME rule statement ingest writes (5 Sep 2026): a credit has no
+        // purchase receipt to chase, and the SoT Stage 7 descriptors have none
+        // either. A seed writing a different verdict than the one live writer
+        // is how a reseed resurrects the drift the backfill repaired.
+        chaseSuppressed: t.pounds > 0 || suppressed.some((s) => t.desc.includes(s)),
       },
     });
 

@@ -171,6 +171,14 @@ structural) and decides nothing about whether it may happen.
   `composeChaseSms`; `recipientEmail` is resolved for the review render. The
   executor adopts `message.chaseId`, so the reviewed link names the chase the
   approval creates. Exported through `index.ts` beside the publish compute.
+  ⚠ **Since 5 Sep 2026 it enforces chaseability** (review item 30): a named
+  transaction that is not `matchState: 'UNMATCHED' && !chaseSuppressed` —
+  detection's own predicate — refuses the whole message rather than composing
+  a body quietly missing lines, because a CONFIRMED line has its evidence on
+  file, a SUGGESTED one is already in front of a human, and a suppressed one
+  (a settlement credit, a bank charge) has no paperwork in existence. The
+  caller's list was only ever a courtesy; this is where the server decides.
+  Pinned by `compose-chase-send.test.ts`.
 - **`chase.send`** (METH S8) — the flagship effect, `chase-send.ts`. A factory
   `chaseSendExecutor(sender)` taking an `SmsSender` from the **chase module's
   public seam** (`../../chase/index.js`) — the executor's first cross-module

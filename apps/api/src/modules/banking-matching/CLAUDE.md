@@ -76,6 +76,11 @@ Three decisions worth knowing before changing anything here:
   descriptor rules (SERVICE CHARGE, STRIPE PAYOUT…) belong to the chase lane; a
   second implementation on the read path is how the Bank screen and the chase
   list start disagreeing about which lines have paperwork to chase.
+  ⚠ **And until 5 Sep 2026 the column had NO writer on the live path** — see
+  *The suppression verdict is written at ingest* below. The drift this bullet
+  warns about had already happened, one layer down: detection re-scanned
+  descriptors at read time while every count read a column that was always
+  `false`.
 
 ## The automatic match suggester (Phase 4, 1 Sep 2026) — `suggestion/`
 
@@ -445,6 +450,42 @@ What each `undefined` means, because they are different:
 ⚠ A PDF statement whose EXTRACTION failed also arrives here with no OCR, because
 the completion is null. That is harmless in practice: extraction failing means
 `docType` was never written, so this step answers "not mine" before it looks.
+
+### 🚨 The suppression verdict is written at INGEST since 5 Sep 2026 — before that, nothing on the live path ever suppressed a line
+
+The third named data-integrity event in this lane (Mubashir review items 25/30/
+32/33/34/35 — the matching-lane package). `statement-ingest.ts` wrote a literal
+`chaseSuppressed: false` on every row from the day it shipped, and under D40
+this lane is the ONLY writer of bank rows outside `prisma/seed.ts`. Measured on
+staging: one client held 1,491 rows of which **631 were credits (Worldpay,
+Just Eat settlements), every one `chase_suppressed: false`** — all of them in
+the "unexplained" count on every surface and all of them offered to the chase
+composer, pre-ticked, as receipts to ask the client for. `chase/detection.ts`
+alone re-scanned descriptors at read time (its second gate), so the chase
+engine itself never sent one — but the counts (`businesses.service.ts`), the
+web's `isUnexplained`, the chat cards and the compose seam all read the column,
+and they all disagreed with detection. Exactly the two-doors drift the tenancy
+section above warns about.
+
+The rule, written ONCE at row creation (the same shape as `matchState`):
+
+- **a CREDIT (`amountPence > 0`, money in) is suppressed** — a payout, a
+  settlement, a customer payment has no purchase receipt in existence to chase;
+- **a descriptor line is suppressed** — `isChaseSuppressed` from the CHASE
+  seam (`chase/suppression.ts`, the SoT Stage 7 list verbatim). The rules stay
+  the chase lane's; this lane only applies them at write time.
+
+Suppression gates CHASING and the unexplained counts only: a suppressed line
+still lists on the Bank screen, still gets match suggestions, still reconciles.
+Three companions landed with it: `db/backfill-chase-suppression.ts` repairs
+pre-fix rows (per-practice `scopedDb` — the fingerprint backfill's RLS trap
+applies here too — false→true only, idempotent; **run on staging after
+deploy**); `prisma/seed.ts` writes the same rule so a reseed cannot resurrect
+the drift; and the chase COMPOSE seam now refuses matched/SUGGESTED/suppressed
+transaction ids outright (`validation-dedupe/proposals/compose-chase-send.ts`),
+so no caller can put an unchaseable line in front of a reviewer. Pinned by
+`statement-ingest.integration.test.ts` (a credit and a SERVICE CHARGE debit in
+the fixture CSV) and `compose-chase-send.test.ts`.
 
 ### 🚨 Re-uploading a statement used to DOUBLE a client's bank data (fixed 2 Sep 2026)
 
