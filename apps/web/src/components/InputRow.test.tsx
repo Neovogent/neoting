@@ -50,6 +50,9 @@ async function renderComposer(overrides: Record<string, unknown> = {}) {
     documents: [],
     businesses: [],
     session: { status: 'off' },
+    // The drill-in bridge (review item 25): absent means nothing queued.
+    pendingUtterance: null,
+    setPendingUtterance: vi.fn(),
     ...overrides,
   };
   const { InputRow } = await import('./InputRow');

@@ -8,6 +8,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl, type IntlShape, type MessageDescriptor } from 'react-intl';
 import { commonActions, commonLabels, commonPlaceholders } from '../i18n/common';
+import { API_ENABLED } from '../api/config';
 import { useAppContext } from '../context/AppContext';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { Modal } from '../components/DynamicComponents/Modal';
@@ -598,7 +599,7 @@ export function ClientDetailView() {
     advanceApproval, rejectApproval,
     clientSideApprovals, approvalRequests, sendApprovalRequest, resendApprovalRequest, openApprovalLink,
     chasePolicy, clientDetailChanges, proposeClientDetailChanges,
-    slices,
+    slices, session, setPendingUtterance,
   } = useAppContext();
 
   // /clients/:id/:tab — the tab is in the address, so every one is linkable
@@ -740,11 +741,31 @@ export function ClientDetailView() {
     (c) => c.attachedClientIds.includes(client.id) && c.messages.length > 0,
   );
 
-  const scoped = (intent: Intent, content: string, response: string) =>
+  /**
+   * The AI-tab prompt buttons. ⚠ Two casts, two mechanisms, deliberately:
+   *
+   * - **Live** (API on, session standing), the question goes to the REAL chat
+   *   lane: `setPendingUtterance` queues it and `InputRow` submits it through
+   *   `POST /chat/turns` — the pinned model classifies, the server grounds the
+   *   answer in this client's records, and the reply carries its model meta.
+   *   It used to inject a canned user message + "Here you go:" + an intent
+   *   whose card computed over the synthetic context arrays — EMPTY by design
+   *   in live mode — so "What is still missing?" answered "Nothing missing"
+   *   over data nobody read (review item 25, the confidently-wrong all-clear).
+   * - **Synthetic**, the injected exchange stays byte-for-byte: the seeded
+   *   arrays are the cast, and METH_MODE §1 keeps the walkthrough offline.
+   */
+  const scoped = (intent: Intent, content: string, response: string) => {
+    if (API_ENABLED && session.status === 'authenticated') {
+      setPendingUtterance(content);
+      startConversation([client.id]);
+      return;
+    }
     startConversation([client.id], [
       { id: `${Date.now()}-u`, role: 'user', content },
       { id: `${Date.now()}-a`, role: 'assistant', content: response, intent, payload: { clientIds: [client.id], clientNames: [client.name] } },
     ]);
+  };
 
   /**
    * Chases a specific set of items, in a composer on this page.

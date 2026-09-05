@@ -76,6 +76,31 @@ sink for routed email/WhatsApp arrivals (portal uploads already wrote
 bell: 10 s poll + window focus, whole-practice unread badge, mark-all-read,
 click-through to the client.
 
+## Overlap map — where items are one piece of work
+
+Items keep their own entries (original words + images preserved); this map is the combining view. **Items 23 + 40 are physically merged** (one defect at two altitudes); everything else groups into work-packages:
+
+| Package | Items | One-line scope |
+|---|---|---|
+| **A. Matching-lane truth** | 25 · 30 · 32 · 33 · 34 · 35 | One investigation: the live match data shown on chat, chase, document and Bank surfaces disagrees with itself (empty Matched lens, matched lines offered for chase, claimed docs re-offered, missing bank-match panel, wrong "nothing missing" answer, dead Chase button in the same dialog) |
+| **B. Correction integrity** | 22 · 36 · 46(flag) · 47 → feeds 29 | One design: sanity checks at the correction boundary (arithmetic, future dates, chart-membership for Category), readiness rules (Type/confidence), D46 flag visibility at review — the whole chain item 29's export failure exposed |
+| **C. Export chain** | 28 · 29 · 37 · 55 · 56(partial) | Date rendering, refusal UX, VT format verification + on-screen how-to, history panel, analytics-report vocabulary |
+| **D. One UK date control** | 16 · 28 · 46 | Build one shared d/m/y picker component; adopt on statement-request, ExportView, document-date correction |
+| **E. Channel & provenance** | 21 · 43 · 60(follow-up) · 62(provenance half) | Split chase-portal vs business-portal channels, honest labels everywhere, uploader/member identity on uploads and captures, Received-via column on Inboxes |
+| **F. Portal & practice access control** | 39 · 41 · 42 · 44 · 57 (+38's form-submit fix) | One capability matrix (Shakib-ratified), self-describing access labels, member edit on both portal and practice sides, Plan hidden from members, invite dialog fixed |
+| **G. Approvals spine + matrix** | 20 · 24 · 26 · 27 · 66 | The approval matrix (66 — what needs whose approval, super-admin fast path; ships as one doc with F's role matrix), duplicate-staging dedupe, Deny-with-reason loop, role-aware D44 copy, modal dismiss after decision |
+| **H. Workflows & rules** | 51 · 52 · 53 | One package: workflows contract/persistence first, then AI describe-parse, real branch composer, chat rule flow landing in the Workflows tab |
+| **I. Modal overflow** | **23 + 40 (merged)** | Fix the Modal frame, audit every dialog in a real browser, keep a reachability smoke |
+| **J. Coding intelligence** | 19 · 48 | One ladder spec: always-suggest-with-confidence + supplier→category memory tiers |
+| **K. Feature builds (design-doc first)** | 18 · 50 · 54 | Portal documents list w/ preview+download; expense claims end-to-end; tasks/teams |
+| **L. Retention & deletion policy** | 61 · 67 | One policy document (Shakib): document Trash window + client-level Trash/restore, deletion-scope choices on offboard, D43/D32/statutory-retention constraints — plus 67's orphaned-documents bug fix |
+
+**Since these entries were written, another pass closed items 9 and 12** (see the section above): chat conversations are now **server-persisted** — so **item 59 is likely already fixed; verify against that build before scheduling it** — and the notifications read surface + header bell now exists, which unblocks the cross-refs in items 54 (assignment notifications) and 60 (arrival signal).
+
+Standalone items not in a package: 17 (sign/tone), 31 (chase draft reactivity/editability — touches G for the compose seam), 45 (Stripe portal config diagnosis), 49 (duplicate resolution, prototype-verified), 58 (chat upload intent step), 64 (setup-link panel → portal-access card).
+
+Late additions and where they land: **63** (missing list on the Chases tab) sequences after package A; **65** (data-aware AI-tab suggestions + proactive task analysis) leans on A's counts; **66** joined package G (it's the approval matrix itself); **61 + 67** form package L (one retention/deletion policy); **60** is resolved (file arrived late) leaving only its Received-via-on-Inboxes follow-up, which is package E's; **59** is likely closed by the items-9/12 second pass (chat persistence landed) — verify, don't re-build.
+
 ## Item 16 — Request statement dialog: unusable period input, no channel choice, no preview
 
 **Original (verbatim):**
@@ -188,16 +213,29 @@ A manual field correction goes through `parseCodingDraft` (type/format checks on
 
 Where it lands: cheapest honest version is deterministic cross-field validation at the correction boundary (client-side warn in the correction dialog + server-side advisory on the proposal review — the review card already renders arbitrary server sections, so a "⚠ tax exceeds gross" section costs zero web bytes per rule 9). The model-backed second opinion is a server concern (rules-suggestions / extraction lane) and should ride the same seam as item 19's reasoning tier. Also worth noting: the "100% confident" human-confirmed display reads wrong when the human just typed nonsense — maybe "Confirmed by you" instead of a percentage. Review → Approve flow itself unchanged; the check slots in before/at review, never bypassing it.
 
-## Item 23 — Publish dialog can't scroll; Approve unreachable, so nothing can be published
+## Items 23 + 40 (combined) — Modals can't scroll: Approve unreachable in the publish dialog; every modal needs the overflow audit
 
-**Original (verbatim):**
+*One defect, reported twice at two altitudes: item 23 is the release-blocking instance, item 40 generalises it to the whole modal population.*
+
+**Original — item 23 (verbatim):**
 > Scroll not working wtf have you checked, not being able to publish
 
-**Image:**
-- `C:\Users\shaki\Downloads\` (WhatsApp image, 5 Sep) — `PublishBatchDialog` ("Release 1 item for export", Zeplow Inc.) with the staged review card mounted ("Release for export — AWAITING REVIEW", server-computed preview: Items 1, Gross £994.00, VAT £9000.00). The card is cut off mid-heading at "THE ACCOUNTING ENTRY THIS RELEASE WILL PUT IN THE IMPORT FILE" and **the dialog will not scroll**, so [Read review]/Approve below the fold are unreachable — publishing is impossible. (The VAT £9000 is item 22's bad correction flowing through, separate issue.)
+**Original — item 40 (verbatim):**
+> do deep research on each modal and check their overflow status, most of them if with overflow bug, there is content at the bottom but i'm not being able to scroll
+
+**Images:**
+- Item 23: `C:\Users\shaki\Downloads\` (WhatsApp image, 5 Sep) — `PublishBatchDialog` ("Release 1 item for export", Zeplow Inc.) with the staged review card mounted ("Release for export — AWAITING REVIEW", server-computed preview: Items 1, Gross £994.00, VAT £9000.00). The card is cut off mid-heading at "THE ACCOUNTING ENTRY THIS RELEASE WILL PUT IN THE IMPORT FILE" and **the dialog will not scroll**, so [Read review]/Approve below the fold are unreachable — publishing is impossible. (The VAT £9000 is item 22's bad correction flowing through, separate issue.)
+- Item 40: `C:\Users\shaki\Downloads\` (WhatsApp image, 5 Sep) — the intake Review step (dark theme): the "Create client & email the sign-in link" button is **cut off at the bottom edge** and the dialog will not scroll.
 
 **Brief:**
-`PublishBatchDialog.tsx` wraps the shared `DynamicComponents/Modal`, whose 2 Sep fix (`max-h-full` wrapper + `overflow-y-auto overscroll-contain` children box) is supposed to make every tall dialog scroll — and per the module notes jsdom can't verify it, only a class-contract test does. With `LiveProposalCard` mounted inside (it grows by the server's whole review), the outer scroll demonstrably does not work in the real browser. Likely suspects to check in the browser, not jsdom: the Modal children box failing height-constraint when its parent is the flex `items-end`/centred wrapper (a `max-h-full` chain needs every ancestor to actually bound height); the dialog's own inner `max-h-52` list trapping scroll; or the review card introducing an unbounded child that defeats `overflow-y-auto` (missing `min-h-0` on a flex child is the classic). **Severity: release-blocking** — this is the only publish path since the S14 sweep removed local writers, and Published gates Export (D42/D43). Fix in the Modal frame (so every tall dialog benefits), verify in a real browser at a normal laptop viewport, and consider a Playwright/CDP smoke for "Approve is reachable" since jsdom computes no layout.
+The shared `DynamicComponents/Modal`'s 2 Sep bounded-and-scrolls fix (`max-h-full` wrapper + `overflow-y-auto overscroll-contain` children box) demonstrably fails in the real browser — pinned only by a class-contract test in jsdom, **which computes no layout**, so the mechanism was never browser-verified. Confirmed on at least the publish dialog (`PublishBatchDialog` + `LiveProposalCard`, which grows by the server's whole review) and the intake Review step; his "most of them" says to assume the family.
+
+Likely mechanical suspects (check in the browser, not jsdom): the `max-h-full` chain broken by an unbounded ancestor (the flex `items-end`/centred wrapper — every ancestor must actually bound height); flex children missing `min-h-0`; the dialog's own inner scrollboxes (e.g. the publish dialog's `max-h-52` list) trapping scroll.
+
+**Severity: release-blocking** — the publish dialog is the only publish path since the S14 sweep, and Published gates Export (D42/D43). Work shape:
+1. Fix in the Modal frame first, so every shared-frame dialog benefits at once.
+2. **Inventory every modal** — shared-`Modal` children (`RequestStatementDialog`, `PublishBatchDialog`, `CodingProposalModal`, intake, invite, offboard, viewer, purge…) *and* the own-chrome dialogs (`AnalysisModal`, `DuplicateModal`, `ChaseModal`, `WorkflowEditor`, tour overlay, portal dialogs) — and reproduce at a short viewport (e.g. 1280×720) in headless Chrome/CDP, the repo's established audit pattern: for each modal, the bottom-most interactive element must be reachable by scroll.
+3. **Keep the smoke**: a browser-level "every dialog's last button is reachable" check, because jsdom can never catch this class and it has now shipped twice.
 
 ## Item 24 — Publish dialog copy lectures the super admin about needing the super admin
 
@@ -225,6 +263,12 @@ Same sweep should cover the sibling D44 sentences on other staging surfaces (`Re
 The MISSING intent's answer contradicts the product's own Bank screen. The reply is the `LiveMissingCard` empty-state copy, and that card is read-only over the live bank slice (unmatched + non-suppressed via `isUnexplained`) plus open chases — so the falsehood is almost certainly **data plumbing, not model reasoning**: the card computed over an empty/mis-scoped set. Prime suspects: the chat scope's business id not resolving to the server's Zeplow id (the seed↔server id bridge — `navigation.businessId` rewrite or `isSameClient` failing for this cast), the bank slice not being hydrated in the chat context, or the server's grounded answer being generated without reading the transactions at all. Diagnose which layer produced the sentence first (client card empty-state vs. server §9 grounded turn).
 
 Mubashir's general rule on top of the specific bug: **the AI must not answer a data question without actually analysing the data** — if the grounded read fails or returns nothing verifiable, say so ("I can't verify right now") rather than emitting a confident all-clear. An empty result set and a failed/mis-scoped read must render differently: "nothing missing" may only be said when the transactions were actually read and genuinely all matched/chased. Add an eval case for this exact turn (client with unmatched undocumented lines → the answer must enumerate them), since §9.8's gate is where accuracy claims live.
+
+**✅ RESOLVED (5 Sep 2026, PR #255 — the matching-lane package).**
+
+**What was done:** the AI never actually looked — that question button on the client's AI tab was showing a pre-written answer over an empty local list; it never asked the server anything. Now clicking it sends the question to the real AI, which reads the client's actual bank data and lists exactly what's missing (screenshot: `docs/reviews/assets/2026-09-05-matching-lane/21-chat-missing-answer.png` — the answer enumerates the real undocumented lines, settlement credits correctly absent). And when the data *can't* be read — a failed load, a client that didn't resolve, a read still in flight — the card now says "I can't verify right now" instead of pretending everything is fine. "Nothing missing" only ever appears when the data was genuinely checked and is genuinely clean.
+
+**Where it landed:** the root cause was that the turn **never existed** — ClientDetailView's `scoped()` fabricated the exchange locally (canned user message, "Here you go:", intent `SHOW_MISSING` → `ActionCard` over the synthetic `missing` array, EMPTY by design live since M2). Fixes: (1) live, the three AI-tab prompts queue through a new `pendingUtterance` bridge in AppContext and `InputRow` submits through the REAL chat lane (`POST /chat/turns` — pinned model, grounded answer, model meta on the reply); synthetic keeps the injected-card flow byte-for-byte. (2) `LiveMissingCard` consults `slices.bankTransactions`: failed/never-made reads, unresolvable scopes (the id-bridge failure shape), loading and truncation all answer honestly. Pinned in `LiveMissingCard.test.tsx` — client-side fix, so a component test rather than an eval case, per the package's acceptance. ⚠ The same fabricated-turn pattern still exists on **ClientsView's drill columns** (`SHOW_MISSING_TABLE` / `SHOW_MATCHES` over empty live arrays) — flagged as follow-up, not fixed here.
 
 ## Item 26 — Duplicate approval requests for the same document; super admin's own actions shouldn't queue for their own approval
 
@@ -293,6 +337,12 @@ Two stacked facts, **both by design and both correctly refusing — the real bug
 **Brief:**
 The chat-side chase composer is offering lines that must never be chased: (1) the Aldgate Meats £994 line is **matched to a published document** — its evidence exists in the product; (2) credit/settlement lines (Worldpay payouts, Just Eat) are the exact category the `isUnexplained` predicate exists to exclude. The repo's own rule (2 Sep, "Unexplained is one predicate now") says `LiveChaseComposerCard` and `LiveMissingCard` read the unexplained set — unmatched + non-suppressed via `isUnexplained` — so either this surface isn't using the predicate, or the underlying data is wrong in chat scope: the live bank slice's `matchState`/`matchedDocumentId` not reflecting the confirmed match (same data-plumbing suspicion as item 25 — these two are almost certainly one root cause: **the chat lane's view of Zeplow's bank data disagrees with the Bank screen's**), or the seed↔server id bridge mis-scoping the client so the card composed over the wrong/unfiltered set. Diagnose items 25 and 30 together: reproduce in the live app, log what set each card actually received, and check whether the match-confirm + publish actually wrote `matchState: 'CONFIRMED'` on that transaction server-side. Also: every row **pre-ticked** is wrong even for genuine candidates — chasing is opt-in per line, default should be unticked or curated, not "tick everything".
 
+**✅ RESOLVED (5 Sep 2026, PR #255).**
+
+**What was done:** two problems, both fixed. First, the system was never marking money-in lines (Worldpay settlements, Just Eat payouts) or bank charges as "nothing to chase" when a statement imported — so they all counted as missing receipts and were offered for chasing. Every imported line now gets that judgement the moment it lands: money coming in and bank fees can never be chased, because no receipt exists to ask for. A one-time cleanup fixes the lines already imported (Zeplow's 631 settlement credits drop out of the missing counts the moment it runs on staging). Second, the list used to arrive with **everything pre-ticked** — nothing is ticked now until the accountant picks the lines, the card says so ("chasing is opt-in per receipt, nothing is pre-selected"), and Stage stays off until at least one line is chosen. The server also now refuses outright to build a chase over a line that's already matched or shouldn't be chased, whatever a screen sends it. Screenshot: `docs/reviews/assets/2026-09-05-matching-lane/30-chase-composer.png` — only the genuine unexplained debits, all unticked. On the Aldgate line specifically: **the match and publish were saved correctly all along** (checked in the staging database directly — the 06 Aug £994 row is CONFIRMED, human-matched, document PUBLISHED); the composer screenshot predates that confirm.
+
+**Where it landed:** (1) the suppression verdict is written at ingest (`statement-ingest.ts`: credit `amountPence > 0`, or the SoT Stage 7 descriptors via the chase seam's `isChaseSuppressed`), pinned by the integration suite; (2) `db/backfill-chase-suppression.ts` repairs pre-fix rows (per-practice `scopedDb`, false→true only, idempotent — **run on staging after deploy**); (3) `prisma/seed.ts` writes the same rule; (4) `computeChaseSendPayload` refuses matched/SUGGESTED/suppressed lines (detection's own predicate, enforced where the server decides); (5) `LiveChaseComposerCard` defaults UNTICKED with an honest error state when the bank slice failed instead of "nothing to chase". The pre-fix drift: only chase *detection* re-scanned descriptors at read time while every count read the always-false column — the exact two-doors disagreement `banking-matching/CLAUDE.md` warns about.
+
 ## Item 31 — Chase draft ignores the selection, reads like a data dump, and cannot be edited
 
 **Original (verbatim):**
@@ -320,6 +370,12 @@ Two problems in one dialog:
 1. **Scoring:** the suggestion engine (`apps/web/src/lib/matching.ts` — explicitly display-tier, float-pounds, "flagged for a post-demo rewrite in pence") treats supplier-name equality as enough for "Probable" even when the amount is £320 off and the date a month apart. Amount/date disagreement should crush the score; a name-only coincidence for a repeat supplier (a butcher a restaurant pays weekly!) is the *expected* case, not a probable match. The rewrite this module already owes is now user-visible.
 2. **Already-claimed document offered again:** this same £994.00 / 30 Jul 2025 Aldgate document is already matched and published against the 06 Aug £994.00 transaction (item 30's image shows it). The `claimed` set in `lib/matching.ts` exists precisely so one receipt cannot answer two bank lines — either it isn't consulted on this dialog's candidate list, or live rows' missing `matchedDocId` (the known contract gap: only CONFIRMED rows carry `matchedDocumentId`) leaves the claimed set empty in live mode. Same data-plumbing family as items 25/30.
 
+**✅ RESOLVED (5 Sep 2026, PR #255).**
+
+**What was done:** for a supplier you pay every week, the name matching means nothing — every payment to Aldgate matches "Aldgate" — so for payments, a name alone is no longer enough. The amounts now have to be close (within 10%) or the document isn't offered at all: the exact £674.46-vs-£994.00 shape from the screenshot now produces **no suggestion** instead of "Probable 48%". Refunds are the deliberate exception — a partial refund genuinely won't match the invoice amount, so those still get shown as a question for a human. And a document that's already matched to one transaction can never be offered again for a different one: the £994 Aldgate invoice is claimed by its confirmed match, and the dialog now knows it.
+
+**Where it landed:** both halves in `lib/matching.ts`, without starting the pence rewrite and with no contract change. (1) The probable tier splits by sign: a DEBIT requires amount agreement (`PROBABLE_AMOUNT_TOLERANCE = 10%`, confidence scaled by the gap); a CREDIT keeps the name-only question (the seeded £212.40 Bidfood refund pin stands). (2) `matchCandidates`/`assessTransaction` take an optional `claimedDocIds` set; BankView builds it from `matchedDocId`, which live rides exactly the CONFIRMED rows — the contract's design, worked with, not around. `autoMatches` feeds its evolving claimed set in too, so a claimed winner lets the genuine runner-up through. Pinned in `matching.test.ts` with the review's exact Aldgate shape verbatim.
+
 ## Item 33 — "Chase for it" button in the candidate dialog does nothing
 
 **Original (verbatim):**
@@ -330,6 +386,12 @@ Two problems in one dialog:
 
 **Brief:**
 The per-transaction candidate dialog (BankView's "Needs you" verdict modal) offers "Chase for it" alongside "Cash code instead" / "This is the one", and the chase button is inert in the live build. Per the S14 sweep the synthetic chase composer paths are gated off live — so this button most likely either lost its handler in the gating, or points at a local writer that live mode suppresses without the disabled-with-tooltip treatment the sweep gave everything else. Expected behaviour live: stage the real engine chase for this one transaction (the same `chase.send` seam item 15 wired for the Bank-tab bulk selection). Find the handler in `BankView.tsx`'s verdict dialog and either wire it to `requestChase`/proposal staging or disable it honestly with the reason until it can act.
+
+**✅ RESOLVED (5 Sep 2026, PR #255).**
+
+**What was done:** the button was opening an old demo screen with no real data behind it, so clicking looked dead. It now stages a real chase for that one transaction: click it and the screen says *"Chase queued for 1 transaction — the message is composed at review and sends when it is approved in Approvals"*, and the actual request — with the real message and a working secure upload link — is sitting in the Approvals queue waiting for release. Screenshot: `docs/reviews/assets/2026-09-05-matching-lane/15-chase-queued-banner.png`.
+
+**Where it landed:** `MatchPicker`'s `onChase` calls `stageLiveChase([txn])` when live — item 15's server-composed `chase.send` seam, narrowed to the one transaction — with the queued/failed banner above the table reporting the outcome; synthetic keeps the local composer. Proven end to end: the `chase.send` proposal row exists server-side with the composed body and a signed portal link.
 
 ## Item 34 — Ready document shows no sign of the bank transaction it matched
 
@@ -345,6 +407,12 @@ The bank-match panel exists (Phase 4: `api/bank-match.ts` → `GET /documents/{i
 2. **A match exists and isn't shown:** if the server did suggest/confirm a transaction for this document, the section failed to render live — check the endpoint's answer for this doc id and whether the section fails-closed on a shape it can't parse.
 Either way, Mubashir's expectation is right: a Ready document should always answer "which bank line does this belong to — or none yet, and why". Fold the diagnosis into the items 25/30/32 matching-lane investigation, since all four are one story: **the live matching data visible on documents, chat, and chase surfaces disagrees with the Bank screen.**
 
+**✅ RESOLVED (5 Sep 2026, PR #255).**
+
+**What was done:** the panel only spoke when there *was* a match — no match, still loading, and a broken read all looked identical: blank. It now always answers one of four things: here's the matched transaction · *"No bank match found yet — no imported transaction lines up with this document"* · "checking…" · or "couldn't read it" with a Try-again button. For the Barchester document specifically the honest answer was "no match yet" — checked against the staging database first, it genuinely has no match (the amounts differ by £9.83 and the dates are a year apart, so the matcher rightly suggested nothing) — and the screen now says so instead of staying silent. Screenshots: `docs/reviews/assets/2026-09-05-matching-lane/40-docpreview-no-match.png` and `41-docpreview-confirmed-match.png` (both states).
+
+**Where it landed:** `DocumentPreview`'s bank-match section renders unconditionally when live, with the four states above; the fail-closed parse path now fails VISIBLY (`role="alert"` + retry) instead of rendering as nothing. Pinned in `DocumentPreview.test.tsx` — the old "renders nothing" test was pinning the defect and was replaced with three state tests.
+
 ## Item 35 — Bank → Matched shows nothing despite confirmed matches; matched rows need document preview + transaction details
 
 **Original (verbatim):**
@@ -357,6 +425,12 @@ Either way, Mubashir's expectation is right: a Ready document should always answ
 Two layers again:
 1. **Bug — the Matched lens is empty when matches exist.** The lens keys on `isMatched` (`matchState === 'CONFIRMED'` on live rows), so either the confirm-match ritual never wrote `CONFIRMED` server-side, or the slice's mapping/refetch loses it. Same root as items 25/30/32/34 — one investigation. (Also note the header claims "0 unexplained" while "Needs you (7)" — if 7 need attention and 0 are unexplained *and* Matched is empty, at least one of the three numbers is lying; capture all three predicates' inputs when diagnosing.) The **Matches** sub-tab live is deliberately a pointer per the S14 sweep — that decision may need revisiting now that matches are real live.
 2. **Feature — richer matched rows:** each matched transaction should show its document (preview affordance, the `DocumentViewer`/`DocumentPreview` seam exists) beside the transaction details, same layout richness as the All tab. Today `matchedDocumentId` only crosses the contract for CONFIRMED rows, so the join is possible live — render the document name, open-preview button, and the match provenance (AI vs hand).
+
+**✅ RESOLVED (5 Sep 2026, PR #255).**
+
+**What was done:** three numbers on one screen were each lying in a different way, and all three are fixed. The **header** ("0 unexplained · £0.00") was being recalculated from whatever filter was selected — clicking the Matched filter made it zero *by definition*; it now always states the client's true position, whatever tab or filter is active. The **Matches count** was reading an old demo list that is always empty in the real app; it now counts the real confirmed matches, and the Matches tab shows each one as a card — the document, the transaction, and an "Open document" button to see the receipt. And **matched rows** in the transaction list now show *which* document they matched, with a preview button, instead of just a green tag. Screenshots: `docs/reviews/assets/2026-09-05-matching-lane/10-bank-transactions.png`, `11-bank-matched-lens.png`, `12-bank-matches-tab.png` — the Matched lens listing the confirmed row with its document, Matches counting 1, the header truthful on every lens. Also worth knowing: the confirmed match itself **was stored correctly on the server the whole time** (checked in the staging database directly); the screens were the problem, not the matching.
+
+**Where it landed (all in `BankView.tsx`):** (1) the headline is computed over the client scope only (`clientScopedTxns`), lens-independent, and `needsYouCount` shares the base — header, Needs-you and lens counts are mutually consistent (unexplained ⊆ unmatched by predicate construction); (2) the Matches sub-tab count and cards derive from `transactions.filter(isMatched)` joined to the hydrated documents slice by `matchedDocumentId` — one derivation, so the count and the list cannot disagree (this replaced the S14 pointer card, honest when no live match could exist, a lie once real ones did); (3) matched rows carry the document name + preview in the evidence and actions columns. ⚠ Match provenance (AI vs hand) does NOT cross the contract (`matchState` + `matchedDocumentId` only), so the live card says "Confirmed" rather than guessing who decided — carrying `matchedBy` on `BankTransaction` is the recorded contract follow-up. The lens-empty half of the original screenshot is explained by timing (the confirm landed 20:40 on 4 Sep; a slice hydrated before it would predate the refetch) — everything else in the screenshot was real and is fixed above.
 
 ## Item 36 — A document with mostly-empty, 20%-confidence fields reached Ready after only a category was set
 
@@ -406,19 +480,9 @@ Two distinct wrongs:
 1. **The refusal arrives after the work.** A standard user walks all three intake steps and is refused at Create. The repo's own posture (Governance §11.2, the D44 "degrade honestly, never hide" pattern) permits showing the action — but honestly means the *first* screen says "adding clients needs {role}; you can compose but not create" (or the entry button is disabled-with-reason), never a 3-step form that dead-ends. Also suspicious: NT-PRM-001's message here ("only a member of an accounting practice") suggests the refusal may actually be the **wrong check** for this user (they *are* a practice member — was the session's practice scope missing?) — verify the server-side predicate before assuming role-gating; this may be a bug wearing a permissions message.
 2. **The matrix doesn't exist as a document.** His ask: define, per role (practice super admin/owner, practice standard, client admin, client standard, portal roles), what each **sees** and what each **can do**, then align every surface to it. Today authority lives in scattered `PermittedAction`s (`approvals/assert-can.ts`, four actions) plus per-surface gating. Deliverable: a capability matrix doc (SoT-adjacent — Shakib should ratify it), then a sweep making every gated surface follow one of two sanctioned shapes: hidden (not this role's job at all) or visible-but-disabled-with-reason *before* any work is invested.
 
-## Item 40 — Audit every modal for the overflow/scroll bug (deep-research task)
+## Item 40 — merged into Items 23 + 40 above
 
-**Original (verbatim):**
-> do deep research on each modal and check their overflow status, most of them if with overflow bug, there is content at the bottom but i'm not being able to scroll
-
-**Image:**
-- `C:\Users\shaki\Downloads\` (WhatsApp image, 5 Sep) — the intake Review step (dark theme): the "Create client & email the sign-in link" button is **cut off at the bottom edge** and the dialog will not scroll.
-
-**Brief:**
-Generalises item 23 from one dialog to the whole population: the shared `Modal`'s 2 Sep bounded-and-scrolls fix (`max-h-full` wrapper + `overflow-y-auto` children box) demonstrably fails in the real browser on multiple dialogs (publish dialog, intake form; his "most of them"). The pinning test is a **class-contract test in jsdom, which computes no layout** — so the mechanism was never actually verified in a browser. Task shape:
-1. **Inventory every modal**: shared-`Modal` children (`RequestStatementDialog`, `PublishBatchDialog`, `CodingProposalModal`, intake, invite, offboard, viewer, purge…) *and* the dialogs that draw their own chrome (`AnalysisModal`, `DuplicateModal`, `ChaseModal`, `WorkflowEditor`, tour overlay, portal dialogs).
-2. **Reproduce in a real browser** (headless Chrome/CDP, the repo's established audit pattern) at a short viewport (e.g. 1280×720): for each modal, assert bottom-most interactive element reachable by scroll. The likely mechanical root: a `max-h-full` chain broken by an unbounded ancestor, or flex children missing `min-h-0` — one fix in the Modal frame should cover the family, plus per-own-chrome-dialog fixes.
-3. **Keep the smoke**: a browser-level "every dialog's last button is reachable" check, because jsdom can never catch this class of bug and it has now shipped twice.
+Same defect as item 23 at population scale; the combined entry (original words and image for both items preserved) is at **Items 23 + 40** earlier in this file.
 
 ## Item 41 — Portal People: the access dropdown says "Member", which defines nothing
 
@@ -777,3 +841,80 @@ The scenario is real — WhatsApp to a personal number, paper handed over at a m
 2. **Gaps to close:** the client's **Documents tab** (the per-client register) has no upload affordance — add the same button/drop there; and the **Inboxes screen** should have a *visible* Upload button (drag-drop-only is undiscoverable — if the dialog exists behind a button today, verify it's present on every inbox tab and obvious). One shared flow, three doors.
 3. **Provenance for the physical case:** a manual accountant upload should record *who* entered it and read honestly in Received via ("Uploaded by {accountant}" / "Manual — practice"), distinct from client channels — this is item 21's channel sweep meeting item 43's uploader identity, on the practice side. Optional but valuable for his stated scenario: a "received on paper / personal channel" note at upload (the item-11 `note` seam already carries display-name words).
 4. **Camera capture for paper:** the portal has a Capture surface; the practice app doesn't. If accountants really take paper at meetings, a capture-from-webcam/phone path on the practice side is the natural follow-on — note it for Shakib as scope, don't assume it.
+
+## Item 63 — The Chases tab should list every missing document the statement analysis found
+
+**Original (verbatim):**
+> All missing files should be seen here in the chase tab, the ai will know some file is missing by analyzing the bak statement
+
+**Image:**
+- `C:\Users\shaki\Downloads\WhatsApp Image 2026-09-05 at 04.54.00.jpeg`-family (Image #48) — Zeplow's client screen with the tab row visible (Chases among them); the ask is about what the **Chases** tab shows.
+
+**Brief:**
+The detection already exists — an unexplained bank line (unmatched + non-suppressed, the `isUnexplained` predicate / the server's `missing` count) *is* the product's definition of a missing document — but that list only surfaces when composing a chase (the chat cards, the Bank-tab selection) or as bare counts. Mubashir wants the client's **Chases tab** to lead with it: every missing document from the statement analysis listed as rows — supplier/descriptor, date, amount, how long it's been missing — each carrying a chase affordance, alongside (and feeding) the sent-chases the tab already shows.
+
+Shape:
+1. **A "Missing" section on the Chases tab** reading the same unexplained set every other surface reads (package A's one-predicate rule — this tab must not mint a seventh definition). Rows → select → stage the real `chase.send` per business (item 15's seam, already built for the Bank tab; this is the same action from a second door).
+2. **Items already being chased are marked, not re-listed as missing** — the open chase's items and the missing list must reconcile (a line inside an open chase shows "chased on {date}, awaiting reply" rather than appearing chaseable again — item 30's lesson from the other direction).
+3. Depends on package A's data-truth fixes landing first: putting the missing list on a third surface while the underlying set disagrees across surfaces would just spread the disagreement. Sequence: fix the predicate/plumbing (A), then this tab renders it.
+
+## Item 64 — Setup-link panel still shown for an active client; replace it with something useful
+
+**Original (verbatim):**
+> If the client accounting is active via the link or the accounting is in use by the client then Whats the point it in client->settings ? Remove this section and think something ore useful to put here
+
+**Image:**
+- `C:\Users\shaki\Downloads\` (WhatsApp image, 5 Sep — Image #49) — client → Settings → **Client setup link** panel: "The setup link was emailed when this client was added. Signing in with it is how they register and subscribe." Sent to / Sent 04 Sep 2026 / Expires 7 days — with a **Resend link** button — for a client that has already registered, subscribed and is actively using the portal.
+
+**Brief:**
+`SetupLinkLivePanel` (built 5 Sep, ClientDetailView Settings tab) renders unconditionally; the setup link's whole job ends the moment the client registers and subscribes — after that it's noise, and Resend is a button whose action is pointless-to-confusing (re-inviting an active client). Fix in two moves:
+1. **Gate on onboarding state:** the server already knows the client's standing (`BusinessSummary` subscription status; whether a portal member has verified). While un-onboarded → today's panel. Once active → the panel goes.
+2. **What replaces it — "Portal access" status card** (his "think something more useful"): portal state at a glance — subscription status (already on the Plan panel, so keep it one-line here), portal members count with a link to the client's People (via item 42's surface), last portal activity/upload if the data exists, and the re-invite affordance demoted to an edge-case action ("invite another contact" — the real `inviteBusinessMember`, which is what Resend actually wraps). Nothing invented: every line must come from data the server already serves, or be left out.
+Cross-ref: item 39's matrix decides who sees this card; the honest-data rule (no fabricated "last active" if nothing records it) is the standing one.
+
+## Item 65 — "Ask about this client" prompts are static; suggest only what has substance, and propose tasks proactively
+
+**Original (verbatim):**
+> The ai must understand what must be done for this client and will present the prompt here for the accountant to give suggestions, I clicked the "which items are waiting on approval" and it showed me nothing; if nothing is waiting for approval then why show it? And this is not about the only this prompt; ai must analyze the user give task suggestion for the client here
+
+**Image:**
+- `C:\Users\shaki\Downloads\` (WhatsApp image, 5 Sep — Image #50) — client → **AI** tab: "Ask about this client" with three fixed prompts (What is still missing / Show the bank matches / Which items are waiting on approval), and a past conversation "Which items are waiting on approva… · 2 messages" that answered nothing.
+
+**Brief:**
+The AI tab's suggested prompts are a static list, offered regardless of whether the answer has any substance — clicking "Which items are waiting on approval?" for a client with zero pending approvals yields an empty answer, which reads as the AI failing rather than the queue being empty. Two asks:
+1. **Data-aware suggestions:** the chips should be generated from the client's actual state — the counts are already served (`BusinessSummary`: toReview, missing, unmatched, approvals, overdue…), so offer "3 items are waiting on approval — review them?" and simply don't offer the approvals question when the count is 0. A suggestion is a claim there's something to see; only make true claims. (Cheap version: filter/parameterise the existing static list by the counts. No model call needed for the chips themselves.)
+2. **Proactive task suggestions:** beyond Q&A chips, an "what needs doing for {client}" analysis — the AI reads the client's pipeline state and proposes next actions (chase these 4 missing documents, review the 2 low-confidence extractions, the statement for August is missing, export July) with each suggestion linking to the surface or staging the relevant proposal. This is the same grounded §9 read the MISSING/approvals intents already do, composed into a summary — and it must obey the item-25 rule: derived from actually-read data, honest when the read fails, never a confident guess. Depends on package A's data truth for the numbers to be worth showing.
+Also check why the clicked prompt's answer was literally "nothing" — an empty-set answer should still be a sentence ("Nothing is waiting on approval for Zeplow Inc.") rather than a blank card; if it rendered blank, that's a rendering bug in the approvals card (`SHOW_APPROVALS`, added in the items-9/12 second pass) to fix regardless.
+
+## Item 66 — The approval matrix: draw the line between what needs super-admin approval and what doesn't
+
+**Original (verbatim):**
+> everything goes to the approval tabs, but the super admin needs no approving, also define activity that is must get approval, such as any publishing, any filed update like the category, ths things and this typo things must need approval from super admin; prepare a fine line and divide it that what needs approval what not
+
+**Image:** none provided.
+
+**Brief:**
+The completion of item 26's ruling, generalised: today **every** proposal kind rides the same Review → Approve queue regardless of who acts or what's at stake, which produces both his complaints at once — the super admin approving their own trivial edits, and no stated policy on what genuinely demands the super admin. The deliverable is an **approval matrix**: every action in the product classified, with the rules enforced server-side.
+
+The taxonomy to draft (his examples slotted in):
+1. **Super-admin approval required, always** (regardless of who staged it): releasing for export (`publish.batch` — already the rule, D44), field updates that change accounting meaning — category/coding changes, money-field corrections (his "any filed update like the category… must need approval"), statement removal, document purge, client offboarding, rule creation.
+2. **Review → Approve by any member** (or the proposer's own second look): the lighter proposal kinds, if any survive this sort — the matrix should say explicitly which kinds sit here, or collapse this tier into 1 or 3.
+3. **No approval needed:** ingest-class operations (uploads, intake, routing?, chases?) — some already bypass the spine by design (`x-nt-side-effect: ingest`); the matrix should ratify each one deliberately rather than by history. His "typo things" reading cuts both ways — he says typo-class field fixes **must** need approval; the matrix should test that against volume (if every typo needs the super admin, the queue drowns — maybe non-financial fields (supplier spelling) sit in tier 2/3 while financial fields (category, totals, dates) sit in tier 1). Put both options in the doc and let him and Shakib pick.
+4. **The super-admin exception (item 26's fast path):** when the actor **is** the super admin, tier-1 actions don't queue — the same Review → Approve record is made inline in one flow (stage → read review → approve in the dialog), so the audit spine survives and nothing waits. Never a silent bypass: the review record is the point.
+
+**Constraints that bound the design:** Governance §10 (no state change outside the ActionProposal path — enforced server-side and by DB trigger) means every tier-1/2 action keeps the proposal record; the matrix changes *who may approve* and *whether it queues*, never whether it's recorded. This is Governance + auth territory — **the deliverable is the matrix document for Shakib's sign-off** (it amends §10's operational reading), then `assert-can.ts` and the proposal kinds implement it. Direct dependency of items 26 (dedupe/fast path), 27 (deny flow — the deny power follows the approve power per tier), and 39 (the role capability matrix — these two matrices should ship as one document: who sees/does what, and what of it needs whose approval).
+
+## Item 67 — Deleting a client orphans their documents; deletion must ask its scope, and a deleted client goes to a recoverable Trash
+
+**Original (verbatim):**
+> One client was deleted but their document is still here, while deleting a user ask to select what they want to delete, full user and data, user only, keep files etc. ; in the trash keep the client too for some days if any reason the client gets back the accountant can restart work form where left
+
+**Image:**
+- `C:\Users\shaki\Downloads\WhatsApp Image 2026-09-05 at 05.04.25.jpeg` — the review board after a client deletion: three To-Review rows whose CLIENT column reads the **raw CUID** `cmtndidpz003y96czwm24v0vc` (Biffa + the two B C Window Cleaning duplicates) — the business row is gone, its documents remain, and every surface that resolves the client name now falls through to the id.
+
+**Brief:**
+Three layers:
+1. **Bug, immediate:** documents survive their business's deletion as orphans, and `clientNameFor`'s fall-through renders the raw id on the board. Whatever else is decided, orphaned rows must never render a CUID as a client name — and the deeper question is what `business.offboard`'s executor actually does today (it evidently removes/hides the business row while leaving documents live in the pipeline; check whether that half-state is the executor's design or its bug — an offboarded client's documents still sitting in To Review with publish affordances is wrong under any policy).
+2. **Deletion scope choice:** offboarding should ask what it means — his options: **full client and all data** / **client only, keep the files** / (implicitly) archive-everything. The honest set needs the D32 constraint stated: export-at-cancellation is a product promise (reading and exporting survive a lapse), and UK bookkeeping records carry statutory retention duties — so "delete all data" likely means "schedule for deletion after the retention answer", not an instant purge. The chosen scope rides the `business.offboard` proposal and is stated verbatim at Read review (blast radius: N documents, M transactions, the portal members who lose access).
+3. **Client-level Trash with a recovery window:** a deleted client held restorable for a stated period, so a returning client resumes where they left — the same retention-policy decision as item 61's document Trash (one policy document covering both: durations, what auto-purge skips, D43's exported-document refusal, and the subscription question — a restored client's Stripe subscription state needs defining too).
+⚠ All three touch **deleting/migrating data** — root CLAUDE.md stop-and-ask territory, and the retention/GDPR angle makes this Shakib sign-off before any PR. Files with items 61 (retention policy) and 27/66 (the offboard proposal's approval tier).

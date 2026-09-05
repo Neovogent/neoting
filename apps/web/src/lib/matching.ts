@@ -179,20 +179,47 @@ export interface Candidate {
 }
 
 /**
+ * The largest relative amount gap the PROBABLE tier tolerates on a DEBIT.
+ *
+ * A supplier a restaurant pays weekly makes a name-only hit the EXPECTED
+ * collision, not evidence: every one of those payments normalises to the same
+ * merchant, and a candidate whose amount is materially different is almost
+ * certainly a different invoice. Ten per cent admits the near-misses worth a
+ * human's eyes (a card surcharge, a rounding difference) and refuses the
+ * £674-vs-£994 shape that shipped as "Probable 48%" (review item 32, 5 Sep
+ * 2026). Credits are deliberately NOT held to it — a partial refund genuinely
+ * differs from its invoice, and the question is real.
+ */
+export const PROBABLE_AMOUNT_TOLERANCE = 0.1;
+
+/**
  * Ranks documents that could explain a transaction.
  *
  * Deterministic rules at Dext parity — equal totals inside the date window —
  * extended with credit-note handling, fuzzy merchant names, partial payments
  * and a clearly-labelled probable tier.
+ *
+ * `claimedDocIds` — documents already matched to ANOTHER transaction. One
+ * receipt cannot answer two bank lines, so a claimed document is out of the
+ * pool entirely rather than merely losing the auto-link (which was the only
+ * place the claimed set used to be consulted — the candidate DIALOG offered a
+ * matched-and-published document as "Probable" for a second transaction,
+ * review item 32). Callers build it from `matchedDocId`, which live is set on
+ * exactly the CONFIRMED rows — that is the contract's design, not a gap.
  */
 export function matchCandidates(
   intl: IntlShape,
   txn: BankTransaction,
   documents: Document[],
   settings: MatchSettings,
+  claimedDocIds?: ReadonlySet<string>,
 ): Candidate[] {
   const pool = documents.filter(
-    (d) => d.clientId === txn.clientId && d.status !== 'rejected' && !d.id.startsWith('matched-'),
+    (d) =>
+      d.clientId === txn.clientId &&
+      d.status !== 'rejected' &&
+      !d.id.startsWith('matched-') &&
+      claimedDocIds?.has(d.id) !== true,
   );
 
   const candidates: Candidate[] = [];
@@ -284,12 +311,38 @@ export function matchCandidates(
     }
 
     if (settings.allowProbable && merchant > 0.7 && inWindow) {
-      candidates.push({
-        document: doc,
-        confidence: 0.48,
-        kind: 'probable',
-        reason: intl.formatMessage(m.reasonProbable),
-      });
+      // ⚠ The probable tier is SPLIT BY SIGN since review item 32 (5 Sep 2026).
+      //
+      // This branch used to fire on the merchant name alone, so a £674.46
+      // payment to a weekly supplier offered that supplier's £994.00 invoice
+      // from a month earlier as "Probable 48%". For a DEBIT, amount
+      // disagreement now crushes the candidate out entirely: a repeat
+      // supplier's name matches EVERY one of their payments, so the name
+      // carries no information and the amount is the evidence. Within the
+      // tolerance the confidence still scales down with the gap, so a
+      // penny-close near-miss outranks a 9%-off one.
+      //
+      // A CREDIT keeps the old behaviour on purpose: a partial refund
+      // genuinely differs from its invoice, and "same supplier, different
+      // amount" is a real question for a human there — pinned by the seeded
+      // £212.40 Bidfood refund case.
+      const larger = Math.max(Math.abs(doc.total), Math.abs(txn.amount));
+      const relativeGap = larger === 0 ? 0 : Math.abs(Math.abs(doc.total) - Math.abs(txn.amount)) / larger;
+      if (txn.isCredit) {
+        candidates.push({
+          document: doc,
+          confidence: 0.48,
+          kind: 'probable',
+          reason: intl.formatMessage(m.reasonProbable),
+        });
+      } else if (relativeGap <= PROBABLE_AMOUNT_TOLERANCE) {
+        candidates.push({
+          document: doc,
+          confidence: 0.48 * (1 - relativeGap),
+          kind: 'probable',
+          reason: intl.formatMessage(m.reasonProbable),
+        });
+      }
     }
   }
 
@@ -323,8 +376,9 @@ export function assessTransaction(
   txn: BankTransaction,
   documents: Document[],
   settings: MatchSettings,
+  claimedDocIds?: ReadonlySet<string>,
 ): MatchVerdict {
-  const candidates = matchCandidates(intl, txn, documents, settings);
+  const candidates = matchCandidates(intl, txn, documents, settings, claimedDocIds);
 
   // Reading the first entry is the empty check: matchCandidates builds a dense
   // array, so a missing candidates[0] means there were none at all.
@@ -443,7 +497,10 @@ export function autoMatches(
     // id on the wire, and proposing a fresh auto-match for one would offer the
     // accountant a decision a human already took.
     if (isMatched(txn)) continue;
-    const verdict = assessTransaction(intl, txn, documents, settings);
+    // The evolving claimed set goes INTO the assessment (item 32): a claimed
+    // document out of the pool lets the genuine runner-up win, where before it
+    // merely blocked the link and the transaction got nothing.
+    const verdict = assessTransaction(intl, txn, documents, settings, claimed);
     // One document cannot explain two different transactions.
     if (verdict.kind !== 'confident' || !verdict.best || claimed.has(verdict.best.document.id)) continue;
     claimed.add(verdict.best.document.id);

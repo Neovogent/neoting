@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Check, MessageSquareText } from 'lucide-react';
 import { defineMessages, useIntl } from 'react-intl';
 import type { CreateActionProposalRequest } from '@neoting/contracts/model';
+import { API_ENABLED } from '../../api/config';
 import { useAppContext } from '../../context/AppContext';
 import { composeChaseBody, toE164 } from '../../lib/demoIntents';
 import { isUnexplained } from '../../lib/matching';
@@ -20,6 +21,15 @@ const m = defineMessages({
   noItems: {
     id: 'shell.liveChaseComposer.noItems',
     defaultMessage: 'Nothing to chase — every unmatched transaction for this client is either suppressed or already has its paperwork.',
+  },
+  itemsUnread: {
+    id: 'shell.liveChaseComposer.itemsUnread',
+    defaultMessage: 'The bank feed could not be read, so no chase list can be offered — a receipt request composed over unread data would name the wrong lines. Try again in a moment, or request a statement below.',
+  },
+  itemsLoading: { id: 'shell.liveChaseComposer.itemsLoading', defaultMessage: 'Reading the bank feed…' },
+  itemsHint: {
+    id: 'shell.liveChaseComposer.itemsHint',
+    defaultMessage: 'Tick the lines to ask for — chasing is opt-in per receipt, nothing is pre-selected.',
   },
   recipientLabel: { id: 'shell.liveChaseComposer.recipientLabel', defaultMessage: 'Recipient mobile (optional)' },
   // UK-first wording (5 Sep 2026 review): the audience is a UK practice, so
@@ -77,7 +87,7 @@ export function LiveChaseComposerCard({
   businessId?: string | undefined;
   businessName?: string | undefined;
 }) {
-  const { transactions, businesses, clients } = useAppContext();
+  const { transactions, businesses, clients, slices } = useAppContext();
   const intl = useIntl();
 
   const [chosenBusinessId, setChosenBusinessId] = useState<string | null>(businessId ?? null);
@@ -93,8 +103,19 @@ export function LiveChaseComposerCard({
     [transactions, chosenBusinessId],
   );
 
-  const [excluded, setExcluded] = useState<ReadonlySet<string>>(new Set());
-  const selected = candidates.filter((t) => !excluded.has(t.id));
+  // Whether the candidate list can honestly be offered at all: with the API on,
+  // a failed or unfinished bank read must say so — a "Nothing to chase" over
+  // zero unread rows is the same lie as review item 25's all-clear, one card
+  // over. `slices.bankTransactions` is the same status the Bank screen wears.
+  const bankSlice = slices.bankTransactions;
+
+  // ⚠ Chasing is OPT-IN PER LINE since review item 30 (5 Sep 2026), a
+  // deliberate behaviour change: this held an `excluded` set and pre-ticked
+  // every candidate, so "stage" one click away meant asking the client for
+  // every receipt on the statement. Nothing is selected until the accountant
+  // picks the lines the message is about.
+  const [included, setIncluded] = useState<ReadonlySet<string>>(new Set());
+  const selected = candidates.filter((t) => included.has(t.id));
 
   // Prefilled from the synthetic client record when one shares the name —
   // there is no /v1/contacts read surface yet — and always editable: the
@@ -193,22 +214,29 @@ export function LiveChaseComposerCard({
         {chosenBusinessId !== null && (
           <>
             <ReviewSection title={intl.formatMessage(m.itemsSection)}>
-              {candidates.length === 0 ? (
+              {API_ENABLED && bankSlice.source !== 'api' ? (
+                // An unread feed says so — it never renders as "nothing to
+                // chase", which is an all-clear about data nobody read.
+                <p role="alert" className="text-[13px] text-amber-400">{intl.formatMessage(m.itemsUnread)}</p>
+              ) : API_ENABLED && bankSlice.loading ? (
+                <p className="text-[13px] text-zinc-500">{intl.formatMessage(m.itemsLoading)}</p>
+              ) : candidates.length === 0 ? (
                 <p className="text-[13px] text-zinc-500">{intl.formatMessage(m.noItems)}</p>
               ) : (
                 <div className="bg-card border border-white/5 rounded-2xl divide-y divide-white/5 shadow-inner">
+                  <p className="px-4 pt-2.5 pb-1 text-[12px] text-zinc-500">{intl.formatMessage(m.itemsHint)}</p>
                   {candidates.map((t) => {
-                    const on = !excluded.has(t.id);
+                    const on = included.has(t.id);
                     return (
                       <button
                         key={t.id}
                         role="checkbox"
                         aria-checked={on}
                         onClick={() =>
-                          setExcluded((prev) => {
+                          setIncluded((prev) => {
                             const next = new Set(prev);
-                            if (on) next.add(t.id);
-                            else next.delete(t.id);
+                            if (on) next.delete(t.id);
+                            else next.add(t.id);
                             return next;
                           })
                         }

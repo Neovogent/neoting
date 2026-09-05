@@ -52,6 +52,9 @@ const statementCsv = [
   '01/04/2026,BALANCE BROUGHT FORWARD,,,1000.00',
   '02/04/2026,BIDFOOD LTD,150.00,,850.00',
   '03/04/2026,CARD PAYMENT,,250.00,1100.00',
+  // A DEBIT carrying a SoT Stage 7 suppression descriptor — pins the second
+  // half of the ingest-time suppression rule (the credit above pins the first).
+  '04/04/2026,SERVICE CHARGE,10.00,,1090.00',
 ].join('\n');
 
 /** The same file with £50 unaccounted for between two lines. */
@@ -198,14 +201,14 @@ describe.skipIf(!enabled)('statement import, against a real database', () => {
     expect(outcome.status).toBe('ingested');
     if (outcome.status !== 'ingested') return;
     // The brought-forward line is the opening balance, not a transaction.
-    expect(outcome.rowCount).toBe(2);
+    expect(outcome.rowCount).toBe(3);
     expect(outcome.report.assurance).toBe('complete');
 
     const rows = await owner.bankTransaction.findMany({
       where: { businessId: BIZ },
       orderBy: { bookedAt: 'asc' },
     });
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
     // Signed integer pence, money OUT negative. Getting this backwards files
     // every payment as income and inverts the client's books.
     expect(rows[0]?.amountPence).toBe(-15_000);
@@ -214,7 +217,16 @@ describe.skipIf(!enabled)('statement import, against a real database', () => {
     // The set the chase list reads: a line that arrived any other way would be
     // a payment silently exempted from ever being chased for its receipt.
     expect(rows.every((r) => r.matchState === 'UNMATCHED')).toBe(true);
-    expect(rows.every((r) => r.chaseSuppressed === false)).toBe(true);
+    // The suppression verdict is written AT INGEST (5 Sep 2026): a debit with
+    // an ordinary supplier descriptor is chaseable; a CREDIT (money in) has no
+    // purchase receipt in existence, and a descriptor line (SERVICE CHARGE)
+    // has none either — neither may reach the chase composer or the
+    // unexplained count. This pinned `every(… === false)` until the fix —
+    // the literal that left a real client's 631 settlement credits chaseable.
+    expect(rows[0]?.chaseSuppressed).toBe(false);
+    expect(rows[1]?.chaseSuppressed).toBe(true);
+    expect(rows[2]?.descriptionRaw).toBe('SERVICE CHARGE');
+    expect(rows[2]?.chaseSuppressed).toBe(true);
     // The provenance stamp removal enumerates by: every row names the
     // statement that created it, so `bank.remove-statement` can take exactly
     // this upload back out and nothing else.
@@ -225,8 +237,8 @@ describe.skipIf(!enabled)('statement import, against a real database', () => {
     const statement = await owner.statement.findFirst({ where: { documentId: DOC_GOOD } });
     expect(statement).not.toBeNull();
     expect(statement?.openingBalancePence).toBe(100_000);
-    expect(statement?.closingBalancePence).toBe(110_000);
-    expect(statement?.rowCount).toBe(2);
+    expect(statement?.closingBalancePence).toBe(109_000);
+    expect(statement?.rowCount).toBe(3);
     expect(statement?.periodStart?.toISOString().slice(0, 10)).toBe('2026-04-02');
     // The FIRST writer of gapAnalysis in this repo — `GET /businesses` counts
     // statement gaps off exactly this.
