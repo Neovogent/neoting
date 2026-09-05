@@ -116,6 +116,7 @@ else.
 | `portal-document-status.ts` | `DocumentState` → the five words a client is shown. Pure, total, and the ONLY place that mapping is made. |
 | `portal-upload.port.ts` | The `PortalUploadService` interface + `PortalUploadIntent`. The controller depends on this, not on the implementation, so it unit-tests with no object store, no Prisma and no signing secret. |
 | `portal-upload.service.ts` | `PrismaPortalUploadService.createPortalUpload(facts, request, key)` — the delegated intent. Mirrors web upload's `createUpload` from ingestion-routing's *mechanisms*, and **grants the derived document id to the session before returning**. See "The delegated upload path" below. |
+| `portal-provenance.ts` | **Who sent it, in words (5 Sep 2026, review items 21/43).** Pure: the submitter label (chase slug / member-by-name / portal slug) and the capture display name (`Capture — {member} · {business} · {d Mmm yyyy}.jpg`, Europe/London). Composed at intent time, signed into the claims; completion copies. See "Provenance is composed at INTENT time" below. |
 | `portal-session-token.ts` | The bearer. `base64url(claims).base64url(hmac)` — the house format, fourth instance. Claims `{otpSessionId, businessId, practiceId, expiresAtMs}`, secret `PORTAL_SESSION_SECRET`, TTL **60 min**. Missing/malformed/forged collapse to one `invalid`; `expired` stays distinct. Empty secret refuses to sign *and* to verify. |
 | `portal-session.service.ts` | `createSession(linkToken, otp)` → verify link (chase seam) + OTP → resolve the chase → upsert `otp_sessions` → mint the bearer. `grantItems(facts, ids)` — the only thing that widens a session. |
 | `portal-session-context.ts` | `PortalSessionContextResolver.resolve(authorizationHeader)` → `PortalSessionFacts`, plus `resolveOnboarding()`, `delegatedScopeFor()` and `systemScopeFor()`. **Two doors, not one door with a flag** — see below. |
@@ -514,9 +515,11 @@ intent and must not widen the grant twice).
 the portal bearer on `completeDocumentUpload` — one completion path, two trust
 levels, no second door. `delegated-completion.ts` there turns an `Authorization`
 header into the two contexts and the notification closure; the document is
-written under the DELEGATED one, and the provenance
-(`uploaded-by-delegated-session`, on `documents.submitter_label` **and** as a
-`document_events` row) plus the accountant's notification under the practice
+written under the DELEGATED one, and the provenance (the signed
+`claims.submitterLabel` on `documents.submitter_label` **and** as a
+`document_events` row — see "Provenance is composed at INTENT time" above; the
+chase event keeps `uploaded-by-delegated-session`, SoT §8.3's exact string)
+plus the accountant's notification under the practice
 SYSTEM one, because neither `document_events` nor `notifications` has a delegated
 branch. A session may complete only intents whose derived id is in its own grant
 — 404 otherwise, and Postgres behind that.
@@ -533,6 +536,41 @@ would carry the other session's `businessId`.
 extraction against every open chase (SoT Stage 8.5), so a client who taps the
 wrong item still gets the right outcome. It is recorded rather than dropped
 because this lane's invariant is that nothing is silently dropped.
+
+**Provenance is composed at INTENT time and signed (5 Sep 2026, review items
+21/43).** `portal-provenance.ts` (pure, tested directly) decides two things
+`createPortalUpload` puts into the claims:
+
+- **`UploadClaims.submitterLabel`** — what `documents.submitter_label` will
+  carry, from facts the server holds, never client words: a CHASE session
+  (`facts.chaseId !== null`) writes the slug `uploaded-via-chase-link` (the
+  link is forwardable, its holder deliberately unnamed); a signed-in session
+  with a contact writes `Uploaded by {member} ({business})` /
+  `Captured by {member} ({business})`; a signed-in session naming no contact
+  falls back to `uploaded-via-client-portal`. The web reads this off
+  `DocumentSummary.submitterLabel` to split the ONE `SMS_PORTAL` channel into
+  its two honest surfaces — "Chase link" vs "Client portal" — which is review
+  item 21's fix. ⚠ Rows written before 5 Sep 2026 carry
+  `uploaded-by-delegated-session` for BOTH kinds; the web reads that legacy
+  value as "Client portal", the superset true of both. The contact read runs
+  under `systemScopeFor` constrained to `facts.businessId`; client-entered
+  names are whitespace-collapsed and clamped on their way into the label.
+- **The capture display name** — a camera capture arrives as the app's own
+  mint (`capture-YYYY-MM-DD-N.jpg`, `portalCamera.ts`) and would otherwise
+  title as "Unknown" until extraction. `captureIndex` recognises exactly that
+  mint (a client claim, safe: the only consequence is display words) and the
+  filename becomes `Capture — {member} · {business} · {d Mmm yyyy}.jpg`
+  (Europe/London — UTC in storage, London in rendering; the tray sequence is
+  kept when > 1). The `.jpg` stays because `formatFor` picks a reader off the
+  extension. A client-typed `note` (item 11) still wins over the generated
+  name; `displayFilename(note, generated)` makes that ordering structural.
+
+Completion (`web-upload.service.ts`) COPIES `claims.submitterLabel` onto the
+row (falling back to the old constant for pre-widening tokens) — one composer,
+at the one place the session facts live. The audit-trail EVENT keeps SoT §4
+Stage 8.3's exact `uploaded-by-delegated-session` string for chase sessions;
+a signed-in member's event carries their human label instead (item 43's
+"captured by Mubashir (Zeplow Inc)" processing-log line).
 
 **`note` is the client's own name for the document (5 Sep 2026, review item
 11).** `PortalUploadRequest.note` (nullable, ≤280) does two things at intent

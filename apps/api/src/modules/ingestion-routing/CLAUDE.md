@@ -137,6 +137,16 @@ loads the map for the RESOLVED practice and hands it to `processEmail`; the
 loader is optional (absent → empty map = prior behaviour). `decideRouting` and
 the schema are untouched. See `email/CLAUDE.md`.
 
+### The row says who sent it (5 Sep 2026, review items 21/43/62)
+
+`documents.submitter_label` now carries display words per door — the chase-link
+slug, the signed-in portal member by name, or `Uploaded by {accountant}` for a
+workspace completion — and `DocumentSummary` serves it, so list rows render an
+honest "Received via" and the one `SMS_PORTAL` channel splits into its two
+surfaces client-side. The rules and the legacy-row asymmetry live in
+`web-upload/CLAUDE.md` ("`submitter_label` — who sent it, in words"); the
+portal-side composer is `portal/portal-provenance.ts`.
+
 ### The sink writes the bell's row (5 Sep 2026, review item 12)
 
 `document-sink.ts` writes a `document.received` notification — same transaction

@@ -635,3 +635,19 @@ an action. ⚠ `ChatConversationDetail` repeats the summary's fields instead of
 the SHOW_STATEMENTS shape (no field a model could put a figure or an id in).
 `POST /chat/turns` remains `x-nt-side-effect: none`; conversation persistence
 is the caller's own act through the CRUD above, never the model's side effect.
+
+## `DocumentSummary.submitterLabel` (5 Sep 2026 — review items 21/43/62)
+
+One field MOVED from `Document`'s detail half onto `DocumentSummary` (optional,
+nullable — the composed `Document` shape is byte-identical), so LIST rows can
+say who sent a document. The reason it had to move: `DocumentChannel` is
+mirrored verbatim from prisma and `SMS_PORTAL` is ONE value doing two jobs —
+the chase-link portal and the signed-in business portal — so an honest
+"Received via" either needed a new enum value (a prisma migration and a
+product decision) or a per-row provenance fact the server already records.
+The label is that fact: servers write `uploaded-via-chase-link` for a chase
+session, display words (`Uploaded by/Captured by {member} ({business})`,
+`Uploaded by {accountant}`) or `uploaded-via-client-portal` otherwise, and
+consumers read legacy `uploaded-by-delegated-session` rows as the client
+portal — the superset true of both. The CLIENT_PORTAL enum value remains open
+as a future first-class split, recorded for the owner rather than decided here.

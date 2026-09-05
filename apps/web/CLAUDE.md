@@ -1938,6 +1938,72 @@ floor-resident readiness/selectors/types edits). `InboxesView` 249,708 B
 warning-step UI and `correctionChecks.ts` land on the document-detail chunks
 (DocumentPreview/CodingProposalModal are already lazy), not the floor.
 
+## The channel-provenance package (5 Sep 2026 — review items 21/43/62 + 60's follow-up)
+
+**The display channel is DERIVED per row, not read off the enum.** `SMS_PORTAL`
+is one server channel doing two jobs (chase-link portal vs signed-in business
+portal), so `api/documents.ts`'s `sourceFor` splits it on
+`DocumentSummary.submitterLabel` — the provenance the server writes at
+creation: only a row marked `uploaded-via-chase-link` reads `'sms-link'`
+("Chase link"); everything else portal-shaped, INCLUDING every legacy
+`uploaded-by-delegated-session` row, reads the previously-unused `'portal'`
+member ("Client portal" — true of both doors, where "Chase link" on a direct
+upload was the reported lie, and "SMS" anything is banned words under M8).
+Pinned in `documents.test.ts` beside the contract-exhaustive channel table.
+
+**`lib/channelLabels.ts` is the one catalogue for the row-cell/'via' surface
+role** — the per-view maps disagreeing was the defect. Consumers: ClientInbox's
+Received via column, ClientDetailView's register column, DocumentsView's
+register/archive columns + channel filter, InboxesView's NEW Received via
+column (item 60's follow-up — desktop table AND phone cards) + its channel
+filter (which finally offers `chat`), and DocumentPreview/DocumentViewer's
+header via `receivedViaHeading` (channels compose into "VIA {CHANNEL}"; a
+named manual upload stands alone — "UPLOADED BY PRIYA SHAH", never "VIA
+UPLOADED BY…"). The cell rule (`receivedViaText`): client channels name the
+CHANNEL, the practice's own manual door names the PERSON (item 62) — a
+`'web'` row with a human `submitterLabel` renders it verbatim (server-composed
+words, the `failureMessage` precedent). AnalyticsView's chart legend keeps its
+per-view ids (`i18n/common.ts`'s rule) reworded to agree ("Client portal").
+`channelLabels.test.ts` pins the words, the slug swallowing and the no-SMS
+sweep; `InboxesView.test.tsx` pins the column.
+
+**`displayTitle` vs the 'Unknown' sentinel (item 43).** `toLocalDocument` keeps
+`supplier: 'Unknown'` as the DATA value — `lib/selectors.ts` readiness and the
+publish-eligibility checks compare against it by value — and adds
+`displayTitle` (the filename, extension dropped) for what a human is SHOWN.
+For a portal camera capture the server has already generated that filename
+(`Capture — {member} · {business} · {d Mmm yyyy}.jpg` — see
+`portal/portal-provenance.ts`), so the row/preview/viewer titles read it
+instead of "Unknown". Render sites updated: both InboxesView layouts,
+ClientInbox, ClientDetailView's register, DocumentsView's tables,
+DocumentPreview and DocumentViewer headings. Do NOT route `displayTitle` into
+readiness or publish checks.
+
+**The register's upload door (item 62).** The client Documents tab has the
+same button + drag-drop the Costs tab has, through the one shared flow —
+live it is `runWorkspaceDrop`, loaded by `import()` (see the bundle note
+below), synthetic the local `ingest`, byte-for-byte the Costs tab's branch.
+⚠ **A `FileList` is LIVE**: the input's onChange clears `e.target.value`, so
+the files are snapshotted with `Array.from` SYNCHRONOUSLY before the dynamic
+import — deferred, the list reads empty and the door silently uploads nothing
+(found live; the walkthrough's `{sent: 0}`). InboxesView's visible Upload
+button already existed (header, every tab) — verified, unchanged.
+
+**Bundle (paired A/B, node-zlib level-6 closure walk — the measure script's
+gzip shell-out still does not run on Windows):** floor 207,036 → 207,164 B
+(+128, `sourceFor` on `api/documents.ts` — boundary code, belongs there).
+The column + door work initially put the two tightest routes OVER 250 kB
+(InboxesView 250,442 B, ClientDetailView 252,188 B), reclaimed in the same
+package with the files' own established lazy pattern: InboxesView lazies
+`AnalysisModal` (~8.8 kB, mounts only after a synthetic upload) →
+**246,080 B**; ClientDetailView lazies `ChaseComposer` (~3.2 kB, mounts only
+inside the chase Modal, Suspense inside the frame) and reaches `api/uploads`
+by `import()` (~1.4 kB) → **245,266 B**. Both now LIGHTER than main
+(249,835 / 249,501 B). DocumentsView 230,153 B, BankView 243,100 B,
+AnalyticsView 215,681 B; AIWorkspaceView keeps its recorded breach
+(296,610 → 297,329 B, floor drift + the shared labels chunk reaching its
+closure).
+
 ## Bundle: the Chases dark-mode fix + theme persistence (3 Sep 2026)
 
 Paired A/B, two builds back to back in one session, exact `gzip -c | wc -c`. Worst route is `ClientDetailView` plus its separate `BankView` chunk on top of the shared floor.
