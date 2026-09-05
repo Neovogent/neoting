@@ -18,6 +18,7 @@ import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { applyToEach, softDeleteDocument } from '../api/document-lifecycle';
 import { errorLabel } from '../api/slices';
 import { blockedReason, partitionByReadiness, readinessOf } from '../lib/readiness';
+import { receivedViaText } from '../lib/channelLabels';
 import { currency } from '../lib/resolver';
 import type { Client, DocKind, Document, DuplicatePair } from '../lib/types';
 import { EXPORT_HINT } from '../lib/exportRules';
@@ -596,13 +597,16 @@ export function ClientInbox({ client, kind, onPreview }: {
   const supplierCell: Column<Document> = {
     key: 'supplier',
     label: intl.formatMessage(kind === 'cost' ? commonLabels.supplier : m.columnCustomer),
-    sortValue: (d) => d.supplier,
+    sortValue: (d) => d.displayTitle ?? d.supplier,
     render: (d) => {
       const field = d.fields.find((f) => f.label === 'Supplier' || f.label === 'Customer');
       const low = field !== undefined && field.confidence < 0.75;
       return (
         <span className="flex items-center gap-2">
-          <span className="text-white font-semibold">{d.supplier}</span>
+          {/* An unextracted supplier shows the document's generated name — a
+              capture reads "Capture — {member} · {business} · {date}" — never
+              the literal "Unknown" (item 43). Data stays on `supplier`. */}
+          <span className="text-white font-semibold">{d.displayTitle ?? d.supplier}</span>
           {/* Confidence is shown where it changes what you do, not everywhere. */}
           {low && <Pill tone="amber">{intl.formatMessage(m.percent, { percent: Math.round(field!.confidence * 100) })}</Pill>}
         </span>
@@ -650,12 +654,14 @@ export function ClientInbox({ client, kind, onPreview }: {
   };
 
   // Kept at the user's request: which channel a document arrived on is how you
-  // tell a chased upload from a supplier emailing us directly.
+  // tell a chased upload from a supplier emailing us directly. Honest words,
+  // never the raw slug (item 21): "Client portal", "Chase link", or the
+  // accountant who entered it by hand.
   const channelCell: Column<Document> = {
     key: 'source',
     label: intl.formatMessage(m.columnChannel),
-    sortValue: (d) => d.source,
-    render: (d) => <Pill>{d.source}</Pill>,
+    sortValue: (d) => receivedViaText(intl, d),
+    render: (d) => <Pill>{receivedViaText(intl, d)}</Pill>,
   };
 
   const dateCell: Column<Document> = { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date };

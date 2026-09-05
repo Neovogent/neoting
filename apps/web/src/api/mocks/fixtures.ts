@@ -93,6 +93,10 @@ export function toDocumentSummary(doc: LocalDocument): DocumentSummary {
     state: STATE[doc.status] ?? DocumentState.RECEIVED,
     docType: isSales ? DocumentType.INVOICE : DocumentType.RECEIPT,
     channel: CHANNEL[doc.source] ?? DocumentChannel.WEB_UPLOAD,
+    // Both portal surfaces share the SMS_PORTAL channel; the provenance label
+    // is what tells them apart (review item 21), so the fixture round-trips
+    // the seed's source through it the way the server does.
+    submitterLabel: doc.source === 'sms-link' ? 'uploaded-via-chase-link' : (doc.submitterLabel ?? null),
     originalFilename: doc.splitFrom ?? `${doc.supplier.toLowerCase().replace(/\s+/g, '-')}.pdf`,
     receivedAt: `${toIsoDate(doc.date) ?? '2026-08-01'}T09:00:00Z`,
     supplierName: isSales ? null : doc.supplier,

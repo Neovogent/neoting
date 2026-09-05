@@ -74,15 +74,18 @@ function fakeStore(): { store: DocumentStore; presigned: StoreCall[] } {
 
 interface Fixture {
   /** null simulates a business RLS does not return — the real policy does the same by returning no row. */
-  readonly business: { id: string; practiceId: string | null; subscriptionStatus: string | null } | null;
+  readonly business: { id: string; name?: string; practiceId: string | null; subscriptionStatus: string | null } | null;
   readonly grants: string[];
+  /** The signed-in member's contact row, when the session names one (review item 43). */
+  readonly contact?: { firstName: string | null; lastName: string | null; email: string | null } | null;
 }
 
-/** Enough Prisma for the business read and the grant write, and nothing else. */
+/** Enough Prisma for the business + contact reads and the grant write, and nothing else. */
 function fakePrisma(fixture: Fixture): PrismaClient {
   const tx = {
     $executeRaw: async () => 0,
     business: { findUnique: async () => fixture.business },
+    contact: { findFirst: async () => fixture.contact ?? null },
     otpSession: {
       update: async ({ data }: { data: { grantedItemIds?: { push: string[] } } }) => {
         // The real column is a scalar list written with `push`, so appending is
@@ -99,13 +102,15 @@ function fakePrisma(fixture: Fixture): PrismaClient {
 function harness(
   // Entitlement (D48) gates the portal intent too — the client is the payer,
   // so the surface the client uploads through is where the rule has to bite.
-  business: { id: string; practiceId: string | null; subscriptionStatus: string | null } | null = {
+  business: { id: string; name?: string; practiceId: string | null; subscriptionStatus: string | null } | null = {
     id: BIZ,
+    name: 'American Burger Ltd',
     practiceId: PRACTICE,
     subscriptionStatus: 'ACTIVE',
   },
+  contact: { firstName: string | null; lastName: string | null; email: string | null } | null = null,
 ): { service: PrismaPortalUploadService; presigned: StoreCall[]; grants: string[] } {
-  const fixture: Fixture = { business, grants: [] };
+  const fixture: Fixture = { business, grants: [], contact };
   const prisma = fakePrisma(fixture);
   const { store, presigned } = fakeStore();
   const sessions = new PortalSessionService(prisma, {
@@ -341,6 +346,74 @@ test('a note that survives sanitisation as nothing falls back to the declared fi
 
   expect(claimsOf(blank.uploadId)).toMatchObject({ filename: 'currys-receipt.jpg' });
   expect(claimsOf(separatorsOnly.uploadId)).toMatchObject({ filename: 'currys-receipt.jpg' });
+});
+
+/* ── who sent it, and what a capture is called (review items 21/43) ────────── */
+
+/** A signed-in business-portal session: no chase, a verified contact. */
+const OWN_PORTAL_FACTS: PortalSessionFacts = { ...FACTS, chaseId: null, contactId: 'contact_1' };
+const MEMBER = { firstName: 'Mubashir', lastName: 'Rahman', email: 'mub@zeplow.test' };
+
+test('a CHASE session\'s claims carry the chase-link label — the holder is unnamed by design', async () => {
+  const { service } = harness();
+
+  const intent = await service.createPortalUpload(FACTS, request(), randomUUID());
+
+  expect(claimsOf(intent.uploadId)).toMatchObject({ submitterLabel: 'uploaded-via-chase-link' });
+});
+
+test('a signed-in member\'s upload is labelled with THEIR name and business — never the chase words (item 21)', async () => {
+  const { service } = harness(undefined, MEMBER);
+
+  const intent = await service.createPortalUpload(OWN_PORTAL_FACTS, request(), randomUUID());
+
+  expect(claimsOf(intent.uploadId)).toMatchObject({
+    submitterLabel: 'Uploaded by Mubashir Rahman (American Burger Ltd)',
+    filename: 'currys-receipt.jpg', // a picked file keeps its own name
+  });
+});
+
+test('a camera capture gets the generated display name — member, business, London date — instead of the mint (item 43)', async () => {
+  const { service } = harness(undefined, MEMBER);
+
+  const intent = await service.createPortalUpload(
+    OWN_PORTAL_FACTS,
+    request({ filename: 'capture-2026-09-05-1.jpg' }),
+    randomUUID(),
+  );
+
+  const claims = claimsOf(intent.uploadId);
+  // The date is TODAY's Europe/London day (composed at intent time), so the
+  // shape is pinned rather than a frozen date the test would go stale on.
+  expect(String(claims['filename'])).toMatch(/^Capture — Mubashir Rahman · American Burger Ltd · \d{1,2} [A-Z][a-z]{2} \d{4}\.jpg$/);
+  expect(claims['submitterLabel']).toBe('Captured by Mubashir Rahman (American Burger Ltd)');
+});
+
+test('a later capture in the tray keeps its sequence number, and a client-typed note still beats the generated name', async () => {
+  const { service } = harness(undefined, MEMBER);
+
+  const third = await service.createPortalUpload(
+    OWN_PORTAL_FACTS,
+    request({ filename: 'capture-2026-09-05-3.jpg' }),
+    randomUUID(),
+  );
+  const named = await service.createPortalUpload(
+    OWN_PORTAL_FACTS,
+    request({ filename: 'capture-2026-09-05-4.jpg', note: 'Petty cash receipt' }),
+    randomUUID(),
+  );
+
+  expect(String(claimsOf(third.uploadId)['filename'])).toMatch(/ · 3\.jpg$/);
+  // Item 11's rule outranks the generated default: the client's own words win.
+  expect(claimsOf(named.uploadId)).toMatchObject({ filename: 'Petty cash receipt.jpg' });
+});
+
+test('a session naming no contact row falls back to the client-portal slug, never an invented person', async () => {
+  const { service } = harness(undefined, null);
+
+  const intent = await service.createPortalUpload({ ...OWN_PORTAL_FACTS, contactId: null }, request(), randomUUID());
+
+  expect(claimsOf(intent.uploadId)).toMatchObject({ submitterLabel: 'uploaded-via-client-portal' });
 });
 
 test('path separators in a note are stripped from the NAME and kept verbatim in the RECORD', async () => {

@@ -16,14 +16,24 @@ import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { Tooltip } from '../components/DynamicComponents/Tooltip';
 import { blockedReason, describeMissing, partitionByReadiness, readinessOf } from '../lib/readiness';
+import { channelLabels, receivedViaText } from '../lib/channelLabels';
 import { currency } from '../lib/resolver';
 import { missingMandatory, OPTIONAL_MANDATORY } from '../lib/selectors';
 import { DuplicateModal } from '../components/DynamicComponents/DuplicateModal';
 import { navigate, path, usePath, useQueryParam } from '../lib/router';
 import { EXPORT_HINT, EXPORT_MIN_ROWS } from '../lib/exportRules';
 import { failureOf, reasonText, retryMeaning } from '../lib/failures';
-import { AnalysisModal } from '../components/DynamicComponents/AnalysisModal';
 import { ProposalFlowModal } from '../components/DynamicComponents/ProposalFlowModal';
+/**
+ * Lazy like PublishBatchDialog below and for the same budget: the analysis
+ * panel mounts only after a synthetic upload, and its ~8.8 kB gzip chunk sat on
+ * this route — the thinnest on the board — which the Received-via column
+ * (review item 60's follow-up) then pushed over 250 kB. Measured paired A/B,
+ * 5 Sep 2026.
+ */
+const AnalysisModal = lazy(() =>
+  import('../components/DynamicComponents/AnalysisModal').then((mod) => ({ default: mod.AnalysisModal })),
+);
 /**
  * The live publish door — see the header of `PublishBatchDialog.tsx`. `lazy()`
  * so the flow's copy stays off this route and shares one chunk with the copy
@@ -142,12 +152,10 @@ const m = defineMessages({
   searchPlaceholder: { id: 'inboxes.inboxesView.searchPlaceholder', defaultMessage: 'Search supplier, amount...' },
   filterAllClients: { id: 'inboxes.inboxesView.filterAllClients', defaultMessage: 'All clients' },
   filterAllChannels: { id: 'inboxes.inboxesView.filterAllChannels', defaultMessage: 'All channels' },
-  channelEmail: { id: 'inboxes.inboxesView.channelEmail', defaultMessage: 'Email' },
-  channelWeb: { id: 'inboxes.inboxesView.channelWeb', defaultMessage: 'Web upload' },
-  channelWhatsapp: { id: 'inboxes.inboxesView.channelWhatsapp', defaultMessage: 'WhatsApp' },
-  channelSmsLink: { id: 'inboxes.inboxesView.channelSmsLink', defaultMessage: 'Chase link' },
-  channelCsv: { id: 'inboxes.inboxesView.channelCsv', defaultMessage: 'CSV / XLSX' },
-  channelPortal: { id: 'inboxes.inboxesView.channelPortal', defaultMessage: 'Business portal' },
+  // The per-channel option labels moved to the shared `lib/channelLabels.ts`
+  // (item 21's sweep): the filter, the column and every other row surface must
+  // say the same honest words.
+  columnReceivedVia: { id: 'inboxes.inboxesView.columnReceivedVia', defaultMessage: 'Received via' },
   rowCount: { id: 'inboxes.inboxesView.rowCount', defaultMessage: '{count} items' },
   publishItemsAction: { id: 'inboxes.inboxesView.publishItemsAction', defaultMessage: 'Publish {count} Items' },
   selectedCount: { id: 'inboxes.inboxesView.selectedCount', defaultMessage: '{count} selected' },
@@ -1036,12 +1044,13 @@ export function InboxesView() {
                   onChange={setChannelFilter}
                   options={[
                     { value: 'all', label: intl.formatMessage(m.filterAllChannels) },
-                    { value: 'email', label: intl.formatMessage(m.channelEmail) },
-                    { value: 'web', label: intl.formatMessage(m.channelWeb) },
-                    { value: 'whatsapp', label: intl.formatMessage(m.channelWhatsapp) },
-                    { value: 'sms-link', label: intl.formatMessage(m.channelSmsLink) },
-                    { value: 'csv', label: intl.formatMessage(m.channelCsv) },
-                    { value: 'portal', label: intl.formatMessage(m.channelPortal) },
+                    // One label source for filter, column and cells (item 21) —
+                    // and `chat` finally has an option, since CHAT_UPLOAD rows
+                    // exist and were unfilterable.
+                    ...(['email', 'web', 'chat', 'whatsapp', 'portal', 'sms-link', 'csv'] as const).map((s) => ({
+                      value: s,
+                      label: intl.formatMessage(channelLabels[s]),
+                    })),
                   ]}
                 />
               </div>
@@ -1367,7 +1376,9 @@ export function InboxesView() {
                     <div className="flex-1 min-w-0 flex flex-col gap-2.5">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <div className="font-bold text-white text-[15px] leading-tight break-words">{doc.supplier}</div>
+                          {/* The generated channel-based name for an unextracted
+                              supplier, never the literal "Unknown" (item 43). */}
+                          <div className="font-bold text-white text-[15px] leading-tight break-words">{doc.displayTitle ?? doc.supplier}</div>
                           {doc.splitFrom && <div className="text-[11px] font-medium text-zinc-400">{doc.splitFrom}</div>}
                           <div className="text-[12px] text-zinc-500 font-medium mt-0.5">{doc.clientName} · {doc.date}</div>
                         </div>
@@ -1376,6 +1387,11 @@ export function InboxesView() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold tracking-wide uppercase ${doc.category === '—' ? 'bg-amber-100 text-amber-700' : 'bg-raised text-zinc-300'}`}>
                           {doc.category}
+                        </span>
+                        {/* Item 60's follow-up, phone layout: where it came
+                            from, in the honest words (item 21). */}
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold tracking-wide bg-raised text-zinc-300">
+                          {receivedViaText(intl, doc)}
                         </span>
                         <StatusBadge doc={doc} blocked={blocked} />
                         {renderFlags(doc, blocked)}
@@ -1418,6 +1434,10 @@ export function InboxesView() {
                     <th className="px-4 py-4">{intl.formatMessage(commonLabels.date)}</th>
                     <th className="px-4 py-4 text-right">{intl.formatMessage(commonLabels.total)}</th>
                     <th className="px-4 py-4">{intl.formatMessage(commonLabels.category)}</th>
+                    {/* Item 60's follow-up: the client Costs tab shows where a
+                        document came from; this board did not. Same channel
+                        fact, same honest words (item 21). */}
+                    <th className="px-4 py-4">{intl.formatMessage(m.columnReceivedVia)}</th>
                     {/* A field the practice made mandatory is a field they
                         need to see: making it required and then hiding it
                         leaves people opening documents one by one to find out
@@ -1433,7 +1453,7 @@ export function InboxesView() {
                 <tbody className="divide-y divide-white/5">
                   {rows.length === 0 && (
                     <tr>
-                      <td colSpan={9 + mandatoryFields.length} className="px-4 py-16 text-center text-zinc-400 font-medium">
+                      <td colSpan={10 + mandatoryFields.length} className="px-4 py-16 text-center text-zinc-400 font-medium">
                         {intl.formatMessage(m.emptyTable)}
                       </td>
                     </tr>
@@ -1452,7 +1472,7 @@ export function InboxesView() {
                         </td>
                         <td className="px-4 py-5 text-white font-bold">{doc.clientName}</td>
                         <td className="px-4 py-5 font-semibold text-zinc-300">
-                          {doc.supplier}
+                          {doc.displayTitle ?? doc.supplier}
                           {doc.splitFrom && <span className="block text-[11px] font-medium text-zinc-400">{doc.splitFrom}</span>}
                         </td>
                         <td className="px-4 py-5 text-zinc-500 font-medium">{doc.date}</td>
@@ -1460,6 +1480,11 @@ export function InboxesView() {
                         <td className="px-4 py-5">
                           <span className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold tracking-wide uppercase ${doc.category === '—' ? 'bg-amber-100 text-amber-700' : 'bg-raised text-zinc-300'}`}>
                             {doc.category}
+                          </span>
+                        </td>
+                        <td className="px-4 py-5">
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold tracking-wide bg-raised text-zinc-300 whitespace-nowrap">
+                            {receivedViaText(intl, doc)}
                           </span>
                         </td>
                         {mandatoryFields.map((label) => {
@@ -1585,6 +1610,7 @@ export function InboxesView() {
       {/* Extraction on screen, then its figures, then the calls it made —
           all before the document is filed anywhere. */}
       {analysing && (
+        <Suspense fallback={null}>
         <AnalysisModal
           docIds={analysing.docIds}
           importIds={analysing.importIds}
@@ -1604,6 +1630,7 @@ export function InboxesView() {
             if (sales || costs) goTo({ inbox: sales > costs ? 'sales' : 'cost', status: 'review' });
           }}
         />
+        </Suspense>
       )}
 
       {/* The two suspected copies, side by side, with keep-one / keep-both */}

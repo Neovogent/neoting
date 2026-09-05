@@ -5463,6 +5463,28 @@ components:
           description: |
             Whether the Rejected/Failed view should offer a retry. Retrying is
             itself an ActionProposal of kind `document.reprocess`.
+        submitterLabel:
+          type: [string, 'null']
+          description: |
+            Display words for who sent this document, written at creation from
+            facts the server held — never client words (5 Sep 2026, review
+            items 21/43/62). Three writers:
+
+            - a signed-in client-portal member: `Uploaded by {member}
+              ({business})` / `Captured by {member} ({business})`, or the slug
+              `uploaded-via-client-portal` when the session has no contact;
+            - a chase-link session: the slug `uploaded-via-chase-link` (the
+              audit-trail event keeps SoT §4 Stage 8.3's exact
+              `uploaded-by-delegated-session` string);
+            - a practice member's own upload: `Uploaded by {accountant}`.
+
+            It sits on the SUMMARY so list rows can render an honest
+            "Received via" — in particular splitting `SMS_PORTAL` into
+            chase-link vs direct client-portal uploads, which one channel enum
+            value cannot say. Rows written before 5 Sep 2026 carry
+            `uploaded-by-delegated-session` for BOTH portal kinds; consumers
+            must read that legacy value as the client portal, the superset
+            that is true of both.
         archivedAt: { type: [string, 'null'], format: date-time }
         # ---- Trash (document management, 2 Sep 2026) ----------------------
         deletedAt:
@@ -5580,12 +5602,9 @@ components:
                 Catches the same paper photographed twice, cropped or rotated —
                 one of the multi-signal dedupe nets (SoT Stage 6).
             submitterUserId: { type: [string, 'null'] }
-            submitterLabel:
-              type: [string, 'null']
-              description: |
-                Display name for a submitter with no login — someone who emails or
-                WhatsApps documents is recorded as Document Owner without ever
-                being provisioned as a user.
+            # `submitterLabel` moved onto `DocumentSummary` (5 Sep 2026, review
+            # items 21/43/62) so list rows can render who sent a document; the
+            # composed `Document` shape is unchanged.
             receivedLocal:
               type: [string, 'null']
               description: The Europe/London wall-clock time as received, kept for evidence alongside the UTC instant.

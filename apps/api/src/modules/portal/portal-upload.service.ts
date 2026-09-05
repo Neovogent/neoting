@@ -18,6 +18,12 @@ import {
   type UploadClaims,
   uploadIntentKey,
 } from '../ingestion-routing/index.js';
+import {
+  captureDisplayName,
+  captureIndex,
+  portalSubmitterLabel,
+  type PortalUploadPerson,
+} from './portal-provenance.js';
 import { type PortalSessionFacts, portalSessionRequired, systemScopeFor } from './portal-session-context.js';
 import type { PortalSessionService } from './portal-session.service.js';
 import type { PortalUploadIntent, PortalUploadService } from './portal-upload.port.js';
@@ -130,10 +136,15 @@ export class PrismaPortalUploadService implements PortalUploadService {
     // whether the worker can extract at all (`ingest-processor.ts` skips a job
     // with no practice), so it is read from the row that owns the answer. The
     // read also proves the session's business is still reachable at all.
+    // `name` rides along for the provenance words below; `contact` is the
+    // signed-in member the session verified (`otp_sessions.contact_id` — null
+    // on a chase session by design, the link being forwardable). Both reads run
+    // under the practice SYSTEM context and are constrained to the session's
+    // own business, the standing rule for that scope.
     const business = await scopedDb(this.prisma, systemScopeFor(facts), (db) =>
       db.business.findUnique({
         where: { id: facts.businessId },
-        select: { id: true, practiceId: true, subscriptionStatus: true },
+        select: { id: true, name: true, practiceId: true, subscriptionStatus: true },
       }),
     );
     if (business === null) {
@@ -167,6 +178,21 @@ export class PrismaPortalUploadService implements PortalUploadService {
     // process. That ceremony was retired on 1 Sep.
     assertMayIngest(business);
 
+    // The provenance facts (review items 21/43): who is acting, and whether
+    // this is the app's own camera capture. A chase session names nobody, so
+    // the contact read is skipped rather than answered with a guess.
+    const contactId = facts.contactId;
+    const person: PortalUploadPerson | null =
+      contactId === null
+        ? null
+        : await scopedDb(this.prisma, systemScopeFor(facts), (db) =>
+            db.contact.findFirst({
+              where: { id: contactId, businessId: facts.businessId },
+              select: { firstName: true, lastName: true, email: true },
+            }),
+          );
+    const capture = captureIndex(request.filename);
+
     const key = uploadIntentKey(facts.businessId, randomUUID());
     const presigned = await this.store.presignPut({
       key,
@@ -183,9 +209,15 @@ export class PrismaPortalUploadService implements PortalUploadService {
       // The client's own name for the document, when they gave one (review
       // item 11): "July fuel receipt.jpg" instead of IMG_2937.jpg, keeping the
       // REAL extension — `formatFor` picks the statement lane's reader off it,
-      // and a renamed CSV must still read as one. No note → the filename as
-      // declared, exactly as before.
-      filename: displayFilename(request.note, request.filename),
+      // and a renamed CSV must still read as one. A camera capture with no note
+      // gets the generated name (review item 43) — the client's words still win
+      // when they typed any. No note, no capture → the filename as declared.
+      filename: displayFilename(
+        request.note,
+        capture === null
+          ? request.filename
+          : captureDisplayName({ person, businessName: business.name, index: capture, now: new Date() }),
+      ),
       mimeType: request.mimeType,
       byteSize: request.byteSize,
       // Nothing splits yet (web-upload's own out-of-scope note), and a phone
@@ -199,6 +231,16 @@ export class PrismaPortalUploadService implements PortalUploadService {
       // SAID on the provenance event — carried, never trusted, like the
       // transaction declaration above it.
       ...(request.note === undefined || request.note === null ? {} : { portalNote: request.note }),
+      // Who sent this, in the words `documents.submitter_label` will carry
+      // (review items 21/43): the chase-link slug, or the signed-in member by
+      // name. Composed here — where the session facts live — and signed, so
+      // completion copies rather than re-derives.
+      submitterLabel: portalSubmitterLabel({
+        chase: facts.chaseId !== null,
+        person,
+        businessName: business.name,
+        capture: capture !== null,
+      }),
       s3Key: key,
       expiresAtMs,
     };

@@ -47,7 +47,12 @@ const DOCUMENT_DEFAULTS = {
  * under test is identical. What Postgres does with the *write* (the WITH CHECK,
  * the real unique violation) is the integration test's job, not this file's.
  */
-function fakePrisma(business: { id: string; practiceId: string | null } | null): PrismaClient {
+function fakePrisma(
+  business: { id: string; practiceId: string | null } | null,
+  // The session actor behind a workspace completion (review item 62). Read at
+  // the ROOT client, not the transaction — `users` carries no RLS.
+  user: { kind: string; firstName: string | null; lastName: string | null } | null = null,
+): PrismaClient {
   const documents = new Map<string, DocumentRow>();
   const tx = {
     $executeRaw: async () => 0,
@@ -62,7 +67,10 @@ function fakePrisma(business: { id: string; practiceId: string | null } | null):
     },
     documentEvent: { create: async () => ({}) },
   };
-  return { $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx) } as unknown as PrismaClient;
+  return {
+    $transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx),
+    user: { findUnique: async () => user },
+  } as unknown as PrismaClient;
 }
 
 function harness(
@@ -74,10 +82,11 @@ function harness(
     practiceId: 'prac_1',
     subscriptionStatus: 'ACTIVE',
   },
+  user: { kind: string; firstName: string | null; lastName: string | null } | null = null,
 ): { store: InMemoryDocumentStore; queue: FixtureIngestQueue; service: WebUploadService } {
   const store = new InMemoryDocumentStore();
   const queue = new FixtureIngestQueue();
-  const service = new WebUploadService(fakePrisma(business), store, queue, new InMemoryIdempotencyStore(), {
+  const service = new WebUploadService(fakePrisma(business, user), store, queue, new InMemoryIdempotencyStore(), {
     uploadSecret: SECRET,
     uploadTtlSeconds: 900,
   });
@@ -286,6 +295,28 @@ test('a second completion of the same intent returns the same document and does 
   expect(second.id).toBe(first.id); // one document, not two
   expect(second).toEqual(first);
   expect(queue.enqueued).toHaveLength(1); // and one sanitisation job
+});
+
+test('a workspace completion records WHO entered it — "Uploaded by {accountant}" on the row (review item 62)', async () => {
+  // The paper-handed-over-at-a-meeting case: the accountant entering the
+  // document IS the provenance, and the Received-via column reads it.
+  const { store, service } = harness(undefined, { kind: 'HUMAN', firstName: 'Priya', lastName: 'Shah' });
+  const bytes = Buffer.from('paper-receipt');
+  const token = tokenFor(store, bytes, Date.now() + 60_000);
+
+  const doc = await service.completeUpload(CTX, token, createHash('sha256').update(bytes).digest('hex'));
+
+  expect(doc.submitterLabel).toBe('Uploaded by Priya Shah');
+});
+
+test('a SYSTEM actor or an unknown user writes NO label — a generic channel word beats a fabricated name', async () => {
+  const { store, service } = harness(undefined, { kind: 'SYSTEM', firstName: 'Neoting', lastName: 'automation' });
+  const bytes = Buffer.from('machine-entered');
+  const token = tokenFor(store, bytes, Date.now() + 60_000);
+
+  const doc = await service.completeUpload(CTX, token, createHash('sha256').update(bytes).digest('hex'));
+
+  expect(doc.submitterLabel).toBeNull();
 });
 
 test('completeUpload: same Idempotency-Key + different payload is 409 NT-IDM-001', async () => {

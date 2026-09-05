@@ -1,9 +1,9 @@
-import { Fragment, lazy, Suspense, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, lazy, Suspense, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowLeft, Sparkles, Send, Activity, Star,
   RefreshCw, CheckCircle, Eye, Users, Settings as SettingsIcon, Download, Smartphone,
   Radio, History, ListChecks, Bot, Circle, Plus, PencilLine, X as XIcon, ShieldCheck, Clock, Check,
-  UserMinus, LucideIcon,
+  UserMinus, Upload, LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl, type IntlShape, type MessageDescriptor } from 'react-intl';
@@ -37,7 +37,13 @@ import { RolePicker } from '../components/DynamicComponents/RolePicker';
 const DocumentPreview = lazy(() => import('../components/DynamicComponents/DocumentPreview').then((m) => ({ default: m.DocumentPreview })));
 const WorkflowEditor = lazy(() => import('../components/DynamicComponents/WorkflowEditor').then((m) => ({ default: m.WorkflowEditor })));
 const ClientInbox = lazy(() => import('./ClientInbox').then((m) => ({ default: m.ClientInbox })));
-import { ChaseComposer } from '../components/DynamicComponents/ChaseComposer';
+// Lazy for the same reason as DocumentPreview above: it mounts only inside the
+// chase Modal, and its ~3.2 kB gzip chunk was part of what pushed this route —
+// the heaviest on the board — over the 250 kB budget when the Received-via
+// sweep landed (measured paired A/B, 5 Sep 2026).
+const ChaseComposer = lazy(() =>
+  import('../components/DynamicComponents/ChaseComposer').then((m) => ({ default: m.ChaseComposer })),
+);
 const BankView = lazy(() => import('./BankView').then((m) => ({ default: m.BankView })));
 const ClientSupplierStatements = lazy(() => import('./ClientSupplierStatements').then((m) => ({ default: m.ClientSupplierStatements })));
 const ClientExpenseClaims = lazy(() => import('./ClientExpenseClaims').then((m) => ({ default: m.ClientExpenseClaims })));
@@ -47,6 +53,7 @@ import { fromSlug, slug, useQueryParam, useSegment } from '../lib/router';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { OffboardClientDialog } from '../components/DynamicComponents/OffboardClientDialog';
 import { channelLabel } from '../lib/channels';
+import { receivedViaText } from '../lib/channelLabels';
 import { resendClientSetupLink } from '../api/setup-link';
 import { errorLabel } from '../api/slices';
 import type { ApprovalWorkflow, BusinessMemberRole, Client, ClientDetailChange, Colleague, Document, Intent, MissingItem, SetupTask, WorkflowTask } from '../lib/types';
@@ -353,6 +360,7 @@ const m = defineMessages({
 
   // ── Documents tab ───────────────────────────────────────────────────────
   documentsEmpty: { id: 'clients.clientDetailView.documentsEmpty', defaultMessage: 'No documents yet.' },
+  uploadDocuments: { id: 'clients.clientDetailView.uploadDocuments', defaultMessage: 'Upload Documents' },
   bulkPreview: { id: 'clients.clientDetailView.bulkPreview', defaultMessage: 'Preview' },
   download: { id: 'clients.clientDetailView.download', defaultMessage: 'Download' },
   bulkRetryFailed: { id: 'clients.clientDetailView.bulkRetryFailed', defaultMessage: 'Retry failed' },
@@ -633,6 +641,7 @@ export function ClientDetailView() {
     clientSideApprovals, approvalRequests, sendApprovalRequest, resendApprovalRequest, openApprovalLink,
     chasePolicy, clientDetailChanges, proposeClientDetailChanges,
     slices, session, setPendingUtterance,
+    ingest, documentsSource, serverClientIdFor,
   } = useAppContext();
 
   // /clients/:id/:tab — the tab is in the address, so every one is linkable
@@ -671,6 +680,8 @@ export function ClientDetailView() {
   const confirm = useConfirm();
   const intl = useIntl();
   const client = clients.find((c) => c.id === openClientId);
+  /** The Documents tab's own upload door (review item 62). */
+  const registerFileRef = useRef<HTMLInputElement>(null);
 
   /**
    * Wireframe screen 7, "Channel mix (how docs arrive)" — a real share of this
@@ -730,6 +741,39 @@ export function ClientDetailView() {
 
   const s = statsFor(client.id);
   const docs = documents.filter((d) => d.clientId === client.id);
+
+  /**
+   * The Documents tab's upload (review item 62) — the paper / personal-channel
+   * case, into THIS client. The same journey the Costs tab takes: live it is
+   * `runWorkspaceDrop` (intent → presigned PUT → complete, one document per
+   * file), and the server records "Uploaded by {accountant}"; synthetic it is
+   * the local `ingest`, byte-for-byte the Costs tab's branch.
+   */
+  const uploadToRegister = (files: FileList | null) => {
+    // ⚠ Snapshotted SYNCHRONOUSLY: a FileList is live, and the input's
+    // onChange clears `e.target.value` right after this call — an
+    // `Array.from(files)` deferred past the dynamic import below would read an
+    // already-emptied list and silently upload nothing (found live, 5 Sep).
+    const picked = Array.from(files ?? []);
+    if (picked.length === 0) return;
+    if (documentsSource === 'api') {
+      // `import()` rather than a static import: `api/uploads` (and its
+      // transport) used to reach this route only through the LAZY ClientInbox
+      // chunk, and pulling it onto this chunk statically was ~1.4 kB gzip on
+      // the board's heaviest route. The user has just dropped files — a network
+      // round-trip is already in flight, so the dynamic edge costs nothing felt.
+      void import('../api/uploads').then(({ runWorkspaceDrop }) =>
+        runWorkspaceDrop(intl, confirm, serverClientIdFor(client.id), picked),
+      );
+      return;
+    }
+    ingest(
+      picked.map((f) => ({ name: f.name, size: f.size, raw: f })),
+      client.id,
+      'web',
+      { uploader: 'You (web upload)' },
+    );
+  };
   const miss = missing.filter((m) => m.clientId === client.id);
   const clientApprovals = approvals.filter((a) => a.clientName === client.name);
   /** Live workflows this client's items are actually running through. */
@@ -818,10 +862,13 @@ export function ClientDetailView() {
   const chaseClient = () => setChasing(miss.filter((m) => !m.chased).map((m) => m.id));
 
   const docColumns: Column<Document>[] = [
-    { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (d) => d.supplier, render: (d) => <span className="text-white font-semibold">{d.supplier}</span> },
+    // Title: the generated channel-based name for an unextracted supplier —
+    // never the literal "Unknown" (item 43). Channel: honest words, never the
+    // raw slug (item 21).
+    { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (d) => d.displayTitle ?? d.supplier, render: (d) => <span className="text-white font-semibold">{d.displayTitle ?? d.supplier}</span> },
     { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date },
     { key: 'category', label: intl.formatMessage(commonLabels.category), sortValue: (d) => d.category },
-    { key: 'source', label: intl.formatMessage(m.colChannel), sortValue: (d) => d.source, render: (d) => <Pill>{d.source}</Pill> },
+    { key: 'source', label: intl.formatMessage(m.colChannel), sortValue: (d) => receivedViaText(intl, d), render: (d) => <Pill>{receivedViaText(intl, d)}</Pill> },
     { key: 'total', label: intl.formatMessage(commonLabels.total), align: 'right', sortValue: (d) => d.total, render: (d) => <span className="text-white font-bold tabular-nums">{currency(d.total)}</span> },
     {
       key: 'status', label: intl.formatMessage(commonLabels.status),
@@ -1510,6 +1557,16 @@ export function ClientDetailView() {
           )}
 
           {tab === 'Documents' && (
+            /* The register's own upload door (review item 62): the client hands
+               paper or a personal-channel photo to the accountant, who enters it
+               from HERE — the same intent → PUT → complete journey the Costs tab
+               takes (`runWorkspaceDrop`, one shared flow), recorded as
+               "Uploaded by {accountant}" server-side. Drag-drop works on the
+               whole table; the button is what makes the door discoverable. */
+            <div
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => { e.preventDefault(); uploadToRegister(e.dataTransfer.files); }}
+            >
             <DataTable<Document>
               className="max-w-none"
               columns={docColumns}
@@ -1517,6 +1574,24 @@ export function ClientDetailView() {
               rowId={(d) => d.id}
               selectable
               onRowClick={(d) => setPreview(d)}
+              toolbar={
+                <>
+                  <button
+                    onClick={() => registerFileRef.current?.click()}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold text-brand-on bg-brand hover:bg-brand-hover transition-colors shadow-glow-btn-soft"
+                  >
+                    <Upload size={16} strokeWidth={2.5} />
+                    {intl.formatMessage(m.uploadDocuments)}
+                  </button>
+                  <input
+                    ref={registerFileRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => { uploadToRegister(e.target.files); e.target.value = ''; }}
+                  />
+                </>
+              }
               emptyMessage={intl.formatMessage(m.documentsEmpty)}
               bulkActions={[
                 { label: intl.formatMessage(m.bulkPreview), icon: Eye, onClick: (sel) => sel[0] && setPreview(sel[0]) },
@@ -1537,6 +1612,7 @@ export function ClientDetailView() {
               ]}
               footer={intl.formatMessage(m.documentsFooter, { total: docs.length, published: s.published, rejected: s.rejected })}
             />
+            </div>
           )}
 
           {tab === 'Users' && (
@@ -1807,7 +1883,12 @@ export function ClientDetailView() {
                   {intl.formatMessage(m.chaseDone)}
                 </button>
               </div>
-              <ChaseComposer clientIds={[client.id]} missingItemIds={chasing} />
+              {/* The Suspense sits INSIDE the modal frame (the InboxesView
+                  precedent): the overlay and Done button paint at once and only
+                  the composer waits. */}
+              <Suspense fallback={<TabSkeleton />}>
+                <ChaseComposer clientIds={[client.id]} missingItemIds={chasing} />
+              </Suspense>
             </div>
           </Modal>
         )}

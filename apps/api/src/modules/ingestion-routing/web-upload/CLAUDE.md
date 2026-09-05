@@ -65,11 +65,29 @@ path, unchanged, and the portal resolver is never asked.
 
 That split is why `persistDocument` skips its own event write on the delegated
 path and `recordDelegatedProvenance` runs after the transaction. It is best
-effort **and the row does not depend on it**: `documents.submitter_label` carries
-`uploaded-by-delegated-session` too, so a failure loses the timeline entry, not
-the provenance. Failing the request instead would be worse — the document is
+effort **and the row does not depend on it**: `documents.submitter_label`
+carries the provenance too, so a failure loses the timeline entry, not the
+provenance. Failing the request instead would be worse — the document is
 persisted by then, and a retry finds `created: false`, skips the enqueue, and
 strands it in RECEIVED.
+
+## `submitter_label` — who sent it, in words (5 Sep 2026, review items 21/43/62)
+
+`complete()` decides the row's `submitter_label` once, and the web renders it
+off `DocumentSummary.submitterLabel` (the contract widening that lets list rows
+say an honest "Received via"):
+
+| Caller | Row label | Event outcome |
+|---|---|---|
+| chase-link session | `uploaded-via-chase-link` (from the signed claims) | `uploaded-by-delegated-session` — **SoT §4 Stage 8.3's exact audit string, do not reword** |
+| signed-in portal member | `Uploaded by {member} ({business})` / `Captured by …` (composed in `portal/portal-provenance.ts` at intent time, signed into `UploadClaims.submitterLabel`) | the same human words |
+| workspace session (WEB_UPLOAD / CHAT_UPLOAD) | `Uploaded by {accountant}` — `workspaceSubmitterLabel`, read from `users` by the session's own `actorId` (no RLS on `users`, the `resolveSystemActor` precedent); a SYSTEM actor or a nameless user writes NOTHING, and a lookup failure never costs the upload | `received`, unchanged |
+
+⚠ A delegated token minted before the claim existed falls back to the legacy
+`uploaded-by-delegated-session` — and rows written before 5 Sep 2026 carry that
+value for BOTH portal kinds, so the web reads it as "Client portal" (true of
+both) rather than as a chase that may never have happened. That asymmetry is
+review item 21's whole point; do not "fix" the fallback to the chase slug.
 
 **Three guards on the delegated path, in order:**
 

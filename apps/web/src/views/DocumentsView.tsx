@@ -32,6 +32,7 @@ import {
 } from '../api/document-lifecycle';
 import { errorLabel, sliceStatus } from '../api/slices';
 import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
+import { channelLabels, receivedViaText } from '../lib/channelLabels';
 import { currency } from '../lib/resolver';
 import type { CreateActionProposalRequest } from '@neoting/contracts/model';
 import type { DocStatus, Document, VaultDocument } from '../lib/types';
@@ -802,11 +803,13 @@ export function DocumentsView() {
   });
 
   const archiveColumns: Column<Document>[] = [
-    { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (d) => d.supplier, render: (d) => <span className="text-white font-semibold">{d.supplier}</span> },
+    // Title + channel: the generated name for an unextracted supplier (item 43)
+    // and honest channel words, never the raw slug (item 21).
+    { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (d) => d.displayTitle ?? d.supplier, render: (d) => <span className="text-white font-semibold">{d.displayTitle ?? d.supplier}</span> },
     ...(groupByClient ? [] : [{ key: 'clientName', label: intl.formatMessage(commonLabels.client), sortValue: (d: Document) => d.clientName }]),
     { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date },
     { key: 'category', label: intl.formatMessage(commonLabels.category), sortValue: (d) => d.category },
-    { key: 'source', label: intl.formatMessage(m.columnSource), sortValue: (d) => d.source, render: (d) => <Pill>{d.source}</Pill> },
+    { key: 'source', label: intl.formatMessage(m.columnSource), sortValue: (d) => receivedViaText(intl, d), render: (d) => <Pill>{receivedViaText(intl, d)}</Pill> },
     { key: 'uploader', label: intl.formatMessage(m.columnUploader), sortValue: (d) => d.uploader },
     { key: 'total', label: intl.formatMessage(commonLabels.total), align: 'right', sortValue: (d) => d.total, render: (d) => <span className="text-white font-bold tabular-nums">{currency(d.total, d.currency)}</span> },
   ];
@@ -911,7 +914,7 @@ export function DocumentsView() {
    * exists for.
    */
   const allColumns: Column<Document>[] = [
-    { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (d) => d.supplier, render: (d) => <span className="text-white font-semibold">{d.supplier}</span> },
+    { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (d) => d.displayTitle ?? d.supplier, render: (d) => <span className="text-white font-semibold">{d.displayTitle ?? d.supplier}</span> },
     {
       key: 'clientName',
       label: intl.formatMessage(commonLabels.client),
@@ -935,7 +938,7 @@ export function DocumentsView() {
         </span>
       ),
     },
-    { key: 'source', label: intl.formatMessage(m.columnSource), sortValue: (d) => d.source, render: (d) => <Pill>{d.source}</Pill> },
+    { key: 'source', label: intl.formatMessage(m.columnSource), sortValue: (d) => receivedViaText(intl, d), render: (d) => <Pill>{receivedViaText(intl, d)}</Pill> },
     { key: 'uploader', label: intl.formatMessage(m.columnUploader), sortValue: (d) => d.uploader },
     { key: 'total', label: intl.formatMessage(commonLabels.total), align: 'right', sortValue: (d) => d.total, render: (d) => <span className="text-white font-bold tabular-nums">{currency(d.total, d.currency)}</span> },
     rowActionsColumn('register'),
@@ -1142,7 +1145,8 @@ export function DocumentsView() {
               onChange={setSourceFilter}
               options={[
                 { value: 'all', label: intl.formatMessage(m.filterAllChannels) },
-                ...(tab === 'All' ? allSources : archiveSources).map((s) => ({ value: s, label: s })),
+                // Honest channel words, never the raw slug (item 21).
+                ...(tab === 'All' ? allSources : archiveSources).map((s) => ({ value: s, label: intl.formatMessage(channelLabels[s]) })),
               ]}
             />
             {tab === 'All' && (

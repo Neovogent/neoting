@@ -295,7 +295,17 @@ export class WebUploadService {
       throw new AppException('NT-ING-003', HttpStatus.CONFLICT, 'The uploaded bytes do not match the declared hash');
     }
 
-    const { row, created } = await this.persistDocument(ctx, uploadId, claims, byteHash, delegated);
+    // Who this row says sent it (review items 21/43/62). A delegated intent
+    // carries the words the portal composed and signed (chase-link slug, or the
+    // member by name — `?? DELEGATED_SUBMITTER_LABEL` covers tokens minted
+    // before the claim existed); a workspace completion names the accountant
+    // whose session this is.
+    const submitterLabel =
+      delegated === null
+        ? await this.workspaceSubmitterLabel(ctx.actorId)
+        : (claims.submitterLabel ?? DELEGATED_SUBMITTER_LABEL);
+
+    const { row, created } = await this.persistDocument(ctx, uploadId, claims, byteHash, delegated, submitterLabel);
     if (delegated !== null && created) await this.afterDelegatedCreate(delegated, row.id, claims);
     // Only the completion that actually CREATED the document enqueues. A second
     // completion of the same intent — a replay with a different Idempotency-Key,
@@ -386,7 +396,16 @@ export class WebUploadService {
           data: {
             documentId,
             stage: 'upload',
-            outcome: DELEGATED_SUBMITTER_LABEL,
+            // A CHASE session keeps the SoT §4 Stage 8.3 audit string verbatim
+            // ("requested-from vs uploaded-by-delegated-session" — the
+            // forwardable-link journey it describes). A signed-in portal member
+            // is a different journey (D49) with a named person, so their event
+            // reads the human words the row's label carries (review item 43):
+            // "Captured by Mubashir Rahman (Zeplow Inc)".
+            outcome:
+              delegated.chaseId === null
+                ? (claims.submitterLabel ?? DELEGATED_SUBMITTER_LABEL)
+                : DELEGATED_SUBMITTER_LABEL,
             traceId: currentTraceId() ?? null,
             detail: {
               otpSessionId: delegated.otpSessionId,
@@ -422,6 +441,7 @@ export class WebUploadService {
     claims: UploadClaims,
     byteHash: string,
     delegated: DelegatedCompletion | null,
+    submitterLabel: string | null,
   ): Promise<{ row: DocumentRow; created: boolean }> {
     const id = documentIdFor(uploadId);
     const outcome = await scopedDb(this.prisma, ctx, async (db) => {
@@ -452,8 +472,11 @@ export class WebUploadService {
             state: 'RECEIVED',
             submitterUserId: ctx.actorId,
             // The provenance that survives even if the event write below (or its
-            // delegated equivalent) never lands — it is on the row itself.
-            ...(delegated === null ? {} : { submitterLabel: DELEGATED_SUBMITTER_LABEL }),
+            // delegated equivalent) never lands — it is on the row itself. The
+            // words were decided in `complete()` (review items 21/43/62): the
+            // portal intent's signed label, or "Uploaded by {accountant}" for a
+            // workspace session with a named human behind it.
+            ...(submitterLabel === null ? {} : { submitterLabel }),
           },
         });
         // A delegated context CANNOT write this: `document_events` reaches its
@@ -499,6 +522,30 @@ export class WebUploadService {
       ...(claims.practiceId === null ? {} : { practiceId: claims.practiceId }),
     };
     await this.queue.enqueue(job);
+  }
+
+  /**
+   * "Uploaded by Priya Shah" for a workspace completion (review item 62) — the
+   * paper-handed-over-at-a-meeting case, where the accountant entering the
+   * document IS the provenance. Read from `users` directly: the table carries
+   * no RLS (the `resolveSystemActor` precedent), and the id is the verified
+   * session's own actor, never a request field. A SYSTEM actor or a user with
+   * no name writes no label — a generic channel word beats a fabricated name —
+   * and a lookup failure must never cost the upload.
+   */
+  private async workspaceSubmitterLabel(actorId: string): Promise<string | null> {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: actorId },
+        select: { kind: true, firstName: true, lastName: true },
+      });
+      if (user === null || user.kind !== 'HUMAN') return null;
+      const name = [user.firstName ?? '', user.lastName ?? ''].join(' ').replace(/\s+/gu, ' ').trim();
+      return name === '' ? null : `Uploaded by ${name.slice(0, 60).trim()}`;
+    } catch (error) {
+      this.logger.warn(`submitter label lookup failed (the upload proceeds without one): ${String(error)}`);
+      return null;
+    }
   }
 
   private now(): number {

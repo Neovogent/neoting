@@ -7,6 +7,7 @@ import { AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import { API_ENABLED } from '../../api/config';
 import { useDocumentDetail } from '../../api/document-detail';
+import { receivedViaHeading } from '../../lib/channelLabels';
 import { currency } from '../../lib/resolver';
 import { Modal } from './Modal';
 import { Pill } from './DataTable';
@@ -273,8 +274,10 @@ export default function DocumentViewer({
               <FileText size={22} />
             </div>
             <div className="min-w-0">
-              <h3 title={doc.supplier} className="font-sans font-bold text-xl text-white tracking-tight truncate">
-                {doc.supplier}
+              {/* The generated channel-based name for an unextracted supplier —
+                  never the literal "Unknown" (item 43). */}
+              <h3 title={doc.displayTitle ?? doc.supplier} className="font-sans font-bold text-xl text-white tracking-tight truncate">
+                {doc.displayTitle ?? doc.supplier}
               </h3>
               <p title={metaText} className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider truncate">
                 {metaText}
@@ -284,8 +287,9 @@ export default function DocumentViewer({
 
           <div className="flex items-center gap-3 shrink-0 flex-wrap">
             <Pill tone={STATUS_TONE[doc.status]}>{intl.formatMessage(statusMessages[doc.status])}</Pill>
+            {/* Honest channel words, never the raw slug (item 21). */}
             <span className="text-[11px] text-zinc-600 font-semibold uppercase tracking-wider">
-              {intl.formatMessage(m.via, { source: doc.source })}
+              {receivedViaHeading(intl, doc, m.via)}
             </span>
             <div className="flex items-center gap-1.5">
               <IconButton
