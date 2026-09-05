@@ -47,6 +47,16 @@ export interface UploadClaims {
    * instructions. Optional and absent on every other lane.
    */
   readonly portalNote?: string | null;
+  /**
+   * The provenance words `documents.submitter_label` will carry (review items
+   * 21/43/62) — composed at INTENT time by the portal service from facts the
+   * server holds (the session's kind, its contact, the business row), never
+   * from client words, and signed here so completion copies rather than
+   * re-derives. Absent on a workspace intent (completion attributes those to
+   * the session actor) and on any token minted before this field existed —
+   * completion falls back to the legacy `uploaded-by-delegated-session`.
+   */
+  readonly submitterLabel?: string;
   /** The object-storage key the bytes were presigned to. */
   readonly s3Key: string;
   /** Epoch millis after which completion is refused with NT-ING-005. */

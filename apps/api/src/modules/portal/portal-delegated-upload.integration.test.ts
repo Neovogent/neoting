@@ -217,8 +217,10 @@ describe.skipIf(!enabled)('the delegated upload path against real RLS', () => {
     expect(row.practiceId).toBe(P_A);
     expect(row.inbox).toBe('COSTS');
     // The provenance the acceptance names, on the row itself, so it survives
-    // even if the timeline write below never lands.
-    expect(row.submitterLabel).toBe('uploaded-by-delegated-session');
+    // even if the timeline write below never lands. Since review item 21 the
+    // ROW label names WHICH portal door — this is a chase-link session — while
+    // the timeline event below keeps SoT §4 Stage 8.3's exact audit string.
+    expect(row.submitterLabel).toBe('uploaded-via-chase-link');
     // A delegated session is not a user; the actor is the practice SYSTEM one
     // (the chase's contact has no provisioned user), decided at session creation.
     expect(row.submitterUserId).toBe(SYS_A);

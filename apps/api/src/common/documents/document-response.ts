@@ -54,7 +54,6 @@ export function toDocumentResponse(row: DocumentRow): Document {
     byteHash: row.byteHash,
     perceptualHash: row.perceptualHash,
     submitterUserId: row.submitterUserId,
-    submitterLabel: row.submitterLabel,
     receivedLocal: row.receivedLocal,
     routingDecision: (row.routingDecision as Record<string, unknown> | null) ?? null,
     routingConfidence: row.routingConfidence,
@@ -108,6 +107,10 @@ export function toDocumentSummary(row: DocumentRow): DocumentSummary {
     // view shows one, and the retry itself is a `document.reprocess` proposal —
     // never a side-effect endpoint on this read surface (Governance §10).
     retryable: row.state === 'REJECTED' || row.state === 'FAILED',
+    // Who sent it, in display words (review items 21/43/62) — on the SUMMARY so
+    // list rows can render an honest "Received via": it is what splits
+    // `SMS_PORTAL` into chase-link vs direct client-portal uploads.
+    submitterLabel: row.submitterLabel,
     archivedAt: row.archivedAt === null ? null : row.archivedAt.toISOString(),
     // Trash (2 Sep 2026). It sits on the SUMMARY rather than only on the detail
     // shape deliberately: the Trash listing is `GET /documents?deleted=true`,
