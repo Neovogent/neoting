@@ -7,7 +7,7 @@ import { AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import { API_ENABLED } from '../../api/config';
 import { useDocumentDetail } from '../../api/document-detail';
-import { receivedViaText } from '../../lib/channelLabels';
+import { receivedViaHeading } from '../../lib/channelLabels';
 import { currency } from '../../lib/resolver';
 import { Modal } from './Modal';
 import { Pill } from './DataTable';
@@ -289,7 +289,7 @@ export default function DocumentViewer({
             <Pill tone={STATUS_TONE[doc.status]}>{intl.formatMessage(statusMessages[doc.status])}</Pill>
             {/* Honest channel words, never the raw slug (item 21). */}
             <span className="text-[11px] text-zinc-600 font-semibold uppercase tracking-wider">
-              {intl.formatMessage(m.via, { source: receivedViaText(intl, doc) })}
+              {receivedViaHeading(intl, doc, m.via)}
             </span>
             <div className="flex items-center gap-1.5">
               <IconButton

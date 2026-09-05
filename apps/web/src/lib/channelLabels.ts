@@ -58,3 +58,20 @@ export function receivedViaText(intl: IntlShape, doc: Pick<Document, 'source' | 
   }
   return intl.formatMessage(channelLabels[doc.source]);
 }
+
+/**
+ * The preview/viewer header line. Channels compose into the caller's own
+ * "via {source}" message ("VIA CLIENT PORTAL"); a manual upload's label stands
+ * alone — "UPLOADED BY PRIYA SHAH", never "VIA UPLOADED BY…".
+ */
+export function receivedViaHeading(
+  intl: IntlShape,
+  doc: Pick<Document, 'source' | 'submitterLabel'>,
+  via: MessageDescriptor,
+): string {
+  if (doc.source === 'web') {
+    const who = submitterDisplay(doc);
+    if (who !== null) return who;
+  }
+  return intl.formatMessage(via, { source: intl.formatMessage(channelLabels[doc.source]) });
+}

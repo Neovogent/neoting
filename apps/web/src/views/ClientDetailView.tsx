@@ -750,7 +750,12 @@ export function ClientDetailView() {
    * the local `ingest`, byte-for-byte the Costs tab's branch.
    */
   const uploadToRegister = (files: FileList | null) => {
-    if (!files?.length) return;
+    // ⚠ Snapshotted SYNCHRONOUSLY: a FileList is live, and the input's
+    // onChange clears `e.target.value` right after this call — an
+    // `Array.from(files)` deferred past the dynamic import below would read an
+    // already-emptied list and silently upload nothing (found live, 5 Sep).
+    const picked = Array.from(files ?? []);
+    if (picked.length === 0) return;
     if (documentsSource === 'api') {
       // `import()` rather than a static import: `api/uploads` (and its
       // transport) used to reach this route only through the LAZY ClientInbox
@@ -758,12 +763,12 @@ export function ClientDetailView() {
       // the board's heaviest route. The user has just dropped files — a network
       // round-trip is already in flight, so the dynamic edge costs nothing felt.
       void import('../api/uploads').then(({ runWorkspaceDrop }) =>
-        runWorkspaceDrop(intl, confirm, serverClientIdFor(client.id), Array.from(files)),
+        runWorkspaceDrop(intl, confirm, serverClientIdFor(client.id), picked),
       );
       return;
     }
     ingest(
-      Array.from(files).map((f) => ({ name: f.name, size: f.size, raw: f })),
+      picked.map((f) => ({ name: f.name, size: f.size, raw: f })),
       client.id,
       'web',
       { uploader: 'You (web upload)' },

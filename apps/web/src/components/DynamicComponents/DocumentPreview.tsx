@@ -8,7 +8,7 @@ import { CATEGORY_LABEL, isEditableLabel, parseCodingDraft, useDocumentDetail, t
 import { confirmDocumentBankMatch, useDocumentBankMatch } from '../../api/bank-match';
 import type { UpdateCodingPayload } from '@neoting/contracts/model';
 import { currency } from '../../lib/resolver';
-import { receivedViaText } from '../../lib/channelLabels';
+import { receivedViaHeading } from '../../lib/channelLabels';
 import { correctionWarnings } from '../../lib/correctionChecks';
 import { BASE_MANDATORY } from '../../lib/selectors';
 import { Pill } from './DataTable';
@@ -478,7 +478,7 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
           {/* Honest channel words, never the raw slug — "VIA SMS-LINK" on a
               client's direct portal upload was review item 21's headline. */}
           <span className="text-[11px] text-zinc-600 font-semibold uppercase tracking-wider">
-            {intl.formatMessage(m.via, { source: receivedViaText(intl, doc) })}
+            {receivedViaHeading(intl, doc, m.via)}
           </span>
         </div>
       </div>
