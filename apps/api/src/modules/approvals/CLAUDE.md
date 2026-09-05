@@ -88,6 +88,53 @@ decides nothing about whether it may happen.
   back would close a cycle between two public seams. The composition root is
   the place allowed to know both.
 
+## The correction-integrity gate + advisory (5 Sep 2026 — review items 22/46/47, feeding 29)
+
+Three things joined the engine, and one recorded decision about WHERE facts may
+enter a review:
+
+- **`create()` gates `document.update-coding` on the client's chart.**
+  `assertUpdateCodingAllowed` (validation-dedupe seam) refuses a `categoryCode`
+  that is not EXACTLY a chart code — the refuse-never-fuzzy rule AI rule drafts
+  always had, applied to the manual boundary at last (item 47's "jhngbhf"). The
+  chart arrives through the `ChartCategoriesReader` structural seam, composed in
+  `approvals.module.ts` from the SAME `ChartOfAccountsService` instance the
+  entry preview uses; an unreadable chart skips the check (a correction boundary
+  must not deadlock coding over a picklist). Optional constructor dep, the
+  `exportEntryPreview` pattern. This is a HARD refusal — the one rule in the
+  package with no Ignore button, because chart membership is a rule, not an
+  opinion.
+- **`review()` computes the correction ADVISORY for `document.update-coding`**
+  (`computeCorrectionAdvisory` — tax vs total, sign disagreement, future /
+  implausibly-old dates, figures typed onto a non-financial document) and
+  passes it to `renderSummary` as `RenderContext.correctionChecks`, rendered as
+  a **"⚠ Checks — read before you approve"** section closed with the D44
+  sentence ("these checks gate nothing").
+
+  ⚠ **THE RECORDED DECISION — review-time enrichment, and why it is not the
+  compute-at-creation pattern.** Facts a review needs normally arrive IN the
+  payload at creation (publish previews, chase bodies). The update-coding
+  payload is the contract's and `.strict()` — `parseStoredProposalPayload`
+  re-parses it at review AND approve, so a computed `checks` member is a G7
+  contract change and would NT-PRP-006 every stored proposal until it landed.
+  The rendered summary is the engine's OWN record: computed exactly once at
+  first review (review idempotency returns the stored copy), frozen with its
+  hash, echoed at approve — so an advisory frozen there is still "what was
+  shown is what was approved". `renderSummary` itself STAYS pure (the checks
+  arrive as an argument; the read happens in `review()` under the caller's
+  scope). The checks gate nothing, so facts moving between review and approve
+  cost an advisory its freshness, never an effect its truth — the executor
+  diffs against the live row regardless. `render-summary.ts`'s `RenderContext`
+  doc carries the same reasoning at the code.
+- **The `publish.batch` render leads with "⚠ Checks — read before you
+  release"** (item 29(b)): the entry preview's refusals — a document that will
+  produce NO line in the export file — are the FIRST section and counted in
+  the TITLE ("⚠ 1 document will produce no export line"), not the bottom
+  section they were when the £9,000-VAT release was approved with them below
+  the fold; `not-a-financial-document` warnings (D46, item 47 — appended at
+  creation by validation-dedupe's `applyEntryAdvisories`) render there too.
+  Still advisory: the release proceeds, informed.
+
 ## `publish.batch` shows the ENTRY now, and two money bugs it uncovered (2 Sep 2026)
 
 *"Before publishing show the accountant the actual accounting entry that will be

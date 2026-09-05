@@ -402,6 +402,10 @@ vendor, not a fake system.
   **PROCESSING → READY | TO_REVIEW | FAILED** via `resolveProcessedState`.
   Idempotent and re-entrant: a redelivery or crash-retry re-reads the state and
   does nothing twice (guards on state; skips if an accepted extraction exists).
+  ⚠ Since 2026-09-05 the readiness call passes `extracted.docType` — readiness
+  gained the TYPE gate (review items 36/47, `validation-dedupe/readiness.ts`),
+  so a document the extractor classifies OTHER lands TO_REVIEW whatever its
+  fields say, from the first read.
   **`run` now returns an `ExtractionCompletion | null`** (METH Stage 8): the
   header (supplier, total pence, document date) + final state for a LANDED
   document (READY | TO_REVIEW), or `null` for a FAILED read / no-op redelivery.

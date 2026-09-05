@@ -80,6 +80,7 @@ export default function CodingProposalCard({
   currentValue,
   nextValue,
   fields,
+  warnings = [],
   onEdit,
 }: {
   document: Document;
@@ -87,6 +88,13 @@ export default function CodingProposalCard({
   currentValue: string;
   nextValue: string;
   fields: UpdateCodingPayload['fields'];
+  /**
+   * Checks the person already chose to IGNORE in the warning step
+   * (`CodingProposalModal`). Restated on the review itself so the last thing
+   * read before Approve still carries them — the server puts the same checks
+   * on the proposal's own review render.
+   */
+  warnings?: string[];
   /**
    * Makes [Edit] mean something: the host takes the correction back to the
    * field it came from. Without it the button only collapses the review, which
@@ -146,6 +154,16 @@ export default function CodingProposalCard({
       subtitle={intl.formatMessage(m.subtitle, { supplier: party, field: fieldLabel })}
       detail={
         <ReviewSection title={intl.formatMessage(m.changeHeading)}>
+          {warnings.length > 0 && (
+            <div role="alert" className="mb-3 rounded-xl border border-amber-400/25 bg-amber-400/5 p-3">
+              {warnings.map((warning) => (
+                <p key={warning} className="flex items-start gap-2 text-[12px] text-amber-400 leading-relaxed">
+                  <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+                  {warning}
+                </p>
+              ))}
+            </div>
+          )}
           <ReviewRows
             rows={[
               { label: intl.formatMessage(m.rowField), value: fieldLabel },

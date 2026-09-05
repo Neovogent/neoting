@@ -59,6 +59,13 @@ export interface Readiness {
 export function readinessOf(doc: Document, mandatoryFields: string[] = []): Readiness {
   const missing: string[] = [];
 
+  // The TYPE gate (items 36/47), FIRST — mirroring the server's readiness rule
+  // (`validation-dedupe/readiness.ts`): a document the pipeline classified
+  // OTHER is not a financial document and cannot be Ready until a human
+  // corrects what it IS. `docType` is set on live rows only, so the synthetic
+  // cast is untouched (METH_MODE §1).
+  if (doc.docType === 'OTHER') missing.push('Type');
+
   // The three the PRD names as the floor for every document.
   if (isBlank(doc.supplier)) missing.push(doc.kind === 'sales' ? 'Customer' : 'Supplier');
   if (!doc.total) missing.push('Total');

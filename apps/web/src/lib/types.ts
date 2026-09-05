@@ -210,6 +210,13 @@ export interface ExtractedField {
   value: string;
   confidence: number;
   provenance: string;
+  /**
+   * True when a person confirmed/typed this value (`HUMAN_CONFIRMED`, live
+   * rows only). The display renders "Confirmed by you" instead of a
+   * percentage: the old 100% badge read as the system endorsing whatever was
+   * typed — the £9,000-tax screenshot in review item 22 wore it.
+   */
+  humanConfirmed?: boolean | undefined;
   /** Present only when extraction placed the value on the page (live rows only). */
   boundingBox?: FieldBoundingBox | undefined;
 }
@@ -264,6 +271,15 @@ export interface Document {
    * synthetic mode byte-for-byte unchanged (METH_MODE §1).
    */
   isStatement?: boolean | undefined;
+  /**
+   * The document's classified type, live rows only (5 Sep 2026, items 36/47).
+   * `OTHER` is the D46 flag every surface must carry: the pipeline judged this
+   * not to be a financial document, and the server's readiness rule refuses it
+   * READY until a human corrects the type (`readinessOf` mirrors that —
+   * "Type" leads the missing list). Undefined on the synthetic cast, which
+   * keeps synthetic mode byte-for-byte unchanged (METH_MODE §1).
+   */
+  docType?: 'INVOICE' | 'RECEIPT' | 'CREDIT_NOTE' | 'STATEMENT' | 'OTHER' | undefined;
   /** The original file name, kept only until extraction has used it. */
   uploadFileName?: string | undefined;
   fields: ExtractedField[];

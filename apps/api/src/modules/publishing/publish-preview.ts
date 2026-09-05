@@ -74,6 +74,10 @@ export type PublishPreviewOutcome =
 
 /** Plain English for the accountant reading the refusal, not for a log line. */
 const FIELD_WORDS: Readonly<Record<ReadinessField, string>> = {
+  // 'type' joined readiness on 2026-09-05 (the items 36/47 Type gate): a
+  // document classified OTHER — or never classified — is refused by the same
+  // rule that blocks READY, worded as what the human has to do about it.
+  type: 'confirmed document type (it reads as not a financial document)',
   total: 'total',
   supplier: 'supplier',
   category: 'category',
@@ -96,7 +100,7 @@ export function checkPublishMinimum(item: PublishPreviewItem): PublishItemRefusa
     documentId: item.id,
     code: PUBLISH_MINIMUM_CODE,
     missing,
-    message: `This document has no ${listWords(missing.map((field) => FIELD_WORDS[field]))}. A bill enters a publish batch only with a total, a supplier and a category — fill in what is missing, then propose the publish again.`,
+    message: `This document has no ${listWords(missing.map((field) => FIELD_WORDS[field]))}. A bill enters a publish batch only with a confirmed financial type, a total, a supplier and a category — fill in what is missing, then propose the publish again.`,
   };
 }
 

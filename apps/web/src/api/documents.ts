@@ -124,6 +124,9 @@ export function toLocalDocument(row: DocumentSummary, clientNameFor: (businessId
     lineItems: [],
     splitFrom: row.parentDocumentId ? row.originalFilename : undefined,
     ...(row.docType === 'STATEMENT' ? { isStatement: true } : {}),
+    // The classified type travels so the D46 flag (OTHER = not a financial
+    // document) can sit on every row it belongs to (items 36/47).
+    ...(row.docType == null ? {} : { docType: row.docType }),
     // A failed PUBLISH is `REJECTED` + an NT-PUB code (the follow-up's only
     // failure exit from READY); `FAILED` is extraction. This flag said
     // `state === 'FAILED'` until METH S12, which branded every unreadable

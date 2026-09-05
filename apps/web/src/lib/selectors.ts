@@ -251,13 +251,19 @@ export const OPTIONAL_MANDATORY = ['Tax amount', 'Invoice number', 'Project', 'C
 /** Which required fields a document is still missing. */
 export function missingMandatory(doc: Document, extra: string[]): string[] {
   const required = [...BASE_MANDATORY, ...extra];
-  return required.filter((label) => {
+  const missing = required.filter((label) => {
     if (label === 'Supplier') return !doc.supplier || doc.supplier === 'Unknown';
     if (label === 'Total') return !doc.total;
     if (label === 'Category') return !doc.category || doc.category === '—';
     const field = doc.fields.find((f) => f.label === label);
     return !field || !field.value || field.value === '—';
   });
+  // The TYPE gate (items 36/47), first — the server's publish minimum refuses
+  // an OTHER-typed document by the same rule (`NT-PUB-001` names 'type').
+  // `docType` exists on live rows only, so synthetic mode is unchanged.
+  // Deliberately NOT a `BASE_MANDATORY` member: that list is the join key for
+  // the practice's mandatory-fields settings, and Type is a rule, not a toggle.
+  return doc.docType === 'OTHER' ? ['Type', ...missing] : missing;
 }
 
 /** Items missing required fields cannot be published — they are held back. */

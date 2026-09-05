@@ -111,7 +111,7 @@ export const reprocessDocumentExecutor: ProposalExecutor<'document.reprocess', R
 
     const documents = await db.document.findMany({
       where: { id: { in: [...payload.documentIds] } },
-      select: { id: true, state: true, totalPence: true, supplierName: true, categoryCode: true },
+      select: { id: true, state: true, totalPence: true, supplierName: true, categoryCode: true, docType: true },
     });
     // All-or-nothing (the archive rule): an id RLS cannot see and an id that
     // does not exist are the same refusal, and neither confirms existence.

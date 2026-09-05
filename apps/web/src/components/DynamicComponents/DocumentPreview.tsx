@@ -8,6 +8,7 @@ import { CATEGORY_LABEL, isEditableLabel, parseCodingDraft, useDocumentDetail, t
 import { confirmDocumentBankMatch, useDocumentBankMatch } from '../../api/bank-match';
 import type { UpdateCodingPayload } from '@neoting/contracts/model';
 import { currency } from '../../lib/resolver';
+import { correctionWarnings } from '../../lib/correctionChecks';
 import { BASE_MANDATORY } from '../../lib/selectors';
 import { Pill } from './DataTable';
 import type { Document, ExtractedField, FieldBoundingBox } from '../../lib/types';
@@ -42,6 +43,21 @@ const m = defineMessages({
   // these arrive.
   correctHintTouch: { id: 'documents.documentPreview.correctHintTouch', defaultMessage: 'tap any value to correct' },
   confidence: { id: 'documents.documentPreview.confidence', defaultMessage: '{percent}% confident' },
+  /**
+   * The human-confirmed provenance line (item 22). It used to render as
+   * "100% confident", which read as the SYSTEM endorsing whatever was typed —
+   * the £9,000-tax screenshot wore it. A human answer is not a probability;
+   * say what it is instead.
+   */
+  confirmedByYou: { id: 'documents.documentPreview.confirmedByYou', defaultMessage: 'Confirmed by you' },
+  /** The D46 flag, following the document (item 47): the pipeline's own verdict. */
+  notFinancialPill: { id: 'documents.documentPreview.notFinancialPill', defaultMessage: 'Not a financial document' },
+  readyTypeGate: {
+    id: 'documents.documentPreview.readyTypeGate',
+    defaultMessage:
+      'This document cannot be Ready until its Type is corrected to a financial type — the pipeline read it as {type}, not an invoice or receipt. Correct Type first; the fields below come after.',
+  },
+  readyTypeGateButton: { id: 'documents.documentPreview.readyTypeGateButton', defaultMessage: 'Correct the Type' },
   lineItemsHeading: {
     id: 'documents.documentPreview.lineItemsHeading',
     defaultMessage: 'Line items — standard, not an add-on',
@@ -164,6 +180,13 @@ interface PendingCorrection {
   currentValue: string;
   nextValue: string;
   fields: UpdateCodingPayload['fields'];
+  /**
+   * The deterministic checks that fired on this correction
+   * (`lib/correctionChecks.ts`, mirroring the server's). The dialog renders
+   * them with [Ignore — I'm sure] / [Go back and fix] before the review card
+   * mounts; the server restates the same checks on the proposal review.
+   */
+  warnings: string[];
 }
 
 /** The original frame's CSS aspect (`aspect-[3/4]`) — the letterbox maths below depend on it. */
@@ -266,6 +289,15 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
         return field === undefined || field.value === '—';
       })
     : [];
+  /**
+   * The TYPE gate (items 36/47), mirroring the server's readiness rule: a
+   * document whose type is OTHER — or was never classified — cannot reach
+   * Ready whatever its fields say, and the Path-to-Ready panel says so as its
+   * FIRST line. Read off the raw header (`checkContext`), never a display
+   * string.
+   */
+  const typeGate =
+    readyPanelOn && detail.checkContext !== null && (detail.checkContext.docType === 'OTHER' || detail.checkContext.docType === null);
   // After approval, item details lock — the server refuses the proposal, so
   // the affordance goes rather than the refusal being discovered on approve.
   const canEdit = (label: string) => !live || (doc.status !== 'published' && isEditableLabel(label));
@@ -295,14 +327,19 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
   };
 
   /**
-   * [Edit] on the staged card: close the dialog and hand the value back to the
-   * field it came from, so the button changes something instead of only
-   * collapsing a panel. Nothing was created, so there is nothing to cancel.
+   * [Edit] on the staged card — and [Go back and fix] on the warning step:
+   * close the dialog and hand the value back to the field it came from, so the
+   * button changes something instead of only collapsing a panel. The draft is
+   * the STAGED value, not the field's old one — "go back and fix" means fixing
+   * what was typed. Nothing was created, so there is nothing to cancel.
    */
-  const reopenEdit = (label: string) => {
-    const field = fields.find((f) => f.label === label);
+  const reopenEdit = (correction: PendingCorrection) => {
+    const field = fields.find((f) => f.label === correction.label);
     setPending(null);
-    if (field !== undefined) startEdit(field);
+    if (field !== undefined) {
+      startEdit(field);
+      setDraft(correction.nextValue);
+    }
   };
 
   const commit = (label: string) => {
@@ -324,6 +361,10 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
       currentValue: fields.find((f) => f.label === label)?.value ?? '—',
       nextValue: parsed.display,
       fields: parsed.fields,
+      // The correction-integrity checks (items 22/46/47), against the stored
+      // header figures with this correction applied over them. An empty
+      // context (detail not loaded) checks nothing rather than inventing one.
+      warnings: detail.checkContext === null ? [] : correctionWarnings(detail.checkContext, parsed.fields),
     });
     setEditing(null);
   };
@@ -363,6 +404,10 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
       currentValue: fields.find((f) => f.label === CATEGORY_LABEL)?.value ?? '—',
       nextValue: parsed.display,
       fields: parsed.fields,
+      // The same checks a typed correction gets — accepting a suggestion is
+      // the ordinary path, and a suggestion onto a Type OTHER document is
+      // exactly the item-47 shape the warning exists for.
+      warnings: detail.checkContext === null ? [] : correctionWarnings(detail.checkContext, parsed.fields),
     });
   };
 
@@ -403,7 +448,12 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
           </div>
         </div>
         <div className="flex flex-col items-end gap-2 shrink-0">
-          <StatusPill doc={doc} />
+          <div className="flex items-center gap-2">
+            {/* The D46 flag follows the document (item 47): flagged at upload,
+                never blocked — but VISIBLE wherever the document is. */}
+            {doc.docType === 'OTHER' && <Pill tone="red">{intl.formatMessage(m.notFinancialPill)}</Pill>}
+            <StatusPill doc={doc} />
+          </div>
           <span className="text-[11px] text-zinc-600 font-semibold uppercase tracking-wider">
             {intl.formatMessage(m.via, { source: doc.source })}
           </span>
@@ -583,10 +633,24 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                   <div className="min-w-0">
                     <div className="text-[13px] text-zinc-500 font-medium">{f.label}</div>
                     <div className="mt-0.5 flex items-center gap-2">
-                      <ConfidenceDot value={f.confidence} />
-                      <span className="text-[11px] text-zinc-600 font-semibold">
-                        {intl.formatMessage(m.confidence, { percent: Math.round(f.confidence * 100) })}
-                      </span>
+                      {/* A human-confirmed value says WHO decided, never a
+                          percentage (item 22): "100% confident" beside typed
+                          junk read as the system endorsing it. */}
+                      {f.humanConfirmed === true ? (
+                        <>
+                          <Check size={11} className="text-brand shrink-0" strokeWidth={3} />
+                          <span className="text-[11px] text-zinc-500 font-semibold">
+                            {intl.formatMessage(m.confirmedByYou)}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <ConfidenceDot value={f.confidence} />
+                          <span className="text-[11px] text-zinc-600 font-semibold">
+                            {intl.formatMessage(m.confidence, { percent: Math.round(f.confidence * 100) })}
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -658,6 +722,29 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                 <div className="text-[11px] font-bold text-amber-400 uppercase tracking-widest mb-2">
                   {intl.formatMessage(m.readyHeading)}
                 </div>
+                {/* The TYPE gate, FIRST (items 36/47): confirming what this
+                    document IS precedes filling its fields — the server's
+                    readiness rule lists 'type' first for the same reason. */}
+                {typeGate && (
+                  <div className="mb-3">
+                    <p className="text-[13px] text-zinc-300 leading-relaxed">
+                      {intl.formatMessage(m.readyTypeGate, { type: detail.checkContext?.docType ?? '—' })}
+                    </p>
+                    {(() => {
+                      const typeField = fields.find((f) => f.label === 'Type');
+                      if (typeField === undefined || !canEdit('Type')) return null;
+                      return (
+                        <button
+                          onClick={() => startEdit(typeField)}
+                          className="mt-2 flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold text-white bg-raised hover:bg-white/10 border border-white/5 transition-colors shadow-inner"
+                        >
+                          <PencilLine size={13} className="text-brand" />
+                          {intl.formatMessage(m.readyTypeGateButton)}
+                        </button>
+                      );
+                    })()}
+                  </div>
+                )}
                 {missingForReady.length > 0 ? (
                   <>
                     <p className="text-[13px] text-zinc-300 leading-relaxed">
@@ -683,7 +770,9 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                       })}
                     </div>
                   </>
-                ) : (
+                ) : typeGate ? null : (
+                  // Not rendered while the type gate holds: "every field Ready
+                  // requires is present" would contradict the sentence above it.
                   <p className="text-[13px] text-zinc-300 leading-relaxed">
                     {intl.formatMessage(m.readyComplete, {
                       fields: intl.formatList(BASE_MANDATORY, { type: 'conjunction' }),
@@ -865,7 +954,8 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
               currentValue={pending.currentValue}
               nextValue={pending.nextValue}
               fields={pending.fields}
-              onEdit={() => reopenEdit(pending.label)}
+              warnings={pending.warnings}
+              onEdit={() => reopenEdit(pending)}
               onClose={() => setPending(null)}
             />
           </Suspense>

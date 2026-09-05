@@ -51,6 +51,7 @@ export const archiveDocumentExecutor: ProposalExecutor<'document.archive', Archi
         totalPence: true,
         supplierName: true,
         categoryCode: true,
+        docType: true,
       },
     });
 

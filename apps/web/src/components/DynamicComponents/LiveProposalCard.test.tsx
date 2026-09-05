@@ -196,3 +196,49 @@ test('⚠ D42: the release review never implies anything reaches accounting soft
   }
   expect(text).toContain('Releases these documents for export');
 });
+
+/* ── the correction-integrity "⚠ Checks" sections (items 22/29/47) ─────────── */
+
+test('a review carrying a "⚠ Checks" section renders it verbatim — zero web bytes, frontend rule 9', async () => {
+  // The server-composed advisory: the same {heading, entries} shape as every
+  // section, so the card renders it with no component change. This pins that
+  // the mechanism actually carries the new section, not just that it could.
+  vi.mocked(openReview).mockResolvedValue({
+    ...RELEASE_REVIEW,
+    sections: [
+      {
+        heading: '⚠ Checks — read before you release',
+        entries: [
+          {
+            label: 'Will not export — doc_1',
+            value:
+              "This document's figures do not add up, so it was left out rather than exported wrong. Tax £9000.00 is larger than the total £994.00 — correct the tax or the total, then propose the release again.",
+          },
+        ],
+      },
+      ...RELEASE_REVIEW.sections,
+    ],
+  });
+  renderCard(releaseProposal(), 'Neovogent');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Read review' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Approve' })).toBeTruthy());
+
+  const text = document.body.textContent ?? '';
+  expect(text).toContain('⚠ Checks — read before you release');
+  expect(text).toContain('Tax £9000.00 is larger than the total £994.00');
+  // Advisory, not a gate: Approve is present once the review is open.
+  expect(screen.getByRole('button', { name: 'Approve' })).toBeTruthy();
+});
+
+test('a section the card cannot render still withholds Approve — fail-closed survives the new section shape', async () => {
+  // `openReview` itself is where the fail-closed parse lives (`api/proposals.ts`
+  // throws on a section it cannot render — pinned in proposals.test.ts); what
+  // this pins is the card's half: that rejection means NO Approve in the DOM.
+  vi.mocked(openReview).mockRejectedValue(new Error('the review carried a section this screen cannot render'));
+  renderCard(releaseProposal(), 'Neovogent');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Read review' }));
+  await waitFor(() => expect(document.body.textContent).toContain('the review carried a section this screen cannot render'));
+  expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+});

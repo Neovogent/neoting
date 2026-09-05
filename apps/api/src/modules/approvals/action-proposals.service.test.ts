@@ -131,6 +131,26 @@ function harness(
         return data;
       },
     },
+    // The correction-integrity gate and advisory read the document and its
+    // accepted extraction (validate-update-coding.ts). One fixture document,
+    // shaped as the item-22 invoice: £994.00 gross, zero-rated, INVOICE.
+    document: {
+      findUnique: async ({ where }: { where: { id: string } }) =>
+        where.id === 'doc_1'
+          ? {
+              id: 'doc_1',
+              businessId: 'biz_1',
+              docType: 'INVOICE',
+              totalPence: 99_400,
+              taxPence: 0,
+              documentDate: new Date('2025-07-30T00:00:00.000Z'),
+              currency: 'GBP',
+            }
+          : null,
+    },
+    extraction: {
+      findFirst: async () => ({ fields: { supplierName: { value: 'Aldgate Meats Ltd', provenance: 'AI_SUGGESTED' } } }),
+    },
   };
   const prisma = { $transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx) } as unknown as PrismaClient;
 
@@ -176,6 +196,10 @@ const TEST_CHASE_COMPOSE = { portalLinkSecret: 'test-portal-link-secret', appOri
     },
     new InMemoryIdempotencyStore(),
     TEST_CHASE_COMPOSE,
+    // No entry previewer in this harness (the publish stub above covers it).
+    undefined,
+    // The chart reader the correction-integrity gate validates against.
+    async () => [{ code: 'COS_FOOD' }, { code: 'SOFTWARE_AND_SUBSCRIPTIONS' }],
   );
   return { service, map, audits, executed, listCalls, membershipQueries };
 }
@@ -469,4 +493,70 @@ test('list projects onto the contract shape and never renders — reading the qu
   expect(row?.createdAt).toBe('2026-08-18T09:00:00.000Z');
   expect(row?.reviewedAt).toBeNull(); // untouched — only POST .../review writes it
   expect(row?.renderedSummaryHash).toBeNull();
+});
+
+// ---- the correction-integrity gate + advisory (items 22/46/47) ---------------
+
+test('create refuses an update-coding whose category is not a code on the chart, naming the string', async () => {
+  const { service, map, executed } = harness();
+  const refused = service.create(
+    CTX,
+    { kind: 'document.update-coding', businessId: 'biz_1', payload: { documentId: 'doc_1', fields: { categoryCode: 'jhngbhf' } } },
+    'k-junk',
+  );
+  await expect(refused).rejects.toMatchObject({ code: 'NT-PRP-006' });
+  await refused.catch((e: unknown) => {
+    expect(e).toBeInstanceOf(AppException);
+    expect((e as AppException).message).toContain('Proposal is not executable');
+  });
+  expect(map.size).toBe(0); // nothing was stored
+  expect(executed).toEqual([]);
+});
+
+test('create accepts an update-coding naming an exact chart code, and one that touches no category', async () => {
+  const { service } = harness();
+  const coded = await service.create(
+    CTX,
+    { kind: 'document.update-coding', businessId: 'biz_1', payload: { documentId: 'doc_1', fields: { categoryCode: 'COS_FOOD' } } },
+    'k-good',
+  );
+  expect(coded.state).toBe('CREATED');
+  const uncoded = await service.create(
+    CTX,
+    { kind: 'document.update-coding', businessId: 'biz_1', payload: { documentId: 'doc_1', fields: { supplierName: 'Aldgate Meats Ltd' } } },
+    'k-name',
+  );
+  expect(uncoded.state).toBe('CREATED');
+});
+
+test('review freezes the correction advisory into the stored render — the £9,000-tax shape (item 22)', async () => {
+  const { service } = harness([
+    proposal('prop_tax', {
+      kind: 'document.update-coding',
+      payload: { documentId: 'doc_1', fields: { taxPence: 900_000 } },
+    }),
+  ]);
+  const review = await service.review(CTX, 'prop_tax', 'k-rev');
+  const sections = (review.renderedSummary as unknown as { sections: { heading: string; entries: { label: string; value: string }[] }[] }).sections;
+  const checks = sections.find((section) => section.heading === '⚠ Checks — read before you approve');
+  expect(checks).toBeDefined();
+  expect(checks?.entries[0]?.label).toBe('Tax exceeds the total');
+  expect(checks?.entries[0]?.value).toContain('£9000.00');
+  expect(checks?.entries[0]?.value).toContain('£994.00');
+  // Idempotent review returns the SAME frozen render — the advisory is part of
+  // what the approve hash covers.
+  const second = await service.review(CTX, 'prop_tax', 'k-rev-2');
+  expect(second.renderedSummaryHash).toBe(review.renderedSummaryHash);
+});
+
+test('a clean correction reviews with NO checks section', async () => {
+  const { service } = harness([
+    proposal('prop_clean', {
+      kind: 'document.update-coding',
+      payload: { documentId: 'doc_1', fields: { supplierName: 'Aldgate Meats Ltd' } },
+    }),
+  ]);
+  const review = await service.review(CTX, 'prop_clean', 'k-rev-3');
+  const sections = (review.renderedSummary as unknown as { sections: { heading: string }[] }).sections;
+  expect(sections.some((section) => section.heading.startsWith('⚠ Checks'))).toBe(false);
 });

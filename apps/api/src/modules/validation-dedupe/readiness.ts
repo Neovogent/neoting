@@ -31,11 +31,11 @@ import type { Document as DocumentRow } from '@prisma/client';
  * this comment is the seam's marker.
  */
 
-export const READY_REQUIRED_FIELDS = ['total', 'supplier', 'category'] as const;
+export const READY_REQUIRED_FIELDS = ['type', 'total', 'supplier', 'category'] as const;
 export type ReadinessField = (typeof READY_REQUIRED_FIELDS)[number];
 
 /** What readiness reads off a document. A projection, so fakes stay small. */
-export type ReadinessInput = Pick<DocumentRow, 'totalPence' | 'supplierName' | 'categoryCode'>;
+export type ReadinessInput = Pick<DocumentRow, 'totalPence' | 'supplierName' | 'categoryCode' | 'docType'>;
 
 /**
  * The placeholder residue a pipeline leaves where a value should be. Compared
@@ -77,6 +77,18 @@ export interface Readiness {
 
 export function evaluateReadiness(document: ReadinessInput, context: ReadinessContext = {}): Readiness {
   const missing: ReadinessField[] = [];
+  // The TYPE gate (2026-09-05, review items 36 + 47). A webcam selfie the
+  // extractor honestly classified OTHER was walked to READY by typing junk
+  // into the three field slots below — Type played no part in readiness, so a
+  // non-financial image with fabricated Supplier/Total/Category satisfied the
+  // whole rule. A document whose type is OTHER, or was never classified at
+  // all, is not ready until a human corrects Type to a financial type
+  // (`document.update-coding` carries `docType`). It is FIRST in `missing`
+  // because "confirm what this document is" precedes filling its fields — the
+  // Path-to-Ready panel renders the list in this order. STATEMENT is not
+  // gated here: a statement can never reach READY anyway (it has no single
+  // total), and refusing it under 'type' would mislabel the reason.
+  if (document.docType === null || document.docType === 'OTHER') missing.push('type');
   // A zero total blocks READY alongside null, since 2026-09-03. This file used
   // to call £0.00 "a confirmed zero, a real total" — but both publish gates
   // (web `missingMandatory` and `readinessOf`) have ALWAYS refused a zero
