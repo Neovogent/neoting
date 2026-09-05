@@ -984,6 +984,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
               contactName: b.primaryContactName ?? undefined,
               mobile: b.primaryContactMobile ?? undefined,
               setupLinkSentAt: b.setupLinkSentAt ?? undefined,
+              // The raw status beside the derived badge below: the client's
+              // Settings tab forks on it (setup link while un-onboarded, the
+              // portal-access card once registered — review item 64), and the
+              // badge's two-way reading cannot tell "never onboarded" from
+              // "lapsed". Display only, like everything else on this row.
+              subscriptionStatus: b.subscription?.status,
               bankConnected: true,
               // "Awaiting client registration" — the board prints this where the
               // sector goes, and it is a claim about the CLIENT, not about how

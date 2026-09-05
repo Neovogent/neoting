@@ -51,6 +51,14 @@ export interface Client {
    * showed for every live client. Display only, like the contact fields.
    */
   setupLinkSentAt?: string | undefined;
+  /**
+   * The contract's own words, from `BusinessSummary.subscription.status` on a
+   * live row — written only by the Stripe webhook server-side. Display only,
+   * like the contact fields. Absent means the server sent no subscription
+   * (never through checkout) or the row is seeded. The type-only import is
+   * erased at build (the `ChatMessage.display` precedent below).
+   */
+  subscriptionStatus?: import('@neoting/contracts/model').SubscriptionStatus | undefined;
   vatNumber?: string | undefined;
   /** Ltd, LLP, sole trader… — drives the filings the client is subject to. */
   companyType?: string | undefined;

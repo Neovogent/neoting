@@ -52,11 +52,13 @@ const CLIENT = {
 
 // The remove affordance is live-gated on the businesses slice; the seed test flips it.
 let businessesSource: 'api' | 'seed' = 'api';
+// Per-test overrides on the client row (subscription status, contact email…).
+let clientOver: Partial<import('../lib/types').Client> = {};
 const setActiveTab = vi.fn();
 
 vi.mock('../context/AppContext', () => ({
   useAppContext: () => ({
-    clients: [CLIENT],
+    clients: [{ ...CLIENT, ...clientOver }],
     openClientId: 'biz_sparkle',
     openClient: vi.fn(),
     statsFor: () => STATS,
@@ -102,6 +104,7 @@ vi.mock('../context/AppContext', () => ({
 
 beforeEach(() => {
   businessesSource = 'api';
+  clientOver = {};
   // The tab is the address's third segment — this is how a person gets here.
   window.history.replaceState(null, '', '/clients/biz_sparkle/settings');
   vi.mocked(createProposal).mockResolvedValue({
@@ -171,6 +174,74 @@ test('confirming creates the business.offboard proposal and the panel says queue
   );
   fireEvent.click(screen.getByRole('button', { name: 'Review in Approvals' }));
   expect(setActiveTab).toHaveBeenCalledWith('Approvals');
+});
+
+/**
+ * Review item 64 — the setup-link panel's job ends when the client registers
+ * and subscribes. Un-onboarded keeps today's panel; a subscription that has
+ * existed at Stripe replaces it with the "Portal access" card, and a lapse is
+ * said plainly with the same words the portal's own Plan panel uses.
+ */
+test('an un-onboarded client still gets the setup-link panel', () => {
+  clientOver = { email: 'tom@sparkle.co.uk', setupLinkSentAt: '2026-09-04T10:00:00.000Z' };
+  renderView();
+
+  expect(screen.getByText('Client setup link')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Resend link' })).toBeTruthy();
+  expect(screen.queryByText('Portal access')).toBeNull();
+});
+
+test('an ACTIVE client gets the portal-access card instead — no more Resend link', () => {
+  clientOver = { subscriptionStatus: 'ACTIVE', email: 'tom@sparkle.co.uk', setupLinkSentAt: '2026-09-04T10:00:00.000Z' };
+  renderView();
+
+  expect(screen.getByText('Portal access')).toBeTruthy();
+  expect(screen.queryByText('Client setup link')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Resend link' })).toBeNull();
+  // Facts already served, nothing invented: status, sign-in address, sent date.
+  expect(screen.getByText('Active')).toBeTruthy();
+  // The address also renders in the details panel, so at least once here.
+  expect(screen.getAllByText('tom@sparkle.co.uk').length).toBeGreaterThan(0);
+  expect(screen.getByText('04 Sept 2026')).toBeTruthy();
+  // The re-invite survives demoted to an edge-case action.
+  expect(screen.getByRole('button', { name: 'Invite another contact' })).toBeTruthy();
+});
+
+test('TRIALING counts as onboarded too', () => {
+  clientOver = { subscriptionStatus: 'TRIALING', email: 'tom@sparkle.co.uk' };
+  renderView();
+
+  expect(screen.getByText('Portal access')).toBeTruthy();
+  expect(screen.getByText('Trial')).toBeTruthy();
+  expect(screen.queryByText('Client setup link')).toBeNull();
+});
+
+test('a lapsed client (PAST_DUE) shows the card with the lapse said plainly, not a setup link', () => {
+  clientOver = { subscriptionStatus: 'PAST_DUE', email: 'tom@sparkle.co.uk' };
+  renderView();
+
+  expect(screen.getByText('Portal access')).toBeTruthy();
+  expect(screen.getByText('Payment overdue')).toBeTruthy();
+  // The portal's own Plan panel says "not running … cannot send"; this agrees.
+  expect(document.body.textContent).toContain('The subscription is not running, so the client cannot send new documents.');
+  expect(screen.queryByRole('button', { name: 'Resend link' })).toBeNull();
+});
+
+test('CANCELED shows the card as well — a setup link cannot fix a cancellation', () => {
+  clientOver = { subscriptionStatus: 'CANCELED', email: 'tom@sparkle.co.uk' };
+  renderView();
+
+  expect(screen.getByText('Portal access')).toBeTruthy();
+  expect(screen.getByText('Cancelled')).toBeTruthy();
+  expect(screen.queryByText('Client setup link')).toBeNull();
+});
+
+test('an INCOMPLETE checkout keeps the setup-link panel — the journey is still the door', () => {
+  clientOver = { subscriptionStatus: 'INCOMPLETE', email: 'tom@sparkle.co.uk' };
+  renderView();
+
+  expect(screen.getByText('Client setup link')).toBeTruthy();
+  expect(screen.queryByText('Portal access')).toBeNull();
 });
 
 test('on seed data the affordance is disabled with the reason — a removal is never faked locally', () => {
