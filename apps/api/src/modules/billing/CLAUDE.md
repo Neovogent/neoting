@@ -99,6 +99,19 @@ full amount a month later), max_redemptions 1. The hosted checkout's existing
 (`promotion[type]=coupon&promotion[coupon]=…`); a bare `coupon` param is
 refused as unknown.
 
+## ⚠ A Stripe refusal and a Stripe outage wear different words (5 Sep 2026, review item 45)
+
+`http-stripe-client.ts#refuse` answers `NT-SRV-001` either way (the `ErrorCode`
+enum is a closed contract list — a named `NT-BIL-003` is a written-up delta,
+not minted), but the **detail** now says which it was: a 4xx from Stripe is
+*"refused the request — the billing account needs attention…"* (the live-mode
+portal-configuration and restricted-key-permission class, which no retry
+fixes), everything else keeps *"could not be reached"*. The web renders those
+words verbatim with the code in front (`errorLabel` / `messageFor`), so the
+"We could not open Stripe" screenshot now diagnoses itself.
+`docs/runbooks/stripe-billing.md` §9 has the CloudWatch query and the
+dashboard fixes — both are HUMAN steps in live mode, not code.
+
 ## The four things worth knowing before you change anything here
 
 ### 1. Entitlement is in the service layer, and moving it is a data-loss bug

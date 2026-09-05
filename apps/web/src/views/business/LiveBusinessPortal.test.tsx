@@ -264,6 +264,40 @@ test('an unknown checkout value on the address claims nothing at all', () => {
   expect(screen.queryByText('Nothing has been charged')).not.toBeInTheDocument();
 });
 
+/**
+ * ⚠ Review item 45. The Plan panel's fault line used to be one generic
+ * sentence ("We could not open Stripe…") whatever the server answered, which
+ * made four different failures — a missing live-mode portal configuration, a
+ * restricted key without the Customer-portal permission, a refused return
+ * URL, the tenancy 404 — indistinguishable from a screenshot. The line now
+ * carries the session's own words with the NT- code in front (frontend ten,
+ * item 5), composed by `useBusinessPortalSession#messageFor`.
+ */
+test('a failed billing-portal open wears the server problem and its NT- code', async () => {
+  await signIn({ ...HOME, plan: { status: 'ACTIVE', plan: null, currentPeriodEnd: null } });
+  await openTab('Settings');
+  await openTab('Plan');
+
+  const { NtProblemError } = await import('@neoting/contracts');
+  mocks.openBillingPortal.mockRejectedValue(
+    new NtProblemError({
+      status: 500,
+      code: 'NT-SRV-001',
+      title: 'Billing is not set up correctly',
+      detail: 'The payment provider refused the request — the billing account needs attention from the practice, not a retry. Nothing was charged.',
+    }),
+  );
+  await act(async () => {
+    screen.getByRole('button', { name: 'Manage billing in Stripe' }).click();
+  });
+
+  const alert = await screen.findByRole('alert');
+  expect(alert.textContent).toContain('NT-SRV-001');
+  expect(alert.textContent).toContain('refused the request');
+  // The generic sentence is gone — the line is the server's, not a mask.
+  expect(alert.textContent).not.toContain('We could not open Stripe');
+});
+
 test('the plan panel says what it does not know rather than claiming the client never paid', async () => {
   await signIn({ ...HOME, plan: null, subscriptionActive: true });
   await openTab('Settings');

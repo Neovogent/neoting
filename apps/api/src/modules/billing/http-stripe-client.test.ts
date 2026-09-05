@@ -215,6 +215,29 @@ test('a Stripe failure becomes our own 500 and leaks nothing from their body', a
   }
 });
 
+test('a Stripe REFUSAL says the account needs attention; an outage says try again (item 45)', async () => {
+  // A 400 in live mode is the "no customer-portal configuration saved" /
+  // "restricted key lacks the permission" class — permanent until a human
+  // acts in the dashboard, so "try again in a moment" would be a lie.
+  const refusal = (async () =>
+    ({
+      ok: false,
+      status: 400,
+      headers: new Headers(),
+      text: async () => JSON.stringify({ error: { type: 'invalid_request_error' } }),
+    }) as unknown as Response) as unknown as typeof fetch;
+  await expect(
+    new HttpStripeClient(CONFIG, refusal).createPortalSession({ customerId: 'cus_1', returnUrl: 'https://app.example/', idempotencyKey: 'k' }),
+  ).rejects.toMatchObject({ code: 'NT-SRV-001', publicDetail: expect.stringContaining('refused') });
+
+  // A 5xx (and a 429) is Stripe itself struggling — the retry words are true.
+  const outage = (async () =>
+    ({ ok: false, status: 503, headers: new Headers(), text: async () => '' }) as unknown as Response) as unknown as typeof fetch;
+  await expect(
+    new HttpStripeClient(CONFIG, outage).createPortalSession({ customerId: 'cus_1', returnUrl: 'https://app.example/', idempotencyKey: 'k' }),
+  ).rejects.toMatchObject({ code: 'NT-SRV-001', publicDetail: expect.stringContaining('could not be reached') });
+});
+
 test('a 200 with an unparseable body is a failure, not a silent success', async () => {
   const fetchImpl = (async () =>
     ({ ok: true, status: 200, headers: new Headers(), text: async () => '<html>maintenance</html>' }) as unknown as Response) as unknown as typeof fetch;

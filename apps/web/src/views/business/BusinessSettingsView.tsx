@@ -5,6 +5,7 @@ import { defineMessages, useIntl } from 'react-intl';
 import { commonActions, commonLabels, commonPlaceholders } from '../../i18n/common';
 import { API_ENABLED } from '../../api/config';
 import { openBillingPortal } from '../../api/onboarding';
+import { errorLabel } from '../../api/slices';
 import { useAppContext } from '../../context/AppContext';
 import { Pill } from '../../components/DynamicComponents/DataTable';
 import { newMember } from '../../lib/business';
@@ -674,20 +675,24 @@ function PlanPanel({ account }: { account: BusinessAccount }) {
   const { serverClientIdFor } = useAppContext();
   const intl = useIntl();
   const [opening, setOpening] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [fault, setFault] = useState<string | null>(null);
 
   const plan = account.subscription ?? null;
 
   const manage = async () => {
     setOpening(true);
-    setFailed(false);
+    setFault(null);
     try {
       const url = await openBillingPortal(serverClientIdFor(account.clientId));
       // The whole tab goes to Stripe; its `returnUrl` brings the client back
       // to this screen when they are done.
       window.location.assign(url);
-    } catch {
-      setFailed(true);
+    } catch (error) {
+      // The server's own problem with its NT- code in front (`errorLabel`,
+      // frontend ten item 5 — review item 45): the generic line hid four
+      // different failures behind one sentence, and this failure's commonest
+      // causes are dashboard-side facts only the code can point at.
+      setFault(errorLabel(error) ?? intl.formatMessage(m.planManageFault));
       setOpening(false);
     }
   };
@@ -728,9 +733,9 @@ function PlanPanel({ account }: { account: BusinessAccount }) {
             {opening ? <Loader2 size={15} className="animate-spin" /> : <CreditCard size={15} strokeWidth={2.5} />}
             {intl.formatMessage(m.planManageAction)}
           </button>
-          {failed && (
+          {fault !== null && (
             <p role="alert" className="text-[13px] font-semibold text-red-400 leading-relaxed">
-              {intl.formatMessage(m.planManageFault)}
+              {fault}
             </p>
           )}
           <p className="text-[12px] text-zinc-600 leading-relaxed">

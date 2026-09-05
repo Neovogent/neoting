@@ -202,11 +202,6 @@ const m = defineMessages({
       'They see the documents you send and the figures read off them. They cannot sign in as you, and you only ever see your own business here.',
   },
   signOutAction: { id: 'portal.livePortalSettings.signOutAction', defaultMessage: 'Sign out' },
-
-  fault: {
-    id: 'portal.livePortalSettings.fault',
-    defaultMessage: 'We could not open Stripe. Try again in a moment — if it keeps failing, tell your accountant.',
-  },
 });
 
 /**
@@ -400,9 +395,15 @@ export function LivePortalSettings({
                     {busy ? intl.formatMessage(m.planWorking) : intl.formatMessage(m.planSubscribeAction)}
                   </button>
                 )}
+                {/* The session's own words, never a generic line (review item
+                    45): `useBusinessPortalSession` composes them with the NT-
+                    code in front (frontend ten, item 5), so the next
+                    screenshot of this line diagnoses itself. The generic "We
+                    could not open Stripe" hid four different failures behind
+                    one sentence. */}
                 {fault !== null && (
                   <p role="alert" className="text-[13px] font-semibold text-red-400 leading-relaxed">
-                    {intl.formatMessage(m.fault)}
+                    {fault}
                   </p>
                 )}
                 <p className="text-[12px] text-zinc-600 leading-relaxed">{intl.formatMessage(m.planManageNote)}</p>

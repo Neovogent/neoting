@@ -240,6 +240,16 @@ export class HttpStripeClient implements StripeClient {
    * back; error responses are logged and screenshotted far more freely than
    * request bodies are. The `type`/`code` pair and Stripe's request id go to
    * the log, which is where someone debugging this actually looks.
+   *
+   * ⚠ The DETAIL distinguishes a refusal from an outage (review item 45). A
+   * 4xx means Stripe WAS reached and said no — a key permission or a
+   * dashboard configuration the account is missing (live mode has its own
+   * customer-portal configuration and its own restricted-key grants; see
+   * `docs/runbooks/stripe-billing.md` §9). Calling that "temporarily
+   * unavailable — try again" told the person on screen to retry a failure no
+   * retry can fix. The code stays `NT-SRV-001` because `ErrorCode` is a
+   * closed contract enum (G7); a named `NT-BIL-003` is written up as a delta,
+   * not minted here.
    */
   private refuse(path: string, response: Response, text: string): AppException {
     const parsed = StripeErrorSchema.safeParse(safeJson(text));
@@ -247,12 +257,21 @@ export class HttpStripeClient implements StripeClient {
     this.logger.error(
       `Stripe ${path} failed: HTTP ${response.status}, ${kind}, request-id ${response.headers.get('request-id') ?? '(none)'}`,
     );
-    return new AppException(
-      'NT-SRV-001',
-      HttpStatus.INTERNAL_SERVER_ERROR,
-      'Billing is temporarily unavailable',
-      'The payment provider could not be reached. Nothing was charged.',
-    );
+    // 429 is Stripe's rate limit — transient, so it keeps the try-again words.
+    const refused = response.status >= 400 && response.status < 500 && response.status !== 429;
+    return refused
+      ? new AppException(
+          'NT-SRV-001',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+          'Billing is not set up correctly',
+          'The payment provider refused the request — the billing account needs attention from the practice, not a retry. Nothing was charged.',
+        )
+      : new AppException(
+          'NT-SRV-001',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+          'Billing is temporarily unavailable',
+          'The payment provider could not be reached. Nothing was charged.',
+        );
   }
 }
 
