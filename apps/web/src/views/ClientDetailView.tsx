@@ -1,4 +1,4 @@
-import { Fragment, lazy, Suspense, useMemo, useState } from 'react';
+import { Fragment, lazy, Suspense, useMemo, useState, type ReactNode } from 'react';
 import {
   ArrowLeft, Sparkles, Send, Activity, Star,
   RefreshCw, CheckCircle, Eye, Users, Settings as SettingsIcon, Download, Smartphone,
@@ -485,6 +485,39 @@ const m = defineMessages({
   setupNeedsEmail: {
     id: 'clients.clientDetailView.setupNeedsEmail',
     defaultMessage: 'This client has no contact email on file, so a setup link cannot be emailed.',
+  },
+
+  // ── Portal access (Settings tab, review item 64) ─────────────────────────
+  // Replaces the setup-link panel once the client has registered — the link's
+  // whole job ends there, and "Resend link" to an active client is noise. The
+  // status words mirror the portal's own Plan panel so the two surfaces never
+  // contradict each other about one subscription.
+  panelPortalAccess: { id: 'clients.clientDetailView.panelPortalAccess', defaultMessage: 'Portal access' },
+  rowSubscription: { id: 'clients.clientDetailView.rowSubscription', defaultMessage: 'Subscription' },
+  rowPortalSignIn: { id: 'clients.clientDetailView.rowPortalSignIn', defaultMessage: 'Signs in as' },
+  rowSetupLinkSent: { id: 'clients.clientDetailView.rowSetupLinkSent', defaultMessage: 'Setup link sent' },
+  portalStatusActive: { id: 'clients.clientDetailView.portalStatusActive', defaultMessage: 'Active' },
+  portalStatusTrialing: { id: 'clients.clientDetailView.portalStatusTrialing', defaultMessage: 'Trial' },
+  portalStatusPastDue: { id: 'clients.clientDetailView.portalStatusPastDue', defaultMessage: 'Payment overdue' },
+  portalStatusCanceled: { id: 'clients.clientDetailView.portalStatusCanceled', defaultMessage: 'Cancelled' },
+  portalStatusUnpaid: { id: 'clients.clientDetailView.portalStatusUnpaid', defaultMessage: 'Unpaid' },
+  portalStatusPaused: { id: 'clients.clientDetailView.portalStatusPaused', defaultMessage: 'Paused' },
+  portalAccessActiveBody: {
+    id: 'clients.clientDetailView.portalAccessActiveBody',
+    defaultMessage: 'The client has registered and subscribed — the portal is in use, and the setup link has done its job.',
+  },
+  // Says the same thing the client's own Plan panel says about a lapse
+  // ("Your subscription is not running, so new documents cannot be sent"),
+  // from the practice's side of it. Reading survives a lapse by design (D32).
+  portalAccessLapsedBody: {
+    id: 'clients.clientDetailView.portalAccessLapsedBody',
+    defaultMessage:
+      'The subscription is not running, so the client cannot send new documents. They can still sign in and see what they have sent — restarting is done from the Plan page of their own portal.',
+  },
+  inviteAnotherContact: { id: 'clients.clientDetailView.inviteAnotherContact', defaultMessage: 'Invite another contact' },
+  inviteAnotherContactNote: {
+    id: 'clients.clientDetailView.inviteAnotherContactNote',
+    defaultMessage: 'Rarely needed — a fresh invite emails a sign-in link to the registered contact address.',
   },
 
   // ── Modals ──────────────────────────────────────────────────────────────
@@ -1608,7 +1641,29 @@ export function ClientDetailView() {
 
               {/* The setup link asks for company details only — D47 removed
                   every connection from onboarding, so there is nothing else a
-                  client could be asked to do. */}
+                  client could be asked to do.
+
+                  ⚠ Once the client has REGISTERED the panel is replaced
+                  outright (review item 64): the link's job ends at
+                  registration, and "Resend link" beside an active client is
+                  noise-to-confusing. The fork is the served subscription
+                  status: a status in PORTAL_STATUS means a subscription
+                  existed at Stripe, which only the registered client's own
+                  checkout creates. No status — or INCOMPLETE, a checkout
+                  started and never paid — keeps today's panel, because the
+                  setup journey is still the client's door. Synthetic mode
+                  never reaches the card (METH_MODE §1: the seeded
+                  OnboardingLink branch stands). */}
+              {businessesLive && client.subscriptionStatus !== undefined && PORTAL_STATUS[client.subscriptionStatus] !== undefined ? (
+                <Panel title={intl.formatMessage(m.panelPortalAccess)} icon={Smartphone}>
+                  <PortalAccessCard
+                    clientId={client.id}
+                    status={client.subscriptionStatus}
+                    email={contactEmail}
+                    sentAt={client.setupLinkSentAt}
+                  />
+                </Panel>
+              ) : (
               <Panel title={intl.formatMessage(m.panelSetupLink)} icon={Smartphone}>
                 {/* Live rows come from the server (setupLinkSentAt, the
                     primary contact's email); the synthetic branches below read
@@ -1684,6 +1739,7 @@ export function ClientDetailView() {
                   </>
                 )}
               </Panel>
+              )}
 
               {/* The danger zone, last on purpose. The button only ever opens
                   the confirmation; the removal itself is a business.offboard
@@ -1941,31 +1997,17 @@ const detailsPanelMessages = defineMessages({
 });
 
 /**
- * The setup-link panel's LIVE half (5 Sep 2026, staging finding). It renders
- * the contract's own facts — `setupLinkSentAt` off the businesses slice, the
- * primary contact's email — and re-sends through the real invite operation:
- * a fresh invite IS the re-send (`api/setup-link.ts` carries the argument).
- * There is no false gate on a mobile number here; the link travels by email.
- * The synthetic half is untouched (METH_MODE §1).
+ * The one send-an-invite action, shared by the setup-link panel and the
+ * portal-access card (review item 64): a fresh invite IS the re-send
+ * (`api/setup-link.ts` carries the argument — the server's create-if-absent
+ * contact rule means nothing accumulates).
  */
-function SetupLinkLivePanel({ clientId, email, sentAt }: { clientId: string; email: string; sentAt: string | undefined }) {
+function useSetupInvite(clientId: string, email: string) {
   const intl = useIntl();
-  const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<{ kind: 'sent' } | { kind: 'failed'; label: string } | null>(null);
 
   const send = async () => {
-    // The confirm's copy must not claim the old link stops working — the
-    // server keeps every un-expired invite live, deliberately (a client mid-
-    // journey on the first link is not knocked off it by an impatient resend).
-    if (sentAt !== undefined) {
-      const ok = await confirm({
-        title: intl.formatMessage(m.resendSetupLink),
-        detail: intl.formatMessage(m.resendSetupLiveDetail, { email }),
-        confirmLabel: intl.formatMessage(m.resendConfirmLabel),
-      });
-      if (!ok) return;
-    }
     setBusy(true);
     setOutcome(null);
     try {
@@ -1979,6 +2021,131 @@ function SetupLinkLivePanel({ clientId, email, sentAt }: { clientId: string; ema
     } finally {
       setBusy(false);
     }
+  };
+
+  return { busy, outcome, send };
+}
+
+/**
+ * The statuses that mean a subscription has EXISTED at Stripe — which only the
+ * registered client's own checkout creates, so any of these proves the setup
+ * link has done its job (review item 64). INCOMPLETE / INCOMPLETE_EXPIRED are
+ * deliberately absent: a checkout started and never paid leaves the setup
+ * journey as the client's door, so those keep the setup-link panel. The words
+ * mirror the portal's own Plan panel (`LivePortalSettings.STATUS_LABEL`) so
+ * the two surfaces never disagree about one subscription.
+ */
+const PORTAL_STATUS: Partial<Record<
+  NonNullable<Client['subscriptionStatus']>,
+  { label: MessageDescriptor; tone: 'green' | 'amber' | 'red' }
+>> = {
+  ACTIVE: { label: m.portalStatusActive, tone: 'green' },
+  TRIALING: { label: m.portalStatusTrialing, tone: 'green' },
+  PAST_DUE: { label: m.portalStatusPastDue, tone: 'amber' },
+  CANCELED: { label: m.portalStatusCanceled, tone: 'red' },
+  UNPAID: { label: m.portalStatusUnpaid, tone: 'red' },
+  PAUSED: { label: m.portalStatusPaused, tone: 'amber' },
+};
+
+/**
+ * What replaces the setup-link panel once the client is registered: portal
+ * state at a glance, built ONLY from facts the practice side already receives
+ * (`BusinessSummary` — subscription status, primary contact email,
+ * setupLinkSentAt). Portal-member count and last portal activity are OMITTED:
+ * neither has a wired practice-side read surface, and honest omission beats
+ * invention. The re-invite affordance survives demoted to an edge-case action.
+ */
+function PortalAccessCard({ clientId, status, email, sentAt }: {
+  clientId: string;
+  status: NonNullable<Client['subscriptionStatus']>;
+  email: string;
+  sentAt: string | undefined;
+}) {
+  const intl = useIntl();
+  const confirm = useConfirm();
+  const { busy, outcome, send } = useSetupInvite(clientId, email);
+  const chrome = PORTAL_STATUS[status];
+  if (chrome === undefined) return null; // the Settings fork never sends one outside the map
+  const active = status === 'ACTIVE' || status === 'TRIALING';
+
+  const invite = async () => {
+    const ok = await confirm({
+      title: intl.formatMessage(m.inviteAnotherContact),
+      detail: intl.formatMessage(m.resendSetupLiveDetail, { email }),
+      confirmLabel: intl.formatMessage(m.resendConfirmLabel),
+    });
+    if (ok) await send();
+  };
+
+  return (
+    <>
+      <p className="text-[13px] text-zinc-500 leading-relaxed">
+        {intl.formatMessage(active ? m.portalAccessActiveBody : m.portalAccessLapsedBody)}
+      </p>
+      <div className="flex flex-col gap-2.5 text-[13px] mt-4">
+        <Row
+          label={intl.formatMessage(m.rowSubscription)}
+          value={<Pill tone={chrome.tone}>{intl.formatMessage(chrome.label)}</Pill>}
+        />
+        <Row label={intl.formatMessage(m.rowPortalSignIn)} value={email || '—'} />
+        {sentAt !== undefined && (
+          <Row
+            label={intl.formatMessage(m.rowSetupLinkSent)}
+            value={intl.formatDate(new Date(sentAt), { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Europe/London' })}
+          />
+        )}
+      </div>
+      <button
+        onClick={() => void invite()}
+        disabled={!email || busy}
+        className="mt-4 flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold text-zinc-400 hover:text-white hover:bg-white/5 border border-white/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        <Send size={13} />
+        {intl.formatMessage(m.inviteAnotherContact)}
+      </button>
+      <p className="text-[12px] text-zinc-600 leading-relaxed mt-2">{intl.formatMessage(m.inviteAnotherContactNote)}</p>
+      {outcome?.kind === 'sent' && (
+        <p role="status" className="text-[12px] text-brand font-semibold mt-2">
+          {intl.formatMessage(m.setupResendSent, { email })}
+        </p>
+      )}
+      {outcome?.kind === 'failed' && (
+        <p role="alert" className="text-[12px] text-amber-400 font-semibold mt-2">
+          {outcome.label}
+        </p>
+      )}
+    </>
+  );
+}
+
+/**
+ * The setup-link panel's LIVE half (5 Sep 2026, staging finding). It renders
+ * the contract's own facts — `setupLinkSentAt` off the businesses slice, the
+ * primary contact's email — and re-sends through the real invite operation:
+ * a fresh invite IS the re-send (`api/setup-link.ts` carries the argument).
+ * There is no false gate on a mobile number here; the link travels by email.
+ * The synthetic half is untouched (METH_MODE §1). Renders only while the
+ * client is un-onboarded — registration replaces it with `PortalAccessCard`
+ * (review item 64).
+ */
+function SetupLinkLivePanel({ clientId, email, sentAt }: { clientId: string; email: string; sentAt: string | undefined }) {
+  const intl = useIntl();
+  const confirm = useConfirm();
+  const { busy, outcome, send: sendInvite } = useSetupInvite(clientId, email);
+
+  const send = async () => {
+    // The confirm's copy must not claim the old link stops working — the
+    // server keeps every un-expired invite live, deliberately (a client mid-
+    // journey on the first link is not knocked off it by an impatient resend).
+    if (sentAt !== undefined) {
+      const ok = await confirm({
+        title: intl.formatMessage(m.resendSetupLink),
+        detail: intl.formatMessage(m.resendSetupLiveDetail, { email }),
+        confirmLabel: intl.formatMessage(m.resendConfirmLabel),
+      });
+      if (!ok) return;
+    }
+    await sendInvite();
   };
 
   return (
@@ -2655,7 +2822,7 @@ function Panel({ title, icon: Icon, children }: { title: string; icon: LucideIco
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex justify-between items-center gap-4">
       <span className="text-zinc-500 font-medium">{label}</span>

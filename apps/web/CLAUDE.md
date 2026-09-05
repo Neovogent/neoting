@@ -686,6 +686,46 @@ Bundle: `ClientDetailView`'s closure measured **247,578 B** after the change
 (node-zlib closure walk over the manifest — the measure script's `gzip` shell-out
 does not run on Windows), under the 250,000 budget with ~2.4 kB of headroom.
 
+### Review items 17, 45, 64 (5 Sep 2026)
+
+- **Bank amounts wear their direction from `isCredit`, never from the local
+  sign (item 17).** A credit rendered `−£543.98` in green — sign and colour
+  contradicting each other. `txnAmountLabel` in `BankView.tsx` is the one
+  maker now (money in `+£x` emerald, money out unsigned white), used by the
+  Amount cell and both modal headers; `csvAmount` signs the CSV export by the
+  SERVER's convention (in positive, out negative — a file has no colour
+  column). And **missing evidence is RED regardless of direction**: the
+  "Credit — no document" pill keeps its wording but wears the same red as "No
+  document" — a credit must not look settled for lacking evidence (chase
+  candidacy is separate: credits stay non-chaseable, item 25). Both rules
+  pinned in `BankView.test.tsx`. ClientDetailView's Bank tab is the same
+  component.
+- **The billing-portal fault line names itself (item 45).** Both Plan panels
+  used to swallow the server's problem for one generic sentence.
+  `LivePortalSettings` now renders the session's own fault string
+  (`messageFor` puts the NT- code in front); `BusinessSettingsView`'s
+  `PlanPanel` renders `errorLabel(error)`. Server-side,
+  `http-stripe-client.ts#refuse` splits the DETAIL: a Stripe 4xx says
+  "refused — needs attention, not a retry" (the live-mode portal-config /
+  restricted-key-permission class; `docs/runbooks/stripe-billing.md` §9 has
+  the diagnosis table), 5xx/429 keep "could not be reached". The code stays
+  `NT-SRV-001` — `ErrorCode` is a closed contract enum.
+- **The setup-link panel retires itself at registration (item 64).** It
+  rendered unconditionally, offering "Resend link" for clients already using
+  the portal. The Settings tab now forks on `Client.subscriptionStatus`
+  (mapped from the widened `BusinessSummary.subscription.status` in
+  `AppContext.liveClients`, beside the derived `awaitingRegistration` badge
+  which cannot tell never-onboarded from lapsed): a status in
+  `PORTAL_STATUS` — ACTIVE/TRIALING/PAST_DUE/CANCELED/UNPAID/PAUSED, i.e. a
+  subscription EXISTED at Stripe — renders the **Portal access** card
+  (status pill wearing the portal Plan panel's own words, sign-in address,
+  setup-link sent date, and "Invite another contact" demoted to an edge-case
+  action over the same `useSetupInvite` the panel uses); no status or
+  INCOMPLETE keeps the panel — the setup journey is still the door. Portal
+  member count and last activity are OMITTED: no wired practice-side read
+  surface, honest omission over invention. Synthetic branch untouched
+  (METH_MODE §1). Pinned in `ClientDetailView.test.tsx`.
+
 ### The chase portal (`/p/:linkToken`) — METH Stage 9
 
 The narrowest surface in the product, and the only one wired to the API today. No account, no password, no browsing: a delegated session that may see the items one chase asked for and add documents to them.

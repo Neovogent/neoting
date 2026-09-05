@@ -170,6 +170,17 @@ There is deliberately no plan-change screen, cancellation flow or invoice
 renderer in the codebase. Those are three things Stripe does correctly and
 three more things that could be wrong on our side.
 
+⚠ **The configuration is PER MODE.** Saving it in test mode configures test
+mode and nothing else — flip the same account to live mode and
+`billing_portal/sessions` refuses every create until the live-mode page has
+been saved once (Dashboard → toggle to **Live mode** → Settings → Billing →
+Customer portal → **Save**). "Checkout works, the portal doesn't" after a mode
+switch is this failure's signature, and it is exactly the switch staging went
+through on 2 Sep 2026 (§7). The same per-mode rule applies to the restricted
+key: a live-mode key is minted separately and needs the **Customer Portal**
+permission granted by name (§7's permission table — the picker does NOT call
+it "Billing Portal Sessions").
+
 ---
 
 ## 6. The webhook
@@ -223,7 +234,7 @@ decides which deployments silently lose the renewal date.
 | Variable | Staging since 28 Aug 2026 | Live |
 |---|---|---|
 | `BILLING` | **`stripe`** | `stripe` |
-| `STRIPE_SECRET_KEY` | `rk_test_…` — **restricted**, the three permissions below | a **restricted** key (`rk_…`), not `sk_…` |
+| `STRIPE_SECRET_KEY` | ⚠ `rk_live_…` since 2 Sep 2026 — **LIVE MODE**, hand-switched from the dashboard (see the billing module's `CLAUDE.md`; this row used to say `rk_test_`). Still **restricted**, and it must carry the three permissions below **in live mode** | a **restricted** key (`rk_…`), not `sk_…` |
 | `STRIPE_WEBHOOK_SECRET` | `we_1U9Bfs…`'s signing secret | the endpoint's signing secret |
 | `STRIPE_PRICE_ID` | `price_1U8lIsGMdHp4NCWvxj03BBuc` | the live-mode `price_…` |
 | `STRIPE_TAX` | `rate` | `rate` until registered, then `automatic` |
@@ -323,3 +334,32 @@ The one thing worth repeating here: **`businesses` is a projection, and Stripe
 is the source of truth.** A disagreement means a webhook was missed, not that
 the client is unsubscribed. Check Stripe's event log for failed deliveries
 before telling anyone their card declined.
+
+### "Manage billing in Stripe" fails while checkout works (review item 45)
+
+**Symptom.** The Plan panel (portal or practice side) shows a red line under
+the button; the subscription itself reads Active. Since item 45 the line
+carries the `NT-` code and the server's own words — *"refused the request —
+the billing account needs attention"* means Stripe answered a 4xx (a
+configuration or key-permission fact, no retry will fix it); *"could not be
+reached"* means an outage or rate limit (retrying is honest).
+
+**Diagnose.** `HttpStripeClient` logs every Stripe refusal with the status,
+Stripe's own `type/code`, and Stripe's request id. One CloudWatch query
+answers which failure it is:
+
+```bash
+aws logs filter-log-events --log-group-name /nt/staging/api \
+  --filter-pattern '"Stripe billing_portal/sessions failed"'
+```
+
+| Log line says | Cause | Fix (dashboard, live mode) |
+|---|---|---|
+| `HTTP 400, invalid_request_error/…` mentioning configuration | **No live-mode customer-portal configuration saved.** Test-mode config does not carry over a mode switch (§5). | Toggle to Live mode → Settings → Billing → Customer portal → review §5's on/off list → **Save**. Once. |
+| `HTTP 401/403, …permission…` | **The `rk_live_` restricted key lacks the Customer Portal permission** — it is granted separately from Checkout (§7). | Developers → API keys → the staging restricted key → Edit → **Customer Portal: Write** → save, then update `/neoting/staging/stripe` if a new key was minted. |
+| `NT-VAL-001` in the API's response, nothing logged from Stripe | The `returnUrl` origin is not in `BILLING_RETURN_ORIGINS` — the request never reached Stripe. | Add the origin to the task definition, or fix the caller. |
+| `HTTP 5xx` / nothing (network) | Stripe outage. | Wait; the on-screen words already say retry. |
+
+Both dashboard rows are **human steps in the Stripe dashboard, not code** —
+they need whoever holds the Stripe account login (the owner), and nothing in
+this repo can make the click.
