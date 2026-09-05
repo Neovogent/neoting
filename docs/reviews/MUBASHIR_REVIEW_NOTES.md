@@ -603,6 +603,8 @@ Feeds the item-39 capability matrix: portal Owner sees Business/Plan/People/…;
 
 ## Item 45 — "Manage billing in Stripe" fails: diagnose the portal-session error
 
+**✅ DIAGNOSED — DASHBOARD STEP OWED (5 Sep 2026, PR #259).** Root cause is Stripe refusing `billing_portal/sessions` in live mode: either the live-mode customer-portal configuration was never saved, or the hand-minted `rk_live_` restricted key lacks the separately-granted Customer Portal permission (hypotheses 3/4 ruled out statically). `docs/runbooks/stripe-billing.md` §9 carries the one CloudWatch query that says which, and the exact dashboard fix for each — **the click is the owner's to make; this item closes when it's made and the button works on staging.** Code side landed in #259: the Stripe client distinguishes refusal from outage in the problem detail, and both Plan panels render the server's words with the `NT-` code in front (`NT-BIL-003` written up as a contract delta, not minted).
+
 **Original (verbatim):**
 > Check what is the error here
 
