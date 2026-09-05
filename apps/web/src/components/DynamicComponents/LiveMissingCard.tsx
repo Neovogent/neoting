@@ -18,6 +18,19 @@ const m = defineMessages({
   },
   allClients: { id: 'shell.liveMissingCard.allClients', defaultMessage: 'All clients' },
   empty: { id: 'shell.liveMissingCard.empty', defaultMessage: 'Nothing is missing — every transaction in scope has its paperwork.' },
+  bankLoading: { id: 'shell.liveMissingCard.bankLoading', defaultMessage: 'Reading the bank feed…' },
+  bankUnread: {
+    id: 'shell.liveMissingCard.bankUnread',
+    defaultMessage: 'I can’t verify what’s missing right now — the bank feed could not be read{error, select, none {} other { ({error})}}. Check the Bank tab, or try again in a moment.',
+  },
+  scopeUnresolved: {
+    id: 'shell.liveMissingCard.scopeUnresolved',
+    defaultMessage: 'I can’t verify what’s missing right now — {scope} did not match a client on the server, so an answer would be about nobody. Open the client and ask from there.',
+  },
+  bankTruncated: {
+    id: 'shell.liveMissingCard.bankTruncated',
+    defaultMessage: 'The feed is longer than one read returns — this list covers the {loaded} most recent transactions.',
+  },
   chasesHeading: { id: 'shell.liveMissingCard.chasesHeading', defaultMessage: 'Chases already out' },
   chasesNone: { id: 'shell.liveMissingCard.chasesNone', defaultMessage: 'No open chases in this scope.' },
   chaseItems: { id: 'shell.liveMissingCard.chaseItems', defaultMessage: '{items} · last sent {lastSentAt}' },
@@ -33,7 +46,7 @@ const m = defineMessages({
  * render instantly with no review step (SoT §8.2).
  */
 export function LiveMissingCard({ businessId, businessName }: { businessId?: string | undefined; businessName?: string | undefined }) {
-  const { transactions, session, setActiveTab } = useAppContext();
+  const { transactions, businesses, session, slices, setActiveTab } = useAppContext();
   const intl = useIntl();
   const live = API_ENABLED && session.status === 'authenticated';
   const { chases, isLoading: chasesLoading } = useChases({ enabled: live });
@@ -50,8 +63,48 @@ export function LiveMissingCard({ businessId, businessName }: { businessId?: str
   const openChases = chases.filter((c) => c.open && (businessId ? c.businessId === businessId : true));
   const scope = businessName ?? intl.formatMessage(m.allClients);
 
+  // ⚠ "Nothing is missing" is a claim about the client's records, and this
+  // card may only make it after actually reading them (review item 25 — the
+  // product answered a data question with an all-clear computed over an empty
+  // set). Three states short of that answer honestly instead:
+  //
+  // - the bank slice has not answered yet → say it is being read;
+  // - the slice failed, or was never asked while a session is live → say the
+  //   answer cannot be verified, never an all-clear over zero rows;
+  // - the scope names a business no server row carries (the seed↔server id
+  //   bridge's known failure shape) → say the client did not resolve, because
+  //   every filter over that id matches nothing and the empty state would be
+  //   a confident lie about the wrong scope.
+  const bankSlice = slices.bankTransactions;
+  if (live) {
+    const scopeUnresolved =
+      businessId !== undefined && businesses.length > 0 && !businesses.some((b) => b.id === businessId);
+    if (scopeUnresolved) {
+      return (
+        <p role="alert" className="text-[13px] text-amber-400">
+          {intl.formatMessage(m.scopeUnresolved, { scope })}
+        </p>
+      );
+    }
+    if (bankSlice.source !== 'api') {
+      return (
+        <p role="alert" className="text-[13px] text-amber-400">
+          {intl.formatMessage(m.bankUnread, { error: bankSlice.error ?? 'none' })}
+        </p>
+      );
+    }
+    if (bankSlice.loading) {
+      return <p className="text-[13px] text-zinc-500">{intl.formatMessage(m.bankLoading)}</p>;
+    }
+  }
+
   return (
     <div className="w-full flex flex-col gap-4">
+      {live && bankSlice.truncated === true && (
+        <p className="text-[12px] text-amber-400">
+          {intl.formatMessage(m.bankTruncated, { loaded: bankSlice.loaded ?? transactions.length })}
+        </p>
+      )}
       <DataTable<BankTransaction>
         title={intl.formatMessage(m.title)}
         subtitle={intl.formatMessage(m.subtitle, { scope })}

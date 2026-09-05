@@ -346,15 +346,44 @@ test('truncated values carry their full text as titles', () => {
   expect(screen.getByTitle(LONG_DESCRIPTION)).toBeTruthy();
 });
 
-test('no bank-match section renders — the contract exposes no match read surface to build one from', () => {
-  // Survey verdict, pinned: `BankTransaction` carries `matchState` but no
-  // document id, and no endpoint exposes a suggested or confirmed match for a
-  // document. Until that read surface exists (G7), the preview says nothing
-  // about transactions rather than fabricating a pairing.
+test('no match renders the EXPLICIT empty state, never silence (review item 34)', () => {
+  // This test used to pin the opposite — "the preview says nothing about
+  // transactions" — from before `GET /documents/{id}/bank-match` existed. Once
+  // the read surface shipped, silence stopped being honest: a Ready document
+  // with no section could be "unmatched" or "panel broken" and an accountant
+  // cannot tell which. The section now always answers.
   detail = liveDetail();
+  bankMatch = { match: null, loading: false, error: false, refetch: () => {} };
   renderPreview();
 
-  expect(screen.queryByText(/transaction/i)).toBeNull();
+  expect(screen.getByText('Bank match')).toBeTruthy();
+  expect(screen.getByText(/No bank match found yet/)).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /Confirm match/ })).toBeNull();
+});
+
+test('a bank-match read that is loading says so instead of rendering nothing', () => {
+  detail = liveDetail();
+  bankMatch = { match: null, loading: true, error: false, refetch: () => {} };
+  renderPreview();
+
+  expect(screen.getByText(/Checking for a bank match/)).toBeTruthy();
+  bankMatch = { match: null, loading: false, error: false, refetch: () => {} };
+});
+
+test('a failed bank-match read is VISIBLE and retryable — fail-closed must not render as nothing', () => {
+  detail = liveDetail();
+  const refetch = vi.fn();
+  bankMatch = { match: null, loading: false, error: true, refetch };
+  renderPreview();
+
+  // The one claim an errored read may make: the answer is unknown. Never the
+  // empty state — "no match yet" is a statement about the data, and the data
+  // was not read.
+  expect(screen.getByRole('alert').textContent).toMatch(/could not be read/);
+  expect(screen.queryByText(/No bank match found yet/)).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: /Try again/ }));
+  expect(refetch).toHaveBeenCalledTimes(1);
+  bankMatch = { match: null, loading: false, error: false, refetch: () => {} };
 });
 
 test('a suggested bank match renders with its line and Confirm stages the three-call ritual', async () => {

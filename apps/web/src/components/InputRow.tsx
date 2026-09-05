@@ -94,7 +94,7 @@ export function InputRow() {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const { addMessage, clients, messages, attachedClients, attachClient, detachClient, ingest, missing, chases, approvals, documents, businesses, session, serverClientIdFor, setAssistantPending } = useAppContext();
+  const { addMessage, clients, messages, attachedClients, attachClient, detachClient, ingest, missing, chases, approvals, documents, businesses, session, serverClientIdFor, setAssistantPending, pendingUtterance, setPendingUtterance } = useAppContext();
   const intl = useIntl();
 
   /**
@@ -327,6 +327,32 @@ export function InputRow() {
   };
 
   const handleSubmit = () => submitMessage(input);
+
+  /**
+   * The drill-in → real-chat bridge (review item 25). A prompt button that
+   * used to fabricate its whole exchange locally now queues the question in
+   * `pendingUtterance`; this consumes it ONCE and submits it through exactly
+   * the path a typed utterance takes, so the answer is the server's — real
+   * classification, real grounding — never a card over the empty synthetic
+   * arrays.
+   *
+   * The ref guards StrictMode's double-invoked effect: both runs see the same
+   * state, so clearing it inside the effect alone would still submit twice.
+   * A session still loading WAITS (the effect re-fires when its status
+   * settles); any signed-out terminal state clears the question unasked —
+   * falling through to `classifyLocally` would produce the exact fabricated
+   * answer this bridge exists to remove.
+   */
+  const consumedUtteranceRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (pendingUtterance === null || isLoading) return;
+    if (session.status === 'loading') return;
+    if (consumedUtteranceRef.current === pendingUtterance) return;
+    consumedUtteranceRef.current = pendingUtterance;
+    setPendingUtterance(null);
+    if (API_ENABLED && session.status === 'authenticated') void submitMessage(pendingUtterance);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- submitMessage is recreated per render and stable in behaviour; depending on it would re-arm the effect every keystroke. The consumed ref makes re-runs no-ops regardless.
+  }, [pendingUtterance, session.status, isLoading, setPendingUtterance]);
 
   return (
     <div

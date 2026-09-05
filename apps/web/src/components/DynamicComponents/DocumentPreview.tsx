@@ -137,6 +137,23 @@ const m = defineMessages({
     id: 'documents.documentPreview.matchFailed',
     defaultMessage: 'The match could not be confirmed. It stays suggested — try again, or confirm it from the Bank screen.',
   },
+  matchSectionHeading: {
+    id: 'documents.documentPreview.matchSectionHeading',
+    defaultMessage: 'Bank match',
+  },
+  matchNone: {
+    id: 'documents.documentPreview.matchNone',
+    defaultMessage: 'No bank match found yet — no imported transaction lines up with this document. Suggestions appear here as statements import.',
+  },
+  matchLoading: {
+    id: 'documents.documentPreview.matchLoading',
+    defaultMessage: 'Checking for a bank match…',
+  },
+  matchReadFailed: {
+    id: 'documents.documentPreview.matchReadFailed',
+    defaultMessage: 'The bank match could not be read — whether this document has one is unknown right now.',
+  },
+  matchRetry: { id: 'documents.documentPreview.matchRetry', defaultMessage: 'Try again' },
 });
 
 /** Why a typed correction was refused before it ever reached the network. */
@@ -777,38 +794,69 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
             )}
 
             {/* The bank-match section PR #230 had to leave out — the read
-                surface exists now (Phase 4). Rendered only when the server
-                actually holds a match; confirming a suggestion is the same
-                three-call Review → Approve ritual the Bank screen uses. */}
-            {live && bankMatch.match !== null && (
+                surface exists now (Phase 4). ⚠ It ALWAYS answers when live
+                (review item 34): match, explicit "no match yet", loading, or a
+                visible read failure. It used to render only when a match
+                existed, so an accountant could not tell "no match" from "the
+                panel broke" — and fail-closed on an unparseable shape rendered
+                as NOTHING, which is fail-closed only to a reader of the code.
+                Confirming a suggestion is the same three-call Review → Approve
+                ritual the Bank screen uses. */}
+            {live && (
               <div className="mt-6 rounded-2xl border border-white/10 bg-raised/40 p-4">
                 <div className="text-[11px] font-bold text-brand uppercase tracking-widest mb-2">
-                  {intl.formatMessage(bankMatch.match.state === 'CONFIRMED' ? m.matchConfirmedHeading : m.matchSuggestedHeading)}
+                  {intl.formatMessage(
+                    bankMatch.match === null
+                      ? m.matchSectionHeading
+                      : bankMatch.match.state === 'CONFIRMED'
+                        ? m.matchConfirmedHeading
+                        : m.matchSuggestedHeading,
+                  )}
                 </div>
-                <p className="text-[13px] text-zinc-300 leading-relaxed">
-                  {intl.formatMessage(m.matchLine, {
-                    label: bankMatch.match.label,
-                    amount: currency(Math.abs(bankMatch.match.amount)),
-                    date: bankMatch.match.date,
-                  })}
-                </p>
-                {bankMatch.match.state === 'SUGGESTED' && (
-                  <div className="mt-3 flex items-center gap-3">
+                {bankMatch.loading ? (
+                  <p className="text-[13px] text-zinc-500">{intl.formatMessage(m.matchLoading)}</p>
+                ) : bankMatch.error ? (
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <p role="alert" className="text-[13px] text-amber-400">
+                      {intl.formatMessage(m.matchReadFailed)}
+                    </p>
                     <button
-                      onClick={() => void confirmMatch()}
-                      disabled={confirmingMatch}
-                      className="flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      onClick={() => bankMatch.refetch()}
+                      className="px-3 py-1.5 rounded-full text-[12px] font-bold text-zinc-400 hover:text-white hover:bg-white/5 border border-white/5 transition-colors"
                     >
-                      <Check size={13} />
-                      {intl.formatMessage(m.matchConfirm)}
+                      {intl.formatMessage(m.matchRetry)}
                     </button>
-                    <span className="text-[12px] text-zinc-500">{intl.formatMessage(m.matchConfirmNote)}</span>
                   </div>
-                )}
-                {matchProblem && (
-                  <p role="alert" className="mt-2 text-[12px] text-red-400">
-                    {intl.formatMessage(m.matchFailed)}
-                  </p>
+                ) : bankMatch.match === null ? (
+                  <p className="text-[13px] text-zinc-500">{intl.formatMessage(m.matchNone)}</p>
+                ) : (
+                  <>
+                    <p className="text-[13px] text-zinc-300 leading-relaxed">
+                      {intl.formatMessage(m.matchLine, {
+                        label: bankMatch.match.label,
+                        amount: currency(Math.abs(bankMatch.match.amount)),
+                        date: bankMatch.match.date,
+                      })}
+                    </p>
+                    {bankMatch.match.state === 'SUGGESTED' && (
+                      <div className="mt-3 flex items-center gap-3">
+                        <button
+                          onClick={() => void confirmMatch()}
+                          disabled={confirmingMatch}
+                          className="flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <Check size={13} />
+                          {intl.formatMessage(m.matchConfirm)}
+                        </button>
+                        <span className="text-[12px] text-zinc-500">{intl.formatMessage(m.matchConfirmNote)}</span>
+                      </div>
+                    )}
+                    {matchProblem && (
+                      <p role="alert" className="mt-2 text-[12px] text-red-400">
+                        {intl.formatMessage(m.matchFailed)}
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             )}

@@ -273,6 +273,84 @@ describe('credit notes do not auto-link across suppliers (#67)', () => {
   });
 });
 
+/**
+ * Review item 32 (5 Sep 2026), pinned with the shape that shipped: transaction
+ * FASTER PAYMENT TO ALDGATE MEATS LTD · 26 Aug · £674.46, candidate Aldgate
+ * Meats Ltd · £994.00 · 30 Jul, tagged "Probable 48%". A supplier a restaurant
+ * pays weekly makes a name-only hit the EXPECTED collision — the name carries
+ * no information, and the amount is the evidence.
+ */
+describe('the probable tier requires amount agreement on a debit (item 32)', () => {
+  const aldgateDoc = {
+    ...seedDocuments[0]!,
+    id: 'd-aldgate',
+    supplier: 'Aldgate Meats Ltd',
+    total: 994.0,
+    date: '30 Jul 2026',
+  };
+
+  const paymentOf = (amount: number, date = '26 Aug 2026'): BankTransaction =>
+    txn({ description: 'FASTER PAYMENT TO ALDGATE MEATS LTD', amount, date, isCredit: false });
+
+  it('refuses a name-only hit whose amount is far off, rather than calling it probable', () => {
+    const candidates = matchCandidates(intl, paymentOf(674.46), [aldgateDoc], DEFAULT_MATCH_SETTINGS);
+
+    expect(candidates).toEqual([]);
+  });
+
+  it('still offers a near-miss amount, scored below the far-off shape ever was', () => {
+    const candidates = matchCandidates(intl, paymentOf(950.0), [aldgateDoc], DEFAULT_MATCH_SETTINGS);
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.kind).toBe('probable');
+    expect(candidates[0]?.confidence).toBeLessThanOrEqual(0.48);
+    expect(candidates[0]?.confidence).toBeGreaterThan(0.4);
+  });
+
+  it('keeps the credit (refund) question open even when the amounts disagree', () => {
+    // A partial refund genuinely differs from its invoice — the seeded £212.40
+    // Bidfood refund case, restated with this supplier. Pinned so the debit
+    // rule can never quietly swallow it.
+    const refund = txn({
+      description: 'ALDGATE MEATS REFUND',
+      amount: -212.4,
+      date: '26 Aug 2026',
+      isCredit: true,
+    });
+    const candidates = matchCandidates(intl, refund, [aldgateDoc], DEFAULT_MATCH_SETTINGS);
+
+    expect(candidates.map((c) => c.kind)).toContain('probable');
+  });
+});
+
+/**
+ * Item 32's second half: one receipt cannot answer two bank lines. The claimed
+ * set used to be consulted only by `autoMatches`' own link decision — the
+ * candidate DIALOG happily offered a matched-and-published document as a
+ * candidate for a second transaction.
+ */
+describe('a claimed document is out of the candidate pool', () => {
+  const doc = seedDocuments[0]!; // d1, Bidfood £1,420.50
+
+  it('never offers a document another transaction already claimed', () => {
+    const claimed = new Set([doc.id]);
+    const exact = txn({ description: 'BIDFOOD UK LTD', amount: doc.total, date: '12 Aug 2026' });
+
+    const withClaim = matchCandidates(intl, exact, seedDocuments, DEFAULT_MATCH_SETTINGS, claimed);
+    const without = matchCandidates(intl, exact, seedDocuments, DEFAULT_MATCH_SETTINGS);
+
+    expect(without.map((c) => c.document.id)).toContain(doc.id);
+    expect(withClaim.map((c) => c.document.id)).not.toContain(doc.id);
+  });
+
+  it('assessTransaction passes the claimed set through', () => {
+    const exact = txn({ description: 'BIDFOOD UK LTD', amount: doc.total, date: '12 Aug 2026' });
+    const verdict = assessTransaction(intl, exact, seedDocuments, DEFAULT_MATCH_SETTINGS, new Set([doc.id]));
+
+    expect(verdict.candidates.map((c) => c.document.id)).not.toContain(doc.id);
+  });
+});
+
 describe('merchantSimilarity measures overlap, not alignment (#67)', () => {
   it('scores a shifted prefix as similar', () => {
     // The old positional comparison scored this near zero: every character is
