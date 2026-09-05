@@ -121,11 +121,15 @@ test('a real supplier is still named', () => {
 });
 
 /**
- * jsdom computes no layout, so the only mechanical guard the clipping fix has
- * is the class contract on the frame itself: a bounded card with its own
- * scroll box. Without both, a dialog taller than the window runs off the bottom
- * edge — which is what was reported, with the last Path-to-Ready action button
- * cut off and unreachable.
+ * The class contract on the frame: a bounded card with its own scroll box,
+ * whose children may not flex-shrink. jsdom computes no layout, so this can
+ * only pin the CLASSES — it proved twice (review items 23+40) that it cannot
+ * prove the mechanism: with every class below present, dialog cards carrying
+ * `overflow-hidden` were silently SHRUNK to fit the scroll box (flexbox zeroes
+ * the automatic minimum size of a non-visible-overflow item) and clipped their
+ * own tails. `[&>*]:shrink-0` is the fix; the guard that runs real layout is
+ * `scripts/measure/modal-reachability.mjs`, and this test is only the tripwire
+ * for someone deleting a class.
  */
 test('the frame bounds the card to the viewport and gives it a real scroll box', () => {
   renderModal();
@@ -135,6 +139,10 @@ test('the frame bounds the card to the viewport and gives it a real scroll box',
 
   const scroller = dialog.querySelector('.overflow-y-auto');
   expect(scroller).not.toBeNull();
+  // Without this, a card with `overflow-hidden` (the rounded-corner idiom)
+  // shrinks to fit instead of overflowing, and the scroll box has nothing to
+  // scroll — the items 23+40 defect.
+  expect(scroller?.className).toContain('[&>*]:shrink-0');
   // The close button is a SIBLING of the scroll box, so it neither scrolls
   // away nor gets clipped by it.
   expect(scroller?.contains(screen.getByRole('button', { name: 'Close' }))).toBe(false);

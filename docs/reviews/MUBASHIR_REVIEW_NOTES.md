@@ -248,6 +248,14 @@ Likely mechanical suspects (check in the browser, not jsdom): the `max-h-full` c
 2. **Inventory every modal** — shared-`Modal` children (`RequestStatementDialog`, `PublishBatchDialog`, `CodingProposalModal`, intake, invite, offboard, viewer, purge…) *and* the own-chrome dialogs (`AnalysisModal`, `DuplicateModal`, `ChaseModal`, `WorkflowEditor`, tour overlay, portal dialogs) — and reproduce at a short viewport (e.g. 1280×720) in headless Chrome/CDP, the repo's established audit pattern: for each modal, the bottom-most interactive element must be reachable by scroll.
 3. **Keep the smoke**: a browser-level "every dialog's last button is reachable" check, because jsdom can never catch this class and it has now shipped twice.
 
+**✅ RESOLVED (5 Sep 2026, the modal-overflow package).**
+
+**What was done:** the dialogs scroll now. The publish flow completes at 1280×720 — stage → Read review → scroll → Approve clickable (screenshots `docs/reviews/assets/2026-09-05-modal-overflow/10–14`), and the intake Review step reaches its Create button (`15–16`). Every dialog in the app was then walked in a real headless Chromium at BOTH viewports (1280×720 and 390×844) with the window forced short enough that the dialog had to scroll, asserting the bottom-most interactive element scrolls into view and is hit-testable — the audit table is in PR #258's body, with the per-dialog screenshots committed beside this file.
+
+**Root cause, per dialog family:** the 2 Sep bounded-and-scrolls fix was mechanically defeated by one flexbox rule — a flex item whose overflow is not `visible` has an automatic minimum size of ZERO, and nearly every dialog card carries `overflow-hidden` for its rounded corners. So inside the shared frame's column-flex scroll box the card was **shrunk to fit instead of overflowing**, and its own `overflow-hidden` clipped the tail: `scrollHeight === clientHeight`, nothing to scroll, last button unreachable. The jsdom class test could never see this because every class was present and correct — the defeat lived entirely in layout. Fix: `[&>*]:shrink-0` on the frame's scroll box (one class, every shared-frame dialog fixed at once). Second family: `ConfirmStep`, `OffboardClientDialog` and InboxesView's two synthetic confirm dialogs used `items-center`/`items-end` scrims with **no scroll at all** — a too-short viewport clipped both ends by construction; they now centre/anchor the card by auto margins on a scrolling scrim (auto margins collapse to zero on overflow). Third: `BusinessPortalLauncher`'s InviteForm branch sat bare inside a bounded `overflow-hidden` card with no scroll box — it has one now. The own-chrome dialogs on the `items-start` + scrolling-scrim pattern (AnalysisModal, ChaseModal, DuplicateModal, StatementModal, the view previews, the portal shells) were mechanically sound all along and audited as such.
+
+**The smoke that stops a third shipping:** `scripts/measure/modal-reachability.mjs` — no-dependency raw-CDP, spawns headless Chromium at 1280×500, walks intake-to-Review and publish-to-server-review, and fails unless the last button genuinely scrolls into view and is hit-testable; it also **refuses to pass when the dialog doesn't overflow**, so it cannot rot into a non-proof. Verified both ways: green on the fix, exit 1 with the exact `scrollHeight === clientHeight` signature when the fix is removed. e2e/ is still an S0 scaffold, so this lives with the other measure scripts; invocation is documented in its header and in `apps/web/CLAUDE.md`'s Modal section, which now records the root cause and demotes the jsdom class test to a tripwire.
+
 ## Item 24 — Publish dialog copy lectures the super admin about needing the super admin
 
 **Original (verbatim):**
@@ -524,7 +532,7 @@ Two distinct wrongs:
 
 ## Item 40 — merged into Items 23 + 40 above
 
-Same defect as item 23 at population scale; the combined entry (original words and image for both items preserved) is at **Items 23 + 40** earlier in this file.
+Same defect as item 23 at population scale; the combined entry (original words and image for both items preserved) is at **Items 23 + 40** earlier in this file. **✅ RESOLVED with it (5 Sep 2026)** — the population audit is that entry's resolution.
 
 ## Item 41 — Portal People: the access dropdown says "Member", which defines nothing
 

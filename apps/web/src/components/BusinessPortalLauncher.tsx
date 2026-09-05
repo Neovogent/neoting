@@ -328,7 +328,10 @@ function InviteForm({
   const [mobile, setMobile] = useState(client.mobile ?? '');
 
   return (
-    <div className="p-6 flex flex-col gap-4">
+    // overflow-y-auto: the launcher card is bounded (max-h-[88dvh]) and clips —
+    // this branch has no scroll box of its own, so a short viewport cut the
+    // submit row off with no way to reach it (items 23+40).
+    <div className="p-6 flex flex-col gap-4 overflow-y-auto">
       <div>
         <h3 className="text-[15px] font-bold text-white tracking-tight">
           {intl.formatMessage(inviteMessages.heading, { client: client.name })}
