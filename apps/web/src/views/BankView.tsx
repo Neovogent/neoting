@@ -42,6 +42,21 @@ import { DataSourceBadge } from '../components/DataSourceBadge';
 const BankFilterPanel = lazy(() => import('../components/DynamicComponents/BankFilterPanel'));
 const RequestStatementDialog = lazy(() => import('../components/DynamicComponents/RequestStatementDialog'));
 
+/**
+ * A transaction amount worn with its direction (review item 17): money INTO
+ * the account wears a plus, money out renders unsigned, as on a bank
+ * statement. Direction comes from `isCredit` — the signal `api/bank.ts`
+ * reconciles from the server's signed pence — NEVER from the local sign of
+ * `amount`, which the seeded cast and live rows encode differently.
+ */
+export const txnAmountLabel = (t: BankTransaction) => `${t.isCredit ? '+' : ''}${currency(Math.abs(t.amount))}`;
+
+/**
+ * CSV amounts carry the server's sign convention — money in positive, money
+ * out negative — because a file has no colour or context to carry direction.
+ */
+export const csvAmount = (t: BankTransaction) => (t.isCredit ? Math.abs(t.amount) : -Math.abs(t.amount));
+
 const TABS = ['Transactions', 'Matches', 'Statements', 'Accounts'] as const;
 type Tab = (typeof TABS)[number];
 
@@ -680,14 +695,18 @@ export function BankView({ clientId }: { clientId?: string } = {}) {
         if (v.kind === 'confused') {
           return <Pill tone="amber">{intl.formatMessage(m.needsYouPill, { count: v.candidates.length })}</Pill>;
         }
+        // Missing evidence is a RED flag regardless of direction (review item
+        // 17): a credit with no document keeps its distinct wording but must
+        // not LOOK settled just because money came in. Chase candidacy is a
+        // separate question — credits stay non-chaseable either way.
         return t.isCredit
-          ? <Pill tone="blue">{intl.formatMessage(m.creditNoDocument)}</Pill>
+          ? <Pill tone="red">{intl.formatMessage(m.creditNoDocument)}</Pill>
           : <Pill tone="red">{intl.formatMessage(m.noDocument)}</Pill>;
       },
     },
     {
       key: 'amount', label: intl.formatMessage(commonLabels.amount), align: 'right', sortValue: (t) => t.amount,
-      render: (t) => <span className={`font-bold tabular-nums ${t.amount < 0 ? 'text-emerald-400' : 'text-white'}`}>{currency(t.amount)}</span>,
+      render: (t) => <span className={`font-bold tabular-nums ${t.isCredit ? 'text-emerald-400' : 'text-white'}`}>{txnAmountLabel(t)}</span>,
     },
     {
       key: 'actions', label: '', align: 'right',
@@ -1541,7 +1560,7 @@ function MatchPicker({ txn, verdict, onMatch, onPreview, onCashCode, onChase }: 
         <div className="min-w-0">
           <h3 className="font-sans font-bold text-xl text-white tracking-tight truncate">{txn.description}</h3>
           <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
-            {txn.clientName} · {txn.date} · {currency(txn.amount)}
+            {txn.clientName} · {txn.date} · {txnAmountLabel(txn)}
           </p>
         </div>
       </div>
@@ -1659,7 +1678,7 @@ function CashCodePanel({ txn, customCategories, onAddCategory, onConfirm }: {
       <div className="p-6 border-b border-white/5">
         <h3 className="font-sans font-bold text-xl text-white tracking-tight">{intl.formatMessage(mCash.heading)}</h3>
         <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
-          {txn.description} · {currency(txn.amount)}
+          {txn.description} · {txnAmountLabel(txn)}
         </p>
       </div>
       <div className="p-6 flex flex-col gap-4">
@@ -1766,7 +1785,7 @@ function NumberField({ label, value, onChange }: { label: string; value: number;
 function exportTxns(rows: BankTransaction[]) {
   const header = 'Client,Description,Date,Amount,Evidence,Type\n';
   const body = rows
-    .map((t) => `"${t.clientName}","${t.description}","${t.date}",${t.amount},"${isMatched(t) ? 'matched' : 'none'}","${t.isCredit ? 'credit' : 'payment'}"`)
+    .map((t) => `"${t.clientName}","${t.description}","${t.date}",${csvAmount(t)},"${isMatched(t) ? 'matched' : 'none'}","${t.isCredit ? 'credit' : 'payment'}"`)
     .join('\n');
   const blob = new Blob([header + body], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
