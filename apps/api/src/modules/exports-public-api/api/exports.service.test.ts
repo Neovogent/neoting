@@ -725,13 +725,35 @@ test('documents Published but undated are counted by neither side — there is n
   expect(error.extension).toBeUndefined();
 });
 
-test('documents found but none exportable is still NT-EXP-001, carrying the first reason', async () => {
-  const { service } = harness({ documents: [document('doc_1', { totalPence: null })] });
+test('documents found but none exportable is still NT-EXP-001, and every refused document is NAMED (item 29)', async () => {
+  // The refusal used to state the accounting rule and stop. An accountant told
+  // "figures do not add up" with no document named starts the fix with a manual
+  // hunt — so each refused document rides `Problem.errors` under
+  // `documents/<id>` (the shape `assertEveryNamedIdSurvived` already uses; no
+  // contract change), carrying who, dated when, how much, and the check it
+  // failed. The web reads the id off the field path and routes to the document.
+  const { service } = harness({
+    documents: [
+      document('doc_1', { totalPence: null }),
+      // Item 29's live shape: VAT larger than gross flips the net's sign, and
+      // the canonical model refuses mixed signs as not-representable.
+      document('doc_2', { totalPence: 99_400, taxPence: 900_000 }),
+    ],
+  });
 
   const error = await refusal(() => service.createExport(CTX, request(), KEY));
 
   expect(error.code).toBe('NT-EXP-001');
-  expect(error.publicDetail).toContain('no total');
+  expect(error.publicDetail).toContain('2 Published document(s) were found');
+  expect(error.publicDetail).toContain('open the document, correct the field its refusal names');
+
+  const errors = error.fieldErrors ?? [];
+  expect(errors.map((e) => e.field)).toEqual(['documents/doc_1', 'documents/doc_2']);
+  // Who, dated when (UK d/m/y), how much — and the specific check it failed.
+  expect(errors[0]?.message).toContain('Épicerie Dubois, S.à r.l., dated 14/01/2026, no total');
+  expect(errors[0]?.message).toContain('no total');
+  expect(errors[1]?.message).toContain('Épicerie Dubois, S.à r.l., dated 14/01/2026, £994.00');
+  expect(errors[1]?.message).toContain('figures do not add up');
 });
 
 test('over the cap is NT-EXP-003 naming the cap, never a truncated file', async () => {

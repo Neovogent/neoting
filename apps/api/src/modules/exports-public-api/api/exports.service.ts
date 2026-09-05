@@ -25,6 +25,7 @@ import { AppException } from '../../../common/problem/problem.js';
 import type { DocumentStore } from '../../ingestion-routing/index.js';
 import { type BundleDocument, buildSourceDocumentBundle } from '../bundle/source-document-bundle.js';
 import type { CanonicalRow, CanonicalSourceLink } from '../canonical/canonical-row.js';
+import { formatPenceDecimal } from '../canonical/money.js';
 import { selectEmitter } from '../emitters/select-emitter.js';
 import { DocumentLinkService, MAX_LINKS_PER_CALL } from '../links/document-link.service.js';
 
@@ -296,14 +297,7 @@ export class ExportsService {
       if (link !== null) bundleDocuments.push(toBundleDocument(document, link));
     }
 
-    if (rows.length === 0) {
-      throw new AppException(
-        'NT-EXP-001',
-        HttpStatus.UNPROCESSABLE_ENTITY,
-        'Nothing to export',
-        `${documents.length} Published document(s) were found for ${ukDate(request.periodStart)} to ${ukDate(request.periodEnd)}, but none of them could be exported. ${warnings[0]?.message ?? ''}`.trim(),
-      );
-    }
+    if (rows.length === 0) throw this.noneExportable(documents, warnings, request);
 
     const emitter = selectEmitter(request.target);
     const emitted = emitter.emit(rows);
@@ -362,6 +356,42 @@ export class ExportsService {
     const response = toExport(row, { file: file.access, bundle: bundleFile.access });
     await this.remember(request.businessId, idempotencyKey, request, response);
     return response;
+  }
+
+  /**
+   * `NT-EXP-001` when documents WERE found and every one refused to become a
+   * row (review item 29, 5 Sep 2026 — the usability half).
+   *
+   * The refusal used to state the accounting rule and stop: *"figures do not
+   * add up… Mixed signs are a parsing accident"* — true, and useless, because
+   * it never said WHICH document, so fixing it started with a manual hunt
+   * through the month. Each refused document now rides `Problem.errors` under
+   * `documents/<id>` — the same shape {@link assertEveryNamedIdSurvived}
+   * already uses, so **no contract change** — carrying the facts only this
+   * service holds at refusal time: who, dated when, how much, and the specific
+   * check it failed. The web reads the id off the field path and offers the
+   * route to the document; it branches on the CODE, never on this prose.
+   */
+  private noneExportable(
+    documents: readonly SelectedDocument[],
+    warnings: readonly ExportWarning[],
+    request: CreateExportRequest,
+  ): AppException {
+    const period = `${ukDate(request.periodStart)} to ${ukDate(request.periodEnd)}`;
+    const reasonFor = new Map(warnings.map((warning) => [warning.documentId, warning.message]));
+
+    const errors: ProblemErrorsItem[] = documents.map((document) => ({
+      field: `documents/${document.id}`,
+      message: `${describeDocument(document)} — ${reasonFor.get(document.id) ?? 'This document could not be exported.'}`,
+    }));
+
+    return new AppException(
+      'NT-EXP-001',
+      HttpStatus.UNPROCESSABLE_ENTITY,
+      'Nothing to export',
+      `${documents.length} Published document(s) were found for ${period}, but none of them could be exported. Each one is named below — open the document, correct the field its refusal names, and export again.`,
+      errors,
+    );
   }
 
   /**
@@ -732,6 +762,20 @@ export class ExportsService {
 
 function storeKey(businessId: string, idempotencyKey: string): string {
   return `export:create:${businessId}:${idempotencyKey}`;
+}
+
+/**
+ * "Épicerie Dubois, dated 30/07/2025, £994.00" — the facts an accountant needs
+ * to FIND the document a refusal is about. Server-side money formatting through
+ * the module's one pence→decimal boundary; the web renders this string, it
+ * never does money maths (R5).
+ */
+function describeDocument(document: SelectedDocument): string {
+  const name =
+    document.supplierName?.trim() || document.customerName?.trim() || 'A document with no counterparty name';
+  const dated = document.documentDate === null ? 'undated' : `dated ${ukDate(calendarDate(document.documentDate))}`;
+  const amount = document.totalPence === null ? 'no total' : `£${formatPenceDecimal(document.totalPence)}`;
+  return `${name}, ${dated}, ${amount}`;
 }
 
 function toBundleDocument(document: SelectedDocument, link: CanonicalSourceLink): BundleDocument {

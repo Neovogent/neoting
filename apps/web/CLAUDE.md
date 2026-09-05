@@ -252,6 +252,10 @@ Six things about it that are decisions, not details:
 - **The two download anchors carry `rel="noreferrer noopener"`.** The signed URL is bearer authority over a client's whole month of financial records with no session behind it, and a `Referer` header would carry it wherever the tab goes next. Pinned by test.
 - **⚠ "Nothing to export" is no longer allowed to be a dead end (2 Sep 2026).** Reported from the live app: a client with exactly one Published document — dated **12 May 2025** — and this screen, defaulting to `previousCalendarMonth`, answering *"No documents reached Published in 01/08/2026 to 31/08/2026 for this client."* The product owner read that as **published, but it will not export**. The server was right (the export period selects on the document's own date, which is the accounting answer and is now stated in the contract) and the screen was useless. It now renders the refusal's `publishedOutsidePeriod` — how many Published documents sit outside the chosen period and the dates they span — plus **one button that sets both date inputs to the server's own bounds**, so nobody retypes two dates read out of a sentence.
   ⚠ **The screen computes none of that, and must never start.** The facts ride on the `NT-EXP-001` problem (`NtProblemError.publishedOutsidePeriod`, the contract's one RFC 7807 extension member) because the exporter is the only thing that knows its own predicate; a second query here could disagree with it and would be a second read of a client's records written by someone not looking at the exporter. Two silences are deliberate and pinned by test: a client with genuinely nothing Published gets no hint (the extension is absent, not zero), and a count whose documents are all **undated** offers no button, because there is no period a widening could reach. `previousCalendarMonth` is unchanged — the default is fine once the dead end is not one.
+- **⚠ A refused document is NAMED, with the route to fix it (5 Sep 2026, review item 29).** The other `NT-EXP-001` shape — documents found, none representable — used to state the accounting rule and stop. The server now puts each refused document on the problem's `errors` under `documents/<id>` (the existing contract shape; **no G7 change was needed** — `ntFetch` already spreads `errors` into `NtProblemError.fieldErrors`), carrying supplier, date (UK d/m/y), amount and the check it failed, composed server-side including the money formatting. The screen keys on the field PATH prefix, renders each entry, and offers **Open the document** → `navigate(path('clients', businessId) + '?doc=<id>')`, the same `?doc=` param `ClientDetailView` already opens previews from. Same law as `publishedOutsidePeriod`: branch on the code and the contract shape, never on message prose, and compute nothing here.
+- **⚠ The import instructions were teaching a dialog that cannot import, until 5 Sep 2026 (review item 37).** A10 (27 Aug) rewrote the VT emitter to `Transaction → Journal → Import…` (the Universal Input Sheet has **no import command** — verified in a real VT, SoT §24.3.1), and this screen's copy lagged it: `targetVt` said "(Universal Input Sheet)", `importSteps` taught `Transactions → Universal Input Sheet → Import from CSV File`, `reconcileNote` said "before you press Post", and `bundleNote` named a column the format no longer has. All rewritten to the verified route; the success panel now carries a VT-only **"Importing into VT"** block (the journal route, the type-the-date-from-the-filename rule, the one-off supplier mapping) mirroring the ZIP's `HOW-TO-IMPORT.txt`, which the emitter writes and which is the wording of record. The copy test now pins `Transaction → Journal → Import` PRESENT and `Universal Input Sheet` ABSENT — stale instructions are a copy defect the same way forbidden vocabulary is.
+- **The chosen period is restated in UK long form (item 28, interim).** The native date inputs render in the *browser* locale (US month-first on the reviewer's machine) and no attribute forces d/m/y, so the form prints "Period: 30 July 2025 – 30 July 2025" beside them (`ukLongDate`, built on a UTC date and rendered in UTC so the calendar date never shifts). Package D's shared UK date-picker replaces the native inputs here; the long-form line stays, because words cannot be misread in any locale.
+- **History's empty state tells the truth about a null selection (item 55).** With no client chosen the query does not even run (`enabled` is false), so "Nothing has been exported for this client yet" was a false claim — it now says "Choose a client to see its export history." **History lists successes only, decided and recorded:** a refused attempt (both of the reviewer's "missing" exports were `NT-EXP-001` refusals) produces no artefact, and the panel's stated purpose is what has actually been exported so a month is not imported twice. Recording itself is server-proven: the integration suite pins that a created export lists for its practice and that the `businessId` filter serves it.
 
 Colour is tokens throughout — `bg-ground` / `bg-card` / `bg-raised` for surfaces, `bg-brand` + **`text-brand-on`** for the primary buttons (not `text-white`: white on mint is 1.4:1, and `--color-brand-on` exists for exactly this), and the established amber/red/emerald ramps for degraded/failure/settled. **Nothing lints a hex literal in a className**, so it was checked by grepping the two new files for `#[0-9a-fA-F]{3,8}` — zero — and by listing every `bg-`/`text-`/`border-` class in the view against the `@theme` block.
 
@@ -1714,6 +1718,30 @@ EXCLUDED and suppressed lines (10 vs 6) rather than by the whole feed.
 floor 203,481 → 203,522 B (**+41 B**); worst route (`ClientDetailView` + its
 embedded `BankView` chunk) 244,997 → **245,050 B**, i.e. **+53 B** and
 **4,950 B of headroom** against the 250,000 B budget.
+
+## The Analytics export is a designed report now (5 Sep 2026 — review item 56)
+
+The Export button on `AnalyticsView` used to serialise the screen's internal KPI
+object — metric keys, bare numbers, no client dimension. It now downloads the
+**practice analytics report**: one row per client from `statsFor` (live = the
+server's `BusinessSummary.counts`, so the file cannot disagree with the Clients
+board), a practice roll-up, subscription state off `BusinessSummary.
+subscription`, and a time-saved estimate whose assumption is **printed inside
+the file** (3 min per published document, `MINUTES_SAVED_PER_PUBLISHED_DOCUMENT`).
+The builder is pure and tested: `lib/analyticsReport.ts` + its test; the spec
+with the Dext/AutoEntry/Hubdoc research and citations is
+`docs/reports/PRACTICE_ANALYTICS_REPORT.md`. Three decisions worth knowing:
+
+- **Counts with no server source are OMITTED and the file says so** (duplicates
+  caught, item delay, chases sent/answered, period scoping) — a zero that means
+  "unknown" is invented data. The spec lists what serving each would take.
+- **CSV (UTF-8 BOM), not XLSX** — XLSX needs a spreadsheet dependency and
+  adding one is a stop-and-ask; Excel opens the BOM CSV cleanly and the upgrade
+  is confined to one file.
+- **`autoPublishedPct` is gone** — D42-forbidden vocabulary (nothing
+  auto-publishes in ID). The metric is the share of processed documents that
+  reached Published and is named `publishedPct`, in the metrics object and
+  therefore everywhere downstream.
 
 ## The matching-lane data-truth package (5 Sep 2026 — review items 25/30/32/33/34/35)
 

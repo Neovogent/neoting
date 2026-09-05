@@ -25,6 +25,7 @@ import {
 import { errorLabel, sliceStatus } from '../api/slices';
 import { DataSourceBadge, SliceLoadError } from '../components/DataSourceBadge';
 import { useAppContext } from '../context/AppContext';
+import { navigate, path } from '../lib/router';
 
 /**
  * **Export for VT** — launch stage A9, and the visible endpoint of the journey
@@ -133,7 +134,7 @@ const m = defineMessages({
   submitCsv: { id: 'export.exportView.submitCsv', defaultMessage: 'Export as CSV' },
   submitting: { id: 'export.exportView.submitting', defaultMessage: 'Building the file…' },
 
-  targetVt: { id: 'export.exportView.targetVt', defaultMessage: 'VT Transaction+ (Universal Input Sheet)' },
+  targetVt: { id: 'export.exportView.targetVt', defaultMessage: 'VT Transaction+ (journal import, ZIP of CSVs)' },
   targetCsv: { id: 'export.exportView.targetCsv', defaultMessage: 'Generic CSV' },
 
   readyHeading: { id: 'export.exportView.readyHeading', defaultMessage: 'Your export is ready' },
@@ -142,10 +143,18 @@ const m = defineMessages({
     defaultMessage:
       '{rows, plural, one {# row} other {# rows}} in the import file, {documents, plural, one {# source document} other {# source documents}} in the bundle.',
   },
+  /**
+   * ⚠ A10 (27 Aug 2026) rewrote the VT target and this copy lagged it until
+   * 5 Sep (review item 37): the screen taught `Transactions → Universal Input
+   * Sheet → Import from CSV File`, a dialog A10 proved has NO import command.
+   * The real route is `Transaction → Journal → Import…` and the reconciliation
+   * point is VT's Preview Journal. If the emitter's target ever moves again,
+   * this block moves with it — the ZIP's HOW-TO-IMPORT.txt is written by the
+   * emitter and is the wording of record.
+   */
   reconcileNote: {
     id: 'export.exportView.reconcileNote',
-    defaultMessage:
-      'Check that row count against what VT shows on the Universal Input Sheet before you press Post.',
+    defaultMessage: "Check that row count against VT's Preview Journal before you press Save.",
   },
   downloadFile: { id: 'export.exportView.downloadFile', defaultMessage: 'Download VT import file' },
   downloadFileCsv: { id: 'export.exportView.downloadFileCsv', defaultMessage: 'Download CSV import file' },
@@ -153,15 +162,27 @@ const m = defineMessages({
   bundleNote: {
     id: 'export.exportView.bundleNote',
     defaultMessage:
-      'Each file in the ZIP is named by the link code that appears in the Entry details column, and manifest.csv is the index.',
+      'Each file in the ZIP is named by the link code that appears in the Paid to/invoice details column, and manifest.csv is the index.',
   },
   linksExpire: {
     id: 'export.exportView.linksExpire',
     defaultMessage: 'These download links expire in a few minutes. Export again to get fresh ones.',
   },
-  importSteps: {
-    id: 'export.exportView.importSteps',
-    defaultMessage: 'In VT: Transactions → Universal Input Sheet → Import from CSV File.',
+  howToHeading: { id: 'export.exportView.howToHeading', defaultMessage: 'Importing into VT' },
+  howToRoute: {
+    id: 'export.exportView.howToRoute',
+    defaultMessage:
+      'In VT: Transaction → Journal → Import… Import each CSV in the ZIP on its own — one file holds one day and one direction, and HOW-TO-IMPORT.txt inside the ZIP names the data format to pick for each file.',
+  },
+  howToDate: {
+    id: 'export.exportView.howToDate',
+    defaultMessage:
+      'The date is not in the file: VT applies one date to a whole journal, so type the date from the file name into the journal Date box before importing.',
+  },
+  howToMapping: {
+    id: 'export.exportView.howToMapping',
+    defaultMessage:
+      'On the first import VT asks you to assign each supplier and nominal to a VT account. It saves that mapping and reuses it, so it is a one-off per supplier.',
   },
 
   warningsHeading: {
@@ -174,6 +195,20 @@ const m = defineMessages({
   },
 
   failureHeading: { id: 'export.exportView.failureHeading', defaultMessage: 'Nothing was exported' },
+  /** Item 29: the refused document is a row the accountant can act on, not a rule to decode. */
+  openDocument: { id: 'export.exportView.openDocument', defaultMessage: 'Open the document' },
+
+  /**
+   * Item 28, interim: a native `<input type="date">` renders in the BROWSER
+   * locale (US month-first on some machines) and no attribute can force d/m/y,
+   * so the chosen period is restated beside the inputs in UK long form. Package
+   * D's shared UK date-picker replaces the native inputs here; this line stays
+   * even then, because "30 July 2025" is unambiguous in every locale.
+   */
+  periodReads: {
+    id: 'export.exportView.periodReads',
+    defaultMessage: 'Period: {from} – {to}',
+  },
 
   historyHeading: { id: 'export.exportView.historyHeading', defaultMessage: 'Export history' },
   historyNote: {
@@ -183,6 +218,17 @@ const m = defineMessages({
   historyEmpty: {
     id: 'export.exportView.historyEmpty',
     defaultMessage: 'Nothing has been exported for this client yet. Pick a period above and export it.',
+  },
+  /**
+   * Item 55: with NO client chosen the query does not even run, so "Nothing has
+   * been exported for this client yet" was a false claim about a null
+   * selection. History lists successes only — a refused attempt produced no
+   * file, and the panel's stated purpose is what has ACTUALLY been exported so
+   * a month is not imported twice.
+   */
+  historyChooseClient: {
+    id: 'export.exportView.historyChooseClient',
+    defaultMessage: 'Choose a client to see its export history.',
   },
   historyLoading: { id: 'export.exportView.historyLoading', defaultMessage: 'Loading export history…' },
   historyError: { id: 'export.exportView.historyError', defaultMessage: 'Export history could not be loaded' },
@@ -223,6 +269,37 @@ function ukDate(calendarDate: string | null | undefined): string {
   return match === null ? (calendarDate ?? '') : `${match[3]}/${match[2]}/${match[1]}`;
 }
 
+/**
+ * `YYYY-MM-DD` → "30 July 2025" — the restatement beside the native date
+ * inputs (item 28, interim). Long form because it cannot be misread in ANY
+ * locale, which digits with slashes can. Built on a UTC date and rendered in
+ * UTC so the calendar date never shifts across a timezone.
+ */
+function ukLongDate(intl: ReturnType<typeof useIntl>, isoDate: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
+  if (match === null) return isoDate;
+  return intl.formatDate(new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))), {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+/**
+ * Item 29: the refused documents the server named on the `NT-EXP-001` problem,
+ * as `errors` entries under `documents/<id>` — the exporter is the only thing
+ * that knows which document failed which check, so the facts ride the problem
+ * and this screen computes none of them. The branch is on the field PATH, a
+ * contract shape, never on message prose.
+ */
+function refusedDocuments(error: unknown): { id: string; message: string }[] {
+  if (!(error instanceof NtProblemError) || error.code !== 'NT-EXP-001') return [];
+  return (error.fieldErrors ?? [])
+    .filter((entry) => entry.field.startsWith('documents/'))
+    .map((entry) => ({ id: entry.field.slice('documents/'.length), message: entry.message }));
+}
+
 const FIELD_CLASS =
   'w-full px-4 py-3 rounded-2xl bg-raised border border-white/10 text-[13px] font-semibold text-white ' +
   'focus:outline-none focus:border-brand/50 disabled:opacity-40 disabled:cursor-not-allowed';
@@ -256,6 +333,8 @@ export function ExportView() {
    * Published, which is a different sentence and gets no hint.
    */
   const [outside, setOutside] = useState<NtProblemError['publishedOutsidePeriod']>(undefined);
+  /** Item 29: the documents the server named as refused, each with its own route. */
+  const [refused, setRefused] = useState<{ id: string; message: string }[]>([]);
 
   const history = useExportHistory({ enabled: liveOn && businessId !== '', businessId: businessId || undefined });
   const historyStatus = sliceStatus(liveOn && businessId !== '', history);
@@ -290,6 +369,7 @@ export function ExportView() {
     setFailure(null);
     setCapHit(false);
     setOutside(undefined);
+    setRefused([]);
     try {
       const created = await requestExport({ businessId, target, periodStart, periodEnd });
       setResult(created);
@@ -306,6 +386,7 @@ export function ExportView() {
       // thing that knows its own predicate, so it is the only thing allowed to
       // answer where the documents are.
       setOutside(error instanceof NtProblemError ? error.publishedOutsidePeriod : undefined);
+      setRefused(refusedDocuments(error));
     } finally {
       setBuilding(false);
     }
@@ -421,6 +502,20 @@ export function ExportView() {
             </div>
           </div>
 
+          {/*
+            Item 28 (interim): the native inputs above render in the BROWSER
+            locale and nothing can force their display format, so the chosen
+            period is restated in UK long form. Package D's shared UK
+            date-picker replaces the native inputs on this screen.
+          */}
+          {periodStart !== '' && periodEnd !== '' && (
+            <p className="text-[12px] font-semibold text-zinc-400">
+              {intl.formatMessage(m.periodReads, {
+                from: ukLongDate(intl, periodStart),
+                to: ukLongDate(intl, periodEnd),
+              })}
+            </p>
+          )}
           <p className="text-[12px] text-zinc-500 font-medium">{intl.formatMessage(m.periodHint)}</p>
           {/* ⚠ The cap, before it is hit. */}
           <p className="text-[12px] text-zinc-500 font-medium">
@@ -455,6 +550,28 @@ export function ExportView() {
                 <p className="mt-2 text-[13px] font-medium text-red-300/80">
                   {intl.formatMessage(m.capHit, { cap: EXPORT_BATCH_CAP })}
                 </p>
+              )}
+              {/*
+                Item 29: each refused document, named by the server (supplier,
+                date, amount, the check it failed) with the one action that
+                fixes it — open it, correct the field, export again. The facts
+                ride the problem's `errors`; this screen computes none of them.
+              */}
+              {refused.length > 0 && (
+                <ul className="mt-3 flex flex-col gap-3">
+                  {refused.map((doc) => (
+                    <li key={doc.id} className="flex flex-col gap-2">
+                      <span className="text-[13px] font-medium text-red-300/80">{doc.message}</span>
+                      <button
+                        type="button"
+                        className="self-start px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-[13px] font-bold text-white"
+                        onClick={() => navigate(`${path('clients', businessId)}?doc=${encodeURIComponent(doc.id)}`)}
+                      >
+                        {intl.formatMessage(m.openDocument)}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               )}
               {outsideSpan !== null && (
                 <>
@@ -502,7 +619,9 @@ export function ExportView() {
                   documents: result.documentCount ?? 0,
                 })}
               </p>
-              <p className="text-[12px] text-zinc-500 font-medium">{intl.formatMessage(m.reconcileNote)}</p>
+              {result.target === 'VT_TRANSACTION_PLUS' && (
+                <p className="text-[12px] text-zinc-500 font-medium">{intl.formatMessage(m.reconcileNote)}</p>
+              )}
 
               <div className="flex flex-col sm:flex-row gap-3">
                 {result.file && (
@@ -533,7 +652,20 @@ export function ExportView() {
               </div>
 
               <p className="text-[12px] text-zinc-500 font-medium">{intl.formatMessage(m.bundleNote)}</p>
-              <p className="text-[12px] text-zinc-500 font-medium">{intl.formatMessage(m.importSteps)}</p>
+              {/*
+                Item 37: the how-to, on screen and not only inside the ZIP —
+                the reviewer's "how will VT understand?" proved the screen was
+                not teaching the import step. VT-only: Preview Journal and the
+                per-file data format mean nothing to a generic CSV.
+              */}
+              {result.target === 'VT_TRANSACTION_PLUS' && (
+                <div className="rounded-2xl bg-white/[0.03] border border-white/10 p-4 flex flex-col gap-2">
+                  <h3 className="text-[13px] font-bold text-white">{intl.formatMessage(m.howToHeading)}</h3>
+                  <p className="text-[12px] text-zinc-400 font-medium">{intl.formatMessage(m.howToRoute)}</p>
+                  <p className="text-[12px] text-zinc-400 font-medium">{intl.formatMessage(m.howToDate)}</p>
+                  <p className="text-[12px] text-zinc-500 font-medium">{intl.formatMessage(m.howToMapping)}</p>
+                </div>
+              )}
               <p className="text-[12px] text-zinc-500 font-medium">{intl.formatMessage(m.linksExpire)}</p>
 
               {result.warnings && result.warnings.length > 0 && (
@@ -569,7 +701,14 @@ export function ExportView() {
           <p className="mt-1 text-[12px] text-zinc-500 font-medium">{intl.formatMessage(m.historyNote)}</p>
 
           <div className="mt-4">
-            {historyStatus.source === 'error' ? (
+            {/*
+              Item 55: with no client chosen the history query never runs, so
+              "Nothing has been exported for this client yet" was a false claim
+              about a null selection. Say what is actually true: pick a client.
+            */}
+            {businessId === '' ? (
+              <p className="text-[13px] text-zinc-500 font-medium">{intl.formatMessage(m.historyChooseClient)}</p>
+            ) : historyStatus.source === 'error' ? (
               <SliceLoadError
                 heading={intl.formatMessage(m.historyError)}
                 error={historyStatus.error}

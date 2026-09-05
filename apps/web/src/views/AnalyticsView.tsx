@@ -5,6 +5,7 @@ import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
 import { commonLabels } from '../i18n/common';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
+import { buildPracticeReport, type ClientReportRow } from '../lib/analyticsReport';
 import { currency } from '../lib/resolver';
 import { isUnexplained } from '../lib/matching';
 import type { Client, SourceChannel } from '../lib/types';
@@ -130,7 +131,7 @@ const m = defineMessages({
 });
 
 export function AnalyticsView() {
-  const { clients, documents, missing, chases, approvals, transactions, statementGaps, statsFor, auditLog } = useAppContext();
+  const { clients, businesses, documents, missing, chases, approvals, transactions, statementGaps, statsFor, auditLog } = useAppContext();
   const [scope, setScope] = useState('practice');
   const intl = useIntl();
 
@@ -164,7 +165,11 @@ export function AnalyticsView() {
       rejected,
       toReview,
       ready,
-      autoPublishedPct: processed ? Math.round((published / processed) * 100) : 0,
+      // ⚠ This key was `autoPublishedPct` — D42-forbidden vocabulary (nothing
+      // auto-publishes in ID; Published is a human release). What it measures
+      // is the share of processed documents that reached Published, so that is
+      // its name (review item 56).
+      publishedPct: processed ? Math.round((published / processed) * 100) : 0,
       correctionRate: allFields.length ? Math.round((corrected / allFields.length) * 1000) / 10 : 0,
       lowConfidence,
       missing: openMissing.filter((m) => !m.chased).length,
@@ -240,7 +245,33 @@ export function AnalyticsView() {
               {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
             <button
-              onClick={() => exportMetrics(metrics, scope === 'practice' ? 'practice' : clients.find((c) => c.id === scope)?.name ?? '')}
+              onClick={() =>
+                downloadReport(
+                  buildPracticeReport({
+                    // One row per client in scope, from `statsFor` — live that
+                    // is the server's own BusinessSummary counts, so the file
+                    // cannot disagree with the Clients board (item 56).
+                    rows: scopedClients.map(
+                      (c): ClientReportRow => ({
+                        name: c.name,
+                        stats: statsFor(c.id),
+                        subscriptionStatus: businesses.find((b) => b.id === c.id)?.subscription?.status ?? null,
+                      }),
+                    ),
+                    scopeName:
+                      scope === 'practice'
+                        ? intl.formatMessage(m.scopePractice)
+                        : clients.find((c) => c.id === scope)?.name ?? '',
+                    // Rule 8: Europe/London in rendering; long form so no locale can misread it.
+                    generatedOn: intl.formatDate(new Date(), {
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric',
+                      timeZone: 'Europe/London',
+                    }),
+                  }),
+                )
+              }
               className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
             >
               <Download size={16} />
@@ -255,7 +286,7 @@ export function AnalyticsView() {
           <div data-tour="analytics-kpis" className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
             <Tile label={intl.formatMessage(m.tileProcessed)} value={String(metrics.processed)} sub={intl.formatMessage(m.tileProcessedSub)} />
             <Tile label={intl.formatMessage(m.tileCorrectionRate)} value={intl.formatMessage(m.percent, { value: metrics.correctionRate })} sub={intl.formatMessage(m.tileCorrectionRateSub)} />
-            <Tile label={intl.formatMessage(m.tilePublished)} value={intl.formatMessage(m.percent, { value: metrics.autoPublishedPct })} sub={intl.formatMessage(m.tilePublishedSub, { count: metrics.published })} />
+            <Tile label={intl.formatMessage(m.tilePublished)} value={intl.formatMessage(m.percent, { value: metrics.publishedPct })} sub={intl.formatMessage(m.tilePublishedSub, { count: metrics.published })} />
             <Tile label={intl.formatMessage(m.tileMissing)} value={String(metrics.missing)} sub={currency(metrics.unverified)} tone={metrics.missing > 20 ? 'red' : 'plain'} />
             <Tile label={intl.formatMessage(m.tileOverdueChases)} value={String(metrics.overdueChases)} sub={intl.formatMessage(m.tileOverdueChasesSub)} tone={metrics.overdueChases ? 'red' : 'plain'} />
             <Tile label={intl.formatMessage(m.tileItemDelay)} value={intl.formatMessage(m.days, { days: metrics.itemDelay })} sub={intl.formatMessage(m.tileItemDelaySub)} />
@@ -350,14 +381,18 @@ function Tile({ label, value, sub, tone = 'plain' }: { label: string; value: str
   );
 }
 
-function exportMetrics(metrics: Record<string, number>, scopeName: string) {
-  const header = 'Scope,Metric,Value\n';
-  const body = Object.entries(metrics).map(([k, v]) => `"${scopeName}","${k}",${v}`).join('\n');
-  const blob = new Blob([header + body], { type: 'text/csv;charset=utf-8;' });
+/**
+ * The old export serialised the internal KPI object — metric keys and bare
+ * numbers, no client dimension (review item 56: "super dumb"). The file is now
+ * `lib/analyticsReport.ts`'s designed report; this only downloads the bytes.
+ * The BOM is for Excel, which misreads a bare UTF-8 CSV's accented names.
+ */
+function downloadReport(csv: string) {
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'pipeline-analytics.csv';
+  a.download = 'practice-analytics-report.csv';
   a.click();
   URL.revokeObjectURL(url);
 }
