@@ -37,7 +37,13 @@ import { RolePicker } from '../components/DynamicComponents/RolePicker';
 const DocumentPreview = lazy(() => import('../components/DynamicComponents/DocumentPreview').then((m) => ({ default: m.DocumentPreview })));
 const WorkflowEditor = lazy(() => import('../components/DynamicComponents/WorkflowEditor').then((m) => ({ default: m.WorkflowEditor })));
 const ClientInbox = lazy(() => import('./ClientInbox').then((m) => ({ default: m.ClientInbox })));
-import { ChaseComposer } from '../components/DynamicComponents/ChaseComposer';
+// Lazy for the same reason as DocumentPreview above: it mounts only inside the
+// chase Modal, and its ~3.2 kB gzip chunk was part of what pushed this route —
+// the heaviest on the board — over the 250 kB budget when the Received-via
+// sweep landed (measured paired A/B, 5 Sep 2026).
+const ChaseComposer = lazy(() =>
+  import('../components/DynamicComponents/ChaseComposer').then((m) => ({ default: m.ChaseComposer })),
+);
 const BankView = lazy(() => import('./BankView').then((m) => ({ default: m.BankView })));
 const ClientSupplierStatements = lazy(() => import('./ClientSupplierStatements').then((m) => ({ default: m.ClientSupplierStatements })));
 const ClientExpenseClaims = lazy(() => import('./ClientExpenseClaims').then((m) => ({ default: m.ClientExpenseClaims })));
@@ -48,7 +54,6 @@ import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { OffboardClientDialog } from '../components/DynamicComponents/OffboardClientDialog';
 import { channelLabel } from '../lib/channels';
 import { receivedViaText } from '../lib/channelLabels';
-import { runWorkspaceDrop } from '../api/uploads';
 import { resendClientSetupLink } from '../api/setup-link';
 import { errorLabel } from '../api/slices';
 import type { ApprovalWorkflow, BusinessMemberRole, Client, ClientDetailChange, Colleague, Document, Intent, MissingItem, SetupTask, WorkflowTask } from '../lib/types';
@@ -747,7 +752,14 @@ export function ClientDetailView() {
   const uploadToRegister = (files: FileList | null) => {
     if (!files?.length) return;
     if (documentsSource === 'api') {
-      void runWorkspaceDrop(intl, confirm, serverClientIdFor(client.id), Array.from(files));
+      // `import()` rather than a static import: `api/uploads` (and its
+      // transport) used to reach this route only through the LAZY ClientInbox
+      // chunk, and pulling it onto this chunk statically was ~1.4 kB gzip on
+      // the board's heaviest route. The user has just dropped files — a network
+      // round-trip is already in flight, so the dynamic edge costs nothing felt.
+      void import('../api/uploads').then(({ runWorkspaceDrop }) =>
+        runWorkspaceDrop(intl, confirm, serverClientIdFor(client.id), Array.from(files)),
+      );
       return;
     }
     ingest(
@@ -1866,7 +1878,12 @@ export function ClientDetailView() {
                   {intl.formatMessage(m.chaseDone)}
                 </button>
               </div>
-              <ChaseComposer clientIds={[client.id]} missingItemIds={chasing} />
+              {/* The Suspense sits INSIDE the modal frame (the InboxesView
+                  precedent): the overlay and Done button paint at once and only
+                  the composer waits. */}
+              <Suspense fallback={<TabSkeleton />}>
+                <ChaseComposer clientIds={[client.id]} missingItemIds={chasing} />
+              </Suspense>
             </div>
           </Modal>
         )}

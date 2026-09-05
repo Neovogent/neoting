@@ -23,8 +23,17 @@ import { DuplicateModal } from '../components/DynamicComponents/DuplicateModal';
 import { navigate, path, usePath, useQueryParam } from '../lib/router';
 import { EXPORT_HINT, EXPORT_MIN_ROWS } from '../lib/exportRules';
 import { failureOf, reasonText, retryMeaning } from '../lib/failures';
-import { AnalysisModal } from '../components/DynamicComponents/AnalysisModal';
 import { ProposalFlowModal } from '../components/DynamicComponents/ProposalFlowModal';
+/**
+ * Lazy like PublishBatchDialog below and for the same budget: the analysis
+ * panel mounts only after a synthetic upload, and its ~8.8 kB gzip chunk sat on
+ * this route — the thinnest on the board — which the Received-via column
+ * (review item 60's follow-up) then pushed over 250 kB. Measured paired A/B,
+ * 5 Sep 2026.
+ */
+const AnalysisModal = lazy(() =>
+  import('../components/DynamicComponents/AnalysisModal').then((mod) => ({ default: mod.AnalysisModal })),
+);
 /**
  * The live publish door — see the header of `PublishBatchDialog.tsx`. `lazy()`
  * so the flow's copy stays off this route and shares one chunk with the copy
@@ -1601,6 +1610,7 @@ export function InboxesView() {
       {/* Extraction on screen, then its figures, then the calls it made —
           all before the document is filed anywhere. */}
       {analysing && (
+        <Suspense fallback={null}>
         <AnalysisModal
           docIds={analysing.docIds}
           importIds={analysing.importIds}
@@ -1620,6 +1630,7 @@ export function InboxesView() {
             if (sales || costs) goTo({ inbox: sales > costs ? 'sales' : 'cost', status: 'review' });
           }}
         />
+        </Suspense>
       )}
 
       {/* The two suspected copies, side by side, with keep-one / keep-both */}
