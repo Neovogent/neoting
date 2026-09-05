@@ -504,6 +504,54 @@ document that appears in any export, so the link cannot outlive its target.
 must be common to the selection and the diagnostic — so a future clause added to
 one and not the other fails there too.
 
+## ✅ The headerless format is verified against VT's PUBLISHED docs too (5 Sep 2026 — review item 37)
+
+The reviewer asked how VT can understand a file with no column names. A10's
+real-VT round-trip already answered it empirically; this pass verified it
+against vtsoftware.co.uk's own help (pages read 5 Sep 2026; the help tree sits
+behind a captcha for automated fetchers — read via text-render proxy and
+cross-checked against Wayback captures). **Verdict: the emitter is correct and
+unchanged. Nothing VT publishes contradicts any of it.**
+
+| Claim | VT's own words | Citation |
+|---|---|---|
+| The journal import route exists and takes CSV | *"To display the journal import dialog, choose the Transaction > Journal > Import command"* · *"A journal can be imported from: CSV file…"* | [Importing a journal](https://www.vtsoftware.co.uk/transplushelp/importing-a-journal.html) |
+| Formats are POSITIONAL, not header-mapped | *"Selecting More info about this format displays the columnar format that your CSV file should be laid out as"* — column letters, no header row mentioned anywhere on the route, no header option in the dialog: **row 1 is data** (which is why `VT_CSV_INCLUDE_HEADER` is `false`) | same page + [VT's own dialog screenshot](https://www.vtsoftware.co.uk/transplushelp/images/hmfile_hash_21a76634.png) |
+| "Payments list/purchase invoices list" / "Receipts list/sales invoices list" exist by those names | Both listed in the Data format dropdown of VT's official dialog screenshot | same screenshot |
+| One date for the whole file, typed by the user | *"In Date, enter the date; all lines of the journal will have this date"* — and "Trial balance **with date**" existing as a separate format corroborates that date-in-file is the exception | Importing a journal |
+| Abandoning the Universal Input Sheet was right | The UIS is a spreadsheet-like window in VT, and its import **cannot take a split analysis**: *"If a single transaction has more than one analysis account, i.e. a split analysis, it cannot be imported"* — our files use VT's multi-line split, which only the journal list formats support | [Importing transactions](https://www.vtsoftware.co.uk/transplushelp/importing-transactions.html) · [Method 1: Importing](https://www.vtsoftware.co.uk/transplushelp/importing.html) · [UIS instructions](https://www.vtsoftware.co.uk/transplushelp/instructions.html) |
+| The 104-char Column B value is safe | VT publishes **no field-length limit** for details fields (both user-guide PDFs and the help tree checked); the real-VT observation stands uncontradicted | searched 5 Sep 2026 |
+
+⚠ **The exact A–G column order is documented IN-APP only** ("More info about
+this format" in the dialog), not on VT's website — so the 27 Aug 2026 real-VT
+round-trip (`Desktop/A10-vt-roundtrip/VERDICT.md`, SoT §24.3.1) remains the
+primary evidence for the column order; the published material corroborates it
+and contradicts none of it. The remaining screen-side half of item 37 — the
+export screen teaching the import step instead of assuming it — landed the same
+day in `ExportView.tsx` (see apps/web/CLAUDE.md).
+
+## ⚠ A refusal names its documents now (5 Sep 2026 — review item 29, the usability half)
+
+The `NT-EXP-001` shape where documents WERE found and none could become a row
+used to state the accounting rule and stop — *"figures do not add up… Mixed
+signs are a parsing accident"* — which is true and gave the accountant no way
+to know **which** document, so the fix started with a manual hunt. (The live
+case: a £9,000 tax on a £994 invoice, item 22's unchecked correction, refused
+here as designed. The exporter itself is CORRECT and unchanged, as PR #256
+ruled; this is only the refusal's usability.)
+
+`noneExportable()` in `exports.service.ts` now puts each refused document on
+the problem's **`errors` under `documents/<id>`** — the same shape
+`assertEveryNamedIdSurvived` already uses, so **no contract change**
+(`ntFetch` spreads the body into `NtProblemError`, so `fieldErrors` arrives in
+the web with nothing new on the wire). Each entry carries who, dated when (UK
+d/m/y), how much, and the specific check it failed — `describeDocument()`
+formats the money server-side through `formatPenceDecimal`, because the emitter
+side of this module owns the only pence→decimal boundary and the web must never
+do money maths. The web (`ExportView`) keys on the field-path prefix, renders
+the facts, and routes to the document; it branches on the CODE and the contract
+shape, never this prose. Pinned in `exports.service.test.ts`.
+
 ## The entry preview — `previewEntries`, and why it cannot drift (2 Sep 2026)
 
 *"Before publishing show the accountant the actual accounting entry that will be

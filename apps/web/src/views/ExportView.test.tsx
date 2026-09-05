@@ -62,8 +62,11 @@ const EXPORT: Export = {
   warnings: [
     {
       documentId: 'doc_9',
-      code: 'analysis-collapsed',
-      message: 'VT accepts one nominal per row, so this document was exported against "Purchases" for its full net.',
+      // A REAL current warning code (A10 retired `analysis-collapsed`) — the
+      // screen renders warnings verbatim, so the mock should look like one.
+      code: 'analysis-account-unprefixed',
+      message:
+        'The analysis account "Groceries" has no ledger prefix, so this row will need mapping by hand on every import.',
     },
   ],
   createdAt: '2026-02-01T09:30:00.000Z',
@@ -143,8 +146,12 @@ test('⚠ D42: nothing rendered implies anything was transmitted to a ledger', a
   ]) {
     expect(text).not.toMatch(forbidden);
   }
-  // And the honest instruction is present: the human does the importing.
-  expect(text).toContain('Universal Input Sheet');
+  // And the honest instruction is present: the human does the importing —
+  // via the route A10 verified in a real VT (`Transaction → Journal →
+  // Import…`), NOT the Universal Input Sheet, which has no import command and
+  // which this screen wrongly taught until 5 Sep 2026 (item 37).
+  expect(text).toContain('Transaction → Journal → Import');
+  expect(text).not.toContain('Universal Input Sheet');
 });
 
 // ── the batch cap ───────────────────────────────────────────────────────────
@@ -275,6 +282,52 @@ test('a count with no dates offers nothing to widen to — there is no period to
   expect(screen.queryByRole('button', { name: /instead/ })).toBeNull();
 });
 
+// ── a refused document is NAMED, with the route to fix it (item 29) ─────────
+
+test('a refusal that names documents renders each one with an Open-the-document route', async () => {
+  // The server's `NT-EXP-001` when documents WERE found and none could become a
+  // row: each refused document rides `Problem.errors` under `documents/<id>`,
+  // carrying supplier, date, amount and the check it failed. The screen keys on
+  // the field PATH — a contract shape — never on the message prose.
+  vi.mocked(requestExport).mockRejectedValue(
+    new NtProblemError({
+      status: 422,
+      code: 'NT-EXP-001',
+      title: 'Nothing to export',
+      detail: '1 Published document(s) were found for 30/07/2025 to 30/07/2025, but none of them could be exported.',
+      errors: [
+        {
+          field: 'documents/doc_aldgate',
+          message:
+            "Aldgate Meats, dated 30/07/2025, £994.00 — This document's figures do not add up, so it was left out rather than exported wrong.",
+        },
+      ],
+    }),
+  );
+  renderView();
+  pickClient();
+  await pressExport();
+
+  const text = document.body.textContent ?? '';
+  expect(text).toContain('Aldgate Meats, dated 30/07/2025, £994.00');
+  expect(text).toContain('figures do not add up');
+
+  // The one action that fixes it: open the document. The route carries the
+  // client and the document id, so the preview opens on arrival.
+  fireEvent.click(screen.getByRole('button', { name: 'Open the document' }));
+  expect(window.location.pathname).toBe('/clients/biz_1');
+  expect(window.location.search).toContain('doc=doc_aldgate');
+});
+
+test('a refusal with no named documents renders no Open-the-document button', async () => {
+  nothingToExport();
+  renderView();
+  pickClient();
+  await pressExport();
+
+  expect(screen.queryByRole('button', { name: 'Open the document' })).toBeNull();
+});
+
 test('⚠ D42: the empty-export hint still claims nothing was transmitted', async () => {
   nothingToExport({ count: 1, earliestDocumentDate: '2025-05-12', latestDocumentDate: '2025-05-12' });
   renderView();
@@ -321,8 +374,15 @@ test('a finished export offers both downloads, the counts and what did not trave
   expect(text).toContain('12 rows in the import file');
   expect(text).toContain('11 source documents in the bundle');
   expect(text).toContain('1 thing did not travel');
-  expect(text).toContain('one nominal per row');
+  expect(text).toContain('no ledger prefix');
   expect(text).toContain('Nothing was dropped silently');
+
+  // Item 37: the screen teaches the import step itself — the verified journal
+  // route, the date rule (VT applies one date to a whole file), and the
+  // first-import mapping cost.
+  expect(text).toContain('Transaction → Journal → Import');
+  expect(text).toContain('journal Date box');
+  expect(text).toContain('one-off per supplier');
 });
 
 test('the period defaults to a whole calendar month, sent as ISO and shown as ISO in the picker', async () => {
@@ -352,6 +412,22 @@ test('the empty history teaches the next action rather than showing a blank box'
   renderView();
   pickClient();
   expect(document.body.textContent).toContain('Nothing has been exported for this client yet');
+});
+
+test('with NO client chosen the history says to choose one — never "nothing exported for this client" (item 55)', () => {
+  // The query does not even run with no client, so the old copy was a false
+  // claim about a null selection.
+  renderView();
+  expect(document.body.textContent).toContain('Choose a client to see its export history');
+  expect(document.body.textContent).not.toContain('Nothing has been exported for this client yet');
+});
+
+test('the chosen period is restated in UK long form beside the native inputs (item 28, interim)', () => {
+  // The native date inputs render in the BROWSER locale (US month-first on the
+  // reviewer's machine) and nothing can force d/m/y on them, so the screen
+  // restates the period in words: "1 August 2026 – 31 August 2026".
+  renderView();
+  expect(document.body.textContent).toMatch(/Period: \d{1,2} [A-Z][a-z]+ \d{4} – \d{1,2} [A-Z][a-z]+ \d{4}/);
 });
 
 test('history that failed to load says so, with the code and a retry — never silently empty', () => {

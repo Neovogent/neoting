@@ -1,0 +1,26 @@
+﻿"Practice analytics report"
+"Scope","Whole practice (incl. our own account)"
+"Generated","5 September 2026"
+"Figures are a point-in-time snapshot of the document pipeline, read from the same server counts the Clients board shows. Period filtering is not yet served."
+"Time saved assumes 3 minutes of manual keying avoided per published document. It is an estimate under that stated assumption, not a measurement."
+"Not yet served by the API, and omitted rather than guessed: duplicates caught, item delay, chases sent and answered, month-on-month trend."
+
+"Practice summary"
+"Clients in scope",3
+"To review",8
+"Ready",10
+"Failed",3
+"Published (approved and released for export)",8
+"Missing paperwork",0
+"Requested (chase outstanding)",1
+"Overdue requests",1
+"Unmatched bank lines",11
+"Statement gaps",0
+"Approvals waiting",1
+"Time saved (hours, estimated)",0.4
+
+"Per client"
+"Client","Health %","To review","Ready","Failed","Published","Missing paperwork","Requested","Overdue","Unmatched bank lines","Statement gaps","Approvals waiting","Subscription","Time saved (hours, estimated)"
+"American Burger Ltd",91,4,4,2,4,0,1,0,6,0,0,"ACTIVE",0.2
+"Cosmo Restaurants Ltd",98,2,3,0,2,0,0,1,3,0,0,"ACTIVE",0.1
+"Harbourview Dental Ltd",94,2,3,1,2,0,0,0,2,0,1,"ACTIVE",0.1
