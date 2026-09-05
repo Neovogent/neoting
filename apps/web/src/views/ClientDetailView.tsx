@@ -46,6 +46,10 @@ const ChaseComposer = lazy(() =>
 );
 const BankView = lazy(() => import('./BankView').then((m) => ({ default: m.BankView })));
 const ClientSupplierStatements = lazy(() => import('./ClientSupplierStatements').then((m) => ({ default: m.ClientSupplierStatements })));
+// The live Chases tab (review item 63) — its own chunk because it carries
+// `api/chases.ts` + the generated chases client, and this route is within
+// ~1.5 kB of the 250 kB budget. Synthetic keeps the seeded table below.
+const ClientChases = lazy(() => import('./ClientChases'));
 const ClientExpenseClaims = lazy(() => import('./ClientExpenseClaims').then((m) => ({ default: m.ClientExpenseClaims })));
 import { currency } from '../lib/resolver';
 import { healthTone } from '../lib/selectors';
@@ -1201,7 +1205,17 @@ export function ClientDetailView() {
             </Suspense>
           )}
 
-          {tab === 'Chases' && (
+          {/* Live (item 63): the tab LEADS with the missing documents — the
+              same `isUnexplained` set every other surface counts — plus the
+              sent chases, reconciled. Synthetic keeps the seeded MissingItem
+              table below, byte-for-byte (METH_MODE §1). */}
+          {tab === 'Chases' && slices.bankTransactions.source === 'api' && (
+            <Suspense fallback={<TabSkeleton />}>
+              <ClientChases client={client} />
+            </Suspense>
+          )}
+
+          {tab === 'Chases' && slices.bankTransactions.source !== 'api' && (
             <DataTable<MissingItem>
               className="max-w-none"
               columns={[

@@ -1070,6 +1070,30 @@ Shape:
 2. **Items already being chased are marked, not re-listed as missing** — the open chase's items and the missing list must reconcile (a line inside an open chase shows "chased on {date}, awaiting reply" rather than appearing chaseable again — item 30's lesson from the other direction).
 3. Depends on package A's data-truth fixes landing first: putting the missing list on a third surface while the underlying set disagrees across surfaces would just spread the disagreement. Sequence: fix the predicate/plumbing (A), then this tab renders it.
 
+**✅ RESOLVED (6 Sep 2026, this branch — the matching-lane package #255 had landed, so the
+predicate was safe to put on a third surface).**
+
+**What was done:** live, the client's Chases tab now LEADS with **Missing documents** — every
+unexplained bank line for this client, read through `isUnexplained` (the ONE predicate, #255's
+rule; this tab minted no seventh definition), with descriptor, date, amount and a **days-missing**
+pill (amber ≥14d, red ≥30d). Each row carries a Chase button and the selection has a bulk **Chase
+selected** — both stage item 15's real server-composed `chase.send` (`requestChaseProposal`, the
+same action the Bank tab stages; a second door, never a second engine), with the queued/failed
+banner reporting the outcome. **A line inside an OPEN chase is marked, not re-offered**: it stays
+listed (the paperwork has not arrived) reading *"Chased {date}, awaiting reply"* with no chase
+button, and a selection that contains only such lines refuses with words instead of double-asking
+— reconciled against the same `useChases` read whose poll clears the marks when auto-close
+settles a chase. Below it, **Chases sent** lists this client's chases with honest state pills
+(Awaiting reply / Received / Closed), item count, sent date and the closed reason.
+
+**Where it landed:** `views/ClientChases.tsx`, a NEW lazy chunk — `api/chases.ts` and the
+generated chases client stay off the ClientDetailView route's arrival weight (the route sits
+~1.5 kB under its 250 kB budget), the ClientSupplierStatements precedent. The tab forks on
+`slices.bankTransactions.source === 'api'`; synthetic keeps the seeded MissingItem table
+byte-for-byte. A failed bank read renders the honest alert, never "nothing is missing" over
+unread data (item 25's rule). Pinned in `ClientChases.test.tsx` (the predicate, the marked-line
+rule, the real staging, the refusal alert, the unread-data honesty, the state pills).
+
 ## Item 64 — Setup-link panel still shown for an active client; replace it with something useful
 
 **Original (verbatim):**
