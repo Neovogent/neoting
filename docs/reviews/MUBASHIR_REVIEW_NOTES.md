@@ -400,6 +400,37 @@ Three defects on `LiveChaseComposerCard` (`apps/web/src/components/DynamicCompon
 2. **Copy quality:** the draft is an unreadable recitation of raw bank descriptors. He wants a personal-touch message (matches item 16's later-AI-personalisation note — for now, a humane preset that summarises: "a few receipts from August, including X and Y" rather than thirty descriptors; note §8.2 was already amended once for "no amounts in chase copy").
 3. **Editability:** no way to change a word/sentence/the whole message anywhere before it sends. ⚠ This collides with the contract's rule that chase copy is composed **server-side** and "never free-typed by a caller" — the deliberate injection/consistency defence. Options: an editable-with-guardrails seam (accountant edits travel as a reviewed field on the proposal, shown verbatim at Read review, still released by the super admin), or per-practice templates. Either way it's a contract/engine change — **G7, Shakib's call** — not a textarea slapped on the card. Also: the prefilled fictional mobile should be gone per M8; check why this build still shows it.
 
+**✅ RESOLVED (6 Sep 2026, this branch — all four halves, with Shakib's two in-session rulings).**
+
+1. **Reactivity was already structurally fixed by #255** — the draft derives from the CURRENT
+   checked set (`selected`, the opt-in `included` set), so unticking recomposes it immediately.
+   What was missing was the pin: `LiveChaseComposerCard.test.tsx` now ticks two lines, unticks
+   one, and asserts the draft stops naming it.
+2. **The copy summarises, server AND preview (Shakib's ruling, 6 Sep):** above three items
+   `composeChaseSms` (the message that actually emails, shown verbatim at Read review) writes
+   *"we're missing receipts for 12 payments between 3 Aug and 28 Aug, including X and Y"* —
+   count, period, two named examples, still no amounts (the 4 Sep §8.2 rule). Three or fewer
+   keep the named-list shape. `composeChaseBody` (the client draft) mirrors it and the card
+   now labels the draft *"a preview of the message the engine composes at review — never a
+   promise of exact words"*. A side effect worth recording: a thirty-descriptor recitation
+   could exceed the contract's 500-char body cap and refuse the STORED payload at review as
+   NT-PRP-006; the summary makes the template fit by construction, and the compose seam now
+   refuses an over-cap body at CREATE with words a human can act on.
+3. **Editable message — BUILT (Shakib's ruling: build now, not defer).** The seam:
+   `ChaseSendPayload.messages[].accountantMessage` (optional, ≤240 chars — contract change,
+   in-session approval). The engine still owns the greeting and the signed portal link
+   (`composeCustomChaseBody` in `chase/sms-copy.ts`); the accountant's words replace only the
+   middle sentence, are trimmed once at compose so payload = review = sent bytes, and Read
+   review renders the woven body verbatim plus a *"Wording: written by the proposer"* line so
+   the releasing super admin knows these are human words, not the template. "Never free-typed
+   by a caller" still holds for the parts that carry authority. Works for both message kinds
+   (transaction chase and statement request). The card's textarea sends it.
+4. **The prefilled mobile is gone.** The namesake lookup was surfacing the SEEDED primary
+   contact's fictional `+447700900001` (served live via `BusinessSummary.primaryContactMobile`
+   since the 5 Sep widening) as if someone had chosen it. The field now starts empty — blank
+   means the engine resolves the REGISTERED primary contact at compose, which was already the
+   honest path — and stays as an override only. Pinned by test.
+
 ## Item 32 — Match suggestion calls a name-only hit "Probable" when amount and date are wildly different
 
 **Original (verbatim):**

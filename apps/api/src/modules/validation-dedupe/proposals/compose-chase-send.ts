@@ -3,7 +3,13 @@ import { randomUUID } from 'node:crypto';
 import type { ChaseSendPayload } from '@neoting/contracts/model';
 
 import type { ScopedClient } from '../../../common/db/scoped-db.js';
-import { composeChaseSms, composeStatementRequestSms, signPortalLink, statementItemRef } from '../../chase/index.js';
+import {
+  composeChaseSms,
+  composeCustomChaseBody,
+  composeStatementRequestSms,
+  signPortalLink,
+  statementItemRef,
+} from '../../chase/index.js';
 import { ProposalExecutionRefused } from './proposal-executor.js';
 
 /**
@@ -52,6 +58,9 @@ import { ProposalExecutionRefused } from './proposal-executor.js';
  */
 export const CHASE_LINK_TTL_SECONDS = 7 * 24 * 60 * 60;
 
+/** The contract's `ChaseSendPayload.messages[].body` maxLength, mirrored. */
+const MAX_CHASE_BODY_LENGTH = 500;
+
 export interface ChaseComposeConfig {
   /** Signs the portal link — the same secret the portal verifies with. */
   readonly portalLinkSecret: string;
@@ -81,6 +90,15 @@ export async function computeChaseSendPayload(
     const chaseId = randomUUID();
     const token = signPortalLink({ chaseId, expSeconds: CHASE_LINK_TTL_SECONDS }, config.portalLinkSecret, nowMs);
     const portalLink = `${config.appOrigin.replace(/\/$/, '')}/p/${token}`;
+
+    // The accountant's own wording (review item 31, owner-approved 6 Sep
+    // 2026). Trimmed here so the stored payload, the review render and the
+    // sent bytes all carry the same string; empty-after-trim means "not
+    // edited" and the engine's template stands.
+    const accountantMessage =
+      typeof message.accountantMessage === 'string' && message.accountantMessage.trim() !== ''
+        ? message.accountantMessage.trim()
+        : null;
 
     let businessId: string;
     let body: string;
@@ -128,16 +146,19 @@ export async function computeChaseSendPayload(
       businessId = first;
 
       const business = await requireBusiness(db, businessId);
-      body = composeChaseSms({
-        businessName: business.name,
-        items: transactions.map((t) => ({
-          transactionId: t.id,
-          amountPence: t.amountPence,
-          bookedAt: t.bookedAt,
-          supplierLabel: t.merchantName ?? t.descriptionRaw,
-        })),
-        portalLink,
-      });
+      body =
+        accountantMessage !== null
+          ? composeCustomChaseBody({ businessName: business.name, message: accountantMessage, portalLink })
+          : composeChaseSms({
+              businessName: business.name,
+              items: transactions.map((t) => ({
+                transactionId: t.id,
+                amountPence: t.amountPence,
+                bookedAt: t.bookedAt,
+                supplierLabel: t.merchantName ?? t.descriptionRaw,
+              })),
+              portalLink,
+            });
     } else {
       // A statement request has no transactions to derive a business from —
       // the proposal's own anchor is the answer, and a proposal without one
@@ -147,11 +168,27 @@ export async function computeChaseSendPayload(
       }
       businessId = proposalBusinessId;
       const business = await requireBusiness(db, businessId);
-      body = composeStatementRequestSms({
-        businessName: business.name,
-        period: message.statementPeriod as string,
-        portalLink,
-      });
+      body =
+        accountantMessage !== null
+          ? composeCustomChaseBody({ businessName: business.name, message: accountantMessage, portalLink })
+          : composeStatementRequestSms({
+              businessName: business.name,
+              period: message.statementPeriod as string,
+              portalLink,
+            });
+    }
+
+    // The contract caps `body` at 500 chars, and the stored payload re-parses
+    // against the generated schema at review — a body over the cap would
+    // surface days later as NT-PRP-006 "the stored payload no longer parses".
+    // Refuse HERE with the reason a human can act on. Template bodies fit by
+    // construction (the summarising rule); this catches a long custom wording
+    // meeting a long business name and origin.
+    if (body.length > MAX_CHASE_BODY_LENGTH) {
+      throw new ProposalExecutionRefused(
+        'chase.send',
+        'the composed message is too long — shorten the custom wording',
+      );
     }
 
     // The recipient. The caller's named contact when given; otherwise the
@@ -191,6 +228,9 @@ export async function computeChaseSendPayload(
 
     messages.push({
       ...message,
+      // Stored trimmed (or null) so the payload, the review's "written by the
+      // proposer" note and the sent body all agree about what the edit was.
+      accountantMessage,
       chaseId,
       businessId,
       recipientContactId: contact?.id ?? message.recipientContactId ?? null,

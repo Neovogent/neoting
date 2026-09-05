@@ -1,6 +1,14 @@
 import { expect, test } from 'vitest';
 
-import { composeChaseSms, composeSignInCodeSms, composeStatementRequestSms, formatDay, formatGbp } from './sms-copy.js';
+import {
+  CHASE_SUMMARISE_THRESHOLD,
+  composeChaseSms,
+  composeCustomChaseBody,
+  composeSignInCodeSms,
+  composeStatementRequestSms,
+  formatDay,
+  formatGbp,
+} from './sms-copy.js';
 
 // A booked date in early August — chosen mid-day UTC so the Europe/London day
 // (BST, +1) is unambiguously the 9th.
@@ -31,6 +39,62 @@ test('grouped per client: many receipts become ONE text, not one per receipt', (
   });
   expect(sms).toBe(
     "American Burger Accounts: we're missing the receipts for Currys on 9 Aug and Google Ads on 5 Aug. Upload securely: https://n.to/abc",
+  );
+});
+
+test('above the threshold the copy SUMMARISES — count, period, two named examples, no amounts (item 31)', () => {
+  const day = (iso: string) => new Date(`${iso}T12:00:00.000Z`);
+  const sms = composeChaseSms({
+    businessName: 'Zeplow Inc',
+    portalLink: 'https://n.to/abc',
+    items: [
+      { transactionId: 't1', amountPence: -5000, bookedAt: day('2026-08-28'), supplierLabel: 'L Ferreira Wages' },
+      { transactionId: 't2', amountPence: -6000, bookedAt: day('2026-08-03'), supplierLabel: 'Aldgate Meats' },
+      { transactionId: 't3', amountPence: -7000, bookedAt: day('2026-08-10'), supplierLabel: 'Bidfood' },
+      { transactionId: 't4', amountPence: -8000, bookedAt: day('2026-08-15'), supplierLabel: 'L Ferreira Wages' },
+    ],
+  });
+  expect(sms).toBe(
+    "Zeplow Inc Accounts: we're missing receipts for 4 payments between 3 Aug and 28 Aug, including L Ferreira Wages and Aldgate Meats. Upload securely: https://n.to/abc",
+  );
+  expect(sms).not.toContain('£');
+});
+
+test('a summarised list on one day says "on <day>", not "between X and X"', () => {
+  const bookedAt = new Date('2026-08-09T12:00:00.000Z');
+  const items = ['A', 'B', 'C', 'D'].map((s, i) => ({
+    transactionId: `t${i}`,
+    amountPence: -1000,
+    bookedAt,
+    supplierLabel: s,
+  }));
+  expect(items.length).toBeGreaterThan(CHASE_SUMMARISE_THRESHOLD);
+  expect(composeChaseSms({ businessName: 'Zeplow Inc', portalLink: 'https://n.to/abc', items })).toBe(
+    "Zeplow Inc Accounts: we're missing receipts for 4 payments on 9 Aug, including A and B. Upload securely: https://n.to/abc",
+  );
+});
+
+test('exactly the threshold still lists every item by name — the summary starts above it', () => {
+  const items = ['A', 'B', 'C'].map((s, i) => ({
+    transactionId: `t${i}`,
+    amountPence: -1000,
+    bookedAt: AUG_9,
+    supplierLabel: s,
+  }));
+  expect(composeChaseSms({ businessName: 'Zeplow Inc', portalLink: 'https://n.to/abc', items })).toContain(
+    'A on 9 Aug, B on 9 Aug and C on 9 Aug',
+  );
+});
+
+test('composeCustomChaseBody: the accountant writes the middle sentence, the engine keeps the frame (item 31)', () => {
+  expect(
+    composeCustomChaseBody({
+      businessName: 'Zeplow Inc',
+      message: 'Could you send over the August receipts when you get a chance?',
+      portalLink: 'https://n.to/abc',
+    }),
+  ).toBe(
+    'Zeplow Inc Accounts: Could you send over the August receipts when you get a chance? Upload securely: https://n.to/abc',
   );
 });
 

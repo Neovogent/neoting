@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { composeChaseBody, formatPoundsForSms, shortDay, toE164 } from './demoIntents';
+import { composeChaseBody, composeCustomChaseBody, formatPoundsForSms, shortDay, toE164 } from './demoIntents';
 
 /**
  * The classification tests that used to live here are gone with the classifier.
@@ -31,6 +31,50 @@ describe('the SMS draft (display-tier — the payload carries only ids and text)
       'https://x/p/',
     );
     expect(body).toContain("we're missing the receipts for Currys on 9 Aug and Google on 5 Aug.");
+  });
+
+  test('more than three items summarise — count, period, two named examples (item 31, mirrors the server)', () => {
+    const body = composeChaseBody(
+      'Zeplow Inc',
+      [
+        { supplier: 'L Ferreira Wages', amount: 50, date: '28 Aug 2026' },
+        { supplier: 'Aldgate Meats', amount: 60, date: '03 Aug 2026' },
+        { supplier: 'Bidfood', amount: 70, date: '10 Aug 2026' },
+        { supplier: 'L Ferreira Wages', amount: 80, date: '15 Aug 2026' },
+      ],
+      'https://x/p/',
+    );
+    expect(body).toBe(
+      "Zeplow Inc Accounts: we're missing receipts for 4 payments between 3 Aug and 28 Aug, including L Ferreira Wages and Aldgate Meats. Upload securely: https://x/p/",
+    );
+  });
+
+  test('a one-day summary says "on <day>", and the period spans year boundaries by real order', () => {
+    const sameDay = composeChaseBody(
+      'Zeplow Inc',
+      ['A', 'B', 'C', 'D'].map((supplier) => ({ supplier, amount: 1, date: '09 Aug 2026' })),
+      'https://x/p/',
+    );
+    expect(sameDay).toContain('4 payments on 9 Aug, including A and B.');
+
+    // December 2025 precedes January 2026 — a lexical sort would reverse them.
+    const acrossYears = composeChaseBody(
+      'Zeplow Inc',
+      [
+        { supplier: 'A', amount: 1, date: '05 Jan 2026' },
+        { supplier: 'B', amount: 1, date: '28 Dec 2025' },
+        { supplier: 'C', amount: 1, date: '10 Jan 2026' },
+        { supplier: 'D', amount: 1, date: '02 Jan 2026' },
+      ],
+      'https://x/p/',
+    );
+    expect(acrossYears).toContain('between 28 Dec and 10 Jan');
+  });
+
+  test('composeCustomChaseBody keeps the engine frame around the accountant’s words (item 31)', () => {
+    expect(composeCustomChaseBody('Zeplow Inc', 'Could you send the August receipts?', 'https://x/p/')).toBe(
+      'Zeplow Inc Accounts: Could you send the August receipts? Upload securely: https://x/p/',
+    );
   });
 
   test('pounds keep pence only when they carry information', () => {

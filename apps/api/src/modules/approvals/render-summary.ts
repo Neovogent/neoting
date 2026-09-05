@@ -111,10 +111,15 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
           // A13 leftover this closes. Older payloads carry only the number.
           const email = typeof msg['recipientEmail'] === 'string' && msg['recipientEmail'] !== '' ? msg['recipientEmail'] : null;
           const period = typeof msg['statementPeriod'] === 'string' && msg['statementPeriod'] !== '' ? msg['statementPeriod'] : null;
+          // Review item 31: when the proposer wrote the wording themselves the
+          // reviewer should know these are human words, not the engine's
+          // template — the body above is still the verbatim send either way.
+          const edited = typeof msg['accountantMessage'] === 'string' && msg['accountantMessage'] !== '';
           return {
             heading: `Message ${i + 1} — to ${email ?? text(msg['recipientE164'])}`,
             entries: [
               { label: 'Message, exactly as it will send', value: text(msg['body']) },
+              ...(edited ? [{ label: 'Wording', value: 'Written by the proposer (the secure link is still the engine’s)' }] : []),
               ...(email !== null ? [{ label: 'Registered mobile on file', value: text(msg['recipientE164']) }] : []),
               // A statement request (engine (c)) asks for a month, not lines.
               period !== null

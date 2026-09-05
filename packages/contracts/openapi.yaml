@@ -6554,6 +6554,18 @@ components:
               recipientE164:
                 type: string
                 pattern: '^\+[1-9][0-9]{6,14}$'
+              accountantMessage:
+                type: [string, 'null']
+                minLength: 1
+                maxLength: 240
+                description: |
+                  Optional wording written by the accountant in the composer
+                  (D44's compose half — review item 31). The engine still owns
+                  the greeting and the signed portal link; this replaces only
+                  the middle sentence, and the woven `body` is what Read
+                  review shows verbatim and the super admin releases. Stored
+                  beside the body so the review can say the words were
+                  human-written rather than the engine's template.
               body:
                 type: string
                 minLength: 1
