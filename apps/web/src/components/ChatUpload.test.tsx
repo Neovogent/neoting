@@ -1,37 +1,34 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { IntlProvider } from 'react-intl';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { ChatDropOverlay, ChatUploadClientPicker, useChatUpload } from './ChatUpload';
+import { ChatDropOverlay, useChatUpload } from './ChatUpload';
 
 /**
- * The chat surface's upload flow — the thing the user report said did not
- * exist ("no document is being uploaded here"). What is pinned is the flow's
- * honesty rules, at the context boundary like `ChatArea.test.tsx`:
+ * The chat surface's upload flow. Since review item 58 the LIVE rules changed
+ * shape and are pinned here:
  *
- * - live, a drop reaches the real uploads client with the ATTACHED client's
- *   server id and `channel: 'CHAT_UPLOAD'` — never a guessed workspace;
- * - "All clients" holds the files and ASKS (the searchable picker) instead of
- *   uploading somewhere hopeful — nothing is sent until a client is chosen,
- *   and cancelling sends nothing at all; a practice with no clients yet keeps
- *   the named refusal, because an empty list has nothing to pick;
- * - a refused file's server reason lands in the transcript by name;
+ * - a live drop HOLDS and ASKS — nothing uploads on the drop itself, ever. The
+ *   files land on a user bubble (raw File kept, so an unanswered question
+ *   stays visibly attached) and the assistant answers with the
+ *   CHAT_UPLOAD_DECISION card, suggesting the attached client when exactly one
+ *   was attached;
+ * - "All clients" (or several) holds with NO suggestion — never a guess;
+ * - a practice with no clients keeps the named refusal, because an empty list
+ *   has nothing to pick;
  * - synthetic mode keeps the local ingest, so the no-API walkthrough works.
+ *
+ * The SEND half — the journey, the refusal reasons, the honest timing copy —
+ * lives on the decision card and is pinned in
+ * `DynamicComponents/ChatUploadDecisionCard.test.tsx`.
  */
 
 const mocks = vi.hoisted(() => ({
   context: { value: {} as Record<string, unknown> },
   confirm: vi.fn(),
-  sendWorkspaceUpload: vi.fn(),
-  refreshDocuments: vi.fn(),
 }));
 
 vi.mock('../context/AppContext', () => ({ useAppContext: () => mocks.context.value }));
 vi.mock('./DynamicComponents/ConfirmProvider', () => ({ useConfirm: () => mocks.confirm }));
-vi.mock('../api/uploads', () => ({
-  sendWorkspaceUpload: mocks.sendWorkspaceUpload,
-  refreshDocuments: mocks.refreshDocuments,
-}));
-vi.mock('../api/queryClient', () => ({ queryClient: { mocked: true } }));
 
 /** The smallest host both real hosts (InputRow, ChatArea) are instances of. */
 function Harness() {
@@ -39,13 +36,11 @@ function Harness() {
   return (
     <div data-testid="zone" {...upload.dropTargetProps}>
       <ChatDropOverlay dragging={upload.dragging} />
-      <ChatUploadClientPicker upload={upload} />
     </div>
   );
 }
 
 const addMessage = vi.fn();
-const setAssistantPending = vi.fn();
 const ingest = vi.fn();
 
 function renderZone(overrides: Record<string, unknown> = {}) {
@@ -53,9 +48,7 @@ function renderZone(overrides: Record<string, unknown> = {}) {
     documentsSource: 'api',
     attachedClients: [{ id: '1', name: 'American Burger Ltd' }],
     clients: [{ id: '1', name: 'American Burger Ltd' }],
-    serverClientIdFor: (id: string) => `biz_${id}`,
     addMessage,
-    setAssistantPending,
     ingest,
     ...overrides,
   };
@@ -74,7 +67,6 @@ const dropFile = (name = 'receipt.jpg') =>
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.confirm.mockResolvedValue(true);
-  mocks.sendWorkspaceUpload.mockResolvedValue({ documentId: 'doc_1', state: 'RECEIVED' });
 });
 
 describe('the drop overlay', () => {
@@ -91,85 +83,46 @@ describe('the drop overlay', () => {
   });
 });
 
-describe('a drop with a client attached, live', () => {
-  test('uploads to that client’s business over CHAT_UPLOAD and says where it lands', async () => {
+describe('a live drop HOLDS and asks (item 58)', () => {
+  test('one attached client becomes the suggested default — and NOTHING uploads on the drop', async () => {
     renderZone();
     dropFile();
 
-    await waitFor(() => expect(mocks.sendWorkspaceUpload).toHaveBeenCalledTimes(1));
-    expect(mocks.sendWorkspaceUpload).toHaveBeenCalledWith(
-      'biz_1',
-      { filename: 'receipt.jpg', mimeType: 'image/jpeg', bytes: expect.any(File) },
-      'CHAT_UPLOAD',
+    await waitFor(() => expect(addMessage).toHaveBeenCalledTimes(2));
+    const [bubble, question] = addMessage.mock.calls.map(
+      (c) => c[0] as { id: string; role: string; content: string; intent?: string; payload?: Record<string, unknown>; attachments?: { raw?: File }[] },
     );
 
-    // The in-flight state is the honest one — no client name, because an
-    // upload reads nobody's records — and it is always cleared.
-    expect(setAssistantPending).toHaveBeenNthCalledWith(1, { businessName: null });
-    expect(setAssistantPending).toHaveBeenLastCalledWith(null);
+    // The files stay visibly attached — raw File and all, so the card can act
+    // on them later in the session.
+    expect(bubble!.role).toBe('user');
+    expect(bubble!.attachments).toHaveLength(1);
+    expect(bubble!.attachments![0]!.raw).toBeInstanceOf(File);
 
-    // The transcript: the queued file by name, then the reply pointing at the
-    // surface where the document shows up next.
-    await waitFor(() => expect(addMessage).toHaveBeenCalledTimes(2));
-    const [userMsg, reply] = addMessage.mock.calls.map((c) => c[0] as { role: string; content: string; attachments?: unknown[] });
-    expect(userMsg!.role).toBe('user');
-    expect(userMsg!.attachments).toHaveLength(1);
-    expect(reply!.role).toBe('assistant');
-    expect(reply!.content).toContain('American Burger Ltd');
-    expect(reply!.content).toContain('To Review');
-
-    // The documents poll is nudged so Inboxes is already moving.
-    expect(mocks.refreshDocuments).toHaveBeenCalledWith({ mocked: true });
+    // The question, with the one-click default named.
+    expect(question!.role).toBe('assistant');
+    expect(question!.intent).toBe('CHAT_UPLOAD_DECISION');
+    expect(question!.content).toContain('nothing has uploaded yet');
+    expect(question!.content).toContain('American Burger Ltd');
+    expect(question!.payload).toEqual({
+      uploadMessageId: bubble!.id,
+      suggestedClientId: '1',
+      suggestedClientName: 'American Burger Ltd',
+    });
   });
-});
 
-describe('a drop with "All clients" active, live', () => {
-  test('asks with the searchable picker — nothing is sent until a client is chosen by name', async () => {
+  test('"All clients" holds with NO suggestion — never a guess', async () => {
     renderZone({ attachedClients: [] });
     dropFile();
 
-    // The picker is its own lazy chunk, so it arrives via findBy*.
-    expect(await screen.findByText('Choose a client for this upload')).toBeTruthy();
-    expect(mocks.sendWorkspaceUpload).not.toHaveBeenCalled();
-    expect(addMessage).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole('button', { name: 'American Burger Ltd' }));
-    await waitFor(() => expect(mocks.sendWorkspaceUpload).toHaveBeenCalledTimes(1));
-    expect(mocks.sendWorkspaceUpload).toHaveBeenCalledWith(
-      'biz_1',
-      { filename: 'receipt.jpg', mimeType: 'image/jpeg', bytes: expect.any(File) },
-      'CHAT_UPLOAD',
-    );
-    // The old flat refusal is gone — the question replaced it.
+    await waitFor(() => expect(addMessage).toHaveBeenCalledTimes(2));
+    const question = addMessage.mock.calls[1]![0] as { intent?: string; payload?: Record<string, unknown> };
+    expect(question.intent).toBe('CHAT_UPLOAD_DECISION');
+    expect(question.payload!.suggestedClientId).toBeUndefined();
     expect(mocks.confirm).not.toHaveBeenCalled();
   });
 
-  test('the search narrows the list, and cancel sends nothing', async () => {
-    renderZone({
-      attachedClients: [],
-      clients: [
-        { id: '1', name: 'American Burger Ltd' },
-        { id: '2', name: 'Ananda Group' },
-      ],
-    });
-    dropFile();
-
-    const search = await screen.findByRole('textbox', { name: 'Search clients' });
-    fireEvent.change(search, { target: { value: 'ananda' } });
-    expect(screen.queryByRole('button', { name: 'American Burger Ltd' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Ananda Group' })).toBeTruthy();
-
-    // A query nothing matches says so, rather than showing an empty silence.
-    fireEvent.change(search, { target: { value: 'zzz' } });
-    expect(screen.getByText('No client matches “zzz”.')).toBeTruthy();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    await waitFor(() => expect(screen.queryByText('Choose a client for this upload')).toBeNull());
-    expect(mocks.sendWorkspaceUpload).not.toHaveBeenCalled();
-    expect(addMessage).not.toHaveBeenCalled();
-  });
-
-  test('two attached clients is not a choice either — the picker asks', async () => {
+  test('two attached clients is not a choice either — held with no suggestion', async () => {
     renderZone({
       attachedClients: [
         { id: '1', name: 'American Burger Ltd' },
@@ -182,8 +135,9 @@ describe('a drop with "All clients" active, live', () => {
     });
     dropFile();
 
-    expect(await screen.findByText('Choose a client for this upload')).toBeTruthy();
-    expect(mocks.sendWorkspaceUpload).not.toHaveBeenCalled();
+    await waitFor(() => expect(addMessage).toHaveBeenCalledTimes(2));
+    const question = addMessage.mock.calls[1]![0] as { payload?: Record<string, unknown> };
+    expect(question.payload!.suggestedClientId).toBeUndefined();
   });
 
   test('a practice with no clients yet is pointed at the real first step', async () => {
@@ -193,39 +147,7 @@ describe('a drop with "All clients" active, live', () => {
     await waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(1));
     const options = mocks.confirm.mock.calls[0]![0] as { detail: string };
     expect(options.detail).toContain('none yet');
-  });
-});
-
-describe('a refused file, live', () => {
-  test('the server’s own reason reaches the transcript, by file name', async () => {
-    mocks.sendWorkspaceUpload.mockRejectedValueOnce(new Error('NT-VAL-002 The file is larger than the 25MB limit.'));
-    renderZone();
-    dropFile('huge-scan.pdf');
-
-    await waitFor(() => expect(addMessage).toHaveBeenCalledTimes(2));
-    const reply = addMessage.mock.calls[1]![0] as { content: string };
-    expect(reply.content).toContain("I couldn't upload 1 file");
-    expect(reply.content).toContain('huge-scan.pdf — NT-VAL-002 The file is larger than the 25MB limit.');
-    // The wait indicator never survives a failure.
-    expect(setAssistantPending).toHaveBeenLastCalledWith(null);
-  });
-
-  test('one refusal never stops the rest — the reply carries both halves', async () => {
-    mocks.sendWorkspaceUpload
-      .mockRejectedValueOnce(new Error('NT-VAL-002 too large'))
-      .mockResolvedValueOnce({ documentId: 'doc_2', state: 'RECEIVED' });
-    renderZone();
-    fireEvent.drop(screen.getByTestId('zone'), {
-      dataTransfer: {
-        files: [new File(['a'], 'bad.pdf', { type: 'application/pdf' }), new File(['b'], 'good.jpg', { type: 'image/jpeg' })],
-      },
-    });
-
-    await waitFor(() => expect(mocks.sendWorkspaceUpload).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(addMessage).toHaveBeenCalledTimes(2));
-    const reply = addMessage.mock.calls[1]![0] as { content: string };
-    expect(reply.content).toContain('Uploaded 1 document');
-    expect(reply.content).toContain('bad.pdf — NT-VAL-002 too large');
+    expect(addMessage).not.toHaveBeenCalled();
   });
 });
 
@@ -244,8 +166,6 @@ describe('synthetic mode', () => {
     const reply = addMessage.mock.calls[1]![0] as { content: string; intent: string };
     expect(reply.content).toBe('Ingested 1 document. Extraction is running.');
     expect(reply.intent).toBe('SHOW_INBOX');
-    // Nothing live was touched.
-    expect(mocks.sendWorkspaceUpload).not.toHaveBeenCalled();
     expect(mocks.confirm).not.toHaveBeenCalled();
   });
 

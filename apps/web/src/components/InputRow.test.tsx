@@ -32,13 +32,15 @@ vi.mock('../lib/useSpeech', () => ({
 // Types on its own timers; this suite is about the file doors, not the launcher.
 vi.mock('./DynamicComponents/TypedPlaceholder', () => ({ TypedPlaceholder: () => null }));
 
+const addMessage = vi.fn();
+
 async function renderComposer(overrides: Record<string, unknown> = {}) {
   mocks.context.value = {
     documentsSource: 'api',
     attachedClients: [{ id: '1', name: 'American Burger Ltd' }],
     clients: [{ id: '1', name: 'American Burger Ltd' }],
     serverClientIdFor: (id: string) => `biz_${id}`,
-    addMessage: vi.fn(),
+    addMessage,
     setAssistantPending: vi.fn(),
     ingest: vi.fn(() => ({ documents: [], rejected: [], imports: [] })),
     attachClient: vi.fn(),
@@ -94,31 +96,32 @@ describe('the Documents button', () => {
 });
 
 describe('picking files, live', () => {
-  test('uploads to the attached client over CHAT_UPLOAD — no chip a send could never deliver', async () => {
+  test('HOLDS and asks (item 58) — the files reach the transcript, nothing uploads on the pick', async () => {
     const { container } = await renderComposer();
     fireEvent.change(fileInput(container), {
       target: { files: [new File(['bytes'], 'receipt.jpg', { type: 'image/jpeg' })] },
     });
 
-    await waitFor(() => expect(mocks.sendWorkspaceUpload).toHaveBeenCalledTimes(1));
-    expect(mocks.sendWorkspaceUpload).toHaveBeenCalledWith(
-      'biz_1',
-      { filename: 'receipt.jpg', mimeType: 'image/jpeg', bytes: expect.any(File) },
-      'CHAT_UPLOAD',
-    );
-    // The file went into the pipeline, not into the composer's chip strip.
+    await waitFor(() => expect(addMessage).toHaveBeenCalledTimes(2));
+    const question = addMessage.mock.calls[1]![0] as { intent?: string; payload?: Record<string, unknown> };
+    expect(question.intent).toBe('CHAT_UPLOAD_DECISION');
+    expect(question.payload!.suggestedClientName).toBe('American Burger Ltd');
+    // The one thing item 58 exists to stop: the ingest firing on the pick.
+    expect(mocks.sendWorkspaceUpload).not.toHaveBeenCalled();
+    // And no chip in the composer either — the file lives in the transcript.
     expect(screen.queryByText('receipt.jpg')).toBeNull();
   });
 
-  test('with "All clients" active it asks with the searchable picker instead of uploading', async () => {
+  test('with "All clients" active the hold carries NO suggested client — never a guess', async () => {
     const { container } = await renderComposer({ attachedClients: [] });
     fireEvent.change(fileInput(container), {
       target: { files: [new File(['bytes'], 'receipt.jpg', { type: 'image/jpeg' })] },
     });
 
-    // The client question, not a flat refusal — and nothing sent until it is
-    // answered (the picker's own behaviours are pinned in ChatUpload.test.tsx).
-    expect(await screen.findByText('Choose a client for this upload')).toBeTruthy();
+    await waitFor(() => expect(addMessage).toHaveBeenCalledTimes(2));
+    const question = addMessage.mock.calls[1]![0] as { intent?: string; payload?: Record<string, unknown> };
+    expect(question.intent).toBe('CHAT_UPLOAD_DECISION');
+    expect(question.payload!.suggestedClientId).toBeUndefined();
     expect(mocks.sendWorkspaceUpload).not.toHaveBeenCalled();
   });
 });
@@ -147,11 +150,10 @@ describe('dragging files over the composer', () => {
     fireEvent.drop(host, {
       dataTransfer: { files: [new File(['bytes'], 'dropped.jpg', { type: 'image/jpeg' })] },
     });
-    await waitFor(() => expect(mocks.sendWorkspaceUpload).toHaveBeenCalledTimes(1));
-    expect(mocks.sendWorkspaceUpload).toHaveBeenCalledWith(
-      'biz_1',
-      expect.objectContaining({ filename: 'dropped.jpg' }),
-      'CHAT_UPLOAD',
-    );
+    // Same path as the picker: the drop HOLDS and asks (item 58).
+    await waitFor(() => expect(addMessage).toHaveBeenCalledTimes(2));
+    const question = addMessage.mock.calls[1]![0] as { intent?: string };
+    expect(question.intent).toBe('CHAT_UPLOAD_DECISION');
+    expect(mocks.sendWorkspaceUpload).not.toHaveBeenCalled();
   });
 });

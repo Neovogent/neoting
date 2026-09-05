@@ -956,6 +956,34 @@ Direct sibling of item 42 (portal member edit) — one member-management design 
 3. **Option scope needs honesty:** "discuss it here without ingesting" implies a read path for un-ingested bytes, which doesn't exist — the honest v1 option set is probably "Send to {client}'s inbox" / "Send to a different client" / "Cancel — don't upload", growing later. Whatever is offered must be real (the S12 rule: no buttons whose action can't happen).
 4. Possible refinement to keep the power users fast: a setting or "always do this" tick on the card — his phrasing ("the existing one with suggestion") suggests he wants the ask every time, so default to asking.
 
+**✅ RESOLVED (6 Sep 2026, this branch).**
+
+**What was done:** every live chat upload now HOLDS and asks first. The files land in the
+transcript as a user bubble (the raw `File` rides the message, so *a held file whose question is
+never answered stays visibly attached to the conversation* — and the question's own copy says
+"nothing has uploaded yet … they stay attached until you decide"), and the assistant answers with
+a `CHAT_UPLOAD_DECISION` card offering exactly the real options: **"Send to {client}'s inbox for
+review"** (the one-click suggested default when exactly one client was attached), **"Send to a
+different client"** (the existing searchable `ChatClientPicker`, now opened from the card), and
+**"Cancel — don't upload"** (uploads nothing, says the files stay attached, and the buttons
+remain for a change of mind). With "All clients" active there is no suggestion and the primary IS
+the picker — never a guess. "Discuss it without ingesting" is deliberately not offered (S12 — no
+read path for un-ingested bytes exists). The success message carries item 60's honest timing copy:
+*"Extraction is running — it appears in {client}'s inbox within a minute or two."*
+
+**Where it landed:** the hold in `useChatUpload` (`ChatUpload.tsx` — which SHRANK: the whole
+upload journey moved off the floor-resident module onto the chat chunk's new
+`ChatUploadDecisionCard`, and the hook's old modal-hold machinery retired); the card renders via
+`IntentRenderer` under the new local intent. A reloaded transcript keeps the question's sentence
+and drops the card (persistence stores text + intent name only); files that did not survive
+degrade to an honest line, never buttons that would upload nothing. Synthetic ingest-on-drop is
+byte-for-byte unchanged (METH_MODE §1). Pinned across `ChatUpload.test.tsx`,
+`ChatUploadDecisionCard.test.tsx` and `InputRow.test.tsx` (the pick, the drop, the hold, the
+picker, cancel, refusal reasons, the timing copy, the files-gone degrade).
+
+**Not built, deliberately:** the "always do this" tick — his phrasing reads as wanting the ask
+every time, so asking is the default and the refinement waits for a real request.
+
 ## Item 59 — Chat history vanishes on reload
 
 **Original (verbatim):**
