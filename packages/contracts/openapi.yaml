@@ -1805,6 +1805,53 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /duplicates:
+    get:
+      operationId: listDuplicates
+      summary: Recorded duplicate rulings
+      description: |
+        Every `duplicates` row the caller can reach — the pairs the route-time
+        detector wrote, and the pairs a `document.resolve-duplicate` approval
+        recorded a human ruling on (review item 49, D49). The web derives its
+        suspected-duplicate flags client-side from the document list; this is
+        what lets a DECIDED pair stay decided across reloads and colleagues,
+        instead of re-flagging on every visit.
+
+        Not paginated: a practice's ruled-on pairs number in the dozens, and a
+        page of rulings nobody can see all of would hide the one that matters.
+        The `limit` cap is the unbounded-load guard, not a paging scheme.
+      tags: [documents]
+      x-nt-side-effect: none
+      parameters:
+        - name: businessId
+          in: query
+          required: false
+          schema: { type: string }
+          description: |
+            Narrow to one client. Omitted, every pair the caller can reach. A
+            business outside the caller's scope yields an EMPTY list, never a
+            404 — the rows were already invisible, so the answer never confirms
+            whether that business exists.
+      responses:
+        '200':
+          description: The recorded pairs, newest decision first.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 500
+                    items: { $ref: '#/components/schemas/DuplicateRecord' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   # ==========================================================================
   # INGESTION
   # ==========================================================================
@@ -6000,6 +6047,7 @@ components:
         - document.revoke-link    # revoke capability URLs already sitting in someone's ledger
         - business.offboard       # deactivate a client workspace (D32 slice); soft, books retained
         - document.purge          # PERMANENTLY delete documents already in Trash; refuses anything exported
+        - document.resolve-duplicate # record the human ruling on a suspected duplicate pair; delete-copy also moves the copy to Trash (reversible)
 
     CreateActionProposalRequest:
       description: |
@@ -6023,6 +6071,7 @@ components:
         - $ref: '#/components/schemas/RevokeLinkProposalRequest'
         - $ref: '#/components/schemas/BusinessOffboardProposalRequest'
         - $ref: '#/components/schemas/DocumentPurgeProposalRequest'
+        - $ref: '#/components/schemas/ResolveDuplicateProposalRequest'
       discriminator:
         propertyName: kind
         mapping:
@@ -6041,6 +6090,7 @@ components:
           document.revoke-link: '#/components/schemas/RevokeLinkProposalRequest'
           business.offboard: '#/components/schemas/BusinessOffboardProposalRequest'
           document.purge: '#/components/schemas/DocumentPurgeProposalRequest'
+          document.resolve-duplicate: '#/components/schemas/ResolveDuplicateProposalRequest'
 
     ProposalRequestBase:
       type: object
@@ -6245,6 +6295,80 @@ components:
           properties:
             kind: { const: document.purge }
             payload: { $ref: '#/components/schemas/DocumentPurgePayload' }
+
+    ResolveDuplicateProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: document.resolve-duplicate }
+            payload: { $ref: '#/components/schemas/DuplicateResolvePayload' }
+
+    DuplicateResolvePayload:
+      type: object
+      description: |
+        The human ruling on one suspected duplicate pair (D49's four-action
+        resolution, review item 49; owner-approved 6 Sep 2026). Three of the
+        prototype's four outcomes — **"attach to the original"** (one document,
+        two images) is a named deferral: no schema shape for a second image
+        exists, and inventing one under a resolution footer would be a bigger
+        decision wearing a smaller one's clothes.
+
+        The executor records the verdict on the `duplicates` row (upserted when
+        the pair was derived client-side and never stored), stamped with who
+        decided and when. `delete-copy` ADDITIONALLY moves the copy to Trash —
+        the reversible `deleted_at` seam, `POST /documents/{id}/restoration`
+        undoes it exactly — never a purge (`document.purge` is the only
+        irreversible act on a document, and it refuses anything exported).
+      required: [documentKeepId, documentCopyId, resolution]
+      properties:
+        documentKeepId:
+          type: string
+          description: The document that stays untouched in every outcome — the pair's "already on file" side.
+        documentCopyId:
+          type: string
+          description: The suspected copy. Only `delete-copy` touches it (Trash, reversible); the other resolutions keep it too.
+        resolution:
+          type: string
+          enum: [different-documents, keep-both, delete-copy]
+          description: |
+            `different-documents` — the flag was wrong; both stay, verdict
+            CONFIRMED_DIFFERENT. `keep-both` — an intentional duplicate; both
+            stay and both will be released, verdict KEEP_BOTH. `delete-copy` —
+            verdict CONFIRMED_DUPLICATE and the copy moves to Trash.
+
+    DuplicateVerdict:
+      type: string
+      description: |
+        Mirrors prisma's `DuplicateVerdict` verbatim (check-contract enforces
+        it). `PENDING` is a detector's flag awaiting a human; the other three
+        are recorded rulings — see `DuplicateResolvePayload.resolution` for
+        which resolution writes which.
+      enum:
+        - PENDING
+        - CONFIRMED_DUPLICATE
+        - CONFIRMED_DIFFERENT
+        - KEEP_BOTH
+
+    DuplicateRecord:
+      type: object
+      description: |
+        One `duplicates` row: a suspected (or ruled-on) pair. Deliberately
+        lean — the documents themselves are `GET /documents`; this carries only
+        what a client needs to reconcile its own derived flags with recorded
+        rulings.
+      required: [id, businessId, documentAId, documentBId, verdict]
+      properties:
+        id: { type: string }
+        businessId: { type: string }
+        documentAId: { type: string }
+        documentBId: { type: string }
+        verdict: { $ref: '#/components/schemas/DuplicateVerdict' }
+        decidedAt:
+          type: [string, 'null']
+          format: date-time
+          description: When a human ruled. Null while the verdict is PENDING.
 
     RoutePayload:
       type: object

@@ -355,4 +355,8 @@ const side = (intl: IntlShape, d: Document): DuplicatePair['left'] => ({
   total: d.total,
   date: d.date,
   uploader: d.uploader,
+  // The server's display words for WHO sent it (package E) — a person, when
+  // one is known. `uploader` is the filename and stays for the compare signal;
+  // the modal renders it under the honest "File" label when this is absent.
+  sentBy: d.submitterLabel,
 });

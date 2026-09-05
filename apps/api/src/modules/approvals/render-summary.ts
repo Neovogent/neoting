@@ -231,6 +231,37 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
         { heading: 'Documents', entries: ids.map((id, i) => ({ label: `Document ${i + 1}`, value: id })) },
       ]);
     }
+    case 'document.resolve-duplicate': {
+      // The ConfirmStep copy the composer showed, restated on the review card
+      // (item 49). Payload-pure: the card promises what the executor CHECKS
+      // (reachability, one client), never claims a fact it cannot read.
+      const resolution = typeof payload['resolution'] === 'string' ? payload['resolution'] : 'unknown';
+      const titles: Record<string, string> = {
+        'different-documents': 'Dismiss the duplicate flag — these are two different documents',
+        'keep-both': 'Keep both copies — an intentional duplicate',
+        'delete-copy': 'Delete the duplicate copy (recoverable — it moves to Trash)',
+      };
+      const consequences: Record<string, string> = {
+        'different-documents': 'The flag is dismissed and both documents stay in the pipeline.',
+        'keep-both': 'Both stay, and both can be released — an intentional duplicate.',
+        'delete-copy':
+          'The copy moves to Trash and can be restored from there. The kept document is untouched. Nothing is permanently deleted.',
+      };
+      return summary(titles[resolution] ?? `Resolve a duplicate (${resolution})`, [
+        {
+          heading: 'What this does',
+          entries: [
+            { label: 'Outcome', value: consequences[resolution] ?? 'Unknown resolution.' },
+            { label: 'Kept document', value: text(payload['documentKeepId']) },
+            { label: 'The suspected copy', value: text(payload['documentCopyId']) },
+            {
+              label: 'Checked at approval',
+              value: 'Both documents must be reachable and belong to the same client, or the whole thing refuses',
+            },
+          ],
+        },
+      ]);
+    }
     case 'bank.remove-statement': {
       // The blast radius, per statement, in the server's own numbers — the
       // payload's preview was computed at creation over the provenance-stamped

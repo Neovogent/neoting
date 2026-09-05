@@ -22,6 +22,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { PortalModule } from './modules/portal/portal.module.js';
 import { PublishingModule } from './modules/publishing/publishing.module.js';
 import { RulesSuggestionsModule } from './modules/rules-suggestions/rules-suggestions.module.js';
+import { ValidationDedupeModule } from './modules/validation-dedupe/validation-dedupe.module.js';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { RulesSuggestionsModule } from './modules/rules-suggestions/rules-sugges
     PortalModule,
     PublishingModule,
     RulesSuggestionsModule,
+    ValidationDedupeModule,
     WebUploadModule,
     WhatsAppWebhookModule,
   ],

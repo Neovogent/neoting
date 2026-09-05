@@ -7,6 +7,7 @@ import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import { commonActions, commonLabels } from '../i18n/common';
 import { useAppContext } from '../context/AppContext';
 import { onStatusTab } from '../api/documents';
+import { pairKey, useDuplicateResolutions } from '../api/duplicates';
 import { runWorkspaceDrop } from '../api/uploads';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { SubTabs } from '../components/DynamicComponents/SubTabs';
@@ -409,9 +410,21 @@ export function ClientInbox({ client, kind, onPreview }: {
   const status: Status = (STATUSES.find((st) => st === statusSlug) as Status) ?? 'review';
   const setStatus = (next: Status) => setStatusSlug(next);
 
+  /**
+   * The recorded rulings (review item 49): pairs a human has resolved through
+   * the `document.resolve-duplicate` approval are subtracted before any flag
+   * renders, so a dismissal survives reloads and colleagues. Synthetic keeps
+   * AppContext's local `resolvedDuplicates` filter, untouched.
+   */
+  const rulings = useDuplicateResolutions(documentsSource === 'api');
+  const openPairs = useMemo(
+    () => duplicates.filter((p) => !rulings.decidedPairKeys.has(pairKey(p.left.id, p.right.id))),
+    [duplicates, rulings.decidedPairKeys],
+  );
+
   // ?compare=<pairId> — the side-by-side modal is linkable like any other.
   const [comparingId, setComparingId] = useQueryParam('compare');
-  const comparing = comparingId ? duplicates.find((p) => p.id === comparingId) ?? null : null;
+  const comparing = comparingId ? openPairs.find((p) => p.id === comparingId) ?? null : null;
   const setComparing = (pair: DuplicatePair | null) => setComparingId(pair ? pair.id : null);
   const [splitMode, setSplitMode] = useState<(typeof SPLIT_MODES)[number]['key']>('auto');
   const fileRef = useRef<HTMLInputElement>(null);
@@ -445,20 +458,20 @@ export function ClientInbox({ client, kind, onPreview }: {
   const pairFor = useMemo(() => {
     const ids = new Set(mine.map((d) => d.id));
     const map = new Map<string, DuplicatePair>();
-    duplicates
+    openPairs
       .filter((p) => ids.has(p.left.id) || ids.has(p.right.id))
       .forEach((p) => {
         if (!map.has(p.left.id)) map.set(p.left.id, p);
         if (!map.has(p.right.id)) map.set(p.right.id, p);
       });
     return map;
-  }, [duplicates, mine]);
+  }, [openPairs, mine]);
 
   /** The pairs themselves, for the Duplicates tab. */
   const clientPairs = useMemo(() => {
     const ids = new Set(mine.map((d) => d.id));
-    return duplicates.filter((p) => ids.has(p.left.id) || ids.has(p.right.id));
-  }, [duplicates, mine]);
+    return openPairs.filter((p) => ids.has(p.left.id) || ids.has(p.right.id));
+  }, [openPairs, mine]);
 
   /**
    * The least confident thing the extractor said about a document. Ranking on
@@ -1319,7 +1332,9 @@ export function ClientInbox({ client, kind, onPreview }: {
         </Suspense>
       )}
 
-      {comparing && <DuplicateModal pair={comparing} onClose={() => setComparing(null)} />}
+      {comparing && (
+        <DuplicateModal pair={comparing} onClose={() => setComparing(null)} onResolved={rulings.refetch} />
+      )}
     </div>
   );
 }

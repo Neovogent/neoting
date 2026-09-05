@@ -6,6 +6,7 @@ import type {
   BankRemoveStatementPayload,
   ChaseSendPayload,
   DocumentPurgePayload,
+  DuplicateResolvePayload,
   MoveBusinessPayload,
   ProposalKind,
   PublishBatchPayload,
@@ -51,6 +52,7 @@ export interface ProposalPayloadMap {
   'document.revoke-link': RevokeLinkPayload;
   'business.offboard': BusinessOffboardPayload;
   'document.purge': DocumentPurgePayload;
+  'document.resolve-duplicate': DuplicateResolvePayload;
 }
 
 export interface ExecutionInput<P> {

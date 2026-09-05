@@ -748,6 +748,51 @@ Work shape:
 3. **Delete should be the reversible deletion** (Move to Trash seam, item 13) — matching the prototype's "recoverable" promise — never a purge.
 4. **Detail:** the "BC" vs "B C" supplier spellings render unexplained while a "Same supplier" chip sits above them — the dedupe normalised them for matching, and the display could say so.
 
+**✅ RESOLVED (6 Sep 2026, this branch — with Shakib's in-session contract ruling; "attach" is the recorded deferral).**
+
+**What already existed:** the four-action footer, the per-action ConfirmSteps and the inline
+DocumentPreview expand were ALL ported with the comparison layout — they were gated off LIVE
+behind the informational footer, because resolving had no server half. The real gap was the
+server, and the reviewer found it precisely.
+
+**The server half (Shakib's ruling: kind + read surface now, attach deferred):**
+- **`document.resolve-duplicate`** is the sixteenth `ProposalKind`. Payload
+  `{documentKeepId, documentCopyId, resolution: different-documents | keep-both | delete-copy}`.
+  **No prisma change was needed** — the `duplicates` schema anticipated exactly this (verdicts
+  `CONFIRMED_DIFFERENT` / `KEEP_BOTH` / `CONFIRMED_DUPLICATE`, `decided_by_user_id`,
+  `decided_at`). The executor (`validation-dedupe/proposals/resolve-duplicate.ts`) resolves both
+  documents through the approver's RLS, refuses a cross-client "pair", and upserts the verdict —
+  the detector's row when one exists (either column order), a fresh row marked
+  `signals: {resolvedBy: 'accountant'}, score: 0` when the pair was derived client-side.
+  **`delete-copy` moves the copy to TRASH** (`deleted_at`, restoration undoes it — the item-13
+  seam, exactly as the brief demanded, never a purge) and writes the same `document_events` Trash
+  row the deletion endpoint writes, so the document's own log has no gap. Idempotent by outcome;
+  a later ruling supersedes an earlier one. `RELEASE_KINDS: false` (internal, reversible — flagged
+  for ratification like every entry). The review card restates the ConfirmStep consequences and
+  what is checked at approval.
+- **`GET /v1/duplicates`** (the new read, `DuplicatesController`/`Service` — validation-dedupe's
+  first controller, the chase-module precedent) serves the recorded pairs + verdicts, RLS-scoped,
+  so a ruled-on pair STAYS ruled across reloads and colleagues. `DuplicateVerdict` joined the
+  contract's prisma-mirrored enums.
+
+**The web half:** live, the four actions are REAL — each stages the proposal via
+`ProposalFlowModal` (lazy, off both chunks until pressed; the review card IS the confirmation, so
+no local ConfirmStep in front — the bulk-move lesson). **Attach renders disabled wearing its
+reason** ("merging two images into one document is not built yet") — S12, never a button that
+does something else. `useDuplicateResolutions` (`api/duplicates.ts`, view-chunks only) subtracts
+decided pairs from the derived flags in InboxesView and ClientInbox; an approved resolution
+refetches it and closes the comparison. Synthetic keeps the local ConfirmStep flow byte-for-byte,
+and the #258 scroll frame is untouched (nothing changed about the modal's box).
+
+**Detail (item 49.3):** package E's member identity landed, so "Sent by" now renders the server's
+`submitterLabel` — a person — when one is known, and otherwise the field is labelled honestly
+**"File"** with the filename, because "Sent by: king fisser.jpg" was the lie being reported.
+
+**Deferred, named:** "Attach to the original" (one document, two images) — no schema shape for a
+second image exists; it needs its own design (a `document_images` child table or a supersedes
+link) and is exactly the heavy merge write the brief said to split out. Also open: the pair-side
+supplier-normalisation note (49.4) — cosmetic, not done.
+
 ## Item 50 — Expense claims: hide the unbuilt tab now; design and build the whole feature
 
 **Original (verbatim):**

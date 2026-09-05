@@ -544,8 +544,8 @@ export interface DuplicatePair {
   similarity: number;
   signals: string[];
   crossType: boolean;
-  left: { id: string; label: string; type: string; total: number; date: string; uploader: string };
-  right: { id: string; label: string; type: string; total: number; date: string; uploader: string };
+  left: { id: string; label: string; type: string; total: number; date: string; uploader: string; sentBy?: string | undefined };
+  right: { id: string; label: string; type: string; total: number; date: string; uploader: string; sentBy?: string | undefined };
 }
 
 export type RuleTier = 'user' | 'payment-method' | 'supplier' | 'defaults';

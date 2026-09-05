@@ -10,6 +10,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { commonActions, commonLabels } from '../i18n/common';
 import { useAppContext } from '../context/AppContext';
 import { onStatusTab } from '../api/documents';
+import { pairKey, useDuplicateResolutions } from '../api/duplicates';
 import { refreshDocuments, runWorkspaceDrop } from '../api/uploads';
 import { useTourAction } from '../tour/bus';
 import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
@@ -438,19 +439,32 @@ export function InboxesView() {
   };
 
   /**
+   * The recorded rulings (review item 49): a pair a human has RESOLVED —
+   * through the `document.resolve-duplicate` approval — must stay resolved
+   * across reloads and colleagues, so the derived pairs are subtracted by the
+   * server's decided set before anything renders a flag. Synthetic keeps its
+   * local `resolvedDuplicates` filter inside AppContext, untouched.
+   */
+  const rulings = useDuplicateResolutions(documentsSource === 'api');
+  const openPairs = useMemo(
+    () => duplicates.filter((p) => !rulings.decidedPairKeys.has(pairKey(p.left.id, p.right.id))),
+    [duplicates, rulings.decidedPairKeys],
+  );
+
+  /**
    * The pair each flagged document belongs to, not just the fact that it is
    * flagged. A duplicate warning that cannot show you the other copy asks the
    * accountant to go and find it themselves, which is the whole job.
    */
   const pairFor = useMemo(() => {
     const map = new Map<string, DuplicatePair>();
-    duplicates.forEach((p) => { map.set(p.left.id, p); map.set(p.right.id, p); });
+    openPairs.forEach((p) => { map.set(p.left.id, p); map.set(p.right.id, p); });
     return map;
-  }, [duplicates]);
+  }, [openPairs]);
 
   // In the URL, so a compare can be linked to and Back closes it.
   const [comparingId, setComparingId] = useQueryParam('compare');
-  const comparing = comparingId ? duplicates.find((p) => p.id === comparingId) ?? null : null;
+  const comparing = comparingId ? openPairs.find((p) => p.id === comparingId) ?? null : null;
   const setComparing = (pair: DuplicatePair | null) => setComparingId(pair ? pair.id : null);
 
   const matchedIds = useMemo(
@@ -1634,7 +1648,9 @@ export function InboxesView() {
       )}
 
       {/* The two suspected copies, side by side, with keep-one / keep-both */}
-      {comparing && <DuplicateModal pair={comparing} onClose={() => setComparing(null)} />}
+      {comparing && (
+        <DuplicateModal pair={comparing} onClose={() => setComparing(null)} onResolved={rulings.refetch} />
+      )}
 
       {/* Publish confirmation — releasing is a state change, so it always asks first */}
       <AnimatePresence>
