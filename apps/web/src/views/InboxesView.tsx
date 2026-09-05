@@ -1624,13 +1624,16 @@ export function InboxesView() {
             <motion.div
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => setConfirmPublish(null)}
-              className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 md:p-10"
+              // Anchored by the card's auto margins, not items-*: auto margins
+              // collapse to zero when the card overflows, so a too-short
+              // viewport scrolls the scrim instead of clipping (items 23+40).
+              className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex justify-center overflow-y-auto p-0 sm:p-4 md:p-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             >
               <motion.div
                 initial={{ opacity: 0, y: 20, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.97 }}
                 onClick={(e) => e.stopPropagation()}
                 data-tour="publish-confirm"
-                className="w-full max-w-md border border-white/5 rounded-t-[28px] sm:rounded-[32px] bg-card shadow-2xl overflow-hidden pb-safe sm:pb-0"
+                className="w-full max-w-md mt-auto sm:my-auto border border-white/5 rounded-t-[28px] sm:rounded-[32px] bg-card shadow-2xl overflow-hidden pb-safe sm:pb-0"
               >
                 <div className="p-6 border-b border-white/5">
                   <h3 className="font-sans font-bold text-xl text-white tracking-tight">
@@ -1689,12 +1692,13 @@ export function InboxesView() {
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             onClick={() => setFieldsOpen(false)}
-            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 md:p-10"
+            // Same auto-margin anchoring as the publish confirm above (items 23+40).
+            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex justify-center overflow-y-auto p-0 sm:p-4 md:p-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             <motion.div
               initial={{ opacity: 0, y: 20, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.97 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md border border-white/5 rounded-t-[28px] sm:rounded-[32px] bg-card shadow-2xl overflow-hidden pb-safe sm:pb-0"
+              className="w-full max-w-md mt-auto sm:my-auto border border-white/5 rounded-t-[28px] sm:rounded-[32px] bg-card shadow-2xl overflow-hidden pb-safe sm:pb-0"
             >
               <div className="p-6 border-b border-white/5">
                 <h3 className="font-sans font-bold text-xl text-white tracking-tight">{intl.formatMessage(m.fieldsHeading)}</h3>

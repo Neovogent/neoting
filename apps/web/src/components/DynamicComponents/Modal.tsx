@@ -41,6 +41,18 @@ const m = defineMessages({
  * focus scrolls its own control into view, and `overscroll-contain` stops the
  * page behind taking over the gesture at the ends.
  *
+ * ⚠ `[&>*]:shrink-0` is what makes the scroll box actually scroll (5 Sep
+ * 2026, review items 23+40 — this failed twice in the field with every class
+ * above present and correct). Nearly every dialog card carries
+ * `overflow-hidden` for its rounded corners, and flexbox zeroes the automatic
+ * minimum size of a flex item whose overflow is not visible — so instead of
+ * overflowing this box and being scrolled, the card was SHRUNK to fit it and
+ * its own `overflow-hidden` clipped the tail: `scrollHeight === clientHeight`,
+ * nothing to scroll, last button unreachable. jsdom computes no layout, so no
+ * class assertion can catch this; the browser smoke in
+ * `scripts/measure/modal-reachability.mjs` is the guard that actually runs
+ * the layout.
+ *
  * ⚠ `[&>*]:w-full` is the other half, and it is a frame rule rather than a
  * caller's. The wrapper centres its child, so a child that forgets `w-full`
  * shrink-wraps to its own content and reads as a stray pill floating on the
@@ -95,7 +107,7 @@ export function Modal({
         >
           <X size={18} />
         </button>
-        <div className="min-h-0 overflow-y-auto overscroll-contain flex flex-col items-center [&>*]:w-full">
+        <div className="min-h-0 overflow-y-auto overscroll-contain flex flex-col items-center [&>*]:w-full [&>*]:shrink-0">
           {children}
         </div>
       </motion.div>

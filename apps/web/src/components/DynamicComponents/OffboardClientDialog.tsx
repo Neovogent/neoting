@@ -88,8 +88,11 @@ export function OffboardClientDialog({ client, onQueued, onCancel }: {
   return (
     // The backdrop is not a button — role="presentation" says so; the keyboard
     // dismissal is Escape above.
+    // Centred by the card's auto margins, not items-center: auto margins
+    // collapse to zero when the card overflows, so a too-short viewport scrolls
+    // the scrim instead of clipping the card at both ends (items 23+40).
     <div
-      className="fixed inset-0 z-[60] bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6"
+      className="fixed inset-0 z-[60] bg-black/75 backdrop-blur-sm flex justify-center overflow-y-auto p-3 sm:p-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       onClick={onCancel}
       role="presentation"
     >
@@ -100,7 +103,7 @@ export function OffboardClientDialog({ client, onQueued, onCancel }: {
         role="dialog"
         aria-modal="true"
         aria-label={intl.formatMessage(m.title, { name: client.name })}
-        className="w-full max-w-md border border-white/10 rounded-[28px] bg-card shadow-2xl overflow-hidden"
+        className="w-full max-w-md my-auto border border-white/10 rounded-[28px] bg-card shadow-2xl overflow-hidden"
       >
         <div className="p-6 flex flex-col gap-4">
           <div className="flex items-start gap-3.5">
