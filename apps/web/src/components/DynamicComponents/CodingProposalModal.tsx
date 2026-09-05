@@ -93,7 +93,12 @@ export default function CodingProposalModal({
   return (
     <Modal onClose={onClose} width="max-w-xl" label={intl.formatMessage(m.label)}>
       {warningStep ? (
-        <div className="p-5 rounded-2xl border border-amber-400/25 bg-amber-400/5">
+        // ⚠ bg-card is load-bearing: the Modal frame supplies scrim + placement
+        // only, and a child without an opaque ground renders as a translucent
+        // panel over the dimmed page (the RequestStatementDialog lesson in the
+        // Modal's own header). The amber tint rides ON the card, not instead of
+        // one.
+        <div className="p-5 rounded-2xl border border-amber-400/25 bg-card shadow-2xl">
           <div className="flex items-start gap-3">
             <AlertTriangle size={18} className="shrink-0 mt-0.5 text-amber-400" />
             <div className="min-w-0">
