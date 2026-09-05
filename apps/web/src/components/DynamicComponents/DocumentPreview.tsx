@@ -8,6 +8,7 @@ import { CATEGORY_LABEL, isEditableLabel, parseCodingDraft, useDocumentDetail, t
 import { confirmDocumentBankMatch, useDocumentBankMatch } from '../../api/bank-match';
 import type { UpdateCodingPayload } from '@neoting/contracts/model';
 import { currency } from '../../lib/resolver';
+import { receivedViaText } from '../../lib/channelLabels';
 import { correctionWarnings } from '../../lib/correctionChecks';
 import { BASE_MANDATORY } from '../../lib/selectors';
 import { Pill } from './DataTable';
@@ -456,8 +457,11 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
           <div className="min-w-0">
             {/* Truncated values always carry the full text as a title, so a
                 clipped name is one hover away rather than lost. */}
-            <h3 title={doc.supplier} className="font-sans font-bold text-xl text-white tracking-tight truncate">
-              {doc.supplier}
+            {/* An unextracted supplier titles the card with the generated
+                channel-based name (a capture reads "Capture — {member} ·
+                {business} · {date}"), never the literal "Unknown" (item 43). */}
+            <h3 title={doc.displayTitle ?? doc.supplier} className="font-sans font-bold text-xl text-white tracking-tight truncate">
+              {doc.displayTitle ?? doc.supplier}
             </h3>
             <p title={metaText} className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider truncate">
               {metaText}
@@ -471,8 +475,10 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
             {doc.docType === 'OTHER' && <Pill tone="red">{intl.formatMessage(m.notFinancialPill)}</Pill>}
             <StatusPill doc={doc} />
           </div>
+          {/* Honest channel words, never the raw slug — "VIA SMS-LINK" on a
+              client's direct portal upload was review item 21's headline. */}
           <span className="text-[11px] text-zinc-600 font-semibold uppercase tracking-wider">
-            {intl.formatMessage(m.via, { source: doc.source })}
+            {intl.formatMessage(m.via, { source: receivedViaText(intl, doc) })}
           </span>
         </div>
       </div>

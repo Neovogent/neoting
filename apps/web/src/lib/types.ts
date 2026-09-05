@@ -298,6 +298,23 @@ export interface Document {
   splitFrom?: string | undefined;
   /** Free text the business typed when sending this from its portal. */
   clientNote?: string | undefined;
+  /**
+   * Who sent it, in the server's display words (5 Sep 2026, items 21/43/62):
+   * "Uploaded by Priya Shah", "Captured by Mubashir Rahman (Zeplow Inc)", or a
+   * provenance slug (`uploaded-via-chase-link` and friends — see
+   * `lib/channelLabels.ts`). Live rows only; undefined on the synthetic cast,
+   * which keeps synthetic mode byte-for-byte unchanged (METH_MODE §1).
+   */
+  submitterLabel?: string | undefined;
+  /**
+   * What a row/heading CALLS this document when no supplier has been extracted
+   * — the filename (for a capture, the server-generated
+   * "Capture — {member} · {business} · {date}") instead of the literal
+   * "Unknown" (item 43). Display only: `supplier === 'Unknown'` stays the
+   * data sentinel the readiness and publish checks compare against, so this
+   * must never feed those. Live rows only; synthetic stays unchanged.
+   */
+  displayTitle?: string | undefined;
 }
 
 /**

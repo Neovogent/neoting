@@ -76,11 +76,29 @@ const CHANNEL_TO_SOURCE: Record<string, SourceChannel> = {
   WEB_UPLOAD: 'web',
   EMAIL: 'email',
   WHATSAPP: 'whatsapp',
-  SMS_PORTAL: 'sms-link',
+  // The default for the one channel that is two surfaces — see `sourceFor`.
+  SMS_PORTAL: 'portal',
   CHAT_UPLOAD: 'chat',
   STRUCTURED_IMPORT: 'csv',
   API: 'web',
 };
+
+/**
+ * The row's display channel (review item 21). `SMS_PORTAL` is ONE server enum
+ * value doing two jobs — the chase-link portal (`/p/:token`) and the signed-in
+ * business portal — so the split is read off the provenance the server records
+ * per row: `submitterLabel` is `uploaded-via-chase-link` for a chase session
+ * and human words (or `uploaded-via-client-portal`) for a signed-in member.
+ *
+ * ⚠ Rows written before 5 Sep 2026 carry `uploaded-by-delegated-session` for
+ * BOTH kinds, so the default is `'portal'` — "Client portal" is true of both
+ * surfaces, where "Chase link" on a direct upload was the reported lie. Only a
+ * row the server explicitly marked as chase-linked reads as one.
+ */
+export function sourceFor(row: Pick<DocumentSummary, 'channel' | 'submitterLabel'>): SourceChannel {
+  if (row.channel === 'SMS_PORTAL' && row.submitterLabel === 'uploaded-via-chase-link') return 'sms-link';
+  return CHANNEL_TO_SOURCE[row.channel] ?? 'web';
+}
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -101,7 +119,13 @@ export function fromIsoDate(iso: string | null | undefined): string {
  */
 export function toLocalDocument(row: DocumentSummary, clientNameFor: (businessId: string) => string): LocalDocument {
   const kind: DocKind = row.inbox === 'SALES' ? 'sales' : 'cost';
+  // 'Unknown' is a DATA sentinel — readiness (`lib/selectors.ts`) and the
+  // publish-eligibility checks compare against it by value — so it stays on
+  // `supplier`. What a human is SHOWN for an unextracted row is `displayTitle`:
+  // the filename, which for a capture is the server-generated
+  // "Capture — {member} · {business} · {date}" (item 43).
   const party = (row.inbox === 'SALES' ? row.customerName : row.supplierName) ?? 'Unknown';
+  const displayTitle = party === 'Unknown' ? row.originalFilename.replace(/\.[a-z0-9]+$/iu, '') : party;
 
   return {
     id: row.id,
@@ -116,9 +140,13 @@ export function toLocalDocument(row: DocumentSummary, clientNameFor: (businessId
     // as-is rather than replaced with a generic line.
     statusNote: row.failureMessage ?? undefined,
     failureCode: row.failureCode ?? undefined,
-    source: CHANNEL_TO_SOURCE[row.channel] ?? 'web',
+    source: sourceFor(row),
     uploader: row.originalFilename,
     currency: row.currency ?? 'GBP',
+    displayTitle,
+    // The server's display words for who sent it (items 21/43/62) — slugs are
+    // translated by `lib/channelLabels.ts`, human labels render verbatim.
+    ...(row.submitterLabel == null ? {} : { submitterLabel: row.submitterLabel }),
     kind,
     fields: [],
     lineItems: [],

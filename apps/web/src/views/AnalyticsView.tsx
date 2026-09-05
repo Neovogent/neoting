@@ -22,7 +22,9 @@ const CHANNEL_LABEL: Record<SourceChannel, MessageDescriptor> = defineMessages({
   'sms-link': { id: 'analytics.analyticsView.channelSmsLink', defaultMessage: 'Chase link' },
   csv: { id: 'analytics.analyticsView.channelCsv', defaultMessage: 'CSV / XLSX' },
   chat: { id: 'analytics.analyticsView.channelChat', defaultMessage: 'Chat' },
-  portal: { id: 'analytics.analyticsView.channelPortal', defaultMessage: 'Business portal' },
+  // "Client portal" everywhere (item 21's sweep): the same surface must not be
+  // "Business portal" on this chart and "Client portal" on every row cell.
+  portal: { id: 'analytics.analyticsView.channelPortal', defaultMessage: 'Client portal' },
 });
 
 const m = defineMessages({

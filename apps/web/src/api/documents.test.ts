@@ -188,7 +188,8 @@ describe('channel mapping', () => {
     WEB_UPLOAD: 'web',
     EMAIL: 'email',
     WHATSAPP: 'whatsapp',
-    SMS_PORTAL: 'sms-link',
+    // The one channel that is two surfaces — the split is below.
+    SMS_PORTAL: 'portal',
     CHAT_UPLOAD: 'chat',
     STRUCTURED_IMPORT: 'csv',
     API: 'web',
@@ -200,6 +201,32 @@ describe('channel mapping', () => {
 
   it.each(Object.entries(EXPECTED))('%s renders as %s', (channel, source) => {
     expect(toLocalDocument(row({ channel: channel as DocumentChannel }), nameFor).source).toBe(source);
+  });
+
+  /**
+   * Review item 21: `SMS_PORTAL` is one server enum value doing two jobs, and
+   * the split is read off the provenance the server records per row.
+   */
+  it('splits SMS_PORTAL by provenance: only an explicit chase-link row is a chase', () => {
+    const at = (submitterLabel: string | null) =>
+      toLocalDocument(row({ channel: 'SMS_PORTAL', submitterLabel }), nameFor).source;
+
+    expect(at('uploaded-via-chase-link')).toBe('sms-link');
+    // A signed-in member's upload, whichever words the server composed.
+    expect(at('Uploaded by Mubashir Rahman (Zeplow Inc)')).toBe('portal');
+    expect(at('uploaded-via-client-portal')).toBe('portal');
+    // ⚠ Legacy rows (pre-5 Sep 2026) carry this for BOTH portal kinds; they
+    // read as the client portal — true of both — never as a chase that may
+    // not have happened. That was the reported lie.
+    expect(at('uploaded-by-delegated-session')).toBe('portal');
+    expect(at(null)).toBe('portal');
+  });
+
+  it('carries the submitter label through, and only when there is one', () => {
+    expect(
+      toLocalDocument(row({ channel: 'WEB_UPLOAD', submitterLabel: 'Uploaded by Priya Shah' }), nameFor).submitterLabel,
+    ).toBe('Uploaded by Priya Shah');
+    expect(toLocalDocument(row({ submitterLabel: null }), nameFor).submitterLabel).toBeUndefined();
   });
 });
 
@@ -217,7 +244,24 @@ describe('the rest of the row', () => {
   it('says Unknown rather than showing an empty name', () => {
     const doc = toLocalDocument(row({ supplierName: null, customerName: null }), nameFor);
 
+    // 'Unknown' stays the DATA sentinel (readiness and publish-eligibility
+    // compare against it by value)…
     expect(doc.supplier).toBe('Unknown');
+    // …while what a human is SHOWN is the filename — for a capture, the
+    // server-generated channel-based name (review item 43).
+    expect(doc.displayTitle).toBe('bidfood-uk');
+  });
+
+  it('titles an unextracted row with its (generated) filename, extension dropped — never the word Unknown (item 43)', () => {
+    const capture = toLocalDocument(
+      row({ supplierName: null, originalFilename: 'Capture — Mubashir Rahman · Zeplow Inc · 5 Sep 2026.jpg' }),
+      nameFor,
+    );
+    const extracted = toLocalDocument(row({ supplierName: 'Bidfood UK' }), nameFor);
+
+    expect(capture.displayTitle).toBe('Capture — Mubashir Rahman · Zeplow Inc · 5 Sep 2026');
+    // An extracted supplier titles the row as it always has.
+    expect(extracted.displayTitle).toBe('Bidfood UK');
   });
 
   it('resolves the client name from the caller rather than parsing the id', () => {
