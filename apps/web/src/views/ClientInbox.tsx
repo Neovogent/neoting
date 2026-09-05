@@ -120,6 +120,8 @@ const m = defineMessages({
   columnDoc: { id: 'analytics.clientInbox.columnDoc', defaultMessage: 'Doc' },
   docReceipt: { id: 'analytics.clientInbox.docReceipt', defaultMessage: 'Receipt' },
   docInvoice: { id: 'analytics.clientInbox.docInvoice', defaultMessage: 'Invoice' },
+  /** The D46 flag on the row (item 47): the pipeline's verdict follows the document. */
+  docNotFinancial: { id: 'analytics.clientInbox.docNotFinancial', defaultMessage: 'Not a financial document' },
   columnCustomer: { id: 'analytics.clientInbox.columnCustomer', defaultMessage: 'Customer' },
   columnChannel: { id: 'analytics.clientInbox.columnChannel', defaultMessage: 'Received via' },
   columnWhyFlagged: { id: 'analytics.clientInbox.columnWhyFlagged', defaultMessage: 'Why flagged' },
@@ -470,6 +472,9 @@ export function ClientInbox({ client, kind, onPreview }: {
     if (pairFor.has(d.id)) {
       return { text: intl.formatMessage(m.flagDuplicate, { percent: Math.round(pairFor.get(d.id)!.similarity * 100) }), tone: 'amber' };
     }
+    // The D46 verdict outranks a low-confidence field: "this is not a financial
+    // document" is the first thing a reviewer should read about a selfie.
+    if (d.docType === 'OTHER') return { text: intl.formatMessage(m.docNotFinancial), tone: 'red' };
     if (d.statusNote) return { text: d.statusNote, tone: d.status === 'rejected' ? 'red' : 'amber' };
     const weakest = d.fields.length ? d.fields.reduce((a, b) => (a.confidence < b.confidence ? a : b)) : undefined;
     if (weakest && weakest.confidence < 0.6) {
@@ -560,6 +565,21 @@ export function ClientInbox({ client, kind, onPreview }: {
     sortValue: (d) => d.splitFrom ?? d.id,
     render: (d) => {
       const isImage = /receipt|photo|jpg|png|heic/i.test(`${d.source} ${d.splitFrom ?? ''}`) || d.source === 'whatsapp';
+      // The D46 flag follows the document onto its row (item 47): a live row
+      // whose classified type is OTHER wears the verdict instead of a guessed
+      // "Receipt"/"Invoice" word — flagged, never blocked, but VISIBLE.
+      if (d.docType === 'OTHER') {
+        return (
+          <span className="flex items-center gap-2.5">
+            <span className="w-8 h-9 rounded-lg bg-raised border border-red-400/20 flex items-center justify-center text-red-400 shrink-0">
+              {isImage ? <ImageIcon size={14} /> : <FileText size={14} />}
+            </span>
+            <span className="text-[11px] text-red-400 font-semibold uppercase tracking-wider">
+              {intl.formatMessage(m.docNotFinancial)}
+            </span>
+          </span>
+        );
+      }
       return (
         <span className="flex items-center gap-2.5">
           <span className="w-8 h-9 rounded-lg bg-raised border border-white/5 flex items-center justify-center text-zinc-500 shrink-0">

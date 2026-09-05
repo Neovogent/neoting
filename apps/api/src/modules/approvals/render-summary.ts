@@ -1,5 +1,7 @@
 import type { ProposalKind } from '@neoting/contracts/model';
 
+import type { CorrectionCheck, CorrectionCheckCode } from '../validation-dedupe/index.js';
+
 /**
  * The review renderer — what `[Read review]` shows and what
  * `rendered_summary_hash` is computed over.
@@ -33,7 +35,27 @@ export interface RenderedSection {
   readonly entries: readonly { label: string; value: string }[];
 }
 
-export function renderSummary(kind: ProposalKind, payload: Record<string, unknown>): RenderedSummary {
+/**
+ * Facts the render may use that are NOT in the payload — computed by the
+ * SERVICE at first review and passed in, so this function stays pure.
+ *
+ * ⚠ Why they are not in the payload, which is this file's usual rule: the
+ * `document.update-coding` payload schema is the contract's and `.strict()`
+ * (`parseStoredProposalPayload` re-parses it at review AND approve), so a
+ * computed `checks` member would need a G7 contract change and would fail
+ * every stored proposal's re-parse until it landed. The rendered summary is
+ * the engine's OWN record: it is computed exactly once (review is idempotent
+ * and returns the stored render), frozen with its hash, and the approve call
+ * echoes that hash — so an advisory frozen here is still "what was shown is
+ * what was approved". The checks gate nothing, so facts moving between review
+ * and approve cost an advisory its freshness, never the effect its truth —
+ * the executor diffs against the live row regardless.
+ */
+export interface RenderContext {
+  readonly correctionChecks?: readonly CorrectionCheck[];
+}
+
+export function renderSummary(kind: ProposalKind, payload: Record<string, unknown>, context: RenderContext = {}): RenderedSummary {
   switch (kind) {
     case 'document.archive': {
       const ids = stringArray(payload['documentIds']);
@@ -67,6 +89,13 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
           heading: 'Field changes',
           entries: [{ label: 'Document', value: text(payload['documentId']) }, ...entries],
         },
+        // The correction-integrity advisory (items 22/46/47): the deterministic
+        // checks the engine ran against the document when this review was
+        // opened. Advisory, never a gate — approving proceeds; the section
+        // exists so the assertion is INFORMED. Same {heading, entries} shape as
+        // every section, so the web card renders it with zero changes
+        // (frontend rule 9) and withholds Approve only if it cannot.
+        ...correctionChecksSection(context.correctionChecks ?? []),
       ]);
     }
     case 'chase.send': {
@@ -106,11 +135,21 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
       const vat = penceToMoney(preview['vatPence'], code);
       const mixed = code === null;
       const entries = entryPreviewSections(payload['entryPreview']);
+      // Item 29(b): the review that approved gross £994 / VAT £9,000 displayed
+      // both numbers neutrally, and the refusal sat at the bottom of the card.
+      // A document that will produce NO export line is now in the TITLE, so it
+      // cannot be approved unread.
+      const refusalCount = isObject(payload['entryPreview']) && Array.isArray(payload['entryPreview']['refusals'])
+        ? payload['entryPreview']['refusals'].length
+        : 0;
+      const refusalSuffix = refusalCount === 0 ? '' : ` (⚠ ${count(refusalCount, 'document')} will produce no export line)`;
       return summary(
         mixed
-          ? `Release ${count(ids.length, 'document')} for export — gross ${gross}, VAT ${vat} (mixed currencies)`
-          : `Release ${count(ids.length, 'document')} for export — gross ${gross}, VAT ${vat}`,
+          ? `Release ${count(ids.length, 'document')} for export — gross ${gross}, VAT ${vat} (mixed currencies)${refusalSuffix}`
+          : `Release ${count(ids.length, 'document')} for export — gross ${gross}, VAT ${vat}${refusalSuffix}`,
         [
+        // ⚠ Checks lead the card — see entryChecksSection.
+        ...entryChecksSection(payload['entryPreview']),
         {
           heading: 'Server-computed preview',
           entries: [
@@ -434,18 +473,81 @@ function entryPreviewSections(value: unknown): RenderedSection[] {
     });
   });
 
-  if (refusals.length > 0) {
-    sections.push({
-      heading: 'Documents that would produce no line in the file',
-      entries: refusals.filter(isObject).map((refusal) => ({
-        label: text(refusal['documentId']),
-        value: text(refusal['message']),
-      })),
-    });
-  }
+  // The refusals themselves render in the ⚠ Checks section at the TOP of the
+  // whole card (entryChecksSection) — they used to sit here at the bottom,
+  // which is how a review card carrying "this will produce no line" was
+  // approved unread (item 29).
 
   return sections;
 }
+
+/**
+ * ⚠ Checks, FIRST on the release card (item 29(b)). A refused document
+ * produces NO line in the import file, and a document the pipeline judged
+ * non-financial (D46, item 47) is about to have human-typed figures released
+ * as bookkeeping — both were previously renderable only below the fold, under
+ * the entry, where the review that approved gross £994 / VAT £9,000 never
+ * showed them. Advisory: approving still proceeds (D44); the section exists so
+ * the release is an informed act.
+ */
+function entryChecksSection(value: unknown): RenderedSection[] {
+  if (!isObject(value)) return [];
+  const documents = Array.isArray(value['documents']) ? value['documents'] : [];
+  const refusals = Array.isArray(value['refusals']) ? value['refusals'] : [];
+
+  const entries: { label: string; value: string }[] = [];
+  for (const refusal of refusals) {
+    if (!isObject(refusal)) continue;
+    entries.push({ label: `Will not export — ${text(refusal['documentId'])}`, value: text(refusal['message']) });
+  }
+  for (const document of documents) {
+    if (!isObject(document)) continue;
+    const warnings = Array.isArray(document['warnings']) ? document['warnings'] : [];
+    for (const warning of warnings) {
+      if (!isObject(warning) || warning['code'] !== 'not-a-financial-document') continue;
+      entries.push({
+        label: `Not a financial document — ${text(document['documentId'])}`,
+        value: text(warning['message']),
+      });
+    }
+  }
+  if (entries.length === 0) return [];
+  return [{ heading: '⚠ Checks — read before you release', entries }];
+}
+
+/**
+ * The correction advisory as a review section — one entry per fired check,
+ * closed with the D44 sentence so a reviewer knows the checks gate nothing.
+ * Empty input renders NO section: an always-present "no concerns" section
+ * would teach reviewers to skip the one that matters.
+ */
+function correctionChecksSection(checks: readonly CorrectionCheck[]): RenderedSection[] {
+  if (checks.length === 0) return [];
+  return [
+    {
+      heading: '⚠ Checks — read before you approve',
+      entries: [
+        ...checks.map((check) => ({ label: CHECK_LABELS[check.code], value: check.message })),
+        {
+          label: 'These checks gate nothing',
+          value: 'They are advisory — the decision is yours, and approving proceeds. They exist so the correction is an informed one.',
+        },
+      ],
+    },
+  ];
+}
+
+/**
+ * Total over the check codes — a new check that fails to compile here has to
+ * answer what its review label reads as, rather than inherit a blank.
+ */
+const CHECK_LABELS: Readonly<Record<CorrectionCheckCode, string>> = {
+  'tax-exceeds-total': 'Tax exceeds the total',
+  'tax-total-signs-disagree': 'Tax and total point in opposite directions',
+  'date-in-future': 'Document date is in the future',
+  'date-implausibly-old': 'Document date is implausibly old',
+  'not-a-financial-document': 'Not a financial document',
+};
 
 /** The target, in the words the accountant's own software uses. Never a claim about a connection. */
 function targetName(target: unknown): string {

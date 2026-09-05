@@ -139,6 +139,11 @@ system with a fake vendor, not a fake system. Nothing here opens a socket, and
   now refuse with `NT-PUB-001` like a null does — the reasoning and the placeholder
   list live in `validation-dedupe/readiness.ts`, and `publish-preview.test.ts`
   pins the new behaviour (it used to pin "£0.00 is a confirmed value").
+  ⚠ And it moved again on 2026-09-05 (review items 36/47): readiness gained the
+  **TYPE gate** — `docType` of `OTHER` or null refuses with `'type'` FIRST in
+  `missing` — so `PublishPreviewItem` (which extends `ReadinessInput`) now
+  requires `docType`, `FIELD_WORDS` gained the type wording, and a pre-existing
+  READY row that was never classified refuses `NT-PUB-001` naming the type.
 - **`select-ledger-adapter.ts` + `LEDGER_ADAPTER` env** — mirrors `EXTRACTOR` /
   `MEDIA_FETCH` exactly: `z.enum(['demo']).default('demo')`, selected by config, never
   by import. `publishing.module.ts` provides and exports the `LEDGER_ADAPTER` token so

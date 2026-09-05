@@ -488,7 +488,10 @@ export class PrismaExtractionStep implements ExtractionStep {
     }
 
     const finalState = resolveProcessedState(
-      { totalPence: extracted.totalPence, supplierName: extracted.supplierName, categoryCode },
+      // `docType` joined the readiness input on 2026-09-05 (the items 36/47
+      // Type gate): a document the extractor classified OTHER lands TO_REVIEW
+      // whatever its fields say, until a human corrects what it IS.
+      { totalPence: extracted.totalPence, supplierName: extracted.supplierName, categoryCode, docType: extracted.docType },
       { validatorFailed: extracted.validatorFailed },
     );
     await transitionDocument(db, from, { to: finalState, traceId: input.traceId, detail: { stage: 'extract', outcome: finalState } });

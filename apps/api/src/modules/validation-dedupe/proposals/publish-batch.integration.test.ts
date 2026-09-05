@@ -221,7 +221,7 @@ async function seedDocument(id: string, over: DocumentFixture = {}): Promise<voi
 async function previewOf(ids: readonly string[]): Promise<PublishBatchPayload['preview']> {
   const rows = await owner.document.findMany({
     where: { id: { in: [...ids] } },
-    select: { id: true, totalPence: true, taxPence: true, supplierName: true, categoryCode: true, currency: true },
+    select: { id: true, totalPence: true, taxPence: true, supplierName: true, categoryCode: true, currency: true, docType: true },
   });
   const outcome = previewPublishBatch(rows);
   if (!outcome.ok) throw new Error('fixture is not publishable');

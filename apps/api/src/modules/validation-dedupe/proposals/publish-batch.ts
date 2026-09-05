@@ -13,6 +13,7 @@ import {
   type PublishPreviewItem,
   type PublishPreviewOutcome,
 } from '../../publishing/index.js';
+import { money as advisoryMoney } from '../correction-checks.js';
 import { transitionDocument } from '../document-state.js';
 import {
   type ExecutionInput,
@@ -304,12 +305,113 @@ export async function computePublishBatchPayload(
   // The cast is `readonly` → mutable and nothing else: the emitter returns deep
   // `readonly` arrays (nothing downstream may edit a cell) and the generated
   // contract model is mutable, which is orval's shape for every DTO in the repo.
+  const preview = await applyEntryAdvisories(db, await previewEntries(db, PREVIEW_TARGET, documents), documents);
   return {
     ...withTotals,
-    entryPreview: (await previewEntries(db, PREVIEW_TARGET, documents)) as unknown as NonNullable<
-      PublishBatchPayload['entryPreview']
-    >,
+    entryPreview: preview as unknown as NonNullable<PublishBatchPayload['entryPreview']>,
   };
+}
+
+/**
+ * The correction-integrity advisories on the RELEASE review (items 29(b) and
+ * 47's D46 half): what the reviewer must meet BEFORE approving, appended onto
+ * the entry preview the emitter produced.
+ *
+ * Two advisories, and where each lands:
+ *
+ * - **Tax exceeding the total** — the £9,000-on-£994 shape. The emitter side
+ *   already refuses such a document (`document-not-representable`: net = gross
+ *   − VAT flips sign, and the canonical model refuses mixed signs), so it is in
+ *   `refusals` — but the message there recites the accounting rule, and the
+ *   review that approved that release "displayed both numbers neutrally"
+ *   (item 29). The plain sentence — tax is LARGER than the total, this will
+ *   not export — is appended to the refusal's own message, naming both
+ *   figures.
+ * - **A document the pipeline judged not to be a financial document** (D46,
+ *   item 47) — the flag must FOLLOW the document to the release review. The
+ *   verdict read here is the machine extraction's own `docType` (the earliest
+ *   non-human extraction row), NOT the current column: a human may since have
+ *   corrected Type to RECEIPT, and that correction is exactly what the super
+ *   admin releasing it needs to see was a human assertion over a machine
+ *   "OTHER". Rides `documents[].warnings` — the contract's own free-code
+ *   `ExportWarning` channel, rendered per entry on the card.
+ *
+ * ⚠ **Called on BOTH sides of the entry-preview drift check** — creation
+ * (`computePublishBatchPayload`) and execution (the recompute below) — because
+ * `sameEntryPreview` fingerprints warnings and refusal messages. One side
+ * appending what the other does not would refuse every approval. A pending
+ * proposal created before this landed and approved after it drifts only when
+ * an advisory actually fires, and a release whose review never showed the
+ * warning being re-proposed is the correct outcome, not a casualty.
+ */
+async function applyEntryAdvisories(
+  db: ScopedClient,
+  preview: ExportEntryPreview,
+  documents: readonly { id: string; totalPence: number | null; taxPence: number | null; currency: string | null }[],
+): Promise<ExportEntryPreview> {
+  const byId = new Map(documents.map((document) => [document.id, document]));
+
+  // The machine's own verdict, read off extraction history: the earliest
+  // non-human extraction whose docType read OTHER. jsonb — parsed, not trusted.
+  const machineRows = await db.extraction.findMany({
+    where: { documentId: { in: documents.map((d) => d.id) }, NOT: { extractorKind: 'human' } },
+    orderBy: { createdAt: 'asc' },
+    select: { documentId: true, fields: true },
+  });
+  const judgedOther = new Set<string>();
+  const seen = new Set<string>();
+  for (const row of machineRows) {
+    if (seen.has(row.documentId)) continue;
+    seen.add(row.documentId);
+    if (machineDocType(row.fields) === 'OTHER') judgedOther.add(row.documentId);
+  }
+
+  const withWarnings = preview.documents.map((entry) => {
+    if (!judgedOther.has(entry.documentId)) return entry;
+    return {
+      ...entry,
+      warnings: [
+        ...entry.warnings,
+        {
+          documentId: entry.documentId,
+          code: 'not-a-financial-document',
+          message:
+            'The pipeline judged this not to be a financial document when it was read (Type OTHER). Its figures were asserted by a person afterwards — releasing it exports them as real bookkeeping.',
+        },
+      ],
+    };
+  });
+
+  const refusals = (preview.refusals ?? []).map((refusal) => {
+    const document = byId.get(refusal.documentId);
+    if (
+      document === undefined ||
+      document.totalPence === null ||
+      document.taxPence === null ||
+      Math.abs(document.taxPence) <= Math.abs(document.totalPence)
+    ) {
+      return refusal;
+    }
+    return {
+      ...refusal,
+      message: `${refusal.message} Tax ${advisoryMoney(document.taxPence, document.currency)} is larger than the total ${advisoryMoney(document.totalPence, document.currency)} — correct the tax or the total, then propose the release again.`,
+    };
+  });
+
+  return {
+    ...preview,
+    documents: withWarnings,
+    ...(refusals.length === 0 ? {} : { refusals }),
+  };
+}
+
+/** The stored extraction's own docType claim, or null when the row does not say. */
+function machineDocType(fields: unknown): string | null {
+  if (typeof fields !== 'object' || fields === null || Array.isArray(fields)) return null;
+  const field = (fields as Record<string, unknown>)['docType'];
+  if (typeof field !== 'object' || field === null) return null;
+  const value = (field as Record<string, unknown>)['value'];
+  return typeof value === 'string' ? value : null;
 }
 
 export function createPublishBatchExecutor(
@@ -414,7 +516,10 @@ export function createPublishBatchExecutor(
       // the field existed, or a registry composed without the previewer. A
       // refusal there would be refusing a proposal for not making a claim.
       if (payload.entryPreview !== undefined && previewEntries !== undefined) {
-        const current = await previewEntries(db, PREVIEW_TARGET, documents);
+        // The advisories are applied here exactly as they were at creation —
+        // `sameEntryPreview` fingerprints warnings and refusal messages, so one
+        // side carrying them and not the other would refuse every approval.
+        const current = await applyEntryAdvisories(db, await previewEntries(db, PREVIEW_TARGET, documents), documents);
         if (!sameEntryPreview(payload.entryPreview, current)) {
           throw new ProposalExecutionRefused(
             'publish.batch',
@@ -530,7 +635,7 @@ function minimumRefusal(refusals: readonly PublishItemRefusal[]): string {
   // that claims to know it.
   const codes = [...new Set(refusals.map((refusal) => refusal.code))].join('/');
   const items = refusals.map((refusal) => `${refusal.documentId} (missing ${refusal.missing.join(', ')})`).join('; ');
-  return `${codes} — ${refusals.length} item(s) no longer meet the publish minimum of total, supplier and category: ${items}. The whole batch is refused rather than publishing half-coded books.`;
+  return `${codes} — ${refusals.length} item(s) no longer meet the publish minimum of a confirmed financial type, total, supplier and category: ${items}. The whole batch is refused rather than publishing half-coded books.`;
 }
 
 /**

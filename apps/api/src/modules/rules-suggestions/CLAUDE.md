@@ -334,6 +334,18 @@ document a person coded, then contradicted by an approved rule, still answers
 from one a rule applied. `document.update-coding` writes
 `provenance: 'HUMAN_CONFIRMED'` and is the only writer of it.
 
+## A fourth consumer: the manual-correction gate (5 Sep 2026)
+
+`approvals.module.ts` composes a `ChartCategoriesReader` from
+`ChartOfAccountsService.resolve` for the `document.update-coding` CREATION gate
+(validation-dedupe's `assertUpdateCodingAllowed`, review item 47): a manually
+typed `categoryCode` must be EXACTLY a code on the client's chart — refused,
+never fuzzy-matched, the same rule `parseModelCodingSuggestion` and the chat
+drafts have always applied. Same service instance and same open transaction as
+the publish entry preview. Nothing here changed; this records that the chart
+now has a fourth reader and that its `categories` list is load-bearing for the
+correction boundary too.
+
 ## Nothing in this module writes
 
 No `documents.category_code`, no `rules` row. A `CodingDecision` is a read; a

@@ -3,7 +3,7 @@ import type { Prisma } from '@prisma/client';
 
 import type { ScopedClient } from '../../../common/db/scoped-db.js';
 import { transitionDocument } from '../document-state.js';
-import { resolveProcessedState } from '../readiness.js';
+import { type ReadinessInput, resolveProcessedState } from '../readiness.js';
 import {
   type ExecutionInput,
   type ExecutionResult,
@@ -148,6 +148,10 @@ export const updateCodingExecutor: ProposalExecutor<'document.update-coding', Up
         totalPence: valueAfter(changes, 'totalPence', document.totalPence) as number | null,
         supplierName: valueAfter(changes, 'supplierName', document.supplierName) as string | null,
         categoryCode: valueAfter(changes, 'categoryCode', document.categoryCode) as string | null,
+        // The TYPE gate (items 36/47): a document whose type is OTHER — or was
+        // never classified — cannot become READY until a correction asserts a
+        // financial type, exactly like the three fields above.
+        docType: valueAfter(changes, 'docType', document.docType) as ReadinessInput['docType'],
       };
       if (resolveProcessedState(after) === 'READY') {
         await transitionDocument(db, document, { to: 'READY', traceId, detail: { proposalId, via: 'update-coding' } });

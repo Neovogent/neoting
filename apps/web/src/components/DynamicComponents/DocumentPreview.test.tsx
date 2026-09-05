@@ -87,6 +87,16 @@ function liveDetail(over: Partial<DocumentDetail> = {}): DocumentDetail {
     // The default is the world before this change: an uncoded document with
     // nothing said about why. Individual tests override it.
     codingSuggestion: null,
+    // The correction checks' raw header snapshot — a plain INVOICE by default,
+    // so no check fires unless a test makes one.
+    checkContext: {
+      docType: 'INVOICE',
+      totalPence: 5_435_251,
+      taxPence: 0,
+      documentDate: '2025-05-12',
+      currency: 'USD',
+      extractionHadValues: true,
+    },
     isLoading: false,
     contractError: null,
     image: { url: 'https://example.test/original.png', mimeType: 'image/png', filename: 'invoice.png' },
@@ -531,4 +541,133 @@ test('no suggestion renders no panel at all', () => {
   detail = liveDetail();
   renderPreview();
   expect(screen.queryByTestId('coding-suggestion')).toBeNull();
+});
+
+/* ── the correction-integrity layer (items 22/36/46/47) ────────────────────── */
+
+test('a warned correction opens on the WARNING, not the review — Ignore proceeds with the typed value, restated on the card', async () => {
+  // The item-47 shape: money/category typed onto a document the pipeline read
+  // as not a financial document.
+  detail = liveDetail({
+    checkContext: {
+      docType: 'OTHER',
+      totalPence: null,
+      taxPence: null,
+      documentDate: null,
+      currency: 'GBP',
+      extractionHadValues: false,
+    },
+  });
+  renderPreview();
+
+  const dialog = await stageCategoryCorrection();
+
+  // The warning step, with exactly the two actions the ruling names — and no
+  // review affordance behind it: [Read review] is not in the DOM yet.
+  expect(within(dialog).getByText(/does not appear to be a financial document/)).toBeTruthy();
+  expect(within(dialog).queryByRole('button', { name: /Read review/ })).toBeNull();
+  expect(within(dialog).queryByRole('button', { name: /Approve change/ })).toBeNull();
+
+  fireEvent.click(within(dialog).getByRole('button', { name: /Ignore — I’m sure/ }));
+
+  // The ordinary Review → Approve card. Opening the review RESTATES the
+  // ignored warning inside it (the server puts the same checks on the
+  // proposal's own review render).
+  expect(await within(dialog).findByText('Update coding')).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole('button', { name: /Read review/ }));
+  expect(within(dialog).getByRole('alert').textContent).toContain('does not appear to be a financial document');
+  fireEvent.click(within(dialog).getByRole('button', { name: /Approve change/ }));
+
+  // Ignore proceeded with the ORIGINAL typed value — nothing was rewritten.
+  expect(updateCodingProposal).toHaveBeenCalledExactlyOnceWith({
+    businessId: 'biz_burger',
+    documentId: 'doc_f404e752a4fbb629b203dc04',
+    fields: { categoryCode: '5100' },
+  });
+});
+
+test('[Go back and fix] returns the value to the field it came from, staging nothing', async () => {
+  detail = liveDetail({
+    checkContext: {
+      docType: 'OTHER',
+      totalPence: null,
+      taxPence: null,
+      documentDate: null,
+      currency: 'GBP',
+      extractionHadValues: false,
+    },
+  });
+  renderPreview();
+
+  const dialog = await stageCategoryCorrection();
+  fireEvent.click(within(dialog).getByRole('button', { name: /Go back and fix/ }));
+
+  // The dialog is gone, the edit input is back with the typed value, and no
+  // proposal was ever created.
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('5100');
+  expect(updateCodingProposal).not.toHaveBeenCalled();
+});
+
+test('a clean correction never meets the warning step — the dialog opens straight on the review card', async () => {
+  detail = liveDetail();
+  renderPreview();
+  const dialog = await stageCategoryCorrection();
+  expect(within(dialog).getByText('Update coding')).toBeTruthy();
+  expect(within(dialog).queryByRole('button', { name: /Ignore — I’m sure/ })).toBeNull();
+});
+
+test('a human-confirmed field reads "Confirmed by you", never a percentage (item 22)', () => {
+  detail = liveDetail({
+    fields: [
+      {
+        label: 'Tax amount',
+        value: '$9,000.00',
+        confidence: 1,
+        provenance: 'human confirmed — corrected in review',
+        humanConfirmed: true,
+      },
+      { label: 'Total', value: '$54,352.51', confidence: 0.93, provenance: 'AI suggested: bedrock' },
+    ],
+  });
+  renderPreview();
+
+  expect(screen.getByText('Confirmed by you')).toBeTruthy();
+  // The machine-read row keeps its percentage; the human row must not have one.
+  expect(screen.getByText('93% confident')).toBeTruthy();
+  expect(screen.queryByText('100% confident')).toBeNull();
+});
+
+test('the Type gate is the Path-to-Ready panel’s FIRST line for an OTHER document (items 36/47)', () => {
+  detail = liveDetail({
+    fields: [
+      { label: 'Supplier', value: 'gf', confidence: 1, provenance: 'human confirmed', humanConfirmed: true },
+      { label: 'Total', value: '£76,543.00', confidence: 1, provenance: 'human confirmed', humanConfirmed: true },
+      { label: 'Category', value: '—', confidence: 0, provenance: 'AI suggested: extraction' },
+      { label: 'Type', value: 'OTHER', confidence: 0, provenance: 'AI suggested: extraction' },
+    ],
+    checkContext: {
+      docType: 'OTHER',
+      totalPence: 7_654_300,
+      taxPence: null,
+      documentDate: null,
+      currency: 'GBP',
+      extractionHadValues: false,
+    },
+  });
+  renderPreview();
+
+  const panel = screen.getByText('Path to Ready').parentElement as HTMLElement;
+  expect(within(panel).getByText(/cannot be Ready until its Type is corrected to a financial type/)).toBeTruthy();
+  // The gate leads: its sentence renders before the missing-fields offer.
+  const text = panel.textContent ?? '';
+  expect(text.indexOf('cannot be Ready until its Type')).toBeLessThan(text.indexOf('Ready needs a value for'));
+  // And it offers the correction that answers it.
+  expect(within(panel).getByRole('button', { name: /Correct the Type/ })).toBeTruthy();
+});
+
+test('an OTHER document wears the D46 flag on the preview header (item 47)', () => {
+  detail = liveDetail();
+  renderPreview({ docType: 'OTHER' });
+  expect(screen.getByText('Not a financial document')).toBeTruthy();
 });

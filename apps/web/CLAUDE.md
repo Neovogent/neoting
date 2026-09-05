@@ -1796,6 +1796,76 @@ additions), `InboxesView` 249,773 B (still the thinnest, **227 B headroom**),
 **295,282 B — the pre-existing breach, deepened ~1 kB** by the two cards'
 honesty states, which belong on that chunk by the reachability rule.
 
+## The correction-integrity package (5 Sep 2026 — review items 22/36/46/47, feeding 29)
+
+A reviewer typed £9,000 of tax onto a £994 zero-rated invoice, "jhngbhf" into
+Category, a 2027 date, and walked a webcam selfie to Ready — every layer silent.
+The ruling (Mubashir): **warn with an Ignore button, never hard-block the
+human**; hard-refuse only where a hard rule exists. What this app owns:
+
+- **`lib/correctionChecks.ts`** mirrors the SERVER's deterministic checks
+  (`validation-dedupe/correction-checks.ts` — tax exceeding the total, sign
+  disagreement, future / >7-years-old document date, money/category typed onto
+  a non-financial document). ⚠ **Change the two together** — the dialog's
+  warning and the proposal review's restatement must not disagree. Live-only by
+  construction: the staging path that reaches the dialog exists only with the
+  API on (METH_MODE §1 holds).
+- **The correction dialog opens on the WARNING when checks fire**
+  (`CodingProposalModal`): **[Ignore — I'm sure]** reveals the ordinary
+  Review → Approve card with the ignored warning RESTATED inside the review
+  detail (`role="alert"` in `CodingProposalCard`); **[Go back and fix]** hands
+  the TYPED value back to the field (`reopenEdit` now restores the staged
+  value, not the field's old one — "fix what you typed"). Ignore proceeds with
+  the ORIGINAL typed value; nothing is rewritten. The checks read
+  `DocumentDetailData.checkContext` — raw header pence/ISO dates off the wire
+  document, never parsed back out of display strings.
+- **The junk-category refusal is the SERVER's** (chart membership, checked at
+  proposal creation) and arrives on the card through the existing
+  `failedOnCard` path with its reason. ⚠ **The chart select/datalist is NOT
+  built** — no contract operation serves a chart to the browser; the G7 delta
+  is written in the review notes (item 47). Free text + server refusal is the
+  standing state.
+- **"Confirmed by you", never a percentage** (item 22): `ExtractedField` gained
+  `humanConfirmed`, set from `provenance === 'HUMAN_CONFIRMED'` in
+  `toDetailData`, and DocumentPreview renders the words instead of "100%
+  confident" — the old badge read as the system endorsing whatever was typed.
+  §13.3 is intact: the provenance line still says "human confirmed — corrected
+  in review"; only the CONFIDENCE presentation changed, and machine-read rows
+  keep their percentage.
+- **The TYPE gate, mirrored** (items 36/47): `Document.docType` crosses the
+  boundary now (`toLocalDocument`; undefined on the synthetic cast, so
+  synthetic is byte-for-byte unchanged). `readinessOf` and `missingMandatory`
+  put 'Type' FIRST when it is OTHER — matching the server's readiness rule,
+  which now refuses READY for OTHER/unclassified — and DocumentPreview's
+  Path-to-Ready panel leads with "cannot be Ready until its Type is corrected"
+  plus a Correct-the-Type button (the `readyComplete` copy is withheld while
+  the gate holds, because "every field is present" would contradict it).
+  ⚠ 'Type' is deliberately NOT a `BASE_MANDATORY` member: that list is the join
+  key for the practice's mandatory-fields settings, and Type is a rule, not a
+  toggle.
+- **The D46 flag follows the document** (item 47): a live row whose `docType`
+  is OTHER wears "Not a financial document" (red) — ClientInbox's doc cell and
+  flag column, DocumentsView's status column, and the DocumentPreview header.
+  The publish review's restatement is server-side (the ⚠ Checks section, keyed
+  on the MACHINE extraction's verdict, so a human's later Type correction does
+  not erase it).
+- **The "⚠ Checks" review sections cost zero web bytes** (frontend rule 9):
+  they are ordinary `{heading, entries}` sections and `LiveProposalCard`
+  renders them unchanged — pinned in `LiveProposalCard.test.tsx`, along with
+  the fail-closed half (a review the parse refuses still withholds Approve).
+
+Tests: `lib/correctionChecks.test.ts` (property-style, mirroring the server
+suite), the DocumentPreview warning-flow/Type-gate/Confirmed-by-you cases, and
+the LiveProposalCard section pins.
+
+**Bundle (5 Sep 2026, node-zlib closure walk at gzip level 6 — NOT a paired
+A/B; other lanes' drift baked in):** every route under budget except the
+pre-existing `AIWorkspaceView` breach (295,486 B, ~+200 B from the
+floor-resident readiness/selectors/types edits). `InboxesView` 249,708 B
+(292 B headroom — still the thinnest), `ClientDetailView` 248,289 B. The
+warning-step UI and `correctionChecks.ts` land on the document-detail chunks
+(DocumentPreview/CodingProposalModal are already lazy), not the floor.
+
 ## Bundle: the Chases dark-mode fix + theme persistence (3 Sep 2026)
 
 Paired A/B, two builds back to back in one session, exact `gzip -c | wc -c`. Worst route is `ClientDetailView` plus its separate `BankView` chunk on top of the shared floor.

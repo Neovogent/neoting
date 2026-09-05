@@ -271,6 +271,25 @@ export interface DocumentDetailData {
   businessId: string;
   /** The ladder's opinion about an uncoded document, or null. Never a coding. */
   codingSuggestion: CodingSuggestionView | null;
+  /**
+   * The document's stored figures as the CORRECTION CHECKS need them
+   * (`lib/correctionChecks.ts` — the client mirror of the server's
+   * `correction-checks.ts`): raw pence and ISO dates off the header, never
+   * parsed back out of display strings. Null when the detail has not loaded.
+   */
+  checkContext: CorrectionCheckContext | null;
+}
+
+/** Mirror of the server's `CorrectionCheckContext` (validation-dedupe/correction-checks.ts). */
+export interface CorrectionCheckContext {
+  docType: string | null;
+  totalPence: number | null;
+  taxPence: number | null;
+  /** `YYYY-MM-DD`, or null. */
+  documentDate: string | null;
+  currency: string | null;
+  /** Whether extraction read ANY value off the document (human typing excluded). */
+  extractionHadValues: boolean;
 }
 
 /**
@@ -303,6 +322,11 @@ export function toDetailData(doc: WireDocument, ruleId: string | null): Document
         // certainty in the existing confidence UI without a special case.
         confidence: field.confidence ?? 1,
         provenance: provenanceText(field),
+        // A human-confirmed value renders "Confirmed by you", never a
+        // percentage (item 22): "100% confident" beside a typed £9,000 read as
+        // the system endorsing the figure, and a human answer is not a
+        // probability in the first place.
+        ...(field.provenance === 'HUMAN_CONFIRMED' ? { humanConfirmed: true } : {}),
         // Omitted, never explicit-undefined: exactOptionalPropertyTypes makes
         // those two different keys, and the seeds omit it.
         ...(boundingBox === undefined ? {} : { boundingBox }),
@@ -347,7 +371,23 @@ export function toDetailData(doc: WireDocument, ruleId: string | null): Document
     tax: typeof item.taxPence?.value === 'number' ? item.taxPence.value / 100 : 0,
   }));
 
-  return { fields, lineItems, state: doc.state, businessId: doc.businessId, codingSuggestion };
+  // What the correction checks read: the HEADER figures (raw pence, ISO dates
+  // — the same projection the server's readiness and advisory read), never the
+  // display strings above. `extractionHadValues` mirrors the server's rule:
+  // human-typed values do not count as the document having readable content.
+  const checkContext: CorrectionCheckContext = {
+    docType: doc.docType ?? null,
+    totalPence: doc.totalPence ?? null,
+    taxPence: doc.taxPence ?? null,
+    documentDate: typeof doc.documentDate === 'string' ? doc.documentDate.slice(0, 10) : null,
+    currency: doc.currency ?? null,
+    extractionHadValues: Object.values(wireFields).some(
+      (field) =>
+        field.value !== null && field.value !== undefined && field.value !== '' && field.provenance !== 'HUMAN_CONFIRMED',
+    ),
+  };
+
+  return { fields, lineItems, state: doc.state, businessId: doc.businessId, codingSuggestion, checkContext };
 }
 
 /** The extract stage's recorded rule, if one coded this document. */
@@ -375,7 +415,7 @@ export interface DocumentDetail extends DocumentDetailData {
   events: DetailEvent[];
 }
 
-const EMPTY: DocumentDetailData = { fields: [], lineItems: [], state: '', businessId: '', codingSuggestion: null };
+const EMPTY: DocumentDetailData = { fields: [], lineItems: [], state: '', businessId: '', codingSuggestion: null, checkContext: null };
 
 const firstIssues = (error: z.ZodError): string =>
   error.issues

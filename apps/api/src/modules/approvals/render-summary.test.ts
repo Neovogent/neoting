@@ -218,7 +218,7 @@ test('a split analysis renders one labelled line per nominal — nothing collaps
   expect(values.get('Line 2 · Gross amount')).toBe('');
 });
 
-test('a document that cannot become a row is NAMED on the card, never dropped', () => {
+test('a document that cannot become a row is NAMED on the card, FIRST, never dropped', () => {
   const summary = renderSummary('publish.batch', {
     documentIds: ['doc_1', 'doc_2'],
     preview: { itemCount: 2, grossPence: 100, vatPence: 0, currency: 'GBP' },
@@ -228,8 +228,74 @@ test('a document that cannot become a row is NAMED on the card, never dropped', 
     },
   });
 
-  const refused = summary.sections.find((section) => section.heading === 'Documents that would produce no line in the file');
-  expect(refused?.entries).toEqual([{ label: 'doc_2', value: 'This document has not been coded to a nominal.' }]);
+  // Item 29(b): the £9,000-VAT release was approved with its refusal renderable
+  // only at the bottom of the card. The refusal is now the FIRST section, worded
+  // as what it means for the release, and counted in the title — a reviewer
+  // cannot reach the entry without passing it.
+  expect(summary.title).toContain('⚠ 1 document will produce no export line');
+  const checks = summary.sections[0];
+  expect(checks?.heading).toBe('⚠ Checks — read before you release');
+  expect(checks?.entries).toEqual([
+    { label: 'Will not export — doc_2', value: 'This document has not been coded to a nominal.' },
+  ]);
+});
+
+test('a document the pipeline judged non-financial is restated on the release review (D46, item 47)', () => {
+  const summary = renderSummary('publish.batch', {
+    documentIds: ['doc_1'],
+    preview: { itemCount: 1, grossPence: 24_000, vatPence: 4_000, currency: 'GBP' },
+    entryPreview: {
+      ...VT_ENTRY_PREVIEW,
+      documents: [
+        {
+          ...VT_ENTRY_PREVIEW.documents[0],
+          warnings: [
+            {
+              documentId: 'doc_1',
+              code: 'not-a-financial-document',
+              message: 'The pipeline judged this not to be a financial document when it was read (Type OTHER).',
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  const checks = summary.sections[0];
+  expect(checks?.heading).toBe('⚠ Checks — read before you release');
+  expect(checks?.entries[0]?.label).toBe('Not a financial document — doc_1');
+  expect(checks?.entries[0]?.value).toContain('judged this not to be a financial document');
+  // No refusal, so the title carries no will-not-export count.
+  expect(summary.title).not.toContain('will produce no export line');
+});
+
+test('the correction advisory renders as its own section on an update-coding review, and gates nothing', () => {
+  const summary = renderSummary(
+    'document.update-coding',
+    { documentId: 'doc_9', fields: { taxPence: 900_000 } },
+    {
+      correctionChecks: [
+        {
+          code: 'tax-exceeds-total',
+          message: 'Tax £9,000.00 is larger than the total £994.00. A document whose tax exceeds its total will produce NO line in the export file — correct the tax or the total before approving.',
+        },
+      ],
+    },
+  );
+
+  const checks = summary.sections.find((section) => section.heading === '⚠ Checks — read before you approve');
+  expect(checks?.entries[0]).toEqual({
+    label: 'Tax exceeds the total',
+    value:
+      'Tax £9,000.00 is larger than the total £994.00. A document whose tax exceeds its total will produce NO line in the export file — correct the tax or the total before approving.',
+  });
+  // Advisory, never a gate — the section says so in as many words (D44).
+  expect(checks?.entries.at(-1)?.label).toBe('These checks gate nothing');
+
+  // And with no checks, NO section — an always-present "no concerns" section
+  // teaches reviewers to skip the one that matters.
+  const clean = renderSummary('document.update-coding', { documentId: 'doc_9', fields: { supplierName: 'Bidfood' } });
+  expect(clean.sections.some((section) => section.heading.startsWith('⚠ Checks'))).toBe(false);
 });
 
 test('a payload with no entry preview still reviews — the card falls back, it does not fail', () => {

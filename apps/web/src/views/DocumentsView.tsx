@@ -241,6 +241,8 @@ const m = defineMessages({
     defaultMessage: '{count} archived • searches every extracted field and line item',
   },
   unassignedClient: { id: 'documents.documentsView.unassignedClient', defaultMessage: 'Unassigned' },
+  /** The D46 flag on the row (item 47): the pipeline's verdict follows the document. */
+  notFinancial: { id: 'documents.documentsView.notFinancial', defaultMessage: 'Not a financial document' },
   groupCount: { id: 'documents.documentsView.groupCount', defaultMessage: '{count} documents' },
 
   vaultTree: {
@@ -923,9 +925,14 @@ export function DocumentsView() {
       label: intl.formatMessage(commonLabels.status),
       sortValue: (d) => STATUS_ORDER.indexOf(d.status),
       render: (d) => (
-        <Pill tone={STATUS_TONE[d.status]} {...(d.statusNote === undefined ? {} : { title: d.statusNote })}>
-          {intl.formatMessage(STATUS_LABEL[d.status])}
-        </Pill>
+        <span className="flex items-center gap-1.5 flex-wrap">
+          <Pill tone={STATUS_TONE[d.status]} {...(d.statusNote === undefined ? {} : { title: d.statusNote })}>
+            {intl.formatMessage(STATUS_LABEL[d.status])}
+          </Pill>
+          {/* The D46 flag follows the document (item 47): flagged at upload,
+              never blocked — but visible on its row wherever it goes. */}
+          {d.docType === 'OTHER' && <Pill tone="red">{intl.formatMessage(m.notFinancial)}</Pill>}
+        </span>
       ),
     },
     { key: 'source', label: intl.formatMessage(m.columnSource), sortValue: (d) => d.source, render: (d) => <Pill>{d.source}</Pill> },

@@ -10,7 +10,12 @@ import { analysisAccountChart, previewExportEntries } from '../exports-public-ap
 import { PrismaDuplicateDetector } from '../ingestion-routing/index.js';
 import { LEDGER_ADAPTER, type LedgerAdapter, previewPublishBatch, PublishingModule } from '../publishing/index.js';
 import { ChartOfAccountsService } from '../rules-suggestions/index.js';
-import { buildExecutorRegistry, type ExportEntryPreviewer, type PublishGateway } from '../validation-dedupe/index.js';
+import {
+  buildExecutorRegistry,
+  type ChartCategoriesReader,
+  type ExportEntryPreviewer,
+  type PublishGateway,
+} from '../validation-dedupe/index.js';
 import { ActionProposalsController } from './action-proposals.controller.js';
 import { ActionProposalsService } from './action-proposals.service.js';
 import { ACTION_PROPOSALS_SERVICE, PRISMA } from './tokens.js';
@@ -89,6 +94,23 @@ import { ACTION_PROPOSALS_SERVICE, PRISMA } from './tokens.js';
           }
         };
 
+        /**
+         * The chart again, for the `document.update-coding` creation gate
+         * (review item 47): a typed category must be a code on the client's
+         * chart — the drafts.ts refuse-never-fuzzy rule, applied to the manual
+         * boundary. Same service instance as the entry preview above, read
+         * through the SAME open transaction the engine holds. `null` (a chart
+         * that cannot be read) SKIPS the check rather than refusing — a
+         * correction boundary must not deadlock coding over a picklist.
+         */
+        const chartCategories: ChartCategoriesReader = async (db, businessId) => {
+          try {
+            return (await charts.resolve(db, businessId)).categories;
+          } catch {
+            return null;
+          }
+        };
+
         return new ActionProposalsService(
           prisma,
           // The chase.send executor "sends" through the config-selected sender
@@ -111,6 +133,9 @@ import { ACTION_PROPOSALS_SERVICE, PRISMA } from './tokens.js';
           // the only place allowed to know two public seams at once — and since
           // the chart of accounts joined it, that is three.
           exportEntryPreview,
+          // The chart, for the correction-integrity gate on
+          // `document.update-coding` creation (see above).
+          chartCategories,
         );
       },
       inject: [PRISMA, ENV, LEDGER_ADAPTER],

@@ -91,10 +91,30 @@ Five properties, each pinned by a test:
   back (#81's unarchive ruling). `archivedAt` stamps on the way in, clears on
   the way out.
 
-`readiness.ts` — READY requires **Total + Supplier + Category** off the
-denormalised header fields; anything missing is returned by name and the
-document belongs in TO_REVIEW (`resolveProcessedState` is the one place that
-choice lives). **Hardened 2026-09-03, in two ways, after documents missing all
+`readiness.ts` — READY requires **a confirmed financial Type + Total +
+Supplier + Category** off the denormalised header fields; anything missing is
+returned by name and the document belongs in TO_REVIEW
+(`resolveProcessedState` is the one place that choice lives).
+
+**The TYPE gate joined on 2026-09-05 (review items 36 + 47):** a webcam selfie
+the extractor honestly classified OTHER was walked to READY by typing junk
+into the three field slots — Type played no part in readiness. Now `docType`
+of `OTHER` **or null** puts `'type'` FIRST in `missing` ("confirm what this
+document is" precedes filling its fields; the web's Path-to-Ready panel renders
+the list in this order). STATEMENT is deliberately NOT gated under `'type'` —
+it can never reach READY on its fields, and `'type'` would mislabel the reason.
+Consequences of the widened `ReadinessInput` (it gained `docType`, and
+TypeScript named every caller): the publish minimum inherits the gate
+(`NT-PUB-001` names the missing type; wording updated in
+`publishing/publish-preview.ts` and `minimumRefusal` here), `update-coding`'s
+after-correction check carries the corrected `docType`, the
+archive/reprocess selects widened, and `extraction-pipeline.ts` passes
+`extracted.docType` — so an OTHER classification lands TO_REVIEW from the first
+read. ⚠ A pre-existing READY row with `docType` null is not reclassified
+(stored state, the standing rule below) but WILL refuse at publish with
+`NT-PUB-001` naming the type — correct its Type via update-coding.
+
+**Hardened 2026-09-03, in two ways, after documents missing all
 three fields surfaced on the Ready tab as "Ready — blocked":**
 
 - **A placeholder is not a value.** The literal `Unknown`, `—`, `-`, `n/a`,
@@ -521,6 +541,48 @@ structural) and decides nothing about whether it may happen.
   document cannot be released for export, and a document moved to Trash between
   propose and approve refuses at execution — the only place that drift is
   visible, the same reasoning as the entry-preview re-check.
+
+### The correction-integrity layer (5 Sep 2026 — review items 22/36/46/47, feeding 29)
+
+Proven by a reviewer walking a £9,000 tax onto a £994 zero-rated invoice, the
+free string "jhngbhf" into Category, a 2027 document date and a webcam selfie
+to READY — all accepted silently, dying only at export. The design ruling
+(Mubashir, 5 Sep): **warn, second-opinion, never hard-block the human** — with
+exactly one hard rule where a rule exists.
+
+- **`correction-checks.ts`** — the deterministic check emitter, pure, integer
+  pence, `today` as an argument: tax exceeding the total (named figures + the
+  export consequence), tax/total sign disagreement, future document date,
+  document date > `IMPLAUSIBLY_OLD_YEARS` (7), and money/category typed onto a
+  non-financial document (docType OTHER, or an extraction that read no values —
+  human-typed values deliberately do not count as "the document had content").
+  Checks fire on what the correction TOUCHES, against the AFTER values.
+  ⚠ **Mirrored by `apps/web/src/lib/correctionChecks.ts`** — change the two
+  together. The `CorrectionCheck` shape is the seam the items-19/48 model
+  second opinion (package J) plugs into.
+- **`proposals/validate-update-coding.ts`** — the engine calls both halves:
+  `assertUpdateCodingAllowed` at CREATE (the one HARD rule: `categoryCode` must
+  be EXACTLY a code on the client's chart — refuse, never fuzzy-match, the
+  drafts.ts rule applied to the manual boundary; the chart arrives through the
+  structural `ChartCategoriesReader` seam composed in `approvals.module.ts`,
+  and an unreadable chart SKIPS the check rather than deadlocking coding), and
+  `computeCorrectionAdvisory` at first REVIEW (the checks, read against the
+  stored document under the caller's own scope; the engine freezes them into
+  the rendered summary — see `approvals/render-summary.ts`'s `RenderContext`
+  for why they cannot ride the `.strict()` payload instead).
+- **`publish-batch.ts` gained `applyEntryAdvisories`** (items 29(b) + 47's D46
+  half), applied on BOTH sides of the entry-preview drift check — creation and
+  the executor's recompute — because `sameEntryPreview` fingerprints warnings
+  and refusal messages, and one-sided application would refuse every approval.
+  It (1) augments a refusal whose document's |tax| > |total| with the plain
+  sentence naming both figures, and (2) appends a `not-a-financial-document`
+  `ExportWarning` to any entry whose MACHINE extraction read docType OTHER —
+  the earliest non-human extraction row, deliberately not the current column,
+  so a human's later Type correction does not erase the verdict the releasing
+  super admin needs to see. ⚠ A pending publish proposal over a machine-OTHER
+  document created BEFORE this landed will refuse at approve with the
+  entry-drift message — propose again; that re-review is the point.
+
 
 ### `bank.remove-statement` (3 Sep 2026) — LIVE since 4 Sep 2026
 

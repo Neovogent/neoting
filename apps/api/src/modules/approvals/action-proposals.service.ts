@@ -8,6 +8,7 @@ import type {
   ProposalKind,
   ProposalReview,
   PublishBatchPayload,
+  UpdateCodingPayload,
 } from '@neoting/contracts/model';
 import type { listActionProposalsQueryParams } from '@neoting/contracts/zod';
 import type { ActionProposal as ActionProposalRow, Prisma } from '@prisma/client';
@@ -28,8 +29,11 @@ import {
 import { AppException } from '../../common/problem/problem.js';
 import { currentTraceId } from '../../common/trace/trace-context.js';
 import {
+  assertUpdateCodingAllowed,
+  type ChartCategoriesReader,
   type ChaseComposeConfig,
   computeChaseSendPayload,
+  computeCorrectionAdvisory,
   computePublishBatchPayload,
   computeRemoveStatementPayload,
   type DedupeDetection,
@@ -126,6 +130,18 @@ export class ActionProposalsService {
      * a worse failure than a quieter card.
      */
     private readonly exportEntryPreview?: ExportEntryPreviewer,
+    /**
+     * The client's chart of accounts, for the `document.update-coding`
+     * creation gate (review item 47): a typed category must be a code ON the
+     * chart — the same refuse-never-fuzzy rule AI rule drafts already obey —
+     * validated server-side, whatever client staged the correction.
+     *
+     * Optional so a test can build the engine without it; absent, the chart
+     * check is skipped (the `exportEntryPreview` reasoning — a correction
+     * boundary that refused every category because a picklist was not wired
+     * would be worse than the junk string it exists to stop).
+     */
+    private readonly chartCategories?: ChartCategoriesReader,
   ) {}
 
   async create(ctx: ScopeContext, request: CreateProposalRequest, idempotencyKey: string): Promise<ActionProposal> {
@@ -201,6 +217,26 @@ export class ActionProposalsService {
         try {
           const asked = request.payload as unknown as BankRemoveStatementPayload;
           payload = (await computeRemoveStatementPayload(db, asked.statementIds)) as unknown as Record<string, unknown>;
+        } catch (error) {
+          if (error instanceof ProposalExecutionRefused) {
+            throw new AppException(
+              error.code ?? 'NT-PRP-006',
+              HttpStatus.UNPROCESSABLE_ENTITY,
+              'Proposal is not executable',
+              error.message,
+            );
+          }
+          throw error;
+        }
+      }
+      // The correction-integrity gate (5 Sep 2026, review item 47): a manual
+      // category correction must name a code on the client's chart of
+      // accounts — refused by exact membership, never fuzzy-matched, the same
+      // rule AI rule drafts have always obeyed. A refusal here is a hard rule,
+      // not an advisory; the advisory checks run at review (see review()).
+      if (request.kind === 'document.update-coding') {
+        try {
+          await assertUpdateCodingAllowed(db, request.payload as unknown as UpdateCodingPayload, this.chartCategories);
         } catch (error) {
           if (error instanceof ProposalExecutionRefused) {
             throw new AppException(
@@ -321,7 +357,19 @@ export class ActionProposalsService {
       // rendering — the row sat in a table between propose and review, and a
       // renderer must never run over bytes nothing revalidated.
       const payload = parseStoredPayload(row);
-      const renderedSummary = renderSummary(row.kind as ProposalKind, payload);
+      // The correction-integrity advisory (items 22/46/47): for a coding
+      // correction, run the deterministic checks against the document AS IT
+      // STANDS when the review is first opened, and freeze the result into the
+      // stored render — the render itself stays a pure function (the checks
+      // arrive as an argument), review idempotency returns this stored copy,
+      // and the approve call echoes its hash, so what was warned about is part
+      // of what was approved. `RenderContext`'s doc says why the checks cannot
+      // ride the payload instead. The read is under the caller's own scope.
+      const context =
+        row.kind === 'document.update-coding'
+          ? { correctionChecks: await computeCorrectionAdvisory(db, payload as unknown as UpdateCodingPayload) }
+          : {};
+      const renderedSummary = renderSummary(row.kind as ProposalKind, payload, context);
       const renderedSummaryHash = canonicalHash(renderedSummary);
 
       const updated = await db.actionProposal.update({
