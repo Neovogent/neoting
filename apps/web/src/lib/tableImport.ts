@@ -31,7 +31,7 @@ import type { BankTransaction, Client, DocKind, Document, ExtractedField, Source
  *     and `api/documents.ts` fills `statusNote` from the server's own
  *     `failureMessage` — a field that can hold a sentence written elsewhere
  *     cannot be a catalogue entry.
- *   · the `display()` date format below is a format, not a phrase (§12.6).
+ *   · `parseSheetDate`'s date format below is a format, not a phrase (§12.6).
  *
  * The one genuine candidate left is `skipped[].reason`, which is transient UI
  * feedback. It stayed because `tableImport.test.ts` asserts it by substring
@@ -45,7 +45,6 @@ let seq = 0;
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-const display = (d: Date) => `${String(d.getDate()).padStart(2, '0')} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 
 /**
  * A date cell, in whichever of the four shapes a spreadsheet hands over.
@@ -83,7 +82,22 @@ function exactDate(year: number, monthIndex: number, day: number): Date | null {
   return d;
 }
 
-export function parseSheetDate(cell: string | undefined): string | null {
+/**
+ * **UK-first date text → the contract's `YYYY-MM-DD`, or null.**
+ *
+ * Split out of `parseSheetDate` on 7 Sep 2026 (review items 16/28/46) so the
+ * shared UK date control can reach it. It is the same function it always was;
+ * `parseSheetDate` is now the display projection of this one.
+ *
+ * ⚠ **Two projections, ONE parser, and that is the point.** A spreadsheet
+ * import and a date field a person types into are the same question — *"what
+ * date did a human mean by this text"* — and the day the two had separate
+ * answers is the day `03/08/2026` imports as 3 August and saves as 8 March. The
+ * day-first rule, the two-digit-year rule and the roll-over refusal above are
+ * therefore stated once, and `tableImport.test.ts`'s cases guard the control as
+ * well as the importer.
+ */
+export function parseUkDate(cell: string | undefined): string | null {
   if (!cell) return null;
   const raw = cell.trim();
   if (!raw) return null;
@@ -93,15 +107,15 @@ export function parseSheetDate(cell: string | undefined): string | null {
     const serial = Number.parseFloat(raw);
     const ms = Date.UTC(1899, 11, 30) + Math.round(serial * 86400000);
     const d = new Date(ms);
-    return Number.isNaN(d.getTime()) ? null : display(new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    return Number.isNaN(d.getTime()) ? null : iso(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
   }
 
   // ISO, which sorts and parses unambiguously. Every group in both patterns
   // below is unconditional, so a match carries all three of them.
-  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
-  if (iso?.[1] && iso[2] && iso[3]) {
-    const d = exactDate(+iso[1], +iso[2] - 1, +iso[3]);
-    return d ? display(d) : null;
+  const already = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  if (already?.[1] && already[2] && already[3]) {
+    const d = exactDate(+already[1], +already[2] - 1, +already[3]);
+    return d ? iso(d.getFullYear(), d.getMonth(), d.getDate()) : null;
   }
 
   // Day-first slash or dot separated.
@@ -109,12 +123,34 @@ export function parseSheetDate(cell: string | undefined): string | null {
   if (slash?.[1] && slash[2] && slash[3]) {
     const year = slash[3].length === 2 ? 2000 + +slash[3] : +slash[3];
     const d = exactDate(year, +slash[2] - 1, +slash[1]);
-    return d ? display(d) : null;
+    return d ? iso(d.getFullYear(), d.getMonth(), d.getDate()) : null;
   }
 
   // "12 Aug 2026" and friends, which Date already understands.
   const parsed = new Date(raw);
-  return Number.isNaN(parsed.getTime()) ? null : display(parsed);
+  return Number.isNaN(parsed.getTime())
+    ? null
+    : iso(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+}
+
+/**
+ * `2026, 7, 9` → `'2026-08-09'`.
+ *
+ * ⚠ **Built by string, never through `toISOString()`.** Every `Date` above is a
+ * LOCAL-midnight date (that is what `exactDate` reads back), and
+ * `toISOString()` converts to UTC — so west of Greenwich the calendar date
+ * shifts by one and a receipt files into the previous day. A picker that moves
+ * the date it was given is worse than the format bug it replaced.
+ */
+const iso = (year: number, monthIndex: number, day: number) =>
+  `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+/** The same parse, as the display string the importer's screens render. */
+export function parseSheetDate(cell: string | undefined): string | null {
+  const parsed = parseUkDate(cell);
+  if (parsed === null) return null;
+  const [year, month, day] = parsed.split('-') as [string, string, string];
+  return `${day} ${MONTHS[Number(month) - 1]} ${year}`;
 }
 
 /* ── which way the money went ─────────────────────────────────────────────── */

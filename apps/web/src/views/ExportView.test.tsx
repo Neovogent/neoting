@@ -385,20 +385,25 @@ test('a finished export offers both downloads, the counts and what did not trave
   expect(text).toContain('one-off per supplier');
 });
 
-test('the period defaults to a whole calendar month, sent as ISO and shown as ISO in the picker', async () => {
+test('the period defaults to a whole calendar month — UK d/m/y on screen, ISO on the wire', async () => {
   renderView();
   const from = screen.getByLabelText('From') as HTMLInputElement;
   const to = screen.getByLabelText('To') as HTMLInputElement;
 
-  expect(from.value).toMatch(/^\d{4}-\d{2}-01$/);
-  expect(to.value).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  // ⚠ This asserted `^\d{4}-\d{2}-01$` — the ISO string, in the field, on
+  // screen — until review items 16/28/46 replaced the native `<input
+  // type="date">`. That expectation encoded the defect: the native control
+  // renders in the BROWSER's locale, which is how `30 July 2025` reached the
+  // reviewer as `07/30/2025`. What a person reads is day-first now.
+  expect(from.value).toMatch(/^01\/\d{2}\/\d{4}$/);
+  expect(to.value).toMatch(/^\d{2}\/\d{2}\/\d{4}$/);
 
   pickClient();
   await pressExport();
-  expect(vi.mocked(requestExport).mock.calls[0]?.[0]).toMatchObject({
-    periodStart: from.value,
-    periodEnd: to.value,
-  });
+  // And the wire is unchanged: `YYYY-MM-DD`, which is what the contract takes.
+  const sent = vi.mocked(requestExport).mock.calls[0]?.[0] as { periodStart: string; periodEnd: string };
+  expect(sent.periodStart).toMatch(/^\d{4}-\d{2}-01$/);
+  expect(sent.periodEnd).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 });
 
 // ── the other three states ──────────────────────────────────────────────────
