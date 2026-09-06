@@ -5,6 +5,7 @@ import { holdsReleaseAuthority } from '../../api/auth';
 import { useAppContext } from '../../context/AppContext';
 import { requestStatementProposal } from '../../api/proposals';
 import { Modal } from './Modal';
+import { ukLongMonth, UkMonthField } from './UkDateField';
 
 /**
  * Ask a client for a month's bank statement — the accountant's side of the
@@ -36,7 +37,12 @@ const m = defineMessages({
     defaultMessage:
       'Confirming queues a request for {client}. The message is composed at review — the month, a secure upload link, and the client’s registered contact — and it sends once you have read that review and approved it in Approvals.',
   },
-  monthLabel: { id: 'bank.requestStatement.monthLabel', defaultMessage: 'Statement month' },
+  monthLabel: { id: 'bank.requestStatement.monthLabel', defaultMessage: 'Which month?' },
+  // ⚠ The confirm's gate is now the CONTROL's — a month and a year are chosen
+  // or they are not — so this line no longer has to explain a regex. It says
+  // what will be asked for, in words, which is what the accountant is about to
+  // put their name to.
+  monthChosen: { id: 'bank.requestStatement.monthChosen', defaultMessage: 'Asking for the {month} statement.' },
   confirm: { id: 'bank.requestStatement.confirm', defaultMessage: 'Queue the request' },
   cancel: { id: 'bank.requestStatement.cancel', defaultMessage: 'Cancel' },
   queued: {
@@ -99,13 +105,25 @@ export default function RequestStatementDialog({
           <label htmlFor="statement-month" className="block text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
             {intl.formatMessage(m.monthLabel)}
           </label>
-          <input
-            id="statement-month"
-            type="month"
-            value={period}
-            onChange={(e) => setPeriod(e.target.value)}
-            className="w-full bg-ground border border-white/5 rounded-2xl px-4 py-3 text-sm font-semibold text-white focus:outline-none focus:border-brand transition-colors"
-          />
+          {/*
+            Review item 16. This was `<input type="month">`, which renders as an
+            unlabelled free-text box in several browsers — the reviewer's
+            screenshot is that box with `12` typed into it and the confirm greyed
+            out against a `YYYY-MM` regex he had no way to discover. Two selects,
+            with the month as a NAME: nothing to parse and nothing to guess at.
+
+            ⚠ Still ONE MONTH, not a range. `chase.send`'s `statementPeriod` is a
+            single `YYYY-MM` on the wire and the engine composes the message from
+            it — so the rest of item 16's ask (a range, a year, a single date;
+            the SMS/email checkboxes; the preview step) is a contract and engine
+            widening, written up in the review notes rather than half-built here.
+          */}
+          <UkMonthField id="statement-month" value={period} onChange={setPeriod} />
+          {period !== '' && (
+            <p className="text-[12px] font-semibold text-zinc-400 mt-2">
+              {intl.formatMessage(m.monthChosen, { month: ukLongMonth(intl, period) })}
+            </p>
+          )}
         </div>
 
         {queued ? (
@@ -128,7 +146,7 @@ export default function RequestStatementDialog({
             </button>
             <button
               onClick={() => void confirm()}
-              disabled={busy || !/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(period)}
+              disabled={busy || period === ''}
               className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}

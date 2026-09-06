@@ -5,6 +5,7 @@ import { NtProblemError } from '@neoting/contracts';
 import {
   fetchBusinessPortalHome,
   fetchPortalDocuments,
+  PORTAL_DOCUMENT_PAGES_MAX,
   openBillingPortal,
   openOnboardingSession,
   requestSignInCode,
@@ -101,6 +102,17 @@ export interface BusinessPortalSession {
   readonly home: BusinessPortalHome | null;
   /** What the client has sent, newest first. Null until the first read lands. */
   readonly documents: PortalSentPage | null;
+  /**
+   * One more page of 50 on the browsable list (review item 18).
+   *
+   * ⚠ It raises a page COUNT rather than appending a cursor page, because this
+   * surface polls: an appended list would be reset to page one on every tick.
+   * The next refresh re-reads however many pages are on screen, so everything
+   * the client is looking at stays current.
+   */
+  readonly showMoreDocuments: () => void;
+  /** Whether there is anything left to show — the server's own `hasMore`, capped. */
+  readonly canShowMoreDocuments: boolean;
   /** The document list's own failure, kept apart so it cannot fell the screen. */
   readonly documentsFault: string | null;
   readonly busy: boolean;
@@ -178,6 +190,7 @@ export function useBusinessPortalSession(): BusinessPortalSession {
   const [expired, setExpired] = useState(false);
   const [home, setHome] = useState<BusinessPortalHome | null>(null);
   const [documents, setDocuments] = useState<PortalSentPage | null>(null);
+  const [documentPages, setDocumentPages] = useState(1);
   const [documentsFault, setDocumentsFault] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -323,7 +336,7 @@ export function useBusinessPortalSession(): BusinessPortalSession {
     // server that has not caught up; letting its 404 clear the home figures
     // would take the whole portal down for a panel.
     try {
-      const sent = await fetchPortalDocuments(token);
+      const sent = await fetchPortalDocuments(token, documentPages);
       if (!alive.current) return;
       setDocuments(sent);
       setDocumentsFault(null);
@@ -335,7 +348,7 @@ export function useBusinessPortalSession(): BusinessPortalSession {
       }
       setDocumentsFault(messageFor(caught, 'We could not load what you have sent. Nothing is lost.'));
     }
-  }, [token, expire]);
+  }, [token, expire, documentPages]);
 
   /* ── the poll ───────────────────────────────────────────────────────────── */
 
@@ -489,9 +502,20 @@ export function useBusinessPortalSession(): BusinessPortalSession {
     setHome(null);
     setDocuments(null);
     setDocumentsFault(null);
+    setDocumentPages(1);
     setEmail('');
     setStep('address');
     setError(null);
+  }, []);
+
+  /**
+   * One more page of 50 (review item 18). The refresh below re-reads the whole
+   * depth, so the poll keeps every page on screen current — and a document that
+   * has moved from "with your accountant" to "filed" while the client scrolled
+   * changes its pill rather than sitting stale.
+   */
+  const showMoreDocuments = useCallback(() => {
+    setDocumentPages((pages) => Math.min(pages + 1, PORTAL_DOCUMENT_PAGES_MAX));
   }, []);
 
   return {
@@ -500,6 +524,11 @@ export function useBusinessPortalSession(): BusinessPortalSession {
     home,
     documents,
     documentsFault,
+    showMoreDocuments,
+    // `hasMore` is the server's word about the LAST page read, so it is exactly
+    // "there is another page after what you are looking at". The cap is the
+    // second condition: past it, pressing again would read nothing new.
+    canShowMoreDocuments: (documents?.hasMore ?? false) && documentPages < PORTAL_DOCUMENT_PAGES_MAX,
     busy,
     error,
     expired,

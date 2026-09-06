@@ -85,3 +85,88 @@ describe('AppProvider under rapid navigation (#87)', () => {
     unmount();
   });
 });
+
+/**
+ * Review item 59 — *"Chat history gets vanished after reloading"*.
+ *
+ * The server persistence that item 9 built was real and worked; the transcript
+ * was in the database the whole time. What lost it was a CONSTANT: the first
+ * conversation of every session was minted as `'draft-initial'`, so that one
+ * name meant a different conversation every time it was used.
+ *
+ * Two failures came out of it, and this test is over the first because the
+ * second follows from it:
+ *
+ * 1. **A reload could not read the transcript back.** `hydrateConversations`
+ *    is add-only by id — deliberately, so the open tab's live state is never
+ *    clobbered by a stale summary — and the fresh, empty `draft-initial` was
+ *    already in the array before the server answered. The saved row was
+ *    therefore discarded, `remoteMessageCount` was never set, the sync hook
+ *    never fetched its messages, and `LeftPanel` filtered the row out of
+ *    RECENT HISTORY for having none. "No conversations yet.", over a
+ *    conversation the server was holding.
+ * 2. **The next session overwrote the last one.** Saving is a PUT under the
+ *    conversation's own id, so session two's first conversation replaced
+ *    session one's stored transcript. Silent, and unrecoverable.
+ *
+ * So what has to hold is that the first draft's id is the conversation's OWN
+ * name and not a shared one — which is what makes a previous session's row an
+ * id this mount has never seen, and therefore one that hydrates.
+ */
+describe('the first conversation of a session (review item 59)', () => {
+  function mount() {
+    let seen!: ReturnType<typeof useAppContext>;
+    function Grab() {
+      seen = useAppContext();
+      return null;
+    }
+    const { unmount } = render(
+      <AppIntlProvider>
+        <QueryClientProvider client={queryClient}>
+          <AppProvider>
+            <Grab />
+          </AppProvider>
+        </QueryClientProvider>
+      </AppIntlProvider>,
+    );
+    return { ctx: () => seen, unmount };
+  }
+
+  it('is named per session, and a previous session’s conversation hydrates into the drawer', async () => {
+    window.history.replaceState({}, '', '/app');
+
+    const first = mount();
+    const earlierId = first.ctx().conversations[0]!.id;
+    first.unmount();
+
+    const second = mount();
+    const freshId = second.ctx().conversations[0]!.id;
+
+    // The whole of the defect in one assertion: two sessions, two names.
+    expect(freshId).not.toBe(earlierId);
+    expect(earlierId).toMatch(/^[A-Za-z0-9_-]{1,64}$/); // the contract's own id shape
+
+    // What a reload does: the server answers with what it is holding.
+    await act(async () => {
+      second.ctx().hydrateConversations([
+        {
+          id: earlierId,
+          title: 'How many documents are waiting for…',
+          pinned: false,
+          businessId: null,
+          messageCount: 2,
+          updatedAt: new Date().toISOString(),
+        },
+      ]);
+    });
+
+    const restored = second.ctx().conversations.find((c) => c.id === earlierId);
+    expect(restored).toBeDefined();
+    // `remoteMessageCount` is the marker with two jobs: it tells LeftPanel the
+    // row is a real conversation despite carrying no messages yet, and it tells
+    // `useConversationSync` the transcript still needs fetching.
+    expect(restored?.remoteMessageCount).toBe(2);
+
+    second.unmount();
+  });
+});

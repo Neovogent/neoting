@@ -240,17 +240,46 @@ export class DocumentsService {
     };
   }
 
-  /** `GET /documents/{documentId}/original` — a short-lived link to the bytes, never the bytes. */
-  async getDocumentOriginal(ctx: ScopeContext, documentId: string): Promise<FileAccess> {
+  /**
+   * `GET /documents/{documentId}/original` — a short-lived link to the bytes,
+   * never the bytes.
+   *
+   * ⚠ **`alsoWhere` is a SECOND boundary, and only the portal principal passes
+   * one** (review item 18, 7 Sep 2026). The accountant's call passes nothing and
+   * is unchanged: RLS is the whole of its boundary, as it always was.
+   *
+   * A portal caller's boundary cannot be RLS, because there is no delegated
+   * policy meaning "this client's whole business" — the two that exist key on
+   * the session's GRANT, which holds only what the current sign-in uploaded. So
+   * the portal reads under the practice SYSTEM context with
+   * `portalVisibleDocuments(facts)` as `alsoWhere`, which is the SAME expression
+   * `GET /portal/documents` filters its list with: an application guarantee,
+   * stated as one, exactly as that endpoint's own header states it.
+   *
+   * It is `findFirst`, not `findUnique`, for one reason: `findUnique` accepts
+   * only unique fields in its `where`, so a compound predicate would have to be
+   * applied AFTER the row came back — and a filter applied after the read is a
+   * filter somebody eventually forgets, on the one endpoint in this service that
+   * hands out a URL to raw bytes. The predicate goes into the query or nowhere.
+   */
+  async getDocumentOriginal(
+    ctx: ScopeContext,
+    documentId: string,
+    alsoWhere: Prisma.DocumentWhereInput = {},
+  ): Promise<FileAccess> {
     // Read inside the scope, presign outside it: signing is a pure local
     // computation over the key, and holding a database transaction open across
     // it would pin a connection for no reason (Governance §5.1).
     const row = await scopedDb(this.prisma, ctx, async (db) =>
-      db.document.findUnique({
-        where: { id: documentId },
+      db.document.findFirst({
+        where: { id: documentId, ...alsoWhere },
         select: { s3Key: true, mimeType: true, byteSize: true, originalFilename: true },
       }),
     );
+    // ⚠ Before the presign, and it must stay before it: the store would sign a
+    // key for a row this caller may not have, and object storage has no RLS to
+    // undo that. `portal-client-surface.integration.test.ts` asserts on the
+    // recording store that NOTHING WAS SIGNED, not merely that a 404 came back.
     if (row === null) throw notFound();
 
     const signed = await this.store.presignGet({

@@ -137,7 +137,9 @@ test('D48: a lapsed subscription replaces the upload control, and says so above 
 
   // And it is ABOVE the rest of the tab, not appended under it.
   const heading = screen.getByText('Your subscription is not active');
-  const later = screen.getByText('Sent from this portal');
+  // The panel below it — renamed by review item 18, when it stopped being a
+  // list of one channel and became the client's whole file.
+  const later = screen.getByText('Everything you have sent');
   expect(heading.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 

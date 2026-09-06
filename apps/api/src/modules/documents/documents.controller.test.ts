@@ -45,13 +45,16 @@ function facts(over: Partial<PortalSessionFacts> = {}): PortalSessionFacts {
 }
 
 function harness(over: { portal?: () => Promise<PortalSessionFacts> } = {}) {
-  const seen: { ctx: ScopeContext; documentId: string }[] = [];
+  // ⚠ `alsoWhere` is recorded too (review item 18). It is the whole of the
+  // tenancy on the portal path now that RLS is not narrowing it, so a test that
+  // watched only the context would pass with the predicate deleted.
+  const seen: { ctx: ScopeContext; documentId: string; alsoWhere?: unknown }[] = [];
 
   const context = { require: async () => COOKIE_CTX } as RequestContext;
 
   const service = {
-    getDocumentOriginal: async (ctx: ScopeContext, documentId: string) => {
-      seen.push({ ctx, documentId });
+    getDocumentOriginal: async (ctx: ScopeContext, documentId: string, alsoWhere?: unknown) => {
+      seen.push({ ctx, documentId, ...(alsoWhere === undefined ? {} : { alsoWhere }) });
       return { url: 'https://fixture.local/get', expiresAt: '2026-09-02T12:05:00.000Z', mimeType: 'image/jpeg', byteSize: 1 };
     },
   } as unknown as DocumentsService;
@@ -86,42 +89,57 @@ test('an empty Authorization header is not a bearer — it falls to the cookie',
   expect(seen[0]?.ctx).toEqual(COOKIE_CTX);
 });
 
-test('⚠ a bearer runs under the DELEGATED scope, whose granted ids are the boundary', async () => {
+test('⚠ a bearer reads what the client’s own LIST shows — the SAME predicate (review item 18)', async () => {
   const { controller, seen } = harness();
   await controller.original('doc_mine', 'Bearer portal.token');
 
-  // Not the practice SYSTEM context the portal's other reads use. This one is
-  // `delegated_upload`, so `documents_delegated_upload`'s
-  // `id = ANY(app_granted_item_ids())` decides — a database guarantee, and the
-  // reason this handler adds no ownership check of its own.
-  expect(seen[0]?.ctx).toEqual({
-    actorId: 'usr_system_1',
+  // ⚠ It was `delegatedScopeFor(facts)` until 7 Sep 2026, so
+  // `documents_delegated_upload`'s `id = ANY(app_granted_item_ids())` decided —
+  // the stronger kind of boundary, and it meant a client could open almost
+  // nothing: a grant holds only what THIS sign-in uploaded. Probed live against
+  // American Burger, every row of the client's own list answered 404.
+  //
+  // Shakib's ruling was "any document in their own list", so the boundary is now
+  // the practice SYSTEM context narrowed IN THE QUERY — the application
+  // guarantee `GET /portal/documents` already rests on, stated as one.
+  // ⚠ The practice SYSTEM context is `sessionScope: 'user'` acting AS the
+  // practice's system actor — not a scope name of its own (`systemContext`).
+  // What identifies it is the actor and the practice, so that is what is
+  // asserted; asserting a literal 'system' would be asserting a word that does
+  // not exist.
+  expect(seen[0]?.ctx).toMatchObject({ actorId: 'usr_system_1', practiceId: 'prac_1', sessionScope: 'user' });
+  // NOT the delegated scope any more — that is the change.
+  expect(seen[0]?.ctx.sessionScope).not.toBe('delegated_upload');
+  expect(seen[0]?.ctx.grantedItemIds).toEqual([]);
+
+  // And the narrowing itself, which is the whole of the tenancy on this path:
+  // `portalVisibleDocuments(facts)` — the session's own business, minus what
+  // the list hides. The set a client can open and the set a client can see are
+  // ONE set, by construction.
+  expect(seen[0]?.alsoWhere).toEqual({
     businessId: 'biz_burger',
-    sessionScope: 'delegated_upload',
-    grantedItemIds: ['doc_mine'],
+    state: { not: 'ARCHIVED' },
+    deletedAt: null,
   });
-  // No `practiceId`: the delegated policies read the business and the grant and
-  // nothing else, and a practice in scope would only widen what a later
-  // `user`-scope mistake could see.
-  expect(seen[0]?.ctx.practiceId).toBeUndefined();
 });
 
-test('a session with an EMPTY grant reaches nothing, and the refusal is indistinguishable from "no such document"', async () => {
-  // An onboarding session that has never uploaded. `ScopeContextSchema` refuses
-  // to build a delegated context for it — an empty grant reads as "no
-  // restriction" to a human and denies everything in SQL — so the handler
-  // answers before the database is touched.
-  //
-  // The answer must be word-for-word the service's own 404: a caller must not
-  // be able to tell "your session may reach no documents at all" from "that
-  // document is not yours".
-  const { controller, seen } = harness({ portal: async () => facts({ grantedItemIds: [] }) });
-  const error = await grab(() => controller.original('doc_mine', 'Bearer portal.token'));
+test('the accountant carries NO extra predicate — RLS alone, exactly as before', async () => {
+  const { controller, seen } = harness();
+  await controller.original('doc_mine', undefined);
+  expect(seen[0]?.alsoWhere).toBeUndefined();
+});
 
-  expect(error.getStatus()).toBe(404);
-  expect(error.code).toBe('NT-VAL-001');
-  expect(error.message).toBe('Document not found');
-  expect(seen).toEqual([]);
+test('a session with an empty grant is no longer refused before the database — the business is what bounds it', async () => {
+  // This used to be an indistinguishable 404 raised by the handler, because
+  // `ScopeContextSchema` refuses a delegated context with an empty grant. An
+  // onboarding session that has never uploaded now reads its own business like
+  // any other, which is the ruling. What still refuses is a document outside
+  // that business, and the refusal is the QUERY's — see the integration suite.
+  const { controller, seen } = harness({ portal: async () => facts({ grantedItemIds: [] }) });
+  await controller.original('doc_mine', 'Bearer portal.token');
+
+  expect(seen[0]?.ctx).toMatchObject({ actorId: 'usr_system_1', practiceId: 'prac_1' });
+  expect(seen[0]?.alsoWhere).toMatchObject({ businessId: 'biz_burger' });
 });
 
 test('a bearer the portal refuses never reaches the service at all', async () => {

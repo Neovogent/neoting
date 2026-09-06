@@ -1,10 +1,11 @@
 import type { ComponentType, ReactNode } from 'react';
-import { AlertCircle, Camera, CheckCircle2, Clock, FileText, ShieldCheck, Upload } from 'lucide-react';
+import { AlertCircle, Camera, CheckCircle2, Clock, ShieldCheck, Upload } from 'lucide-react';
 import { defineMessages, useIntl } from 'react-intl';
 
 import type { BusinessPortalHome, PortalSentPage } from '../../api/onboarding';
 import { currency } from '../../lib/resolver';
-import { PortalPill, PortalStatusPill } from './PortalStatusPill';
+import { PortalDocumentList } from './PortalDocumentList';
+import { PortalPill } from './PortalStatusPill';
 import { asksFrom, askKey, type PortalAsk } from './portalAsk';
 
 /**
@@ -108,11 +109,6 @@ const m = defineMessages({
     id: 'portal.livePortalHome.sentEmpty',
     defaultMessage: 'Nothing sent yet. Photograph or upload your first document.',
   },
-  sentLoading: { id: 'portal.livePortalHome.sentLoading', defaultMessage: 'Loading what you have sent…' },
-  sentUnnamed: { id: 'portal.livePortalHome.sentUnnamed', defaultMessage: 'Not read yet' },
-  sentDetail: { id: 'portal.livePortalHome.sentDetail', defaultMessage: '{date} · {amount}' },
-  sentDetailNoAmount: { id: 'portal.livePortalHome.sentDetailNoAmount', defaultMessage: '{date}' },
-  sentNoDate: { id: 'portal.livePortalHome.sentNoDate', defaultMessage: 'Sent {date}' },
 
   lastSent: { id: 'portal.livePortalHome.lastSent', defaultMessage: 'Last one {when}' },
   lastSentNever: { id: 'portal.livePortalHome.lastSentNever', defaultMessage: 'Nothing sent yet' },
@@ -131,6 +127,7 @@ export function LivePortalHome({
   home,
   documents,
   documentsFault,
+  sessionToken,
   onGoCapture,
   onGoUpload,
   onSendFor,
@@ -138,6 +135,8 @@ export function LivePortalHome({
   readonly home: BusinessPortalHome;
   readonly documents: PortalSentPage | null;
   readonly documentsFault: string | null;
+  /** For [Open] / [Download] on a row — React state only; it dies with the tab. */
+  readonly sessionToken: string | null;
   readonly onGoCapture: () => void;
   readonly onGoUpload: () => void;
   readonly onSendFor: (ask: PortalAsk) => void;
@@ -263,53 +262,17 @@ export function LivePortalHome({
       </Panel>
 
       <Panel title={intl.formatMessage(m.sentPanelTitle)} subtitle={intl.formatMessage(m.sentPanelSubtitle)}>
-        {documentsFault !== null ? (
-          <p role="alert" className="text-[13px] text-red-400 leading-relaxed py-2">
-            {documentsFault}
-          </p>
-        ) : documents === null ? (
-          <div className="flex flex-col gap-2" role="status" aria-busy="true">
-            <span className="sr-only">{intl.formatMessage(m.sentLoading)}</span>
-            <div className="h-14 rounded-2xl bg-white/[0.04] animate-pulse" />
-            <div className="h-14 rounded-2xl bg-white/[0.04] animate-pulse" />
-          </div>
-        ) : rows.length === 0 ? (
-          <Empty icon={FileText} message={intl.formatMessage(m.sentEmpty)} />
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {rows.slice(0, 8).map((doc) => (
-              <li
-                key={doc.id}
-                className="flex items-center justify-between gap-3 p-4 rounded-2xl bg-ground/60 border border-white/5"
-              >
-                <div className="min-w-0">
-                  {/* Untrusted content: extracted off a scanned page by a
-                      model, rendered as text and nothing else. */}
-                  <div className="text-sm font-bold text-white truncate">
-                    {doc.supplier ?? intl.formatMessage(m.sentUnnamed)}
-                  </div>
-                  <div className="text-[12px] text-zinc-500 mt-0.5 truncate">
-                    {doc.date === null
-                      ? intl.formatMessage(m.sentNoDate, {
-                          date: intl.formatDate(doc.receivedAt, {
-                            day: 'numeric',
-                            month: 'short',
-                            timeZone: 'Europe/London',
-                          }),
-                        })
-                      : doc.total === null
-                        ? intl.formatMessage(m.sentDetailNoAmount, { date: doc.date })
-                        : intl.formatMessage(m.sentDetail, {
-                            date: doc.date,
-                            amount: currency(Math.abs(doc.total)),
-                          })}
-                  </div>
-                </div>
-                <PortalStatusPill status={doc.status} />
-              </li>
-            ))}
-          </ul>
-        )}
+        {/* The SAME rows the Upload tab browses, capped at the most recent few
+            — "one list at two levels of detail", which is what the operation's
+            own description calls them. The row is written once so the two
+            surfaces cannot come to disagree about what a document looks like to
+            the person who sent it. */}
+        <PortalDocumentList
+          documents={documents}
+          documentsFault={documentsFault}
+          sessionToken={sessionToken}
+          emptyMessage={intl.formatMessage(m.sentEmpty)}
+        />
         <p className="text-[12px] text-zinc-600 mt-4">
           {home.lastDocumentAt === null
             ? intl.formatMessage(m.lastSentNever)

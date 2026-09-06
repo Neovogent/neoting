@@ -85,21 +85,23 @@ Items keep their own entries (original words + images preserved); this map is th
 | **A. Matching-lane truth** | 25 · 30 · 32 · 33 · 34 · 35 | One investigation: the live match data shown on chat, chase, document and Bank surfaces disagrees with itself (empty Matched lens, matched lines offered for chase, claimed docs re-offered, missing bank-match panel, wrong "nothing missing" answer, dead Chase button in the same dialog) |
 | **B. Correction integrity** ✅ **RESOLVED (#256, 5 Sep; the model halves 6 Sep in package J)** | 22 · 36 · 46(flag) · 47 → feeds 29 | One design: sanity checks at the correction boundary (arithmetic, future dates, chart-membership for Category), readiness rules (Type/confidence), D46 flag visibility at review — the whole chain item 29's export failure exposed |
 | **C. Export chain** | 28 · 29 · 37 · 55 · 56(partial) | Date rendering, refusal UX, VT format verification + on-screen how-to, history panel, analytics-report vocabulary |
-| **D. One UK date control** | 16 · 28 · 46 | Build one shared d/m/y picker component; adopt on statement-request, ExportView, document-date correction |
+| **D. One UK date control** ✅ **RESOLVED (7 Sep 2026)** | 16(period) · 28 · 46 | `DynamicComponents/UkDateField.tsx` — d/m/y typing through the repo's EXISTING `parseUkDate` (split out of the spreadsheet importer, so there is one answer to "what date did a human mean" and it cost zero bytes), long-form restatement, the native picker kept behind a calendar button, and `UkMonthField` for the statement period. Adopted on all three surfaces. ⚠ **28 and 46 are fully closed; 16 is only its period input** — the range/year modes, the channel checkboxes and the preview step need `statementPeriod` to stop being one month, which is contract + engine work. Evidence in `assets/2026-09-07-items-59-18-16/` |
 | **E. Channel & provenance** ✅ **RESOLVED (PR #260)** | 21 · 43 · 60(follow-up) · 62(provenance half) | Split chase-portal vs business-portal channels, honest labels everywhere, uploader/member identity on uploads and captures, Received-via column on Inboxes — all four entries below carry their ✅ blocks and evidence (`assets/2026-09-05-channel-provenance/`) |
 | **F. Portal & practice access control** ✅ **RESOLVED (6 Sep 2026)** | 39 · 41 · 42 · 44 · 57 (+38's form-submit fix) | `docs/Access_and_Approval_Matrix.md` with Shakib's three rulings recorded inline, self-describing access labels, member edit on both sides (the portal's was one button — its server half already existed), **Plan hidden from members AND the billing endpoints' missing authority check closed**, invite dialog fixed. Evidence in `assets/2026-09-06-access-control/` |
 | **G. Approvals spine + matrix** ✅ **RESOLVED (6 Sep 2026)** | 20 · 24 · 26 · 27 · 66 | `docs/Access_and_Approval_Matrix.md` **Part 2** with Shakib's four rulings inline — three tiers over every proposal kind and all 33 ingest operations, five kinds promoted to tier 1 (three of them overturning arguments written in the repo), the super-admin fast path, idempotent staging (`NT-PRP-007`) with a cleanup script, the full Deny-with-reason loop (`DENIED` state, the email, the `READY → TO_REVIEW` drop wearing the reason), role-aware D44 copy from one shared fact, and the coding modal dismissing itself. Governance §10's spine untouched throughout. Evidence in `assets/2026-09-06-approvals/` |
 | **H. Workflows & rules** | 51 · 52 · 53 | One package: workflows contract/persistence first, then AI describe-parse, real branch composer, chat rule flow landing in the Workflows tab |
 | **I. Modal overflow** | **23 + 40 (merged)** | Fix the Modal frame, audit every dialog in a real browser, keep a reachability smoke |
 | **J. Coding intelligence** ✅ **RESOLVED (6 Sep 2026)** | 19 · 48 (+ 22/47's model halves) | The ladder, specified once and built: supplier memory shown at last, a model tier over the three escalations that meant *nothing was known*, and the model second opinion on manual corrections. Evidence in `assets/2026-09-06-coding-intelligence/`; §9.8 gate `pnpm test:eval:coding` |
-| **K. Feature builds (design-doc first)** | 18 · 50 · 54 | Portal documents list w/ preview+download; expense claims end-to-end; tasks/teams |
+| **K. Feature builds (design-doc first)** | ~~18~~ · 50 · 54 | ✅ **18 RESOLVED (7 Sep 2026)** — `PortalDocumentList` on Home and Upload, status filter, paging, preview + download. ⚠ Its server half was NOT "already wired": the portal bearer's grant holds only the current sign-in's uploads, so every row of the client's own list 404'd, and Shakib ruled the read open to the client's whole business. Remaining: expense claims end-to-end; tasks/teams |
 | **L. Retention & deletion policy** | 61 · 67 | One policy document (Shakib): document Trash window + client-level Trash/restore, deletion-scope choices on offboard, D43/D32/statutory-retention constraints — plus 67's orphaned-documents bug fix |
 
-**Since these entries were written, another pass closed items 9 and 12** (see the section above): chat conversations are now **server-persisted** — so **item 59 is likely already fixed; verify against that build before scheduling it** — and the notifications read surface + header bell now exists, which unblocks the cross-refs in items 54 (assignment notifications) and 60 (arrival signal).
+**Since these entries were written, another pass closed items 9 and 12** (see the section above): chat conversations are now **server-persisted** — and the notifications read surface + header bell now exists, which unblocks the cross-refs in items 54 (assignment notifications) and 60 (arrival signal).
+
+⚠ **This line said "item 59 is likely already fixed; verify before scheduling it". The verification was done on 7 Sep 2026 and it was NOT fixed** — the persistence worked perfectly and a fixed conversation id (`'draft-initial'`) made the saved transcript unreachable on reload AND overwrote it on the next session. See item 59's ✅ block. The instruction to verify rather than assume is exactly what found it; the guess in the same sentence was wrong.
 
 Standalone items not in a package: 17 (sign/tone), 31 (chase draft reactivity/editability — touches G for the compose seam), 45 (Stripe portal config diagnosis), 49 (duplicate resolution, prototype-verified), 58 (chat upload intent step), 64 (setup-link panel → portal-access card).
 
-Late additions and where they land: **63** (missing list on the Chases tab) sequences after package A; **65** (data-aware AI-tab suggestions + proactive task analysis) leans on A's counts; **66** joined package G (it's the approval matrix itself); **61 + 67** form package L (one retention/deletion policy); **60** is resolved (file arrived late) leaving only its Received-via-on-Inboxes follow-up, which is package E's; **59** is likely closed by the items-9/12 second pass (chat persistence landed) — verify, don't re-build.
+Late additions and where they land: **63** (missing list on the Chases tab) sequences after package A; **65** (data-aware AI-tab suggestions + proactive task analysis) leans on A's counts; **66** joined package G (it's the approval matrix itself); **61 + 67** form package L (one retention/deletion policy); **60** is resolved (file arrived late) leaving only its Received-via-on-Inboxes follow-up, which is package E's; **59** ✅ **RESOLVED 7 Sep 2026** — and it was NOT closed by the items-9/12 pass, whatever this line used to predict.
 
 ✅ **The standalone five closed together on 6 Sep 2026** — **31 · 49 · 58 · 63 · 65**, one branch, one commit each (`fix/review-items-31-49-58-63-65`). Each entry below carries its ✅ block; evidence in `assets/2026-09-06-standalone-five/`. Two owner rulings taken in-session: the §8.2 copy amendment (long chase lists summarise, server template AND preview) with accountant-editable wording built rather than deferred, and the `document.resolve-duplicate` contract delta (kind + `GET /v1/duplicates`) with "attach to the original" deferred by name. The sequencing held: **63 and 65 both waited on package A (#255) and read its one predicate / its served counts rather than minting new ones.** That closes the standalone list **in code, entirely** — 17 and 64 landed 5 Sep, 31/49/58 here — leaving **45** as the only one still outstanding, and it is not a code item: it is diagnosed (#259) and waits on one click in the Stripe dashboard, which is the owner's to make. ⚠ An earlier draft of this line said 17 was unclosed; it was resolved on 5 Sep and the claim was simply wrong.
 
@@ -121,6 +123,34 @@ The current `RequestStatementDialog` (`apps/web/src/components/DynamicComponents
 4. **Confirm** — accountant confirms and the request goes out (in our architecture: stages the `chase.send` proposal, released via Approvals per D44 — his "will be sent" reads as the existing queue-for-approval path, not a bypass).
 
 Repo realities that will shape the fix: the engine's statement request (`statementPeriod` on `chase.send`) currently carries a single month, so range/year/date modes likely need a contract/engine widening (G7 territory); the message is composed **server-side** at review, so the "preview" step either surfaces the server's composed copy or a client-side mirror of the preset template; and ID currently has **no SMS transport** (email is the channel since launch M8), so the SMS checkbox needs a decision — offer-and-honestly-disable vs. build against AWS End User Messaging. Personalisation via AI = future work only.
+
+**◐ PARTLY RESOLVED (7 Sep 2026, branch `fix/review-items-59-18-16`) — package
+D's date control landed; the rest is a recorded ask.**
+
+**What was done — the period input, which is the half that made the dialog
+unusable.** The `<input type="month">` in the screenshot renders as an unlabelled
+free-text box in several browsers (that is the `12` he typed) and the confirm
+gated on a `YYYY-MM` regex he had no way to discover. It is now `UkMonthField` —
+two selects, **the month as a NAME** — so there is nothing to parse, nothing to
+mis-order, no locale to get wrong and no picker to be unavailable. Below it the
+dialog restates the ask in words: *"Asking for the August 2026 statement."* The
+confirm gates on the control, not a regex. Evidence:
+`assets/2026-09-07-items-59-18-16/08-item16-the-statement-month.png`.
+
+**What is NOT done, and why it is an ask rather than a half-build:**
+
+| Asked for | Blocked on |
+|---|---|
+| Range / by year / single-date modes | `chase.send`'s `statementPeriod` is a single `YYYY-MM` on the wire and the engine composes the message from it. A contract widening AND an engine change — the message template, the portal ask, and `toChaseItem`'s statement projection all read one month. |
+| Send-via-SMS / send-via-email checkboxes | **There is no SMS in ID** (D40/D45, launch M8 swept every claim of texting). A tickbox offering a channel that does not exist is the exact lie M8 removed; offer-and-disable needs the owner's call on whether ID ships a disabled control at all. |
+| Both previews before confirming | The message is composed **server-side at review** (D44) and the review card already shows it verbatim. A second, client-side mirror of the preset template would be a second opinion about what will be sent. The honest version is a preview step that asks the server to compose without staging — a new read on `chase.send`, so contract work. |
+| AI-personalised copy | The entry says explicitly: noted for later, not now. |
+
+**For Shakib:** the first row is the one that unblocks the other three — decide
+whether `statementPeriod` becomes a range (`periodStart`/`periodEnd`, or a
+`{kind, value}` union) and the rest follows in one package.
+
+---
 
 ## Item 17 — Bank transactions: credits show a minus sign, and "Credit — no document" is green when it should be red
 
@@ -160,6 +190,78 @@ What exists to build on: `GET /portal/documents` already lists the portal's own 
 1. **UI half** — a "Documents" surface in the portal (either a fifth tab or the Upload tab's list made primary) listing every sent document with status, and per-row preview + download.
 2. **Server/contract half (G7)** — a portal-scoped read of a document's original (presigned URL) for documents that client's own session uploaded/owns. Needs Shakib's contract approval.
 3. **"Other document control functions"** — scope needs deciding: rename is plausible (the `note`/display-filename mechanism from item 11 exists), delete/replace should likely map to "send another copy" rather than real deletion (D46/state-machine: the accountant's pipeline owns document state, and a client deleting evidence out of a practice's books is not a portal power). Keep the portal light — it's the 250 kB budget's most protected route.
+
+**✅ RESOLVED (7 Sep 2026, branch `fix/review-items-59-18-16`).**
+
+**⚠ The brief's premise was wrong, and finding that out was most of the work.**
+`getDocumentOriginal` does declare the portal principal — but under that bearer
+the boundary was the session's GRANT (`id = ANY(app_granted_item_ids())`), and a
+grant is widened only by the upload path, so it holds exactly what the CURRENT
+sign-in uploaded. Signed into American Burger's portal and probed all five rows
+its own list returns, **including the `SMS_PORTAL` one the client sent
+themselves: every one answered 404.** A per-row [Open] would have failed on every
+row on the screen.
+
+**Shakib's ruling, taken in session:** *"any document in their own list."* So the
+server reads under the practice SYSTEM context narrowed **in the query** by
+`portalVisibleDocuments(facts)` — the exported `where` that
+`GET /portal/documents` has always built its list from. The set a client can see
+and the set a client can open are now one set by construction, archived and
+deleted exclusions included, so an accountant who withdraws a document withdraws
+it from both surfaces with one edit. Said plainly in
+`documents/CLAUDE.md`: this trades a database guarantee for an application one on
+this endpoint, deliberately. **The cost is named there too** — a forwarded CHASE
+link's anonymous holder can now open any document of that business;
+`resolveOnboarding` closes it and also stops the chase portal previewing its own
+upload, so the narrower door is a one-line change the day it is wanted.
+
+**The web half:** `views/business/PortalDocumentList.tsx`, one row component on
+two surfaces — Home's recent few and the Upload tab's browsable list with a
+status filter over the server's five words, a count, and one more page of fifty
+per press. Per row: status pill, date, amount, **how it arrived in the client's
+own words** ("Sent from here", "Emailed", "WhatsApp", "Added by your
+accountant"), [Open] and [Download].
+
+Four decisions worth knowing:
+
+- **⚠ No practice-internal state, and a test guards it.** `PortalDocument`
+  carries no `state`/`inbox`/`categoryCode`/`failureCode`, so the component has
+  **no mapping table from anything to anything**; `PortalDocumentList.test.tsx`
+  asserts over the rendered text that `TO_REVIEW`, `SMS_PORTAL`, `NT-DOC…` and
+  friends never appear.
+- **Only an image previews in place.** Framing the PDF renders on desktop Chrome
+  and fails where this surface lives — iOS Safari shows page one of a framed PDF
+  with no way to the rest. Anything else is handed over as a real anchor, which
+  is also what makes it work: the presigned URL is fetched on the press, so the
+  gesture has expired and a `window.open` would be blocked by Safari.
+- **The presigned URL never leaks as a `Referer`** (`rel="noreferrer noopener"`,
+  `referrerPolicy="no-referrer"`) and is fetched per press, never stored.
+  `DocumentViewer` is not reused — the portal is the lightest route in the
+  product and nothing it imports may become shared with a practice screen.
+- **A refusal blames nobody.** One 404 covers "not this client's" and "your
+  accountant took it back", so the copy claims to know neither.
+
+**"Other document control functions" — deliberately NOT built**, and the reason
+is the entry's own: the accountant's pipeline owns document state, and a client
+deleting evidence out of a practice's books is not a portal power. Renaming after
+the fact is the one plausible addition and is not in this package.
+
+Cost: **+2,018 B** on the portal route (239,939 → 241,957 B by closure), leaving
+8,043 B of headroom on the product's most protected surface.
+
+Walked live: the list, a client opening the receipt they photographed, and the
+status filter — `assets/2026-09-07-items-59-18-16/03-item18-the-browsable-list.png`,
+`assets/2026-09-07-items-59-18-16/04-item18-a-client-opens-their-own-receipt.png`,
+`assets/2026-09-07-items-59-18-16/05-item18-filtered-by-the-five-words.png`,
+`assets/2026-09-07-items-59-18-16/06-item18-home-rows-open-too.png`.
+
+⚠ **A seed defect found on the way:** several seeded documents (`doc_014` and
+friends) have rows but **no bytes in MinIO**, so opening one shows the object
+store's `NoSuchKey` XML. Not this package's code — the same would happen on the
+accountant's viewer — but it will be the first thing a demo hits. Logged here
+rather than fixed.
+
+---
 
 ## Item 19 — Category must never be null: always a suggestion with a confidence score
 
@@ -543,6 +645,18 @@ Two halves — the "2025 recommendation" half is item 29's (the suggestion is *c
 **✅ INTERIM FIX LANDED (5 Sep 2026, PR #257 — package C).**
 
 **What was done:** the export form now restates the chosen period in UK long form beside the native inputs — *"Period: 30 July 2025 – 30 July 2025"* (`ukLongDate` in `ExportView.tsx`, built on a UTC date and rendered in UTC so the calendar date never shifts; pinned by test). Every date in the refusal copy and the "Use … instead" button was already d/m/y and stays so. **The full fix — the shared UK date-picker replacing the native inputs — is package D's**, noted in the code where the inputs live; the long-form line stays even then, because words cannot be misread in any locale.
+
+**✅ FULLY RESOLVED (7 Sep 2026, branch `fix/review-items-59-18-16`).** Package D
+landed and both native inputs are gone: `UkDateField` types day-first
+(`dd/mm/yyyy`, parsed by the repo's existing `parseUkDate`) and restates each
+date in long form under its own field. **The "Period: 30 July 2025 – 30 July
+2025" line stays**, and the code now says why it outlived the bug that prompted
+it: the period is a third fact — that these two dates are the span being exported
+— and it is the sentence an accountant checks before producing a file. The screen
+test that asserted the field's value was ISO (`^\d{4}-\d{2}-01$`, on screen) is
+rewritten: **that expectation was the defect written down**, and it now asserts
+d/m/y on screen and ISO on the wire. Evidence:
+`assets/2026-09-07-items-59-18-16/07-item28-export-dates-day-first.png`.
 
 ## Item 29 — Export "major issue": root-cause analysis (deep-dive done)
 
@@ -1072,6 +1186,20 @@ The Document date correction in `DocumentPreview` needs the same date-control tr
 
 **What was done:** correcting a document's date to the future — like the 09 Aug 2027 in the screenshot — is no longer accepted silently. The dialog now says *"The document date 09 Aug 2027 is in the future. A future date is almost always a typo, and it files this document into an accounting period that does not exist yet"* — with the item-22 **[Ignore — I'm sure] / [Go back and fix]** buttons, and the same for a date more than 7 years in the past (screenshot 09). Ignored warnings are restated on the proposal review, and the "100% confident" display is "Confirmed by you" now (item 22's entry). The date-PICKER half (UK d/m/y control, better UX) stays with package D (items 16/28/46's shared control) — not this package's.
 
+**✅ The PICKER half is RESOLVED too (7 Sep 2026, branch
+`fix/review-items-59-18-16`).** The Document date row opens `UkDateField` instead
+of a free-text box: `dd/mm/yyyy` typing, a calendar button on the native picker,
+and the long-form line underneath — `03/08/2026` reads back as **"3 August
+2026"**, never 8 March. `isDateLabel` decides which rows get it, read off
+`FIELD_PRESENTATION`'s own `kind` (the same table `parseCodingDraft` branches on)
+rather than matching on the label's words, so a third date field cannot quietly
+be served a text box. `commit` is untouched — the control emits `YYYY-MM-DD`,
+which the date branch already accepted — so **the future-date and 7-years-past
+warnings above still fire on exactly the same boundary**. And the control refuses
+`31/02/2026` outright rather than rolling it to 3 March, which is the failure
+`parseUkDate`'s read-the-components-back rule exists for. Evidence:
+`assets/2026-09-07-items-59-18-16/09-item46-document-date-correction.png`.
+
 ## Item 47 — A selfie was driven to Ready with fabricated fields; the pipeline never objected
 
 **Original (verbatim):**
@@ -1485,6 +1613,45 @@ Fix layers, in order of correctness:
 2. **What not to do:** `localStorage` is not the answer — the repo's own bar (one key, `nt.theme`, "worthless to an attacker") explicitly excludes conversation content, which is client financial data on a possibly-shared machine.
 3. **Reopen semantics:** a rehydrated conversation must render the same cards (proposal cards re-mount showing their draft; staged proposals live in Approvals — the existing remount rule already handles this), and the seed↔server scope mapping must survive the round trip.
 Also worth checking: "Pinned clients" survived the reload in the screenshot (Zeplow listed) — if pins persist somewhere, find where and make sure that mechanism passes the same storage bar.
+
+**✅ RESOLVED (7 Sep 2026, branch `fix/review-items-59-18-16`).**
+
+**⚠ It was NOT already fixed, and the note above saying it likely was is the
+thing worth reading twice.** Item 9's server-side persistence was real and
+working: with the API on, a turn was sent, the page reloaded, and the drawer read
+**"No conversations yet."** while `GET /v1/chat/conversations` answered
+`{"id":"draft-initial","title":"How many documents are waiting for…","messageCount":2}`
+— the transcript, in the database, unreachable. So the verification the brief
+asked for is what found the defect rather than closing the item.
+
+**The cause was one constant.** `AppContext` minted every session's first
+conversation as `newDraft(…, 'draft-initial')`, so that one name meant a
+different conversation every time it was used. Two failures came out of it:
+
+1. **A reload could not read the transcript back.** `hydrateConversations` is
+   add-only by id — deliberately, so a stale summary cannot clobber the open
+   tab's live state — and the fresh, empty `draft-initial` was already in the
+   array before the server answered. The saved row was dropped,
+   `remoteMessageCount` was never set, `useConversationSync` never fetched the
+   messages, and `LeftPanel` filtered the row out for having none.
+2. **The next session OVERWROTE the last one**, silently and unrecoverably: the
+   save is a PUT under the conversation's own id.
+
+**What was done:** the first draft has no special name any more, and
+`newDraft` gained a random suffix (`draft-${Date.now()}-${seq}-${rand}`) because
+**the id is a server key now** and two tabs opened in the same millisecond both
+start their counter at 0. Nothing else changed — the wire, the sync hook, the
+reconciler and the drawer were all correct and none was touched. Pinned in
+`AppContext.test.tsx`: two mounts, two different first-draft ids, and a summary
+carrying the earlier mount's id hydrating into the drawer — it fails on the old
+code at `expect(freshId).not.toBe(earlierId)`.
+
+Walked live: conversation → reload → **both rows in RECENT HISTORY**, and
+clicking one brings the transcript and its cards back
+(`assets/2026-09-07-items-59-18-16/01-item59-history-survives-a-reload.png`,
+`assets/2026-09-07-items-59-18-16/02-item59-transcript-comes-back.png`).
+
+---
 
 ## Item 60 — Chat upload claims success but the document never appears in the Inbox
 

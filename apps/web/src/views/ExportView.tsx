@@ -24,6 +24,7 @@ import {
 } from '../api/exports';
 import { errorLabel, sliceStatus } from '../api/slices';
 import { DataSourceBadge, SliceLoadError } from '../components/DataSourceBadge';
+import { ukLongDate, UkDateField } from '../components/DynamicComponents/UkDateField';
 import { useAppContext } from '../context/AppContext';
 import { navigate, path } from '../lib/router';
 
@@ -270,23 +271,6 @@ function ukDate(calendarDate: string | null | undefined): string {
 }
 
 /**
- * `YYYY-MM-DD` → "30 July 2025" — the restatement beside the native date
- * inputs (item 28, interim). Long form because it cannot be misread in ANY
- * locale, which digits with slashes can. Built on a UTC date and rendered in
- * UTC so the calendar date never shifts across a timezone.
- */
-function ukLongDate(intl: ReturnType<typeof useIntl>, isoDate: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
-  if (match === null) return isoDate;
-  return intl.formatDate(new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))), {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
-}
-
-/**
  * Item 29: the refused documents the server named on the `NT-EXP-001` problem,
  * as `errors` entries under `documents/<id>` — the exporter is the only thing
  * that knows which document failed which check, so the facts ride the problem
@@ -460,27 +444,15 @@ export function ExportView() {
               <label className={LABEL_CLASS} htmlFor="export-from">
                 {intl.formatMessage(m.fromLabel)}
               </label>
-              <input
-                id="export-from"
-                type="date"
-                className={FIELD_CLASS}
-                value={periodStart}
-                disabled={!liveOn}
-                onChange={(event) => setPeriodStart(event.target.value)}
-              />
+              {/* Package D: the shared UK control, in place of the native
+                  input that rendered `07/30/2025` on the reviewer's machine. */}
+              <UkDateField id="export-from" value={periodStart} disabled={!liveOn} onChange={setPeriodStart} />
             </div>
             <div>
               <label className={LABEL_CLASS} htmlFor="export-to">
                 {intl.formatMessage(m.toLabel)}
               </label>
-              <input
-                id="export-to"
-                type="date"
-                className={FIELD_CLASS}
-                value={periodEnd}
-                disabled={!liveOn}
-                onChange={(event) => setPeriodEnd(event.target.value)}
-              />
+              <UkDateField id="export-to" value={periodEnd} disabled={!liveOn} onChange={setPeriodEnd} />
             </div>
             <div>
               <label className={LABEL_CLASS} htmlFor="export-target">
@@ -503,10 +475,12 @@ export function ExportView() {
           </div>
 
           {/*
-            Item 28 (interim): the native inputs above render in the BROWSER
-            locale and nothing can force their display format, so the chosen
-            period is restated in UK long form. Package D's shared UK
-            date-picker replaces the native inputs on this screen.
+            ⚠ KEPT after package D replaced the native inputs (items 16/28/46).
+            `UkDateField` restates each date under its own field, but the PERIOD
+            is a third fact — that these two dates are the span being exported —
+            and it is the sentence the accountant checks before pressing a button
+            that produces a file. Words cannot be misread in any locale, which is
+            why this line outlived the bug that prompted it.
           */}
           {periodStart !== '' && periodEnd !== '' && (
             <p className="text-[12px] font-semibold text-zinc-400">

@@ -4,7 +4,9 @@ import { AnimatePresence, motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
 import { API_ENABLED } from '../../api/config';
-import { CATEGORY_LABEL, isEditableLabel, parseCodingDraft, useDocumentDetail, type DraftProblem } from '../../api/document-detail';
+import { CATEGORY_LABEL, isDateLabel, isEditableLabel, parseCodingDraft, useDocumentDetail, type DraftProblem } from '../../api/document-detail';
+import { parseUkDate } from '../../lib/tableImport';
+import { UkDateField } from './UkDateField';
 import { confirmDocumentBankMatch, useDocumentBankMatch } from '../../api/bank-match';
 import type { CreateActionProposalRequest, UpdateCodingPayload } from '@neoting/contracts/model';
 import { currency } from '../../lib/resolver';
@@ -727,22 +729,48 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
 
                   {editing === f.label ? (
                     <div className="flex flex-col items-end gap-1.5 shrink-0">
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          // This input mounts because the user just pressed Edit
-                          // on this field: focus is following their action, not
-                          // being stolen — the rule's concern — and Escape hands
-                          // it back.
-                          // eslint-disable-next-line jsx-a11y/no-autofocus
-                          autoFocus
-                          value={draft}
-                          onChange={(e) => setDraft(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') commit(f.label);
-                            if (e.key === 'Escape') setEditing(null);
-                          }}
-                          className="w-36 bg-ground border border-brand rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none"
-                        />
+                      <div className="flex items-start gap-1.5">
+                        {/*
+                          Review item 46 (package D): a DATE gets the UK date
+                          control, not a text box. It was a free-text field, so
+                          the accountant's only guidance was the format the row
+                          happened to be rendered in — and the screenshot that
+                          raised this item shows the result, "09 Aug 2027",
+                          accepted silently a year into the future.
+
+                          The value crossing this boundary is `YYYY-MM-DD`, which
+                          `parseCodingDraft`'s date branch already accepts, so
+                          `commit` is untouched — as are the correction-integrity
+                          warnings it raises on the way past (items 22/46). The
+                          control refuses `31/02/2026` outright rather than
+                          rolling it forward, so an impossible date never becomes
+                          a plausible different one.
+                        */}
+                        {isDateLabel(f.label) ? (
+                          <div className="w-56">
+                            <UkDateField
+                              id={`correct-${f.label.replace(/\s+/g, '-').toLowerCase()}`}
+                              value={parseUkDate(draft) ?? ''}
+                              onChange={setDraft}
+                            />
+                          </div>
+                        ) : (
+                          <input
+                            // This input mounts because the user just pressed Edit
+                            // on this field: focus is following their action, not
+                            // being stolen — the rule's concern — and Escape hands
+                            // it back.
+                            // eslint-disable-next-line jsx-a11y/no-autofocus
+                            autoFocus
+                            value={draft}
+                            onChange={(e) => setDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') commit(f.label);
+                              if (e.key === 'Escape') setEditing(null);
+                            }}
+                            className="w-36 bg-ground border border-brand rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none"
+                          />
+                        )}
                         <button
                           onClick={() => commit(f.label)}
                           className="p-1.5 rounded-lg bg-brand text-white hover:bg-brand-hover transition-colors"

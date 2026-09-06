@@ -180,29 +180,68 @@ spec described a caller nothing admitted.
 `otp_sessions` row and re-checks scope, verification and expiry), no header at
 all is the accountant, and a blank header falls to the accountant.
 
-**On the portal path the boundary is SQL, and it is the ONLY one** — which makes
-this different from every other portal read in the product. The request runs
-under `delegatedScopeFor(facts)`, so
-`documents_delegated_upload`'s `id = ANY(app_granted_item_ids())` decides: a
-document outside the grant is invisible to `findUnique`, the service's existing
-`null` check raises 404, and the presign never happens (this module already reads
-before it signs, and a test pins that). No ownership check is added, because a
-check that *could* answer 403 would confirm the document exists.
+### ⚠ The portal path's boundary CHANGED on 7 Sep 2026 (review item 18)
 
-A session with an EMPTY grant — an onboarding session that has never uploaded —
-cannot have a delegated context built for it at all (`ScopeContextSchema`
-refuses one: an empty grant reads as "no restriction" to a human and denies
-everything in SQL). It gets a 404 that is **word for word** the service's own,
-so a caller cannot tell "your session may reach no documents" from "that
-document is not yours".
+Everything above still describes the change that put the portal bearer on this
+operation. What follows replaces the paragraphs that described **what then
+bounded it**, because those are no longer true.
 
-⚠ The consequence for the client portal, stated plainly: a client may open the
-original of a document **they sent through the portal**, and not one that
-arrived by email or that their accountant uploaded, because that is what a grant
-contains. Widening it means either a new RLS branch (a `prisma/` change) or
-reading originals under the practice SYSTEM context — which would trade a
-database guarantee for an application one on the single endpoint that hands out
-bearer-authority URLs to raw bytes.
+It ran under `delegatedScopeFor(facts)`, so `documents_delegated_upload`'s
+`id = ANY(app_granted_item_ids())` decided — SQL, the strongest kind of boundary,
+and the only portal read in the product that had one.
+
+**It also meant a client could open almost nothing.** A grant is widened only by
+`grantItems`, which only the upload path calls, so it holds exactly the documents
+THIS sign-in uploaded: sign in tomorrow and yesterday's receipt is a 404. Probed
+live against American Burger on 7 Sep 2026 — **all five rows the client's own
+list returns, including the `SMS_PORTAL` one they sent themselves, answered
+404.** So `GET /portal/documents` shipped a browsable list of documents the
+product could not open, which is item 18's whole complaint.
+
+Shakib's ruling, in session: *"any document in their own list."* Two ways to get
+there — a new RLS branch meaning "this client's whole business", which is a
+`prisma/` change and a stop-and-ask, or the pattern the portal's own reads
+already use. The second was taken:
+
+```ts
+// documents.controller.ts#principalFor
+const facts = await this.portalAuth.resolveForDocumentOriginal(authorization);
+return { context: systemScopeFor(facts), alsoWhere: portalVisibleDocuments(facts) };
+```
+
+- **`portalVisibleDocuments` is the SAME expression `GET /portal/documents`
+  filters its list with** (exported from `modules/portal`'s seam for exactly this
+  caller). The set a client can open and the set a client can see are one set by
+  construction — including the ARCHIVED and `deletedAt` exclusions, so an
+  accountant who withdraws a document withdraws it from both surfaces with one
+  edit rather than two.
+- **It goes INTO the query.** `getDocumentOriginal` took a `findFirst` and an
+  optional `alsoWhere` for this; a predicate applied to a row that already came
+  back is one somebody eventually forgets, on the one endpoint here that hands
+  out a URL to raw bytes. A service test asserts the predicate reaches the
+  `where`, and asserts the accountant's call still carries none.
+- **The presign is still after the read**, so nothing is signed for a refusal.
+  That property is unchanged and is still what the negative tests assert.
+
+**Say it honestly: this traded a database guarantee for an application one**, on
+this endpoint, deliberately and on a ruling. What makes it safe is what makes the
+list safe — the filter is built from `facts.businessId` off the `otp_sessions`
+row the resolver re-checks per request, the operation takes no `businessId`
+argument for a caller to supply or a handler to forget, and one function builds
+it.
+
+⚠ **A CHASE session reaches this too** (`resolveForDocumentOriginal` takes both
+kinds), so a forwarded chase link's anonymous holder can now open any document of
+the business the chase was raised against. That is the widening's real cost.
+Narrowing to `resolveOnboarding` would close it and would also stop the chase
+portal previewing what it has just uploaded; the narrower door is available the
+day the owner wants it, and this paragraph is the record that it was not passed
+over silently.
+
+A session with an EMPTY grant is no longer refused before the database — it reads
+its own business like any other session. The handler still adds no ownership
+check that could answer 403, so everything outside the predicate is a 404 that
+reads exactly like every other 404.
 
 The other four reads did **not** gain a principal, and
 `documents.controller.test.ts` pins their arity so one cannot be given a header
@@ -441,7 +480,7 @@ controller → guard → service → RLS path end to end.
 
       | File | Line | What leaks |
       |---|---|---|
-      | `portal/portal-documents.service.ts` | `whereFor()` ~125 | **A deleted document is still visible to the CLIENT in their portal** — the sharpest of the four |
+      | ~~`portal/portal-documents.service.ts`~~ | — | ✅ closed 3 Sep 2026, and the predicate is now `portalVisibleDocuments` — exported, and shared with `getDocumentOriginal`'s portal path since 7 Sep, so a deleted document is neither listed to the client nor openable by them |
       | `portal/portal-context.service.ts` | `count` ~185 | `PortalSummary.documentsSent` counts Trash |
       | `exports-public-api/api/exports.service.ts` | `publishedWhere()` ~523 | Trash can enter an export selection. Mitigated but not closed: `publish.batch` already refuses to RELEASE a deleted document, so nothing new can reach `PUBLISHED` while deleted |
       | `chat-framework/suggestions.service.ts` ~152, `grounding.ts` ~85, `display.ts` ~56 | | Chat counts and grounding see Trash |

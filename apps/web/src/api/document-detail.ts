@@ -579,6 +579,19 @@ export function isEditableLabel(label: string): boolean {
   return (PRESENTATION_BY_LABEL.get(label)?.coding ?? null) !== null;
 }
 
+/**
+ * Whether a row holds a DATE — so `DocumentPreview` can give it the UK date
+ * control instead of a text box (review item 46, package D).
+ *
+ * It reads `FIELD_PRESENTATION`'s own `kind`, the same table `parseCodingDraft`
+ * branches on, rather than matching on the label's words. A second opinion about
+ * which rows are dates would drift the moment a third one is added, and the
+ * failure would be silent: a date row quietly served a free-text box again.
+ */
+export function isDateLabel(label: string): boolean {
+  return PRESENTATION_BY_LABEL.get(label)?.kind === 'date';
+}
+
 /* ── the proposal ─────────────────────────────────────────────────────────── */
 
 /**

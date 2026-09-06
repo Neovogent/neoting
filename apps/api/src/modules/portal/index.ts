@@ -76,6 +76,19 @@ export {
   type PortalUploadNotice,
 } from './portal-upload-notifier.js';
 
+/**
+ * The set of documents a portal session may see — the predicate `GET
+ * /portal/documents` filters its list with (review item 18, 7 Sep 2026).
+ *
+ * On the seam because `modules/documents` needs the SAME expression to bound
+ * `GET /documents/{documentId}/original` under a portal bearer. The alternative
+ * was a second predicate over there, and the point of exporting this one is that
+ * the list a client can browse and the documents a client can open cannot come
+ * to disagree — an accountant who deletes or archives a document has to take it
+ * back from both surfaces with one edit, not two.
+ */
+export { portalVisibleDocuments } from './portal-documents.service.js';
+
 // The DI tokens, so a consuming Nest module can inject what `PortalModule`
 // exports rather than construct a second resolver.
 export { PORTAL_SESSION_CONTEXT, PORTAL_SESSION_SERVICE, PORTAL_UPLOAD_NOTIFIER } from './tokens.js';
