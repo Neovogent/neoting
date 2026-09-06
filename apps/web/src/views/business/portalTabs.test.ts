@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest';
 import {
   PORTAL_SECTIONS,
   PORTAL_TABS,
+  hiddenSectionsFor,
   isTabSlug,
   pathForSection,
   pathForTab,
@@ -191,5 +192,59 @@ describe('sections', () => {
 
   test('an id with a slash is still encoded, one level deeper', () => {
     expect(pathForSection(['portal', 'a/b'], 'Settings', 'People')).toBe('/portal/a%2Fb/settings/people');
+  });
+});
+
+/**
+ * **Review item 44 — the Plan section is HIDDEN for a portal member.**
+ *
+ * > *"The team member of a client don't need to see the plan subscribed"*
+ *
+ * The rule this file already carried — an unrecognised section is the FIRST
+ * section, never a blank panel and never a dead end on a phone — is what makes
+ * a deep link safe once Plan leaves the member's list. So what is pinned here
+ * is that hiding it does not need a new branch: it makes the address
+ * unrecognised, and the existing fallback catches it.
+ *
+ * ⚠ Presentation only. `POST /billing/portal-sessions` and
+ * `POST /billing/checkout-sessions` refuse a non-owner portal session
+ * server-side, which is the actual protection.
+ */
+describe('hidden sections (item 44)', () => {
+  const MEMBER = hiddenSectionsFor({ canManageBilling: false });
+  const OWNER = hiddenSectionsFor({ canManageBilling: true });
+
+  test('an owner hides nothing; a member hides Plan and nothing else', () => {
+    expect(OWNER).toEqual([]);
+    expect(MEMBER).toEqual(['Plan']);
+    expect(sectionsForTab('Settings', OWNER)).toEqual(PORTAL_SECTIONS.Settings);
+    expect(sectionsForTab('Settings', MEMBER)).toEqual(['Business', 'Sending', 'Notifications', 'People', 'Security']);
+  });
+
+  test('⚠ /portal/settings/plan falls to the first VISIBLE section for a member', () => {
+    // The owner opens the panel they asked for…
+    expect(sectionFromPath(['portal', 'settings', 'plan'], OWNER)).toBe('Plan');
+    // …and the member lands somewhere usable, exactly as a typo does.
+    expect(sectionFromPath(['portal', 'settings', 'plan'], MEMBER)).toBe('Business');
+    expect(sectionFromPath(['portal', 'settings', 'nonsense'], MEMBER)).toBe('Business');
+  });
+
+  test('every other section is unaffected for a member', () => {
+    expect(sectionFromPath(['portal', 'settings', 'people'], MEMBER)).toBe('People');
+    expect(sectionFromPath(['portal', 'ba_1', 'settings', 'security'], MEMBER)).toBe('Security');
+  });
+
+  test('the hidden slug still comes off an address that is being rebuilt', () => {
+    // `isSectionSlugOf` reads the UNFILTERED list on purpose: if `plan` stopped
+    // being recognised as a section, it would be carried into every address
+    // built from `/portal/settings/plan` for the one session that may not
+    // see it.
+    expect(pathForTab(['portal', 'settings', 'plan'], 'Upload')).toBe('/portal/upload');
+    expect(pathForSection(['portal', 'settings', 'plan'], 'Settings', 'People')).toBe('/portal/settings/people');
+  });
+
+  test('omitting the argument offers everything — the synthetic shell is unchanged', () => {
+    expect(sectionsForTab('Settings')).toEqual(PORTAL_SECTIONS.Settings);
+    expect(sectionFromPath(['portal', 'ba_1', 'settings', 'plan'])).toBe('Plan');
   });
 });

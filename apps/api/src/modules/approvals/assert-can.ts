@@ -85,7 +85,12 @@ import { canRelease } from '../clients-team-settings/index.js';
  * every module that offers a guarded act has no single place to read, and the
  * more permissive of two copies always wins on the day it matters.
  */
-export type PermittedAction = 'publish.release' | 'team.invite' | 'business.people.manage' | 'business.profile.manage';
+export type PermittedAction =
+  | 'publish.release'
+  | 'team.invite'
+  | 'business.people.manage'
+  | 'business.profile.manage'
+  | 'business.billing.manage';
 
 /**
  * The acting person, resolved from their membership. Everything needed to answer
@@ -303,6 +308,50 @@ export function mayManageProfile(actor: Actor): boolean {
 }
 
 /**
+ * Who may reach the client's own SUBSCRIPTION — start it, change the card, read
+ * an invoice, **cancel it** (review item 44, 6 Sep 2026).
+ *
+ * > *"The team member of a client don't need to see the plan subscribed"*
+ *
+ * ## What this closes, stated plainly because it was a live hole
+ *
+ * `POST /v1/billing/portal-sessions` and `POST /v1/billing/checkout-sessions`
+ * accept a portal bearer (D48 makes the CLIENT the payer, so they must). Their
+ * shared `principalFor` checked that the session's business equalled the body's
+ * `businessId` — a tenancy check, and a correct one — **and nothing else**. So
+ * any contact of the business holding a portal bearer, including a
+ * `BUSINESS_STANDARD` added to photograph receipts, could mint a Stripe
+ * customer-portal session and reach the card, every invoice and cancellation.
+ * The UI simply rendered the button for everyone, which is how it was found.
+ *
+ * ## `BUSINESS_ADMIN` only — the same predicate as {@link mayManageProfile},
+ * and a SEPARATE ACTION on purpose
+ *
+ * Reusing `business.profile.manage` was the alternative and costs zero lines
+ * (the two rules select the same person today). It was refused at the matrix
+ * gate — `docs/Access_and_Approval_Matrix.md` ⚖2, Shakib, 6 Sep 2026 — because
+ * the refusal MESSAGE is the whole user-facing product of a permission check,
+ * and *"Only an owner at your business can change its own details"* said to
+ * somebody who pressed a billing button is a wrong answer wearing a right
+ * status code. Naming the act also keeps the two free to diverge without one
+ * quietly widening the other, which is the failure this file's header exists to
+ * prevent.
+ *
+ * ⚠ **A `USER_ADMIN` is refused, and that is the interesting cell.** They hold
+ * people management and *"nothing else"* — that role's whole definition — and
+ * an office manager who can add a new starter is not thereby somebody who may
+ * cancel the company's subscription. The two are different kinds of authority
+ * and the enum already keeps them apart.
+ *
+ * `role === null` refuses, as everywhere here: a chase session's `contact_id`
+ * is deliberately NULL, so the holder of a forwardable link is nobody, and
+ * nobody may reach a card.
+ */
+export function mayManageBilling(actor: Actor): boolean {
+  return actor.role === 'BUSINESS_ADMIN';
+}
+
+/**
  * Governance §11.2's check. Throws {@link AppException} `NT-PRM-001` (403) when
  * the actor may not perform `action` on `resource`; returns silently otherwise.
  *
@@ -350,7 +399,28 @@ export function assertCan(actor: Actor, action: 'business.people.manage'): void;
  * is reached.
  */
 export function assertCan(actor: Actor, action: 'business.profile.manage'): void;
+/**
+ * `business.billing.manage` — no resource, the same argument one more time: the
+ * portal session's own row fixes the business, and the billing controller has
+ * already refused a body naming a different one before this is reached.
+ */
+export function assertCan(actor: Actor, action: 'business.billing.manage'): void;
 export function assertCan(actor: Actor, action: PermittedAction, resource?: ProposalResource): void {
+  if (action === 'business.billing.manage') {
+    if (mayManageBilling(actor)) return;
+    throw new AppException(
+      'NT-PRM-001',
+      HttpStatus.FORBIDDEN,
+      'Not permitted',
+      // The person reading this is a member of staff who pressed a button they
+      // should not have been shown. It names what is out of reach (the
+      // subscription, not "billing", which they may not connect to anything on
+      // screen) and the one action open to them, and it does not imply they
+      // did anything wrong.
+      'Only an owner at your business can manage the subscription. Ask them.',
+    );
+  }
+
   if (action === 'business.profile.manage') {
     if (mayManageProfile(actor)) return;
     throw new AppException(

@@ -5,6 +5,8 @@ import { resolveSystemActor } from '../../common/db/resolve-system-actor.js';
 import { type ScopeContext, ScopeContextSchema, systemContext } from '../../common/db/scope-context.js';
 import { scopedDb } from '../../common/db/scoped-db.js';
 import { AppException } from '../../common/problem/problem.js';
+import type { Actor } from '../approvals/index.js';
+import { portalActorFor } from './portal-people-authority.js';
 import { verifyPortalSessionHeader } from './portal-session-token.js';
 
 /**
@@ -293,6 +295,49 @@ export class PortalSessionContextResolver {
     nowMs: number = Date.now(),
   ): Promise<PortalSessionFacts> {
     return this.factsFor(authorizationHeader, ['ONBOARDING'], nowMs);
+  }
+
+  /**
+   * **WHO is acting in this session** — the facts say which business, this says
+   * which person (review item 44).
+   *
+   * `PortalSessionFacts` answers *which workspace is asking*, which is all a
+   * read or an upload needs. A guarded ACT needs a person, and
+   * `portal-people.service.ts` already resolves one — but it does so out of the
+   * people list it has just read for its own purposes, which a caller with no
+   * such list cannot reuse. This is the same resolution for callers that hold
+   * only the facts, and it lives here because this class is already the answer
+   * to "who is asking" and a second one elsewhere would be a second opinion.
+   *
+   * ⚠ **The role is READ FROM THE ROW, every time, never from the bearer** —
+   * the rule the whole class is built on. A role in the claims would be one
+   * more fact the row could contradict for up to an hour, in the direction that
+   * matters: an owner demoted at 10:00 still holding an owner's bearer at
+   * 10:59.
+   *
+   * ⚠ **The lookup is BOUNDED by `facts.businessId`, not by the contact id
+   * alone**, which is the same fail-closed shape `#assertMayManage` uses: a
+   * `contact_id` naming somebody on another business resolves to nothing rather
+   * than to a real person whose authority would then be applied to a workspace
+   * they do not belong to. Deactivated contacts are excluded for the reason
+   * every actor read excludes them — revocation must end authority at the next
+   * request.
+   *
+   * A null `contactId` yields `role: null`, which every branch of `assertCan`
+   * refuses. That is the honest answer for a chase session, whose `contact_id`
+   * is deliberately NULL because the link is forwardable and guessing who holds
+   * it would be worse than an absence.
+   */
+  async resolveActor(facts: PortalSessionFacts): Promise<Actor> {
+    const contactId = facts.contactId;
+    if (contactId === null) return portalActorFor(null);
+    const row = await scopedDb(this.prisma, systemScopeFor(facts), (db) =>
+      db.contact.findFirst({
+        where: { id: contactId, businessId: facts.businessId, deactivatedAt: null },
+        select: { id: true, portalRole: true, isPrimary: true },
+      }),
+    );
+    return portalActorFor(row);
   }
 
   private async factsFor(

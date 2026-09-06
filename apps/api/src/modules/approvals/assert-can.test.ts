@@ -8,6 +8,7 @@ import { canRelease } from '../clients-team-settings/index.js';
 import {
   type Actor,
   assertCan,
+  mayManageBilling,
   mayManagePeople,
   mayManageTeam,
   mayRelease,
@@ -295,4 +296,76 @@ test('the three actions are independent — a practice super admin holds two of 
   expect(refusal(() => assertCan(clientOwner, 'business.people.manage'))).toBeNull();
   expect(refusal(() => assertCan(clientOwner, 'publish.release', RESOURCE))?.code).toBe('NT-PRM-001');
   expect(refusal(() => assertCan(clientOwner, 'team.invite'))?.code).toBe('NT-PRM-001');
+});
+
+/**
+ * **`business.billing.manage` — the fifth action** (review item 44, 6 Sep 2026).
+ *
+ * It exists because `billing.controller.ts` checked TENANCY and nothing else,
+ * so any contact of a business holding a portal bearer could mint a Stripe
+ * customer-portal session — the card, every invoice, cancellation. The rule is
+ * `BUSINESS_ADMIN` only, deliberately narrower than people management.
+ */
+
+test('mayManageBilling over all six roles: the business OWNER, and nobody else', () => {
+  const roles = Object.values(WorkspaceRole);
+  expect(roles).toHaveLength(6); // the assertion must be able to fail
+  for (const role of roles) {
+    const expected = role === WorkspaceRole.BUSINESS_ADMIN;
+    // `isOwner` mirrors BUSINESS_ADMIN for a portal actor rather than adding a
+    // second condition, so it must not move the answer in either direction.
+    expect(mayManageBilling(actor({ role, isOwner: true }))).toBe(expected);
+    expect(mayManageBilling(actor({ role, isOwner: false }))).toBe(expected);
+  }
+});
+
+test('⚠ a USER_ADMIN manages PEOPLE and not the subscription — the two authorities diverge here', () => {
+  // The cell worth having a test for. That role is granted people management
+  // and "nothing else" — an office manager who can add a new starter is not
+  // thereby somebody who may cancel the company's subscription.
+  const hr = actor({ role: WorkspaceRole.USER_ADMIN });
+  expect(mayManagePeople(hr)).toBe(true);
+  expect(mayManageBilling(hr)).toBe(false);
+});
+
+test('a chase-link holder resolves to nobody, and nobody reaches a card', () => {
+  // `otp_sessions.contact_id` is deliberately NULL on a chase session because
+  // the link is forwardable. `portalActorFor(null)` yields `role: null`.
+  expect(mayManageBilling(actor({ role: null }))).toBe(false);
+});
+
+test('assertCan(business.billing.manage) refuses with NT-PRM-001 and names the subscription', () => {
+  const error = refusal(() => {
+    assertCan(actor({ role: WorkspaceRole.BUSINESS_STANDARD }), 'business.billing.manage');
+  });
+
+  expect(error?.code).toBe('NT-PRM-001');
+  expect(error?.getStatus()).toBe(403);
+  // The person reading this pressed a button they should not have been shown.
+  // It says "subscription", not "billing", which they may not connect to
+  // anything on screen, and it names the one action open to them.
+  expect(error?.publicDetail).toBe('Only an owner at your business can manage the subscription. Ask them.');
+});
+
+test('the billing refusal is its OWN sentence, not the profile one', () => {
+  // The whole reason this is a fifth action rather than a reuse of
+  // `business.profile.manage`, which selects the same person today
+  // (`docs/Access_and_Approval_Matrix.md`, gate ⚖2).
+  const billing = refusal(() => {
+    assertCan(actor({ role: WorkspaceRole.USER_ADMIN }), 'business.billing.manage');
+  });
+  const profile = refusal(() => {
+    assertCan(actor({ role: WorkspaceRole.USER_ADMIN }), 'business.profile.manage');
+  });
+
+  expect(billing?.publicDetail).not.toBe(profile?.publicDetail);
+});
+
+test('the owner passes both, and the guard is not the outage', () => {
+  // D48 makes the client the payer, and a subscription its payer cannot leave
+  // is not one they consented to.
+  const owner = actor({ role: WorkspaceRole.BUSINESS_ADMIN, isOwner: true });
+  expect(() => {
+    assertCan(owner, 'business.billing.manage');
+  }).not.toThrow();
 });

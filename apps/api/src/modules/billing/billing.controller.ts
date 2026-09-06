@@ -13,6 +13,7 @@ import type { RequestContext } from '../../common/context/request-context.js';
 import type { ScopeContext } from '../../common/db/scope-context.js';
 import { AppException } from '../../common/problem/problem.js';
 import { parseBoundary, parseIdempotencyKey } from '../../common/validation/parse-boundary.js';
+import { assertCan } from '../approvals/index.js';
 import { PORTAL_SESSION_CONTEXT, PortalSessionContextResolver, systemScopeFor } from '../portal/index.js';
 import type { BillingService } from './billing.service.js';
 import { BILLING_SERVICE } from './tokens.js';
@@ -51,6 +52,14 @@ import { BILLING_SERVICE } from './tokens.js';
  * tenancy check. `BillingPortalSessionRequest` carried no such guard of its own
  * (it had never needed one), so the principal and the guard had to arrive
  * together or the second door would have opened another business's invoices.
+ *
+ * ⚠ **AND TENANCY WAS ALL IT CHECKED, until review item 44 (6 Sep 2026).**
+ * `principalFor` answered *whose subscription is this* and never *may this
+ * person touch it*, so both doors stood open to every contact of the business
+ * — including staff added only to photograph receipts. `assertCan(actor,
+ * 'business.billing.manage')` is the missing half and it binds BOTH operations,
+ * because starting a subscription and cancelling one are the same authority
+ * seen from two ends. See the comment at the call site.
  */
 @Controller('billing')
 export class BillingController {
@@ -110,6 +119,23 @@ export class BillingController {
     if (facts.businessId !== businessId) {
       throw new AppException('NT-VAL-001', HttpStatus.NOT_FOUND, 'Not found', 'No such client business.');
     }
+    // ⚠ **THE AUTHORITY CHECK, AND IT WAS MISSING** (review item 44, 6 Sep
+    // 2026). Everything above this line is TENANCY — the session's business
+    // must be the body's — and it was the whole of the portal-path guard. That
+    // is the right answer to "whose subscription is this" and no answer at all
+    // to "may THIS PERSON touch it", so every contact of the business with a
+    // portal bearer could reach the card, every invoice and cancellation: a
+    // `BUSINESS_STANDARD` added to photograph receipts included. It was
+    // reported as a UI complaint — the Plan section rendering for a team member
+    // — and the button was live, not decorative.
+    //
+    // The check is ordered AFTER the business match on purpose: a caller naming
+    // somebody else's business gets the 404 that says nothing, and only a
+    // caller asking about their own workspace learns that authority is what
+    // they lack. The refusal is `assert-can.ts`'s, never a role test written
+    // here — that file's header is explicit that a second copy of a rule is how
+    // the more permissive one wins on the day it matters.
+    assertCan(await this.portalAuth.resolveActor(facts), 'business.billing.manage');
     return systemScopeFor(facts);
   }
 

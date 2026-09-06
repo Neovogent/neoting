@@ -331,6 +331,20 @@ export interface BusinessPortalHome {
   readonly documentsSent: number;
   readonly awaitingYou: number;
   readonly subscriptionActive: boolean;
+  /**
+   * Whether the person holding this session may reach the subscription (review
+   * item 44) — start it, change the card, read an invoice, cancel it.
+   *
+   * ⚠ **Presentation, never the gate.** The server refuses both billing
+   * operations for a non-owner portal session
+   * (`assertCan(actor, 'business.billing.manage')`, `BUSINESS_ADMIN` only).
+   * This decides whether the Plan section is in the Settings list at all —
+   * the HIDDEN branch of the matrix, because what the company pays and a live
+   * cancel button are neither a member's business nor any use to them.
+   *
+   * False when the server did not say. See the parse.
+   */
+  readonly canManageBilling: boolean;
   readonly lastDocumentAt: string | null;
   /** The itemised asks (Phase 5) — what "waiting for N documents" actually names. */
   readonly items: readonly BusinessPortalAsk[];
@@ -382,6 +396,14 @@ const portalHomeShape = z.object({
       documentsSent: z.number().int().min(0),
       awaitingYou: z.number().int().min(0),
       subscriptionActive: z.boolean(),
+      // ⚠ `nullish`, and it DEFAULTS CLOSED (review item 44). The contract
+      // requires it, but an older server does not send it, and the two honest
+      // readings of an absent authority flag are opposite: default open and a
+      // member sees a live cancel button against a server that will refuse it;
+      // default closed and an owner is missing a section for the length of one
+      // deploy. Closed is the one that cannot leak, and the server refuses
+      // either way — this is presentation.
+      canManageBilling: z.boolean().nullish(),
       lastDocumentAt: z.string().nullish(),
       // The plan (contract change, 2 Sep 2026). `nullish` twice over on
       // purpose: absent means an older server, null means a client who has
@@ -428,6 +450,7 @@ export async function fetchBusinessPortalHome(sessionToken: string): Promise<Bus
     documentsSent: body.summary.documentsSent,
     awaitingYou: body.summary.awaitingYou,
     subscriptionActive: body.summary.subscriptionActive,
+    canManageBilling: body.summary.canManageBilling ?? false,
     lastDocumentAt: body.summary.lastDocumentAt ?? null,
     items: (body.items ?? []).map((item) => ({
       transactionId: item.transactionId,

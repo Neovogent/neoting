@@ -7424,8 +7424,40 @@ components:
         business knowing how many documents are in review inside the practice,
         or what the practice's approval queue looks like — those are the firm's
         working state. This is the client's own side of the same pipeline.
-      required: [documentsSent, awaitingYou, subscriptionActive]
+      required: [documentsSent, awaitingYou, subscriptionActive, canManageBilling]
       properties:
+        canManageBilling:
+          type: boolean
+          description: |
+            Whether the person holding THIS session may reach the subscription —
+            start it, change the card, read an invoice, cancel it. Added 6 Sep
+            2026 (review item 44).
+
+            **A fact for honest degradation, and never a gate**, exactly as
+            `PortalPeople.canManagePeople` is: the server refuses
+            `POST /billing/checkout-sessions` and
+            `POST /billing/portal-sessions` for a non-owner portal session
+            regardless of what a browser believes
+            (`assertCan(actor, 'business.billing.manage')`).
+
+            ⚠ It exists because this one degrades by **hiding**, which the
+            people list deliberately does not. Who else can send paperwork on
+            your employer's behalf is not a secret from you, so that section
+            renders read-only with a line naming who can change it. What the
+            company pays and a live button that could cancel it are neither
+            a member's business nor any use to them, so the Plan section is
+            omitted from a member's Settings entirely — the other of the two
+            sanctioned shapes in `docs/Access_and_Approval_Matrix.md`.
+
+            Required rather than optional, for `Me.isOwner`'s reason: an
+            omitted boolean and `false` are indistinguishable once rendered,
+            so an optional one would let a producer stay silent and have it
+            read as "not permitted".
+
+            **`BUSINESS_ADMIN` only** — narrower than `canManagePeople`, which
+            a `USER_ADMIN` also holds. That role is granted people management
+            and nothing else; an office manager who can add a new starter is
+            not thereby somebody who may cancel the company's subscription.
         documentsSent:
           type: integer
           minimum: 0
