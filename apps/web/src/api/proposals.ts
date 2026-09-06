@@ -6,6 +6,7 @@ import {
   approveActionProposal,
   cancelActionProposal,
   createActionProposal,
+  denyActionProposal,
   listActionProposals,
   reviewActionProposal,
 } from '@neoting/contracts/client';
@@ -220,6 +221,37 @@ export async function openReview(proposalId: string): Promise<ReviewCard> {
 /** [Approve] — echoes the hash from the review the human actually opened. */
 export async function approveReviewed(proposalId: string, renderedSummaryHash: string): Promise<void> {
   await approveActionProposal(proposalId, { renderedSummaryHash });
+}
+
+/**
+ * **[Deny]** — the reviewer's refusal, with a required reason (review item 27).
+ *
+ * ⚠ **Not [Cancel] with a message.** Cancel is the PROPOSER withdrawing their
+ * own work and its reason is optional; this is somebody else refusing theirs,
+ * the reason is required, and the server emails it to them and puts it on the
+ * documents they staged. The two answer different questions and land in
+ * different states (`CANCELLED` vs `DENIED`), which is why there are two calls
+ * here rather than one with a flag.
+ */
+export async function denyReviewed(proposalId: string, reason: string): Promise<void> {
+  await denyActionProposal(proposalId, { reason });
+}
+
+/**
+ * The reason a decided proposal carries, from its own `outcome` — a denial's
+ * or a cancellation's.
+ *
+ * The contract types `outcome` as an open record, so this NARROWS rather than
+ * trusts: a payload with no string reason answers null, never a rendering of
+ * something that is not one. Same discipline as {@link offboardReason}.
+ */
+export function decisionReason(proposal: ActionProposal): { reason: string; deniedBy: string | null } | null {
+  const outcome = proposal.outcome as Record<string, unknown> | null | undefined;
+  if (outcome == null) return null;
+  const reason = outcome['reason'];
+  if (typeof reason !== 'string' || reason.trim() === '') return null;
+  const deniedBy = outcome['deniedByName'];
+  return { reason, deniedBy: typeof deniedBy === 'string' && deniedBy !== '' ? deniedBy : null };
 }
 
 /** [Cancel] — nothing executes, nothing is deleted. */

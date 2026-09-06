@@ -458,6 +458,64 @@ export function composeDuplicateSignupNotice(): ComposedEmail {
   return { subject, body, html: renderEmailHtml({ subject, body }) };
 }
 
+// ── 6 · A proposal you staged was DENIED ───────────────────────────────
+
+export interface ComposeProposalDeniedInput {
+  /** What was refused, in the queue's own words — "Release for export". */
+  readonly actionLabel: string;
+  /** The client it named, when it named one. A practice-level proposal names none. */
+  readonly clientName: string | null;
+  /** Who refused it. Null when no name is recorded — the copy drops the clause. */
+  readonly deciderName: string | null;
+  /** The reviewer's own words, verbatim. Required by the contract. */
+  readonly reason: string;
+}
+
+/**
+ * Sent to the colleague who staged a proposal, when a reviewer denied it
+ * (review item 27).
+ *
+ * > *the reason and declined message must be sent via email to the team member*
+ *
+ * ⚠ **THE REASON IS THE MESSAGE.** Everything around it exists to say which
+ * proposal is meant and who decided; the sentence a colleague acts on is the
+ * one the reviewer typed, and it is reproduced verbatim on its own line. No
+ * summarising, no truncation, no rewording — a denial the recipient has to
+ * interpret is a denial that costs a conversation.
+ *
+ * ⚠ **It carries no link, and that is deliberate.** Every other message in this
+ * file exists to get somebody through a door: an invite link, a setup link, a
+ * reset link, a code. This one is addressed to a person who is already signed
+ * in to the workspace and whose next move is a screen they already know how to
+ * reach. A link here would be a credential-shaped thing in an email that needs
+ * none, and it would have to be a workspace URL with no token behind it — which
+ * is exactly the shape a phishing message imitates.
+ *
+ * ⚠ **It never says the work was wrong.** A denial is a decision, not a verdict
+ * on a colleague, and this is a message a junior reads about their own work in
+ * front of whoever is standing behind them. It states what happened, what the
+ * reviewer said, and what is still true (nothing changed, the fix is theirs to
+ * make) — and stops.
+ */
+export function composeProposalDenied(input: ComposeProposalDeniedInput): ComposedEmail {
+  const scope = input.clientName === null ? input.actionLabel : `${input.actionLabel} — ${input.clientName}`;
+  const subject = `Not approved: ${scope}`;
+  const body = lines(
+    input.deciderName === null
+      ? `A request you sent for review was not approved: ${scope}.`
+      : `${input.deciderName} did not approve a request you sent for review: ${scope}.`,
+    '',
+    'The reason given:',
+    '',
+    input.reason,
+    '',
+    `Nothing was changed — the action did not run. You can make the change they asked for and send it for review again in ${SENDER_DISPLAY_NAME}.`,
+    '',
+    SENDER_DISPLAY_NAME,
+  );
+  return { subject, body, html: renderEmailHtml({ subject, body }) };
+}
+
 /**
  * Join body lines with `\n`, ending with one.
  *

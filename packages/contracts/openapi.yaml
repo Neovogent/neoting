@@ -2352,6 +2352,99 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /action-proposals/{proposalId}/denial:
+    parameters:
+      - $ref: '#/components/parameters/ProposalId'
+    post:
+      operationId: denyActionProposal
+      summary: Deny with a reason — [Deny]
+      description: |
+        The REVIEWER's refusal, and the counterpart of `[Approve]` rather than
+        of `[Cancel]` (review item 27).
+
+        > *There is no option for denying an approval, if the super admin denies
+        > to approve it then it must ask for the reason, and the reason and
+        > declined message must be sent via email to the team member*
+
+        Until this existed the review card offered only Approve and Cancel, and
+        Cancel is the PROPOSER taking their own work back. A reviewer who
+        disagreed had nothing to press and no way to say why.
+
+        Moves the proposal to `DENIED`. Nothing executes and nothing is deleted:
+        the proposal, its reason and its audit trail survive, for the reason
+        cancellation gives — *"what did we decide not to do"* is as much a part
+        of the record as what we did.
+
+        **Three things follow a denial**, and each is stated here because a
+        caller cannot see them happen:
+
+        1. **The proposer is emailed the reason.** The message goes to the
+           person named by `createdByUserId`; a proposal created by a model has
+           no proposer to write to and simply skips it.
+        2. **The reason is on the proposal**, in `outcome`, so the queue and the
+           history show what was said.
+        3. **A denied `publish.batch` drops its documents `READY → TO_REVIEW`**
+           wearing *"Denied by {name}: {reason}"*, so the composer sees exactly
+           what to fix and where. Other kinds change no document state — a
+           denial of a coding correction simply means the correction was never
+           applied.
+
+        **Who may deny follows who may APPROVE, per tier**
+        (`docs/Access_and_Approval_Matrix.md`, Part 2): a refusal is a decision
+        of the same weight as an approval, so a tier-1 kind answers `403
+        NT-PRM-001` to anybody but the firm's super admin.
+      tags: [action-proposals]
+      x-nt-side-effect: proposal
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 500
+                  description: |
+                    **Required**, unlike cancellation's, and that asymmetry is
+                    the feature: withdrawing your own work owes nobody an
+                    explanation, and refusing somebody else's does. It is
+                    emailed to them verbatim and shown on the document they
+                    staged, so it is the whole of what they have to act on.
+      responses:
+        '200':
+          description: Denied. Nothing executed.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionProposal' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403':
+          description: |
+            The actor may see this proposal but may not decide it. Deny
+            authority follows approve authority per tier, so this is the same
+            `NT-PRM-001` the approval path answers.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: |
+            Already executed (`NT-PRP-005`) — an executed action is undone by a
+            new proposal, never by denying the old one — or already cancelled
+            (`NT-PRP-006`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   # ==========================================================================
   # CHASES — read surface (METH Stage 2, issue #120)
   #
@@ -5429,7 +5522,21 @@ components:
 
     ProposalState:
       type: string
-      enum: [CREATED, REVIEWED, APPROVED, EXECUTED, CANCELLED, EXPIRED]
+      description: |
+        ⚠ **`CANCELLED` and `DENIED` are different decisions and the enum has to
+        say so** (review item 27, 6 Sep 2026). `CANCELLED` is the PROPOSER
+        withdrawing their own work — it owes nobody an explanation, which is why
+        its reason is optional. `DENIED` is a REVIEWER refusing it, it always
+        carries a reason, and the person who staged it is emailed that reason.
+        Telling those two apart is the whole product of the deny feature, and a
+        History screen that had to read `outcome` JSON per row to do it would be
+        a state enum not carrying its own record.
+
+        ⚠ **`DENIED`, not `REJECTED`.** `DocumentState.REJECTED` and the
+        `document.reject` proposal kind already exist and mean something else
+        entirely — a DOCUMENT judged unusable. Three "rejected"s in one queue is
+        how a support call goes wrong.
+      enum: [CREATED, REVIEWED, APPROVED, EXECUTED, CANCELLED, DENIED, EXPIRED]
 
     WorkspaceRole:
       type: string

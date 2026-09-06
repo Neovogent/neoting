@@ -79,7 +79,14 @@ export type EmailKind =
   // refused under NODE_ENV=production and staging had no signup at all.
   | 'email-verification'
   | 'duplicate-signup'
-  | 'password-reset';
+  | 'password-reset'
+  // A proposal DENIED by a reviewer, with the reason, to the colleague who
+  // staged it (review item 27). Its own kind rather than a use of any invite
+  // kind for the two standing reasons: the copy is unlike anything else here —
+  // it is the only message this product sends that tells somebody their work
+  // was refused — and the ceilings are per-kind, so a busy day of denials must
+  // not exhaust the budget an invitation needs.
+  | 'proposal-denied';
 
 /** One message, fully composed. The sender adds the envelope and nothing else. */
 export interface OutboundEmail {

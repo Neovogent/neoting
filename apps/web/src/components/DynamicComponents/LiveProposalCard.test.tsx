@@ -4,7 +4,7 @@ import type { ActionProposal } from '@neoting/contracts/model';
 
 import { LiveProposalCard } from './LiveProposalCard';
 import { AppIntlProvider } from '../../i18n/AppIntlProvider';
-import { openReview } from '../../api/proposals';
+import { denyReviewed, openReview } from '../../api/proposals';
 
 /**
  * How a `business.offboard` proposal reads on the Approvals queue — the
@@ -24,7 +24,7 @@ vi.mock('../../context/AppContext', () => ({
 
 vi.mock('../../api/proposals', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api/proposals')>();
-  return { ...actual, openReview: vi.fn() };
+  return { ...actual, openReview: vi.fn(), denyReviewed: vi.fn() };
 });
 
 afterEach(() => vi.clearAllMocks());
@@ -246,4 +246,73 @@ test('a section the card cannot render still withholds Approve — fail-closed s
   fireEvent.click(screen.getByRole('button', { name: 'Read review' }));
   await waitFor(() => expect(document.body.textContent).toContain('the review carried a section this screen cannot render'));
   expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+});
+
+/* ── deny with a reason (review item 27) ────────────────────────────────── */
+
+test('Deny opens a reason field first, and nothing is refused until the second press', async () => {
+  // ⚠ The reason is REQUIRED by the contract, is emailed verbatim to the
+  // colleague who staged this and lands on the documents it named — so the
+  // first press opens a field somebody can read back, never a one-shot action.
+  vi.mocked(openReview).mockResolvedValue(RELEASE_REVIEW);
+  vi.mocked(denyReviewed).mockResolvedValue(undefined);
+
+  renderCard(proposal(), 'Zeplow Inc.');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Read review' }));
+  const deny = await screen.findByRole('button', { name: /^Deny$/ });
+  expect(denyReviewed).not.toHaveBeenCalled();
+
+  fireEvent.click(deny);
+  const field = await screen.findByRole('textbox', { name: /Why are you not approving this/ });
+  expect(denyReviewed).not.toHaveBeenCalled();
+
+  // ⚠ Approve is withheld while the reason field is open: somebody mid-sentence
+  // about why they are refusing must not have Approve one mis-click away.
+  expect(screen.queryByRole('button', { name: /^Approve$/ })).toBeNull();
+
+  fireEvent.change(field, { target: { value: 'The VAT is wrong — it is zero-rated.' } });
+  fireEvent.click(screen.getByRole('button', { name: /Deny with this reason/ }));
+
+  await screen.findByRole('status');
+  expect(denyReviewed).toHaveBeenCalledWith('prop_off_1', 'The VAT is wrong — it is zero-rated.');
+  expect(document.body.textContent).toContain('The VAT is wrong — it is zero-rated.');
+});
+
+test('an empty reason is refused HERE, before the network', async () => {
+  // The person is mid-sentence, not a broken client. Meeting a 400 for an empty
+  // box teaches nothing.
+  vi.mocked(openReview).mockResolvedValue(RELEASE_REVIEW);
+
+  renderCard(proposal(), 'Zeplow Inc.');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Read review' }));
+  fireEvent.click(await screen.findByRole('button', { name: /^Deny$/ }));
+  fireEvent.change(await screen.findByRole('textbox', { name: /Why are you not approving/ }), {
+    target: { value: '   ' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: /Deny with this reason/ }));
+
+  expect(denyReviewed).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain('A denial needs a reason');
+});
+
+test('a proposal that ARRIVES denied wears the reason and who gave it', () => {
+  // Item 27's *"the reason must be shown"* on the proposal itself — read off
+  // the server's own `outcome`, never re-composed here.
+  renderCard(
+    proposal({
+      state: 'DENIED',
+      outcome: { denied: true, reason: 'Wrong period.', deniedByName: 'Priya Shah' },
+    }),
+    'Zeplow Inc.',
+  );
+
+  const text = document.body.textContent ?? '';
+  expect(text).toContain('Denied by Priya Shah: “Wrong period.”');
+  expect(text).toContain('Denied');
+  // ⚠ Never the word "Rejected": `document.reject` and `DocumentState.REJECTED`
+  // already mean a DOCUMENT judged unusable, and three of them on one screen is
+  // how a support call goes wrong.
+  expect(text).not.toContain('Rejected');
 });

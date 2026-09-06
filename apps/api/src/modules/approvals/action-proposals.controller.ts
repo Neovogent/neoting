@@ -9,6 +9,9 @@ import {
   cancelActionProposalHeader,
   cancelActionProposalParams,
   createActionProposalHeader,
+  denyActionProposalBody,
+  denyActionProposalHeader,
+  denyActionProposalParams,
   getActionProposalParams,
   listActionProposalsQueryParams,
   reviewActionProposalHeader,
@@ -122,6 +125,27 @@ export class ActionProposalsController {
     // The body is optional in the contract; an absent one arrives as undefined.
     const parsed = parseBoundary(cancelActionProposalBody, body ?? {}, 'request body');
     return this.service.cancel(await this.context.require(), params.proposalId, parsed, key);
+  }
+
+  /**
+   * [Deny] — the REVIEWER's refusal, with a REQUIRED reason (review item 27).
+   *
+   * Distinct from cancellation, which is the proposer withdrawing their own
+   * work. The reason is not optional here and the contract makes it so: it is
+   * emailed to the person who staged the proposal and shown on the document
+   * they staged, so it is the whole of what they have to act on.
+   */
+  @Post(':proposalId/denial')
+  @HttpCode(HttpStatus.OK)
+  async deny(
+    @Param('proposalId') proposalId: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+  ): Promise<ActionProposal> {
+    const key = parseIdempotencyKey(denyActionProposalHeader, idempotencyKey);
+    const params = parseBoundary(denyActionProposalParams, { proposalId }, 'proposalId');
+    const parsed = parseBoundary(denyActionProposalBody, body, 'request body');
+    return this.service.deny(await this.context.require(), params.proposalId, parsed, key);
   }
 }
 

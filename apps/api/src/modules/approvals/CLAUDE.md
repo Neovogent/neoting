@@ -346,6 +346,71 @@ newest of each group and **CANCELS** the rest with
 `outcome.supersededBy`. Cancels, never deletes — the cancellation contract's own
 rule. Runbook: `docs/runbooks/error-codes.md`, `NT-PRP-007`.
 
+## Deny with a reason — item 27, 6 Sep 2026 (`DENIED`)
+
+> *There is no option for denying an approval… it must ask for the reason, and
+> the reason and declined message must be sent via email to the team member and
+> must be shown in the table row in the document row; and this document must be
+> downgraded from ready tab to review tab*
+
+The card offered **Approve** and **Cancel**, and Cancel is the contracted
+*withdrawal* — the PROPOSER taking their own work back. A reviewer who
+disagreed had nothing to press and no way to say why. `deny()` is the
+counterpart of approve, not of cancel.
+
+- **⚠ `DENIED`, a state of its own, not `CANCELLED` with a flag.**
+  `GET /v1/action-proposals?state=` filters on the column, so History would
+  otherwise have to read `outcome` JSON per row to tell *"the proposer withdrew
+  it"* from *"the principal refused it"* — and those two sentences are the
+  entire product of this feature. Ruled at matrix ⚖7. **And `DENIED`, not
+  `REJECTED`**: `DocumentState.REJECTED` and the `document.reject` KIND already
+  mean a document judged unusable.
+- **Deny authority IS approve authority**, per tier: the same
+  `assertCanApprove` call, first in the ladder, for the approve path's reason
+  verbatim — a caller who may not decide this learns nothing about its state.
+- **⚠ An EXPIRED proposal is still deniable**, which is why `refuseTerminal` is
+  not reused here. Review and approve refuse an expired row because approving
+  would execute against facts that have moved; denying executes nothing, and a
+  queue full of expired proposals nobody may close is a queue nobody reads.
+  Denying a denied one is an idempotent no-op — the first reviewer's reason is
+  never overwritten by a second's.
+- **The email is POST-COMMIT and its failure is a loud log.** An SMTP or SES
+  round trip may never hold a tenant transaction open (`runPublishFollowUp`'s
+  rule). So a send failure cannot un-deny anything, and it must not: the
+  decision is on the proposal, in the audit chain and on the document. ⚠ The
+  engine takes a `DenialNotice` **function**, never `NotificationsService` — a
+  service here would put every other message in the product one call from the
+  engine, the second-door shape issue #81 exists to prevent. Composed in
+  `approvals.module.ts` over `notifications`' seam; `EmailKind`
+  `'proposal-denied'`, ceiling 10/hour (the document-request ceiling, because
+  volume tracks how much WORK a colleague did, and it is the one kind here a
+  stranger cannot cause).
+- **A denied `publish.batch` sends its documents back** `READY → TO_REVIEW`
+  wearing *"Denied by {name}: {reason}"*. ⚠ Only rows still in `READY` move and
+  one that has moved on is SKIPPED, never forced — a denial must not fail
+  because one document in a batch of forty was archived meanwhile. The reason
+  rides `failureCode`/`failureMessage` with **`NT-DOC-001`** (the existing
+  "rejected by a reviewer" value, minted for exactly this) and deliberately NOT
+  an `NT-PUB-*` code: `api/documents.ts` reads that prefix as *a failed publish
+  worth retrying*, and a denial is the opposite. The tag then costs **zero web
+  bytes** — `failureMessage` already becomes `Document.statusNote` and
+  `Tables.tsx` already renders it as the amber pill.
+- **`document-state.ts` gained a third `DocumentTransition` member** so
+  `TO_REVIEW` may carry an OPTIONAL failure. ⚠ The mechanical guarantee is
+  untouched: `REJECTED`/`FAILED` still cannot be written without a reason. And
+  `TO_REVIEW → READY` now CLEARS it, so a corrected document stops carrying why
+  it was sent back — a no-op for every row written before this member existed.
+- **`KIND_LABEL` in `render-summary.ts`** is what the notice calls the act when
+  a proposal is denied without its review ever having been opened. First choice
+  is the proposal's own stored `renderedSummary.title` — the server's words for
+  THAT proposal, already hashed.
+
+⚠ **The Approvals **History tab** is still the synthetic `ApprovalItem` table**
+(`apps/web/src/views/ApprovalsView.tsx`). A denial's reason renders on the CARD
+— read off `outcome` — wherever a decided proposal is shown; making History a
+live read over `GET /action-proposals?state=DENIED` is a separate, unbuilt job
+and is not part of item 27.
+
 ## The release gate — D44, stage A12
 
 `assert-can.ts`, called from `action-proposals.service.ts` on the **approve**

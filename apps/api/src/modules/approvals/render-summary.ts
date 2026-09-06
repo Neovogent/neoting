@@ -55,6 +55,43 @@ export interface RenderContext {
   readonly correctionChecks?: readonly CorrectionCheck[];
 }
 
+/**
+ * What a kind is CALLED, in one short phrase, with no payload behind it.
+ *
+ * This file's whole job is turning a kind into words, so the label lives here
+ * rather than beside its one consumer. It exists for the denial notice (review
+ * item 27): an email subject has to name the refused act, and *"Not approved:
+ * publish.batch"* is a machine talking to an accountant.
+ *
+ * ⚠ **It is the SECOND-choice source, not the first.** A denial prefers the
+ * proposal's own stored `renderedSummary.title` — the server's words for THIS
+ * proposal, already computed and hashed at Read review, naming counts and
+ * figures a bare label cannot. This is the fallback for a proposal denied
+ * without its review ever being opened, which the server permits: refusing to
+ * let somebody say no is not a rule worth having.
+ *
+ * Total over `ProposalKind`, like every other table here — a new kind answers
+ * "what is this called" rather than inheriting its own id as a name.
+ */
+export const KIND_LABEL: Readonly<Record<ProposalKind, string>> = {
+  'document.route': 'Route a document',
+  'document.update-coding': 'Update document coding',
+  'document.move-business': 'Move a document between clients',
+  'document.reprocess': 'Re-read documents',
+  'document.reject': 'Reject documents',
+  'document.split': 'Split a document',
+  'document.archive': 'Archive documents',
+  'chase.send': 'Send a chase',
+  'publish.batch': 'Release for export',
+  'bank.confirm-match': 'Confirm a bank match',
+  'bank.remove-statement': 'Remove bank statements',
+  'rule.create': 'Create a rule',
+  'document.revoke-link': 'Revoke document links',
+  'business.offboard': 'Remove a client',
+  'document.purge': 'Delete documents permanently',
+  'document.resolve-duplicate': 'Resolve a suspected duplicate',
+};
+
 export function renderSummary(kind: ProposalKind, payload: Record<string, unknown>, context: RenderContext = {}): RenderedSummary {
   switch (kind) {
     case 'document.archive': {

@@ -10,10 +10,12 @@ import {
   type ComposeDocumentRequestInput,
   composeDocumentRequest,
   composeDuplicateSignupNotice,
+  composeProposalDenied,
   type ComposeEmailVerificationInput,
   composeEmailVerification,
   composePasswordReset,
   type ComposePasswordResetInput,
+  type ComposeProposalDeniedInput,
   type ComposeSignInCodeInput,
   composeSignInCode,
   type ComposeTeamInviteInput,
@@ -83,6 +85,11 @@ export interface SendTeamInviteInput extends ComposeTeamInviteInput {
 
 export interface SendBusinessPeopleInviteInput extends ComposeBusinessPeopleInviteInput {
   /** The new starter's address, unvalidated. Parsed here — this is the boundary (R4). */
+  readonly to: string;
+}
+
+export interface SendProposalDeniedInput extends ComposeProposalDeniedInput {
+  /** The PROPOSER's address, unvalidated. Parsed here — this is the boundary (R4). */
   readonly to: string;
 }
 
@@ -197,6 +204,21 @@ export class NotificationsService {
   /** S2 message 3 — the chase, by email instead of SMS. Wiring is A14's. */
   sendDocumentRequest(input: SendDocumentRequestInput, context: SendContext = {}): Promise<SendOutcome> {
     return this.#deliver('document-request', input.to, context, () => composeDocumentRequest(input));
+  }
+
+  /**
+   * A proposal the recipient staged was DENIED by a reviewer (review item 27).
+   *
+   * ⚠ **The refusal is a VALUE here and the caller must NOT treat it as a
+   * failure.** The denial is already committed by the time this runs — that is
+   * deliberate: an SMTP round trip may never hold a tenant transaction open
+   * (`runPublishFollowUp`'s reasoning). So a rate-limit refusal or an unsendable
+   * address cannot un-deny anything, and the honest handling is a loud log. The
+   * decision is recorded on the proposal and visible in the queue either way,
+   * which is what stops a lost email becoming a lost decision.
+   */
+  sendProposalDenied(input: SendProposalDeniedInput, context: SendContext = {}): Promise<SendOutcome> {
+    return this.#deliver('proposal-denied', input.to, context, () => composeProposalDenied(input));
   }
 
   async #deliver(

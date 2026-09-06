@@ -75,6 +75,37 @@ export type DocumentTransition =
       readonly failure: DocumentFailure;
       readonly traceId: string;
       readonly detail?: Readonly<Record<string, string | number | boolean | null>>;
+    }
+  /**
+   * **`TO_REVIEW` may carry a reason, and only `TO_REVIEW`** — review item 27,
+   * 6 Sep 2026.
+   *
+   * > *this document must be downgraded from ready tab to review tab with tag
+   * > that it is rejected or denied by the super admin for this reason*
+   *
+   * A denied `publish.batch` sends its documents back with the words the
+   * reviewer wrote, so the composer sees what to fix. There was no way to say
+   * that: the non-failure branch above carries `failure?: never`, deliberately,
+   * so `REJECTED`/`FAILED` can never be written without a reason.
+   *
+   * ⚠ **That mechanical guarantee is UNTOUCHED.** This member widens what
+   * `TO_REVIEW` may carry; it does not loosen what a failure state must. The
+   * reason is OPTIONAL here because readiness sends documents to `TO_REVIEW`
+   * all day with nothing to say — an extraction that read four fields of five
+   * is not a refusal and must not acquire a `failureCode`.
+   *
+   * The field it writes is `documents.failure_code` / `failure_message`, whose
+   * schema comment is *"why it was rejected or failed"* — and a denial is a
+   * rejection, by a person rather than by the pipeline. The whole client-facing
+   * surface then comes free: `api/documents.ts` already maps `failureMessage`
+   * onto `Document.statusNote`, and `Tables.tsx` already renders it as the
+   * amber pill on every review-status row.
+   */
+  | {
+      readonly to: 'TO_REVIEW';
+      readonly failure?: DocumentFailure;
+      readonly traceId: string;
+      readonly detail?: Readonly<Record<string, string | number | boolean | null>>;
     };
 
 export class IllegalDocumentTransition extends Error {
@@ -151,6 +182,13 @@ export async function transitionDocument(
     ...((from === 'REJECTED' || from === 'FAILED') && to === 'PROCESSING'
       ? { failureCode: null, failureMessage: null }
       : {}),
+    // ⚠ And a document that has been FIXED stops carrying why it was sent back
+    // (item 27). Only `TO_REVIEW` can hold a reason without being a failure
+    // state, so `TO_REVIEW → READY` is the one edge that has to clear it —
+    // otherwise a corrected document keeps "Denied by …" in a column nothing
+    // renders today and something will render tomorrow. A no-op for every row
+    // written before this member existed, because none of them carries one.
+    ...(from === 'TO_REVIEW' && to === 'READY' ? { failureCode: null, failureMessage: null } : {}),
     ...(to === 'ARCHIVED' ? { archivedAt: new Date() } : {}),
     ...(from === 'ARCHIVED' ? { archivedAt: null } : {}),
   };

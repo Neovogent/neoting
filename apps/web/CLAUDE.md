@@ -2246,6 +2246,33 @@ dialog settles.
   review" assertion vacuous. `PublishBatchDialog.test.tsx` and
   `PurgeDocumentsDialog.test.tsx` both default it FALSE and say why.
 
+**Deny is a STEP, not a button that acts** (item 27). The reason is required by
+the contract, is emailed verbatim to the colleague who staged the proposal and
+lands on the documents it named — so the first press opens a `textarea`
+somebody can read back and the confirm is a second, deliberate press. ⚠ **Approve
+is withheld while that field is open**: somebody mid-sentence about why they are
+refusing must not have Approve one mis-click away. An empty reason is refused
+HERE as well as server-side, because the person is mid-sentence rather than a
+broken client. ⚠ **The word is "Deny", never "Reject"** — `document.reject` is a
+proposal KIND and `DocumentState.REJECTED` is a failed document; three
+"rejected"s on one screen is how a support call goes wrong. `decisionReason`
+(`api/proposals.ts`) narrows the server's `outcome` the way `offboardReason`
+narrows a payload, and a proposal that ARRIVES `DENIED` wears *"Denied by {who}:
+{reason}"*. ⚠ Do not confuse the two: `offboardReason` is the PROPOSER's note on
+why they staged an offboard, `decisionReason` is the REVIEWER's on why they
+refused it, and both can be on one card meaning opposite things.
+
+**The denied document tags itself, for zero web bytes.** The server writes the
+reason to `failureMessage`, `api/documents.ts` already maps that to
+`Document.statusNote`, and `Tables.tsx` already renders it as the amber pill on
+every review-status row — so *"Denied by Priya Shah: the VAT is wrong"* appears
+on the client tables with no component change. ⚠ Keep it that way: a second
+rendering of the denial reason here would be a second sentence free to disagree
+with the server's.
+
+⚠ **The Approvals History tab is still the synthetic `ApprovalItem` table.** A
+live read over `GET /action-proposals?state=DENIED` is a separate, unbuilt job.
+
 **`NT-PRP-007` is not a red banner** (item 26, ⚖8). A second identical staging
 is refused server-side, and `LiveProposalFlow` gives it its own amber state with
 the server's sentence and an **Open Approvals** button — the person pressed a
