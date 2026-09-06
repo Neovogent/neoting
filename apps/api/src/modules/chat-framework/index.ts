@@ -22,7 +22,7 @@
  * the chat runtime, and the two have no reason to be coupled.
  */
 
-export { MODELS, TASKS, DEGRADE_CHAIN, costPence } from './models.js';
+export { MODELS, TASKS, TASK_BUDGETS, DEGRADE_CHAIN, costPence } from './models.js';
 export type { Tier, Effort, TaskConfig, TaskName } from './models.js';
 
 /**

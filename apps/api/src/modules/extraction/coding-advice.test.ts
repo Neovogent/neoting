@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { ScopedClient } from '../../common/db/scoped-db.js';
 import { StoredCodingSuggestionSchema } from '../../common/documents/coding-suggestion.js';
 import type { AiCodingSuggestion, CodingEvidence, SupplierCodingResult } from '../rules-suggestions/index.js';
-import { adviseCoding, type DocumentCodingAdvisor, toStoredCodingSuggestion } from './coding-advice.js';
+import { adviseCoding, type DocumentCodingAdvisor, finishCoding, toStoredCodingSuggestion } from './coding-advice.js';
 import type { ExtractedDocument } from './document-extractor.js';
 
 /**
@@ -18,18 +18,49 @@ import type { ExtractedDocument } from './document-extractor.js';
  * whole reason it is one.
  */
 
-/** A `decide()` that answers with whatever the test hands it, and records the call. */
-function advisorReturning(decision: SupplierCodingResult['decision']): DocumentCodingAdvisor & {
-  calls: Array<{ businessId: string; supplierName: string | null; evidence: Omit<CodingEvidence, 'supplier'> | undefined }>;
-} {
-  const calls: Array<{ businessId: string; supplierName: string | null; evidence: Omit<CodingEvidence, 'supplier'> | undefined }> = [];
-  return {
+interface DecideCall {
+  businessId: string;
+  supplierName: string | null;
+  evidence: Omit<CodingEvidence, 'supplier'> | undefined;
+}
+
+type FakeAdvisor = DocumentCodingAdvisor & { calls: DecideCall[]; reconsidered: number };
+
+/**
+ * A `decide()` that answers with whatever the test hands it, and records the
+ * call. `rest` fills the parts of the result `codingSuggestionFor` reads for a
+ * `LEARNED_HISTORY` coding — the review item 48 path.
+ */
+function advisorReturning(
+  decision: SupplierCodingResult['decision'],
+  rest: Partial<SupplierCodingResult> = {},
+  reconsider?: DocumentCodingAdvisor['reconsider'],
+): FakeAdvisor {
+  const calls: DecideCall[] = [];
+  const advisor: FakeAdvisor = {
     calls,
+    reconsidered: 0,
     decide: async (_db, businessId, supplierName, evidence) => {
       calls.push({ businessId, supplierName, evidence });
-      return { businessId, decision } as unknown as SupplierCodingResult;
+      return { businessId, decision, ...rest } as unknown as SupplierCodingResult;
     },
+    ...(reconsider === undefined
+      ? {}
+      : {
+          reconsider: async (result, evidence, practiceId) => {
+            advisorState.reconsidered += 1;
+            return reconsider(result, evidence, practiceId);
+          },
+        }),
   };
+  const advisorState = advisor;
+  return advisor;
+}
+
+/** The whole pipeline-side journey: the deterministic ladder, then the model rung, then the stored shape. */
+async function advise(advisor: DocumentCodingAdvisor, businessId: string | null, categoryCode: string | null, doc: ExtractedDocument) {
+  const result = await adviseCoding(advisor, DB, businessId, categoryCode, doc);
+  return result === null ? null : finishCoding(advisor, result, doc, 'prac_1');
 }
 
 const DB = {} as ScopedClient;
@@ -77,7 +108,7 @@ const review = (suggestion: AiCodingSuggestion) =>
 describe('adviseCoding — when the ladder is consulted at all', () => {
   it('asks about an uncoded, routed document and stores what came back', async () => {
     const advisor = advisorReturning(review(SUGGEST));
-    const stored = await adviseCoding(advisor, DB, 'biz_1', null, extracted());
+    const stored = await advise(advisor, 'biz_1', null, extracted());
 
     expect(advisor.calls).toHaveLength(1);
     expect(advisor.calls[0]?.businessId).toBe('biz_1');
@@ -90,21 +121,59 @@ describe('adviseCoding — when the ladder is consulted at all', () => {
     // A suggestion beside an accountant's rule is not extra information, it is
     // pressure to second-guess an explicit instruction.
     const advisor = advisorReturning(review(SUGGEST));
-    expect(await adviseCoding(advisor, DB, 'biz_1', 'OFFICE_EQUIPMENT', extracted())).toBeNull();
+    expect(await advise(advisor, 'biz_1', 'OFFICE_EQUIPMENT', extracted())).toBeNull();
     expect(advisor.calls).toHaveLength(0);
   });
 
   it('is not consulted about an unrouted document — no client, so no chart, rules or history', async () => {
     const advisor = advisorReturning(review(SUGGEST));
-    expect(await adviseCoding(advisor, DB, null, null, extracted())).toBeNull();
+    expect(await advise(advisor, null, null, extracted())).toBeNull();
     expect(advisor.calls).toHaveLength(0);
   });
 
-  it('stores nothing for a decision that was not a REVIEW', async () => {
-    // `LOCKED` and `CODE` structurally carry no suggestion — the type system,
-    // not a runtime check, is what stops a model opinion riding beside a rule.
-    const coded = { outcome: 'CODE', categoryCode: 'OFFICE_EQUIPMENT' } as unknown as SupplierCodingResult['decision'];
-    expect(await adviseCoding(advisorReturning(coded), DB, 'biz_1', null, extracted())).toBeNull();
+  it('stores nothing beside an ACCOUNTANT’S RULE', async () => {
+    // A `CODE` on any authority but the client's own history is an explicit
+    // instruction; an opinion next to it is pressure to second-guess it.
+    const coded = { outcome: 'CODE', authority: 'ACCOUNTANT_RULE', categoryCode: 'OFFICE_EQUIPMENT' } as unknown as SupplierCodingResult['decision'];
+    expect(await advise(advisorReturning(coded), 'biz_1', null, extracted())).toBeNull();
+  });
+
+  /**
+   * **Review item 48, the regression this whole seam change exists for.**
+   *
+   * A supplier the client had coded by hand answers `CODE` on `LEARNED_HISTORY`,
+   * and this function used to return `null` for it — so the strongest signal the
+   * product has below an explicit rule produced an empty Category field with no
+   * sentence, identical to a supplier nobody had ever seen.
+   */
+  it('⚠ stores the client’s REMEMBERED treatment for a LEARNED_HISTORY coding', async () => {
+    const remembered = {
+      outcome: 'CODE',
+      authority: 'LEARNED_HISTORY',
+      categoryCode: 'FOOD_PURCHASES',
+    } as unknown as SupplierCodingResult['decision'];
+    const advisor = advisorReturning(remembered, {
+      history: {
+        entries: [
+          { documentId: 'd1', supplierName: 'Aldgate Meats Ltd', categoryCode: 'FOOD_PURCHASES', receivedAt: new Date('2026-08-09T00:00:00Z') },
+          { documentId: 'd2', supplierName: 'Aldgate Meats Ltd', categoryCode: 'FOOD_PURCHASES', receivedAt: new Date('2026-07-02T00:00:00Z') },
+        ],
+        categoryCodes: ['FOOD_PURCHASES'],
+        spellings: ['Aldgate Meats Ltd'],
+      },
+      chart: {
+        accounts: [],
+        categories: [{ code: 'FOOD_PURCHASES', name: 'Cost of sales: Food purchases' }],
+      } as unknown as SupplierCodingResult['chart'],
+    });
+
+    const stored = await advise(advisor, 'biz_1', null, extracted());
+    expect(stored?.outcome).toBe('SUGGEST');
+    expect(stored?.categoryCode).toBe('FOOD_PURCHASES');
+    expect(stored?.basis).toBe('SUPPLIER_MEMORY');
+    // Two hand-codings: above the floor, well below a bright line.
+    expect(stored?.confidence).toBe(0.68);
+    expect(stored?.note).toContain('2 times');
   });
 
   it('passes the document’s own evidence, with the lines read through the ladder’s parser', async () => {
@@ -112,9 +181,8 @@ describe('adviseCoding — when the ladder is consulted at all', () => {
     // so a first read and every later `resolveForDocument` must agree about what
     // the document's lines say.
     const advisor = advisorReturning(review(ESCALATE));
-    await adviseCoding(
+    await advise(
       advisor,
-      DB,
       'biz_1',
       null,
       extracted({ lineItems: [{ description: { value: 'Annual subscription' }, totalPence: { value: 1_200 } }] } as never),
@@ -123,6 +191,44 @@ describe('adviseCoding — when the ladder is consulted at all', () => {
     expect(evidence?.currency).toBe('USD');
     expect(evidence?.totalPence).toBe(5_435_251);
     expect(Array.isArray(evidence?.lines)).toBe(true);
+  });
+});
+
+/**
+ * **The phase split** (review item 19). `decide()` runs inside a transaction and
+ * the model rung cannot, so `finishCoding` is a separate call the pipeline makes
+ * with nothing open. These pin the contract between the two halves rather than
+ * the model itself, which has no database and its own tests.
+ */
+describe('finishCoding — the model rung, and what happens without one', () => {
+  it('is a pure mapping when the advisor has no model — exactly the behaviour before the rung existed', async () => {
+    const advisor = advisorReturning(review(ESCALATE));
+    const stored = await advise(advisor, 'biz_1', null, extracted());
+    expect(advisor.reconsidered).toBe(0);
+    expect(stored?.outcome).toBe('ESCALATE');
+    expect(stored?.escalationReason).toBe('SOFTWARE_TERM_UNKNOWN');
+  });
+
+  it('stores what the model upgraded an escalation to, and meters against the caller’s practice', async () => {
+    let sawPracticeId: string | null = null;
+    const advisor = advisorReturning(review(ESCALATE), {}, async (result, _evidence, practiceId) => {
+      sawPracticeId = practiceId;
+      return { ...result, decision: { ...result.decision, suggestion: SUGGEST } } as SupplierCodingResult;
+    });
+
+    const stored = await advise(advisor, 'biz_1', null, extracted());
+    expect(advisor.reconsidered).toBe(1);
+    expect(sawPracticeId).toBe('prac_1');
+    expect(stored?.outcome).toBe('SUGGEST');
+    expect(stored?.categoryCode).toBe('SOFTWARE_SUBSCRIPTIONS');
+  });
+
+  it('keeps the deterministic answer when the model changed nothing', async () => {
+    // Unreachable, over budget, refused, unparseable, or simply agreeing — the
+    // ladder's own escalation is the more specific answer and stands.
+    const advisor = advisorReturning(review(ESCALATE), {}, async (result) => result);
+    const stored = await advise(advisor, 'biz_1', null, extracted());
+    expect(stored?.escalationReason).toBe('SOFTWARE_TERM_UNKNOWN');
   });
 });
 

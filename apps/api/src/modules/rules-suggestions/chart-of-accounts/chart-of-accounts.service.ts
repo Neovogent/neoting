@@ -6,7 +6,7 @@ import type { PrismaClient } from '../../../common/db/prisma.js';
 import type { ScopeContext } from '../../../common/db/scope-context.js';
 import { scopedDb, type ScopedClient } from '../../../common/db/scoped-db.js';
 import { AppException } from '../../../common/problem/problem.js';
-import { readBusinessProfile } from '../../clients-team-settings/index.js';
+import { type BusinessTypeProfile, readBusinessProfile } from '../../clients-team-settings/index.js';
 import { ChartAccountSchema } from './account.js';
 import { type ChartBasis, type ChartCategory, type ChartOfAccounts, chartOfAccountsFor, toCategories } from './chart-of-accounts.js';
 import { BUSINESS_PROFILE_IDS } from './profiles.js';
@@ -105,6 +105,28 @@ export interface ClientChartOfAccounts extends ChartOfAccounts {
   readonly source: ChartSource;
   /** The `{ code, name }` pairs, `name` ledger-prefixed — the form A7's `Analysis account` needs. */
   readonly categories: readonly ChartCategory[];
+  /**
+   * The business-type profile the client gave at intake, or `null`.
+   *
+   * **§24.4's context pack, in the one shape this release has of it.** Review
+   * item 19: *"there won't be no written account category on any invoice ever;
+   * this requires deep understanding of accounting"* — a meat wholesaler
+   * invoicing a restaurant is food cost because of the RESTAURANT, and nothing
+   * on the page says so. The model rung
+   * (`coding/bedrock-coding.ts`) is the only consumer.
+   *
+   * ⚠ **It is read off the business row, NOT off the chart**, and that is why it
+   * is declared here rather than on `ChartOfAccounts`. A stored chart's
+   * `reference_syncs` payload carries no profile, so deriving it from the chart
+   * would give a seeded client coding context and a saved one none — the same
+   * client answered two ways depending on whether anything had read its chart
+   * before. `resolve()` reads `contextQuestionnaire` on every path already.
+   *
+   * ⚠ **Free text an accountant or a client typed. UNTRUSTED.** Anything that
+   * puts it in front of a model must use A11's `profileForModel()`, which wraps
+   * it; never interpolate a field.
+   */
+  readonly profile: BusinessTypeProfile | null;
 }
 
 export class ChartOfAccountsService {
@@ -162,6 +184,14 @@ export class ChartOfAccountsService {
       throw new AppException('NT-VAL-001', HttpStatus.NOT_FOUND, 'Not found', 'No client with that id.');
     }
 
+    // ⚠ Read ONCE, here, and carried onto every return below — including the
+    // stored-chart paths. The `reference_syncs` payload has no profile in it, so
+    // deriving the coding context from the chart would give a client with a
+    // freshly-derived chart its own trade as context and a client whose chart
+    // had already been saved none at all. Same client, two answers, decided by
+    // whether anything had read the chart before.
+    const profile = readBusinessProfile(business.contextQuestionnaire);
+
     const integration = await db.integration.findFirst({
       where: { businessId },
       orderBy: { createdAt: 'asc' },
@@ -174,18 +204,18 @@ export class ChartOfAccountsService {
         select: { payload: true },
       });
       const parsed = readStoredChart(stored?.payload ?? null);
-      if (parsed !== null) return { ...parsed, businessId, source: 'STORED' };
+      if (parsed !== null) return { ...parsed, businessId, profile, source: 'STORED' };
       if (stored !== null) {
         // A row exists and does not parse. That is a broken or hand-edited
         // chart, and REPLACING it would be this service overwriting something a
         // human may have written — the one thing it must not do. Fall through
         // to the derived chart, unstored, and say so in the log.
         this.logger.warn(`chart_of_accounts for business ${businessId} did not parse — serving the derived chart, not overwriting`);
-        return { ...derive(business.contextQuestionnaire, businessId), source: 'UNSTORED' };
+        return { ...derive(profile, businessId), source: 'UNSTORED' };
       }
     }
 
-    const derived = derive(business.contextQuestionnaire, businessId);
+    const derived = derive(profile, businessId);
     if (integration === null) {
       // No integration means nowhere to hang the row (`reference_syncs` is keyed
       // on one, and its RLS policy reads through it). A11's intake creates
@@ -214,15 +244,15 @@ export class ChartOfAccountsService {
         select: { payload: true },
       });
       const parsed = readStoredChart(stored?.payload ?? null);
-      return parsed === null ? { ...derived, source: 'UNSTORED' } : { ...parsed, businessId, source: 'STORED' };
+      return parsed === null ? { ...derived, source: 'UNSTORED' } : { ...parsed, businessId, profile, source: 'STORED' };
     }
   }
 }
 
-/** The business row's questionnaire column → a chart. The `null` path is documented in `chart-of-accounts.ts`. */
-function derive(questionnaire: unknown, businessId: string): Omit<ClientChartOfAccounts, 'source'> {
-  const chart = chartOfAccountsFor(readBusinessProfile(questionnaire));
-  return { ...chart, businessId, categories: toCategories(chart) };
+/** A parsed business-type profile → a chart. The `null` path is documented in `chart-of-accounts.ts`. */
+function derive(profile: BusinessTypeProfile | null, businessId: string): Omit<ClientChartOfAccounts, 'source'> {
+  const chart = chartOfAccountsFor(profile);
+  return { ...chart, businessId, categories: toCategories(chart), profile };
 }
 
 /**
@@ -241,7 +271,7 @@ function derive(questionnaire: unknown, businessId: string): Omit<ClientChartOfA
  * this release cannot read is served as a *derived, unstored* chart with a
  * warning, and is never overwritten.
  */
-function readStoredChart(payload: unknown): Omit<ClientChartOfAccounts, 'businessId' | 'source'> | null {
+function readStoredChart(payload: unknown): Omit<ClientChartOfAccounts, 'businessId' | 'source' | 'profile'> | null {
   if (payload === null || payload === undefined) return null;
   const parsed = StoredChartSchema.safeParse(payload);
   if (!parsed.success) return null;

@@ -4,7 +4,9 @@ import type { ScopedClient } from '../../../common/db/scoped-db.js';
 import {
   type CorrectionCheck,
   type CorrectionCheckContext,
+  type CorrectionOpinionVerdicts,
   evaluateCorrectionChecks,
+  modelCorrectionChecks,
   todayInLondon,
 } from '../correction-checks.js';
 import { ProposalExecutionRefused } from './proposal-executor.js';
@@ -59,10 +61,50 @@ export interface ChartCategoriesReader {
   (db: ScopedClient, businessId: string): Promise<readonly { readonly code: string }[] | null>;
 }
 
+/**
+ * **The model second opinion** (review items 22/47's model half), as a
+ * structural reader — the `ChartCategoriesReader` pattern, composed in
+ * `approvals.module.ts` from `rules-suggestions`' `BedrockCodingModel`.
+ *
+ * ⚠ **Every failure is `null`, and `null` is silence.** Unreachable, over
+ * budget, refused, unparseable, nothing to say: all the same answer, and all
+ * produce no checks. The ruling is explicit — the check must never block a
+ * correction, and *the check silently absent beats coding deadlocked on
+ * Bedrock*.
+ *
+ * ⚠ **It is called INSIDE the review transaction**, with a four-second cap on
+ * the model call. `SECOND_OPINION_TIMEOUT_MS` in `bedrock-coding.ts` carries the
+ * reasoning and the rejected alternative; the short version is that this is a
+ * human-paced, once-per-correction, single-row transaction with ten seconds to
+ * spend, and moving the call out costs a second read of the proposal row on
+ * every kind to save four of them.
+ */
+export interface CorrectionSecondOpinion {
+  (input: {
+    readonly practiceId: string;
+    readonly document: {
+      readonly docType: string | null;
+      readonly supplierName: string | null;
+      readonly totalPence: number | null;
+      readonly taxPence: number | null;
+      readonly currency: string | null;
+      readonly documentDate: string | null;
+      readonly lineDescriptions: readonly string[];
+      readonly text: string | null;
+    };
+    readonly typed: {
+      readonly supplierName?: string;
+      readonly totalPence?: number;
+      readonly categoryCode?: string;
+    };
+  }): Promise<CorrectionOpinionVerdicts | null>;
+}
+
 const DOCUMENT_SELECT = {
   id: true,
   businessId: true,
   docType: true,
+  supplierName: true,
   totalPence: true,
   taxPence: true,
   documentDate: true,
@@ -116,6 +158,12 @@ export async function computeCorrectionAdvisory(
   db: ScopedClient,
   payload: UpdateCodingPayload,
   todayIso: string = todayInLondon(),
+  /**
+   * The model second opinion, and the practice it is metered against. Both
+   * optional together: without them this is exactly the deterministic layer #256
+   * shipped, which is what every existing test drives.
+   */
+  secondOpinion?: { readonly read: CorrectionSecondOpinion; readonly practiceId: string },
 ): Promise<CorrectionCheck[]> {
   const document = await db.document.findUnique({
     where: { id: payload.documentId },
@@ -129,15 +177,75 @@ export async function computeCorrectionAdvisory(
     select: { fields: true },
   });
 
+  const documentDate = document.documentDate === null ? null : document.documentDate.toISOString().slice(0, 10);
   const context: CorrectionCheckContext = {
     docType: document.docType,
     totalPence: document.totalPence,
     taxPence: document.taxPence,
-    documentDate: document.documentDate === null ? null : document.documentDate.toISOString().slice(0, 10),
+    documentDate,
     currency: document.currency,
     extractionHadValues: extractionHasValues(accepted?.fields ?? null),
   };
-  return evaluateCorrectionChecks(context, payload.fields, todayIso);
+  const checks = evaluateCorrectionChecks(context, payload.fields, todayIso);
+
+  // ⚠ The DETERMINISTIC checks come first and stand on their own. The model is
+  // asked afterwards and can only ADD — it never suppresses an arithmetic
+  // finding, and a model that is unreachable leaves this function answering
+  // exactly what it answered before the rung existed.
+  if (secondOpinion === undefined) return checks;
+  const verdicts = await secondOpinion.read({
+    practiceId: secondOpinion.practiceId,
+    document: {
+      docType: document.docType,
+      supplierName: document.supplierName,
+      totalPence: document.totalPence,
+      taxPence: document.taxPence,
+      currency: document.currency,
+      documentDate,
+      lineDescriptions: extractedLineDescriptions(accepted?.fields ?? null),
+      // Deliberately null: the pipeline keeps no raw document text (OCR is read
+      // in phase 2 and handed to the extractor, not persisted), so the model
+      // judges the EXTRACTED content. Stated rather than left as a puzzle —
+      // when a text column exists, this is the one line that fills it.
+      text: null,
+    },
+    typed: {
+      ...(payload.fields.supplierName === undefined ? {} : { supplierName: payload.fields.supplierName }),
+      ...(payload.fields.totalPence === undefined ? {} : { totalPence: payload.fields.totalPence }),
+      ...(payload.fields.categoryCode === undefined ? {} : { categoryCode: payload.fields.categoryCode }),
+    },
+  });
+  if (verdicts === null) return checks;
+  return [...checks, ...modelCorrectionChecks(verdicts, payload.fields, document.currency)];
+}
+
+/**
+ * The line descriptions the extraction stored, parsed rather than trusted.
+ *
+ * ⚠ **UNTRUSTED CONTENT.** These are words off a document a stranger sent, and
+ * the only thing this function does with them is hand them to
+ * `correctionOpinionBlock`, which wraps them. They are never rendered, never
+ * concatenated into a check message, and never compared against anything but by
+ * the model.
+ *
+ * They ride in `extractions.fields.lineItems` (the smuggled key METH S4
+ * introduced — `common/documents/coding-suggestion.ts` explains why there is no
+ * column). A payload that does not have the shape yields an empty list, which
+ * the model reads as "nothing about what was bought" and answers
+ * `NOT_CHECKABLE` to.
+ */
+function extractedLineDescriptions(fields: unknown): readonly string[] {
+  if (typeof fields !== 'object' || fields === null || Array.isArray(fields)) return [];
+  const lineItems = (fields as Record<string, unknown>)['lineItems'];
+  if (!Array.isArray(lineItems)) return [];
+  const descriptions: string[] = [];
+  for (const raw of lineItems) {
+    if (typeof raw !== 'object' || raw === null) continue;
+    const cell = (raw as Record<string, unknown>)['description'];
+    const value = typeof cell === 'object' && cell !== null ? (cell as Record<string, unknown>)['value'] : cell;
+    if (typeof value === 'string' && value.trim() !== '') descriptions.push(value);
+  }
+  return descriptions;
 }
 
 /**

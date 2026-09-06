@@ -56,18 +56,26 @@ export { computeRemoveStatementPayload, MAX_REMOVE_STATEMENT_BATCH } from './pro
 // deterministic advisory the engine freezes into the review render. The chart
 // arrives through the structural reader seam, composed in approvals.module.ts
 // — the ExportEntryPreviewer pattern. `evaluateCorrectionChecks` is the pure
-// emitter the web dialog mirrors and the model second opinion (items 19/48)
-// will extend.
+// emitter the web dialog mirrors.
+//
+// ⚠ **The model second opinion joined it on 6 Sep 2026** (items 22/47's model
+// half): `CorrectionSecondOpinion` is a second structural reader on the same
+// seam, composed in approvals.module.ts from `rules-suggestions`'
+// `BedrockCodingModel`. It can only ADD checks, never suppress one, and every
+// failure is silence.
 export {
   assertUpdateCodingAllowed,
   type ChartCategoriesReader,
   computeCorrectionAdvisory,
+  type CorrectionSecondOpinion,
 } from './proposals/validate-update-coding.js';
 export {
   type CorrectionCheck,
   type CorrectionCheckCode,
   type CorrectionCheckContext,
+  type CorrectionOpinionVerdicts,
   evaluateCorrectionChecks,
+  modelCorrectionChecks,
   todayInLondon,
 } from './correction-checks.js';
 export { runPublishFollowUp } from './proposals/publish-follow-up.js';

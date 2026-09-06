@@ -616,8 +616,34 @@ exactly one hard rule where a rule exists.
   human-typed values deliberately do not count as "the document had content").
   Checks fire on what the correction TOUCHES, against the AFTER values.
   ⚠ **Mirrored by `apps/web/src/lib/correctionChecks.ts`** — change the two
-  together. The `CorrectionCheck` shape is the seam the items-19/48 model
-  second opinion (package J) plugs into.
+  together.
+- **The MODEL second opinion joined the same emitter on 6 Sep 2026** (items
+  22/47's deferred half). `CorrectionSecondOpinion` is a second structural
+  reader on `computeCorrectionAdvisory`, composed in `approvals.module.ts` from
+  `rules-suggestions`' `BedrockCodingModel` — the `ChartCategoriesReader`
+  pattern. Three new codes, and the sentences are OURS:
+  `model-supplier-not-in-document`, `model-total-not-in-document`,
+  `model-category-dissonant`.
+  - ⚠ **The model returns an ENUM per field and no prose.** The warning is
+    rendered on a card frozen into the hash a super admin echoes, and every
+    other string on it is server-composed from the payload; a model-authored
+    sentence there would be the one piece of text on the approval path written
+    by the document itself. `modelCorrectionChecks` composes ours from what the
+    HUMAN typed.
+  - ⚠ **It can only ADD.** The deterministic checks run first and stand alone; a
+    model that is unreachable, over budget, refused or unparseable produces
+    `null`, and `null` is silence. *The check silently absent beats coding
+    deadlocked on Bedrock.*
+  - ⚠ **`NOT_CHECKABLE` is a real verdict and never a warning.** Measured live
+    against item 47's selfie: shown a document the pipeline read nothing off,
+    the model says it cannot tell — and the deterministic
+    `not-a-financial-document` check already covers that shape. Two layers not
+    saying the same thing twice is what keeps a warning worth reading.
+  - ⚠ **`CorrectionOpinionVerdicts` is declared HERE and again in
+    `rules-suggestions/coding/correction-opinion.ts`**, deliberately: this module
+    may not import that one, so two declarations of one shape make a drift a
+    compile error at the composition root, which is where somebody is looking
+    when they wire it.
 - **`proposals/validate-update-coding.ts`** — the engine calls both halves:
   `assertUpdateCodingAllowed` at CREATE (the one HARD rule: `categoryCode` must
   be EXACTLY a code on the client's chart — refuse, never fuzzy-match, the

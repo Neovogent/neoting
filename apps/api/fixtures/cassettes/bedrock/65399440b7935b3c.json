@@ -1,8 +1,8 @@
 {
   "key": "65399440b7935b3c",
-  "recordedAt": "2026-09-04",
+  "recordedAt": "2026-09-06",
   "modelId": "anthropic.claude-opus-4-6-v1",
-  "synthetic": true,
+  "synthetic": false,
   "description": "chat · one turn, valid on the first answer",
   "response": {
     "stop_reason": "tool_use",
@@ -13,7 +13,7 @@
         "name": "respond",
         "input": {
           "intent": "SHOW_INBOX",
-          "reply": "Here is everything waiting for review.",
+          "reply": "Opening your inbox filtered to documents awaiting review.",
           "navigation": {
             "statusFilter": "review"
           }
@@ -21,10 +21,20 @@
       }
     ],
     "usage": {
-      "input_tokens": 2681,
-      "output_tokens": 64,
+      "input_tokens": 3376,
+      "output_tokens": 85,
       "cache_read_input_tokens": 0,
-      "cache_creation_input_tokens": 0
-    }
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      }
+    },
+    "model": "claude-opus-4-6",
+    "id": "msg_REDACTED",
+    "type": "message",
+    "role": "assistant",
+    "stop_sequence": null,
+    "stop_details": null
   }
 }

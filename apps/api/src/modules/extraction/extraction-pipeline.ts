@@ -22,12 +22,12 @@ import type { Prisma } from '@prisma/client';
 
 import type { PrismaClient } from '../../common/db/prisma.js';
 import { resolveSystemActor } from '../../common/db/resolve-system-actor.js';
-import { systemContext } from '../../common/db/scope-context.js';
+import { type ScopeContext, systemContext } from '../../common/db/scope-context.js';
 import { scopedDb, type ScopedClient } from '../../common/db/scoped-db.js';
 import type { StoredCodingSuggestion } from '../../common/documents/coding-suggestion.js';
 import { CODING_SUGGESTION_KEY } from '../../common/documents/coding-suggestion.js';
 import { resolveProcessedState, transitionDocument } from '../validation-dedupe/index.js';
-import { adviseCoding, type DocumentCodingAdvisor } from './coding-advice.js';
+import { adviseCoding, type DocumentCodingAdvisor, finishCoding } from './coding-advice.js';
 import {
   DEMO_EXTRACTOR_KIND,
   type DocumentExtractor,
@@ -295,11 +295,16 @@ export class PrismaExtractionStep implements ExtractionStep {
       ? { ok: true, document: { ...outcome.document, fields: withFieldGeometry(outcome.document.fields, ocr?.words) } }
       : outcome;
 
+    // Phase 2.5 — the coding ladder, and it is OUTSIDE the write transaction
+    // since 6 Sep 2026 (review item 19). See `codeDocument` for why the model
+    // rung forced the split, and what it costs.
+    const coding = placed.ok ? await this.codeDocument(ctx, input, placed.document) : null;
+
     // Phase 3 — write results and finalise the state, atomically. The completion
     // (the header + final state) is what the caller hands the auto-close hook; it
     // is null for a FAILED read, so a chase never closes on a document we could
     // not read.
-    const completion = await scopedDb(this.prisma, ctx, (db) => this.finish(db, input, placed, extractor));
+    const completion = await scopedDb(this.prisma, ctx, (db) => this.finish(db, input, placed, extractor, coding));
     if (completion === null || ocr === undefined) return completion;
     return { ...completion, ocr };
   }
@@ -424,6 +429,7 @@ export class PrismaExtractionStep implements ExtractionStep {
     input: ExtractionInput,
     outcome: ExtractionOutcome,
     by: DocumentExtractor,
+    coding: StoredCodingSuggestion | null,
   ): Promise<ExtractionCompletion | null> {
     const doc = await db.document.findUnique({ where: { id: input.documentId }, select: { id: true, state: true } });
     if (doc === null || doc.state !== 'PROCESSING') return null; // a concurrent worker finalised it — no-op
@@ -469,14 +475,14 @@ export class PrismaExtractionStep implements ExtractionStep {
             });
       const ruleCategory = rule === null ? null : categoryFromRule(rule.sets);
       if (ruleCategory !== null) categoryCode = ruleCategory;
-      // The coding ladder, in THIS transaction — the chart, the rules and the
-      // client's own history read from one consistent view, which is what
-      // `SupplierCodingService.decide` takes a `ScopedClient` for. It runs
-      // AFTER the rule match and only when that left the document uncoded, so
-      // it can never be consulted about a document an accountant's rule already
-      // answered.
-      const coding = await this.adviseCoding(db, input, extracted, categoryCode);
-      await this.writeExtraction(db, input, extracted, rule?.id ?? null, categoryCode, coding, by);
+      // ⚠ **THE SUGGESTION IS DROPPED IF A RULE CODED THE DOCUMENT.** The ladder
+      // ran in phase 2.5 (see `codeDocument`) and reads rules itself, answering
+      // `CODE` on an accountant's rule — which carries no suggestion at all. So
+      // this can only fire in the window where a rule was approved between that
+      // read and this write. The rule is absolute and the check is one
+      // comparison: *a suggestion beside an explicit instruction is pressure to
+      // second-guess it, not extra information.*
+      await this.writeExtraction(db, input, extracted, rule?.id ?? null, categoryCode, categoryCode === null ? coding : null, by);
     } else {
       // Defensive, not a live path: the extraction write and the final transition
       // below share THIS transaction, so "accepted extraction present but still
@@ -514,32 +520,64 @@ export class PrismaExtractionStep implements ExtractionStep {
    * Ask the coding ladder what it makes of a document nothing coded — and never
    * let the answer be able to break the document.
    *
-   * ## Why the try/catch, and what it costs
+   * ## ⚠ PHASE 2.5, AND THE MODEL RUNG IS WHY IT MOVED (6 Sep 2026, review item 19)
+   *
+   * This used to run inside phase 3's write transaction, and the argument for it
+   * was good: the chart, the rules and the client's history read from one
+   * consistent view. **A model call cannot go there.** `scopedDb` gives that
+   * transaction ten seconds and a judgment-tier call takes seconds of somebody
+   * else's network, so a slow moment at Bedrock would have become a failed
+   * extraction — and, while it lasted, a tenant transaction held open across a
+   * network call, which `modules/approvals` refuses by name for its own ledger
+   * follow-up.
+   *
+   * So the work is split at the seam `coding-advice.ts` describes: the
+   * deterministic ladder still reads chart, rules and history in **one**
+   * transaction — a short one of its own — and the model rung runs with nothing
+   * open at all.
+   *
+   * **What the split costs, stated rather than discovered.** The ladder's rule
+   * read and phase 3's rule match are now two transactions, so a rule approved
+   * between them could produce both a coded header and a suggestion. Phase 3
+   * closes that by dropping the suggestion whenever `categoryCode` is set — one
+   * comparison, and the invariant *a suggestion never rides beside a rule* holds
+   * by construction rather than by timing.
+   *
+   * **What it buys, beyond the model.** The caveat this comment used to carry is
+   * gone: a throw from Postgres inside the ladder no longer aborts the enclosing
+   * write transaction, because there is no enclosing transaction. The realistic
+   * case — `ChartOfAccountsService.resolve`'s seeding race — now costs the
+   * document its suggestion and nothing else, where it used to cost the whole
+   * job a retry.
+   *
+   * ## Why the try/catch
    *
    * This step is the only thing that moves a document out of PROCESSING, so
    * anything it does that can throw is a candidate for stranding one — the
    * failure `runExtractor` exists to close, reached through a different door. A
    * suggestion is an *optional extra on a document that renders perfectly well
    * without one*, so the honest failure mode is silence plus a WARN, exactly as
-   * `readOcr` treats a failed OCR read.
-   *
-   * ⚠ **One caveat, stated rather than hidden:** a throw that came from Postgres
-   * rather than from our own validation leaves the enclosing transaction
-   * aborted, so the write below fails and the job retries. The realistic case is
-   * `ChartOfAccountsService.resolve`'s documented seeding race, which the retry
-   * then finds already settled. Swallowing the error here still buys the case
-   * that matters — a decision that throws in *our* code (a bad chart payload, an
-   * invisible business) costs the document nothing.
+   * `readOcr` treats a failed OCR read. (`BedrockCodingModel` does not throw at
+   * all — every failure there is already `null` — so what this catches is the
+   * database half.)
    */
-  private async adviseCoding(
-    db: ScopedClient,
+  private async codeDocument(
+    ctx: ScopeContext,
     input: ExtractionInput,
     extracted: ExtractedDocument,
-    categoryCode: string | null,
   ): Promise<StoredCodingSuggestion | null> {
-    if (this.coding === undefined) return null;
+    const advisor = this.coding;
+    if (advisor === undefined) return null;
     try {
-      return await adviseCoding(this.coding, db, input.businessId, categoryCode, extracted);
+      // Step one, in a SHORT transaction of its own: the chart, the rules and
+      // this client's history, read from one consistent view — which is what
+      // `decide()` takes a `ScopedClient` for and is unchanged.
+      const result = await scopedDb(this.prisma, ctx, (db) =>
+        adviseCoding(advisor, db, input.businessId, extracted.categoryCode, extracted),
+      );
+      if (result === null) return null;
+      // Step two, with NOTHING open: the model rung, then the answer to store.
+      return await finishCoding(advisor, result, extracted, input.practiceId);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       this.logger.warn(`extract: coding advice failed for ${input.documentId} (${reason}, trace=${input.traceId})`);

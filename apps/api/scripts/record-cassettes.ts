@@ -63,6 +63,12 @@ import { CHAT_REPLAY_CASES } from '../src/modules/chat-framework/replay-corpus.j
 import { BedrockExtractor } from '../src/modules/extraction/bedrock-extractor.js';
 import { EXTRACTION_REPLAY_CASES } from '../src/modules/extraction/replay-corpus.js';
 import type { DocumentStore } from '../src/modules/ingestion-routing/index.js';
+import { BedrockCodingModel } from '../src/modules/rules-suggestions/coding/bedrock-coding.js';
+import {
+  ALWAYS_SYNTHETIC_CODING,
+  CODING_REPLAY_CASES,
+  CORRECTION_REPLAY_CASES,
+} from '../src/modules/rules-suggestions/coding/coding-replay-corpus.js';
 
 const LIVE = process.argv.includes('--live');
 const REGION = process.env.BEDROCK_REGION ?? 'eu-west-2';
@@ -145,7 +151,57 @@ async function main(): Promise<void> {
     );
   }
 
+  // The coding rung and the correction second opinion (review items 19, 22/47).
+  // ⚠ Neither sends BYTES — the coding model reads what the extractor already
+  // read — so a `--live` re-record here is not blocked on the extraction
+  // corpus's one-pixel-PNG refusal.
+  for (const kase of CODING_REPLAY_CASES) {
+    const synthetic = wire === undefined || ALWAYS_SYNTHETIC_CODING.has(kase.name);
+    const model = codingModelFor(kase.syntheticResponse, synthetic, wire, recordedAt, kase.description);
+    const answer = await model.suggest(kase.request);
+    process.stdout.write(
+      `  ${kase.name}${synthetic ? ' (synthetic)' : ''}: ${answer === null ? 'no answer' : `${answer.outcome} ${answer.outcome === 'SUGGEST' ? answer.categoryCode : answer.reason}`}\n`,
+    );
+  }
+
+  for (const kase of CORRECTION_REPLAY_CASES) {
+    const synthetic = wire === undefined;
+    const model = codingModelFor(kase.syntheticResponse, synthetic, wire, recordedAt, kase.description);
+    const verdicts = await model.secondOpinion(kase.request);
+    process.stdout.write(`  ${kase.name}${synthetic ? ' (synthetic)' : ''}: ${verdicts === null ? 'no verdicts' : JSON.stringify(verdicts)}\n`);
+  }
+
   process.stdout.write('\ndone. Commit the cassette files with the change that required re-recording.\n\n');
+}
+
+/**
+ * The REAL coding model with a recording transport around it — real prompt
+ * assembly, real chart enforcement, real Zod parse, real metering (against a
+ * throwaway ledger; recording measures nothing, so the ceiling only needs to
+ * not bite).
+ *
+ * ⚠ **It never throws**, by design, so a live recording that fails prints "no
+ * answer" and writes no cassette rather than stopping the run. The replay test
+ * failing on the miss is what reports it.
+ */
+function codingModelFor(
+  syntheticResponse: Record<string, unknown>,
+  synthetic: boolean,
+  wire: BedrockMessagesCreate | undefined,
+  recordedAt: string,
+  description: string,
+): BedrockCodingModel {
+  const recorder = new RecordingBedrockClient(synthetic || wire === undefined ? scripted([syntheticResponse]) : wire, DEFAULT_CASSETTE_DIR, {
+    synthetic,
+    recordedAt,
+  });
+  recorder.description = description;
+  return new BedrockCodingModel({
+    region: REGION,
+    budget: new InMemoryAiBudget(1_000_000),
+    client: recordingBedrockMessages(recorder),
+    logger: { warn: (message) => process.stdout.write(`    ⚠ ${message}\n`) },
+  });
 }
 
 main().catch((error: unknown) => {

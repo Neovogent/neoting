@@ -136,6 +136,29 @@ eval suite. Never a silent swap. The current pin is behind the latest Claude
 generation; moving it is a deliberate decision with a residency check, a
 Terraform change to the ARNs in both envs, and an eval run — not a drive-by.
 
+### ⚠ `TASKS.codingSuggestion` moved to the JUDGMENT tier (6 Sep 2026)
+
+Review item 19: *"this requires deep understanding of accounting, use higher
+capable model for this if possible"*, said about an invoice that came back with a
+blank category. Coding is not a reading task — extraction reads what is printed,
+that rung is asked what a thing IS against a client's trade when nothing on the
+page says. Shakib took the pin in session.
+
+⚠ **The estimate it was first taken on was 42% LOW**, and the correction is the
+lesson worth keeping. 1.74p/call was computed from a character count of the
+GENERAL chart's instructions; `scripts/measure/coding-cost.ts` measured **2.47p**
+(5,152 in + 204 out) once a real client's chart and their own intake answers were
+in the prompt. A document that reaches the rung costs 3.81p against D20's £0.02
+blended guardrail, which holds while fewer than **27%** of documents reach it —
+and that rate is unmeasured. Quote the rate, never the per-call price.
+
+The task's own eval family is `pnpm test:eval:coding`
+(`evals/src/run-coding-evals.ts`), deliberately separate from this module's:
+different prompt, tool schema, task class and version constant, and one runner
+would couple a coding-rule change to the chat gate.
+`DEGRADE_CHAIN.codingSuggestion` stays empty for the standing §9.3 reason — no
+lower tier has passed the rung's evals, because until now there was no rung.
+
 ## Configuration
 
 | Variable | Default | Notes |
