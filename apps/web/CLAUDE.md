@@ -2214,6 +2214,53 @@ have uncommitted work in this tree, so the absolute floor and worst-route number
 in the table above are not attributable to any one change; re-measure on a clean
 checkout before quoting a delta.
 
+## The approvals package (6 Sep 2026 — review items 20, 24, 26, 27, 66)
+
+`docs/Access_and_Approval_Matrix.md` **Part 2** is the ruling document: which
+proposal kinds need the super admin, which need any member, and which never
+queue at all. Four rulings (⚖5–⚖8) are recorded inline. What lands here:
+
+**⚠ Every `document.update-coding` is TIER 1 now (⚖5, the literal reading).**
+So a member who cannot release stages the correction and it QUEUES — see the
+role-aware copy below. `updateCodingProposal` no longer runs create → review →
+approve unconditionally.
+
+**The super-admin fast path** (⚖6). `LiveProposalCard` takes `autoOpenReview`;
+`LiveProposalFlow` passes it when `session.me.role === 'PRACTICE_ADMIN' &&
+session.me.isOwner` — **the same conjunction `assert-can.ts` applies**, read one
+layer out, so it is not a guess about what the server will allow. Staging then
+fires `POST …/review` itself and the server's own render is on screen when the
+dialog settles.
+
+- ⚠ **It automates [Read review] and NOTHING else.** Approve still mounts only
+  after the server's render arrives and a human still presses it. An
+  auto-approve would be the screen pretending to be the person, which is the one
+  thing `api/proposals.ts`'s header forbids. Pinned in
+  `PublishBatchDialog.test.tsx` — the fast-path case asserts `approveReviewed`
+  was NOT called before the click.
+- ⚠ **It is presentation.** A stale `/me` costs a review that opened itself for
+  somebody who then meets `NT-PRM-001` on Approve — the refusal they would have
+  met anyway. Nothing here gates anything.
+- ⚠ **A test that mocks `useAppContext` must decide `isOwner` deliberately.**
+  `true` auto-opens the review, which makes an "Approve is absent until Read
+  review" assertion vacuous. `PublishBatchDialog.test.tsx` and
+  `PurgeDocumentsDialog.test.tsx` both default it FALSE and say why.
+
+**`NT-PRP-007` is not a red banner** (item 26, ⚖8). A second identical staging
+is refused server-side, and `LiveProposalFlow` gives it its own amber state with
+the server's sentence and an **Open Approvals** button — the person pressed a
+button twice, which the product invited, and nothing went wrong.
+
+**The proposer is a PERSON, never a CUID** (item 26(3)). The queue read
+`createdByUserId` raw, so six cards said *"proposed by CMTNDDE8P00337710E1…"*.
+`LiveProposalCard` takes `proposerName` and falls back through **"you"** (the id
+is this session's — every staging flow) to **"a colleague"**. ⚠ It never falls
+back to the id: a CUID is not a degraded name, it identifies nobody and reads as
+the screen having failed. `ApprovalsLiveQueue` resolves it from
+`usePracticeTeam` — the same list the Team screen shows, on this lazy view's
+chunk (the `api/team.ts` placement rule), and a read every practice-wide member
+may make.
+
 ## The access-control package (6 Sep 2026 — review items 38, 39, 41, 42, 44, 57)
 
 `docs/Access_and_Approval_Matrix.md` is the ruling document — who sees and does

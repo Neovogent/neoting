@@ -52,6 +52,7 @@ import {
 import { assertCanApprove, requiresReleaseAuthority, resolveActor } from './assert-can.js';
 import { appendAuditEvent } from './audit-writer.js';
 import { canonicalHash } from './canonical-hash.js';
+import { proposalIdentity } from './proposal-identity.js';
 import { knownProposalKind, parseStoredProposalPayload } from './proposal-body.js';
 import { renderSummary } from './render-summary.js';
 import { toActionProposal } from './to-action-proposal.js';
@@ -74,6 +75,40 @@ export interface CreateProposalRequest {
  * gate refuses at approval time, which is where the guarantee lives.
  */
 const PROPOSAL_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How many pending proposals the duplicate check reads before giving up on
+ * finding a twin (review item 26).
+ *
+ * The candidate set is already narrowed to one kind on one business in a
+ * non-terminal state inside its TTL, which in a healthy practice is nought to
+ * a handful. The cap exists for the UNhealthy one — the queue this feature was
+ * reported from held eight over a single document, and a practice that has let
+ * hundreds accumulate must not turn every subsequent create into an unbounded
+ * scan. Missing a twin past the cap costs one duplicate card, which is what
+ * the whole product did until today; blocking the create would be worse.
+ */
+const DUPLICATE_SCAN_LIMIT = 50;
+
+/**
+ * What a caller who staged the same act twice reads (`NT-PRP-007`).
+ *
+ * Per kind because the sentence has to name the thing they pressed — the rule
+ * `assert-can.ts` established for refusal messages, applied on the create side.
+ * Partial on purpose: a kind with no sentence gets the generic one, which is
+ * true of every kind, rather than nothing.
+ */
+const DUPLICATE_DETAIL: Partial<Record<ProposalKind, string>> = {
+  'publish.batch':
+    'This release is already awaiting review — the same documents were staged for this client and nobody has decided it yet. Open Approvals and decide that one.',
+  'document.update-coding':
+    'A correction to the same field on this document is already awaiting review. Decide that one in Approvals rather than staging a second.',
+  'chase.send':
+    'A chase for exactly these items is already awaiting review. Decide that one in Approvals rather than staging a second.',
+  'bank.remove-statement': 'Removing these statements is already awaiting review. Decide that one in Approvals.',
+  'document.purge': 'Deleting these documents is already awaiting review. Decide that one in Approvals.',
+  'business.offboard': 'Removing this client is already awaiting review. Decide that one in Approvals.',
+};
 
 /**
  * The Review → Approve engine (METH S3, issue #122) — Governance §10, the
@@ -288,6 +323,20 @@ export class ActionProposalsService {
           throw error;
         }
       }
+      // ---- IDEMPOTENT STAGING (review item 26) ------------------------------
+      //
+      // Run LAST of the creation checks and immediately before the insert, so
+      // a second identical click gets the same refusal the first one would
+      // have got if it were malformed — the payload gates above are about
+      // whether this act is possible at all, and this one is about whether it
+      // is already open.
+      //
+      // ⚠ It is over the RECOMPUTED payload, not the caller's. The engine has
+      // rewritten publish/chase/statement payloads by this point, and the
+      // stored rows it compares against were rewritten the same way — so both
+      // sides of the comparison come out of the same mill.
+      await this.refuseDuplicatePending(db, request.kind, businessId, payload);
+
       return db.actionProposal.create({
         data: {
           businessId,
@@ -576,6 +625,79 @@ export class ActionProposalsService {
 
     await this.remember(ctx, idempotencyKey, { proposalId, ...body }, response);
     return response;
+  }
+
+  /**
+   * Refuse a create whose act is already awaiting a decision (review item 26,
+   * matrix gate ⚖8).
+   *
+   * > *For same document, multiple review request has come in the approval
+   * > tab… make sure no duplicate approval request is sent*
+   *
+   * Eight identical release cards over one Ready document is what this stops.
+   * Staging is now idempotent over WHAT IS BEING PROPOSED, not only over the
+   * caller's `Idempotency-Key` — which never helped here, because each click
+   * carried a fresh key, honestly.
+   *
+   * **The candidate set is small by construction**: same kind, same business,
+   * still `CREATED` or `REVIEWED`, still inside its TTL. In practice that is
+   * nought to a handful of rows, so the identity comparison happens in JS over
+   * `proposalIdentity` rather than as a jsonb predicate — which is also what
+   * lets it read payloads the engine rewrote at creation without a column to
+   * store a request hash in.
+   *
+   * ⚠ **An expired pending row does NOT block.** It cannot be approved
+   * (`NT-PRP-003` refuses it at review and at approve), so treating it as the
+   * open decision would leave a caller pointed at a card nobody can act on —
+   * a deadlock wearing a helpful sentence.
+   *
+   * ⚠ **A kind with no identity is never deduped**, and `rule.create` is the
+   * deliberate one: two rules over one client are two rules. See
+   * `proposal-identity.ts`.
+   *
+   * The refusal is 409 rather than a quiet 201 over the existing row because
+   * the browser cannot see an HTTP status — `packages/contracts`' fetch mutator
+   * returns the raw body — so a returned twin would have the dialog claiming to
+   * have staged something it did not.
+   */
+  private async refuseDuplicatePending(
+    db: ScopedClient,
+    kind: ProposalKind,
+    businessId: string | null,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const identity = proposalIdentity(kind, payload);
+    if (identity === null) return;
+
+    const pending = await db.actionProposal.findMany({
+      where: {
+        kind,
+        businessId,
+        state: { in: ['CREATED', 'REVIEWED'] },
+        expiresAt: { gt: new Date() },
+      },
+      select: { id: true, payload: true },
+      // Newest first, so the id named in the log is the one a caller most
+      // likely just made — and the scan stops at the first match anyway.
+      orderBy: { createdAt: 'desc' },
+      take: DUPLICATE_SCAN_LIMIT,
+    });
+
+    const twin = pending.find(
+      (row) => isJsonObject(row.payload) && proposalIdentity(kind, row.payload as Record<string, unknown>) === identity,
+    );
+    if (twin === undefined) return;
+
+    throw new AppException(
+      'NT-PRP-007',
+      HttpStatus.CONFLICT,
+      'Already awaiting review',
+      // Written for the person who pressed the button twice. It says the act is
+      // not lost, and it says where to go — never the proposal id, which would
+      // be a handle no screen in the product resolves.
+      DUPLICATE_DETAIL[kind] ??
+        'An identical request is already awaiting review. Decide that one in Approvals rather than staging a second.',
+    );
   }
 
   /** Dispatch to the registry executor, mapping its refusals onto the contract. */

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Check, ChevronDown, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
@@ -11,6 +11,14 @@ import { ReviewRows, ReviewSection } from './ReviewGate';
 
 const m = defineMessages({
   createdBy: { id: 'proposals.liveCard.createdBy', defaultMessage: 'Proposed by {who} · {when}' },
+  /**
+   * Item 26(3). The queue rendered `proposal.createdByUserId` raw, so six
+   * identical cards all read *"proposed by CMTNDDE8P00337710E1OQD4J…"* — half
+   * of his "keep track for each approval request" ask, answered with a string
+   * no human can match to a colleague.
+   */
+  createdByYou: { id: 'proposals.liveCard.createdByYou', defaultMessage: 'Proposed by you · {when}' },
+  createdByColleague: { id: 'proposals.liveCard.createdByColleague', defaultMessage: 'Proposed by a colleague · {when}' },
   createdByModel: { id: 'proposals.liveCard.createdByModel', defaultMessage: 'Proposed by AI ({model}) · {when}' },
   statePending: { id: 'proposals.liveCard.statePending', defaultMessage: 'Awaiting review' },
   stateReviewed: { id: 'proposals.liveCard.stateReviewed', defaultMessage: 'Reviewed' },
@@ -42,15 +50,41 @@ const m = defineMessages({
 export function LiveProposalCard({
   proposal,
   clientName,
+  proposerName,
+  autoOpenReview = false,
   onSettled,
 }: {
   proposal: ActionProposal;
   clientName: string | null;
+  /**
+   * The proposer, resolved to a person by whoever mounted this (item 26(3)).
+   * The queue resolves it from the practice-members read; the staging flows
+   * pass nothing, because there the proposer is the person looking at the card
+   * and the fallback already says so.
+   *
+   * ⚠ Absent NEVER falls back to `createdByUserId`. A CUID on a card is not a
+   * degraded name, it is a different kind of thing — see the header below.
+   */
+  proposerName?: string | null;
+  /**
+   * **The super-admin fast path** (review item 26, matrix gate ⚖6). Opens the
+   * server's review as soon as the card mounts, so a person who can approve
+   * gets stage → review → Approve in one flow instead of a card that queues
+   * for themselves.
+   *
+   * ⚠ It automates [Read review] and NOTHING else. Approve still mounts only
+   * after the server's own render is on screen, and a human still presses it —
+   * an auto-approve would be this screen pretending to be the person, which is
+   * the one thing the whole pattern exists to prevent. `reviewedAt` and the
+   * hash are recorded exactly as they are from the queue, so the record a fast
+   * path writes is byte-for-byte the record a queued approval writes.
+   */
+  autoOpenReview?: boolean;
   /** Fired after an approve or cancel lands server-side — the refetch seam. */
   onSettled?: () => void;
 }) {
   const intl = useIntl();
-  const { logAudit } = useAppContext();
+  const { logAudit, session } = useAppContext();
   const [review, setReview] = useState<ReviewCard | null>(null);
   const [phase, setPhase] = useState<'idle' | 'opening' | 'reviewed' | 'approving' | 'approved' | 'cancelled'>('idle');
   const [problem, setProblem] = useState<string | null>(null);
@@ -75,6 +109,29 @@ export function LiveProposalCard({
   const kindNote = KIND_NOTE[proposal.kind];
   const reason = offboardReason(proposal);
 
+  /**
+   * Who staged this (item 26(3)).
+   *
+   * ⚠ **`createdByUserId` is never rendered.** It used to be, and six identical
+   * cards reading *"proposed by CMTNDDE8P00337710E1OQD4J…"* is the screenshot
+   * that opened this item. A CUID is not a degraded name — it identifies
+   * nobody, cannot be searched for, and reads as the screen having failed.
+   *
+   * The ladder, in the order a reader can actually use:
+   *   1. the name the mounting surface resolved (the queue's practice-members read);
+   *   2. **"you"**, when the id is this session's own — which is every staging
+   *      flow, where the card appears one click after the person made it;
+   *   3. **"a colleague"** — honest about what is not known, and still true.
+   */
+  const when = proposal.createdAt.slice(0, 10);
+  const proposedBy = proposal.createdByModel
+    ? intl.formatMessage(m.createdByModel, { model: proposal.createdByModel, when })
+    : proposerName != null && proposerName !== ''
+      ? intl.formatMessage(m.createdBy, { who: proposerName, when })
+      : session.status === 'authenticated' && proposal.createdByUserId === session.me.user.id
+        ? intl.formatMessage(m.createdByYou, { when })
+        : intl.formatMessage(m.createdByColleague, { when });
+
   const fail = (error: unknown) => {
     setProblem(
       error instanceof NtProblemError
@@ -96,6 +153,23 @@ export function LiveProposalCard({
       fail(error);
     }
   };
+
+  /**
+   * The fast path's one line of automation (⚖6). Guarded by a ref rather than
+   * by `phase`, because `open()` sets phase itself and a phase-keyed effect
+   * would re-fire on the transition back to `idle` that a FAILED review makes —
+   * turning one refusal into a retry loop against the server.
+   */
+  const autoOpened = useRef(false);
+  useEffect(() => {
+    if (!autoOpenReview || autoOpened.current) return;
+    autoOpened.current = true;
+    void open();
+    // `open` is redefined every render and is deliberately not a dependency:
+    // the ref is what makes this run once, and listing it would re-run the
+    // effect on every state change it causes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenReview]);
 
   const approve = async () => {
     if (!review) return;
@@ -160,9 +234,7 @@ export function LiveProposalCard({
             <h3 className="font-sans font-bold text-xl text-white tracking-tight truncate">{kindLabel}</h3>
             <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider truncate">
               {clientName ? `${clientName} · ` : ''}
-              {proposal.createdByModel
-                ? intl.formatMessage(m.createdByModel, { model: proposal.createdByModel, when: proposal.createdAt.slice(0, 10) })
-                : intl.formatMessage(m.createdBy, { who: proposal.createdByUserId ?? '—', when: proposal.createdAt.slice(0, 10) })}
+              {proposedBy}
             </p>
           </div>
         </div>

@@ -242,6 +242,62 @@ test('a replayed Idempotency-Key returns the original response; a reused one wit
   expect(await code(service.create(CTX, { kind: 'document.archive', businessId: 'biz_1', payload: { documentIds: ['doc_2'], archived: true } }, 'key-1'))).toBe('NT-IDM-001');
 });
 
+test('staging the same act twice is NT-PRP-007 — the reported eight-cards bug (item 26)', async () => {
+  // ⚠ Note the Idempotency-Key DIFFERS on the second call. That is the point:
+  // each of Mubashir's eight clicks carried a fresh key and was, honestly, a
+  // separate REQUEST. What they were not was a separate ACT, and only this
+  // check can see that.
+  const { service, map } = harness();
+  await service.create(CTX, { kind: 'document.archive', businessId: 'biz_1', payload: ARCHIVE_PAYLOAD }, 'key-1');
+  expect(await code(service.create(CTX, { kind: 'document.archive', businessId: 'biz_1', payload: ARCHIVE_PAYLOAD }, 'key-2'))).toBe(
+    'NT-PRP-007',
+  );
+  expect(map.size).toBe(1); // nothing was minted
+});
+
+test('a DIFFERENT act still stages while one is pending', async () => {
+  const { service, map } = harness();
+  await service.create(CTX, { kind: 'document.archive', businessId: 'biz_1', payload: ARCHIVE_PAYLOAD }, 'key-1');
+  // Other documents — a different batch, and it must not be refused.
+  await service.create(
+    CTX,
+    { kind: 'document.archive', businessId: 'biz_1', payload: { documentIds: ['doc_2'], archived: true } },
+    'key-2',
+  );
+  // The OPPOSITE act on the same documents — unarchive. A documents-only key
+  // would have refused this one, telling the caller their unarchive was
+  // "already awaiting review" when what is pending is the archive.
+  await service.create(
+    CTX,
+    { kind: 'document.archive', businessId: 'biz_1', payload: { documentIds: ['doc_1'], archived: false } },
+    'key-3',
+  );
+  expect(map.size).toBe(3);
+});
+
+test('the duplicate scan is narrowed to pending, unexpired rows of the same kind and business', async () => {
+  // The fake `findMany` ignores `where`, so the narrowing itself is asserted on
+  // the query — which is also the half that matters: an EXPIRED pending row
+  // must not block, because nobody can approve it (NT-PRP-003) and pointing a
+  // caller at it would be a deadlock wearing a helpful sentence.
+  const { service, listCalls } = harness();
+  await service.create(CTX, { kind: 'document.archive', businessId: 'biz_1', payload: ARCHIVE_PAYLOAD }, 'key-1');
+  const scan = listCalls.at(-1)?.where as Record<string, unknown> | undefined;
+  expect(scan).toMatchObject({ kind: 'document.archive', businessId: 'biz_1', state: { in: ['CREATED', 'REVIEWED'] } });
+  expect(scan?.['expiresAt']).toHaveProperty('gt');
+});
+
+test('a kind with no identity is never deduped — rule.create stages twice', async () => {
+  // Two rules over one client are two rules. `proposal-identity.ts` returns
+  // null for this kind deliberately, and the service must treat that as "no
+  // duplicate" rather than as "no key, so refuse".
+  const { service, map } = harness();
+  const rule = { name: 'Google Ads → Advertising', scope: { businessId: 'biz_1' }, conditions: [], sets: {} };
+  await service.create(CTX, { kind: 'rule.create', businessId: 'biz_1', payload: rule }, 'key-1');
+  await service.create(CTX, { kind: 'rule.create', businessId: 'biz_1', payload: rule }, 'key-2');
+  expect(map.size).toBe(2);
+});
+
 // ---- review -----------------------------------------------------------------
 
 test('review records what was rendered; a second review returns the SAME hash and keeps the first reviewedAt', async () => {

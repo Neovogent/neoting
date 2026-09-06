@@ -2122,7 +2122,24 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
-        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '409':
+          description: |
+            Two conditions share this status.
+
+            `NT-IDM-001` — the `Idempotency-Key` was already used with a
+            different request (the shared refusal, `IdempotencyConflict`).
+
+            `NT-PRP-007` — **an identical proposal is already awaiting review**
+            (review item 26). Staging is idempotent over *what is being
+            proposed*, not only over the `Idempotency-Key`: a create whose
+            kind, business and acted-on record ids match a proposal already in
+            `CREATED` or `REVIEWED` and still inside its TTL does not mint a
+            second one. Eight identical release cards over one document is what
+            this refuses. The caller's move is to decide the existing one, and
+            the detail says so.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
         '422':
           description: |
             The kind is known but the payload is not executable — the document is
@@ -4962,6 +4979,14 @@ components:
         - NT-PRP-004   # rendered summary hash no longer matches
         - NT-PRP-005   # proposal already executed
         - NT-PRP-006   # payload not executable against current state
+        # Idempotent staging (review item 26, 6 Sep 2026). An identical
+        # proposal — same kind, same business, same records — is already
+        # awaiting review, so a second one is not minted. It is a 409 rather
+        # than a quiet 201 over the existing row because the web's fetch
+        # mutator returns the raw body and drops the HTTP status, so a
+        # 200-vs-201 distinction is invisible to the browser and the dialog
+        # would claim to have staged something it did not.
+        - NT-PRP-007   # an identical proposal is already awaiting review
         # The model runtime (MDL family, Governance §9). Deliberately NOT `CHS`
         # or a `CHAT` family: these fire when the MODEL failed, not when the
         # chase engine or the chat feature did, and an alert that cannot tell

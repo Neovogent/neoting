@@ -300,6 +300,52 @@ member who cannot release, its third call now answers 403 and the card says
 has to stage and stop instead. Until that lands, a non-owner's coding correction
 on this branch shows a refusal where it should show "queued".
 
+## Idempotent staging — item 26, 6 Sep 2026 (`NT-PRP-007`)
+
+> *For same document, multiple review request has come in the approval tab…
+> make sure no duplicate approval request is sent*
+
+Eight identical "Release for export" cards over one Ready document, all
+pending, all from the same person — amplified by item 23's broken scroll, which
+made Approve unreachable, so he closed and re-staged until it was.
+
+**`create()` now refuses a second identical ACT.** `refuseDuplicatePending`
+runs last of the creation checks and immediately before the insert: same kind,
+same business, still `CREATED`/`REVIEWED`, still inside its TTL, same
+`proposalIdentity` → `409 NT-PRP-007`.
+
+- **⚠ It runs over the RECOMPUTED payload**, not the caller's, because the
+  stored rows it compares against were rewritten by the same mill
+  (`publish.batch`, `chase.send`, `bank.remove-statement`). Both sides of the
+  comparison therefore come out the same shape.
+- **⚠ Identity is not `payloadHash`.** Those three rewrites embed live facts, so
+  two identical clicks a minute apart hash differently whenever anything moved —
+  hashing would silently stop deduping exactly the kinds it exists for.
+  `proposal-identity.ts` extracts the RECORD IDS instead, which survive the
+  rewrite intact. Total over `ProposalKind`, with the reasoning per entry;
+  `null` means "this kind has no stable identity" and is a real answer, not a
+  gap (`rule.create` is the deliberate one — two rules over one client are two
+  rules).
+- **⚠ An EXPIRED pending row does not block.** It cannot be approved
+  (`NT-PRP-003`), so treating it as the open decision would be a deadlock
+  wearing a helpful sentence.
+- **The scan is capped at `DUPLICATE_SCAN_LIMIT` (50).** Missing a twin past the
+  cap costs one duplicate card — what the whole product did until today;
+  blocking the create would be worse.
+- **409, not a quiet 201 over the existing row** (matrix gate ⚖8): the web's
+  fetch mutator returns the raw body and drops the HTTP status, so a returned
+  twin is indistinguishable from a fresh create and the dialog would claim to
+  have staged something it did not. `DUPLICATE_DETAIL` words the refusal per
+  kind — it is not an error the person caused, so it says the act is not lost
+  and where to go.
+
+**Cleaning a queue that already has duplicates:**
+`scripts/cleanup-duplicate-proposals.ts` (`--dry-run` by default, `--apply` to
+act) groups by the SAME `proposalIdentity` the server dedupes with, keeps the
+newest of each group and **CANCELS** the rest with
+`outcome.supersededBy`. Cancels, never deletes — the cancellation contract's own
+rule. Runbook: `docs/runbooks/error-codes.md`, `NT-PRP-007`.
+
 ## The release gate — D44, stage A12
 
 `assert-can.ts`, called from `action-proposals.service.ts` on the **approve**

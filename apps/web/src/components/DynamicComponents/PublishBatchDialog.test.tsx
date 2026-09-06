@@ -1,5 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
+import { NtProblemError } from '@neoting/contracts';
 import type { ActionProposal, CreateActionProposalRequest } from '@neoting/contracts/model';
 
 import PublishBatchDialog from './PublishBatchDialog';
@@ -44,11 +45,16 @@ vi.mock('../../api/proposals', async (importOriginal) => ({
 }));
 
 let role = 'PRACTICE_ADMIN';
+let isOwner = false;
 const setActiveTab = vi.fn();
 
 vi.mock('../../context/AppContext', () => ({
   useAppContext: () => ({
-    session: { status: 'authenticated', me: { role } },
+    // ⚠ `isOwner` defaults FALSE so the existing cases keep their meaning: the
+    // super-admin fast path (item 26 / matrix ⚖6) auto-opens the review, which
+    // would make "Approve is unreachable until Read review" vacuous. Its own
+    // case flips it.
+    session: { status: 'authenticated', me: { user: { id: 'usr_me' }, role, isOwner } },
     clientNameFor: (id: string) => (id === 'biz_nexora' ? 'Nexora Solutions LLC' : id),
     setActiveTab,
     logAudit: vi.fn(),
@@ -58,6 +64,7 @@ vi.mock('../../context/AppContext', () => ({
 afterEach(() => {
   vi.clearAllMocks();
   role = 'PRACTICE_ADMIN';
+  isOwner = false;
 });
 
 function doc(over: Partial<Document> = {}): Document {
@@ -129,6 +136,71 @@ test('a selection with nothing Ready is refused, counting Published apart from n
   // Nothing can be staged out of a refusal.
   expect(screen.queryByRole('button', { name: 'Stage for review' })).toBeNull();
   expect(createProposal).not.toHaveBeenCalled();
+});
+
+/* ── 1b. item 26: the fast path and the duplicate refusal ───────────────── */
+
+test('the super admin gets the review WITHOUT pressing Read review — and still has to press Approve', async () => {
+  // Matrix gate ⚖6. Mubashir's complaint was that his own actions queued for
+  // his own approval; the compliant reading is that they do not WAIT, not that
+  // they skip the record. So [Read review] fires itself and Approve does not.
+  isOwner = true;
+  createProposal.mockResolvedValue(proposal);
+  openReview.mockResolvedValue(review);
+  approveReviewed.mockResolvedValue(undefined);
+
+  open([doc()]);
+  fireEvent.click(screen.getByRole('button', { name: 'Stage for review' }));
+
+  // The review arrives on its own — the server rendered it and it is on screen.
+  const approve = await screen.findByRole('button', { name: /^Approve/ });
+  expect(openReview).toHaveBeenCalledWith('prop_pub_1');
+  expect(document.body.textContent).toContain('£420.00');
+  // ⚠ And nothing was approved by the screen. A human still presses it.
+  expect(approveReviewed).not.toHaveBeenCalled();
+
+  fireEvent.click(approve);
+  expect(approveReviewed).toHaveBeenCalledWith('prop_pub_1', review.renderedSummaryHash);
+});
+
+test('a member who cannot release still has to open the review themselves', async () => {
+  // The other half of the same rule: the fast path is the super admin's, and
+  // for everybody else staging queues exactly as it did.
+  isOwner = false;
+  createProposal.mockResolvedValue(proposal);
+  openReview.mockResolvedValue(review);
+
+  open([doc()]);
+  fireEvent.click(screen.getByRole('button', { name: 'Stage for review' }));
+  expect(await screen.findByRole('button', { name: /Read review/ })).toBeTruthy();
+  expect(openReview).not.toHaveBeenCalled();
+});
+
+test("a second identical staging shows the server's already-awaiting-review refusal and a way to it", async () => {
+  // Item 26's headline: eight identical cards over one document. The server
+  // refuses NT-PRP-007 and this is what the person sees — not the red
+  // "the proposal was refused" banner, because nothing went wrong.
+  createProposal.mockRejectedValue(
+    new NtProblemError({
+      status: 409,
+      code: 'NT-PRP-007',
+      title: 'Already awaiting review',
+      detail: 'This release is already awaiting review — the same documents were staged for this client and nobody has decided it yet. Open Approvals and decide that one.',
+    }),
+  );
+
+  open([doc()]);
+  fireEvent.click(screen.getByRole('button', { name: 'Stage for review' }));
+
+  const alert = await screen.findByRole('alert');
+  expect(alert.textContent).toContain('Already awaiting review');
+  expect(alert.textContent).toContain('Open Approvals and decide that one');
+  // Not the generic refusal wording — this is not a failure.
+  expect(document.body.textContent).not.toContain('The proposal was refused');
+
+  // And the one move that resolves it is on screen.
+  fireEvent.click(screen.getByRole('button', { name: 'Open Approvals' }));
+  expect(setActiveTab).toHaveBeenCalledWith('Approvals');
 });
 
 /* ── 2. the review gate ─────────────────────────────────────────────────── */

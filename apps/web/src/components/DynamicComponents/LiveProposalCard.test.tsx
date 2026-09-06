@@ -13,8 +13,13 @@ import { openReview } from '../../api/proposals';
  * opened: the client's name, the queued reason, and that books are retained.
  */
 
+// The card reads `session` for the proposer ladder (item 26(3)): the id it is
+// handed is NOT this user's, so these tests exercise the "a colleague" rung.
 vi.mock('../../context/AppContext', () => ({
-  useAppContext: () => ({ logAudit: vi.fn() }),
+  useAppContext: () => ({
+    logAudit: vi.fn(),
+    session: { status: 'authenticated', me: { user: { id: 'usr_me' }, role: 'PRACTICE_ADMIN', isOwner: true } },
+  }),
 }));
 
 vi.mock('../../api/proposals', async (importOriginal) => {
