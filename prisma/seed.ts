@@ -52,6 +52,33 @@ if (process.env.NODE_ENV === 'production') {
 const DAY = 24 * 60 * 60 * 1000;
 const now = new Date();
 const daysAgo = (n: number) => new Date(now.getTime() - n * DAY);
+
+/**
+ * A byte hash the CONTRACT accepts — `^[a-f0-9]{64}$`.
+ *
+ * Derived from the document id so it is stable across re-seeds and greppable
+ * back to its row; it is a fixture and hashes nothing that exists. It is a real
+ * sha-256 of the id rather than a hand-built string precisely so nobody has to
+ * check the length or the alphabet by eye again.
+ */
+const sha256Fixture = (id: string) => createHash('sha256').update(id).digest('hex');
+
+/**
+ * One extracted value in the shape the contract requires: a `value`, a
+ * `confidence`, and a `provenance` that is a **`ProvenanceClass` MEMBER**.
+ *
+ * ⚠ The provenance is an enum of three (`HUMAN_CONFIRMED` / `DETERMINISTIC` /
+ * `AI_SUGGESTED`), not a free string. The seed wrote `'textract:block/12'` — a
+ * plausible-looking source pointer — and every `ExtractedField` in the database
+ * failed its parse on it. `extraction/demo-profiles.ts` has the same helper
+ * under the same name for the same reason; if a third caller ever needs it, it
+ * moves somewhere shared rather than being written a third time.
+ */
+const aiField = (value: string | number | boolean | null, confidence: number) => ({
+  value,
+  confidence,
+  provenance: 'AI_SUGGESTED' as const,
+});
 const daysAhead = (n: number) => new Date(now.getTime() + n * DAY);
 
 // --- money ------------------------------------------------------------------
@@ -193,13 +220,48 @@ async function main() {
         nextDeadline: daysAhead(12),
         yearEndMonth: 3,
         yearEndDay: 31,
-        contextQuestionnaire: {
-          sells: c.industry === 'Restaurants' ? 'Food and drink, eat-in and delivery' : 'Private dental treatment',
-          revenueStreams: c.industry === 'Restaurants' ? ['in-store', 'Just Eat', 'Deliveroo'] : ['private patients', 'plans'],
-          typicalSuppliers: c.industry === 'Restaurants' ? ['Bidfood', 'Brakes', 'Coca-Cola'] : ['Henry Schein', 'Dental Directory'],
-          companyCards: true,
-          expectedUnusual: c.industry === 'Restaurants' ? 'Occasional equipment purchases over £2,000' : 'Annual GDC registration fees',
-        },
+        // ⚠ **THE CONTRACT'S OWN SHAPE, AND NOTHING ELSE** (fixed 6 Sep 2026).
+        //
+        // This wrote `sells` / `revenueStreams` / `companyCards` /
+        // `expectedUnusual` — plausible questionnaire words, and not one of them
+        // a member of `BusinessContextQuestionnaire`. `readBusinessProfile`
+        // parses this column with the contract's own schema, which requires
+        // `businessActivity`, so it answered **null for every seeded client** and
+        // the whole cast was profile-less. Two things followed and both were
+        // invisible until somebody looked:
+        //
+        //  - `ChartOfAccountsService` derived the `NO_PROFILE` chart — the 37
+        //    core accounts and none of the trade additions. So a restaurant had
+        //    no `COS_FOOD_AND_DRINK` and a correction naming one was refused as
+        //    "not a code on this client's chart", which is item 47's rule
+        //    working correctly against data that had lied to it.
+        //  - the coding ladder (items 19/48) had no trade context for any demo
+        //    client, so the surface built to show trade-aware coding was
+        //    demonstrating the generic path.
+        //
+        // `businessActivity` carries the words `PROFILE_SELECTION_ORDER` matches
+        // on — "restaurant" and "takeaway" select RETAIL_AND_HOSPITALITY,
+        // "dental practice" plus staff selects SERVICES_WITH_STAFF — so the
+        // demo cast now gets the chart its trade implies, which is what every
+        // client created through A11's intake has always got.
+        contextQuestionnaire:
+          c.industry === 'Restaurants'
+            ? {
+                businessActivity: 'Restaurant and takeaway — food and drink, eat-in and delivery through Just Eat and Deliveroo',
+                typicalSuppliers: ['Bidfood', 'Brakes', 'Coca-Cola'],
+                typicalCosts: ['Food and drink stock', 'Packaging', 'Card and platform fees', 'Utilities'],
+                hasEmployees: true,
+                usesSubcontractors: false,
+                notes: 'Occasional equipment purchases over £2,000.',
+              }
+            : {
+                businessActivity: 'Private dental practice — treatment and payment plans',
+                typicalSuppliers: ['Henry Schein', 'Dental Directory'],
+                typicalCosts: ['Clinical consumables', 'Lab fees', 'Equipment servicing'],
+                hasEmployees: true,
+                usesSubcontractors: true,
+                notes: 'Annual GDC registration fees.',
+              },
       },
     });
   }
@@ -271,46 +333,46 @@ async function main() {
 
   const specs: DocSpec[] = [
     // --- American Burger: the busy client ---------------------------------
-    { supplier: 'Bidfood', grossPounds: 1284.5, daysOld: 3, state: 'READY', inbox: 'COSTS', category: 'Cost of Sales — Food', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_burger' },
-    { supplier: 'Bidfood', grossPounds: 976.2, daysOld: 10, state: 'PUBLISHED', inbox: 'COSTS', category: 'Cost of Sales — Food', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_burger' },
-    { supplier: 'Bidfood', grossPounds: 1102.85, daysOld: 17, state: 'ARCHIVED', inbox: 'COSTS', category: 'Cost of Sales — Food', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_burger' },
+    { supplier: 'Bidfood', grossPounds: 1284.5, daysOld: 3, state: 'READY', inbox: 'COSTS', category: 'COS_FOOD_AND_DRINK', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_burger' },
+    { supplier: 'Bidfood', grossPounds: 976.2, daysOld: 10, state: 'PUBLISHED', inbox: 'COSTS', category: 'COS_FOOD_AND_DRINK', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_burger' },
+    { supplier: 'Bidfood', grossPounds: 1102.85, daysOld: 17, state: 'ARCHIVED', inbox: 'COSTS', category: 'COS_FOOD_AND_DRINK', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_burger' },
     { supplier: 'Currys', grossPounds: 1299.0, daysOld: 4, state: 'TO_REVIEW', inbox: 'COSTS', channel: 'WHATSAPP', docType: 'RECEIPT', business: 'biz_burger' },
-    { supplier: 'Adobe', grossPounds: 61.99, daysOld: 6, state: 'PUBLISHED', inbox: 'COSTS', category: 'Software', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_burger' },
+    { supplier: 'Adobe', grossPounds: 61.99, daysOld: 6, state: 'PUBLISHED', inbox: 'COSTS', category: 'SOFTWARE_AND_SUBSCRIPTIONS', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_burger' },
     { supplier: 'Shell', grossPounds: 78.4, daysOld: 2, state: 'TO_REVIEW', inbox: 'COSTS', channel: 'SMS_PORTAL', docType: 'RECEIPT', business: 'biz_burger' },
-    { supplier: 'British Gas', grossPounds: 412.66, daysOld: 8, state: 'READY', inbox: 'COSTS', category: 'Utilities', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_burger' },
+    { supplier: 'British Gas', grossPounds: 412.66, daysOld: 8, state: 'READY', inbox: 'COSTS', category: 'LIGHT_HEAT_AND_POWER', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_burger' },
     { supplier: 'Amazon', grossPounds: 156.3, daysOld: 5, state: 'TO_REVIEW', inbox: 'COSTS', channel: 'WEB_UPLOAD', docType: 'RECEIPT', business: 'biz_burger' },
-    { supplier: 'Coca-Cola Europacific', grossPounds: 344.1, daysOld: 12, state: 'PUBLISHED', inbox: 'COSTS', category: 'Cost of Sales — Drink', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_burger' },
-    { supplier: 'Just Eat', grossPounds: 2841.55, daysOld: 7, state: 'READY', inbox: 'SALES', category: 'Sales — Delivery', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_burger' },
-    { supplier: 'Deliveroo', grossPounds: 1955.2, daysOld: 7, state: 'PUBLISHED', inbox: 'SALES', category: 'Sales — Delivery', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_burger' },
-    { supplier: 'Bidfood', grossPounds: 88.4, daysOld: 14, state: 'READY', inbox: 'COSTS', category: 'Cost of Sales — Food', channel: 'EMAIL', docType: 'CREDIT_NOTE', business: 'biz_burger' },
+    { supplier: 'Coca-Cola Europacific', grossPounds: 344.1, daysOld: 12, state: 'PUBLISHED', inbox: 'COSTS', category: 'COS_FOOD_AND_DRINK', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_burger' },
+    { supplier: 'Just Eat', grossPounds: 2841.55, daysOld: 7, state: 'READY', inbox: 'SALES', category: 'SALES', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_burger' },
+    { supplier: 'Deliveroo', grossPounds: 1955.2, daysOld: 7, state: 'PUBLISHED', inbox: 'SALES', category: 'SALES', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_burger' },
+    { supplier: 'Bidfood', grossPounds: 88.4, daysOld: 14, state: 'READY', inbox: 'COSTS', category: 'COS_FOOD_AND_DRINK', channel: 'EMAIL', docType: 'CREDIT_NOTE', business: 'biz_burger' },
     { supplier: 'Screwfix', grossPounds: 47.88, daysOld: 1, state: 'PROCESSING', inbox: 'COSTS', channel: 'CHAT_UPLOAD', business: 'biz_burger' },
     { supplier: 'Unknown', grossPounds: 0, daysOld: 1, state: 'FAILED', inbox: 'COSTS', channel: 'WHATSAPP', business: 'biz_burger', failureCode: 'NT-EXT-0004', failureMessage: 'Photo too blurred to read supplier, date or total. Ask the sender to retake it in better light.' },
     { supplier: 'Unknown', grossPounds: 0, daysOld: 2, state: 'REJECTED', inbox: 'COSTS', channel: 'EMAIL', business: 'biz_burger', failureCode: 'NT-ING-0007', failureMessage: 'The PDF is password-protected, so it could not be opened. Ask the sender to resend without a password.' },
     { supplier: 'Currys', grossPounds: 1299.0, daysOld: 4, state: 'TO_REVIEW', inbox: 'COSTS', channel: 'EMAIL', docType: 'RECEIPT', business: 'biz_burger' }, // the duplicate
 
     // --- Cosmo: mid-volume -------------------------------------------------
-    { supplier: 'Brakes', grossPounds: 2140.75, daysOld: 5, state: 'READY', inbox: 'COSTS', category: 'Cost of Sales — Food', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_cosmo' },
-    { supplier: 'Brakes', grossPounds: 1877.4, daysOld: 19, state: 'ARCHIVED', inbox: 'COSTS', category: 'Cost of Sales — Food', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_cosmo' },
+    { supplier: 'Brakes', grossPounds: 2140.75, daysOld: 5, state: 'READY', inbox: 'COSTS', category: 'COS_FOOD_AND_DRINK', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_cosmo' },
+    { supplier: 'Brakes', grossPounds: 1877.4, daysOld: 19, state: 'ARCHIVED', inbox: 'COSTS', category: 'COS_FOOD_AND_DRINK', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_cosmo' },
     { supplier: 'Google Ads', grossPounds: 600.0, daysOld: 9, state: 'TO_REVIEW', inbox: 'COSTS', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_cosmo' },
-    { supplier: 'Booker', grossPounds: 733.2, daysOld: 11, state: 'PUBLISHED', inbox: 'COSTS', category: 'Cost of Sales — Food', channel: 'WEB_UPLOAD', docType: 'INVOICE', business: 'biz_cosmo' },
-    { supplier: 'Thames Water', grossPounds: 188.9, daysOld: 13, state: 'READY', inbox: 'COSTS', category: 'Utilities', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_cosmo' },
-    { supplier: 'Uber Eats', grossPounds: 3204.4, daysOld: 6, state: 'READY', inbox: 'SALES', category: 'Sales — Delivery', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_cosmo' },
-    { supplier: 'Sky Business', grossPounds: 96.0, daysOld: 20, state: 'ARCHIVED', inbox: 'COSTS', category: 'Subscriptions', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_cosmo' },
+    { supplier: 'Booker', grossPounds: 733.2, daysOld: 11, state: 'PUBLISHED', inbox: 'COSTS', category: 'COS_FOOD_AND_DRINK', channel: 'WEB_UPLOAD', docType: 'INVOICE', business: 'biz_cosmo' },
+    { supplier: 'Thames Water', grossPounds: 188.9, daysOld: 13, state: 'READY', inbox: 'COSTS', category: 'LIGHT_HEAT_AND_POWER', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_cosmo' },
+    { supplier: 'Uber Eats', grossPounds: 3204.4, daysOld: 6, state: 'READY', inbox: 'SALES', category: 'SALES', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_cosmo' },
+    { supplier: 'Sky Business', grossPounds: 96.0, daysOld: 20, state: 'ARCHIVED', inbox: 'COSTS', category: 'SOFTWARE_AND_SUBSCRIPTIONS', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_cosmo' },
     { supplier: 'Nisbets', grossPounds: 2480.0, daysOld: 3, state: 'TO_REVIEW', inbox: 'COSTS', channel: 'WEB_UPLOAD', docType: 'INVOICE', business: 'biz_cosmo' },
-    { supplier: 'Bidfood', grossPounds: 512.3, daysOld: 15, state: 'PUBLISHED', inbox: 'COSTS', category: 'Cost of Sales — Food', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_cosmo' },
+    { supplier: 'Bidfood', grossPounds: 512.3, daysOld: 15, state: 'PUBLISHED', inbox: 'COSTS', category: 'COS_FOOD_AND_DRINK', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_cosmo' },
     { supplier: 'Unknown', grossPounds: 0, daysOld: 1, state: 'PROCESSING', inbox: 'UNROUTED', channel: 'EMAIL', business: 'biz_cosmo' },
 
     // --- Harbourview Dental: light, not VAT registered ----------------------
-    { supplier: 'Henry Schein', grossPounds: 1420.0, daysOld: 4, state: 'READY', inbox: 'COSTS', category: 'Consumables', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_dental', vatRate: 0 },
-    { supplier: 'Dental Directory', grossPounds: 688.5, daysOld: 8, state: 'PUBLISHED', inbox: 'COSTS', category: 'Consumables', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_dental', vatRate: 0 },
-    { supplier: 'GDC', grossPounds: 890.0, daysOld: 22, state: 'ARCHIVED', inbox: 'COSTS', category: 'Professional Fees', channel: 'WEB_UPLOAD', docType: 'INVOICE', business: 'biz_dental', vatRate: 0 },
-    { supplier: 'Bupa', grossPounds: 4120.0, daysOld: 10, state: 'READY', inbox: 'SALES', category: 'Sales — Plans', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_dental', vatRate: 0 },
+    { supplier: 'Henry Schein', grossPounds: 1420.0, daysOld: 4, state: 'READY', inbox: 'COSTS', category: 'COS_PURCHASES', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_dental', vatRate: 0 },
+    { supplier: 'Dental Directory', grossPounds: 688.5, daysOld: 8, state: 'PUBLISHED', inbox: 'COSTS', category: 'COS_PURCHASES', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_dental', vatRate: 0 },
+    { supplier: 'GDC', grossPounds: 890.0, daysOld: 22, state: 'ARCHIVED', inbox: 'COSTS', category: 'PROFESSIONAL_FEES', channel: 'WEB_UPLOAD', docType: 'INVOICE', business: 'biz_dental', vatRate: 0 },
+    { supplier: 'Bupa', grossPounds: 4120.0, daysOld: 10, state: 'READY', inbox: 'SALES', category: 'SALES', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_dental', vatRate: 0 },
     { supplier: 'Npower', grossPounds: 264.15, daysOld: 6, state: 'TO_REVIEW', inbox: 'COSTS', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_dental' },
-    { supplier: 'Anglian Water', grossPounds: 98.4, daysOld: 16, state: 'PUBLISHED', inbox: 'COSTS', category: 'Utilities', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_dental' },
+    { supplier: 'Anglian Water', grossPounds: 98.4, daysOld: 16, state: 'PUBLISHED', inbox: 'COSTS', category: 'LIGHT_HEAT_AND_POWER', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_dental' },
     { supplier: 'Amazon', grossPounds: 74.99, daysOld: 2, state: 'TO_REVIEW', inbox: 'COSTS', channel: 'SMS_PORTAL', docType: 'RECEIPT', business: 'biz_dental' },
     { supplier: 'Unknown', grossPounds: 0, daysOld: 3, state: 'REJECTED', inbox: 'COSTS', channel: 'EMAIL', business: 'biz_dental', failureCode: 'NT-ING-0011', failureMessage: 'The email contained a link to download the invoice rather than the invoice itself. Ask the sender to attach the file.' },
-    { supplier: 'Henry Schein', grossPounds: 322.6, daysOld: 18, state: 'ARCHIVED', inbox: 'COSTS', category: 'Consumables', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_dental', vatRate: 0 },
-    { supplier: 'Practice Plan', grossPounds: 1860.0, daysOld: 12, state: 'READY', inbox: 'SALES', category: 'Sales — Plans', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_dental', vatRate: 0 },
+    { supplier: 'Henry Schein', grossPounds: 322.6, daysOld: 18, state: 'ARCHIVED', inbox: 'COSTS', category: 'COS_PURCHASES', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_dental', vatRate: 0 },
+    { supplier: 'Practice Plan', grossPounds: 1860.0, daysOld: 12, state: 'READY', inbox: 'SALES', category: 'SALES', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_dental', vatRate: 0 },
 
     // --- the Unrouted queue: nothing is ever silently dropped ---------------
     { supplier: 'Wolseley', grossPounds: 430.1, daysOld: 1, state: 'TO_REVIEW', inbox: 'UNROUTED', channel: 'EMAIL', docType: 'INVOICE', business: 'biz_burger' },
@@ -346,7 +408,15 @@ async function main() {
         originalFilename: `${s.supplier.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${id}.pdf`,
         mimeType: s.docType === 'RECEIPT' ? 'image/jpeg' : 'application/pdf',
         byteSize: 120_000 + i * 3_100,
-        byteHash: `sha256:${id}${'0'.repeat(50)}`,
+        // ⚠ A REAL sha-256 shape, because the contract's pattern is
+        // `^[a-f0-9]{64}$` and the generated client parses it strictly. This
+        // read `sha256:${id}000…`, which is 64 characters and not one of them
+        // matched — so `GET /documents/{id}` failed its parse for EVERY seeded
+        // document and the detail panel said "No fields extracted — the server
+        // answer did not match the contract". Found 6 Sep 2026 while walking
+        // review item 20. Derived from the id so it is still stable and
+        // greppable; it is a fixture, not a hash of anything.
+        byteHash: sha256Fixture(id),
         perceptualHash: s.docType === 'RECEIPT' ? `phash:${id}` : null,
         channel: s.channel,
         // An unrouted document has no known submitter either — if we knew who
@@ -392,14 +462,49 @@ async function main() {
           ladderRung: 'textract',
           overallConfidence: lowConfidence ? 0.71 : 0.96,
           isAccepted: true,
+          // ⚠ **THE FIELD NAMES ARE THE CONTRACT'S, AND THE PROVENANCE IS AN
+          // ENUM.** All three of these were wrong until 6 Sep 2026 and between
+          // them they made every seeded document's detail unrenderable:
+          //
+          //  - the keys were `supplier` / `total` / `tax`, which no screen
+          //    reads — `FIELD_PRESENTATION` in `apps/web/src/api/document-detail.ts`
+          //    keys on the contract's own header names, the same ones
+          //    `extraction/demo-profiles.ts` writes;
+          //  - `provenance` was `'textract:block/12'`, a free string, where
+          //    `ProvenanceClass` is an enum of three members. Every
+          //    `ExtractedField` failed its parse on it;
+          //  - the line items carried raw values where the contract wants an
+          //    `ExtractedField` per member.
+          //
+          // The symptom was "No fields extracted — the server answer did not
+          // match the contract" on every document, which takes the correction
+          // flow, the coding panel and the Path-to-Ready panel with it. The
+          // seed is what makes the screens honest (Definition of Done), and a
+          // seed the contract refuses makes them blank.
+          //
+          // ⚠ `lineItems` staying INSIDE `fields` is NOT a defect — it is the
+          // storage convention `extraction-pipeline.ts` uses and
+          // `toExtraction` separates on the way out (its own header says why).
           fields: {
-            supplier: { value: s.supplier, confidence: lowConfidence ? 0.64 : 0.98, provenance: 'textract:block/12' },
-            total: { value: totalPence, confidence: lowConfidence ? 0.72 : 0.99, provenance: 'textract:block/44' },
-            tax: { value: taxPence, confidence: lowConfidence ? 0.58 : 0.95, provenance: 'textract:block/45' },
-            documentDate: { value: receivedAt.toISOString().slice(0, 10), confidence: lowConfidence ? 0.69 : 0.97, provenance: 'textract:block/7' },
+            supplierName: aiField(s.supplier, lowConfidence ? 0.64 : 0.98),
+            totalPence: aiField(totalPence, lowConfidence ? 0.72 : 0.99),
+            taxPence: aiField(taxPence, lowConfidence ? 0.58 : 0.95),
+            documentDate: aiField(receivedAt.toISOString().slice(0, 10), lowConfidence ? 0.69 : 0.97),
+            currency: aiField('GBP', 0.99),
+            ...(s.docType === null || s.docType === undefined ? {} : { docType: aiField(s.docType, 0.97) }),
             lineItems: [
-              { description: s.inbox === 'SALES' ? 'Platform sales, period total' : `${s.supplier} goods`, totalPence: Math.round(totalPence * 0.7), taxPence: Math.round(taxPence * 0.7), quantity: 1, confidence: 0.94 },
-              { description: 'Delivery / service', totalPence: Math.round(totalPence * 0.3), taxPence: Math.round(taxPence * 0.3), quantity: 1, confidence: 0.91 },
+              {
+                description: aiField(s.inbox === 'SALES' ? 'Platform sales, period total' : `${s.supplier} goods`, 0.94),
+                quantity: aiField(1, 0.94),
+                totalPence: aiField(Math.round(totalPence * 0.7), 0.94),
+                taxPence: aiField(Math.round(taxPence * 0.7), 0.94),
+              },
+              {
+                description: aiField('Delivery / service', 0.91),
+                quantity: aiField(1, 0.91),
+                totalPence: aiField(Math.round(totalPence * 0.3), 0.91),
+                taxPence: aiField(Math.round(taxPence * 0.3), 0.91),
+              },
             ],
           },
           validatorResults: {
@@ -768,33 +873,39 @@ async function main() {
     ],
   });
 
-  // METH Stage 5 (§7): the "synced" chart of accounts for American Burger's Xero
-  // integration, so category dropdowns show the client's real CoA (SoT Stage 10).
-  // These are the exact categories the Stage 4 extractor profiles / suggestions
-  // code against. The ReferenceSync model holds an arbitrary list in its `payload`
-  // Json (listKind + payload shape) — no schema change needed for the category set.
-  // DEMO-MOCK: real Xero reference-list sync engine (Stage 10 / post-demo) replaces this.
-  await prisma.referenceSync.create({
-    data: {
-      id: 'refsync_burger_coa',
-      integrationId: 'int_burger_xero',
-      listKind: 'chart_of_accounts',
-      syncedAt: daysAgo(1),
-      payload: {
-        provider: 'XERO',
-        categories: [
-          { code: 'OFFICE_EQUIPMENT', name: 'Office Equipment', taxType: 'standard' },
-          { code: 'ADVERTISING', name: 'Advertising', taxType: 'standard' },
-          { code: 'SOFTWARE', name: 'Software', taxType: 'standard' },
-          { code: 'MOTOR_FUEL', name: 'Motor Fuel', taxType: 'standard' },
-          { code: 'SALES_INCOME', name: 'Sales Income', taxType: 'standard' },
-          { code: 'GENERAL_EXPENSES', name: 'General Expenses', taxType: 'standard' },
-          { code: 'CAPITAL_EQUIPMENT', name: 'Capital Equipment', taxType: 'standard' },
-          { code: 'COST_OF_SALES_FOOD', name: 'Cost of Sales — Food', taxType: 'standard' },
-        ],
-      },
-    },
-  });
+  // ⚠ **AND THE DOCUMENTS' `categoryCode` VALUES ARE CHART CODES NOW**, not the
+  // display names they were ("Cost of Sales — Food", "Utilities", "Software").
+  // A code that is not on the client's chart is refused at the correction
+  // boundary by design (review item 47's refuse-never-fuzzy rule) and resolves
+  // to no Analysis account in the export — so seeded documents were coded
+  // against a chart that had never existed. They now carry codes from the
+  // derived chart their own trade profile produces: `COS_FOOD_AND_DRINK` and
+  // `LIGHT_HEAT_AND_POWER` for the restaurants, `COS_PURCHASES` for the
+  // dentist, `SALES` for revenue, `SOFTWARE_AND_SUBSCRIPTIONS`,
+  // `PROFESSIONAL_FEES`. ⚠ The VAULT rows' `category` is a different field —
+  // a folder label, not a nominal account — and is untouched.
+
+  // ⚠ **THE SEEDED "XERO" CHART OF ACCOUNTS IS GONE (6 Sep 2026), and deleting
+  // it is the fix rather than the loss.**
+  //
+  // It was a METH Stage 5 DEMO-MOCK standing in for "the real Xero
+  // reference-list sync engine" — a feature D42 removed from this release
+  // entirely. Worse, it had stopped governing anything: the payload predates
+  // the `neoting` block `ChartOfAccountsService.StoredChartSchema` requires, so
+  // every read logged *"chart_of_accounts for business biz_burger did not
+  // parse — serving the derived chart, not overwriting"* and served the DERIVED
+  // chart instead. The row's only remaining effect was that warning, plus a
+  // `psql` answer that disagreed with the product.
+  //
+  // With no row, `resolve()` takes its derive-and-SEED path: the client gets the
+  // trade-matched UK chart its questionnaire implies, written through the
+  // service's own writer, in the shape the service's own parser accepts —
+  // exactly what every client created since A11 gets. The demo cast stops being
+  // the one set of clients with a bespoke chart nothing could read.
+  //
+  // Found 6 Sep 2026 while walking review item 20: a correction naming a code
+  // that WAS in this row was refused as "not a code on this client's chart",
+  // because the chart the gate reads was never this one.
 
   for (const [i, d] of ['doc_002', 'doc_005', 'doc_009', 'doc_011', 'doc_020', 'doc_025', 'doc_028', 'doc_032'].entries()) {
     const biz = d <= 'doc_016' ? 'biz_burger' : d <= 'doc_026' ? 'biz_cosmo' : 'biz_dental';

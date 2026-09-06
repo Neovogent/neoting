@@ -227,16 +227,18 @@ The Approvals QUEUE keeps its decided-card outcome banners — that pattern was
 added because the settle refetch used to unmount them instantly, it is right for
 a queue and wrong for a modal over one document, and both files now say so.
 
-**Verified:** the refusal half LIVE
-(`docs/reviews/assets/2026-09-06-approvals/08-coding-modal-refusal-keeps-it-open.png` — a
-category off the client's chart, the red alert on screen, the dialog still
-open); the dismissal itself by test, `CodingProposalModal.test.tsx` driving the
-real component with fake timers (confirmation visible → `onClose` after the
-dwell), plus its mirror case asserting a refusal never closes it.
+**Verified LIVE, both halves.** The success path: the confirmation on screen
+(`docs/reviews/assets/2026-09-06-approvals/09-coding-modal-confirmation.png`),
+then the dialog and its backdrop GONE, back on the updated document with
+Category reading `COS_FOOD_AND_DRINK` "✓ Confirmed by you" and the state moved
+to READY (`…/10-coding-modal-dismissed-itself.png`). And the half that matters
+more: a REFUSED correction keeps the dialog open with its red alert
+(`…/08-coding-modal-refusal-keeps-it-open.png`), because the dismissal fires on
+the server settle and not on the click. Both are pinned in
+`CodingProposalModal.test.tsx` with fake timers.
 
-⚠ **The success path could not be walked live on seeded data, and the reason is
-a pre-existing seed defect, not this change** — see "Three seed defects found
-during the walkthrough" at the end of this file.
+⚠ Walking the success path took five seed defects with it — the document detail
+did not render at all on seeded data. See the last section of this file.
 
 ---
 
@@ -1737,30 +1739,65 @@ Three layers:
 
 ---
 
-## Three seed defects found during the approvals walkthrough (6 Sep 2026)
+## The seed was lying to the contract — five defects, found and FIXED (6 Sep 2026)
 
-⚠ **Not regressions, not part of package G, and between them they make the
-document-detail surface unusable on any seeded database.** Found while trying to
-walk item 20's success path live; each was patched in the LOCAL database to get
-the walkthrough done, and none is fixed in `prisma/seed.ts`.
+⚠ **Not regressions and not part of package G's five items** — found while
+walking review item 20, because item 20's success path could not be reached at
+all. Between them they made **the whole document-detail surface unusable on any
+seeded database**, and they had been that way long enough that nobody had
+walked it. All five are fixed in `prisma/seed.ts`, in this branch.
 
-| # | What `prisma/seed.ts` writes | What the contract requires | Consequence |
+The visible symptom was every document reading **"No fields extracted — The
+server answer did not match the contract"**, which takes the manual-correction
+flow, the coding-suggestion panel, the Path-to-Ready panel and the D46 flag with
+it. `api/document-detail.ts` fails closed, correctly; there was simply nothing
+to render.
+
+| # | What the seed wrote | What the contract requires | Consequence |
 |---|---|---|---|
-| 1 | `byteHash: 'sha256:<id>000…'` (seed.ts:349) | `^[a-f0-9]{64}$` | every `GET /documents/{id}` fails its parse |
-| 2 | `lineItems` nested INSIDE `fields` | `fields` is `name → ExtractedField`; `lineItems` is a SIBLING | the same parse fails again |
-| 3 | `provenance: 'textract:block/12'` | `ProvenanceClass` enum — `HUMAN_CONFIRMED` / `DETERMINISTIC` / `AI_SUGGESTED` | and again |
+| 1 | `byteHash: 'sha256:<id>000…'` | `^[a-f0-9]{64}$` | 64 characters, not one of them a match — every `GET /documents/{id}` failed its parse |
+| 2 | field keys `supplier` / `total` / `tax` | the header names `supplierName` / `totalPence` / `taxPence` | no screen reads those keys; `FIELD_PRESENTATION` and the extractor's own `demo-profiles.ts` use the contract's |
+| 3 | `provenance: 'textract:block/12'` | `ProvenanceClass` — `HUMAN_CONFIRMED` / `DETERMINISTIC` / `AI_SUGGESTED` | a plausible-looking source pointer where an enum was required; every `ExtractedField` failed on it |
+| 4 | line items carrying raw values | an `ExtractedField` per member | the same parse, one level down |
+| 5 | a `contextQuestionnaire` of `sells` / `revenueStreams` / `companyCards` | `BusinessContextQuestionnaire`, which requires `businessActivity` | `readBusinessProfile` answered **null for every seeded client** — see below |
 
-The visible symptom is the document panel reading **"No fields extracted — The
-server answer did not match the contract"** for every seeded document. Because
-`api/document-detail.ts` fails closed (correctly), nothing renders and there is
-no field to correct — so the manual-correction flow, the coding suggestion
-panel, the Path-to-Ready panel and the D46 flag are all unreachable on seed data.
+⚠ **I got one thing wrong in the first pass and it is worth correcting here:**
+`lineItems` living INSIDE `fields` is *not* a defect. It is the storage
+convention `extraction-pipeline.ts` uses and `toExtraction` separates on the way
+out — its own header explains why. Only the members' shape (#4) was wrong.
 
-A fourth, smaller one: after fixing 1–3, a correction naming `OFFICE_EQUIPMENT`
-— which IS on American Burger's seeded chart (`int_burger_xero`) — is still
-refused by the creation gate as *"not a code on this client's chart"*. The chart
-the gate reads is not resolving that integration; worth a look, and likely the
-same D42 fallout that removed the Xero connection concept.
+**Defect 5 is the interesting one, because it was silent in two more places.**
+A profile-less client gets the `NO_PROFILE` chart: the 37 core accounts and none
+of the trade additions. So:
 
-**Owed as its own change** (it touches `prisma/`), and it should be taken before
-the next walkthrough of anything document-shaped.
+- **a restaurant had no `COS_FOOD_AND_DRINK`**, and a correction naming one was
+  refused as *"not a code on this client's chart"* — item 47's refuse-never-fuzzy
+  rule working exactly as designed against data that had lied to it;
+- **the coding ladder (items 19/48) had no trade context for any demo client**,
+  so the surface built to demonstrate trade-aware coding was demonstrating the
+  generic path.
+
+Two more things went with it:
+
+- **The seeded "Xero" chart of accounts is deleted.** It was a METH Stage 5
+  DEMO-MOCK for a reference-list sync engine D42 removed from this release, and
+  it had stopped governing anything: its payload predates the `neoting` block
+  `StoredChartSchema` requires, so every read logged *"chart_of_accounts for
+  business biz_burger did not parse — serving the derived chart, not
+  overwriting"*. Its only remaining effect was that warning plus a `psql` answer
+  that disagreed with the product. With no row, `ChartOfAccountsService` takes
+  its derive-and-SEED path and the demo cast gets the trade-matched UK chart
+  every client created since A11 already gets.
+- **The documents' `categoryCode` values are chart CODES now**, not display
+  names. `'Cost of Sales — Food'` was never on any chart, so seeded documents
+  were coded against something that had never existed — which also means they
+  resolved to no Analysis account in the export. They carry
+  `COS_FOOD_AND_DRINK`, `LIGHT_HEAT_AND_POWER`, `COS_PURCHASES`, `SALES`,
+  `SOFTWARE_AND_SUBSCRIPTIONS` and `PROFESSIONAL_FEES` now. ⚠ The VAULT rows'
+  `category` is a folder label, not a nominal account, and is untouched.
+
+**Verified after the fix, live:** the document detail renders its seven fields
+with confidences and provenance; `biz_burger`'s chart derives and PERSISTS as
+`RETAIL_AND_HOSPITALITY`; a correction to `COS_FOOD_AND_DRINK` is accepted,
+files as *"Confirmed by you"*, and moves the document to READY. Both API (2,638)
+and web (901) suites pass on the reseeded database.
