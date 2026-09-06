@@ -2246,6 +2246,31 @@ dialog settles.
   review" assertion vacuous. `PublishBatchDialog.test.tsx` and
   `PurgeDocumentsDialog.test.tsx` both default it FALSE and say why.
 
+**The correction modal dismisses itself after the decision** (item 20 — the
+green banner appeared and the document stayed behind a dark scrim somebody had
+to close by hand). `CodingProposalCard` gained `onSettled`, `CodingProposalModal`
+holds the timer.
+
+- ⚠ **It fires on the SERVER SETTLE, never on the click.** `ReviewGate` shows
+  its confirmation optimistically and a refusal a moment later swaps the card to
+  `failedOnCard` — dismissing on the click would throw away the one screen
+  telling somebody their correction was not saved. Both halves are pinned in
+  `CodingProposalModal.test.tsx`, and the refusal case is the one that matters.
+- The dwell is 1.4 s: long enough to read the confirmation, short enough that
+  nobody reaches for the close button. Not zero — a dialog that vanishes on the
+  click leaves a person unsure anything happened, which is the mirror-image
+  defect.
+- The timer is a ref cleared on unmount, so a dialog closed by hand meanwhile
+  cannot call `onClose` on a remounted one. Nothing about the `Modal` FRAME
+  changes: the bounded card and its scroll box (items 23+40, #258) are
+  untouched.
+
+⚠ **The Approvals QUEUE keeps its decided cards mounted and must not be "made
+consistent" with this.** A queue's outcome banner is the only record of a
+decision on that screen and exists because the settle refetch used to unmount it
+instantly (`ApprovalsLiveQueue`'s own note). Right for a queue, wrong for a
+modal over the one document it just changed.
+
 **The D44 family is role-aware, from ONE fact** (item 24 — *"I'm the super
 admin and it is giving me lecture"*). `holdsReleaseAuthority(session)` in
 `api/auth.ts` is `canRelease(role) && isOwner` — `mayRelease` in

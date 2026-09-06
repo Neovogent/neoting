@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { defineMessages, useIntl } from 'react-intl';
 import type { UpdateCodingPayload } from '@neoting/contracts/model';
@@ -23,6 +23,18 @@ const m = defineMessages({
   ignore: { id: 'documents.codingProposalModal.ignore', defaultMessage: 'Ignore — I’m sure' },
   goBack: { id: 'documents.codingProposalModal.goBack', defaultMessage: 'Go back and fix' },
 });
+
+/**
+ * How long the confirmation stays on screen before the dialog closes itself
+ * (review item 20).
+ *
+ * Long enough to READ — "Correction approved — Category is now
+ * human-confirmed." is nine words — and short enough that nobody reaches for
+ * the close button first, which is the behaviour being replaced. Not zero: a
+ * dialog that vanishes the instant you click leaves a person unsure whether
+ * anything happened, which is the mirror-image defect.
+ */
+const CONFIRMATION_DWELL_MS = 1_400;
 
 /**
  * The staged correction in the one dialog frame — `ProposalFlowModal`'s shape,
@@ -59,6 +71,18 @@ const m = defineMessages({
  * `updateCodingProposal`. The gate is enforced server-side and again by a
  * database trigger; the dialog is a frame around it, never a shortcut past it.
  *
+ * ## It dismisses itself after the decision (5 Sep 2026 — review item 20)
+ *
+ * > *After changing the category of an invoice manually the modal backdrop
+ * > with the blend balk screen must disappear after showing the confirmation*
+ *
+ * The confirmation appeared and the dialog stayed, leaving the document behind
+ * a dark scrim somebody had to close by hand. It now shows the confirmation and
+ * then closes — on the SERVER settle, never on the click, so a refusal keeps
+ * its red alert on screen. See `dismissAfterConfirmation` below for the three
+ * things that make that safe, and for why the Approvals queue's decided cards
+ * stay mounted and must not be "made consistent" with this.
+ *
  * ⚠ NOTHING IS CREATED ON MOUNT — unlike `ProposalFlowModal`, which creates its
  * proposal in an effect, the correction's proposal is minted by the Approve
  * click and by nothing else. So closing this dialog undecided leaves no record
@@ -89,6 +113,43 @@ export default function CodingProposalModal({
   const intl = useIntl();
   const [ignored, setIgnored] = useState(false);
   const warningStep = warnings.length > 0 && !ignored;
+
+  /**
+   * ⚠ **The dismissal, and the three things that make it safe** (item 20).
+   *
+   * The reported defect: after approving a category correction the green
+   * confirmation appeared and *the modal and its blurred backdrop stayed*,
+   * leaving the document behind a dark scrim the user had to close by hand.
+   *
+   * 1. It fires on the SERVER SETTLE, never on the click. `ReviewGate` shows
+   *    its banner optimistically; a refusal a moment later swaps the card to
+   *    its red alert, and dismissing on the click would throw that away.
+   *    `CodingProposalCard.onSettled` is the success path alone.
+   * 2. The timer is held in a ref and cleared on unmount, so a dialog closed by
+   *    hand in the meantime cannot call `onClose` on a remounted one — and the
+   *    guard makes it fire at most once.
+   * 3. Nothing about the FRAME changes. The `Modal`'s bounded card and its
+   *    scroll box (items 23+40, #258) are untouched; this closes the dialog, it
+   *    does not restyle it.
+   *
+   * ⚠ **The Approvals QUEUE keeps its decided cards mounted and must.** A
+   * queue's outcome banner is the only record of a decision on that screen,
+   * and it was added because the settle refetch used to unmount it instantly
+   * (`ApprovalsLiveQueue`'s own note). That pattern is right for a queue and
+   * wrong for a modal over the one document it just changed — the two must not
+   * be "made consistent".
+   */
+  const dismissal = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (dismissal.current !== null) clearTimeout(dismissal.current);
+    },
+    [],
+  );
+  const dismissAfterConfirmation = () => {
+    if (dismissal.current !== null) return;
+    dismissal.current = setTimeout(onClose, CONFIRMATION_DWELL_MS);
+  };
 
   return (
     <Modal onClose={onClose} width="max-w-xl" label={intl.formatMessage(m.label)}>
@@ -138,6 +199,7 @@ export default function CodingProposalModal({
           nextValue={nextValue}
           fields={fields}
           warnings={warnings}
+          onSettled={dismissAfterConfirmation}
           {...(onEdit ? { onEdit } : {})}
         />
       )}

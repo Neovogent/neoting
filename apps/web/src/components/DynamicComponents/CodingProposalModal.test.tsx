@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import CodingProposalModal from './CodingProposalModal';
@@ -207,4 +207,62 @@ test('a member who cannot release sends the correction for approval instead of a
   expect(updateCodingProposal).toHaveBeenCalledWith(expect.anything(), { canRelease: false });
   expect(updateDocumentField).not.toHaveBeenCalled();
   expect(document.body.textContent).toContain('Sent for approval');
+});
+
+/* ── item 20: the dialog dismisses itself after the confirmation ─────────── */
+
+test('the dialog shows the confirmation and then closes itself, backdrop and all', async () => {
+  // > After changing the category of an invoice manually the modal backdrop
+  // > with the blend balk screen must disappear after showing the confirmation
+  //
+  // The reported defect: the green banner appeared and the document stayed
+  // behind a dark scrim the user had to dismiss by hand.
+  vi.useFakeTimers();
+  try {
+    const { onClose } = renderModal();
+    fireEvent.click(screen.getByRole('button', { name: 'Read review' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Approve change' }));
+
+    // The confirmation is READ first — it is on screen and the dialog is still
+    // open. A dialog that vanishes on the click is the mirror-image defect.
+    expect(document.body.textContent).toContain('Correction approved');
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Let the server call settle, then let the dwell elapse.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(2_000);
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('⚠ a REFUSED correction keeps the dialog open — the red alert is the only place it is said', async () => {
+  // The dismissal fires on the server settle, never on the click, precisely
+  // because `ReviewGate` shows its banner optimistically and a refusal a moment
+  // later swaps the card to `failedOnCard`. Closing on the click would throw
+  // away the one screen telling somebody their correction was not saved.
+  updateCodingProposal.mockRejectedValueOnce(new Error('NT-PRP-006 — that category is not on the chart'));
+  vi.useFakeTimers();
+  try {
+    const { onClose } = renderModal();
+    fireEvent.click(screen.getByRole('button', { name: 'Read review' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Approve change' }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(5_000);
+    });
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('That correction was NOT saved');
+  } finally {
+    vi.useRealTimers();
+  }
 });

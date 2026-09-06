@@ -100,6 +100,7 @@ export default function CodingProposalCard({
   fields,
   warnings = [],
   onEdit,
+  onSettled,
 }: {
   document: Document;
   fieldLabel: string;
@@ -119,6 +120,17 @@ export default function CodingProposalCard({
    * reads as a dead control (see `ReviewGate`).
    */
   onEdit?: () => void;
+  /**
+   * Fired when the proposal call SETTLED SUCCESSFULLY — review item 20.
+   *
+   * ⚠ **Not when Approve was pressed.** `ReviewGate` shows its confirmation
+   * optimistically on the click, and the server answers a moment later; a
+   * refusal swaps this card to its red `failedOnCard` alert. So a host that
+   * dismissed on the click would throw away the one screen telling somebody
+   * their correction was refused. This fires only on the success path, which
+   * is why it is here and not in `ReviewGate`.
+   */
+  onSettled?: () => void;
 }) {
   const intl = useIntl();
   const { updateDocumentField, logAudit, session } = useAppContext();
@@ -144,6 +156,7 @@ export default function CodingProposalCard({
     // exactly the "a write the next poll reverts" failure the S14 sweep swept.
     if (canRelease) updateDocumentField(doc.id, fieldLabel, nextValue);
     void updateCodingProposal({ businessId: doc.clientId, documentId: doc.id, fields }, { canRelease })
+      .then(() => onSettled?.())
       .catch((error: unknown) => {
         const reason = error instanceof Error ? error.message : 'unknown error';
         // On the CARD as well as in the audit log — the gate has already shown
