@@ -15,6 +15,8 @@ import {
   statementPeriodOf,
   toChaseItem,
 } from '../chase/index.js';
+import { mayManageBilling } from '../approvals/index.js';
+import { portalActorFor } from './portal-people-authority.js';
 import { type PortalSessionFacts, portalSessionRequired, systemScopeFor } from './portal-session-context.js';
 
 /**
@@ -182,6 +184,20 @@ export class PortalContextService {
       });
       if (business === null) throw contextUnavailable();
 
+      // WHO is asking, not just which workspace — for `canManageBilling`
+      // below. Read here rather than injected, because this transaction is
+      // already open under the same scope and the row is three columns; the
+      // billing controller's own guard reads the same two helpers through
+      // `PortalSessionContextResolver.resolveActor`, so there is one rule and
+      // two callers rather than two opinions.
+      const acting =
+        facts.contactId === null
+          ? null
+          : await db.contact.findFirst({
+              where: { id: facts.contactId, businessId: facts.businessId, deactivatedAt: null },
+              select: { id: true, portalRole: true, isPrimary: true },
+            });
+
       // ⚠ `notDeleted()` on BOTH document reads, and they have to move
       // together. `documentsSent` and `lastDocumentAt` are two facts about one
       // set — the client's own file — and `GET /portal/documents` now lists
@@ -261,6 +277,18 @@ export class PortalContextService {
           // D48: an upload is refused without a live subscription, so the portal
           // says so before the client photographs a receipt rather than after.
           subscriptionActive: business.subscriptionStatus === 'ACTIVE' || business.subscriptionStatus === 'TRIALING',
+          // ⚠ **A FACT FOR HONEST DEGRADATION, NEVER A GATE** (review item 44).
+          // The server refuses both billing operations for a non-owner portal
+          // session regardless of what a browser believes — `principalFor` in
+          // `billing.controller.ts` asks `assertCan(actor,
+          // 'business.billing.manage')`. This field exists so the client's
+          // Settings tab can OMIT the Plan section for a member rather than
+          // render a price and a live cancel button they may not use.
+          //
+          // It is the same rule, read as a boolean, and it is computed from
+          // `mayManageBilling` rather than restated — a second copy of a
+          // permission rule is how a screen and a server come to disagree.
+          canManageBilling: mayManageBilling(portalActorFor(acting)),
           lastDocumentAt: latest?.createdAt.toISOString() ?? null,
           subscription: toClientSubscription(business),
         },

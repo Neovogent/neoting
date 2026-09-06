@@ -8,6 +8,7 @@ import { Modal } from '../components/DynamicComponents/Modal';
 import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
 import { defineMessages, useIntl, type IntlShape, type MessageDescriptor } from 'react-intl';
 import { useAppContext } from '../context/AppContext';
+import { actsForWholePractice } from '../api/auth';
 import { commonActions, commonLabels } from '../i18n/common';
 import { ClientIntakeForm } from '../components/DynamicComponents/ClientIntakeForm';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
@@ -138,8 +139,23 @@ const m = defineMessages({
  */
 export function ClientsView() {
   const {
-    clients, statsFor, openClient, starredClientIds, toggleStarClient, startConversation,
+    clients, statsFor, openClient, starredClientIds, toggleStarClient, startConversation, session,
   } = useAppContext();
+
+  /**
+   * Whether this session may add a client at all (review item 39).
+   *
+   * The server's predicate is `ctx.practiceId !== undefined`, and
+   * `actsForWholePractice` reads the one fact `/me` reports it from — so a
+   * colleague scoped to specific clients, who reaches `403 NT-PRM-001` at
+   * Create, never sees the button that walks them into it. **Hidden rather
+   * than disabled-with-reason** (`docs/Access_and_Approval_Matrix.md`, gate
+   * ⚖1): adding clients is not a scoped colleague's job, and a permanently
+   * dead button on the board they work from every day teaches nothing.
+   *
+   * Presentation only. The refusal is the server's and now names the scope.
+   */
+  const canAddClient = actsForWholePractice(session);
 
   const [tab, setTab] = useState<Tab>('All');
   const tabStripRef = useScrollActiveIntoView<HTMLDivElement>(tab);
@@ -147,7 +163,10 @@ export function ClientsView() {
   const [query, setQuery] = useState('');
   // ?add=1 — the intake modal is a link, so it can be sent to a colleague.
   const [addParam, setAddParam] = useQueryParam('add');
-  const adding = addParam === '1';
+  // ⚠ The link is gated too, not just the button. `?add=1` is an ADDRESS —
+  // sendable to a colleague, which is the whole reason it exists — so a
+  // hidden action that a pasted URL still opens would be hidden in name only.
+  const adding = addParam === '1' && canAddClient;
   const setAdding = (open: boolean) => setAddParam(open ? '1' : null);
   const [columns, setColumns] = useState<string[]>(DEFAULT_COLUMNS);
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
@@ -290,6 +309,7 @@ export function ClientsView() {
             </div>
           )}
 
+          {canAddClient && (
           <button
             data-tour="clients-add"
             onClick={() => setAdding(true)}
@@ -298,6 +318,7 @@ export function ClientsView() {
             <Plus size={16} strokeWidth={2.5} />
             {intl.formatMessage(m.addClient)}
           </button>
+          )}
         </div>
       </header>
 

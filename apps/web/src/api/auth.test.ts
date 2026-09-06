@@ -1,7 +1,8 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { NtProblemError } from '@neoting/contracts';
 
-import { login, logout, toSessionState } from './auth';
+import { actsForWholePractice, login, logout, toSessionState } from './auth';
+import type { SessionState } from './auth';
 
 /**
  * The session boundary.
@@ -147,4 +148,59 @@ test('a refused login surfaces the problem, code intact', async () => {
 test('logout resolves even when the API is unreachable', async () => {
   vi.stubGlobal('fetch', () => Promise.reject(new Error('Failed to fetch')));
   await expect(logout()).resolves.toBeUndefined();
+});
+
+/**
+ * **Review item 39 — the predicate that decides what a session may reach.**
+ *
+ * The reported bug was a standard user walking three intake steps and being
+ * refused at Create by *"Only a member of an accounting practice can add a
+ * client"* — which is false of them. The cause is the shape of a SCOPED
+ * colleague's memberships (`practice_id` NULL, deliberately, so RLS confines
+ * them), which makes `/me` answer `practice: null` while `role` still reads
+ * `PRACTICE_STANDARD`.
+ *
+ * So the two cases that matter are the two `PRACTICE_STANDARD` rows below.
+ * A role test would answer the same for both and be wrong about each in
+ * opposite directions; this one keys on the fact the SERVER decides from, so
+ * the screen and the refusal cannot disagree.
+ */
+const authenticated = (practice: { id: string; name: string } | null, role: string): SessionState =>
+  ({
+    status: 'authenticated',
+    me: {
+      user: { id: 'usr_1', email: 'sam@ledgerline.test', firstName: 'Sam', lastName: 'Patel' },
+      practice,
+      role,
+      isOwner: false,
+      businesses: [],
+    },
+  }) as SessionState;
+
+const LEDGERLINE = { id: 'prac_1', name: 'Ledgerline' };
+
+test('⚠ item 39 — a PRACTICE_STANDARD scoped to clients does NOT act for the practice', () => {
+  // The item-39 user, exactly: practice staff by role, no practice in scope.
+  expect(actsForWholePractice(authenticated(null, 'PRACTICE_STANDARD'))).toBe(false);
+});
+
+test('⚠ item 39 — the same role, invited practice-wide, DOES', () => {
+  expect(actsForWholePractice(authenticated(LEDGERLINE, 'PRACTICE_STANDARD'))).toBe(true);
+});
+
+test('the owner and a client admin act for the practice; a business-only login does not', () => {
+  expect(actsForWholePractice(authenticated(LEDGERLINE, 'PRACTICE_ADMIN'))).toBe(true);
+  expect(actsForWholePractice(authenticated(LEDGERLINE, 'CLIENT_ADMIN'))).toBe(true);
+  expect(actsForWholePractice(authenticated(null, 'BUSINESS_ADMIN'))).toBe(false);
+});
+
+test('every non-authenticated state answers true, which is what keeps synthetic mode unchanged', () => {
+  for (const session of [
+    { status: 'off' },
+    { status: 'loading' },
+    { status: 'unauthenticated' },
+    { status: 'degraded', error: 'boom' },
+  ] as SessionState[]) {
+    expect(actsForWholePractice(session)).toBe(true);
+  }
 });

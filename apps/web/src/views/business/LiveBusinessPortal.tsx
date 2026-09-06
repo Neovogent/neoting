@@ -10,7 +10,7 @@ import { LivePortalHome } from './LivePortalHome';
 import { LivePortalSettings } from './LivePortalSettings';
 import { LivePortalUpload } from './LivePortalUpload';
 import type { PortalAsk } from './portalAsk';
-import { pathForSection, pathForTab, sectionFromPath, tabFromPath, type PortalTab } from './portalTabs';
+import { hiddenSectionsFor, pathForSection, pathForTab, sectionFromPath, tabFromPath, type PortalTab } from './portalTabs';
 import { useBusinessPortalSession } from './useBusinessPortalSession';
 
 /**
@@ -130,7 +130,14 @@ export function LiveBusinessPortal() {
   // link a client can be sent and can send on. An unrecognised one falls back to
   // the first section rather than opening a blank panel — `portalTabs.ts` owns
   // that rule, one level down from the tab's own.
-  const section = sectionFromPath(segments) ?? 'Business';
+  // ⚠ Resolved against THIS session's visible sections (review item 44), so a
+  // member pasting `/portal/settings/plan` lands on Business rather than on the
+  // panel the rail no longer offers them. `canManageBilling` defaults CLOSED
+  // while the home is still loading, for `api/onboarding.ts`'s reason: of the
+  // two readings of an unknown authority, the one that cannot leak is closed.
+  const section =
+    sectionFromPath(segments, hiddenSectionsFor({ canManageBilling: session.home?.canManageBilling ?? false })) ??
+    'Business';
   const goToSection = (next: string) => navigate(pathForSection(segments, 'Settings', next));
 
   // A stored bearer being re-proven (a reload mid-visit). Neither form is

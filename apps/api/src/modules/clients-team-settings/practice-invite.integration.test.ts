@@ -59,7 +59,37 @@ const SEEDED_MEMBERSHIPS = ['pti-mem-owner', 'pti-mem-staff', 'pti-mem-system'];
 
 const INVITED_SCOPED = 'pti-invited-scoped@example.test';
 const INVITED_WIDE = 'pti-invited-wide@example.test';
-const INVITED_EMAILS = [INVITED_SCOPED, INVITED_WIDE, 'pti-refused@example.test'];
+/**
+ * One address PER CASE in the management block below (review item 57).
+ *
+ * ⚠ Not a style choice: acceptance creates a `users` row keyed on the address,
+ * so a second onboarding of the same one is refused as address-taken. Sharing
+ * one address between these tests made them order-dependent and, worse, made
+ * each one operate on whatever the previous had left behind — which for an
+ * edit-and-remove suite is the failure mode it exists to catch.
+ */
+const MANAGED = Object.fromEntries(
+  ['edit-scope', 'edit-wide', 'edit-role', 'edit-admin', 'staff-edit', 'remove'].map((k) => [
+    k,
+    `pti-managed-${k}@example.test`,
+  ]),
+) as Record<'edit-scope' | 'edit-wide' | 'edit-role' | 'edit-admin' | 'staff-edit' | 'remove', string>;
+
+/** The invitation-lifecycle cases, which never accept and so need only addresses. */
+const INVITE_CASES = {
+  revoke: 'pti-invite-revoke@example.test',
+  resend: 'pti-invite-resend@example.test',
+  accepted: 'pti-invite-accepted@example.test',
+  expired: 'pti-invite-expired@example.test',
+};
+
+const INVITED_EMAILS = [
+  INVITED_SCOPED,
+  INVITED_WIDE,
+  'pti-refused@example.test',
+  ...Object.values(MANAGED),
+  ...Object.values(INVITE_CASES),
+];
 
 const OWNER_CTX = ScopeContextSchema.parse({ actorId: USER_OWNER, practiceId: PRACTICE });
 const STAFF_CTX = ScopeContextSchema.parse({ actorId: USER_STAFF, practiceId: PRACTICE });
@@ -340,5 +370,258 @@ describe.skipIf(!enabled)('practice team-member onboarding, against a real datab
     // member reports an empty list, which means ALL and not NONE.
     expect(page.data.find((m) => m.email === INVITED_SCOPED)?.businessIds).toEqual([BIZ_ASSIGNED]);
     expect(page.data.find((m) => m.email === INVITED_WIDE)?.businessIds).toEqual([]);
+  });
+});
+
+/**
+ * **Review item 57 — full member management, against the same real database.**
+ *
+ * > *"Give full member control here for the accountant, deleting, editing,
+ * > removing and all member access control form here design the full setup and
+ * > implement"*
+ *
+ * These belong here rather than beside a mock for the reason the suite above
+ * states: **per-client access is not a field, it is the SHAPE of somebody's
+ * membership rows**, and the whole story is worth nothing if it is only true in
+ * TypeScript. An edit that widened a colleague's scope in the projection while
+ * leaving RLS unchanged would pass every unit test ever written for it.
+ *
+ * The guards are asserted by their EFFECTS, not by their messages: the owner
+ * still holds their row after a refused edit, the removed colleague's session
+ * resolves to nothing, the revoked token no longer accepts.
+ */
+describe.skipIf(!enabled)('practice team-member management (review item 57)', () => {
+  /**
+   * A colleague of this firm, scoped to one client — one per case, so no test
+   * inherits another's edits. See {@link MANAGED}.
+   */
+  const onboardManaged = async (which: keyof typeof MANAGED): Promise<string> =>
+    onboard({ email: MANAGED[which], role: 'PRACTICE_STANDARD', businessIds: [BIZ_ASSIGNED] }, `pti-key-${which}`);
+
+  test('⚠ editing a colleague\'s clients REWRITES their memberships, and Postgres agrees', async () => {
+    const userId = await onboardManaged('edit-scope');
+
+    // Before: one scoped row, and the withheld client is invisible.
+    const before = await loadScopeForUser(app, userId);
+    const visibleBefore = await scopedDb(app, before!, (db) => db.business.findMany({ select: { id: true } }));
+    expect(visibleBefore.map((b) => b.id)).toEqual([BIZ_ASSIGNED]);
+
+    const updated = await teamService().updatePracticeMember(
+      OWNER_CTX,
+      userId,
+      { businessIds: [BIZ_ASSIGNED, BIZ_WITHHELD] },
+      'pti-key-edit-scope',
+    );
+    expect(updated.businessIds.sort()).toEqual([BIZ_ASSIGNED, BIZ_WITHHELD].sort());
+
+    // ⚠ `practiceId` stays NULL on every scoped row. With one set,
+    // `app_can_access_business`'s practice branch would grant every client of
+    // the firm and the next assertion would pass for the wrong reason — the
+    // exact trap ASSERTION 1 above guards on the acceptance path.
+    const rows = await owner.membership.findMany({
+      where: { userId },
+      select: { practiceId: true, businessId: true, isOwner: true },
+      orderBy: { businessId: 'asc' },
+    });
+    expect(rows).toEqual([
+      { practiceId: null, businessId: BIZ_ASSIGNED, isOwner: false },
+      { practiceId: null, businessId: BIZ_WITHHELD, isOwner: false },
+    ]);
+
+    // POSTGRES answers this, not the projection above.
+    const after = await loadScopeForUser(app, userId);
+    const visibleAfter = await scopedDb(app, after!, (db) => db.business.findMany({ select: { id: true } }));
+    expect(visibleAfter.map((b) => b.id).sort()).toEqual([BIZ_ASSIGNED, BIZ_WITHHELD].sort());
+  });
+
+  test('an EMPTY client list means every client — the invite form\'s rule, kept at the other end', async () => {
+    const userId = await onboardManaged('edit-wide');
+
+    await teamService().updatePracticeMember(OWNER_CTX, userId, { businessIds: [] }, 'pti-key-edit-wide');
+
+    // Practice-WIDE now: one row carrying the practice and no business, which
+    // is the shape signup and an unscoped acceptance both write.
+    const rows = await owner.membership.findMany({ where: { userId }, select: { practiceId: true, businessId: true } });
+    expect(rows).toEqual([{ practiceId: PRACTICE, businessId: null }]);
+  });
+
+  test('an OMITTED client list leaves their scoping alone — a role change is not a silent widening', async () => {
+    const userId = await onboardManaged('edit-role');
+
+    const updated = await teamService().updatePracticeMember(OWNER_CTX, userId, { role: 'PRACTICE_STANDARD' }, 'pti-key-edit-role');
+
+    expect(updated.businessIds).toEqual([BIZ_ASSIGNED]);
+    const rows = await owner.membership.findMany({ where: { userId }, select: { businessId: true } });
+    expect(rows).toEqual([{ businessId: BIZ_ASSIGNED }]);
+  });
+
+  test('⚠ the OWNER cannot be changed, and still holds their row afterwards', async () => {
+    // D44: exactly one membership carries `is_owner`, nothing moves it, and a
+    // demoted or re-scoped owner is a firm that can never release again.
+    const refusal = await problem(
+      teamService().updatePracticeMember(OWNER_CTX, USER_OWNER, { role: 'PRACTICE_STANDARD' }, 'pti-key-owner-edit'),
+    );
+    expect(refusal.code).toBe('NT-PRM-001');
+    expect(refusal.status).toBe(403);
+
+    const row = await owner.membership.findUnique({ where: { id: 'pti-mem-owner' }, select: { role: true, isOwner: true } });
+    expect(row).toEqual({ role: 'PRACTICE_ADMIN', isOwner: true });
+  });
+
+  test('⚠ the OWNER cannot be removed, and still holds their row afterwards', async () => {
+    const refusal = await problem(teamService().removePracticeMember(OWNER_CTX, USER_OWNER, 'pti-key-owner-remove'));
+    expect(refusal.code).toBe('NT-PRM-001');
+    expect(refusal.status).toBe(403);
+    expect(await owner.membership.findUnique({ where: { id: 'pti-mem-owner' } })).not.toBeNull();
+  });
+
+  test('⚠ PRACTICE_ADMIN cannot be granted by an edit, any more than by an invitation', async () => {
+    const userId = await onboardManaged('edit-admin');
+
+    const refusal = await problem(
+      teamService().updatePracticeMember(OWNER_CTX, userId, { role: 'PRACTICE_ADMIN' }, 'pti-key-edit-admin'),
+    );
+    // The same `NT-VAL-001` the invite boundary gives, and for the same reason:
+    // an edited-to admin would hold `canRelease` and not `isOwner` — able to
+    // invite, unable to release, and told "only your super admin can" by a
+    // screen that had just labelled them an admin.
+    expect(refusal.code).toBe('NT-VAL-001');
+    expect(refusal.status).toBe(400);
+
+    const rows = await owner.membership.findMany({ where: { userId }, select: { role: true } });
+    expect(rows.every((r) => r.role === 'PRACTICE_STANDARD')).toBe(true);
+  });
+
+  test('a non-admin can change nobody — 403, and the target is untouched', async () => {
+    const userId = await onboardManaged('staff-edit');
+
+    const refusal = await problem(
+      teamService().updatePracticeMember(STAFF_CTX, userId, { businessIds: [] }, 'pti-key-staff-edit'),
+    );
+    expect(refusal.code).toBe('NT-PRM-001');
+    expect(refusal.status).toBe(403);
+
+    const rows = await owner.membership.findMany({ where: { userId }, select: { businessId: true } });
+    expect(rows).toEqual([{ businessId: BIZ_ASSIGNED }]);
+  });
+
+  test('⚠ removing a colleague ends their SESSION and keeps their account', async () => {
+    const userId = await onboardManaged('remove');
+    expect(await loadScopeForUser(app, userId)).not.toBeNull();
+
+    await teamService().removePracticeMember(OWNER_CTX, userId, 'pti-key-remove');
+
+    // No membership to act as, so `loadScopeForUser` answers null and the
+    // resolver turns that into a 401 on their very next request.
+    expect(await loadScopeForUser(app, userId)).toBeNull();
+    expect(await owner.membership.count({ where: { userId } })).toBe(0);
+    // The PERSON survives. Their access to this firm was the subject, not their
+    // account — and everything they did keeps their name.
+    expect(await owner.user.findUnique({ where: { id: userId } })).not.toBeNull();
+  });
+
+  test('a caller cannot remove themselves', async () => {
+    // Refused for its own reason, distinct from the owner rule — proven by
+    // reaching it at all, which needs a caller who is an admin and not the
+    // owner. There is none today, so the OWNER's refusal is what fires; the
+    // rule is pinned in the service and this asserts the door stays shut.
+    const refusal = await problem(teamService().removePracticeMember(OWNER_CTX, USER_OWNER, 'pti-key-self-remove'));
+    expect(refusal.code).toBe('NT-PRM-001');
+  });
+
+  test('⚠ revoking an invitation kills the LINK, not just the row', async () => {
+    const body = invitePracticeMemberBody.parse({ email: INVITE_CASES.revoke, role: 'PRACTICE_STANDARD' });
+    const invite = await teamService().invitePracticeMember(OWNER_CTX, body, 'pti-key-revoke-invite');
+    const token = outbox.at(-1)?.token ?? '';
+    expect(token).not.toBe('');
+
+    await teamService().revokePracticeInvitation(OWNER_CTX, invite.id, 'pti-key-revoke');
+
+    // The row is gone, and with it the only stored hash the token could be
+    // checked against — so the link in the email is dead now rather than in
+    // seven days. Acceptance is the proof, not the row count.
+    expect(await owner.invite.findUnique({ where: { id: invite.id } })).toBeNull();
+    const refusal = await problem(
+      acceptanceService().accept({ token, password: 'a-long-enough-passphrase', firstName: 'Sam', lastName: 'Patel' }),
+    );
+    expect(refusal.code).not.toBe('no-throw');
+  });
+
+  test('⚠ re-sending supersedes the old link — one invitation, one live token', async () => {
+    const body = invitePracticeMemberBody.parse({ email: INVITE_CASES.resend, role: 'PRACTICE_STANDARD' });
+    const invite = await teamService().invitePracticeMember(OWNER_CTX, body, 'pti-key-resend-invite');
+    const first = outbox.at(-1)?.token ?? '';
+
+    const resent = await teamService().resendPracticeInvitation(OWNER_CTX, invite.id, 'pti-key-resend');
+    const second = outbox.at(-1)?.token ?? '';
+
+    // Same row, same id, new credential and a fresh seven days.
+    expect(resent.id).toBe(invite.id);
+    expect(second).not.toBe(first);
+    expect(Date.parse(resent.expiresAt)).toBeGreaterThan(Date.parse(invite.expiresAt));
+    expect(await owner.invite.count({ where: { practiceId: PRACTICE, email: INVITE_CASES.resend } })).toBe(1);
+
+    // The OLD link is dead — one row stores one hash, so a second live link is
+    // structurally impossible. That is the honest behaviour, and the screen
+    // says so before the click.
+    const stale = await problem(
+      acceptanceService().accept({ token: first, password: 'a-long-enough-passphrase', firstName: 'Sam', lastName: 'Patel' }),
+    );
+    expect(stale.code).not.toBe('no-throw');
+
+    // …and the NEW one works.
+    const accepted = await acceptanceService().accept({
+      token: second,
+      password: 'a-long-enough-passphrase',
+      firstName: 'Sam',
+      lastName: 'Patel',
+    });
+    expect(accepted).toEqual({ email: INVITE_CASES.resend });
+  });
+
+  test('⚠ an EXPIRED invitation is listed, so it can be re-sent', async () => {
+    const body = invitePracticeMemberBody.parse({ email: INVITE_CASES.expired, role: 'PRACTICE_STANDARD' });
+    const invite = await teamService().invitePracticeMember(OWNER_CTX, body, 'pti-key-expired-invite');
+    // Age it past its seven days. Nothing else in the product can produce this
+    // state inside a test, and the list rule is the whole point of the contract
+    // change that came with re-send.
+    await owner.invite.update({ where: { id: invite.id }, data: { expiresAt: new Date(Date.now() - 60_000) } });
+
+    const page = await teamService().listPracticeMembers(OWNER_CTX, { limit: 100 });
+    const listed = page.pendingInvites.find((i) => i.id === invite.id);
+    expect(listed).toBeDefined();
+    // `expiresAt` is what tells the two apart on the row — no field was added.
+    expect(Date.parse(listed?.expiresAt ?? '')).toBeLessThan(Date.now());
+
+    // And it can be revived, which is why listing it was worth a contract change.
+    const resent = await teamService().resendPracticeInvitation(OWNER_CTX, invite.id, 'pti-key-expired-resend');
+    expect(Date.parse(resent.expiresAt)).toBeGreaterThan(Date.now());
+  });
+
+  test('an ACCEPTED invitation is neither revocable nor re-sendable — 404, not a lie', async () => {
+    const body = invitePracticeMemberBody.parse({ email: INVITE_CASES.accepted, role: 'PRACTICE_STANDARD' });
+    const invite = await teamService().invitePracticeMember(OWNER_CTX, body, 'pti-key-accepted-invite');
+    const token = outbox.at(-1)?.token ?? '';
+    await acceptanceService().accept({ token, password: 'a-long-enough-passphrase', firstName: 'Sam', lastName: 'Patel' });
+
+    // It was consumed; the person is a member, and the operation for them is
+    // `removePracticeMember`. A 204 here would be a revoke that revoked
+    // nothing while looking like it had.
+    const revoke = await problem(teamService().revokePracticeInvitation(OWNER_CTX, invite.id, 'pti-key-accepted-revoke'));
+    expect(revoke.status).toBe(404);
+    const resend = await problem(teamService().resendPracticeInvitation(OWNER_CTX, invite.id, 'pti-key-accepted-resend'));
+    expect(resend.status).toBe(404);
+  });
+
+  test("another practice's colleague is a 404, not a 403 — a 403 would confirm they exist", async () => {
+    // `USER_SYSTEM` is a member of this practice but is a SYSTEM actor, which
+    // the firm's own list excludes. Somebody genuinely elsewhere is the
+    // stronger case, and the seeded staff of no other practice exists here — so
+    // this asserts the shape with an id that cannot resolve.
+    const refusal = await problem(
+      teamService().updatePracticeMember(OWNER_CTX, 'pti-user-nobody', { businessIds: [] }, 'pti-key-nobody'),
+    );
+    expect(refusal.code).toBe('NT-VAL-001');
+    expect(refusal.status).toBe(404);
   });
 });

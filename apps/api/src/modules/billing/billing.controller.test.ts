@@ -5,6 +5,7 @@ import { expect, test } from 'vitest';
 import type { ScopeContext } from '../../common/db/scope-context.js';
 import type { RequestContext } from '../../common/context/request-context.js';
 import type { AppException } from '../../common/problem/problem.js';
+import type { Actor } from '../approvals/index.js';
 import type { PortalSessionContextResolver, PortalSessionFacts } from '../portal/index.js';
 import { portalSessionRequired } from '../portal/index.js';
 import { BillingController } from './billing.controller.js';
@@ -50,7 +51,7 @@ function facts(over: Partial<PortalSessionFacts> = {}): PortalSessionFacts {
   };
 }
 
-function harness(over: { onboarding?: () => Promise<PortalSessionFacts> } = {}) {
+function harness(over: { onboarding?: () => Promise<PortalSessionFacts>; actor?: () => Promise<Actor> } = {}) {
   const seen: ScopeContext[] = [];
 
   const context = { require: async () => COOKIE_CTX } as RequestContext;
@@ -72,10 +73,27 @@ function harness(over: { onboarding?: () => Promise<PortalSessionFacts> } = {}) 
 
   const portal = {
     resolveOnboarding: over.onboarding ?? (async () => facts()),
+    // ⚠ WHO is asking, added with the authority guard (review item 44). The
+    // default is the business OWNER, so every test above this line keeps asking
+    // the question it was written to ask — which principal, and whose business
+    // — rather than being silently rewritten into a permission test.
+    resolveActor: over.actor ?? (async () => OWNER),
   } as unknown as PortalSessionContextResolver;
 
   return { controller: new BillingController(context, service, portal), seen };
 }
+
+/**
+ * The three portal actors that matter here. `assertCan` reads `role` and
+ * nothing else, and `business.billing.manage` is `BUSINESS_ADMIN` only.
+ */
+const PORTAL_BODY = { businessId: 'biz_1', returnUrl: 'https://app.example/back' };
+
+const OWNER: Actor = { actorId: 'con_owner', role: 'BUSINESS_ADMIN', isOwner: true };
+const USER_ADMIN: Actor = { actorId: 'con_hr', role: 'USER_ADMIN', isOwner: false };
+const MEMBER: Actor = { actorId: 'con_staff', role: 'BUSINESS_STANDARD', isOwner: false };
+/** A chase session's `contact_id` is deliberately NULL — nobody, and nobody pays. */
+const NOBODY: Actor = { actorId: '', role: null, isOwner: false };
 
 const grab = async (run: () => Promise<unknown>): Promise<AppException> => {
   try {
@@ -211,5 +229,88 @@ test('a bearer the portal refuses never reaches the customer portal either', asy
   );
   expect(error.code).toBe('NT-OTP-002');
   expect(error.getStatus()).toBe(401);
+  expect(seen).toEqual([]);
+});
+
+/**
+ * **⚠ REVIEW ITEM 44 — the authority half, which did not exist.**
+ *
+ * Everything above these tests is TENANCY: the session's business must be the
+ * body's. That was the whole of the portal-path guard, and it is the right
+ * answer to *whose subscription is this* and no answer at all to *may THIS
+ * PERSON touch it*. So every contact of the business holding a portal bearer —
+ * a `BUSINESS_STANDARD` added to photograph receipts included — could mint a
+ * Stripe customer-portal session and reach the card, every invoice and
+ * cancellation. It was reported as a UI complaint (*"the team member of a
+ * client don't need to see the plan subscribed"*); the button was live.
+ *
+ * Both doors are tested, because starting a subscription and cancelling one are
+ * the same authority seen from two ends, and `principalFor` is shared precisely
+ * so a future change cannot land on one and miss the other.
+ *
+ * ⚠ `seen` staying empty is the assertion that matters on every refusal: it
+ * proves nothing reached the service, so nothing reached Stripe.
+ */
+const REFUSED = [
+  ['a plain member', MEMBER],
+  ['a user administrator, who manages people and nothing else', USER_ADMIN],
+  ['a session that resolves to nobody at all', NOBODY],
+] as const;
+
+for (const [who, actor] of REFUSED) {
+  test(`⚠ item 44 — the customer portal refuses ${who}, and nothing reaches Stripe`, async () => {
+    const { controller, seen } = harness({ actor: async () => actor });
+    const error = await grab(() => controller.portal(PORTAL_BODY, KEY, 'Bearer portal.bearer'));
+
+    expect(error.code).toBe('NT-PRM-001');
+    expect(error.getStatus()).toBe(403);
+    expect(seen).toEqual([]);
+  });
+
+  test(`⚠ item 44 — checkout refuses ${who} too — one authority, both doors`, async () => {
+    const { controller, seen } = harness({ actor: async () => actor });
+    const error = await grab(() => controller.checkout(BODY, KEY, 'Bearer portal.bearer'));
+
+    expect(error.code).toBe('NT-PRM-001');
+    expect(seen).toEqual([]);
+  });
+}
+
+test('⚠ item 44 — the owner still reaches both doors', async () => {
+  // The guard must not be the outage. D48 makes the client the payer, and a
+  // subscription its payer cannot leave is not one they consented to.
+  const { controller, seen } = harness({ actor: async () => OWNER });
+  await controller.portal(PORTAL_BODY, KEY, 'Bearer portal.bearer');
+  await controller.checkout(BODY, KEY, 'Bearer portal.bearer');
+  expect(seen).toHaveLength(2);
+});
+
+test('⚠ item 44 — the ACCOUNTANT is unaffected: no bearer, no portal actor read', async () => {
+  // The cookie path never resolves a portal actor, so a practice user opening a
+  // client's billing is decided by the workspace session exactly as before.
+  let asked = 0;
+  const { controller, seen } = harness({
+    actor: async () => {
+      asked += 1;
+      return MEMBER;
+    },
+  });
+  await controller.portal(PORTAL_BODY, KEY, undefined);
+  expect(seen).toEqual([COOKIE_CTX]);
+  expect(asked).toBe(0);
+});
+
+test('⚠ item 44 — the wrong-business 404 still comes FIRST', async () => {
+  // Ordering, and it is deliberate: a caller naming somebody else's business
+  // gets the answer that confirms nothing, and only a caller asking about their
+  // own workspace learns that authority is what they lack.
+  const { controller, seen } = harness({
+    onboarding: async () => facts({ businessId: 'biz_someone_else' }),
+    actor: async () => MEMBER,
+  });
+  const error = await grab(() => controller.portal(PORTAL_BODY, KEY, 'Bearer portal.bearer'));
+
+  expect(error.code).toBe('NT-VAL-001');
+  expect(error.getStatus()).toBe(404);
   expect(seen).toEqual([]);
 });

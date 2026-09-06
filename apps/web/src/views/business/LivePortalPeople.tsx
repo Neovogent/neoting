@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Trash2, UserRound } from 'lucide-react';
+import { Loader2, Pencil, Plus, Trash2, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { defineMessages, useIntl } from 'react-intl';
 
@@ -80,6 +80,9 @@ const m = defineMessages({
   removed: { id: 'portal.livePortalPeople.removed', defaultMessage: 'Removed' },
   noEmail: { id: 'portal.livePortalPeople.noEmail', defaultMessage: 'No email address' },
   removeAction: { id: 'portal.livePortalPeople.removeAction', defaultMessage: 'Remove' },
+  // Review item 42. The same words as the editor's own title, so the button
+  // and the panel it opens name one act.
+  editAction: { id: 'portal.livePortalPeople.editAction', defaultMessage: 'Change what they can do' },
   removeLastOwner: {
     id: 'portal.livePortalPeople.removeLastOwner',
     defaultMessage: 'This is your only owner — make someone else an owner first.',
@@ -98,6 +101,35 @@ const m = defineMessages({
   accessOwner: { id: 'portal.livePortalPeople.accessOwner', defaultMessage: 'Owner' },
   accessUserAdmin: { id: 'portal.livePortalPeople.accessUserAdmin', defaultMessage: 'User administrator' },
   accessStandard: { id: 'portal.livePortalPeople.accessStandard', defaultMessage: 'Member' },
+
+  // Review item 41: *"'member' does not define what the job is, write specific
+  // word or words to define the access"*. The ENUM WORDS DO NOT MOVE — they
+  // are the contract's, and the last-owner rule keys on them — so what was
+  // added is a sentence per level, shown under the select and changing with
+  // the choice. That is the pattern the capability checkboxes below it already
+  // use, and the reason the select read as meaningless beside them.
+  //
+  // Each one says what the level GRANTS and what it withholds, because a level
+  // named only by what it can do leaves the reader guessing at the boundary —
+  // which is the whole question somebody adding staff is asking. What a person
+  // may SEND and SEE is deliberately left to the two boxes below rather than
+  // claimed here: those are per-person and would contradict a sentence about
+  // the level.
+  accessOwnerNote: {
+    id: 'portal.livePortalPeople.accessOwnerNote',
+    defaultMessage:
+      'Owner — full control: the people on this list, your business’s own details, and the subscription.',
+  },
+  accessUserAdminNote: {
+    id: 'portal.livePortalPeople.accessUserAdminNote',
+    defaultMessage:
+      'User administrator — can add, change and remove people on this list. Cannot see or change the subscription, or your business’s details.',
+  },
+  accessStandardNote: {
+    id: 'portal.livePortalPeople.accessStandardNote',
+    defaultMessage:
+      'Member — day-to-day use only. Cannot change who has access, your business’s details or the subscription. What they may send and see is the two boxes below.',
+  },
 });
 
 /**
@@ -111,6 +143,17 @@ const ACCESS_LABEL: Record<PortalAccessRole, { id: string; defaultMessage: strin
   BUSINESS_ADMIN: m.accessOwner,
   USER_ADMIN: m.accessUserAdmin,
   BUSINESS_STANDARD: m.accessStandard,
+};
+
+/**
+ * What each level actually grants (review item 41), keyed off the same enum so
+ * a level cannot have a label and no explanation — or an explanation for a
+ * level that no longer exists.
+ */
+const ACCESS_NOTE: Record<PortalAccessRole, { id: string; defaultMessage: string }> = {
+  BUSINESS_ADMIN: m.accessOwnerNote,
+  USER_ADMIN: m.accessUserAdminNote,
+  BUSINESS_STANDARD: m.accessStandardNote,
 };
 
 export const PEOPLE_QUERY_KEY = ['portal', 'people'] as const;
@@ -202,24 +245,65 @@ export function LivePortalPeople({ sessionToken }: { readonly sessionToken: stri
                   </span>
 
                   {canManage && person.isActive && (
-                    <button
-                      type="button"
-                      // ⚠ Disabled with an EXPLANATORY title, never hidden. A
-                      // control that vanishes teaches nothing; one that says why
-                      // it cannot be used names the fix.
-                      disabled={removeReason(intl, person, owners) !== null || remove.isPending}
-                      title={removeReason(intl, person, owners) ?? undefined}
-                      onClick={() => {
-                        const name = person.name ?? person.email ?? '';
-                        if (!window.confirm(intl.formatMessage(m.removeConfirm, { name }))) return;
-                        setFault(null);
-                        remove.mutate(person.id);
-                      }}
-                      className="shrink-0 p-2 rounded-lg text-zinc-400 hover:text-rose-300 hover:bg-raised disabled:opacity-40 disabled:hover:text-zinc-400 hit-area"
-                      aria-label={intl.formatMessage(m.removeAction)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <span className="shrink-0 flex items-center gap-0.5">
+                      {/* ⚠ **REVIEW ITEM 42 IS THIS BUTTON, AND ONLY THIS
+                          BUTTON.** *"Give edit option for the owner … so that
+                          if there was any mistake the owner can edit them"* —
+                          the row offered a trash icon and nothing else, so the
+                          only recovery from a wrong access level or a mistyped
+                          name was delete-and-re-add, which for a person who has
+                          already sent documents is not a correction at all.
+
+                          Everything the fix needed already existed and was
+                          simply unreachable: `PATCH /portal/people/{personId}`
+                          is contracted and implemented with the last-owner
+                          guard server-side, `api/portalPeople.ts` exports
+                          `updatePerson`, and `PortalPersonEditor` below already
+                          renders the edit case — its own title, the email
+                          locked with the reason, the demote gate. The list just
+                          never called `setEditing(person)`; only
+                          `setEditing('new')`.
+
+                          Placed BEFORE the trash so the recoverable act is the
+                          one nearest the reader, and the destructive one is
+                          not what a thumb reaches first. */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFault(null);
+                          setEditing(person);
+                        }}
+                        className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-raised hit-area"
+                        aria-label={intl.formatMessage(m.editAction)}
+                        title={intl.formatMessage(m.editAction)}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        // ⚠ Disabled with an EXPLANATORY title, never hidden. A
+                        // control that vanishes teaches nothing; one that says why
+                        // it cannot be used names the fix.
+                        //
+                        // The pencil beside it carries no such guard on purpose:
+                        // there is no person on this list who cannot be EDITED.
+                        // The last owner may be renamed and retitled — only
+                        // DEMOTING them is refused, which is `gateFor`'s job
+                        // inside the form, where the offending value is.
+                        disabled={removeReason(intl, person, owners) !== null || remove.isPending}
+                        title={removeReason(intl, person, owners) ?? undefined}
+                        onClick={() => {
+                          const name = person.name ?? person.email ?? '';
+                          if (!window.confirm(intl.formatMessage(m.removeConfirm, { name }))) return;
+                          setFault(null);
+                          remove.mutate(person.id);
+                        }}
+                        className="p-2 rounded-lg text-zinc-400 hover:text-rose-300 hover:bg-raised disabled:opacity-40 disabled:hover:text-zinc-400 hit-area"
+                        aria-label={intl.formatMessage(m.removeAction)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </span>
                   )}
                 </li>
               ))}
@@ -472,7 +556,11 @@ function PortalPersonEditor({
             </datalist>
           </Field>
 
-          <Field label={intl.formatMessage(e.accessLabel)}>
+          {/* The note is the `Field`'s own, so it sits where every other
+              explanation on this form sits, and it changes with the selection —
+              a static line describing three levels would describe none of
+              them. */}
+          <Field label={intl.formatMessage(e.accessLabel)} note={intl.formatMessage(ACCESS_NOTE[access])}>
             <select
               value={access}
               onChange={(event) => setAccess(event.target.value as PortalAccessRole)}

@@ -8,7 +8,7 @@ import type { BusinessPortalHome } from '../../api/onboarding';
 import { SectionStrip } from '../../components/DynamicComponents/SectionStrip';
 import { PortalPill } from './PortalStatusPill';
 import { Panel } from './LivePortalHome';
-import { sectionsForTab } from './portalTabs';
+import { hiddenSectionsFor, sectionsForTab } from './portalTabs';
 
 /**
  * ⚠ **Lazy, and it is a BUDGET rule rather than a tidy-up.** The portal route is
@@ -36,7 +36,7 @@ const LivePortalPeople = lazy(() => import('./LivePortalPeople'));
  * | section | what it does |
  * |---|---|
  * | Business | states the name on file. Read-only; the practice owns the record. |
- * | Plan | **real** — status, renewal, and both Stripe doors (checkout, customer portal). |
+ * | Plan | **real** — status, renewal, and both Stripe doors (checkout, customer portal). **Owner only since 6 Sep 2026** — see below. |
  * | Sending | explains what happens to a document. No settings; the capture preference is on the Capture tab and lasts one visit. |
  * | Notifications | states how the accountant contacts them. No preferences exist to change. |
  * | People | states how anyone else would sign in. Adding someone is the accountant's, and there is no portal operation for it. |
@@ -49,6 +49,25 @@ const LivePortalPeople = lazy(() => import('./LivePortalPeople'));
  * month, so the person reading this screen is the person being charged, and a
  * portal that could not show them what they pay for — or let them stop — would
  * be a subscription they cannot leave.
+ *
+ * ## ⚠ …and it is the OWNER's section, not every member's (review item 44)
+ *
+ * > *"The team member of a client don't need to see the plan subscribed"*
+ *
+ * D48 makes the client the payer — in practice the business OWNER. A staff
+ * member added to photograph receipts has no use for the price and no business
+ * holding a live button that mints a Stripe billing-portal session, which
+ * reaches the card, every invoice and **cancellation**. So this is the HIDDEN
+ * branch of `docs/Access_and_Approval_Matrix.md`, not the disabled one: the
+ * section is absent from a member's list entirely, and `portalTabs.ts` makes
+ * the address unrecognised for them so a deep link falls to Business.
+ *
+ * ⚠ **The real guard is server-side and landed with this.** `principalFor` in
+ * `billing.controller.ts` used to check only that the portal session's business
+ * matched the body's — tenancy, and nothing about authority — so every one of
+ * these buttons WORKED for every member who could see it. It now asks
+ * `assertCan(actor, 'business.billing.manage')`. Hiding the section is the
+ * courtesy; the refusal is the protection.
  */
 
 const m = defineMessages({
@@ -223,7 +242,28 @@ const SECTION_CHROME: Record<string, { icon: typeof Building2; label: MessageDes
   Security: { icon: KeyRound, label: m.sectionSecurity },
 };
 
-const SECTIONS = sectionsForTab('Settings').map((key) => ({ key, ...SECTION_CHROME[key]! }));
+/**
+ * The sections THIS session may open (review item 44).
+ *
+ * ⚠ It was a module constant, and the change from constant to function is the
+ * whole of the item's UI half: *"The team member of a client don't need to see
+ * the plan subscribed"*. A member sees no Plan entry in the rail, no pill in
+ * the phone strip, and `/portal/settings/plan` lands them on Business —
+ * `portalTabs.ts` owns that last part, over the same list, so the nav and the
+ * address cannot disagree about what exists.
+ *
+ * ⚠ **Presentation only.** `POST /billing/portal-sessions` and
+ * `POST /billing/checkout-sessions` refuse a non-owner portal session
+ * server-side (`assertCan(actor, 'business.billing.manage')`), and that refusal
+ * is the actual protection — this hides a button that would otherwise mint a
+ * Stripe session reaching the card, every invoice and cancellation.
+ */
+function sectionsFor(canManageBilling: boolean) {
+  return sectionsForTab('Settings', hiddenSectionsFor({ canManageBilling })).map((key) => ({
+    key,
+    ...SECTION_CHROME[key]!,
+  }));
+}
 
 /** Keyed by the contract's enum — machine values, so only the label is copy. */
 const STATUS_LABEL: Record<SubscriptionStatus, MessageDescriptor> = {
@@ -280,6 +320,16 @@ export function LivePortalSettings({
   readonly onSignOut: () => void;
 }) {
   const intl = useIntl();
+  const sections = sectionsFor(home.canManageBilling);
+  // ⚠ **The panel renders from the VISIBLE list, not from the prop** (review
+  // item 44). `sectionFromPath` already lands a member on Business, so this is
+  // belt to that rule's braces — but the two live in different files, and a
+  // component that paints £8.50 and a live cancellation door on nothing but a
+  // string it was handed is one caller away from doing it. Falling back to the
+  // first visible section is the same rule the address applies, applied where
+  // the panel is chosen, so the rail's highlight and the panel cannot disagree
+  // either.
+  const active = sections.some((s) => s.key === section) ? section : sections[0]!.key;
 
   return (
     <div className="flex flex-col md:flex-row min-w-0 h-full">
@@ -289,18 +339,18 @@ export function LivePortalSettings({
         className="hidden md:block w-56 shrink-0 border-r border-white/5 py-8 px-3 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         <nav className="flex flex-col gap-1">
-          {SECTIONS.map((s) => (
+          {sections.map((s) => (
             <button
               key={s.key}
               onClick={() => onSection(s.key)}
-              {...(section === s.key ? { 'aria-current': 'true' as const } : {})}
+              {...(active === s.key ? { 'aria-current': 'true' as const } : {})}
               className={`px-4 py-2.5 rounded-xl text-left text-sm font-semibold transition-all flex items-center gap-3 ${
-                section === s.key
+                active === s.key
                   ? 'bg-card text-white border border-white/5'
                   : 'text-zinc-400 hover:text-white hover:bg-card/50 border border-transparent'
               }`}
             >
-              <s.icon size={15} className={section === s.key ? 'text-brand' : ''} />
+              <s.icon size={15} className={active === s.key ? 'text-brand' : ''} />
               {intl.formatMessage(s.label)}
             </button>
           ))}
@@ -310,20 +360,20 @@ export function LivePortalSettings({
       <div className="md:hidden shrink-0 border-b border-white/5 pt-2">
         <SectionStrip
           tourKey="portal-settings"
-          items={SECTIONS.map((s) => ({ key: s.key, icon: s.icon, label: intl.formatMessage(s.label) }))}
-          active={section}
+          items={sections.map((s) => ({ key: s.key, icon: s.icon, label: intl.formatMessage(s.label) }))}
+          active={active}
           onSelect={onSection}
         />
       </div>
 
       <div className="flex-1 min-w-0 overflow-y-auto p-4 md:p-8 pb-safe-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <motion.div
-          key={section}
+          key={active}
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           className="max-w-2xl flex flex-col gap-5"
         >
-          {section === 'Business' && (
+          {active === 'Business' && (
             <Panel title={intl.formatMessage(m.businessTitle)} subtitle={intl.formatMessage(m.businessSubtitle)}>
               <Row label={intl.formatMessage(m.businessNameLabel)} value={home.businessName} />
               <Row label={intl.formatMessage(m.signedInAsLabel)} value={email} />
@@ -331,7 +381,7 @@ export function LivePortalSettings({
             </Panel>
           )}
 
-          {section === 'Plan' && (
+          {active === 'Plan' && (
             <Panel title={intl.formatMessage(m.planTitle)} subtitle={intl.formatMessage(m.planSubtitle)}>
               {home.plan !== null ? (
                 <>
@@ -411,7 +461,7 @@ export function LivePortalSettings({
             </Panel>
           )}
 
-          {section === 'Sending' && (
+          {active === 'Sending' && (
             <Panel title={intl.formatMessage(m.sendingTitle)} subtitle={intl.formatMessage(m.sendingSubtitle)}>
               <div className="flex flex-col gap-3">
                 <Note title={intl.formatMessage(m.sendingClassifyTitle)} body={intl.formatMessage(m.sendingClassifyBody)} />
@@ -421,7 +471,7 @@ export function LivePortalSettings({
             </Panel>
           )}
 
-          {section === 'Notifications' && (
+          {active === 'Notifications' && (
             <Panel
               title={intl.formatMessage(m.notificationsTitle)}
               subtitle={intl.formatMessage(m.notificationsSubtitle)}
@@ -440,7 +490,7 @@ export function LivePortalSettings({
               operations with the authority enforced in the service — so the
               rule this file states everywhere else is satisfied rather than
               bent: this control's write is not reverted by the next poll. */}
-          {section === 'People' && (
+          {active === 'People' && (
             <Suspense
               fallback={
                 <Panel title={intl.formatMessage(m.peopleTitle)}>
@@ -455,7 +505,7 @@ export function LivePortalSettings({
             </Suspense>
           )}
 
-          {section === 'Security' && (
+          {active === 'Security' && (
             <>
               <Panel title={intl.formatMessage(m.securityTitle)} subtitle={intl.formatMessage(m.securitySubtitle)}>
                 <p className="text-[13px] text-zinc-300 leading-relaxed">{intl.formatMessage(m.securityBody)}</p>

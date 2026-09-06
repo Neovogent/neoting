@@ -126,8 +126,17 @@ export function effectivePortalRole(row: Pick<PortalPersonRow, 'portalRole' | 'i
  * `isOwner` mirrors `BUSINESS_ADMIN` so the field means the same thing it means
  * everywhere else — *the one person who owns this thing* — one level down from
  * the practice.
+ *
+ * ⚠ **The parameter is the THREE FIELDS THIS READS, not a whole
+ * {@link PortalPersonRow}** (narrowed 6 Sep 2026, review item 44). A full row
+ * still satisfies it, so every existing caller is unchanged; what the narrowing
+ * buys is that a caller who needs an actor and nothing else — the billing
+ * guard, the portal summary's `canManageBilling` — selects three columns
+ * instead of padding a fake row with nulls to satisfy a type. A padded row is a
+ * lie that compiles, and the fields it invents are exactly the ones a later
+ * reader would assume had been read.
  */
-export function portalActorFor(row: PortalPersonRow | null): Actor {
+export function portalActorFor(row: Pick<PortalPersonRow, 'id' | 'portalRole' | 'isPrimary'> | null): Actor {
   if (row === null) return { actorId: '', role: null, isOwner: false };
   const role = effectivePortalRole(row);
   return { actorId: row.id, role, isOwner: role === 'BUSINESS_ADMIN' };

@@ -87,7 +87,7 @@ Items keep their own entries (original words + images preserved); this map is th
 | **C. Export chain** | 28 · 29 · 37 · 55 · 56(partial) | Date rendering, refusal UX, VT format verification + on-screen how-to, history panel, analytics-report vocabulary |
 | **D. One UK date control** | 16 · 28 · 46 | Build one shared d/m/y picker component; adopt on statement-request, ExportView, document-date correction |
 | **E. Channel & provenance** ✅ **RESOLVED (PR #260)** | 21 · 43 · 60(follow-up) · 62(provenance half) | Split chase-portal vs business-portal channels, honest labels everywhere, uploader/member identity on uploads and captures, Received-via column on Inboxes — all four entries below carry their ✅ blocks and evidence (`assets/2026-09-05-channel-provenance/`) |
-| **F. Portal & practice access control** | 39 · 41 · 42 · 44 · 57 (+38's form-submit fix) | One capability matrix (Shakib-ratified), self-describing access labels, member edit on both portal and practice sides, Plan hidden from members, invite dialog fixed |
+| **F. Portal & practice access control** ✅ **RESOLVED (6 Sep 2026)** | 39 · 41 · 42 · 44 · 57 (+38's form-submit fix) | `docs/Access_and_Approval_Matrix.md` with Shakib's three rulings recorded inline, self-describing access labels, member edit on both sides (the portal's was one button — its server half already existed), **Plan hidden from members AND the billing endpoints' missing authority check closed**, invite dialog fixed. Evidence in `assets/2026-09-06-access-control/` |
 | **G. Approvals spine + matrix** | 20 · 24 · 26 · 27 · 66 | The approval matrix (66 — what needs whose approval, super-admin fast path; ships as one doc with F's role matrix), duplicate-staging dedupe, Deny-with-reason loop, role-aware D44 copy, modal dismiss after decision |
 | **H. Workflows & rules** | 51 · 52 · 53 | One package: workflows contract/persistence first, then AI describe-parse, real branch composer, chat rule flow landing in the Workflows tab |
 | **I. Modal overflow** | **23 + 40 (merged)** | Fix the Modal frame, audit every dialog in a real browser, keep a reachability smoke |
@@ -586,6 +586,40 @@ A verification task, his own framing ("if it is ok, then ok, just recheck"). The
 **Brief:**
 Order-dependent misfire: type the email, then click a client pill → the dialog closes and the invitation **sends by itself**. Only the full sequence email → role → client → explicit "Send invitation" should send. This is almost certainly the classic implicit-form-submit: the role/client pills are `<button>`s inside a `<form>` without `type="button"`, so clicking one submits the form (the first submit-capable button wins). Fix in the Team invite dialog (`TeamView`'s invite form over `api/team.ts`): `type="button"` on every non-submit button (and audit **every** form-hosted dialog in the app for the same — the intake form's pill steps, chase composer checkboxes-as-buttons, onboarding steps), plus, belt-and-braces, the send handler should refuse when role/client haven't been explicitly confirmed. An invitation email is an outward-facing side effect — firing it on a mis-click is exactly what the explicit button exists to prevent.
 
+**✅ RESOLVED (6 Sep 2026, the access-control package — branch
+`fix/access-control-38-39-41-42-44-57`).**
+
+The diagnosis in the brief was exactly right. `Chip` — the role and client pills
+— is declared two hundred lines from the `<form>` it renders inside, and a
+`<button>` inside a form defaults to `type="submit"`, so clicking one ran
+`onSubmit`: the dialog closed and the invitation email left, mid-form, in the
+order a person naturally works. `type="button"` on `Chip`, on `IconBtn` beside
+it, and on the shared `FormControls.Toggle` — the last because that module is
+the app's one shared form-control home, where a stray submit would be inherited
+by every dialog at once.
+
+**The audit was done mechanically, and the result is worth keeping.**
+`grep -rl '<form' apps/web/src` returns exactly FIVE files, and this dialog was
+the only defect among them; `LiveBusinessPortal`, `InviteView`, `LoginView` and
+`SignupView` all type every button already. The three surfaces the brief named
+by guess — `ClientIntakeForm`, the chase composer, `BusinessOnboardingView` —
+**host no `<form>` at all**, so they have no implicit submit and no Enter-key
+path either. Recorded in `TeamView.test.tsx` so nobody re-runs the search.
+
+`TeamView.test.tsx` pins the BEHAVIOUR rather than the attribute (a
+`type="button"` assertion would pass forever and catch nothing — the next pill
+is a fresh button with the same default): the wire stays silent until Send
+invitation is pressed, including a loop that clicks every non-footer button the
+dialog offers. Verified red with the one attribute removed, and walked live —
+screenshot `38-01` in the evidence folder shows the dialog still open, and the
+invitation unsent, after the pill click.
+
+**The belt-and-braces half the brief also proposed — the send handler refusing
+until role and client are "explicitly confirmed" — was deliberately NOT built.**
+`role` has a legitimate default and an empty client list legitimately means
+every client, so there is no unconfirmed state to refuse; it would be a new flag
+guarding a door that is now shut.
+
 ## Item 39 — Role capability matrix: standard users see actions they're forbidden to finish
 
 **Original (verbatim):**
@@ -598,6 +632,60 @@ Order-dependent misfire: type the email, then click a client pill → the dialog
 Two distinct wrongs:
 1. **The refusal arrives after the work.** A standard user walks all three intake steps and is refused at Create. The repo's own posture (Governance §11.2, the D44 "degrade honestly, never hide" pattern) permits showing the action — but honestly means the *first* screen says "adding clients needs {role}; you can compose but not create" (or the entry button is disabled-with-reason), never a 3-step form that dead-ends. Also suspicious: NT-PRM-001's message here ("only a member of an accounting practice") suggests the refusal may actually be the **wrong check** for this user (they *are* a practice member — was the session's practice scope missing?) — verify the server-side predicate before assuming role-gating; this may be a bug wearing a permissions message.
 2. **The matrix doesn't exist as a document.** His ask: define, per role (practice super admin/owner, practice standard, client admin, client standard, portal roles), what each **sees** and what each **can do**, then align every surface to it. Today authority lives in scattered `PermittedAction`s (`approvals/assert-can.ts`, four actions) plus per-surface gating. Deliverable: a capability matrix doc (SoT-adjacent — Shakib should ratify it), then a sweep making every gated surface follow one of two sanctioned shapes: hidden (not this role's job at all) or visible-but-disabled-with-reason *before* any work is invested.
+
+**✅ RESOLVED (6 Sep 2026, the access-control package).**
+
+**Both halves, and the first one was a misdiagnosis waiting to happen.** The
+brief's suspicion was right: `NT-PRM-001` was the WRONG SENTENCE, not the wrong
+check. `ClientIntakeService.createClient` refuses on
+`ctx.practiceId === undefined`, and a `PRACTICE_STANDARD` invited **with a
+client list** gets one membership per assigned client carrying `practice_id`
+**NULL** — deliberately, because that null is the whole mechanism that makes
+RLS confine them (`app_can_access_business`'s third branch would otherwise hand
+them every client of any practice they carry a `practice_id` on).
+`loadScopeForUser` therefore has no practice to put in the context, `GET /me`
+answers `practice: null`, and every predicate of that form refuses them **while
+their role still reads `PRACTICE_STANDARD`**. The screenshot's user is item 57's
+*"Mubashir Khan · Standard user · 1 client"*. Confirmed live: `/me` for the
+walked colleague answers `{"practice":null,"role":"PRACTICE_STANDARD"}`.
+
+**The matrix exists**, at `docs/Access_and_Approval_Matrix.md` — the
+visibility/action half, filled from what the code enforces today, with every
+changing cell marked, and package G adds the approval-tier half (item 66) to the
+same file. Two sanctioned degraded shapes and no third; the rule of thumb it
+applies is **hide when the role has no legitimate interest in the fact,
+disable-with-reason when they do**.
+
+**Shakib's ruling (gate ⚖1, 6 Sep 2026): the predicate stands, the surfaces are
+HIDDEN, the message is replaced.** Writing a `practiceId` onto scoped
+memberships so they *could* add clients was put to him and refused — it would
+defeat the client list entirely.
+
+- **Server, both refusals** (they wore the same lie): intake now says *"Your
+  sign-in reaches only the clients it was given, so it cannot add new ones. A
+  practice admin at your accounting firm can."*, and `requirePractice` in
+  `practice-team.service.ts` the same shape for the team list. Both are true of
+  the other caller that arrives with no practice scope — a client-workspace
+  user, whose accountant *is* the practice.
+- **Web**: `actsForWholePractice(session)` reads `me.practice !== null`, never
+  the role — a role test would be wrong in BOTH directions, hiding the surface
+  from a practice-wide standard user who may use it and showing it to the scoped
+  colleague who may not. `AppContext.availableTabs` is the ONE list the rail,
+  the phone nav and the address→tab resolution all read, so a hidden tab cannot
+  survive as a working deep link. `ClientsView` hides Add Client and refuses
+  `?add=1`; `ClientIntakeForm` refuses before the mode chooser, and that guard
+  is in the shared component because it has two doors (the board's button and
+  the chat's `ADD_CLIENT` intent).
+
+Every non-authenticated session answers `true`, so synthetic mode is
+byte-for-byte unchanged (METH_MODE §1).
+
+**Walked live end to end** — invite a scoped colleague, accept the emailed
+invitation, sign in as them: the Team tab is absent from the nav
+(`39-01`), `/team` renders the AI Workspace rather than a dead end (`39-02`),
+`?add=1` opens nothing (`39-03`), the chat door refuses before step 1
+(`39-04`), and on the wire `POST /v1/businesses` → `403` with the new sentence
+while `GET /v1/practice-members` → `403` with its own. Evidence in `docs/reviews/assets/2026-09-06-access-control/`.
 
 ## Item 40 — merged into Items 23 + 40 above
 
@@ -614,6 +702,37 @@ Same defect as item 23 at population scale; the combined entry (original words a
 **Brief:**
 In `LivePortalPeople.tsx` the `access` enum renders as bare nouns ("Member", presumably "Owner"/"Admin" siblings) that tell the person adding staff nothing about what the level grants — especially confusing sitting directly above capability checkboxes that *do* describe themselves. Fix is copy, not architecture: label each access level with what it does — e.g. "Member — can use the portal, cannot manage people or the plan", "Admin — can manage people and business details", "Owner — full control, including the subscription" — either in the option labels themselves or as a description line under the select that updates with the choice (the pattern the checkboxes already use: "Leave this off for staff who photograph receipts…"). Keep the role words stable (the enum is the contract's); the description is the fix. All catalogue strings, portal-light, no server change.
 
+**✅ RESOLVED (6 Sep 2026, the access-control package).**
+
+Copy, as the brief said, and the enum words did not move — `access` is the
+contract's `WorkspaceRole` and the last-owner rule keys on it, so a protection
+defeated by retyping a label is not one. What was added is a sentence per level
+**under the select, changing with the selection**, in the `Field` note slot every
+other explanation on that form already uses; a static line describing three
+levels would describe none of them.
+
+Each sentence says what the level grants AND what it withholds, because the
+boundary is the whole question somebody adding staff is asking:
+
+- **Owner** — full control: the people on this list, your business's own
+  details, and the subscription.
+- **User administrator** — can add, change and remove people on this list.
+  Cannot see or change the subscription, or your business's details.
+- **Member** — day-to-day use only. Cannot change who has access, your
+  business's details or the subscription.
+
+All three are checked against what the server actually enforces
+(`business.people.manage` = `BUSINESS_ADMIN | USER_ADMIN`,
+`business.profile.manage` = `BUSINESS_ADMIN`, and item 44's billing guard
+landing in the same package), so the copy is not describing a rule that only
+exists on the screen. What a person may SEND and SEE is deliberately not
+claimed — those are the two per-person boxes below, and a sentence about the
+level would contradict them for anyone whose boxes differ from their level's
+default.
+
+Walked live: `41-01` in `docs/reviews/assets/2026-09-06-access-control/` shows the description
+following the choice from Member to User administrator.
+
 ## Item 42 — Portal People: members can only be deleted, never edited
 
 **Original (verbatim):**
@@ -626,6 +745,34 @@ In `LivePortalPeople.tsx` the `access` enum renders as bare nouns ("Member", pre
 `LivePortalPeople.tsx` (over `api/portalPeople.ts`) supports list, add, remove — no update. Mubashir wants the business owner (or whoever holds `canManagePeople`) to **edit an existing member**: access level, job title, name — so a mistake at add time is correctable in place. Two halves:
 1. **Contract/server (likely G7):** check whether the portal people surface has an update operation; if the four contracted operations are list/create/remove(+one other), a `PATCH`/`PUT` member endpoint needs adding — with the same guards the remove path already has (last-owner protection: you cannot demote the last owner, same as you cannot remove them; server refuses regardless of UI).
 2. **Web:** an edit affordance per row (pencil beside the trash) opening the same form as "Add someone" pre-filled — role, job title, name; the email is the sign-in identity, so decide whether it's editable (probably not in place: one address is one person — changing it is a new member, and the form should say so). Honest degradation for non-managers, same as the rest of the panel. Pairs naturally with item 41 (the access labels being edited need to describe themselves).
+
+**✅ RESOLVED (6 Sep 2026, the access-control package) — and it was ONE BUTTON,
+because the brief's feared contract gap does not exist.**
+
+Investigated before anything was written. `PATCH /portal/people/{personId}` is
+contracted (with `email` deliberately absent and the last-owner demote refused
+as `NT-VAL-001`), implemented in `portal-people.service.ts` behind
+`assertCan(actor, 'business.people.manage')`, exported from
+`api/portalPeople.ts` as `updatePerson` — and `PortalPersonEditor` in
+`LivePortalPeople.tsx` already rendered the whole edit case: its own title
+*"Change what they can do"*, the email read-only with the reason printed under
+it, and the last-owner demote gate in `gateFor`. **The list simply never called
+`setEditing(person)`; only `setEditing('new')`.** So no contract delta, no new
+authority, and nothing for Shakib to rule — recorded as gate ⚖4 in the matrix.
+
+The pencil sits BEFORE the trash so the recoverable act is nearest the reader,
+and it carries no disabled-with-reason guard of its own: there is no person on
+the list who cannot be EDITED. The last owner may be renamed and retitled —
+only DEMOTING them is refused, which is `gateFor`'s job inside the form, where
+the offending value is. `canManagePeople` still gates both affordances together,
+unchanged: a pencil that opens a form whose save is a guaranteed 403 is the
+failure this package exists to remove, one surface over.
+
+`LivePortalPeopleRow.test.tsx` pins the button, that it opens the editor
+PRE-FILLED with the row that was pressed (an edit form opening blank would
+silently blank the fields it was opened to fix), the locked email with its
+reason, and that a plain member gets neither affordance. Walked live — `42-01`
+and `42-02` in `docs/reviews/assets/2026-09-06-access-control/`.
 
 ## Item 43 — Capture uploads arrive as "Unknown": give them a generated name carrying channel, member, business and date
 
@@ -661,6 +808,52 @@ The Plan section (`LivePortalSettings` → the plan panel over `PortalSummary.su
 1. **Server (the real guard):** `POST /billing/portal-sessions` must refuse a non-owner portal session — check whether it currently keys on anything beyond "valid portal session for this business". If it doesn't, that's the security half, not a cosmetic one.
 2. **Web:** for the Plan section, this is the "hidden, not disabled" branch of the item-39 matrix — billing is not a member's job at all, so the Settings section list should omit Plan for non-owners (the `canManagePeople`-style fact, e.g. an owner/`access`-based gate; note `PORTAL_SECTIONS` is a total mapped type and section slugs are addresses — an unauthorised deep link to `/portal/settings/plan` must fall to the first visible section, which the existing unknown-section rule already handles once Plan is excluded from the member's list).
 Feeds the item-39 capability matrix: portal Owner sees Business/Plan/People/…; Member sees Business (read-only?), Sending, Notifications, Security. Decide alongside items 41/42 so the People/Plan/access story lands as one ruleset.
+
+**✅ RESOLVED (6 Sep 2026, the access-control package). ⚠ It was a LIVE SECURITY
+HOLE, not a cosmetic one — the brief's hypothesis 1 was correct.**
+
+`billing.controller.ts`'s `principalFor`, shared by
+`POST /v1/billing/checkout-sessions` and `POST /v1/billing/portal-sessions`,
+checked that the portal session's business equalled the body's `businessId`
+**and nothing else**. That is the right answer to *whose subscription is this*
+and no answer at all to *may this person touch it*, so any contact of the
+business holding a portal bearer — a `BUSINESS_STANDARD` added to photograph
+receipts included — could mint a Stripe customer-portal session and reach the
+card, every invoice and **cancellation**. The button was live, not decorative.
+
+- **Server (the real fix).** `business.billing.manage` is the fifth
+  `PermittedAction`, `BUSINESS_ADMIN` only, binding BOTH doors — starting a
+  subscription and cancelling one are the same authority seen from two ends. It
+  is ordered AFTER the business match, so a caller naming somebody else's
+  business still gets the 404 that confirms nothing. ⚠ A `USER_ADMIN` is
+  refused: that role holds people management and *"nothing else"*, and an office
+  manager who can add a new starter is not thereby somebody who may cancel the
+  company's subscription. `PortalSessionContextResolver.resolveActor` reads the
+  role FROM THE ROW every time, bounded by `facts.businessId`.
+- **A fifth action rather than reusing `business.profile.manage`** (which
+  selects the same person today) — Shakib's ruling at gate ⚖2: the refusal
+  message is the whole user-facing product of a permission check, and *"Only an
+  owner at your business can change its own details"* said to somebody who
+  pressed a billing button is a wrong answer in a right status code.
+- **Web — the HIDDEN branch, as the brief expected.**
+  `PortalSummary.canManageBilling` (contract addition, ruled at ⚖2) mirrors
+  `PortalPeople.canManagePeople`: a fact for honest degradation, never a gate.
+  `hiddenSectionsFor` in `portalTabs.ts` removes Plan from a member's list, which
+  makes `/portal/settings/plan` **unrecognised for them** — so the existing
+  "an unrecognised section is the first section" rule catches the deep link with
+  no new branch, no 403 page and no dead end on a phone, exactly as the brief
+  predicted. The web parse defaults it CLOSED.
+
+`LivePortalSettings` also now renders its panel from the VISIBLE list rather
+than the `section` prop it was handed, so no future caller can paint £8.50 by
+passing a string.
+
+**Walked live, both sides of one business.** Owner: Plan in the list, price on
+screen, `canManageBilling: true`, and the billing POST reaches Stripe's own
+`NT-BIL-001` (no subscription on the seeded row). Member: **no Plan section**
+(`44-02`), `/portal/settings/plan` renders Business (`44-03`), no price, and
+`POST /v1/billing/portal-sessions` → **`403 NT-PRM-001` — "Only an owner at
+your business can manage the subscription. Ask them."** Evidence in `docs/reviews/assets/2026-09-06-access-control/`.
 
 ## Item 45 — "Manage billing in Stripe" fails: diagnose the portal-session error
 
@@ -996,6 +1189,70 @@ The live Team surface is deliberately read-only-plus-invite today (`api/team.ts`
 4. **Invitations:** revoke (kills the link before expiry) and re-send (fresh link, supersedes the old — the setup-link re-send seam is precedent). An expired invitation should offer re-send from its own row.
 5. **Web:** per-row actions (edit opens the invite-shaped form pre-filled; remove behind a ConfirmStep naming the blast radius), honest degradation for non-admin viewers (item 39's matrix).
 Direct sibling of item 42 (portal member edit) — one member-management design covering both sides, plus item 38's form-submit fix in the same dialogs.
+
+**✅ RESOLVED (6 Sep 2026, the access-control package).** Four contract
+additions plus a list change, approved as tabled at gate ⚖3.
+
+**Contract** — `PATCH`/`DELETE /v1/practice-members/{userId}`,
+`DELETE /v1/practice-invitations/{inviteId}`,
+`POST /v1/practice-invitations/{inviteId}/resend`, and `listPracticeMembers`
+now returns EXPIRED invitations. That last one is not incidental: the list said
+*"an expired one is not something to wait for"*, true while there was nothing to
+be done about one — and an expired invitation the screen cannot show is one
+nobody can re-send. `Invite.expiresAt` already distinguishes them, so no field
+was added. Invitations get their own noun because an invitation has no user id.
+
+**Why an edit REWRITES memberships.** Per-client access is not a column — it is
+the shape of a person's rows, and a scoped colleague's carry `practice_id`
+**NULL** deliberately. So moving between practice-wide and scoped is a
+delete-and-write, and `membershipShapeFor` is deliberately identical to what
+`invitation-acceptance.service.ts` writes: an edited colleague and an accepted
+one must end up with the same shape or RLS would treat them differently.
+`businessIds` keeps the invitation's semantics exactly — **empty means EVERY
+client** — so the same list means the same thing at both ends of a person's
+time at the firm.
+
+**The guards, all server-side** (and all about the SUBJECT rather than the
+actor, which is why they live in the service and not in `assert-can.ts`): the
+owner cannot be changed OR removed — re-scoping is refused along with demoting,
+because a practice-wide owner narrowed to two clients is the same D44 outage
+wearing a different field; **`PRACTICE_ADMIN` cannot be granted by an edit**
+(Shakib's explicit ruling at ⚖3, for the invite boundary's reason); nobody
+removes themselves; a colleague at another firm is a `404`.
+
+`team.manage` is the sixth `PermittedAction`, sharing `mayManageTeam` with
+`team.invite` — ONE predicate, two names. The authority is identical; what
+differs is the sentence a refused caller reads, and *"Only a practice admin can
+invite a colleague"* said to somebody who pressed Remove is a wrong answer in a
+right status code. Each write appends an audit row on the practice's
+`(no-business)` chain.
+
+**Web** — per-row edit and remove on the colleagues table, revoke and re-send
+on each invitation row, all **disabled-with-the-reason-as-title rather than
+hidden**. Remove and revoke go behind a `ConfirmStep` stating the real blast
+radius — what ends and what does not (*"everything they already did keeps their
+name"*). The editor is the invite dialog's own shape pre-filled, so the two
+screens cannot disagree about what an empty client picker means; the address is
+shown and not editable, with the reason. An expired invitation wears a red pill
+whose tooltip names the fix, and re-send says BEFORE the click that the existing
+link will stop working.
+
+**Tests: eleven against a real database**, because the claim is Postgres's — an
+edit that widened someone's scope in the projection while leaving RLS alone
+would pass every unit test written for it. They assert effects, not messages:
+`practice_id` still NULL on every rewritten scoped row, the widened colleague
+now sees the withheld client through `loadScopeForUser` + `scopedDb`, the owner
+still holds their row after a refused edit, a removed colleague's session
+resolves to null while their account survives, a revoked token no longer
+accepts, a re-sent one supersedes rather than accumulates, and an expired
+invitation lists and revives. Verified red: deleting the three guard lines fails
+eight of them.
+
+**Walked live**: the rows with their actions and the owner's disabled reason
+(`57-01`), the pre-filled editor (`57-02`), a real edit round-trip from
+*1 client* to *All clients* (`57-03`), the remove confirmation's blast radius
+(`57-04`), the re-send warning (`57-05`) and a revoked invitation leaving the
+list (`57-06`). Evidence in `docs/reviews/assets/2026-09-06-access-control/`.
 
 ## Item 58 — Chat uploads ingest immediately; the AI should ask what to do with the document first
 

@@ -44,6 +44,10 @@ const HOME: BusinessPortalHome = {
   documentsSent: 4,
   awaitingYou: 1,
   subscriptionActive: true,
+  // Review item 44: the owner's answer, so this suite keeps exercising the
+  // Settings tab it always has. The member's answer is pinned in
+  // `portalTabs.test.ts` and `LivePortalSettings.test.tsx`.
+  canManageBilling: true,
   lastDocumentAt: '2026-08-30T09:00:00.000Z',
   items: [
     {

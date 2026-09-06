@@ -51,9 +51,14 @@ import { slug } from '../../lib/router';
  *
  * **The same fallback rule applies, one level down.** An unrecognised section is
  * not an error and not a blank panel — it is the FIRST section, exactly as an
- * unrecognised tab is Home. A tab name typed wrong should land the client
- * somewhere they can use, not on a dead end they cannot get out of on a phone,
- * and that is no less true of a section.
+ * unrecognised tab is Home. **Since review item 44 that rule also carries the
+ * hidden ones**: `hiddenSectionsFor` removes Plan for a portal member, which
+ * makes `/portal/settings/plan` unrecognised FOR THEM and lands them on
+ * Business — no new branch, no 403 page, and no dead end on a phone.
+ *
+ * A tab name typed wrong should land the client somewhere they can use, not on
+ * a dead end they cannot get out of on a phone, and that is no less true of a
+ * section.
  */
 
 export const PORTAL_TABS = ['Home', 'Upload', 'Capture', 'Settings'] as const;
@@ -89,9 +94,39 @@ export function isTabSlug(segment: string | undefined): boolean {
   return segment !== undefined && PORTAL_TABS.some((t) => t !== HOME && slug(t) === segment);
 }
 
-/** The sections this tab offers. Empty for the three that have none. */
-export function sectionsForTab(tab: PortalTab): readonly string[] {
-  return PORTAL_SECTIONS[tab];
+/**
+ * Sections this SESSION may not reach (review item 44).
+ *
+ * ⚠ It lives here, with the section names, rather than at the two call sites,
+ * because "which sections exist" and "which of them are addressable for this
+ * person" are one question — and a nav that hides a panel while
+ * `sectionFromPath` still resolves its address would be hidden in name only,
+ * with `/portal/settings/plan` opening the very panel that was removed.
+ *
+ * **Plan is HIDDEN for a member, not disabled** — the matrix's other sanctioned
+ * shape (`docs/Access_and_Approval_Matrix.md`). Settings → People degrades the
+ * opposite way, and the contrast is deliberate: who else can send paperwork on
+ * your employer's behalf is not a secret from you, whereas what the company
+ * pays and a live button that could cancel it are neither a member's business
+ * nor any use to them.
+ *
+ * The flag is the SERVER's (`PortalSummary.canManageBilling`), and the server
+ * refuses both billing operations regardless — this is presentation.
+ */
+export function hiddenSectionsFor(session: { readonly canManageBilling: boolean }): readonly string[] {
+  return session.canManageBilling ? [] : ['Plan'];
+}
+
+/**
+ * The sections this tab offers. Empty for the three that have none.
+ *
+ * `hidden` is the session's own list from {@link hiddenSectionsFor}; omitted,
+ * every section is offered, which is what the synthetic shell and every caller
+ * with no session fact want.
+ */
+export function sectionsForTab(tab: PortalTab, hidden: readonly string[] = []): readonly string[] {
+  const sections = PORTAL_SECTIONS[tab];
+  return hidden.length === 0 ? sections : sections.filter((section) => !hidden.includes(section));
 }
 
 /**
@@ -104,7 +139,15 @@ export function slugForSection(section: string): string {
   return slug(section);
 }
 
-/** Whether a segment names a section OF THIS TAB. */
+/**
+ * Whether a segment names a section OF THIS TAB.
+ *
+ * ⚠ Deliberately over the UNFILTERED list. This decides what `baseOf` strips
+ * off an address, and a hidden section's slug must still be recognised as a
+ * section so it comes off — otherwise `/portal/settings/plan` would carry
+ * `plan` into every address built from it for the very session that may not
+ * see it.
+ */
 function isSectionSlugOf(tab: PortalTab, segment: string | undefined): boolean {
   return segment !== undefined && sectionsForTab(tab).some((s) => slug(s) === segment);
 }
@@ -138,11 +181,15 @@ export function tabFromPath(segments: readonly string[]): PortalTab {
  * panel — the tab-level fallback, one level down. `/portal/settings` has no
  * section segment at all and lands on the first section for the same reason.
  */
-export function sectionFromPath(segments: readonly string[]): string | null {
+export function sectionFromPath(segments: readonly string[], hidden: readonly string[] = []): string | null {
   const tab = tabFromPath(segments);
-  const sections = sectionsForTab(tab);
+  const sections = sectionsForTab(tab, hidden);
   if (sections.length === 0) return null;
   const last = segments[segments.length - 1];
+  // ⚠ A HIDDEN section is now an unrecognised one, so it takes the same route a
+  // typo does — the first VISIBLE section — rather than a blank panel or a 403
+  // page (review item 44). That rule already existed; the only change is that
+  // the set it resolves against is this session's.
   return sections.find((s) => slug(s) === last) ?? sections[0]!;
 }
 

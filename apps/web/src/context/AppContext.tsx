@@ -44,7 +44,7 @@ import { analyseSheet, readTable, sheetReadMessage } from '../lib/spreadsheet';
 import { confirmMatchProposal, useBankTransactions } from '../api/bank';
 import { useDocuments } from '../api/documents';
 import { API_ENABLED } from '../api/config';
-import { logout as apiLogout, useSession, type SessionState } from '../api/auth';
+import { actsForWholePractice, logout as apiLogout, useSession, type SessionState } from '../api/auth';
 import { deriveBusinessSummaries, useBusinesses, type BusinessSummary } from '../api/businesses';
 import { SEED_SLICE, errorLabel, sliceStatus, type SliceStatuses } from '../api/slices';
 import { queryClient } from '../api/queryClient';
@@ -525,6 +525,16 @@ interface AppContextType {
    * rendering an empty table that looks like a clean inbox.
    */
   documentsSource: 'api' | 'seed';
+  /**
+   * The tabs THIS session may navigate to — `SIDEBAR_TABS` minus what the
+   * matrix hides (review item 39, `docs/Access_and_Approval_Matrix.md`).
+   *
+   * ⚠ One list, read by all three consumers — the rail, the phone nav and the
+   * address→tab resolution — because a nav that hides a tab while the router
+   * still resolves its address is a hidden surface you can still deep-link
+   * into, which is not one of the two sanctioned degraded shapes.
+   */
+  availableTabs: readonly string[];
   documentsLoading: boolean;
   documentsError: string | null;
   /**
@@ -1243,10 +1253,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const openRegistrationFor =
     root === 'register' && first && second ? { accountId: first, memberId: second } : null;
 
+  /**
+   * Which tabs this session may reach (review item 39).
+   *
+   * **Team goes for a session with no practice scope.** A colleague scoped to
+   * specific clients gets `403 NT-PRM-001` from `GET /v1/practice-members` —
+   * the firm's own staff list is not theirs to read — and the matrix's ruling
+   * (gate ⚖1) is the **hidden** shape rather than disabled-with-reason: who
+   * else works at their accountant's firm is not information a scoped
+   * colleague has any use for.
+   *
+   * Non-authenticated sessions keep every tab, so synthetic mode is unchanged
+   * (`actsForWholePractice`'s own note).
+   */
+  const availableTabs = useMemo(
+    () => (actsForWholePractice(session) ? SIDEBAR_TABS : SIDEBAR_TABS.filter((tab) => tab !== 'Team')),
+    [session],
+  );
+
   // `/app` is the workspace root — `/` belongs to the landing page (M3). The
   // `undefined` arm is unreachable while the landing renders first in App.tsx;
   // it states the fallback rather than leaving the expression partial.
-  const activeTab = root === 'app' || root === undefined ? 'AI Workspace' : (fromSlug(root, SIDEBAR_TABS) ?? 'AI Workspace');
+  //
+  // ⚠ It resolves against `availableTabs`, NOT `SIDEBAR_TABS`, which is what
+  // makes a hidden tab genuinely hidden: `/team` typed or pasted by a scoped
+  // colleague is an unrecognised slug and falls to the AI Workspace, the same
+  // way the portal's unknown-section rule falls to the first section rather
+  // than rendering a blank panel or a 403 page.
+  const activeTab = root === 'app' || root === undefined ? 'AI Workspace' : (fromSlug(root, availableTabs) ?? 'AI Workspace');
   const openClientId = root === 'clients' ? first ?? null : null;
 
   const setActiveTab = useCallback((tab: string) => {
@@ -2960,6 +2994,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ingestRejections,
         sheetImports,
         documentsSource: API_ENABLED ? 'api' : 'seed',
+        availableTabs,
         documentsLoading: documentsQuery.isLoading,
         documentsError: documentsQuery.contractError ?? errorLabel(documentsQuery.error),
         refetchDocuments,

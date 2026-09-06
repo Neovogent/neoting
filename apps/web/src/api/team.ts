@@ -1,7 +1,14 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { invitePracticeMember, listPracticeMembers } from '@neoting/contracts/client';
-import { invitePracticeMemberBody, listPracticeMembersResponse } from '@neoting/contracts/zod';
+import {
+  invitePracticeMember,
+  listPracticeMembers,
+  removePracticeMember,
+  resendPracticeInvitation,
+  revokePracticeInvitation,
+  updatePracticeMember,
+} from '@neoting/contracts/client';
+import { invitePracticeMemberBody, listPracticeMembersResponse, updatePracticeMemberBody } from '@neoting/contracts/zod';
 import type { Invite, PracticeMember, WorkspaceRole } from '@neoting/contracts/model';
 import { unwrapBody } from './envelope';
 import { type SliceStatus, sliceStatus } from './slices';
@@ -187,4 +194,95 @@ export function memberLabel(member: Pick<PracticeMember, 'firstName' | 'lastName
     .trim();
   if (name !== '') return name;
   return member.email ?? '';
+}
+
+/* ── member management (review item 57) ─────────────────────────────────────
+ *
+ * > *"Give full member control here for the accountant, deleting, editing,
+ * > removing and all member access control form here"*
+ *
+ * The Team screen was read-only-plus-invite: `api/team.ts` wrapped exactly
+ * `GET`/`POST /practice-members`, and the synthetic editors beside it were
+ * hidden live by the S14 sweep because their writes had no server. These four
+ * are that server half, contracted 6 Sep 2026 at
+ * `docs/Access_and_Approval_Matrix.md` gate ⚖3.
+ *
+ * ⚠ **Every refusal below is the SERVER's**, and this module states none of
+ * them: the owner being unchangeable and unremovable, `PRACTICE_ADMIN` being
+ * ungrantable, no self-removal. The screen degrades honestly against what comes
+ * back — `mayInviteColleague`'s note applies verbatim to all four.
+ */
+
+/**
+ * What an edit may change. Both optional, and an omitted one is UNCHANGED
+ * server-side — so a role change does not silently rewrite somebody's client
+ * list, and a scope change does not touch their role.
+ */
+export interface UpdateColleagueRequest {
+  role?: WorkspaceRole;
+  /**
+   * The clients they may reach, REPLACING what they had.
+   *
+   * ⚠ **Empty means EVERY client**, the invite form's stated rule, kept
+   * identical here so the same list means the same thing at both ends of a
+   * person's time at the firm. That is why it is sent as `[]` rather than
+   * dropped when the picker is cleared — dropping the key means "leave their
+   * scoping alone", which is a different instruction.
+   */
+  businessIds?: string[];
+}
+
+/** Change a colleague's role or client access. Answers the member, after the change. */
+export async function updateColleague(userId: string, request: UpdateColleagueRequest): Promise<PracticeMember> {
+  // The contract's own schema before it travels, the invite path's rule: a
+  // value this screen should not have offered is refused here rather than
+  // becoming a server-side 400 the user reads as a bug.
+  const body = updatePracticeMemberBody.parse(request);
+  const updated = await updatePracticeMember(userId, body as Parameters<typeof updatePracticeMember>[1]);
+  return unwrapBody(updated) as PracticeMember;
+}
+
+/**
+ * End a colleague's access to this practice.
+ *
+ * `204`, so there is nothing to parse and nothing to return. What they already
+ * did keeps their name — the memberships go, the history does not.
+ */
+export async function removeColleagueAccess(userId: string): Promise<void> {
+  await removePracticeMember(userId);
+}
+
+/** Kill an outstanding invitation's link before its seven days are up. `204`. */
+export async function revokeInvitation(inviteId: string): Promise<void> {
+  await revokePracticeInvitation(inviteId);
+}
+
+/**
+ * Send a fresh link for an invitation that was never accepted.
+ *
+ * ⚠ The previous link stops working — one row, one stored hash. The screen says
+ * so before the click, because two live links to one invitation is a thing
+ * somebody would otherwise assume they had.
+ */
+export async function resendInvitation(inviteId: string): Promise<Invite> {
+  const sent = await resendPracticeInvitation(inviteId);
+  const value = unwrapBody(sent);
+  // orval emits a response schema for this 200, but the same hand-pin the
+  // invite path uses guards the shape a screen is about to render as a sent
+  // invitation.
+  if (!isInvite(value)) {
+    throw new Error('The server accepted the re-send but answered with a shape this app does not recognise.');
+  }
+  return value;
+}
+
+/**
+ * Has this invitation's link already expired?
+ *
+ * Expired invitations are LISTED now (the contract change that came with
+ * re-send), because an expired one the screen cannot show is one nobody can
+ * revive. This is what tells the two apart on the row.
+ */
+export function inviteExpired(invite: Pick<Invite, 'expiresAt'>, now: number = Date.now()): boolean {
+  return Date.parse(invite.expiresAt) <= now;
 }

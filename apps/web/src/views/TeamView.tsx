@@ -1,10 +1,10 @@
 import { useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   Shield, Plus, Trash2, Check, CircleSlash, AlertTriangle, Sparkles, MapPin, Users,
-  KeyRound, ImagePlus, X, UserPlus, Pencil, Loader2, LucideIcon,
+  KeyRound, ImagePlus, X, UserPlus, Pencil, PencilLine, Send, UserMinus, Loader2, LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { defineMessages, useIntl } from 'react-intl';
+import { defineMessages, useIntl, type IntlShape } from 'react-intl';
 import { NtProblemError } from '@neoting/contracts';
 import type { WorkspaceRole } from '@neoting/contracts/model';
 import { commonActions, commonLabels, commonPlaceholders } from '../i18n/common';
@@ -17,12 +17,18 @@ import { Tooltip } from '../components/DynamicComponents/Tooltip';
 import {
   INVITABLE_ROLES,
   inviteColleague,
+  inviteExpired,
   mayInviteColleague,
+  removeColleagueAccess,
+  resendInvitation,
+  revokeInvitation,
+  updateColleague,
   memberLabel,
   type PracticeMember,
   usePracticeTeam,
 } from '../api/team';
 import { Modal } from '../components/DynamicComponents/Modal';
+import { ConfirmStep } from '../components/DynamicComponents/ConfirmStep';
 import { Field, Toggle } from '../components/DynamicComponents/FormControls';
 import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
 import type { Colleague, ColleagueRole, Team, WorkflowTask } from '../lib/types';
@@ -522,7 +528,14 @@ export function TeamView() {
         <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           {tab === 'Colleagues' && (
             live ? (
-              <LiveColleagues status={teamStatus} team={team} onRetry={refetchTeam} />
+              <LiveColleagues
+                status={teamStatus}
+                team={team}
+                onRetry={refetchTeam}
+                canManage={canInvite}
+                actorId={session.status === 'authenticated' ? session.me.user.id : null}
+                clients={clients.map((c) => ({ id: c.id, name: c.name }))}
+              />
             ) : (
               <DataTable<Colleague>
                 className="max-w-none"
@@ -1356,6 +1369,19 @@ function Label({ children }: { children: React.ReactNode }) {
 function Chip({ children, active, onClick }: { children: React.ReactNode; active: boolean; onClick: () => void }) {
   return (
     <button
+      // ⚠ `type="button"` IS THE FIX FOR REVIEW ITEM 38, and it is load-bearing.
+      // A `<button>` inside a `<form>` defaults to `type="submit"`, so clicking
+      // a role or client pill in `InviteColleagueForm` ran the form's `onSubmit`
+      // — an invitation EMAIL, sent on a mis-click, before the person had
+      // finished filling the dialog in. The reporter hit it in the order a
+      // person naturally works: type the address, then pick a client.
+      //
+      // The default is the trap: nothing about this component says "form", and
+      // the form is two hundred lines away. Every non-submit button in this file
+      // therefore states its type, and `TeamView.test.tsx` pins the behaviour
+      // rather than the attribute, so a future pill built from scratch is caught
+      // by what it does rather than by what it was remembered to say.
+      type="button"
       onClick={onClick}
       className={`px-3.5 py-2 rounded-full text-[13px] font-bold border transition-all ${
         active
@@ -1368,12 +1394,33 @@ function Chip({ children, active, onClick }: { children: React.ReactNode; active
   );
 }
 
-function IconBtn({ icon: Icon, title, onClick }: { icon: LucideIcon; title: string; onClick: () => void }) {
+function IconBtn({
+  icon: Icon,
+  title,
+  onClick,
+  disabled = false,
+}: {
+  icon: LucideIcon;
+  title: string;
+  onClick: () => void;
+  /**
+   * ⚠ **Disabled, never absent, and `title` carries the REASON** (review item
+   * 57). A control that vanishes teaches nothing; one that says why it cannot
+   * be used names the fix. Every caller that passes `true` passes the server's
+   * own rule as the title in the same expression, so the two cannot drift.
+   */
+  disabled?: boolean;
+}) {
   return (
     <button
+      // Stated for {@link Chip}'s reason. This one is not inside a form today;
+      // it is a generic button helper in a file that hosts one, which is exactly
+      // how the next occurrence of item 38 would arrive.
+      type="button"
+      disabled={disabled}
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       title={title}
-      className="p-2 rounded-lg text-zinc-500 hover:text-white hover:bg-white/5 transition-colors"
+      className="p-2 rounded-lg text-zinc-500 hover:text-white hover:bg-white/5 disabled:opacity-40 disabled:hover:text-zinc-500 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-colors"
     >
       <Icon size={14} />
     </button>
@@ -1405,12 +1452,54 @@ function LiveColleagues({
   status,
   team,
   onRetry,
+  canManage,
+  actorId,
+  clients,
 }: {
   status: ReturnType<typeof usePracticeTeam>['status'];
   team: ReturnType<typeof usePracticeTeam>['team'];
   onRetry: () => void;
+  /**
+   * Whether this session may change the team. Presentation only — the server
+   * refuses all four operations with `NT-PRM-001` regardless, and the refusal
+   * is rendered when it arrives anyway (a `/me` thirty seconds stale is exactly
+   * how it arrives).
+   */
+  canManage: boolean;
+  /** The signed-in user, so the self-removal rule can explain itself on the row. */
+  actorId: string | null;
+  clients: { id: string; name: string }[];
 }) {
   const intl = useIntl();
+  const [editing, setEditing] = useState<PracticeMember | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [fault, setFault] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<TeamConfirmation | null>(null);
+
+  /**
+   * One runner for all three one-click writes.
+   *
+   * They differ only in which function is called and what is said afterwards,
+   * and the parts that must not differ — the row locking while it is in flight,
+   * the `NT-` code in front of the words, the refetch that replaces an
+   * optimistic guess with server truth — are the parts a copy would eventually
+   * get wrong in one of three places.
+   */
+  const run = async (id: string, act: () => Promise<unknown>, said: string | null) => {
+    setBusyId(id);
+    setFault(null);
+    setNotice(null);
+    try {
+      await act();
+      setNotice(said);
+      onRetry();
+    } catch (error) {
+      setFault(faultOf(intl, error));
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   if (status.source === 'error') {
     return <SliceLoadError heading={intl.formatMessage(m.loadFailed)} error={status.error} onRetry={onRetry} />;
@@ -1465,6 +1554,54 @@ function LiveColleagues({
         ? <Pill>{intl.formatMessage(m.clientsAll)}</Pill>
         : <span className="tabular-nums text-zinc-300">{intl.formatMessage(m.clientsSome, { count: p.businessIds.length })}</span>),
     },
+    {
+      key: 'actions',
+      label: intl.formatMessage(manageM.actionsColumn),
+      align: 'right',
+      sortValue: () => '',
+      // ⚠ **Disabled-with-reason, never hidden** (the matrix's other sanctioned
+      // shape). A control that vanishes teaches nothing; one that says why it
+      // cannot be used names the fix — and on this surface the two reasons are
+      // things an admin genuinely has to learn: the owner is fixed because
+      // release authority must always exist, and you are not your own to
+      // remove.
+      render: (p) => {
+        const fixed = p.isOwner ? intl.formatMessage(manageM.ownerFixed) : null;
+        const self = actorId !== null && p.userId === actorId ? intl.formatMessage(manageM.notYourself) : null;
+        const noAuthority = canManage ? null : intl.formatMessage(manageM.notAdmin);
+        return (
+          <span className="flex items-center justify-end gap-0.5">
+            <IconBtn
+              icon={PencilLine}
+              title={noAuthority ?? fixed ?? intl.formatMessage(manageM.editAction)}
+              disabled={!canManage || fixed !== null || busyId === p.userId}
+              onClick={() => {
+                setFault(null);
+                setNotice(null);
+                setEditing(p);
+              }}
+            />
+            <IconBtn
+              icon={UserMinus}
+              title={noAuthority ?? fixed ?? self ?? intl.formatMessage(manageM.removeAction)}
+              disabled={!canManage || fixed !== null || self !== null || busyId === p.userId}
+              onClick={() =>
+                setConfirming({
+                  id: p.userId,
+                  tone: 'red',
+                  title: intl.formatMessage(manageM.removeTitle, { name: memberLabel(p) }),
+                  detail: intl.formatMessage(manageM.removeDetail),
+                  consequence: intl.formatMessage(manageM.removeConsequence),
+                  confirmLabel: intl.formatMessage(manageM.removeConfirm),
+                  act: () => removeColleagueAccess(p.userId),
+                  said: null,
+                })
+              }
+            />
+          </span>
+        );
+      },
+    },
   ];
 
   return (
@@ -1499,7 +1636,54 @@ function LiveColleagues({
                       date: intl.formatDate(invite.expiresAt, { day: 'numeric', month: 'short', timeZone: 'Europe/London' }),
                     })}
                   </span>
-                  <Pill tone="amber">{intl.formatMessage(m.pendingPill)}</Pill>
+                  {/* ⚠ EXPIRED invitations are listed now, and this pill is why
+                      the contract change was worth making: before it, an
+                      expired one vanished and the only way to revive it was to
+                      invite the address again, which wrote a SECOND row for one
+                      person. `inviteExpired` is the one place the two are told
+                      apart. */}
+                  {inviteExpired(invite) ? (
+                    <Tooltip label={intl.formatMessage(manageM.expiredPill)} detail={intl.formatMessage(manageM.expiredNote)}>
+                      <span><Pill tone="red">{intl.formatMessage(manageM.expiredPill)}</Pill></span>
+                    </Tooltip>
+                  ) : (
+                    <Pill tone="amber">{intl.formatMessage(m.pendingPill)}</Pill>
+                  )}
+                  <span className="flex items-center gap-0.5">
+                    <IconBtn
+                      icon={Send}
+                      title={canManage ? intl.formatMessage(manageM.resendAction) : intl.formatMessage(manageM.notAdmin)}
+                      disabled={!canManage || busyId === invite.id}
+                      onClick={() =>
+                        setConfirming({
+                          id: invite.id,
+                          tone: 'brand',
+                          title: intl.formatMessage(manageM.resendTitle, { email: invite.email ?? '' }),
+                          detail: intl.formatMessage(manageM.resendDetail),
+                          confirmLabel: intl.formatMessage(manageM.resendConfirm),
+                          act: () => resendInvitation(invite.id),
+                          said: intl.formatMessage(manageM.resentToast, { email: invite.email ?? '' }),
+                        })
+                      }
+                    />
+                    <IconBtn
+                      icon={Trash2}
+                      title={canManage ? intl.formatMessage(manageM.revokeAction) : intl.formatMessage(manageM.notAdmin)}
+                      disabled={!canManage || busyId === invite.id}
+                      onClick={() =>
+                        setConfirming({
+                          id: invite.id,
+                          tone: 'red',
+                          title: intl.formatMessage(manageM.revokeTitle, { email: invite.email ?? '' }),
+                          detail: intl.formatMessage(manageM.revokeDetail),
+                          consequence: intl.formatMessage(manageM.revokeConsequence),
+                          confirmLabel: intl.formatMessage(manageM.revokeConfirm),
+                          act: () => revokeInvitation(invite.id),
+                          said: null,
+                        })
+                      }
+                    />
+                  </span>
                 </span>
               </li>
             ))}
@@ -1507,9 +1691,297 @@ function LiveColleagues({
           <p className="px-6 pb-5 text-[12px] text-zinc-600">{intl.formatMessage(m.pendingNote)}</p>
         </section>
       )}
+
+      {/* The server's own words, with the `NT-` code in front (frontend ten,
+          item 5), so the next screenshot of a refusal diagnoses itself. */}
+      {fault !== null && (
+        <p role="alert" className="text-[13px] font-semibold text-red-400 leading-relaxed">{fault}</p>
+      )}
+      {notice !== null && (
+        <p role="status" className="text-[13px] font-semibold text-emerald-400 leading-relaxed">{notice}</p>
+      )}
+
+      {editing !== null && (
+        <EditColleagueForm
+          member={editing}
+          clients={clients}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            onRetry();
+          }}
+        />
+      )}
+
+      {confirming !== null && (
+        <ConfirmStep
+          title={confirming.title}
+          detail={confirming.detail}
+          {...(confirming.consequence === undefined ? {} : { consequence: confirming.consequence })}
+          confirmLabel={confirming.confirmLabel}
+          tone={confirming.tone}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => {
+            const decided = confirming;
+            setConfirming(null);
+            void run(decided.id, decided.act, decided.said);
+          }}
+        />
+      )}
     </div>
   );
 }
+
+/**
+ * One pending decision, so the three confirmations share a frame rather than
+ * three near-identical dialogs — and so the blast-radius wording lives beside
+ * the act that causes it.
+ */
+interface TeamConfirmation {
+  readonly id: string;
+  readonly tone: 'brand' | 'red';
+  readonly title: string;
+  readonly detail: string;
+  readonly consequence?: string;
+  readonly confirmLabel: string;
+  readonly act: () => Promise<unknown>;
+  /** What to say afterwards, when there is something worth saying. */
+  readonly said: string | null;
+}
+
+/**
+ * Change a colleague's role and client access — **the invite dialog's own
+ * shape, pre-filled** (review item 57).
+ *
+ * Deliberately the same pills and the same hint text: an admin who has invited
+ * somebody already knows this form, and the two screens must not disagree about
+ * what an empty client picker means. **Empty is EVERY client** at both ends,
+ * which is the invite form's stated rule and the contract's.
+ *
+ * ⚠ The address is not here. It is the person's sign-in, the contract has no
+ * path to change it, and a field whose value is discarded is a question asked
+ * in bad faith — so the form says what to do instead.
+ */
+function EditColleagueForm({
+  member,
+  clients,
+  onClose,
+  onSaved,
+}: {
+  member: PracticeMember;
+  clients: { id: string; name: string }[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const intl = useIntl();
+  const [role, setRole] = useState<WorkspaceRole>(
+    INVITABLE_ROLES.includes(member.role) ? member.role : 'PRACTICE_STANDARD',
+  );
+  const [businessIds, setBusinessIds] = useState<string[]>([...member.businessIds]);
+  const [busy, setBusy] = useState(false);
+  const [fault, setFault] = useState<string | null>(null);
+
+  const scoped = role === 'PRACTICE_STANDARD';
+
+  const save = async () => {
+    if (busy) return;
+    setBusy(true);
+    setFault(null);
+    try {
+      // ⚠ `businessIds` is sent even when EMPTY, unlike the invite path which
+      // drops it. The two are different instructions: on an edit, omitting the
+      // key means "leave their scoping alone" and `[]` means "widen them to
+      // every client", and clearing the picker is the second one. A
+      // `CLIENT_ADMIN` is practice-wide by definition and the server refuses a
+      // list for it, so that role sends none at all.
+      await updateColleague(member.userId, scoped ? { role, businessIds } : { role });
+      onSaved();
+    } catch (error) {
+      setFault(faultOf(intl, error));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal onClose={onClose}>
+      <div className="w-full max-w-lg border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
+        <div className="p-6 border-b border-white/5">
+          <h3 className="font-sans font-bold text-xl text-white tracking-tight">
+            {intl.formatMessage(manageM.editTitle, { name: memberLabel(member) })}
+          </h3>
+          <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider">
+            {intl.formatMessage(manageM.editSubtitle)}
+          </p>
+        </div>
+
+        <div className="p-6 flex flex-col gap-5 max-h-[55dvh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div>
+            <Label>{intl.formatMessage(inviteFormM.emailLabel)}</Label>
+            <p className="text-[13px] text-zinc-300">{member.email}</p>
+            <p className="text-[12px] text-zinc-500 leading-relaxed mt-1.5">{intl.formatMessage(manageM.editEmailNote)}</p>
+          </div>
+
+          <div>
+            <Label>{intl.formatMessage(inviteFormM.roleLabel)}</Label>
+            <div className="flex flex-wrap gap-2">
+              {INVITABLE_ROLES.map((r) => (
+                <Chip key={r} active={role === r} onClick={() => setRole(r)}>
+                  {intl.formatMessage(ROLE_LABELS[r])}
+                </Chip>
+              ))}
+            </div>
+            <p className="text-[12px] text-zinc-500 leading-relaxed mt-2.5">{intl.formatMessage(inviteFormM.roleHint)}</p>
+          </div>
+
+          {scoped && clients.length > 0 && (
+            <div>
+              <Label>{intl.formatMessage(inviteFormM.clientsLabel)}</Label>
+              <div className="flex flex-wrap gap-2">
+                {clients.map((c) => (
+                  <Chip
+                    key={c.id}
+                    active={businessIds.includes(c.id)}
+                    onClick={() =>
+                      setBusinessIds(businessIds.includes(c.id) ? businessIds.filter((x) => x !== c.id) : [...businessIds, c.id])
+                    }
+                  >
+                    {c.name}
+                  </Chip>
+                ))}
+              </div>
+              <p className="text-[12px] text-zinc-500 leading-relaxed mt-2.5">{intl.formatMessage(inviteFormM.clientsHint)}</p>
+            </div>
+          )}
+
+          {fault !== null && (
+            <div role="alert" className="p-4 rounded-2xl border border-red-500/20 bg-red-500/5">
+              <p className="flex items-start gap-2 text-[13px] font-semibold text-red-400 leading-relaxed">
+                <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+                {fault}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="p-4 bg-raised/50 flex justify-end gap-3">
+          <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-full text-sm font-bold text-zinc-400 hover:text-white transition-colors">
+            {intl.formatMessage(commonActions.cancel)}
+          </button>
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={busy}
+            className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+          >
+            {busy ? <Loader2 size={15} className="animate-spin" /> : null}
+            {intl.formatMessage(busy ? manageM.editSaving : manageM.editSave)}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * The server's refusal, with its `NT-` code in front (frontend ten, item 5).
+ *
+ * ⚠ It renders the SERVER's own detail rather than a local sentence per code.
+ * Four operations share these codes and the reasons differ per subject — the
+ * owner, yourself, a role that may not be granted — so a local table would have
+ * to guess which of them fired, and would be wrong on the day a new refusal
+ * lands. The screen restates the two it can know BEFORE the click (the row
+ * titles above); this is for everything else.
+ */
+function faultOf(intl: IntlShape, error: unknown): string {
+  if (error instanceof NtProblemError) return `${error.code} — ${error.detail ?? error.title}`;
+  return intl.formatMessage(inviteFormM.faultUnreachable);
+}
+
+/**
+ * The row affordances review item 57 commissioned, and the sentences that make
+ * each refusal legible before it is pressed rather than after.
+ */
+const manageM = defineMessages({
+  actionsColumn: { id: 'team.manage.actionsColumn', defaultMessage: 'Manage' },
+  editAction: { id: 'team.manage.editAction', defaultMessage: 'Change role and clients' },
+  removeAction: { id: 'team.manage.removeAction', defaultMessage: 'Remove from the firm' },
+  revokeAction: { id: 'team.manage.revokeAction', defaultMessage: 'Revoke' },
+  resendAction: { id: 'team.manage.resendAction', defaultMessage: 'Send a new link' },
+  working: { id: 'team.manage.working', defaultMessage: 'Working…' },
+
+  // The two subjects nothing may happen to, said in the words that name the
+  // reason rather than the rule. Both are the SERVER's refusals, restated here
+  // only so the button can explain itself before it is pressed.
+  ownerFixed: {
+    id: 'team.manage.ownerFixed',
+    defaultMessage:
+      'Your firm’s owner cannot be changed or removed — they are the only person who can release documents for export, and there is no way to hand that over yet.',
+  },
+  notYourself: {
+    id: 'team.manage.notYourself',
+    defaultMessage: 'You cannot remove your own access. Ask another practice admin.',
+  },
+  notAdmin: {
+    id: 'team.manage.notAdmin',
+    defaultMessage: 'Only a practice admin can change your firm’s team.',
+  },
+
+  removeTitle: { id: 'team.manage.removeTitle', defaultMessage: 'Remove {name} from the firm?' },
+  // ⚠ The blast radius, stated rather than implied. It names what ENDS and what
+  // does NOT, because "remove" reads as "delete everything they touched" to
+  // somebody who has never had to find out.
+  removeDetail: {
+    id: 'team.manage.removeDetail',
+    defaultMessage:
+      'They lose access to every client immediately and the next page they open will ask them to sign in. Their account is not deleted — only their place at your firm.',
+  },
+  removeConsequence: {
+    id: 'team.manage.removeConsequence',
+    defaultMessage:
+      'Everything they already did stays exactly as it is: documents they coded, chases they drafted and approvals they staged keep their name. Inviting them back restores access to all of it.',
+  },
+  removeConfirm: { id: 'team.manage.removeConfirm', defaultMessage: 'Yes, remove them' },
+
+  revokeTitle: { id: 'team.manage.revokeTitle', defaultMessage: 'Revoke the invitation to {email}?' },
+  revokeDetail: {
+    id: 'team.manage.revokeDetail',
+    defaultMessage: 'The link in their email stops working straight away instead of expiring on its own.',
+  },
+  revokeConsequence: {
+    id: 'team.manage.revokeConsequence',
+    defaultMessage: 'Nothing is lost — they were never a member. Invite them again whenever you like.',
+  },
+  revokeConfirm: { id: 'team.manage.revokeConfirm', defaultMessage: 'Yes, revoke it' },
+
+  resendTitle: { id: 'team.manage.resendTitle', defaultMessage: 'Send {email} a new link?' },
+  // ⚠ Said BEFORE the click. One invitation holds one token, so a re-send
+  // supersedes — and somebody who assumed both links worked would be told by a
+  // colleague that theirs had stopped, which is the worst way to learn it.
+  resendDetail: {
+    id: 'team.manage.resendDetail',
+    defaultMessage:
+      'A fresh link is emailed and lasts another seven days. The link they already have stops working — there is only ever one live link per invitation.',
+  },
+  resendConfirm: { id: 'team.manage.resendConfirm', defaultMessage: 'Send the new link' },
+
+  expiredPill: { id: 'team.manage.expiredPill', defaultMessage: 'Expired' },
+  expiredNote: {
+    id: 'team.manage.expiredNote',
+    defaultMessage: 'This link has run out. Send a new one, or revoke it if they are not joining.',
+  },
+  resentToast: { id: 'team.manage.resentToast', defaultMessage: 'A new link is on its way to {email}.' },
+
+  editTitle: { id: 'team.manage.editTitle', defaultMessage: 'Change what {name} can do' },
+  editSubtitle: { id: 'team.manage.editSubtitle', defaultMessage: 'Their role, and the clients they can reach' },
+  editSave: { id: 'team.manage.editSave', defaultMessage: 'Save changes' },
+  editSaving: { id: 'team.manage.editSaving', defaultMessage: 'Saving…' },
+  // The address is not editable and the form says why rather than showing a
+  // field that would be discarded — the portal People editor's rule.
+  editEmailNote: {
+    id: 'team.manage.editEmailNote',
+    defaultMessage: 'Their sign-in address cannot be changed here. Remove them and invite the new address.',
+  },
+});
 
 const inviteFormM = defineMessages({
   heading: { id: 'team.inviteColleague.heading', defaultMessage: 'Invite a colleague' },
@@ -1581,7 +2053,7 @@ const inviteFormM = defineMessages({
  * under the picker instead — a chip that produced a `400` would teach the user
  * nothing about why.
  */
-function InviteColleagueForm({
+export function InviteColleagueForm({
   clients,
   onClose,
   onInvited,

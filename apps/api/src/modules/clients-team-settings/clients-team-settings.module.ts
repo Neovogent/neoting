@@ -8,7 +8,7 @@ import { createAwsSmsTransport } from '../chase/index.js';
 import { NotificationsModule, NOTIFICATIONS_SERVICE, type NotificationsService } from '../notifications/index.js';
 import { ClientIntakeService } from './client-intake.service.js';
 import { ClientsTeamSettingsController } from './clients-team-settings.controller.js';
-import { PracticeMembersController } from './practice-members.controller.js';
+import { PracticeInvitationsController, PracticeMembersController } from './practice-members.controller.js';
 import { PracticeTeamService } from './practice-team.service.js';
 import { TeamService } from './team.service.js';
 import { CLIENT_INTAKE_SERVICE, IDEMPOTENCY_STORE, PRACTICE_TEAM_SERVICE, PRISMA, TEAM_SERVICE } from './tokens.js';
@@ -33,7 +33,7 @@ import { CLIENT_INTAKE_SERVICE, IDEMPOTENCY_STORE, PRACTICE_TEAM_SERVICE, PRISMA
  */
 @Module({
   imports: [NotificationsModule],
-  controllers: [ClientsTeamSettingsController, PracticeMembersController],
+  controllers: [ClientsTeamSettingsController, PracticeMembersController, PracticeInvitationsController],
   providers: [
     { provide: PRISMA, useFactory: () => getPrismaClient() },
     { provide: IDEMPOTENCY_STORE, useFactory: (): IdempotencyStore => new InMemoryIdempotencyStore() },

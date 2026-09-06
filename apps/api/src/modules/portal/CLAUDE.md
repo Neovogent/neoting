@@ -1310,3 +1310,53 @@ paid for and left; `GET /portal/documents`, which is the workspace's own file;
 and `delegatedScopeFor`, which still refuses a session with no granted items. A
 chase session's `chaseId` is still the only thing that makes the context return
 chase items.
+
+## `canManageBilling`, and the guard it degrades for (6 Sep 2026 — review item 44)
+
+> *"The team member of a client don't need to see the plan subscribed"*
+
+**⚠ Reported as a UI complaint; it was a live hole.** `billing.controller.ts`'s
+`principalFor` checked that the portal session's business equalled the body's
+and **nothing else**, so any contact of the business holding a portal bearer
+could mint a Stripe customer-portal session — the card, every invoice,
+cancellation. The real fix is `assertCan(actor, 'business.billing.manage')` in
+that controller (`BUSINESS_ADMIN` only, both doors); see
+`approvals/CLAUDE.md`.
+
+Two things landed in THIS module for it:
+
+- **`PortalSessionContextResolver.resolveActor(facts)`** — the facts say which
+  workspace is asking, this says which PERSON. `portal-people.service.ts`
+  already resolves an actor, but out of the people list it has just read for its
+  own purposes; a caller holding only the facts cannot reuse that. Same rules as
+  everywhere here: the role is read FROM THE ROW every time (never the bearer),
+  the lookup is bounded by `facts.businessId` so a `contact_id` naming somebody
+  on another business resolves to nothing, deactivated contacts are excluded,
+  and a null `contactId` — a chase session, by design — yields `role: null`,
+  which every branch of `assertCan` refuses.
+- **`PortalSummary.canManageBilling`** (contract addition), computed in
+  `portal-context.service.ts` from `mayManageBilling(portalActorFor(acting))`
+  rather than restated — a second copy of a permission rule is how a screen and
+  a server come to disagree. ⚠ **A fact for honest degradation, never a gate**,
+  exactly as `PortalPeople.canManagePeople` is.
+
+⚠ **It degrades by HIDING, which People deliberately does not**, and the
+contrast is the matrix's rule of thumb: who else can send paperwork on your
+employer's behalf is not a secret from you, whereas what the company pays and a
+live cancel button are neither a member's business nor any use to them. Web-side,
+`portalTabs.ts`'s `hiddenSectionsFor` drops Plan from a member's Settings list,
+which makes `/portal/settings/plan` unrecognised for them — so the existing
+"an unrecognised section is the first section" rule catches the deep link with
+no new branch.
+
+`portalActorFor` now takes the **three fields it reads** rather than a whole
+`PortalPersonRow`, so a caller who needs an actor and nothing else selects three
+columns instead of padding a fake row with nulls. Every existing caller is
+unchanged.
+
+### Settings → People gained its edit affordance (review item 42)
+
+The web list never called `setEditing(person)`. Nothing in this module changed:
+`PATCH /portal/people/{personId}`, its last-owner guard and its audit row were
+all already here and already tested. Recorded because the next reader will
+otherwise go looking for the server half of item 42 and find it already built.

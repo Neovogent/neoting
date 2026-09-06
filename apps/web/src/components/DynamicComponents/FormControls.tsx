@@ -35,6 +35,11 @@ export function Field({ label, value, onChange, placeholder }: { label: string; 
 export function Toggle({ label, hint, value, onChange }: { label: string; hint?: string; value: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
+      // Review item 38: a `<button>` inside a `<form>` submits it by default,
+      // and this is the app's SHARED form-control module — the one place a
+      // stray submit would be inherited by every dialog at once. Stated here so
+      // no caller has to know.
+      type="button"
       onClick={() => onChange(!value)}
       className="bg-ground/60 border border-white/5 rounded-2xl p-4 flex items-center justify-between gap-4 shadow-inner hover:border-white/10 transition-colors text-left"
     >

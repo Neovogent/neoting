@@ -9,6 +9,7 @@ import { ReviewGate, ReviewRows, ReviewSection } from './ReviewGate';
 import { Pill } from './DataTable';
 import type { SetupTask } from '../../lib/types';
 import { API_ENABLED } from '../../api/config';
+import { actsForWholePractice } from '../../api/auth';
 import { errorLabel } from '../../api/slices';
 import {
   buildIntakeRequest,
@@ -48,6 +49,23 @@ const m = defineMessages({
   },
 
   // ModeChooser — the invite/practice fork.
+  // Review item 39. The refusal a scoped colleague meets BEFORE step 1 instead
+  // of after step 3 — the words say what is actually true of them (their
+  // access is a client list, not a missing job title) and name the one person
+  // who can do it. The server says the same thing in its own voice.
+  notPermittedTitle: {
+    id: 'clients.clientIntakeForm.notPermittedTitle',
+    defaultMessage: 'Adding a client is not part of your access',
+  },
+  notPermittedSubtitle: {
+    id: 'clients.clientIntakeForm.notPermittedSubtitle',
+    defaultMessage: 'Nothing to fill in',
+  },
+  notPermittedBody: {
+    id: 'clients.clientIntakeForm.notPermittedBody',
+    defaultMessage:
+      'Your sign-in reaches only the clients you were assigned, so it cannot create new ones. A practice admin at your firm can add the client and give you access to it.',
+  },
   modeChooserTitle: {
     id: 'clients.modeChooser.title',
     defaultMessage: 'Add new client',
@@ -631,6 +649,20 @@ export function ClientIntakeForm({ defaultName = '' }: { defaultName?: string })
   const [mode, setMode] = useState<IntakeMode | null>(null);
   const live = API_ENABLED && session.status === 'authenticated';
 
+  // ⚠ **THE REFUSAL COMES BEFORE STEP 1, AND IT LIVES HERE RATHER THAN AT THE
+  // CALL SITES** (review item 39). The reported defect was a standard user
+  // walking all three intake steps and being refused at Create — the work
+  // invested first, the answer given last. This component has two doors (the
+  // Clients board's button and the chat's `ADD_CLIENT` intent), so the guard
+  // is in the one place both route through; the board additionally hides its
+  // button, which is the matrix's ruling for that surface, and this is what
+  // catches the chat.
+  //
+  // Live only, by construction: `actsForWholePractice` answers true for every
+  // non-authenticated session, so the synthetic demo is untouched
+  // (METH_MODE §1).
+  if (live && !actsForWholePractice(session)) return <NotPermitted />;
+
   // The fork comes FIRST in both worlds. It used to be skipped live — the live
   // form went straight to the one full flow — which quietly removed the choice
   // D47 and the prototype's #6 both describe, and left an accountant answering
@@ -679,6 +711,25 @@ function Shell({
       </div>
       {children}
     </div>
+  );
+}
+
+/**
+ * What a colleague scoped to specific clients sees instead of the intake
+ * (review item 39). The `Shell` chrome, so it reads as the same surface
+ * answering rather than an error page, and no form at all — there is nothing
+ * here that could be filled in.
+ */
+function NotPermitted() {
+  const intl = useIntl();
+  return (
+    <Shell title={intl.formatMessage(m.notPermittedTitle)} subtitle={intl.formatMessage(m.notPermittedSubtitle)}>
+      <div className="p-6">
+        <p role="status" className="text-[13px] text-zinc-300 leading-relaxed">
+          {intl.formatMessage(m.notPermittedBody)}
+        </p>
+      </div>
+    </Shell>
   );
 }
 

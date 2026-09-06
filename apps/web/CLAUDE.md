@@ -2213,3 +2213,64 @@ route is floor + 13,897 B. Measured clean with `gzip -c | wc -c`. ⚠ Other agen
 have uncommitted work in this tree, so the absolute floor and worst-route numbers
 in the table above are not attributable to any one change; re-measure on a clean
 checkout before quoting a delta.
+
+## The access-control package (6 Sep 2026 — review items 38, 39, 41, 42, 44, 57)
+
+`docs/Access_and_Approval_Matrix.md` is the ruling document — who sees and does
+what, per role, per surface, with Shakib's three rulings recorded inline. Two
+sanctioned degraded shapes and **no third**: **hidden** (not this role's job at
+all) or **visible-but-disabled-with-reason**. The rule of thumb it applies:
+*hide when the role has no legitimate interest in the fact, disable-with-reason
+when they do* — which is why the portal's People list is readable by a member
+with a line naming who can change it, and the portal's Plan section is absent
+for one entirely.
+
+**⚠ `actsForWholePractice(session)` in `api/auth.ts` is the practice-side
+predicate, and it reads `me.practice !== null`, NEVER the role.** A
+`PRACTICE_STANDARD` invited WITH a client list holds one membership per assigned
+client carrying `practice_id` null — deliberately, it is what makes RLS confine
+them — so `/me` answers `practice: null` while `role` still reads
+`PRACTICE_STANDARD`. A role test would be wrong in BOTH directions: hiding the
+surface from a practice-wide standard user who may use it, and showing it to the
+scoped colleague who may not. Every non-authenticated state answers `true`, which
+is what keeps synthetic mode byte-for-byte unchanged (METH_MODE §1).
+
+**`AppContext.availableTabs` is the ONE list**, read by `Sidebar`, `BottomNav`
+AND the address→tab resolution. A nav that hides a tab while the router still
+resolves its address is a hidden surface you can deep-link into, which is
+neither sanctioned shape; `/team` for a scoped colleague is an unrecognised slug
+and falls to the AI Workspace. `portalTabs.ts` does the same job one level down
+for Settings sections (`hiddenSectionsFor`), and `LivePortalSettings` renders
+its panel from the VISIBLE list rather than the `section` prop it was handed, so
+the rail's highlight and the panel cannot disagree.
+
+**⚠ Item 38 is the one to remember when adding a dialog: a `<button>` inside a
+`<form>` submits it.** `Chip` in `TeamView` was declared two hundred lines from
+the form it renders inside, so clicking a role or client pill SENT the
+invitation. Fixed on `Chip`, `IconBtn` and the shared `FormControls.Toggle` —
+the last because that module is the app's one shared form-control home. The
+audit is mechanical and its result is recorded in `TeamView.test.tsx`:
+`grep -rl '<form' src` returns exactly five files and only that dialog was
+wrong; `ClientIntakeForm`, the chase composer and `BusinessOnboardingView` host
+no `<form>` at all. `TeamView.test.tsx` pins the BEHAVIOUR, never the attribute
+— the next pill somebody adds is a fresh button with the same default.
+
+**Refusals are rendered from the SERVER's own detail** with the `NT-` code in
+front (frontend ten, item 5), never from a local table keyed on the code: four
+practice-team operations share `NT-PRM-001` and the reason differs per subject
+(the owner, yourself, a role that may not be granted), so a local table would
+have to guess which fired. What the screen restates BEFORE the click is only the
+two it can know from the row.
+
+Two web-side facts worth knowing:
+
+- `updateColleague` SENDS an empty `businessIds` and OMITS the key when there is
+  no change — the one place the edit and invite paths differ on purpose. On an
+  edit, omitting means *leave their scoping alone* and `[]` means *widen them to
+  every client*, and clearing the picker is the second one.
+- `api/onboarding.ts` parses `canManageBilling` as `nullish` and **defaults it
+  CLOSED**. Of the two readings of an absent authority flag, the one that cannot
+  leak is closed; the server refuses either way.
+
+Evidence for the whole package, both sides walked live:
+`docs/reviews/assets/2026-09-06-access-control/`.

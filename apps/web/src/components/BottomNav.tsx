@@ -76,11 +76,17 @@ interface BottomNavProps {
 }
 
 export function BottomNav({ activeTab, setActiveTab, onOpenBusinessPortal }: BottomNavProps) {
-  const { settings, updateSettings, documentsSource } = useAppContext();
+  const { settings, updateSettings, documentsSource, availableTabs } = useAppContext();
   const intl = useIntl();
   const [moreOpen, setMoreOpen] = useState(false);
   const isLight = settings.theme === 'light';
-  const moreActive = MORE.some((item) => item.tab === activeTab);
+  // ⚠ Filtered by `availableTabs`, never by a role read here — Sidebar's note
+  // (review item 39). Both lists, because a hidden tab must not survive in the
+  // More sheet, and `moreActive` must not light the More button for a tab this
+  // session cannot reach.
+  const primary = PRIMARY.filter((item) => availableTabs.includes(item.tab));
+  const more = MORE.filter((item) => availableTabs.includes(item.tab));
+  const moreActive = more.some((item) => item.tab === activeTab);
 
   // Any navigation closes the sheet, including the browser's Back.
   useEffect(() => setMoreOpen(false), [activeTab]);
@@ -98,7 +104,7 @@ export function BottomNav({ activeTab, setActiveTab, onOpenBusinessPortal }: Bot
         className="shrink-0 z-30 border-t border-white/5 bg-card pb-safe"
       >
         <div className="flex items-stretch justify-around h-16 px-1">
-          {PRIMARY.map((item) => (
+          {primary.map((item) => (
             <NavButton
               key={item.tab}
               icon={item.icon}
@@ -145,7 +151,7 @@ export function BottomNav({ activeTab, setActiveTab, onOpenBusinessPortal }: Bot
                   {intl.formatMessage(m.moreHeading)}
                 </div>
                 <div className="grid grid-cols-1 gap-1">
-                  {MORE.map((item) => (
+                  {more.map((item) => (
                     <SheetRow
                       key={item.tab}
                       icon={item.icon}
