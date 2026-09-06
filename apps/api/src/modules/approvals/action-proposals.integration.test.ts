@@ -125,6 +125,15 @@ async function seedDocument(id: string, over: Record<string, unknown> = {}): Pro
       originalFilename: 'currys-receipt.jpg',
       inbox: 'COSTS',
       state: 'READY',
+      // ⚠ `docType` is LOAD-BEARING here since the readiness Type gate landed
+      // (review items 36/47, #256): a document whose type is OTHER **or null**
+      // puts `'type'` first in `missing` and cannot reach READY however complete
+      // its fields are. This fixture predates that rule and carried no type, so
+      // the update-coding test below — which asserts a correction supplying the
+      // last mandatory field drives TO_REVIEW → READY — failed on a gate that
+      // had nothing to do with what it was testing. The filename has always said
+      // what this document is.
+      docType: 'RECEIPT',
       supplierName: 'Currys',
       totalPence: 129_900,
       categoryCode: 'OFFICE_EQUIPMENT',

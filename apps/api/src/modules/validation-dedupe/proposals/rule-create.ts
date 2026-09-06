@@ -83,6 +83,20 @@ export const ruleCreateExecutor: ProposalExecutor<'rule.create', RuleCreatePaylo
         ...(payload.conditions == null ? {} : { conditions: payload.conditions as Prisma.InputJsonObject }),
         sets: payload.sets as Prisma.InputJsonObject,
         isActive: true,
+        // ⚠ **INACCURATE FOR ONE PATH SINCE 6 SEP 2026, and stated rather than
+        // quietly changed.** `rule.create` had exactly one producer — the chat's
+        // rule beat — when this constant was written. Review item 48's "make it
+        // a rule?" offer on the document preview is a second, and a rule created
+        // from a document now records `chat`.
+        //
+        // Left as it is deliberately: nothing in the product READS this column
+        // (grep — only this file and its tests), so the cost today is zero, and
+        // the two honest fixes both deserve their own decision rather than a
+        // drive-by. Either the payload carries the origin (a contract change for
+        // a provenance string nobody consumes yet) or the value becomes
+        // something neutral like `approval`, which is accurate for every path
+        // and throws away the fact that chat drafted most of them. Recorded in
+        // this module's CLAUDE.md.
         createdVia: 'chat',
         createdByUserId: ctx.actorId,
         actionProposalId: proposalId,

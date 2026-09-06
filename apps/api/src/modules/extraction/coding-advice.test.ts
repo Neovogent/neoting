@@ -37,12 +37,21 @@ function advisorReturning(
   reconsider?: DocumentCodingAdvisor['reconsider'],
 ): FakeAdvisor {
   const calls: DecideCall[] = [];
+  // ⚠ `history` and `chart` are ALWAYS present on a real result, and the
+  // rule-offer step (review item 48's follow-on) reads both. A fake that omits
+  // them is lying about the shape rather than exercising a branch, so the empty
+  // defaults are here rather than a null-guard in production code.
+  const complete = {
+    history: { entries: [], categoryCodes: [], spellings: [] },
+    chart: { accounts: [], categories: [] },
+    ...rest,
+  };
   const advisor: FakeAdvisor = {
     calls,
     reconsidered: 0,
     decide: async (_db, businessId, supplierName, evidence) => {
       calls.push({ businessId, supplierName, evidence });
-      return { businessId, decision, ...rest } as unknown as SupplierCodingResult;
+      return { businessId, decision, ...complete } as unknown as SupplierCodingResult;
     },
     ...(reconsider === undefined
       ? {}
@@ -250,6 +259,7 @@ describe('toStoredCodingSuggestion — the shape the read projection will hand b
         'note',
         'outcome',
         'provenance',
+        'ruleOffer',
         'secondChoice',
         'treatment',
       ].sort(),

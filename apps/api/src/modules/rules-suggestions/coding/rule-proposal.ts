@@ -46,6 +46,19 @@ export interface SupplierRuleProposal {
   readonly kind: 'rule.create';
   readonly businessId: string;
   readonly payload: RuleCreatePayload;
+  /**
+   * The same two values the payload carries, typed as the STRINGS they are.
+   *
+   * ⚠ Not redundancy. `RuleCreatePayload` is the generated contract type and
+   * orval emits its members optional, so a caller reading `payload.scopeKey`
+   * gets `string | undefined` and has to re-narrow something this function
+   * already validated with `SupplierRulePayloadSchema.parse`. Handing the
+   * checked pair over is cheaper than every consumer inventing its own guard —
+   * and a guard is where a `scopeKey` gets normalised "just to be safe", which
+   * is the one edit that makes a rule never fire.
+   */
+  readonly scopeKey: string;
+  readonly categoryCode: string;
   /** The ledger-prefixed account the rule codes to, or null when the code is off-chart. */
   readonly analysisAccount: string | null;
   /** One sentence for whoever is being asked to approve it. */
@@ -140,6 +153,8 @@ export function buildSupplierRuleProposal(result: SupplierCodingResult): Supplie
     kind: 'rule.create',
     businessId,
     payload,
+    scopeKey,
+    categoryCode: decision.categoryCode,
     analysisAccount: decision.analysisAccount,
     rationale: `Code ${scopeKey} to ${account?.name ?? decision.categoryCode} from now on. This client has coded them that way ${times === 1 ? 'once' : `${times} times`}, by hand, and never differently.${account === undefined ? ' ⚠ That code is not on this client’s chart of accounts, so the export cannot give it a ledger prefix.' : ''}`,
     unmatchedSpellings: history.spellings.slice(1),

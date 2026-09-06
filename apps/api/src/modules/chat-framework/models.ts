@@ -75,10 +75,14 @@ export const TASKS = {
   //   holds under 2p while fewer than **27%** of documents reach the rung
   //   (45% on the workhorse tier).
   //
-  // **Nobody has measured that rate yet.** It is what the `document_events` rows
-  // with `stage: 'code'` answer — `suggested` against `escalated` against the
-  // total — and it is the number to watch, never the per-call price. Shakib took
-  // the pin in session on 6 Sep 2026 and re-confirmed it on the measured figure.
+  // The rate is measurable now — `scripts/measure/coding-escalation-rate.ts`,
+  // counting `document_events` by BASIS (supplier memory is a free suggestion
+  // and must not be counted as a model call). ⚠ **Nobody has run it against a
+  // real corpus**, and the figure MOVES as a client accumulates rules and
+  // history, both of which answer above the rung and cost nothing: measured 75%
+  // on a brand-new client and 33% eight documents later. Watch the rate, never
+  // the per-call price. Shakib took the pin in session on 6 Sep 2026 and
+  // re-confirmed it on the measured figure.
   codingSuggestion: { model: 'judgment', effort: 'high' }, // THE volume call — see above
   chaseComposition: { model: 'workhorse', effort: 'medium' }, // every SMS human-reviewed verbatim (§10)
   chaseValidation: { model: 'workhorse', effort: 'medium' },

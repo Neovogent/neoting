@@ -4,7 +4,7 @@ import {
   StoredCodingSuggestionSchema,
 } from '../../common/documents/coding-suggestion.js';
 import type { AiCodingSuggestion, CodingEvidence, SupplierCodingResult } from '../rules-suggestions/index.js';
-import { codingSuggestionFor, readStoredLines } from '../rules-suggestions/index.js';
+import { codingSuggestionFor, readStoredLines, type SupplierRuleOffer, supplierRuleOffer } from '../rules-suggestions/index.js';
 import type { ExtractedDocument } from './document-extractor.js';
 
 /**
@@ -137,7 +137,13 @@ export async function finishCoding(
   // accountant's rule or a human's correction — where an opinion is pressure to
   // second-guess an explicit instruction rather than extra information.
   const suggestion = codingSuggestionFor(reconsidered);
-  return suggestion === null ? null : toStoredCodingSuggestion(suggestion);
+  if (suggestion === null) return null;
+  // ⚠ The offer is computed from the RESULT, not from the suggestion: it is a
+  // fact about this client's history, and only `buildSupplierRuleProposal` —
+  // which owns every refusal — gets to say whether a standing rule is available
+  // (review item 48's follow-on). `null` is the usual answer, and most documents
+  // should not be offering to write a rule.
+  return toStoredCodingSuggestion(suggestion, supplierRuleOffer(reconsidered));
 }
 
 /**
@@ -150,12 +156,16 @@ export async function finishCoding(
  * because a suggestion that silently vanishes on the detail screen is the same
  * empty Category field this whole change exists to remove.
  */
-export function toStoredCodingSuggestion(suggestion: AiCodingSuggestion): StoredCodingSuggestion {
+export function toStoredCodingSuggestion(
+  suggestion: AiCodingSuggestion,
+  ruleOffer: SupplierRuleOffer | null = null,
+): StoredCodingSuggestion {
   const base = {
     provenance: suggestion.provenance,
     basis: suggestion.basis,
     note: suggestion.note,
     advisories: [...suggestion.advisories],
+    ruleOffer: ruleOffer === null ? null : { ...ruleOffer, unmatchedSpellings: [...ruleOffer.unmatchedSpellings] },
   };
 
   const stored: StoredCodingSuggestion =

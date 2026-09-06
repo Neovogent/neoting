@@ -66,6 +66,7 @@ natural-language rule parsing are still not built.
 | `coding/coding-decision.ts` | The answer shape — including `LOCKED` as a first-class outcome |
 | `coding/supplier-coding.service.ts` | The ladder itself, the human lock, and `readStoredLines` |
 | `coding/rule-proposal.ts` | Decision → `rule.create` payload for the Review → Approve spine |
+| `coding/rule-offer.ts` | **"Make it a rule?"** — the threshold on top of it (item 48's follow-on) |
 | `coding/escalation.ts` | **The two closed sets** — why a coding is declined, and what is worth saying about one that is offered |
 | `coding/capital-revenue.ts` | **The decision rules.** Pure, per line. The capitalisation policy lives here as a value, never a constant |
 | `coding/ai-suggestion.ts` | The `AI_INFERENCE` rung: the document-level fold, the arithmetic hard stop, the confidence table |
@@ -347,6 +348,46 @@ zero-shot categorisation of a brand-new supplier where the published figures are
 62.5% top-1 and ~36% zero-shot. The prompt asks for honesty and got 0.97 anyway:
 `input_schema` instructs, the parse enforces. It is a DISPLAY bound, not a gate —
 ordering below the ceiling is preserved and no branch compares it to a number.
+
+## The offer that closes the loop — "make it a rule?" (6 Sep 2026, item 48's point 4)
+
+Supplier memory suggests the code on every document and asks a human every
+time. A **rule** codes the next document before anybody opens it —
+`extraction-pipeline.ts` matches an active `SUPPLIER_CUSTOMER` rule on the way
+in — so it is the difference between approving a suggestion forty times and
+taking one decision once. §24.4.5 says a learned treatment *should* become a
+deterministic rule; item 48 asks for both, *"so the two mechanisms converge
+instead of competing"*.
+
+`coding/rule-offer.ts` is the whole of it, and it is small because
+**`buildSupplierRuleProposal` already owned every refusal** and had simply never
+been called: a rule already codes this supplier, the decision is not the
+client's own prior treatment, the document is locked, the supplier is new, the
+history disagrees with itself, there is no exact spelling to key on. This file
+adds **a threshold** and the projection a surface renders.
+
+- **`RULE_OFFER_THRESHOLD = 3`** — a value, not a law, and deliberately
+  conservative. A rule OUTLIVES the document that argued for it, so offering too
+  early is much worse than offering a document later. The count is always shown,
+  so the accountant judges the evidence rather than the threshold.
+- ⚠ **`scopeKey` is the supplier's EXACT spelling and travels verbatim** through
+  the contract, the web and into the payload. The pipeline matches by exact
+  string equality; a key anything tidied would produce a rule that is written,
+  reviewed, approved — and never fires, with nothing reporting it. Other
+  spellings in the client's history ride along as `unmatchedSpellings` and are
+  named on screen rather than papered over.
+- **It reaches the browser through `CodingSuggestion.ruleOffer`** — an additive,
+  optional contract change (G7, Shakib's instruction on 6 Sep 2026). Nothing is
+  created by its presence; the web takes `scopeKey` + `categoryCode` to
+  `POST /v1/action-proposals` as an ordinary `rule.create`, the same door the
+  chat's rule beat uses.
+
+**Proven live, end to end:** five hand-codings of Aldgate Meats → the sixth
+document arrives at **90% confident** on `SUPPLIER_MEMORY` with the offer beside
+it → Create this rule → Read review → Approve → a real `rules` row → **the next
+invoice arrives READY, coded by the rule, with no suggestion beside it at all**
+(the standing invariant, observed rather than asserted). Screenshots `06` and
+`07` in `docs/reviews/assets/2026-09-06-coding-intelligence/`.
 
 ## The model second opinion on a manual correction (items 22/47's deferred half)
 
@@ -823,25 +864,41 @@ approves. There is no shortcut and no second door.
       `CODING_PROMPT_VERSION` is at `coding-instructions-2` and remains this
       module's own, so a coding rule still changes without dragging the chat
       eval gate in.
-- [ ] **The escalation RATE is unmeasured, and it is the number the model pin
-      rests on.** The blended guardrail (£0.02/document) holds while fewer than
-      27% of documents reach the model rung; a document that does costs 3.81p.
-      Every ingredient is already recorded — `document_events` writes a `code`
-      stage row per document with outcome `suggested` or `escalated` — so this is
-      a query and a dashboard line, not new instrumentation. Re-run
-      `scripts/measure/coding-cost.ts` when the pin or the chart moves.
+- [x] ~~**The escalation RATE is unmeasured.**~~ **Measurable since 6 Sep 2026:**
+      `scripts/measure/coding-escalation-rate.ts`. It needed no instrumentation —
+      `document_events` already writes a `code` row per document — but it did
+      need the RLS trap `db/backfill-import-fingerprints.ts` documents: as
+      `nt_app` the query returns an EMPTY LIST and no error, so the first run
+      printed "nothing to measure" against a database holding the rows. It reads
+      through `DIRECT_URL` and refuses to start without it.
+      ⚠ **It counts by BASIS, not by outcome** — `SUPPLIER_MEMORY` is a
+      suggestion that costs nothing, and counting it as "the model ran" would
+      inflate the estimated spend badly.
+- [ ] **Nobody has run it against a real corpus, and the local figure moves as
+      history accumulates — which is the point.** Measured on the walkthrough
+      client: **75%** of documents reached the model rung when the client was
+      new, **33%** eight documents later, as supplier memory (free, and above the
+      rung) took over. Both are noise at that sample size and the script says so
+      below 50 documents. Staging after a week of intake is the first honest
+      sample. Re-run `scripts/measure/coding-cost.ts` too when the pin or the
+      chart moves.
 - [x] ~~**Nothing consumes the suggestion yet.**~~ Closed in two halves: the
       pipeline began calling `decide()` on 2 Sep 2026, and the LEARNED_HISTORY
       half — which reached no screen at all — on 6 Sep 2026 (item 48). The
       `DocumentPreview` panel renders both, verified live.
-- [ ] **The "make it a rule?" follow-on has no caller.**
-      `buildSupplierRuleProposal` / `proposeSupplierRule` are built and tested
-      and nothing in the product invokes them, because this module publishes no
-      controller. Item 48's optional half — *"You've coded Aldgate Meats to Food
-      5 times — make it a rule?"* — is that call plus a surface, and the surface
-      needs a contract operation (G7). Supplier memory now covers the behaviour
-      it was wanted for; formalising a repeated treatment as a standing rule is
-      the part still owed.
+- [x] ~~**The "make it a rule?" follow-on has no caller.**~~ **DONE, 6 Sep 2026**
+      — see *The offer that closes the loop* above. `buildSupplierRuleProposal`
+      had been built, tested and uncalled since A6; it has a caller now, and it
+      needed no controller of its own.
+- [ ] **`rules.created_via` says `chat` for a rule created from a document.**
+      `rule.create` had one producer when that constant was written and now has
+      two. Nothing in the product reads the column (grep — only
+      `rule-create.ts` and its own tests), so the cost today is zero, but the
+      first person who reads it will be misled. The two honest fixes are a
+      payload field carrying the origin (a contract change for a string nobody
+      consumes) or a neutral value like `approval` (accurate everywhere,
+      throwing away the fact that chat drafted most of them). Either deserves
+      its own decision; the inaccuracy is written at the write site.
 - [ ] ⚠ **THE A7/A9 HANDSHAKE THIS MODULE'S SEAM PROMISES IS NOT WIRED, and it
       is now visible to accountants.** `index.ts` names the export as consumer
       one: *"the VT emitter's `Analysis account` column must carry the ledger

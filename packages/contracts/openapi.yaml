@@ -5907,6 +5907,58 @@ components:
             supplier. Never blocking; their sentences are already folded into
             `note`.
           items: { type: string }
+        ruleOffer:
+          type: [object, 'null']
+          description: |
+            **"You've coded this supplier that way N times — make it a rule?"**
+            (SoT §24.4.5; review item 48's follow-on.) Present only when this
+            client's own repeated hand-coding has crossed the offer threshold
+            AND a standing rule is genuinely available: absent when a rule
+            already codes the supplier, when the treatment is not the client's
+            own, and when there is no exact spelling to key one on.
+
+            ⚠ **It is an OFFER, not a rule and not a proposal.** Nothing is
+            created by its presence. A caller takes `scopeKey` and
+            `categoryCode` to `POST /v1/action-proposals` as an ordinary
+            `rule.create`, which a human then reviews and approves — the same
+            door the chat's rule beat uses. Supplier memory already suggests the
+            code on every document; this is the step that makes the treatment
+            standing, so the two mechanisms converge instead of competing.
+
+            ⚠ **`scopeKey` is the supplier's EXACT spelling from a document this
+            client actually received, and a caller must send it verbatim.**
+            `extraction-pipeline.ts` matches a rule by exact string equality, so
+            a normalised or title-cased key produces a rule that is written,
+            renders correctly on the review card, is approved by a human — and
+            then never fires, with nothing reporting it.
+          required: [scopeKey, categoryCode, times, rationale]
+          properties:
+            scopeKey:
+              type: string
+              description: The exact supplier spelling a rule must be keyed on. Send verbatim.
+            categoryCode: { type: string }
+            analysisAccount:
+              type: [string, 'null']
+              description: The ledger-prefixed emittable form, for display beside the offer.
+            times:
+              type: integer
+              minimum: 1
+              description: How many times this client has coded this supplier that way, by hand.
+            rationale:
+              type: string
+              description: |
+                One sentence composed server-side, naming the supplier, the
+                account and the count. Rendered verbatim — a client that reworded
+                it would be a second description of the same rule, free to
+                disagree with the one the review card shows.
+            unmatchedSpellings:
+              type: array
+              description: |
+                Other spellings of this supplier in the client's history that this
+                rule will NOT match. Empty in the ordinary case; non-empty means a
+                second rule is wanted, and saying so beats a rule that appears to
+                work and half does.
+              items: { type: string }
     # ── end region ──
 
     DocumentEvent:

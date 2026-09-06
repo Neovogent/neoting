@@ -201,6 +201,11 @@ export {
   type SupplierRuleRefusal,
 } from './coding/rule-proposal.js';
 
+// Item 48's follow-on: "make it a rule?" after a treatment repeats. It DECIDES
+// nothing — `buildSupplierRuleProposal` owns every refusal; this adds a
+// threshold and the shape a surface renders.
+export { RULE_OFFER_THRESHOLD, type SupplierRuleOffer, supplierRuleOffer } from './coding/rule-offer.js';
+
 export {
   // The one mapping from a ladder decision to the opinion a surface renders —
   // including this client's remembered treatment, which had no consumer before
