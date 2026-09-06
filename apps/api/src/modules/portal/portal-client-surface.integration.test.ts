@@ -63,9 +63,43 @@ const DOC_ARCHIVED = 'pcs_doc_archived';
 const DOC_THEIRS = 'pcs_doc_theirs';
 const ALL_DOCS = [DOC_SENT, DOC_REVIEW, DOC_FILED, DOC_BROKEN, DOC_ARCHIVED, DOC_THEIRS];
 
+const CONTACT_MINE = 'pcs_con_mine';
+
+/**
+ * A plain MEMBER of the same business, and the session they hold (review item
+ * 44). Not `is_primary` and no `portal_role`, so `effectivePortalRole` derives
+ * `BUSINESS_STANDARD` — the staff member added to photograph receipts, who
+ * until this package could mint a Stripe customer-portal session and reach the
+ * card, every invoice and cancellation.
+ */
+const CONTACT_MEMBER = 'pcs_con_member';
+const SESSION_MEMBER = 'pcs_otp_member';
+
 const SESSION_MINE = 'pcs_otp_mine';
 const SESSION_THEIRS = 'pcs_otp_theirs';
-const ALL_SESSIONS = [SESSION_MINE, SESSION_THEIRS];
+const ALL_SESSIONS = [SESSION_MINE, SESSION_THEIRS, SESSION_MEMBER];
+
+/**
+ * The PERSON holding the session (review item 44, 6 Sep 2026).
+ *
+ * ⚠ **The fixture used to write no `contact_id`, and no real onboarding session
+ * looks like that.** Both own-portal sign-in routes set it — `resolveByAddress`
+ * to the contact whose address proved control, `resolveInvite` to the contact
+ * the invitation names — and intake writes the contact and the invite in one
+ * transaction, so an invited client always has one. The `?? null` on the invite
+ * route is defensive against a state this product cannot currently produce.
+ *
+ * It mattered the day billing gained an authority check: a session that cannot
+ * be resolved to a person holds `role: null`, which every branch of `assertCan`
+ * refuses — correctly, and the test asserting the customer portal opens then
+ * failed for a reason that had nothing to do with what it was written to
+ * assert. Its subject is TENANCY (*"for the session's OWN business"*), so the
+ * fix is to make the fixture look like reality rather than to soften the guard.
+ *
+ * `is_primary` makes them the workspace's OWNER by `effectivePortalRole`'s
+ * derivation, which is who D48 says pays.
+ */
+
 
 let owner: PrismaClient;
 let app: PrismaClient;
@@ -100,6 +134,7 @@ const grab = async (run: () => Promise<unknown>): Promise<AppException> => {
  */
 async function cleanup(): Promise<void> {
   await owner.otpSession.deleteMany({ where: { id: { in: ALL_SESSIONS } } });
+  await owner.contact.deleteMany({ where: { id: { in: [CONTACT_MINE, CONTACT_MEMBER] } } });
   await owner.documentEvent.deleteMany({ where: { documentId: { in: ALL_DOCS } } });
   await owner.document.deleteMany({ where: { id: { in: ALL_DOCS } } });
   await owner.membership.deleteMany({ where: { id: { in: [MEMBERSHIP] } } });
@@ -122,6 +157,27 @@ beforeAll(async () => {
     data: [
       { id: BIZ_MINE, practiceId: PRACTICE, name: 'American Burger' },
       { id: BIZ_THEIRS, practiceId: PRACTICE, name: 'The Other Client' },
+    ],
+  });
+  // The person the session belongs to — `is_primary`, so `effectivePortalRole`
+  // derives BUSINESS_ADMIN and they are the workspace's owner. See CONTACT_MINE.
+  await owner.contact.createMany({
+    data: [
+      {
+        id: CONTACT_MINE,
+        businessId: BIZ_MINE,
+        firstName: 'Owner',
+        email: 'pcs-owner@example.test',
+        isPrimary: true,
+      },
+      // The member. Same business, not primary, no portal_role.
+      {
+        id: CONTACT_MEMBER,
+        businessId: BIZ_MINE,
+        firstName: 'Staff',
+        email: 'pcs-staff@example.test',
+        isPrimary: false,
+      },
     ],
   });
   await owner.user.create({ data: { id: SYS_USER, email: 'pcs-system@example.test', kind: 'SYSTEM' } });
@@ -191,9 +247,23 @@ beforeAll(async () => {
         id: SESSION_MINE,
         businessId: BIZ_MINE,
         practiceId: PRACTICE,
+        // WHO is holding it. See CONTACT_MINE.
+        contactId: CONTACT_MINE,
         scope: 'ONBOARDING',
         grantedItemIds: [DOC_SENT],
         linkTokenHash: 'pcs-link-hash-mine',
+        ...live,
+      },
+      // The member's own live session on the SAME business as SESSION_MINE, so
+      // the only thing separating them is who is holding it.
+      {
+        id: SESSION_MEMBER,
+        businessId: BIZ_MINE,
+        practiceId: PRACTICE,
+        contactId: CONTACT_MEMBER,
+        scope: 'ONBOARDING',
+        grantedItemIds: [],
+        linkTokenHash: 'pcs-link-hash-member',
         ...live,
       },
       {
@@ -368,5 +438,55 @@ describe.skipIf(!enabled)("the client's own portal surface against real RLS", ()
     expect(reached).toEqual([
       { actorId: SYS_USER, practiceId: PRACTICE, sessionScope: 'user', grantedItemIds: [] },
     ]);
+  });
+
+  /**
+   * **⚠ Review item 44, against the real row.**
+   *
+   * `billing.controller.test.ts` pins the same refusal with the actor STUBBED,
+   * which is the right unit for "does the controller ask". This is the half a
+   * stub cannot cover: that `resolveActor` reads the authority out of
+   * `contacts` — through `systemScopeFor`, bounded by the session's own
+   * business — and gets it right for a person nobody wrote a role for.
+   *
+   * `CONTACT_MEMBER` carries no `portal_role` at all, so the answer comes from
+   * `effectivePortalRole`'s derivation (`is_primary` false → `BUSINESS_STANDARD`).
+   * That derivation is what makes this work for every business that existed
+   * before the column did, and it is the case a hand-set role would have
+   * quietly skipped.
+   */
+  test('⚠ the customer portal REFUSES a plain member of the same business, and nothing reaches Stripe', async () => {
+    const reached: ScopeContext[] = [];
+    const service = {
+      createPortalSession: async (ctx: ScopeContext) => {
+        reached.push(ctx);
+        return { url: 'https://billing.stripe.com/p/session/x', expiresAt: null };
+      },
+    } as unknown as BillingService;
+    const cookie = { require: async () => { throw new Error('the cookie path must not be taken here'); } } as unknown as RequestContext;
+    const controller = new BillingController(cookie, service, resolver());
+
+    const key = '3f1b7c92-6a48-4d05-9e3f-2c8b7a41d6e0';
+    let code: string | undefined;
+    let status: number | undefined;
+    try {
+      await controller.portal(
+        { businessId: BIZ_MINE, returnUrl: 'https://app.example/back' },
+        key,
+        // The SAME business as the passing test above. The only difference is
+        // who the session belongs to.
+        bearerFor(SESSION_MEMBER, BIZ_MINE),
+      );
+    } catch (error) {
+      const problem = error as { code?: string; getStatus?: () => number };
+      code = problem.code;
+      status = problem.getStatus?.();
+    }
+
+    expect(code).toBe('NT-PRM-001');
+    expect(status).toBe(403);
+    // The assertion that matters: nothing reached the service, so nothing
+    // reached Stripe and no session was minted.
+    expect(reached).toEqual([]);
   });
 });
