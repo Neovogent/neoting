@@ -87,6 +87,21 @@ import { canRelease } from '../clients-team-settings/index.js';
  */
 export type PermittedAction =
   | 'publish.release'
+  /**
+   * Approving a TIER-1 proposal that is not one of D44's two outward acts —
+   * a coding correction, a statement removal, a purge, an offboard, a rule
+   * (`docs/Access_and_Approval_Matrix.md`, Part 2, review item 66).
+   *
+   * ⚠ **The same predicate as `publish.release`, and a separate NAME on
+   * purpose.** `publish.release` is Governance §11.2's own literal and its
+   * refusals say *"release documents for export"* and *"authorise a message to
+   * a client"*. Neither is true of somebody who pressed Approve on a category
+   * fix, and the message is the whole user-facing product of a permission
+   * check — the rule this file established at `business.billing.manage` and
+   * `team.manage`, applied a third time. A second PREDICATE would be a second
+   * thing free to disagree; a second NAME costs ten lines.
+   */
+  | 'proposal.approve'
   | 'team.invite'
   | 'team.manage'
   | 'business.people.manage'
@@ -119,79 +134,138 @@ export interface ProposalResource {
 }
 
 /**
- * Which kinds are a RELEASE — total over `ProposalKind` by the mapped type, the
- * way `ExecutorRegistry` is. A new kind that fails to compile here is the point:
- * "is this an irreversible outward act?" is a question a new proposal kind must
- * answer, not one it may inherit a default for.
+ * **The TIER-1 table** — total over `ProposalKind` by the mapped type, the way
+ * `ExecutorRegistry` is. A new kind that fails to compile here is the point:
+ * "does the firm's principal sign for this?" is a question a new proposal kind
+ * must answer, not one it may inherit a default for.
  *
- * D44 names two, and they are the two things this product does that reach
- * outside itself and cannot be taken back:
+ * ## What this table selects for CHANGED on 6 Sep 2026 (review item 66)
  *
- * - **`chase.send`** — a text or an email to somebody else's client. Once sent,
- *   it is sent.
- * - **`publish.batch`** — Ready → Published, which under D42 means released for
- *   export. The export is ID's only egress, so this is the act that lets a
- *   figure leave the product.
+ * It was built to select for **acts that reach outside the product** — D44's
+ * two, and only those. `docs/Access_and_Approval_Matrix.md` Part 2 asks a
+ * different question, and it is the one the product owner asked:
  *
- * ⚠ **`document.revoke-link` is deliberately `false`.** It is an outward act —
- * it turns a working link inside somebody's ledger into a 410 — and gating it
- * was the first instinct. It is not gated because revocation is a
- * **containment** action: the reason to press it is that a capability URL has
- * leaked, and a rule that says only one person in the firm may stop a leak makes
- * the leak last longer. A8 owns that lane and may revisit with the surface in
- * front of it.
+ * > *define activity that is must get approval, such as any publishing, any
+ * > filed update like the category… prepare a fine line and divide it that what
+ * > needs approval what not*
  *
- * Everything else is internal and reversible by a further proposal — archive
- * unarchives, coding is corrected again, a rejection is reprocessed — so D44's
- * first half applies: the team composes and edits.
+ * So the predicate is now **"is this the principal's signature?"**, of which
+ * "reaches outside and cannot be taken back" is one answer among several.
+ * Irreversibility and blast radius are the others. FIVE entries moved as a
+ * result, and three of them overturn arguments written in this file — each is
+ * named at its entry, because a reversed ruling that is not visible at the
+ * reversal is a trap for the next reader.
+ *
+ * **Tier 1 (`true`) — seven kinds.** Only `mayRelease(actor)` may approve one.
+ * **Tier 2 (`false`) — nine kinds.** Any member the RLS context admits.
+ *
+ * ⚠ **The tier changes WHO approves and WHETHER it queues, never whether it is
+ * recorded.** Every kind in both tiers still mints a proposal, still records
+ * Read review and its hash, still echoes that hash at Approve, still writes the
+ * audit row, and is still enforced again by `action_proposals_guard()` in the
+ * database. Governance §10's spine is not what Part 2 legislates over.
+ *
+ * ⚠ **Tier 1 does not mean "waits for somebody".** When the super admin is the
+ * one staging, the same stage → Read review → Approve happens inline in the
+ * dialog they are standing in (matrix gate ⚖6) — identical record, no queue.
+ * The tier only says whose signature the record has to carry.
+ *
+ * ⚠ **`document.revoke-link` stays `false`, and it is the one outward act that
+ * does.** It turns a working link inside somebody's ledger into a 410, and
+ * gating it was the first instinct both times this table was written.
+ * Revocation is a **containment** action: the reason to press it is that a
+ * capability URL has leaked, and a rule that says only one person in the firm
+ * may stop a leak makes the leak last longer. A8 owns that lane and may revisit
+ * with the surface in front of it.
  */
 export const RELEASE_KINDS: Readonly<Record<ProposalKind, boolean>> = {
+  // D44's two, and the reason the table existed at all: a text to somebody
+  // else's client, and the one act that lets a figure leave the product.
   'chase.send': true,
   'publish.batch': true,
+  // ⚠ **TIER 1 since 6 Sep 2026 (item 66, matrix gate ⚖5) — the LITERAL
+  // reading, taken deliberately.** The owner was offered a field split
+  // (accounting-meaning fields tier 1, labels tier 2) and declined it: *"any
+  // filed update like the category… and this typo things must need approval"*
+  // means every field, so a supplier-spelling fix waits for the super admin
+  // exactly as a category change does. Item 22 is the case law — a team member
+  // typed £9,000 of tax onto a £994 invoice and it reached the export because
+  // nobody with authority ever looked.
+  //
+  // The queue-volume objection was put and answered by the FAST PATH, not by
+  // narrowing the rule: the person the queue waits for is also the person doing
+  // most of the correcting, and their own corrections never queue (⚖6). The
+  // field split is kept in the matrix as the option NOT taken — it is the
+  // change to make on the day the queue does drown, and its reasoning should
+  // not have to be rebuilt.
+  //
+  // ⚠ The web consequence is real and is item 24's other half: a member who
+  // cannot release must STAGE AND STOP rather than run
+  // `updateCodingProposal`'s third call into a 403 and read "that correction
+  // was NOT saved" about an act that was, in fact, queued.
+  'document.update-coding': true,
   'document.route': false,
   'document.archive': false,
-  'document.update-coding': false,
   'document.move-business': false,
   'document.reprocess': false,
   'document.reject': false,
   'document.split': false,
   'bank.confirm-match': false,
-  // Not a release: removal destroys DERIVED rows only — the source document
-  // stays in the vault and re-import re-proves D41, so it is internal and
-  // reversible in the sense that matters. What protects a client's bank data
-  // is the executor's refusals (confirmed matches, open chases, unprovable
-  // provenance), which bind the super admin too — the document.purge
-  // precedent. The banking design note recommended `false`; flagged for human
-  // ratification like every entry in this table (it is permission logic).
-  'bank.remove-statement': false,
-  'rule.create': false,
+  // ⚠ **TIER 1 since 6 Sep 2026 (item 66) — this RATIFIES the flag the entry
+  // was carrying.** It read `false` on the ground that removal destroys DERIVED
+  // rows only: the source document stays in the vault and re-import re-proves
+  // D41. Both halves are still true and neither is an undo. The derived rows
+  // ARE the period's reconciliation — every match, every explained line, every
+  // chase raised off a gap — and re-importing is a fresh run of the D41
+  // completeness gate, not a restore. The executor's refusals (confirmed
+  // matches, open chases, unprovable provenance) stay exactly as they are and
+  // bind the super admin too; they are a different guarantee, not a substitute
+  // for a signature.
+  'bank.remove-statement': true,
+  // ⚠ **TIER 1 since 6 Sep 2026 (item 66), and the widest blast radius in the
+  // product.** Governance §10.5 lets a standing policy execute WITHOUT a
+  // per-item proposal, on the sole ground that the policy itself was approved
+  // through this contract. If any member can approve the policy, that argument
+  // has nothing left in it: one approval buys unattended coding of every
+  // future document the rule matches. The review card already renders the rule
+  // in full — tier, scope, conditions and every field it sets — precisely
+  // because a reviewer has to see what will start coding their client's books.
+  // This says whose reading that has to be.
+  'rule.create': true,
   'document.revoke-link': false,
-  // Not a release: offboarding is soft and entirely internal — it flips
-  // `businesses.is_active`, sends nothing, and lets no figure leave the
-  // product (books, documents and audit trail are retained, D12). Nothing
-  // irreversible happens at the row level; the flag can be restored. D44's
-  // compose half therefore applies, the same reading as every other internal
-  // kind. Note there is no `business.reactivate` kind yet — the undo is a
-  // later surface, the `bank.unmatch` shape — so revisit this ruling if that
-  // asymmetry starts to matter in practice.
-  'business.offboard': false,
-  // ⚠ **`document.purge` is `false`, and this one was genuinely arguable.** It
-  // is irreversible — the only irreversible thing that can happen to a document
-  // — and irreversibility is half of what `RELEASE_KINDS` is about. It is
-  // `false` because the OTHER half is what the gate actually selects for:
-  // D44's two kinds both **reach outside the product** — a message to somebody
-  // else's client, a figure released for export — and a purge reaches nowhere.
-  // It destroys one of the practice's own rows, inside their own workspace,
-  // after a human already put it in Trash.
+  // ⚠ **TIER 1 since 6 Sep 2026 (item 66) — overturning the argument written
+  // here.** It read `false` because offboarding is soft and entirely internal:
+  // it flips `businesses.is_active`, sends nothing, and lets no figure leave
+  // the product. Two things answer that. First, this entry's own closing line
+  // asked to be revisited — *"there is no `business.reactivate` kind yet, so
+  // the undo is a later surface"* — and that day has not come, so the flag is
+  // one nobody in the product can flip back. Second, ending a client
+  // relationship is not the same size of act as archiving a receipt: the
+  // client's staff lose portal access the moment it executes, and item 67 is
+  // about to give it a deletion SCOPE and a subscription consequence (D48).
+  // A card whose blast radius has to be stated at Read review is a card
+  // somebody senior signs.
+  'business.offboard': true,
+  // ⚠ **TIER 1 since 6 Sep 2026 (item 66) — this is the reversal to read
+  // carefully, because the argument for `false` was a good one.**
   //
-  // What protects the outward promise here is not the approver's rank but the
-  // executor's refusal: a document that has been published or that carries a
-  // D43 capability link **cannot be purged by anybody**, super admin included.
-  // A permission gate would have been a weaker guarantee wearing a stronger
-  // word — it would let the one person who may release also destroy the link
-  // their release created. Revisit if a firm asks for it; the refusal is the
-  // part that must not move.
-  'document.purge': false,
+  // It said: irreversibility is only HALF of what this table is about, and the
+  // other half — reaching outside the product — a purge does not do. It
+  // destroys one of the practice's own rows, inside their own workspace, after
+  // a human already put it in Trash. That was sound while the table selected
+  // for outward acts. Part 2 changed the question to "whose signature does
+  // this carry", and a purge is the only unrecoverable thing in the product:
+  // the row, its extractions, its processing log and its duplicate pairs all
+  // go, and nothing brings them back.
+  //
+  // ⚠ **The executor's refusals are UNCHANGED and are still the real D43
+  // guarantee.** A document that has been published, or that carries a
+  // capability link, or that a statement names, cannot be purged by ANYBODY —
+  // the super admin included. That was the old entry's strongest point and it
+  // survives intact: it protects the export link, which is a different
+  // question from who signs for destroying a client's record. The two are
+  // belt and braces now rather than one standing in for the other.
+  'document.purge': true,
   // Not a release: a duplicate ruling is internal bookkeeping — the verdict is
   // re-rulable (a later decision supersedes), and delete-copy is the
   // REVERSIBLE Trash seam (restoration undoes it exactly). Nothing leaves the
@@ -199,10 +273,63 @@ export const RELEASE_KINDS: Readonly<Record<ProposalKind, boolean>> = {
   'document.resolve-duplicate': false,
 };
 
-/** Does approving this kind need release authority? */
+/** Does approving this kind need the super admin — i.e. is it tier 1? */
 export function requiresReleaseAuthority(kind: ProposalKind): boolean {
   return RELEASE_KINDS[kind];
 }
+
+/**
+ * Which {@link PermittedAction} names the approval of this kind.
+ *
+ * D44's two keep `publish.release` — Governance §11.2's own literal, and the
+ * only two acts its sentences describe truthfully. Everything else tier 1 got
+ * with item 66 is `proposal.approve`, whose sentences name the act the person
+ * actually pressed. Tier-2 kinds never reach here: the caller asks
+ * {@link requiresReleaseAuthority} first.
+ */
+function approvalAction(kind: ProposalKind): 'publish.release' | 'proposal.approve' {
+  return kind === 'publish.batch' || kind === 'chase.send' ? 'publish.release' : 'proposal.approve';
+}
+
+/**
+ * The one call site's convenience — the approve path asks this and nothing
+ * else. It exists because {@link assertCan} is overloaded per action name, so a
+ * caller holding a UNION of two names matches neither overload; picking the
+ * name here keeps that choice in the file that owns the reasoning rather than
+ * in the engine.
+ */
+export function assertCanApprove(actor: Actor, resource: ProposalResource): void {
+  const action = approvalAction(resource.kind);
+  if (action === 'publish.release') assertCan(actor, action, resource);
+  else assertCan(actor, action, resource);
+}
+
+/**
+ * What a refused approver READS, per tier-1 kind that is not D44's two.
+ *
+ * Written to be read by the person who pressed the button. Each names the act
+ * in their words, says who holds it, and — unlike the two release sentences —
+ * states that the thing they did is not lost: under item 66's literal ruling a
+ * standard user's ordinary coding correction now lands here, and telling them
+ * only "you may not" about a proposal that IS staged and IS in the queue would
+ * be a true sentence that leaves them believing something false.
+ *
+ * ⚠ Total over the five, by construction: the fallback is unreachable for a
+ * tier-1 kind today, and a kind promoted to tier 1 without a sentence gets a
+ * generic one rather than a crash. The sentence is the product; add it.
+ */
+const TIER_1_REFUSAL: Partial<Record<ProposalKind, string>> = {
+  'document.update-coding':
+    "Only your practice's super admin can approve a change to a document's figures or coding. This correction is queued for them — nothing on the document has changed yet.",
+  'bank.remove-statement':
+    "Only your practice's super admin can approve removing a bank statement. The removal is queued for them; every transaction is still there.",
+  'document.purge':
+    "Only your practice's super admin can approve deleting documents permanently. The deletion is queued for them; the documents are still in Trash.",
+  'business.offboard':
+    "Only your practice's super admin can approve removing a client. The removal is queued for them; the client is unchanged.",
+  'rule.create':
+    "Only your practice's super admin can approve a new coding rule. The rule is queued for them and codes nothing until they approve it.",
+};
 
 /** D44's whole rule, in one expression: the release role AND the ownership flag. */
 export function mayRelease(actor: Actor): boolean {
@@ -407,6 +534,13 @@ export function mayManageBilling(actor: Actor): boolean {
  */
 export function assertCan(actor: Actor, action: 'publish.release', resource: ProposalResource): void;
 /**
+ * `proposal.approve` takes the resource for `publish.release`'s reason exactly:
+ * the decision is authorised against ONE proposal, and the KIND is what selects
+ * the sentence. Prefer {@link assertCanApprove} at a call site — it picks
+ * between the two names so the engine does not have to know there are two.
+ */
+export function assertCan(actor: Actor, action: 'proposal.approve', resource: ProposalResource): void;
+/**
  * `team.invite` takes NO resource, and the missing argument is the shape of the
  * decision rather than an omission. A release is authorised against one
  * proposal; inviting is authorised against the practice the session already
@@ -496,7 +630,20 @@ export function assertCan(actor: Actor, action: PermittedAction, resource?: Prop
     );
   }
 
+  // `proposal.approve` and `publish.release` share ONE predicate — item 66's
+  // tier 1 is `mayRelease` and nothing else — and differ only in the sentence.
   if (mayRelease(actor)) return;
+
+  if (action === 'proposal.approve') {
+    throw new AppException(
+      'NT-PRM-001',
+      HttpStatus.FORBIDDEN,
+      'Not permitted',
+      (resource === undefined ? undefined : TIER_1_REFUSAL[resource.kind]) ??
+        "Only your practice's super admin can approve this. It is queued for them; nothing has changed yet.",
+    );
+  }
+
   throw new AppException(
     'NT-PRM-001',
     HttpStatus.FORBIDDEN,

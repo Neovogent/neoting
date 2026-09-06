@@ -49,7 +49,7 @@ import {
   runDedupeFollowUp,
   runPublishFollowUp,
 } from '../validation-dedupe/index.js';
-import { assertCan, requiresReleaseAuthority, resolveActor } from './assert-can.js';
+import { assertCanApprove, requiresReleaseAuthority, resolveActor } from './assert-can.js';
 import { appendAuditEvent } from './audit-writer.js';
 import { canonicalHash } from './canonical-hash.js';
 import { knownProposalKind, parseStoredProposalPayload } from './proposal-body.js';
@@ -470,7 +470,12 @@ export class ActionProposalsService {
       // nothing it could name is a release, so it never reaches an effect.
       const kind = knownProposalKind(proposal.kind);
       if (kind !== null && requiresReleaseAuthority(kind)) {
-        assertCan(await resolveActor(db, ctx), 'publish.release', {
+        // `assertCanApprove`, not `assertCan(…, 'publish.release', …)`: since
+        // item 66 tier 1 holds SEVEN kinds, and the five that are not D44's two
+        // answer to `proposal.approve` so a refused approver reads a sentence
+        // about the act they pressed. One predicate, two names —
+        // `assert-can.ts` picks between them.
+        assertCanApprove(await resolveActor(db, ctx), {
           kind,
           proposalId: proposal.id,
           businessId: proposal.businessId,

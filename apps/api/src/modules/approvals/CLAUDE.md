@@ -238,6 +238,68 @@ it cannot render a section (`apps/web/src/api/proposals.ts`, fail-closed) — th
 new sections use the same `{heading, entries[{label, value}]}` shape, so nothing
 on the web side had to change to display them.
 
+## The tier table — item 66, 6 Sep 2026 (`RELEASE_KINDS` is no longer D44's two)
+
+`docs/Access_and_Approval_Matrix.md` **Part 2** is now the governing document for
+this module's authority, the way Part 1 already was for the other five
+`PermittedAction`s. Read it before touching `RELEASE_KINDS`.
+
+**What changed is the QUESTION the table asks.** It was built to select for *acts
+that reach outside the product* — D44's two, and the file said so in as many
+words. Item 66 asks *what does the firm's principal sign for?*, of which
+"reaches outside and cannot be taken back" is one answer among several;
+irreversibility and blast radius are the others. **Five kinds moved up, and
+three of them overturn arguments written in this repo.** Each reversal is named
+at its own entry in `assert-can.ts` — a reversed ruling that is not visible at
+the reversal is a trap for the next reader.
+
+| Kind | Was | Now | The reversal, in one line |
+|---|---|---|---|
+| `document.update-coding` | 2 | **1** | ⚖5's LITERAL reading — *"any filed update like the category… and this typo things"* means every field. The field split was offered and declined; it is kept in the matrix as the change to make if the queue ever does drown |
+| `bank.remove-statement` | 2 | **1** | the entry was already *"flagged for human ratification"*; this is the ratification |
+| `document.purge` | 2 | **1** | the only unrecoverable act in the product. ⚠ the executor's refusals are UNCHANGED and still bind the super admin — belt and braces now, not one standing in for the other |
+| `business.offboard` | 2 | **1** | its own entry asked to be revisited when no `business.reactivate` existed. It still does not |
+| `rule.create` | 2 | **1** | Governance §10.5 lets an approved policy execute with no per-item proposal. If anyone can approve the policy, §10.5 has nothing left in it |
+
+⚠ **`document.revoke-link` stays tier 2 and is now the one outward act that
+does.** Containment: a rule that lets only one person stop a leaked link makes
+the leak last longer. Unchanged reasoning, more conspicuous position.
+
+### `proposal.approve` — the seventh `PermittedAction`
+
+Same predicate as `publish.release` (`mayRelease`, verbatim), separate NAME,
+per-kind sentence — this file's own rule from `business.billing.manage` and
+`team.manage`, applied a third time. *"Only your practice's super admin can
+release documents for export"* said to somebody who pressed Approve on a
+category fix is a wrong answer in a right status code. `publish.release` keeps
+D44's two and keeps meaning exactly what Governance §11.2 said.
+
+**Call it through `assertCanApprove(actor, resource)`**, not `assertCan`
+directly: `assertCan` is overloaded per action name, so a caller holding a union
+of two names matches neither overload, and the choice between them belongs in
+the file that owns the reasoning. One call site — the approve path.
+
+⚠ **The tier-1 sentences say the act is QUEUED, and that is load-bearing.**
+Under ⚖5's literal ruling an ordinary standard user's coding correction now
+lands on a 403, and *"you may not"* alone would leave them believing the fix was
+lost. It was staged; it is in the queue.
+
+### Tier 1 does not mean "waits"
+
+Matrix gate ⚖6: when the super admin is the one staging, the same
+stage → Read review → Approve happens INLINE in the dialog they are standing in
+— identical record, no queue. The tier says whose signature the record carries,
+never that somebody has to wait. `apps/web` owns that sequence; nothing here
+changes for it.
+
+⚠ **The web consequence of ⚖5 is real and is the package's next commit.**
+`api/document-detail.ts`'s `updateCodingProposal` bundles create → review →
+approve into ONE call behind the correction modal's [Approve] button. For a
+member who cannot release, its third call now answers 403 and the card says
+*"That correction was NOT saved"* — true of the value, wrong about the act. It
+has to stage and stop instead. Until that lands, a non-owner's coding correction
+on this branch shows a refusal where it should show "queued".
+
 ## The release gate — D44, stage A12
 
 `assert-can.ts`, called from `action-proposals.service.ts` on the **approve**
