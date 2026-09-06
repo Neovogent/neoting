@@ -1356,6 +1356,19 @@ function Label({ children }: { children: React.ReactNode }) {
 function Chip({ children, active, onClick }: { children: React.ReactNode; active: boolean; onClick: () => void }) {
   return (
     <button
+      // ⚠ `type="button"` IS THE FIX FOR REVIEW ITEM 38, and it is load-bearing.
+      // A `<button>` inside a `<form>` defaults to `type="submit"`, so clicking
+      // a role or client pill in `InviteColleagueForm` ran the form's `onSubmit`
+      // — an invitation EMAIL, sent on a mis-click, before the person had
+      // finished filling the dialog in. The reporter hit it in the order a
+      // person naturally works: type the address, then pick a client.
+      //
+      // The default is the trap: nothing about this component says "form", and
+      // the form is two hundred lines away. Every non-submit button in this file
+      // therefore states its type, and `TeamView.test.tsx` pins the behaviour
+      // rather than the attribute, so a future pill built from scratch is caught
+      // by what it does rather than by what it was remembered to say.
+      type="button"
       onClick={onClick}
       className={`px-3.5 py-2 rounded-full text-[13px] font-bold border transition-all ${
         active
@@ -1371,6 +1384,10 @@ function Chip({ children, active, onClick }: { children: React.ReactNode; active
 function IconBtn({ icon: Icon, title, onClick }: { icon: LucideIcon; title: string; onClick: () => void }) {
   return (
     <button
+      // Stated for {@link Chip}'s reason. This one is not inside a form today;
+      // it is a generic button helper in a file that hosts one, which is exactly
+      // how the next occurrence of item 38 would arrive.
+      type="button"
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       title={title}
       className="p-2 rounded-lg text-zinc-500 hover:text-white hover:bg-white/5 transition-colors"
@@ -1581,7 +1598,7 @@ const inviteFormM = defineMessages({
  * under the picker instead — a chip that produced a `400` would teach the user
  * nothing about why.
  */
-function InviteColleagueForm({
+export function InviteColleagueForm({
   clients,
   onClose,
   onInvited,
