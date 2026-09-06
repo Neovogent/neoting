@@ -353,3 +353,89 @@ Two things it deliberately does **not** do, both flagged rather than guessed:
 commits, `sendClientInvite` may refuse, `remember()` is only reached on success).
 Untouched here because it was outside the reviewed change set — reported, not
 fixed.
+
+## Full practice member management (6 Sep 2026 — review item 57)
+
+Four operations the TODO above listed as *"no contract operation exists"*, plus
+the list change they needed. `PracticeTeamService` grew
+`updatePracticeMember`, `removePracticeMember`, `revokePracticeInvitation` and
+`resendPracticeInvitation`; `practice-members.controller.ts` gained `PATCH` and
+`DELETE` on `{userId}`, and a THIRD controller — `PracticeInvitationsController`
+at `/practice-invitations` — because an invitation has no user id and
+`/practice-members/invitations/{id}` would collide with `{userId}`.
+
+### ⚠ An edit REWRITES memberships; it does not update a field
+
+Per-client access is not a column. A practice-wide colleague holds one row with
+`business_id` null; a scoped one holds a row per client with **`practice_id`
+NULL**, because `app_can_access_business`'s third branch would otherwise hand
+them every client of any practice they carry a `practice_id` on. So moving
+between the two is a delete-and-write, and **`membershipShapeFor` is
+deliberately identical to what `invitation-acceptance.service.ts#provision`
+writes** — an edited colleague and an accepted one must end up with the same
+shape or RLS would treat them differently. If one of the two moves, move both.
+
+`businessIds` keeps the invitation's semantics exactly: **empty means EVERY
+client**. An OMITTED field is unchanged, so a role edit is not a silent widening.
+
+### The guards, and why they are here rather than in `assert-can.ts`
+
+| Rule | Refusal |
+|---|---|
+| The owner cannot be changed OR removed | `403 NT-PRM-001`, `ownerIsFixed` |
+| `PRACTICE_ADMIN` cannot be granted by an edit | `400 NT-VAL-001`, `assertInvitableRole` — the same refusal the invite path gives |
+| Nobody removes themselves | `403 NT-PRM-001` |
+| A colleague at another firm | `404`, via `readFirmMember`'s `firmMembership` lookup — never a bare `userId` |
+
+All four are about the **subject**, not the actor. `assertCanManageTeam` answers
+*may this person act*; these answer *may this happen to that person*, and the
+authority seam has never been told who the subject is.
+
+⚠ **Re-scoping the owner is refused along with demoting them.** A practice-wide
+owner narrowed to two clients is the same D44 outage wearing a different field.
+
+⚠ **`PRACTICE_ADMIN` by edit is Shakib's explicit ruling**
+(`docs/Access_and_Approval_Matrix.md` gate ⚖3, 6 Sep 2026), not an inherited
+default. It comes back the day an ownership-TRANSFER operation exists, and
+`INVITABLE_PRACTICE_ROLES` in `team-authority.ts` is the one constant that
+changes on that day.
+
+### Removal deletes MEMBERSHIPS, never the person
+
+The subject is their access to THIS firm; a `users` row is not the firm's to
+disable. With no membership left, `loadScopeForUser` answers null and their next
+request is a `401`. Everything they did keeps their `userId` — an audit trail
+that forgets who acted is not one — and re-inviting re-attaches nothing, because
+nothing was detached.
+
+### Expired invitations are LISTED now
+
+`listPracticeMembers` dropped them with the comment *"an expired one is not
+something to wait for"* — true while there was nothing to be done about one.
+`resendPracticeInvitation` mints a fresh token on the same row, so an expired
+invitation the screen cannot show is one nobody can re-send. `Invite.expiresAt`
+already distinguishes them; no field was added. **Accepted ones stay absent**:
+that person is a member.
+
+⚠ **A re-send SUPERSEDES.** One row stores one `token_hash`, so the previous
+link dies. That is the honest behaviour — two live links to one invitation is
+one more than anybody meant to create — and it is also the fix for the "a fresh
+key still writes a second outstanding invitation" hazard recorded above, for the
+re-send path at least: re-sending refreshes the row instead of adding one.
+
+### The audit gap in the TODO above is half-closed
+
+These four writes append to the practice's `(no-business)` chain through
+`approvals`' seam (`businessId: null` — a colleague's role and client list are
+the firm's facts, not any one client's; `proposalId: null` because they are
+`ingest`). **Intake and the invite itself still write none** — that half of the
+TODO stands.
+
+### Item 39's correction to `requirePractice`
+
+⚠ Its message said *"this account does not act for a practice"* to a
+`PRACTICE_STANDARD` invited with a client list — who genuinely is practice
+staff, and whose memberships carry no `practice_id` by design. **The predicate
+is a SCOPE test, not a role test**, and the sentence now says so. The identical
+correction was made to `client-intake.service.ts`; if a third predicate of that
+shape appears, it needs the same sentence.

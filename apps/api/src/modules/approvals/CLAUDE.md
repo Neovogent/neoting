@@ -588,3 +588,56 @@ pnpm --filter @neoting/api test -- approvals            # unit, offline
 - [ ] Approval *workflows* (multi-stage/branching), expiry sweep, pseudonym
       map.
 - [ ] Update this file on exit — it is how the next session picks up.
+
+## Two more `PermittedAction`s, and the rule about naming them (6 Sep 2026 — review items 44, 57)
+
+`assert-can.ts` now carries **six**: `publish.release`, `team.invite`,
+`team.manage`, `business.people.manage`, `business.profile.manage`,
+`business.billing.manage`. Two arrived together with the access-control package
+and both are the same shape — **a name of their own for a predicate that already
+existed** — so the rule they establish is worth stating once:
+
+> **When an act needs the same authority as an existing action but a DIFFERENT
+> refusal sentence, add the name and share the predicate.** The message is the
+> whole user-facing product of a permission check. *"Only an owner at your
+> business can change its own details"* said to somebody who pressed a billing
+> button, or *"Only a practice admin can invite a colleague"* said to somebody
+> who pressed Remove, is a wrong answer in a right status code. A second
+> PREDICATE would be a second thing free to disagree, which this file's header
+> refuses; a second NAME costs ten lines and keeps the two free to diverge
+> later without one quietly widening the other.
+
+Ruled at `docs/Access_and_Approval_Matrix.md` gate ⚖2 (Shakib, 6 Sep 2026), and
+applied to gate ⚖3's batch in the same package.
+
+### `business.billing.manage` — and the hole it closed
+
+⚠ **It is not a tidy-up.** `billing.controller.ts`'s `principalFor` — shared by
+checkout and the customer portal — checked that the portal session's business
+equalled the body's `businessId` **and nothing else**. Tenancy, correctly; and no
+answer at all to *may this person touch it*. So every contact of a business
+holding a portal bearer, including a `BUSINESS_STANDARD` added to photograph
+receipts, could mint a Stripe customer-portal session and reach the card, every
+invoice and **cancellation**.
+
+`BUSINESS_ADMIN` only, deliberately narrower than `business.people.manage`: a
+`USER_ADMIN` holds people management and *"nothing else"* (that role's whole
+definition), and an office manager who can add a new starter is not thereby
+somebody who may cancel the company's subscription. Both doors are bound,
+because starting a subscription and cancelling one are the same authority from
+two ends.
+
+### `team.manage` — the four practice-team writes
+
+Shares `mayManageTeam` with `team.invite` verbatim: every one of those acts
+(edit a colleague, end their access, revoke an invitation, re-send a link) is
+reversible, internal and reaches nobody outside the firm. `assertCanManageTeam`
+is the exported convenience the one consumer calls.
+
+⚠ **The refusals that BOUND those acts are not here, and that is deliberate.**
+The owner being unchangeable and unremovable, `PRACTICE_ADMIN` being
+ungrantable, nobody removing themselves — those are about the SUBJECT, and this
+file has never been told who the subject is. They live in
+`practice-team.service.ts`. An authority check answers *may this person act*;
+folding a rule about the owner into it would put a fact it cannot see inside a
+function that fails closed on absence.
