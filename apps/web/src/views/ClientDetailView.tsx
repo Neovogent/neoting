@@ -1,6 +1,6 @@
 import { Fragment, lazy, Suspense, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  ArrowLeft, Sparkles, Send, Activity, Star,
+  ArrowLeft, ArrowRight, Sparkles, Send, Activity, Star,
   RefreshCw, CheckCircle, Eye, Users, Settings as SettingsIcon, Download, Smartphone,
   Radio, History, ListChecks, Bot, Circle, Plus, PencilLine, X as XIcon, ShieldCheck, Clock, Check,
   UserMinus, Upload, LucideIcon,
@@ -53,7 +53,7 @@ const ClientChases = lazy(() => import('./ClientChases'));
 const ClientExpenseClaims = lazy(() => import('./ClientExpenseClaims').then((m) => ({ default: m.ClientExpenseClaims })));
 import { currency } from '../lib/resolver';
 import { healthTone } from '../lib/selectors';
-import { fromSlug, slug, useQueryParam, useSegment } from '../lib/router';
+import { fromSlug, navigate, path, slug, useQueryParam, useSegment } from '../lib/router';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { OffboardClientDialog } from '../components/DynamicComponents/OffboardClientDialog';
 import { channelLabel } from '../lib/channels';
@@ -180,6 +180,67 @@ const m = defineMessages({
   promptMatches: { id: 'clients.clientDetailView.promptMatches', defaultMessage: 'Show the bank matches for {client}' },
   promptApprovals: { id: 'clients.clientDetailView.promptApprovals', defaultMessage: 'Which items are waiting on approval?' },
   promptReply: { id: 'clients.clientDetailView.promptReply', defaultMessage: 'Here you go:' },
+  // Data-aware chips (review item 65): a suggestion is a CLAIM there is
+  // something to see, so each chip carries its live count and a zero-count
+  // question is simply not offered. The chip's words double as the utterance
+  // the real chat lane answers.
+  chipApprovals: {
+    id: 'clients.clientDetailView.chipApprovals',
+    defaultMessage: '{count, plural, one {# item is} other {# items are}} waiting on approval — review them?',
+  },
+  chipMissing: {
+    id: 'clients.clientDetailView.chipMissing',
+    defaultMessage: '{count, plural, one {# document is} other {# documents are}} missing — what is still missing for {client}?',
+  },
+  chipToReview: {
+    id: 'clients.clientDetailView.chipToReview',
+    defaultMessage: '{count, plural, one {# document is} other {# documents are}} waiting for review — show them?',
+  },
+  chipOverdue: {
+    id: 'clients.clientDetailView.chipOverdue',
+    defaultMessage: '{count, plural, one {# chase is} other {# chases are}} overdue — what is outstanding?',
+  },
+  chipsEmpty: {
+    id: 'clients.clientDetailView.chipsEmpty',
+    defaultMessage: 'Nothing is waiting on {client} right now — ask anything below.',
+  },
+  chipsUnverified: {
+    id: 'clients.clientDetailView.chipsUnverified',
+    defaultMessage:
+      'The client\'s counts could not be read, so no suggestions are offered — a suggestion over unread data would be a guess.',
+  },
+  // The proactive half (item 65): next actions composed from the SAME served
+  // counts, each linking to the surface where it is done. No model call — the
+  // numbers are the server's, and a zero simply produces no line.
+  panelNeedsDoing: { id: 'clients.clientDetailView.panelNeedsDoing', defaultMessage: 'What needs doing' },
+  needsDoingIntro: {
+    id: 'clients.clientDetailView.needsDoingIntro',
+    defaultMessage: 'Composed from {client}\'s live pipeline counts — each action opens the surface where it is done.',
+  },
+  todoChase: {
+    id: 'clients.clientDetailView.todoChase',
+    defaultMessage: 'Chase {count, plural, one {# missing document} other {# missing documents}}',
+  },
+  todoReview: {
+    id: 'clients.clientDetailView.todoReview',
+    defaultMessage: 'Review {count, plural, one {# document} other {# documents}} waiting in the inbox',
+  },
+  todoApprovals: {
+    id: 'clients.clientDetailView.todoApprovals',
+    defaultMessage: 'Decide {count, plural, one {# item} other {# items}} in the Approvals queue',
+  },
+  todoReady: {
+    id: 'clients.clientDetailView.todoReady',
+    defaultMessage: 'Release {count, plural, one {# Ready document} other {# Ready documents}} for export',
+  },
+  todoOverdue: {
+    id: 'clients.clientDetailView.todoOverdue',
+    defaultMessage: 'Nudge {count, plural, one {# overdue chase} other {# overdue chases}}',
+  },
+  needsDoingEmpty: {
+    id: 'clients.clientDetailView.needsDoingEmpty',
+    defaultMessage: 'Nothing needs doing for {client} right now.',
+  },
   newConversation: { id: 'clients.clientDetailView.newConversation', defaultMessage: 'New conversation' },
   panelConversations: { id: 'clients.clientDetailView.panelConversations', defaultMessage: 'Conversations about this client' },
   conversationsEmpty: {
@@ -1114,26 +1175,106 @@ export function ClientDetailView() {
           {/* Wireframe: "[AI] tab = same chat as screen 3, pre-scoped to this
               client." The chat is the full workspace, so this tab is the way
               in and the record of what has already been asked. */}
-          {tab === 'AI' && (
+          {tab === 'AI' && (() => {
+            /**
+             * Item 65: everything on this tab derives from the SAME served
+             * counts `statsFor` answers (live: BusinessSummary.counts). Live
+             * with the businesses slice unread, the honest answer is "can't
+             * verify" — zeros over unread data would be item 25's confident
+             * all-clear, one tab over. Synthetic derives from the seeded
+             * arrays, which METH_MODE §1 keeps truthful.
+             */
+            const countsVerified = !API_ENABLED || slices.businesses.source === 'api';
+            const chips = [
+              s.approvals > 0 && {
+                q: intl.formatMessage(m.chipApprovals, { count: s.approvals }),
+                intent: 'SHOW_APPROVALS' as Intent,
+              },
+              s.missing > 0 && {
+                q: intl.formatMessage(m.chipMissing, { count: s.missing, client: client.name }),
+                intent: 'SHOW_MISSING' as Intent,
+              },
+              s.toReview > 0 && {
+                q: intl.formatMessage(m.chipToReview, { count: s.toReview }),
+                intent: 'SHOW_INBOX' as Intent,
+              },
+              s.overdue > 0 && {
+                q: intl.formatMessage(m.chipOverdue, { count: s.overdue }),
+                intent: 'SHOW_MISSING' as Intent,
+              },
+            ].filter((chip): chip is { q: string; intent: Intent } => chip !== false);
+            const todos = [
+              s.missing > 0 && {
+                label: intl.formatMessage(m.todoChase, { count: s.missing }),
+                go: () => setTab('Chases'),
+              },
+              s.toReview > 0 && {
+                label: intl.formatMessage(m.todoReview, { count: s.toReview }),
+                go: () => setTab('Costs'),
+              },
+              s.approvals > 0 && {
+                label: intl.formatMessage(m.todoApprovals, { count: s.approvals }),
+                go: () => setActiveTab('Approvals'),
+              },
+              s.ready > 0 && {
+                label: intl.formatMessage(m.todoReady, { count: s.ready }),
+                go: () => navigate(path('clients', client.id, 'costs', 'ready')),
+              },
+              s.overdue > 0 && {
+                label: intl.formatMessage(m.todoOverdue, { count: s.overdue }),
+                go: () => setTab('Chases'),
+              },
+            ].filter((todo): todo is { label: string; go: () => void } => todo !== false);
+            return (
             <div data-tour="client-ai" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Panel title={intl.formatMessage(m.panelNeedsDoing)} icon={ListChecks}>
+                <p className="text-[13px] text-zinc-500 leading-relaxed mb-5">
+                  {intl.formatMessage(m.needsDoingIntro, { client: client.name })}
+                </p>
+                {!countsVerified ? (
+                  <p role="alert" className="text-[13px] text-amber-400">{intl.formatMessage(m.chipsUnverified)}</p>
+                ) : todos.length === 0 ? (
+                  <p className="text-[13px] text-zinc-500">
+                    {intl.formatMessage(m.needsDoingEmpty, { client: client.name })}
+                  </p>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {todos.map((todo) => (
+                      <button
+                        key={todo.label}
+                        onClick={todo.go}
+                        className="flex items-center justify-between gap-3 text-left px-4 py-3 rounded-2xl bg-ground/60 border border-white/5 text-[13px] font-semibold text-zinc-300 hover:text-white hover:border-white/15 transition-colors"
+                      >
+                        {todo.label}
+                        <ArrowRight size={14} className="shrink-0 text-zinc-600" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </Panel>
+
               <Panel title={intl.formatMessage(m.panelAskAboutClient)} icon={Bot}>
                 <p className="text-[13px] text-zinc-500 leading-relaxed mb-5">
                   {intl.formatMessage(m.askIntro, { client: client.name })}
                 </p>
                 <div className="flex flex-col gap-2 mb-5">
-                  {([
-                    { q: intl.formatMessage(m.promptMissing, { client: client.name }), intent: 'SHOW_MISSING' },
-                    { q: intl.formatMessage(m.promptMatches, { client: client.name }), intent: 'SHOW_MATCHES' },
-                    { q: intl.formatMessage(m.promptApprovals), intent: 'SHOW_APPROVALS' },
-                  ] satisfies { q: string; intent: Intent }[]).map((p) => (
-                    <button
-                      key={p.q}
-                      onClick={() => scoped(p.intent, p.q, intl.formatMessage(m.promptReply))}
-                      className="text-left px-4 py-3 rounded-2xl bg-ground/60 border border-white/5 text-[13px] text-zinc-300 hover:text-white hover:border-white/15 transition-colors"
-                    >
-                      {p.q}
-                    </button>
-                  ))}
+                  {!countsVerified ? (
+                    <p role="alert" className="text-[13px] text-amber-400">{intl.formatMessage(m.chipsUnverified)}</p>
+                  ) : chips.length === 0 ? (
+                    <p className="text-[13px] text-zinc-500">
+                      {intl.formatMessage(m.chipsEmpty, { client: client.name })}
+                    </p>
+                  ) : (
+                    chips.map((p) => (
+                      <button
+                        key={p.q}
+                        onClick={() => scoped(p.intent, p.q, intl.formatMessage(m.promptReply))}
+                        className="text-left px-4 py-3 rounded-2xl bg-ground/60 border border-white/5 text-[13px] text-zinc-300 hover:text-white hover:border-white/15 transition-colors"
+                      >
+                        {p.q}
+                      </button>
+                    ))
+                  )}
                 </div>
                 <button
                   onClick={() => startConversation([client.id])}
@@ -1176,7 +1317,8 @@ export function ClientDetailView() {
                 )}
               </Panel>
             </div>
-          )}
+            );
+          })()}
 
           {/* Wireframe screen 10, Statements sub-tab: uploaded statements plus
               gap detection, where a gap is chaseable in one step. */}

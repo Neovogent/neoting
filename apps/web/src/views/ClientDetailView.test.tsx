@@ -54,6 +54,8 @@ const CLIENT = {
 let businessesSource: 'api' | 'seed' = 'api';
 // Per-test overrides on the client row (subscription status, contact email…).
 let clientOver: Partial<import('../lib/types').Client> = {};
+// Per-test overrides on the served counts (the AI tab derives from them — item 65).
+let statsOver: Partial<ClientStats> = {};
 const setActiveTab = vi.fn();
 
 vi.mock('../context/AppContext', () => ({
@@ -61,7 +63,7 @@ vi.mock('../context/AppContext', () => ({
     clients: [{ ...CLIENT, ...clientOver }],
     openClientId: 'biz_sparkle',
     openClient: vi.fn(),
-    statsFor: () => STATS,
+    statsFor: () => ({ ...STATS, ...statsOver }),
     documents: [],
     missing: [],
     approvals: [],
@@ -105,6 +107,7 @@ vi.mock('../context/AppContext', () => ({
 beforeEach(() => {
   businessesSource = 'api';
   clientOver = {};
+  statsOver = {};
   // The tab is the address's third segment — this is how a person gets here.
   window.history.replaceState(null, '', '/clients/biz_sparkle/settings');
   vi.mocked(createProposal).mockResolvedValue({
@@ -254,4 +257,37 @@ test('on seed data the affordance is disabled with the reason — a removal is n
   );
   fireEvent.click(removeButton());
   expect(screen.queryByRole('dialog')).toBeNull();
+});
+
+// ── The AI tab earns its suggestions (review item 65) ──────────────────────
+// A suggestion is a claim there is something to see; only true claims render.
+
+test('AI tab, everything at zero: no chips, honest empty sentences on both panels', () => {
+  window.history.replaceState(null, '', '/clients/biz_sparkle/ai');
+  renderView();
+
+  // The old static approvals question is NOT offered at count zero.
+  expect(screen.queryByText(/waiting on approval/)).toBeNull();
+  expect(screen.getByText(/Nothing is waiting on Sparkle Cleaning Ltd right now/)).toBeTruthy();
+  expect(screen.getByText('Nothing needs doing for Sparkle Cleaning Ltd right now.')).toBeTruthy();
+});
+
+test('AI tab, live counts: chips carry the numbers, and each todo opens its surface', () => {
+  statsOver = { approvals: 3, missing: 4, ready: 2 };
+  window.history.replaceState(null, '', '/clients/biz_sparkle/ai');
+  renderView();
+
+  // The chips claim exactly what the served counts hold.
+  expect(screen.getByText('3 items are waiting on approval — review them?')).toBeTruthy();
+  expect(
+    screen.getByText('4 documents are missing — what is still missing for Sparkle Cleaning Ltd?'),
+  ).toBeTruthy();
+  // Zero-count questions stay unoffered.
+  expect(screen.queryByText(/waiting for review — show them\?/)).toBeNull();
+
+  // "What needs doing" — composed from the same counts, linking to surfaces.
+  expect(screen.getByText('Chase 4 missing documents')).toBeTruthy();
+  expect(screen.getByText('Release 2 Ready documents for export')).toBeTruthy();
+  fireEvent.click(screen.getByText('Decide 3 items in the Approvals queue'));
+  expect(setActiveTab).toHaveBeenCalledWith('Approvals');
 });

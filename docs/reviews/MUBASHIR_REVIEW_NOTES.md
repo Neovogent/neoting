@@ -1128,6 +1128,35 @@ The AI tab's suggested prompts are a static list, offered regardless of whether 
 2. **Proactive task suggestions:** beyond Q&A chips, an "what needs doing for {client}" analysis — the AI reads the client's pipeline state and proposes next actions (chase these 4 missing documents, review the 2 low-confidence extractions, the statement for August is missing, export July) with each suggestion linking to the surface or staging the relevant proposal. This is the same grounded §9 read the MISSING/approvals intents already do, composed into a summary — and it must obey the item-25 rule: derived from actually-read data, honest when the read fails, never a confident guess. Depends on package A's data truth for the numbers to be worth showing.
 Also check why the clicked prompt's answer was literally "nothing" — an empty-set answer should still be a sentence ("Nothing is waiting on approval for Zeplow Inc.") rather than a blank card; if it rendered blank, that's a rendering bug in the approvals card (`SHOW_APPROVALS`, added in the items-9/12 second pass) to fix regardless.
 
+**✅ RESOLVED (6 Sep 2026, this branch — the smaller version, as the brief asked; no new server
+surface, no model call).**
+
+1. **The chips are data-aware.** The static three are gone; the chips derive from the SAME served
+   counts every surface reads (`statsFor` — live, `BusinessSummary.counts`), each carrying its
+   number as the claim: *"3 items are waiting on approval — review them?"*, *"4 documents are
+   missing — what is still missing for {client}?"*, plus to-review and overdue. **A zero-count
+   question is simply not offered**; all-zeros renders *"Nothing is waiting on {client} right
+   now"*. The chip's words are the utterance the real chat lane answers (#255's drill-in bridge —
+   live they submit through `POST /chat/turns`, synthetic keeps the injected card). The old
+   "Show the bank matches" chip retired: no served count exists to make its claim true, and the
+   Bank tab is one todo-link away. Item 25's rule enforced: live with the businesses slice unread,
+   both panels render *"the counts could not be read, so no suggestions are offered"* instead of
+   zeros dressed as an all-clear.
+2. **"What needs doing" is a new panel, first on the tab** — next actions composed from the same
+   counts, each opening the surface where it is done: chase N missing → the Chases tab (now
+   leading with the missing list, item 63), review N in the inbox → Costs, decide N approvals →
+   the Approvals queue, release N Ready for export → Costs → Ready, nudge N overdue → Chases.
+   Honest empty: *"Nothing needs doing for {client} right now."* **The smaller version was chosen
+   deliberately** (the brief's own instruction): composition over already-served counts, no model
+   call, no new server surface. The full §9 model-composed narrative ("the statement for August
+   is missing…") stays a named follow-up — it needs facts (per-month statement coverage,
+   low-confidence extractions) no count currently serves.
+3. **The bug check: SHOW_APPROVALS's empty state was verified NOT blank** — the card renders
+   *"The approval queue is empty."* plus the always-present "Open the Approvals queue" button
+   (the real queue reads `GET /action-proposals` itself). The reviewer's blank answer predates
+   item 9's SHOW_APPROVALS card (5 Sep). Now pinned in `IntentRenderer.test.tsx` so it cannot
+   regress to silence; the chips fix means the question is no longer offered at zero anyway.
+
 ## Item 66 — The approval matrix: draw the line between what needs super-admin approval and what doesn't
 
 **Original (verbatim):**
