@@ -70,6 +70,14 @@ const PER_ADDRESS_HOURLY: Readonly<Record<EmailKind, number>> = Object.freeze({
   'sign-in-code': 5,
   'client-invite': 5,
   'document-request': 10,
+  // A denial notice (item 27). TEN, the document-request ceiling rather than an
+  // invitation's, because this is the one kind here whose volume is a function
+  // of how much WORK a colleague did: a junior who staged twelve corrections
+  // over one client's month and had four of them sent back needs four emails,
+  // and the fourth is not spam. It is also the only kind on this list a
+  // stranger cannot cause — the recipient is a colleague of the sender's own
+  // practice, named by a proposal row, never an address anybody typed.
+  'proposal-denied': 10,
   // A colleague invitation, held at the SIGNUP ceiling rather than the client
   // one. It is the only invitation an authenticated caller can point at an
   // address of their choosing with no existing relationship behind it — a

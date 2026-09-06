@@ -81,7 +81,13 @@ beforeAll(async () => {
   await owner.practice.create({ data: { id: P, name: 'P13' } });
   await owner.business.create({ data: { id: BIZ, practiceId: P, name: 'American Burger Ltd' } });
   await owner.user.create({ data: { id: 'p13_user', email: 'p13@example.test' } });
-  await owner.membership.create({ data: { id: 'p13_mem', userId: 'p13_user', practiceId: P, role: 'PRACTICE_ADMIN' } });
+  // ⚠ `isOwner` set since review item 66: `rule.create` is TIER 1 now — a
+  // standing policy executes without a per-item proposal (Governance §10.5), so
+  // approving the policy is the firm's principal's signature. This suite tests
+  // the EXECUTOR; the authority gate has its own suite.
+  await owner.membership.create({
+    data: { id: 'p13_mem', userId: 'p13_user', practiceId: P, role: 'PRACTICE_ADMIN', isOwner: true },
+  });
   // The extraction pipeline runs as the practice SYSTEM actor (the p4 suite's
   // arrangement) — the rule beat's second half needs one.
   await owner.user.create({ data: { id: 'p13_sys', kind: 'SYSTEM' } });

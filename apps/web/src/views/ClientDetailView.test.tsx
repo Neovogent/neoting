@@ -60,6 +60,10 @@ const setActiveTab = vi.fn();
 
 vi.mock('../context/AppContext', () => ({
   useAppContext: () => ({
+    // D44, items 24/66: the offboard dialog's copy branches on this (a
+    // TIER-1 kind now). Owner by default, so the existing cases read the
+    // "you approve it" sentence; the member sentence has its own case.
+    session: { status: 'authenticated', me: { user: { id: 'usr_me' }, role: 'PRACTICE_ADMIN', isOwner: true } },
     clients: [{ ...CLIENT, ...clientOver }],
     openClientId: 'biz_sparkle',
     openClient: vi.fn(),

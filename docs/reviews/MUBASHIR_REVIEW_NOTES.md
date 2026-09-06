@@ -88,7 +88,7 @@ Items keep their own entries (original words + images preserved); this map is th
 | **D. One UK date control** | 16 · 28 · 46 | Build one shared d/m/y picker component; adopt on statement-request, ExportView, document-date correction |
 | **E. Channel & provenance** ✅ **RESOLVED (PR #260)** | 21 · 43 · 60(follow-up) · 62(provenance half) | Split chase-portal vs business-portal channels, honest labels everywhere, uploader/member identity on uploads and captures, Received-via column on Inboxes — all four entries below carry their ✅ blocks and evidence (`assets/2026-09-05-channel-provenance/`) |
 | **F. Portal & practice access control** ✅ **RESOLVED (6 Sep 2026)** | 39 · 41 · 42 · 44 · 57 (+38's form-submit fix) | `docs/Access_and_Approval_Matrix.md` with Shakib's three rulings recorded inline, self-describing access labels, member edit on both sides (the portal's was one button — its server half already existed), **Plan hidden from members AND the billing endpoints' missing authority check closed**, invite dialog fixed. Evidence in `assets/2026-09-06-access-control/` |
-| **G. Approvals spine + matrix** | 20 · 24 · 26 · 27 · 66 | The approval matrix (66 — what needs whose approval, super-admin fast path; ships as one doc with F's role matrix), duplicate-staging dedupe, Deny-with-reason loop, role-aware D44 copy, modal dismiss after decision |
+| **G. Approvals spine + matrix** ✅ **RESOLVED (6 Sep 2026)** | 20 · 24 · 26 · 27 · 66 | `docs/Access_and_Approval_Matrix.md` **Part 2** with Shakib's four rulings inline — three tiers over every proposal kind and all 33 ingest operations, five kinds promoted to tier 1 (three of them overturning arguments written in the repo), the super-admin fast path, idempotent staging (`NT-PRP-007`) with a cleanup script, the full Deny-with-reason loop (`DENIED` state, the email, the `READY → TO_REVIEW` drop wearing the reason), role-aware D44 copy from one shared fact, and the coding modal dismissing itself. Governance §10's spine untouched throughout. Evidence in `assets/2026-09-06-approvals/` |
 | **H. Workflows & rules** | 51 · 52 · 53 | One package: workflows contract/persistence first, then AI describe-parse, real branch composer, chat rule flow landing in the Workflows tab |
 | **I. Modal overflow** | **23 + 40 (merged)** | Fix the Modal frame, audit every dialog in a real browser, keep a reachability smoke |
 | **J. Coding intelligence** ✅ **RESOLVED (6 Sep 2026)** | 19 · 48 (+ 22/47's model halves) | The ladder, specified once and built: supplier memory shown at last, a model tier over the three escalations that meant *nothing was known*, and the model second opinion on manual corrections. Evidence in `assets/2026-09-06-coding-intelligence/`; §9.8 gate `pnpm test:eval:coding` |
@@ -207,6 +207,41 @@ Repo realities: the ladder's "refuse, never fuzzy-match, only codes on the clien
 **Brief:**
 The manual-category flow (DocumentPreview → correction → `CodingProposalModal`, the create → Read review → Approve ritual) shows its success state but does not release the dialog: the backdrop/scrim and blur stay after "Correction approved". Expected behaviour: show the confirmation, then **auto-dismiss the modal and backdrop** (brief delay or immediate close with the confirmation surfaced as a toast on the underlying screen), returning the user to the now-updated document detail. Fix lives in `apps/web/src/components/DynamicComponents/CodingProposalModal.tsx` (and possibly its host in `DocumentPreview`) — on approve-settled, call the modal's `onClose` after the confirmation renders instead of parking on the outcome banner. Note the Approvals queue deliberately keeps decided cards mounted with an outcome banner (`ApprovalsLiveQueue`) — that pattern is right for a queue and wrong for a modal over a document; don't "fix" the queue while fixing this. Pure web change, no contract impact.
 
+**✅ RESOLVED (6 Sep 2026, package G — the approvals package).**
+
+**What was done:** after you approve a category correction the confirmation
+shows and then the dialog and its blurred backdrop close themselves, putting
+you back on the updated document. No more dead screen to dismiss by hand.
+
+**Where it landed:** `CodingProposalCard` gained `onSettled`;
+`CodingProposalModal` holds the timer and calls `onClose` 1.4 s after the
+confirmation renders. ⚠ **It fires on the SERVER settle, never on the click** —
+`ReviewGate` shows its banner optimistically and a refusal a moment later swaps
+the card to its red `failedOnCard` alert, so dismissing on the click would throw
+away the one screen telling somebody their correction was not saved. The dwell
+is not zero either: a dialog that vanishes the instant you click leaves a person
+unsure anything happened. The timer is a ref cleared on unmount, and the `Modal`
+frame (items 23+40, #258) is untouched.
+
+The Approvals QUEUE keeps its decided-card outcome banners — that pattern was
+added because the settle refetch used to unmount them instantly, it is right for
+a queue and wrong for a modal over one document, and both files now say so.
+
+**Verified LIVE, both halves.** The success path: the confirmation on screen
+(`docs/reviews/assets/2026-09-06-approvals/09-coding-modal-confirmation.png`),
+then the dialog and its backdrop GONE, back on the updated document with
+Category reading `COS_FOOD_AND_DRINK` "✓ Confirmed by you" and the state moved
+to READY (`…/10-coding-modal-dismissed-itself.png`). And the half that matters
+more: a REFUSED correction keeps the dialog open with its red alert
+(`…/08-coding-modal-refusal-keeps-it-open.png`), because the dismissal fires on
+the server settle and not on the click. Both are pinned in
+`CodingProposalModal.test.tsx` with fake timers.
+
+⚠ Walking the success path took five seed defects with it — the document detail
+did not render at all on seeded data. See the last section of this file.
+
+---
+
 ## Item 21 — "Received via" says sms-link for a direct portal upload; map all receiving channels properly
 
 **Original (verbatim):**
@@ -308,6 +343,42 @@ The D44 note in `PublishBatchDialog.tsx` is deliberately generic because the ses
 2. If the contract can't move now, at least soften the unconditional sentence so it informs rather than lectures (e.g. lead with what the button does, put the who-releases fact in secondary text) — but any phrasing claiming "you can approve" without the server-known fact would violate the dialog's own honesty rule, so option 1 is the real fix.
 Same sweep should cover the sibling D44 sentences on other staging surfaces (`RequestStatementDialog`'s "sends only when your practice's super admin approves it", OffboardClientDialog, LiveProposalFlow copy) so the whole family goes role-aware together, from the same `/me` fact.
 
+**✅ RESOLVED (6 Sep 2026, package G).**
+
+**What was done:** the dialog stops lecturing you. As the super admin you now
+read *"You can approve this after reading the review — it opens as soon as you
+stage, and nothing is Published until you do."* Everybody else still reads who
+releases, and more plainly when their role is not the release role.
+
+**No contract delta was needed** — option 1 in the brief turned out to be
+already done. `Me.isOwner` is required in the contract and answered from the
+same acting membership `role` comes from; package F landed it. Recorded as a
+finding at `docs/Access_and_Approval_Matrix.md` gate ⚖9 rather than a gate.
+
+**Where it landed:** `holdsReleaseAuthority(session)` in `api/auth.ts` is
+`canRelease(role) && isOwner` — `mayRelease` in `assert-can.ts`, verbatim — and
+is the ONLY place any surface reads it, so the whole D44 family branches from
+one fact and cannot drift: `PublishBatchDialog`, `RequestStatementDialog`,
+`OffboardClientDialog` (whose generic "after it is approved" is deleted, since
+`business.offboard` is tier 1 now and that sentence let a standard user think
+their confirm was the decision), `LiveProposalFlow` and `CodingProposalCard`.
+
+⚠ The old rule is retired, its REASON is not: no branch says *"you have
+permission"*. They say what the flow does next, because the server is still the
+rule and a `/me` thirty seconds stale is exactly how its refusal arrives.
+
+**Plus ⚖5's live consequence, which is the other half of this item.**
+`document.update-coding` is tier 1 now and `updateCodingProposal` drove
+create → review → approve behind one click, so a standard user's third call
+answered 403 and the card said *"That correction was NOT saved"* — true of the
+value, wrong about the act. It stages and stops: the button reads **Send for
+approval**, the note names who releases, and the optimistic field update does
+not fire.
+
+**Verified LIVE:** `docs/reviews/assets/2026-09-06-approvals/01-d44-copy-role-aware.png`.
+
+---
+
 ## Item 25 — Chat gives a confidently wrong answer: "nothing missing" for a client with a screen full of undocumented transactions
 
 **Original (verbatim):**
@@ -341,6 +412,57 @@ Two asks plus one observation:
 2. **Self-approval flow for super admins (product decision, D44-adjacent):** his ruling — when the actor **is** a super admin (and there can be several), their own staged action shouldn't sit as a separate approval request for themselves; team-member requests are tracked per member and do require the release. Note carefully: Governance §10's spine (no state change outside ActionProposal / Review → Approve, enforced server-side + DB trigger) must survive — the cheapest compliant reading is a **fast path, not a bypass**: super admin stages and the same dialog immediately walks them through Read review → Approve in one flow (the machinery already exists — `LiveProposalCard` mounts right there), so the record is identical but nothing lingers in the queue. Removing Review → Approve for super admins outright would be a Governance change — Shakib's call, flag it.
 3. **Per-member attribution:** the proposer renders as a raw CUID (`CMTNDDE8P00337710E1…`) — resolve it to the member's name so the queue reads "proposed by Mubashir", which is half of his "keep track for each approval request" ask.
 
+**✅ RESOLVED (6 Sep 2026, package G).** All three asks.
+
+**1 · Duplicate suppression.** Staging the same act twice is refused server-side
+with `409 NT-PRP-007`, and the dialog says *"This release is already awaiting
+review — the same documents were staged for this client and nobody has decided
+it yet"* with an **Open Approvals** button. The `Idempotency-Key` never helped:
+each click carried a fresh one and was honestly a separate REQUEST — what they
+were not was a separate ACT.
+
+⚠ Identity is NOT the payload hash. The engine rewrites publish/chase/statement
+payloads at creation with live facts, so two identical clicks a minute apart
+hash differently the moment anything moves. `proposal-identity.ts` extracts the
+RECORD IDS, which survive the rewrite; total over `ProposalKind`, and `null`
+("never dedupe this kind") is a real answer — `rule.create` is the deliberate
+one, because two rules over one client are two rules. Three entries are traps a
+naive key would have set, each with a test: archive vs UNarchive over the same
+documents are opposite acts, revoke-link keys on LINKS not documents, and a
+duplicate ruling keys on the ORDERED pair.
+
+**Cleanup for the queue as it stands:** `scripts/cleanup-duplicate-proposals.ts`
+(`--dry-run` by default). Same identity function as the server, keeps the newest
+of each group, CANCELS the rest with `outcome.supersededBy`. Nothing is deleted.
+⚠ Its first draft printed *"Scanned 0 … nothing to do"* against a database
+holding six, because `action_proposals` is RLS-FORCED and an unscoped read
+answers empty without erroring — the trap `backfill-import-fingerprints.ts`
+records one table over. It now sweeps practice by practice through `scopedDb`,
+and the walkthrough is what caught it.
+
+**2 · The super-admin fast path.** Governance §10's spine survives intact: a
+tier-1 action staged by the super admin does not QUEUE — the same
+stage → Read review → Approve happens inline, and the record written is
+byte-for-byte the record a queued approval writes. ⚠ It automates [Read review]
+and nothing else; Approve still mounts only after the server's own render
+arrives and a human still presses it. Ruled at
+`docs/Access_and_Approval_Matrix.md` ⚖6.
+
+**3 · Per-member attribution.** The queue rendered `createdByUserId` raw. It now
+falls through a resolved name (from the practice-members read) → **"you"** →
+**"a colleague"**, and never to the id: a CUID is not a degraded name, it
+identifies nobody and reads as the screen having failed.
+
+**Verified LIVE:** the queue reading *"PROPOSED BY PRIYA RAMAN"* over three
+identical release cards (`docs/reviews/assets/2026-09-06-approvals/00-queue-duplicates-and-proposer-name.png`);
+the duplicate refusal with its link
+(`docs/reviews/assets/2026-09-06-approvals/02-duplicate-refused-with-link.png`); the fast path — staged,
+and the server's review already open with Approve mounted, no [Read review]
+press (`docs/reviews/assets/2026-09-06-approvals/03-fastpath-review-opened-itself.png`); and the cleanup
+script cancelling two of three seeded twins with `supersededBy` set.
+
+---
+
 ## Item 27 — Approvals have no Deny: reject-with-reason, email the proposer, downgrade the document with a visible tag
 
 **Original (verbatim):**
@@ -356,6 +478,56 @@ The review card (`LiveProposalCard`) offers Approve and Cancel; Cancel is the co
 3. **Visibility**: the denial and reason shown on the document's row (a column/tag in the client's document tables).
 4. **State**: the document drops **Ready → To Review** wearing a "rejected by super admin: {reason}" tag, so the composer sees exactly what to fix and where.
 Scope honestly: this is a **contract + server + web** feature (G7 — new proposal decision `REJECTED`-by-reviewer with reason, a document state transition, an outbound email through the established mailer, plus web columns and the deny UI). It also interlocks with item 26 (dedupe/self-approve) and item 22 (a deny is exactly what the £9,000 VAT release deserved). Needs Shakib's contract sign-off before a PR opens.
+
+**✅ RESOLVED (6 Sep 2026, package G).** The whole loop, approved at
+`docs/Access_and_Approval_Matrix.md` gate ⚖7.
+
+1. **Deny with a required reason.** `POST /v1/action-proposals/{id}/denial`, and
+   the reason is required where cancellation's is optional — withdrawing your
+   own work owes nobody an explanation, refusing somebody else's does. On the
+   card, Deny sits beside Approve and the first press opens a field somebody can
+   read back; ⚠ **Approve is withheld while it is open**, because somebody
+   mid-sentence about a refusal must not have Approve one mis-click away.
+2. **A state of its own.** `ProposalState` gains **`DENIED`** — not `CANCELLED`
+   with a flag, because `?state=` is what History filters on and telling *"the
+   proposer withdrew it"* from *"the principal refused it"* is the entire product
+   of this feature. And `DENIED`, not `REJECTED`: `DocumentState.REJECTED` and
+   the `document.reject` KIND already mean a document judged unusable.
+3. **Who may deny follows who may approve, per tier** — the same
+   `assertCanApprove` the approve path calls, first in the ladder.
+4. **The email.** The reason, verbatim, to whoever staged it. Sent AFTER the
+   commit: an SMTP round trip may never hold a tenant transaction open, so a
+   send failure cannot un-deny anything and must not — the decision is on the
+   proposal, in the audit chain and on the document.
+5. **The document goes back.** A denied `publish.batch` drops its documents
+   `READY → TO_REVIEW` wearing *"Denied by {name}: {reason}"*. Only rows still
+   READY move; one that has moved on is skipped, never forced. The tag cost
+   **zero web bytes** — `failureMessage` already becomes `Document.statusNote`
+   and the client tables already render it as the amber pill.
+
+**On the document state machine, as the brief asked:** `READY → TO_REVIEW` was
+already legal. What did not exist was a way to attach a REASON to it —
+`DocumentTransition`'s non-failure branch carries `failure?: never` so that
+`REJECTED`/`FAILED` can never be written without one. A third union member lets
+`TO_REVIEW` carry an OPTIONAL reason; that mechanical guarantee is untouched,
+and `TO_REVIEW → READY` now clears it so a corrected document stops carrying why
+it was sent back.
+
+⚠ **The Approvals History TAB is still the synthetic table.** The reason renders
+on the proposal CARD, read off the server's own `outcome`; a live History over
+`?state=DENIED` is a separate, unbuilt job, named as such in both CLAUDE.mds.
+
+**Verified LIVE, end to end:** the reason field with Approve withheld
+(`docs/reviews/assets/2026-09-06-approvals/04-deny-reason-and-approve-withheld.png`); *"Denied — nothing was
+executed. The proposer was told why."* with the reason
+(`docs/reviews/assets/2026-09-06-approvals/05-denied-confirmation.png`); Bidfood and British Gas back in To
+Review wearing *"Denied by Shakib Rahman: The VAT on the Bidfood invoice is
+wrong…"* (`docs/reviews/assets/2026-09-06-approvals/06-documents-sent-back-with-the-reason.png`); and the
+email in MailHog, subject *"Not approved: Release 2 documents for export — gross
+£1697.16, VAT £282.86 — American Burger Ltd"*, reason on its own line
+(`docs/reviews/assets/2026-09-06-approvals/07-denial-email-to-the-proposer.png`).
+
+---
 
 ## Item 28 — Export date inputs render US-format MM/DD/YYYY; must be UK-readable
 
@@ -1488,6 +1660,68 @@ The taxonomy to draft (his examples slotted in):
 
 **Constraints that bound the design:** Governance §10 (no state change outside the ActionProposal path — enforced server-side and by DB trigger) means every tier-1/2 action keeps the proposal record; the matrix changes *who may approve* and *whether it queues*, never whether it's recorded. This is Governance + auth territory — **the deliverable is the matrix document for Shakib's sign-off** (it amends §10's operational reading), then `assert-can.ts` and the proposal kinds implement it. Direct dependency of items 26 (dedupe/fast path), 27 (deny flow — the deny power follows the approve power per tier), and 39 (the role capability matrix — these two matrices should ship as one document: who sees/does what, and what of it needs whose approval).
 
+**✅ RESOLVED (6 Sep 2026, package G).** The deliverable is
+`docs/Access_and_Approval_Matrix.md` **Part 2**, with Shakib's four rulings
+recorded inline, and the code that implements it.
+
+**The three tiers, all classified.**
+
+- **Tier 1 — the super admin signs. Seven kinds.** `chase.send` and
+  `publish.batch` (D44's two, unchanged) plus five that moved up:
+  `document.update-coding`, `bank.remove-statement`, `document.purge`,
+  `business.offboard`, `rule.create`.
+- **Tier 2 — any member. Nine kinds**, each with its reason. The tier is
+  deliberately NOT collapsed: those are the approvals an accountant does all
+  day, and collapsing them is the queue-drowning you complained about in the
+  same breath.
+- **Tier 3 — no proposal at all.** All 33 `x-nt-side-effect: ingest`
+  operations, ratified in six groups. `createExport` carries a real argument
+  rather than a listing: it physically produces the VT file, but it can only
+  contain documents that already passed a tier-1 approval, and asking for the
+  same signature twice makes the second one mean less.
+
+**⚠ What changed is the QUESTION the table asks.** `RELEASE_KINDS` selected for
+*acts that reach outside the product*; item 66 asks *whose signature does this
+carry*, of which "outward and irreversible" is one answer among several. Five
+kinds moved and **three of them overturn arguments written in this repo** —
+`document.purge`, `bank.remove-statement`, `business.offboard`. Each reversal is
+named at its own entry in `assert-can.ts` rather than silently replaced, and the
+executor refusals that were the old argument's strongest point (a purge cannot
+touch an exported document, by anybody) are untouched and now sit alongside the
+gate instead of standing in for it.
+
+**Your "typo things" ambiguity — ⚖5, ruled (a), the LITERAL reading.** Every
+`document.update-coding` is tier 1, whatever field it touches: a
+supplier-spelling fix waits for the super admin exactly as a category change
+does. The field split (accounting meaning tier 1, labels tier 2) was tabled and
+declined, and is kept in the matrix as the change to make if the queue ever does
+drown. The volume objection is answered by the fast path, not by narrowing the
+rule — the person the queue waits for is also the person doing most of the
+correcting, and their own corrections never queue.
+
+**The super-admin fast path — ⚖6.** A tier-1 action staged by the super admin
+does not QUEUE; the same stage → Read review → Approve happens inline and the
+record is byte-for-byte identical. Never an auto-approve.
+
+**`proposal.approve` is the seventh `PermittedAction`** — the same predicate as
+`publish.release`, its own name, its own per-kind sentence, because *"Only your
+practice's super admin can release documents for export"* said to somebody who
+pressed Approve on a category fix is a wrong answer in a right status code. Each
+tier-1 sentence also says the act is QUEUED: under ⚖5 an ordinary standard user
+now lands there, and "you may not" alone would leave them believing the fix was
+lost.
+
+**Governance §10 is untouched throughout.** Every kind in both tiers still mints
+a proposal, records Read review and its hash, echoes it at Approve, writes the
+audit row, and is enforced again by `action_proposals_guard()`. This Part
+decides who may press Approve and whether it waits, never whether it is
+recorded.
+
+Pinned by a test that asserts the tier-1 list WHOLE and sorted against the
+matrix's seven, so a promotion nobody meant fails there rather than shipping.
+
+---
+
 ## Item 67 — Deleting a client orphans their documents; deletion must ask its scope, and a deleted client goes to a recoverable Trash
 
 **Original (verbatim):**
@@ -1502,3 +1736,68 @@ Three layers:
 2. **Deletion scope choice:** offboarding should ask what it means — his options: **full client and all data** / **client only, keep the files** / (implicitly) archive-everything. The honest set needs the D32 constraint stated: export-at-cancellation is a product promise (reading and exporting survive a lapse), and UK bookkeeping records carry statutory retention duties — so "delete all data" likely means "schedule for deletion after the retention answer", not an instant purge. The chosen scope rides the `business.offboard` proposal and is stated verbatim at Read review (blast radius: N documents, M transactions, the portal members who lose access).
 3. **Client-level Trash with a recovery window:** a deleted client held restorable for a stated period, so a returning client resumes where they left — the same retention-policy decision as item 61's document Trash (one policy document covering both: durations, what auto-purge skips, D43's exported-document refusal, and the subscription question — a restored client's Stripe subscription state needs defining too).
 ⚠ All three touch **deleting/migrating data** — root CLAUDE.md stop-and-ask territory, and the retention/GDPR angle makes this Shakib sign-off before any PR. Files with items 61 (retention policy) and 27/66 (the offboard proposal's approval tier).
+
+---
+
+## The seed was lying to the contract — five defects, found and FIXED (6 Sep 2026)
+
+⚠ **Not regressions and not part of package G's five items** — found while
+walking review item 20, because item 20's success path could not be reached at
+all. Between them they made **the whole document-detail surface unusable on any
+seeded database**, and they had been that way long enough that nobody had
+walked it. All five are fixed in `prisma/seed.ts`, in this branch.
+
+The visible symptom was every document reading **"No fields extracted — The
+server answer did not match the contract"**, which takes the manual-correction
+flow, the coding-suggestion panel, the Path-to-Ready panel and the D46 flag with
+it. `api/document-detail.ts` fails closed, correctly; there was simply nothing
+to render.
+
+| # | What the seed wrote | What the contract requires | Consequence |
+|---|---|---|---|
+| 1 | `byteHash: 'sha256:<id>000…'` | `^[a-f0-9]{64}$` | 64 characters, not one of them a match — every `GET /documents/{id}` failed its parse |
+| 2 | field keys `supplier` / `total` / `tax` | the header names `supplierName` / `totalPence` / `taxPence` | no screen reads those keys; `FIELD_PRESENTATION` and the extractor's own `demo-profiles.ts` use the contract's |
+| 3 | `provenance: 'textract:block/12'` | `ProvenanceClass` — `HUMAN_CONFIRMED` / `DETERMINISTIC` / `AI_SUGGESTED` | a plausible-looking source pointer where an enum was required; every `ExtractedField` failed on it |
+| 4 | line items carrying raw values | an `ExtractedField` per member | the same parse, one level down |
+| 5 | a `contextQuestionnaire` of `sells` / `revenueStreams` / `companyCards` | `BusinessContextQuestionnaire`, which requires `businessActivity` | `readBusinessProfile` answered **null for every seeded client** — see below |
+
+⚠ **I got one thing wrong in the first pass and it is worth correcting here:**
+`lineItems` living INSIDE `fields` is *not* a defect. It is the storage
+convention `extraction-pipeline.ts` uses and `toExtraction` separates on the way
+out — its own header explains why. Only the members' shape (#4) was wrong.
+
+**Defect 5 is the interesting one, because it was silent in two more places.**
+A profile-less client gets the `NO_PROFILE` chart: the 37 core accounts and none
+of the trade additions. So:
+
+- **a restaurant had no `COS_FOOD_AND_DRINK`**, and a correction naming one was
+  refused as *"not a code on this client's chart"* — item 47's refuse-never-fuzzy
+  rule working exactly as designed against data that had lied to it;
+- **the coding ladder (items 19/48) had no trade context for any demo client**,
+  so the surface built to demonstrate trade-aware coding was demonstrating the
+  generic path.
+
+Two more things went with it:
+
+- **The seeded "Xero" chart of accounts is deleted.** It was a METH Stage 5
+  DEMO-MOCK for a reference-list sync engine D42 removed from this release, and
+  it had stopped governing anything: its payload predates the `neoting` block
+  `StoredChartSchema` requires, so every read logged *"chart_of_accounts for
+  business biz_burger did not parse — serving the derived chart, not
+  overwriting"*. Its only remaining effect was that warning plus a `psql` answer
+  that disagreed with the product. With no row, `ChartOfAccountsService` takes
+  its derive-and-SEED path and the demo cast gets the trade-matched UK chart
+  every client created since A11 already gets.
+- **The documents' `categoryCode` values are chart CODES now**, not display
+  names. `'Cost of Sales — Food'` was never on any chart, so seeded documents
+  were coded against something that had never existed — which also means they
+  resolved to no Analysis account in the export. They carry
+  `COS_FOOD_AND_DRINK`, `LIGHT_HEAT_AND_POWER`, `COS_PURCHASES`, `SALES`,
+  `SOFTWARE_AND_SUBSCRIPTIONS` and `PROFESSIONAL_FEES` now. ⚠ The VAULT rows'
+  `category` is a folder label, not a nominal account, and is untouched.
+
+**Verified after the fix, live:** the document detail renders its seven fields
+with confidences and provenance; `biz_burger`'s chart derives and PERSISTS as
+`RETAIL_AND_HOSPITALITY`; a correction to `COS_FOOD_AND_DRINK` is accepted,
+files as *"Confirmed by you"*, and moves the document to READY. Both API (2,638)
+and web (901) suites pass on the reseeded database.

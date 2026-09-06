@@ -46,8 +46,13 @@ vi.mock('../../api/proposals', async (importOriginal) => ({
 
 vi.mock('../../context/AppContext', () => ({
   useAppContext: () => ({
-    session: { status: 'authenticated', me: { role: 'PRACTICE_ADMIN' } },
+    // ⚠ `isOwner: false` deliberately: the super-admin fast path (item 26 /
+    // matrix ⚖6) auto-opens the review, which would make this file's
+    // "Approve is absent until Read review returns" case vacuous. The fast
+    // path has its own case in `PublishBatchDialog.test.tsx`.
+    session: { status: 'authenticated', me: { user: { id: 'usr_me' }, role: 'PRACTICE_ADMIN', isOwner: false } },
     clientNameFor: (id: string) => (id === 'biz_nexora' ? 'Nexora Solutions LLC' : id),
+    setActiveTab: vi.fn(),
     logAudit: vi.fn(),
   }),
 }));

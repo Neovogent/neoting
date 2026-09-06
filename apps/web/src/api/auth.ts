@@ -128,6 +128,43 @@ export async function logout(): Promise<void> {
 }
 
 /**
+ * **Does this session hold D44's release authority?** — review item 24.
+ *
+ * `canRelease(role) && isOwner`, which is `mayRelease` in
+ * `apps/api/src/modules/approvals/assert-can.ts`, verbatim. One expression, one
+ * place, read by every surface that has something to say about who releases —
+ * so the publish dialog, the statement request, the offboard panel and the
+ * staging flow cannot drift into four different claims about the same person.
+ *
+ * ## Why this can exist now, and could not before
+ *
+ * The dialogs' standing rule was that they *"can never claim the permission IS
+ * held"*, because `/me` carried the role and not `memberships.is_owner` — so
+ * the honest thing was to name who releases and stop. That produced item 24:
+ *
+ * > *I'm the super admin and it is giving me lecture*
+ *
+ * `Me.isOwner` is required in the contract now (package F), answered from the
+ * same acting membership `role` comes from, so the two can never describe
+ * different people. The dialogs may branch.
+ *
+ * ⚠ **It is a fact for DISPLAY and never a gate.** Governance §11.2: *"a UI
+ * that merely hides the button is not an implementation of this."* The server
+ * refuses with `NT-PRM-001` regardless, and a `/me` thirty seconds stale is
+ * exactly how that refusal arrives — every surface reading this must still
+ * handle the refusal when it comes.
+ *
+ * ⚠ **Not authenticated answers FALSE**, unlike `actsForWholePractice`, and the
+ * asymmetry is deliberate. That one answers "is this surface any of your
+ * business", where a synthetic session must keep seeing everything
+ * (METH_MODE §1). This one answers "may you release", where the safe reading of
+ * an unknown session is the one that promises nothing.
+ */
+export function holdsReleaseAuthority(session: SessionState): boolean {
+  return session.status === 'authenticated' && session.me.role === 'PRACTICE_ADMIN' && session.me.isOwner;
+}
+
+/**
  * **Does this session act for the whole practice?** — review item 39, the
  * `docs/Access_and_Approval_Matrix.md` predicate every practice-wide surface
  * gates on.

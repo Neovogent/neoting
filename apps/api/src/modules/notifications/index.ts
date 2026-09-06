@@ -32,6 +32,7 @@ export {
   type SendDocumentRequestInput,
   type SendDuplicateSignupNoticeInput,
   type SendEmailVerificationInput,
+  type SendProposalDeniedInput,
   type SendOutcome,
   type SendSignInCodeInput,
   type SendTeamInviteInput,

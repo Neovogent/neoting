@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { defineMessages, useIntl } from 'react-intl';
 import type { ActionProposal } from '@neoting/contracts/model';
 import { useAppContext } from '../context/AppContext';
+import { usePracticeTeam } from '../api/team';
 import { LiveProposalCard } from '../components/DynamicComponents/LiveProposalCard';
 
 const m = defineMessages({
@@ -34,7 +35,34 @@ export function ApprovalsLiveQueue({
   onSettled: () => void;
 }) {
   const intl = useIntl();
-  const { businesses } = useAppContext();
+  const { businesses, session } = useAppContext();
+  /**
+   * Item 26(3) — *"keep track for each approval request sent by the team
+   * member"*. The queue rendered `createdByUserId` raw, so six cards read
+   * *"proposed by CMTNDDE8P00337710E1OQD4J…"*.
+   *
+   * ⚠ The read is `GET /v1/practice-members`, which every practice-wide member
+   * may call (`docs/Access_and_Approval_Matrix.md`, Part 1a) — this is not a
+   * privileged lookup, and it is the SAME list the Team screen shows, so the
+   * two cannot name one colleague differently. It lands on this lazy view's
+   * chunk, never the floor (`api/team.ts`'s own header, the `proposals.ts`
+   * rule).
+   *
+   * A member who is not on the list — a deactivated colleague, or a proposal
+   * older than their removal — resolves to nothing, and `LiveProposalCard`'s
+   * own ladder answers "you" or "a colleague". It never falls back to the id.
+   */
+  const { team } = usePracticeTeam({ enabled: session.status === 'authenticated' });
+  const proposerFor = (userId: string | null | undefined) => {
+    if (userId == null) return null;
+    const member = team.members.find((m) => m.userId === userId);
+    if (member === undefined) return null;
+    const name = [member.firstName, member.lastName].filter(Boolean).join(' ').trim();
+    // The email is a worse name than a name and a far better one than a CUID:
+    // a colleague who accepted an invitation but never filled in their details
+    // is still recognisable by the address the invitation went to.
+    return name !== '' ? name : (member.email ?? null);
+  };
   /**
    * Cards decided THIS visit stay mounted showing their outcome banner. The
    * settle refetch removes a decided proposal from `proposals`, and without
@@ -71,6 +99,7 @@ export function ApprovalsLiveQueue({
           key={proposal.id}
           proposal={proposal}
           clientName={nameFor(proposal.businessId)}
+          proposerName={proposerFor(proposal.createdByUserId)}
           onSettled={() => {
             setDecided((prev) => (prev.some((p) => p.id === proposal.id) ? prev : [...prev, proposal]));
             onSettled();

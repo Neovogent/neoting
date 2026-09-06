@@ -238,6 +238,179 @@ it cannot render a section (`apps/web/src/api/proposals.ts`, fail-closed) — th
 new sections use the same `{heading, entries[{label, value}]}` shape, so nothing
 on the web side had to change to display them.
 
+## The tier table — item 66, 6 Sep 2026 (`RELEASE_KINDS` is no longer D44's two)
+
+`docs/Access_and_Approval_Matrix.md` **Part 2** is now the governing document for
+this module's authority, the way Part 1 already was for the other five
+`PermittedAction`s. Read it before touching `RELEASE_KINDS`.
+
+**What changed is the QUESTION the table asks.** It was built to select for *acts
+that reach outside the product* — D44's two, and the file said so in as many
+words. Item 66 asks *what does the firm's principal sign for?*, of which
+"reaches outside and cannot be taken back" is one answer among several;
+irreversibility and blast radius are the others. **Five kinds moved up, and
+three of them overturn arguments written in this repo.** Each reversal is named
+at its own entry in `assert-can.ts` — a reversed ruling that is not visible at
+the reversal is a trap for the next reader.
+
+| Kind | Was | Now | The reversal, in one line |
+|---|---|---|---|
+| `document.update-coding` | 2 | **1** | ⚖5's LITERAL reading — *"any filed update like the category… and this typo things"* means every field. The field split was offered and declined; it is kept in the matrix as the change to make if the queue ever does drown |
+| `bank.remove-statement` | 2 | **1** | the entry was already *"flagged for human ratification"*; this is the ratification |
+| `document.purge` | 2 | **1** | the only unrecoverable act in the product. ⚠ the executor's refusals are UNCHANGED and still bind the super admin — belt and braces now, not one standing in for the other |
+| `business.offboard` | 2 | **1** | its own entry asked to be revisited when no `business.reactivate` existed. It still does not |
+| `rule.create` | 2 | **1** | Governance §10.5 lets an approved policy execute with no per-item proposal. If anyone can approve the policy, §10.5 has nothing left in it |
+
+⚠ **`document.revoke-link` stays tier 2 and is now the one outward act that
+does.** Containment: a rule that lets only one person stop a leaked link makes
+the leak last longer. Unchanged reasoning, more conspicuous position.
+
+### `proposal.approve` — the seventh `PermittedAction`
+
+Same predicate as `publish.release` (`mayRelease`, verbatim), separate NAME,
+per-kind sentence — this file's own rule from `business.billing.manage` and
+`team.manage`, applied a third time. *"Only your practice's super admin can
+release documents for export"* said to somebody who pressed Approve on a
+category fix is a wrong answer in a right status code. `publish.release` keeps
+D44's two and keeps meaning exactly what Governance §11.2 said.
+
+**Call it through `assertCanApprove(actor, resource)`**, not `assertCan`
+directly: `assertCan` is overloaded per action name, so a caller holding a union
+of two names matches neither overload, and the choice between them belongs in
+the file that owns the reasoning. One call site — the approve path.
+
+⚠ **The tier-1 sentences say the act is QUEUED, and that is load-bearing.**
+Under ⚖5's literal ruling an ordinary standard user's coding correction now
+lands on a 403, and *"you may not"* alone would leave them believing the fix was
+lost. It was staged; it is in the queue.
+
+### Tier 1 does not mean "waits"
+
+Matrix gate ⚖6: when the super admin is the one staging, the same
+stage → Read review → Approve happens INLINE in the dialog they are standing in
+— identical record, no queue. The tier says whose signature the record carries,
+never that somebody has to wait. `apps/web` owns that sequence; nothing here
+changes for it.
+
+⚠ **The web consequence of ⚖5 is real and is the package's next commit.**
+`api/document-detail.ts`'s `updateCodingProposal` bundles create → review →
+approve into ONE call behind the correction modal's [Approve] button. For a
+member who cannot release, its third call now answers 403 and the card says
+*"That correction was NOT saved"* — true of the value, wrong about the act. It
+has to stage and stop instead. Until that lands, a non-owner's coding correction
+on this branch shows a refusal where it should show "queued".
+
+## Idempotent staging — item 26, 6 Sep 2026 (`NT-PRP-007`)
+
+> *For same document, multiple review request has come in the approval tab…
+> make sure no duplicate approval request is sent*
+
+Eight identical "Release for export" cards over one Ready document, all
+pending, all from the same person — amplified by item 23's broken scroll, which
+made Approve unreachable, so he closed and re-staged until it was.
+
+**`create()` now refuses a second identical ACT.** `refuseDuplicatePending`
+runs last of the creation checks and immediately before the insert: same kind,
+same business, still `CREATED`/`REVIEWED`, still inside its TTL, same
+`proposalIdentity` → `409 NT-PRP-007`.
+
+- **⚠ It runs over the RECOMPUTED payload**, not the caller's, because the
+  stored rows it compares against were rewritten by the same mill
+  (`publish.batch`, `chase.send`, `bank.remove-statement`). Both sides of the
+  comparison therefore come out the same shape.
+- **⚠ Identity is not `payloadHash`.** Those three rewrites embed live facts, so
+  two identical clicks a minute apart hash differently whenever anything moved —
+  hashing would silently stop deduping exactly the kinds it exists for.
+  `proposal-identity.ts` extracts the RECORD IDS instead, which survive the
+  rewrite intact. Total over `ProposalKind`, with the reasoning per entry;
+  `null` means "this kind has no stable identity" and is a real answer, not a
+  gap (`rule.create` is the deliberate one — two rules over one client are two
+  rules).
+- **⚠ An EXPIRED pending row does not block.** It cannot be approved
+  (`NT-PRP-003`), so treating it as the open decision would be a deadlock
+  wearing a helpful sentence.
+- **The scan is capped at `DUPLICATE_SCAN_LIMIT` (50).** Missing a twin past the
+  cap costs one duplicate card — what the whole product did until today;
+  blocking the create would be worse.
+- **409, not a quiet 201 over the existing row** (matrix gate ⚖8): the web's
+  fetch mutator returns the raw body and drops the HTTP status, so a returned
+  twin is indistinguishable from a fresh create and the dialog would claim to
+  have staged something it did not. `DUPLICATE_DETAIL` words the refusal per
+  kind — it is not an error the person caused, so it says the act is not lost
+  and where to go.
+
+**Cleaning a queue that already has duplicates:**
+`scripts/cleanup-duplicate-proposals.ts` (`--dry-run` by default, `--apply` to
+act) groups by the SAME `proposalIdentity` the server dedupes with, keeps the
+newest of each group and **CANCELS** the rest with
+`outcome.supersededBy`. Cancels, never deletes — the cancellation contract's own
+rule. Runbook: `docs/runbooks/error-codes.md`, `NT-PRP-007`.
+
+## Deny with a reason — item 27, 6 Sep 2026 (`DENIED`)
+
+> *There is no option for denying an approval… it must ask for the reason, and
+> the reason and declined message must be sent via email to the team member and
+> must be shown in the table row in the document row; and this document must be
+> downgraded from ready tab to review tab*
+
+The card offered **Approve** and **Cancel**, and Cancel is the contracted
+*withdrawal* — the PROPOSER taking their own work back. A reviewer who
+disagreed had nothing to press and no way to say why. `deny()` is the
+counterpart of approve, not of cancel.
+
+- **⚠ `DENIED`, a state of its own, not `CANCELLED` with a flag.**
+  `GET /v1/action-proposals?state=` filters on the column, so History would
+  otherwise have to read `outcome` JSON per row to tell *"the proposer withdrew
+  it"* from *"the principal refused it"* — and those two sentences are the
+  entire product of this feature. Ruled at matrix ⚖7. **And `DENIED`, not
+  `REJECTED`**: `DocumentState.REJECTED` and the `document.reject` KIND already
+  mean a document judged unusable.
+- **Deny authority IS approve authority**, per tier: the same
+  `assertCanApprove` call, first in the ladder, for the approve path's reason
+  verbatim — a caller who may not decide this learns nothing about its state.
+- **⚠ An EXPIRED proposal is still deniable**, which is why `refuseTerminal` is
+  not reused here. Review and approve refuse an expired row because approving
+  would execute against facts that have moved; denying executes nothing, and a
+  queue full of expired proposals nobody may close is a queue nobody reads.
+  Denying a denied one is an idempotent no-op — the first reviewer's reason is
+  never overwritten by a second's.
+- **The email is POST-COMMIT and its failure is a loud log.** An SMTP or SES
+  round trip may never hold a tenant transaction open (`runPublishFollowUp`'s
+  rule). So a send failure cannot un-deny anything, and it must not: the
+  decision is on the proposal, in the audit chain and on the document. ⚠ The
+  engine takes a `DenialNotice` **function**, never `NotificationsService` — a
+  service here would put every other message in the product one call from the
+  engine, the second-door shape issue #81 exists to prevent. Composed in
+  `approvals.module.ts` over `notifications`' seam; `EmailKind`
+  `'proposal-denied'`, ceiling 10/hour (the document-request ceiling, because
+  volume tracks how much WORK a colleague did, and it is the one kind here a
+  stranger cannot cause).
+- **A denied `publish.batch` sends its documents back** `READY → TO_REVIEW`
+  wearing *"Denied by {name}: {reason}"*. ⚠ Only rows still in `READY` move and
+  one that has moved on is SKIPPED, never forced — a denial must not fail
+  because one document in a batch of forty was archived meanwhile. The reason
+  rides `failureCode`/`failureMessage` with **`NT-DOC-001`** (the existing
+  "rejected by a reviewer" value, minted for exactly this) and deliberately NOT
+  an `NT-PUB-*` code: `api/documents.ts` reads that prefix as *a failed publish
+  worth retrying*, and a denial is the opposite. The tag then costs **zero web
+  bytes** — `failureMessage` already becomes `Document.statusNote` and
+  `Tables.tsx` already renders it as the amber pill.
+- **`document-state.ts` gained a third `DocumentTransition` member** so
+  `TO_REVIEW` may carry an OPTIONAL failure. ⚠ The mechanical guarantee is
+  untouched: `REJECTED`/`FAILED` still cannot be written without a reason. And
+  `TO_REVIEW → READY` now CLEARS it, so a corrected document stops carrying why
+  it was sent back — a no-op for every row written before this member existed.
+- **`KIND_LABEL` in `render-summary.ts`** is what the notice calls the act when
+  a proposal is denied without its review ever having been opened. First choice
+  is the proposal's own stored `renderedSummary.title` — the server's words for
+  THAT proposal, already hashed.
+
+⚠ **The Approvals **History tab** is still the synthetic `ApprovalItem` table**
+(`apps/web/src/views/ApprovalsView.tsx`). A denial's reason renders on the CARD
+— read off `outcome` — wherever a decided proposal is shown; making History a
+live read over `GET /action-proposals?state=DENIED` is a separate, unbuilt job
+and is not part of item 27.
+
 ## The release gate — D44, stage A12
 
 `assert-can.ts`, called from `action-proposals.service.ts` on the **approve**

@@ -82,10 +82,18 @@ function harness(
    * so every pre-existing test keeps its old meaning.
    */
   membership: { role: string; isOwner: boolean } | null = OWNER_MEMBERSHIP,
+  /**
+   * The denial notice (item 27). Absent means the engine was built without a
+   * mailer — the ordinary test shape, and the same "absence is silence" rule
+   * every other optional seam here follows.
+   */
+  denialNotice?: (input: unknown) => Promise<unknown>,
 ) {
   const map = new Map(rows.map((r) => [r.id, r]));
   const audits: Record<string, unknown>[] = [];
   const executed: string[] = [];
+  /** Every `document.updateMany` the deny path drove — the send-back's record. */
+  const documentUpdates: { where?: unknown; data?: unknown }[] = [];
   const listCalls: { where?: unknown; orderBy?: unknown; take?: number }[] = [];
   const membershipQueries: Record<string, unknown>[] = [];
   let idSeq = 0;
@@ -151,6 +159,21 @@ function harness(
     extraction: {
       findFirst: async () => ({ fields: { supplierName: { value: 'Aldgate Meats Ltd', provenance: 'AI_SUGGESTED' } } }),
     },
+    // The deny path's reads and writes (item 27). `documents.findMany` answers
+    // the batch's rows still in READY; `updateMany` is `transitionDocument`'s
+    // compare-and-swap, recorded rather than applied.
+    documentEvent: { create: async ({ data }: { data: unknown }) => data },
+    user: {
+      findUnique: async ({ where }: { where: { id: string } }) =>
+        where.id === 'usr_1'
+          ? { id: 'usr_1', firstName: 'Priya', lastName: 'Shah', email: 'priya@practice.example', kind: 'HUMAN' }
+          : null,
+    },
+  };
+  (tx.document as Record<string, unknown>)['findMany'] = async () => [{ id: 'doc_1', state: 'READY' }];
+  (tx.document as Record<string, unknown>)['updateMany'] = async (args: { where?: unknown; data?: unknown }) => {
+    documentUpdates.push(args);
+    return { count: 1 };
   };
   const prisma = { $transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx) } as unknown as PrismaClient;
 
@@ -200,8 +223,12 @@ const TEST_CHASE_COMPOSE = { portalLinkSecret: 'test-portal-link-secret', appOri
     undefined,
     // The chart reader the correction-integrity gate validates against.
     async () => [{ code: 'COS_FOOD' }, { code: 'SOFTWARE_AND_SUBSCRIPTIONS' }],
+    // No model second opinion — absence is silence (item 22's rule).
+    undefined,
+    // The denial notice (item 27), when the case under test supplies one.
+    denialNotice,
   );
-  return { service, map, audits, executed, listCalls, membershipQueries };
+  return { service, map, audits, executed, listCalls, membershipQueries, documentUpdates };
 }
 
 const code = async (p: Promise<unknown>): Promise<string> => {
@@ -240,6 +267,173 @@ test('a replayed Idempotency-Key returns the original response; a reused one wit
   expect(replay).toEqual(first);
   expect(map.size).toBe(1); // no second proposal
   expect(await code(service.create(CTX, { kind: 'document.archive', businessId: 'biz_1', payload: { documentIds: ['doc_2'], archived: true } }, 'key-1'))).toBe('NT-IDM-001');
+});
+
+test('staging the same act twice is NT-PRP-007 — the reported eight-cards bug (item 26)', async () => {
+  // ⚠ Note the Idempotency-Key DIFFERS on the second call. That is the point:
+  // each of Mubashir's eight clicks carried a fresh key and was, honestly, a
+  // separate REQUEST. What they were not was a separate ACT, and only this
+  // check can see that.
+  const { service, map } = harness();
+  await service.create(CTX, { kind: 'document.archive', businessId: 'biz_1', payload: ARCHIVE_PAYLOAD }, 'key-1');
+  expect(await code(service.create(CTX, { kind: 'document.archive', businessId: 'biz_1', payload: ARCHIVE_PAYLOAD }, 'key-2'))).toBe(
+    'NT-PRP-007',
+  );
+  expect(map.size).toBe(1); // nothing was minted
+});
+
+test('a DIFFERENT act still stages while one is pending', async () => {
+  const { service, map } = harness();
+  await service.create(CTX, { kind: 'document.archive', businessId: 'biz_1', payload: ARCHIVE_PAYLOAD }, 'key-1');
+  // Other documents — a different batch, and it must not be refused.
+  await service.create(
+    CTX,
+    { kind: 'document.archive', businessId: 'biz_1', payload: { documentIds: ['doc_2'], archived: true } },
+    'key-2',
+  );
+  // The OPPOSITE act on the same documents — unarchive. A documents-only key
+  // would have refused this one, telling the caller their unarchive was
+  // "already awaiting review" when what is pending is the archive.
+  await service.create(
+    CTX,
+    { kind: 'document.archive', businessId: 'biz_1', payload: { documentIds: ['doc_1'], archived: false } },
+    'key-3',
+  );
+  expect(map.size).toBe(3);
+});
+
+test('the duplicate scan is narrowed to pending, unexpired rows of the same kind and business', async () => {
+  // The fake `findMany` ignores `where`, so the narrowing itself is asserted on
+  // the query — which is also the half that matters: an EXPIRED pending row
+  // must not block, because nobody can approve it (NT-PRP-003) and pointing a
+  // caller at it would be a deadlock wearing a helpful sentence.
+  const { service, listCalls } = harness();
+  await service.create(CTX, { kind: 'document.archive', businessId: 'biz_1', payload: ARCHIVE_PAYLOAD }, 'key-1');
+  const scan = listCalls.at(-1)?.where as Record<string, unknown> | undefined;
+  expect(scan).toMatchObject({ kind: 'document.archive', businessId: 'biz_1', state: { in: ['CREATED', 'REVIEWED'] } });
+  expect(scan?.['expiresAt']).toHaveProperty('gt');
+});
+
+test('a kind with no identity is never deduped — rule.create stages twice', async () => {
+  // Two rules over one client are two rules. `proposal-identity.ts` returns
+  // null for this kind deliberately, and the service must treat that as "no
+  // duplicate" rather than as "no key, so refuse".
+  const { service, map } = harness();
+  const rule = { name: 'Google Ads → Advertising', scope: { businessId: 'biz_1' }, conditions: [], sets: {} };
+  await service.create(CTX, { kind: 'rule.create', businessId: 'biz_1', payload: rule }, 'key-1');
+  await service.create(CTX, { kind: 'rule.create', businessId: 'biz_1', payload: rule }, 'key-2');
+  expect(map.size).toBe(2);
+});
+
+// ---- deny (review item 27) --------------------------------------------------
+
+test('deny records DENIED with the reason and the decider, and executes nothing', async () => {
+  const { service, map, executed } = harness([proposal('prop_d1', { state: 'REVIEWED', reviewedAt: new Date() })]);
+  const denied = await service.deny(CTX, 'prop_d1', { reason: 'The VAT is wrong — it is zero-rated.' }, 'k');
+
+  expect(denied.state).toBe('DENIED');
+  expect(map.get('prop_d1')?.outcome).toMatchObject({
+    denied: true,
+    reason: 'The VAT is wrong — it is zero-rated.',
+    deniedByUserId: 'usr_1',
+  });
+  // ⚠ The whole point: a refusal runs nothing.
+  expect(executed).toEqual([]);
+  expect(map.get('prop_d1')?.executedAt).toBeNull();
+});
+
+test('deny is NOT cancel — a cancelled proposal cannot be denied and vice versa', async () => {
+  // The two are different decisions by different people and the states have to
+  // stay apart, or History cannot tell "the proposer withdrew it" from "the
+  // principal refused it" — which is the entire product of this feature.
+  const { service } = harness([proposal('prop_c', { state: 'CANCELLED' })]);
+  expect(await code(service.deny(CTX, 'prop_c', { reason: 'too late' }, 'k'))).toBe('NT-PRP-006');
+
+  const { service: s2, map } = harness([proposal('prop_d2', { state: 'REVIEWED', reviewedAt: new Date() })]);
+  await s2.deny(CTX, 'prop_d2', { reason: 'no' }, 'k2');
+  expect(map.get('prop_d2')?.state).toBe('DENIED');
+  expect(map.get('prop_d2')?.state).not.toBe('CANCELLED');
+});
+
+test('an executed proposal cannot be denied — it is undone by a new proposal', async () => {
+  const { service } = harness([proposal('prop_x', { state: 'EXECUTED', executedAt: new Date() })]);
+  expect(await code(service.deny(CTX, 'prop_x', { reason: 'changed my mind' }, 'k'))).toBe('NT-PRP-005');
+});
+
+test('denying a denied proposal is idempotent — the first reviewer’s reason is not overwritten', async () => {
+  const { service, map } = harness([proposal('prop_d3', { state: 'REVIEWED', reviewedAt: new Date() })]);
+  await service.deny(CTX, 'prop_d3', { reason: 'first reason' }, 'k1');
+  await service.deny(CTX, 'prop_d3', { reason: 'second reason' }, 'k2');
+  expect(map.get('prop_d3')?.outcome).toMatchObject({ reason: 'first reason' });
+});
+
+test('an EXPIRED proposal is still deniable — refusing to let somebody say no is not a rule', async () => {
+  // Review and approve refuse an expired row because approving it would execute
+  // against facts that have moved. Denying executes nothing, and a queue full of
+  // expired proposals nobody may close is a queue nobody reads.
+  const { service, map } = harness([
+    proposal('prop_old', { state: 'REVIEWED', reviewedAt: new Date(), expiresAt: new Date(Date.now() - 1_000) }),
+  ]);
+  await service.deny(CTX, 'prop_old', { reason: 'stale' }, 'k');
+  expect(map.get('prop_old')?.state).toBe('DENIED');
+});
+
+test('deny authority IS approve authority — a non-owner is refused a tier-1 kind and nothing changes', async () => {
+  const { service, map } = harness(
+    [proposal('prop_rel', { kind: 'publish.batch', payload: PUBLISH_PAYLOAD, state: 'REVIEWED', reviewedAt: new Date() })],
+    undefined,
+    { role: 'PRACTICE_ADMIN', isOwner: false },
+  );
+  expect(await code(service.deny(CTX, 'prop_rel', { reason: 'no' }, 'k'))).toBe('NT-PRM-001');
+  // A refusal is a decision of the same weight as an approval, so it leaves the
+  // proposal exactly where it was.
+  expect(map.get('prop_rel')?.state).toBe('REVIEWED');
+});
+
+test('a denied publish.batch sends its READY documents back to TO_REVIEW wearing the reason', async () => {
+  const { service, documentUpdates } = harness([
+    proposal('prop_pub', { kind: 'publish.batch', payload: PUBLISH_PAYLOAD, state: 'REVIEWED', reviewedAt: new Date() }),
+  ]);
+  await service.deny(CTX, 'prop_pub', { reason: 'The tax figure is wrong.' }, 'k');
+
+  const sentBack = documentUpdates.at(-1);
+  expect(sentBack?.data).toMatchObject({ state: 'TO_REVIEW' });
+  // The reviewer's words, verbatim, on the column the client tables already
+  // render as the amber pill — zero web bytes for the tag item 27 asked for.
+  expect(String((sentBack?.data as Record<string, unknown>)['failureMessage'])).toContain('The tax figure is wrong.');
+  // ⚠ NOT an NT-PUB code: `api/documents.ts` reads that prefix as "a failed
+  // publish worth retrying", and a denial is the opposite.
+  expect(String((sentBack?.data as Record<string, unknown>)['failureCode'])).not.toContain('NT-PUB');
+  // Guarded on the expected `from` state — a document that moved is skipped,
+  // never forced.
+  expect(sentBack?.where).toMatchObject({ state: 'READY' });
+});
+
+test('denying a NON-publish kind touches no document', async () => {
+  // A denied coding correction simply means the correction was never applied.
+  const { service, documentUpdates } = harness([proposal('prop_arc', { state: 'REVIEWED', reviewedAt: new Date() })]);
+  await service.deny(CTX, 'prop_arc', { reason: 'not now' }, 'k');
+  expect(documentUpdates).toEqual([]);
+});
+
+test('the proposer is emailed the reason AFTER the commit, and a send failure never un-denies it', async () => {
+  const notices: unknown[] = [];
+  const { service, map } = harness(
+    [proposal('prop_mail', { state: 'REVIEWED', reviewedAt: new Date() })],
+    undefined,
+    OWNER_MEMBERSHIP,
+    () => {
+      notices.push('called');
+      throw new Error('SES is down');
+    },
+  );
+  const denied = await service.deny(CTX, 'prop_mail', { reason: 'wrong client' }, 'k');
+
+  expect(notices).toHaveLength(1);
+  // ⚠ The throw is swallowed: the denial is committed, and a lost email is not
+  // a lost decision. Same rule as the post-commit follow-ups.
+  expect(denied.state).toBe('DENIED');
+  expect(map.get('prop_mail')?.state).toBe('DENIED');
 });
 
 // ---- review -----------------------------------------------------------------

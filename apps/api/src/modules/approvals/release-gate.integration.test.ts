@@ -46,13 +46,25 @@ const P_B = 'a12g-prac-b';
 const BIZ = 'a12g-biz';
 const DOC_1 = 'a12g-doc-1';
 const DOC_2 = 'a12g-doc-2';
+/**
+ * ⚠ **One document per case, and that is a REQUIREMENT since review item 26.**
+ *
+ * Three of these cases used to stage `publish.batch` over `DOC_2` in sequence,
+ * leaving each other's proposals pending — and idempotent staging now refuses
+ * the second identical act with `NT-PRP-007`. The refusal is correct and the
+ * fixture was the thing that was wrong: a real accountant does not stage the
+ * same release over the same document three times and expect three proposals,
+ * which is the whole reason the check exists. Each case owns its documents.
+ */
+const DOC_3 = 'a12g-doc-3';
+const DOC_4 = 'a12g-doc-4';
 const USER_OWNER = 'a12g-user-owner';
 const USER_ADMIN = 'a12g-user-admin';
 const USER_STAFF = 'a12g-user-staff';
 const USER_OTHER = 'a12g-user-other';
 const MEMBERSHIPS = ['a12g-mem-owner', 'a12g-mem-admin', 'a12g-mem-staff', 'a12g-mem-other'];
 const USERS = [USER_OWNER, USER_ADMIN, USER_STAFF, USER_OTHER];
-const DOCUMENTS = [DOC_1, DOC_2];
+const DOCUMENTS = [DOC_1, DOC_2, DOC_3, DOC_4];
 
 let owner: PrismaClient;
 let app: PrismaClient;
@@ -228,8 +240,9 @@ describe.skipIf(!enabled)('the release gate against a real database (A12, D44)',
   });
 
   test('visibility and authority are different refusals: another practice gets 404, never 403', async () => {
+    await seedDocument(DOC_3);
     const svc = service();
-    const created = await svc.create(OWNER_CTX, { kind: 'publish.batch', businessId: BIZ, payload: { documentIds: [DOC_2] } }, 'a12g-key-rls');
+    const created = await svc.create(OWNER_CTX, { kind: 'publish.batch', businessId: BIZ, payload: { documentIds: [DOC_3] } }, 'a12g-key-rls');
 
     // RLS decides first, so the outsider never reaches the gate and the answer
     // never confirms the proposal exists.
@@ -245,8 +258,9 @@ describe.skipIf(!enabled)('the release gate against a real database (A12, D44)',
   });
 
   test('authority is decided before the review gate — an unreviewed release refuses NT-PRM-001, not NT-PRP-002', async () => {
+    await seedDocument(DOC_4);
     const svc = service();
-    const created = await svc.create(OWNER_CTX, { kind: 'publish.batch', businessId: BIZ, payload: { documentIds: [DOC_2] } }, 'a12g-key-order');
+    const created = await svc.create(OWNER_CTX, { kind: 'publish.batch', businessId: BIZ, payload: { documentIds: [DOC_4] } }, 'a12g-key-order');
     const early = await problem(svc.approve(ADMIN_CTX, created.id, { renderedSummaryHash: 'f'.repeat(64) }, 'a12g-key-order-approve'));
     expect(early.code).toBe('NT-PRM-001');
     // For the owner the same unreviewed call is the review gate, unchanged.

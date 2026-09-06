@@ -1,16 +1,34 @@
-import { useState } from 'react';
-import { AlertTriangle, Check, ChevronDown, ShieldCheck } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { AlertTriangle, Ban, Check, ChevronDown, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import { NtProblemError } from '@neoting/contracts';
 import type { ActionProposal } from '@neoting/contracts/model';
 import { useAppContext } from '../../context/AppContext';
-import { approveReviewed, cancelPending, KIND_LABEL, KIND_NOTE, offboardReason, openReview, type ReviewCard } from '../../api/proposals';
+import {
+  approveReviewed,
+  cancelPending,
+  decisionReason,
+  denyReviewed,
+  KIND_LABEL,
+  KIND_NOTE,
+  offboardReason,
+  openReview,
+  type ReviewCard,
+} from '../../api/proposals';
 import { commonActions } from '../../i18n/common';
 import { ReviewRows, ReviewSection } from './ReviewGate';
 
 const m = defineMessages({
   createdBy: { id: 'proposals.liveCard.createdBy', defaultMessage: 'Proposed by {who} · {when}' },
+  /**
+   * Item 26(3). The queue rendered `proposal.createdByUserId` raw, so six
+   * identical cards all read *"proposed by CMTNDDE8P00337710E1OQD4J…"* — half
+   * of his "keep track for each approval request" ask, answered with a string
+   * no human can match to a colleague.
+   */
+  createdByYou: { id: 'proposals.liveCard.createdByYou', defaultMessage: 'Proposed by you · {when}' },
+  createdByColleague: { id: 'proposals.liveCard.createdByColleague', defaultMessage: 'Proposed by a colleague · {when}' },
   createdByModel: { id: 'proposals.liveCard.createdByModel', defaultMessage: 'Proposed by AI ({model}) · {when}' },
   statePending: { id: 'proposals.liveCard.statePending', defaultMessage: 'Awaiting review' },
   stateReviewed: { id: 'proposals.liveCard.stateReviewed', defaultMessage: 'Reviewed' },
@@ -28,6 +46,35 @@ const m = defineMessages({
     defaultMessage:
       'This review was rendered and recorded by the server; approving echoes its hash back. An approval without this review open is refused server-side.',
   },
+  /**
+   * Item 27. ⚠ The word is **Deny**, never "Reject" — `document.reject` is a
+   * proposal KIND meaning a document is unusable, and `DocumentState.REJECTED`
+   * is a document that failed. Three "rejected"s on one screen is how a support
+   * call goes wrong.
+   */
+  deny: { id: 'proposals.liveCard.deny', defaultMessage: 'Deny' },
+  denyHeading: { id: 'proposals.liveCard.denyHeading', defaultMessage: 'Why are you not approving this?' },
+  denyNote: {
+    id: 'proposals.liveCard.denyNote',
+    defaultMessage:
+      'Your reason is emailed to whoever staged this and shown on the documents it named, so write what needs fixing. Nothing is executed and nothing is deleted.',
+  },
+  denyPlaceholder: {
+    id: 'proposals.liveCard.denyPlaceholder',
+    defaultMessage: 'e.g. The VAT on the Bidfood invoice is wrong — it is zero-rated.',
+  },
+  denyConfirm: { id: 'proposals.liveCard.denyConfirm', defaultMessage: 'Deny with this reason' },
+  denyReasonRequired: {
+    id: 'proposals.liveCard.denyReasonRequired',
+    defaultMessage: 'A denial needs a reason — it is the only thing the person who staged this has to act on.',
+  },
+  denying: { id: 'proposals.liveCard.denying', defaultMessage: 'Denying…' },
+  denied: { id: 'proposals.liveCard.denied', defaultMessage: 'Denied — nothing was executed. {who} was told why.' },
+  deniedProposer: { id: 'proposals.liveCard.deniedProposer', defaultMessage: 'The proposer' },
+  stateDenied: { id: 'proposals.liveCard.stateDenied', defaultMessage: 'Denied' },
+  deniedReasonShown: { id: 'proposals.liveCard.deniedReasonShown', defaultMessage: 'Denied by {who}: “{reason}”' },
+  deniedReasonNoName: { id: 'proposals.liveCard.deniedReasonNoName', defaultMessage: 'Denied at review: “{reason}”' },
+  auditDeny: { id: 'proposals.liveCard.auditDeny', defaultMessage: 'Denied a proposal' },
   auditApprove: { id: 'proposals.liveCard.auditApprove', defaultMessage: 'Approved a proposal' },
   auditCancel: { id: 'proposals.liveCard.auditCancel', defaultMessage: 'Cancelled a proposal' },
 });
@@ -42,18 +89,54 @@ const m = defineMessages({
 export function LiveProposalCard({
   proposal,
   clientName,
+  proposerName,
+  autoOpenReview = false,
   onSettled,
 }: {
   proposal: ActionProposal;
   clientName: string | null;
+  /**
+   * The proposer, resolved to a person by whoever mounted this (item 26(3)).
+   * The queue resolves it from the practice-members read; the staging flows
+   * pass nothing, because there the proposer is the person looking at the card
+   * and the fallback already says so.
+   *
+   * ⚠ Absent NEVER falls back to `createdByUserId`. A CUID on a card is not a
+   * degraded name, it is a different kind of thing — see the header below.
+   */
+  proposerName?: string | null;
+  /**
+   * **The super-admin fast path** (review item 26, matrix gate ⚖6). Opens the
+   * server's review as soon as the card mounts, so a person who can approve
+   * gets stage → review → Approve in one flow instead of a card that queues
+   * for themselves.
+   *
+   * ⚠ It automates [Read review] and NOTHING else. Approve still mounts only
+   * after the server's own render is on screen, and a human still presses it —
+   * an auto-approve would be this screen pretending to be the person, which is
+   * the one thing the whole pattern exists to prevent. `reviewedAt` and the
+   * hash are recorded exactly as they are from the queue, so the record a fast
+   * path writes is byte-for-byte the record a queued approval writes.
+   */
+  autoOpenReview?: boolean;
   /** Fired after an approve or cancel lands server-side — the refetch seam. */
   onSettled?: () => void;
 }) {
   const intl = useIntl();
-  const { logAudit } = useAppContext();
+  const { logAudit, session } = useAppContext();
   const [review, setReview] = useState<ReviewCard | null>(null);
-  const [phase, setPhase] = useState<'idle' | 'opening' | 'reviewed' | 'approving' | 'approved' | 'cancelled'>('idle');
+  const [phase, setPhase] = useState<
+    'idle' | 'opening' | 'reviewed' | 'approving' | 'approved' | 'cancelled' | 'denying' | 'denied'
+  >('idle');
   const [problem, setProblem] = useState<string | null>(null);
+  /**
+   * The deny step (item 27). `null` means the reviewer has not opened it; a
+   * string is the reason they are typing. A separate step rather than a prompt,
+   * because the reason is REQUIRED by the contract and is emailed verbatim to a
+   * colleague — that deserves a field somebody can read back, not a one-line
+   * dialog.
+   */
+  const [denyReason, setDenyReason] = useState<string | null>(null);
 
   /**
    * ⚠ `KIND_LABEL` is total over the CONTRACT's kinds — but the queue is served
@@ -74,6 +157,40 @@ export function LiveProposalCard({
   // does before Read review is even opened.
   const kindNote = KIND_NOTE[proposal.kind];
   const reason = offboardReason(proposal);
+  /**
+   * A proposal that arrives ALREADY denied wears the reason it was denied for
+   * (item 27 — *"the reason … must be shown"*).
+   *
+   * ⚠ It is read off the proposal's own `outcome`, so it is the reviewer's
+   * words as the server recorded them — never re-composed here, and never
+   * confused with `offboardReason`, which is the PROPOSER's note on why they
+   * staged an offboard in the first place. Both can be on one card and they
+   * mean opposite things.
+   */
+  const decided = proposal.state === 'DENIED' ? decisionReason(proposal) : null;
+
+  /**
+   * Who staged this (item 26(3)).
+   *
+   * ⚠ **`createdByUserId` is never rendered.** It used to be, and six identical
+   * cards reading *"proposed by CMTNDDE8P00337710E1OQD4J…"* is the screenshot
+   * that opened this item. A CUID is not a degraded name — it identifies
+   * nobody, cannot be searched for, and reads as the screen having failed.
+   *
+   * The ladder, in the order a reader can actually use:
+   *   1. the name the mounting surface resolved (the queue's practice-members read);
+   *   2. **"you"**, when the id is this session's own — which is every staging
+   *      flow, where the card appears one click after the person made it;
+   *   3. **"a colleague"** — honest about what is not known, and still true.
+   */
+  const when = proposal.createdAt.slice(0, 10);
+  const proposedBy = proposal.createdByModel
+    ? intl.formatMessage(m.createdByModel, { model: proposal.createdByModel, when })
+    : proposerName != null && proposerName !== ''
+      ? intl.formatMessage(m.createdBy, { who: proposerName, when })
+      : session.status === 'authenticated' && proposal.createdByUserId === session.me.user.id
+        ? intl.formatMessage(m.createdByYou, { when })
+        : intl.formatMessage(m.createdByColleague, { when });
 
   const fail = (error: unknown) => {
     setProblem(
@@ -97,6 +214,23 @@ export function LiveProposalCard({
     }
   };
 
+  /**
+   * The fast path's one line of automation (⚖6). Guarded by a ref rather than
+   * by `phase`, because `open()` sets phase itself and a phase-keyed effect
+   * would re-fire on the transition back to `idle` that a FAILED review makes —
+   * turning one refusal into a retry loop against the server.
+   */
+  const autoOpened = useRef(false);
+  useEffect(() => {
+    if (!autoOpenReview || autoOpened.current) return;
+    autoOpened.current = true;
+    void open();
+    // `open` is redefined every render and is deliberately not a dependency:
+    // the ref is what makes this run once, and listing it would re-run the
+    // effect on every state change it causes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenReview]);
+
   const approve = async () => {
     if (!review) return;
     setProblem(null);
@@ -105,6 +239,28 @@ export function LiveProposalCard({
       await approveReviewed(proposal.id, review.renderedSummaryHash);
       logAudit({ action: intl.formatMessage(m.auditApprove), scope: review.title, reviewOpened: true });
       setPhase('approved');
+      onSettled?.();
+    } catch (error) {
+      setPhase('reviewed');
+      fail(error);
+    }
+  };
+
+  const deny = async () => {
+    const reason = (denyReason ?? '').trim();
+    // Refused here as well as server-side, because a caller who gets this wrong
+    // is a person mid-sentence rather than a broken client — meeting a 400 for
+    // an empty box teaches nothing.
+    if (reason === '') {
+      setProblem(intl.formatMessage(m.denyReasonRequired));
+      return;
+    }
+    setProblem(null);
+    setPhase('denying');
+    try {
+      await denyReviewed(proposal.id, reason);
+      logAudit({ action: intl.formatMessage(m.auditDeny), scope: `${subtitle} — ${reason}`, reviewOpened: true });
+      setPhase('denied');
       onSettled?.();
     } catch (error) {
       setPhase('reviewed');
@@ -141,6 +297,30 @@ export function LiveProposalCard({
     );
   }
 
+  if (phase === 'denied') {
+    return (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.97 }}
+        animate={{ opacity: 1, scale: 1 }}
+        role="status"
+        className="w-full border border-amber-400/25 bg-amber-400/10 rounded-[24px] p-5 flex items-start gap-4 text-amber-300"
+      >
+        <div className="w-10 h-10 rounded-2xl bg-amber-400/15 flex items-center justify-center shrink-0 border border-amber-400/25">
+          <Ban size={20} strokeWidth={2.5} />
+        </div>
+        <div className="min-w-0">
+          {/* Says who was told, because the whole point of the reason is that it
+              travelled. A model-proposed action has nobody to tell, and the
+              generic noun is honest for it. */}
+          <p className="text-sm font-bold tracking-wide">
+            {intl.formatMessage(m.denied, { who: proposerName ?? intl.formatMessage(m.deniedProposer) })}
+          </p>
+          <p className="mt-1.5 text-[13px] text-amber-200/80 leading-relaxed break-words">{denyReason}</p>
+        </div>
+      </motion.div>
+    );
+  }
+
   if (phase === 'cancelled') {
     return (
       <div className="w-full border border-white/5 bg-card rounded-[24px] p-5 flex items-center gap-4 text-zinc-500">
@@ -160,15 +340,15 @@ export function LiveProposalCard({
             <h3 className="font-sans font-bold text-xl text-white tracking-tight truncate">{kindLabel}</h3>
             <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider truncate">
               {clientName ? `${clientName} · ` : ''}
-              {proposal.createdByModel
-                ? intl.formatMessage(m.createdByModel, { model: proposal.createdByModel, when: proposal.createdAt.slice(0, 10) })
-                : intl.formatMessage(m.createdBy, { who: proposal.createdByUserId ?? '—', when: proposal.createdAt.slice(0, 10) })}
+              {proposedBy}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <span className="px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wide bg-amber-500/10 text-amber-400">
-            {intl.formatMessage(proposal.state === 'REVIEWED' ? m.stateReviewed : m.statePending)}
+            {intl.formatMessage(
+              proposal.state === 'DENIED' ? m.stateDenied : proposal.state === 'REVIEWED' ? m.stateReviewed : m.statePending,
+            )}
           </span>
           {phase === 'idle' && (
             <button
@@ -185,6 +365,16 @@ export function LiveProposalCard({
         </div>
       </div>
 
+      {decided && (
+        <div role="status" className="px-6 py-4 border-b border-amber-400/20 bg-amber-400/5">
+          <p className="text-[13px] text-amber-300 leading-relaxed break-words">
+            {decided.deniedBy === null
+              ? intl.formatMessage(m.deniedReasonNoName, { reason: decided.reason })
+              : intl.formatMessage(m.deniedReasonShown, { who: decided.deniedBy, reason: decided.reason })}
+          </p>
+        </div>
+      )}
+
       {(kindNote || reason) && (
         <div className="px-6 py-4 border-b border-white/5 flex flex-col gap-1.5">
           {kindNote && <p className="text-[12px] text-zinc-500 leading-relaxed">{intl.formatMessage(kindNote)}</p>}
@@ -197,7 +387,7 @@ export function LiveProposalCard({
       )}
 
       <AnimatePresence>
-        {review && (phase === 'reviewed' || phase === 'approving') && (
+        {review && DECIDABLE.has(phase) && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
@@ -236,8 +426,30 @@ export function LiveProposalCard({
         </div>
       )}
 
+      {/*
+        ⚠ The deny STEP, not a deny button that acts. The reason is required by
+        the contract, is emailed verbatim to the colleague who staged this, and
+        lands on the documents it named — so it gets a field, and the confirm is
+        a second, deliberate press.
+      */}
+      {review && denyReason !== null && phase !== 'denying' && (
+        <div className="px-6 py-5 border-t border-amber-400/20 bg-amber-400/5 flex flex-col gap-3">
+          <h4 className="text-[14px] font-bold text-amber-300">{intl.formatMessage(m.denyHeading)}</h4>
+          <p className="text-[12px] text-zinc-400 leading-relaxed">{intl.formatMessage(m.denyNote)}</p>
+          <textarea
+            value={denyReason}
+            onChange={(e) => setDenyReason(e.target.value)}
+            rows={3}
+            maxLength={500}
+            aria-label={intl.formatMessage(m.denyHeading)}
+            placeholder={intl.formatMessage(m.denyPlaceholder)}
+            className="w-full bg-card border border-white/10 rounded-2xl px-4 py-3 text-[13px] text-white placeholder:text-zinc-600 focus:outline-none focus:border-amber-400/50 resize-y"
+          />
+        </div>
+      )}
+
       {/* Approve mounts only once the server-rendered review is on screen. */}
-      {review && (phase === 'reviewed' || phase === 'approving') && (
+      {review && DECIDABLE.has(phase) && (
         <div className="p-4 bg-card flex justify-end gap-3 flex-wrap">
           <button
             onClick={() => void cancel()}
@@ -245,16 +457,45 @@ export function LiveProposalCard({
           >
             {intl.formatMessage(commonActions.cancel)}
           </button>
+          {/*
+            Deny sits beside Approve because it is its counterpart — the two
+            decisions a reviewer can take — while Cancel above is the proposer
+            withdrawing their own work. The first press only opens the reason
+            field; nothing is refused until the second.
+          */}
           <button
-            onClick={() => void approve()}
-            aria-disabled={phase === 'approving'}
-            className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all shadow-glow-btn-strong aria-disabled:opacity-50"
+            onClick={() => (denyReason === null ? setDenyReason('') : void deny())}
+            aria-disabled={phase === 'denying'}
+            className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-amber-300 bg-amber-400/10 hover:bg-amber-400/20 border border-amber-400/25 rounded-full transition-colors aria-disabled:opacity-50"
           >
-            <Check size={18} strokeWidth={2.5} />
-            {intl.formatMessage(phase === 'approving' ? m.approving : m.approve)}
+            <Ban size={17} strokeWidth={2.5} />
+            {intl.formatMessage(phase === 'denying' ? m.denying : denyReason === null ? m.deny : m.denyConfirm)}
           </button>
+          {/*
+            ⚠ Approve is withheld while the reason field is open. Somebody
+            mid-sentence about why they are refusing something must not have
+            the approve button one mis-click away.
+          */}
+          {denyReason === null && (
+            <button
+              onClick={() => void approve()}
+              aria-disabled={phase === 'approving'}
+              className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white bg-brand hover:bg-brand-hover rounded-full transition-all shadow-glow-btn-strong aria-disabled:opacity-50"
+            >
+              <Check size={18} strokeWidth={2.5} />
+              {intl.formatMessage(phase === 'approving' ? m.approving : m.approve)}
+            </button>
+          )}
         </div>
       )}
     </div>
   );
 }
+
+/**
+ * The phases in which the server's review is on screen and a decision is still
+ * open. Extracted because three JSX conditions read it and a fourth phase
+ * (`denying`) had to join all three at once — a missed one renders a card whose
+ * review vanishes mid-decision.
+ */
+const DECIDABLE: ReadonlySet<string> = new Set(['reviewed', 'approving', 'denying']);

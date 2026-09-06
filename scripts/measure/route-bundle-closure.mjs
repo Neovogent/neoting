@@ -71,8 +71,9 @@
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const WEB = resolve(HERE, '../../apps/web');
@@ -137,13 +138,51 @@ function readRouteNames() {
   return [...new Set(names)];
 }
 
+/**
+ * Is a POSIX shell with `gzip` actually reachable? Answered ONCE, not per file:
+ * this is called for every chunk of every route and a failed spawn per call is
+ * both slow and noisy.
+ */
+const shellGzip = (() => {
+  try {
+    execFileSync('/bin/sh', ['-c', 'command -v gzip >/dev/null 2>&1']);
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
 function gzipBytes(file, { storeName }) {
   // Shell out to the same `gzip` the repo's figures were always taken with.
   // Node's zlib produces a different number and would silently rebase history.
-  const out = storeName
-    ? execFileSync('/bin/sh', ['-c', `gzip -c "${file}" | wc -c`])
-    : execFileSync('/bin/sh', ['-c', `gzip -c < "${file}" | wc -c`]);
-  return Number(String(out).trim());
+  if (shellGzip) {
+    const out = storeName
+      ? execFileSync('/bin/sh', ['-c', `gzip -c "${file}" | wc -c`])
+      : execFileSync('/bin/sh', ['-c', `gzip -c < "${file}" | wc -c`]);
+    return Number(String(out).trim());
+  }
+
+  // ⚠ WINDOWS FALLBACK, added 6 Sep 2026. There is no `/bin/sh` here, so the
+  // shell-out above throws ENOENT and this script — the ONE tool that answers
+  // whether a route is over the 250 kB budget — could not be run at all. Two
+  // whole packages of work quote "node-zlib closure walk at gzip level 6"
+  // figures taken by hand for exactly this reason; this makes that the
+  // script's own behaviour instead of a paragraph in a CLAUDE.md.
+  //
+  // ⚠ **The numbers are NOT interchangeable with the shell's.** `gzip -c`
+  // writes a header carrying the ORIGINAL FILENAME and an mtime; zlib's
+  // `gzipSync` writes neither. So this reads a few bytes lower per file, and on
+  // a route closure of thirty chunks the gap compounds. Never compare a figure
+  // from one path against a figure from the other — take a PAIRED before/after
+  // on the same machine, which this file's own header already insists on for a
+  // different reason (other lanes' drift).
+  //
+  // `storeName` is honoured by prepending the basename into the gzip header's
+  // FNAME field, which is the only thing the shell's two variants differ by.
+  const raw = readFileSync(file);
+  const options = { level: 6 };
+  const buffer = storeName ? gzipSync(raw, { ...options, name: basename(file) }) : gzipSync(raw, options);
+  return buffer.length;
 }
 
 /**

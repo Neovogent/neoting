@@ -103,8 +103,12 @@ beforeAll(async () => {
   });
   await owner.membership.createMany({
     data: [
-      { id: 'pob_mem_a', userId: 'pob_user_a', practiceId: P_A, role: 'PRACTICE_ADMIN' },
-      { id: 'pob_mem_b', userId: 'pob_user_b', practiceId: P_B, role: 'PRACTICE_ADMIN' },
+      // ⚠ `isOwner` set since review item 66: this kind is TIER 1 now, so a
+      // `PRACTICE_ADMIN` without the ownership flag is refused NT-PRM-001
+      // before the executor. This suite tests the EXECUTOR's effect; the
+      // authority gate has its own suite (`approvals/release-gate.integration`).
+      { id: 'pob_mem_a', userId: 'pob_user_a', practiceId: P_A, role: 'PRACTICE_ADMIN', isOwner: true },
+      { id: 'pob_mem_b', userId: 'pob_user_b', practiceId: P_B, role: 'PRACTICE_ADMIN', isOwner: true },
     ],
   });
   // A document in the departing workspace — the retention assertion's witness.

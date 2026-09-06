@@ -18,6 +18,19 @@ vi.mock('../../api/proposals', async (importOriginal) => {
   return { ...actual, createProposal: vi.fn() };
 });
 
+/**
+ * The dialog reads `session` since review items 24/66 — `business.offboard` is
+ * TIER 1, so the copy names who releases. `isOwner` is a `let` so one case can
+ * flip it; the default is the owner, which keeps every pre-existing case
+ * meaning what it meant.
+ */
+let isOwner = true;
+vi.mock('../../context/AppContext', () => ({
+  useAppContext: () => ({
+    session: { status: 'authenticated', me: { user: { id: 'usr_me' }, role: 'PRACTICE_ADMIN', isOwner } },
+  }),
+}));
+
 const CLIENT = { id: 'biz_sparkle', name: 'Sparkle Cleaning Ltd' };
 const onQueued = vi.fn();
 const onCancel = vi.fn();
@@ -32,7 +45,11 @@ beforeEach(() => {
   } as Awaited<ReturnType<typeof createProposal>>);
 });
 
-afterEach(() => vi.clearAllMocks());
+afterEach(() => {
+  vi.clearAllMocks();
+  // One case flips it; the default is the owner.
+  isOwner = true;
+});
 
 function renderDialog() {
   return render(
@@ -54,10 +71,24 @@ test('the dialog names the client, the approval gate and the retained books', ()
   const dialog = screen.getByRole('dialog', { name: 'Remove Sparkle Cleaning Ltd?' });
   const text = dialog.textContent ?? '';
   // Honest about the spine: nothing changes until the proposal is approved…
-  expect(text).toContain('disappears from the client list only after it is approved');
+  expect(text).toContain('once you have read that review and approved it');
   // …and nothing is destroyed either way.
   expect(text).toContain('Documents, books and the audit trail are retained — nothing is deleted.');
   expect(vi.mocked(createProposal)).not.toHaveBeenCalled();
+});
+
+test('a member who cannot release is told WHO does, and that the client stays until then', () => {
+  // Items 24 + 66. `business.offboard` is tier 1 now, so "after it is approved"
+  // left a standard user thinking their confirm was the decision. Both branches
+  // name the authority; neither claims one — the server is still the rule.
+  isOwner = false;
+  renderDialog();
+
+  const text = screen.getByRole('dialog', { name: 'Remove Sparkle Cleaning Ltd?' }).textContent ?? '';
+  expect(text).toContain('queues a removal proposal for your practice’s super admin');
+  expect(text).toContain('stays on the client list until they approve it');
+  // And it does not tell them they can do it.
+  expect(text).not.toContain('once you have read that review and approved it');
 });
 
 test('Cancel closes without creating anything', () => {

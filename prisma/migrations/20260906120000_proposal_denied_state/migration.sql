@@ -1,0 +1,18 @@
+-- Review item 27 — the reviewer's refusal becomes a state of its own.
+--
+-- `CANCELLED` is the PROPOSER withdrawing their own work. `DENIED` is a
+-- REVIEWER refusing it, always with a reason, which is emailed to the person
+-- who staged it and shown on the document. Those are different decisions, and
+-- `GET /v1/action-proposals?state=` filters on this column — a History screen
+-- that had to read `outcome` JSON per row to tell them apart would be a state
+-- enum not carrying its own record.
+--
+-- ⚠ `DENIED`, not `REJECTED`: `DocumentState.REJECTED` and the
+-- `document.reject` proposal kind already exist and mean a DOCUMENT judged
+-- unusable.
+--
+-- Purely additive: no row is rewritten, no default changes, nothing is
+-- backfilled. `ADD VALUE IF NOT EXISTS` is idempotent, so a re-run is a no-op.
+-- Reversal is a Postgres enum-value drop, which requires rebuilding the type —
+-- do not plan on it; the safe undo is to stop writing the value.
+ALTER TYPE "ProposalState" ADD VALUE IF NOT EXISTS 'DENIED' AFTER 'CANCELLED';

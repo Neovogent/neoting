@@ -3,6 +3,7 @@ import { ArrowRight, Ban, Download, ShieldCheck, UploadCloud } from 'lucide-reac
 import { defineMessages, useIntl } from 'react-intl';
 import type { CreateActionProposalRequest } from '@neoting/contracts/model';
 import { useAppContext } from '../../context/AppContext';
+import { holdsReleaseAuthority } from '../../api/auth';
 import { currency } from '../../lib/resolver';
 import { commonActions } from '../../i18n/common';
 import type { Document } from '../../lib/types';
@@ -51,11 +52,20 @@ import { Pill } from './DataTable';
  * - **D44, two authorities.** Composing and staging is every member's; only
  *   the practice's super admin may release. The server is the rule
  *   (`assertCan(actor, 'publish.release', …)` → `NT-PRM-001` on the APPROVE
- *   call, never on create), so the action is never hidden — the note says who
- *   releases, says it more plainly when this session's role is not the release
- *   role, and a refusal arrives on the card with its own code rather than as an
- *   opaque 403. `/me` carries no `is_owner`, so this screen can never claim the
- *   permission IS held; it only ever says who holds it.
+ *   call, never on create), so the action is never hidden — and since review
+ *   item 24 the note is ROLE-AWARE: the super admin is told what happens next
+ *   ("you can approve this after reading the review"), everybody else is told
+ *   who releases, more plainly when their role is not the release role, and a
+ *   refusal still arrives on the card with its own code rather than as an
+ *   opaque 403.
+ *
+ *   ⚠ The old rule — *"`/me` carries no `is_owner`, so this screen can never
+ *   claim the permission IS held"* — was true and is retired: `Me.isOwner` is
+ *   required in the contract (package F) and is answered from the same acting
+ *   membership `role` comes from. What survives is the reason behind it: the
+ *   copy still never says *"you have permission"*, only what the flow does,
+ *   because the server is the rule and a stale `/me` is how its refusal
+ *   arrives. The fact is read in ONE place, `holdsReleaseAuthority`.
  *
  * Lazy on purpose (`ClientInbox` is embedded in `ClientDetailView`, the worst
  * route in the bundle) — keep every string and every proposal import in here.
@@ -137,6 +147,15 @@ const m = defineMessages({
   stage: { id: 'publish.batchDialog.stage', defaultMessage: 'Stage for review' },
 
   // ── D44 ─────────────────────────────────────────────────────────────────
+  /**
+   * ⚠ **Item 24 — the reported lecture.** This sentence used to be
+   * unconditional and read *"only your practice's super admin can approve
+   * one"* to the person who IS the super admin. It was deliberately generic
+   * because `/me` carried no `is_owner` and the dialog's own rule forbade
+   * claiming a permission it could not verify. `Me.isOwner` exists now
+   * (package F), so the dialog branches — and this is the sentence for
+   * somebody who genuinely cannot release.
+   */
   authority: {
     id: 'publish.batchDialog.authority',
     defaultMessage:
@@ -146,6 +165,16 @@ const m = defineMessages({
     id: 'publish.batchDialog.authorityNotYours',
     defaultMessage:
       'Your role does not release. Staging this queues it in Approvals for your practice’s super admin, and nothing is Published until they approve it.',
+  },
+  /**
+   * ⚠ It says what happens NEXT, never *"you have permission"*. The server is
+   * still the rule and a stale `/me` is exactly how its refusal arrives, so the
+   * honest claim is about the flow rather than about the person.
+   */
+  authorityYours: {
+    id: 'publish.batchDialog.authorityYours',
+    defaultMessage:
+      'You can approve this after reading the review — it opens as soon as you stage, and nothing is Published until you do.',
   },
 
   // ── where the VT file comes from ────────────────────────────────────────
@@ -220,8 +249,11 @@ export default function PublishBatchDialog({ selection, onClose, onSettled }: Pu
   // D44: what this session's role can be said about. `/me` carries the role and
   // NOT `memberships.is_owner`, so a PRACTICE_ADMIN may still be refused — the
   // note therefore never promises the permission, it only names who holds it.
+  // D44, item 24: the fact is read once, in `api/auth.ts`, so this dialog and
+  // its three siblings cannot drift into different claims about one person.
+  const canRelease = holdsReleaseAuthority(session);
   const role = session.status === 'authenticated' ? session.me.role : null;
-  const roleCannotRelease = role !== null && role !== 'PRACTICE_ADMIN';
+  const roleCannotRelease = !canRelease && role !== null && role !== 'PRACTICE_ADMIN';
 
   const goToExport = () => {
     onClose();
@@ -380,7 +412,7 @@ export default function PublishBatchDialog({ selection, onClose, onSettled }: Pu
           <p className="text-[12px] text-zinc-500 leading-relaxed flex items-start gap-2">
             <ShieldCheck size={14} className="shrink-0 mt-0.5" />
             <span className="min-w-0">
-              {intl.formatMessage(roleCannotRelease ? m.authorityNotYours : m.authority)}
+              {intl.formatMessage(canRelease ? m.authorityYours : roleCannotRelease ? m.authorityNotYours : m.authority)}
             </span>
           </p>
 

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import CodingProposalModal from './CodingProposalModal';
@@ -22,22 +22,36 @@ import type { Document } from '../../lib/types';
  *   `UNKNOWN · TYPE`, which says nothing true about the document.
  */
 
+// ⚠ `isOwner` defaults TRUE since review items 24/66: `document.update-coding`
+// is TIER 1, so a session without it STAGES rather than applies, and every
+// pre-existing case here is about the apply path. The stage path flips it.
+let isOwner = true;
+const updateDocumentField = vi.fn();
+
 vi.mock('../../context/AppContext', () => ({
-  useAppContext: () => ({ updateDocumentField: vi.fn(), logAudit: vi.fn() }),
+  useAppContext: () => ({
+    updateDocumentField,
+    logAudit: vi.fn(),
+    session: { status: 'authenticated', me: { user: { id: 'usr_me' }, role: 'PRACTICE_ADMIN', isOwner } },
+  }),
 }));
 
-const updateCodingProposal = vi.fn(async (_request: unknown) => {});
+const updateCodingProposal = vi.fn(async (_request: unknown, _options?: unknown) => ({ released: true }));
 
 vi.mock('../../api/document-detail', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api/document-detail')>();
   return {
     ...actual,
-    updateCodingProposal: (request: unknown) => updateCodingProposal(request as never),
+    updateCodingProposal: (request: unknown, options?: unknown) => updateCodingProposal(request as never, options),
     refreshDocument: vi.fn(async () => {}),
   };
 });
 
-afterEach(() => vi.clearAllMocks());
+afterEach(() => {
+  vi.clearAllMocks();
+  // One case flips it; the default is the release-holder.
+  isOwner = true;
+});
 
 const doc: Document = {
   id: 'doc_f404e752a4fbb629b203dc04',
@@ -164,4 +178,91 @@ test('Escape closes the dialog through the useEscape stack', () => {
   // The stack listens on `document`, deliberately — see `lib/useEscape.ts`.
   fireEvent.keyDown(document, { key: 'Escape' });
   expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+/* ── items 24 + 66: a member STAGES, and the card says so ───────────────── */
+
+test('a member who cannot release sends the correction for approval instead of applying it', () => {
+  // ⚠ `document.update-coding` became TIER 1 (matrix ⚖5, the literal reading of
+  // "any filed update like the category must need approval"). Before this the
+  // card ran create → review → approve behind one click and the third call
+  // answered 403, so the person read "That correction was NOT saved" about an
+  // act that WAS staged and IS in the queue.
+  isOwner = false;
+
+  renderModal();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Read review' }));
+
+  // The button says what the click does, and the note says who releases.
+  expect(screen.queryByRole('button', { name: 'Approve change' })).toBeNull();
+  const stage = screen.getByRole('button', { name: 'Send for approval' });
+  expect(document.body.textContent).toContain('released by your practice’s super admin');
+
+  fireEvent.click(stage);
+
+  // It STAGES: the third call is never made, and the value is not painted onto
+  // the document — an optimistic update here would show a correction the super
+  // admin has not approved, which the next 5 s poll would take away again.
+  expect(updateCodingProposal).toHaveBeenCalledWith(expect.anything(), { canRelease: false });
+  expect(updateDocumentField).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain('Sent for approval');
+});
+
+/* ── item 20: the dialog dismisses itself after the confirmation ─────────── */
+
+test('the dialog shows the confirmation and then closes itself, backdrop and all', async () => {
+  // > After changing the category of an invoice manually the modal backdrop
+  // > with the blend balk screen must disappear after showing the confirmation
+  //
+  // The reported defect: the green banner appeared and the document stayed
+  // behind a dark scrim the user had to dismiss by hand.
+  vi.useFakeTimers();
+  try {
+    const { onClose } = renderModal();
+    fireEvent.click(screen.getByRole('button', { name: 'Read review' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Approve change' }));
+
+    // The confirmation is READ first — it is on screen and the dialog is still
+    // open. A dialog that vanishes on the click is the mirror-image defect.
+    expect(document.body.textContent).toContain('Correction approved');
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Let the server call settle, then let the dwell elapse.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(2_000);
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('⚠ a REFUSED correction keeps the dialog open — the red alert is the only place it is said', async () => {
+  // The dismissal fires on the server settle, never on the click, precisely
+  // because `ReviewGate` shows its banner optimistically and a refusal a moment
+  // later swaps the card to `failedOnCard`. Closing on the click would throw
+  // away the one screen telling somebody their correction was not saved.
+  updateCodingProposal.mockRejectedValueOnce(new Error('NT-PRP-006 — that category is not on the chart'));
+  vi.useFakeTimers();
+  try {
+    const { onClose } = renderModal();
+    fireEvent.click(screen.getByRole('button', { name: 'Read review' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Approve change' }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(5_000);
+    });
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('That correction was NOT saved');
+  } finally {
+    vi.useRealTimers();
+  }
 });

@@ -9,6 +9,7 @@ import { ENV } from '../../config/env.module.js';
 import { selectSmsSender } from '../chase/index.js';
 import { analysisAccountChart, previewExportEntries } from '../exports-public-api/index.js';
 import { PrismaDuplicateDetector } from '../ingestion-routing/index.js';
+import { NOTIFICATIONS_SERVICE, NotificationsModule, type NotificationsService } from '../notifications/index.js';
 import { LEDGER_ADAPTER, type LedgerAdapter, previewPublishBatch, PublishingModule } from '../publishing/index.js';
 import { ChartOfAccountsService, selectCodingModel } from '../rules-suggestions/index.js';
 import {
@@ -51,13 +52,13 @@ import { ACTION_PROPOSALS_SERVICE, PRISMA } from './tokens.js';
  * same honest limitation as web-upload's, same durable-store follow-up.
  */
 @Module({
-  imports: [PublishingModule],
+  imports: [PublishingModule, NotificationsModule],
   controllers: [ActionProposalsController],
   providers: [
     { provide: PRISMA, useFactory: () => getPrismaClient() },
     {
       provide: ACTION_PROPOSALS_SERVICE,
-      useFactory: (prisma: PrismaClient, env: Env, ledger: LedgerAdapter) => {
+      useFactory: (prisma: PrismaClient, env: Env, ledger: LedgerAdapter, notifications: NotificationsService) => {
         // The coding model's only reporting channel — it never throws and never
         // fails a caller, so a WARN is the whole of what a slow or refused
         // second opinion leaves behind.
@@ -170,9 +171,35 @@ import { ACTION_PROPOSALS_SERVICE, PRISMA } from './tokens.js';
           // The model second opinion on the same correction, rendered into the
           // same ⚠ Checks section at review (see above).
           correctionSecondOpinion,
+          // The denial notice (review item 27). ⚠ A FUNCTION is handed over,
+          // never the service: this module has to send exactly one message, and
+          // giving it a `NotificationsService` would put every other message in
+          // the product one call away from the engine — the second-door shape
+          // issue #81 exists to prevent.
+          //
+          // ⚠ The refusal is swallowed HERE rather than thrown at the engine.
+          // `SendOutcome` reports a rate-limit refusal as a value, and the
+          // engine has already committed the denial by the time this runs, so
+          // there is nothing a failure could undo. It is logged with the kind
+          // and left; the decision is on the proposal and on the document
+          // either way.
+          async (input) => {
+            const outcome = await notifications.sendProposalDenied({
+              to: input.to,
+              actionLabel: input.actionLabel,
+              clientName: input.clientName,
+              deciderName: input.deciderName,
+              reason: input.reason,
+            });
+            if (!outcome.sent) {
+              new Logger('DenialNotice').warn(
+                `denial notice not sent (${outcome.reason}) — the denial itself is recorded on the proposal`,
+              );
+            }
+          },
         );
       },
-      inject: [PRISMA, ENV, LEDGER_ADAPTER],
+      inject: [PRISMA, ENV, LEDGER_ADAPTER, NOTIFICATIONS_SERVICE],
     },
   ],
 })

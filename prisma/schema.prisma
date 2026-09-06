@@ -1219,12 +1219,23 @@ model Approval {
   @@map("approvals")
 }
 
+/// ⚠ `CANCELLED` and `DENIED` are DIFFERENT decisions (review item 27).
+/// `CANCELLED` is the proposer withdrawing their own work; `DENIED` is a
+/// reviewer refusing it, always with a reason, which is emailed to the
+/// proposer. `GET /v1/action-proposals?state=` filters on this column, so a
+/// History screen that had to read `outcome` JSON per row to tell them apart
+/// would be a state enum not carrying its own record.
+///
+/// ⚠ `DENIED`, not `REJECTED`: `DocumentState.REJECTED` and the
+/// `document.reject` proposal kind already exist and mean a DOCUMENT judged
+/// unusable.
 enum ProposalState {
   CREATED
   REVIEWED
   APPROVED
   EXECUTED
   CANCELLED
+  DENIED
   EXPIRED
 }
 

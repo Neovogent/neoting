@@ -33,7 +33,28 @@ import { ConfirmStep } from '../components/DynamicComponents/ConfirmStep';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import type { ApprovalItem, ApprovalWorkflow, Document } from '../lib/types';
 import { Tooltip } from '../components/DynamicComponents/Tooltip';
-import { DocumentPreview } from '../components/DynamicComponents/DocumentPreview';
+/**
+ * ⚠ **Lazy, and the route needs it to be** (6 Sep 2026, review item 26).
+ *
+ * `DocumentPreview` plus its `api/document-detail` client is **~12.0 kB gzip**
+ * on this chunk, and it opens behind a [View] click on a row that most sessions
+ * never press. Eager, it put the Approvals route at 251,582 B — 1,582 B OVER
+ * the 250,000 B budget, which is a reject (D37). The 951 B of `api/team.ts`
+ * this package added is what tipped it, but the 12 kB was always the wrong
+ * thing to fetch on arrival.
+ *
+ * Same reclaim, same reasoning, as the one already taken on `BankView` and
+ * `ClientDetailView`. The `Suspense` sits INSIDE the dialog's own frame so the
+ * scrim and its close button paint at once and only the card waits.
+ *
+ * ⚠ A `lazy()` at one call site proves nothing (this file's own bundle notes):
+ * grep every STATIC importer before believing a number. `ApprovalsView` is the
+ * only one here — `AnalysisModal` and `DuplicateModal`, which drag it on other
+ * routes, are not imported by this view.
+ */
+const DocumentPreview = lazy(() =>
+  import('../components/DynamicComponents/DocumentPreview').then((mod) => ({ default: mod.DocumentPreview })),
+);
 import { EXPORT_HINT } from '../lib/exportRules';
 
 const TABS = ['Queue', 'Workflows', 'History'] as const;
@@ -688,7 +709,9 @@ export function ApprovalsView() {
               >
                 <X size={18} />
               </button>
-              <DocumentPreview document={documents.find((d) => d.id === preview.id) ?? preview} />
+              <Suspense fallback={<div className="rounded-[32px] bg-card border border-white/5 h-64 animate-pulse" />}>
+                <DocumentPreview document={documents.find((d) => d.id === preview.id) ?? preview} />
+              </Suspense>
             </motion.div>
           </motion.div>
         )}

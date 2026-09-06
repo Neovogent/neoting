@@ -2214,6 +2214,186 @@ have uncommitted work in this tree, so the absolute floor and worst-route number
 in the table above are not attributable to any one change; re-measure on a clean
 checkout before quoting a delta.
 
+## The approvals package (6 Sep 2026 — review items 20, 24, 26, 27, 66)
+
+`docs/Access_and_Approval_Matrix.md` **Part 2** is the ruling document: which
+proposal kinds need the super admin, which need any member, and which never
+queue at all. Four rulings (⚖5–⚖8) are recorded inline. What lands here:
+
+**⚠ Every `document.update-coding` is TIER 1 now (⚖5, the literal reading).**
+So a member who cannot release stages the correction and it QUEUES — see the
+role-aware copy below. `updateCodingProposal` no longer runs create → review →
+approve unconditionally.
+
+**The super-admin fast path** (⚖6). `LiveProposalCard` takes `autoOpenReview`;
+`LiveProposalFlow` passes it when `session.me.role === 'PRACTICE_ADMIN' &&
+session.me.isOwner` — **the same conjunction `assert-can.ts` applies**, read one
+layer out, so it is not a guess about what the server will allow. Staging then
+fires `POST …/review` itself and the server's own render is on screen when the
+dialog settles.
+
+- ⚠ **It automates [Read review] and NOTHING else.** Approve still mounts only
+  after the server's render arrives and a human still presses it. An
+  auto-approve would be the screen pretending to be the person, which is the one
+  thing `api/proposals.ts`'s header forbids. Pinned in
+  `PublishBatchDialog.test.tsx` — the fast-path case asserts `approveReviewed`
+  was NOT called before the click.
+- ⚠ **It is presentation.** A stale `/me` costs a review that opened itself for
+  somebody who then meets `NT-PRM-001` on Approve — the refusal they would have
+  met anyway. Nothing here gates anything.
+- ⚠ **A test that mocks `useAppContext` must decide `isOwner` deliberately.**
+  `true` auto-opens the review, which makes an "Approve is absent until Read
+  review" assertion vacuous. `PublishBatchDialog.test.tsx` and
+  `PurgeDocumentsDialog.test.tsx` both default it FALSE and say why.
+
+**Bundle — the approvals package, PAIRED** (6 Sep 2026; two builds in one
+session, same machine, `route-bundle-closure.mjs` both sides, node-zlib level 6
+via the Windows fallback the same commit added — so the two columns are
+comparable to each other and NOT to any shell-`gzip` figure elsewhere in this
+file):
+
+| route | main | this package | vs budget |
+|---|---|---|---|
+| `AIWorkspaceView` | 300,201 | 302,213 | **52,213 OVER** — the pre-existing breach, +2.0 kB |
+| `ApprovalsView` | 248,347 | **238,607** | **−9,740** · 11,393 under |
+| `InboxesView` | 247,404 | 249,046 | 954 under — **the thinnest on the board** |
+| `ClientDetailView` | 247,189 | 247,531 | 2,469 under |
+| `ChasesView` | 242,096 | 242,233 | 7,767 under |
+| `ClientsView` | 241,779 | 241,922 | 8,078 under |
+| `BusinessPortal` | 239,805 | 239,939 | 10,061 under |
+
+**The floor moved +134 B** — the uniform delta across every untouched route: one
+predicate in `api/auth.ts` plus the entry chunk's preload map. Everything above
+that is the deny UI, the fast path and the duplicate banner landing on the
+chunks that carry `LiveProposalCard` / `LiveProposalFlow`, which is where the
+reachability rule puts them.
+
+⚠ **`ApprovalsView` went OVER before it came back.** The 951 B of `api/team.ts`
+the proposer-name lookup added took it to 251,582 B — a reject — and the fix was
+not to drop the feature but to stop fetching `DocumentPreview` (+ its
+`api/document-detail` client, ~12.0 kB together) on arrival for a dialog behind
+a [View] click. Read the `lazy()` comment in `ApprovalsView.tsx`.
+
+⚠ **`InboxesView` has 954 B of headroom.** It has been the thinnest route for
+three packages running and the next byte spent on the floor puts it over. Its
+named next lever is still `AnalysisModal` (8,540 B), and taking it is a
+behaviour change — the modal draws its own overlay, so there is no frame to put
+a `Suspense` inside and the dialog would arrive a beat after the click. Do not
+take it without asking.
+
+**The correction modal dismisses itself after the decision** (item 20 — the
+green banner appeared and the document stayed behind a dark scrim somebody had
+to close by hand). `CodingProposalCard` gained `onSettled`, `CodingProposalModal`
+holds the timer.
+
+- ⚠ **It fires on the SERVER SETTLE, never on the click.** `ReviewGate` shows
+  its confirmation optimistically and a refusal a moment later swaps the card to
+  `failedOnCard` — dismissing on the click would throw away the one screen
+  telling somebody their correction was not saved. Both halves are pinned in
+  `CodingProposalModal.test.tsx`, and the refusal case is the one that matters.
+- The dwell is 1.4 s: long enough to read the confirmation, short enough that
+  nobody reaches for the close button. Not zero — a dialog that vanishes on the
+  click leaves a person unsure anything happened, which is the mirror-image
+  defect.
+- The timer is a ref cleared on unmount, so a dialog closed by hand meanwhile
+  cannot call `onClose` on a remounted one. Nothing about the `Modal` FRAME
+  changes: the bounded card and its scroll box (items 23+40, #258) are
+  untouched.
+
+⚠ **The Approvals QUEUE keeps its decided cards mounted and must not be "made
+consistent" with this.** A queue's outcome banner is the only record of a
+decision on that screen and exists because the settle refetch used to unmount it
+instantly (`ApprovalsLiveQueue`'s own note). Right for a queue, wrong for a
+modal over the one document it just changed.
+
+**The D44 family is role-aware, from ONE fact** (item 24 — *"I'm the super
+admin and it is giving me lecture"*). `holdsReleaseAuthority(session)` in
+`api/auth.ts` is `canRelease(role) && isOwner` — `mayRelease` in
+`assert-can.ts`, verbatim — and it is the only place any surface reads it, so
+`PublishBatchDialog`, `RequestStatementDialog`, `OffboardClientDialog`,
+`LiveProposalFlow` and `CodingProposalCard` cannot drift into five claims about
+one person.
+
+⚠ **The old rule is retired, its REASON is not.** *"`/me` carries no
+`is_owner`, so this screen can never claim the permission IS held"* was true
+until package F made `Me.isOwner` required. The dialogs may branch now — and
+still never say *"you have permission"*. They say what the flow does next,
+because the server is the rule (`NT-PRM-001` on approve) and a `/me` thirty
+seconds stale is exactly how its refusal arrives. Every surface here still
+handles that refusal when it comes.
+
+⚠ **Not authenticated answers FALSE**, unlike `actsForWholePractice`, which
+answers `true`. That one asks *is this surface any of your business* — where
+synthetic mode must keep seeing everything (METH_MODE §1). This one asks *may
+you release*, where the safe reading of an unknown session promises nothing.
+
+**The correction dialog STAGES for a member who cannot release** (items 24 +
+66). `document.update-coding` is TIER 1 since matrix ⚖5, and
+`updateCodingProposal` drives create → review → approve behind one click — so
+without this a standard user's third call answered 403 and the card said *"That
+correction was NOT saved"*, which is true of the value and the wrong sentence
+about the act: it was staged, and it is in the queue. It now takes
+`{ canRelease }` and stops after CREATE when false. Three things move together
+and must keep moving together:
+
+- the button says **Send for approval**, not "Approve change";
+- the enforcement note names who releases;
+- ⚠ **the optimistic `updateDocumentField` does NOT fire.** Painting the new
+  value would show a correction the super admin has not approved, and the 5 s
+  poll would take it away again — the "a write the next poll reverts" failure
+  the S14 sweep exists to prevent.
+
+Creation is still where the server's hard refusals land (a category off the
+client's chart, an unreachable document), so a staging caller meets every one
+of them. What it does not do is press a button it may not press.
+
+⚠ **A test that mocks `useAppContext` for any of these surfaces must decide
+`isOwner` deliberately** — it changes the copy, the button word, whether the
+review auto-opens and whether the correction applies. The four affected suites
+default it and say which path they are testing.
+
+**Deny is a STEP, not a button that acts** (item 27). The reason is required by
+the contract, is emailed verbatim to the colleague who staged the proposal and
+lands on the documents it named — so the first press opens a `textarea`
+somebody can read back and the confirm is a second, deliberate press. ⚠ **Approve
+is withheld while that field is open**: somebody mid-sentence about why they are
+refusing must not have Approve one mis-click away. An empty reason is refused
+HERE as well as server-side, because the person is mid-sentence rather than a
+broken client. ⚠ **The word is "Deny", never "Reject"** — `document.reject` is a
+proposal KIND and `DocumentState.REJECTED` is a failed document; three
+"rejected"s on one screen is how a support call goes wrong. `decisionReason`
+(`api/proposals.ts`) narrows the server's `outcome` the way `offboardReason`
+narrows a payload, and a proposal that ARRIVES `DENIED` wears *"Denied by {who}:
+{reason}"*. ⚠ Do not confuse the two: `offboardReason` is the PROPOSER's note on
+why they staged an offboard, `decisionReason` is the REVIEWER's on why they
+refused it, and both can be on one card meaning opposite things.
+
+**The denied document tags itself, for zero web bytes.** The server writes the
+reason to `failureMessage`, `api/documents.ts` already maps that to
+`Document.statusNote`, and `Tables.tsx` already renders it as the amber pill on
+every review-status row — so *"Denied by Priya Shah: the VAT is wrong"* appears
+on the client tables with no component change. ⚠ Keep it that way: a second
+rendering of the denial reason here would be a second sentence free to disagree
+with the server's.
+
+⚠ **The Approvals History tab is still the synthetic `ApprovalItem` table.** A
+live read over `GET /action-proposals?state=DENIED` is a separate, unbuilt job.
+
+**`NT-PRP-007` is not a red banner** (item 26, ⚖8). A second identical staging
+is refused server-side, and `LiveProposalFlow` gives it its own amber state with
+the server's sentence and an **Open Approvals** button — the person pressed a
+button twice, which the product invited, and nothing went wrong.
+
+**The proposer is a PERSON, never a CUID** (item 26(3)). The queue read
+`createdByUserId` raw, so six cards said *"proposed by CMTNDDE8P00337710E1…"*.
+`LiveProposalCard` takes `proposerName` and falls back through **"you"** (the id
+is this session's — every staging flow) to **"a colleague"**. ⚠ It never falls
+back to the id: a CUID is not a degraded name, it identifies nobody and reads as
+the screen having failed. `ApprovalsLiveQueue` resolves it from
+`usePracticeTeam` — the same list the Team screen shows, on this lazy view's
+chunk (the `api/team.ts` placement rule), and a read every practice-wide member
+may make.
+
 ## The access-control package (6 Sep 2026 — review items 38, 39, 41, 42, 44, 57)
 
 `docs/Access_and_Approval_Matrix.md` is the ruling document — who sees and does

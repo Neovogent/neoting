@@ -48,12 +48,14 @@ import {
   type PublishGateway,
   runDedupeFollowUp,
   runPublishFollowUp,
+  transitionDocument,
 } from '../validation-dedupe/index.js';
-import { assertCan, requiresReleaseAuthority, resolveActor } from './assert-can.js';
+import { assertCanApprove, requiresReleaseAuthority, resolveActor } from './assert-can.js';
 import { appendAuditEvent } from './audit-writer.js';
 import { canonicalHash } from './canonical-hash.js';
+import { proposalIdentity } from './proposal-identity.js';
 import { knownProposalKind, parseStoredProposalPayload } from './proposal-body.js';
-import { renderSummary } from './render-summary.js';
+import { KIND_LABEL, renderSummary } from './render-summary.js';
 import { toActionProposal } from './to-action-proposal.js';
 
 type ListProposalsQuery = z.infer<typeof listActionProposalsQueryParams>;
@@ -74,6 +76,40 @@ export interface CreateProposalRequest {
  * gate refuses at approval time, which is where the guarantee lives.
  */
 const PROPOSAL_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How many pending proposals the duplicate check reads before giving up on
+ * finding a twin (review item 26).
+ *
+ * The candidate set is already narrowed to one kind on one business in a
+ * non-terminal state inside its TTL, which in a healthy practice is nought to
+ * a handful. The cap exists for the UNhealthy one — the queue this feature was
+ * reported from held eight over a single document, and a practice that has let
+ * hundreds accumulate must not turn every subsequent create into an unbounded
+ * scan. Missing a twin past the cap costs one duplicate card, which is what
+ * the whole product did until today; blocking the create would be worse.
+ */
+const DUPLICATE_SCAN_LIMIT = 50;
+
+/**
+ * What a caller who staged the same act twice reads (`NT-PRP-007`).
+ *
+ * Per kind because the sentence has to name the thing they pressed — the rule
+ * `assert-can.ts` established for refusal messages, applied on the create side.
+ * Partial on purpose: a kind with no sentence gets the generic one, which is
+ * true of every kind, rather than nothing.
+ */
+const DUPLICATE_DETAIL: Partial<Record<ProposalKind, string>> = {
+  'publish.batch':
+    'This release is already awaiting review — the same documents were staged for this client and nobody has decided it yet. Open Approvals and decide that one.',
+  'document.update-coding':
+    'A correction to the same field on this document is already awaiting review. Decide that one in Approvals rather than staging a second.',
+  'chase.send':
+    'A chase for exactly these items is already awaiting review. Decide that one in Approvals rather than staging a second.',
+  'bank.remove-statement': 'Removing these statements is already awaiting review. Decide that one in Approvals.',
+  'document.purge': 'Deleting these documents is already awaiting review. Decide that one in Approvals.',
+  'business.offboard': 'Removing this client is already awaiting review. Decide that one in Approvals.',
+};
 
 /**
  * The Review → Approve engine (METH S3, issue #122) — Governance §10, the
@@ -155,6 +191,22 @@ export class ActionProposalsService {
      * silence, because the ruling says the check must never block a correction.
      */
     private readonly correctionSecondOpinion?: CorrectionSecondOpinion,
+    /**
+     * The denial notice (review item 27) — the fifth structural seam this
+     * module's factory composes, built in `approvals.module.ts` over
+     * `notifications`' `NotificationsService`.
+     *
+     * ⚠ **A FUNCTION, not the service.** This module needs to send exactly one
+     * message and must not acquire an opinion about email: a `NotificationsService`
+     * here would put every other message it can send one import away from the
+     * engine, which is the second-door shape issue #81 exists to prevent.
+     *
+     * Optional for the reason every seam here is optional — a test builds the
+     * engine without it — and, like the second opinion, optional in the stronger
+     * sense too: it is called AFTER the commit and a throw is swallowed into a
+     * loud log. A denial whose email failed is a denial, recorded and visible.
+     */
+    private readonly denialNotice?: DenialNotice,
   ) {}
 
   async create(ctx: ScopeContext, request: CreateProposalRequest, idempotencyKey: string): Promise<ActionProposal> {
@@ -288,6 +340,20 @@ export class ActionProposalsService {
           throw error;
         }
       }
+      // ---- IDEMPOTENT STAGING (review item 26) ------------------------------
+      //
+      // Run LAST of the creation checks and immediately before the insert, so
+      // a second identical click gets the same refusal the first one would
+      // have got if it were malformed — the payload gates above are about
+      // whether this act is possible at all, and this one is about whether it
+      // is already open.
+      //
+      // ⚠ It is over the RECOMPUTED payload, not the caller's. The engine has
+      // rewritten publish/chase/statement payloads by this point, and the
+      // stored rows it compares against were rewritten the same way — so both
+      // sides of the comparison come out of the same mill.
+      await this.refuseDuplicatePending(db, request.kind, businessId, payload);
+
       return db.actionProposal.create({
         data: {
           businessId,
@@ -470,7 +536,12 @@ export class ActionProposalsService {
       // nothing it could name is a release, so it never reaches an effect.
       const kind = knownProposalKind(proposal.kind);
       if (kind !== null && requiresReleaseAuthority(kind)) {
-        assertCan(await resolveActor(db, ctx), 'publish.release', {
+        // `assertCanApprove`, not `assertCan(…, 'publish.release', …)`: since
+        // item 66 tier 1 holds SEVEN kinds, and the five that are not D44's two
+        // answer to `proposal.approve` so a refused approver reads a sentence
+        // about the act they pressed. One predicate, two names —
+        // `assert-can.ts` picks between them.
+        assertCanApprove(await resolveActor(db, ctx), {
           kind,
           proposalId: proposal.id,
           businessId: proposal.businessId,
@@ -569,6 +640,238 @@ export class ActionProposalsService {
       return toActionProposal(updated);
     });
 
+    await this.remember(ctx, idempotencyKey, { proposalId, ...body }, response);
+    return response;
+  }
+
+  /**
+   * Refuse a create whose act is already awaiting a decision (review item 26,
+   * matrix gate ⚖8).
+   *
+   * > *For same document, multiple review request has come in the approval
+   * > tab… make sure no duplicate approval request is sent*
+   *
+   * Eight identical release cards over one Ready document is what this stops.
+   * Staging is now idempotent over WHAT IS BEING PROPOSED, not only over the
+   * caller's `Idempotency-Key` — which never helped here, because each click
+   * carried a fresh key, honestly.
+   *
+   * **The candidate set is small by construction**: same kind, same business,
+   * still `CREATED` or `REVIEWED`, still inside its TTL. In practice that is
+   * nought to a handful of rows, so the identity comparison happens in JS over
+   * `proposalIdentity` rather than as a jsonb predicate — which is also what
+   * lets it read payloads the engine rewrote at creation without a column to
+   * store a request hash in.
+   *
+   * ⚠ **An expired pending row does NOT block.** It cannot be approved
+   * (`NT-PRP-003` refuses it at review and at approve), so treating it as the
+   * open decision would leave a caller pointed at a card nobody can act on —
+   * a deadlock wearing a helpful sentence.
+   *
+   * ⚠ **A kind with no identity is never deduped**, and `rule.create` is the
+   * deliberate one: two rules over one client are two rules. See
+   * `proposal-identity.ts`.
+   *
+   * The refusal is 409 rather than a quiet 201 over the existing row because
+   * the browser cannot see an HTTP status — `packages/contracts`' fetch mutator
+   * returns the raw body — so a returned twin would have the dialog claiming to
+   * have staged something it did not.
+   */
+  private async refuseDuplicatePending(
+    db: ScopedClient,
+    kind: ProposalKind,
+    businessId: string | null,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const identity = proposalIdentity(kind, payload);
+    if (identity === null) return;
+
+    const pending = await db.actionProposal.findMany({
+      where: {
+        kind,
+        businessId,
+        state: { in: ['CREATED', 'REVIEWED'] },
+        expiresAt: { gt: new Date() },
+      },
+      select: { id: true, payload: true },
+      // Newest first, so the id named in the log is the one a caller most
+      // likely just made — and the scan stops at the first match anyway.
+      orderBy: { createdAt: 'desc' },
+      take: DUPLICATE_SCAN_LIMIT,
+    });
+
+    const twin = pending.find(
+      (row) => isJsonObject(row.payload) && proposalIdentity(kind, row.payload as Record<string, unknown>) === identity,
+    );
+    if (twin === undefined) return;
+
+    throw new AppException(
+      'NT-PRP-007',
+      HttpStatus.CONFLICT,
+      'Already awaiting review',
+      // Written for the person who pressed the button twice. It says the act is
+      // not lost, and it says where to go — never the proposal id, which would
+      // be a handle no screen in the product resolves.
+      DUPLICATE_DETAIL[kind] ??
+        'An identical request is already awaiting review. Decide that one in Approvals rather than staging a second.',
+    );
+  }
+
+  /**
+   * **[Deny]** — the REVIEWER's refusal (review item 27, matrix gate ⚖7).
+   *
+   * > *There is no option for denying an approval, if the super admin denies to
+   * > approve it then it must ask for the reason, and the reason and declined
+   * > message must be sent via email to the team member*
+   *
+   * Until this existed the card offered Approve and Cancel, and **Cancel is the
+   * proposer taking their own work back** — a reviewer who disagreed had nothing
+   * to press and no way to say why. The two are different decisions and the
+   * state enum now says so: `DENIED`, never `CANCELLED`, and never `REJECTED`
+   * (that word already means a DOCUMENT judged unusable, twice over).
+   *
+   * ## The four things it does, and the order they are done in
+   *
+   * 1. **Authority first**, before any other gate, for the approve path's
+   *    reason verbatim: a caller who may not decide this learns nothing about
+   *    its state. Deny authority IS approve authority — a refusal is a decision
+   *    of the same weight — so `assertCanApprove` is the same call, and tier-1
+   *    kinds answer `NT-PRM-001` to anybody but the firm's super admin.
+   * 2. **The proposal is consumed**, `DENIED`, with the reason and the decider
+   *    in `outcome`. Nothing is deleted; the record of what we decided NOT to do
+   *    is the point.
+   * 3. **A denied `publish.batch` sends its documents back** `READY →
+   *    TO_REVIEW` wearing "Denied by {name}: {reason}". Only that kind touches a
+   *    document: denying a coding correction simply means the correction was
+   *    never applied, and there is nothing to send back.
+   * 4. **The proposer is emailed the reason — AFTER the commit.**
+   *
+   * ## ⚠ The email is outside the transaction, and that is not a convenience
+   *
+   * An SMTP or SES round trip must never hold a tenant transaction open — the
+   * rule `runPublishFollowUp` established for the ledger call, for the same
+   * reason: it lasts as long as somebody else's network decides. So the denial
+   * commits first and the notice is sent after, which means a send failure
+   * cannot un-deny anything. It is a loud log, exactly like the post-commit
+   * follow-ups: the decision is on the proposal, visible in the queue and on
+   * the document, and a lost email is not a lost decision.
+   *
+   * ⚠ **A model-proposed action has no proposer to write to** and simply skips
+   * the notice — `createdByModel` and `createdByUserId` are never both set.
+   */
+  async deny(
+    ctx: ScopeContext,
+    proposalId: string,
+    body: { reason: string },
+    idempotencyKey: string,
+  ): Promise<ActionProposal> {
+    const replay = await this.replayed<ActionProposal>(ctx, idempotencyKey, { proposalId, ...body });
+    if (replay !== null) return replay;
+
+    const traceId = currentTraceId() ?? 'no-trace';
+    const { row, notice } = await scopedDb(this.prisma, ctx, async (db) => {
+      const proposal = await db.actionProposal.findUnique({ where: { id: proposalId } });
+      if (proposal === null) throw notFound();
+
+      const kind = knownProposalKind(proposal.kind);
+
+      // ---- AUTHORITY, first (the approve path's ordering, and its reason) ---
+      if (kind !== null && requiresReleaseAuthority(kind)) {
+        assertCanApprove(await resolveActor(db, ctx), {
+          kind,
+          proposalId: proposal.id,
+          businessId: proposal.businessId,
+        });
+      }
+
+      if (proposal.executedAt !== null || proposal.state === 'EXECUTED') {
+        throw conflict(
+          'NT-PRP-005',
+          'Already executed',
+          'An executed action is undone by a new proposal, never by denying the old one.',
+        );
+      }
+      if (proposal.state === 'CANCELLED') {
+        throw conflict('NT-PRP-006', 'Proposal cancelled', 'The proposer withdrew this before it was decided.');
+      }
+      // Idempotent replay: denying a denied proposal returns it unchanged rather
+      // than overwriting one reviewer's reason with another's.
+      if (proposal.state === 'DENIED') return { row: proposal, notice: null };
+
+      // ⚠ An EXPIRED proposal is deliberately still deniable, which is why
+      // `refuseTerminal` is not reused here. Review and approve refuse an
+      // expired row because approving it would execute against facts that have
+      // moved; denying executes nothing. A queue full of expired proposals
+      // nobody may close is a queue nobody reads.
+
+      const decider = await readPersonName(db, ctx.actorId);
+      const denied = await db.actionProposal.update({
+        where: { id: proposal.id },
+        data: {
+          state: 'DENIED',
+          outcome: {
+            denied: true,
+            reason: body.reason,
+            deniedByUserId: ctx.actorId,
+            ...(decider === null ? {} : { deniedByName: decider }),
+          },
+        },
+      });
+
+      // ---- the documents go back (publish.batch only) -----------------------
+      if (kind === 'publish.batch') {
+        await sendDocumentsBack(db, proposal, body.reason, decider, traceId);
+      }
+
+      await appendAuditEvent(db, {
+        businessId: proposal.businessId,
+        event: 'action_proposal.denied',
+        proposalId: proposal.id,
+        payloadHash: proposal.payloadHash,
+        renderedSummaryHash: proposal.renderedSummaryHash,
+        traceId,
+        outcome: { kind: proposal.kind, deniedByUserId: ctx.actorId },
+      });
+
+      // Everything the notice needs, read under the CALLER's scope while it is
+      // still open — the mailer runs after the transaction and has none.
+      const proposerEmail =
+        proposal.createdByUserId === null ? null : await readPersonEmail(db, proposal.createdByUserId);
+      const clientName =
+        proposal.businessId === null
+          ? null
+          : ((await db.business.findUnique({ where: { id: proposal.businessId }, select: { name: true } }))?.name ??
+            null);
+
+      return {
+        row: denied,
+        notice:
+          proposerEmail === null
+            ? null
+            : {
+                to: proposerEmail,
+                actionLabel: labelFor(proposal),
+                clientName,
+                deciderName: decider,
+                reason: body.reason,
+              },
+      };
+    });
+
+    if (notice !== null) {
+      try {
+        await this.denialNotice?.(notice);
+      } catch (error) {
+        // The denial is committed and correct. A send failure is a loud log,
+        // never a 500 for a decision that was taken — the post-commit
+        // follow-ups' rule, one seam over.
+        this.logger.warn(
+          `denial notice failed [${traceId}]: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
+    const response = toActionProposal(row);
     await this.remember(ctx, idempotencyKey, { proposalId, ...body }, response);
     return response;
   }
@@ -686,6 +989,137 @@ export class ActionProposalsService {
   private fingerprintFor(ctx: ScopeContext, request: unknown): string {
     return fingerprint({ actorId: ctx.actorId, request });
   }
+}
+
+/**
+ * What the engine hands the mailer when a proposal is denied (review item 27).
+ *
+ * Deliberately a plain shape and not `SendProposalDeniedInput`: this module
+ * composes no email and holds no address type. It states the facts it read
+ * under the caller's scope; `approvals.module.ts` maps them onto the
+ * notifications seam, which is the composition root's job.
+ */
+export interface DenialNoticeInput {
+  readonly to: string;
+  readonly actionLabel: string;
+  readonly clientName: string | null;
+  readonly deciderName: string | null;
+  readonly reason: string;
+}
+
+export type DenialNotice = (input: DenialNoticeInput) => Promise<unknown>;
+
+/**
+ * ⚠ `documents.failure_code` for a reviewer's denial, and it is deliberately
+ * NOT an `NT-PUB-*` code.
+ *
+ * `api/documents.ts` reads `failureCode?.startsWith('NT-PUB')` to decide
+ * whether a row is a FAILED PUBLISH — a thing the export lane offers to retry.
+ * A denial is the opposite: the release was refused by a person and retrying it
+ * unchanged is exactly what must not be offered. `NT-DOC-001` is the existing
+ * "rejected by a reviewer" value, its runbook page says in as many words that
+ * it never reaches the wire as a problem code, and this is precisely what it
+ * was minted for.
+ */
+const DENIED_FAILURE_CODE = 'NT-DOC-001';
+
+/**
+ * A denied release sends its documents back to To Review wearing the reason.
+ *
+ * > *this document must be downgraded from ready tab to review tab with tag
+ * > that it is rejected or denied by the super admin for this reason in a
+ * > column*
+ *
+ * ⚠ **Only rows still in `READY` move, and one that has moved on is SKIPPED
+ * rather than forced.** Between staging and the denial a document may have been
+ * archived, corrected back to `TO_REVIEW` by somebody else, or published by a
+ * second approved batch; `LEGAL_TRANSITIONS` refuses most of those and
+ * `transitionDocument`'s compare-and-swap would throw on the rest. A denial
+ * must not fail because one document in a batch of forty moved — the decision
+ * is about the PROPOSAL, and the send-back is a courtesy to the composer.
+ *
+ * The reason rides `failureCode`/`failureMessage`, the column whose schema
+ * comment reads *"why it was rejected or failed"* — and a denial is a
+ * rejection, by a person rather than by the pipeline. Everything client-facing
+ * then comes free: `api/documents.ts` maps `failureMessage` onto
+ * `Document.statusNote`, and `Tables.tsx` already renders that as the amber
+ * pill on every review-status row. Zero web bytes for the tag item 27 asked
+ * for.
+ */
+async function sendDocumentsBack(
+  db: ScopedClient,
+  proposal: ActionProposalRow,
+  reason: string,
+  deciderName: string | null,
+  traceId: string,
+): Promise<void> {
+  const payload = proposal.payload;
+  if (!isJsonObject(payload)) return;
+  const documentIds = (payload as Record<string, unknown>)['documentIds'];
+  if (!Array.isArray(documentIds)) return;
+
+  const ids = documentIds.filter((id): id is string => typeof id === 'string');
+  if (ids.length === 0) return;
+
+  const documents = await db.document.findMany({
+    where: { id: { in: ids }, state: 'READY' },
+    select: { id: true, state: true },
+  });
+
+  for (const document of documents) {
+    await transitionDocument(db, document, {
+      to: 'TO_REVIEW',
+      failure: {
+        code: DENIED_FAILURE_CODE,
+        // The words the composer reads on the row. The reviewer's own reason is
+        // reproduced verbatim — it is the whole of what they have to act on —
+        // and the decider is named when we know them.
+        message: deciderName === null ? `Denied at review: ${reason}` : `Denied by ${deciderName}: ${reason}`,
+      },
+      traceId,
+      detail: { deniedByProposalId: proposal.id },
+    });
+  }
+}
+
+/**
+ * What the denial notice calls the refused act.
+ *
+ * The proposal's own stored review title first — the server's words for THIS
+ * proposal, computed and hashed at Read review, naming counts and figures a
+ * bare label cannot. `KIND_LABEL` is the fallback for a proposal denied without
+ * its review ever having been opened, which the server permits: refusing to let
+ * somebody say no is not a rule worth having.
+ */
+function labelFor(proposal: ActionProposalRow): string {
+  const summary = proposal.renderedSummary;
+  if (isJsonObject(summary) && typeof (summary as Record<string, unknown>)['title'] === 'string') {
+    return (summary as Record<string, unknown>)['title'] as string;
+  }
+  const kind = knownProposalKind(proposal.kind);
+  return kind === null ? proposal.kind : KIND_LABEL[kind];
+}
+
+/**
+ * A person's display name, or null when nothing is recorded.
+ *
+ * ⚠ `users` carries no RLS — it is one of the tables the policies read — so the
+ * `id` filter IS the boundary here, exactly as it is in `resolveActor`. Both ids
+ * this is called with come from the verified session or from the proposal row
+ * RLS has already admitted.
+ */
+async function readPersonName(db: ScopedClient, userId: string): Promise<string | null> {
+  const user = await db.user.findUnique({ where: { id: userId }, select: { firstName: true, lastName: true } });
+  if (user === null) return null;
+  const name = [user.firstName, user.lastName].filter((part) => part !== null && part !== '').join(' ').trim();
+  return name === '' ? null : name;
+}
+
+/** The proposer's address. Null for a SYSTEM actor or a row with no email. */
+async function readPersonEmail(db: ScopedClient, userId: string): Promise<string | null> {
+  const user = await db.user.findUnique({ where: { id: userId }, select: { email: true, kind: true } });
+  if (user === null || user.kind !== 'HUMAN') return null;
+  return user.email === null || user.email === '' ? null : user.email;
 }
 
 /** The registry entry as the engine calls it — payload already re-validated, typing restored per-kind by the registry's own mapped type. */

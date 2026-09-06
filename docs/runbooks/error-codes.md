@@ -221,6 +221,63 @@ this refusal carries a detail written to be shown to the person who read it.
 
 ---
 
+## `NT-PRP-007` — an identical proposal is already awaiting review
+
+**Status:** `409` · **Surface:** `POST /v1/action-proposals` · **Added by:** review item 26 (6 Sep 2026)
+
+**Symptom.** Somebody presses [Stage for review] a second time and, instead of a
+new card, gets *"This release is already awaiting review."*
+
+**What it means.** Staging is idempotent over **what is being proposed**, not
+only over the caller's `Idempotency-Key`. A create whose **kind + business +
+acted-on record ids** match a proposal already in `CREATED` or `REVIEWED` and
+still inside its 24 h TTL does not mint a second one.
+
+**Why it exists.** The reported queue held **eight identical "Release for
+export" cards over one Ready document**, all pending, all from the same person.
+The `Idempotency-Key` never helped: each click carried a fresh one, correctly —
+they really were separate requests. What they were not was separate *acts*.
+
+**This is not an error the user caused.** The right response is to go and decide
+the pending one, and the `detail` says so, per kind.
+
+**Diagnose.**
+
+```sql
+-- What is already open for this act? (publish.batch shown; adjust the kind)
+SELECT id, state, created_at, expires_at, payload->'documentIds' AS documents
+  FROM action_proposals
+ WHERE kind = 'publish.batch' AND business_id = :businessId
+   AND state IN ('CREATED','REVIEWED') AND expires_at > now()
+ ORDER BY created_at DESC;
+```
+
+**Fix.** Decide the existing proposal — approve it, or cancel it and stage
+again. An **expired** pending row never blocks (it cannot be approved either,
+`NT-PRP-003`), so a stale queue does not deadlock staging.
+
+**Cleaning up a queue that already has duplicates.**
+
+```bash
+pnpm --filter @neoting/api exec tsx scripts/cleanup-duplicate-proposals.ts --dry-run
+pnpm --filter @neoting/api exec tsx scripts/cleanup-duplicate-proposals.ts --apply
+```
+
+It CANCELS the older twins with a stated reason and keeps the newest of each
+group. Nothing is deleted — "what did we decide not to do" is part of the
+record, which is the same rule `POST .../cancellation` obeys.
+
+**⚠ One kind is deliberately never deduped.** `rule.create` has no stable
+identity: two rules over one client are two rules, which is what a rule set
+*is*. `apps/api/src/modules/approvals/proposal-identity.ts` carries the per-kind
+table and the reasoning for every entry.
+
+**Prevention.** This is the prevention. Before it, the only thing standing
+between a stuck Approve button and a queue full of twins was the person's
+patience.
+
+---
+
 ## `NT-DOC-001` — rejected by a reviewer
 
 **Status:** not a wire error · **Surface:** `documents.failure_code` · **Added by:** stage A12

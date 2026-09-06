@@ -8,6 +8,7 @@ import { canRelease } from '../clients-team-settings/index.js';
 import {
   type Actor,
   assertCan,
+  assertCanApprove,
   mayManageBilling,
   mayManagePeople,
   mayManageTeam,
@@ -66,32 +67,99 @@ test('no role other than PRACTICE_ADMIN may release, owner flag or not', () => {
 
 // ---- which kinds are a release ------------------------------------------------
 
-test("the release map is total over ProposalKind, and gates exactly D44's two acts", () => {
+/**
+ * ⚠ The tier table is the matrix's, and this test is where the two are held
+ * together: `docs/Access_and_Approval_Matrix.md` Part 2 lists exactly these
+ * seven, and a change to the code that is not a change to the document fails
+ * here. Sorted and compared whole rather than probed kind by kind — a
+ * promotion nobody meant is the failure mode, and only the whole list catches
+ * one.
+ */
+test("the tier table is total over ProposalKind, and tier 1 is exactly the matrix's seven", () => {
   for (const kind of Object.values(ProposalKind)) {
     expect(typeof RELEASE_KINDS[kind]).toBe('boolean');
   }
-  const gated = Object.values(ProposalKind).filter((k) => requiresReleaseAuthority(k)).sort();
-  expect(gated).toEqual(['chase.send', 'publish.batch']);
+  const tier1 = Object.values(ProposalKind).filter((k) => requiresReleaseAuthority(k)).sort();
+  expect(tier1).toEqual([
+    'bank.remove-statement',
+    'business.offboard',
+    'chase.send',
+    'document.purge',
+    'document.update-coding',
+    'publish.batch',
+    'rule.create',
+  ]);
 });
 
-test('document.purge is UNGATED, and the export protection is the executor refusal instead', () => {
-  // ⚠ The arguable one. Purge IS irreversible — but `RELEASE_KINDS` selects for
-  // acts that reach OUTSIDE the product and cannot be taken back (a message to
-  // somebody else's client, a figure released for export), and a purge reaches
-  // nowhere: it destroys one of the practice's own rows, inside their own
-  // workspace, after a human already put it in Trash.
-  //
-  // What protects the D43 promise is not the approver's rank: a published
-  // document, or one carrying an export link, cannot be purged by ANYBODY,
-  // super admin included. A permission gate would have been a weaker guarantee
-  // wearing a stronger word — it would let the one person who may release also
-  // destroy the link their release created.
-  expect(requiresReleaseAuthority('document.purge')).toBe(false);
+test('document.purge is TIER 1 since item 66 — and the executor refusal still binds the super admin', () => {
+  // ⚠ This assertion was `false` until 6 Sep 2026 and the reversal is the
+  // point. The old reasoning — `RELEASE_KINDS` selects for acts that reach
+  // OUTSIDE the product, and a purge reaches nowhere — was sound while that
+  // was the question. Item 66 asks whose signature an act carries, and a purge
+  // is the only unrecoverable thing in the product.
+  expect(requiresReleaseAuthority('document.purge')).toBe(true);
+  // What did NOT change: a published document, or one carrying an export link,
+  // cannot be purged by ANYBODY, super admin included. That is the executor's
+  // refusal, it protects D43, and it is a different guarantee from this one.
+  // The two are belt and braces now, not one standing in for the other.
 });
 
-test('every compose-and-edit kind is ungated — including reject and reprocess, which undo each other', () => {
-  for (const kind of ['document.archive', 'document.update-coding', 'document.reject', 'document.reprocess', 'rule.create'] as const) {
+test('the tier-2 kinds stay ungated — the approvals an accountant does all day', () => {
+  // Collapsing these into tier 1 is the literal reading item 66 explicitly
+  // did NOT take for them: nine of the sixteen kinds sit here, and they are
+  // the ordinary compose-and-edit traffic D44's first half is about.
+  for (const kind of [
+    'document.archive',
+    'document.route',
+    'document.reject',
+    'document.reprocess',
+    'document.split',
+    'document.move-business',
+    'bank.confirm-match',
+    'document.revoke-link',
+    'document.resolve-duplicate',
+  ] as const) {
     expect(requiresReleaseAuthority(kind)).toBe(false);
+  }
+});
+
+test("a tier-1 refusal that is not one of D44's two names the act the person pressed", () => {
+  // The whole reason `proposal.approve` exists as a second NAME over one
+  // predicate: "release documents for export" said to somebody who pressed
+  // Approve on a category fix is a wrong answer in a right status code. And
+  // the sentence has to say the correction is QUEUED — under item 66's literal
+  // ruling this is where an ordinary standard user now lands, and "you may
+  // not" alone would leave them believing the fix was lost.
+  const standard = actor({ role: WorkspaceRole.PRACTICE_STANDARD, isOwner: false });
+  const thrown = (kind: ProposalKind): AppException => {
+    try {
+      assertCanApprove(standard, { kind, proposalId: 'prp_1', businessId: 'biz_1' });
+    } catch (error) {
+      return error as AppException;
+    }
+    throw new Error(`expected ${kind} to refuse`);
+  };
+
+  const coding = thrown('document.update-coding');
+  expect(coding.code).toBe('NT-PRM-001');
+  expect(coding.publicDetail).toContain('figures or coding');
+  expect(coding.publicDetail).toContain('queued');
+  expect(coding.publicDetail).not.toContain('export');
+
+  // D44's two keep Governance §11.2's own literal and its sentences.
+  expect(thrown('publish.batch').publicDetail).toContain('release documents for export');
+  expect(thrown('chase.send').publicDetail).toContain('message to a client');
+
+  // Every tier-1 kind has a sentence of its own — no generic fallback in use.
+  for (const kind of Object.values(ProposalKind).filter((k) => requiresReleaseAuthority(k))) {
+    expect(thrown(kind).publicDetail).not.toContain('super admin can approve this.');
+  }
+});
+
+test('the super admin passes every tier-1 kind, and every kind is silent for them', () => {
+  const owner = actor({ role: WorkspaceRole.PRACTICE_ADMIN, isOwner: true });
+  for (const kind of Object.values(ProposalKind)) {
+    expect(() => assertCanApprove(owner, { kind, proposalId: 'prp_1', businessId: 'biz_1' })).not.toThrow();
   }
 });
 

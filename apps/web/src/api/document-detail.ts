@@ -630,7 +630,26 @@ export interface UpdateCodingRequest {
  * attesting to its own render. Same shape as `bank.ts`'s
  * `confirmMatchProposal`; the duplication is the two payloads, not the rule.
  */
-export async function updateCodingProposal(request: UpdateCodingRequest): Promise<void> {
+export async function updateCodingProposal(
+  request: UpdateCodingRequest,
+  /**
+   * **Does this session hold D44's release authority?** — review items 24 + 66.
+   *
+   * ⚠ **`document.update-coding` became TIER 1** on 6 Sep 2026 (matrix gate ⚖5,
+   * the literal reading of *"any filed update like the category… must need
+   * approval"*). This function drives all three calls behind ONE click, so for
+   * a member who cannot release the third now answers `403 NT-PRM-001` — and
+   * the card said *"That correction was NOT saved"*, which is true of the value
+   * and the wrong sentence about the act: it was staged, and it is in the
+   * queue.
+   *
+   * So a caller who cannot release STAGES AND STOPS. The proposal exists, the
+   * super admin decides it, and the copy says so. Defaulting to `false` is the
+   * safe direction: a caller that forgot to pass it stages, which is always
+   * permitted, rather than driving into a refusal.
+   */
+  options: { canRelease?: boolean } = {},
+): Promise<{ released: boolean }> {
   const body = {
     kind: 'document.update-coding' as const,
     businessId: request.businessId,
@@ -643,10 +662,17 @@ export async function updateCodingProposal(request: UpdateCodingRequest): Promis
   const created = unwrapBody(await createActionProposal(body)) as { id?: string };
   if (typeof created.id !== 'string') throw new Error('the proposal was created without an id');
 
+  // ⚠ Creation is where the SERVER's hard refusals land — a category that is
+  // not on the client's chart (item 47), an unreachable document — so a
+  // stage-and-stop caller still meets every one of them. What it does not do is
+  // press a button it may not press.
+  if (options.canRelease !== true) return { released: false };
+
   const reviewed = unwrapBody(await reviewActionProposal(created.id)) as { renderedSummaryHash?: string };
   if (typeof reviewed.renderedSummaryHash !== 'string') throw new Error('the review returned no summary hash to echo');
 
   await approveActionProposal(created.id, { renderedSummaryHash: reviewed.renderedSummaryHash });
+  return { released: true };
 }
 
 /** Server truth replaces the optimistic render: list, detail and log together. */

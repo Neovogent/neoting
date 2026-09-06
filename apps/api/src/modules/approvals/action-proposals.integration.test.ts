@@ -99,8 +99,16 @@ beforeAll(async () => {
   });
   await owner.membership.createMany({
     data: [
-      { id: 'p122_mem_a', userId: 'p122_user_a', practiceId: P_A, role: 'PRACTICE_ADMIN' },
-      { id: 'p122_mem_b', userId: 'p122_user_b', practiceId: P_B, role: 'PRACTICE_ADMIN' },
+      // ⚠ `isOwner` is set since review item 66: `document.update-coding` is
+      // TIER 1 now, so a `PRACTICE_ADMIN` without the ownership flag is refused
+      // `NT-PRM-001` before the executor. This suite tests the ENGINE — the
+      // review gate, the hash echo, exactly-once execution, the audit chain —
+      // and the authority gate has its own suite next door
+      // (`release-gate.integration.test.ts`) whose whole point is a non-owner
+      // being refused. Leaving the flag off here would make every case in this
+      // file a second, accidental test of the gate and no test of the engine.
+      { id: 'p122_mem_a', userId: 'p122_user_a', practiceId: P_A, role: 'PRACTICE_ADMIN', isOwner: true },
+      { id: 'p122_mem_b', userId: 'p122_user_b', practiceId: P_B, role: 'PRACTICE_ADMIN', isOwner: true },
     ],
   });
 });
@@ -277,10 +285,16 @@ describe.skipIf(!enabled)('the Review → Approve engine against a real database
   });
 
   test("RLS is the boundary: another practice's staff get 404 for get, review and approve — never 403", async () => {
+    await seedDocument('p122_doc_3');
     const svc = service();
     const created = await svc.create(
       STAFF_A,
-      { kind: 'document.archive', businessId: BIZ, payload: { documentIds: ['p122_doc_1'], archived: false } },
+      // ⚠ Its OWN document, since review item 26. Idempotent staging refuses a
+      // second identical act with `NT-PRP-007`, and three cases in this file
+      // used to stage `archive` over `p122_doc_1` while each other's proposals
+      // were still pending. The refusal is right — nobody stages one archive
+      // three times and expects three proposals — so each case owns its rows.
+      { kind: 'document.archive', businessId: BIZ, payload: { documentIds: ['p122_doc_3'], archived: false } },
       'p122-key-rls',
     );
     expect(await code(svc.get(STAFF_B, created.id))).toBe('NT-VAL-001');
@@ -295,7 +309,7 @@ describe.skipIf(!enabled)('the Review → Approve engine against a real database
     const svc = service();
     const created = await svc.create(
       STAFF_A,
-      { kind: 'document.archive', businessId: BIZ, payload: { documentIds: ['p122_doc_1'], archived: false } },
+      { kind: 'document.archive', businessId: BIZ, payload: { documentIds: ['p122_doc_1'], archived: true } },
       'p122-key-list',
     );
 
