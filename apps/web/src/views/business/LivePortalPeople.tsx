@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Trash2, UserRound } from 'lucide-react';
+import { Loader2, Pencil, Plus, Trash2, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { defineMessages, useIntl } from 'react-intl';
 
@@ -80,6 +80,9 @@ const m = defineMessages({
   removed: { id: 'portal.livePortalPeople.removed', defaultMessage: 'Removed' },
   noEmail: { id: 'portal.livePortalPeople.noEmail', defaultMessage: 'No email address' },
   removeAction: { id: 'portal.livePortalPeople.removeAction', defaultMessage: 'Remove' },
+  // Review item 42. The same words as the editor's own title, so the button
+  // and the panel it opens name one act.
+  editAction: { id: 'portal.livePortalPeople.editAction', defaultMessage: 'Change what they can do' },
   removeLastOwner: {
     id: 'portal.livePortalPeople.removeLastOwner',
     defaultMessage: 'This is your only owner — make someone else an owner first.',
@@ -242,24 +245,65 @@ export function LivePortalPeople({ sessionToken }: { readonly sessionToken: stri
                   </span>
 
                   {canManage && person.isActive && (
-                    <button
-                      type="button"
-                      // ⚠ Disabled with an EXPLANATORY title, never hidden. A
-                      // control that vanishes teaches nothing; one that says why
-                      // it cannot be used names the fix.
-                      disabled={removeReason(intl, person, owners) !== null || remove.isPending}
-                      title={removeReason(intl, person, owners) ?? undefined}
-                      onClick={() => {
-                        const name = person.name ?? person.email ?? '';
-                        if (!window.confirm(intl.formatMessage(m.removeConfirm, { name }))) return;
-                        setFault(null);
-                        remove.mutate(person.id);
-                      }}
-                      className="shrink-0 p-2 rounded-lg text-zinc-400 hover:text-rose-300 hover:bg-raised disabled:opacity-40 disabled:hover:text-zinc-400 hit-area"
-                      aria-label={intl.formatMessage(m.removeAction)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <span className="shrink-0 flex items-center gap-0.5">
+                      {/* ⚠ **REVIEW ITEM 42 IS THIS BUTTON, AND ONLY THIS
+                          BUTTON.** *"Give edit option for the owner … so that
+                          if there was any mistake the owner can edit them"* —
+                          the row offered a trash icon and nothing else, so the
+                          only recovery from a wrong access level or a mistyped
+                          name was delete-and-re-add, which for a person who has
+                          already sent documents is not a correction at all.
+
+                          Everything the fix needed already existed and was
+                          simply unreachable: `PATCH /portal/people/{personId}`
+                          is contracted and implemented with the last-owner
+                          guard server-side, `api/portalPeople.ts` exports
+                          `updatePerson`, and `PortalPersonEditor` below already
+                          renders the edit case — its own title, the email
+                          locked with the reason, the demote gate. The list just
+                          never called `setEditing(person)`; only
+                          `setEditing('new')`.
+
+                          Placed BEFORE the trash so the recoverable act is the
+                          one nearest the reader, and the destructive one is
+                          not what a thumb reaches first. */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFault(null);
+                          setEditing(person);
+                        }}
+                        className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-raised hit-area"
+                        aria-label={intl.formatMessage(m.editAction)}
+                        title={intl.formatMessage(m.editAction)}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        // ⚠ Disabled with an EXPLANATORY title, never hidden. A
+                        // control that vanishes teaches nothing; one that says why
+                        // it cannot be used names the fix.
+                        //
+                        // The pencil beside it carries no such guard on purpose:
+                        // there is no person on this list who cannot be EDITED.
+                        // The last owner may be renamed and retitled — only
+                        // DEMOTING them is refused, which is `gateFor`'s job
+                        // inside the form, where the offending value is.
+                        disabled={removeReason(intl, person, owners) !== null || remove.isPending}
+                        title={removeReason(intl, person, owners) ?? undefined}
+                        onClick={() => {
+                          const name = person.name ?? person.email ?? '';
+                          if (!window.confirm(intl.formatMessage(m.removeConfirm, { name }))) return;
+                          setFault(null);
+                          remove.mutate(person.id);
+                        }}
+                        className="p-2 rounded-lg text-zinc-400 hover:text-rose-300 hover:bg-raised disabled:opacity-40 disabled:hover:text-zinc-400 hit-area"
+                        aria-label={intl.formatMessage(m.removeAction)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </span>
                   )}
                 </li>
               ))}
