@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { CalendarDays, Loader2, Send, X } from 'lucide-react';
 import { defineMessages, useIntl } from 'react-intl';
+import { holdsReleaseAuthority } from '../../api/auth';
+import { useAppContext } from '../../context/AppContext';
 import { requestStatementProposal } from '../../api/proposals';
 import { Modal } from './Modal';
 
@@ -11,6 +13,10 @@ import { Modal } from './Modal';
  * the message server-side (month, working portal link, the client's PRIMARY
  * contact), review shows it verbatim, and only the firm's super admin
  * releases it (D44) — so the dialog's copy says "queued", never "sent".
+ *
+ * Since review item 24 that sentence is ROLE-AWARE: a member reads who
+ * releases, the super admin reads that it sends once THEY have read the
+ * review. Neither claims a permission — the server is still the rule.
  */
 const m = defineMessages({
   title: { id: 'bank.requestStatement.title', defaultMessage: 'Request a bank statement' },
@@ -18,6 +24,17 @@ const m = defineMessages({
     id: 'bank.requestStatement.detail',
     defaultMessage:
       'Confirming queues a request for {client}. The message is composed at review — the month, a secure upload link, and the client’s registered contact — and it sends only when your practice’s super admin approves it.',
+  },
+  /**
+   * Item 24 — the same sentence for somebody who holds the release. It says
+   * what the flow does next, never *"you have permission"*: the server is the
+   * rule (`NT-PRM-001` on approve) and a `/me` thirty seconds stale is exactly
+   * how its refusal arrives.
+   */
+  detailYours: {
+    id: 'bank.requestStatement.detailYours',
+    defaultMessage:
+      'Confirming queues a request for {client}. The message is composed at review — the month, a secure upload link, and the client’s registered contact — and it sends once you have read that review and approved it in Approvals.',
   },
   monthLabel: { id: 'bank.requestStatement.monthLabel', defaultMessage: 'Statement month' },
   confirm: { id: 'bank.requestStatement.confirm', defaultMessage: 'Queue the request' },
@@ -42,6 +59,10 @@ export default function RequestStatementDialog({
   onClose: () => void;
 }) {
   const intl = useIntl();
+  // D44, item 24 — the one shared fact, so this dialog and its three
+  // siblings cannot make different claims about the same person.
+  const { session } = useAppContext();
+  const canRelease = holdsReleaseAuthority(session);
   const [period, setPeriod] = useState('');
   const [busy, setBusy] = useState(false);
   const [queued, setQueued] = useState(false);
@@ -72,7 +93,7 @@ export default function RequestStatementDialog({
           </div>
           <h3 className="font-sans font-bold text-lg text-white tracking-tight">{intl.formatMessage(m.title)}</h3>
         </div>
-        <p className="text-[13px] text-zinc-400 leading-relaxed">{intl.formatMessage(m.detail, { client: clientName })}</p>
+        <p className="text-[13px] text-zinc-400 leading-relaxed">{intl.formatMessage(canRelease ? m.detailYours : m.detail, { client: clientName })}</p>
 
         <div>
           <label htmlFor="statement-month" className="block text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">

@@ -3,16 +3,30 @@ import { AlertTriangle, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import { NtProblemError } from '@neoting/contracts';
+import { holdsReleaseAuthority } from '../../api/auth';
+import { useAppContext } from '../../context/AppContext';
 import { createProposal } from '../../api/proposals';
 import { commonActions } from '../../i18n/common';
 import { useEscape } from '../../lib/useEscape';
 
 const m = defineMessages({
   title: { id: 'proposals.offboardDialog.title', defaultMessage: 'Remove {name}?' },
-  detail: {
-    id: 'proposals.offboardDialog.detail',
+  /**
+   * ⚠ Item 24 AND item 66 in one sentence. `business.offboard` became TIER 1
+   * (matrix Part 2), so the person who confirms is not necessarily the person
+   * who can approve — and the old copy said only "after it is approved", which
+   * left a standard user thinking it was a formality. Both branches name the
+   * authority now; neither claims one.
+   */
+  detailYours: {
+    id: 'proposals.offboardDialog.detailYours',
     defaultMessage:
-      'Removing a client goes through Review → Approve: confirming queues a removal proposal, and {name} disappears from the client list only after it is approved.',
+      'Removing a client goes through Review → Approve: confirming queues a removal proposal, and {name} disappears from the client list once you have read that review and approved it.',
+  },
+  detailNotYours: {
+    id: 'proposals.offboardDialog.detailNotYours',
+    defaultMessage:
+      'Removing a client goes through Review → Approve: confirming queues a removal proposal for your practice’s super admin, and {name} stays on the client list until they approve it.',
   },
   retained: {
     id: 'proposals.offboardDialog.retained',
@@ -53,6 +67,11 @@ export function OffboardClientDialog({ client, onQueued, onCancel }: {
   onCancel: () => void;
 }) {
   const intl = useIntl();
+  // D44, items 24 + 66: `business.offboard` is TIER 1 now, so the person
+  // confirming is not necessarily the person who can approve. One shared
+  // fact (`api/auth.ts`), so this dialog and its siblings agree.
+  const { session } = useAppContext();
+  const canRelease = holdsReleaseAuthority(session);
   const [reason, setReason] = useState('');
   const [queuing, setQueuing] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -115,7 +134,7 @@ export function OffboardClientDialog({ client, onQueued, onCancel }: {
                 {intl.formatMessage(m.title, { name: client.name })}
               </h3>
               <p className="text-[13px] text-zinc-400 mt-1.5 leading-relaxed">
-                {intl.formatMessage(m.detail, { name: client.name })}
+                {intl.formatMessage(canRelease ? m.detailYours : m.detailNotYours, { name: client.name })}
               </p>
               <p className="text-[12.5px] text-zinc-500 mt-1.5 leading-relaxed">
                 {intl.formatMessage(m.retained)}

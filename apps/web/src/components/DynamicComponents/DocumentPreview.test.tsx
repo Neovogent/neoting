@@ -26,7 +26,15 @@ vi.mock('../../context/AppContext', () => ({
   // `businesses` is read by `ProposalFlowModal`, which the "make it a rule?"
   // offer mounts — empty is the honest fixture: the client name it resolves is
   // a courtesy on the card, not part of the request under test.
-  useAppContext: () => ({ updateDocumentField: vi.fn(), logAudit: vi.fn(), businesses: [] }),
+  useAppContext: () => ({
+    updateDocumentField: vi.fn(),
+    logAudit: vi.fn(),
+    businesses: [],
+    // ⚠ `isOwner: true` since review items 24/66: `document.update-coding` is
+    // TIER 1, so a session without it STAGES rather than applies, and every
+    // case here is about the apply path. The stage path has its own case.
+    session: { status: 'authenticated', me: { user: { id: 'usr_me' }, role: 'PRACTICE_ADMIN', isOwner: true } },
+  }),
 }));
 
 const updateCodingProposal = vi.fn(async (_request: unknown) => {});

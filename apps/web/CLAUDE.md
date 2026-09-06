@@ -2246,6 +2246,52 @@ dialog settles.
   review" assertion vacuous. `PublishBatchDialog.test.tsx` and
   `PurgeDocumentsDialog.test.tsx` both default it FALSE and say why.
 
+**The D44 family is role-aware, from ONE fact** (item 24 — *"I'm the super
+admin and it is giving me lecture"*). `holdsReleaseAuthority(session)` in
+`api/auth.ts` is `canRelease(role) && isOwner` — `mayRelease` in
+`assert-can.ts`, verbatim — and it is the only place any surface reads it, so
+`PublishBatchDialog`, `RequestStatementDialog`, `OffboardClientDialog`,
+`LiveProposalFlow` and `CodingProposalCard` cannot drift into five claims about
+one person.
+
+⚠ **The old rule is retired, its REASON is not.** *"`/me` carries no
+`is_owner`, so this screen can never claim the permission IS held"* was true
+until package F made `Me.isOwner` required. The dialogs may branch now — and
+still never say *"you have permission"*. They say what the flow does next,
+because the server is the rule (`NT-PRM-001` on approve) and a `/me` thirty
+seconds stale is exactly how its refusal arrives. Every surface here still
+handles that refusal when it comes.
+
+⚠ **Not authenticated answers FALSE**, unlike `actsForWholePractice`, which
+answers `true`. That one asks *is this surface any of your business* — where
+synthetic mode must keep seeing everything (METH_MODE §1). This one asks *may
+you release*, where the safe reading of an unknown session promises nothing.
+
+**The correction dialog STAGES for a member who cannot release** (items 24 +
+66). `document.update-coding` is TIER 1 since matrix ⚖5, and
+`updateCodingProposal` drives create → review → approve behind one click — so
+without this a standard user's third call answered 403 and the card said *"That
+correction was NOT saved"*, which is true of the value and the wrong sentence
+about the act: it was staged, and it is in the queue. It now takes
+`{ canRelease }` and stops after CREATE when false. Three things move together
+and must keep moving together:
+
+- the button says **Send for approval**, not "Approve change";
+- the enforcement note names who releases;
+- ⚠ **the optimistic `updateDocumentField` does NOT fire.** Painting the new
+  value would show a correction the super admin has not approved, and the 5 s
+  poll would take it away again — the "a write the next poll reverts" failure
+  the S14 sweep exists to prevent.
+
+Creation is still where the server's hard refusals land (a category off the
+client's chart, an unreachable document), so a staging caller meets every one
+of them. What it does not do is press a button it may not press.
+
+⚠ **A test that mocks `useAppContext` for any of these surfaces must decide
+`isOwner` deliberately** — it changes the copy, the button word, whether the
+review auto-opens and whether the correction applies. The four affected suites
+default it and say which path they are testing.
+
 **Deny is a STEP, not a button that acts** (item 27). The reason is required by
 the contract, is emailed verbatim to the colleague who staged the proposal and
 lands on the documents it named — so the first press opens a `textarea`

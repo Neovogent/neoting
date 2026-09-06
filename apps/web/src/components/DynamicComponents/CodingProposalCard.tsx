@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { defineMessages, useIntl } from 'react-intl';
 import type { UpdateCodingPayload } from '@neoting/contracts/model';
 import { useAppContext } from '../../context/AppContext';
+import { holdsReleaseAuthority } from '../../api/auth';
 import { refreshDocument, updateCodingProposal } from '../../api/document-detail';
 import { ReviewGate, ReviewRows, ReviewSection } from './ReviewGate';
 import type { Document } from '../../lib/types';
@@ -20,12 +21,29 @@ const m = defineMessages({
     defaultMessage:
       'Approving files this as a correction: the value becomes human-confirmed, the original stays immutable, and the server refuses an approval whose review was never opened.',
   },
+  enforcementQueued: {
+    id: 'documents.codingProposal.enforcementQueued',
+    defaultMessage:
+      'A change to a document’s figures or coding is released by your practice’s super admin. This queues it for them with the original untouched — nothing on the document changes until they approve it.',
+  },
   approve: { id: 'documents.codingProposal.approve', defaultMessage: 'Approve change' },
+  /**
+   * ⚠ Items 24 + 66. `document.update-coding` is TIER 1 now, so a member who
+   * cannot release STAGES this correction rather than applying it — and the
+   * button has to say which. "Approve change" on a click that queues would be
+   * the same lie in the other direction from item 24's lecture.
+   */
+  stage: { id: 'documents.codingProposal.stage', defaultMessage: 'Send for approval' },
   success: {
     id: 'documents.codingProposal.success',
     defaultMessage: 'Correction approved — {field} is now human-confirmed.',
   },
+  staged: {
+    id: 'documents.codingProposal.staged',
+    defaultMessage: 'Sent for approval — {field} changes when your practice’s super admin approves it.',
+  },
   auditAction: { id: 'documents.codingProposal.auditAction', defaultMessage: 'Corrected document coding' },
+  auditStaged: { id: 'documents.codingProposal.auditStaged', defaultMessage: 'Sent a coding correction for approval' },
   auditScope: { id: 'documents.codingProposal.auditScope', defaultMessage: '{supplier} · {field}: {from} → {to}' },
   failedAudit: { id: 'documents.codingProposal.failedAudit', defaultMessage: 'Coding correction was refused' },
   supplierUnread: { id: 'documents.codingProposal.supplierUnread', defaultMessage: 'No supplier read' },
@@ -103,7 +121,11 @@ export default function CodingProposalCard({
   onEdit?: () => void;
 }) {
   const intl = useIntl();
-  const { updateDocumentField, logAudit } = useAppContext();
+  const { updateDocumentField, logAudit, session } = useAppContext();
+  // D44, items 24 + 66 — the one shared fact (`api/auth.ts`). It decides three
+  // things together: which button word, whether the value is painted
+  // optimistically, and whether the third call is made at all.
+  const canRelease = holdsReleaseAuthority(session);
   const queryClient = useQueryClient();
   const [refused, setRefused] = useState<string | null>(null);
 
@@ -114,11 +136,14 @@ export default function CodingProposalCard({
     : doc.supplier;
 
   const approve = () => {
-    // Optimistic: every surface deriving from the documents array agrees at
-    // once. The refetch below re-asserts server truth either way.
     setRefused(null);
-    updateDocumentField(doc.id, fieldLabel, nextValue);
-    void updateCodingProposal({ businessId: doc.clientId, documentId: doc.id, fields })
+    // ⚠ Optimistic ONLY when this session can release (items 24 + 66). A member
+    // who is staging has changed nothing yet, and painting the new value onto
+    // the document would show them a correction the super admin has not
+    // approved — the 5 s poll would take it away again a moment later, which is
+    // exactly the "a write the next poll reverts" failure the S14 sweep swept.
+    if (canRelease) updateDocumentField(doc.id, fieldLabel, nextValue);
+    void updateCodingProposal({ businessId: doc.clientId, documentId: doc.id, fields }, { canRelease })
       .catch((error: unknown) => {
         const reason = error instanceof Error ? error.message : 'unknown error';
         // On the CARD as well as in the audit log — the gate has already shown
@@ -171,12 +196,14 @@ export default function CodingProposalCard({
               { label: intl.formatMessage(m.rowNew), value: nextValue },
             ]}
           />
-          <p className="mt-3 text-[12px] text-zinc-500 leading-relaxed">{intl.formatMessage(m.enforcement)}</p>
+          <p className="mt-3 text-[12px] text-zinc-500 leading-relaxed">
+            {intl.formatMessage(canRelease ? m.enforcement : m.enforcementQueued)}
+          </p>
         </ReviewSection>
       }
-      approveLabel={intl.formatMessage(m.approve)}
-      successMessage={intl.formatMessage(m.success, { field: fieldLabel })}
-      auditAction={intl.formatMessage(m.auditAction)}
+      approveLabel={intl.formatMessage(canRelease ? m.approve : m.stage)}
+      successMessage={intl.formatMessage(canRelease ? m.success : m.staged, { field: fieldLabel })}
+      auditAction={intl.formatMessage(canRelease ? m.auditAction : m.auditStaged)}
       auditScope={intl.formatMessage(m.auditScope, { supplier: party, field: fieldLabel, from: currentValue, to: nextValue })}
       onApprove={approve}
       {...(onEdit ? { onEdit } : {})}

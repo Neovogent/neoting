@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowRight, ShieldCheck } from 'lucide-react';
 import { defineMessages, useIntl } from 'react-intl';
 import { NtProblemError } from '@neoting/contracts';
 import type { ActionProposal, CreateActionProposalRequest } from '@neoting/contracts/model';
+import { holdsReleaseAuthority } from '../../api/auth';
 import { useAppContext } from '../../context/AppContext';
 import { createProposal } from '../../api/proposals';
 import { LiveProposalCard } from './LiveProposalCard';
@@ -14,6 +15,16 @@ const m = defineMessages({
   enforcement: {
     id: 'proposals.liveFlow.enforcement',
     defaultMessage: 'Nothing changes until you read the review and approve it — enforced server-side, not by this screen.',
+  },
+  /**
+   * Item 24. The standing sentence says *"until YOU read the review and approve
+   * it"*, which is only true of somebody who can. For everybody else it named
+   * the wrong person — the mirror image of the lecture item 24 reported.
+   */
+  enforcementQueued: {
+    id: 'proposals.liveFlow.enforcementQueued',
+    defaultMessage:
+      'Nothing changes until this is reviewed and approved in Approvals — enforced server-side, not by this screen.',
   },
   /**
    * `NT-PRP-007` (review item 26). Not an error the person caused — they
@@ -68,10 +79,10 @@ export function LiveProposalFlow({
   /**
    * **The fast path's condition** (review item 26, matrix gate ⚖6).
    *
-   * `Me.isOwner` is the fact package F put on the session, and with `role` it
-   * is the whole of D44's release rule — the same conjunction
-   * `assert-can.ts` applies. So this is not a guess about what the server will
-   * allow; it is the same two facts, read one layer out.
+   * `holdsReleaseAuthority` (`api/auth.ts`) is `canRelease(role) && isOwner`,
+   * which is `mayRelease` in `assert-can.ts` verbatim — so this is not a guess
+   * about what the server will allow, it is the same two facts read one layer
+   * out, from the one place every D44 surface reads them (item 24).
    *
    * ⚠ It is still PRESENTATION. If it is somehow wrong — a `/me` thirty
    * seconds stale, a membership deactivated mid-session — the worst outcome is
@@ -79,7 +90,7 @@ export function LiveProposalFlow({
    * Approve, which is the refusal they would have met anyway. Nothing here
    * gates anything.
    */
-  const canRelease = session.status === 'authenticated' && session.me.role === 'PRACTICE_ADMIN' && session.me.isOwner;
+  const canRelease = holdsReleaseAuthority(session);
 
   const stage = async () => {
     if (creating) return;
@@ -148,7 +159,7 @@ export function LiveProposalFlow({
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <p className="text-[12px] text-zinc-500 leading-relaxed flex items-center gap-2 min-w-0">
           <ShieldCheck size={14} className="shrink-0" />
-          {intl.formatMessage(m.enforcement)}
+          {intl.formatMessage(canRelease ? m.enforcement : m.enforcementQueued)}
         </p>
         <button
           onClick={() => void stage()}
