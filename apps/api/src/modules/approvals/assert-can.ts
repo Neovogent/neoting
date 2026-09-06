@@ -266,10 +266,16 @@ export const RELEASE_KINDS: Readonly<Record<ProposalKind, boolean>> = {
   // question from who signs for destroying a client's record. The two are
   // belt and braces now rather than one standing in for the other.
   'document.purge': true,
-  // Not a release: a duplicate ruling is internal bookkeeping — the verdict is
-  // re-rulable (a later decision supersedes), and delete-copy is the
-  // REVERSIBLE Trash seam (restoration undoes it exactly). Nothing leaves the
-  // product. Flagged for human ratification like every entry in this table.
+  // **TIER 2, ratified by item 66** (`docs/Access_and_Approval_Matrix.md`
+  // Part 2) — this kind landed on a parallel branch the day the matrix was
+  // decided, and it was classified with the rest rather than carried past
+  // them. It reads the same under either question: a verdict a LATER verdict
+  // supersedes, and `delete-copy` is the reversible Trash seam (restoration
+  // undoes it exactly), so nothing here is a signature anybody is stuck with.
+  // ⚠ It is not tier 1 by the purge argument: what `delete-copy` does is
+  // exactly what the Trash button does, and that is tier 3 — asking for the
+  // super admin's signature here and not there would be the same act priced
+  // two ways.
   'document.resolve-duplicate': false,
 };
 
