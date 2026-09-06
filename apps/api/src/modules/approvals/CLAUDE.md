@@ -565,11 +565,23 @@ Consumer: `modules/portal/portal-business-profile.service.ts`, through
 The human ruling on a suspected duplicate pair (D49's resolution footer). Two
 decisions this module owns:
 
-- **`RELEASE_KINDS['document.resolve-duplicate'] = false`.** Internal and
-  reversible in both halves that matter: a later ruling supersedes an earlier
-  verdict, and `delete-copy` is the **Trash** seam (`deleted_at`), which
-  `POST /documents/{id}/restoration` undoes exactly. Nothing reaches outside
-  the product, which is what the table selects for.
+- **`RELEASE_KINDS['document.resolve-duplicate'] = false` — TIER 2, and it was
+  RATIFIED, not merely flagged.** ⚠ Read this one carefully, because the entry
+  was written the day the question changed underneath it: this kind landed on a
+  parallel branch while item 66 was deciding the matrix, so its first comment
+  argued from the OLD test (*does it reach outside the product*) and carried
+  the standing "flagged for human ratification" tail every entry then had. Item
+  66 replaced that test with *whose signature does this carry* and swept those
+  tails — and it **classified this kind with the rest** rather than letting it
+  ride past them: `docs/Access_and_Approval_Matrix.md` Part 2 lists it in tier
+  2 by name.
+  The verdict survived the change of question because it reads the same under
+  both: a later verdict supersedes an earlier one, and `delete-copy` is the
+  **Trash** seam (`deleted_at`), which `POST /documents/{id}/restoration` undoes
+  exactly. ⚠ And it does not follow `document.purge` up to tier 1: what
+  `delete-copy` performs is precisely what the Trash button performs, and that
+  is tier 3 — pricing the same act two ways depending on which screen started
+  it is the incoherence the matrix exists to remove.
 - **The render restates the ConfirmStep's own consequence**, per resolution,
   and states what the executor CHECKS rather than what it found — the render is
   payload-pure and cannot read whether these two documents are reachable or
