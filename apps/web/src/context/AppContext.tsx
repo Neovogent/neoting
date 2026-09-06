@@ -576,10 +576,21 @@ export const SETUP_LABEL: Record<SetupTask, string> = {
 
 let draftSeq = 0;
 
-/** An empty conversation, hidden from history until it has its first message. */
+/**
+ * An empty conversation, hidden from history until it has its first message.
+ *
+ * ⚠ **The id is a SERVER KEY now** (review item 9's `PUT
+ * /chat/conversations/{id}`), so it has to be unique across tabs as well as
+ * within one — `Date.now()` plus a per-module counter is neither, because two
+ * tabs opened in the same millisecond both start their counter at 0 and the
+ * second one's save would replace the first one's stored transcript. The
+ * random suffix is not a security value and does not need `crypto`: it is
+ * there so two independent tabs cannot mint the same name. It stays inside the
+ * contract's `^[A-Za-z0-9_-]+$`.
+ */
 function newDraft(attachedClientIds: string[], id?: string): Conversation {
   return {
-    id: id ?? `draft-${Date.now()}-${draftSeq++}`,
+    id: id ?? `draft-${Date.now()}-${draftSeq++}-${Math.random().toString(36).slice(2, 8)}`,
     title: 'New conversation',
     messages: [],
     attachedClientIds,
@@ -1303,7 +1314,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Live, the first draft attaches no client — '1' is the synthetic cast's
     // id and does not exist server-side — and the seeded chat history (canned
     // assistant turns over invented rows) stays out entirely.
-    newDraft(SYNTHETIC ? ['1'] : [], 'draft-initial'),
+    //
+    // ⚠ **NO FIXED ID.** It was `'draft-initial'` until review item 59, and
+    // that constant was the whole of that defect: every session's first
+    // conversation is saved under the conversation's own id, so the id was the
+    // same one every time. On the next load the fresh, empty `draft-initial`
+    // was already in this array, `hydrateConversations` is add-only by id, and
+    // the server's row — the transcript — was therefore dropped on the floor
+    // and never fetched. The drawer read "No conversations yet." over a
+    // conversation the server was holding. The second failure was worse and
+    // silent: the next session's first conversation REPLACED the stored one,
+    // because a PUT under a reused name is a replacement.
+    newDraft(SYNTHETIC ? ['1'] : []),
     ...(SYNTHETIC ? seedConversations : []),
   ]);
   /**
@@ -1311,7 +1333,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
    * A new chat is a new address, so history is browsable rather than a menu.
    */
   const routedConversationId = root === 'chat' ? first : undefined;
-  const [fallbackConversationId, setFallbackConversationId] = useState<string>('draft-initial');
+  // The first draft's own id, whatever it was minted as — see above.
+  const [fallbackConversationId, setFallbackConversationId] = useState<string>(() => conversations[0]!.id);
   const activeConversationId = routedConversationId ?? fallbackConversationId;
   /**
    * Navigation is a side effect, so it happens here in the callback — never
