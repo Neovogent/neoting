@@ -101,6 +101,8 @@ Standalone items not in a package: 17 (sign/tone), 31 (chase draft reactivity/ed
 
 Late additions and where they land: **63** (missing list on the Chases tab) sequences after package A; **65** (data-aware AI-tab suggestions + proactive task analysis) leans on A's counts; **66** joined package G (it's the approval matrix itself); **61 + 67** form package L (one retention/deletion policy); **60** is resolved (file arrived late) leaving only its Received-via-on-Inboxes follow-up, which is package E's; **59** is likely closed by the items-9/12 second pass (chat persistence landed) — verify, don't re-build.
 
+✅ **The standalone five closed together on 6 Sep 2026** — **31 · 49 · 58 · 63 · 65**, one branch, one commit each (`fix/review-items-31-49-58-63-65`). Each entry below carries its ✅ block; evidence in `assets/2026-09-06-standalone-five/`. Two owner rulings taken in-session: the §8.2 copy amendment (long chase lists summarise, server template AND preview) with accountant-editable wording built rather than deferred, and the `document.resolve-duplicate` contract delta (kind + `GET /v1/duplicates`) with "attach to the original" deferred by name. The sequencing held: **63 and 65 both waited on package A (#255) and read its one predicate / its served counts rather than minting new ones.** Of the standalone list only **17 and 45** remain unclosed here (45 is diagnosed in #259 with a dashboard step owed).
+
 ## Item 16 — Request statement dialog: unusable period input, no channel choice, no preview
 
 **Original (verbatim):**
