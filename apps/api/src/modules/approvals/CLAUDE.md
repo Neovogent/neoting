@@ -42,7 +42,12 @@ decides nothing about whether it may happen.
   shows; `rendered_summary_hash` is `canonicalHash` over it.
   **`publish.batch` now renders the bookkeeping ENTRY, not just three totals**
   (2 Sep 2026) — see the section below. `chase.send`
-  renders every SMS byte-for-byte (the contract's words); `rule.create`
+  renders every SMS byte-for-byte (the contract's words) — and since 6 Sep 2026
+  (review item 31) also names the WORDING's author: a message carrying
+  `accountantMessage` renders *"Wording: written by the proposer (the secure
+  link is still the engine's)"*, so the releasing super admin knows these are
+  human words rather than the engine's template. The body is unchanged in
+  kind — still byte-for-byte what sends. `rule.create`
   (METH S13, #142) renders the rule in full — tier, scope, conditions and
   every field it sets — because a reviewer must see what will start coding
   their client's documents, not a JSON blob. A12 shaped two more: `reject`
@@ -358,6 +363,23 @@ the business before this is reached. The refusal is `NT-PRM-001` with its own
 sentence ("Only an owner at your business can change its own details").
 Consumer: `modules/portal/portal-business-profile.service.ts`, through
 `index.ts`.
+
+## `document.resolve-duplicate` — the sixteenth kind (6 Sep 2026, review item 49)
+
+The human ruling on a suspected duplicate pair (D49's resolution footer). Two
+decisions this module owns:
+
+- **`RELEASE_KINDS['document.resolve-duplicate'] = false`.** Internal and
+  reversible in both halves that matter: a later ruling supersedes an earlier
+  verdict, and `delete-copy` is the **Trash** seam (`deleted_at`), which
+  `POST /documents/{id}/restoration` undoes exactly. Nothing reaches outside
+  the product, which is what the table selects for.
+- **The render restates the ConfirmStep's own consequence**, per resolution,
+  and states what the executor CHECKS rather than what it found — the render is
+  payload-pure and cannot read whether these two documents are reachable or
+  share a client, so it promises the check the way `document.purge`'s card
+  does. Executor and the full write discipline live in
+  `validation-dedupe/proposals/resolve-duplicate.ts`.
 
 ## `document.purge` — the fourteenth kind (2 Sep 2026)
 

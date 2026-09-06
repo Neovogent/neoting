@@ -31,20 +31,24 @@ vi.mock('./ConfirmProvider', () => ({
 
 // The create-then-review flow is its own component with its own tests; here it
 // only has to surface the request it was handed and its two callbacks.
-vi.mock('./ProposalFlowModal', () => ({
-  ProposalFlowModal: ({
-    request,
-    onExecuted,
-  }: {
-    request: unknown;
-    onExecuted?: () => void;
-  }) => (
-    <div data-testid="flow-modal">
-      <span data-testid="flow-request">{JSON.stringify(request)}</span>
-      <button onClick={onExecuted}>simulate-approved</button>
-    </div>
-  ),
-}));
+vi.mock('./ProposalFlowModal', () => {
+  // A variable, not a literal in JSX — the i18n lint rule reads test JSX too.
+  const approveLabel = 'simulate-approved';
+  return {
+    ProposalFlowModal: ({
+      request,
+      onExecuted,
+    }: {
+      request: unknown;
+      onExecuted?: () => void;
+    }) => (
+      <div data-testid="flow-modal">
+        <span data-testid="flow-request">{JSON.stringify(request)}</span>
+        <button aria-label={approveLabel} onClick={onExecuted} />
+      </div>
+    ),
+  };
+});
 
 const pair: DuplicatePair = {
   id: 'dup-doc_copy-doc_keep',

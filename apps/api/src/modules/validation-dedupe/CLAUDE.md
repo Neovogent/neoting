@@ -27,6 +27,15 @@ Changing any of those is a contract-change issue approved by Shakib **before** a
 
 Exposes **only** its public providers. No other module reaches into its internals; cross-module work goes through those providers or through domain events on the transactional outbox. Import rules are lint-enforced, because this boundary is also the parallel-agent lane map.
 
+**The module has a Nest module + its FIRST controller since 6 Sep 2026**
+(`validation-dedupe.module.ts`, `duplicates.controller.ts` + `duplicates.service.ts`
+— review item 49's `GET /v1/duplicates`, the chase-module precedent). The read
+serves recorded duplicate rulings so a pair a human resolved stays resolved
+across reloads; RLS is the only tenancy mechanism (`duplicates` is in the policy
+loop), `businessId` is a user filter, not paginated (the 500 `take` is the
+unbounded-load guard, the contract says why). The executors stay OFF the Nest
+graph — pure functions built by the engine's factory, never providers.
+
 `index.ts` is the public seam, with **three** cross-module consumers — growing it
 is a boundary decision, and it grew three times:
 
@@ -183,7 +192,19 @@ structural) and decides nothing about whether it may happen.
   asserts it; the provider-side half is upheld in `approvals.module.ts`
   (registry built inside the service factory, no token).
 
-- **`compose-chase-send.ts`** (1 Sep 2026) — `computeChaseSendPayload`, the
+- **`compose-chase-send.ts`** — ⚠ **it weaves the accountant's own wording
+  since 6 Sep 2026** (review item 31, owner-approved): a message carrying
+  `accountantMessage` (≤240 chars, new on the contract) composes through
+  `composeCustomChaseBody` instead of the template — the engine still owns the
+  greeting and the SIGNED portal link, the accountant owns the middle sentence.
+  Trimmed exactly once here, so the stored payload, the review render and the
+  sent bytes carry the same string; whitespace-only reads as "not edited" and
+  the template stands. It also **refuses an over-500-char composed body at
+  CREATE** rather than letting the stored payload fail its re-parse days later
+  as an unexplained `NT-PRP-006` at review. "Never free-typed by a caller"
+  still holds for every part that carries authority.
+
+  (1 Sep 2026) — `computeChaseSendPayload`, the
   chase.send twin of `computePublishBatchPayload`: at proposal CREATION the
   engine discards the caller's body, reads the chased transactions through RLS,
   mints the chase id, signs the portal link over it (7-day TTL, full
@@ -535,6 +556,43 @@ structural) and decides nothing about whether it may happen.
   that table — see `approvals/assert-can.ts`. The short version: the gate selects
   for acts that reach OUTSIDE the product, and what protects D43 here is the
   refusal, which binds the super admin too.
+
+- **`document.resolve-duplicate`** (6 Sep 2026, review item 49; owner-approved
+  contract delta) — `resolve-duplicate.ts`. The human ruling on a suspected
+  pair, three of D49's four outcomes.
+
+  **No prisma change was needed, and that is the whole shape of it:** the
+  `duplicates` model already carried `verdict` (PENDING /
+  `CONFIRMED_DUPLICATE` / `CONFIRMED_DIFFERENT` / `KEEP_BOTH`) beside
+  `decided_by_user_id` and `decided_at`. The effect is one upsert — the
+  route-time detector's row when one exists (matched in EITHER column order,
+  because the pair is unordered), a fresh row when the pair was derived
+  client-side and never stored. A fresh row carries `score: 0` and
+  `signals: {resolvedBy: 'accountant'}` so it can never be mistaken for a
+  detector's finding.
+
+  ⚠ **`delete-copy` moves the copy to TRASH, never purges.** `deleted_at`, the
+  reversible seam `POST /documents/{id}/restoration` undoes exactly — the
+  prototype's own "recoverable" promise, kept. It writes the same
+  `document_events` row (`stage: 'delete'`, outcome `DELETED`) the Trash
+  endpoint writes, with the proposal named, so the document's log has no gap
+  where a resolution made it vanish. `document.purge` remains the only
+  irreversible act on a document.
+
+  Refuses an unreachable id, a "pair" of one document, and a pair spanning two
+  clients (`duplicates.business_id` holds ONE — the confirm-match rule).
+  **Idempotent by OUTCOME rather than by proposal stamp**, because `duplicates`
+  carries no proposal column: same verdict (and, for delete-copy, a copy
+  already trashed) is a replay with no second write and the original
+  `decided_at` surviving; a DIFFERENT verdict re-rules, because a later human
+  decision supersedes an earlier one — which is what "the flag is dismissible"
+  means.
+
+  **"Attach to the original" is a NAMED deferral, not an oversight.** One
+  document with two images needs a schema shape that does not exist (a
+  `document_images` child table, or a supersedes link); the web offers it
+  disabled wearing that reason rather than as a button that quietly does
+  something else.
 
 - **Trash excluded from `publish.batch`** (2 Sep 2026). Both the proposal-time
   preview and the execution selection now carry `...notDeleted()`, so a deleted

@@ -1868,6 +1868,83 @@ additions), `InboxesView` 249,773 B (still the thinnest, **227 B headroom**),
 **295,282 B — the pre-existing breach, deepened ~1 kB** by the two cards'
 honesty states, which belong on that chunk by the reachability rule.
 
+## The five standalone items (6 Sep 2026 — review items 31/49/58/63/65)
+
+Five unrelated surfaces, one branch. What a future session needs from each:
+
+- **Item 31 — the chase composer.** The draft was already reactive post-#255
+  (it derives from the `included` set); what was missing was the pin. Two real
+  changes: **long lists SUMMARISE** (`composeChaseBody` mirrors the server's
+  `composeChaseSms` above `CHASE_SUMMARISE_THRESHOLD` = 3 — count, period, two
+  named examples; **the two must move together**), and the draft is now
+  labelled *"a preview of the message the engine composes at review — never a
+  promise of exact words"*, which is what it always was. The composer gained a
+  **textarea**: the wording travels as `accountantMessage` on the payload and
+  the ENGINE weaves it into the greeting + signed-link frame (owner ruling —
+  see `chase/CLAUDE.md`), so Read review still shows the exact bytes. ⚠ **The
+  recipient mobile no longer prefills**: the namesake lookup was surfacing the
+  seeded fictional `+447700900001` (served live as
+  `BusinessSummary.primaryContactMobile`) as if somebody had chosen it. Blank
+  means the engine resolves the REGISTERED primary contact, which was already
+  the honest path; the field is an override only.
+- **Item 49 — the duplicate resolves for real.** The four-action footer, the
+  ConfirmSteps and the inline `DocumentPreview` were all already ported and
+  gated OFF live; the gap was the server. Live now, each action stages a
+  `document.resolve-duplicate` proposal through a **lazy** `ProposalFlowModal`
+  (static would land `LiveProposalCard` on the ClientInbox chunk), and the
+  review card IS the confirmation — no local ConfirmStep in front, the
+  bulk-move lesson. **Attach renders disabled wearing its reason** (no schema
+  shape for a second image; S12 — never a button that does something else).
+  `api/duplicates.ts` (`useDuplicateResolutions`, view chunks only — the
+  chases.ts placement rule) reads `GET /v1/duplicates` and subtracts decided
+  pairs from the CLIENT-DERIVED ones in both InboxesView and ClientInbox, so a
+  ruling survives a reload. ⚠ **"Sent by" renders a PERSON only when one is
+  known** (`submitterLabel`, package E); otherwise the row is labelled **File**
+  with the filename — "Sent by: king fisser.jpg" was the reported lie.
+- **Item 58 — every live chat upload holds and asks.** `useChatUpload` no
+  longer fires the ingest on a drop: the files land on a user bubble (raw
+  `File` on the message, so an unanswered question leaves them visibly
+  attached) and a `CHAT_UPLOAD_DECISION` card asks whose inbox. ⚠ **The whole
+  upload journey moved OFF this floor-resident module** onto the chat chunk's
+  `ChatUploadDecisionCard`, which is also where the client picker now opens
+  from — `ChatUploadClientPicker` is gone from both hosts. Three real options
+  only; "discuss without ingesting" does not exist and is not offered (S12).
+  Success copy carries item 60's honest timing (*"within a minute or two"*). A
+  restored transcript keeps the question's sentence and degrades the card
+  honestly, because persistence stores text + intent name only.
+- **Item 63 — the client Chases tab leads with the missing list.**
+  `views/ClientChases.tsx`, its own lazy chunk (it carries `api/chases.ts` +
+  the generated chases client, and this route has ~1.5 kB of headroom). The
+  rows are `isUnexplained` — **the one predicate**, not a seventh definition —
+  and both the row button and the bulk bar stage item 15's real
+  server-composed `chase.send`. A line inside an OPEN chase stays listed but
+  reads *"Chased {date}, awaiting reply"* with no button; the 5 s chases poll
+  is what clears the mark when auto-close settles. The tab forks on
+  `slices.bankTransactions.source === 'api'`; synthetic keeps the seeded
+  `MissingItem` table byte-for-byte.
+- **Item 65 — the client AI tab.** Both panels derive from the SAME served
+  counts `statsFor` answers. Chips carry their number as the claim and a
+  **zero-count question is not offered**; the countless "Show the bank matches"
+  chip retired for want of a fact to make it true. The new "What needs doing"
+  panel composes next actions from those counts, each opening its surface. ⚠
+  **No model call and no new server surface** — the brief's own "propose the
+  smaller version first"; the grounded §9 narrative is a named follow-up
+  needing facts (per-month statement coverage, low-confidence extractions) no
+  count serves. Live with the businesses slice unread BOTH panels say so
+  rather than rendering zeros, which would be item 25's all-clear one tab over.
+
+**Bundle (paired A/B, both sides built with `--manifest`, closure walk at gzip
+level 6):** floor 207,181 → **207,414 B (+233 B)** — the `CHAT_UPLOAD_DECISION`
+intent case and the item-58 hold, both unavoidably on the shell.
+`ClientDetailView` 245,285 → **246,788 B** (+1,503 B, 3,212 B of headroom);
+`InboxesView` 246,105 → **247,232 B** (+1,127 B, the thinnest at 2,768 B);
+`ClientInbox` 239,512 → 240,589 B; `BankView` 243,092 → 243,379 B;
+`AIWorkspaceView` 297,342 → **299,201 B — the pre-existing breach, deepened
+~1.9 kB** by the decision card, which belongs on that chunk by the
+reachability rule. `ClientChases` is a NEW route chunk at 216,959 B total
+(9,545 B of its own), which is what keeping `api/chases.ts` off
+ClientDetailView's arrival bought.
+
 ## The correction-integrity package (5 Sep 2026 — review items 22/36/46/47, feeding 29)
 
 A reviewer typed £9,000 of tax onto a £994 zero-rated invoice, "jhngbhf" into
