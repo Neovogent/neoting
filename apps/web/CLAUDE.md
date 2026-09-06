@@ -2246,6 +2246,41 @@ dialog settles.
   review" assertion vacuous. `PublishBatchDialog.test.tsx` and
   `PurgeDocumentsDialog.test.tsx` both default it FALSE and say why.
 
+**Bundle — the approvals package, PAIRED** (6 Sep 2026; two builds in one
+session, same machine, `route-bundle-closure.mjs` both sides, node-zlib level 6
+via the Windows fallback the same commit added — so the two columns are
+comparable to each other and NOT to any shell-`gzip` figure elsewhere in this
+file):
+
+| route | main | this package | vs budget |
+|---|---|---|---|
+| `AIWorkspaceView` | 300,201 | 302,213 | **52,213 OVER** — the pre-existing breach, +2.0 kB |
+| `ApprovalsView` | 248,347 | **238,607** | **−9,740** · 11,393 under |
+| `InboxesView` | 247,404 | 249,046 | 954 under — **the thinnest on the board** |
+| `ClientDetailView` | 247,189 | 247,531 | 2,469 under |
+| `ChasesView` | 242,096 | 242,233 | 7,767 under |
+| `ClientsView` | 241,779 | 241,922 | 8,078 under |
+| `BusinessPortal` | 239,805 | 239,939 | 10,061 under |
+
+**The floor moved +134 B** — the uniform delta across every untouched route: one
+predicate in `api/auth.ts` plus the entry chunk's preload map. Everything above
+that is the deny UI, the fast path and the duplicate banner landing on the
+chunks that carry `LiveProposalCard` / `LiveProposalFlow`, which is where the
+reachability rule puts them.
+
+⚠ **`ApprovalsView` went OVER before it came back.** The 951 B of `api/team.ts`
+the proposer-name lookup added took it to 251,582 B — a reject — and the fix was
+not to drop the feature but to stop fetching `DocumentPreview` (+ its
+`api/document-detail` client, ~12.0 kB together) on arrival for a dialog behind
+a [View] click. Read the `lazy()` comment in `ApprovalsView.tsx`.
+
+⚠ **`InboxesView` has 954 B of headroom.** It has been the thinnest route for
+three packages running and the next byte spent on the floor puts it over. Its
+named next lever is still `AnalysisModal` (8,540 B), and taking it is a
+behaviour change — the modal draws its own overlay, so there is no frame to put
+a `Suspense` inside and the dialog would arrive a beat after the click. Do not
+take it without asking.
+
 **The correction modal dismisses itself after the decision** (item 20 — the
 green banner appeared and the document stayed behind a dark scrim somebody had
 to close by hand). `CodingProposalCard` gained `onSettled`, `CodingProposalModal`
