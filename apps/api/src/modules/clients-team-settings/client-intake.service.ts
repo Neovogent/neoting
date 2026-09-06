@@ -130,18 +130,37 @@ export class ClientIntakeService {
     const replay = await this.replayed<Business>(idempotencyKey, request);
     if (replay !== null) return replay;
 
-    // A client belongs to a practice. A business-scoped actor has no practice in
-    // context and cannot add one — 403 rather than 404 because no record is
-    // being confirmed or denied here: the refusal is about the caller, not about
-    // a row they may not see (`packages/contracts/CLAUDE.md`, "404, never 403",
-    // which is a rule about resources).
+    // A client belongs to a practice, and this session has none in context —
+    // 403 rather than 404 because no record is being confirmed or denied here:
+    // the refusal is about the caller, not about a row they may not see
+    // (`packages/contracts/CLAUDE.md`, "404, never 403", which is a rule about
+    // resources).
+    //
+    // ⚠ **THE PREDICATE IS A SCOPE TEST AND THE MESSAGE USED TO CALL IT A ROLE
+    // TEST** (review item 39, 6 Sep 2026). It said *"Only a member of an
+    // accounting practice can add a client"* — to somebody who IS one. A
+    // `PRACTICE_STANDARD` invited WITH a client list gets one membership per
+    // assigned client carrying `practice_id` **NULL**
+    // (`auth-tenancy/invitation-acceptance.service.ts`, and the null is
+    // deliberate: it is what makes RLS confine them). `loadScopeForUser` then
+    // has no practice to put in the context, so practice staff arrive here
+    // looking exactly like a business-only login and were told they were not
+    // practice staff.
+    //
+    // The refusal itself is CORRECT and stands — a colleague scoped to two
+    // clients adding a third would be granting themselves access nobody
+    // decided to give (`docs/Access_and_Approval_Matrix.md`, gate ⚖1, ruled
+    // 6 Sep 2026). What changed is the sentence, which now names the real
+    // reason and the real fix, and is true of both callers that reach it: the
+    // scoped colleague, and a client-workspace user whose accountant is the
+    // practice.
     const practiceId = ctx.practiceId;
     if (practiceId === undefined) {
       throw new AppException(
         'NT-PRM-001',
         HttpStatus.FORBIDDEN,
         'Not permitted',
-        'Only a member of an accounting practice can add a client.',
+        'Your sign-in reaches only the clients it was given, so it cannot add new ones. A practice admin at your accounting firm can.',
       );
     }
 

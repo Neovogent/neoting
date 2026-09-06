@@ -126,3 +126,37 @@ export async function logout(): Promise<void> {
     // The goal — not being signed in — is decided by the /me refetch.
   }
 }
+
+/**
+ * **Does this session act for the whole practice?** — review item 39, the
+ * `docs/Access_and_Approval_Matrix.md` predicate every practice-wide surface
+ * gates on.
+ *
+ * ⚠ **`practice === null` is a SCOPE fact, not a role fact, and that is the
+ * whole point of this function existing rather than a `role ===` test at each
+ * call site.** A `PRACTICE_STANDARD` invited WITH a client list holds one
+ * membership per assigned client carrying `practice_id` NULL — deliberately,
+ * because that null is what makes RLS confine them
+ * (`auth-tenancy/invitation-acceptance.service.ts`). `loadScopeForUser` then
+ * produces a context with no `practiceId`, `GET /me` answers `practice: null`,
+ * and every server predicate of the form `ctx.practiceId === undefined`
+ * refuses them. So this returns EXACTLY what the server will decide, off the
+ * one fact the server decides it from.
+ *
+ * Their role still reads `PRACTICE_STANDARD`, which is why the naive
+ * `role === 'PRACTICE_STANDARD'` gate would be wrong in both directions: it
+ * would hide the surface from a practice-wide standard user who may use it,
+ * and show it to the scoped colleague who may not.
+ *
+ * ⚠ **It is presentation, never the gate** (Governance §11.2 — *"a UI that
+ * merely hides the button is not an implementation of this"*). The server
+ * refuses regardless, and its refusal names the scope.
+ *
+ * **Every non-authenticated state answers `true`**, and that is what keeps
+ * synthetic mode byte-for-byte unchanged (METH_MODE §1): the seeded cast is a
+ * practice-wide firm with no `/me` behind it, and a screen that hid its own
+ * Team tab in the demo would be answering a question nobody asked.
+ */
+export function actsForWholePractice(session: SessionState): boolean {
+  return session.status !== 'authenticated' || session.me.practice !== null;
+}

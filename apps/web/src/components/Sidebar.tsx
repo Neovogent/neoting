@@ -75,7 +75,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ activeTab, setActiveTab, onOpenBusinessPortal }: SidebarProps) {
-  const { settings, updateSettings, documentsSource } = useAppContext();
+  const { settings, updateSettings, documentsSource, availableTabs } = useAppContext();
   const intl = useIntl();
   const isLight = settings.theme === 'light';
   const mouseY = useMotionValue(Number.POSITIVE_INFINITY);
@@ -114,8 +114,12 @@ export function Sidebar({ activeTab, setActiveTab, onOpenBusinessPortal }: Sideb
           />
         </button>
       </div>
+      {/* ⚠ Filtered by `availableTabs`, never by a role read here (review item
+          39). One list decides what this session may reach — the rail, the
+          phone nav and the address→tab resolution all read it — so a tab
+          cannot be missing from the nav while its address still resolves. */}
       <nav data-tour="nav" className="flex flex-col gap-1.5 w-full px-4">
-        {navItems.map((item) => (
+        {navItems.filter((item) => availableTabs.includes(item.tab)).map((item) => (
           <DockItem
             key={item.tab}
             icon={item.icon}

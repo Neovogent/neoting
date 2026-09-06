@@ -435,13 +435,23 @@ function firmMembership(practiceId: string, businessIds: readonly string[]): Pri
  * carries none either). `403`, not `404`: this is a permission answer about a
  * surface whose existence is public, and the detail says which.
  */
+/**
+ * ⚠ **A SCOPE TEST, NOT A ROLE TEST** — the same correction review item 39 made
+ * to `client-intake.service.ts`, which see for the whole reasoning. A
+ * `PRACTICE_STANDARD` invited with a client list holds memberships carrying
+ * `practice_id` NULL, so they reach this refusal while genuinely being
+ * practice staff; *"this account does not act for a practice"* was therefore
+ * false of the commonest caller. The refusal stands (the firm's staff list is
+ * not a scoped colleague's to read); the sentence names the scope instead of
+ * denying the employment.
+ */
 function requirePractice(ctx: ScopeContext): string {
   if (ctx.practiceId !== undefined) return ctx.practiceId;
   throw new AppException(
     'NT-PRM-001',
     HttpStatus.FORBIDDEN,
     'Not permitted',
-    'This account does not act for a practice, so it has no practice team to read.',
+    'Your sign-in reaches only the clients it was given, so it has no firm-wide team list. A practice admin at your accounting firm can see it.',
   );
 }
 
