@@ -717,7 +717,7 @@ lives elsewhere. There are three, and they need the same two things
 | Module | Operation | Resolver + scope |
 |---|---|---|
 | `ingestion-routing/web-upload` | `completeDocumentUpload` | `resolveForUpload` → `delegatedScopeFor` |
-| `documents` | `getDocumentOriginal` (2 Sep 2026) | `resolveForDocumentOriginal` → `delegatedScopeFor` |
+| `documents` | `getDocumentOriginal` (2 Sep 2026) | `resolveForDocumentOriginal` → **`systemScopeFor` + `portalVisibleDocuments`** since 7 Sep 2026 (review item 18) — it was `delegatedScopeFor`; see the superseded section below |
 | `billing` | `createCheckoutSession`, `createBillingPortalSession` (2 Sep 2026) | `resolveOnboarding` → `systemScopeFor` + the businessId→404 guard |
 
 The six portal endpoints themselves live **inside** this module and import the
@@ -1227,13 +1227,43 @@ can have no delegated context built for it at all, and gets the same 404 —
 word for word the service's own, so a caller cannot tell "your session may reach
 nothing" from "that document is not yours".
 
-⚠ **The consequence for the UI, stated plainly:** a client can open the original
-of a document **they sent through the portal**, and not one that arrived by
-email or that their accountant uploaded. That is the grant, and widening it
-would mean either a new RLS branch (a `prisma/` change) or reading originals
-under the SYSTEM context, which would trade a database guarantee for an
-application one on the single endpoint that hands out bearer-authority URLs to
-raw bytes.
+### ⚠ SUPERSEDED 7 Sep 2026 — the grant is no longer what bounds this (review item 18)
+
+The paragraph that stood here said, correctly: *"a client can open the original
+of a document they sent through the portal, and not one that arrived by email or
+that their accountant uploaded."* What it did not say is that a grant lives on
+**one `otp_sessions` row**, so "they sent" meant *"in this sign-in"* — and
+`GET /portal/documents` shows a client their whole file. Probed live on 7 Sep
+2026 against American Burger: all five rows of the client's own list, including
+the `SMS_PORTAL` one they had sent themselves, answered 404. The portal shipped a
+list it could not open.
+
+Shakib's ruling was **"any document in their own list"**, and the shape is this
+module's own pattern rather than a new RLS branch:
+
+- `portal-documents.service.ts` exports **`portalVisibleDocuments(facts)`** — the
+  `where` its list has always been built from — and `modules/portal/index.ts`
+  puts it on the seam.
+- `documents.controller.ts#principalFor` resolves a portal bearer to
+  `systemScopeFor(facts)` plus that predicate, passed into
+  `getDocumentOriginal`'s new `alsoWhere` so it lands in the QUERY.
+
+So the read a client gets and the bytes a client gets are decided by one
+expression, and the archived/deleted exclusions travel with it. It is an
+**application guarantee**, like every other portal read except this one used to
+be — said out loud rather than implied.
+
+⚠ **The cost, named:** a CHASE session reaches `getDocumentOriginal` too
+(`resolveForDocumentOriginal` takes both kinds), so a forwarded link's anonymous
+holder can now open any document of that business. `resolveOnboarding` would
+close it and would also stop the chase portal previewing its own upload; the
+narrower door is a one-line change the day the owner wants it.
+
+`portal-client-surface.integration.test.ts`'s second case is rewritten around the
+new boundary: a document of the client's own business that this session did NOT
+upload now opens, another business's document in the SAME practice still 404s
+(the only pair that isolates the `businessId` predicate from RLS), an ARCHIVED
+row 404s because the list hides it, and nothing is signed for either refusal.
 
 ## Signing in WITHOUT a setup link (29 Aug 2026)
 
@@ -1282,7 +1312,7 @@ endpoints written for them, and `getBusinessContext` was unreachable code.
 | `GET /portal/context` | `resolveForContext` | chase **and** own-portal |
 | `POST /portal/uploads` | `resolveForUpload` | chase **and** own-portal |
 | `POST /document-uploads/{id}/complete` | `resolveForUpload` | chase **and** own-portal |
-| `GET /documents/{id}/original` | `resolveForDocumentOriginal` | chase **and** own-portal — the GRANT decides, not the scope |
+| `GET /documents/{id}/original` | `resolveForDocumentOriginal` | chase **and** own-portal — since 7 Sep 2026 the client's own BUSINESS decides, not the grant (review item 18) |
 | `GET /portal/documents` | `resolveOnboarding` | own-portal **only** |
 | `POST /billing/checkout-sessions` | `resolveOnboarding` | own-portal **only** |
 | `POST /billing/portal-sessions` | `resolveOnboarding` | own-portal **only** |

@@ -6,8 +6,8 @@ import { defineMessages, useIntl, type MessageDescriptor } from 'react-intl';
 import type { PortalSentPage } from '../../api/onboarding';
 import { PrivacyNoticeLink } from '../legal/PrivacyNoticeLink';
 import { LapsedSubscriptionNotice } from './LapsedSubscriptionNotice';
-import { Empty, Panel } from './LivePortalHome';
-import { PortalStatusPill } from './PortalStatusPill';
+import { Panel } from './LivePortalHome';
+import { PortalDocumentList } from './PortalDocumentList';
 import {
   PORTAL_ACCEPT,
   PORTAL_UPLOAD_LIMIT_MB,
@@ -119,17 +119,21 @@ const m = defineMessages({
   },
   fileSize: { id: 'portal.livePortalUpload.fileSize', defaultMessage: '{size}MB' },
 
-  sentTitle: { id: 'portal.livePortalUpload.sentTitle', defaultMessage: 'Sent from this portal' },
+  // ⚠ It said "Sent from this portal" and listed ten `SMS_PORTAL` rows, and
+  // that was the wrong list for review item 18's ask ("the actual list of sent
+  // document"). A client's file is everything that reached their accountant —
+  // what they photographed here, what they emailed, what came by WhatsApp — and
+  // a list that hides four fifths of it answers "where is my invoice" with
+  // silence. Each row now names how it arrived instead.
+  sentTitle: { id: 'portal.livePortalUpload.sentTitle', defaultMessage: 'Everything you have sent' },
   sentSubtitle: {
     id: 'portal.livePortalUpload.sentSubtitle',
-    defaultMessage: 'The status changes as your accountant works through them',
+    defaultMessage: 'However it reached us. Open or download any of them; the status changes as your accountant works through them',
   },
   sentEmpty: {
     id: 'portal.livePortalUpload.sentEmpty',
-    defaultMessage: 'Nothing sent from this portal yet.',
+    defaultMessage: 'Nothing sent yet. Your documents will appear here once they reach your accountant.',
   },
-  sentLoading: { id: 'portal.livePortalUpload.sentLoading', defaultMessage: 'Loading what you have sent…' },
-  sentUnnamed: { id: 'portal.livePortalUpload.sentUnnamed', defaultMessage: 'Not read yet' },
 });
 
 /** Keyed by the machine reason, so only the sentence is copy. */
@@ -139,23 +143,27 @@ const REFUSAL: Record<RefusalReason, MessageDescriptor> = {
   empty: m.refusalEmpty,
 };
 
-/** Portal uploads are the `SMS_PORTAL` channel, fixed server-side. */
-const PORTAL_CHANNEL = 'SMS_PORTAL';
-
 export function LivePortalUpload({
   subscriptionActive,
   documents,
   documentsFault,
+  sessionToken,
   busy,
   onUpload,
   onSubscribe,
+  onShowMoreDocuments,
+  canShowMoreDocuments,
 }: {
   readonly subscriptionActive: boolean;
   readonly documents: PortalSentPage | null;
   readonly documentsFault: string | null;
+  /** For [Open] / [Download] on a row — React state only; it dies with the tab. */
+  readonly sessionToken: string | null;
   readonly busy: boolean;
   readonly onUpload: (file: File, note: string | null) => Promise<PortalSendOutcome>;
   readonly onSubscribe: () => void;
+  readonly onShowMoreDocuments: () => void;
+  readonly canShowMoreDocuments: boolean;
 }) {
   const intl = useIntl();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -205,8 +213,6 @@ export function LivePortalUpload({
       }
     }
   };
-
-  const portalDocs = (documents?.rows ?? []).filter((d) => d.channel === PORTAL_CHANNEL);
 
   return (
     <div className="p-4 md:p-8 max-w-3xl mx-auto flex flex-col gap-6 pb-safe-6">
@@ -416,34 +422,18 @@ export function LivePortalUpload({
       </AnimatePresence>
 
       <Panel title={intl.formatMessage(m.sentTitle)} subtitle={intl.formatMessage(m.sentSubtitle)}>
-        {documentsFault !== null ? (
-          <p role="alert" className="text-[13px] text-red-400 leading-relaxed py-2">
-            {documentsFault}
-          </p>
-        ) : documents === null ? (
-          <div className="flex flex-col gap-2" role="status" aria-busy="true">
-            <span className="sr-only">{intl.formatMessage(m.sentLoading)}</span>
-            <div className="h-14 rounded-2xl bg-white/[0.04] animate-pulse" />
-            <div className="h-14 rounded-2xl bg-white/[0.04] animate-pulse" />
-          </div>
-        ) : portalDocs.length === 0 ? (
-          <Empty icon={UploadCloud} message={intl.formatMessage(m.sentEmpty)} />
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {portalDocs.slice(0, 10).map((doc) => (
-              <li
-                key={doc.id}
-                className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-ground/60 border border-white/5"
-              >
-                {/* Untrusted content — extracted text, rendered as text. */}
-                <span className="text-[13px] font-semibold text-white truncate">
-                  {doc.supplier ?? intl.formatMessage(m.sentUnnamed)}
-                </span>
-                <PortalStatusPill status={doc.status} />
-              </li>
-            ))}
-          </ul>
-        )}
+        {/* The browsable half of the one list (review item 18): every channel,
+            a status filter over the server's own five words, and one more page
+            of fifty per press. Home renders the same rows short. */}
+        <PortalDocumentList
+          browse
+          documents={documents}
+          documentsFault={documentsFault}
+          sessionToken={sessionToken}
+          emptyMessage={intl.formatMessage(m.sentEmpty)}
+          onShowMore={onShowMoreDocuments}
+          canShowMore={canShowMoreDocuments}
+        />
       </Panel>
     </div>
   );

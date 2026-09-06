@@ -65,6 +65,7 @@ function doc(id: string, over: Partial<DocumentRow> = {}): DocumentRow {
 
 interface Calls {
   documentFindMany: { where?: unknown; orderBy?: unknown; take?: number }[];
+  documentFindFirst: unknown[];
   childFindMany: unknown[];
   presignGet: unknown[];
   counts: { model: string; where?: unknown }[];
@@ -84,7 +85,7 @@ function harness(
     children?: { id: string; createdAt: Date }[];
   } = {},
 ) {
-  const calls: Calls = { documentFindMany: [], childFindMany: [], presignGet: [], counts: [] };
+  const calls: Calls = { documentFindMany: [], documentFindFirst: [], childFindMany: [], presignGet: [], counts: [] };
   const rows =
     options.documents ??
     (options.document === undefined ? [doc('doc_1')] : options.document === null ? [] : [options.document]);
@@ -98,6 +99,15 @@ function harness(
         return rows;
       },
       findUnique: async () => (options.document === undefined ? doc('doc_1') : options.document),
+      // `getDocumentOriginal` is `findFirst`, not `findUnique` — it composes an
+      // extra predicate for the portal principal (review item 18), and
+      // `findUnique` accepts only unique fields in its `where`. The args are
+      // recorded so a test can assert the predicate reaches the QUERY rather
+      // than being applied to its result.
+      findFirst: async (args: unknown) => {
+        calls.documentFindFirst.push(args);
+        return options.document === undefined ? doc('doc_1') : options.document;
+      },
     },
     documentEvent: {
       findMany: async (args: unknown) => {
@@ -438,6 +448,24 @@ test('NOTHING is signed for a document RLS cannot see', async () => {
 
   expect((err as AppException).getStatus()).toBe(HttpStatus.NOT_FOUND);
   expect(calls.presignGet).toHaveLength(0);
+});
+
+test('⚠ a caller-supplied predicate goes INTO the query, never over its result (review item 18)', async () => {
+  // The portal principal reads under the practice SYSTEM context, so RLS is not
+  // what narrows it — `businessId` in the `where` is. A predicate applied AFTER
+  // the row came back is one somebody eventually forgets, on the one endpoint
+  // here that hands out a URL to raw bytes.
+  const { calls, service } = harness({ document: doc('doc_1') });
+  await service.getDocumentOriginal(CTX, 'doc_1', { businessId: 'biz_1', deletedAt: null });
+
+  expect(calls.documentFindFirst[0]).toMatchObject({
+    where: { id: 'doc_1', businessId: 'biz_1', deletedAt: null },
+  });
+
+  // And the accountant's call is unchanged: no extra predicate, RLS alone.
+  await service.getDocumentOriginal(CTX, 'doc_1');
+  expect(calls.documentFindFirst[1]).toMatchObject({ where: { id: 'doc_1' } });
+  expect(Object.keys((calls.documentFindFirst[1] as { where: object }).where)).toEqual(['id']);
 });
 
 // ---- events and extractions ----

@@ -6,6 +6,7 @@ import type { ScopeContext } from '../../common/db/scope-context.js';
 import type { AppException } from '../../common/problem/problem.js';
 import { BillingController } from '../billing/billing.controller.js';
 import type { BillingService } from '../billing/billing.service.js';
+import { DocumentsController } from '../documents/documents.controller.js';
 import { DocumentsService } from '../documents/documents.service.js';
 import { InMemoryDocumentStore } from '../ingestion-routing/storage/document-store.js';
 import { PortalDocumentsService } from './portal-documents.service.js';
@@ -26,11 +27,15 @@ import { signPortalSessionToken } from './portal-session-token.js';
  *    Proven with a SECOND BUSINESS IN THE SAME PRACTICE — a second practice
  *    would have proved nothing, because RLS would have hidden it anyway and the
  *    test would pass with the filter deleted.
- * 2. **`GET /documents/{id}/original` honours the GRANT, and SQL is what
- *    honours it.** Two documents in the same business, one granted; the
- *    ungranted one is invisible to `findUnique` under
- *    `documents_delegated_upload`, so the service's own `null` check answers 404
- *    and nothing is signed. That is a database guarantee, unlike (1).
+ * 2. **`GET /documents/{id}/original` opens exactly what (1) LISTS.** ⚠ This
+ *    read said "honours the GRANT, and SQL is what honours it" until 7 Sep 2026,
+ *    and that was true and useless: a grant holds only what the CURRENT sign-in
+ *    uploaded, so a client could browse their own list and open nothing on it
+ *    (review item 18). On Shakib's ruling the boundary is now the same
+ *    application guarantee as (1) — `portalVisibleDocuments(facts)`, the one
+ *    expression both surfaces filter with — so the pair that matters is a
+ *    document of the client's own business against one of the OTHER business in
+ *    the SAME practice, plus an ARCHIVED row the list hides.
  * 3. **`POST /billing/portal-sessions` 404s a body naming another business.**
  *    The portal principal landed on that operation with this guard, and the
  *    guard is the ENTIRE tenancy check on that path — `systemScopeFor` sees the
@@ -334,17 +339,12 @@ describe.skipIf(!enabled)("the client's own portal surface against real RLS", ()
     expect(reviewed?.documentDate).toBe('2026-08-09');
   });
 
-  test('⚠ getDocumentOriginal honours the GRANT — and it is Postgres, not the handler, that honours it', async () => {
-    const facts = await factsFor(SESSION_MINE, BIZ_MINE);
-    const delegated = delegatedScopeFor(facts);
-    expect(delegated.ok).toBe(true);
-    if (!delegated.ok) return;
-
-    // A store that would sign ANYTHING it is asked to. That is deliberate: the
-    // 404 alone does not prove the refusal is safe, because a refactor that
-    // presigned before the lookup would still throw 404 and would still have
-    // minted a working URL to bytes the client may not have. Object storage has
-    // no RLS to undo that, so the assertion has to be that nothing was signed.
+  test('⚠ getDocumentOriginal opens what the client\u2019s own LIST shows, and nothing outside it (review item 18)', async () => {
+    // A store that would sign ANYTHING it is asked to. That is deliberate: a 404
+    // alone does not prove a refusal is safe, because a refactor that presigned
+    // before the lookup would still throw 404 and would still have minted a
+    // working URL to bytes the client may not have. Object storage has no RLS to
+    // undo that, so the assertion has to be that nothing was signed.
     const signed: string[] = [];
     const store = {
       presignGet: async (input: { key: string }) => {
@@ -352,35 +352,57 @@ describe.skipIf(!enabled)("the client's own portal surface against real RLS", ()
         return { url: `https://fixture.local/${input.key}?sig=x`, expiresAt: new Date(Date.now() + 300_000) };
       },
     } as unknown as InMemoryDocumentStore;
-    const service = new DocumentsService(app, store);
 
-    // In the grant: the client opens the receipt they sent.
-    const access = await service.getDocumentOriginal(delegated.context, DOC_SENT);
-    expect(access.url).toContain(DOC_SENT);
-    expect(access.mimeType).toBe('image/jpeg');
-    expect(signed).toEqual([`w/${BIZ_MINE}/documents/${DOC_SENT}`]);
+    // Driven through the CONTROLLER, because the controller is what decides
+    // which principal is asking and what bounds it. Calling the service with a
+    // hand-built context would be testing the arguments this suite passed in.
+    const cookie = { require: async () => { throw new Error('the cookie path must not be taken here'); } } as unknown as RequestContext;
+    const controller = new DocumentsController(cookie, new DocumentsService(app, store), resolver());
+    const mine = bearerFor(SESSION_MINE, BIZ_MINE);
 
-    // NOT in the grant, and in the client's OWN business — so this is the
-    // delegated policy's `id = ANY(app_granted_item_ids())` doing the work and
-    // nothing else. 404, and never a 403 that would confirm it exists.
-    const refused = await grab(() => service.getDocumentOriginal(delegated.context, DOC_REVIEW));
-    expect(refused.getStatus()).toBe(404);
-    expect(refused.code).toBe('NT-VAL-001');
+    // The receipt this session sent — in its grant, and openable before and
+    // after the widening.
+    const sent = await controller.original(DOC_SENT, mine);
+    expect(sent.url).toContain(DOC_SENT);
+    expect(sent.mimeType).toBe('image/jpeg');
 
-    // And another business's document is no more reachable than its own
-    // business's ungranted one — the same answer, which is the point.
-    const foreign = await grab(() => service.getDocumentOriginal(delegated.context, DOC_THEIRS));
+    // ⚠ The change (review item 18, Shakib's ruling of 7 Sep 2026): a document
+    // in the client's own business that this session did NOT upload. It was a
+    // 404 — the grant holds only what the current sign-in sent, so a client
+    // could browse a list and open nothing on it — and it opens now.
+    const notMine = await controller.original(DOC_REVIEW, mine);
+    expect(notMine.url).toContain(DOC_REVIEW);
+
+    // What still refuses, and it is the whole tenancy of this path now that RLS
+    // is not narrowing it: another business's document, in the SAME practice —
+    // the only pair that isolates the `businessId` predicate from RLS, which
+    // would have hidden a second practice anyway. 404, never a 403 that would
+    // confirm it exists.
+    const foreign = await grab(() => controller.original(DOC_THEIRS, mine));
     expect(foreign.getStatus()).toBe(404);
+    expect(foreign.code).toBe('NT-VAL-001');
 
-    // Nothing further was signed. Still exactly the one granted key.
-    expect(signed).toEqual([`w/${BIZ_MINE}/documents/${DOC_SENT}`]);
+    // And the claim the ruling actually rests on: **the set a client can open is
+    // the set the client's own list shows.** An ARCHIVED document is absent from
+    // `GET /portal/documents`, so it must be unopenable too — otherwise the two
+    // surfaces disagree about what the client has, and the more permissive one
+    // wins on the day it matters.
+    const archived = await grab(() => controller.original(DOC_ARCHIVED, mine));
+    expect(archived.getStatus()).toBe(404);
+
+    // Nothing was signed for any refusal. Exactly the two keys that opened.
+    expect(signed).toEqual([
+      `w/${BIZ_MINE}/documents/${DOC_SENT}`,
+      `w/${BIZ_MINE}/documents/${DOC_REVIEW}`,
+    ]);
   });
 
-  test('a session that has never uploaded can build no delegated scope, so it can open nothing', async () => {
-    // An empty grant is refused by `ScopeContextSchema` on purpose: it reads as
-    // "no restriction" to a human and denies everything in SQL. The controller
-    // turns this into the same 404, so the two cases are indistinguishable to a
-    // caller.
+  test('a session that has never uploaded still has an empty grant — it is simply no longer what bounds a read', async () => {
+    // Kept, and re-pointed. The empty grant used to be the whole reason an
+    // onboarding session could open nothing: `ScopeContextSchema` refuses a
+    // `delegated_upload` context with no granted items, so no context could be
+    // built at all. `getDocumentOriginal` no longer builds one — but the UPLOAD
+    // path still does, so this fact and its refusal both have to keep holding.
     const facts = await factsFor(SESSION_THEIRS, BIZ_THEIRS);
     expect(facts.grantedItemIds).toEqual([]);
     expect(delegatedScopeFor(facts)).toEqual({ ok: false, reason: 'no-granted-items' });

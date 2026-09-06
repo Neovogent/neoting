@@ -55,8 +55,10 @@ type ListQuery = z.infer<typeof listPortalDocumentsQueryParams>;
  *   declares none on the operation. There is no argument to forget to pass and
  *   none for a caller to supply — the same move `PortalUploadRequest` makes by
  *   having no `businessId` field at all.
- * - `whereFor(facts)` is the single expression that builds it, and every query
- *   in this class goes through it.
+ * - `portalVisibleDocuments(facts)` is the single expression that builds it,
+ *   and every query in this class goes through it — as does the portal's read
+ *   of a document's ORIGINAL, which is why that expression is exported (see
+ *   its own header).
  *
  * ## What is NOT projected, and why the shape is small
  *
@@ -74,7 +76,7 @@ export class PortalDocumentsService {
   constructor(private readonly prisma: PrismaClient) {}
 
   async listDocuments(facts: PortalSessionFacts, query: ListQuery): Promise<Page<PortalDocument>> {
-    const filters = whereFor(facts);
+    const filters = portalVisibleDocuments(facts);
     const request: PageRequest<DocumentRow> = {
       // Newest first, and no other sort. The contract offers none: a client
       // reading "what happened to my receipt" wants the receipt they just sent,
@@ -110,12 +112,30 @@ export class PortalDocumentsService {
 const RECEIVED_AT = dateField<DocumentRow>('receivedAt', (row) => row.receivedAt, false);
 
 /**
- * The one place this endpoint's `where` is built — the whole of its tenancy,
- * and the whole of its state filter.
+ * **The set of documents a portal session may see, and the one place it is
+ * spelled** — the whole of this surface's tenancy and the whole of its state
+ * filter.
  *
  * `businessId` is the application guarantee described in the class header. It
  * is written here once so there is no second query on this surface that could
  * be written without it.
+ *
+ * ⚠ **It is EXPORTED, and it has a second caller** (review item 18, Shakib's
+ * ruling of 7 Sep 2026): `GET /documents/{documentId}/original` under a portal
+ * bearer. A client could browse their own list and open nothing in it — the
+ * operation declares the portal principal, but under that bearer the boundary
+ * was the session's GRANT (`id = ANY(app_granted_item_ids())`), which contains
+ * only what THIS sign-in uploaded. Probed live against American Burger on
+ * 7 Sep: all five rows its own list returns, including the `SMS_PORTAL` one the
+ * client sent itself, answered 404.
+ *
+ * The ruling was *"any document in their own list"*, and this predicate is what
+ * makes those two sentences the same sentence. The read a client gets and the
+ * bytes a client gets are decided by ONE expression, so the list cannot show a
+ * row the open refuses, and — the direction that actually matters — an open
+ * cannot reach a document the list would have hidden. An accountant who deletes
+ * or archives a document has taken it back from the client in both places at
+ * once, with no second predicate to remember.
  *
  * `ARCHIVED` is excluded because archiving is the practice's own housekeeping
  * and none of the five client-facing words is true of an archived document —
@@ -133,7 +153,7 @@ const RECEIVED_AT = dateField<DocumentRow>('receivedAt', (row) => row.receivedAt
  * `deletedAt: null`, so this list and `PortalSummary.documentsSent` cannot come
  * to disagree about what "sent" means.
  */
-function whereFor(facts: PortalSessionFacts): Prisma.DocumentWhereInput {
+export function portalVisibleDocuments(facts: PortalSessionFacts): Prisma.DocumentWhereInput {
   return { businessId: facts.businessId, state: { not: PORTAL_HIDDEN_DOCUMENT_STATE }, ...notDeleted() };
 }
 

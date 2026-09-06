@@ -315,6 +315,9 @@ export function LiveBusinessPortal() {
           home={home}
           documents={session.documents}
           documentsFault={session.documentsFault}
+          // Review item 18 — [Open] / [Download] on a row need the bearer.
+          // React state only; never `localStorage`, never a cookie.
+          sessionToken={session.token}
           onGoCapture={() => goTo('Capture')}
           onGoUpload={() => goTo('Upload')}
           onSendFor={sendFor}
@@ -325,9 +328,12 @@ export function LiveBusinessPortal() {
           subscriptionActive={home.subscriptionActive}
           documents={session.documents}
           documentsFault={session.documentsFault}
+          sessionToken={session.token}
           busy={session.busy}
           onUpload={(file, note) => session.upload(file, null, note)}
           onSubscribe={() => void session.startCheckout()}
+          onShowMoreDocuments={session.showMoreDocuments}
+          canShowMoreDocuments={session.canShowMoreDocuments}
         />
       )}
       {tab === 'Capture' && (

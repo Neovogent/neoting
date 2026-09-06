@@ -1,4 +1,5 @@
 import { Controller, Get, Headers, HttpCode, HttpStatus, Inject, Param, Query } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 
 import {
   getDocumentCountsQueryParams,
@@ -14,10 +15,9 @@ import {
 import { REQUEST_CONTEXT } from '../../common/context/context.module.js';
 import type { RequestContext } from '../../common/context/request-context.js';
 import type { ScopeContext } from '../../common/db/scope-context.js';
-import { AppException } from '../../common/problem/problem.js';
 import { parseBoundary } from '../../common/validation/parse-boundary.js';
 import { coerceQuery } from '../../common/validation/query-coercion.js';
-import { delegatedScopeFor, PORTAL_SESSION_CONTEXT, PortalSessionContextResolver } from '../portal/index.js';
+import { PORTAL_SESSION_CONTEXT, PortalSessionContextResolver, portalVisibleDocuments, systemScopeFor } from '../portal/index.js';
 import type { DocumentsService } from './documents.service.js';
 import { DOCUMENTS_SERVICE } from './tokens.js';
 
@@ -111,7 +111,8 @@ export class DocumentsController {
     @Headers('authorization') authorization: string | undefined,
   ) {
     const params = parseBoundary(getDocumentOriginalParams, { documentId }, 'documentId');
-    return this.service.getDocumentOriginal(await this.principalFor(authorization), params.documentId);
+    const principal = await this.principalFor(authorization);
+    return this.service.getDocumentOriginal(principal.context, params.documentId, principal.alsoWhere);
   }
 
   /**
@@ -122,35 +123,63 @@ export class DocumentsController {
    * verification and its expiry, so holding a cookie as well changes nothing.
    * No `Authorization` header at all is the accountant, unchanged.
    *
-   * ⚠ **On the portal path the boundary is SQL, and it is the only one.**
-   * `delegatedScopeFor` yields a `delegated_upload` context whose
-   * `app_granted_item_ids()` is this session's own grant, so
-   * `documents_delegated_upload`'s `id = ANY(...)` decides — a document outside
-   * the grant is invisible to `findUnique`, the service's existing `null` check
-   * raises 404, and nothing is ever signed for it (`documents.service.ts` reads
-   * before it presigns, and a test in that module pins it). That is a database
-   * guarantee, unlike the portal's other reads, and it is why this handler adds
-   * no ownership check of its own: a check that could answer 403 would confirm
-   * the document exists.
+   * ## The portal path changed on 7 Sep 2026 (review item 18)
    *
-   * A session whose grant is EMPTY — an onboarding session that has never
-   * uploaded — cannot have a delegated context built for it at all
-   * (`ScopeContextSchema` refuses one, for the good reason that an empty grant
-   * reads as "no restriction" to a human and denies everything in SQL). It gets
-   * the same 404, because there is nothing it may reach, and 404 is what the
-   * database would have produced anyway.
+   * It used to build `delegatedScopeFor(facts)`, so
+   * `documents_delegated_upload`'s `id = ANY(app_granted_item_ids())` decided.
+   * That is the stronger kind of boundary and it is the one this handler wanted.
+   * **It also meant a client could open almost nothing.** A grant is widened
+   * only by `grantItems`, which only the upload path calls, so it holds exactly
+   * the documents THIS sign-in uploaded: sign in tomorrow and yesterday's
+   * receipt is a 404. Probed live against American Burger on 7 Sep 2026 — all
+   * five rows the client's own list returns, including the `SMS_PORTAL` one they
+   * sent themselves, answered 404. So the portal shipped a browsable list of
+   * documents it could not open, which is item 18's whole complaint.
+   *
+   * Shakib's ruling was *"any document in their own list"*. Two ways to get
+   * there: a new RLS branch meaning "this client's whole business", which is a
+   * `prisma/` change and a stop-and-ask — or the pattern the portal's own reads
+   * already use, which is the practice SYSTEM context narrowed **in the query**
+   * by the session's business. This takes the second, and says so plainly rather
+   * than implying SQL is still doing the work:
+   *
+   * - the predicate is `portalVisibleDocuments(facts)`, **the same expression**
+   *   `GET /portal/documents` builds its list from, so the set a client can open
+   *   and the set a client can see are one set by construction — including the
+   *   deleted and archived exclusions, which means an accountant who withdraws a
+   *   document withdraws it from both surfaces at once;
+   * - it is built from `facts.businessId`, off the `otp_sessions` row the server
+   *   wrote and the resolver re-checks on every request, and there is no
+   *   `businessId` argument on this operation for a caller to supply or a
+   *   handler to forget;
+   * - it goes INTO the query, never over its result — see `getDocumentOriginal`,
+   *   which reads before it presigns for the same reason.
+   *
+   * What did NOT change: this handler still adds no ownership check that could
+   * answer 403, because a 403 confirms the document exists. Everything outside
+   * the predicate is a 404 that reads exactly like every other 404.
+   *
+   * ⚠ **A CHASE session reaches this too** (`resolveForDocumentOriginal` takes
+   * both kinds), and it now sees the business rather than its own grant. That is
+   * the widening's real cost, and it is stated here rather than buried: a
+   * forwarded chase link is deliberately anonymous, and its holder can now open
+   * any document of the business the chase was raised against. Narrowing it to
+   * `resolveOnboarding` would close that and would also stop the chase portal
+   * previewing what it has just uploaded, which is a live surface — so the
+   * narrower door is available the day the owner wants it, and this paragraph is
+   * the record that it was not passed over silently.
    */
-  private async principalFor(authorization: string | undefined): Promise<ScopeContext> {
+  private async principalFor(
+    authorization: string | undefined,
+  ): Promise<{ context: ScopeContext; alsoWhere?: Prisma.DocumentWhereInput }> {
     if (authorization === undefined || authorization.trim() === '') {
       // `require()` resolves the context inside Nest's pipeline, so a bad one
       // leaves as a 401 problem+json rather than an Express-level crash (#75).
-      return this.context.require();
+      return { context: await this.context.require() };
     }
 
     const facts = await this.portalAuth.resolveForDocumentOriginal(authorization);
-    const delegated = delegatedScopeFor(facts);
-    if (!delegated.ok) throw notFoundForPortal();
-    return delegated.context;
+    return { context: systemScopeFor(facts), alsoWhere: portalVisibleDocuments(facts) };
   }
 
   @Get(':documentId/events')
@@ -168,21 +197,4 @@ export class DocumentsController {
     const parsed = parseBoundary(listDocumentExtractionsQueryParams, coerceQuery(listDocumentExtractionsQueryParams, query), 'query parameters');
     return this.service.listDocumentExtractions(await this.context.require(), params.documentId, parsed);
   }
-}
-
-/**
- * The 404 a portal session with nothing in its grant receives.
- *
- * Word for word the service's own `notFound()` — same code, same title, same
- * detail, and it echoes no id back. It has to be indistinguishable: a caller
- * must not be able to tell "your session may reach no documents at all" from
- * "that document is not yours", because the first sentence is a fact about the
- * session and the second would be a fact about someone else's document.
- *
- * `NT-VAL-001` rather than a not-found code of its own: the `ErrorCode` enum in
- * `openapi.yaml` has none, and this is the house fallback for an otherwise
- * uncoded 4xx (`ProblemFilter.CODE_BY_STATUS`) — see `documents/CLAUDE.md`.
- */
-function notFoundForPortal(): AppException {
-  return new AppException('NT-VAL-001', HttpStatus.NOT_FOUND, 'Document not found', 'No document with that id.');
 }

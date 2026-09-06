@@ -4,6 +4,7 @@ import {
   createCheckoutSession,
   createPortalOnboardingSession,
   createPortalSignInCode,
+  getDocumentOriginal,
   getPortalContext,
   listPortalDocuments,
   previewPortalSetup,
@@ -14,6 +15,7 @@ import {
   createCheckoutSessionBody,
   createPortalOnboardingSessionBody,
   createPortalSignInCodeBody,
+  getDocumentOriginalResponse,
   listPortalDocumentsResponse,
   updatePortalBusinessProfileBody,
 } from '@neoting/contracts/zod';
@@ -514,6 +516,21 @@ export interface PortalSentPage {
 }
 
 /**
+ * How many pages of 50 the browsable list holds (review item 18).
+ *
+ * ⚠ **A COUNT, not a cursor, and the difference is the poll.** This surface
+ * refreshes on a timer and on tab focus, so an appended-cursor list would either
+ * be reset to page one every tick or would drift out of date behind the first
+ * page. Re-reading N pages says exactly what is on screen, so the poll keeps all
+ * of it fresh and "show more" is one number going up.
+ *
+ * It is bounded because a client who has to press a button eight times does not
+ * have a browsing problem this control can fix — they have a search problem,
+ * which the contract offers no parameter for and which this list is not.
+ */
+export const PORTAL_DOCUMENT_PAGES_MAX = 8;
+
+/**
  * `GET /portal/documents` — the client's own list, newest first.
  *
  * Parsed by the contract's own generated schema rather than a hand-written
@@ -521,22 +538,62 @@ export interface PortalSentPage {
  * status value the enum does not admit fails here rather than rendering as a
  * blank pill three components deep.
  */
-export async function fetchPortalDocuments(sessionToken: string, limit = 50): Promise<PortalSentPage> {
-  const body = listPortalDocumentsResponse.parse(
-    unwrapBody(await listPortalDocuments({ limit }, bearer(sessionToken))),
+export async function fetchPortalDocuments(sessionToken: string, pages = 1): Promise<PortalSentPage> {
+  const rows: PortalSentDocument[] = [];
+  let cursor: string | undefined;
+  let hasMore = false;
+
+  for (let page = 0; page < Math.max(1, Math.min(pages, PORTAL_DOCUMENT_PAGES_MAX)); page += 1) {
+    const body = listPortalDocumentsResponse.parse(
+      unwrapBody(
+        await listPortalDocuments({ limit: 50, ...(cursor === undefined ? {} : { cursor }) }, bearer(sessionToken)),
+      ),
+    );
+    for (const row of body.data) {
+      rows.push({
+        id: row.id,
+        supplier: row.supplierName ?? null,
+        date: row.documentDate === null || row.documentDate === undefined ? null : fromIsoDate(row.documentDate),
+        // The one pence→pounds boundary for this list, as everywhere else.
+        total: row.totalPence === null || row.totalPence === undefined ? null : fromPence(row.totalPence),
+        currency: row.currency ?? null,
+        channel: row.channel,
+        status: row.status,
+        receivedAt: row.receivedAt,
+      });
+    }
+    hasMore = body.pageInfo.hasMore;
+    // `hasMore` is the server's own word for it; a null cursor with more rows
+    // claimed would be a contract fault, and stopping is the safe reading.
+    if (!hasMore || body.pageInfo.nextCursor === null || body.pageInfo.nextCursor === undefined) break;
+    cursor = body.pageInfo.nextCursor;
+  }
+
+  return { rows, hasMore };
+}
+
+/**
+ * `GET /documents/{documentId}/original` under the PORTAL bearer — the presigned
+ * URL behind [Open] and [Download] on the client's own list (review item 18).
+ *
+ * ⚠ **What comes back is bearer authority over one of this client's financial
+ * records, with no session behind it.** Everything that touches the URL carries
+ * `rel="noreferrer noopener"` (or `referrerPolicy="no-referrer"` on a frame),
+ * the rule `DocumentViewer` and `ExportView` already follow, because a `Referer`
+ * header would hand the URL to wherever the tab goes next. It expires in
+ * minutes, so it is fetched per open and never stored.
+ *
+ * The server decides what this may reach and the answer is *"exactly what
+ * `listPortalDocuments` shows"* — one predicate, both surfaces
+ * (`portal-documents.service.ts`). Anything else is a 404 that reads like every
+ * other 404, so nothing here needs to guess at ownership.
+ */
+export async function fetchPortalDocumentOriginal(
+  sessionToken: string,
+  documentId: string,
+): Promise<{ url: string; mimeType: string; filename: string | null }> {
+  const body = getDocumentOriginalResponse.parse(
+    unwrapBody(await getDocumentOriginal(documentId, bearer(sessionToken))),
   );
-  return {
-    rows: body.data.map((row) => ({
-      id: row.id,
-      supplier: row.supplierName ?? null,
-      date: row.documentDate === null || row.documentDate === undefined ? null : fromIsoDate(row.documentDate),
-      // The one pence→pounds boundary for this list, as everywhere else.
-      total: row.totalPence === null || row.totalPence === undefined ? null : fromPence(row.totalPence),
-      currency: row.currency ?? null,
-      channel: row.channel,
-      status: row.status,
-      receivedAt: row.receivedAt,
-    })),
-    hasMore: body.pageInfo.hasMore,
-  };
+  return { url: body.url, mimeType: body.mimeType, filename: body.filename ?? null };
 }
