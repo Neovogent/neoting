@@ -21,6 +21,7 @@
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",
     "test:eval": "turbo run test:eval",
+    "test:eval:coding": "turbo run test:eval:coding",
     "e2e:smoke": "turbo run e2e:smoke",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",

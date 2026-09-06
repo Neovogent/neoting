@@ -131,6 +131,29 @@ enter a review:
   cost an advisory its freshness, never an effect its truth — the executor
   diffs against the live row regardless. `render-summary.ts`'s `RenderContext`
   doc carries the same reasoning at the code.
+
+  **⚠ THE MODEL SECOND OPINION JOINED THAT SAME CALL ON 6 SEP 2026** (items
+  22/47's deferred half). `computeCorrectionAdvisory` takes an optional
+  `CorrectionSecondOpinion` reader — the fourth structural seam this module's
+  factory composes, built from `rules-suggestions`' `BedrockCodingModel` through
+  `selectCodingModel`, which keys on `EXTRACTOR`. It can only ADD checks to the
+  same ⚠ Checks section; the deterministic ones stand alone, and every model
+  failure is `null`, which is silence.
+
+  ⚠ **It is the one model call the engine makes inside its own transaction**,
+  with a hard 4 s cap (`SECOND_OPINION_TIMEOUT_MS` in `bedrock-coding.ts`, where
+  the reasoning and the rejected alternative are written out). `scopedDb` gives
+  the review 10 seconds and the rest of it is three single-row reads and one
+  update; a slow answer is DISCARDED rather than waited for, which is the correct
+  direction — an accountant who cannot approve a coding fix is a worse outcome
+  than one who does not get a hint. It meters against `ctx.practiceId`, the
+  practice the SESSION fixes, never one a caller could name.
+
+  Proven live 6 Sep 2026: one correction typing £9,000 of tax AND a supplier the
+  document does not name renders both checks side by side —
+  *"Tax £9000.00 is larger than the total £994.00…"* and *"“Bidfood Wholesale
+  Ltd” does not appear anywhere on this document…"* — above the standing D44
+  sentence (`docs/reviews/assets/2026-09-06-coding-intelligence/04`).
 - **The `publish.batch` render leads with "⚠ Checks — read before you
   release"** (item 29(b)): the entry preview's refusals — a document that will
   produce NO line in the export file — are the FIRST section and counted in

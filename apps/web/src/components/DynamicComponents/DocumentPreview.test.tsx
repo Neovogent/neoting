@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, expect, test, vi } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { DocumentPreview } from './DocumentPreview';
 import { AppIntlProvider } from '../../i18n/AppIntlProvider';
@@ -23,7 +23,10 @@ vi.mock('../../api/config', () => ({
 }));
 
 vi.mock('../../context/AppContext', () => ({
-  useAppContext: () => ({ updateDocumentField: vi.fn(), logAudit: vi.fn() }),
+  // `businesses` is read by `ProposalFlowModal`, which the "make it a rule?"
+  // offer mounts — empty is the honest fixture: the client name it resolves is
+  // a courtesy on the card, not part of the request under test.
+  useAppContext: () => ({ updateDocumentField: vi.fn(), logAudit: vi.fn(), businesses: [] }),
 }));
 
 const updateCodingProposal = vi.fn(async (_request: unknown) => {});
@@ -36,6 +39,13 @@ let bankMatch: import('../../api/bank-match').DocumentBankMatchResult = { match:
 const confirmBankMatch = vi.fn(async (_documentId: unknown, _match: unknown) => {});
 // Offline by construction: the real hook would open a socket from jsdom.
 // Default: no match — the section renders nothing; tests override `bankMatch`.
+// The "make it a rule?" offer stages an ordinary `rule.create` through
+// `ProposalFlowModal`, which creates on mount.
+vi.mock('../../api/proposals', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../api/proposals')>();
+  return { ...actual, createProposal: vi.fn(() => new Promise(() => {})) };
+});
+
 vi.mock('../../api/bank-match', () => ({
   useDocumentBankMatch: () => bankMatch,
   confirmDocumentBankMatch: (documentId: unknown, match: unknown) => confirmBankMatch(documentId, match),
@@ -460,7 +470,7 @@ const SUGGESTION = {
   analysisAccount: 'Overheads: Software subscriptions',
   confidence: 0.82,
   escalationReason: null,
-  candidateCategoryCodes: [],
+  candidateCategoryCodes: [], ruleOffer: null,
 };
 
 const ESCALATION = {
@@ -471,7 +481,7 @@ const ESCALATION = {
   analysisAccount: null,
   confidence: null,
   escalationReason: 'SOFTWARE_TERM_UNKNOWN',
-  candidateCategoryCodes: [],
+  candidateCategoryCodes: [], ruleOffer: null,
 };
 
 test('an ESCALATION renders the engine’s sentence where the blank Category was — the reported bug', () => {
@@ -535,6 +545,69 @@ test('a published document is offered no accept — its coding is locked server-
 
   // The affordance goes rather than the refusal being discovered on approve.
   expect(screen.queryByTestId('coding-suggestion')).toBeNull();
+});
+
+/**
+ * **Review item 48's follow-on.** Supplier memory suggests the code on every
+ * document and asks a human every time; a rule codes the NEXT one before
+ * anybody opens it. The offer is where the two converge.
+ */
+describe('“make it a rule?” — the offer on a repeated treatment', () => {
+  const REMEMBERED = {
+    ...SUGGESTION,
+    basis: 'SUPPLIER_MEMORY',
+    categoryCode: 'COS_FOOD_AND_DRINK',
+    analysisAccount: 'Cost of sales: Food and drink',
+    note: 'Suggested — not applied — as Cost of sales: Food and drink. This client has coded this supplier that way 4 times, by hand, most recently 9 Aug 2026, and never differently.',
+    ruleOffer: {
+      scopeKey: 'ALDGATE MEATS LTD',
+      categoryCode: 'COS_FOOD_AND_DRINK',
+      analysisAccount: 'Cost of sales: Food and drink',
+      times: 4,
+      rationale: 'Code ALDGATE MEATS LTD to Cost of sales: Food and drink from now on. This client has coded them that way 4 times, by hand, and never differently.',
+      unmatchedSpellings: [],
+    },
+  };
+
+  test('the offer renders the SERVER’s sentence, never a reworded one', () => {
+    detail = liveDetail({ codingSuggestion: REMEMBERED });
+    renderPreview();
+
+    const offer = screen.getByTestId('coding-rule-offer');
+    expect(within(offer).getByText('Make it a rule?')).toBeTruthy();
+    expect(within(offer).getByText(REMEMBERED.ruleOffer.rationale)).toBeTruthy();
+  });
+
+  test('⚠ the EXACT spelling travels into the proposal — a tidied key would never fire', async () => {
+    const { createProposal } = await import('../../api/proposals');
+    detail = liveDetail({ codingSuggestion: REMEMBERED });
+    renderPreview();
+
+    fireEvent.click(screen.getByRole('button', { name: /Create this rule/ }));
+
+    await waitFor(() => expect(createProposal).toHaveBeenCalled());
+    expect(createProposal).toHaveBeenCalledExactlyOnceWith({
+      kind: 'rule.create',
+      businessId: 'biz_burger',
+      payload: { tier: 'SUPPLIER_CUSTOMER', scopeKey: 'ALDGATE MEATS LTD', sets: { categoryCode: 'COS_FOOD_AND_DRINK' } },
+    });
+  });
+
+  test('other spellings the rule will NOT match are named, not hidden', () => {
+    // A rule that appears to work and half does is worse than two rules.
+    detail = liveDetail({
+      codingSuggestion: { ...REMEMBERED, ruleOffer: { ...REMEMBERED.ruleOffer, unmatchedSpellings: ['Aldgate Meats', 'aldgate meats ltd'] } },
+    });
+    renderPreview();
+
+    expect(screen.getByText(/2 other spellings/)).toBeTruthy();
+  });
+
+  test('a suggestion with no offer renders no offer — the usual case', () => {
+    detail = liveDetail({ codingSuggestion: SUGGESTION });
+    renderPreview();
+    expect(screen.queryByTestId('coding-rule-offer')).toBeNull();
+  });
 });
 
 test('no suggestion renders no panel at all', () => {

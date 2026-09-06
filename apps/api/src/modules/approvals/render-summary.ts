@@ -583,6 +583,13 @@ const CHECK_LABELS: Readonly<Record<CorrectionCheckCode, string>> = {
   'date-in-future': 'Document date is in the future',
   'date-implausibly-old': 'Document date is implausibly old',
   'not-a-financial-document': 'Not a financial document',
+  // ⚠ The three the MODEL raises (6 Sep 2026, items 22/47). Their labels say
+  // "the document does not…" rather than "the AI thinks…": what is being
+  // reported is a fact about the paper, and the uncertainty is already carried
+  // by the sentence and by the Ignore the whole section wears.
+  'model-supplier-not-in-document': 'Supplier is not on the document',
+  'model-total-not-in-document': 'Total is not on the document',
+  'model-category-dissonant': 'Account does not fit what was bought',
 };
 
 /** The target, in the words the accountant's own software uses. Never a claim about a connection. */

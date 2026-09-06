@@ -237,6 +237,25 @@ export interface CodingSuggestionView {
   escalationReason: string | null;
   /** The codes the lines pointed at when they pointed at several. */
   candidateCategoryCodes: string[];
+  /**
+   * **"You've coded this supplier that way N times — make it a rule?"** — the
+   * server's offer to turn a repeated treatment into a standing rule (review
+   * item 48's follow-on). Null on almost every document, and that is normal.
+   *
+   * ⚠ **`scopeKey` travels VERBATIM into the proposal.** The pipeline matches a
+   * rule by exact string equality, so a key this app tidied up would produce a
+   * rule that is written, reviewed, approved — and never fires. Do not
+   * normalise, trim or re-case it.
+   */
+  ruleOffer: {
+    scopeKey: string;
+    categoryCode: string;
+    analysisAccount: string | null;
+    times: number;
+    /** Composed server-side and rendered verbatim — never re-worded here. */
+    rationale: string;
+    unmatchedSpellings: string[];
+  } | null;
 }
 
 /**
@@ -261,6 +280,17 @@ export function toCodingSuggestion(doc: WireDocument): CodingSuggestionView | nu
     confidence: wire.confidence ?? null,
     escalationReason: wire.escalationReason ?? null,
     candidateCategoryCodes: [...(wire.candidateCategoryCodes ?? [])],
+    ruleOffer:
+      wire.ruleOffer === null || wire.ruleOffer === undefined
+        ? null
+        : {
+            scopeKey: wire.ruleOffer.scopeKey,
+            categoryCode: wire.ruleOffer.categoryCode,
+            analysisAccount: wire.ruleOffer.analysisAccount ?? null,
+            times: wire.ruleOffer.times,
+            rationale: wire.ruleOffer.rationale,
+            unmatchedSpellings: [...(wire.ruleOffer.unmatchedSpellings ?? [])],
+          },
   };
 }
 

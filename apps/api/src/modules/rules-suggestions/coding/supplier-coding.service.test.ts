@@ -695,3 +695,179 @@ describe('Trash is not coding evidence', () => {
     expect(decision.outcome === 'CODE' && decision.reason).not.toContain('3 times');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Review item 48 — supplier memory, and the code that left the chart
+// ---------------------------------------------------------------------------
+
+describe('a remembered code the chart no longer carries is not offered', () => {
+  /**
+   * ⚠ **The ladder falls THROUGH rather than answering with it.** Offering a
+   * code the chart does not carry produces a suggestion the export cannot give
+   * a ledger prefix and that `assertUpdateCodingAllowed` — the correction
+   * boundary since review item 47 — refuses on the way back in. An affordance
+   * whose only possible outcome is a 422 is worse than no affordance.
+   */
+  test('it becomes a REVIEW, not a CODE', async () => {
+    const { decision } = await decide({
+      questionnaire: CLEANING_AGENCY,
+      documents: [
+        doc({ id: 'd1', categoryCode: 'RETIRED_ACCOUNT', extractions: humanCoded('RETIRED_ACCOUNT') }),
+        doc({ id: 'd2', categoryCode: 'RETIRED_ACCOUNT', extractions: humanCoded('RETIRED_ACCOUNT') }),
+      ],
+    });
+
+    expect(decision.outcome).toBe('REVIEW');
+  });
+
+  test('and the reason SAYS SO, rather than claiming nothing codes this supplier yet', async () => {
+    // An accountant reading "nothing codes them yet" over a supplier they have
+    // coded twice would reasonably conclude the feature is broken.
+    const { decision } = await decide({
+      questionnaire: CLEANING_AGENCY,
+      documents: [doc({ id: 'd1', categoryCode: 'RETIRED_ACCOUNT', extractions: humanCoded('RETIRED_ACCOUNT') })],
+    });
+
+    expect(decision.reason).toContain('RETIRED_ACCOUNT');
+    expect(decision.reason).toContain('no longer on their chart');
+    expect(decision.reason).not.toContain('Nothing codes');
+  });
+
+  test('a remembered code that IS on the chart still answers CODE — nothing above changed', async () => {
+    const { decision } = await decide({
+      questionnaire: CLEANING_AGENCY,
+      documents: [doc({ id: 'd1' }), doc({ id: 'd2' })],
+    });
+
+    expect(decision.outcome).toBe('CODE');
+    expect(decision.outcome === 'CODE' && decision.authority).toBe('LEARNED_HISTORY');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review item 19 — the model tier, and where it may and may not fire
+// ---------------------------------------------------------------------------
+
+describe('reconsider — the model rung, outside every transaction', () => {
+  const SUGGESTED = {
+    outcome: 'SUGGEST',
+    authority: 'AI_INFERENCE',
+    provenance: 'AI_SUGGESTED',
+    basis: 'INDUSTRY_CONTEXT_REASONING',
+    categoryCode: 'COS_MATERIALS_AND_CONSUMABLES',
+    analysisAccount: 'Cost of sales: Materials and consumables',
+    confidence: 0.55,
+    treatment: 'REVENUE',
+    secondChoice: null,
+    advisories: [],
+    note: 'Suggested — not applied — as Cost of sales: Materials and consumables. Cleaning consumables for a cleaning agency.',
+  } as const;
+
+  /** A model that records what it was asked and answers with whatever the test wants. */
+  function withModel(answer: unknown) {
+    const asked: unknown[] = [];
+    const rung = {
+      asked,
+      suggest: async (request: unknown) => {
+        asked.push(request);
+        return answer as never;
+      },
+    };
+    const prisma = undefined as unknown as PrismaClient;
+    return { rung, service: new SupplierCodingService(prisma, new ChartOfAccountsService(prisma), undefined, rung) };
+  }
+
+  /** A brand-new supplier with no line detail — the Aldgate shape, and NEW_SUPPLIER_NO_HISTORY. */
+  const NEW_SUPPLIER = { questionnaire: CLEANING_AGENCY };
+  const EVIDENCE = { currency: 'GBP', totalPence: 99_400, taxPence: 0, lines: [] };
+
+  test('it upgrades a model-answerable escalation to the model’s SUGGEST', async () => {
+    const { rung, service: svc } = withModel(SUGGESTED);
+    const before = await svc.decide(world(NEW_SUPPLIER), 'biz_1', 'Aldgate Meats Ltd');
+    expect(before.decision.outcome === 'REVIEW' && before.decision.suggestion.outcome).toBe('ESCALATE');
+
+    const after = await svc.reconsider(before, EVIDENCE, 'prac_1');
+    expect(rung.asked).toHaveLength(1);
+    if (after.decision.outcome !== 'REVIEW') throw new Error('expected REVIEW');
+    const suggestion = after.decision.suggestion;
+    expect(suggestion.outcome).toBe('SUGGEST');
+    if (suggestion.outcome !== 'SUGGEST') return;
+    expect(suggestion.categoryCode).toBe('COS_MATERIALS_AND_CONSUMABLES');
+  });
+
+  test('⚠ a model answer NEVER replaces a deterministic escalation', async () => {
+    // "The model did not pick anything" is less use than the named reason the
+    // rules worked out. The model can only ever ADD a code here.
+    const { service: svc } = withModel({
+      outcome: 'ESCALATE',
+      authority: 'AI_INFERENCE',
+      provenance: 'AI_SUGGESTED',
+      basis: 'NOTHING_MATCHED',
+      reason: 'CODE_NOT_ON_CHART',
+      candidateCategoryCodes: [],
+      confidence: null,
+      note: 'the model refused',
+    });
+    const before = await svc.decide(world(NEW_SUPPLIER), 'biz_1', 'Aldgate Meats Ltd');
+    const after = await svc.reconsider(before, EVIDENCE, 'prac_1');
+
+    if (after.decision.outcome !== 'REVIEW') throw new Error('expected REVIEW');
+    const suggestion = after.decision.suggestion;
+    expect(suggestion.outcome).toBe('ESCALATE');
+    if (suggestion.outcome !== 'ESCALATE') return;
+    expect(suggestion.reason).toBe('NEW_SUPPLIER_NO_HISTORY');
+  });
+
+  test('every failure is null and the deterministic answer stands', async () => {
+    const { service: svc } = withModel(null);
+    const before = await svc.decide(world(NEW_SUPPLIER), 'biz_1', 'Aldgate Meats Ltd');
+    const after = await svc.reconsider(before, EVIDENCE, 'prac_1');
+    expect(after.decision).toEqual(before.decision);
+  });
+
+  test('⚠ it is NOT asked about a document a RULE coded — the ladder returned before the rung', async () => {
+    const { rung, service: svc } = withModel(SUGGESTED);
+    const before = await svc.decide(
+      world({
+        questionnaire: CLEANING_AGENCY,
+        rules: [{ id: 'rule_1', tier: 'SUPPLIER_CUSTOMER', scopeKey: 'Nisbets Ltd', sets: { categoryCode: 'COS_PURCHASES' } }],
+      }),
+      'biz_1',
+      'Nisbets Ltd',
+    );
+    await svc.reconsider(before, EVIDENCE, 'prac_1');
+    expect(rung.asked).toHaveLength(0);
+  });
+
+  test('⚠ it is NOT asked about a document this client’s own history codes', async () => {
+    const { rung, service: svc } = withModel(SUGGESTED);
+    const before = await svc.decide(world({ questionnaire: CLEANING_AGENCY, documents: [doc({ id: 'd1' })] }), 'biz_1', 'Nisbets Ltd');
+    await svc.reconsider(before, EVIDENCE, 'prac_1');
+    expect(rung.asked).toHaveLength(0);
+  });
+
+  test('⚠ it is NOT asked over an escalation the rules answered SPECIFICALLY', async () => {
+    // ARITHMETIC_MISMATCH is the hard stop: a model opinion on top of figures
+    // that do not reconcile does not make the sums reconcile.
+    const { rung, service: svc } = withModel(SUGGESTED);
+    const before = await svc.decide(world(NEW_SUPPLIER), 'biz_1', 'Aldgate Meats Ltd', {
+      currency: 'GBP',
+      totalPence: 5_435_251,
+      taxPence: 0,
+      lines: [{ description: 'Consultancy', quantity: 1, netPence: 5_255_000, taxPence: null }],
+    });
+    if (before.decision.outcome !== 'REVIEW') throw new Error('expected REVIEW');
+    const suggestion = before.decision.suggestion;
+    if (suggestion.outcome !== 'ESCALATE') throw new Error('expected ESCALATE');
+    expect(suggestion.reason).toBe('ARITHMETIC_MISMATCH');
+
+    await svc.reconsider(before, EVIDENCE, 'prac_1');
+    expect(rung.asked).toHaveLength(0);
+  });
+
+  test('with no model configured it is a no-op — the deterministic ladder, unchanged', async () => {
+    const before = await decide(NEW_SUPPLIER, 'Aldgate Meats Ltd');
+    const after = await service().reconsider(before, EVIDENCE, 'prac_1');
+    expect(after).toEqual(before);
+  });
+});

@@ -88,6 +88,7 @@ export { type CodingDecision, type CodingLock, isCoded, type SupplierContext } f
 // requires a surface to show an AI-produced value as one.
 export {
   type AiCodingSuggestion,
+  BASIS_SENTENCES,
   CONFIDENCE_FLOOR,
   type CodingEvidence,
   documentReconciles,
@@ -97,6 +98,56 @@ export {
   suggestCoding,
   type SuggestionChart,
 } from './coding/ai-suggestion.js';
+
+// Tier 2 — this client's own remembered treatment of a supplier (review item
+// 48). Pure; the confidence is CONSISTENCY, computed rather than looked up.
+export {
+  MEMORY_BASE_CONFIDENCE,
+  MEMORY_CONFIDENCE_PER_REPEAT,
+  MEMORY_MAX_CONFIDENCE,
+  memoryConfidence,
+  type SupplierMemoryHistory,
+  supplierMemorySuggestion,
+} from './coding/supplier-memory.js';
+
+/**
+ * Tier 3 — the model. **The only runtime export on this seam that opens a
+ * socket**, and it is here for the reason the extractor's own adapter is
+ * reachable from `worker/main.ts`: a composition root has to be able to build
+ * it, and two of them do (the worker for the coding rung, `approvals.module.ts`
+ * for the correction second opinion, which runs in the api process).
+ *
+ * `selectCodingModel` is the only sanctioned constructor — it keys on
+ * `EXTRACTOR` and its file argues why. Nothing else in the product should build
+ * a `BedrockCodingModel` by hand; an unmetered one is deliberately impossible,
+ * but an unselected one would be a fifth environment nobody chose.
+ */
+export {
+  BedrockCodingModel,
+  type BedrockCodingModelDeps,
+  clientCodingContext,
+  type ModelCodingRequest,
+  type ModelCorrectionRequest,
+  SECOND_OPINION_TIMEOUT_MS,
+} from './coding/bedrock-coding.js';
+export { selectCodingModel } from './coding/select-coding-model.js';
+
+// The second opinion's pure half — the verdict vocabulary `validation-dedupe`
+// turns into a `CorrectionCheck`, and the offline prompt/parse behind it.
+export {
+  AGREEMENT_VERDICTS,
+  type AgreementVerdict,
+  CORRECTION_OPINION_INSTRUCTIONS,
+  CORRECTION_OPINION_PROMPT_VERSION,
+  CORRECTION_OPINION_TOOL_NAME,
+  CORRECTION_OPINION_TOOL_SCHEMA,
+  type CorrectionOpinion,
+  type CorrectionOpinionEvidence,
+  correctionOpinionBlock,
+  parseCorrectionOpinion,
+  PRESENCE_VERDICTS,
+  type PresenceVerdict,
+} from './coding/correction-opinion.js';
 
 export {
   type CapitalisationPolicy,
@@ -121,6 +172,7 @@ export {
   type CodingEscalationReason,
   ESCALATION_PROMPTS,
   escalationSeverity,
+  MODEL_ANSWERABLE_ESCALATIONS,
   moreSevere,
 } from './coding/escalation.js';
 
@@ -128,15 +180,18 @@ export {
 // that refuses an off-chart code. No client, no credentials, no network.
 export {
   buildCodingInstructions,
+  type ClientCodingContext,
   CODING_DECISION_RULES,
   CODING_OUTPUT_RULES,
   CODING_PROMPT_VERSION,
   CODING_TOOL_NAME,
   CODING_TOOL_SCHEMA,
   codingEvidenceBlock,
+  MAX_REASONING_CHARS,
   type ModelCodingAnswer,
   modelCodingAnswer,
   parseModelCodingSuggestion,
+  sanitiseReasoning,
 } from './coding/coding-instructions.js';
 
 export {
@@ -146,7 +201,16 @@ export {
   type SupplierRuleRefusal,
 } from './coding/rule-proposal.js';
 
+// Item 48's follow-on: "make it a rule?" after a treatment repeats. It DECIDES
+// nothing — `buildSupplierRuleProposal` owns every refusal; this adds a
+// threshold and the shape a surface renders.
+export { RULE_OFFER_THRESHOLD, type SupplierRuleOffer, supplierRuleOffer } from './coding/rule-offer.js';
+
 export {
+  // The one mapping from a ladder decision to the opinion a surface renders —
+  // including this client's remembered treatment, which had no consumer before
+  // 6 Sep 2026 (review item 48).
+  codingSuggestionFor,
   HISTORY_WINDOW,
   // On the seam because the extraction pipeline consults `decide()` on a
   // document it has just read but not yet written, so it holds the line items in

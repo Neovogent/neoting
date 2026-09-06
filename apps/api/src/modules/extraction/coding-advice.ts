@@ -4,7 +4,7 @@ import {
   StoredCodingSuggestionSchema,
 } from '../../common/documents/coding-suggestion.js';
 import type { AiCodingSuggestion, CodingEvidence, SupplierCodingResult } from '../rules-suggestions/index.js';
-import { readStoredLines } from '../rules-suggestions/index.js';
+import { codingSuggestionFor, readStoredLines, type SupplierRuleOffer, supplierRuleOffer } from '../rules-suggestions/index.js';
 import type { ExtractedDocument } from './document-extractor.js';
 
 /**
@@ -44,11 +44,25 @@ export interface DocumentCodingAdvisor {
     supplierName: string | null,
     evidence?: Omit<CodingEvidence, 'supplier'>,
   ): Promise<SupplierCodingResult>;
+  /**
+   * The model tier (review item 19), run with **no transaction open**.
+   *
+   * ⚠ Optional, and the absence is a real configuration: an advisor without one
+   * is the deterministic ladder, which is what every unit test in this module
+   * drives and what `EXTRACTOR=demo` selects. The pipeline calls it if it is
+   * there.
+   */
+  reconsider?(
+    result: SupplierCodingResult,
+    evidence: Omit<CodingEvidence, 'supplier'>,
+    practiceId: string,
+  ): Promise<SupplierCodingResult>;
 }
 
 /**
- * The decision for a document the pipeline has just read, or `null` when there
- * is nothing to say.
+ * **Step one: the deterministic ladder**, inside the caller's transaction — the
+ * decision for a document the pipeline has just read, or `null` when there is
+ * nothing to ask about.
  *
  * ⚠ **`null` is returned for a document something already coded**, and that is
  * the load-bearing branch. A suggestion beside an accountant's rule is not extra
@@ -56,10 +70,13 @@ export interface DocumentCodingAdvisor {
  * `CodingDecision` type refuses to carry one on a `CODE` for the same reason,
  * and this is the same rule at the call site.
  *
- * The other two nulls are honest absences rather than failures: an **unrouted**
+ * The other null is an honest absence rather than a failure: an **unrouted**
  * document has no client, therefore no chart, no rules and no history to decide
- * anything from; and a decision that came back as anything other than `REVIEW`
- * carries no `suggestion` field at all.
+ * anything from.
+ *
+ * ⚠ It returns the RESULT, not the stored shape, because {@link finishCoding}
+ * still has to run — outside every transaction. It used to return the stored
+ * suggestion directly, when there was no model tier to reach.
  */
 export async function adviseCoding(
   advisor: DocumentCodingAdvisor,
@@ -67,26 +84,66 @@ export async function adviseCoding(
   businessId: string | null,
   categoryCode: string | null,
   extracted: ExtractedDocument,
-): Promise<StoredCodingSuggestion | null> {
+): Promise<SupplierCodingResult | null> {
   if (businessId === null) return null;
   if (categoryCode !== null) return null;
 
-  const result = await advisor.decide(db, businessId, extracted.supplierName, {
+  return advisor.decide(db, businessId, extracted.supplierName, codingEvidenceOf(extracted));
+}
+
+/**
+ * The evidence the ladder codes from, read the ladder's OWN way.
+ *
+ * Through `readStoredLines`, on the shape the pipeline is about to write, so a
+ * first read and every later `resolveForDocument` see identical lines. Untrusted
+ * content stays untrusted: a description is classified against patterns this
+ * repository authored, never obeyed and never quoted back into a sentence.
+ */
+export function codingEvidenceOf(extracted: ExtractedDocument): Omit<CodingEvidence, 'supplier'> {
+  return {
     currency: extracted.currency,
     totalPence: extracted.totalPence,
     taxPence: extracted.taxPence,
-    // Through the ladder's OWN parser, on the shape the pipeline is about to
-    // write, so a first read and every later `resolveForDocument` see identical
-    // lines. Untrusted content stays untrusted: a description is classified
-    // against patterns this repository authored, never obeyed and never quoted
-    // back into a sentence.
     lines: readStoredLines({ lineItems: extracted.lineItems }),
-  });
+  };
+}
 
-  // `LOCKED` and `CODE` structurally carry no suggestion — the type system, not
-  // a runtime check, is what stops a model opinion riding along beside a rule.
-  if (result.decision.outcome !== 'REVIEW') return null;
-  return toStoredCodingSuggestion(result.decision.suggestion);
+/**
+ * **Step two: the model tier, and then the answer to store** — run with NO
+ * transaction open.
+ *
+ * ⚠ **The split is not tidiness; it is the transaction boundary.** `decide()`
+ * takes a `ScopedClient`, so its caller holds an open transaction, and
+ * `scopedDb` gives that transaction ten seconds. A judgment-tier model call
+ * takes seconds of somebody else's network, and holding a tenant transaction
+ * open across one is the thing `modules/approvals` refuses by name for its
+ * ledger follow-up. So the pipeline reads the ladder in a short transaction of
+ * its own, closes it, and calls this — which touches no database at all.
+ *
+ * `reconsider` absent (no model configured) makes this a pure mapping, which is
+ * exactly what it was before the model rung existed.
+ */
+export async function finishCoding(
+  advisor: DocumentCodingAdvisor,
+  result: SupplierCodingResult,
+  extracted: ExtractedDocument,
+  practiceId: string,
+): Promise<StoredCodingSuggestion | null> {
+  const reconsidered =
+    advisor.reconsider === undefined ? result : await advisor.reconsider(result, codingEvidenceOf(extracted), practiceId);
+  // `codingSuggestionFor` is the ladder's own mapping, not this module's: it
+  // answers the REVIEW rung's suggestion, this client's remembered treatment for
+  // a `LEARNED_HISTORY` coding (review item 48), and `null` beside an
+  // accountant's rule or a human's correction — where an opinion is pressure to
+  // second-guess an explicit instruction rather than extra information.
+  const suggestion = codingSuggestionFor(reconsidered);
+  if (suggestion === null) return null;
+  // ⚠ The offer is computed from the RESULT, not from the suggestion: it is a
+  // fact about this client's history, and only `buildSupplierRuleProposal` —
+  // which owns every refusal — gets to say whether a standing rule is available
+  // (review item 48's follow-on). `null` is the usual answer, and most documents
+  // should not be offering to write a rule.
+  return toStoredCodingSuggestion(suggestion, supplierRuleOffer(reconsidered));
 }
 
 /**
@@ -99,12 +156,16 @@ export async function adviseCoding(
  * because a suggestion that silently vanishes on the detail screen is the same
  * empty Category field this whole change exists to remove.
  */
-export function toStoredCodingSuggestion(suggestion: AiCodingSuggestion): StoredCodingSuggestion {
+export function toStoredCodingSuggestion(
+  suggestion: AiCodingSuggestion,
+  ruleOffer: SupplierRuleOffer | null = null,
+): StoredCodingSuggestion {
   const base = {
     provenance: suggestion.provenance,
     basis: suggestion.basis,
     note: suggestion.note,
     advisories: [...suggestion.advisories],
+    ruleOffer: ruleOffer === null ? null : { ...ruleOffer, unmatchedSpellings: [...ruleOffer.unmatchedSpellings] },
   };
 
   const stored: StoredCodingSuggestion =

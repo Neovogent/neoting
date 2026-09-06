@@ -1,6 +1,6 @@
 {
   "key": "2dc5288d9342649b",
-  "recordedAt": "2026-09-04",
+  "recordedAt": "2026-09-06",
   "modelId": "anthropic.claude-opus-4-6-v1",
   "synthetic": true,
   "description": "chat · first answer fails the schema, §9.2 retry corrects it (SYNTHETIC by design)",

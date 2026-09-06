@@ -4,7 +4,7 @@ import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { type Job, UnrecoverableError, Worker } from 'bullmq';
 
-import { InMemoryAiBudget, RedisAiBudget } from '../common/ai-budget.js';
+import { selectAiBudget } from '../common/ai-budget.js';
 import { getPrismaClient } from '../common/db/prisma.js';
 import { loadEnv } from '../config/env.js';
 import { PrismaChaseAutoClose } from '../modules/chase/index.js';
@@ -26,7 +26,12 @@ import { createRedisConnection } from '../modules/ingestion-routing/queue/redis-
 import { selectMediaFetcher } from '../modules/ingestion-routing/queue/select-media-fetcher.js';
 import type { MediaIntakeDeps } from '../modules/ingestion-routing/queue/whatsapp-media-intake.js';
 import { PrismaMatchSuggester, PrismaStatementStep } from '../modules/banking-matching/index.js';
-import { ChartOfAccountsService, SupplierCodingService } from '../modules/rules-suggestions/index.js';
+import {
+  ChartOfAccountsService,
+  PLATFORM_DEFAULT_CAPITALISATION_POLICY,
+  selectCodingModel,
+  SupplierCodingService,
+} from '../modules/rules-suggestions/index.js';
 import { selectDocumentStore } from '../modules/ingestion-routing/storage/select-document-store.js';
 import { PrismaUploadSanitisationStep } from '../modules/ingestion-routing/web-upload/prisma-upload-sanitisation.js';
 
@@ -59,10 +64,7 @@ function bootstrap(): void {
   // ⚠ This is why extraction is metered at all. `BedrockExtractor` built its own
   // Bedrock client and answered to no budget, so `EXTRACTOR=bedrock` on staging
   // was unbounded model spend on a live environment.
-  const aiBudget =
-    env.INGEST_QUEUE === 'bullmq'
-      ? RedisAiBudget.fromUrl(env.REDIS_URL, env.AI_DAILY_BUDGET_PENCE)
-      : new InMemoryAiBudget(env.AI_DAILY_BUDGET_PENCE);
+  const aiBudget = selectAiBudget(env);
   // Extraction (METH Stage 4, real since Stage 15) — the step that moves a
   // document out of RECEIVED. Config-selected: `EXTRACTOR=demo` is fixture
   // profiles, `bedrock` actually reads the image. Logs through the worker's logger.
@@ -94,7 +96,19 @@ function bootstrap(): void {
   // `documents.category_code` still has one writer, and a suggestion is not a
   // coding. Until this line existed the whole rung was dead code: 196 passing
   // tests and no caller.
-  const codingAdvisor = new SupplierCodingService(getPrismaClient(), new ChartOfAccountsService(getPrismaClient()));
+  //
+  // ⚠ **The model rung joined it on 6 Sep 2026 (review item 19).** It is
+  // selected from `EXTRACTOR` — `selectCodingModel`'s file argues why that
+  // switch and not a fifth one — so `EXTRACTOR=demo` gets the deterministic
+  // ladder unchanged and staging, which already sets `bedrock` on both task
+  // families, gets the model with no Terraform change. It shares the ceiling
+  // above: one firm, one daily number, now three spenders.
+  const codingAdvisor = new SupplierCodingService(
+    getPrismaClient(),
+    new ChartOfAccountsService(getPrismaClient()),
+    PLATFORM_DEFAULT_CAPITALISATION_POLICY,
+    selectCodingModel(env, aiBudget, ocrLogger),
+  );
 
   const extractor = new PrismaExtractionStep(getPrismaClient(), selectExtractor(env, documentStore, aiBudget), {
     logger: ocrLogger,

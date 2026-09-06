@@ -4,7 +4,7 @@ import { getPrismaClient, type PrismaClient } from '../../common/db/prisma.js';
 import { InMemoryIdempotencyStore, type IdempotencyStore } from '../../common/idempotency/idempotency-store.js';
 import type { Env } from '../../config/env.js';
 import { ENV } from '../../config/env.module.js';
-import { type AiBudget, InMemoryAiBudget, RedisAiBudget } from '../../common/ai-budget.js';
+import { type AiBudget, selectAiBudget } from '../../common/ai-budget.js';
 import { ChatConversationsController } from './chat-conversations.controller.js';
 import { ChatConversationsService } from './chat-conversations.service.js';
 import { ChatController } from './chat.controller.js';
@@ -53,10 +53,11 @@ import {
     { provide: CIRCUIT_BREAKER, useFactory: () => new CircuitBreaker() },
     {
       provide: AI_BUDGET,
-      useFactory: (env: Env): AiBudget =>
-        env.INGEST_QUEUE === 'bullmq'
-          ? RedisAiBudget.fromUrl(env.REDIS_URL, env.AI_DAILY_BUDGET_PENCE)
-          : new InMemoryAiBudget(env.AI_DAILY_BUDGET_PENCE),
+      // ⚠ Through `selectAiBudget` since 6 Sep 2026, when a THIRD composition
+      // root started building one (`approvals.module.ts`, for the correction
+      // second opinion). §9.7 gives a firm ONE daily number; three copies of
+      // how to reach it is how that stops being true.
+      useFactory: (env: Env): AiBudget => selectAiBudget(env),
       inject: [ENV],
     },
     {

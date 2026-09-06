@@ -1,0 +1,45 @@
+{
+  "key": "482b8a46ee6993d1",
+  "recordedAt": "2026-09-06",
+  "modelId": "anthropic.claude-opus-4-6-v1",
+  "synthetic": false,
+  "description": "coding evals — recorded from the live model",
+  "response": {
+    "stop_reason": "tool_use",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_REDACTED",
+        "name": "record_coding_suggestion",
+        "input": {
+          "categoryCode": "COS_FOOD_AND_DRINK",
+          "escalationReason": null,
+          "confidence": 0.97,
+          "basis": "INDUSTRY_CONTEXT_REASONING",
+          "reasoning": "Beef, chicken and lamb from a meat supplier — direct food cost for a restaurant.",
+          "secondChoiceCode": "COS_PURCHASES",
+          "treatment": "REVENUE",
+          "advisories": [
+            "NEW_SUPPLIER"
+          ]
+        }
+      }
+    ],
+    "usage": {
+      "input_tokens": 5152,
+      "output_tokens": 204,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      }
+    },
+    "model": "claude-opus-4-6",
+    "id": "msg_REDACTED",
+    "type": "message",
+    "role": "assistant",
+    "stop_sequence": null,
+    "stop_details": null
+  }
+}

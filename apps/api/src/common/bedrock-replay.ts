@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { z } from 'zod';
 
-import type { AnthropicBedrock } from '@anthropic-ai/bedrock-sdk';
+import { AnthropicBedrock } from '@anthropic-ai/bedrock-sdk';
 
 /**
  * Cassette record/replay for the TRANSPORT under the two Bedrock adapters.
@@ -309,4 +309,19 @@ export class RecordingBedrockClient {
 /** The recording seam, cast once, mirroring `replayBedrockMessages`. */
 export function recordingBedrockMessages(client: RecordingBedrockClient): Pick<AnthropicBedrock, 'messages'> {
   return client as unknown as Pick<AnthropicBedrock, 'messages'>;
+}
+
+/**
+ * The LIVE wire, behind the same seam — `maxRetries: 0` because retries are our
+ * decision, not the SDK's (the pin both adapters carry).
+ *
+ * ⚠ It is here rather than at each call site for a reason that is not tidiness:
+ * `evals/` resolves its imports from its OWN `node_modules`, which does not
+ * carry `@anthropic-ai/bedrock-sdk`. The eval runners reach into `apps/api/src`
+ * by relative path, so a `new AnthropicBedrock(...)` written in `evals/src`
+ * fails at runtime with `ERR_MODULE_NOT_FOUND` while typechecking perfectly. A
+ * factory on this side is what lets an eval drive the real transport at all.
+ */
+export function liveBedrockMessages(awsRegion: string): Pick<AnthropicBedrock, 'messages'> {
+  return new AnthropicBedrock({ awsRegion, maxRetries: 0 });
 }

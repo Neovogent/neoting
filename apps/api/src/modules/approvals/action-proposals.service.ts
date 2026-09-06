@@ -31,6 +31,7 @@ import { currentTraceId } from '../../common/trace/trace-context.js';
 import {
   assertUpdateCodingAllowed,
   type ChartCategoriesReader,
+  type CorrectionSecondOpinion,
   type ChaseComposeConfig,
   computeChaseSendPayload,
   computeCorrectionAdvisory,
@@ -142,6 +143,18 @@ export class ActionProposalsService {
      * would be worse than the junk string it exists to stop).
      */
     private readonly chartCategories?: ChartCategoriesReader,
+    /**
+     * The MODEL second opinion on a manual correction (review items 22/47's
+     * deferred half, 6 Sep 2026).
+     *
+     * Optional for the third time and for the third time the same reason: a
+     * test builds the engine without it, `EXTRACTOR=demo` selects none, and its
+     * absence leaves the deterministic advisory exactly as #256 shipped it.
+     * Unlike the chart reader, this one is optional in a stronger sense — it is
+     * allowed to fail at RUNTIME too. Every failure is `null` and `null` is
+     * silence, because the ruling says the check must never block a correction.
+     */
+    private readonly correctionSecondOpinion?: CorrectionSecondOpinion,
   ) {}
 
   async create(ctx: ScopeContext, request: CreateProposalRequest, idempotencyKey: string): Promise<ActionProposal> {
@@ -365,9 +378,27 @@ export class ActionProposalsService {
       // and the approve call echoes its hash, so what was warned about is part
       // of what was approved. `RenderContext`'s doc says why the checks cannot
       // ride the payload instead. The read is under the caller's own scope.
+      // Narrowed to a local: the model second opinion meters against the
+      // practice the SESSION fixes, and a proposal with no practice gets the
+      // deterministic checks alone.
+      const meteredPracticeId = ctx.practiceId ?? null;
       const context =
         row.kind === 'document.update-coding'
-          ? { correctionChecks: await computeCorrectionAdvisory(db, payload as unknown as UpdateCodingPayload) }
+          ? {
+              correctionChecks: await computeCorrectionAdvisory(
+                db,
+                payload as unknown as UpdateCodingPayload,
+                undefined,
+                // ⚠ The MODEL half rides the SAME seam and the same section
+                // (items 22/47). It is metered against the practice the session
+                // already fixes, never one a caller could name — and a proposal
+                // with no practice (there is no such shape for this kind, but
+                // the type allows one) simply gets the deterministic checks.
+                this.correctionSecondOpinion !== undefined && meteredPracticeId !== null
+                  ? { read: this.correctionSecondOpinion, practiceId: meteredPracticeId }
+                  : undefined,
+              ),
+            }
           : {};
       const renderedSummary = renderSummary(row.kind as ProposalKind, payload, context);
       const renderedSummaryHash = canonicalHash(renderedSummary);

@@ -161,6 +161,22 @@ const CONFIDENCE_BY_BASIS: Readonly<Record<CodingBasis, number>> = {
   KEYWORD_MATCH_ON_CHART: 0.5,
   // Below it, deliberately. Supplier identity is the weakest signal on a page.
   SUPPLIER_NAME_FALLBACK: 0.35,
+  /**
+   * ⚠ **Neither of these two is ever read from this table**, and the entries
+   * exist so the record stays total over `CodingBasis` rather than because a
+   * number here is consulted.
+   *
+   * `SUPPLIER_MEMORY` computes its own confidence from CONSISTENCY — five
+   * identical codings and one are not the same claim, and no fixed number can
+   * say so (`supplier-memory.ts`). `INDUSTRY_CONTEXT_REASONING` carries the
+   * MODEL's own reported confidence, parsed at the boundary
+   * (`parseModelCodingSuggestion`). The values below are what each would be
+   * worth if a future deterministic path ever produced one: memory at the top
+   * of the non-authority bases, model reasoning at the published population
+   * figure, neither flattered.
+   */
+  SUPPLIER_MEMORY: 0.7,
+  INDUSTRY_CONTEXT_REASONING: 0.5,
   // Escalation-only bases. No coding is offered, so no confidence is claimed.
   SOFTWARE_TERM_NOT_STATED: 0,
   PROFESSIONAL_SERVICES_SPLIT_REQUIRED: 0,
@@ -397,8 +413,14 @@ function suggestion(
   };
 }
 
-/** One sentence per named rule, so the card explains itself without a legend. */
-const BASIS_SENTENCES: Readonly<Record<CodingBasis, string>> = {
+/**
+ * One sentence per named rule, so the card explains itself without a legend.
+ *
+ * Exported since 6 Sep 2026: the model rung's parse
+ * (`parseModelCodingSuggestion`) falls back to it when a model answered with no
+ * reasoning sentence of its own, so a suggestion is never note-less.
+ */
+export const BASIS_SENTENCES: Readonly<Record<CodingBasis, string>> = {
   TRAINING_NEVER_CAPITAL: 'the rule that training is never capitalisable (IAS 16.19(c), IAS 38.69(b)).',
   SERVICE_CONTRACT_EXPENSED: 'the rule that consuming a supplier’s service or infrastructure acquires nothing, so nothing can be capitalised.',
   SUBSCRIPTION_TERM_UNDER_TWO_YEARS:
@@ -416,6 +438,8 @@ const BASIS_SENTENCES: Readonly<Record<CodingBasis, string>> = {
   HARDWARE_PER_UNIT_UNSETTLED: 'hardware with no per-unit amount to test against the capitalisation policy.',
   KEYWORD_MATCH_ON_CHART: 'a keyword match against this client’s own chart — a word matched, nothing was reasoned.',
   SUPPLIER_NAME_FALLBACK: 'the supplier’s name alone, because the document carried no line detail. The weakest signal on a page.',
+  SUPPLIER_MEMORY: 'this client’s own prior coding of the same supplier, by hand.',
+  INDUSTRY_CONTEXT_REASONING: 'what the goods or services on this document are, read against this client’s trade — no rule and no rota, an accounting judgement.',
   FOREIGN_TAX_LINE: 'a tax line, which is part of the cost rather than a category of its own.',
   NOTHING_MATCHED: 'nothing on this client’s chart.',
   OFF_CHART_CODE_REFUSED: 'a code this client’s chart does not carry, which is refused rather than matched to the nearest one.',

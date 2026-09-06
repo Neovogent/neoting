@@ -6,7 +6,7 @@ import { useAppContext } from '../../context/AppContext';
 import { API_ENABLED } from '../../api/config';
 import { CATEGORY_LABEL, isEditableLabel, parseCodingDraft, useDocumentDetail, type DraftProblem } from '../../api/document-detail';
 import { confirmDocumentBankMatch, useDocumentBankMatch } from '../../api/bank-match';
-import type { UpdateCodingPayload } from '@neoting/contracts/model';
+import type { CreateActionProposalRequest, UpdateCodingPayload } from '@neoting/contracts/model';
 import { currency } from '../../lib/resolver';
 import { receivedViaHeading } from '../../lib/channelLabels';
 import { correctionWarnings } from '../../lib/correctionChecks';
@@ -21,6 +21,12 @@ import type { Document, ExtractedField, FieldBoundingBox } from '../../lib/types
  * budget, and `ClientDetailView` (which mounts this preview) is the worst one.
  */
 const CodingProposalModal = lazy(() => import('./CodingProposalModal'));
+// ⚠ Lazy, like every other proposal surface: it carries `LiveProposalCard` and
+// `api/proposals`, and this component is already on the two tightest route
+// chunks in the app. The DuplicateModal precedent.
+const ProposalFlowModal = lazy(() =>
+  import('./ProposalFlowModal').then((mod) => ({ default: mod.ProposalFlowModal })),
+);
 
 const m = defineMessages({
   meta: { id: 'documents.documentPreview.meta', defaultMessage: '{client} • {date} • {total}' },
@@ -91,6 +97,25 @@ const m = defineMessages({
     defaultMessage: 'The lines pointed at {count, plural, one {# account} other {# accounts}}: {codes}',
   },
   codingAccept: { id: 'documents.documentPreview.codingAccept', defaultMessage: 'Accept this category' },
+  /* ── "Make it a rule?" (review item 48's follow-on) ───────────────────────
+     The RATIONALE is the server's sentence and is rendered as a variable —
+     it names the supplier, the account and the count, and a second wording
+     here could disagree with the review card the accountant then reads. What
+     is in the catalogue is the chrome only. */
+  ruleOfferHeading: {
+    id: 'documents.documentPreview.ruleOfferHeading',
+    defaultMessage: 'Make it a rule?',
+  },
+  ruleOfferAction: { id: 'documents.documentPreview.ruleOfferAction', defaultMessage: 'Create this rule' },
+  ruleOfferNote: {
+    id: 'documents.documentPreview.ruleOfferNote',
+    defaultMessage: 'A rule codes the NEXT document from this supplier before anyone opens it. Creating one stages a Review → Approve proposal — nothing is standing until you approve it.',
+  },
+  ruleOfferUnmatched: {
+    id: 'documents.documentPreview.ruleOfferUnmatched',
+    defaultMessage:
+      'This client has also received {count, plural, one {# other spelling} other {# other spellings}} of this supplier ({spellings}). A rule matches one spelling exactly, so those keep arriving uncoded.',
+  },
   codingAcceptNote: {
     id: 'documents.documentPreview.codingAcceptNote',
     defaultMessage: 'Accepting stages a correction you read and approve — nothing is coded until you do.',
@@ -405,6 +430,29 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
    * echoed back. Nothing here writes a category. The one thing the tap saves
    * the accountant is typing a code they are looking at.
    */
+  /**
+   * **"Make it a rule?"** — review item 48's follow-on, staged as an ordinary
+   * `rule.create` proposal (the same kind and the same door the chat's rule
+   * beat uses). Held in state because `ProposalFlowModal` creates on mount and
+   * its `request` must be referentially stable.
+   *
+   * ⚠ **`scopeKey` goes in VERBATIM.** The pipeline matches a rule by exact
+   * string equality, so tidying the supplier's spelling here would produce a
+   * rule that is written, reviewed, approved — and never fires, with nothing
+   * reporting it. The server chose this spelling off a document the client
+   * actually received; this passes it through untouched.
+   */
+  const [ruleRequest, setRuleRequest] = useState<CreateActionProposalRequest | null>(null);
+  const offerRule = () => {
+    const offer = suggestion?.ruleOffer;
+    if (offer === null || offer === undefined || detail.businessId === '') return;
+    setRuleRequest({
+      kind: 'rule.create',
+      businessId: detail.businessId,
+      payload: { tier: 'SUPPLIER_CUSTOMER', scopeKey: offer.scopeKey, sets: { categoryCode: offer.categoryCode } },
+    });
+  };
+
   const acceptSuggestion = () => {
     if (suggestion === null || suggestion.categoryCode === null) return;
     const parsed = parseCodingDraft(CATEGORY_LABEL, suggestion.categoryCode);
@@ -885,6 +933,43 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                     <span className="text-[12px] text-zinc-500">{intl.formatMessage(m.codingAcceptNote)}</span>
                   </div>
                 )}
+
+                {/* ── "You've coded this supplier that way N times — make it a
+                    rule?" (review item 48's follow-on, §24.4.5) ─────────────
+                    Supplier memory suggests the code on every document and asks
+                    a human every time; a rule codes the NEXT one before anybody
+                    opens it. The server decides whether to offer — it is absent
+                    when a rule already covers the supplier, when the treatment
+                    is not the client's own, and below the repeat threshold. */}
+                {suggestion.ruleOffer !== null && (
+                  <div data-testid="coding-rule-offer" className="mt-4 pt-4 border-t border-white/10">
+                    <div className="text-[11px] font-bold text-brand uppercase tracking-widest mb-2">
+                      {intl.formatMessage(m.ruleOfferHeading)}
+                    </div>
+                    {/* The server's own sentence — it names the supplier, the
+                        account and the count, and warns when the code is off
+                        the chart. Rendered as a variable, never re-worded. */}
+                    <p className="text-[13px] text-zinc-300 leading-relaxed">{suggestion.ruleOffer.rationale}</p>
+                    {suggestion.ruleOffer.unmatchedSpellings.length > 0 && (
+                      <p className="mt-2 text-[12px] text-amber-300/90">
+                        {intl.formatMessage(m.ruleOfferUnmatched, {
+                          count: suggestion.ruleOffer.unmatchedSpellings.length,
+                          spellings: intl.formatList(suggestion.ruleOffer.unmatchedSpellings, { type: 'conjunction' }),
+                        })}
+                      </p>
+                    )}
+                    <div className="mt-3 flex items-center gap-3 flex-wrap">
+                      <button
+                        onClick={offerRule}
+                        className="flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-bold text-white bg-raised border border-white/10 hover:border-brand/40 transition-colors"
+                      >
+                        <Check size={13} />
+                        {intl.formatMessage(m.ruleOfferAction)}
+                      </button>
+                      <span className="text-[12px] text-zinc-500">{intl.formatMessage(m.ruleOfferNote)}</span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1012,6 +1097,18 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
               onEdit={() => reopenEdit(pending)}
               onClose={() => setPending(null)}
             />
+          </Suspense>
+        )}
+      </AnimatePresence>
+
+      {/* "Make it a rule?" → the ordinary Review → Approve flow. It CREATES on
+          mount, which is why `ruleRequest` is held in state rather than built
+          inline; closing without deciding leaves the proposal pending in the
+          Approvals queue, which is the point of having one. */}
+      <AnimatePresence>
+        {ruleRequest !== null && (
+          <Suspense fallback={null}>
+            <ProposalFlowModal request={ruleRequest} onClose={() => setRuleRequest(null)} />
           </Suspense>
         )}
       </AnimatePresence>

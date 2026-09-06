@@ -126,6 +126,28 @@ export class InMemoryAiBudget implements AiBudget {
   }
 }
 
+/**
+ * The one place the ledger is CHOSEN — Redis where the process has one, the
+ * in-process counter otherwise.
+ *
+ * Three composition roots build a budget now (`chat.module.ts`,
+ * `approvals.module.ts` for the correction second opinion, and `worker/main.ts`
+ * for extraction and the coding rung), and they had begun to be three copies of
+ * the same three lines. One firm gets ONE daily number (§9.7); three spellings
+ * of how to reach it is how that stops being true. Redis is what makes the
+ * number shared ACROSS processes; the in-memory fallback still enforces a
+ * ceiling rather than silently having none.
+ */
+export function selectAiBudget(env: {
+  readonly INGEST_QUEUE: string;
+  readonly REDIS_URL: string;
+  readonly AI_DAILY_BUDGET_PENCE: number;
+}): AiBudget {
+  return env.INGEST_QUEUE === 'bullmq'
+    ? RedisAiBudget.fromUrl(env.REDIS_URL, env.AI_DAILY_BUDGET_PENCE)
+    : new InMemoryAiBudget(env.AI_DAILY_BUDGET_PENCE);
+}
+
 function verdict(spentPence: number, ceilingPence: number): BudgetVerdict {
   const remainingPence = Math.max(0, ceilingPence - spentPence);
   return {

@@ -22,6 +22,9 @@ const CHART: ClientChartOfAccounts = {
   knownSuppliers: ['nisbets'],
   caveat: 'seeded',
   categories: [{ code: 'COS_MATERIALS_AND_CONSUMABLES', name: 'Cost of sales: Materials and consumables' }],
+  // The client's intake answers, read off the business row rather than the chart
+  // (review item 19's coding context). Nothing in the rule proposal reads it.
+  profile: null,
 };
 
 const SUPPLIER = { name: 'Nisbets Ltd', key: 'nisbets', isNew: false };

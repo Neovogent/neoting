@@ -112,6 +112,49 @@ describe('toExtraction and the smuggled codingSuggestion key', () => {
     expect('codingSuggestion' in extraction).toBe(false);
   });
 
+  /**
+   * ⚠ **A ROW AN OLDER RELEASE WROTE MUST STILL RENDER**, and this nearly went
+   * the other way. `ruleOffer` (review item 48's "make it a rule?") joined the
+   * stored shape on 6 Sep 2026 as required-and-nullable, matching every other
+   * property here — which meant every suggestion already in the database failed
+   * the parse, and this schema's failure mode is to drop the WHOLE suggestion.
+   * Every one of those documents would have silently lost its Category sentence
+   * and gone back to the em dash the whole ladder exists to remove.
+   *
+   * The fixture above is deliberately an OLD payload — no `ruleOffer` key at
+   * all — so the two tests either side of this one are the guard. This one says
+   * it out loud.
+   */
+  it('⚠ a payload from BEFORE a property existed still renders — new keys read tolerantly', () => {
+    const older = { ...suggestion };
+    expect('ruleOffer' in older).toBe(false);
+
+    const extraction = toExtraction(row({ supplierName: supplier, codingSuggestion: older }));
+    expect(extraction.codingSuggestion?.categoryCode).toBe('SOFTWARE_SUBSCRIPTIONS');
+    // Absent reads as "no offer", never as "no suggestion".
+    expect(extraction.codingSuggestion?.ruleOffer ?? null).toBeNull();
+  });
+
+  it('carries the rule offer when the client’s own repeated coding earned one', () => {
+    const offered = {
+      ...suggestion,
+      basis: 'SUPPLIER_MEMORY',
+      ruleOffer: {
+        scopeKey: 'ALDGATE MEATS LTD',
+        categoryCode: 'COS_FOOD_AND_DRINK',
+        analysisAccount: 'Cost of sales: Food and drink',
+        times: 5,
+        rationale: 'Code ALDGATE MEATS LTD to Cost of sales: Food and drink from now on.',
+        unmatchedSpellings: [],
+      },
+    };
+    const extraction = toExtraction(row({ supplierName: supplier, codingSuggestion: offered }));
+    // ⚠ The EXACT spelling survives the round trip — a rule keyed on anything
+    // else is written, approved, and never fires.
+    expect(extraction.codingSuggestion?.ruleOffer?.scopeKey).toBe('ALDGATE MEATS LTD');
+    expect(extraction.codingSuggestion?.ruleOffer?.times).toBe(5);
+  });
+
   it('degrades a malformed payload to “no suggestion”, never to a half-rendered opinion', () => {
     // `fields` is a Json column, so what comes back is whatever was written —
     // by this release, an older one, or a hand edit. A payload that does not

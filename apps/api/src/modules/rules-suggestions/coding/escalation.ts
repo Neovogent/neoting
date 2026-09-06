@@ -138,6 +138,55 @@ export const CODING_ESCALATION_REASONS = [
 
 export type CodingEscalationReason = (typeof CODING_ESCALATION_REASONS)[number];
 
+/**
+ * **The escalations a model is allowed to be asked to reconsider** (review item
+ * 19), and — just as much — the ones it is not.
+ *
+ * Mubashir's ruling is narrower than "never escalate", and reading it as the
+ * wider thing would be worse than ignoring it. What he overruled is the
+ * document that came back with *"nothing on this client's chart matches … and
+ * nothing was guessed at"*: an escalation raised because the deterministic
+ * layer knows **nothing**. His two reasons are that a best guess with an honest
+ * confidence beats a dash, and that *"there won't be no written account
+ * category on any invoice ever"* — so "the page does not say" cannot be a
+ * reason to abstain, because the page never says.
+ *
+ * The three below are exactly those: no line detail, nothing matched, a
+ * first-time supplier. In each the product's answer today is an empty field,
+ * and a model reading what the goods ARE against the client's trade genuinely
+ * has something to add.
+ *
+ * ⚠ **Every other reason stays terminal, and that is not timidity.** The rest
+ * escalate because the deterministic layer knows something SPECIFIC and knows
+ * it is not enough:
+ *
+ * - `ARITHMETIC_MISMATCH` — the document does not add up. Coding a number that
+ *   is not the number is the failure the hard stop exists for, and a model
+ *   opinion on top of it does not make the sums reconcile.
+ * - `NO_CHART_OF_ACCOUNTS` / `CODE_NOT_ON_CHART` — there is no chart to pick
+ *   from, or a code was refused for not being on it. Asking a model to choose
+ *   from a list that does not exist is how an off-chart code gets in by a
+ *   second door.
+ * - `SOFTWARE_TERM_UNKNOWN` — the same product name is capital or revenue on
+ *   one word the document does not print. `coding-instructions.ts` tells a
+ *   model in capitals not to infer it from the vendor; re-asking the model
+ *   after the deterministic layer already refused would be asking it to do the
+ *   one thing it was told not to.
+ * - `MIXED_CAPITAL_AND_REVENUE` / `MULTIPLE_CATEGORIES_ON_ONE_DOCUMENT` — the
+ *   lines were classified successfully and `documents.category_code` cannot
+ *   hold the answer. That is the schema's limit (this module's `DocumentLine`
+ *   proposal), and a single code from a model would be picking one of several
+ *   correct answers and calling it the answer.
+ * - `THRESHOLD_BOUNDARY` — an amount sitting on the PRACTICE's own
+ *   capitalisation policy. There is no statutory de minimis; the call is the
+ *   accountant's by definition, and a model cannot be given the authority.
+ */
+export const MODEL_ANSWERABLE_ESCALATIONS: ReadonlySet<CodingEscalationReason> = new Set([
+  'NO_LINE_DETAIL',
+  'NO_MATCH_ON_CHART',
+  'NEW_SUPPLIER_NO_HISTORY',
+]);
+
 /** Lower is more severe. Index into the declared order — there is no second table. */
 export function escalationSeverity(reason: CodingEscalationReason): number {
   return CODING_ESCALATION_REASONS.indexOf(reason);

@@ -66,10 +66,16 @@ natural-language rule parsing are still not built.
 | `coding/coding-decision.ts` | The answer shape — including `LOCKED` as a first-class outcome |
 | `coding/supplier-coding.service.ts` | The ladder itself, the human lock, and `readStoredLines` |
 | `coding/rule-proposal.ts` | Decision → `rule.create` payload for the Review → Approve spine |
+| `coding/rule-offer.ts` | **"Make it a rule?"** — the threshold on top of it (item 48's follow-on) |
 | `coding/escalation.ts` | **The two closed sets** — why a coding is declined, and what is worth saying about one that is offered |
 | `coding/capital-revenue.ts` | **The decision rules.** Pure, per line. The capitalisation policy lives here as a value, never a constant |
 | `coding/ai-suggestion.ts` | The `AI_INFERENCE` rung: the document-level fold, the arithmetic hard stop, the confidence table |
+| `coding/supplier-memory.ts` | **Tier 2** — this client's own remembered treatment, confidence scaled by consistency (item 48) |
 | `coding/coding-instructions.ts` | The same rules in prose for a model, the tool schema, and the strict parse that refuses an off-chart code |
+| `coding/correction-opinion.ts` | **The second opinion's pure half** — closed-set verdicts on a manual correction (items 22/47) |
+| `coding/bedrock-coding.ts` | **The wire.** Both model calls, the meter, and the rule that every failure is `null` |
+| `coding/select-coding-model.ts` | Config selection, keyed on `EXTRACTOR`. Read its header before adding a switch |
+| `coding/coding-replay-corpus.ts` | The cassette corpus for both model calls |
 | `supplier-key.ts` | Supplier-name normalisation. Read its header before using it on a `scopeKey` |
 | `index.ts` | The public seam. Read its header before adding a name |
 
@@ -203,6 +209,238 @@ Capitalising development spend turns on IAS 38.57's six criteria, which are a
 judgement about a project rather than a fact on an invoice. Offering the code
 would invite a bespoke-development line to be capitalised *because an account
 existed for it*. Such a line escalates instead.
+
+## The ladder has five rungs and a MODEL now (6 Sep 2026 — review items 19 + 48)
+
+**Mubashir's ruling, verbatim:** *"It is very important that the ai is not giving
+any null value… at least give suggestion with confidence score; there won't be no
+written account category on any invoice ever; this requires deep understanding of
+accounting, use higher capable model for this if possible."* Said about an
+**Aldgate Meats Ltd** invoice to a restaurant that came back with a BLANK
+category and *"nothing on this client's chart matches… nothing was guessed at"*.
+
+The order, and what each rung does:
+
+| # | Rung | Answers | New? |
+|---|---|---|---|
+| 1 | Accountant's rule / practice default | `CODE` | no |
+| 2 | **Supplier memory** — this client's own hand-codings | `CODE` (`LEARNED_HISTORY`), SHOWN as a suggestion | **the SHOWING is new** |
+| 3 | Deterministic suggestion (`ai-suggestion.ts`) | `SUGGEST` or `ESCALATE` | no |
+| 4 | **The model** (`bedrock-coding.ts`) | upgrades three escalations to `SUGGEST` | **NEW** |
+| 5 | `ESCALATE` with a named reason | unchanged | no |
+
+### ⚠ Item 48 was a missing CONSUMER, not a missing rung
+
+`loadHistory` has read this client's prior HUMAN-CONFIRMED codings since A6, and
+`decide()` has answered `CODE` on `LEARNED_HISTORY` ever since. **Nothing ever
+showed it to anybody**: `extraction/coding-advice.ts` returned `null` for every
+outcome that was not `REVIEW`, so a supplier a person had coded by hand arrived
+with an empty Category and no sentence — identical on screen to a supplier
+nobody had ever seen. The memory existed, the ladder used it, and the product
+was silent about it.
+
+`codingSuggestionFor(result)` (on the seam) is the one mapping now: the `REVIEW`
+rung's suggestion, **or** the remembered treatment for a `LEARNED_HISTORY`
+coding, **or** `null` beside an accountant's rule or a human's correction —
+where an opinion is pressure to second-guess an explicit instruction rather than
+extra information.
+
+Two behaviour changes came with it, both named in item 48:
+
+- **The confidence is CONSISTENCY, computed rather than looked up.**
+  `memoryConfidence(times)` — 0.6 for one hand-coding, +0.08 each, capped at
+  **0.9** (`TRAINING_NEVER_CAPITAL`'s ceiling: nothing may read as more certain
+  than a bright line in a standard). It gates nothing, as ever.
+- ⚠ **A remembered code the chart no longer carries is NOT offered**, and
+  `decide()` falls THROUGH rather than answering `CODE` with it. Offering it
+  produces a suggestion the export cannot prefix and that
+  `assertUpdateCodingAllowed` refuses on the way back in — an affordance whose
+  only possible outcome is a 422. The review reason says so by name instead of
+  claiming nothing codes the supplier yet.
+
+### The model rung: where it fires, and where it deliberately does not
+
+`MODEL_ANSWERABLE_ESCALATIONS` (`escalation.ts`) is **three** reasons:
+`NO_LINE_DETAIL`, `NO_MATCH_ON_CHART`, `NEW_SUPPLIER_NO_HISTORY` — exactly the
+ones where the deterministic layer knows *nothing*, which is what Mubashir
+overruled. Every other escalation stays terminal because it names something
+SPECIFIC: the sums do not reconcile, there is no chart, a licence term is not
+printed, the lines split across treatments the schema cannot hold, an amount
+sits on the practice's own policy. That set's own doc argues each exclusion.
+
+⚠ **A model answer never REPLACES a deterministic escalation.** If the model also
+declines, the accountant keeps the named reason the rules worked out. The model
+can only ever ADD a code.
+
+### ⚠ IT RUNS OUTSIDE EVERY TRANSACTION, AND THAT FORCED A PIPELINE CHANGE
+
+`decide()` takes a `ScopedClient`, so its caller holds an open transaction —
+`extraction-pipeline.ts` called it inside the one that writes the extraction.
+`scopedDb` gives that transaction **10 seconds** and a judgment-tier call takes
+seconds of somebody else's network. So the model is a SECOND call,
+`reconsider()`, made with nothing open; the pipeline reads the ladder in a short
+transaction of its own (phase 2.5) and calls the model after it closes. The
+`modules/approvals` ledger follow-up makes the same argument in its own words.
+
+The cost of the split is one comparison: the rule read and the pipeline's rule
+match are now two transactions, so phase 3 drops the suggestion whenever
+`categoryCode` is set. The invariant *a suggestion never rides beside a rule*
+holds by construction rather than by timing. What it buys, beyond the model: a
+throw from Postgres inside the ladder no longer aborts the write transaction.
+
+### The model pin, and the number that moved
+
+`TASKS.codingSuggestion` was raised from `workhorse` to **`judgment`**
+(opus-4-6) — §9.1, Shakib's decision in session on 6 Sep 2026, taken on
+arithmetic and re-confirmed on the measurement.
+
+⚠ **The estimate was 42% low, and `scripts/measure/coding-cost.ts` is why that
+is known.** Estimated 1.74p/call from a character count of the GENERAL chart's
+instructions; **measured 2.47p** (5,152 in + 204 out) once a real client's chart
+and their own intake answers were in the prompt. A document that REACHES the
+rung costs **3.81p** against D20's £0.02 blended guardrail, which holds while
+fewer than **27%** of documents reach it. **Nobody has measured that rate** — it
+is what the `document_events` rows with `stage: 'code'` answer, `suggested`
+against `escalated` against the total, and it is the number to watch.
+
+### The client's trade is the coding context (§24.4)
+
+`ClientChartOfAccounts` gained `profile` — read off the business row in
+`resolve()`, **not** off the chart, because the `reference_syncs` payload has no
+profile in it and deriving it from the chart would give a client with a
+freshly-derived chart its own trade as context and a client whose chart had been
+saved none at all.
+
+The prompt gets two things: the **trade label** (one of four strings this
+repository authored, from `profileId`) and the client's own intake answers
+through A11's `profileForModel()`, which wraps them. `basis: 'NO_PROFILE'` yields
+a NULL label deliberately — `profileId` is `GENERAL_BUSINESS` both for a client
+who answered nothing and for one whose answers matched no specialist, and telling
+a model the first is a general business invents the one fact the context exists
+to supply. There is an honest sentence for that case.
+
+### Two new bases, and one the model may not claim
+
+`SUPPLIER_MEMORY` and `INDUSTRY_CONTEXT_REASONING` joined `CODING_BASES`.
+⚠ **A model answering `SUPPLIER_MEMORY` is rewritten to
+`INDUSTRY_CONTEXT_REASONING` by `parseModelCodingSuggestion`** — that basis names
+this client's own repeated hand-coding, settled from the database before the
+model is asked, and a guess wearing it would put the strongest signal the product
+has on top of the weakest. The prompt says so; the parse enforces it.
+
+### ⚠ The model's own sentence is the ONE free-text field, and it is bounded
+
+Item 19 asks for "a one-sentence reasoning note", and the model writes it —
+*"Beef, chicken and lamb from a known meat wholesaler, purchased as food stock
+for this restaurant."* Everything else it returns is a closed set. So
+`sanitiseReasoning` collapses it to one line, refuses angle brackets, truncates
+at `MAX_REASONING_CHARS` (240) and drops it entirely if nothing survives — after
+which the note falls back to the named rule and is never empty. What it is NOT
+protected against, stated plainly: a plausible well-formed lie. The confidence,
+the named basis, the chart enforcement and the human's Approve are what stand
+against that.
+
+### ⚠ `MODEL_MAX_CONFIDENCE = 0.75`, and it was MEASURED into existence
+
+The first live recording of the Aldgate case answered with a **confidence of
+0.97** — a good code and a number that argues with everything around it, on a
+zero-shot categorisation of a brand-new supplier where the published figures are
+62.5% top-1 and ~36% zero-shot. The prompt asks for honesty and got 0.97 anyway:
+`input_schema` instructs, the parse enforces. It is a DISPLAY bound, not a gate —
+ordering below the ceiling is preserved and no branch compares it to a number.
+
+## The offer that closes the loop — "make it a rule?" (6 Sep 2026, item 48's point 4)
+
+Supplier memory suggests the code on every document and asks a human every
+time. A **rule** codes the next document before anybody opens it —
+`extraction-pipeline.ts` matches an active `SUPPLIER_CUSTOMER` rule on the way
+in — so it is the difference between approving a suggestion forty times and
+taking one decision once. §24.4.5 says a learned treatment *should* become a
+deterministic rule; item 48 asks for both, *"so the two mechanisms converge
+instead of competing"*.
+
+`coding/rule-offer.ts` is the whole of it, and it is small because
+**`buildSupplierRuleProposal` already owned every refusal** and had simply never
+been called: a rule already codes this supplier, the decision is not the
+client's own prior treatment, the document is locked, the supplier is new, the
+history disagrees with itself, there is no exact spelling to key on. This file
+adds **a threshold** and the projection a surface renders.
+
+- **`RULE_OFFER_THRESHOLD = 3`** — a value, not a law, and deliberately
+  conservative. A rule OUTLIVES the document that argued for it, so offering too
+  early is much worse than offering a document later. The count is always shown,
+  so the accountant judges the evidence rather than the threshold.
+- ⚠ **`scopeKey` is the supplier's EXACT spelling and travels verbatim** through
+  the contract, the web and into the payload. The pipeline matches by exact
+  string equality; a key anything tidied would produce a rule that is written,
+  reviewed, approved — and never fires, with nothing reporting it. Other
+  spellings in the client's history ride along as `unmatchedSpellings` and are
+  named on screen rather than papered over.
+- **It reaches the browser through `CodingSuggestion.ruleOffer`** — an additive,
+  optional contract change (G7, Shakib's instruction on 6 Sep 2026). Nothing is
+  created by its presence; the web takes `scopeKey` + `categoryCode` to
+  `POST /v1/action-proposals` as an ordinary `rule.create`, the same door the
+  chat's rule beat uses.
+
+**Proven live, end to end:** five hand-codings of Aldgate Meats → the sixth
+document arrives at **90% confident** on `SUPPLIER_MEMORY` with the offer beside
+it → Create this rule → Read review → Approve → a real `rules` row → **the next
+invoice arrives READY, coded by the rule, with no suggestion beside it at all**
+(the standing invariant, observed rather than asserted). Screenshots `06` and
+`07` in `docs/reviews/assets/2026-09-06-coding-intelligence/`.
+
+## The model second opinion on a manual correction (items 22/47's deferred half)
+
+Package B (#256) built the deterministic checks — tax exceeding the total, a
+future date, money typed onto a document the pipeline read as OTHER — and the
+advisory seam they render through. This is the half that needed a model, because
+it asks a question arithmetic cannot: **is the thing a person typed actually on
+the document at all?**
+
+`correction-opinion.ts` is the pure half; `BedrockCodingModel.secondOpinion` is
+the call. ⚠ **It returns VERDICTS FROM A CLOSED SET AND NO PROSE**, and the
+sentence rendered on the approval card is OURS, composed from the value the
+HUMAN typed (`validation-dedupe/correction-checks.ts`). Three reasons: that card
+is frozen into the hash a super admin echoes and every other string on it is
+server-composed; a closed set can be rendered, counted and tested; and it is
+enough — what the accountant needs is *which* typed value the document does not
+support, and they are looking at the document.
+
+⚠ **`NOT_CHECKABLE` is a first-class answer and never a warning.** Measured live:
+shown item 47's selfie — a document the pipeline read NOTHING off — the model
+answers `NOT_CHECKABLE`, not `ABSENT`, and it is right. The deterministic layer
+already covers that shape (*"this does not appear to be a financial document"*),
+so the model staying quiet is the two layers not saying the same thing twice.
+Where it earns its keep is a document that reads perfectly with a typed value
+that names somebody else.
+
+⚠ **It is the one model call in this module that runs INSIDE a transaction** —
+`ActionProposalsService.review()`'s — with a hard 4 s cap
+(`SECOND_OPINION_TIMEOUT_MS`). The reasoning and the rejected alternative are
+written at that constant. A slow answer is discarded rather than waited for,
+which is the correct direction: the ruling says the check must never block a
+correction.
+
+## The two Bedrock calls, and the rule that makes them safe to add
+
+⚠ **NOTHING IN `bedrock-coding.ts` CAN FAIL A CALLER.** A throttle, an expired
+credential, a budget ceiling, a refusal, an unparseable answer and a cassette
+miss are all `null`, and both callers already hold a complete honest answer. That
+is the OPPOSITE of `BedrockExtractor`, which must turn a failed read into a
+FAILED document so a document nobody read does not look read.
+
+- **Metered** against the same per-firm daily ledger (§9.7) — three spenders now,
+  one number. The budget is a required constructor dep for the extractor's
+  reason: an unmetered client does not fail, it just spends.
+- **`temperature: 0`, no thinking.** The #252 convention, and here it does a
+  second job: the cassette key hashes the request body, so a request that varied
+  would be a fixture that cannot exist. `effort: 'high'` is recorded
+  configuration and is not sent (thinking and `temperature: 0` are a 400).
+- **Selected by `EXTRACTOR`**, not a fifth switch. `select-coding-model.ts`
+  argues it at length: same document, same job, same meter; `demo` means the
+  document was never read; the production boot gates already cover it; and
+  `EXTRACTOR` is in staging's `common_environment`, so both task families carry
+  it — which matters because the two consumers live in different processes.
 
 ## ⚠ The architectural blocker — `Document.categoryCode` cannot hold the answer
 
@@ -509,8 +747,19 @@ decides whether to restore it. Filtering it would turn that into a 404.
 ## Tests
 
 ```bash
-pnpm --filter @neoting/api test -- rules-suggestions   # 199 tests: 191 offline + 8 against a real DB
+pnpm --filter @neoting/api test -- rules-suggestions   # 271 tests: 263 offline + 8 against a real DB
+pnpm test:eval:coding                                  # the §9.8 gate — replayed, offline, free
 ```
+
+**The §9.8 gate for this module is `evals/src/run-coding-evals.ts`**, and it is a
+SECOND runner rather than more cases in the chat one: a different prompt, tool
+schema, task class and version constant, and one runner would have coupled a
+coding-rule change to the chat eval gate — the exact coupling
+`CODING_PROMPT_VERSION` exists to prevent. It drives the REAL
+`decide()` → `reconsider()` → `codingSuggestionFor()` over a fake `ScopedClient`,
+so it scores the whole answer an accountant sees rather than a re-implementation
+of the tier order. **Recorded live 6 Sep 2026: ladder 12 cases / 30 assertions
+100%, second opinion 5 cases / 7 assertions 100%, injection 0 leaks.**
 
 The 85 added on 2 Sep 2026 are the suggestion rung. The five that matter most,
 because each pins a rule the research says is expensive to get wrong: *an annual
@@ -605,20 +854,51 @@ approves. There is no shortcut and no second door.
       practice's). Persisting it wants a `practices` column — LAW again — or a
       practice-settings row. Until then every firm is on our number and is told
       so.
-- [ ] **No model is wired behind `coding-instructions.ts`.** The instructions,
-      the tool schema and the strict parse exist and are tested offline (the same
-      split as `bedrock-extraction-schema.ts` under `bedrock-extractor.ts`); what
-      runs today is the deterministic rule layer. A Bedrock rung needs the §9.7
-      budget (`common/ai-budget.ts`), a cassette corpus for `replay`, a model pin
-      through `chat-framework/models.ts`, and its own §9.8 eval family — which is
-      a stage, not a line. `CODING_PROMPT_VERSION` is this module's own and is
-      deliberately NOT `chat-framework`'s `PROMPT_VERSION`, so a coding rule can
-      change without dragging the chat eval gate in.
-- [ ] **Nothing consumes the suggestion yet.** `decision.suggestion` is on the
-      seam and no surface reads it: there is no controller (see below) and the
-      extraction pipeline still does not call `decide()`. Rendering it is a
-      §13.3 job — provenance class visible, "show the working" expandable — and
-      it needs a contract change to reach the browser.
+- [x] ~~**No model is wired behind `coding-instructions.ts`.**~~ **DONE, 6 Sep
+      2026** (review item 19) — `coding/bedrock-coding.ts`, selected by
+      `EXTRACTOR`. Everything that TODO listed as needed is in: the §9.7 budget,
+      a cassette corpus (`coding-replay-corpus.ts`), the model pin moved through
+      `chat-framework/models.ts` to the judgment tier, and its own §9.8 eval
+      family (`pnpm test:eval:coding` — 12 ladder cases + 5 second-opinion
+      cases, replayed from `evals/recordings/coding-cassettes/`).
+      `CODING_PROMPT_VERSION` is at `coding-instructions-2` and remains this
+      module's own, so a coding rule still changes without dragging the chat
+      eval gate in.
+- [x] ~~**The escalation RATE is unmeasured.**~~ **Measurable since 6 Sep 2026:**
+      `scripts/measure/coding-escalation-rate.ts`. It needed no instrumentation —
+      `document_events` already writes a `code` row per document — but it did
+      need the RLS trap `db/backfill-import-fingerprints.ts` documents: as
+      `nt_app` the query returns an EMPTY LIST and no error, so the first run
+      printed "nothing to measure" against a database holding the rows. It reads
+      through `DIRECT_URL` and refuses to start without it.
+      ⚠ **It counts by BASIS, not by outcome** — `SUPPLIER_MEMORY` is a
+      suggestion that costs nothing, and counting it as "the model ran" would
+      inflate the estimated spend badly.
+- [ ] **Nobody has run it against a real corpus, and the local figure moves as
+      history accumulates — which is the point.** Measured on the walkthrough
+      client: **75%** of documents reached the model rung when the client was
+      new, **33%** eight documents later, as supplier memory (free, and above the
+      rung) took over. Both are noise at that sample size and the script says so
+      below 50 documents. Staging after a week of intake is the first honest
+      sample. Re-run `scripts/measure/coding-cost.ts` too when the pin or the
+      chart moves.
+- [x] ~~**Nothing consumes the suggestion yet.**~~ Closed in two halves: the
+      pipeline began calling `decide()` on 2 Sep 2026, and the LEARNED_HISTORY
+      half — which reached no screen at all — on 6 Sep 2026 (item 48). The
+      `DocumentPreview` panel renders both, verified live.
+- [x] ~~**The "make it a rule?" follow-on has no caller.**~~ **DONE, 6 Sep 2026**
+      — see *The offer that closes the loop* above. `buildSupplierRuleProposal`
+      had been built, tested and uncalled since A6; it has a caller now, and it
+      needed no controller of its own.
+- [ ] **`rules.created_via` says `chat` for a rule created from a document.**
+      `rule.create` had one producer when that constant was written and now has
+      two. Nothing in the product reads the column (grep — only
+      `rule-create.ts` and its own tests), so the cost today is zero, but the
+      first person who reads it will be misled. The two honest fixes are a
+      payload field carrying the origin (a contract change for a string nobody
+      consumes) or a neutral value like `approval` (accurate everywhere,
+      throwing away the fact that chat drafted most of them). Either deserves
+      its own decision; the inaccuracy is written at the write site.
 - [ ] ⚠ **THE A7/A9 HANDSHAKE THIS MODULE'S SEAM PROMISES IS NOT WIRED, and it
       is now visible to accountants.** `index.ts` names the export as consumer
       one: *"the VT emitter's `Analysis account` column must carry the ledger

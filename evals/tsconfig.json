@@ -8,8 +8,29 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "noEmit": true,
+    // ⚠ Needed since the coding gate (6 Sep 2026), and not decoration: the
+    // coding ladder's chart service reaches `clients-team-settings`' public
+    // seam, whose barrel carries Nest controllers. `tsx` transforms through
+    // esbuild, which reads THIS file, and without the flag the whole run dies
+    // with "Parameter decorators only work when experimental decorators are
+    // enabled" pointing at a controller no eval calls. `apps/api` has it on;
+    // this line is the mirror the comment above already promises.
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "../apps/api/src/modules/chat-framework/**/*.ts", "../apps/api/src/common/**/*.ts"],
+  // ⚠ **The WHOLE of `apps/api/src`, and it is `tsx` that requires it rather
+  // than `tsc`.** esbuild applies a tsconfig's options only to files that
+  // tsconfig actually MATCHES, so a transitively-imported file outside this
+  // list is transformed with no options at all — which is how the coding gate
+  // first died on "Parameter decorators only work when experimental decorators
+  // are enabled", pointing at a Nest controller no eval calls. The coding
+  // ladder's chart service reaches `clients-team-settings`' public seam, that
+  // barrel reaches `notifications`', and that one exports a controller.
+  //
+  // Listing the tree is the honest fix: this package really does execute that
+  // code, and a narrower list would only mean the compiler checks less of what
+  // the runner runs.
+  "include": ["src/**/*.ts", "../apps/api/src/**/*.ts"],
   "exclude": ["node_modules", ".turbo"]
 }

@@ -44,7 +44,46 @@ export const TASKS = {
   ruleParsing: { model: 'judgment', effort: 'high' },
   ruleConflictResolution: { model: 'judgment', effort: 'max' },
   extractionVisionFinal: { model: 'judgment', effort: 'max' },
-  codingSuggestion: { model: 'workhorse', effort: 'medium' }, // THE volume call
+  // ⚠ RAISED TO `judgment` ON 6 SEP 2026, and it is the one entry in this map
+  // that deliberately costs more than its tier's obvious choice.
+  //
+  // Review item 19 (Mubashir): *"this requires deep understanding of accounting,
+  // use higher capable model for this if possible"* — said about a meat
+  // supplier's invoice to a restaurant that came back with a BLANK category.
+  // Coding is not a reading task. Extraction reads what is printed; this rung is
+  // asked what a thing IS, against a client's trade, when nothing on the page
+  // says. That is the judgement tier's question.
+  //
+  // ⚠ **THE COST, MEASURED — and the estimate the pin was taken on was 42% LOW.**
+  // `scripts/measure/coding-cost.ts`, live against this model, eu-west-2,
+  // 6 Sep 2026: **5,152 input + 204 output tokens, 2.47p per call** on the
+  // Aldgate case. The estimate beforehand was 1.74p, taken from a character
+  // count of the GENERAL chart's instructions — a real client's chart plus their
+  // own intake answers make the prompt substantially bigger, which is exactly
+  // the thing a probe exists to catch and a spreadsheet does not.
+  //
+  //   judgment   5,152×400 + 204×2,000 per Mtok = 2.47p per call (MEASURED)
+  //   workhorse  the same request at 240/1,200   = 1.48p per call
+  //
+  // Extraction is 1.26–1.34p, so a document that REACHES this rung costs
+  // **3.81p** against D20's £0.02 blended guardrail. The rung is the TAIL — it
+  // fires only after an accountant's rule, a practice default, this client's own
+  // history AND the deterministic suggestion have all declined — so the blended
+  // figure is what the guardrail is about:
+  //
+  //   blended = extraction + (escalation rate × coding)
+  //   holds under 2p while fewer than **27%** of documents reach the rung
+  //   (45% on the workhorse tier).
+  //
+  // The rate is measurable now — `scripts/measure/coding-escalation-rate.ts`,
+  // counting `document_events` by BASIS (supplier memory is a free suggestion
+  // and must not be counted as a model call). ⚠ **Nobody has run it against a
+  // real corpus**, and the figure MOVES as a client accumulates rules and
+  // history, both of which answer above the rung and cost nothing: measured 75%
+  // on a brand-new client and 33% eight documents later. Watch the rate, never
+  // the per-call price. Shakib took the pin in session on 6 Sep 2026 and
+  // re-confirmed it on the measured figure.
+  codingSuggestion: { model: 'judgment', effort: 'high' }, // THE volume call — see above
   chaseComposition: { model: 'workhorse', effort: 'medium' }, // every SMS human-reviewed verbatim (§10)
   chaseValidation: { model: 'workhorse', effort: 'medium' },
   addresseeEscalation: { model: 'workhorse', effort: 'medium' },
@@ -138,7 +177,11 @@ export const TASK_BUDGETS: Readonly<Record<TaskName, { maxTokens: number; timeou
   ruleParsing: { maxTokens: 2048, timeoutMs: 20_000 },
   ruleConflictResolution: { maxTokens: 4096, timeoutMs: 30_000 },
   extractionVisionFinal: { maxTokens: 8192, timeoutMs: 60_000 },
-  codingSuggestion: { maxTokens: 2048, timeoutMs: 20_000 },
+  // 30 s, not 20: the pin moved to the judgment tier (see TASKS above) and the
+  // request carries the client's whole chart. The call runs OUTSIDE every
+  // transaction — see `rules-suggestions/coding/bedrock-coding.ts` — so the
+  // budget here bounds a worker job, never a held tenant transaction.
+  codingSuggestion: { maxTokens: 2048, timeoutMs: 30_000 },
   chaseComposition: { maxTokens: 2048, timeoutMs: 20_000 },
   chaseValidation: { maxTokens: 1024, timeoutMs: 15_000 },
   addresseeEscalation: { maxTokens: 1024, timeoutMs: 15_000 },
@@ -167,7 +210,7 @@ export const TIER_RATES_PENCE_PER_MTOK: Readonly<Record<Tier, { input: number; o
  * historical answer is reproducible (§9.8) — the model ID alone is not enough,
  * because the parameters around it move independently of it.
  */
-export const MODEL_CONFIG_REVISION = '2026-08-28.1';
+export const MODEL_CONFIG_REVISION = '2026-09-06.1';
 
 /** What lands in `ChatTurn.modelVersion`. */
 export function modelVersionOf(tier: Tier): string {

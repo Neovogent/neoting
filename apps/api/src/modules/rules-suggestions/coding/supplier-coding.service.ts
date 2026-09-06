@@ -11,9 +11,12 @@ import type { ChartOfAccountsService, ClientChartOfAccounts } from '../chart-of-
 import { normaliseSupplierKey } from '../supplier-key.js';
 import { type AiCodingSuggestion, type CodingEvidence, suggestCoding } from './ai-suggestion.js';
 import { authorityForTier, tierRank } from './authority.js';
+import { clientCodingContext, type ModelCodingRequest } from './bedrock-coding.js';
 import { type CapitalisationPolicy, type CodingLine, PLATFORM_DEFAULT_CAPITALISATION_POLICY } from './capital-revenue.js';
 import type { CodingDecision, SupplierContext } from './coding-decision.js';
+import { MODEL_ANSWERABLE_ESCALATIONS } from './escalation.js';
 import { buildSupplierRuleProposal, type SupplierRuleProposal, type SupplierRuleRefusal } from './rule-proposal.js';
+import { supplierMemorySuggestion } from './supplier-memory.js';
 
 /**
  * **The coding ladder** — A6's second half, and the thing that makes the second
@@ -125,6 +128,21 @@ export class SupplierCodingService {
      * `CLAUDE.md` rather than smuggled in here.
      */
     private readonly capitalisation: CapitalisationPolicy = PLATFORM_DEFAULT_CAPITALISATION_POLICY,
+    /**
+     * The model rung (review item 19), consulted by {@link reconsider} and by
+     * nothing else in this class.
+     *
+     * ⚠ **Optional, and its absence is a real configuration** — the stance `ocr`
+     * and `coding` both take in the extraction pipeline. Without one the ladder
+     * is the deterministic one it has been since 2 Sep 2026 and every existing
+     * test drives exactly that. `selectCodingModel` decides from `EXTRACTOR`;
+     * the composition roots (`worker/main.ts`, `approvals.module.ts`) are the
+     * only places that choose.
+     *
+     * Structural, not a class: this file has no idea Bedrock exists, a unit test
+     * hands it four lines, and the dependency runs one way.
+     */
+    private readonly model?: { suggest(request: ModelCodingRequest): Promise<AiCodingSuggestion | null> },
   ) {}
 
   /** How this client's documents from this supplier should be coded, and on whose authority. */
@@ -310,8 +328,18 @@ export class SupplierCodingService {
     // Nothing explicit. The client's own prior decisions are the next rung —
     // and the ONLY thing below a rule that ID fills. The seeded chart is a
     // picklist, not supplier knowledge, so `CLIENT_CONTEXT` never wins here.
-    if (history.categoryCodes.length === 1) {
-      const categoryCode = history.categoryCodes[0] as string;
+    //
+    // ⚠ **A remembered code the chart no longer carries is NOT offered** (review
+    // item 48: *"a remembered code that has since left the chart is not
+    // offered"*). It used to be, and the failure was quiet: the ladder answered
+    // with a code the export cannot give a ledger prefix, and which
+    // `assertUpdateCodingAllowed` — the correction boundary since item 47 —
+    // refuses on the way back in. An affordance whose only possible outcome is a
+    // 422 is worse than no affordance. Falling through means the document still
+    // gets an answer, from a code that exists.
+    const remembered = history.categoryCodes.length === 1 ? (history.categoryCodes[0] as string) : null;
+    const rememberedAccount = remembered === null ? null : emittableAccount(chart, remembered);
+    if (remembered !== null && rememberedAccount !== null) {
       const times = history.entries.length;
       return {
         businessId,
@@ -320,12 +348,12 @@ export class SupplierCodingService {
         decision: {
           outcome: 'CODE',
           authority: 'LEARNED_HISTORY',
-          categoryCode,
-          analysisAccount: emittableAccount(chart, categoryCode),
+          categoryCode: remembered,
+          analysisAccount: rememberedAccount,
           sourceRuleId: null,
           supplier,
           nearMissRuleScopeKeys: nearMiss,
-          reason: `This client has coded ${supplier.name ?? 'this supplier'} to ${categoryCode} ${times === 1 ? 'once' : `${times} times`}, by hand. Consistency with the client's own prior treatment is the strongest signal below an explicit rule.`,
+          reason: `This client has coded ${supplier.name ?? 'this supplier'} to ${remembered} ${times === 1 ? 'once' : `${times} times`}, by hand. Consistency with the client's own prior treatment is the strongest signal below an explicit rule.`,
         },
       };
     }
@@ -357,10 +385,120 @@ export class SupplierCodingService {
         supplier,
         nearMissRuleScopeKeys: nearMiss,
         suggestion,
-        reason: reviewReason(supplier, history, chart, suggestion),
+        reason: reviewReason(supplier, history, chart, suggestion, remembered !== null),
       },
     };
   }
+
+  /**
+   * **The model tier** (review item 19) — run this AFTER {@link decide}, with no
+   * transaction open.
+   *
+   * ## Why it is a second call and not another branch inside `decide()`
+   *
+   * ⚠ `decide()` takes a `ScopedClient`, which means its caller is holding an
+   * open transaction — `extraction-pipeline.ts` calls it inside the one that
+   * writes the extraction, precisely so the chart, the rules and the history are
+   * one consistent read. `scopedDb` gives that transaction **10 seconds**, and a
+   * judgment-tier model call takes seconds of somebody else's network. Putting
+   * the model inside `decide()` would hold a tenant transaction open across a
+   * network call — the thing `modules/approvals` refuses by name for its ledger
+   * follow-up, and the reason it commits first and drives the vendor after.
+   *
+   * So the deterministic ladder stays where it is and this is the rung above the
+   * floor: same inputs, no database, no transaction, and a `SupplierCodingResult`
+   * in and out so the caller's code reads as one pipeline.
+   *
+   * ## When it fires, and when it deliberately does not
+   *
+   * Only over an `ESCALATE` whose reason is in
+   * {@link MODEL_ANSWERABLE_ESCALATIONS} — the three that mean the deterministic
+   * layer knows NOTHING (no line detail, nothing matched, a first-time
+   * supplier). That set's own doc argues each exclusion; the short version is
+   * that an escalation naming a specific missing fact is a better answer than a
+   * guess, and Mubashir's ruling was about the empty field, not about the
+   * escalations that say something.
+   *
+   * ⚠ **A model escalation never replaces a deterministic one.** If the model
+   * also declines, the answer the accountant sees stays the one the rules
+   * worked out — *"this is a first document from this supplier, and nothing on
+   * it is specific enough to code on its own"* is more use than *"the model did
+   * not pick anything"*. The model can only ever ADD a code here.
+   */
+  async reconsider(
+    result: SupplierCodingResult,
+    evidence: Omit<CodingEvidence, 'supplier'>,
+    practiceId: string,
+  ): Promise<SupplierCodingResult> {
+    if (this.model === undefined) return result;
+    const { decision, chart } = result;
+    if (decision.outcome !== 'REVIEW') return result;
+    const deterministic = decision.suggestion;
+    if (deterministic.outcome !== 'ESCALATE') return result;
+    if (!MODEL_ANSWERABLE_ESCALATIONS.has(deterministic.reason)) return result;
+
+    const answer = await this.model.suggest({
+      practiceId,
+      chart,
+      policy: this.capitalisation,
+      client: clientCodingContext(chart),
+      evidence: {
+        supplier: decision.supplier,
+        currency: evidence.currency ?? null,
+        totalPence: evidence.totalPence ?? null,
+        taxPence: evidence.taxPence ?? null,
+        lines: evidence.lines ?? [],
+      },
+    });
+    // `null` is every failure — unreachable, over budget, refused, unparseable —
+    // and an escalation is the model agreeing with the rules. Both keep the
+    // deterministic answer, which was already a complete one.
+    if (answer === null || answer.outcome !== 'SUGGEST') return result;
+
+    return { ...result, decision: { ...decision, suggestion: answer } };
+  }
+}
+
+/**
+ * **What to SHOW for a document nothing coded** — the one mapping from a ladder
+ * decision to the opinion a surface renders, and the fix for review item 48.
+ *
+ * ## The bug this closes, which was a missing consumer rather than a missing rung
+ *
+ * `extraction/coding-advice.ts` returned `null` for every outcome that was not
+ * `REVIEW`. `LEARNED_HISTORY` answers `CODE`. So a supplier this client had
+ * coded by hand — the strongest signal the product has below an explicit rule,
+ * and the whole of what Dext's supplier memory does — produced an empty Category
+ * field with no sentence beside it, indistinguishable from a supplier nobody had
+ * ever seen. The memory was read, the ladder used it, and nothing said so.
+ *
+ * ## Why a remembered coding is offered as a SUGGESTION
+ *
+ * Because nothing applies it. `documents.category_code` has one writer, carrying
+ * the extractor's value or an accountant's rule, and A6's brief is blunt about
+ * the alternative: *a rule that silently recodes a document is exactly the thing
+ * §10 forbids.* §24.4.5's answer is that a learned treatment should BECOME a
+ * rule, through `rule-proposal.ts` and a human's approval — which is untouched
+ * by this and still reads the `CODE` outcome.
+ *
+ * Three outcomes, and each `null` is a rule rather than a gap:
+ *
+ * - **`REVIEW`** → the suggestion the ladder already carries (deterministic, or
+ *   the model's after {@link SupplierCodingService.reconsider}).
+ * - **`CODE` on `LEARNED_HISTORY`** → the memory, with confidence scaled by
+ *   consistency (`supplier-memory.ts`).
+ * - **`CODE` on any other authority** → `null`. An accountant's rule or a
+ *   practice default is an explicit instruction, and an opinion beside it is not
+ *   extra information, it is pressure to second-guess it. `LOCKED` is `null` for
+ *   the same reason, one step stronger: a person already decided.
+ */
+export function codingSuggestionFor(result: SupplierCodingResult): AiCodingSuggestion | null {
+  const { decision, history, chart } = result;
+  if (decision.outcome === 'REVIEW') return decision.suggestion;
+  if (decision.outcome === 'CODE' && decision.authority === 'LEARNED_HISTORY') {
+    return supplierMemorySuggestion(history, chart);
+  }
+  return null;
 }
 
 /**
@@ -476,11 +614,26 @@ function reviewReason(
   history: SupplierHistory,
   chart: ClientChartOfAccounts,
   suggestion: AiCodingSuggestion,
+  rememberedOffChart: boolean,
 ): string {
-  return `${whyReview(supplier, history, chart)} ${suggestion.note}`;
+  return `${whyReview(supplier, history, chart, rememberedOffChart)} ${suggestion.note}`;
 }
 
-function whyReview(supplier: SupplierContext, history: SupplierHistory, chart: ClientChartOfAccounts): string {
+function whyReview(
+  supplier: SupplierContext,
+  history: SupplierHistory,
+  chart: ClientChartOfAccounts,
+  rememberedOffChart: boolean,
+): string {
+  // Checked FIRST among the history branches: this client does have a
+  // consistent prior treatment, and the reason it is not being offered has
+  // nothing to do with the supplier being new or the history disagreeing. An
+  // accountant reading "nothing codes them yet" over a supplier they have coded
+  // five times would reasonably conclude the feature is broken.
+  if (rememberedOffChart) {
+    const remembered = history.categoryCodes[0] ?? 'that account';
+    return `This client has coded this supplier to ${remembered} before, but that code is no longer on their chart of accounts, so it was not offered — a code the chart does not carry cannot be exported or accepted.`;
+  }
   if (supplier.name === null || supplier.key === '') {
     return 'No supplier was read off this document, so there is nothing to match a rule or a prior coding against.';
   }

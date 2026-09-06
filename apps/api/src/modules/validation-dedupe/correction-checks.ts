@@ -48,7 +48,14 @@ export type CorrectionCheckCode =
   | 'tax-total-signs-disagree'
   | 'date-in-future'
   | 'date-implausibly-old'
-  | 'not-a-financial-document';
+  | 'not-a-financial-document'
+  // ── The MODEL's three (6 Sep 2026, review items 22/47) ───────────────────
+  // Arithmetic cannot ask whether a typed value is on the document at all;
+  // reading it can. They join the same section, wear the same [Ignore], and are
+  // absent — never alarming — when the model is unreachable.
+  | 'model-supplier-not-in-document'
+  | 'model-total-not-in-document'
+  | 'model-category-dissonant';
 
 export interface CorrectionCheck {
   readonly code: CorrectionCheckCode;
@@ -140,6 +147,76 @@ export function evaluateCorrectionChecks(
         context.docType === 'OTHER'
           ? 'This does not appear to be a financial document — the pipeline classified it as Type OTHER. Figures typed onto it will be treated as real bookkeeping once approved.'
           : 'This does not appear to be a financial document — extraction found no readable values on it at all. Figures typed onto it will be treated as real bookkeeping once approved.',
+    });
+  }
+
+  return checks;
+}
+
+/**
+ * **The model second opinion's verdicts, structurally** — what a
+ * `CorrectionSecondOpinion` reader hands back (`proposals/validate-update-coding.ts`).
+ *
+ * ⚠ **Declared HERE and again in `rules-suggestions/coding/correction-opinion.ts`,
+ * on purpose.** This module may not import that one (`no-cross-module-internals`),
+ * and the reader arrives as a structural seam composed in `approvals.module.ts`
+ * — the `ExportEntryPreviewer` / `ChartCategoriesReader` pattern. Two
+ * declarations of one shape means a drift is a compile error at the composition
+ * root, which is exactly where somebody is looking when they wire it.
+ */
+export interface CorrectionOpinionVerdicts {
+  readonly supplier: 'PRESENT' | 'ABSENT' | 'NOT_CHECKABLE' | null;
+  readonly total: 'PRESENT' | 'ABSENT' | 'NOT_CHECKABLE' | null;
+  readonly category: 'CONSISTENT' | 'DISSONANT' | 'NOT_CHECKABLE' | null;
+}
+
+/**
+ * Verdicts → checks. **The sentences are OURS**, composed from what the HUMAN
+ * typed; the model contributes an enum and nothing else.
+ *
+ * Read `correction-opinion.ts`'s header for the argument at length. The short
+ * version is that these strings are frozen into the rendered summary a super
+ * admin echoes back as a hash, every other string on that card is
+ * server-composed from the payload, and a model-authored sentence there would
+ * be the one piece of text on the approval path written by the document itself.
+ *
+ * ⚠ **`NOT_CHECKABLE` and `PRESENT`/`CONSISTENT` produce nothing.** Only the two
+ * verdicts that mean "the document does not support this" reach a card. A check
+ * that fired on an unreadable photograph would teach an accountant to scroll
+ * past the ones that mean something — which is the failure item 29(b) had to fix
+ * for the release card.
+ */
+export function modelCorrectionChecks(
+  verdicts: CorrectionOpinionVerdicts,
+  corrections: Corrections,
+  currency: string | null,
+): CorrectionCheck[] {
+  const checks: CorrectionCheck[] = [];
+
+  // Guarded on the correction TOUCHING the field as well as on the verdict: the
+  // model was asked only about what was typed, and a verdict about a field
+  // nobody corrected would be an opinion nobody asked for.
+  const supplier = corrections.supplierName;
+  if (verdicts.supplier === 'ABSENT' && supplier !== undefined) {
+    checks.push({
+      code: 'model-supplier-not-in-document',
+      message: `“${supplier}” does not appear anywhere on this document — the document names a different party, or none. Check you are looking at the right document before approving.`,
+    });
+  }
+
+  const total = corrections.totalPence;
+  if (verdicts.total === 'ABSENT' && total !== undefined) {
+    checks.push({
+      code: 'model-total-not-in-document',
+      message: `The total ${money(total, currency)} is not the figure printed on this document. Check the amount against the paper — a typed total the document does not carry will be exported as if it did.`,
+    });
+  }
+
+  const category = corrections.categoryCode;
+  if (verdicts.category === 'DISSONANT' && category !== undefined) {
+    checks.push({
+      code: 'model-category-dissonant',
+      message: `${category} does not look like the right account for what this document says was bought. That is an opinion, not a rule — the account is on this client's chart and you may be right.`,
     });
   }
 

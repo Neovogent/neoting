@@ -1,5 +1,6 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 
+import { selectAiBudget } from '../../common/ai-budget.js';
 import type { ScopedClient } from '../../common/db/scoped-db.js';
 import { getPrismaClient, type PrismaClient } from '../../common/db/prisma.js';
 import { InMemoryIdempotencyStore } from '../../common/idempotency/idempotency-store.js';
@@ -9,10 +10,11 @@ import { selectSmsSender } from '../chase/index.js';
 import { analysisAccountChart, previewExportEntries } from '../exports-public-api/index.js';
 import { PrismaDuplicateDetector } from '../ingestion-routing/index.js';
 import { LEDGER_ADAPTER, type LedgerAdapter, previewPublishBatch, PublishingModule } from '../publishing/index.js';
-import { ChartOfAccountsService } from '../rules-suggestions/index.js';
+import { ChartOfAccountsService, selectCodingModel } from '../rules-suggestions/index.js';
 import {
   buildExecutorRegistry,
   type ChartCategoriesReader,
+  type CorrectionSecondOpinion,
   type ExportEntryPreviewer,
   type PublishGateway,
 } from '../validation-dedupe/index.js';
@@ -56,6 +58,10 @@ import { ACTION_PROPOSALS_SERVICE, PRISMA } from './tokens.js';
     {
       provide: ACTION_PROPOSALS_SERVICE,
       useFactory: (prisma: PrismaClient, env: Env, ledger: LedgerAdapter) => {
+        // The coding model's only reporting channel — it never throws and never
+        // fails a caller, so a WARN is the whole of what a slow or refused
+        // second opinion leaves behind.
+        const logger = new Logger('CorrectionSecondOpinion');
         // ONE gateway object for both halves: the executor re-validates the
         // batch with it and the post-commit follow-up publishes through it.
         const publishing: PublishGateway = { ledger, previewPublishBatch };
@@ -111,6 +117,31 @@ import { ACTION_PROPOSALS_SERVICE, PRISMA } from './tokens.js';
           }
         };
 
+        /**
+         * **The model second opinion on a manual correction** (review items
+         * 22/47's deferred half, 6 Sep 2026) — the fourth seam this factory
+         * composes, and the second one that reaches `rules-suggestions`.
+         *
+         * `selectCodingModel` keys on `EXTRACTOR`, so this is `undefined` on a
+         * demo laptop and real on staging with no Terraform change (that switch
+         * is in `common_environment`, so the api family carries it too). The
+         * budget is the SAME per-firm daily ledger chat and extraction spend
+         * against — §9.7 gives a firm one number, and this makes three spenders
+         * rather than three meters.
+         *
+         * ⚠ **It is `undefined` when no model is configured, and it returns
+         * `null` for every runtime failure.** Both mean the same thing to
+         * `computeCorrectionAdvisory`: the deterministic checks stand alone.
+         * That is the ruling — *the check silently absent beats coding
+         * deadlocked on Bedrock* — and it is why nothing here retries, degrades
+         * a tier or surfaces an error code.
+         */
+        const codingModel = selectCodingModel(env, selectAiBudget(env), logger);
+        const correctionSecondOpinion: CorrectionSecondOpinion | undefined =
+          codingModel === undefined
+            ? undefined
+            : (input) => codingModel.secondOpinion({ practiceId: input.practiceId, evidence: { document: input.document, typed: input.typed } });
+
         return new ActionProposalsService(
           prisma,
           // The chase.send executor "sends" through the config-selected sender
@@ -136,6 +167,9 @@ import { ACTION_PROPOSALS_SERVICE, PRISMA } from './tokens.js';
           // The chart, for the correction-integrity gate on
           // `document.update-coding` creation (see above).
           chartCategories,
+          // The model second opinion on the same correction, rendered into the
+          // same ⚠ Checks section at review (see above).
+          correctionSecondOpinion,
         );
       },
       inject: [PRISMA, ENV, LEDGER_ADAPTER],

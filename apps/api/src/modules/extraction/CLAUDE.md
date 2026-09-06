@@ -519,6 +519,47 @@ empty"* is answerable from the record and not only from the current render.
 suggestion never makes a document Ready — the mandatory set is unchanged, so an
 advised document lands TO_REVIEW exactly as it did before.
 
+### ⚠ THE LADDER MOVED TO PHASE 2.5 (6 Sep 2026 — review item 19)
+
+It used to run inside phase 3's write transaction, and the argument was good:
+the chart, the rules and the client's history read from one consistent view.
+**A model call cannot go there.** `scopedDb` gives that transaction 10 seconds
+and a judgment-tier call takes seconds of somebody else's network, so a slow
+moment at Bedrock would have become a failed extraction — and, while it lasted,
+a tenant transaction held open across a network call, which `modules/approvals`
+refuses by name for its own ledger follow-up.
+
+So `coding-advice.ts` is two calls now, and the pipeline makes them either side
+of a transaction boundary:
+
+| Step | Where | What |
+|---|---|---|
+| `adviseCoding` | a SHORT scoped transaction of its own | the deterministic ladder — chart, rules and history still ONE consistent read |
+| `finishCoding` | **nothing open** | the model rung (`reconsider`), then the answer to store |
+
+Three consequences worth knowing:
+
+- **Phase 3 drops the suggestion whenever `categoryCode` is set.** The ladder's
+  rule read and the pipeline's rule match are now two transactions, so a rule
+  approved between them could otherwise produce both a coded header and a
+  suggestion. One comparison keeps *a suggestion never rides beside a rule* true
+  by construction rather than by timing.
+- **The caveat this file used to carry is gone.** A throw from Postgres inside
+  the ladder no longer aborts the enclosing write transaction, because there is
+  no enclosing transaction. `ChartOfAccountsService.resolve`'s seeding race now
+  costs the document its suggestion and nothing else, where it used to cost the
+  whole job a retry.
+- **`DocumentCodingAdvisor` gained an OPTIONAL `reconsider`.** Absent is a real
+  configuration — that is the deterministic ladder, which is what
+  `EXTRACTOR=demo` selects and what every unit test in this module drives.
+
+⚠ **A document a `LEARNED_HISTORY` coding answers now produces a suggestion, and
+before this it produced nothing at all.** `adviseCoding` returned `null` for
+every outcome that was not `REVIEW`, so a supplier a person had coded by hand
+arrived with an empty Category and no sentence. `codingSuggestionFor` on the
+ladder's seam is the mapping; `rules-suggestions/CLAUDE.md` has the full story
+(review item 48).
+
 ⚠ **No `DemoExtractor` profile can exercise this**, because every one of them
 codes. The integration test therefore uses a small `UncodedExtractor` that
 reproduces the real extractor's silence on coding and nothing else.

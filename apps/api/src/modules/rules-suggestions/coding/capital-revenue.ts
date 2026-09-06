@@ -68,6 +68,28 @@ export const CODING_BASES = [
   'HARDWARE_PER_UNIT_UNSETTLED',
   'KEYWORD_MATCH_ON_CHART',
   'SUPPLIER_NAME_FALLBACK',
+  /**
+   * **This client's own prior treatment of this supplier** (review item 48 —
+   * the Dext "supplier memory" behaviour). Not a rule about accounting at all:
+   * a statement that the same people coded the same supplier the same way, N
+   * times, by hand.
+   *
+   * ⚠ **A model may never claim it.** It is decided from the database before
+   * anything is asked of a model, and `parseModelCodingSuggestion` refuses it
+   * on the way back — a suggestion that borrowed the client's own history as
+   * its authority would be the strongest signal on the card wearing the wrong
+   * name.
+   */
+  'SUPPLIER_MEMORY',
+  /**
+   * **What the goods ARE, read against this client's trade** (review item 19).
+   * The one basis that is neither a bright accounting line nor a string match:
+   * a meat wholesaler invoicing a restaurant is food cost, and no rule in
+   * `capital-revenue.ts` can reach that, because nothing on the page says it.
+   *
+   * Produced only by the model rung. The deterministic layer never claims it.
+   */
+  'INDUSTRY_CONTEXT_REASONING',
   'FOREIGN_TAX_LINE',
   'NOTHING_MATCHED',
   'OFF_CHART_CODE_REFUSED',

@@ -1,0 +1,45 @@
+{
+  "key": "0516754e65ec82fc",
+  "recordedAt": "2026-09-06",
+  "modelId": "anthropic.claude-opus-4-6-v1",
+  "synthetic": false,
+  "description": "coding evals — recorded from the live model",
+  "response": {
+    "stop_reason": "tool_use",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_REDACTED",
+        "name": "record_coding_suggestion",
+        "input": {
+          "categoryCode": "COS_FOOD_AND_DRINK",
+          "escalationReason": null,
+          "confidence": 0.95,
+          "basis": "INDUSTRY_CONTEXT_REASONING",
+          "reasoning": "Bulk fresh beef mince from a meat supplier, and this client runs a restaurant and takeaway — a direct food ingredient cost.",
+          "secondChoiceCode": "COS_PURCHASES",
+          "treatment": "REVENUE",
+          "advisories": [
+            "NEW_SUPPLIER"
+          ]
+        }
+      }
+    ],
+    "usage": {
+      "input_tokens": 5064,
+      "output_tokens": 213,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      }
+    },
+    "model": "claude-opus-4-6",
+    "id": "msg_REDACTED",
+    "type": "message",
+    "role": "assistant",
+    "stop_sequence": null,
+    "stop_details": null
+  }
+}

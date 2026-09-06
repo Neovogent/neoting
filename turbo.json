@@ -54,6 +54,10 @@
       "dependsOn": ["^build"],
       "cache": false
     },
+    "test:eval:coding": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
     "e2e:smoke": {
       "dependsOn": ["build"],
       "cache": false

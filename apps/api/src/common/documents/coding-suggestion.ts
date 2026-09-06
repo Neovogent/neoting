@@ -43,6 +43,25 @@ import { z } from 'zod';
  */
 export const CODING_SUGGESTION_KEY = 'codingSuggestion';
 
+/**
+ * **"You've coded this supplier that way N times — make it a rule?"** (review
+ * item 48's follow-on). Present only when the client's own repeated hand-coding
+ * crossed the offer threshold AND `buildSupplierRuleProposal` found a standing
+ * rule genuinely available — see `rules-suggestions/coding/rule-offer.ts`.
+ *
+ * ⚠ `scopeKey` is the supplier's EXACT spelling from a document this client
+ * received. A caller sends it verbatim; the pipeline matches a rule by exact
+ * string equality, and a normalised key produces a rule that never fires.
+ */
+const RuleOfferSchema = z.object({
+  scopeKey: z.string().min(1),
+  categoryCode: z.string().min(1),
+  analysisAccount: z.string().nullable(),
+  times: z.number().int().min(1),
+  rationale: z.string().min(1),
+  unmatchedSpellings: z.array(z.string()),
+});
+
 const SecondChoiceSchema = z.object({
   categoryCode: z.string().min(1),
   analysisAccount: z.string().nullable(),
@@ -73,6 +92,24 @@ export const StoredCodingSuggestionSchema = z.object({
   escalationReason: z.string().nullable(),
   candidateCategoryCodes: z.array(z.string()),
   advisories: z.array(z.string()),
+  /**
+   * ⚠ **WRITTEN always, READ tolerantly — and the asymmetry is deliberate.**
+   *
+   * Every other property here is required-and-nullable, because this release
+   * writes them all and an absent key is then indistinguishable from a value a
+   * release did not have. `ruleOffer` is NEWER than rows already in the
+   * database, so the same strictness would fail the parse on every suggestion
+   * written before 6 Sep 2026 — and this schema's failure mode is to drop the
+   * WHOLE suggestion, so every one of those documents would silently lose its
+   * Category sentence and go back to the em dash this work exists to remove.
+   *
+   * Caught by `document-response.test.ts`, whose fixtures are older payloads —
+   * which is exactly what those fixtures are for.
+   *
+   * `toStoredCodingSuggestion` still writes the key on every new row, so the
+   * "present and nullable" convention holds for anything this release produces.
+   */
+  ruleOffer: RuleOfferSchema.nullish().transform((value) => value ?? null),
 });
 
 export type StoredCodingSuggestion = z.infer<typeof StoredCodingSuggestionSchema>;
