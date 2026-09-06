@@ -1,8 +1,14 @@
 # Access and Approval Matrix
 
 **Status:** Part 1 (visibility and action) drafted 6 Sep 2026 for review item 39;
-Shakib's rulings recorded inline at the gates marked ⚖. **Part 2 (approval tiers)
-is owed by review item 66 / package G and lands in this same file.**
+Shakib's rulings recorded inline at the gates marked ⚖, and **every ⚑ cell in the
+tables below has since SHIPPED** in the same package (review items 38, 39, 41,
+42, 44, 57 — branch `fix/access-control-38-39-41-42-44-57`, evidence in
+`docs/reviews/assets/2026-09-06-access-control/`). The ⚑ marks are kept rather
+than cleared: they are the record of what this document changed, and a reader
+comparing the table to the code should be able to see which cells were the
+argument. **Part 2 (approval tiers) is owed by review item 66 / package G and
+lands in this same file.**
 
 **Standing:** SoT-adjacent. It does not amend the Source of Truth; it states, in
 one place, what the code already enforces, and names every cell where the code
