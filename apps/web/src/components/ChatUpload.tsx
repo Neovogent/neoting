@@ -1,5 +1,4 @@
-import { lazy, Suspense, useCallback, useState, type DragEvent } from 'react';
-import { createPortal } from 'react-dom';
+import { useCallback, useState, type DragEvent } from 'react';
 import { UploadCloud } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
@@ -9,39 +8,30 @@ import { commonActions } from '../i18n/common';
 
 /**
  * The chat surface's way into the real pipeline: the composer's file picker and
- * a drag-and-drop over the transcript, one flow behind both (the user report
- * this closes: files "attached" in chat never reached the server — the live
- * build routed them into the synthetic ingest, which writes local rows the next
- * poll discards).
+ * a drag-and-drop over the transcript, one flow behind both.
  *
- * Live (`documentsSource === 'api'`) it is the same three-call journey every
- * other document takes — intent → presigned PUT → complete (`api/uploads.ts`) —
- * with `channel: 'CHAT_UPLOAD'`, the contract's name for this door. The
- * business id is resolved exactly the way InboxesView resolves it: the chosen
- * client through `serverClientIdFor`. With "All clients" active there is no
- * chosen client — so the files are HELD and the one missing question is asked
- * (`ChatClientPicker`, a searchable client list; render `ChatUploadClientPicker`
- * beside the overlay), and the upload continues with the explicit answer. A
- * practice with no clients yet keeps the named refusal, because an empty list
- * has nothing to pick. Never a guessed workspace either way — guessing at
- * ingest time is the misrouting the product exists to fix.
+ * ⚠ **Live, a chat upload ASKS FIRST (review item 58).** It used to fire the
+ * ingest the moment a file landed; now every live upload is HELD: the files go
+ * into the transcript as a user bubble (raw `File` kept on the message, so an
+ * unanswered question leaves them visibly attached to the conversation), and
+ * the assistant answers with a `CHAT_UPLOAD_DECISION` card offering the real
+ * options — "Send to {client}'s inbox for review" (the one-click default when
+ * exactly one client is attached), "Send to a different client" (the
+ * searchable picker), "Cancel — don't upload". The card and the actual send
+ * live in `DynamicComponents/ChatUploadDecisionCard.tsx`, on the chat chunk —
+ * which is also what took the upload journey OFF this floor-resident module.
+ * There is deliberately no "discuss it without ingesting" option: no read path
+ * for un-ingested bytes exists, and a button whose action cannot happen is the
+ * S12 lie.
+ *
+ * A practice with no clients keeps the named refusal, because an empty list
+ * has nothing to pick. Never a guessed workspace — guessing at ingest time is
+ * the misrouting the product exists to fix.
  *
  * Synthetic mode keeps InboxesView's posture for a drop: the local `ingest`
  * runs immediately (METH_MODE §1 — the app walks end to end with no API), and
  * the transcript says what happened in the same words the composer already
  * uses for an attached file.
- *
- * Feedback lives in the transcript, the chat's own pattern: a user bubble
- * carrying the files as they queue (one chip per file), the pending indicator
- * while the uploads run — `businessName: null`, so it says only "Working on
- * it…", which is true, rather than "Reading X's records…", which would not
- * be — and an assistant reply naming what landed, where it shows up next
- * (Inboxes → To Review), and every refused file with the server's own reason.
- *
- * `api/uploads.ts` and the query client are imported dynamically at upload
- * time: this module is floor-resident (InputRow is the shell), the worst
- * route's headroom is ~2.9 kB, and an upload always follows a user gesture, so
- * the chunk fetch hides entirely behind the network the upload is about to use.
  */
 
 const m = defineMessages({
@@ -57,26 +47,24 @@ const m = defineMessages({
     defaultMessage: 'Choose a client before uploading',
   },
   // A practice with no clients cannot pick one from a list — it is empty, and
-  // the instruction has to point at the real first step. (With clients present
-  // this dialog never shows: the searchable picker asks instead of refusing.)
+  // the instruction has to point at the real first step.
   needsFirstClientDetail: {
     id: 'shell.chatUpload.needsFirstClientDetail',
     defaultMessage:
       'Every document is filed under a named client, and this practice has none yet — add your first client under Clients, then come back.',
   },
-  uploaded: {
-    id: 'shell.chatUpload.uploaded',
+
+  // The intent step (item 58): the assistant's question. Written to stand
+  // alone too — a restored transcript keeps the text and drops the card.
+  holdQuestionFor: {
+    id: 'shell.chatUpload.holdQuestionFor',
     defaultMessage:
-      'Uploaded {count, plural, one {# document} other {# documents}} for {client}. Extraction is running — they land in Inboxes under To Review.',
+      'I\'m holding {count, plural, one {# file} other {# files}} — nothing has uploaded yet. Send {count, plural, one {it} other {them}} to {client}\'s inbox for review? {count, plural, one {It stays} other {They stay}} attached to this conversation until you decide.',
   },
-  uploadedPartial: {
-    id: 'shell.chatUpload.uploadedPartial',
+  holdQuestion: {
+    id: 'shell.chatUpload.holdQuestion',
     defaultMessage:
-      'Uploaded {sent, plural, one {# document} other {# documents}} for {client} — extraction is running, and they land in Inboxes under To Review. I couldn\'t take {failed, plural, one {# file} other {# files}}: {reasons}.',
-  },
-  uploadFailed: {
-    id: 'shell.chatUpload.uploadFailed',
-    defaultMessage: 'I couldn\'t upload {count, plural, one {# file} other {# files}}: {reasons}.',
+      'I\'m holding {count, plural, one {# file} other {# files}} — nothing has uploaded yet. Which client\'s inbox should {count, plural, one {it} other {they}} go to? {count, plural, one {It stays} other {They stay}} attached to this conversation until you decide.',
   },
 
   // The synthetic drop's replies — the same two-sentence discipline as the
@@ -118,85 +106,15 @@ export interface ChatUpload {
   };
   /** The one flow both entry points share. */
   uploadFiles: (files: File[]) => Promise<void>;
-  /**
-   * Files held while the client question is asked — a live drop with no single
-   * attached client. Render `ChatUploadClientPicker` from the same host that
-   * renders the overlay; `resolvePick`/`cancelPick` settle it.
-   */
-  pendingPick: File[] | null;
-  resolvePick: (clientId: string) => void;
-  cancelPick: () => void;
 }
 
 export function useChatUpload(): ChatUpload {
-  const { addMessage, attachedClients, clients, documentsSource, ingest, serverClientIdFor, setAssistantPending } =
-    useAppContext();
+  const { addMessage, attachedClients, clients, documentsSource, ingest } = useAppContext();
   const intl = useIntl();
   const confirm = useConfirm();
   const [dragging, setDragging] = useState(false);
 
   const live = documentsSource === 'api';
-  const [pendingPick, setPendingPick] = useState<File[] | null>(null);
-
-  /** The live journey once the client is known — attached, or the picker's answer. */
-  const uploadTo = useCallback(
-    async (target: { id: string; name: string }, files: File[]) => {
-      const businessId = serverClientIdFor(target.id);
-
-      addMessage({
-        id: nextId(),
-        role: 'user',
-        content: '',
-        attachments: files.map((f) => ({ name: f.name, size: f.size, raw: f })),
-      });
-      // The transcript's own in-flight state. `businessName: null` on purpose:
-      // the named variant claims records are being read, and an upload reads none.
-      setAssistantPending({ businessName: null });
-      try {
-        const [{ sendWorkspaceUpload, refreshDocuments }, { queryClient }] = await Promise.all([
-          import('../api/uploads'),
-          import('../api/queryClient'),
-        ]);
-
-        // Sequentially, one file's refusal never stopping the rest — the
-        // `sendWorkspaceUploads` shape, walked here so each file's outcome is
-        // known by name for the reply.
-        const failures: string[] = [];
-        let sent = 0;
-        for (const file of files) {
-          try {
-            await sendWorkspaceUpload(
-              businessId,
-              { filename: file.name, mimeType: file.type || 'application/octet-stream', bytes: file },
-              'CHAT_UPLOAD',
-            );
-            sent += 1;
-          } catch (error) {
-            // The uploads client throws the problem+json detail as the message;
-            // that is the server's own sentence, so it is the one shown.
-            failures.push(`${file.name} — ${error instanceof Error ? error.message : 'upload failed'}`);
-          }
-        }
-        // Nudge the documents poll so the Inboxes list is already moving by
-        // the time the reply below points at it.
-        void refreshDocuments(queryClient);
-
-        const reasons = failures.join('; ');
-        const content =
-          failures.length === 0
-            ? intl.formatMessage(m.uploaded, { count: sent, client: target.name })
-            : sent === 0
-              ? intl.formatMessage(m.uploadFailed, { count: failures.length, reasons })
-              : intl.formatMessage(m.uploadedPartial, { sent, failed: failures.length, client: target.name, reasons });
-        addMessage({ id: nextId(), role: 'assistant', content, intent: 'GENERAL' });
-      } finally {
-        // Whatever happened, the transcript must not keep claiming work is
-        // still in flight.
-        setAssistantPending(null);
-      }
-    },
-    [addMessage, serverClientIdFor, setAssistantPending, intl],
-  );
 
   const uploadFiles = useCallback(
     async (files: File[]) => {
@@ -235,44 +153,44 @@ export function useChatUpload(): ChatUpload {
         return;
       }
 
-      // Exactly one attached client names the workspace. Zero is "All clients";
-      // two or more is not a choice either — never guess (the API's own rule,
-      // and InboxesView's).
-      const target = attachedClients.length === 1 ? attachedClients[0] : undefined;
-      if (target === undefined) {
-        if (clients.length === 0) {
-          await confirm({
-            tone: 'red',
-            title: intl.formatMessage(m.needsClientTitle),
-            detail: intl.formatMessage(m.needsFirstClientDetail),
-            confirmLabel: intl.formatMessage(commonActions.close),
-          });
-          return;
-        }
-        // The files are already in hand; only the client is missing. Hold them
-        // and ask with the searchable picker, instead of refusing and making
-        // the user find the composer's selector and drop everything again.
-        setPendingPick(files);
+      if (clients.length === 0) {
+        await confirm({
+          tone: 'red',
+          title: intl.formatMessage(m.needsClientTitle),
+          detail: intl.formatMessage(m.needsFirstClientDetail),
+          confirmLabel: intl.formatMessage(commonActions.close),
+        });
         return;
       }
-      await uploadTo(target, files);
-    },
-    [live, addMessage, ingest, attachedClients, clients, uploadTo, confirm, intl],
-  );
 
-  const resolvePick = useCallback(
-    (clientId: string) => {
-      const files = pendingPick;
-      const client = clients.find((c) => c.id === clientId);
-      setPendingPick(null);
-      // A pick that raced a cancel, or a client list that changed under the
-      // dialog, settles to nothing rather than to a guess.
-      if (files && client) void uploadTo(client, files);
+      // Live: HOLD and ask (item 58). The files ride the user bubble — raw
+      // File included, so the decision card can act on them and an unanswered
+      // question leaves them visibly attached — and the assistant's card asks
+      // the one thing that decides everything: whose inbox. Exactly one
+      // attached client is the suggested one-click default; zero or several
+      // is not a choice, so the card leads with the picker (never a guess —
+      // the API's own rule, and InboxesView's).
+      const suggested = attachedClients.length === 1 ? attachedClients[0] : undefined;
+      const uploadMessageId = nextId();
+      addMessage({ id: uploadMessageId, role: 'user', content: '', attachments });
+      addMessage({
+        id: nextId(),
+        role: 'assistant',
+        content:
+          suggested === undefined
+            ? intl.formatMessage(m.holdQuestion, { count: files.length })
+            : intl.formatMessage(m.holdQuestionFor, { count: files.length, client: suggested.name }),
+        intent: 'CHAT_UPLOAD_DECISION',
+        payload: {
+          uploadMessageId,
+          ...(suggested === undefined
+            ? {}
+            : { suggestedClientId: suggested.id, suggestedClientName: suggested.name }),
+        },
+      });
     },
-    [pendingPick, clients, uploadTo],
+    [live, addMessage, ingest, attachedClients, clients, confirm, intl],
   );
-
-  const cancelPick = useCallback(() => setPendingPick(null), []);
 
   const onDragOver = useCallback((e: DragEvent) => {
     e.preventDefault();
@@ -294,43 +212,7 @@ export function useChatUpload(): ChatUpload {
     dragging,
     dropTargetProps: { onDragOver, onDragLeave, onDrop },
     uploadFiles,
-    pendingPick,
-    resolvePick,
-    cancelPick,
   };
-}
-
-/**
- * The client question a drop with no chosen client opens — a searchable list
- * over the practice's clients (`ChatClientPicker`), held while the dropped
- * files wait. Lazy for the same reason `api/uploads.ts` is imported
- * dynamically: this module is floor-resident and the dialog is not needed
- * until a drop actually asks for it, so the chunk fetch hides behind the
- * user's own gesture.
- */
-const LazyChatClientPicker = lazy(() => import('./ChatClientPicker'));
-
-export function ChatUploadClientPicker({ upload }: { upload: ChatUpload }) {
-  const { clients } = useAppContext();
-  // Portalled to <body> (ContextBar's pattern): both hosts sit under animated
-  // containers, and an ancestor transform turns the Modal's `fixed` scrim into
-  // an ancestor-relative box — the dialog rendered clipped to the composer's
-  // rectangle instead of covering the screen.
-  return createPortal(
-    <AnimatePresence>
-      {upload.pendingPick && (
-        <Suspense fallback={null}>
-          <LazyChatClientPicker
-            clients={clients}
-            fileCount={upload.pendingPick.length}
-            onPick={upload.resolvePick}
-            onCancel={upload.cancelPick}
-          />
-        </Suspense>
-      )}
-    </AnimatePresence>,
-    document.body,
-  );
 }
 
 /**

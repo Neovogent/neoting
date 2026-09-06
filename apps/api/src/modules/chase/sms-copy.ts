@@ -49,16 +49,61 @@ export interface ComposeChaseInput {
 }
 
 /**
+ * Above this many items the copy SUMMARISES instead of naming every line —
+ * an owner ruling of 6 Sep 2026 amending §8.2 (review item 31): thirty raw
+ * bank descriptors in one sentence is a data dump nobody reads, and a long
+ * recitation could exceed the contract's 500-char body cap, refusing the
+ * stored payload at review. The full itemised list still exists everywhere
+ * identity-gated: the portal's item list behind the OTP, and the review card.
+ */
+export const CHASE_SUMMARISE_THRESHOLD = 3;
+
+/**
  * The composed SMS for one client. Verbatim per SoT Stage 8.2 (as amended
- * 4 Sep 2026 — no amounts) for the single-item case; the multi-item case lists
- * each "<supplier> on <date>" with the same framing, because the SoT rule is
- * one grouped text, not one per receipt.
+ * 4 Sep 2026 — no amounts; 6 Sep 2026 — long lists summarise) for the
+ * single-item case; up to three items are listed as "<supplier> on <date>"
+ * with the same framing, because the SoT rule is one grouped text, not one
+ * per receipt. More than three summarises: count, period, two named examples.
  */
 export function composeChaseSms(input: ComposeChaseInput): string {
   const greeting = `${input.businessName} Accounts:`;
+  if (input.items.length > CHASE_SUMMARISE_THRESHOLD) {
+    return `${greeting} we're missing receipts for ${summariseItems(input.items)}. Upload securely: ${input.portalLink}`;
+  }
   const list = joinItems(input.items.map(describeItem));
   const noun = input.items.length === 1 ? 'the receipt' : 'the receipts';
   return `${greeting} we're missing ${noun} for ${list}. Upload securely: ${input.portalLink}`;
+}
+
+/**
+ * "12 payments between 3 Aug and 28 Aug, including L Ferreira Wages and
+ * Aldgate Meats" — the humane summary for a long list. Period bounds are the
+ * earliest and latest booked days (one day collapses to "on <day>"); the
+ * examples are the first two distinct supplier labels, so a client scanning a
+ * lock screen learns the shape of the ask without thirty descriptors.
+ */
+function summariseItems(items: readonly ChaseItem[]): string {
+  const times = items.map((i) => i.bookedAt.getTime());
+  const from = formatDay(new Date(Math.min(...times)));
+  const to = formatDay(new Date(Math.max(...times)));
+  const period = from === to ? `on ${from}` : `between ${from} and ${to}`;
+  const named = [...new Set(items.map((i) => i.supplierLabel))].slice(0, 2);
+  return `${items.length} payments ${period}, including ${joinItems(named)}`;
+}
+
+/**
+ * The accountant's own wording woven into the engine's frame (review item 31,
+ * owner-approved 6 Sep 2026). The engine keeps the greeting and the signed
+ * portal link — "never free-typed by a caller" still holds for the parts that
+ * carry authority — and the middle sentence is the accountant's, shown
+ * verbatim at Read review and released by the super admin like any chase.
+ */
+export function composeCustomChaseBody(input: {
+  readonly businessName: string;
+  readonly message: string;
+  readonly portalLink: string;
+}): string {
+  return `${input.businessName} Accounts: ${input.message} Upload securely: ${input.portalLink}`;
 }
 
 /**

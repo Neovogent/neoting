@@ -16,6 +16,7 @@ import { createPublishBatchExecutor, type ExportEntryPreviewer, type PublishGate
 import { rejectDocumentExecutor } from './reject-document.js';
 import { removeStatementExecutor } from './remove-statement.js';
 import { reprocessDocumentExecutor } from './reprocess-document.js';
+import { resolveDuplicateExecutor } from './resolve-duplicate.js';
 import { revokeLinkExecutor } from './revoke-link.js';
 import { routeDocumentExecutor } from './route-document.js';
 import { ruleCreateExecutor } from './rule-create.js';
@@ -127,6 +128,11 @@ export function buildExecutorRegistry(deps: ExecutorRegistryDeps): ExecutorRegis
     // `publishes` and `document_links` as rows rather than trusting `state` —
     // the executor's header carries the argument.
     'document.purge': purgeDocumentExecutor,
+    // document.resolve-duplicate — the human ruling on a suspected pair
+    // (review item 49, D49). One upsert on `duplicates.verdict`; delete-copy
+    // additionally moves the copy to TRASH (reversible — restoration undoes
+    // it), never a purge. "Attach to the original" is a named deferral.
+    'document.resolve-duplicate': resolveDuplicateExecutor,
   };
 }
 

@@ -6,7 +6,7 @@ import { ChatDisplayBlocks } from './DynamicComponents/ChatDisplayBlocks';
 import { AssistantMetaLine, AssistantPending } from './DynamicComponents/AssistantActivity';
 import { useAppContext } from '../context/AppContext';
 import { motion } from 'motion/react';
-import { ChatDropOverlay, ChatUploadClientPicker, useChatUpload } from './ChatUpload';
+import { ChatDropOverlay, useChatUpload } from './ChatUpload';
 import logo from '../assets/logo.png';
 
 /**
@@ -48,7 +48,6 @@ export function ChatArea() {
       {...upload.dropTargetProps}
     >
       <ChatDropOverlay dragging={upload.dragging} />
-      <ChatUploadClientPicker upload={upload} />
 
       {messages.map((msg) => (
         <Message key={msg.id} from={msg.role}>

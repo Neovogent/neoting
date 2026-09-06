@@ -186,6 +186,11 @@ export const RELEASE_KINDS: Readonly<Record<ProposalKind, boolean>> = {
   // their release created. Revisit if a firm asks for it; the refusal is the
   // part that must not move.
   'document.purge': false,
+  // Not a release: a duplicate ruling is internal bookkeeping — the verdict is
+  // re-rulable (a later decision supersedes), and delete-copy is the
+  // REVERSIBLE Trash seam (restoration undoes it exactly). Nothing leaves the
+  // product. Flagged for human ratification like every entry in this table.
+  'document.resolve-duplicate': false,
 };
 
 /** Does approving this kind need release authority? */

@@ -4,7 +4,7 @@ import { defineMessages, useIntl } from 'react-intl';
 import type { CreateActionProposalRequest } from '@neoting/contracts/model';
 import { API_ENABLED } from '../../api/config';
 import { useAppContext } from '../../context/AppContext';
-import { composeChaseBody, toE164 } from '../../lib/demoIntents';
+import { composeChaseBody, composeCustomChaseBody, toE164 } from '../../lib/demoIntents';
 import { isUnexplained } from '../../lib/matching';
 import { currency } from '../../lib/resolver';
 import { LiveProposalFlow } from './LiveProposalFlow';
@@ -48,7 +48,14 @@ const m = defineMessages({
   draftSection: { id: 'shell.liveChaseComposer.draftSection', defaultMessage: 'Draft message' },
   draftNote: {
     id: 'shell.liveChaseComposer.draftNote',
-    defaultMessage: 'The portal link is minted when the message is composed server-side; this draft carries the portal address without a signed token.',
+    defaultMessage:
+      'A preview of the message the engine composes at review — never a promise of exact words. The secure link is signed server-side; Read review shows the real message before anything sends.',
+  },
+  editLabel: { id: 'shell.liveChaseComposer.editLabel', defaultMessage: 'Write the message yourself (optional)' },
+  editHint: {
+    id: 'shell.liveChaseComposer.editHint',
+    defaultMessage:
+      'Your words replace the middle sentence. The greeting and the secure upload link stay the engine’s, and the exact message is shown at Read review before it sends.',
   },
   stage: { id: 'shell.liveChaseComposer.stage', defaultMessage: 'Stage for review' },
   // The statement-request half (5 Sep 2026 review finding: "ask Zeplow for
@@ -87,7 +94,7 @@ export function LiveChaseComposerCard({
   businessId?: string | undefined;
   businessName?: string | undefined;
 }) {
-  const { transactions, businesses, clients, slices } = useAppContext();
+  const { transactions, businesses, slices } = useAppContext();
   const intl = useIntl();
 
   const [chosenBusinessId, setChosenBusinessId] = useState<string | null>(businessId ?? null);
@@ -117,18 +124,21 @@ export function LiveChaseComposerCard({
   const [included, setIncluded] = useState<ReadonlySet<string>>(new Set());
   const selected = candidates.filter((t) => included.has(t.id));
 
-  // Prefilled from the synthetic client record when one shares the name —
-  // there is no /v1/contacts read surface yet — and always editable: the
-  // number is part of what Read review shows, so the accountant owns it.
-  // With no namesake it starts EMPTY: staging is disabled until a number is
-  // typed, and an invented placeholder number a hurried approver could send
-  // to is exactly the kind of fake data launch M8 removes.
-  // // DEMO-MOCK: contact lookup once a contacts read surface exists.
-  const [recipient, setRecipient] = useState(() => {
-    const namesake = clients.find((c) => resolvedName !== null && c.name.toLowerCase() === resolvedName.toLowerCase());
-    return namesake?.mobile ?? '';
-  });
+  // Starts EMPTY, never prefilled (review item 31 / M8): blank means the
+  // engine resolves the business's REGISTERED primary contact at compose —
+  // the honest path — and the field exists only to override it. The old
+  // namesake prefill surfaced the seeded fictional +447700900001 as if it
+  // were a number somebody chose.
+  const [recipient, setRecipient] = useState('');
   const recipientE164 = toE164(recipient);
+
+  // The accountant's own wording (review item 31, owner-approved 6 Sep 2026).
+  // Non-empty, it travels as `accountantMessage` on the payload — the engine
+  // weaves it into the greeting + signed-link frame at proposal creation and
+  // Read review shows the woven message verbatim. 240 chars is the contract's
+  // cap on the field.
+  const [customMessage, setCustomMessage] = useState('');
+  const customTrimmed = customMessage.trim();
 
   // Last calendar month, the obvious default for "send me your statement".
   const [statementMonth, setStatementMonth] = useState(() => {
@@ -152,11 +162,13 @@ export function LiveChaseComposerCard({
   const body =
     resolvedName === null
       ? ''
-      : composeChaseBody(
-          resolvedName,
-          selected.map((t) => ({ supplier: t.description, amount: t.amount, date: t.date })),
-          `${window.location.origin}/p/`,
-        );
+      : customTrimmed !== ''
+        ? composeCustomChaseBody(resolvedName, customTrimmed, `${window.location.origin}/p/`)
+        : composeChaseBody(
+            resolvedName,
+            selected.map((t) => ({ supplier: t.description, amount: t.amount, date: t.date })),
+            `${window.location.origin}/p/`,
+          );
 
   // The mobile is OPTIONAL (5 Sep 2026 review finding: the card said "by
   // email" and then refused to stage without a mobile). Blank, the key is
@@ -172,6 +184,7 @@ export function LiveChaseComposerCard({
       messages: [
         {
           ...(recipientE164 === null ? {} : { recipientE164 }),
+          ...(customTrimmed === '' ? {} : { accountantMessage: customTrimmed }),
           body,
           transactionIds: selected.map((t) => t.id),
         },
@@ -276,12 +289,29 @@ export function LiveChaseComposerCard({
             </div>
 
             {selected.length > 0 && (
-              <ReviewSection title={intl.formatMessage(m.draftSection)}>
-                <div className="bg-card border border-white/5 rounded-2xl p-4 shadow-inner">
-                  <p className="text-[13px] text-zinc-300 whitespace-pre-wrap break-words">{body}</p>
+              <>
+                <div className="space-y-2">
+                  <label htmlFor="chase-custom-message" className="text-[13px] font-bold text-zinc-400 block">
+                    {intl.formatMessage(m.editLabel)}
+                  </label>
+                  <textarea
+                    id="chase-custom-message"
+                    value={customMessage}
+                    onChange={(e) => setCustomMessage(e.target.value)}
+                    maxLength={240}
+                    rows={3}
+                    className="w-full bg-raised border border-white/10 rounded-2xl px-4 py-2.5 text-[14px] text-white focus:outline-none focus:border-brand resize-none"
+                  />
+                  <p className="text-[12px] text-zinc-500">{intl.formatMessage(m.editHint)}</p>
                 </div>
-                <p className="text-[12px] text-zinc-500 mt-2">{intl.formatMessage(m.draftNote)}</p>
-              </ReviewSection>
+
+                <ReviewSection title={intl.formatMessage(m.draftSection)}>
+                  <div className="bg-card border border-white/5 rounded-2xl p-4 shadow-inner">
+                    <p className="text-[13px] text-zinc-300 whitespace-pre-wrap break-words">{body}</p>
+                  </div>
+                  <p className="text-[12px] text-zinc-500 mt-2">{intl.formatMessage(m.draftNote)}</p>
+                </ReviewSection>
+              </>
             )}
 
             <LiveProposalFlow

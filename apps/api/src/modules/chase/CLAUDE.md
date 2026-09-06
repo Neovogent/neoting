@@ -92,10 +92,28 @@ Twilio, ever), not a fake system.
   pure predicates are split from the DB read (both unit-tested).
 - **`sms-copy.ts`** — `composeChaseSms(input)`, a PURE function producing the SoT
   §8.2 copy **verbatim**: *"American Burger Accounts: we're missing the receipt
-  for Currys £1,299 on 9 Aug. Upload securely: <link>"*. Grouped per client (one
+  for Currys on 9 Aug. Upload securely: <link>"* (no amounts — the 4 Sep 2026
+  amendment). Grouped per client (one
   text, many receipts), never one per receipt. Money is integer pence and
   `formatGbp` is STRING arithmetic only — no float ever touches it, even in the
   formatter; `formatDay` renders the Europe/London day from a UTC instant.
+  ⚠ **Long lists SUMMARISE since 6 Sep 2026** (owner ruling amending §8.2,
+  review item 31): above `CHASE_SUMMARISE_THRESHOLD` (3) the copy becomes
+  *"we're missing receipts for 12 payments between 3 Aug and 28 Aug, including
+  X and Y"* — count, period (one day collapses to "on <day>"), first two
+  distinct supplier labels. Thirty raw descriptors in one sentence was a data
+  dump nobody reads AND could exceed the contract's 500-char `body` cap,
+  refusing the stored payload at review as NT-PRP-006; the summary fits by
+  construction. The itemised list still exists everywhere identity-gated (the
+  portal's item list, the review card's transaction ids).
+  **`composeCustomChaseBody`** (same ruling, item 31's editability): the
+  accountant's own wording woven into the engine's frame — greeting and signed
+  portal link stay the engine's, the middle sentence is theirs, travelling as
+  `ChaseSendPayload.messages[].accountantMessage` (≤240 chars), trimmed once at
+  compose so payload = review = sent bytes. "Never free-typed by a caller"
+  still holds for the parts that carry authority. `apps/web`'s
+  `composeChaseBody`/`composeCustomChaseBody` (`lib/demoIntents.ts`) mirror
+  both shapes for the labelled draft PREVIEW — the two must move together.
   // DEMO-MOCK: Sonnet writes the bespoke copy behind this template.
 - **`portal-link.ts`** — the signed portal-link token, **the format DEFINED HERE
   and consumed by Stage 9's OTP portal**. `signPortalLink({chaseId, expSeconds})`

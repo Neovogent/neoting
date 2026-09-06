@@ -544,8 +544,8 @@ export interface DuplicatePair {
   similarity: number;
   signals: string[];
   crossType: boolean;
-  left: { id: string; label: string; type: string; total: number; date: string; uploader: string };
-  right: { id: string; label: string; type: string; total: number; date: string; uploader: string };
+  left: { id: string; label: string; type: string; total: number; date: string; uploader: string; sentBy?: string | undefined };
+  right: { id: string; label: string; type: string; total: number; date: string; uploader: string; sentBy?: string | undefined };
 }
 
 export type RuleTier = 'user' | 'payment-method' | 'supplier' | 'defaults';
@@ -964,6 +964,11 @@ export type Intent =
   | 'SHOW_ANALYTICS'
   | 'SHOW_AUDIT'
   | 'SHOW_MISSING_TABLE'
+  // Review item 58: a live chat upload HOLDS and asks first. Minted locally by
+  // `useChatUpload` (never by the server — the files never left the browser),
+  // rendered as the decision card offering send-to-inbox / different client /
+  // cancel. Payload-free after a restore, where it degrades to its text.
+  | 'CHAT_UPLOAD_DECISION'
   // Review item 9 (5 Sep 2026): the server's SHOW_EXPORTS lands here —
   // navigation to the Export screen, D42's sole egress. Payload-free like
   // SHOW_STATEMENTS; the Export screen reads its own data.
@@ -1041,6 +1046,15 @@ export interface MessagePayload {
     | undefined;
   /** Narrows the inbox table a navigation intent renders ("everything to review"). */
   statusFilter?: DocStatus | undefined;
+  /**
+   * CHAT_UPLOAD_DECISION (item 58): the user bubble holding the files, and the
+   * one-click default — the single attached client when there was one. Absent
+   * suggested* means "All clients" was active and the card leads with the
+   * picker instead of a guess.
+   */
+  uploadMessageId?: string | undefined;
+  suggestedClientId?: string | undefined;
+  suggestedClientName?: string | undefined;
 }
 
 /**
@@ -1075,7 +1089,14 @@ export interface Message {
   intent?: Intent | undefined;
   /** Resolved data the dynamic component renders from. */
   payload?: MessagePayload | undefined;
-  attachments?: { name: string; size: number }[];
+  /**
+   * `raw` is the held File itself, kept ON the user bubble so a chat upload's
+   * decision card (item 58) can act on it later in the session — "a held file
+   * whose question is never answered stays visibly attached to the
+   * conversation". It does not survive persistence or a reload, and the card
+   * says so honestly when it is gone.
+   */
+  attachments?: { name: string; size: number; raw?: File | undefined }[];
   viaVoice?: boolean | undefined;
   /** Set only on a server-answered assistant turn. See {@link AssistantMeta}. */
   meta?: AssistantMeta | undefined;

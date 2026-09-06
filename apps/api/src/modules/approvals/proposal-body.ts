@@ -48,6 +48,7 @@ const KIND_ORDER: readonly ProposalKind[] = [
   'document.revoke-link',
   'business.offboard',
   'document.purge',
+  'document.resolve-duplicate',
 ];
 
 const KNOWN_KINDS = new Set<string>(Object.values(ProposalKind));

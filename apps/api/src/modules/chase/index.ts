@@ -51,7 +51,9 @@ export { isChaseSuppressed, SUPPRESSION_DESCRIPTORS } from './suppression.js';
 export {
   type ChaseItem,
   type ComposeChaseInput,
+  CHASE_SUMMARISE_THRESHOLD,
   composeChaseSms,
+  composeCustomChaseBody,
   composeSignInCodeSms,
   composeStatementRequestSms,
   formatDay,

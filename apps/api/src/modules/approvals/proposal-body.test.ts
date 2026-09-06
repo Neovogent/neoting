@@ -47,6 +47,7 @@ export const VALID_EXAMPLES: Record<ProposalKind, Record<string, unknown>> = {
   'document.revoke-link': { documentLinkIds: ['dlk_1'], reason: 'Exported to the wrong client' },
   'business.offboard': { businessId: 'biz_1', reason: 'Client moved to another practice' },
   'document.purge': { documentIds: ['doc_1'], reason: 'Duplicate scan, already in Trash' },
+  'document.resolve-duplicate': { documentKeepId: 'doc_1', documentCopyId: 'doc_2', resolution: 'delete-copy' },
 };
 
 test('every kind parses its own valid example — the index ↔ kind pin', () => {

@@ -56,6 +56,24 @@ export function shortDay(displayDate: string): string {
 }
 
 /**
+ * Above this many items the copy summarises — mirrors the server's
+ * `CHASE_SUMMARISE_THRESHOLD` (`chase/sms-copy.ts`, the 6 Sep 2026 §8.2
+ * amendment, review item 31). The two must move together.
+ */
+export const CHASE_SUMMARISE_THRESHOLD = 3;
+
+const MONTH_ORDER = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "09 Aug 2026" → a sortable number, or null when the shape is unknown. */
+function dayValue(displayDate: string): number | null {
+  const m2 = /^(\d{1,2})\s+([A-Za-z]{3})\s*(\d{4})?/.exec(displayDate.trim());
+  if (!m2) return null;
+  const month = MONTH_ORDER.indexOf(m2[2] ?? '');
+  if (month < 0) return null;
+  return Number(m2[3] ?? '0') * 10_000 + (month + 1) * 100 + Number(m2[1]);
+}
+
+/**
  * The SoT §8.2 copy shape, verbatim — grouped per client, one text covering
  * every item: "American Burger Accounts: we're missing the receipt for Currys
  * on 9 Aug. Upload securely: <link>".
@@ -65,13 +83,39 @@ export function shortDay(displayDate: string): string {
  * client's spending. `formatPoundsForSms` stays exported — the composer CARD
  * still shows the amounts to the accountant beside the checkboxes; they just
  * never enter the message.
+ *
+ * ⚠ And long lists SUMMARISE — the 6 Sep 2026 amendment (review item 31):
+ * more than three items becomes "12 payments between 3 Aug and 28 Aug,
+ * including X and Y" instead of a thirty-descriptor recitation, mirroring the
+ * server template. This client-side compose is a PREVIEW of what the engine
+ * writes at proposal creation, never a promise of exact words — the card says
+ * so, and Read review shows the real bytes.
  */
 export function composeChaseBody(businessName: string, items: readonly DemoChaseItem[], portalLink: string): string {
+  if (items.length > CHASE_SUMMARISE_THRESHOLD) {
+    const days = items.map((i) => ({ value: dayValue(i.date), label: shortDay(i.date) }));
+    const known = days.filter((d): d is { value: number; label: string } => d.value !== null);
+    const from = known.length ? known.reduce((a, b) => (b.value < a.value ? b : a)).label : null;
+    const to = known.length ? known.reduce((a, b) => (b.value > a.value ? b : a)).label : null;
+    const period = from === null || to === null ? '' : from === to ? ` on ${from}` : ` between ${from} and ${to}`;
+    const named = [...new Set(items.map((i) => i.supplier))].slice(0, 2);
+    const examples = named.length <= 1 ? named[0] ?? '' : `${named[0]} and ${named[1]}`;
+    return `${businessName} Accounts: we're missing receipts for ${items.length} payments${period}, including ${examples}. Upload securely: ${portalLink}`;
+  }
   const parts = items.map((i) => `${i.supplier} on ${shortDay(i.date)}`);
   const list =
     parts.length <= 1 ? (parts[0] ?? '') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1] ?? ''}`;
   const noun = items.length === 1 ? 'the receipt' : 'the receipts';
   return `${businessName} Accounts: we're missing ${noun} for ${list}. Upload securely: ${portalLink}`;
+}
+
+/**
+ * The accountant's own wording in the engine's frame — the preview twin of the
+ * server's `composeCustomChaseBody` (review item 31): greeting and secure link
+ * stay the engine's, the middle sentence is theirs.
+ */
+export function composeCustomChaseBody(businessName: string, message: string, portalLink: string): string {
+  return `${businessName} Accounts: ${message} Upload securely: ${portalLink}`;
 }
 
 /** "+44 7700 900123" → "+447700900123", or null when it cannot be an E.164 number. */

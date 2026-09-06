@@ -49,6 +49,10 @@ export const KIND_LABEL: Record<ProposalKind, MessageDescriptor> = defineMessage
   'document.revoke-link': { id: 'proposals.kindLabel.documentRevokeLink', defaultMessage: 'Revoke document links' },
   'business.offboard': { id: 'proposals.kindLabel.businessOffboard', defaultMessage: 'Remove a client' },
   'document.purge': { id: 'proposals.kindLabel.documentPurge', defaultMessage: 'Delete documents permanently' },
+  'document.resolve-duplicate': {
+    id: 'proposals.kindLabel.documentResolveDuplicate',
+    defaultMessage: 'Resolve a suspected duplicate',
+  },
 });
 
 /**

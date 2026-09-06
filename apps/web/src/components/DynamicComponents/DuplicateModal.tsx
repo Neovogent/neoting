@@ -14,6 +14,16 @@ import { useAppContext } from '../../context/AppContext';
  * the `Suspense` is inside the frame, so only that panel waits.
  */
 const DocumentPreview = lazy(() => import('./DocumentPreview').then((mod) => ({ default: mod.DocumentPreview })));
+/**
+ * Lazy for the same budget reason: the live resolution path (review item 49)
+ * needs the create-then-review flow, and a static import would land
+ * `LiveProposalCard` on the ClientInbox chunk whether or not a duplicate is
+ * ever resolved. It mounts only after a resolution button is pressed.
+ */
+const ProposalFlowModal = lazy(() =>
+  import('./ProposalFlowModal').then((mod) => ({ default: mod.ProposalFlowModal })),
+);
+import type { CreateActionProposalRequest } from '@neoting/contracts/model';
 import { Pill } from './DataTable';
 import { currency } from '../../lib/resolver';
 import { useEscape } from '../../lib/useEscape';
@@ -102,30 +112,54 @@ const m = defineMessages({
       'The copy and its original are removed. A deleted document cannot be matched to a bank line later.',
   },
   deleteAction: { id: 'documents.duplicateModal.deleteAction', defaultMessage: 'Delete the copy' },
-  liveNote: {
-    id: 'documents.duplicateModal.liveNote',
+  // The live resolution footer (review item 49, D49). Attach is the one
+  // prototype action without a server shape yet — offered disabled with its
+  // reason, never as a button that silently does something else (S12).
+  attachUnavailable: {
+    id: 'documents.duplicateModal.attachUnavailable',
     defaultMessage:
-      'Resolving a duplicate is coming to Review → Approve — in this build the flag and the comparison are informational.',
+      'Merging two images into one document is not built yet — keep both, or delete the copy (recoverable).',
+  },
+  liveHint: {
+    id: 'documents.duplicateModal.liveHint',
+    defaultMessage:
+      'Resolving goes through Review → Approve — the review states the consequence before anything changes.',
   },
 });
 
 const sideMessages = defineMessages({
   rowSentBy: { id: 'documents.side.rowSentBy', defaultMessage: 'Sent by' },
+  // Honest label when only the filename is known (item 49): a filename is not
+  // a person, and calling it "Sent by" made "king fisser.jpg" read as one.
+  rowFile: { id: 'documents.side.rowFile', defaultMessage: 'File' },
   view: { id: 'documents.side.view', defaultMessage: 'View this document' },
   gone: { id: 'documents.side.gone', defaultMessage: 'No longer on file' },
 });
 
-export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose: () => void }) {
+export function DuplicateModal({
+  pair,
+  onClose,
+  onResolved,
+}: {
+  pair: DuplicatePair;
+  onClose: () => void;
+  /** Live: called after an approved resolution — the opener refetches its ruled-pairs read. */
+  onResolved?: (() => void) | undefined;
+}) {
   const { documents, resolveDuplicate, documentsSource } = useAppContext();
   const confirm = useConfirm();
   const intl = useIntl();
   const [expanded, setExpanded] = useState<'left' | 'right' | null>(null);
+  // The live resolution being staged — the ProposalFlowModal's request, held
+  // in state because that component requires a referentially stable request.
+  const [staging, setStaging] = useState<CreateActionProposalRequest | null>(null);
   // Stacked under ConfirmStep's own useEscape while a confirm is up, so
   // Escape mid-confirm cancels the confirm, not this modal.
   useEscape(onClose);
 
   const left = documents.find((d) => d.id === pair.left.id);
   const right = documents.find((d) => d.id === pair.right.id);
+  const live = documentsSource === 'api';
 
   const decide = async (action: 'delete' | 'keep-both', label: string, consequence: string) => {
     const ok = await confirm({
@@ -142,6 +176,20 @@ export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose
     if (!ok) return;
     resolveDuplicate(pair.id, action);
     onClose();
+  };
+
+  /**
+   * Live: stage the real `document.resolve-duplicate` proposal (review item
+   * 49). No local ConfirmStep in front — the Review → Approve card IS the
+   * confirmation, and a second dialog before it is theatre (the bulk-move
+   * lesson). "This copy" is the suspected copy; "Already on file" is kept.
+   */
+  const stageResolution = (resolution: 'different-documents' | 'keep-both' | 'delete-copy') => {
+    setStaging({
+      kind: 'document.resolve-duplicate',
+      businessId: left?.clientId ?? right?.clientId ?? null,
+      payload: { documentKeepId: pair.right.id, documentCopyId: pair.left.id, resolution },
+    } as CreateActionProposalRequest);
   };
 
   return (
@@ -234,11 +282,46 @@ export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose
           </div>
         )}
 
-        {/* The resolutions below are local writes the live poll reverts —
-            live, the footer says what the flag is instead (METH S14 sweep). */}
-        {documentsSource === 'api' ? (
-          <div className="p-4 bg-raised/50 text-[13px] text-zinc-500 text-center">
-            {intl.formatMessage(m.liveNote)}
+        {/* Live: the four D49 resolutions stage a real `document.resolve-
+            duplicate` proposal (review item 49) — the review card is the
+            confirmation. Attach has no server shape yet and says so.
+            Synthetic keeps the local ConfirmStep flow byte-for-byte. */}
+        {live ? (
+          <div className="p-4 bg-raised/50">
+            <div className="flex items-center gap-2 justify-end flex-wrap">
+              <button
+                onClick={() => stageResolution('different-documents')}
+                title={intl.formatMessage(m.differentHint)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 border border-white/5 hover:text-white hover:border-white/20 transition-colors"
+              >
+                <GitCompare size={14} />
+                {intl.formatMessage(m.differentAction)}
+              </button>
+              <button
+                onClick={() => stageResolution('keep-both')}
+                title={intl.formatMessage(m.keepBothHint)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-full text-[13px] font-bold text-zinc-400 border border-white/5 hover:text-white hover:border-white/20 transition-colors"
+              >
+                <Layers size={14} />
+                {intl.formatMessage(m.keepBothAction)}
+              </button>
+              <button
+                disabled
+                title={intl.formatMessage(m.attachUnavailable)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-full text-[13px] font-bold text-zinc-600 border border-white/5 opacity-50 cursor-not-allowed"
+              >
+                <ArrowRight size={14} />
+                {intl.formatMessage(m.attachAction)}
+              </button>
+              <button
+                onClick={() => stageResolution('delete-copy')}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-red-500 hover:bg-red-600 transition-colors"
+              >
+                <Trash2 size={14} />
+                {intl.formatMessage(m.deleteAction)}
+              </button>
+            </div>
+            <p className="text-[12px] text-zinc-500 text-right mt-2">{intl.formatMessage(m.liveHint)}</p>
           </div>
         ) : (
         <div className="p-4 bg-raised/50 flex items-center gap-2 justify-end flex-wrap">
@@ -288,6 +371,25 @@ export function DuplicateModal({ pair, onClose }: { pair: DuplicatePair; onClose
         </div>
         )}
       </motion.div>
+
+      {/* The create-then-review flow for a staged live resolution. Closing it
+          undecided is fine: the proposal stays pending in the Approvals queue.
+          An approved one refetches the ruled-pairs read via onResolved and
+          closes the comparison — the flag is settled. */}
+      {staging && (
+        <Suspense fallback={null}>
+          <ProposalFlowModal
+            request={staging}
+            clientName={pair.clientName}
+            onExecuted={() => {
+              onResolved?.();
+              setStaging(null);
+              onClose();
+            }}
+            onClose={() => setStaging(null)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }
@@ -317,7 +419,14 @@ function Side({ title, pair, onOpen, hasDoc, tone = 'plain' }: {
 
       <div className="flex flex-col gap-1.5 text-[12.5px]">
         <Row label={intl.formatMessage(commonLabels.date)} value={pair.date} />
-        <Row label={intl.formatMessage(sideMessages.rowSentBy)} value={pair.uploader} />
+        {/* A person when the server knows one (package E's submitter label);
+            otherwise the honest label for what the value actually is — a
+            filename, which is not a "Sent by" (item 49). */}
+        {pair.sentBy !== undefined ? (
+          <Row label={intl.formatMessage(sideMessages.rowSentBy)} value={pair.sentBy} />
+        ) : (
+          <Row label={intl.formatMessage(sideMessages.rowFile)} value={pair.uploader} />
+        )}
       </div>
 
       <button

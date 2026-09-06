@@ -101,6 +101,8 @@ Standalone items not in a package: 17 (sign/tone), 31 (chase draft reactivity/ed
 
 Late additions and where they land: **63** (missing list on the Chases tab) sequences after package A; **65** (data-aware AI-tab suggestions + proactive task analysis) leans on A's counts; **66** joined package G (it's the approval matrix itself); **61 + 67** form package L (one retention/deletion policy); **60** is resolved (file arrived late) leaving only its Received-via-on-Inboxes follow-up, which is package E's; **59** is likely closed by the items-9/12 second pass (chat persistence landed) — verify, don't re-build.
 
+✅ **The standalone five closed together on 6 Sep 2026** — **31 · 49 · 58 · 63 · 65**, one branch, one commit each (`fix/review-items-31-49-58-63-65`). Each entry below carries its ✅ block; evidence in `assets/2026-09-06-standalone-five/`. Two owner rulings taken in-session: the §8.2 copy amendment (long chase lists summarise, server template AND preview) with accountant-editable wording built rather than deferred, and the `document.resolve-duplicate` contract delta (kind + `GET /v1/duplicates`) with "attach to the original" deferred by name. The sequencing held: **63 and 65 both waited on package A (#255) and read its one predicate / its served counts rather than minting new ones.** Of the standalone list only **17 and 45** remain unclosed here (45 is diagnosed in #259 with a dashboard step owed).
+
 ## Item 16 — Request statement dialog: unusable period input, no channel choice, no preview
 
 **Original (verbatim):**
@@ -399,6 +401,37 @@ Three defects on `LiveChaseComposerCard` (`apps/web/src/components/DynamicCompon
 1. **Bug — draft not reactive to selection:** unticking an item doesn't recompose the draft; the message keeps naming transactions the accountant excluded. The client-side draft must derive from the *current* checked set.
 2. **Copy quality:** the draft is an unreadable recitation of raw bank descriptors. He wants a personal-touch message (matches item 16's later-AI-personalisation note — for now, a humane preset that summarises: "a few receipts from August, including X and Y" rather than thirty descriptors; note §8.2 was already amended once for "no amounts in chase copy").
 3. **Editability:** no way to change a word/sentence/the whole message anywhere before it sends. ⚠ This collides with the contract's rule that chase copy is composed **server-side** and "never free-typed by a caller" — the deliberate injection/consistency defence. Options: an editable-with-guardrails seam (accountant edits travel as a reviewed field on the proposal, shown verbatim at Read review, still released by the super admin), or per-practice templates. Either way it's a contract/engine change — **G7, Shakib's call** — not a textarea slapped on the card. Also: the prefilled fictional mobile should be gone per M8; check why this build still shows it.
+
+**✅ RESOLVED (6 Sep 2026, this branch — all four halves, with Shakib's two in-session rulings).**
+
+1. **Reactivity was already structurally fixed by #255** — the draft derives from the CURRENT
+   checked set (`selected`, the opt-in `included` set), so unticking recomposes it immediately.
+   What was missing was the pin: `LiveChaseComposerCard.test.tsx` now ticks two lines, unticks
+   one, and asserts the draft stops naming it.
+2. **The copy summarises, server AND preview (Shakib's ruling, 6 Sep):** above three items
+   `composeChaseSms` (the message that actually emails, shown verbatim at Read review) writes
+   *"we're missing receipts for 12 payments between 3 Aug and 28 Aug, including X and Y"* —
+   count, period, two named examples, still no amounts (the 4 Sep §8.2 rule). Three or fewer
+   keep the named-list shape. `composeChaseBody` (the client draft) mirrors it and the card
+   now labels the draft *"a preview of the message the engine composes at review — never a
+   promise of exact words"*. A side effect worth recording: a thirty-descriptor recitation
+   could exceed the contract's 500-char body cap and refuse the STORED payload at review as
+   NT-PRP-006; the summary makes the template fit by construction, and the compose seam now
+   refuses an over-cap body at CREATE with words a human can act on.
+3. **Editable message — BUILT (Shakib's ruling: build now, not defer).** The seam:
+   `ChaseSendPayload.messages[].accountantMessage` (optional, ≤240 chars — contract change,
+   in-session approval). The engine still owns the greeting and the signed portal link
+   (`composeCustomChaseBody` in `chase/sms-copy.ts`); the accountant's words replace only the
+   middle sentence, are trimmed once at compose so payload = review = sent bytes, and Read
+   review renders the woven body verbatim plus a *"Wording: written by the proposer"* line so
+   the releasing super admin knows these are human words, not the template. "Never free-typed
+   by a caller" still holds for the parts that carry authority. Works for both message kinds
+   (transaction chase and statement request). The card's textarea sends it.
+4. **The prefilled mobile is gone.** The namesake lookup was surfacing the SEEDED primary
+   contact's fictional `+447700900001` (served live via `BusinessSummary.primaryContactMobile`
+   since the 5 Sep widening) as if someone had chosen it. The field now starts empty — blank
+   means the engine resolves the REGISTERED primary contact at compose, which was already the
+   honest path — and stays as an override only. Pinned by test.
 
 ## Item 32 — Match suggestion calls a name-only hit "Probable" when amount and date are wildly different
 
@@ -717,6 +750,51 @@ Work shape:
 3. **Delete should be the reversible deletion** (Move to Trash seam, item 13) — matching the prototype's "recoverable" promise — never a purge.
 4. **Detail:** the "BC" vs "B C" supplier spellings render unexplained while a "Same supplier" chip sits above them — the dedupe normalised them for matching, and the display could say so.
 
+**✅ RESOLVED (6 Sep 2026, this branch — with Shakib's in-session contract ruling; "attach" is the recorded deferral).**
+
+**What already existed:** the four-action footer, the per-action ConfirmSteps and the inline
+DocumentPreview expand were ALL ported with the comparison layout — they were gated off LIVE
+behind the informational footer, because resolving had no server half. The real gap was the
+server, and the reviewer found it precisely.
+
+**The server half (Shakib's ruling: kind + read surface now, attach deferred):**
+- **`document.resolve-duplicate`** is the sixteenth `ProposalKind`. Payload
+  `{documentKeepId, documentCopyId, resolution: different-documents | keep-both | delete-copy}`.
+  **No prisma change was needed** — the `duplicates` schema anticipated exactly this (verdicts
+  `CONFIRMED_DIFFERENT` / `KEEP_BOTH` / `CONFIRMED_DUPLICATE`, `decided_by_user_id`,
+  `decided_at`). The executor (`validation-dedupe/proposals/resolve-duplicate.ts`) resolves both
+  documents through the approver's RLS, refuses a cross-client "pair", and upserts the verdict —
+  the detector's row when one exists (either column order), a fresh row marked
+  `signals: {resolvedBy: 'accountant'}, score: 0` when the pair was derived client-side.
+  **`delete-copy` moves the copy to TRASH** (`deleted_at`, restoration undoes it — the item-13
+  seam, exactly as the brief demanded, never a purge) and writes the same `document_events` Trash
+  row the deletion endpoint writes, so the document's own log has no gap. Idempotent by outcome;
+  a later ruling supersedes an earlier one. `RELEASE_KINDS: false` (internal, reversible — flagged
+  for ratification like every entry). The review card restates the ConfirmStep consequences and
+  what is checked at approval.
+- **`GET /v1/duplicates`** (the new read, `DuplicatesController`/`Service` — validation-dedupe's
+  first controller, the chase-module precedent) serves the recorded pairs + verdicts, RLS-scoped,
+  so a ruled-on pair STAYS ruled across reloads and colleagues. `DuplicateVerdict` joined the
+  contract's prisma-mirrored enums.
+
+**The web half:** live, the four actions are REAL — each stages the proposal via
+`ProposalFlowModal` (lazy, off both chunks until pressed; the review card IS the confirmation, so
+no local ConfirmStep in front — the bulk-move lesson). **Attach renders disabled wearing its
+reason** ("merging two images into one document is not built yet") — S12, never a button that
+does something else. `useDuplicateResolutions` (`api/duplicates.ts`, view-chunks only) subtracts
+decided pairs from the derived flags in InboxesView and ClientInbox; an approved resolution
+refetches it and closes the comparison. Synthetic keeps the local ConfirmStep flow byte-for-byte,
+and the #258 scroll frame is untouched (nothing changed about the modal's box).
+
+**Detail (item 49.3):** package E's member identity landed, so "Sent by" now renders the server's
+`submitterLabel` — a person — when one is known, and otherwise the field is labelled honestly
+**"File"** with the filename, because "Sent by: king fisser.jpg" was the lie being reported.
+
+**Deferred, named:** "Attach to the original" (one document, two images) — no schema shape for a
+second image exists; it needs its own design (a `document_images` child table or a supersedes
+link) and is exactly the heavy merge write the brief said to split out. Also open: the pair-side
+supplier-normalisation note (49.4) — cosmetic, not done.
+
 ## Item 50 — Expense claims: hide the unbuilt tab now; design and build the whole feature
 
 **Original (verbatim):**
@@ -880,6 +958,34 @@ Direct sibling of item 42 (portal member edit) — one member-management design 
 3. **Option scope needs honesty:** "discuss it here without ingesting" implies a read path for un-ingested bytes, which doesn't exist — the honest v1 option set is probably "Send to {client}'s inbox" / "Send to a different client" / "Cancel — don't upload", growing later. Whatever is offered must be real (the S12 rule: no buttons whose action can't happen).
 4. Possible refinement to keep the power users fast: a setting or "always do this" tick on the card — his phrasing ("the existing one with suggestion") suggests he wants the ask every time, so default to asking.
 
+**✅ RESOLVED (6 Sep 2026, this branch).**
+
+**What was done:** every live chat upload now HOLDS and asks first. The files land in the
+transcript as a user bubble (the raw `File` rides the message, so *a held file whose question is
+never answered stays visibly attached to the conversation* — and the question's own copy says
+"nothing has uploaded yet … they stay attached until you decide"), and the assistant answers with
+a `CHAT_UPLOAD_DECISION` card offering exactly the real options: **"Send to {client}'s inbox for
+review"** (the one-click suggested default when exactly one client was attached), **"Send to a
+different client"** (the existing searchable `ChatClientPicker`, now opened from the card), and
+**"Cancel — don't upload"** (uploads nothing, says the files stay attached, and the buttons
+remain for a change of mind). With "All clients" active there is no suggestion and the primary IS
+the picker — never a guess. "Discuss it without ingesting" is deliberately not offered (S12 — no
+read path for un-ingested bytes exists). The success message carries item 60's honest timing copy:
+*"Extraction is running — it appears in {client}'s inbox within a minute or two."*
+
+**Where it landed:** the hold in `useChatUpload` (`ChatUpload.tsx` — which SHRANK: the whole
+upload journey moved off the floor-resident module onto the chat chunk's new
+`ChatUploadDecisionCard`, and the hook's old modal-hold machinery retired); the card renders via
+`IntentRenderer` under the new local intent. A reloaded transcript keeps the question's sentence
+and drops the card (persistence stores text + intent name only); files that did not survive
+degrade to an honest line, never buttons that would upload nothing. Synthetic ingest-on-drop is
+byte-for-byte unchanged (METH_MODE §1). Pinned across `ChatUpload.test.tsx`,
+`ChatUploadDecisionCard.test.tsx` and `InputRow.test.tsx` (the pick, the drop, the hold, the
+picker, cancel, refusal reasons, the timing copy, the files-gone degrade).
+
+**Not built, deliberately:** the "always do this" tick — his phrasing reads as wanting the ask
+every time, so asking is the default and the refinement waits for a real request.
+
 ## Item 59 — Chat history vanishes on reload
 
 **Original (verbatim):**
@@ -966,6 +1072,30 @@ Shape:
 2. **Items already being chased are marked, not re-listed as missing** — the open chase's items and the missing list must reconcile (a line inside an open chase shows "chased on {date}, awaiting reply" rather than appearing chaseable again — item 30's lesson from the other direction).
 3. Depends on package A's data-truth fixes landing first: putting the missing list on a third surface while the underlying set disagrees across surfaces would just spread the disagreement. Sequence: fix the predicate/plumbing (A), then this tab renders it.
 
+**✅ RESOLVED (6 Sep 2026, this branch — the matching-lane package #255 had landed, so the
+predicate was safe to put on a third surface).**
+
+**What was done:** live, the client's Chases tab now LEADS with **Missing documents** — every
+unexplained bank line for this client, read through `isUnexplained` (the ONE predicate, #255's
+rule; this tab minted no seventh definition), with descriptor, date, amount and a **days-missing**
+pill (amber ≥14d, red ≥30d). Each row carries a Chase button and the selection has a bulk **Chase
+selected** — both stage item 15's real server-composed `chase.send` (`requestChaseProposal`, the
+same action the Bank tab stages; a second door, never a second engine), with the queued/failed
+banner reporting the outcome. **A line inside an OPEN chase is marked, not re-offered**: it stays
+listed (the paperwork has not arrived) reading *"Chased {date}, awaiting reply"* with no chase
+button, and a selection that contains only such lines refuses with words instead of double-asking
+— reconciled against the same `useChases` read whose poll clears the marks when auto-close
+settles a chase. Below it, **Chases sent** lists this client's chases with honest state pills
+(Awaiting reply / Received / Closed), item count, sent date and the closed reason.
+
+**Where it landed:** `views/ClientChases.tsx`, a NEW lazy chunk — `api/chases.ts` and the
+generated chases client stay off the ClientDetailView route's arrival weight (the route sits
+~1.5 kB under its 250 kB budget), the ClientSupplierStatements precedent. The tab forks on
+`slices.bankTransactions.source === 'api'`; synthetic keeps the seeded MissingItem table
+byte-for-byte. A failed bank read renders the honest alert, never "nothing is missing" over
+unread data (item 25's rule). Pinned in `ClientChases.test.tsx` (the predicate, the marked-line
+rule, the real staging, the refusal alert, the unread-data honesty, the state pills).
+
 ## Item 64 — Setup-link panel still shown for an active client; replace it with something useful
 
 **Original (verbatim):**
@@ -999,6 +1129,35 @@ The AI tab's suggested prompts are a static list, offered regardless of whether 
 1. **Data-aware suggestions:** the chips should be generated from the client's actual state — the counts are already served (`BusinessSummary`: toReview, missing, unmatched, approvals, overdue…), so offer "3 items are waiting on approval — review them?" and simply don't offer the approvals question when the count is 0. A suggestion is a claim there's something to see; only make true claims. (Cheap version: filter/parameterise the existing static list by the counts. No model call needed for the chips themselves.)
 2. **Proactive task suggestions:** beyond Q&A chips, an "what needs doing for {client}" analysis — the AI reads the client's pipeline state and proposes next actions (chase these 4 missing documents, review the 2 low-confidence extractions, the statement for August is missing, export July) with each suggestion linking to the surface or staging the relevant proposal. This is the same grounded §9 read the MISSING/approvals intents already do, composed into a summary — and it must obey the item-25 rule: derived from actually-read data, honest when the read fails, never a confident guess. Depends on package A's data truth for the numbers to be worth showing.
 Also check why the clicked prompt's answer was literally "nothing" — an empty-set answer should still be a sentence ("Nothing is waiting on approval for Zeplow Inc.") rather than a blank card; if it rendered blank, that's a rendering bug in the approvals card (`SHOW_APPROVALS`, added in the items-9/12 second pass) to fix regardless.
+
+**✅ RESOLVED (6 Sep 2026, this branch — the smaller version, as the brief asked; no new server
+surface, no model call).**
+
+1. **The chips are data-aware.** The static three are gone; the chips derive from the SAME served
+   counts every surface reads (`statsFor` — live, `BusinessSummary.counts`), each carrying its
+   number as the claim: *"3 items are waiting on approval — review them?"*, *"4 documents are
+   missing — what is still missing for {client}?"*, plus to-review and overdue. **A zero-count
+   question is simply not offered**; all-zeros renders *"Nothing is waiting on {client} right
+   now"*. The chip's words are the utterance the real chat lane answers (#255's drill-in bridge —
+   live they submit through `POST /chat/turns`, synthetic keeps the injected card). The old
+   "Show the bank matches" chip retired: no served count exists to make its claim true, and the
+   Bank tab is one todo-link away. Item 25's rule enforced: live with the businesses slice unread,
+   both panels render *"the counts could not be read, so no suggestions are offered"* instead of
+   zeros dressed as an all-clear.
+2. **"What needs doing" is a new panel, first on the tab** — next actions composed from the same
+   counts, each opening the surface where it is done: chase N missing → the Chases tab (now
+   leading with the missing list, item 63), review N in the inbox → Costs, decide N approvals →
+   the Approvals queue, release N Ready for export → Costs → Ready, nudge N overdue → Chases.
+   Honest empty: *"Nothing needs doing for {client} right now."* **The smaller version was chosen
+   deliberately** (the brief's own instruction): composition over already-served counts, no model
+   call, no new server surface. The full §9 model-composed narrative ("the statement for August
+   is missing…") stays a named follow-up — it needs facts (per-month statement coverage,
+   low-confidence extractions) no count currently serves.
+3. **The bug check: SHOW_APPROVALS's empty state was verified NOT blank** — the card renders
+   *"The approval queue is empty."* plus the always-present "Open the Approvals queue" button
+   (the real queue reads `GET /action-proposals` itself). The reviewer's blank answer predates
+   item 9's SHOW_APPROVALS card (5 Sep). Now pinned in `IntentRenderer.test.tsx` so it cannot
+   regress to silence; the chips fix means the question is no longer offered at zero anyway.
 
 ## Item 66 — The approval matrix: draw the line between what needs super-admin approval and what doesn't
 

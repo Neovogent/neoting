@@ -57,6 +57,10 @@ const MIRRORED_ENUMS = [
   'IntegrationKind',
   'ExportTarget',
   'SubscriptionStatus',
+  // document.resolve-duplicate (review item 49): the ruling the executor writes
+  // and GET /duplicates serves — drift here would let a web filter miss a
+  // verdict value and re-flag a pair somebody already ruled on.
+  'DuplicateVerdict',
 ];
 
 const failures = [];

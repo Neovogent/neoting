@@ -66,6 +66,50 @@ test('an UNMATCHED, unsuppressed line composes', async () => {
   expect(out.messages[0]?.body).toContain('Currys');
 });
 
+test('accountantMessage replaces the middle sentence; the engine keeps greeting + signed link (item 31)', async () => {
+  const db = fakeDb([txn('txn_1')]);
+  const payload = {
+    messages: [
+      {
+        body: 'discarded',
+        transactionIds: ['txn_1'],
+        accountantMessage: '  Could you send the August receipts over?  ',
+      },
+    ],
+  } as ChaseSendPayload;
+  const out = await computeChaseSendPayload(db, payload, CONFIG);
+  const message = out.messages[0];
+  expect(message?.body).toMatch(
+    /^American Burger Ltd Accounts: Could you send the August receipts over\? Upload securely: https:\/\/app\.test\/p\//,
+  );
+  // Stored trimmed, so the payload, the review note and the sent bytes agree.
+  expect(message?.accountantMessage).toBe('Could you send the August receipts over?');
+  // The engine's own composition is fully displaced — no template sentence.
+  expect(message?.body).not.toContain("we're missing");
+});
+
+test('a whitespace-only accountantMessage is "not edited" — the template stands', async () => {
+  const db = fakeDb([txn('txn_1')]);
+  const payload = {
+    messages: [{ body: 'discarded', transactionIds: ['txn_1'], accountantMessage: '   ' }],
+  } as ChaseSendPayload;
+  const out = await computeChaseSendPayload(db, payload, CONFIG);
+  expect(out.messages[0]?.body).toContain("we're missing");
+  expect(out.messages[0]?.accountantMessage).toBeNull();
+});
+
+test('a composed body over the contract cap refuses at CREATE, naming the fix', async () => {
+  const db = fakeDb([txn('txn_1')]);
+  const payload = {
+    messages: [{ body: 'discarded', transactionIds: ['txn_1'], accountantMessage: 'x'.repeat(240) }],
+  } as ChaseSendPayload;
+  // 240 chars of wording + greeting + a ~180-char signed link exceeds 500 —
+  // the refusal must land here, not days later as NT-PRP-006 at review.
+  await expect(
+    computeChaseSendPayload(db, payload, { ...CONFIG, appOrigin: `https://${'a'.repeat(120)}.test` }),
+  ).rejects.toThrow(/too long/);
+});
+
 test.each([
   ['a CONFIRMED line — its receipt is on file', { matchState: 'CONFIRMED' }],
   ['a SUGGESTED line — already in front of a human', { matchState: 'SUGGESTED' }],

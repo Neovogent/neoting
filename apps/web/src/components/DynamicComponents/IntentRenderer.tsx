@@ -4,6 +4,7 @@ import { useAppContext } from '../../context/AppContext';
 import { ActionCard } from './ActionCard';
 import { ApprovalBatchCard } from './ApprovalBatchCard';
 import { ChaseComposer } from './ChaseComposer';
+import { ChatUploadDecisionCard } from './ChatUploadDecisionCard';
 import { ClientIntakeForm } from './ClientIntakeForm';
 import { DocumentPreview } from './DocumentPreview';
 import { DuplicateCompare } from './DuplicateCompare';
@@ -44,6 +45,18 @@ export function IntentRenderer({ message }: { message: Message }) {
   switch (message.intent) {
     case 'ADD_CLIENT':
       return <ClientIntakeForm defaultName={payload.clientName ?? ''} />;
+
+    // Review item 58: the held chat upload's decision card. Payload-free after
+    // a restore (persistence keeps text + intent only) — the question's own
+    // sentence stands and the card degrades to nothing.
+    case 'CHAT_UPLOAD_DECISION':
+      return payload.uploadMessageId ? (
+        <ChatUploadDecisionCard
+          uploadMessageId={payload.uploadMessageId}
+          suggestedClientId={payload.suggestedClientId}
+          suggestedClientName={payload.suggestedClientName}
+        />
+      ) : null;
 
     case 'SHOW_MISSING':
       return <ActionCard clientIds={clientIds} period={payload.period} />;
