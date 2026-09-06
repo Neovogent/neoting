@@ -2394,6 +2394,193 @@ the screen having failed. `ApprovalsLiveQueue` resolves it from
 chunk (the `api/team.ts` placement rule), and a read every practice-wide member
 may make.
 
+## Chat history, the portal's document list, and one UK date control (7 Sep 2026 — review items 59, 18, 16/28/46)
+
+Three items, one branch. Each is written up below with what was WRONG, because
+two of the three had a diagnosis in this repo that was confidently incorrect.
+
+### Item 59 — a fixed conversation id was the whole defect
+
+> *"Chat history gets vanished after reloading, fix this issue"*
+
+The review notes said this was *"likely already closed"* by item 9's
+server-persisted conversations. **It was not, and the persistence was working
+perfectly.** Run live: send a turn, reload, and the drawer reads "No
+conversations yet." — while `GET /v1/chat/conversations` answers with the
+transcript, two messages, sitting in the database.
+
+`AppContext` minted the session's first conversation as
+`newDraft(…, 'draft-initial')` — a **constant**. Two failures came out of that
+one string, and the second is worse than the reported one:
+
+1. **A reload could not read the transcript back.** `hydrateConversations` is
+   add-only by id (deliberately — the open tab's live state must not be
+   clobbered by a stale summary), and the fresh, empty `draft-initial` was
+   already in the array before the server answered. So the saved row was
+   discarded, `remoteMessageCount` was never set, `useConversationSync` never
+   fetched the messages, and `LeftPanel` filtered the row out for having none.
+2. **The next session OVERWROTE the last one.** Saving is a PUT under the
+   conversation's own id, so session two's first conversation replaced session
+   one's stored transcript. Silent, and unrecoverable.
+
+The fix is that the first draft has no special name: `newDraft(SYNTHETIC ? ['1']
+: [])`, and `fallbackConversationId` initialises from `conversations[0]!.id`.
+`newDraft` also gained a random suffix — `draft-${Date.now()}-${seq}-${rand}` —
+because **the id is a server key now** and two tabs opened in the same
+millisecond both start their module-level counter at 0. It is not a security
+value and does not need `crypto` (which would throw in a non-secure context, and
+people do open the dev server on a phone by LAN IP); it exists so two independent
+tabs cannot mint the same name. It stays inside the contract's
+`^[A-Za-z0-9_-]{1,64}$`.
+
+⚠ **The lesson for the next reader: nothing was rebuilt.** The wire, the hook,
+the reconciler and the drawer were all correct. `AppContext.test.tsx`'s new case
+mounts the provider twice, asserts the two first-draft ids differ, and hydrates a
+summary carrying the EARLIER mount's id — it fails on the old code at
+`expect(freshId).not.toBe(earlierId)`.
+
+### Item 18 — the portal's document list, and the 404 nobody had tried
+
+> *"there is option to see how many document is sent but no option to see the
+> actual list of sent document with preview option download option"*
+
+**`views/business/PortalDocumentList.tsx`** — one row component, two surfaces.
+Home renders the recent few; the Upload tab renders the browsable one with a
+status filter over the server's own five words, a count, and one more page of
+fifty per press. They are the same rows off the same read ("one list at two
+levels of detail", which is what the operation's description calls them), so a
+row is written once — two row components would be two opinions about what a
+document looks like to the person who sent it.
+
+Three things on it that are decisions:
+
+- **⚠ The practice's working state never reaches this screen, and the guard is a
+  test.** `PortalDocument` carries no `state`, no `inbox`, no `categoryCode`, no
+  `failureCode` — the absence is the design — so this file has **no mapping table
+  from anything to anything**: the five words arrive decided and
+  `PortalStatusPill` supplies only the wording. `PortalDocumentList.test.tsx`
+  asserts over `document.body.textContent` that no internal vocabulary
+  (`TO_REVIEW`, `SMS_PORTAL`, `NT-DOC…`) appears, which is what survives somebody
+  widening the projection.
+- **Only an IMAGE previews in place.** The obvious build frames the PDF too, and
+  it was the first one; it renders on desktop Chrome and is unreliable exactly
+  where this surface lives — iOS Safari shows page one of a framed PDF with no
+  way to the rest, and some Android WebViews show a blank white box. So a
+  photograph opens in the dialog and anything else is handed over as a **real
+  anchor**. The anchor is also what makes it work at all: the presigned URL is
+  fetched on the press, so the user gesture has expired by the time it arrives
+  and a programmatic `window.open` would be blocked by Safari. The dialog turns
+  an async fetch back into a link a person clicks.
+- **The URL is bearer authority over a financial record**, so every anchor
+  carries `rel="noreferrer noopener"` and the image `referrerPolicy="no-referrer"`
+  — the rule `DocumentViewer` states in full — and it is fetched per press, never
+  stored. `DocumentViewer` itself is **not** reused: the portal is the lightest
+  route in the product and nothing it imports may become shared with a practice
+  screen. Same reason the preview's scrim is a local `<button>` rather than
+  `DynamicComponents/Modal`.
+
+**⚠ The server half, and the premise that was wrong.** The brief said the portal
+principal was "already wired" on `GET /documents/{id}/original`. It is declared —
+and under that bearer the boundary was the session's GRANT, which holds only what
+the CURRENT sign-in uploaded. Probed live against American Burger before writing
+a line of UI: **all five rows of the client's own list, including the
+`SMS_PORTAL` one they sent themselves, answered 404.** A per-row [Open] would
+have failed on every row. Shakib ruled *"any document in their own list"*, and the
+server now reads under the practice SYSTEM context narrowed by
+`portalVisibleDocuments(facts)` — the same expression the list is built from. See
+`apps/api/src/modules/{documents,portal}/CLAUDE.md`; the trade (a database
+guarantee for an application one) is written up there rather than implied.
+
+Also here: `fetchPortalDocuments(token, pages)` reads N pages of fifty rather
+than taking a cursor, because this surface POLLS — an appended-cursor list would
+be reset to page one on every tick. `showMoreDocuments` raises the count, the
+refresh re-reads that depth, and everything on screen stays current.
+
+### Items 16 / 28 / 46 — one UK date control, package D
+
+> *"The date selector must be in this format 3rd March 2026 - 12th December 2026
+> type, not 07/30/2025"*
+
+**`DynamicComponents/UkDateField.tsx`**, adopted on all three surfaces the notes
+name: ExportView's FROM/TO, the document-date correction in `DocumentPreview`,
+and the statement-request dialog (its month-shaped sibling).
+
+⚠ **What is actually broken about `<input type="date">`, precisely:** it renders
+in the BROWSER's locale and no attribute can force a format — not `lang`, not
+`pattern`. The failure is not that it looks foreign; it is that `03/08/2026` is a
+valid date **both ways round**, so a misreading is silent and the wrong VAT
+quarter is the first anyone hears of it.
+
+What the control does, and what it keeps:
+
+- **Typing is d/m/y**, through **`parseUkDate` — the repo's existing day-first
+  parser**, split out of `lib/tableImport.ts`'s `parseSheetDate` rather than
+  written again. `parseSheetDate` is now that function's display projection, so
+  there is ONE answer to "what date did a human mean by this text" and
+  `tableImport.test.ts`'s 32 cases guard the control as well as the importer. It
+  is already floor-resident, so the reuse cost **zero bytes**.
+- **Reading is long form** — "30 July 2025" under the field, live. ExportView's
+  "Period: …" line stays as well, and the code says why: the period is a third
+  fact (that these two dates are the span being exported) and it is the sentence
+  an accountant checks before producing a file.
+- **The native picker stays**, behind a calendar button (`showPicker()` on a real
+  `<input type="date">`, `.focus()` if that throws). Its day grid is unambiguous
+  however the field beside it is formatted; only its *text rendering* was wrong.
+- **⚠ A shape gate before the parser.** `parseUkDate`'s last branch is
+  `new Date(raw)`, which is right for a spreadsheet cell and wrong mid-typing:
+  `new Date('3')` is **1 March 2001**, so the long-form line would announce a
+  confident wrong date after one keystroke. The field asks the parser only once
+  the text is finished-looking, and the refusal waits for a blur.
+- **No date library** (a stop-and-ask, and it would buy nothing) and **nothing
+  goes through `toISOString()`**: every conversion is string or `Date.UTC`,
+  because a local-midnight `Date` rendered as UTC moves the calendar date back a
+  day west of Greenwich. A picker that shifts the date it was handed is worse
+  than the format bug it replaced.
+
+`UkMonthField` is a **separate component, not a `granularity` prop**: a statement
+request is *for August*, a document is dated *on the ninth*. Two selects with the
+month as a NAME — nothing to parse, nothing to mis-order, no locale to get wrong
+and no picker to be unavailable. It replaced the `<input type="month">` that
+item 16's screenshot shows as a bare text box with `12` typed into it and the
+confirm greyed out against a `YYYY-MM` regex the accountant could not discover.
+
+⚠ **Item 16 is only PARTLY closed.** `chase.send`'s `statementPeriod` is a single
+`YYYY-MM` on the wire, so the range/year/single-date modes, the SMS/email
+checkboxes and the preview step are a contract and engine widening — written up
+in the review notes, not half-built here.
+
+### Bundle — measured paired, and what it cost
+
+Paired A/B, both sides built with `pnpm exec vite build --manifest`, closure walk
+at zlib 6. **The floor moved +97 B.**
+
+| route | main | this branch | delta | headroom left |
+|---|---|---|---|---|
+| InboxesView | 249,046 | **249,208** | +162 | **792 B** |
+| ClientDetailView | 247,531 | 247,654 | +123 | 2,346 B |
+| BankView | 243,789 | 243,920 | +131 | 6,080 B |
+| ApprovalsView | 238,607 | 238,729 | +122 | 11,271 B |
+| DocumentsView | 230,756 | 230,865 | +109 | 19,135 B |
+| BusinessPortal | 239,939 | 241,957 | +2,018 | 8,043 B |
+| ExportView | 216,256 | 218,314 | +2,058 | 31,686 B |
+
+**⚠ InboxesView's 954 B of headroom is now 792 B — say so to whoever spends
+next.** The date control lands cheaply on the queue routes because they load
+`DocumentPreview` lazily; it is only the routes that reach it statically that pay
+in kilobytes.
+
+🚨 **A finding, not a regression: `AIWorkspaceView` is 302,213 B on MAIN by
+closure — 52 kB OVER the 250 kB budget, today, with nothing pending.** This
+branch adds 2,271 B to it (`IntentRenderer` imports `DocumentPreview`
+*statically*, so the chat route pays for the date control in full). The four-chunk
+shorthand this file used to quote hides it — `AIWorkspaceView`'s own chunk is
+40 kB — and the closure walk is the sanctioned quantity (*The route total is
+bigger than the four-chunk shorthand says*). **Nobody has measured the chat route
+this way before.** The reclaim is on the same line that causes it: making
+`DocumentPreview` lazy in `IntentRenderer` the way every view already does. Not
+taken here — it is its own change with its own Suspense question, and this branch
+should not be the one that quietly rewrites the chat renderer.
+
 ## The access-control package (6 Sep 2026 — review items 38, 39, 41, 42, 44, 57)
 
 `docs/Access_and_Approval_Matrix.md` is the ruling document — who sees and does
