@@ -98,6 +98,35 @@ const m = defineMessages({
   accessOwner: { id: 'portal.livePortalPeople.accessOwner', defaultMessage: 'Owner' },
   accessUserAdmin: { id: 'portal.livePortalPeople.accessUserAdmin', defaultMessage: 'User administrator' },
   accessStandard: { id: 'portal.livePortalPeople.accessStandard', defaultMessage: 'Member' },
+
+  // Review item 41: *"'member' does not define what the job is, write specific
+  // word or words to define the access"*. The ENUM WORDS DO NOT MOVE — they
+  // are the contract's, and the last-owner rule keys on them — so what was
+  // added is a sentence per level, shown under the select and changing with
+  // the choice. That is the pattern the capability checkboxes below it already
+  // use, and the reason the select read as meaningless beside them.
+  //
+  // Each one says what the level GRANTS and what it withholds, because a level
+  // named only by what it can do leaves the reader guessing at the boundary —
+  // which is the whole question somebody adding staff is asking. What a person
+  // may SEND and SEE is deliberately left to the two boxes below rather than
+  // claimed here: those are per-person and would contradict a sentence about
+  // the level.
+  accessOwnerNote: {
+    id: 'portal.livePortalPeople.accessOwnerNote',
+    defaultMessage:
+      'Owner — full control: the people on this list, your business’s own details, and the subscription.',
+  },
+  accessUserAdminNote: {
+    id: 'portal.livePortalPeople.accessUserAdminNote',
+    defaultMessage:
+      'User administrator — can add, change and remove people on this list. Cannot see or change the subscription, or your business’s details.',
+  },
+  accessStandardNote: {
+    id: 'portal.livePortalPeople.accessStandardNote',
+    defaultMessage:
+      'Member — day-to-day use only. Cannot change who has access, your business’s details or the subscription. What they may send and see is the two boxes below.',
+  },
 });
 
 /**
@@ -111,6 +140,17 @@ const ACCESS_LABEL: Record<PortalAccessRole, { id: string; defaultMessage: strin
   BUSINESS_ADMIN: m.accessOwner,
   USER_ADMIN: m.accessUserAdmin,
   BUSINESS_STANDARD: m.accessStandard,
+};
+
+/**
+ * What each level actually grants (review item 41), keyed off the same enum so
+ * a level cannot have a label and no explanation — or an explanation for a
+ * level that no longer exists.
+ */
+const ACCESS_NOTE: Record<PortalAccessRole, { id: string; defaultMessage: string }> = {
+  BUSINESS_ADMIN: m.accessOwnerNote,
+  USER_ADMIN: m.accessUserAdminNote,
+  BUSINESS_STANDARD: m.accessStandardNote,
 };
 
 export const PEOPLE_QUERY_KEY = ['portal', 'people'] as const;
@@ -472,7 +512,11 @@ function PortalPersonEditor({
             </datalist>
           </Field>
 
-          <Field label={intl.formatMessage(e.accessLabel)}>
+          {/* The note is the `Field`'s own, so it sits where every other
+              explanation on this form sits, and it changes with the selection —
+              a static line describing three levels would describe none of
+              them. */}
+          <Field label={intl.formatMessage(e.accessLabel)} note={intl.formatMessage(ACCESS_NOTE[access])}>
             <select
               value={access}
               onChange={(event) => setAccess(event.target.value as PortalAccessRole)}
