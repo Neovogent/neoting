@@ -88,6 +88,7 @@ import { canRelease } from '../clients-team-settings/index.js';
 export type PermittedAction =
   | 'publish.release'
   | 'team.invite'
+  | 'team.manage'
   | 'business.people.manage'
   | 'business.profile.manage'
   | 'business.billing.manage';
@@ -244,6 +245,34 @@ export function mayManageTeam(actor: Actor): boolean {
 }
 
 /**
+ * `team.manage` — changing a colleague's role or client list, ending their
+ * access, revoking an outstanding invitation, sending a fresh link (review
+ * item 57, 6 Sep 2026).
+ *
+ * ⚠ **It shares {@link mayManageTeam} with `team.invite`: ONE predicate, two
+ * action names.** The authority is genuinely the same — every one of these acts
+ * is reversible, internal, and reaches nobody outside the firm — so a second
+ * predicate would be a second thing free to disagree, which is what this file's
+ * header refuses. What differs is only the SENTENCE a refused caller reads, and
+ * that is worth a name: *"Only a practice admin can invite a colleague"* said
+ * to somebody who pressed Remove is a wrong answer in a right status code. The
+ * same reasoning separated `business.billing.manage` from
+ * `business.profile.manage` (`docs/Access_and_Approval_Matrix.md`, gate ⚖2).
+ *
+ * The refusals that bound what this permits are NOT here — they are the
+ * service's, because they are about the SUBJECT rather than the actor: the
+ * owner can never be removed or changed (D44 — release authority must always
+ * exist), nobody may remove themselves, and `PRACTICE_ADMIN` cannot be granted
+ * by an edit any more than by an invitation (ruled at gate ⚖3, 6 Sep 2026).
+ * An authority check answers "may this person act"; those answer "may this
+ * happen to that person", and folding them together would put a rule about the
+ * owner inside a function that has never been told who the subject is.
+ */
+export function assertCanManageTeam(actor: Actor): void {
+  assertCan(actor, 'team.manage');
+}
+
+/**
  * May this actor manage the PEOPLE of a client business — invite one, change
  * what they may do, revoke their access?
  *
@@ -386,6 +415,13 @@ export function assertCan(actor: Actor, action: 'publish.release', resource: Pro
  */
 export function assertCan(actor: Actor, action: 'team.invite'): void;
 /**
+ * `team.manage` takes no resource for `team.invite`'s reason one step on: the
+ * practice is fixed by the session, and the SUBJECT — which colleague, which
+ * invitation — is not an input to the authority question. Whether it may happen
+ * to *that* person is the service's rule; see {@link assertCanManageTeam}.
+ */
+export function assertCan(actor: Actor, action: 'team.manage'): void;
+/**
  * `business.people.manage` takes no resource either, and for the same reason
  * one level down: the business is fixed by the portal session's own
  * `otp_sessions` row before this is reached, so there is nothing for a caller to
@@ -445,13 +481,18 @@ export function assertCan(actor: Actor, action: PermittedAction, resource?: Prop
     );
   }
 
-  if (action === 'team.invite') {
+  if (action === 'team.invite' || action === 'team.manage') {
     if (mayManageTeam(actor)) return;
     throw new AppException(
       'NT-PRM-001',
       HttpStatus.FORBIDDEN,
       'Not permitted',
-      'Only a practice admin can invite a colleague. Ask one of your admins to send the invitation.',
+      action === 'team.invite'
+        ? 'Only a practice admin can invite a colleague. Ask one of your admins to send the invitation.'
+        : // Deliberately vague about WHICH act, because one sentence serves
+          // four (edit, remove, revoke, re-send) and naming the wrong one is
+          // worse than naming none. It says what is out of reach and who has it.
+          "Only a practice admin can change your firm's team. Ask one of your admins.",
     );
   }
 

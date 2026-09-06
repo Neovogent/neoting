@@ -3552,6 +3552,16 @@ paths:
         ⚠ `pageInfo` describes `data` only. `pendingInvites` is unpaginated
         because a practice with enough outstanding invitations to need a second
         page has a different problem.
+
+        ⚠ **EXPIRED invitations appear too, since 6 Sep 2026 (review item 57).**
+        This used to say *"an expired one is not something to wait for"*, which
+        was true while there was nothing to be done about one. There is now:
+        `POST /practice-invitations/{inviteId}/resend` mints a fresh token on
+        the same row, and an expired invitation the screen cannot show is one
+        nobody can re-send. `Invite.expiresAt` is what distinguishes them -
+        already on the shape, so no field was added. **Accepted invitations are
+        still absent**: that person is a member, and the member list is where
+        they are.
       tags: [practices]
       x-nt-side-effect: none
       parameters:
@@ -3573,7 +3583,11 @@ paths:
                     items: { $ref: '#/components/schemas/PracticeMember' }
                   pendingInvites:
                     type: array
-                    description: Outstanding invitations — not yet accepted, not yet expired.
+                    description: |
+                      Invitations that have not been accepted - including
+                      EXPIRED ones, which a caller distinguishes by
+                      `expiresAt` and can re-send. Accepted ones are members
+                      and are in `data`.
                     items: { $ref: '#/components/schemas/Invite' }
                   pageInfo: { $ref: '#/components/schemas/PageInfo' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
@@ -3675,6 +3689,260 @@ paths:
             it is the durable record of a decision that was made, a retry
             re-sends rather than re-decides, and an invitation nothing was sent
             for expires harmlessly.
+          headers:
+            Retry-After: { $ref: '#/components/headers/RetryAfter' }
+            RateLimit-Limit: { $ref: '#/components/headers/RateLimitLimit' }
+            RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+            RateLimit-Reset: { $ref: '#/components/headers/RateLimitReset' }
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /practice-members/{userId}:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        description: |
+          The `userId` from `PracticeMember`. Somebody who works at another
+          firm is a `404`, never a `403` — a `403` would confirm they exist.
+        schema: { type: string }
+    patch:
+      operationId: updatePracticeMember
+      summary: Change what a colleague may do
+      description: |
+        Change a colleague's role, or the clients they can reach. Both fields
+        are optional; an omitted one is left alone, and a body that changes
+        nothing answers their current state.
+
+        **`businessIds` keeps the invitation's semantics exactly: an empty list
+        means EVERY client, not none.** A practice-wide colleague holds one
+        membership with a null `business_id`, and a scoped one holds a row per
+        assigned client — so moving between the two is a rewrite of their
+        memberships, not an edit of a field, and this operation performs it.
+        Editing that list post-hoc is the operationally important half of the
+        feature: staff join and leave client engagements constantly.
+
+        **⚠ The refusal set, which is the point of this description.**
+
+        - **The OWNER cannot be changed at all** — `403 NT-PRM-001`. D44 reserves
+          release authority for the firm's super admin, exactly one membership
+          per practice carries `is_owner`, and no operation in this contract
+          moves it. Demoting or re-scoping them would leave a firm that can
+          never release a document or authorise a chase again, with no route
+          back from inside the product.
+        - **`PRACTICE_ADMIN` cannot be granted** — `400 NT-VAL-001`, by name.
+          The same refusal `invitePracticeMember` gives, for the same reason:
+          `assertCan` releases on `canRelease(role) && isOwner`, so an edited-to
+          admin would hold `canRelease` and not `isOwner` — able to invite,
+          unable to release, and told *"only your super admin can"* by a screen
+          that had just labelled them an admin. Two true statements that cannot
+          both be believed. It comes back the day an ownership-TRANSFER
+          operation exists.
+        - **The three business-level roles are refused**, as at invitation: a
+          client's own person is not practice staff.
+        - **`businessIds` on a `CLIENT_ADMIN` is refused** rather than ignored —
+          that role is practice-wide by definition, and accepting a list while
+          discarding it would describe a grant that did not happen.
+        - **A `businessId` the CALLER cannot see is a `404`**, decided by RLS
+          rather than by a filter written in the service.
+      tags: [practices]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PracticeMemberUpdateRequest' }
+      responses:
+        '200':
+          description: The colleague, after the change.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PracticeMember' }
+        '400':
+          description: '`NT-VAL-001` — a role this operation may not grant, or a client list on a role that reaches all of them.'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403':
+          description: '`NT-PRM-001` — the caller is not a practice admin, or the subject is the owner.'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '404':
+          description: '`NT-VAL-001` — nobody with that id at this practice, or a client the caller cannot see.'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+    delete:
+      operationId: removePracticeMember
+      summary: End a colleague's access to this practice
+      description: |
+        Removes every membership this person holds at the caller's practice, so
+        their next request has no workspace to act in and answers `401`.
+        Deactivating the person's account is deliberately NOT what happens: the
+        subject of this operation is their access to THIS firm, and a `users`
+        row is not the firm's to disable.
+
+        **Nothing they did is removed.** Documents they routed, corrections they
+        made and proposals they staged keep their `userId`, because an audit
+        trail that forgets who acted is not one. Re-inviting them restores
+        access and re-attaches nothing — the history was never detached.
+
+        **⚠ Two refusals, both `403 NT-PRM-001`:**
+
+        - **The owner can never be removed** — D44 again. Release authority must
+          always exist, and this is the operation that could end it.
+        - **A caller cannot remove themselves.** Not paternalism: the only role
+          that passes this gate is the practice admin, and today that is the
+          owner, who is already refused above — so the rule reads as "ask
+          somebody else" rather than as a wall, and it stays correct on the day
+          a second admin becomes possible.
+      tags: [practices]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204':
+          description: Access ended. No body — there is no state left to describe.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403':
+          description: '`NT-PRM-001` — not a practice admin, the owner, or yourself.'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '404':
+          description: '`NT-VAL-001` — nobody with that id at this practice.'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /practice-invitations/{inviteId}:
+    parameters:
+      - name: inviteId
+        in: path
+        required: true
+        description: |
+          The `id` from an `Invite` on `listPracticeMembers`. An invitation at
+          another practice is a `404`.
+
+          ⚠ **Never the token.** The token exists in the email and in
+          `invites.token_hash`, and nowhere else; an id is an opaque handle that
+          admits nobody.
+        schema: { type: string }
+    delete:
+      operationId: revokePracticeInvitation
+      summary: Kill an outstanding invitation
+      description: |
+        Destroys the invitation row, and with it the only stored hash the
+        emailed token can be checked against — so the link stops working
+        immediately rather than at its seven-day expiry. That is the whole point
+        of the operation: the wrong address, the wrong role, or somebody who
+        left before they arrived.
+
+        An accepted invitation is `404`: acceptance consumed it, the person is a
+        member now, and the operation for THAT is
+        `DELETE /practice-members/{userId}`. Revoking an already-expired one is
+        allowed — the row goes, which is tidy, and no working link is broken
+        that was not broken already.
+      tags: [practices]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204':
+          description: The invitation is gone and its link is dead.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403':
+          description: '`NT-PRM-001` — only a practice admin may revoke.'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '404':
+          description: '`NT-VAL-001` — no outstanding invitation with that id at this practice.'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /practice-invitations/{inviteId}/resend:
+    parameters:
+      - name: inviteId
+        in: path
+        required: true
+        description: The `id` from an `Invite`. Never the token — see the sibling path.
+        schema: { type: string }
+    post:
+      operationId: resendPracticeInvitation
+      summary: Send a fresh link for an invitation that was never accepted
+      description: |
+        Mints a NEW token on the same invitation row, resets its seven-day
+        expiry, and emails the link again. **The previous link stops working**,
+        because only one hash is stored — which is the honest behaviour: two
+        live links to one invitation is one more than anybody meant to create.
+
+        This is the operation an EXPIRED invitation needs, and why they are
+        listed at all now. Nothing else in the product could revive one: the
+        address had to be invited again, which wrote a second row for one person
+        and left the first sitting in the list. The setup-link re-send is the
+        precedent — *a fresh invite IS the re-send* — applied to the row rather
+        than beside it.
+
+        The role and the client scoping are the ORIGINAL invitation's and cannot
+        be changed here. Changing what somebody is being invited to is a
+        different decision from sending them the link again; revoke and invite
+        afresh.
+
+        An accepted invitation is `404`: there is nothing to send, and the person
+        already has an account.
+      tags: [practices]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: The invitation, with its new expiry. The token is not here.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invite' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403':
+          description: '`NT-PRM-001` — only a practice admin may re-send.'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '404':
+          description: '`NT-VAL-001` — no unaccepted invitation with that id at this practice.'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429':
+          description: |
+            The row's new token was written and the EMAIL was refused by the
+            per-address ceiling — `NT-RATE-001`. Same stance as
+            `invitePracticeMember`: the decision is durable, the send is not.
           headers:
             Retry-After: { $ref: '#/components/headers/RetryAfter' }
             RateLimit-Limit: { $ref: '#/components/headers/RateLimitLimit' }
@@ -8091,6 +8359,34 @@ components:
             ⚠ See `PracticeMember.hideFinancialFields`: the column is written
             and nothing in this release reads it, so no screen may present it as
             a protection currently in force.
+
+    PracticeMemberUpdateRequest:
+      type: object
+      description: |
+        Both fields optional; an omitted one is left alone. Read the operation
+        description before this schema — the refusal set is the interesting part
+        and it lives there.
+      properties:
+        role:
+          $ref: '#/components/schemas/WorkspaceRole'
+          description: |
+            `PRACTICE_STANDARD` or `CLIENT_ADMIN` only, the same narrowing
+            `PracticeMemberInviteRequest` states and for the same reason. The
+            whole enum is referenced because there is exactly one copy of
+            `WorkspaceRole` in this contract and a subset schema would be a
+            second copy free to drift from prisma.
+        businessIds:
+          type: array
+          maxItems: 200
+          description: |
+            The clients this colleague may reach, REPLACING whatever they had.
+            **An empty array means every client** — the invitation's semantics,
+            kept identical so the same list means the same thing at both ends of
+            a person's time at the firm. Omit the field to leave their current
+            scoping alone; send `[]` to widen them to the whole practice.
+
+            Refused for `CLIENT_ADMIN`, which is practice-wide by definition.
+          items: { type: string }
 
     InvitationPreviewRequest:
       type: object

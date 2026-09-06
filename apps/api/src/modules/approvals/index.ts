@@ -53,6 +53,7 @@
 export {
   type Actor,
   assertCan,
+  assertCanManageTeam,
   mayManageBilling,
   mayManagePeople,
   mayManageTeam,

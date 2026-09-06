@@ -1,7 +1,24 @@
 import { afterEach, expect, test, vi } from 'vitest';
-import { invitePracticeMember, listPracticeMembers } from '@neoting/contracts/client';
+import {
+  invitePracticeMember,
+  listPracticeMembers,
+  removePracticeMember,
+  resendPracticeInvitation,
+  revokePracticeInvitation,
+  updatePracticeMember,
+} from '@neoting/contracts/client';
 
-import { INVITABLE_ROLES, inviteColleague, mayInviteColleague, memberLabel } from './team';
+import {
+  INVITABLE_ROLES,
+  inviteColleague,
+  inviteExpired,
+  mayInviteColleague,
+  memberLabel,
+  removeColleagueAccess,
+  resendInvitation,
+  revokeInvitation,
+  updateColleague,
+} from './team';
 
 /**
  * The practice-team boundary.
@@ -30,6 +47,10 @@ import { INVITABLE_ROLES, inviteColleague, mayInviteColleague, memberLabel } fro
 vi.mock('@neoting/contracts/client', () => ({
   listPracticeMembers: vi.fn(),
   invitePracticeMember: vi.fn(),
+  updatePracticeMember: vi.fn(),
+  removePracticeMember: vi.fn(),
+  revokePracticeInvitation: vi.fn(),
+  resendPracticeInvitation: vi.fn(),
 }));
 
 afterEach(() => vi.clearAllMocks());
@@ -120,4 +141,93 @@ test('the list module never calls the endpoint unless it is enabled', () => {
   // The hook is gated by `enabled`; this pins that the module does not fire on
   // import, which is what would leak a practice query onto a public route.
   expect(listPracticeMembers).not.toHaveBeenCalled();
+});
+
+/**
+ * **Review item 57 — the four management calls.**
+ *
+ * Same rule as the invite tests above: what is under test is the REQUEST this
+ * module composes and the parse it puts the answer through, because those are
+ * the two places a screen silently sends or believes the wrong thing. Every
+ * REFUSAL — the owner, yourself, `PRACTICE_ADMIN` — is the server's and is
+ * proven against a real database in
+ * `apps/api/.../practice-invite.integration.test.ts`; a mock asserting them
+ * here would only be this module agreeing with itself.
+ */
+
+const MEMBER = {
+  userId: 'usr_sam',
+  email: 'sam@ledgerline.test',
+  firstName: 'Sam',
+  lastName: 'Patel',
+  role: 'PRACTICE_STANDARD',
+  isOwner: false,
+  businessIds: ['biz_1'],
+  createdAt: '2026-08-01T09:00:00.000Z',
+};
+
+const updateBody = () => vi.mocked(updatePracticeMember).mock.calls[0]?.[1] as unknown as Record<string, unknown>;
+
+test('⚠ item 57 — an EMPTY client list is SENT, not dropped: it means every client', async () => {
+  // The one place the edit path and the invite path deliberately differ. On an
+  // invite an empty list is omitted (the server refuses one for CLIENT_ADMIN);
+  // on an edit, omitting the key means "leave their scoping alone" and `[]`
+  // means "widen them to the whole practice" — and clearing the picker is the
+  // second one. Dropping it here would silently do nothing.
+  vi.mocked(updatePracticeMember).mockResolvedValue(MEMBER as never);
+  await updateColleague('usr_sam', { role: 'PRACTICE_STANDARD', businessIds: [] });
+
+  expect(updateBody()).toEqual({ role: 'PRACTICE_STANDARD', businessIds: [] });
+});
+
+test('⚠ item 57 — an omitted client list stays omitted, so a role change is not a widening', async () => {
+  vi.mocked(updatePracticeMember).mockResolvedValue(MEMBER as never);
+  await updateColleague('usr_sam', { role: 'CLIENT_ADMIN' });
+
+  expect(updateBody()).toEqual({ role: 'CLIENT_ADMIN' });
+  expect(Object.keys(updateBody())).not.toContain('businessIds');
+});
+
+test('the update body is parsed by the contract before it travels', async () => {
+  // A value this screen should not have offered is refused here rather than
+  // becoming a server-side 400 the user reads as a bug — the invite path's rule.
+  await expect(updateColleague('usr_sam', { role: 'NOT_A_ROLE' as never })).rejects.toThrow();
+  expect(updatePracticeMember).not.toHaveBeenCalled();
+});
+
+test('the three void-ish calls pass the id through and nothing else', async () => {
+  vi.mocked(removePracticeMember).mockResolvedValue(undefined as never);
+  vi.mocked(revokePracticeInvitation).mockResolvedValue(undefined as never);
+
+  await removeColleagueAccess('usr_sam');
+  await revokeInvitation('inv_1');
+
+  expect(vi.mocked(removePracticeMember).mock.calls[0]?.[0]).toBe('usr_sam');
+  expect(vi.mocked(revokePracticeInvitation).mock.calls[0]?.[0]).toBe('inv_1');
+});
+
+test('a re-send that answers with a shape this app does not recognise is refused, not rendered', async () => {
+  // The screen is about to say "a new link is on its way". Reporting an
+  // unverified body as a sent invitation is the failure the invite path pins
+  // for the same reason.
+  vi.mocked(resendPracticeInvitation).mockResolvedValue({ nonsense: true } as never);
+  await expect(resendInvitation('inv_1')).rejects.toThrow(/shape this app does not recognise/);
+});
+
+test('a re-send answers the invitation, with its new expiry', async () => {
+  const fresh = { ...INVITE, expiresAt: '2026-09-20T09:00:00.000Z' };
+  vi.mocked(resendPracticeInvitation).mockResolvedValue(fresh as never);
+  await expect(resendInvitation('inv_1')).resolves.toMatchObject({ id: 'inv_1', expiresAt: fresh.expiresAt });
+});
+
+test('⚠ item 57 — inviteExpired is what tells a dead link from a live one', () => {
+  // Expired invitations are LISTED now, because an expired one the screen
+  // cannot show is one nobody can re-send. `expiresAt` is the only thing that
+  // distinguishes them — no field was added to `Invite`.
+  const at = Date.parse('2026-09-09T09:00:00.000Z');
+  expect(inviteExpired({ expiresAt: '2026-09-09T09:00:01.000Z' }, at)).toBe(false);
+  expect(inviteExpired({ expiresAt: '2026-09-09T08:59:59.000Z' }, at)).toBe(true);
+  // The instant itself is expired: a link that runs out "at 09:00" does not
+  // still work at 09:00, and the server's own `expiresAt <= now` says the same.
+  expect(inviteExpired({ expiresAt: '2026-09-09T09:00:00.000Z' }, at)).toBe(true);
 });
