@@ -480,12 +480,27 @@ resource "aws_s3_bucket_policy" "web" {
 # which means one cached copy of index.html serves every client-side route
 # rather than one error-mapped entry per URL anyone ever visited.
 #
-# The rule: a final path segment containing a dot is a real file (assets/
-# index-a1b2c3.js, favicon.png, manifest.webmanifest); anything else is a
-# client-side route from apps/web/src/lib/router.ts and gets the shell. That
-# covers "/", "/app", "/clients/1/costs" and "/p/<token>" without listing them,
-# which matters because the router is hand-rolled and its route table is not
-# available to Terraform.
+# ⚠ THE RULE IS "IS THIS A FILE WE ACTUALLY SHIP", NOT "DOES IT CONTAIN A DOT"
+# (8 Sep 2026, found by clicking a chase link from a real inbox).
+#
+# It used to be: a final segment containing a dot is a file, anything else is a
+# route — and the comment here claimed that covered "/p/<token>". It did not.
+# A chase token is `base64url(payload).base64url(signature)`, so EVERY chase
+# link has a dot in its last segment, was treated as a static asset, missed in
+# S3, and the client tapping the link in their email got S3's raw
+# `<Error><Code>AccessDenied</Code></Error>` XML. The single most important
+# link in the product was dead for every client, and no smoke test caught it
+# because "/" and every hand-typed route still worked.
+#
+# So the check is now an allowlist of what the build actually emits, which is a
+# fact Terraform can hold exactly: everything content-hashed under /assets/,
+# plus a short list of real extensions for whatever sits in apps/web/public.
+# A token's "extension" is a 43-character base64url signature and matches
+# nothing on that list, so a route is a route however many dots are in it.
+#
+# ⚠ Adding a file to apps/web/public with a NEW extension means adding that
+# extension here. That failure is loud — the file 404s the first time anyone
+# loads it — where the old rule's failure was silent and only hit tokens.
 # --------------------------------------------------------------------------
 resource "aws_cloudfront_function" "web_spa_router" {
   name    = "nt-${local.env}-web-spa-router"
@@ -501,14 +516,38 @@ resource "aws_cloudfront_function" "web_spa_router" {
     function handler(event) {
       var request = event.request;
       var uri = request.uri;
-      var lastSegment = uri.substring(uri.lastIndexOf('/') + 1);
 
-      // No dot in the final segment => not a file => a client-side route.
-      // "" (a trailing slash, including "/") lands here too, which is correct.
-      if (lastSegment.indexOf('.') === -1) {
-        request.uri = '/index.html';
+      // Everything the build content-hashes lives here. Checked first because
+      // it is every request that matters for page weight.
+      if (uri.indexOf('/assets/') === 0) {
+        return request;
       }
 
+      // The handful of real files at the root (apps/web/public plus the shell).
+      // Extensions, not names, so adding an icon does not need a deploy of this
+      // function -- but a NEW extension does. See the banner above.
+      var FILE_EXTENSIONS = [
+        '.html', '.js', '.mjs', '.css', '.map',
+        '.png', '.jpg', '.jpeg', '.svg', '.ico', '.webp', '.avif',
+        '.woff', '.woff2', '.ttf',
+        '.json', '.webmanifest', '.txt', '.xml', '.pdf'
+      ];
+
+      var lastSegment = uri.substring(uri.lastIndexOf('/') + 1);
+      var lower = lastSegment.toLowerCase();
+
+      for (var i = 0; i < FILE_EXTENSIONS.length; i++) {
+        var ext = FILE_EXTENSIONS[i];
+        var at = lower.length - ext.length;
+        // endsWith, spelled out: the runtime is not Node and not a browser.
+        if (at >= 0 && lower.lastIndexOf(ext) === at) {
+          return request;
+        }
+      }
+
+      // Anything else is a client-side route from apps/web/src/lib/router.ts --
+      // "/", "/app", "/clients/1/costs", and "/p/<token>" whatever it contains.
+      request.uri = '/index.html';
       return request;
     }
   JS
