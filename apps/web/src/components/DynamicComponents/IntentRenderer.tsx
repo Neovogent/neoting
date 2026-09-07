@@ -4,6 +4,7 @@ import { useAppContext } from '../../context/AppContext';
 import { ActionCard } from './ActionCard';
 import { ApprovalBatchCard } from './ApprovalBatchCard';
 import { ChaseComposer } from './ChaseComposer';
+import { ChatRuleClientCard, ChatRuleOfferCard } from './ChatRuleCards';
 import { ChatUploadDecisionCard } from './ChatUploadDecisionCard';
 import { ClientIntakeForm } from './ClientIntakeForm';
 import { DocumentPreview } from './DocumentPreview';
@@ -41,6 +42,15 @@ export function IntentRenderer({ message }: { message: Message }) {
   // A length of one guarantees the name is there; the fallback is the same
   // wording used when nothing is scoped, so an impossible hole reads sanely.
   const scopeName = clientNames.length === 1 ? clientNames[0] ?? 'All clients' : clientNames.length ? `${clientNames.length} clients` : 'All clients';
+
+  /**
+   * Review item 51's affordances come BEFORE the intent switch, because both
+   * ride on `GENERAL`: a client-less rule ask and a correct refusal are both
+   * GENERAL turns, and their card is about what the server attached to the
+   * turn rather than about how it was classified.
+   */
+  if (payload.awaiting === 'client') return <ChatRuleClientCard query={query} />;
+  if (payload.offer === 'rule') return <ChatRuleOfferCard businessName={payload.businessName} />;
 
   switch (message.intent) {
     case 'ADD_CLIENT':

@@ -140,6 +140,12 @@ export function mapTurnToPayload(
     ...(ruleDraft === undefined ? {} : { ruleDraft }),
     // ADD_CLIENT's prefill — IntentRenderer hands it to ClientIntakeForm.
     ...(turn.navigation?.clientName === undefined ? {} : { clientName: turn.navigation.clientName }),
+    // Review item 51's two server-set affordances. Both are UI-only: neither
+    // is a draft, and a restored transcript carries text + intent only, so a
+    // reopened conversation degrades to the sentence with no card — which is
+    // correct, because the offer belonged to a moment.
+    ...(turn.awaiting === undefined ? {} : { awaiting: turn.awaiting }),
+    ...(turn.offer === undefined ? {} : { offer: turn.offer }),
   };
 }
 

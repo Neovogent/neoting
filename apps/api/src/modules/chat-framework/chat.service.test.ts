@@ -66,7 +66,13 @@ describe('the turn, end to end', () => {
 
     expect(turn.intent).toBe('GENERAL');
     expect(turn.draft).toBeUndefined();
-    expect(turn.reply).toContain('Pick a client first');
+    // ⚠ Still refused rather than guessed at — the property this test exists
+    // for is unchanged. What changed with review item 51 §2 is that the
+    // refusal now carries `awaiting: 'client'`, so the UI can offer the
+    // in-chat picker instead of leaving a dead end whose only instruction was
+    // to go and find the scope chip.
+    expect(turn.awaiting).toBe('client');
+    expect(turn.reply).toContain('Which client is this rule for?');
   });
 
   test('a fabricated citation collapses to the §9.4 fallback, not to a rendered answer', async () => {
@@ -139,6 +145,49 @@ describe('the export ask — the sole egress must not fall through to a shrug (D
   test('a GENERAL that asks for nothing export-shaped keeps the model reply', async () => {
     const turn = await service(providerReturning(GENERAL)).createTurn(CONTEXT, { utterance: 'hello' });
     expect(turn.reply).toBe('I can help with paperwork.');
+    expect(turn.offer).toBeUndefined();
+  });
+
+  /**
+   * Review item 51 §1. The refusal is CORRECT and must stay — Governance §10
+   * and D44 forbid any rule that releases a document without a human. What the
+   * offer adds is a way to take the alternative the assistant itself named,
+   * instead of the dangling *"Would you like to create a coding rule
+   * instead?"* the accountant had to answer by re-typing.
+   */
+  test('an auto-publish ask keeps its refusal AND carries the rule offer', async () => {
+    const turn = await service(
+      providerReturning({
+        intent: 'SCOPE_REFUSAL',
+        reply: 'Publishing always requires your approval on the review screen.',
+      }),
+    ).createTurn(CONTEXT, { utterance: 'set rules for Barchester Bakehouse so documents auto-publish when ready' });
+
+    // The words are the model's, untouched: the offer is a next step BESIDE
+    // the refusal, never a replacement for it.
+    expect(turn.reply).toBe('Publishing always requires your approval on the review screen.');
+    expect(turn.offer).toBe('rule');
+    expect(turn.draft).toBeUndefined();
+  });
+
+  test('an auto-APPROVE ask offers the same alternative', async () => {
+    const turn = await service(
+      providerReturning({ intent: 'SCOPE_REFUSAL', reply: 'Every document needs a human to review and approve.' }),
+    ).createTurn(CONTEXT, { utterance: 'can you auto-approve everything from this client' });
+    expect(turn.offer).toBe('rule');
+  });
+
+  test('⚠ the offer never fires over a turn the model ROUTED', async () => {
+    // The same guard the export override carries: it keys on the MODEL's own
+    // intent, so a routed turn — or a decorate() degradation — outranks it.
+    const turn = await service(
+      providerReturning({
+        intent: 'LIVE_RULE',
+        reply: 'drafted',
+        rule: { supplier: 'Bidfood', categoryCode: 'COST_OF_SALES_FOOD' },
+      }),
+    ).createTurn(CONTEXT, { utterance: 'set a rule so Bidfood is auto-approved' });
+    expect(turn.offer).toBeUndefined();
   });
 
   test('the §9.4 fabricated-citation fallback outranks the export guidance', async () => {

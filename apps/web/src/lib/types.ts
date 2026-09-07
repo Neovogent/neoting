@@ -1056,6 +1056,13 @@ export const READ_ONLY_INTENTS: Intent[] = [
 export interface MessagePayload {
   /** Which clients this answer is scoped to. Empty means every client. */
   clientIds?: string[] | undefined;
+  /**
+   * Review item 51's chat affordances, set by the SERVER on the turn.
+   * `awaiting: 'client'` renders the in-chat picker; `offer: 'rule'` renders
+   * the actionable alternative a refusal named. Both are UI-only.
+   */
+  awaiting?: 'client' | undefined;
+  offer?: 'rule' | undefined;
   /** Display names for the same scope, kept alongside so cards need no lookup. */
   clientNames?: string[] | undefined;
   /** A single client's name, for the intake form's prefill. */
