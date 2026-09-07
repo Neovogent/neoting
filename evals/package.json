@@ -8,7 +8,8 @@
     "lint": "echo \"lint: covered by the root eslint config\"",
     "test": "echo \"test: the eval suite runs under test:eval, not under unit tests\"",
     "test:eval": "tsx src/run-chat-evals.ts",
-    "test:eval:coding": "tsx src/run-coding-evals.ts"
+    "test:eval:coding": "tsx src/run-coding-evals.ts",
+    "test:eval:workflow": "tsx src/run-workflow-evals.ts"
   },
   "devDependencies": {
     "@neoting/contracts": "workspace:*",

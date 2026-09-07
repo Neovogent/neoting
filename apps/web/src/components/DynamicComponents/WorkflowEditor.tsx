@@ -19,6 +19,8 @@ import { Check, Sparkles, Trash2 } from 'lucide-react';
 import { defineMessages, useIntl, type IntlShape } from 'react-intl';
 import { commonActions } from '../../i18n/common';
 import { useAppContext } from '../../context/AppContext';
+import { API_ENABLED } from '../../api/config';
+import { draftWorkflow } from '../../api/workflows';
 import { parseWorkflow, WORKFLOW_EXAMPLES } from '../../lib/workflowParser';
 import { Modal } from './Modal';
 import { Field, Toggle } from './FormControls';
@@ -36,9 +38,19 @@ const mEditor = defineMessages({
   describePlaceholder: {
     id: 'approvals.workflowEditor.describePlaceholder',
     defaultMessage:
-      'Anything over £500 needs a manager, and over £2,000 the Finance Director too. Auto-publish once approved.',
+      'Anything over £500 needs a manager, and over £2,000 the Finance Director too.',
   },
   buildAction: { id: 'approvals.workflowEditor.buildAction', defaultMessage: 'Build the workflow' },
+  buildingAction: { id: 'approvals.workflowEditor.buildingAction', defaultMessage: 'Reading it…' },
+  describeNeedsClient: {
+    id: 'approvals.workflowEditor.describeNeedsClient',
+    defaultMessage: 'Pick the client first — a policy is compiled against their own chart of accounts.',
+  },
+  buildFailed: { id: 'approvals.workflowEditor.buildFailed', defaultMessage: '{error}' },
+  refusedHeading: {
+    id: 'approvals.workflowEditor.refusedHeading',
+    defaultMessage: 'That could not be turned into a workflow',
+  },
   manualAction: { id: 'approvals.workflowEditor.manualAction', defaultMessage: 'Set it up by hand' },
   readHeading: {
     id: 'approvals.workflowEditor.readHeading',
@@ -250,12 +262,60 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
   const [describing, setDescribing] = useState(isNew);
   const [prompt, setPrompt] = useState('');
   const [read, setRead] = useState<{ understood: string[]; assumed: string[] } | null>(null);
+  const [building, setBuilding] = useState(false);
+  const [buildError, setBuildError] = useState<string | null>(null);
 
-  const build = () => {
-    const parsed = parseWorkflow(prompt, draft);
-    setDraft(parsed.workflow);
-    setRead({ understood: parsed.understood, assumed: parsed.assumed });
-    setDescribing(false);
+  /**
+   * "Describe it instead" — review item 52.
+   *
+   * ⚠ **With the API on this is a SERVER call to the pinned model**
+   * (`POST /v1/approval-workflows/draft`), compiled against this client's own
+   * chart of accounts and refusing a category that is not on it. The local
+   * `parseWorkflow` survives for SYNTHETIC mode only, where there is no server
+   * to ask; it recognises the vocabulary it was written for and little else,
+   * which is the defect this replaces.
+   *
+   * Either way the result fills an EDITABLE form and saves an inert workflow —
+   * so a wrong reading costs a correction, never a policy in force.
+   */
+  const build = async () => {
+    if (!API_ENABLED) {
+      const parsed = parseWorkflow(prompt, draft);
+      setDraft(parsed.workflow);
+      setRead({ understood: parsed.understood, assumed: parsed.assumed });
+      setDescribing(false);
+      return;
+    }
+    setBuilding(true);
+    setBuildError(null);
+    try {
+      const result = await draftWorkflow(draft.businessId, prompt);
+      if (result.status === 'refused') {
+        // A refusal is an ANSWER, not an error: the model read the description
+        // and will not guess at a category this client does not have. It stays
+        // on the describe panel with the reason, because the next move is to
+        // re-word — not to fall through to a half-filled form.
+        setBuildError(result.reason ?? '');
+        return;
+      }
+      const workflow = result.workflow;
+      if (workflow === undefined) return;
+      setDraft({
+        ...draft,
+        name: workflow.name,
+        appliesTo: workflow.appliesTo,
+        specificity: workflow.specificity,
+        selfApproval: workflow.selfApproval,
+        stages: workflow.stages,
+        branches: workflow.branches,
+      });
+      setRead({ understood: result.understood, assumed: result.assumed });
+      setDescribing(false);
+    } catch (error) {
+      setBuildError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBuilding(false);
+    }
   };
 
   return (
@@ -295,13 +355,19 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && prompt.trim()) build();
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && prompt.trim()) void build();
                 }}
                 rows={3}
                 placeholder={intl.formatMessage(mEditor.describePlaceholder)}
                 className="w-full bg-ground border border-white/5 rounded-2xl px-4 py-3 text-[13.5px] text-white placeholder:text-zinc-600 focus:outline-none focus:border-brand transition-colors resize-none"
               />
             </div>
+
+            {API_ENABLED && draft.businessId === '' && (
+              <p className="text-[11.5px] text-amber-400 font-semibold">
+                {intl.formatMessage(mEditor.describeNeedsClient)}
+              </p>
+            )}
 
             <div className="flex flex-wrap gap-2">
               {WORKFLOW_EXAMPLES.map((ex) => (
@@ -315,14 +381,26 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
               ))}
             </div>
 
+            {buildError !== null && (
+              <div className="p-4 rounded-2xl bg-amber-500/[0.07] border border-amber-500/25 flex flex-col gap-1">
+                <div className="text-[11px] font-bold text-amber-400 uppercase tracking-widest">
+                  {intl.formatMessage(mEditor.refusedHeading)}
+                </div>
+                <p className="text-[12.5px] text-zinc-300 leading-relaxed">
+                  {intl.formatMessage(mEditor.buildFailed, { error: buildError })}
+                </p>
+              </div>
+            )}
+
             <div className="flex items-center gap-3">
               <button
-                onClick={build}
-                disabled={!prompt.trim()}
+                onClick={() => void build()}
+                disabled={!prompt.trim() || building || (API_ENABLED && draft.businessId === '')}
+                title={API_ENABLED && draft.businessId === '' ? intl.formatMessage(mEditor.describeNeedsClient) : undefined}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-glow-btn"
               >
                 <Sparkles size={15} />
-                {intl.formatMessage(mEditor.buildAction)}
+                {intl.formatMessage(building ? mEditor.buildingAction : mEditor.buildAction)}
               </button>
               {!isNew || draft.stages.length > 0 ? (
                 <button

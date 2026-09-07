@@ -5,6 +5,7 @@ import {
   createApprovalWorkflowHeader,
   deleteApprovalWorkflowHeader,
   deleteApprovalWorkflowParams,
+  draftApprovalWorkflowBody,
   listApprovalWorkflowsQueryParams,
   listRulesQueryParams,
   replaceApprovalWorkflowBody,
@@ -54,6 +55,21 @@ export class ApprovalWorkflowsController {
     const key = parseIdempotencyKey(createApprovalWorkflowHeader, idempotencyKey);
     const ctx = await this.context.require();
     return this.service.create(ctx, parsed, key);
+  }
+
+  /**
+   * ⚠ Declared BEFORE `:workflowId`'s routes and on its own literal path, so
+   * `/approval-workflows/draft` can never be read as a workflow id. It is a
+   * POST that WRITES NOTHING (`x-nt-side-effect: none`) and therefore takes no
+   * `Idempotency-Key` — the `beginTotpEnrolment` precedent, and the contract
+   * checker agrees.
+   */
+  @Post('draft')
+  @HttpCode(HttpStatus.OK)
+  async draft(@Body() body: unknown) {
+    const parsed = parseBoundary(draftApprovalWorkflowBody, body, 'body');
+    const ctx = await this.context.require();
+    return this.service.draft(ctx, parsed);
   }
 
   @Put(':workflowId')

@@ -22,7 +22,8 @@ import {
 import { ActionProposalsController } from './action-proposals.controller.js';
 import { ActionProposalsService } from './action-proposals.service.js';
 import { ApprovalWorkflowsController, RulesController } from './approval-workflows.controller.js';
-import { ApprovalWorkflowsService } from './approval-workflows.service.js';
+import { ApprovalWorkflowsService, type ChartNamesReader } from './approval-workflows.service.js';
+import { selectWorkflowModel } from './workflow-draft/select-workflow-model.js';
 import { ACTION_PROPOSALS_SERVICE, APPROVAL_WORKFLOWS_SERVICE, PRISMA } from './tokens.js';
 
 /**
@@ -212,8 +213,30 @@ import { ACTION_PROPOSALS_SERVICE, APPROVAL_WORKFLOWS_SERVICE, PRISMA } from './
      */
     {
       provide: APPROVAL_WORKFLOWS_SERVICE,
-      useFactory: (prisma: PrismaClient) => new ApprovalWorkflowsService(prisma, new InMemoryIdempotencyStore()),
-      inject: [PRISMA],
+      useFactory: (prisma: PrismaClient, env: Env) => {
+        /**
+         * "Describe it instead" (review item 52) — the model and the chart it
+         * validates against, both optional and both composed HERE rather than
+         * imported by the service. The chart reader is the
+         * `ChartCategoriesReader` shape one field over, so this module keeps
+         * its one arc into `rules-suggestions` and the service keeps none.
+         */
+        const charts = new ChartOfAccountsService(prisma);
+        const chartNames: ChartNamesReader = async (db, businessId) => {
+          try {
+            return (await charts.resolve(db, businessId)).categories;
+          } catch {
+            // An unreadable chart NARROWS what the model may say (no category
+            // scope, no category branch) rather than failing the draft — the
+            // correction boundary's stance, and the prompt has a sentence for
+            // the empty case.
+            return null;
+          }
+        };
+        const model = selectWorkflowModel(env, selectAiBudget(env), new Logger('WorkflowDraft'));
+        return new ApprovalWorkflowsService(prisma, new InMemoryIdempotencyStore(), model, chartNames);
+      },
+      inject: [PRISMA, ENV],
     },
   ],
 })

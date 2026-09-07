@@ -1,0 +1,59 @@
+{
+  "key": "ef6ee5ae03ede47b",
+  "recordedAt": "2026-09-07",
+  "modelId": "anthropic.claude-opus-4-6-v1",
+  "synthetic": false,
+  "description": "workflow-draft evals — recorded from the live model",
+  "response": {
+    "stop_reason": "tool_use",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_REDACTED",
+        "name": "draft_workflow",
+        "input": {
+          "name": "Food cost of sales – Finance Director review",
+          "scope": {
+            "kind": "costs"
+          },
+          "stages": [
+            {
+              "name": "Finance Director review",
+              "approver": "Finance Director",
+              "canEdit": true
+            }
+          ],
+          "branches": [],
+          "selfApproval": false,
+          "understood": [
+            "Items coded to a 'Food' cost-of-sales category over £250 need Finance Director approval.",
+            "The description references a category called 'Cost of sales: Food', but this exact name does not exist in the client's category list."
+          ],
+          "assumed": [
+            "The description says 'Cost of sales: Food' but the available categories are 'Cost of sales: Food and drink' and 'Cost of sales: Drink'. These are not the same thing, so the scope has been left as general costs rather than risk miscoding the client's books. Please confirm which category you mean.",
+            "No threshold was set on the stage because the description ties the £250 threshold to a specific category that could not be matched. If the scope is corrected to a category, the £250 threshold will be added to the stage.",
+            "Self-approval is not permitted.",
+            "Finance Director is a practice-side role with edit rights (first and only stage).",
+            "No other approvers or branches were mentioned."
+          ]
+        }
+      }
+    ],
+    "usage": {
+      "input_tokens": 1932,
+      "output_tokens": 382,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      }
+    },
+    "model": "claude-opus-4-6",
+    "id": "msg_REDACTED",
+    "type": "message",
+    "role": "assistant",
+    "stop_sequence": null,
+    "stop_details": null
+  }
+}

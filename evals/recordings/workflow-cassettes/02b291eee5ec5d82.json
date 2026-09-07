@@ -1,0 +1,66 @@
+{
+  "key": "02b291eee5ec5d82",
+  "recordedAt": "2026-09-07",
+  "modelId": "anthropic.claude-opus-4-6-v1",
+  "synthetic": false,
+  "description": "workflow-draft evals — recorded from the live model",
+  "response": {
+    "stop_reason": "tool_use",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_REDACTED",
+        "name": "draft_workflow",
+        "input": {
+          "name": "Manager and Finance Director approval by value",
+          "scope": {
+            "kind": "costs"
+          },
+          "stages": [
+            {
+              "name": "Manager review",
+              "approver": "Manager",
+              "canEdit": true,
+              "thresholdAboveGbp": 500
+            },
+            {
+              "name": "Finance Director review",
+              "approver": "Finance Director",
+              "canEdit": false,
+              "thresholdAboveGbp": 2000
+            }
+          ],
+          "branches": [],
+          "selfApproval": false,
+          "understood": [
+            "Items over £500 require Manager approval.",
+            "Items over £2,000 additionally require Finance Director approval.",
+            "The two thresholds represent two sequential stages, not branches."
+          ],
+          "assumed": [
+            "Scope set to costs as no specific scope was mentioned.",
+            "Self-approval is not permitted.",
+            "Manager is a practice-side role and can edit coding; Finance Director is also practice-side but cannot edit as a later sign-off.",
+            "No branches or additional conditional approvers are needed."
+          ]
+        }
+      }
+    ],
+    "usage": {
+      "input_tokens": 1936,
+      "output_tokens": 319,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      }
+    },
+    "model": "claude-opus-4-6",
+    "id": "msg_REDACTED",
+    "type": "message",
+    "role": "assistant",
+    "stop_sequence": null,
+    "stop_details": null
+  }
+}

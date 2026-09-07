@@ -2,23 +2,43 @@ import { HttpStatus } from '@nestjs/common';
 import type { ApprovalWorkflow as WorkflowRow, Prisma, Rule as RuleRow } from '@prisma/client';
 import { z } from 'zod';
 
-import type { ApprovalWorkflow, ApprovalWorkflowBranch, ApprovalWorkflowStage, Rule } from '@neoting/contracts/model';
+import type {
+  ApprovalWorkflow,
+  ApprovalWorkflowBranch,
+  ApprovalWorkflowDraftResult,
+  ApprovalWorkflowStage,
+  Rule,
+} from '@neoting/contracts/model';
 import type {
   createApprovalWorkflowBody,
+  draftApprovalWorkflowBody,
   listApprovalWorkflowsQueryParams,
   replaceApprovalWorkflowBody,
 } from '@neoting/contracts/zod';
 
 import type { PrismaClient } from '../../common/db/prisma.js';
 import type { ScopeContext } from '../../common/db/scope-context.js';
-import { scopedDb } from '../../common/db/scoped-db.js';
+import { scopedDb, type ScopedClient } from '../../common/db/scoped-db.js';
 import { fingerprint, type IdempotencyStore } from '../../common/idempotency/idempotency-store.js';
 import { dateField, type Page, type PageRequest, pageQuery, toPage } from '../../common/pagination/cursor.js';
 import { AppException } from '../../common/problem/problem.js';
+import { composeWorkflowDraft } from './workflow-draft/compose-draft.js';
+import type { BedrockWorkflowModel } from './workflow-draft/bedrock-workflow.js';
+import { WORKFLOW_PROMPT_VERSION } from './workflow-draft/workflow-instructions.js';
 
 type ListQuery = z.infer<typeof listApprovalWorkflowsQueryParams>;
 type CreateBody = z.infer<typeof createApprovalWorkflowBody>;
 type EditBody = z.infer<typeof replaceApprovalWorkflowBody>;
+type DraftBody = z.infer<typeof draftApprovalWorkflowBody>;
+
+/**
+ * The client's chart, as the draft needs it: names, or null when unreadable.
+ * The `ChartCategoriesReader` pattern — a structural seam composed in
+ * `approvals.module.ts`, so this service never imports `rules-suggestions`.
+ */
+export interface ChartNamesReader {
+  (db: ScopedClient, businessId: string): Promise<readonly { readonly name: string }[] | null>;
+}
 
 /**
  * Approval workflows — the surface `approval_workflows` never had.
@@ -57,6 +77,15 @@ export class ApprovalWorkflowsService {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly idempotency: IdempotencyStore,
+    /**
+     * The model behind "Describe it instead" (review item 52), and the chart it
+     * validates categories against. BOTH optional, the `exportEntryPreview`
+     * pattern — on a demo laptop `selectWorkflowModel` returns undefined and
+     * the operation answers an honest 503 rather than the service failing to
+     * construct.
+     */
+    private readonly model?: BedrockWorkflowModel,
+    private readonly chartNames?: ChartNamesReader,
   ) {}
 
   async list(ctx: ScopeContext, query: ListQuery): Promise<Page<ApprovalWorkflow>> {
@@ -219,6 +248,69 @@ export class ApprovalWorkflowsService {
 
     const page = toPage(rows, request);
     return { data: page.data.map(toRule), pageInfo: page.pageInfo };
+  }
+
+
+  /**
+   * "Describe it instead" — the free-text parse (review item 52).
+   *
+   * **It stores nothing.** The answer fills the editor's form, which the human
+   * then corrects and saves; saving writes an INERT workflow and arming that is
+   * a `policy.activate` proposal. So there is no path from a sentence typed
+   * here to a policy in force that does not pass through two humans.
+   *
+   * The chart is read under the CALLER's own scope and handed to the model as
+   * the only category names that exist — and re-checked afterwards in
+   * `composeWorkflowDraft`, which is where the refusal actually lives. Telling
+   * a model the rule and enforcing it are different jobs; only the second one
+   * is a guarantee.
+   */
+  async draft(ctx: ScopeContext, body: DraftBody): Promise<ApprovalWorkflowDraftResult> {
+    if (this.model === undefined) {
+      throw new AppException(
+        'NT-MDL-001',
+        HttpStatus.SERVICE_UNAVAILABLE,
+        'The assistant is not available here',
+        'This build has no model configured. Set the workflow up by hand — every field is the same one.',
+      );
+    }
+
+    const chart = await scopedDb(this.prisma, ctx, async (db) => {
+      // Resolve the business through RLS first: an unreachable workspace and an
+      // absent one are the same 404, and neither confirms the id names anything.
+      const business = await db.business.findUnique({ where: { id: body.businessId }, select: { id: true } });
+      if (business === null) throw notFound();
+      return (await this.chartNames?.(db, body.businessId)) ?? [];
+    });
+
+    const answer = await this.model.draft({
+      // Metered against the practice the SESSION fixes, never one a caller
+      // could name. A business-scoped session has no practice to bill, and the
+      // actor is the honest fallback the budget ledger already accepts.
+      practiceId: ctx.practiceId ?? ctx.actorId,
+      description: body.description,
+      categoryNames: chart.map((category) => category.name),
+    });
+
+    if (!answer.ok) {
+      // ⚠ A model failure is a 503 with a reason, not a `refused` result.
+      // `status: refused` means "I read this and it does not describe a policy
+      // I can build" — an answer. An unreachable model is not an answer, and
+      // dressing one as the other would put the assistant's name on a sentence
+      // it never wrote (§9.3's honest-error floor).
+      throw new AppException(
+        answer.retryable ? 'NT-MDL-001' : 'NT-MDL-002',
+        HttpStatus.SERVICE_UNAVAILABLE,
+        'The workflow could not be drafted',
+        answer.reason,
+      );
+    }
+
+    return {
+      ...composeWorkflowDraft(answer.draft, body.businessId, chart),
+      modelVersion: answer.modelVersion,
+      promptVersion: WORKFLOW_PROMPT_VERSION,
+    };
   }
 
   /** The house 409-on-key-reuse guard, returning the first response on a true replay. */

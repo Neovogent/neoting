@@ -1,0 +1,57 @@
+{
+  "key": "915962a1de01afbe",
+  "recordedAt": "2026-09-07",
+  "modelId": "anthropic.claude-opus-4-6-v1",
+  "synthetic": false,
+  "description": "workflow-draft evals — recorded from the live model",
+  "response": {
+    "stop_reason": "tool_use",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_REDACTED",
+        "name": "draft_workflow",
+        "input": {
+          "name": "Sales – Manager Review",
+          "scope": {
+            "kind": "sales"
+          },
+          "stages": [
+            {
+              "name": "Manager review",
+              "approver": "Manager",
+              "canEdit": true,
+              "clientSide": false
+            }
+          ],
+          "branches": [],
+          "selfApproval": true,
+          "understood": [
+            "All sales items require a single manager review stage.",
+            "Self-approval is allowed."
+          ],
+          "assumed": [
+            "No threshold was specified, so the manager sees every sales item regardless of value.",
+            "The manager is a practice-side role and can edit coding (first practice-side stage)."
+          ]
+        }
+      }
+    ],
+    "usage": {
+      "input_tokens": 1928,
+      "output_tokens": 229,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      }
+    },
+    "model": "claude-opus-4-6",
+    "id": "msg_REDACTED",
+    "type": "message",
+    "role": "assistant",
+    "stop_sequence": null,
+    "stop_details": null
+  }
+}

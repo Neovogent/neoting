@@ -1,0 +1,66 @@
+{
+  "key": "74b679c048bfe273",
+  "recordedAt": "2026-09-07",
+  "modelId": "anthropic.claude-opus-4-6-v1",
+  "synthetic": false,
+  "description": "workflow-draft evals — recorded from the live model",
+  "response": {
+    "stop_reason": "tool_use",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_REDACTED",
+        "name": "draft_workflow",
+        "input": {
+          "name": "Bookkeeper review with partner sign-off over £5,000",
+          "scope": {
+            "kind": "costs"
+          },
+          "stages": [
+            {
+              "name": "Bookkeeper review",
+              "approver": "Bookkeeper",
+              "canEdit": true,
+              "clientSide": false
+            },
+            {
+              "name": "Partner sign-off",
+              "approver": "Partner",
+              "canEdit": false,
+              "clientSide": false,
+              "thresholdAboveGbp": 5000
+            }
+          ],
+          "branches": [],
+          "selfApproval": false,
+          "understood": [
+            "The bookkeeper reviews every item first.",
+            "Items of £5,000 and above also require partner approval as a second stage."
+          ],
+          "assumed": [
+            "Scope set to costs (purchase invoices/bills) as no specific document type was mentioned.",
+            "Self-approval is not allowed.",
+            "The bookkeeper may correct coding (canEdit); the partner may not.",
+            "No branches are needed — the £5,000 threshold is modelled as a stage, not a branch."
+          ]
+        }
+      }
+    ],
+    "usage": {
+      "input_tokens": 1941,
+      "output_tokens": 328,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      }
+    },
+    "model": "claude-opus-4-6",
+    "id": "msg_REDACTED",
+    "type": "message",
+    "role": "assistant",
+    "stop_sequence": null,
+    "stop_details": null
+  }
+}

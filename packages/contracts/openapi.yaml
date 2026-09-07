@@ -7000,13 +7000,19 @@ components:
         understood:
           type: array
           maxItems: 12
-          items: { type: string, maxLength: 200 }
+          items: { type: string, maxLength: 400 }
           description: What the description was taken to mean.
         assumed:
           type: array
           maxItems: 12
-          items: { type: string, maxLength: 200 }
-          description: What it did not say, and therefore had to be defaulted.
+          items: { type: string, maxLength: 400 }
+          description: |
+            What it did not say, and therefore had to be defaulted — and, more
+            importantly, what it asked for that this product will not do: a
+            category that is not on the client's chart, or an auto-publish.
+            400 rather than 200 because a refusal has to explain itself, and
+            the first live eval recording found the shorter cap rejecting
+            exactly those two sentences.
         reason:
           type: string
           maxLength: 400

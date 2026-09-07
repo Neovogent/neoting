@@ -1,0 +1,65 @@
+{
+  "key": "f5ca1fe52385aeea",
+  "recordedAt": "2026-09-07",
+  "modelId": "anthropic.claude-opus-4-6-v1",
+  "synthetic": false,
+  "description": "workflow-draft evals — recorded from the live model",
+  "response": {
+    "stop_reason": "tool_use",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_REDACTED",
+        "name": "draft_workflow",
+        "input": {
+          "name": "Expense claims – manager then finance director",
+          "scope": {
+            "kind": "expense-claims"
+          },
+          "stages": [
+            {
+              "name": "Manager review",
+              "approver": "Manager",
+              "canEdit": true,
+              "clientSide": false
+            },
+            {
+              "name": "Finance Director review",
+              "approver": "Finance Director",
+              "canEdit": false,
+              "clientSide": false,
+              "thresholdAboveGbp": 200
+            }
+          ],
+          "branches": [],
+          "selfApproval": false,
+          "understood": [
+            "All expense claims are reviewed by a manager first.",
+            "Expense claims over £200 also require the finance director as a second stage.",
+            "Both manager and finance director are practice-side roles."
+          ],
+          "assumed": [
+            "Self-approval is not allowed.",
+            "The manager (first stage) can edit coding; the finance director (second stage) cannot."
+          ]
+        }
+      }
+    ],
+    "usage": {
+      "input_tokens": 1932,
+      "output_tokens": 291,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      }
+    },
+    "model": "claude-opus-4-6",
+    "id": "msg_REDACTED",
+    "type": "message",
+    "role": "assistant",
+    "stop_sequence": null,
+    "stop_details": null
+  }
+}
