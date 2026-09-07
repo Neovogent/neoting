@@ -5609,6 +5609,11 @@ components:
         One interpreted turn. `draft` is the only field that can lead to a state
         change, and only by the caller taking it to `POST /action-proposals` —
         nothing here has changed anything.
+
+        `draft` is a ready-to-send proposal request the UI renders as a card,
+        typed as the real request body on purpose: the model cannot draft
+        something `POST /action-proposals` would reject, because there is no
+        shape there that endpoint does not already accept.
       properties:
         intent: { $ref: '#/components/schemas/ChatIntent' }
         reply:
@@ -5618,13 +5623,25 @@ components:
             this is exactly `Information not available in this client's records.`
             and nothing else (§9.4).
         draft:
-          allOf:
-            - $ref: '#/components/schemas/CreateActionProposalRequest'
-          description: |
-            A ready-to-send proposal request the UI renders as a card. Typed as
-            the real request body on purpose: the model cannot draft something
-            `POST /action-proposals` would reject, because there is no shape
-            here that endpoint does not already accept.
+          # A bare `$ref` — it was a one-member `allOf` carrying a description
+          # until 7 Sep 2026, which is one redundant intersection layer for
+          # prose that belongs on the parent. The wire shape is unchanged.
+          #
+          # ⚠ **This field cannot be parsed by the generated client, and the
+          # wrapper was not why.** `CreateActionProposalRequest`'s own members
+          # are each `allOf: [ProposalRequestBase, {kind, payload}]` — two
+          # `.strict()` halves, which orval emits as an intersection that
+          # rejects EVERY input because each half reports the other's keys as
+          # unrecognized. `packages/contracts/CLAUDE.md` documents the gap and
+          # names its two existing workarounds (`proposal-body.ts`,
+          # `api/chases.ts`); `apps/web/src/api/chat.ts` is now the third.
+          #
+          # The consequence was live and long-standing: `createChatTurnResponse`
+          # failed on EVERY turn carrying a draft, so the whole LIVE_RULE beat
+          # answered *"The assistant answered in an unexpected shape (draft)"*
+          # in the browser. Found by walking review item 51's own journey, which
+          # is the flow it broke.
+          $ref: '#/components/schemas/CreateActionProposalRequest'
         navigation: { $ref: '#/components/schemas/ChatNavigation' }
         references:
           type: array
@@ -6946,17 +6963,41 @@ components:
         selfApproval: { type: boolean }
 
     ApprovalWorkflowWriteRequest:
-      allOf:
-        - $ref: '#/components/schemas/ApprovalWorkflowEditRequest'
-        - type: object
-          required: [businessId]
-          properties:
-            businessId:
-              type: string
-              description: |
-                The client this workflow governs, fixed at creation. A workflow
-                cannot be re-pointed later — that is a new policy for a
-                different client, not an edit.
+      type: object
+      required: [businessId, name, appliesTo, specificity, stages, branches, selfApproval]
+      description: |
+        `ApprovalWorkflowEditRequest` plus the client, and ⚠ **spelled out in
+        full rather than composed with `allOf`** — deliberately, and the
+        duplication is the cheaper half of the trade.
+
+        `packages/contracts/CLAUDE.md` records the orval gap: `allOf` between
+        two `.strict()` objects emits an INTERSECTION, and a strict intersection
+        rejects every possible input because each half reports the other half's
+        keys as unrecognized. Two consumers already carry hand-written
+        workarounds for it (`proposal-body.ts`, `api/chases.ts`). This schema
+        was written with `allOf` first and `POST /approval-workflows` answered
+        `400` on every valid body — found by walking the screen, not by a test,
+        because the generated types were happy. Writing the seven fields out
+        costs a paragraph and needs no workaround at all.
+      properties:
+        businessId:
+          type: string
+          description: |
+            The client this workflow governs, fixed at creation. A workflow
+            cannot be re-pointed later — that is a new policy for a different
+            client, not an edit.
+        name: { type: string, minLength: 1, maxLength: 80 }
+        appliesTo: { type: string, minLength: 1, maxLength: 120 }
+        specificity: { type: integer, minimum: 0, maximum: 100 }
+        stages:
+          type: array
+          maxItems: 12
+          items: { $ref: '#/components/schemas/ApprovalWorkflowStage' }
+        branches:
+          type: array
+          maxItems: 12
+          items: { $ref: '#/components/schemas/ApprovalWorkflowBranch' }
+        selfApproval: { type: boolean }
 
     ApprovalWorkflowDraftRequest:
       type: object
@@ -6985,18 +7026,18 @@ components:
         of what was understood and what had to be assumed — shown beside the
         form so the guess can be checked before it is saved. `refused` carries
         the reason instead, and is a normal answer.
+
+        `workflow` is typed as the CREATE REQUEST on purpose: the model cannot
+        draft something `POST /approval-workflows` would reject, because there
+        is no shape here that operation does not already accept. It is a bare
+        `$ref` rather than a one-member `allOf` for the reason
+        `ApprovalWorkflowWriteRequest`'s own description gives.
       properties:
         status:
           type: string
           enum: [drafted, refused]
         workflow:
-          allOf:
-            - $ref: '#/components/schemas/ApprovalWorkflowWriteRequest'
-          description: |
-            Present with `drafted`. Typed as the create request on purpose: the
-            model cannot draft something `POST /approval-workflows` would
-            reject, because there is no shape here that operation does not
-            already accept.
+          $ref: '#/components/schemas/ApprovalWorkflowWriteRequest'
         understood:
           type: array
           maxItems: 12

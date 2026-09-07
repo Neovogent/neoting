@@ -160,6 +160,14 @@ const mEditor = defineMessages({
     id: 'approvals.workflowEditor.saveBlocked',
     defaultMessage: 'Finish or remove the unfinished branches first.',
   },
+  saveBlockedStage: {
+    id: 'approvals.workflowEditor.saveBlockedStage',
+    defaultMessage: 'Every stage needs a name and an approver.',
+  },
+  stageNeedsApprover: {
+    id: 'approvals.workflowEditor.stageNeedsApprover',
+    defaultMessage: 'Name the approver for this stage — a stage with nobody on it approves nothing.',
+  },
   noBranches: {
     id: 'approvals.workflowEditor.noBranches',
     defaultMessage: 'No branches — the chain is linear.',
@@ -256,7 +264,17 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
   // blocked rather than the row being dropped: silently discarding a condition
   // somebody typed half of is how a policy ships missing a rule.
   const unfinishedBranches = draft.branches.some((b) => b.label === '');
-  const canSave = draft.name.trim() !== '' && draft.businessId !== '' && !unfinishedBranches;
+  /**
+   * ⚠ **A stage with no approver, and the walkthrough is what found it.**
+   * `blankWorkflow` leaves the approver EMPTY on purpose — prefilling a person
+   * invents a colleague the practice may not have — and the contract requires
+   * one (`minLength: 1`). Nothing checked it, so the first hand-built workflow
+   * reached `POST /approval-workflows` and came back 400 with the field named,
+   * which is the server being right and the screen being useless about it.
+   */
+  const unfinishedStages = draft.stages.some((stage) => stage.approver.trim() === '' || stage.name.trim() === '');
+  const canSave =
+    draft.name.trim() !== '' && draft.businessId !== '' && draft.stages.length > 0 && !unfinishedStages && !unfinishedBranches;
 
   const isNew = !workflow.name;
   const [describing, setDescribing] = useState(isNew);
@@ -582,6 +600,11 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
                   >
                     <Trash2 size={14} />
                   </button>
+                  {s.approver.trim() === '' && (
+                    <p className="basis-full text-[11.5px] text-amber-400 font-semibold">
+                      {intl.formatMessage(mEditor.stageNeedsApprover)}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -716,7 +739,13 @@ export function WorkflowEditor({ workflow, onSave, onClose }: { workflow: Approv
           <button
             onClick={() => onSave(draft)}
             disabled={!canSave}
-            title={unfinishedBranches ? intl.formatMessage(mEditor.saveBlocked) : undefined}
+            title={
+              unfinishedStages
+                ? intl.formatMessage(mEditor.saveBlockedStage)
+                : unfinishedBranches
+                ? intl.formatMessage(mEditor.saveBlocked)
+                : undefined
+            }
             className="px-6 py-2.5 rounded-full text-sm font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all"
           >
             {intl.formatMessage(mEditor.saveAction)}

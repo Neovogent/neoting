@@ -177,6 +177,34 @@ describe('the export ask — the sole egress must not fall through to a shrug (D
     expect(turn.offer).toBe('rule');
   });
 
+  /**
+   * Review item 51 §2, the case the walkthrough found. With NO client in scope
+   * the chart is empty, so the model often cannot classify a rule ask at all —
+   * it asks for a category list instead — and the picker, hooked only to the
+   * LIVE_RULE branch, never appeared. The accountant was told what was missing
+   * and given no way to supply it.
+   */
+  test('a rule-shaped utterance with NO client asks for one, whatever the model made of it', async () => {
+    const turn = await service(
+      providerReturning({
+        intent: 'GENERAL',
+        reply: 'I need a category reference list for this client before I can set up a coding rule.',
+      }),
+    ).createTurn(CONTEXT, { utterance: 'Whenever Bidfood documents arrive, code them Cost of Sales — Food.' });
+
+    expect(turn.awaiting).toBe('client');
+    // The offer would be the wrong question here — they have already taken it.
+    // The two triggers are kept DISJOINT rather than ordered: `RULE_SHAPED`
+    // matches a rule instruction, `RULE_ASK`/`AUTOMATION_ASK` match an ask
+    // that has not been answered yet. The test above this one is the other
+    // half of that pair.
+    expect(turn.offer).toBeUndefined();
+    // ⚠ The `businessId === undefined` guard is not asserted here: with a
+    // client in scope the turn does a real scoped read, and standing up a fake
+    // Prisma to pin one boolean would cost more than it measures. It is one
+    // condition, in one expression, next to this test's own reason.
+  });
+
   test('⚠ the offer never fires over a turn the model ROUTED', async () => {
     // The same guard the export override carries: it keys on the MODEL's own
     // intent, so a routed turn — or a decorate() degradation — outranks it.

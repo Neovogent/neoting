@@ -34,10 +34,11 @@
  * a regex that has to understand a call chain is a different class of script.
  *
  * MEASURED, on review package H's branch, `apps/web` built with `--manifest`
- * and walked with the closure script: floor 208,060 → 204,388 B gzip, worst
- * route (InboxesView) 249,540 → 246,128 B. The package's own contract
- * additions cost +856 B of that, so the net to the product is a **3.4 kB
- * reclaim on every route**.
+ * and walked with the closure script: floor 208,060 → 204,255 B gzip, worst
+ * route (InboxesView) 249,540 → 246,019 B. The package's own contract
+ * additions cost +856 B of that — six operations in a tag directory nothing on
+ * the floor imports, which alone had put InboxesView 412 B OVER budget — so the
+ * net to the product is a **~3.8 kB reclaim on every route**.
  *
  * Sibling of `strip-zod-describe.mjs`, which reclaimed ~10 kB of floor from
  * orval copying the spec's prose into the runtime — same seam, same reason.

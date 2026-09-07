@@ -138,6 +138,33 @@ const AUTOMATION_ASK =
 /** The same utterance shape, said as a rule ask rather than an automation one. */
 const RULE_ASK = /\bset\b[^.]{0,20}\brules?\b|\bmake (a|the) rule\b|\bcoding rule\b/i;
 
+/**
+ * A coding-rule instruction, however it is phrased — and ⚠ **this is the one
+ * the walkthrough proved was needed.**
+ *
+ * `decorate()` offers the client picker on the LIVE_RULE branch, which assumes
+ * the model classified the ask. With NO client in scope it frequently cannot:
+ * `readContext` returns an empty chart for an unscoped turn, and the prompt
+ * tells the model to code against the client's own categories — so *"Whenever
+ * Bidfood documents arrive, code them Cost of Sales — Food"* came back as a
+ * polite GENERAL asking for a category list, and the picker never appeared.
+ * The accountant was told what was missing and still given no way to supply it,
+ * which is item 51 §2's defect wearing a different sentence.
+ *
+ * So the picker is offered on the UTTERANCE too, and only when there is no
+ * client: the missing client is the reason the model could not answer, and it
+ * is the one thing a picker can fix. It offers and nothing else.
+ *
+ * ⚠ It matches a rule INSTRUCTION ("whenever X arrives, code them Y"), not an
+ * utterance that merely mentions rules. `RULE_ASK`'s "set a rule for…" is
+ * deliberately absent: *"set rules for X so documents auto-publish"* is an
+ * automation ask that has not been answered yet, and it must get the OFFER —
+ * asking which client to hang a rule on before they have said they want one is
+ * a question about the wrong thing. The two are kept disjoint here rather than
+ * ordered around each other.
+ */
+const RULE_SHAPED = /\bwhenever\b[^.]{0,80}\bcode\b|\bcode (them|it|these|those)\b/i;
+
 export interface ChatTurnInput {
   readonly utterance: string;
   readonly businessId?: string | undefined;
@@ -258,12 +285,28 @@ export class ChatService {
     // ROUTES them (intent SHOW_EXPORTS, the Export screen opens) instead of
     // answering prose about where the screen is. See EXPORT_GUIDANCE above.
     /**
+     * Review item 51 §2, the unscoped case. A rule-shaped utterance with NO
+     * client is answerable by nobody until a client is named — see RULE_SHAPED
+     * for why the LIVE_RULE branch alone was not enough. Checked FIRST so a
+     * turn that needs a client asks for one rather than re-offering the rule
+     * the accountant has already accepted.
+     */
+    if (
+      (turn.intent === 'GENERAL' || turn.intent === 'SCOPE_REFUSAL') &&
+      input.businessId === undefined &&
+      RULE_SHAPED.test(input.utterance)
+    ) {
+      decorated.awaiting = 'client';
+    }
+
+    /**
      * Review item 51 §1. Keyed on the MODEL's own intent so it can never fire
      * over a routed turn or a `decorate()` degradation, and placed BEFORE the
      * export override because an automation ask is the more specific reading of
      * an utterance that could match both.
      */
     if (
+      decorated.awaiting === undefined &&
       (turn.intent === 'GENERAL' || turn.intent === 'SCOPE_REFUSAL') &&
       (AUTOMATION_ASK.test(input.utterance) || RULE_ASK.test(input.utterance))
     ) {

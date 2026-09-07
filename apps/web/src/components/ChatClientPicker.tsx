@@ -5,7 +5,7 @@ import { Modal } from './DynamicComponents/Modal';
 import { commonActions } from '../i18n/common';
 
 /**
- * The chat upload's client question, asked instead of refused. Files dropped
+ * The chat's client question, asked instead of refused. Files dropped
  * with "All clients" active (or several attached) used to meet a dead-end
  * dialog whose only instruction was to close it, find the composer's client
  * selector, and drop the files again. The files are already in hand — so this
@@ -17,6 +17,14 @@ import { commonActions } from '../i18n/common';
  * chat upload flow is floor-resident and the worst route's headroom is ~3 kB,
  * so this dialog — Modal frame and all — must land on its own chunk, fetched
  * on the first drop that needs it.
+ *
+ * ⚠ **Its copy is a PROP since review package H, and that is what made it
+ * reusable.** Item 51 §2 says the rule flow must use this picker rather than
+ * mint a second, and a component whose only sentences are *"Choose a client
+ * for this upload"* and *"nothing uploads until you do"* cannot be reused —
+ * pointed at a coding rule it tells the accountant something false about what
+ * is happening. The upload wording is the DEFAULT, so that call site is
+ * unchanged and the second one says its own thing.
  */
 
 const m = defineMessages({
@@ -37,11 +45,16 @@ const m = defineMessages({
 export default function ChatClientPicker({
   clients,
   fileCount,
+  title,
+  detail,
   onPick,
   onCancel,
 }: {
   clients: ReadonlyArray<{ id: string; name: string }>;
   fileCount: number;
+  /** Overrides the upload wording. Omitted, this is the upload dialog it has always been. */
+  title?: string | undefined;
+  detail?: string | undefined;
   onPick: (clientId: string) => void;
   onCancel: () => void;
 }) {
@@ -50,16 +63,17 @@ export default function ChatClientPicker({
   const q = query.trim().toLowerCase();
   const matches = useMemo(() => (q ? clients.filter((c) => c.name.toLowerCase().includes(q)) : clients), [clients, q]);
 
+  const heading = title ?? intl.formatMessage(m.title);
+  const body = detail ?? intl.formatMessage(m.detail, { count: fileCount });
+
   return (
-    <Modal onClose={onCancel} width="max-w-md" label={intl.formatMessage(m.title)}>
+    <Modal onClose={onCancel} width="max-w-md" label={heading}>
       <div className="w-full bg-card border border-white/10 rounded-[28px] p-6 shadow-2xl">
         <div className="flex items-center gap-3 mb-2">
           <UploadCloud size={20} className="text-brand shrink-0" />
-          <h3 className="text-base font-bold text-white">{intl.formatMessage(m.title)}</h3>
+          <h3 className="text-base font-bold text-white">{heading}</h3>
         </div>
-        <p className="text-[13px] text-zinc-500 leading-relaxed mb-4">
-          {intl.formatMessage(m.detail, { count: fileCount })}
-        </p>
+        <p className="text-[13px] text-zinc-500 leading-relaxed mb-4">{body}</p>
 
         <div className="relative mb-3">
           <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" />

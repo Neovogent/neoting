@@ -122,6 +122,49 @@ prevent. Finding text is wrapped (§9.6): it quotes the uploaded file.
 model decides only that the accountant asked to see the list; the Bank tab's
 Statements sub-tab reads every period, count and verdict from the server itself.
 
+## Review item 51 (7 Sep 2026) — two SERVER-SET affordances on the turn
+
+`ChatTurn` gained `awaiting` and `offer`. ⚠ **Neither is in `ModelTurn`** —
+there is no field a model could put either in — and neither changes what the
+turn did, which is nothing. Both are set in `decorate()` and both are
+deterministic, keyed on the MODEL's own intent: the `EXPORT_GUIDANCE` pattern,
+so no prompt change and therefore **no §9.8 re-record** (the gate was re-run in
+replay after this: 34 cases, intent 94.1%, fields 100%, 0 leaks, the two
+standing misses unchanged).
+
+**`offer: 'rule'`** — asked to auto-publish or auto-approve, the assistant
+refuses, and the refusal is RIGHT and untouched. What it used to end with was
+*"Would you like to create a coding rule instead?"* and no way to say yes. The
+offer is that question with a button behind it; the web renders a card that
+collects a supplier and a category and re-asks in this surface's own vocabulary.
+
+**`awaiting: 'client'`** — a rule ask with no client answered *"Pick a client
+first"* and offered no way to pick one. The UI now renders `ChatClientPicker`
+and re-sends the utterance verbatim, scoped.
+
+⚠ **It fires on the UTTERANCE, not only on the LIVE_RULE branch, and the
+walkthrough is why.** With no client in scope `readContext` returns an empty
+chart, so the model frequently cannot classify a rule ask at all — it politely
+asks for a category list instead — and a picker hooked only to LIVE_RULE never
+appeared. `RULE_SHAPED` matches a rule INSTRUCTION and is kept DISJOINT from
+`AUTOMATION_ASK`/`RULE_ASK` rather than ordered around them: *"set rules for X
+so documents auto-publish"* is an ask that has not been answered yet and must
+get the OFFER, because asking which client to hang a rule on before they have
+said they want one is a question about the wrong thing.
+
+⚠ **A trailing word boundary after `auto[- ]?approv` can never match
+"auto-approve"** — it falls mid-word. Caught by a test that names the exact
+utterance rather than a shape; keep it that way.
+
+⚠ **`ChatTurn.draft` had NEVER parsed in the browser, and this package found
+it.** `CreateActionProposalRequest`'s members are `allOf` of two `.strict()`
+halves — the orval gap `packages/contracts/CLAUDE.md` documents — so
+`createChatTurnResponse` failed on every turn carrying a draft and the chat
+answered *"The assistant answered in an unexpected shape (draft)"*. **The whole
+LIVE_RULE beat was dead on that surface for as long as the field has existed.**
+Nothing on this side was wrong; `apps/web/src/api/chat.ts` now lifts the draft
+out and narrows it separately, the repo's third workaround for that one gap.
+
 ## Model IDs are LAW-adjacent — read this before changing one
 
 The IDs in `models.ts` are D28-as-amended (ADR 0001). Opus 4.8 and Haiku 4.5 are

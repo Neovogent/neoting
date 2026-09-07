@@ -38,6 +38,11 @@ const m = defineMessages({
     id: 'shell.chatRule.pickDetail',
     defaultMessage: 'Rules live inside one client workspace. Nothing is created until you pick one and approve it.',
   },
+  pickerDetail: {
+    id: 'shell.chatRule.pickerDetail',
+    defaultMessage:
+      'A coding rule is checked against this client’s own chart of accounts, so it has to be one client. Nothing is created by choosing.',
+  },
   asking: { id: 'shell.chatRule.asking', defaultMessage: 'Asking…' },
   // ── The offer (item 51 §1) ─────────────────────────────────────────────
   offerHeading: { id: 'shell.chatRule.offerHeading', defaultMessage: 'Draft a coding rule instead?' },
@@ -121,7 +126,14 @@ function useReask() {
  */
 export function ChatRuleClientCard({ query }: { query: string }) {
   const intl = useIntl();
-  const { clients, serverClientIdFor } = useAppContext();
+  /**
+   * ⚠ `businesses`, NOT `clients`. With the API on, `AppContext.clients` is the
+   * SYNTHETIC cast and is empty (launch M2 — nothing degrades to seeds), so the
+   * first version of this card opened a picker with no clients in it. The live
+   * list is `businesses`, and its ids are already server ids, so no
+   * `serverClientIdFor` bridge is needed either.
+   */
+  const { businesses } = useAppContext();
   const { ask, asking } = useReask();
   const [open, setOpen] = useState(false);
 
@@ -144,12 +156,14 @@ export function ChatRuleClientCard({ query }: { query: string }) {
       {open && (
         <Suspense fallback={null}>
           <ChatClientPicker
-            clients={clients}
+            clients={businesses}
             fileCount={0}
+            title={intl.formatMessage(m.pickHeading)}
+            detail={intl.formatMessage(m.pickerDetail)}
             onCancel={() => setOpen(false)}
-            onPick={(clientId) => {
+            onPick={(businessId) => {
               setOpen(false);
-              void ask(query, serverClientIdFor(clientId));
+              void ask(query, businessId);
             }}
           />
         </Suspense>

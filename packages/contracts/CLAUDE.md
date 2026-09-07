@@ -66,7 +66,18 @@ Import by subpath — `@neoting/contracts/zod`, `/model`, `/client` — so `apps
 
 **orval copies every spec `description` into the generated Zod as `.describe('…')`, unconditionally.** No option turns it off (measured on v7.21). The descriptions are this contract's design prose — multi-paragraph notes on `ProposalKind` and friends — and Zod stores them as metadata nothing in this repo reads, while `apps/web` ships the schemas it parses responses with: METH S12 measured ~10 kB gzip of spec prose sitting on the bundle floor of every route. `pnpm generate` therefore chains `scripts/strip-zod-describe.mjs`, and `check-contract.mjs` fails the build if any generated Zod file still carries a `.describe(`. The prose survives where it is read — `openapi.yaml` itself and the JSDoc on `model/`.
 
-**`allOf` + `.strict()` emits an intersection that rejects every input.** Both halves are `.strict()`, so each rejects the other's keys — the generated whole-schema parse can never succeed for a composed type. Known consumers work around it by parsing the halves separately: `apps/api/src/modules/approvals/proposal-body.ts` (the original discovery, for `CreateActionProposalRequest`) and `apps/web/src/api/chases.ts` (`Chase = ChaseSummary & {items, messages}`, hit in METH S12). Both pin the gap with a test so an orval fix surfaces as a deletable workaround, not a mystery.
+**`allOf` + `.strict()` emits an intersection that rejects every input.** Both halves are `.strict()`, so each rejects the other's keys — the generated whole-schema parse can never succeed for a composed type. Known consumers work around it by parsing the halves separately: `apps/api/src/modules/approvals/proposal-body.ts` (the original discovery, for `CreateActionProposalRequest`), `apps/web/src/api/chases.ts` (`Chase = ChaseSummary & {items, messages}`, hit in METH S12) and, since 7 Sep 2026, **`apps/web/src/api/chat.ts`**. All three pin the gap with a test so an orval fix surfaces as a deletable workaround, not a mystery.
+
+⚠ **PREFER WRITING A COMPOSED REQUEST OUT IN FULL over composing it with
+`allOf`.** Review package H learned this twice in one afternoon, and both were
+live defects rather than test failures:
+
+- `ApprovalWorkflowWriteRequest` was `allOf: [ApprovalWorkflowEditRequest, {businessId}]`, so `POST /approval-workflows` answered `400 NT-VAL-001` on **every valid body**, naming its own fields as unrecognized. The generated TYPES were perfectly happy, so nothing caught it until the screen was walked. It is seven fields written out now and needs no workaround at all.
+- `ChatTurn.draft` exposed the SAME gap one `$ref` deep — `CreateActionProposalRequest`'s own members are the composed things — so `createChatTurnResponse` failed on every turn carrying a draft and **the chat's whole LIVE_RULE beat was dead in the browser for as long as the field existed**, answering *"The assistant answered in an unexpected shape (draft)"*. Found by walking a review item whose journey ran through it.
+
+The rule that falls out: a request schema is cheap to spell out and expensive to
+compose. Reserve `allOf` for response shapes nobody parses whole, and give any
+composed type a client must parse a consumer-side test.
 
 ## The contract checker
 
@@ -651,6 +662,55 @@ session, display words (`Uploaded by/Captured by {member} ({business})`,
 consumers read legacy `uploaded-by-delegated-session` rows as the client
 portal — the superset true of both. The CLIENT_PORTAL enum value remains open
 as a future first-class split, recorded for the owner rather than decided here.
+
+## Approval workflows, rules, and `policy.activate` (7 Sep 2026 — review package H)
+
+Six operations, one `ProposalKind`, one error code, two additive prisma columns.
+Shakib ruled all four open questions in session; the arguments are at the
+schemas.
+
+| Surface | Operations |
+|---|---|
+| Approvals | `GET`+`POST /approval-workflows` · `PUT` + `POST .../{id}/deletion` · `POST /approval-workflows/draft` · `GET /rules` |
+
+⚠ **The gap it closed is the largest of this review round.** `ApprovalWorkflow`
+has been a prisma table since the init migration with **zero** operations here
+and **zero** references in `apps/api`: the product's whole Workflows surface was
+browser state, and `rule.create`'s output was visible nowhere at all.
+
+**Five decisions worth knowing before reading the YAML:**
+
+- **A saved workflow is INERT, and arming it is `policy.activate`.** Neither
+  write body carries `isActive`. Composing a policy is D44's compose half;
+  arming one decides what pauses for *other people's* approvals, which is a
+  state change on the spine. ONE kind for both directions — "off" is not the
+  safe direction, it is the direction that removes a check.
+- **One workflow, one client.** `businessId` is required and there is no field
+  on the replace request that could re-point it: that is a new policy for a
+  different client, not a text edit.
+- **There is no auto-publish field, and the absence is the point.** D42 removed
+  auto-publish from this release and D44 reserves release for the super admin;
+  a stored switch nothing could honour is the class of claim D42 exists to stop.
+- **`POST /approval-workflows/draft` is `x-nt-side-effect: none` and takes no
+  `Idempotency-Key`** — the `beginTotpEnrolment` precedent. It stores nothing:
+  it returns a draft that fills an editable form, which is what makes the
+  panel's *"every field below is editable"* structurally true.
+- **`ApprovalWorkflowWriteRequest` is written out rather than composed** — see
+  the `allOf` warning above, which this schema is one half of.
+
+`NT-WFL-001` is a DELETE-shaped refusal, not a proposal one: deleting an armed
+workflow would remove an approval gate with no review — the way round
+`policy.activate` — so the ingest-class operation refuses and points at the
+proposal instead. Runbook page owed.
+
+⚠ **`scripts/mark-zod-pure.mjs` joined the generate chain with this change**, and
+it is a product-wide reclaim rather than a package cost. orval emits every
+schema as a top-level `zod.object(...)` CALL, which Rollup may not tree-shake,
+so the barrel pins all 174 of them onto every route that touches
+`@neoting/contracts/zod`. A `/*#__PURE__*/` annotation reclaimed **3.8 kB of
+bundle floor** — measured, both sides built with `--manifest`. This package's own
+six operations cost +856 B on their own and had put the worst route over budget;
+after the reclaim every route is lighter than main.
 
 ## Retention and deletion (7 Sep 2026 — review items 61 + 67, package L)
 

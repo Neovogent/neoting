@@ -2,6 +2,7 @@ import { createChatTurn } from '@neoting/contracts/client';
 import { createChatTurnResponse } from '@neoting/contracts/zod';
 import type { ChatTurn, ChatTurnRequest } from '@neoting/contracts/model';
 import { NtProblemError } from '@neoting/contracts';
+import { z } from 'zod';
 import { unwrapBody } from './envelope';
 import type { DocStatus, MessagePayload } from '../lib/types';
 
@@ -41,10 +42,53 @@ export type ChatTurnResult = ({ kind: 'ok' } & ChatTurn) | ChatTurnFailure;
 /** The `NT-MDL-*` family plus rate limiting — everything a retry might fix. */
 const RETRYABLE = new Set(['NT-MDL-001', 'NT-MDL-003', 'NT-MDL-004', 'NT-RATE-001', 'NT-SRV-001']);
 
+/**
+ * ⚠ **`draft` is parsed SEPARATELY, and this is the repo's third workaround for
+ * one measured orval gap.**
+ *
+ * `CreateActionProposalRequest`'s members are each
+ * `allOf: [ProposalRequestBase, {kind, payload}]` — two `.strict()` halves,
+ * which orval emits as an intersection that rejects EVERY input because each
+ * half reports the other's keys as unrecognized (`packages/contracts/CLAUDE.md`
+ * records the measurement and the two existing workarounds:
+ * `approvals/proposal-body.ts` on the server, `api/chases.ts` here).
+ *
+ * The consequence was live and had been for as long as the field existed:
+ * `createChatTurnResponse` failed on every turn that carried a draft, so the
+ * whole LIVE_RULE beat answered *"The assistant answered in an unexpected shape
+ * (draft)"* — the chat could never render the rule card it had just composed.
+ * Found by walking review item 51's own journey.
+ *
+ * So the draft is lifted out before the generated parse and narrowed here.
+ * Deliberately SHALLOW: `mapTurnToPayload` already reads only `kind`,
+ * `payload.scopeKey` and `payload.sets`, and re-describing the whole proposal
+ * union in the browser would be a second opinion about a shape the server owns.
+ * `LiveProposalFlow` sends it back verbatim, and `POST /action-proposals`
+ * re-parses it properly on the far side — which is where the real gate is.
+ */
+const DraftShape = z
+  .object({
+    kind: z.string().min(1),
+    businessId: z.string().nullable().optional(),
+    payload: z.record(z.unknown()),
+  })
+  .passthrough();
+
 export async function requestChatTurn(request: ChatTurnRequest): Promise<ChatTurnResult> {
   try {
     const raw = await createChatTurn(request);
-    const parsed = createChatTurnResponse.safeParse(unwrapBody(raw));
+    const body = unwrapBody(raw);
+    // Lift the draft out, parse the rest with the generated schema, put it back.
+    const { draft, ...rest } = (body ?? {}) as Record<string, unknown>;
+    const parsed = createChatTurnResponse.safeParse(rest);
+    const parsedDraft = draft === undefined ? undefined : DraftShape.safeParse(draft);
+    if (parsedDraft !== undefined && !parsedDraft.success) {
+      return {
+        kind: 'failure',
+        retryable: false,
+        message: 'The assistant answered in an unexpected shape (draft).',
+      };
+    }
 
     if (!parsed.success) {
       // A contract drift, not a model failure. Named as such so nobody spends
@@ -56,7 +100,14 @@ export async function requestChatTurn(request: ChatTurnRequest): Promise<ChatTur
       };
     }
 
-    return { kind: 'ok', ...(parsed.data as ChatTurn) };
+    const turn = parsed.data as ChatTurn;
+    // Re-attached rather than spread conditionally: under
+    // `exactOptionalPropertyTypes` a spread of `{}` and a spread of
+    // `{ draft }` do not unify into the optional property's own type.
+    if (parsedDraft !== undefined) {
+      turn.draft = parsedDraft.data as unknown as NonNullable<ChatTurn['draft']>;
+    }
+    return { kind: 'ok', ...turn };
   } catch (error) {
     if (error instanceof NtProblemError) {
       return {

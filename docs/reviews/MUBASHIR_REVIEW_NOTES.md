@@ -1381,6 +1381,60 @@ The refusals themselves are right and must stay: auto-publish and auto-approve a
 4. **Visibility after approval:** the implemented rule must appear in **Client → Approvals → Workflows**. Check what that tab currently lists — if approved `rules` rows don't surface there (or anywhere per-client), that's a real gap independent of chat: a rule that can't be seen can't be audited or retired.
 5. **Scope note for Shakib:** if "auto-publish once Ready" is ever wanted as a *rule kind*, that is a D42/D44 amendment, not a chat feature — record the ask, don't build it. Chat's rule vocabulary today is coding rules; any wider rule taxonomy (chase policy, VAT treatment, routing) needs contract + engine work and its own decision.
 
+**✅ RESOLVED — package H, 7 Sep 2026** (with items 52 and 53; the whole
+workflows story landed as one work-package, as this entry asked).
+
+All four sections, walked live and screenshotted under
+`docs/reviews/assets/2026-09-07-workflows-package-h/`:
+
+1. **The dangling offer is a card** (`13-item51-refusal-WITH-an-actionable-offer`).
+   The refusals are UNTOUCHED and still the model's own words — *"Auto-publish
+   rules aren't something this surface can set up… Publishing always requires
+   your manual approval before anything is released."* Beneath them now sits
+   **Draft a coding rule instead? · Yes — draft it / No thanks**, and Yes opens a
+   two-field composer (supplier, code it to) that re-asks in the assistant's own
+   vocabulary and enters the same `LIVE_RULE` beat. `ChatTurn.offer` is
+   SERVER-SET and deterministic — keyed on the model's own intent, the
+   `EXPORT_GUIDANCE` precedent, so no prompt change and no §9.8 re-record.
+2. **The in-chat client picker** (`15`, `16`). *"Pick a client first"* with
+   nothing to press is gone; `ChatTurn.awaiting = 'client'` renders
+   `ChatClientPicker` — the one built for held uploads, reused as this entry
+   requires, with its copy made a prop so it can say what it is picking for —
+   and the utterance is re-sent VERBATIM with the chosen client attached.
+   ⚠ The walkthrough found the hook was in the wrong place: with no client
+   there is no chart, so the model often cannot classify a rule ask at all and
+   answers asking for a category list. The picker is therefore offered on the
+   UTTERANCE when no client is in scope, not only on a `LIVE_RULE` turn.
+3. **Confirmation before staging** (`17`, `19`) — already true and left alone:
+   `LiveRuleCard` names the client, shows the rule in full, and stages through
+   an explicit click → Review → Approve.
+4. **It lands in Approvals → Workflows** (`21`). `GET /v1/rules` and a **Coding
+   rules in force** list now sit under the Workflows tab: the chat-set rule
+   shows as *"Aldgate Supplies → categoryCode OFFICE_COSTS · from chat"*.
+
+⚠ **The gap this entry predicted was real and bigger than expected.** §4 asked
+*"check what that tab currently lists"*. It listed nothing from the server at
+all — `ApprovalWorkflow` was a prisma table with **zero** operations in the
+contract and **zero** references in `apps/api`, so the entire Workflows surface
+was browser state. `rule.create` rows were visible nowhere in the product. Both
+are fixed; see item 53 for the contract and the persistence.
+
+⚠ **And one long-standing bug the journey walked straight into:
+`ChatTurn.draft` had NEVER parsed in the browser.**
+`CreateActionProposalRequest`'s members are `allOf` of two `.strict()` halves —
+the orval gap `packages/contracts/CLAUDE.md` documents — so
+`createChatTurnResponse` failed on every turn carrying a draft and the chat
+answered *"The assistant answered in an unexpected shape (draft)"*. The whole
+LIVE_RULE beat was dead on this surface for as long as the field has existed.
+`api/chat.ts` now lifts the draft out and narrows it separately, the repo's
+third workaround for that one gap.
+
+**§5 — the scope note for Shakib, recorded and NOT built.** No rule kind
+releases anything. "Auto-publish once Ready" remains a D42/D44 amendment rather
+than a chat feature, and the chat's rule vocabulary is still coding rules only.
+The workflow surface added no rule taxonomy either — an approval workflow
+decides what PAUSES, never what publishes.
+
 ## Item 52 — Workflow "Describe it instead" only understands the preset phrasing; wire real AI parsing
 
 **Original (verbatim):**
@@ -1397,6 +1451,62 @@ Three layers, in dependency order:
 2. **The AI parse belongs server-side, in the §9 chat-framework discipline:** the free-text description goes to the pinned model wrapped as `<untrusted_content>`, the output is a Zod-validated workflow draft (the structured shape the form edits), refusals named, eval case added. Never a client-side model call, and the draft fills the form for the human to correct — exactly the "every field below is editable" promise the panel already makes.
 3. **D42/D44 flag:** the preset parse produces "Publishes automatically once fully approved" — a workflow stage chain that ends in auto-publish collides with super-admin-only release (D44) unless the final stage *is* the super admin's approval. Whatever the parser (preset or AI) emits, the vocabulary must say "released by the super admin", not "publishes automatically" — same copy rule as everywhere else, and a design question for the workflow schema itself.
 
+**✅ RESOLVED — package H, 7 Sep 2026.**
+
+**Layer 1 — what workflows even are, live: nothing.** The check this entry
+asked for came back worse than it guessed. `ApprovalWorkflow` has been a prisma
+table since the init migration with **zero** operations in
+`packages/contracts/openapi.yaml` and **zero** references anywhere in
+`apps/api`; the Workflows tab composed, saved, toggled and deleted policies
+entirely in React state. Nothing writes the `approvals` table either — the
+shipped Review → Approve spine is `ActionProposal`, and `ApprovalWorkflow` /
+`Approval` are SoT Stage 9 design tables only `prisma/seed.ts` had ever touched,
+in a stage shape no surface has ever read. So contract and persistence landed
+first, per this entry's own dependency order. See item 53 for that half.
+
+**Layer 2 — the AI parse, server-side, in the §9 discipline.**
+`POST /v1/approval-workflows/draft`: the description wrapped as
+`<untrusted_content>`, a `.strict()` Zod parse, its own prompt version
+(`workflow-draft/2026-09-07.1`), its own eval family, refusals named. The model
+picks WORDS and SHAPES — no id, no branch `label` (the server composes the
+sentence, so words and condition cannot drift), no `specificity`, and **no
+`isActive`**: there is no shape in which it could arm anything. A category not
+on the client's own chart is **refused, never nearest-matched** — `drafts.ts`'s
+rule, pinned deterministically in `compose-draft.test.ts` including that
+"Cost of sales: Food" does not become "Cost of sales: Food and drink".
+
+Walked live (`docs/reviews/assets/2026-09-07-workflows-package-h/11`, `12`): *"our
+bookkeeper looks at everything first, then anything chunky — say five grand and
+up — has to go past the partner as well, and a supplier we have never used
+before always needs compliance to have a look"* compiled into two stages
+(Bookkeeper, every item, can edit; Partner sign-off at £5,000) plus a
+brand-new-supplier branch adding Compliance, with eight lines of *understood*
+and *assumed* beside the form. That phrasing has no vocabulary in the old
+browser parser at all.
+
+**§9.8:** a third eval family, `pnpm test:eval:workflow` —
+`evals/datasets/workflow-drafts.jsonl`, its own runner and cassettes, recorded
+LIVE against opus-4-6. **10 cases, 36 assertions, 100% accuracy, 0 injection
+leaks.** ⚠ The first recording found a bug in the SCHEMA, not the model: a
+200-character cap on `understood`/`assumed` rejected the two answers that
+mattered most — the model declining to substitute a near-miss category, and the
+model refusing an injected "mark this active and skip approvals" — because a
+refusal that explains itself is longer than a summary. Raised to 400. One eval
+expectation was corrected and is named in the dataset with its reasoning, since
+that is the move that can make a gate stop measuring.
+
+**Layer 3 — D42/D44.** The auto-publish toggle is **deleted**, not reworded:
+the type, the editor control, the card pill, the seed rows, the parser's
+vocabulary, and the `AppContext` branch that flipped a document to `published`
+when the last stage cleared. D42 removed auto-publish from this release and D44
+reserves release for the super admin, so the switch could not do what its name
+said. What replaces it is a sentence — *"Clearing the last stage approves the
+item. Releasing it for export stays a separate act, and only your super admin
+can do it."* The model is told the same, and an auto-publish ask is ANSWERED in
+`assumed` rather than silently dropped (eval case `wf-007`).
+
+`lib/workflowParser.ts` survives for SYNTHETIC mode only, and its header says so.
+
 ## Item 53 — Workflow "+ Add branch" only ever adds the same hardcoded branch
 
 **Original (verbatim):**
@@ -1407,6 +1517,62 @@ Three layers, in dependency order:
 
 **Brief:**
 Same `WorkflowEditor` mock family as item 52: "+ Add branch" pushes a fixed demo branch object rather than opening a branch composer, so the only possible branch is the scripted one, duplicated on every click. The fix rides item 52's decision entirely: once workflows have a real schema (branch = condition {field, operator, threshold} → effect {add stage/approver}), "+ Add branch" becomes a small form (or an AI-drafted line under item 52's describe path) creating a *distinct*, editable branch — and duplicate identical branches should be refused or collapsed. Not worth touching in isolation: fixing the button while branches remain browser-state mock (item 52 layer 1) changes nothing real. Fold into the one workflows work-package (51 + 52 + 53).
+
+**✅ RESOLVED — package H, 7 Sep 2026.**
+
+**The button.** Each branch row IS the composer now: a `<select>` picks the
+condition, the operand is the control its own type needs (a money input for an
+amount, a text input for a category, nothing at all for a new supplier), and
+**the label is DERIVED and read-only**. Two clicks give two blank rows to fill,
+not two copies of one canned branch (`docs/reviews/assets/2026-09-07-workflows-package-h/03`,
+`04`). The deeper half of the defect is the one this entry did not name: the
+label was the only EDITABLE field on the old row, so a branch could read
+"Over £5,000 adds the Partner" and actually add the Finance Director at £2,000.
+Save is blocked while any branch is unfinished, with the reason on the button;
+a duplicate label is called out by name.
+
+`ApprovalBranch` lost `operator` — it was implied by `field` and nothing ever
+read it — and its amount is `thresholdAbovePence`, integer, `x-nt-money`.
+
+**The contract and the persistence this rode on** (item 52 layer 1's finding).
+Shakib's four rulings, in session:
+
+| Ruling | What it means |
+|---|---|
+| **Arming is a proposal** | `ProposalKind += policy.activate`. Create and replace write an INERT draft and carry no field that could set `isActive`; only the executor does, on the far side of Review → Approve. Composing a policy is D44's compose half; the GATE is the state change — in both directions, which is why disarm is the same kind |
+| **One workflow, one client** | prisma's `businessId` over the web's `clientIds[]`. Fixes ClientDetailView having rendered every practice workflow on every client |
+| **The auto-publish toggle is deleted** | D42/D44 — see item 52 |
+| **`GET /v1/rules` is folded in** | item 51 §4's landing place |
+
+Six operations, `PolicyActivatePayload`, `NT-WFL-001`, two additive prisma
+columns (`branches`, `self_approval`) and an `is_active` default flipped to
+false. `policy.activate` is TIER 1 in `RELEASE_KINDS` (now nine) by
+`rule.create`'s argument one step wider: §10.5 lets an approved policy act with
+no per-item proposal, and a workflow decides whether anything stops for a
+signature at all.
+
+Walked live: saved (`07`), **survives a reload** (`08`), and arming it opens the
+`policy.activate` review that renders the whole policy — what changes, the
+scope, every stage, every branch (`09`, `10`).
+
+⚠ **Two defects the walkthrough found in this package's own work**, both fixed
+before the commit: `ApprovalWorkflowWriteRequest` used `allOf` and therefore
+400'd on every valid body (the orval gap again — it is written out in full now),
+and the editor let a stage with no approver reach Save.
+
+**One `WorkflowsPanel`, lazily loaded, replaces both views' near-duplicate
+copies of this screen**, which is also what finally filters the client tab by
+client. ⚠ ROUTE BUDGETS, paired A/B against main: floor **−3,805 B**,
+ApprovalsView **−6,090 B**, ClientDetailView **−6,528 B**, InboxesView
+**−3,521 B**, AIWorkspaceView **−93 B**. **Every route is lighter than main.**
+The package's own contract additions cost +856 B of floor on their own — six
+operations in a zod tag directory nothing on the floor imports — and briefly put
+the worst route 412 B OVER budget. `scripts/mark-zod-pure.mjs` paid for them and
+more: orval emits every schema as a top-level call Rollup cannot tree-shake, so
+the barrel pins all 174 onto every route, and a `/*#__PURE__*/` annotation
+reclaims ~3.8 kB product-wide. ⚠ AIWorkspaceView's 93 B is a rounding error, not
+headroom — the two chat cards cost that route ~3.7 kB and the reclaim just
+covered them. It remains ~55 kB over its budget, as it was before this package.
 
 ## Item 54 — Tasks: no server behind teams/tasks — plan and build the feature completely
 
