@@ -68,7 +68,7 @@ const OffboardClientDialog = lazy(() =>
 /** This client's Trash (review item 61). Its own chunk — see the file's header. */
 const ClientTrashPanel = lazy(() => import('./ClientTrashPanel'));
 import { currency } from '../lib/resolver';
-import { DocumentTitle, documentTitle } from '../lib/documentTitle';
+import { DocumentTitle, documentTitle, DocumentTotal } from '../lib/documentTitle';
 import { healthTone } from '../lib/selectors';
 import { fromSlug, navigate, path, slug, useQueryParam, useSegment } from '../lib/router';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
@@ -1001,7 +1001,7 @@ export function ClientDetailView() {
     { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date },
     { key: 'category', label: intl.formatMessage(commonLabels.category), sortValue: (d) => d.category },
     { key: 'source', label: intl.formatMessage(m.colChannel), sortValue: (d) => receivedViaText(intl, d), render: (d) => <Pill>{receivedViaText(intl, d)}</Pill> },
-    { key: 'total', label: intl.formatMessage(commonLabels.total), align: 'right', sortValue: (d) => d.total, render: (d) => <span className="text-white font-bold tabular-nums">{currency(d.total)}</span> },
+    { key: 'total', label: intl.formatMessage(commonLabels.total), align: 'right', sortValue: (d) => d.total, render: (d) => <DocumentTotal doc={d} /> },
     {
       key: 'status', label: intl.formatMessage(commonLabels.status),
       // Sorted by the label on screen, not the raw status — "Missing VAT" and

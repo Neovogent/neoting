@@ -248,6 +248,18 @@ export interface Document {
   supplier: string;
   date: string;
   total: number;
+  /**
+   * False when the server sent no total at all (`totalPence: null`) — nothing
+   * was read off the page.
+   *
+   * ⚠ 8 Sep 2026, found live: a handwritten receipt the extractor honestly
+   * refused (`Total —`, 10% confident, and Ready blocked on it) was listed on
+   * the board as **£0.00**. `fromPence(null)` is 0 and `currency(0)` is a
+   * confident-looking figure, so the board asserted a total the detail said it
+   * did not have. Absent by default so a synthetic row, which always carries a
+   * real number, needs no change.
+   */
+  totalKnown?: boolean | undefined;
   category: string;
   status: DocStatus;
   statusNote?: string | undefined;

@@ -18,7 +18,7 @@ import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { Tooltip } from '../components/DynamicComponents/Tooltip';
 import { blockedReason, describeMissing, partitionByReadiness, readinessOf } from '../lib/readiness';
 import { channelLabels, receivedViaText } from '../lib/channelLabels';
-import { DocumentTitle } from '../lib/documentTitle';
+import { DocumentTitle, DocumentTotal } from '../lib/documentTitle';
 import { currency } from '../lib/resolver';
 import { missingMandatory, OPTIONAL_MANDATORY } from '../lib/selectors';
 import { DuplicateModal } from '../components/DynamicComponents/DuplicateModal';
@@ -1397,7 +1397,7 @@ export function InboxesView() {
                           {doc.splitFrom && <div className="text-[11px] font-medium text-zinc-400">{doc.splitFrom}</div>}
                           <div className="text-[12px] text-zinc-500 font-medium mt-0.5">{doc.clientName} · {doc.date}</div>
                         </div>
-                        <div className="font-bold text-white text-[15px] tabular-nums shrink-0">{currency(doc.total, doc.currency)}</div>
+                        <div className="text-[15px] shrink-0"><DocumentTotal doc={doc} /></div>
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold tracking-wide uppercase ${doc.category === '—' ? 'bg-amber-100 text-amber-700' : 'bg-raised text-zinc-300'}`}>
@@ -1491,7 +1491,7 @@ export function InboxesView() {
                           {doc.splitFrom && <span className="block text-[11px] font-medium text-zinc-400">{doc.splitFrom}</span>}
                         </td>
                         <td className="px-4 py-5 text-zinc-500 font-medium">{doc.date}</td>
-                        <td className="px-4 py-5 text-right font-bold text-white text-[15px]">{currency(doc.total, doc.currency)}</td>
+                        <td className="px-4 py-5 text-right text-[15px]"><DocumentTotal doc={doc} /></td>
                         <td className="px-4 py-5">
                           <span className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold tracking-wide uppercase ${doc.category === '—' ? 'bg-amber-100 text-amber-700' : 'bg-raised text-zinc-300'}`}>
                             {doc.category}

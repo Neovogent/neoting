@@ -8,8 +8,7 @@ import { holdsReleaseAuthority } from '../api/auth';
 import { DataTable, Pill, type Column } from '../components/DynamicComponents/DataTable';
 import { useAppContext } from '../context/AppContext';
 import { commonLabels } from '../i18n/common';
-import { currency } from '../lib/resolver';
-import { DocumentTitle, documentTitle } from '../lib/documentTitle';
+import { DocumentTitle, documentTitle, DocumentTotal } from '../lib/documentTitle';
 import type { Document } from '../lib/types';
 
 /** Permanent delete's Review → Approve card — the same one the Documents screen uses. */
@@ -163,7 +162,7 @@ export function ClientTrashPanel({ client }: { client: { id: string; name: strin
       label: intl.formatMessage(commonLabels.total),
       align: 'right',
       sortValue: (d) => d.total,
-      render: (d) => <span className="text-white font-bold tabular-nums">{currency(d.total)}</span>,
+      render: (d) => <DocumentTotal doc={d} />,
     },
     {
       key: 'status',

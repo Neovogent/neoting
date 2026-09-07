@@ -14,7 +14,7 @@ import { SubTabs } from '../components/DynamicComponents/SubTabs';
 import { DuplicateModal } from '../components/DynamicComponents/DuplicateModal';
 import { navigate, path, useQueryParam, useSegment } from '../lib/router';
 import { failureOf, reasonText, retryMeaning } from '../lib/failures';
-import { DocumentTitle, documentTitle } from '../lib/documentTitle';
+import { DocumentTitle, documentTitle, DocumentTotal } from '../lib/documentTitle';
 import { AnalysisModal } from '../components/DynamicComponents/AnalysisModal';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { TRASH_RETENTION_DAYS } from '@neoting/contracts';
@@ -674,7 +674,7 @@ export function ClientInbox({ client, kind, onPreview }: {
         {d.currency !== 'GBP' && <Pill tone="amber">{d.currency}</Pill>}
         {/* The document's OWN currency — a USD invoice printed with a £ is a
             misstatement the amber pill cannot undo. */}
-        <span className="text-white font-bold tabular-nums">{currency(d.total, d.currency)}</span>
+        <DocumentTotal doc={d} />
       </span>
     ),
   };
