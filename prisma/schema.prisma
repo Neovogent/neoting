@@ -117,6 +117,27 @@ model Business {
 
   isActive  Boolean  @default(true) @map("is_active")
 
+  /// ---- Offboarding (review item 67, 7 Sep 2026) ---------------------------
+  ///
+  /// `isActive` alone says a client is removed; it cannot say WHEN, and the
+  /// Removed clients panel has to count a restore window from something. The
+  /// audit chain holds the moment, but reading it per row would be a join into
+  /// the approvals tables on a list that renders every removed client.
+  ///
+  /// Nullable rather than defaulted: a live workspace has no offboarding
+  /// moment, and `business.reactivate` clears this back to NULL so a client
+  /// removed twice counts from the second removal, not the first.
+  offboardedAt DateTime? @map("offboarded_at")
+
+  /// The `mark-for-erasure` offboard scope, and NOTHING acts on it on a
+  /// schedule. The owner ruled *erasure on request, no automatic date*
+  /// (7 Sep 2026) because any fixed window shorter than D12's six years would
+  /// delete a UK practice's statutory records out from under them. This column
+  /// records the practice's stated intention so a later, deliberate, audited
+  /// erasure surface can find the clients that asked for it — it is a flag on a
+  /// list, not a timer. See `docs/Retention_and_Deletion_Policy.md`.
+  erasureRequestedAt DateTime? @map("erasure_requested_at")
+
   /// ---- Subscription (D48, ID only) ----------------------------------------
   ///
   /// Four columns rather than a `subscriptions` table, deliberately: ID sells

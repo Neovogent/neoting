@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from 'react';
-import { useIntl, type IntlShape } from 'react-intl';
+import { defineMessages, useIntl, type IntlShape } from 'react-intl';
 import {
   seedClients,
   seedConversations,
@@ -566,6 +566,16 @@ interface AppContextType {
   toggleHistory: () => void;
 }
 
+/**
+ * The provider's own copy. One entry, and it is on the bundle FLOOR — every
+ * route pays for it — which is why there is exactly one and it earns its place:
+ * it is the last thing standing between a raw cuid and the CLIENT column
+ * (review item 67). See `clientNameFor`.
+ */
+const m = defineMessages({
+  removedClient: { id: 'context.appContext.removedClient', defaultMessage: 'No longer on your client list' },
+});
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const ACTOR = 'You (Practice Admin)';
@@ -864,12 +874,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // the authority for opaque ids the synthetic cast has never heard of.
       const hydrated = businessesQuery.businesses.find((b) => b.id === businessId);
       if (hydrated) return hydrated.name;
-      // The mock encodes the seed id as biz_<id>; a real id will not match and
-      // falls through to the id itself rather than inventing a name.
+      // The mock encodes the seed id as biz_<id>; a real id will not match.
       const seeded = localClients.find((c) => `biz_${c.id}` === businessId);
-      return seeded?.name ?? businessId;
+      if (seeded) return seeded.name;
+      // ⚠ **Never the raw id — review item 67.** This line used to `?? businessId`
+      // and put `cmtndidpz003y96czwm24v0vc` in the CLIENT column of the review
+      // board, which is how the orphaned-documents bug was reported in the first
+      // place. The server fix (an offboarded client's documents leave the
+      // un-scoped boards) means the row should not be there at all; this is the
+      // second line, because "the dictionary does not hold this id" has other
+      // causes — a row arriving before the businesses slice has resolved, most
+      // ordinarily — and a cuid is never a client's name under any of them.
+      //
+      // It says "no longer on your list" rather than "unknown": every remaining
+      // way to reach this is a workspace that WAS reachable, and a word that
+      // sends somebody looking for a missing client is better than one that
+      // sends them looking for a bug.
+      return intl.formatMessage(m.removedClient);
     },
-    [localClients, businessesQuery.businesses],
+    [localClients, businessesQuery.businesses, intl],
   );
 
   // No `limit` — see the businesses slice above. The hook reads every page.

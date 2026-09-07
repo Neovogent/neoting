@@ -47,6 +47,7 @@ const KIND_ORDER: readonly ProposalKind[] = [
   'rule.create',
   'document.revoke-link',
   'business.offboard',
+  'business.reactivate',
   'document.purge',
   'document.resolve-duplicate',
 ];

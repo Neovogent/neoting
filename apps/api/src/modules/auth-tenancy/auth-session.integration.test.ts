@@ -151,7 +151,7 @@ describe.skipIf(DATABASE_URL === undefined || OWNER_URL === undefined)('session 
     const scope = await loadScopeForUser(app, U_MINE);
     expect(scope).not.toBeNull();
 
-    const page = await new BusinessesService(app).listBusinesses(scope!, { limit: 10 });
+    const page = await new BusinessesService(app).listBusinesses(scope!, { limit: 10, active: true });
     // Alphabetical ("S1A Burger" before "S1A Cosmo"), and the other
     // practice's business is invisible, not filtered.
     expect(page.data.map((b) => b.id)).toEqual(['s1a_biz_1', 's1a_biz_2']);
@@ -181,11 +181,11 @@ describe.skipIf(DATABASE_URL === undefined || OWNER_URL === undefined)('session 
     const scope = await loadScopeForUser(app, U_MINE);
     const service = new BusinessesService(app);
 
-    const first = await service.listBusinesses(scope!, { limit: 1 });
+    const first = await service.listBusinesses(scope!, { limit: 1, active: true });
     expect(first.data.map((b) => b.id)).toEqual(['s1a_biz_1']);
     expect(first.pageInfo.hasMore).toBe(true);
 
-    const second = await service.listBusinesses(scope!, { limit: 1, cursor: first.pageInfo.nextCursor! });
+    const second = await service.listBusinesses(scope!, { limit: 1, active: true, cursor: first.pageInfo.nextCursor! });
     expect(second.data.map((b) => b.id)).toEqual(['s1a_biz_2']);
     expect(second.pageInfo.hasMore).toBe(false);
   });

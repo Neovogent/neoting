@@ -3449,6 +3449,29 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
+        # ---- Removed clients (review item 67, 7 Sep 2026) -----------------
+        - name: active
+          in: query
+          description: |
+            **Which side of offboarding to list, and the only way to reach the
+            removed side.** `true` (the default) is the working list every
+            surface already renders — the Clients board, the switcher, the
+            context header. `false` returns ONLY workspaces `business.offboard`
+            has deactivated, newest-removed first by the same alphabetical sort,
+            which is what the Removed clients panel and its Restore affordance
+            read.
+
+            A parameter on this operation rather than a `/businesses/removed`
+            path, for the reason `deleted` is one on `GET /documents`: a removed
+            client is the same row with one column flipped, and a second
+            endpoint would be a second opinion about what a client is.
+
+            There is no "both" value, and for the same reason there is none
+            there: one page mixing live and removed clients has no honest
+            heading, and every count beside it would have to say which of the
+            two it meant.
+          required: false
+          schema: { type: boolean, default: true }
       responses:
         '200':
           description: A page of workspaces, alphabetical.
@@ -6498,6 +6521,7 @@ components:
         - rule.create             # create a coding rule; it activates only on approval
         - document.revoke-link    # revoke capability URLs already sitting in someone's ledger
         - business.offboard       # deactivate a client workspace (D32 slice); soft, books retained
+        - business.reactivate     # bring a removed client back; the exact mirror of offboard, soft, idempotent
         - document.purge          # PERMANENTLY delete documents already in Trash; refuses anything exported
         - document.resolve-duplicate # record the human ruling on a suspected duplicate pair; delete-copy also moves the copy to Trash (reversible)
 
@@ -6522,6 +6546,7 @@ components:
         - $ref: '#/components/schemas/RuleCreateProposalRequest'
         - $ref: '#/components/schemas/RevokeLinkProposalRequest'
         - $ref: '#/components/schemas/BusinessOffboardProposalRequest'
+        - $ref: '#/components/schemas/BusinessReactivateProposalRequest'
         - $ref: '#/components/schemas/DocumentPurgeProposalRequest'
         - $ref: '#/components/schemas/ResolveDuplicateProposalRequest'
       discriminator:
@@ -6541,6 +6566,7 @@ components:
           rule.create: '#/components/schemas/RuleCreateProposalRequest'
           document.revoke-link: '#/components/schemas/RevokeLinkProposalRequest'
           business.offboard: '#/components/schemas/BusinessOffboardProposalRequest'
+          business.reactivate: '#/components/schemas/BusinessReactivateProposalRequest'
           document.purge: '#/components/schemas/DocumentPurgeProposalRequest'
           document.resolve-duplicate: '#/components/schemas/ResolveDuplicateProposalRequest'
 
@@ -6738,6 +6764,15 @@ components:
           properties:
             kind: { const: business.offboard }
             payload: { $ref: '#/components/schemas/BusinessOffboardPayload' }
+
+    BusinessReactivateProposalRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProposalRequestBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind: { const: business.reactivate }
+            payload: { $ref: '#/components/schemas/BusinessReactivatePayload' }
 
     DocumentPurgeProposalRequest:
       allOf:
@@ -7066,13 +7101,77 @@ components:
         retention clock (D12) requires them. D32's whole-firm export and
         audited erasure remain their own, later surfaces — this kind must
         never grow a hard delete.
+
+        **`documentScope` was added 7 Sep 2026 (review item 67, owner-ruled
+        in session).** Deleting a client used to say nothing about the
+        client's documents, so they stayed live in the practice's queues with
+        publish affordances and a name nothing could resolve. Offboarding now
+        states its blast radius and acts on it — and every scope it can name
+        is reversible, because none of the three destroys a row.
+      required: [businessId]
+      properties:
+        businessId: { type: string }
+        documentScope:
+          $ref: '#/components/schemas/OffboardDocumentScope'
+        reason:
+          type: string
+          maxLength: 500
+          description: Why the client is being offboarded — lands in the audit trail, shown at Review.
+
+    OffboardDocumentScope:
+      type: string
+      default: keep
+      description: |
+        What removing a client means for that client's documents (review item
+        67). **Not one of these erases anything** — the honest set is bounded
+        by what UK bookkeeping actually permits: D12 holds the books for six
+        years, D32 promises reading and exporting survive a lapse, and D43
+        refuses to purge any document an export still links to
+        (`NT-DOC-002`). A scope that promised instant destruction would be a
+        promise to break all three.
+
+        - `keep` — the documents stay exactly where they are, visible on the
+          client's own screens and reachable by id. The default, and what
+          offboarding did before this field existed.
+        - `trash` — every one of the client's documents that is not already
+          deleted moves to Trash, through the same reversible `deleted_at`
+          seam `POST /documents/{id}/deletion` writes. Restorable one by one
+          from the client's Trash, and subject to the same retention window
+          as any other trashed document.
+        - `mark-for-erasure` — records the practice's intention to erase this
+          client's data once the statutory retention duty lapses, and
+          **nothing else happens on a schedule**. There is deliberately no
+          automatic erasure date (owner ruling, 7 Sep 2026: *erasure on
+          request, no automatic date*), because a date shorter than D12 would
+          delete a UK practice's records out from under their legal duty. The
+          flag is what a later, deliberate, audited erasure surface reads.
+      enum: [keep, trash, mark-for-erasure]
+
+    BusinessReactivatePayload:
+      type: object
+      description: |
+        Bring a removed client back (review item 67 — *"in the trash keep the
+        client too for some days if any reason the client gets back the
+        accountant can restart work from where left"*).
+
+        The exact mirror of `business.offboard` and soft in the same way: it
+        flips `isActive` back on and clears the offboarding stamp. Nothing is
+        created and nothing is undeleted — **documents that the offboard moved
+        to Trash stay in Trash**, and the client's own Trash is where they are
+        restored from. That is a deliberate limit rather than an oversight: a
+        blanket restore would also resurrect every document a person had
+        deleted by hand before the client was ever removed, and the executor
+        cannot tell those apart. The review card says so in as many words.
+
+        Idempotent, the archive rule: reactivating a live workspace is a
+        replay, not a second effect.
       required: [businessId]
       properties:
         businessId: { type: string }
         reason:
           type: string
           maxLength: 500
-          description: Why the client is being offboarded — lands in the audit trail, shown at Review.
+          description: Why the client is coming back — lands in the audit trail, shown at Review.
 
     ChaseSendPayload:
       type: object
@@ -8984,6 +9083,22 @@ components:
         id: { type: string }
         name: { type: string }
         tradingName: { type: [string, 'null'] }
+        offboardedAt:
+          description: |
+            When `business.offboard` deactivated this workspace, ISO-8601, or
+            null for a live one (review item 67). It is what the Removed
+            clients panel counts the restore window from — the owner ruled one
+            window for the whole of package L (7 Sep 2026), so the same figure
+            governs a trashed document and a removed client, and
+            `docs/Retention_and_Deletion_Policy.md` is where it is written down
+            rather than here.
+
+            Nothing is erased when the window lapses. The client simply stops
+            being offered for one-click restore; the books stay under D12's
+            six-year clock and the workspace stays reachable by id, which is
+            what makes the panel's copy honest.
+          type: [string, 'null']
+          format: date-time
         industry:
           description: |
             The client's sector, as keyed in at intake. The Clients list prints

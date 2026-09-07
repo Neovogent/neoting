@@ -135,6 +135,38 @@ conversations client and the notifications client are on the chat chunk and the
 ContextHeader chunk respectively, not the floor. The known reclaims
 (`AIWorkspaceView`'s section above) remain the route's only way back under.
 
+**Bundle (7 Sep 2026, package L — review items 61 + 67; PAIRED A/B, both sides
+built with `pnpm exec vite build --manifest` in one sitting, so this table is
+the quantity the section above wishes it were):**
+
+| Route | main | branch | Δ | headroom |
+|---|---|---|---|---|
+| `ClientDetailView` | 247,774 | **245,313** | **−2,461** | 4,687 B |
+| `InboxesView` | 249,317 | **249,495** | **+178** | **505 B** |
+| `ClientsView` | 242,147 | **242,567** | +420 | 7,433 B |
+| `DocumentsView` | 230,986 | **231,241** | +255 | 18,759 B |
+| floor | 207,970 | 208,061 | +91 | — |
+
+**`ClientDetailView` — the route the work lives on — GAVE BACK 2,461 B, and
+that is the technique worth copying**: `OffboardClientDialog` was a STATIC
+import, so the whole dialog rode the opening download of the tightest route in
+the product for a confirmation that cannot render until somebody presses Remove
+on the Settings tab. Splitting it behind `lazy()` paid for the three scope
+options AND the Trash sub-tab with change left over. The two new screens
+(`ClientTrashPanel`, `RemovedClientsPanel`) are their own chunks for the same
+reason, which is also what keeps `api/document-lifecycle.ts` off the floor —
+that file's own header insists on it.
+
+⚠ **`InboxesView` is the binding constraint now and this change spent 178 B of
+its 683.** +91 B is the FLOOR: one `defineMessages` entry on `AppContext`, which
+is the last thing standing between a raw cuid and the CLIENT column (review item
+67 — `clientNameFor` used to `?? businessId`). The remaining ~87 B is
+`proposals.ts` gaining `KIND_LABEL`/`KIND_NOTE` entries for the new
+`business.reactivate` kind, which that route pays for because it imports the
+module. Both are load-bearing and neither is reclaimable by rewording. **The
+next change on that route is spending against 505 B** — measure paired, or do
+not measure at all.
+
 ### The chat, and where classification actually happens
 
 **The canned intent table is gone.** With a live session `InputRow` calls

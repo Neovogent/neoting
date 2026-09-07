@@ -7,6 +7,7 @@ import {
   restoreDocument as restoreDocumentCall,
 } from '@neoting/contracts/client';
 import { getDocumentCountsResponse, listDocumentsResponse } from '@neoting/contracts/zod';
+import { DocumentState } from '@neoting/contracts/model';
 import type { CreateActionProposalRequest, DocumentSummary } from '@neoting/contracts/model';
 import { fetchAllPages, PAGE_LIMIT } from './paged';
 import { toLocalDocument } from './documents';
@@ -44,8 +45,47 @@ import type { Document as LocalDocument } from '../lib/types';
  *   chunk and the lazy purge dialog, never by `AppContext`.
  */
 
-/** The Trash query's key — hand-rolled, the `proposals.ts` reasoning. */
+/**
+ * ⚠ **Every state, named — ARCHIVED included, and the Trash is the one listing
+ * that has to say so out loud** (found live on 7 Sep 2026, walking review
+ * item 61).
+ *
+ * `deleted` COMPOSES with `state` rather than overriding it (the contract says
+ * so in as many words), and an omitted `state` means *"every state except
+ * ARCHIVED"* — a default that is right for every working queue in the product
+ * and wrong for exactly this one. A document somebody archived and then deleted
+ * was therefore **counted by the header and listed by nothing**:
+ * `GET /documents/counts` asks `deleted_at IS NOT NULL` with no state clause, so
+ * the screen read "1 in Trash" over an empty table, and the only way to reach
+ * that document at all was knowing to send `?deleted=true&state=ARCHIVED` by
+ * hand.
+ *
+ * That is the exact header-versus-list disagreement the counts endpoint exists
+ * to abolish, and *"it is not in the Trash either"* is the worst answer this
+ * surface can give. Asking for the whole enum makes the Trash mean **everything
+ * deleted**, which is the only definition somebody restoring a document can use.
+ *
+ * Read off the generated `DocumentState` rather than typed out, so a state added
+ * to the contract joins the Trash automatically instead of quietly falling out
+ * of it.
+ */
+export const EVERY_STATE = Object.values(DocumentState);
+
+/**
+ * The Trash query's key — hand-rolled, the `proposals.ts` reasoning.
+ *
+ * ⚠ **It is a PREFIX, not the whole key.** Since review item 61 there are two
+ * Trash listings — the practice's, and one scoped to a single client — so the
+ * business id is appended (`trashQueryKey`). Invalidation still targets this
+ * prefix, which TanStack matches against both, so a delete on either surface
+ * refreshes the other rather than leaving one of them confidently stale.
+ */
 export const TRASH_QUERY_KEY = ['documents', 'trash'] as const;
+
+/** This surface's Trash key: the practice-wide listing, or one client's. */
+export function trashQueryKey(businessId?: string) {
+  return [...TRASH_QUERY_KEY, businessId ?? 'all'] as const;
+}
 /** The header counts' key. Same reasoning; invalidated by every lifecycle write. */
 export const COUNTS_QUERY_KEY = ['documents', 'counts'] as const;
 
@@ -160,14 +200,27 @@ export interface UseDeletedDocumentsOptions {
   /** Off entirely on seed data. */
   enabled: boolean;
   clientNameFor: (businessId: string) => string;
+  /**
+   * One client's Trash rather than the practice's (review item 61).
+   *
+   * ⚠ The SERVER's `businessId` filter, deliberately, and not a `.filter()` over
+   * the practice-wide result. Two reasons, and the second is the one that bites:
+   * a client-scoped page that fetched every practice document first would walk
+   * pages of other clients' rows to show ten of this one's, and — since item 67
+   * — a REMOVED client's documents are excluded from the un-scoped listing
+   * entirely, so filtering client-side would show an empty Trash for exactly the
+   * client whose Trash somebody most needs.
+   */
+  businessId?: string;
 }
 
 /**
  * The Trash listing — `GET /documents?deleted=true`, every page.
  *
  * ⚠ `deleted` COMPOSES with the other filters rather than overriding them (the
- * contract's own words), so this asks for the deleted set and nothing else; the
- * screen's client/category/channel filters are applied to the rows it returns,
+ * contract's own words), which is why `state` is sent EXPLICITLY as the whole
+ * enum — `EVERY_STATE` above carries the defect that taught us. The screen's
+ * client/category/channel filters are then applied to the rows it returns,
  * exactly as they are to the register's.
  *
  * It does NOT poll. Documents arrive from outside this browser and the register
@@ -175,13 +228,19 @@ export interface UseDeletedDocumentsOptions {
  * Trash, so a five-second poll here would be round trips bought for nothing.
  * Every delete and every restore invalidates the key by hand instead.
  */
-export function useDeletedDocuments({ enabled, clientNameFor }: UseDeletedDocumentsOptions) {
+export function useDeletedDocuments({ enabled, clientNameFor, businessId }: UseDeletedDocumentsOptions) {
   const query = useQuery({
-    queryKey: TRASH_QUERY_KEY,
+    queryKey: trashQueryKey(businessId),
     enabled,
     queryFn: () =>
       fetchAllPages((cursor) =>
-        listDocuments({ deleted: true, limit: PAGE_LIMIT, ...(cursor === undefined ? {} : { cursor }) }),
+        listDocuments({
+          deleted: true,
+          state: EVERY_STATE,
+          limit: PAGE_LIMIT,
+          ...(businessId === undefined ? {} : { businessId }),
+          ...(cursor === undefined ? {} : { cursor }),
+        }),
       ),
   });
 

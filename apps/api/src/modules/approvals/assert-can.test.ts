@@ -75,14 +75,20 @@ test('no role other than PRACTICE_ADMIN may release, owner flag or not', () => {
  * promotion nobody meant is the failure mode, and only the whole list catches
  * one.
  */
-test("the tier table is total over ProposalKind, and tier 1 is exactly the matrix's seven", () => {
+test("the tier table is total over ProposalKind, and tier 1 is exactly the matrix's eight", () => {
   for (const kind of Object.values(ProposalKind)) {
     expect(typeof RELEASE_KINDS[kind]).toBe('boolean');
   }
   const tier1 = Object.values(ProposalKind).filter((k) => requiresReleaseAuthority(k)).sort();
+  // ⚠ Seven until 7 Sep 2026. `business.reactivate` (review item 67) is the
+  // eighth, and it is tier 1 for the plainest reason in the table: the undo of a
+  // tier-1 act belongs to the same signature. A standard user who could restore
+  // a client the super admin removed would make that removal a suggestion with a
+  // delay on it.
   expect(tier1).toEqual([
     'bank.remove-statement',
     'business.offboard',
+    'business.reactivate',
     'chase.send',
     'document.purge',
     'document.update-coding',

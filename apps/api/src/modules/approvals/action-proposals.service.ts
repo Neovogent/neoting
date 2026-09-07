@@ -109,6 +109,7 @@ const DUPLICATE_DETAIL: Partial<Record<ProposalKind, string>> = {
   'bank.remove-statement': 'Removing these statements is already awaiting review. Decide that one in Approvals.',
   'document.purge': 'Deleting these documents is already awaiting review. Decide that one in Approvals.',
   'business.offboard': 'Removing this client is already awaiting review. Decide that one in Approvals.',
+  'business.reactivate': 'Restoring this client is already awaiting review. Decide that one in Approvals.',
 };
 
 /**

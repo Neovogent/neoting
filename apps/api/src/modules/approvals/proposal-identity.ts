@@ -146,6 +146,12 @@ const IDENTITY: Readonly<Record<ProposalKind, (payload: StoredPayload) => string
   // The business, from the payload's own field rather than the proposal's
   // column — one offboard per client is the whole of it.
   'business.offboard': (p) => str(p['businessId']),
+  // Same key for the mirror, and the reason is the same: one restore per
+  // client is the whole of it. ⚠ The two kinds do NOT share an identity
+  // space — `proposalIdentity` is keyed by kind as well — so a pending
+  // offboard and a pending restore over one client are two live cards, which
+  // is a state a person should be shown rather than one deduped away.
+  'business.reactivate': (p) => str(p['businessId']),
   // ⚠ **`rule.create` deliberately has NO identity.** Two rules over the same
   // client are two different rules — that is what a rule set IS — and the
   // payload carries conditions and effects rather than record ids, so any key

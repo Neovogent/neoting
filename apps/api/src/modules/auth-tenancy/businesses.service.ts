@@ -61,8 +61,28 @@ const CHASE_COUNTED: Partial<Record<ChaseState, keyof BusinessSummary['counts']>
   ESCALATED: 'overdue',
 };
 
-/** The default list serves live workspaces only — see the where clause below. */
-const ACTIVE_ONLY: Prisma.BusinessWhereInput = { isActive: true };
+/**
+ * Which side of offboarding a listing serves — the `active` query parameter,
+ * defaulted here rather than at the caller (review item 67, 7 Sep 2026).
+ *
+ * `true` is the working list every existing surface renders and is what the
+ * contract says a caller who says nothing means. `false` is the **Removed
+ * clients** listing, which is what makes an offboarded workspace reachable
+ * from inside the product at all — before it existed, `business.offboard` was
+ * a flag with no screen behind it and a client removed by mistake could only be
+ * recovered with a hand on the database.
+ *
+ * ⚠ Neither is a tenancy clause. RLS alone decides reach; `businesses_tenant`
+ * has no `isActive` branch, which is precisely why asking for the removed side
+ * returns anything. This is a STATE filter applied on top of the set RLS has
+ * already narrowed to.
+ *
+ * `@@index([practiceId, isActive])` carries both directions.
+ */
+const ACTIVE_FILTER: Record<'true' | 'false', Prisma.BusinessWhereInput> = {
+  true: { isActive: true },
+  false: { isActive: false },
+};
 
 /** Every count at zero — a client with nothing waiting, which is a real state. */
 const ZERO_COUNTS: BusinessSummary['counts'] = {
@@ -113,6 +133,7 @@ export class BusinessesService {
       query: { ...query, cursor: undefined },
     };
     const seek = pageQuery(request);
+    const activeFilter = ACTIVE_FILTER[query.active === false ? 'false' : 'true'];
 
     const { rows, grouped, chases, unmatched, approvals, statementGaps, primaryContacts, inviteTimes } = await scopedDb(this.prisma, ctx, async (db) => {
       const rows = await db.business.findMany({
@@ -120,10 +141,17 @@ export class BusinessesService {
         // an offboarded workspace (`business.offboard` flipped `isActive`
         // off) has left the working surfaces, and the Clients list, switcher
         // and context header all render from this page. Its books, documents
-        // and audit trail are retained (D12) and stay reachable by id; only
-        // the default list stops offering it. `@@index([practiceId, isActive])`
-        // carries the filter.
-        where: seek.where === undefined ? ACTIVE_ONLY : { AND: [ACTIVE_ONLY, seek.where as Prisma.BusinessWhereInput] },
+        // and audit trail are retained (D12) and stay reachable by id.
+        //
+        // ⚠ **The default is applied HERE and not left to the caller**, the
+        // `deletedFilterFor` rule: "the default listing serves live clients"
+        // has to be a fact about the server rather than about what a browser
+        // remembered to send. `active=false` is the Removed clients listing
+        // (review item 67).
+        where:
+          seek.where === undefined
+            ? activeFilter
+            : { AND: [activeFilter, seek.where as Prisma.BusinessWhereInput] },
         orderBy: seek.orderBy as Prisma.BusinessOrderByWithRelationInput[],
         take: seek.take,
       });
@@ -250,6 +278,12 @@ export class BusinessesService {
         id: row.id,
         name: row.name,
         tradingName: row.tradingName,
+        // The offboarding moment (review item 67), null for a live workspace.
+        // The Removed clients panel counts its restore window from here, and a
+        // workspace offboarded BEFORE the column existed carries null — which
+        // the panel renders as a restore offer with no countdown rather than as
+        // a back-dated guess.
+        offboardedAt: row.offboardedAt?.toISOString() ?? null,
         // Both already on the row — the Clients list prints the sector under
         // the name and the deadline in its last column, and neither needed a
         // schema change to reach it. Null where the client has not said: an

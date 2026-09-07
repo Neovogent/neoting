@@ -149,28 +149,35 @@ test('the Settings tab carries the danger zone, honest about approval and retent
   expect(vi.mocked(createProposal)).not.toHaveBeenCalled();
 });
 
-test('the button opens the confirmation dialog naming this client', () => {
+// ⚠ `findBy`, not `getBy`: `OffboardClientDialog` is behind `lazy()` since
+// 7 Sep 2026 (it paid for item 67's scope options out of ClientDetailView's
+// route budget), so it arrives a microtask after the click.
+test('the button opens the confirmation dialog naming this client', async () => {
   renderView();
   fireEvent.click(removeButton());
 
-  expect(screen.getByRole('dialog', { name: 'Remove Sparkle Cleaning Ltd?' })).toBeTruthy();
+  expect(await screen.findByRole('dialog', { name: 'Remove Sparkle Cleaning Ltd?' })).toBeTruthy();
   expect(vi.mocked(createProposal)).not.toHaveBeenCalled();
 });
 
 test('confirming creates the business.offboard proposal and the panel says queued, pointing at Approvals', async () => {
   renderView();
   fireEvent.click(removeButton());
-  fireEvent.change(screen.getByPlaceholderText('Client moved to another practice'), {
+  fireEvent.change(await screen.findByPlaceholderText('Client moved to another practice'), {
     target: { value: 'Client moved on' },
   });
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Yes, queue the removal' }));
   });
 
+  // `documentScope` rides on every offboard now (review item 67), including the
+  // default one: the reviewer is about to read a card that names a scope, and a
+  // card naming one the payload never asserted would be Review → Approve broken
+  // at its cheapest point.
   expect(vi.mocked(createProposal)).toHaveBeenCalledWith({
     kind: 'business.offboard',
     businessId: 'biz_sparkle',
-    payload: { businessId: 'biz_sparkle', reason: 'Client moved on' },
+    payload: { businessId: 'biz_sparkle', documentScope: 'keep', reason: 'Client moved on' },
   });
 
   // The dialog is done; the panel says what actually happened (queued, not

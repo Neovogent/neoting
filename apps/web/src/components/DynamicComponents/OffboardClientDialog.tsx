@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
-import { NtProblemError } from '@neoting/contracts';
+import { NtProblemError, TRASH_RETENTION_DAYS } from '@neoting/contracts';
+import type { OffboardDocumentScope } from '@neoting/contracts/model';
 import { holdsReleaseAuthority } from '../../api/auth';
 import { useAppContext } from '../../context/AppContext';
 import { createProposal } from '../../api/proposals';
@@ -32,6 +33,55 @@ const m = defineMessages({
     id: 'proposals.offboardDialog.retained',
     defaultMessage: 'Documents, books and the audit trail are retained — nothing is deleted.',
   },
+
+  /* ── The deletion scope (review item 67) ────────────────────────────────
+     > "while deleting a user ask to select what they want to delete, full
+     >  user and data, user only, keep files etc."
+
+     Three options, and every one of them is reversible, because UK
+     bookkeeping does not permit a fourth: D12 holds the books six years, D32
+     promises reading and exporting survive a lapse, and D43 refuses to purge
+     anything an export still links to. The copy therefore never uses the word
+     "delete" for any of them, and `markLabel` in particular says MARKED, not
+     scheduled — there is no automatic erasure date, by the owner's ruling
+     (7 Sep 2026), and a label that implied one would be the product promising
+     to break a practice's statutory duty on a timer. */
+  scopeLegend: { id: 'proposals.offboardDialog.scopeLegend', defaultMessage: 'What happens to their documents' },
+  keepLabel: { id: 'proposals.offboardDialog.keepLabel', defaultMessage: 'Keep everything' },
+  keepDetail: {
+    id: 'proposals.offboardDialog.keepDetail',
+    defaultMessage:
+      'The documents stay exactly where they are. They leave your practice-wide queues with the client and come back if you restore them.',
+  },
+  trashLabel: { id: 'proposals.offboardDialog.trashLabel', defaultMessage: 'Move their documents to Trash' },
+  /**
+   * ⚠ **"once you restore the client" is not padding** — the 7 Sep 2026
+   * walkthrough found it. A removed client's own screens do not render (the
+   * board's `clients` array is the ACTIVE listing, and giving
+   * `ClientDetailView` a second read to resolve a removed one would put bytes
+   * on the tightest route in the product to serve a screen nobody opens), so
+   * its Trash is reachable again only after the client is. The earlier wording
+   * — "restorable one by one from this client's Trash" — was true about the
+   * documents and false about when. Nothing is lost either way: the window runs
+   * from the day each document was trashed, and it is stated here.
+   */
+  trashDetail: {
+    id: 'proposals.offboardDialog.trashDetail',
+    defaultMessage:
+      '{count, plural, =0 {Nothing to move — this client has no documents.} one {# document moves to Trash. Restore the client and each one is restorable from their Trash, for {days} days from today.} other {# documents move to Trash. Restore the client and each one is restorable from their Trash, for {days} days from today.}}',
+  },
+  markLabel: { id: 'proposals.offboardDialog.markLabel', defaultMessage: 'Mark for erasure' },
+  markDetail: {
+    id: 'proposals.offboardDialog.markDetail',
+    defaultMessage:
+      'Records that you want this client’s data erased once the six-year retention duty lapses. Nothing is erased and nothing is scheduled — it is a note on the record.',
+  },
+  /** The blast radius, stated before the proposal is queued and again at Read review. */
+  blastRadius: {
+    id: 'proposals.offboardDialog.blastRadius',
+    defaultMessage:
+      '{count, plural, =0 {This client has no documents.} one {This client has # document.} other {This client has # documents.}}',
+  },
   reasonLabel: { id: 'proposals.offboardDialog.reasonLabel', defaultMessage: 'Reason (optional)' },
   reasonPlaceholder: {
     id: 'proposals.offboardDialog.reasonPlaceholder',
@@ -59,9 +109,21 @@ const m = defineMessages({
  * seed data there is no server to propose the removal to and nothing mutates
  * a business client-side.
  */
-export function OffboardClientDialog({ client, onQueued, onCancel }: {
+/** The three scopes, in the order the dialog offers them: safest first. */
+const SCOPES: readonly OffboardDocumentScope[] = ['keep', 'trash', 'mark-for-erasure'];
+
+export function OffboardClientDialog({ client, documentCount, onQueued, onCancel }: {
   /** A live-board row — the id is the server's own business id, unbridged. */
   client: { id: string; name: string };
+  /**
+   * How many documents this client holds — the blast radius, stated BEFORE the
+   * proposal is queued (review item 67). It comes from the caller's own board
+   * counts rather than a query of this dialog's own: the number is already on
+   * screen behind the dialog, and a second read that disagreed with it would be
+   * worse than no second read. The server states the authoritative figure again
+   * at Read review, which is the one that binds.
+   */
+  documentCount: number;
   /** The proposal was created — nothing has been removed yet. */
   onQueued: () => void;
   onCancel: () => void;
@@ -73,6 +135,9 @@ export function OffboardClientDialog({ client, onQueued, onCancel }: {
   const { session } = useAppContext();
   const canRelease = holdsReleaseAuthority(session);
   const [reason, setReason] = useState('');
+  // `keep` is the default here as it is on the server — the safe scope is what
+  // "the accountant said nothing" has to mean on both sides.
+  const [scope, setScope] = useState<OffboardDocumentScope>('keep');
   const [queuing, setQueuing] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   // Escape is Cancel — the safe exit, never the confirm (the ConfirmStep rule).
@@ -89,7 +154,16 @@ export function OffboardClientDialog({ client, onQueued, onCancel }: {
         businessId: client.id,
         // An unanswered optional is an omitted key (the intake rule): an empty
         // reason is nobody asserting anything, not an assertion of ''.
-        payload: { businessId: client.id, ...(trimmed === '' ? {} : { reason: trimmed }) },
+        // `documentScope` always sent, even when it is the default: the reviewer
+        // is about to read a card that names a scope, and a card naming one the
+        // payload never asserted would be the Review → Approve promise broken
+        // at its cheapest point. An unanswered OPTIONAL is omitted (the intake
+        // rule); this one is answered, by a radio that is always on something.
+        payload: {
+          businessId: client.id,
+          documentScope: scope,
+          ...(trimmed === '' ? {} : { reason: trimmed }),
+        },
       });
       onQueued();
     } catch (error) {
@@ -141,6 +215,42 @@ export function OffboardClientDialog({ client, onQueued, onCancel }: {
               </p>
             </div>
           </div>
+
+          <fieldset className="flex flex-col gap-1.5 pl-[54px]">
+            <legend className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">
+              {intl.formatMessage(m.scopeLegend)}
+            </legend>
+            <p className="text-[12px] text-zinc-500 leading-relaxed mb-1">
+              {intl.formatMessage(m.blastRadius, { count: documentCount })}
+            </p>
+            {SCOPES.map((option) => (
+              // Grid rather than a nested wrapper span: `label-has-associated-control`
+              // counts JSX depth from the label to its text, and one more level
+              // of layout div pushed the copy out of reach of the rule.
+              <label
+                key={option}
+                className="grid grid-cols-[auto_1fr] gap-x-2.5 px-3.5 py-2.5 rounded-2xl border border-white/10 bg-ground has-[:checked]:border-brand/40 has-[:checked]:bg-brand/5 cursor-pointer transition-colors"
+              >
+                <input
+                  type="radio"
+                  name="offboard-scope"
+                  checked={scope === option}
+                  onChange={() => setScope(option)}
+                  className="row-span-2 mt-1 accent-brand"
+                />
+                <span className="text-[13px] font-bold text-white min-w-0">
+                  {intl.formatMessage(
+                    option === 'keep' ? m.keepLabel : option === 'trash' ? m.trashLabel : m.markLabel,
+                  )}
+                </span>
+                <span className="text-[12px] text-zinc-500 leading-relaxed mt-0.5 min-w-0">
+                  {option === 'trash'
+                    ? intl.formatMessage(m.trashDetail, { count: documentCount, days: TRASH_RETENTION_DAYS })
+                    : intl.formatMessage(option === 'keep' ? m.keepDetail : m.markDetail)}
+                </span>
+              </label>
+            ))}
+          </fieldset>
 
           <label className="flex flex-col gap-1.5 pl-[54px]">
             <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest">

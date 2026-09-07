@@ -337,6 +337,32 @@ No `SECURITY DEFINER` function, no second connection, no loosened policy. If a f
 3. **`documents` carries denormalised header fields** (supplier, total, date) alongside `extractions`. Deliberate: inbox lists and search would otherwise reach into JSON on every row. The accepted extraction is the source of truth and these are a projection — they must be written by one code path only.
 4. **`audit_events.seq`** is `BigInt` per business for the hash chain. Allocation needs a per-business sequence or advisory lock; decide before the audit service is written.
 
+## Offboarding stamps on `businesses` (7 Sep 2026 — review item 67)
+
+`20260907120000_business_offboarding_stamps`: two nullable `TIMESTAMP(3)`
+columns and nothing else. Writes no data, drops nothing, adds no index, no RLS
+change — `businesses` is already in the policed set and a policy is written over
+the ROW, not over its columns.
+
+- **`offboarded_at`** — when `business.offboard` deactivated the workspace.
+  `is_active` alone says a client is removed and cannot say *when*, and the
+  Removed clients panel has to count its restore window from something; the
+  moment is in the audit chain, but reading it per row would be a join into the
+  approvals tables on a list that renders every removed client.
+  `business.reactivate` clears it back to NULL, so a client removed twice counts
+  from the second removal.
+- **`erasure_requested_at`** — the `mark-for-erasure` offboard scope.
+  ⚠ **A FLAG, NOT A TIMER. Nothing reads this column on a schedule and nothing
+  may be added that does** without a fresh owner ruling written into
+  `docs/Retention_and_Deletion_Policy.md` first. The ruling in force (7 Sep
+  2026) is *erasure on request, no automatic date*, because any fixed window
+  shorter than D12's six years would be this product deleting a UK practice's
+  statutory records out from under their legal duty, on a timer nobody watched.
+
+An ALREADY-offboarded workspace keeps NULL in both, which the panel reads as
+"removal date unknown" and renders as a restore offer with no countdown — the
+honest answer, and better than back-dating a moment nobody recorded.
+
 ## `seed.ts` — the METH Stage 5 demo cast (§7)
 
 Additive-only, no schema change. `prac_ledgerline`'s display name is

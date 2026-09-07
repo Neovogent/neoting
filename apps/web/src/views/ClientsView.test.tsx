@@ -87,12 +87,23 @@ function renderView() {
   );
 }
 
+/**
+ * ⚠ The `/remove/i` sweep used to be unqualified, and review item 67's
+ * **Removed** tab matched it — a tab that LISTS clients already removed is the
+ * opposite of an affordance that removes one, but the regex could not tell.
+ * Excluding it by exact name keeps the assertion pointed at what it is actually
+ * about (no remove control on a card or a row) rather than weakening it to a
+ * looser pattern that a real "Remove client" button could slip through.
+ */
+const removeControls = () =>
+  screen.queryAllByRole('button', { name: /remove/i }).filter((b) => b.textContent?.trim() !== 'Removed');
+
 test('the card grid carries no remove affordance — removal lives on the client Settings tab', () => {
   renderView();
 
   // Neither the live title, the seed-mode title, nor any remove-shaped control.
   expect(screen.queryByTitle(/remove/i)).toBeNull();
-  expect(screen.queryByRole('button', { name: /remove/i })).toBeNull();
+  expect(removeControls()).toEqual([]);
 });
 
 test('the table view carries no remove affordance either', () => {
@@ -101,7 +112,7 @@ test('the table view carries no remove affordance either', () => {
 
   expect(screen.getByRole('table')).toBeTruthy();
   expect(screen.queryByTitle(/remove/i)).toBeNull();
-  expect(screen.queryByRole('button', { name: /remove/i })).toBeNull();
+  expect(removeControls()).toEqual([]);
 });
 
 /**

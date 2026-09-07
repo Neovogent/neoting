@@ -16,6 +16,7 @@ import { navigate, path, useQueryParam, useSegment } from '../lib/router';
 import { failureOf, reasonText, retryMeaning } from '../lib/failures';
 import { AnalysisModal } from '../components/DynamicComponents/AnalysisModal';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
+import { TRASH_RETENTION_DAYS } from '@neoting/contracts';
 import { applyToEach, softDeleteDocument } from '../api/document-lifecycle';
 import { errorLabel } from '../api/slices';
 import { blockedReason, partitionByReadiness, readinessOf } from '../lib/readiness';
@@ -266,9 +267,20 @@ const m = defineMessages({
     id: 'analytics.clientInbox.trashTitle',
     defaultMessage: 'Move {count, plural, one {this document} other {# documents}} to Trash?',
   },
+  /**
+   * ⚠ **The destination, named — review item 61.** This said "Trash is on the
+   * Documents screen", meaning the PRACTICE-wide one, which from here was a
+   * screen away and a filter away and did not exist as a client's own list at
+   * all. The client's Documents tab has a Trash sub-tab now, so the sentence
+   * points at it; and it carries the retention window, because the moment
+   * before somebody deletes something is when "how long do I have" is worth
+   * answering. Both clauses of the policy, always — an exported document is
+   * held for good and no window applies to it.
+   */
   trashConsequence: {
     id: 'analytics.clientInbox.trashConsequence',
-    defaultMessage: 'Nothing is lost — Trash is on the Documents screen, and restoring puts a document straight back.',
+    defaultMessage:
+      'Nothing is lost — they go to this client’s Trash, under their Documents tab, and restoring puts a document straight back. They are held there for {days} days; anything already exported is held indefinitely.',
   },
   trashConfirm: { id: 'analytics.clientInbox.trashConfirm', defaultMessage: 'Move to Trash' },
   trashFailed: {
@@ -1118,7 +1130,7 @@ export function ClientInbox({ client, kind, onPreview }: {
       tone: 'brand',
       title: intl.formatMessage(m.trashTitle, { count: sel.length }),
       detail: sel.map((d) => d.supplier).slice(0, 4).join(' · '),
-      consequence: intl.formatMessage(m.trashConsequence),
+      consequence: intl.formatMessage(m.trashConsequence, { days: TRASH_RETENTION_DAYS }),
       confirmLabel: intl.formatMessage(m.trashConfirm),
     });
     if (!ok) return;

@@ -265,6 +265,27 @@ the reversal is a trap for the next reader.
 does.** Containment: a rule that lets only one person stop a leaked link makes
 the leak last longer. Unchanged reasoning, more conspicuous position.
 
+### An EIGHTH tier-1 kind — `business.reactivate`, 7 Sep 2026 (review item 67)
+
+⚠ **`business.offboard`'s row above says "It still does not". It does now**, and
+that half of its argument is spent — but the tier does not move, because it was
+only ever half. The second half got heavier: offboarding carries a real
+`documentScope` now, and `trash` moves every one of a client's documents in one
+approval, which is a blast radius somebody senior reads before signing.
+
+`business.reactivate` is **tier 1** for the plainest reason in the table: **the
+undo of a tier-1 act belongs to the same signature.** If a standard user could
+restore a client the super admin had removed, the removal would not really have
+been the super admin's decision — it would have been a suggestion with a delay
+on it.
+
+The counter-argument is recorded at the entry in `assert-can.ts` because it is a
+fair one: restoring is the SAFE direction, nothing is destroyed, and the worst
+outcome of a wrong restore is a client back on a list who can be removed again.
+It loses to the symmetry point — ending and resuming a client relationship are
+one decision read in two directions, and D48 hangs a live subscription off the
+answer. `assert-can.test.ts` pins the tier-1 set at **eight**.
+
 ### `proposal.approve` — the seventh `PermittedAction`
 
 Same predicate as `publish.release` (`mayRelease`, verbatim), separate NAME,

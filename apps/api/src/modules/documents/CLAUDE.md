@@ -84,6 +84,52 @@ they have different TYPES so a swap is a compile error.
 ⚠ **It is not a tenancy boundary.** Tenancy is RLS; this is a product predicate
 on top of the already-scoped set.
 
+### ⚠ The DEFAULT listing serves LIVE clients (review item 67, 7 Sep 2026)
+
+`business.offboard` removed a client from `GET /businesses` and said nothing
+whatsoever about that client's documents, so they stayed on every practice-wide
+board — in To Review, still offering Publish — under a CLIENT column whose
+dictionary no longer held the id and which therefore rendered the raw cuid
+`cmtndidpz003y96czwm24v0vc`. The cuid was the symptom; **an offboarded client's
+documents sitting in a working queue is wrong under any deletion policy.**
+
+`buildFilters` and `getDocumentCounts` now carry the same live-client arm, which
+is the rule `businesses.service.ts` has always kept, said once more one table
+over. **A caller who names a `businessId` still reaches a removed client's
+documents** — D12 keeps the books reachable by id, and the client's own screens
+and its Trash are reached exactly that way. It is a product filter applied on
+top of what RLS already narrowed to, never a tenancy boundary.
+
+⚠ **The `businessId: null` arm is load-bearing, not defensive.** An UNROUTED
+document has no business at all, and Prisma's `is:` on an optional to-one
+matches only rows whose relation EXISTS and passes — so the relation filter
+alone would have emptied the Unrouted queue, trading one invisible pile of
+documents for another.
+
+⚠ **The counts moved WITH the listing**, deliberately: this endpoint exists so
+the header and the list beneath it cannot disagree, and a header still counting a
+removed client's documents would put a figure on screen that no filter beneath
+it could reach. The vault counts take an id-only shape — `vault_items.business_id`
+is required, so there is no unrouted arm to allow for.
+
+### ⚠ `deleted=true` composes with `state`, and the Trash has to ask for ALL of them
+
+Found live on 7 Sep 2026 walking review item 61, and it is a real defect rather
+than a nicety. `deleted` composes with the other filters (the contract's own
+words), and an omitted `state` means *"every state except ARCHIVED"* — right for
+every working queue in the product and wrong for exactly one. A document
+somebody archived and then deleted was **counted by `GET /documents/counts` and
+listed by nothing**: the screen read *"1 in Trash"* over an empty table, and the
+only way to reach that document was knowing to send `?deleted=true&state=ARCHIVED`
+by hand.
+
+Nothing in this module changed — the server was behaving as contracted. The fix
+belongs to the caller and lives at the one place the Trash request is built
+(`apps/web/src/api/document-lifecycle.ts#EVERY_STATE`, read off the generated
+enum so a new state joins the Trash on its own), which fixes the practice Trash
+and the per-client Trash together. **If a third Trash listing is ever written,
+it sends the whole enum too.**
+
 ### What deliberately does NOT exclude Trash
 
 `getDocument`, `getDocumentOriginal`, `listDocumentEvents`,

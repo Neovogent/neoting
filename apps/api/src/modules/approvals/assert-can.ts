@@ -245,7 +245,30 @@ export const RELEASE_KINDS: Readonly<Record<ProposalKind, boolean>> = {
   // about to give it a deletion SCOPE and a subscription consequence (D48).
   // A card whose blast radius has to be stated at Read review is a card
   // somebody senior signs.
+  //
+  // ⚠ **That day HAS now come (7 Sep 2026, item 67) and the tier does not
+  // move.** `business.reactivate` exists below, so the first argument is
+  // spent — but it was only ever half. The second stands and got heavier: the
+  // scope is real now, `documentScope: 'trash'` moves every one of the
+  // client's documents in one approval, and the card states that blast radius
+  // precisely so somebody senior reads it before signing. A kind does not
+  // become tier 2 because its undo arrived.
   'business.offboard': true,
+  // **TIER 1, and for the plainest reason in this table: the undo of a tier-1
+  // act belongs to the same signature.** If a standard user could restore a
+  // client the super admin had removed, the removal would not really have been
+  // the super admin's decision — it would have been a suggestion with a delay
+  // on it. Symmetry here is not tidiness; it is what makes the removal mean
+  // something.
+  //
+  // The counter-argument, recorded because it is a fair one: restoring is the
+  // SAFE direction. Nothing is destroyed, nothing leaves the product, and the
+  // worst outcome of a wrong restore is a client back on a list who can be
+  // removed again. That is true, and it is why this is worth writing down
+  // rather than asserting. It loses to the symmetry point: ending and resuming
+  // a client relationship are the same decision read in two directions, and
+  // D48 hangs a live subscription off the answer.
+  'business.reactivate': true,
   // ⚠ **TIER 1 since 6 Sep 2026 (item 66) — this is the reversal to read
   // carefully, because the argument for `false` was a good one.**
   //
@@ -333,6 +356,8 @@ const TIER_1_REFUSAL: Partial<Record<ProposalKind, string>> = {
     "Only your practice's super admin can approve deleting documents permanently. The deletion is queued for them; the documents are still in Trash.",
   'business.offboard':
     "Only your practice's super admin can approve removing a client. The removal is queued for them; the client is unchanged.",
+  'business.reactivate':
+    "Only your practice's super admin can approve bringing a removed client back. The restore is queued for them; the client stays on the removed list until they approve it.",
   'rule.create':
     "Only your practice's super admin can approve a new coding rule. The rule is queued for them and codes nothing until they approve it.",
 };
