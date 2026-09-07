@@ -65,6 +65,8 @@ export const updateCodingExecutor: ProposalExecutor<'document.update-coding', Up
         categoryCode: true,
         description: true,
         projectRef: true,
+        claimantContactId: true,
+        businessId: true,
       },
     });
     if (document === null) {
@@ -75,6 +77,37 @@ export const updateCodingExecutor: ProposalExecutor<'document.update-coding', Up
     // archive path; an archived one is out of every working queue by design.
     if (document.state === 'PUBLISHED' || document.state === 'ARCHIVED') {
       throw new ProposalExecutionRefused('document.update-coding', `cannot update coding on a ${document.state} document — it is locked`);
+    }
+
+    // The expense claimant (review item 50). It is NOT handled by
+    // `collectChanges`' `scalar`, which cannot express the difference between
+    // "leave alone" and "clear": `undefined` means the correction did not
+    // mention the claim, and explicit `null` is how an accountant UNDOES a
+    // client's mistaken tick. Both are real and they are not the same act.
+    //
+    // ⚠ A named claimant is verified to be a contact on THIS document's own
+    // business, inside the approver's scope. Without it an accountant could
+    // name another client's employee as the payee — a wrong person to owe and
+    // a cross-client disclosure of who works where, from a field that looks
+    // like an id nobody would check.
+    const claimantId = payload.fields.claimantId;
+    if (claimantId !== undefined && claimantId !== null && claimantId !== document.claimantContactId) {
+      if (document.businessId === null) {
+        throw new ProposalExecutionRefused(
+          'document.update-coding',
+          'an unrouted document has no client whose people could have paid for it',
+        );
+      }
+      const claimant = await db.contact.findFirst({
+        where: { id: claimantId, businessId: document.businessId },
+        select: { id: true },
+      });
+      if (claimant === null) {
+        throw new ProposalExecutionRefused(
+          'document.update-coding',
+          'the named claimant is not a person at this client',
+        );
+      }
     }
 
     const changes = collectChanges(document, payload.fields);
@@ -188,6 +221,7 @@ type HeaderRow = {
   readonly categoryCode: string | null;
   readonly description: string | null;
   readonly projectRef: string | null;
+  readonly claimantContactId: string | null;
 };
 
 /** The provided fields that actually differ from what the row holds. */
@@ -219,6 +253,16 @@ function collectChanges(row: HeaderRow, fields: UpdateCodingPayload['fields']): 
   scalar('categoryCode', fields.categoryCode);
   scalar('description', fields.description);
   scalar('projectRef', fields.projectRef);
+  // undefined → untouched; null → the claim is cleared (the company paid after
+  // all); an id → that person is owed. The executor validated the id against
+  // this document's business before we get here.
+  if (fields.claimantId !== undefined && fields.claimantId !== row.claimantContactId) {
+    changes.push({
+      field: 'claimantContactId',
+      write: fields.claimantId,
+      extractedValue: fields.claimantId,
+    });
+  }
   return changes;
 }
 
