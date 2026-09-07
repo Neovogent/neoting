@@ -1421,3 +1421,45 @@ The web list never called `setEditing(person)`. Nothing in this module changed:
 `PATCH /portal/people/{personId}`, its last-owner guard and its audit row were
 all already here and already tested. Recorded because the next reader will
 otherwise go looking for the server half of item 42 and find it already built.
+
+## Expense claims, and the permission hole found under them (7 Sep 2026, item 50)
+
+⚠ **`canSendDocuments` was stored, editable and rendered for weeks while being
+enforced NOWHERE.** It appeared in `portal-people.service.ts`,
+`portal-people-authority.ts` and `portal-business-profile.service.ts` — the
+roster's own read and write — and in neither `portal-upload.service.ts` nor the
+controller. A member with the tick cleared could upload exactly as before:
+Governance §11.2's literal prohibition, *"a UI that merely hides the button is
+not an implementation of this"*. Found while designing expense claims
+(`docs/Expense_Claims_Design.md` §4.3) and fixed FIRST, because
+`canSubmitExpenseClaims` would otherwise have been the third capability on a
+mechanism whose second was presentation-only.
+
+The guard lives in `createPortalUpload`, not the controller — every portal
+upload (browser, camera capture, the completion re-read) begins with that
+intent — and refuses **before** presigning, since a presigned URL is bearer
+authority over a bucket key. `createPortalUpload` now declares the `403` it can
+return, the same catching-up the `402` did on 2 Sep.
+
+**Two things about it that are decisions:**
+
+- **A chase session is never refused by the roster tick.** `contactId` is null
+  there; the link was emailed to a registered contact for the sole purpose of
+  uploading, and the capability governs portal MEMBERS, whom the roster is
+  about. Refusing would break the product's main chase beat.
+- **The column is `@default(true)`**, so no existing member lost access — the
+  guard bites only a deliberately cleared tick.
+
+**The claim itself.** `PortalUploadRequest.expenseClaim` is a CLAIM, not an
+instruction: refused (`NT-PRM-001`) when the session names no contact or when
+that contact's `canSubmitExpenseClaims` is false — **never silently dropped**,
+because a client who ticks the box, gets a success and is owed nothing is the
+S12 lie with money attached. ⚠ The claimant recorded is the SESSION's own
+contact and is decided at INTENT, riding the HMAC-signed upload claims through
+to completion. A caller-chosen claimant would be a caller-chosen payee.
+
+`PortalSummary.canSubmitExpenseClaims` is served straight off the roster row
+rather than derived from a role — the client's own owner grants it per person,
+so the column IS the rule. It is `canManageBilling`'s standing: a fact for
+honest degradation, never a gate. The portal hides the tick without it, because
+an upload that cannot be claimed is simply an upload.

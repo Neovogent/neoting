@@ -60,6 +60,15 @@ export interface ExportableDocumentRow {
   readonly taxPence: number | null;
   readonly reference: string | null;
   readonly categoryCode: string | null;
+  /** Set when this is an expense claim — who paid out of their own pocket. */
+  readonly claimantContactId: string | null;
+  /**
+   * The claimant's creditor account, as the Prisma JOIN returns it. The nested
+   * shape is deliberate: flattening it would need a mapping layer between the
+   * query and this pure function, and a mapping layer is a second place for
+   * the field to go missing. Null claimant → not a claim → no account needed.
+   */
+  readonly claimant: { readonly expenseCreditorAccount: string | null } | null;
 }
 
 export type DocumentRefusalCode =
@@ -68,6 +77,19 @@ export type DocumentRefusalCode =
   | 'document-missing-total'
   | 'document-missing-counterparty'
   | 'document-missing-category'
+  /**
+   * An expense claim whose claimant has no creditor account set (review item
+   * 50). The claim's whole accounting point is that the credit goes to the
+   * PERSON — a director's loan account, an employee-creditor nominal — and not
+   * to the bank, because no money left the bank when the receipt was paid.
+   *
+   * ⚠ Refused rather than defaulted. Falling back to a generic creditor would
+   * post one person's money to another's account, which is a real error in a
+   * real ledger and one nobody would notice until a reconciliation. The
+   * accountant sets the account on the client's person; until then the export
+   * names the document and says which fact is missing.
+   */
+  | 'document-missing-claimant-account'
   | 'document-not-representable';
 
 export type DocumentRowResult =
@@ -155,6 +177,24 @@ export function documentToCanonicalRow(
     return refuse(
       'document-missing-category',
       'This document has not been coded to a nominal, so it was left out rather than exported to a guessed one.',
+    );
+  }
+
+  // An expense claim needs a creditor account for the PERSON, because the
+  // credit does not go to the bank: nothing left the bank when they paid for
+  // it themselves (review item 50, design §1.1). Refused rather than
+  // defaulted — a generic creditor would post one person's money against
+  // another's account, an error nobody spots until a reconciliation.
+  // ⚠ `typeof === 'string'`, not `!== null`. A row that reaches here without
+  // the field at all (an older fixture, a select that forgot it) is UNDEFINED,
+  // and `undefined !== null` is true — which would treat every ordinary
+  // company-paid document as a claim and refuse the entire export. Asking for
+  // a real id says what is meant: this is a claim only when somebody is named.
+  const isExpenseClaim = typeof document.claimantContactId === 'string' && document.claimantContactId !== '';
+  if (isExpenseClaim && (document.claimant?.expenseCreditorAccount?.trim() ?? '') === '') {
+    return refuse(
+      'document-missing-claimant-account',
+      "This is an expense claim and the person who paid has no creditor account set, so there is nothing to credit the money back to. Set their account on the client's people list.",
     );
   }
 

@@ -23,6 +23,7 @@ import type { ScopeContext } from '../../common/db/scope-context.js';
 import { scopedDb } from '../../common/db/scoped-db.js';
 import { deletedFilterFor, notDeleted } from '../../common/documents/deleted-documents.js';
 import {
+  CLAIMANT_INCLUDE,
   toDocumentEvent,
   toDocumentResponse,
   toDocumentSummary,
@@ -132,6 +133,11 @@ export class DocumentsService {
         where: seek.where === undefined ? filters : { AND: [filters, seek.where] },
         orderBy: seek.orderBy as Prisma.DocumentOrderByWithRelationInput[],
         take: seek.take,
+        // The claimant join (review item 50). Required by the projection's
+        // type, deliberately: `claimant: null` asserts THE COMPANY PAID, so a
+        // forgotten include would not degrade — it would tell an accountant
+        // nobody is owed for a receipt somebody paid for.
+        include: { ...CLAIMANT_INCLUDE },
       }),
     );
 
@@ -247,7 +253,7 @@ export class DocumentsService {
     const row = await scopedDb(this.prisma, ctx, async (db) =>
       db.document.findUnique({
         where: { id: documentId },
-        include: { extractions: { where: { isAccepted: true }, take: 1 } },
+        include: { extractions: { where: { isAccepted: true }, take: 1 }, ...CLAIMANT_INCLUDE },
       }),
     );
     if (row === null) throw notFound();

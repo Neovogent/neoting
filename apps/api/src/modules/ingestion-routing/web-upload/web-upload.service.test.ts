@@ -34,6 +34,11 @@ const DOCUMENT_DEFAULTS = {
   failureMessage: null, archivedAt: null, deletedAt: null, perceptualHash: null, submitterLabel: null,
   receivedLocal: null, routingDecision: null, routingConfidence: null, pageRange: null,
   receivedAt: NOW, createdAt: NOW, updatedAt: NOW,
+  // The joined relation as Prisma returns it under `include` when there is no
+  // claimant — null, meaning THE COMPANY PAID (review item 50). The projection
+  // requires the key so a forgotten join is a compile error rather than a
+  // silent claim that nobody is owed.
+  claimantContactId: null, claimant: null,
 };
 
 /**

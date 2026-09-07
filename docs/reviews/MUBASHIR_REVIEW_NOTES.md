@@ -142,7 +142,7 @@ confirm gates on the control, not a regex. Evidence:
 | Asked for | Blocked on |
 |---|---|
 | Range / by year / single-date modes | `chase.send`'s `statementPeriod` is a single `YYYY-MM` on the wire and the engine composes the message from it. A contract widening AND an engine change — the message template, the portal ask, and `toChaseItem`'s statement projection all read one month. |
-| Send-via-SMS / send-via-email checkboxes | **There is no SMS in ID** (D40/D45, launch M8 swept every claim of texting). A tickbox offering a channel that does not exist is the exact lie M8 removed; offer-and-disable needs the owner's call on whether ID ships a disabled control at all. |
+| ~~Send-via-SMS / send-via-email checkboxes~~ ✅ **RULED AND BUILT (7 Sep 2026)** | The owner chose **shown but greyed out** over hidden. A LIVE tickbox would have been the lie launch M8 removed; a DISABLED one wearing its reason says something true — the product knows the channel and this release does not have it — and it stops an accountant wondering whether a text went out as well. It submits nothing: email is the only value, so nothing rides on the request until `SMS_SENDER=aws` reaches a practice. Pinned in `RequestStatementDialog.test.tsx`. |
 | Both previews before confirming | The message is composed **server-side at review** (D44) and the review card already shows it verbatim. A second, client-side mirror of the preset template would be a second opinion about what will be sent. The honest version is a preview step that asks the server to compose without staging — a new read on `chase.send`, so contract work. |
 | AI-personalised copy | The entry says explicitly: noted for later, not now. |
 
@@ -1161,7 +1161,36 @@ The red line is `LivePortalSettings.tsx`'s generic `fault` message (`portal.live
 
 **Verification path:** hit the endpoint once with the portal bearer and read the response code + `NT-` problem, and/or read the staging api task logs for the Stripe SDK error string; fixes 1–2 are Stripe-Dashboard-side (save the live-mode portal config; re-scope or re-mint the restricted key), not code. **Web follow-up regardless of cause:** the fault line violates the app's own error rule (frontend ten, item 5 — plain English **plus the `NT-` code**); route it through `errorLabel` so the next person can tell these four causes apart from a screenshot.
 
-**🔶 DIAGNOSED — one dashboard step owed (5 Sep 2026, branch `fix/review-items-17-45-64`).**
+**✅ RESOLVED (7 Sep 2026) — it was cause A, and it is fixed and proven.**
+
+**Diagnosed by asking Stripe rather than reading logs.** The runbook's two
+candidate causes are distinguishable in one call:
+`stripe billing_portal configurations list --live` returned **`data: []`** —
+this account had **no live-mode customer-portal configuration at all**. Cause A,
+exactly as §5's per-mode warning predicted: the configuration is per MODE, the
+account went through a test→live switch on 2 Sep, and test-mode configuration
+does not carry over. Cause B (the restricted key's Customer Portal permission)
+was never the problem.
+
+**Fixed** by creating the live-mode configuration to §5's own spec —
+`bpc_1UD2PRGMdHp4NCWvSHAkVKwe`, active: payment-method update, invoice history
+and cancellation **on**; plan switch and quantity **off** (there is one plan,
+one per business); return URL, terms and privacy links pointing at the app's
+own legal pages.
+
+**Proven with the STAGING KEY, not with an admin one** — the distinction
+matters, because the key's permissions were the other hypothesis. A
+`billing_portal/sessions` create using the exact `rk_live_` key the API holds
+returned a session (`bps_1UD2Q1GMdHp4NCWvSL81HDy5`), which is the same call the
+button makes. Nothing in the repo changed: this was always a Stripe-side
+configuration fact, which is why #259 could only diagnose it.
+
+⚠ One unrelated thing the check turned up, recorded rather than acted on: the
+staging key lacks `connected_account_read`, so `GET /v1/account` refuses. No
+product path calls it today — it surfaced only because that was the probe used
+to confirm the key and my CLI were on the same account (they are:
+`acct_1RQtbxGMdHp4NCWv`). Left alone; granting a permission nothing needs is
+the opposite of the least-privilege the restricted key exists for.
 
 **Root cause, from the code and the module's recorded facts** (the AWS session on this machine had expired, so the log line itself is the owner's one remaining read): hypotheses 3 and 4 are RULED OUT statically — staging allowlists both web origins in `BILLING_RETURN_ORIGINS` (`infra/envs/staging/services.tf:317`) and the portal sends its own session's `businessId`; the panel showing **Active** also rules out `NT-BIL-001` (the webhook resolved that business BY its Stripe customer id, so the binding exists). What remains is Stripe refusing `billing_portal/sessions` **in live mode** — hypothesis 1 (no live-mode customer-portal configuration saved; the config §7 verified on 28 Aug was the SANDBOX's, and Stripe portal configs are per-mode) or hypothesis 2 (the hand-minted `rk_live_` key lacking the separately-granted **Customer Portal** permission). Both are 4xx refusals that `http-stripe-client.ts#refuse` collapsed into one "temporarily unavailable" NT-SRV-001 — which the panels then swallowed for the generic sentence in the screenshot.
 
@@ -1365,7 +1394,53 @@ Two rulings in one item:
    - Mileage and subsistence rules (HMRC flat rates) — probably out of ID scope, but the research should say so explicitly rather than the model discovering it later.
 5. **Fit to this app's spine:** claim approval is a state change → Review → Approve proposal(s); the claimant needs portal-side visibility of their claim's status; reimbursement matching joins the bank lane. Contract changes throughout — **G7, and big enough that the deliverable is a design document for Shakib's sign-off first**, not a PR.
 
-**✅ A RESOLVED · ⏸ B AWAITING YOUR SIGN-OFF (7 Sep 2026, PR TBD).**
+**✅ A RESOLVED · ◐ B LARGELY BUILT, ONE LINK OWED (7 Sep 2026 sign-off, built same day).**
+
+**B — signed off and built, end to end bar one surface.** The doc's own
+recommendations answered ⚖A–⚖F and were taken as given with the sign-off.
+
+**The loop that works today:** the client business's owner grants a person
+*"Can submit expense claims"* on their portal's Settings → People; that person
+ticks **"I paid for this myself"** per FILE on Upload (per file, not per tray —
+a client can send a company receipt and their own in one batch); the server
+records the claimant and the accountant sees it on the client's **Expense
+Claims** tab, which is un-hidden and reads real data. An accountant can set or
+CLEAR the claim through `document.update-coding` (tier 1 by item 66, no new
+kind — ⚖B).
+
+**⚖C was real and was fixed first.** `canSendDocuments` had been stored,
+editable and rendered as a tick for weeks while being consulted NOWHERE on the
+upload path — a member with the box cleared could upload exactly as before.
+Governance §11.2's literal prohibition. Fixed as its own commit before the
+third capability was built on the same mechanism.
+
+**Decisions worth knowing:** a claim is a DOCUMENT with a claimant (⚖E), not a
+stored aggregate — so no new slice, no lifecycle enum, and every pipeline stage
+handles one unchanged. **Null claimant means THE COMPANY PAID**, a positive
+statement rather than "unknown", which is why the projection's key is REQUIRED
+and a forgotten join is a compile error rather than a silent claim that nobody
+is owed. The claimant is decided at INTENT and rides the HMAC-signed upload
+claims, never a completion-time value: a caller-chosen claimant is a
+caller-chosen payee. An unpermitted mark is REFUSED, not ignored — a client who
+ticks the box, gets a success and is owed nothing is the S12 lie with money on
+it.
+
+**⚠ THE ONE LINK OWED, and it is a live dead end: the creditor account has no
+UI.** The export correctly REFUSES a claim whose claimant has no
+`expense_creditor_account` (`document-missing-claimant-account`) — the credit
+belongs to the person, not the bank, and defaulting a generic creditor posts
+one person's money against another's. The column exists and the refusal names
+the fix... but **there is no surface that sets it**, so a real claim cannot be
+exported yet. Closing it needs a slice of its own: there is no practice-side
+read of a client's CONTACTS at all (`GET /businesses/{id}/members` serves
+`BusinessMember`, which is USERS), so it wants a contract operation, a service
+and a small editor on the client's Users tab. Flagged loudly rather than
+softened to a warning — exporting a claim to the wrong nominal is a real ledger
+error, so the refusal is right and the missing remedy is the bug.
+
+**Also not built, per the doc:** mileage/subsistence flat rates (⚖A, out of ID
+scope) and set-valued reimbursement matching (⚖D/⚖F, explicitly the second
+build).
 
 **A — the tab is gone live, and the rule is general.** `ClientDetailView` now
 filters its own tab list: **a tab that cannot read anything from the server is

@@ -42,6 +42,7 @@ const PERSON: PortalPerson = {
   jobTitle: 'Head Chef',
   access: 'BUSINESS_STANDARD',
   canSendDocuments: true,
+  canSubmitExpenseClaims: false,
   canSeeTotals: false,
   isYou: false,
   isActive: true,

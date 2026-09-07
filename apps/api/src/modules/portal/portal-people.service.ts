@@ -127,6 +127,7 @@ const PERSON_SELECT = {
   isPrimary: true,
   canSendDocuments: true,
   canSeeTotals: true,
+  canSubmitExpenseClaims: true,
   deactivatedAt: true,
   createdAt: true,
 } as const;
@@ -271,6 +272,13 @@ export class PortalPeopleService {
           // safer answer rather than the compatible one. Written explicitly so
           // the create never falls through to the column default.
           canSeeTotals: request.canSeeTotals ?? false,
+          // The claim capability follows canSeeTotals' reasoning, not
+          // canSendDocuments': an omitted field gets the SAFER answer. Here the
+          // contract default and the column default agree (both false) — this
+          // grants a power nobody holds by default, so there is no
+          // compatibility case pulling the other way. Written explicitly all
+          // the same, so the create never depends on which default wins.
+          canSubmitExpenseClaims: request.canSubmitExpenseClaims ?? false,
           // `is_primary` is who the chases go to, and it is not this person.
           // Exactly one primary contact per business is what makes the
           // no-backfill derivation work, so a second one would quietly give an
@@ -290,6 +298,7 @@ export class PortalPeopleService {
         access: request.access,
         canSendDocuments: request.canSendDocuments,
         canSeeTotals: request.canSeeTotals,
+        canSubmitExpenseClaims: request.canSubmitExpenseClaims ?? false,
       });
 
       return {
@@ -397,6 +406,9 @@ export class PortalPeopleService {
           ...(request.access === undefined ? {} : { portalRole: request.access }),
           ...(request.canSendDocuments === undefined ? {} : { canSendDocuments: request.canSendDocuments }),
           ...(request.canSeeTotals === undefined ? {} : { canSeeTotals: request.canSeeTotals }),
+          ...(request.canSubmitExpenseClaims === undefined
+            ? {}
+            : { canSubmitExpenseClaims: request.canSubmitExpenseClaims }),
         },
         select: PERSON_SELECT,
       });
@@ -408,6 +420,9 @@ export class PortalPeopleService {
         ...(request.access === undefined ? {} : { access: request.access }),
         ...(request.canSendDocuments === undefined ? {} : { canSendDocuments: request.canSendDocuments }),
         ...(request.canSeeTotals === undefined ? {} : { canSeeTotals: request.canSeeTotals }),
+        ...(request.canSubmitExpenseClaims === undefined
+          ? {}
+          : { canSubmitExpenseClaims: request.canSubmitExpenseClaims }),
         ...(request.name === undefined ? {} : { renamed: true }),
         ...(request.jobTitle === undefined ? {} : { retitled: true }),
       });

@@ -2854,3 +2854,39 @@ more on both. Re-measure rather than believing either figure — that is this
 file's own standing rule about a moving target, and it cuts both ways.
 
 Evidence, walked live: `docs/reviews/assets/2026-09-07-item-54/`.
+
+## Expense claims and the greyed SMS control (7 Sep 2026 — items 50 and 16)
+
+**Item 50 — a claim is a DOCUMENT with a claimant.** Not a stored aggregate
+(design ⚖E), so there is no `expenseClaims` slice to wire: `ClientExpenseClaims`
+filters the documents slice on `claimant !== undefined` and the Expense Claims
+tab is **un-hidden live**. ⚠ `visibleTabs` is now a NO-OP and is deliberately
+KEPT — it encodes item 50 A's rule (a surface that cannot read anything is
+absent live, present synthetic), and deleting the helper would delete the rule,
+leaving the next unwired tab to rediscover the argument. A test pins that its
+subject list is currently empty.
+
+⚠ **Five tests were REPLACED, not fixed.** They pinned the "not connected to
+the API" panel and the hidden tab — correct while nothing could read a claim,
+and wrong the moment claims existed, because they asserted that a paying
+accountant is told the tab does not work. The replacements pin what matters:
+a claimed document shows who paid and what is owed; a document with NO claimant
+never appears (**null means THE COMPANY PAID**, and a board listing those would
+say the company owes its own staff); another client's claim never appears.
+
+**The portal half.** The tick is per FILE, not per tray — a client can send a
+company receipt and their own in one batch, and one tick for the tray would
+make the second a lie. It renders only when
+`PortalSummary.canSubmitExpenseClaims` says so, and it degrades by **hiding**
+rather than disabling: there is nothing somebody without the permission could
+do with the control. Showing it regardless would be the S12 lie with money on
+it — tick, succeed, be owed nothing. An older server that omits the field reads
+as NOT permitted, the safe direction for a permission that can cost money.
+
+**Item 16 — the SMS channel is shown DISABLED**, on the owner's 7 Sep ruling,
+and the distinction is the whole of it: launch M8 swept every claim of texting
+out of this app, so a LIVE tickbox would be the lie M8 removed, while a
+disabled one wearing its reason states something true and stops an accountant
+wondering whether a text went out too. It submits nothing — email is the only
+value — and the reason renders as TEXT, not only a `title`, because a title
+never appears on touch and a phone is where this is read.

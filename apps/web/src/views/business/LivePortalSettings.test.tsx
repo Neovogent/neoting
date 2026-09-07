@@ -35,6 +35,7 @@ const HOME = (canManageBilling: boolean): BusinessPortalHome => ({
   awaitingYou: 1,
   subscriptionActive: true,
   canManageBilling,
+    canSubmitExpenseClaims: false,
   lastDocumentAt: '2026-09-04T09:00:00.000Z',
   items: [],
   statementRequests: [],

@@ -147,6 +147,10 @@ export function toLocalDocument(row: DocumentSummary, clientNameFor: (businessId
     // The server's display words for who sent it (items 21/43/62) — slugs are
     // translated by `lib/channelLabels.ts`, human labels render verbatim.
     ...(row.submitterLabel == null ? {} : { submitterLabel: row.submitterLabel }),
+    // Who PAID out of their own pocket — an expense claim (review item 50).
+    // Absent means the COMPANY paid, which is the ordinary case; the claims
+    // board filters on its presence rather than on a separate stored kind.
+    ...(row.claimant == null ? {} : { claimant: { id: row.claimant.id, name: row.claimant.name } }),
     kind,
     fields: [],
     lineItems: [],

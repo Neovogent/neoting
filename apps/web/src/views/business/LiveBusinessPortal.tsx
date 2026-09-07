@@ -330,7 +330,8 @@ export function LiveBusinessPortal() {
           documentsFault={session.documentsFault}
           sessionToken={session.token}
           busy={session.busy}
-          onUpload={(file, note) => session.upload(file, null, note)}
+          onUpload={(file, note, expenseClaim) => session.upload(file, null, note, expenseClaim)}
+          canSubmitExpenseClaims={home.canSubmitExpenseClaims}
           onSubscribe={() => void session.startCheckout()}
           onShowMoreDocuments={session.showMoreDocuments}
           canShowMoreDocuments={session.canShowMoreDocuments}

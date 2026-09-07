@@ -45,7 +45,7 @@ function toDate(value: Date | null): string | null {
  * Rejected/Failed view shows, and retrying is itself a `document.reprocess`
  * proposal.
  */
-export function toDocumentResponse(row: DocumentRow): Document {
+export function toDocumentResponse(row: WithClaimant<DocumentRow>): Document {
   return {
     ...toDocumentSummary(row),
     // ---- detail (DocumentAllOf) ----
@@ -69,7 +69,27 @@ export function toDocumentResponse(row: DocumentRow): Document {
  * is built from above, so a field cannot be present in one and missing from the
  * other.
  */
-export function toDocumentSummary(row: DocumentRow): DocumentSummary {
+/**
+ * The claimant join, as the projection needs it (review item 50).
+ *
+ * ⚠ **The key is REQUIRED, even though the value is nullable, and that is the
+ * whole safety of it.** `Document.claimant: null` means *the company paid* —
+ * it is a positive statement, not "unknown". A projection that silently
+ * emitted null for a caller who merely forgot the `include` would therefore
+ * not degrade: it would LIE, telling an accountant nobody is owed for a
+ * receipt somebody paid for. Requiring the key makes a forgotten join a
+ * compile error instead.
+ */
+export type WithClaimant<T> = T & {
+  claimant: { id: string; firstName: string | null; lastName: string | null } | null;
+};
+
+/** The Prisma `include` every claimant-aware read uses. One spelling. */
+export const CLAIMANT_INCLUDE = {
+  claimant: { select: { id: true, firstName: true, lastName: true } },
+} as const;
+
+export function toDocumentSummary(row: WithClaimant<DocumentRow>): DocumentSummary {
   return {
     id: row.id,
     // ⚠ CONTRACT DIVERGENCE, not an oversight. `DocumentSummary.businessId` is
@@ -111,6 +131,19 @@ export function toDocumentSummary(row: DocumentRow): DocumentSummary {
     // list rows can render an honest "Received via": it is what splits
     // `SMS_PORTAL` into chase-link vs direct client-portal uploads.
     submitterLabel: row.submitterLabel,
+    // Who PAID out of their own pocket — null means the company did (review
+    // item 50). Distinct from `submitterLabel` above, which says who UPLOADED:
+    // an office manager can photograph a receipt an engineer paid for, and
+    // reading one as the other would show the wrong person as owed.
+    claimant:
+      row.claimant === null
+        ? null
+        : {
+            id: row.claimant.id,
+            name:
+              [row.claimant.firstName, row.claimant.lastName].filter((p) => p !== null && p !== '').join(' ') ||
+              row.claimant.id,
+          },
     archivedAt: row.archivedAt === null ? null : row.archivedAt.toISOString(),
     // Trash (2 Sep 2026). It sits on the SUMMARY rather than only on the detail
     // shape deliberately: the Trash listing is `GET /documents?deleted=true`,

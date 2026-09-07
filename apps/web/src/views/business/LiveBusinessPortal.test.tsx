@@ -48,6 +48,7 @@ const HOME: BusinessPortalHome = {
   // Settings tab it always has. The member's answer is pinned in
   // `portalTabs.test.ts` and `LivePortalSettings.test.tsx`.
   canManageBilling: true,
+  canSubmitExpenseClaims: false,
   lastDocumentAt: '2026-08-30T09:00:00.000Z',
   items: [
     {

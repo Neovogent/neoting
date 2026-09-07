@@ -143,6 +143,12 @@ const EXPORTABLE_DOCUMENT_SELECT = {
   s3Key: true,
   mimeType: true,
   byteHash: true,
+  // The expense claim (review item 50): who paid out of their own pocket, and
+  // the creditor account their claims post against. The account is the
+  // CONTACT's, so it is joined rather than duplicated onto the document — one
+  // place to set it, and changing it fixes every future export at once.
+  claimantContactId: true,
+  claimant: { select: { expenseCreditorAccount: true } },
 } as const;
 
 type SelectedDocument = ExportableDocumentRow & {

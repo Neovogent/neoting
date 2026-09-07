@@ -18,6 +18,8 @@ const BASE: ExportableDocumentRow = {
   totalPence: 12_000,
   taxPence: 2_000,
   reference: 'INV-4471',
+  claimantContactId: null,
+  claimant: null,
   categoryCode: 'Cost of sales: Purchases',
 };
 
@@ -207,4 +209,43 @@ test('the code is trimmed before it is looked up, so stored whitespace still res
   if (!result.ok || result.row.family !== 'TRANSACTION_DOCUMENT') throw new Error('expected a transaction document');
 
   expect(result.row.analysis[0]?.analysisAccount).toBe('Cost of sales: Purchases');
+});
+
+/**
+ * Expense claims (review item 50). The credit on a claim does NOT go to the
+ * bank — no money left the bank when the employee paid for it themselves — so
+ * a claim needs a creditor account for the PERSON. Refused rather than
+ * defaulted: a generic creditor posts one person's money against another's
+ * account, which nobody spots until a reconciliation.
+ */
+test('an expense claim with no creditor account on the claimant REFUSES, naming the missing fact', () => {
+  const result = documentToCanonicalRow(
+    { ...BASE, claimantContactId: 'con_engineer', claimant: { expenseCreditorAccount: null } },
+    LINK,
+    analysisAccountChart([]),
+  );
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.code).toBe('document-missing-claimant-account');
+  // The message has to name the fix, not just the fault — the accountant sets
+  // the account on the client's people list.
+  expect(result.message).toMatch(/creditor account/i);
+});
+
+test('an expense claim WITH a creditor account exports like any other document', () => {
+  const result = documentToCanonicalRow(
+    { ...BASE, claimantContactId: 'con_engineer', claimant: { expenseCreditorAccount: '2101' } },
+    LINK,
+    analysisAccountChart([]),
+  );
+
+  expect(result.ok).toBe(true);
+});
+
+test('an ordinary company-paid document is NOT treated as a claim — the guard asks for a real id', () => {
+  // ⚠ The regression this pins: `claimantContactId !== null` was true for an
+  // UNDEFINED field, so every ordinary document read as a claim and the whole
+  // export refused. Null means the company paid; it is not "unknown".
+  expect(documentToCanonicalRow({ ...BASE, claimantContactId: null, claimant: null }, LINK, analysisAccountChart([])).ok).toBe(true);
 });

@@ -33,6 +33,7 @@ function person(over: Partial<PortalPersonRow> = {}): PortalPersonRow {
     access: 'BUSINESS_STANDARD',
     canSendDocuments: true,
     canSeeTotals: false,
+  canSubmitExpenseClaims: false,
     isYou: false,
     isActive: true,
     addedAt: '2026-08-01T09:00:00.000Z',

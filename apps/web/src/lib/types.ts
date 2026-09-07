@@ -307,6 +307,13 @@ export interface Document {
    */
   submitterLabel?: string | undefined;
   /**
+   * Who paid for this out of their own pocket (review item 50). Absent means
+   * the COMPANY paid — the ordinary case, not "unknown". Distinct from
+   * `submitterLabel`, which says who UPLOADED it: an office manager can
+   * photograph a receipt an engineer paid for.
+   */
+  claimant?: { id: string; name: string } | undefined;
+  /**
    * What a row/heading CALLS this document when no supplier has been extracted
    * — the filename (for a capture, the server-generated
    * "Capture — {member} · {business} · {date}") instead of the literal

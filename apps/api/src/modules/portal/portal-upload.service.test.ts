@@ -76,8 +76,14 @@ interface Fixture {
   /** null simulates a business RLS does not return — the real policy does the same by returning no row. */
   readonly business: { id: string; name?: string; practiceId: string | null; subscriptionStatus: string | null } | null;
   readonly grants: string[];
-  /** The signed-in member's contact row, when the session names one (review item 43). */
-  readonly contact?: { firstName: string | null; lastName: string | null; email: string | null } | null;
+  /**
+   * The signed-in member's contact row, when the session names one (review
+   * item 43). `canSendDocuments` mirrors the column's own `@default(true)` —
+   * the guard added 7 Sep 2026 only bites when somebody deliberately clears
+   * the tick, so a fixture that defaulted it false would model a product
+   * nobody has.
+   */
+  readonly contact?: { firstName: string | null; lastName: string | null; email: string | null; canSendDocuments?: boolean } | null;
 }
 
 /** Enough Prisma for the business + contact reads and the grant write, and nothing else. */
@@ -85,7 +91,10 @@ function fakePrisma(fixture: Fixture): PrismaClient {
   const tx = {
     $executeRaw: async () => 0,
     business: { findUnique: async () => fixture.business },
-    contact: { findFirst: async () => fixture.contact ?? null },
+    contact: {
+      findFirst: async () =>
+        fixture.contact == null ? null : { canSendDocuments: true, ...fixture.contact },
+    },
     otpSession: {
       update: async ({ data }: { data: { grantedItemIds?: { push: string[] } } }) => {
         // The real column is a scalar list written with `push`, so appending is
@@ -108,7 +117,7 @@ function harness(
     practiceId: PRACTICE,
     subscriptionStatus: 'ACTIVE',
   },
-  contact: { firstName: string | null; lastName: string | null; email: string | null } | null = null,
+  contact: { firstName: string | null; lastName: string | null; email: string | null; canSendDocuments?: boolean } | null = null,
 ): { service: PrismaPortalUploadService; presigned: StoreCall[]; grants: string[] } {
   const fixture: Fixture = { business, grants: [], contact };
   const prisma = fakePrisma(fixture);
@@ -427,4 +436,49 @@ test('path separators in a note are stripped from the NAME and kept verbatim in 
   expect(String(claims['filename']).endsWith('.jpg')).toBe(true);
   // …while the provenance record keeps the client's words unedited, as data.
   expect(claims['portalNote']).toBe('../secret/name');
+});
+
+/**
+ * `canSendDocuments` enforcement (7 Sep 2026, `docs/Expense_Claims_Design.md`
+ * §4.3). The column was stored, editable and rendered as a tick for weeks and
+ * was consulted NOWHERE on the upload path — Governance §11.2's literal
+ * prohibition. These three pin the whole rule: it bites a cleared tick, it does
+ * not bite the default, and it never touches a chase link.
+ */
+test('a member whose "can send documents" tick is CLEARED is refused, and nothing is presigned', async () => {
+  const { service, presigned, grants } = harness(undefined, {
+    firstName: 'Sam',
+    lastName: 'Boyd',
+    email: 'sam@americanburger.test',
+    canSendDocuments: false,
+  });
+
+  await expect(service.createPortalUpload(OWN_PORTAL_FACTS, request(), randomUUID())).rejects.toMatchObject({
+    code: 'NT-PRM-001',
+  });
+  // The refusal has to land BEFORE the side effects — a presigned URL is
+  // bearer authority over a bucket key, and a grant is a durable row.
+  expect(presigned).toHaveLength(0);
+  expect(grants).toHaveLength(0);
+});
+
+test('the column defaults TRUE, so an ordinary member is unaffected', async () => {
+  const { service, presigned } = harness(undefined, {
+    firstName: 'Dee',
+    lastName: 'Okafor',
+    email: 'dee@americanburger.test',
+  });
+
+  await service.createPortalUpload(OWN_PORTAL_FACTS, request(), randomUUID());
+  expect(presigned).toHaveLength(1);
+});
+
+test('a CHASE session is never refused by the roster tick — it names no member', async () => {
+  // contactId null is the chase-link door: emailed to a registered contact for
+  // the sole purpose of uploading. There is no roster row to consult, and
+  // refusing would break the product's main chase beat.
+  const { service, presigned } = harness(undefined, null);
+
+  await service.createPortalUpload({ ...OWN_PORTAL_FACTS, contactId: null }, request(), randomUUID());
+  expect(presigned).toHaveLength(1);
 });

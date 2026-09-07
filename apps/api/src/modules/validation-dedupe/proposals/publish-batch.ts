@@ -244,6 +244,12 @@ const DOCUMENT_SELECT = {
   businessId: true,
   supplierName: true,
   categoryCode: true,
+  // The expense claim (review item 50) — the entry preview must refuse a claim
+  // with no creditor account at PROPOSAL time, not discover it at export: the
+  // release review is where a super admin is told what will and will not
+  // produce a line.
+  claimantContactId: true,
+  claimant: { select: { expenseCreditorAccount: true } },
   totalPence: true,
   taxPence: true,
   // The document's own ISO code — the preview refuses to print a symbol

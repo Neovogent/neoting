@@ -87,6 +87,22 @@ const m = defineMessages({
     defaultMessage:
       'Creating, sending, accepting, reimbursing and deleting a claim are unavailable here — those writes would live only in this browser and be gone on reload. The channel an employee would submit a claim through has not been built.',
   },
+  liveHeading: { id: 'analytics.clientExpenseClaims.liveHeading', defaultMessage: 'Expense claims' },
+  liveIntro: {
+    id: 'analytics.clientExpenseClaims.liveIntro',
+    defaultMessage:
+      'Documents {client}’s own people paid for out of their own pocket. The company owes them back, so these are coded like any other cost and credited to the person rather than to the bank.',
+  },
+  liveEmpty: {
+    id: 'analytics.clientExpenseClaims.liveEmpty',
+    defaultMessage:
+      'Nobody at {client} has claimed anything back. A claim starts in their portal — a person you have given the expense-claim permission ticks “I paid for this myself” when they send a receipt.',
+  },
+  colClaimant: { id: 'analytics.clientExpenseClaims.colClaimant', defaultMessage: 'Paid by' },
+  owedTotal: {
+    id: 'analytics.clientExpenseClaims.owedTotal',
+    defaultMessage: '{count, plural, one {# claim} other {# claims}} · {amount} owed',
+  },
   empty: {
     id: 'analytics.clientExpenseClaims.empty',
     defaultMessage:
@@ -230,7 +246,7 @@ export function ClientExpenseClaims({ client, onPreview }: {
 }) {
   const {
     expenseClaims, saveExpenseClaim, setExpenseClaimStatus, deleteExpenseClaim, ingest, documents,
-    documentsSource, slices,
+    documentsSource, slices, isSameClient,
   } = useAppContext();
   const [editing, setEditing] = useState<ExpenseClaim | null>(null);
   const confirm = useConfirm();
@@ -258,20 +274,67 @@ export function ClientExpenseClaims({ client, onPreview }: {
    * BankView and DocumentsView on.
    */
   if (documentsSource === 'api') {
+    /**
+     * ⚠ **A claim is a DOCUMENT with a claimant, not a stored aggregate**
+     * (review item 50, design ⚖E). It is not a different kind of thing from a
+     * cost — it is a cost with one extra fact about who is owed for it — so
+     * this board is a filter over the documents slice the rest of the app
+     * already reads, and every pipeline stage handles a claim unchanged.
+     *
+     * That is also why there is no claim lifecycle here: the states a claim
+     * could have (submitted / approved / reimbursed) are the document's own
+     * states plus the bank match that settles it, and inventing a second
+     * status column beside them would be two answers to "where is this".
+     *
+     * The old "not connected to the API" panel is gone because it is no longer
+     * true — but its RULE stands: the failure badge below still renders on a
+     * failed read rather than drawing an empty board over data nobody got.
+     */
+    const claims = documents.filter((d) => isSameClient(d.clientId, client.id) && d.claimant !== undefined);
+    const owedLive = claims.reduce((n, d) => n + d.total, 0);
     return (
       <div className="flex flex-col gap-4">
-        {/* The badge renders only on 'error'. `slices.expenseClaims` is
-            'seed' — nothing was asked — so today it draws nothing; it is
-            mounted so that wiring the slice lights the failure state up
-            without touching this file. */}
-        <DataSourceBadge slice="expense claims" status={slices.expenseClaims} />
-        <div className="border border-white/5 rounded-[32px] bg-card p-4 md:p-10 shadow-2xl flex flex-col gap-3 text-center">
-          <p className="text-[13px] text-zinc-400 leading-relaxed max-w-xl mx-auto">
-            {intl.formatMessage(m.notWiredLead, { client: client.name })}
+        <DataSourceBadge slice="documents" status={slices.documents} />
+        <div className="border border-white/5 rounded-[32px] bg-card p-4 md:p-6 shadow-2xl">
+          <div className="flex items-center gap-3 mb-4">
+            <Banknote size={18} className="text-brand shrink-0" />
+            <h3 className="text-[15px] font-bold text-white">{intl.formatMessage(m.liveHeading)}</h3>
+          </div>
+          <p className="text-[13px] text-zinc-500 leading-relaxed mb-5 max-w-2xl">
+            {intl.formatMessage(m.liveIntro, { client: client.name })}
           </p>
-          <p className="text-[13px] text-zinc-500 leading-relaxed max-w-xl mx-auto">
-            {intl.formatMessage(m.notWiredActions)}
-          </p>
+          {claims.length === 0 ? (
+            <p className="text-[13px] text-zinc-500 leading-relaxed">
+              {intl.formatMessage(m.liveEmpty, { client: client.name })}
+            </p>
+          ) : (
+            <>
+              <p className="text-[13px] font-bold text-white mb-3">
+                {intl.formatMessage(m.owedTotal, { count: claims.length, amount: currency(owedLive) })}
+              </p>
+              <div className="flex flex-col gap-2">
+                {claims.map((doc) => (
+                  <button
+                    key={doc.id}
+                    onClick={() => onPreview?.(doc)}
+                    className="flex items-center gap-3 p-4 rounded-2xl bg-ground/60 border border-white/5 hover:border-white/15 transition-colors text-left"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[13px] font-bold text-white truncate">
+                        {doc.displayTitle ?? doc.supplier}
+                      </div>
+                      <div className="text-[12px] text-zinc-500">
+                        {intl.formatMessage(m.colClaimant)}: {doc.claimant?.name} · {doc.date}
+                      </div>
+                    </div>
+                    <span className="text-[13px] font-bold text-white tabular-nums shrink-0">
+                      {currency(doc.total)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
     );

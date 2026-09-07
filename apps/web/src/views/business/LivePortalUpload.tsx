@@ -71,6 +71,11 @@ const m = defineMessages({
     id: 'portal.livePortalUpload.stagedSubtitle',
     defaultMessage: 'Nothing has been sent yet — name anything you like, then press Upload.',
   },
+  claimLabel: { id: 'portal.livePortalUpload.claimLabel', defaultMessage: 'I paid for this myself' },
+  claimHint: {
+    id: 'portal.livePortalUpload.claimHint',
+    defaultMessage: 'Tick this if you paid out of your own pocket and the company owes you back.',
+  },
   stagedNameLabel: { id: 'portal.livePortalUpload.stagedNameLabel', defaultMessage: 'Document name (optional)' },
   stagedNamePlaceholder: {
     id: 'portal.livePortalUpload.stagedNamePlaceholder',
@@ -150,6 +155,7 @@ export function LivePortalUpload({
   sessionToken,
   busy,
   onUpload,
+  canSubmitExpenseClaims,
   onSubscribe,
   onShowMoreDocuments,
   canShowMoreDocuments,
@@ -160,7 +166,15 @@ export function LivePortalUpload({
   /** For [Open] / [Download] on a row — React state only; it dies with the tab. */
   readonly sessionToken: string | null;
   readonly busy: boolean;
-  readonly onUpload: (file: File, note: string | null) => Promise<PortalSendOutcome>;
+  readonly onUpload: (file: File, note: string | null, expenseClaim: boolean) => Promise<PortalSendOutcome>;
+  /**
+   * Whether THIS person may claim money back (review item 50). The server's
+   * own fact (`PortalSummary.canSubmitExpenseClaims`), never a guess — and the
+   * control is HIDDEN when false rather than shown disabled, because there is
+   * nothing a person without the permission could do with it and an upload
+   * that cannot be claimed is simply an upload.
+   */
+  readonly canSubmitExpenseClaims: boolean;
   readonly onSubscribe: () => void;
   readonly onShowMoreDocuments: () => void;
   readonly canShowMoreDocuments: boolean;
@@ -178,14 +192,14 @@ export function LivePortalUpload({
   const [sendFaults, setSendFaults] = useState<readonly PortalSendFault[]>([]);
   // Selection STAGES; the Upload button sends (review item 11). Keyed so a
   // name typed against one file survives another being removed.
-  const [staged, setStaged] = useState<{ key: number; file: File; name: string }[]>([]);
+  const [staged, setStaged] = useState<{ key: number; file: File; name: string; claim: boolean }[]>([]);
   const nextKey = useRef(0);
 
   const stage = (files: readonly File[]) => {
     if (files.length === 0) return;
     const { accepted, refused: screened } = screenPortalFiles(files);
     setRefused(screened);
-    setStaged((prev) => [...prev, ...accepted.map((file) => ({ key: nextKey.current++, file, name: '' }))]);
+    setStaged((prev) => [...prev, ...accepted.map((file) => ({ key: nextKey.current++, file, name: '', claim: false }))]);
   };
 
   const uploadStaged = async () => {
@@ -199,7 +213,7 @@ export function LivePortalUpload({
       // kilobits, and the first failure would be indistinguishable from the
       // rest.
       const note = item.name.trim();
-      const outcome = await onUpload(item.file, note === '' ? null : note);
+      const outcome = await onUpload(item.file, note === '' ? null : note, item.claim);
       if (outcome.ok) {
         // Shown under the name the client gave it, which is the name the
         // accountant now sees too.
@@ -328,9 +342,39 @@ export function LivePortalUpload({
                             <X size={15} />
                           </button>
                         </span>
+                        {/* The expense-claim tick (review item 50), per file —
+                            a client can send a company receipt and their own
+                            in one batch, and one tick for the tray would make
+                            the second of those a lie.
+
+                            ⚠ Rendered only when the SERVER says this person
+                            may claim. It degrades by hiding rather than by
+                            disabling: there is nothing somebody without the
+                            permission could do with the control, and an upload
+                            that cannot be claimed is simply an upload. The
+                            server refuses the mark regardless of what this
+                            browser believes. */}
+                        {canSubmitExpenseClaims && (
+                          <label className="flex items-center gap-2 text-[12px] font-semibold text-zinc-400 sm:w-64">
+                            <input
+                              type="checkbox"
+                              checked={item.claim}
+                              onChange={(e) =>
+                                setStaged((prev) =>
+                                  prev.map((st) => (st.key === item.key ? { ...st, claim: e.target.checked } : st)),
+                                )
+                              }
+                              className="accent-brand"
+                            />
+                            {intl.formatMessage(m.claimLabel)}
+                          </label>
+                        )}
                       </div>
                     ))}
                   </div>
+                  {canSubmitExpenseClaims && (
+                    <p className="text-[12px] text-zinc-500 mb-3">{intl.formatMessage(m.claimHint)}</p>
+                  )}
                   <button
                     onClick={() => void uploadStaged()}
                     disabled={busy}

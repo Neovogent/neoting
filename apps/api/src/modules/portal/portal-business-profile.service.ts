@@ -60,7 +60,7 @@ export class PortalBusinessProfileService {
       // The acting person, found in this business — the people service's rule.
       const acting = (await db.contact.findFirst({
         where: { id: facts.contactId ?? '', businessId: facts.businessId, deactivatedAt: null },
-        select: { id: true, firstName: true, lastName: true, email: true, role: true, portalRole: true, isPrimary: true, canSendDocuments: true, canSeeTotals: true, deactivatedAt: true, createdAt: true },
+        select: { id: true, firstName: true, lastName: true, email: true, role: true, portalRole: true, isPrimary: true, canSendDocuments: true, canSeeTotals: true, canSubmitExpenseClaims: true, deactivatedAt: true, createdAt: true },
       })) as PortalPersonRow | null;
       assertCan(portalActorFor(acting), 'business.profile.manage');
 

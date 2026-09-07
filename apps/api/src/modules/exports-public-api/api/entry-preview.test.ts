@@ -42,7 +42,9 @@ function document(over: Partial<ExportableDocumentRow> = {}): ExportableDocument
     totalPence: 6_199,
     taxPence: 1_033,
     reference: 'INV-1042',
-    categoryCode: 'SOFTWARE_AND_SUBSCRIPTIONS',
+    claimantContactId: null,
+  claimant: null,
+  categoryCode: 'SOFTWARE_AND_SUBSCRIPTIONS',
     ...over,
   };
 }

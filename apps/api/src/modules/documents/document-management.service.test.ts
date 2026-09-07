@@ -63,6 +63,10 @@ const DOCUMENT_DEFAULTS = {
   failureMessage: null,
   archivedAt: null,
   deletedAt: null,
+  // Null means THE COMPANY PAID — the ordinary case. The key is
+  // required by the projection so a forgotten join is a compile error
+  // rather than a silent claim that nobody is owed (review item 50).
+  claimant: null,
   pageRange: null,
   createdAt: NOW,
   updatedAt: NOW,
