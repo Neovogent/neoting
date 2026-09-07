@@ -142,7 +142,7 @@ confirm gates on the control, not a regex. Evidence:
 | Asked for | Blocked on |
 |---|---|
 | Range / by year / single-date modes | `chase.send`'s `statementPeriod` is a single `YYYY-MM` on the wire and the engine composes the message from it. A contract widening AND an engine change — the message template, the portal ask, and `toChaseItem`'s statement projection all read one month. |
-| Send-via-SMS / send-via-email checkboxes | **There is no SMS in ID** (D40/D45, launch M8 swept every claim of texting). A tickbox offering a channel that does not exist is the exact lie M8 removed; offer-and-disable needs the owner's call on whether ID ships a disabled control at all. |
+| ~~Send-via-SMS / send-via-email checkboxes~~ ✅ **RULED AND BUILT (7 Sep 2026)** | The owner chose **shown but greyed out** over hidden. A LIVE tickbox would have been the lie launch M8 removed; a DISABLED one wearing its reason says something true — the product knows the channel and this release does not have it — and it stops an accountant wondering whether a text went out as well. It submits nothing: email is the only value, so nothing rides on the request until `SMS_SENDER=aws` reaches a practice. Pinned in `RequestStatementDialog.test.tsx`. |
 | Both previews before confirming | The message is composed **server-side at review** (D44) and the review card already shows it verbatim. A second, client-side mirror of the preset template would be a second opinion about what will be sent. The honest version is a preview step that asks the server to compose without staging — a new read on `chase.send`, so contract work. |
 | AI-personalised copy | The entry says explicitly: noted for later, not now. |
 

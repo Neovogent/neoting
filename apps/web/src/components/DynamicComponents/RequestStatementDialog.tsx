@@ -20,6 +20,16 @@ import { ukLongMonth, UkMonthField } from './UkDateField';
  * review. Neither claims a permission — the server is still the rule.
  */
 const m = defineMessages({
+  // The delivery channel (review item 16). The owner ruled on 7 Sep 2026:
+  // SHOW the SMS option, greyed out — so the accountant can see the product
+  // intends to text one day, rather than wondering whether it silently did.
+  sendByLabel: { id: 'chases.requestStatement.sendByLabel', defaultMessage: 'Send by' },
+  sendByEmail: { id: 'chases.requestStatement.sendByEmail', defaultMessage: 'Email' },
+  sendBySms: { id: 'chases.requestStatement.sendBySms', defaultMessage: 'Text message' },
+  sendBySmsWhy: {
+    id: 'chases.requestStatement.sendBySmsWhy',
+    defaultMessage: 'Not available yet — this release sends document requests by email.',
+  },
   title: { id: 'bank.requestStatement.title', defaultMessage: 'Request a bank statement' },
   detail: {
     id: 'bank.requestStatement.detail',
@@ -124,6 +134,36 @@ export default function RequestStatementDialog({
               {intl.formatMessage(m.monthChosen, { month: ukLongMonth(intl, period) })}
             </p>
           )}
+        </div>
+
+        {/* ⚠ The delivery channel, SHOWN with SMS disabled — the owner's ruling
+            of 7 Sep 2026 on review item 16, taken over the alternative of
+            hiding it. The reasoning matters because launch M8 swept every
+            claim of texting out of this app: a LIVE tickbox offering SMS would
+            be exactly the lie M8 removed. A DISABLED one wearing its reason is
+            a different statement — it says the product knows about the channel
+            and this release does not have it, which is true, and it stops an
+            accountant wondering whether a text was silently sent as well.
+
+            It is deliberately not a form control that submits anything: email
+            is the only value, so there is nothing to choose and nothing rides
+            on the request. The day SMS_SENDER=aws ships to a practice, this
+            becomes a real pair and the request grows a channel field. */}
+        <div className="space-y-2">
+          <span className="text-[13px] font-bold text-zinc-400 block">{intl.formatMessage(m.sendByLabel)}</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="px-3 py-1.5 rounded-full text-[12px] font-bold bg-brand/10 text-brand border border-brand/25">
+              {intl.formatMessage(m.sendByEmail)}
+            </span>
+            <span
+              title={intl.formatMessage(m.sendBySmsWhy)}
+              aria-disabled="true"
+              className="px-3 py-1.5 rounded-full text-[12px] font-bold text-zinc-600 border border-white/5 opacity-50 cursor-not-allowed"
+            >
+              {intl.formatMessage(m.sendBySms)}
+            </span>
+          </div>
+          <p className="text-[12px] text-zinc-500">{intl.formatMessage(m.sendBySmsWhy)}</p>
         </div>
 
         {queued ? (
