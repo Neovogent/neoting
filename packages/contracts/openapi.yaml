@@ -241,6 +241,16 @@ tags:
       dunning and the card-update flow; these two operations mint the hosted
       URLs and nothing else. There is no plan-change UI and no invoice renderer
       in this contract on purpose.
+  - name: tasks
+    description: |
+      The practice's own checklist (review item 54). Client-scoped work a
+      colleague owns, with a due date, an optional dependency and an optional
+      monthly/quarterly recurrence.
+
+      Every write is `x-nt-side-effect: ingest` and no `ProposalKind` exists for
+      one: applying item 66's question — *whose signature does this carry* — a
+      ticked checkbox carries nobody's. Nothing here touches a client's books,
+      a document's coding, or anything outside the product.
   - name: webhooks
     description: Inbound webhooks from third parties. Signature-verified, not session-authenticated.
 
@@ -4736,6 +4746,428 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  # ==========================================================================
+  # TASKS — the practice's own checklist (review item 54)
+  #
+  # `tasks` has been a table since the init migration and NOTHING has ever read
+  # or written a row: no operation named it, no service touched it, and both
+  # Tasks tabs ran off React state that evaporated on reload. The screenshot in
+  # the review notes is the S14 sweep saying so honestly.
+  #
+  # ⚠ **Every write here is `ingest`, and that is a ruling, not an oversight.**
+  # Item 66's ratified question is *whose signature does this carry* — and
+  # ticking "Chase missing receipts" off a checklist carries nobody's. It
+  # asserts nothing about a client's books, moves no money, changes no coding,
+  # reaches nothing outside the product, and is undone by clicking it again.
+  # Governance §10's "no state change outside the ActionProposal path" is about
+  # the CLIENT's state; a proposal on a checkbox would ask for a signature on
+  # something nobody is signing for, and item 66's own finding is that asking
+  # twice makes the second one mean less. What would move this to tier 2 is a
+  # task that ACTS — a checklist item that publishes, or codes, or texts — and
+  # there is none.
+  # ==========================================================================
+
+  /tasks:
+    get:
+      operationId: listTasks
+      summary: Tasks the caller can see
+      description: |
+        Every task on every client workspace the caller reaches, or one
+        client's with `businessId`. Ordered by due date, soonest first, with
+        undated tasks last — a board is read to find out what is next, and a
+        row with no date is never next.
+
+        **Every task belongs to exactly one client** (`businessId` is required
+        and always present). That is not a product preference: `tasks.business_id`
+        is `NOT NULL` and RLS bounds the table through
+        `app_can_access_business(business_id)`, so a practice-level task would
+        be a row no policy could reach. The Tasks tab's "All clients" is a
+        FILTER over that set, never a second scope.
+      tags: [tasks]
+      x-nt-side-effect: none
+      parameters:
+        - $ref: '#/components/parameters/BusinessIdFilter'
+        - name: status
+          in: query
+          required: false
+          description: Restrict to one status. Omit for every status.
+          schema: { $ref: '#/components/schemas/TaskStatus' }
+        - name: assigneeUserId
+          in: query
+          required: false
+          description: |
+            Restrict to one colleague's tasks — "what is on my plate". Narrows
+            within what RLS already allows; it is not an access control.
+          schema: { type: string }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of tasks, soonest due first.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pageInfo]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Task' }
+                  pageInfo: { $ref: '#/components/schemas/PageInfo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+    post:
+      operationId: createTask
+      summary: Add a task to a client's checklist
+      description: |
+        Creates the row and returns it with a server-minted id.
+
+        **Assigning writes a notification.** When `assigneeUserId` names
+        somebody other than the caller, one `notifications` row is written with
+        `event: 'task.assigned'` so the assignee's bell shows it. Assigning to
+        yourself writes nothing — the bell exists to tell you something you did
+        not do.
+      tags: [tasks]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskWriteRequest' }
+      responses:
+        '201':
+          description: The stored task.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Task' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422':
+          description: |
+            `NT-TSK-001` — `dependsOnTaskId` names a task on a different client,
+            or one that does not exist. `NT-TSK-002` — the dependency would
+            close a cycle. `NT-TSK-003` — `assigneeUserId` is not a member of
+            this practice.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /tasks/{taskId}:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    put:
+      operationId: replaceTask
+      summary: Replace a task's editable fields
+      description: |
+        The whole task travels, replacing what was stored — naturally
+        idempotent, and the composer already holds every field.
+
+        **`businessId` and `status` are not fields here.** Moving a task to a
+        different client is not a text edit, and the tick has its own operation
+        because it is the write that happens a hundred times a day and must not
+        require the caller to hold every other field to send it. A stale field
+        in a status payload is how one person's tick silently reverts
+        another's edit.
+
+        Reassigning writes the same `task.assigned` notification `createTask`
+        does — and only when the assignee actually CHANGES, so re-saving a
+        description does not re-notify.
+      tags: [tasks]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskEditRequest' }
+      responses:
+        '200':
+          description: The stored task.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Task' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422':
+          description: |
+            `NT-TSK-001` / `NT-TSK-002` / `NT-TSK-003` — as `createTask`, plus
+            a task may not depend on itself.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /tasks/{taskId}/status:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      operationId: setTaskStatus
+      summary: Tick, reopen, or close a task with a verdict
+      description: |
+        The four statuses the board renders: `open`, `complete`,
+        `complete-with-issues`, `not-applicable`. Every transition is allowed in
+        both directions — a checklist a human cannot correct is worse than one
+        they can.
+
+        **A blocked task can still be completed.** `dependsOnTaskId` is advisory
+        ordering for a person, not a lock: the surfaces disable the tick while
+        the blocker is open, and the server does not, because the one time it
+        matters is the time the ordering was wrong.
+
+        ## ⚠ Completing a RECURRING task creates the next one
+
+        When the task carries a `cadence` and this call moves it out of `open`,
+        the server writes a second row: same title, description, client,
+        assignee, cadence and dependency, `status: open`, and `dueDate` advanced
+        by one cadence period. The new task is returned in `nextOccurrence`.
+
+        There is no scheduler behind this and deliberately so — the completion
+        IS the tick. A monthly task nobody ever completes therefore does not
+        pile up twelve copies by December, which is the right answer for a
+        checklist and the wrong one for a calendar. If rows must appear on the
+        1st whether or not last month closed, that is a worker and a different
+        feature.
+      tags: [tasks]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskStatusRequest' }
+      responses:
+        '200':
+          description: The task in its new status, plus the next occurrence if one was created.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [task]
+                properties:
+                  task: { $ref: '#/components/schemas/Task' }
+                  nextOccurrence:
+                    description: |
+                      The row a recurring completion generated, or null. Null is
+                      the ordinary answer — only a task with a `cadence` leaving
+                      `open` produces one.
+                    oneOf:
+                      - $ref: '#/components/schemas/Task'
+                      - type: 'null'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /tasks/{taskId}/deletion:
+    parameters:
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      operationId: deleteTask
+      summary: Remove a task
+      description: |
+        Idempotent: deleting a task that does not exist is a `204`.
+
+        Any task that DEPENDED on this one has its `dependsOnTaskId` cleared in
+        the same transaction rather than being deleted with it — a blocker
+        going away should unblock the work, not take it with it. Nothing else
+        references a task, so nothing else is orphaned.
+      tags: [tasks]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204':
+          description: Gone, or never there — the same true answer either way.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ==========================================================================
+  # TEAMS — the firm's own org chart (review item 54, second half)
+  #
+  # ⚠ **A team grants NOTHING**, and every line of this block is shaped by
+  # that. `Team` carries no access column: `accessLevel` is DERIVED from the
+  # members' own `memberships` rows and is read-only on the wire. Who may reach
+  # which client is `Membership.businessId` — the answer every RLS policy
+  # already consults — and a stored second answer is how a permission bug
+  # ships. `tenancy-check.sql` §12 asserts that no policy in the database
+  # consults `team_members` at all.
+  # ==========================================================================
+
+  /teams:
+    get:
+      operationId: listTeams
+      summary: The firm's teams
+      description: |
+        Every team in the caller's practice, oldest first — the order a small
+        team reads, the same rule `listPracticeMembers` follows.
+
+        Paginated like every other list in this contract. A firm has teams in
+        the low tens and one page will always hold them, but a list operation
+        that answers a different shape from its neighbours is the one a caller
+        gets wrong.
+      tags: [practices]
+      x-nt-side-effect: none
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of teams, oldest first.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pageInfo]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Team' }
+                  pageInfo: { $ref: '#/components/schemas/PageInfo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+    post:
+      operationId: createTeam
+      summary: Create a team
+      description: |
+        Names a group of colleagues. **It confers no access** — see the block
+        comment above; a member's reach is unchanged by joining or leaving.
+      tags: [practices]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TeamWriteRequest' }
+      responses:
+        '201':
+          description: The stored team.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Team' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '409':
+          description: |
+            `NT-TEM-001` — a team of this name already exists in the practice.
+            Two teams called "VAT" in one firm are a naming accident, not a
+            feature. `NT-IDM-001` for a reused `Idempotency-Key`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422':
+          description: |
+            `NT-TEM-002` — a named member is not a colleague in this practice.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /teams/{teamId}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    put:
+      operationId: replaceTeam
+      summary: Rename a team, or replace its membership
+      description: |
+        The whole team travels — name plus the complete member list, which
+        replaces what was stored rather than merging into it. The editor
+        already holds every field, and a merge would make removing the last
+        member impossible to express.
+      tags: [practices]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TeamWriteRequest' }
+      responses:
+        '200':
+          description: The stored team.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Team' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: '`NT-TEM-001` (duplicate name) or `NT-IDM-001` (reused key).'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422':
+          description: '`NT-TEM-002` — a named member is not a colleague in this practice.'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /teams/{teamId}/deletion:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    post:
+      operationId: deleteTeam
+      summary: Delete a team
+      description: |
+        Idempotent: deleting a team that does not exist is a `204`. Its
+        `team_members` rows go with it (`ON DELETE CASCADE`) and **nobody loses
+        any access**, because a team never granted any.
+      tags: [practices]
+      x-nt-side-effect: ingest
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204':
+          description: Gone, or never there — the same true answer either way.
+          headers:
+            NT-Trace-Id: { $ref: '#/components/headers/TraceId' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /webhooks/whatsapp:
     get:
       operationId: verifyWhatsappWebhook
@@ -5074,6 +5506,18 @@ components:
       required: true
       schema: { type: string }
 
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      schema: { type: string }
+
+    TeamId:
+      name: teamId
+      in: path
+      required: true
+      schema: { type: string }
+
     DocumentLinkCode:
       name: code
       in: path
@@ -5385,6 +5829,18 @@ components:
         # `policy.activate` — so the ingest-class operation refuses and points
         # at the proposal instead.
         - NT-WFL-001   # the approval workflow is still active
+        # Tasks and teams (review item 54). Their own families rather than
+        # NT-VAL-001, because every one of them is a refusal a PERSON has to
+        # act on at a form — "pick someone from the list", "that would make a
+        # loop", "that name is taken" — and a screen cannot say which unless
+        # the code distinguishes them. Nothing here is on the Review → Approve
+        # spine (item 66 tier 3), so none of them is a PRP code.
+        - NT-TSK-001   # a blocker must be a task on the same client
+        - NT-TSK-002   # the dependency would close a cycle
+        - NT-TSK-003   # the assignee is not a member of this practice
+        - NT-TEM-001   # a team of that name already exists in the practice
+        - NT-TEM-002   # a named team member is not a colleague at this firm
+        - NT-TEM-003   # the practice has no client workspaces to build a team around
         # The model runtime (MDL family, Governance §9). Deliberately NOT `CHS`
         # or a `CHAT` family: these fire when the MODEL failed, not when the
         # chase engine or the chat feature did, and an alert that cannot tell
@@ -7098,6 +7554,193 @@ components:
         createdAt: { type: string, format: date-time }
 
     # ---- action proposals -------------------------------------------------
+
+    TaskStatus:
+      type: string
+      description: |
+        The four states the board renders. An enum rather than a free string so
+        a fifth cannot arrive by typo and split every count in the product.
+
+        `complete-with-issues` is not decoration: the work is done and something
+        about it needs saying, which is different from both "done" and "still
+        open". `not-applicable` closes a recurring checklist item for a month
+        that genuinely had no such work, without pretending it was done.
+      enum: [open, complete, complete-with-issues, not-applicable]
+
+    TaskCadence:
+      type: string
+      description: |
+        How often a checklist item comes round. Only the two an accounting
+        practice actually runs on — VAT is quarterly, everything else monthly.
+        Weekly and annual are not here because nothing asked for them, and an
+        enum is cheaper to widen than to narrow.
+      enum: [monthly, quarterly]
+
+    Task:
+      type: object
+      description: |
+        One item on a client's checklist, owned by a colleague.
+
+        **A task is practice-side coordination, never something asked of a
+        client.** Nothing in the portal reads this resource and nothing writes
+        one on a client's behalf — asking a client for something is a chase,
+        which is a different resource with a different approval story.
+      required: [id, businessId, businessName, title, status, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        businessId:
+          type: string
+          description: |
+            The client. Always present — `tasks.business_id` is `NOT NULL`, and
+            a task with no business is a row RLS could not reach.
+        businessName:
+          type: string
+          description: |
+            Rendered on the practice-wide board, which lists tasks across
+            clients and would otherwise need a second read per row to name one.
+        title: { type: string, maxLength: 200 }
+        description: { type: [string, 'null'], maxLength: 2000 }
+        assigneeUserId:
+          type: [string, 'null']
+          description: |
+            The colleague, from `GET /practice-members`. Null is a real state —
+            a task nobody has picked up yet — and it renders as "Unassigned"
+            rather than being hidden.
+        assigneeName:
+          type: [string, 'null']
+          description: |
+            The assignee's display name, projected server-side so a board does
+            not have to hold the member list to render a row. Null when
+            unassigned, and also when the person's name is not set — never the
+            raw id, which means nothing to a reader.
+        dueDate:
+          type: [string, 'null']
+          format: date
+          description: |
+            A CALENDAR date, `YYYY-MM-DD`, not a timestamp. Stored as UTC
+            midnight and rendered date-only at both ends: a due date put through
+            a timezone is the bug `UkDateField` documents, where west of
+            Greenwich the 1st becomes the 31st.
+        status: { $ref: '#/components/schemas/TaskStatus' }
+        cadence:
+          oneOf:
+            - $ref: '#/components/schemas/TaskCadence'
+            - type: 'null'
+          description: |
+            Null for a one-off. When set, completing this task creates the next
+            occurrence — see `setTaskStatus`.
+        dependsOnTaskId:
+          type: [string, 'null']
+          description: |
+            The task this one waits on, which must be on the SAME client and may
+            not close a cycle (both enforced server-side, because a UI cannot).
+            Advisory: it disables the tick on screen, and the server still
+            allows a completion — the one time the ordering matters is the time
+            it was wrong.
+        aiPrefilledAt:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When an engine last answered this task from real pipeline state
+            (SoT §7 — "the AI marks a task done when the underlying engine has
+            actually run, never on its own say-so").
+
+            ⚠ **Nothing writes this yet, so on a live task it is always null**,
+            and the "AI-prefilled" badge renders only when it is set. That is
+            deliberate: the badge used to be decided by matching a task's TITLE
+            against three string prefixes, which against a real task is a
+            coincidence rather than a derivation, and item 25's standing rule is
+            that a claim to have read something must be true or absent.
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    TaskWriteRequest:
+      type: object
+      description: A new task. `status` is not a field — every task starts `open`.
+      required: [businessId, title]
+      properties:
+        businessId: { type: string }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: [string, 'null'], maxLength: 2000 }
+        assigneeUserId: { type: [string, 'null'] }
+        dueDate: { type: [string, 'null'], format: date }
+        cadence:
+          oneOf:
+            - $ref: '#/components/schemas/TaskCadence'
+            - type: 'null'
+        dependsOnTaskId: { type: [string, 'null'] }
+
+    TaskEditRequest:
+      type: object
+      description: |
+        The whole task minus the two fields that are not text edits:
+        `businessId` (moving a task to another client) and `status` (which has
+        its own operation).
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: [string, 'null'], maxLength: 2000 }
+        assigneeUserId: { type: [string, 'null'] }
+        dueDate: { type: [string, 'null'], format: date }
+        cadence:
+          oneOf:
+            - $ref: '#/components/schemas/TaskCadence'
+            - type: 'null'
+        dependsOnTaskId: { type: [string, 'null'] }
+
+    TaskStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status: { $ref: '#/components/schemas/TaskStatus' }
+
+    TeamAccessLevel:
+      type: string
+      description: |
+        ⚠ **DERIVED, and read-only on the wire.** Computed from the members'
+        own `memberships` rows at read time: `all-clients` when every member
+        holds a practice-wide membership, `assigned-clients` otherwise (and for
+        an empty team, which reaches nothing because it contains nobody).
+
+        It is a LABEL over the real access model, never a second one. There is
+        no column behind it and no field that sets it — a stored access level on
+        a team would be a second answer to "what can this person reach" beside
+        the one every RLS policy consults, and two answers to that question is
+        how a permission bug ships.
+      enum: [all-clients, assigned-clients]
+
+    Team:
+      type: object
+      description: |
+        A named group of colleagues in the practice. It confers no access — see
+        `TeamAccessLevel`.
+      required: [id, name, accessLevel, memberUserIds, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        name: { type: string, maxLength: 120 }
+        accessLevel: { $ref: '#/components/schemas/TeamAccessLevel' }
+        memberUserIds:
+          type: array
+          description: |
+            Ids only. The one screen that renders a team also holds
+            `GET /practice-members`, so shipping names here would be a second
+            copy of the same rows going stale against the first.
+          items: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    TeamWriteRequest:
+      type: object
+      description: |
+        Create or replace. `memberUserIds` REPLACES the membership rather than
+        merging into it — a merge cannot express removing the last member.
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        memberUserIds:
+          type: array
+          items: { type: string }
+          default: []
 
     ProposalKind:
       type: string

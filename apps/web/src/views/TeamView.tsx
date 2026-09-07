@@ -27,11 +27,13 @@ import {
   type PracticeMember,
   usePracticeTeam,
 } from '../api/team';
+import { type Task, useTaskWrites, useTasks, useTeamWrites, useTeams } from '../api/tasks';
+import { UkDateField, ukLongDate } from '../components/DynamicComponents/UkDateField';
 import { Modal } from '../components/DynamicComponents/Modal';
 import { ConfirmStep } from '../components/DynamicComponents/ConfirmStep';
 import { Field, Toggle } from '../components/DynamicComponents/FormControls';
 import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
-import type { Colleague, ColleagueRole, Team, WorkflowTask } from '../lib/types';
+import type { Colleague, ColleagueRole, TaskCadence, Team, WorkflowTask } from '../lib/types';
 
 /**
  * `TABS` is identity, not copy: it is the `Tab` union, and `slug()`/`fromSlug()`
@@ -106,7 +108,10 @@ const m = defineMessages({
   },
 
   // Teams tab.
-  teamMembers: { id: 'team.teamView.teamMembers', defaultMessage: '{count} members' },
+  teamMembers: {
+    id: 'team.teamView.teamMembers',
+    defaultMessage: '{count, plural, one {# member} other {# members}}',
+  },
   editTeam: { id: 'team.teamView.editTeam', defaultMessage: 'Edit team' },
   teamNoMembers: {
     id: 'team.teamView.teamNoMembers',
@@ -256,19 +261,21 @@ const m = defineMessages({
     defaultMessage: 'They join the list above once they have chosen a password and set up an authenticator app.',
   },
 
-  // The S14 rule: a control whose write the next reload reverts is worse than
-  // absent, so live it says why rather than disappearing without explanation.
-  notAvailableLive: {
-    id: 'team.teamView.notAvailableLive',
-    defaultMessage: 'Not available yet',
+  // ⚠ The S14 "no server behind this" banner and the two disabled-control
+  // messages that went with it are GONE (review item 54, 7 Sep 2026). Both
+  // tabs now have real operations — `/v1/tasks` and `/v1/teams` — so a notice
+  // saying nothing is saved would itself be the dishonest string.
+  writeFailed: {
+    id: 'team.teamView.writeFailed',
+    defaultMessage: 'That did not save: {reason}',
   },
-  notAvailableLiveDetail: {
-    id: 'team.teamView.notAvailableLiveDetail',
-    defaultMessage: 'There is no operation behind this yet, so anything typed here would be lost on the next reload.',
+  tasksLoadFailed: {
+    id: 'team.teamView.tasksLoadFailed',
+    defaultMessage: 'Tasks could not be loaded.',
   },
-  syntheticOnly: {
-    id: 'team.teamView.syntheticOnly',
-    defaultMessage: 'Teams and tasks are demo data. They have no server behind them yet, so nothing here is saved.',
+  teamsLoadFailed: {
+    id: 'team.teamView.teamsLoadFailed',
+    defaultMessage: 'Teams could not be loaded.',
   },
   inviteNotPermitted: {
     id: 'team.teamView.inviteNotPermitted',
@@ -327,8 +334,63 @@ export function TeamView() {
   const [newTask, setNewTask] = useState(false);
   const [bulkAssign, setBulkAssign] = useState<string[] | null>(null);
   const [taskClient, setTaskClient] = useState('all');
+  const [writeError, setWriteError] = useState<string | null>(null);
 
-  const assignees = colleagues.filter((c) => c.active).map((c) => c.name);
+  /**
+   * The board and the org chart, from the server when there is one (review item
+   * 54). Same components either way — the `ClientsView`/M7 pattern: widen the
+   * real endpoint, keep one board, and let the synthetic cast stay for demo
+   * mode rather than growing a second set of components for it.
+   */
+  const liveTasks = useTasks({ enabled: live, businessId: taskClient === 'all' ? undefined : taskClient });
+  const liveTeams = useTeams({ enabled: live });
+  const taskWrites = useTaskWrites();
+  const teamWrites = useTeamWrites();
+
+  /** Any write's failure, said once, where the person pressed the button. */
+  const attempt = (run: () => Promise<unknown>) => {
+    setWriteError(null);
+    void run().catch((e: unknown) => setWriteError(e instanceof Error ? e.message : String(e)));
+  };
+
+  /**
+   * ⚠ Who may be assigned, as `{ id, name }` — NOT names alone.
+   *
+   * The synthetic cast has no user ids (its colleagues are people with names),
+   * and the server takes an id. Carrying both is what lets one `<select>` serve
+   * both modes; live, the id is the value and the name is only what is drawn.
+   */
+  const assignees = useMemo(
+    () =>
+      live
+        ? team.members.map((member) => ({ id: member.userId, name: memberLabel(member) }))
+        : colleagues.filter((c) => c.active).map((c) => ({ id: c.id, name: c.name })),
+    [live, team.members, colleagues],
+  );
+
+  const boardTasks: WorkflowTask[] = useMemo(
+    () => (live ? liveTasks.tasks.map(toBoardRow) : tasks),
+    [live, liveTasks.tasks, tasks],
+  );
+
+  /**
+   * ⚠ `accessLevel` on a live team is DERIVED server-side from the members' own
+   * memberships — there is no column behind it and no field that sets it. A
+   * team confers no access, and this mapping is the only place that label is
+   * read (`apps/api/src/modules/tasks/teams.service.ts`).
+   */
+  const boardTeams: Team[] = useMemo(
+    () =>
+      live
+        ? liveTeams.teams.map((t) => ({
+            id: t.id,
+            name: t.name,
+            accessLevel: t.accessLevel === 'all-clients' ? 'All clients' : 'Assigned clients only',
+            memberIds: t.memberUserIds,
+          }))
+        : teams,
+    [live, liveTeams.teams, teams],
+  );
 
   /**
    * Tasks the engine can answer from real pipeline state, rather than asking a
@@ -336,7 +398,12 @@ export function TeamView() {
    */
   const prefill = useMemo(() => {
     const map: Record<string, { done: boolean; why: string }> = {};
-    tasks.forEach((t) => {
+    // ⚠ Live rows never enter here: `toBoardRow` sets `aiPrefilled` from the
+    // server's `aiPrefilledAt`, which nothing writes yet. The three
+    // `startsWith` branches below are a match on the SEEDED titles and would be
+    // a coincidence against a real task — item 25's rule, applied by not
+    // claiming (review item 54).
+    boardTasks.forEach((t) => {
       if (!t.aiPrefilled) return;
       const s = statsFor(t.clientId);
       const client = clients.find((c) => c.id === t.clientId);
@@ -362,9 +429,51 @@ export function TeamView() {
       }
     });
     return map;
-  }, [tasks, statsFor, clients, intl]);
+  }, [boardTasks, statsFor, clients, intl]);
 
-  const scopedTasks = tasks.filter((t) => taskClient === 'all' || t.clientId === taskClient);
+  // Live rows are already narrowed by the server's `businessId` filter; this
+  // second pass is what the synthetic cast needs and is a no-op over them.
+  const scopedTasks = boardTasks.filter((t) => taskClient === 'all' || t.clientId === taskClient);
+
+  /**
+   * The three writers, each one branch wide.
+   *
+   * ⚠ **No proposal, on purpose.** Item 66's question is *whose signature does
+   * this carry*, and a ticked checkbox carries nobody's — these are ordinary
+   * `ingest` writes and the audit line is the local activity log, not the
+   * Review → Approve spine (`apps/api/src/modules/tasks/tasks.service.ts`).
+   */
+  const tick = (t: WorkflowTask, status: WorkflowTask['status']) => {
+    if (live) attempt(() => taskWrites.setStatus(t.id, status));
+    else setTaskStatus(t.id, status);
+  };
+
+  const reassign = (t: WorkflowTask, value: string) => {
+    if (live) {
+      // The PUT carries the whole task, so every field it does not mean to
+      // change has to travel — an omitted field is a CLEARED field, which is
+      // what makes a replace idempotent.
+      attempt(() =>
+        taskWrites.replace(t.id, {
+          title: t.title,
+          assigneeUserId: value === '' ? null : value,
+          dueDate: t.due === '' || t.due === '—' ? null : t.due,
+          cadence: t.cadence ?? null,
+          dependsOnTaskId: t.dependsOn ?? null,
+        }),
+      );
+    } else {
+      assignTask(t.id, value);
+    }
+    logAudit({
+      action: intl.formatMessage(m.auditAssignedTask),
+      scope: intl.formatMessage(m.auditAssignedTaskScope, {
+        title: t.title,
+        assignee: assignees.find((a) => (live ? a.id : a.name) === value)?.name ?? value,
+      }),
+      reviewOpened: false,
+    });
+  };
 
   const colleagueColumns: Column<Colleague>[] = [
     {
@@ -415,8 +524,8 @@ export function TeamView() {
               <p className="text-[12px] text-zinc-500 font-semibold uppercase tracking-wider">
                 {intl.formatMessage(m.subtitle, {
                   active: live ? team.members.length : colleagues.filter((c) => c.active).length,
-                  teams: teams.length,
-                  open: tasks.filter((t) => t.status === 'open').length,
+                  teams: boardTeams.length,
+                  open: boardTasks.filter((t) => t.status === 'open').length,
                 })}
               </p>
               {/* Visible in EVERY build (launch M2): a slice that could not be
@@ -455,26 +564,16 @@ export function TeamView() {
               </button>
             )
           )}
-          {/* S14: with the API on, "Create team" writes into React state the next
-              reload discards — there is no teams operation in the contract — so
-              it is disabled with the reason rather than quietly saving nothing. */}
+          {/* Live since review item 54: `POST /v1/teams` is the operation the
+              S14 sweep's disabled-with-a-reason posture was waiting for. */}
           {tab === 'Teams' && (
-            live ? (
-              <Tooltip label={intl.formatMessage(m.notAvailableLive)} detail={intl.formatMessage(m.notAvailableLiveDetail)}>
-                <span className="flex items-center gap-2 px-6 py-2.5 bg-card border border-white/5 text-zinc-600 text-sm font-bold rounded-full cursor-not-allowed">
-                  <Plus size={16} strokeWidth={2.5} />
-                  {intl.formatMessage(m.createTeam)}
-                </span>
-              </Tooltip>
-            ) : (
-              <button
-                onClick={() => setEditingTeam(blankTeam())}
-                className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
-              >
-                <Plus size={16} strokeWidth={2.5} />
-                {intl.formatMessage(m.createTeam)}
-              </button>
-            )
+            <button
+              onClick={() => setEditingTeam(blankTeam())}
+              className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
+            >
+              <Plus size={16} strokeWidth={2.5} />
+              {intl.formatMessage(m.createTeam)}
+            </button>
           )}
           {tab === 'Tasks' && (
             <div className="flex items-center gap-3">
@@ -486,22 +585,13 @@ export function TeamView() {
                 <option value="all">{intl.formatMessage(m.allClients)}</option>
                 {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
-              {live ? (
-                <Tooltip label={intl.formatMessage(m.notAvailableLive)} detail={intl.formatMessage(m.notAvailableLiveDetail)}>
-                  <span className="flex items-center gap-2 px-6 py-2.5 bg-card border border-white/5 text-zinc-600 text-sm font-bold rounded-full cursor-not-allowed">
-                    <Plus size={16} strokeWidth={2.5} />
-                    {intl.formatMessage(m.newTask)}
-                  </span>
-                </Tooltip>
-              ) : (
-                <button
-                  onClick={() => setNewTask(true)}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
-                >
-                  <Plus size={16} strokeWidth={2.5} />
-                  {intl.formatMessage(m.newTask)}
-                </button>
-              )}
+              <button
+                onClick={() => setNewTask(true)}
+                className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white text-sm font-bold rounded-full hover:bg-brand-hover transition-all shadow-glow-btn-soft"
+              >
+                <Plus size={16} strokeWidth={2.5} />
+                {intl.formatMessage(m.newTask)}
+              </button>
             </div>
           )}
         </div>
@@ -551,14 +641,14 @@ export function TeamView() {
 
           {tab === 'Teams' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Said once, at the top, rather than on every card: with the API
-                  on these are demo rows with no contract operation behind them. */}
-              {live && (
-                <p className="lg:col-span-2 text-[13px] text-amber-400/90 font-semibold px-5 py-3.5 rounded-2xl border border-amber-500/20 bg-amber-500/5">
-                  {intl.formatMessage(m.syntheticOnly)}
+              {(writeError !== null || liveTeams.contractError !== null) && (
+                <p className="lg:col-span-2 text-[13px] text-red-400/90 font-semibold px-5 py-3.5 rounded-2xl border border-red-500/20 bg-red-500/5">
+                  {writeError !== null
+                    ? intl.formatMessage(m.writeFailed, { reason: writeError })
+                    : intl.formatMessage(m.teamsLoadFailed)}
                 </p>
               )}
-              {teams.map((team) => (
+              {boardTeams.map((team) => (
                 <div key={team.id} className="border border-white/5 rounded-[32px] bg-card shadow-2xl overflow-hidden">
                   <div className="p-6 flex items-start justify-between gap-4 border-b border-white/5">
                     <div className="flex items-center gap-3">
@@ -572,18 +662,13 @@ export function TeamView() {
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <Pill>{intl.formatMessage(m.teamMembers, { count: team.memberIds.length })}</Pill>
-                      {/* Hidden rather than disabled: the banner above already
-                          says why, and a row of dead pencils says it again once
-                          per card. */}
-                      {!live && (
-                        <button
-                          onClick={() => setEditingTeam(team)}
-                          title={intl.formatMessage(m.editTeam)}
-                          className="w-8 h-8 rounded-lg border border-white/5 text-zinc-500 hover:text-white hover:border-white/20 flex items-center justify-center transition-colors"
-                        >
-                          <Pencil size={13} />
-                        </button>
-                      )}
+                      <button
+                        onClick={() => setEditingTeam(team)}
+                        title={intl.formatMessage(m.editTeam)}
+                        className="w-8 h-8 rounded-lg border border-white/5 text-zinc-500 hover:text-white hover:border-white/20 flex items-center justify-center transition-colors"
+                      >
+                        <Pencil size={13} />
+                      </button>
                     </div>
                   </div>
                   <div className="p-6 flex flex-col gap-2">
@@ -591,16 +676,22 @@ export function TeamView() {
                       <p className="text-[13px] text-zinc-500 py-4 text-center">{intl.formatMessage(m.teamNoMembers)}</p>
                     )}
                     {team.memberIds.map((id) => {
-                      const member = colleagues.find((c) => c.id === id);
+                      // Resolved against whichever cast is live. A live team
+                      // ships ids only — the same screen already holds
+                      // `GET /practice-members`, and shipping names on the team
+                      // too would be a second copy going stale against the
+                      // first (`api/tasks.ts`).
+                      const member = assignees.find((a) => a.id === id);
+                      const local = live ? undefined : colleagues.find((c) => c.id === id);
                       if (!member) return null;
                       return (
                         <div key={id} className="flex items-center gap-3 p-3 rounded-2xl bg-ground/60 border border-white/5">
                           <span className="w-8 h-8 rounded-lg bg-raised flex items-center justify-center font-bold text-white text-[12px] shrink-0 overflow-hidden">
-                            {member.avatarDataUrl ? <img src={member.avatarDataUrl} alt="" className="w-full h-full object-cover" /> : member.name.charAt(0)}
+                            {local?.avatarDataUrl ? <img src={local.avatarDataUrl} alt="" className="w-full h-full object-cover" /> : member.name.charAt(0)}
                           </span>
                           <div className="min-w-0">
                             <div className="text-[13px] font-bold text-white truncate">{member.name}</div>
-                            <div className="text-[11px] text-zinc-500">{member.role} · {member.location}</div>
+                            {local && <div className="text-[11px] text-zinc-500">{local.role} · {local.location}</div>}
                           </div>
                         </div>
                       );
@@ -609,7 +700,7 @@ export function TeamView() {
                 </div>
               ))}
 
-              {teams.length === 0 && (
+              {boardTeams.length === 0 && (
                 <div className="border border-white/5 rounded-[32px] bg-card p-4 md:p-10 text-center text-zinc-500 lg:col-span-2">
                   {intl.formatMessage(m.teamsEmpty)}
                 </div>
@@ -619,11 +710,11 @@ export function TeamView() {
 
           {tab === 'Tasks' && (
             <div className="flex flex-col gap-4">
-              {/* Same statement as the Teams tab, and the same reason: the
-                  checklist is seeded and no contract operation moves it. */}
-              {live && (
-                <p className="text-[13px] text-amber-400/90 font-semibold px-5 py-3.5 rounded-2xl border border-amber-500/20 bg-amber-500/5">
-                  {intl.formatMessage(m.syntheticOnly)}
+              {(writeError !== null || liveTasks.contractError !== null) && (
+                <p className="text-[13px] text-red-400/90 font-semibold px-5 py-3.5 rounded-2xl border border-red-500/20 bg-red-500/5">
+                  {writeError !== null
+                    ? intl.formatMessage(m.writeFailed, { reason: writeError })
+                    : intl.formatMessage(m.tasksLoadFailed)}
                 </p>
               )}
             <DataTable<WorkflowTask>
@@ -649,28 +740,34 @@ export function TeamView() {
                 { key: 'clientName', label: intl.formatMessage(commonLabels.client), sortValue: (t) => t.clientName },
                 {
                   key: 'assignee', label: intl.formatMessage(m.colAssignee), sortValue: (t) => t.assignee,
-                  render: (t) => (
-                    <select
-                      value={assignees.includes(t.assignee) ? t.assignee : ''}
-                      disabled={live}
-                      title={live ? intl.formatMessage(m.notAvailableLiveDetail) : undefined}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => {
-                        assignTask(t.id, e.target.value);
-                        logAudit({
-                          action: intl.formatMessage(m.auditAssignedTask),
-                          scope: intl.formatMessage(m.auditAssignedTaskScope, { title: t.title, assignee: e.target.value }),
-                          reviewOpened: false,
-                        });
-                      }}
-                      className="bg-ground border border-white/5 rounded-lg py-1.5 px-2.5 text-[12px] font-semibold text-zinc-300 focus:outline-none focus:border-brand disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      {!assignees.includes(t.assignee) && <option value="">{t.assignee || intl.formatMessage(m.unassigned)}</option>}
-                      {assignees.map((a) => <option key={a} value={a} className="bg-card">{a}</option>)}
-                    </select>
-                  ),
+                  render: (t) => {
+                    // The VALUE is an id live and a name on the synthetic cast,
+                    // which has no user ids at all. One control, two keys —
+                    // see `assignees` above.
+                    const current = live ? (t.assigneeUserId ?? '') : t.assignee;
+                    const known = assignees.some((a) => (live ? a.id : a.name) === current);
+                    return (
+                      <select
+                        value={known ? current : ''}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => reassign(t, e.target.value)}
+                        className="bg-ground border border-white/5 rounded-lg py-1.5 px-2.5 text-[12px] font-semibold text-zinc-300 focus:outline-none focus:border-brand"
+                      >
+                        {!known && <option value="">{t.assignee || intl.formatMessage(m.unassigned)}</option>}
+                        {assignees.map((a) => (
+                          <option key={a.id} value={live ? a.id : a.name} className="bg-card">{a.name}</option>
+                        ))}
+                      </select>
+                    );
+                  },
                 },
-                { key: 'due', label: intl.formatMessage(m.colDue), sortValue: (t) => t.due },
+                {
+                  key: 'due', label: intl.formatMessage(m.colDue), sortValue: (t) => t.due,
+                  // ISO sorts correctly and READS badly, so the cell renders
+                  // the long form — "30 September 2026" cannot be misread in
+                  // any locale, which `08/09/2026` can (package D, item 28).
+                  render: (t) => <span>{t.due === '' ? '—' : ukLongDate(intl, t.due)}</span>,
+                },
                 {
                   key: 'status', label: intl.formatMessage(commonLabels.status), align: 'right', sortValue: (t) => t.status,
                   render: (t) => {
@@ -689,17 +786,11 @@ export function TeamView() {
                 },
                 {
                   key: 'actions', label: '', align: 'right',
-                  // Hidden live rather than disabled: three dead icons per row,
-                  // on every row, is noise where one banner already said it.
                   render: (t) => (
                     <span className="flex items-center gap-1.5 justify-end">
-                      {!live && (
-                        <>
-                          <IconBtn icon={Check} title={intl.formatMessage(m.actionComplete)} onClick={() => setTaskStatus(t.id, 'complete')} />
-                          <IconBtn icon={AlertTriangle} title={intl.formatMessage(m.actionCompleteWithIssues)} onClick={() => setTaskStatus(t.id, 'complete-with-issues')} />
-                          <IconBtn icon={CircleSlash} title={intl.formatMessage(m.actionNotApplicable)} onClick={() => setTaskStatus(t.id, 'not-applicable')} />
-                        </>
-                      )}
+                      <IconBtn icon={Check} title={intl.formatMessage(m.actionComplete)} onClick={() => tick(t, 'complete')} />
+                      <IconBtn icon={AlertTriangle} title={intl.formatMessage(m.actionCompleteWithIssues)} onClick={() => tick(t, 'complete-with-issues')} />
+                      <IconBtn icon={CircleSlash} title={intl.formatMessage(m.actionNotApplicable)} onClick={() => tick(t, 'not-applicable')} />
                     </span>
                   ),
                 },
@@ -709,18 +800,16 @@ export function TeamView() {
               selectable
               emptyMessage={intl.formatMessage(m.tasksEmpty)}
               bulkActions={[
-                // The two local writers go; "Ask AI about workload" stays,
-                // because opening a chat scoped to a client is real either way.
-                ...(live
-                  ? []
-                  : [
-                      { label: intl.formatMessage(m.bulkMarkComplete), icon: Check, onClick: (sel: WorkflowTask[]) => sel.forEach((t) => setTaskStatus(t.id, 'complete')) },
-                      {
-                        label: intl.formatMessage(m.bulkAssignAction),
-                        icon: UserPlus,
-                        onClick: (sel: WorkflowTask[]) => setBulkAssign(sel.map((t) => t.id)),
-                      },
-                    ]),
+                {
+                  label: intl.formatMessage(m.bulkMarkComplete),
+                  icon: Check,
+                  onClick: (sel: WorkflowTask[]) => sel.forEach((t) => tick(t, 'complete')),
+                },
+                {
+                  label: intl.formatMessage(m.bulkAssignAction),
+                  icon: UserPlus,
+                  onClick: (sel: WorkflowTask[]) => setBulkAssign(sel.map((t) => t.id)),
+                },
                 {
                   label: intl.formatMessage(m.bulkAskAi),
                   icon: Sparkles,
@@ -789,8 +878,18 @@ export function TeamView() {
         {editingTeam && (
           <TeamEditor
             team={editingTeam}
+            live={live}
+            members={assignees}
             onSave={(t) => {
-              saveTeam(t);
+              // ⚠ `accessLevel` is NOT sent. It is derived server-side from the
+              // members' own memberships, so there is no field for it on the
+              // request and a team cannot grant anything.
+              if (live) {
+                const isNew = !boardTeams.some((existing) => existing.id === t.id);
+                attempt(() => teamWrites.save(isNew ? null : t.id, { name: t.name, memberUserIds: t.memberIds }));
+              } else {
+                saveTeam(t);
+              }
               logAudit({
                 action: intl.formatMessage(m.auditSavedTeam),
                 scope: intl.formatMessage(m.auditSavedTeamScope, { name: t.name, count: t.memberIds.length }),
@@ -810,7 +909,8 @@ export function TeamView() {
                 confirmLabel: intl.formatMessage(m.deleteTeamConfirm),
               });
               if (!ok) return;
-              removeTeam(editingTeam.id);
+              if (live) attempt(() => teamWrites.remove(editingTeam.id));
+              else removeTeam(editingTeam.id);
               logAudit({ action: intl.formatMessage(m.auditDeletedTeam), scope: editingTeam.name, reviewOpened: true });
               setEditingTeam(null);
             }}
@@ -822,14 +922,37 @@ export function TeamView() {
           <TaskComposer
             assignees={assignees}
             defaultClientId={taskClient === 'all' ? clients[0]?.id ?? '' : taskClient}
-            onCreate={(t) => {
-              addTask(t);
+            onCreate={(draft) => {
+              const assignee = assignees.find((a) => a.id === draft.assigneeId);
+              if (live) {
+                attempt(() =>
+                  taskWrites.create({
+                    businessId: draft.clientId,
+                    title: draft.title,
+                    assigneeUserId: draft.assigneeId === '' ? null : draft.assigneeId,
+                    dueDate: draft.dueDate === '' ? null : draft.dueDate,
+                    cadence: draft.cadence,
+                  }),
+                );
+              } else {
+                addTask({
+                  id: `task-${Date.now()}`,
+                  clientId: draft.clientId,
+                  clientName: clients.find((c) => c.id === draft.clientId)?.name ?? '—',
+                  title: draft.title,
+                  assignee: assignee?.name ?? '',
+                  due: draft.dueDate === '' ? '—' : draft.dueDate,
+                  status: 'open',
+                  aiPrefilled: false,
+                  ...(draft.cadence === null ? {} : { cadence: draft.cadence }),
+                });
+              }
               logAudit({
                 action: intl.formatMessage(m.auditCreatedTask),
                 scope: intl.formatMessage(m.auditCreatedTaskScope, {
-                  title: t.title,
-                  clientName: t.clientName,
-                  assignee: t.assignee,
+                  title: draft.title,
+                  clientName: clients.find((c) => c.id === draft.clientId)?.name ?? '—',
+                  assignee: assignee?.name ?? '',
                 }),
                 reviewOpened: true,
               });
@@ -851,19 +974,22 @@ export function TeamView() {
               <div className="p-4 flex flex-col gap-1">
                 {assignees.map((a) => (
                   <button
-                    key={a}
+                    key={a.id}
                     onClick={() => {
-                      bulkAssign.forEach((id) => assignTask(id, a));
+                      bulkAssign.forEach((id) => {
+                        const row = boardTasks.find((t) => t.id === id);
+                        if (row) reassign(row, live ? a.id : a.name);
+                      });
                       logAudit({
                         action: intl.formatMessage(m.auditAssignedTasks),
-                        scope: intl.formatMessage(m.auditAssignedTasksScope, { count: bulkAssign.length, assignee: a }),
+                        scope: intl.formatMessage(m.auditAssignedTasksScope, { count: bulkAssign.length, assignee: a.name }),
                         reviewOpened: true,
                       });
                       setBulkAssign(null);
                     }}
                     className="px-4 py-3 rounded-2xl text-left text-sm font-bold text-zinc-300 hover:bg-white/5 hover:text-white transition-colors"
                   >
-                    {a}
+                    {a.name}
                   </button>
                 ))}
               </div>
@@ -877,22 +1003,48 @@ export function TeamView() {
 
 const teamEditorM = defineMessages({
   heading: { id: 'team.teamEditor.heading', defaultMessage: 'Create team' },
+  // ⚠ It used to say *"Groups colleagues and scopes the clients they can
+  // reach"*, which is the one thing a team does NOT do — and it sat directly
+  // above the sentence saying so (review item 54). Access is `memberships`;
+  // this names people.
   subtitle: {
     id: 'team.teamEditor.subtitle',
-    defaultMessage: 'Groups colleagues and scopes the clients they can reach',
+    defaultMessage: 'Names a group of colleagues — it does not change what anyone can reach',
   },
   nameLabel: { id: 'team.teamEditor.nameLabel', defaultMessage: 'Team name' },
   namePlaceholder: { id: 'team.teamEditor.namePlaceholder', defaultMessage: 'Hospitality team' },
   membersLabel: { id: 'team.teamEditor.membersLabel', defaultMessage: 'Members ({count})' },
+  // Says what it IS rather than offering a control that could not do what its
+  // name said — the label follows the members' own memberships.
+  accessDerived: {
+    id: 'team.teamEditor.accessDerived',
+    defaultMessage:
+      '{level} — read from what these people can already reach. A team does not grant access; change it on the Colleagues tab.',
+  },
   deleteTeam: { id: 'team.teamEditor.deleteTeam', defaultMessage: 'Delete team' },
   create: { id: 'team.teamEditor.create', defaultMessage: 'Create team' },
   save: { id: 'team.teamEditor.save', defaultMessage: 'Save' },
   untitled: { id: 'team.teamEditor.untitled', defaultMessage: 'Untitled team' },
 });
 
-/** Create or edit a team: name, how much client access it carries, members. */
-function TeamEditor({ team, onSave, onRemove, onClose }: {
-  team: Team; onSave: (t: Team) => void; onRemove: () => void; onClose: () => void;
+/**
+ * Create or edit a team: name and members.
+ *
+ * ⚠ **Client access is a READING, not a setting, when live** (review item 54).
+ * The chips that used to set `accessLevel` are gone on a live team because
+ * there is no column behind it: the server derives the label from the members'
+ * own memberships, and a control that appeared to set it would be the second
+ * answer to "what can this person reach" the whole design avoids. The synthetic
+ * cast keeps the chips — its teams are drawings, and there is nothing to
+ * contradict.
+ */
+function TeamEditor({ team, live, members, onSave, onRemove, onClose }: {
+  team: Team;
+  live: boolean;
+  members: { id: string; name: string }[];
+  onSave: (t: Team) => void;
+  onRemove: () => void;
+  onClose: () => void;
 }) {
   const { colleagues } = useAppContext();
   const intl = useIntl();
@@ -919,27 +1071,36 @@ function TeamEditor({ team, onSave, onRemove, onClose }: {
 
           <div>
             <Label>{intl.formatMessage(commonLabels.clientAccess)}</Label>
-            <div className="flex flex-wrap gap-2">
-              {(['All clients', 'Assigned clients only'] as Team['accessLevel'][]).map((level) => (
-                <Chip key={level} active={draft.accessLevel === level} onClick={() => setDraft({ ...draft, accessLevel: level })}>
-                  {level}
-                </Chip>
-              ))}
-            </div>
+            {live ? (
+              <p className="text-[13px] text-zinc-400 leading-relaxed">
+                {intl.formatMessage(teamEditorM.accessDerived, { level: draft.accessLevel })}
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {(['All clients', 'Assigned clients only'] as Team['accessLevel'][]).map((level) => (
+                  <Chip key={level} active={draft.accessLevel === level} onClick={() => setDraft({ ...draft, accessLevel: level })}>
+                    {level}
+                  </Chip>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>
             <Label>{intl.formatMessage(teamEditorM.membersLabel, { count: draft.memberIds.length })}</Label>
             <div className="flex flex-col gap-2">
-              {colleagues.map((c) => {
-                const member = draft.memberIds.includes(c.id);
+              {members.map((person) => {
+                const local = live ? undefined : colleagues.find((c) => c.id === person.id);
+                const member = draft.memberIds.includes(person.id);
                 return (
                   <button
-                    key={c.id}
+                    key={person.id}
                     onClick={() =>
                       setDraft({
                         ...draft,
-                        memberIds: member ? draft.memberIds.filter((x) => x !== c.id) : [...draft.memberIds, c.id],
+                        memberIds: member
+                          ? draft.memberIds.filter((x) => x !== person.id)
+                          : [...draft.memberIds, person.id],
                       })
                     }
                     className={`flex items-center gap-3 p-3 rounded-2xl border transition-all text-left ${
@@ -947,11 +1108,11 @@ function TeamEditor({ team, onSave, onRemove, onClose }: {
                     }`}
                   >
                     <span className="w-8 h-8 rounded-lg bg-raised flex items-center justify-center font-bold text-white text-[12px] shrink-0 overflow-hidden">
-                      {c.avatarDataUrl ? <img src={c.avatarDataUrl} alt="" className="w-full h-full object-cover" /> : c.name.charAt(0)}
+                      {local?.avatarDataUrl ? <img src={local.avatarDataUrl} alt="" className="w-full h-full object-cover" /> : person.name.charAt(0)}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block text-[13px] font-bold text-white truncate">{c.name}</span>
-                      <span className="block text-[11px] text-zinc-500">{c.role} · {c.location}</span>
+                      <span className="block text-[13px] font-bold text-white truncate">{person.name}</span>
+                      {local && <span className="block text-[11px] text-zinc-500">{local.role} · {local.location}</span>}
                     </span>
                     {member && <Check size={15} className="text-brand shrink-0" />}
                   </button>
@@ -992,27 +1153,50 @@ const taskComposerM = defineMessages({
   },
   assigneeLabel: { id: 'team.taskComposer.assigneeLabel', defaultMessage: 'Assign to' },
   dueLabel: { id: 'team.taskComposer.dueLabel', defaultMessage: 'Due' },
-  duePlaceholder: { id: 'team.taskComposer.duePlaceholder', defaultMessage: '31 Aug 2026' },
   create: { id: 'team.taskComposer.create', defaultMessage: 'Create task' },
-  defaultAssignee: { id: 'team.taskComposer.defaultAssignee', defaultMessage: 'You' },
   untitled: { id: 'team.taskComposer.untitled', defaultMessage: 'Untitled task' },
+  repeatsLabel: { id: 'team.taskComposer.repeatsLabel', defaultMessage: 'Repeats' },
+  repeatsNever: { id: 'team.taskComposer.repeatsNever', defaultMessage: 'One-off' },
+  repeatsMonthly: { id: 'team.taskComposer.repeatsMonthly', defaultMessage: 'Monthly' },
+  repeatsQuarterly: { id: 'team.taskComposer.repeatsQuarterly', defaultMessage: 'Quarterly' },
+  // Says what recurrence actually DOES here, because it is not what a
+  // scheduler does and a person should not have to find that out in December.
+  repeatsNote: {
+    id: 'team.taskComposer.repeatsNote',
+    defaultMessage: 'Ticking it off creates the next one, due {when}. Nothing appears until this one is done.',
+  },
+  repeatsNoteMonthly: { id: 'team.taskComposer.repeatsNoteMonthly', defaultMessage: 'a month later' },
+  repeatsNoteQuarterly: { id: 'team.taskComposer.repeatsNoteQuarterly', defaultMessage: 'three months later' },
 });
 
-/** Raise a one-off task and put it on someone's desk. */
+/** What the composer hands back — the caller decides where it goes. */
+export interface TaskDraft {
+  clientId: string;
+  title: string;
+  /** A user id live, a colleague id on the synthetic cast. `''` is unassigned. */
+  assigneeId: string;
+  /** `YYYY-MM-DD`, or `''` for no due date. */
+  dueDate: string;
+  cadence: TaskCadence | null;
+}
+
+/** Raise a task and put it on someone's desk. */
 function TaskComposer({ assignees, defaultClientId, onCreate, onClose }: {
-  assignees: string[];
+  // ⚠ `{ id, name }`, not names: the id is what the server takes, and the
+  // synthetic cast supplies its colleagues' ids in the same slot so ONE
+  // composer serves both modes and the caller decides where the draft goes.
+  assignees: { id: string; name: string }[];
   defaultClientId: string;
-  onCreate: (t: WorkflowTask) => void;
+  onCreate: (draft: TaskDraft) => void;
   onClose: () => void;
 }) {
   const { clients } = useAppContext();
   const intl = useIntl();
   const [title, setTitle] = useState('');
   const [clientId, setClientId] = useState(defaultClientId);
-  const [assignee, setAssignee] = useState(assignees[0] ?? intl.formatMessage(taskComposerM.defaultAssignee));
+  const [assigneeId, setAssigneeId] = useState(assignees[0]?.id ?? '');
   const [due, setDue] = useState('');
-
-  const client = clients.find((c) => c.id === clientId);
+  const [cadence, setCadence] = useState<TaskCadence | null>(null);
 
   return (
     <Modal onClose={onClose}>
@@ -1047,17 +1231,43 @@ function TaskComposer({ assignees, defaultClientId, onCreate, onClose }: {
             <Label>{intl.formatMessage(taskComposerM.assigneeLabel)}</Label>
             <div className="flex flex-wrap gap-2">
               {assignees.map((a) => (
-                <Chip key={a} active={assignee === a} onClick={() => setAssignee(a)}>{a}</Chip>
+                <Chip key={a.id} active={assigneeId === a.id} onClick={() => setAssigneeId(a.id)}>{a.name}</Chip>
               ))}
             </div>
           </div>
 
-          <Field
-            label={intl.formatMessage(taskComposerM.dueLabel)}
-            value={due}
-            onChange={setDue}
-            placeholder={intl.formatMessage(taskComposerM.duePlaceholder)}
-          />
+          {/* Package D's ONE date control, reused rather than rebuilt: d/m/y
+              typing, the long form underneath, and the native picker behind
+              the calendar button. A second picker is how `03/08/2026` comes to
+              be read one way here and another way on the next screen. */}
+          <div>
+            <Label>{intl.formatMessage(taskComposerM.dueLabel)}</Label>
+            <UkDateField id="task-due" value={due} onChange={setDue} />
+          </div>
+
+          <div>
+            <Label>{intl.formatMessage(taskComposerM.repeatsLabel)}</Label>
+            <div className="flex flex-wrap gap-2">
+              <Chip active={cadence === null} onClick={() => setCadence(null)}>
+                {intl.formatMessage(taskComposerM.repeatsNever)}
+              </Chip>
+              <Chip active={cadence === 'monthly'} onClick={() => setCadence('monthly')}>
+                {intl.formatMessage(taskComposerM.repeatsMonthly)}
+              </Chip>
+              <Chip active={cadence === 'quarterly'} onClick={() => setCadence('quarterly')}>
+                {intl.formatMessage(taskComposerM.repeatsQuarterly)}
+              </Chip>
+            </div>
+            {cadence !== null && (
+              <p className="text-[12px] text-zinc-500 mt-2 leading-relaxed">
+                {intl.formatMessage(taskComposerM.repeatsNote, {
+                  when: intl.formatMessage(
+                    cadence === 'monthly' ? taskComposerM.repeatsNoteMonthly : taskComposerM.repeatsNoteQuarterly,
+                  ),
+                })}
+              </p>
+            )}
+          </div>
         </div>
 
         <div className="p-4 bg-raised/50 flex justify-end gap-3">
@@ -1067,14 +1277,11 @@ function TaskComposer({ assignees, defaultClientId, onCreate, onClose }: {
           <button
             onClick={() =>
               onCreate({
-                id: `task-${Date.now()}`,
                 clientId,
-                clientName: client?.name ?? '—',
                 title: title.trim() || intl.formatMessage(taskComposerM.untitled),
-                assignee,
-                due: due.trim() || '—',
-                status: 'open',
-                aiPrefilled: false,
+                assigneeId,
+                dueDate: due,
+                cadence,
               })
             }
             disabled={!title.trim()}
@@ -2189,4 +2396,31 @@ export function InviteColleagueForm({
       </form>
     </Modal>
   );
+}
+
+/**
+ * The contract's `Task` → the board's row.
+ *
+ * ⚠ **`aiPrefilled` is `aiPrefilledAt !== null`, and nothing writes that
+ * column** — so a live row never carries the badge. That is item 54's ruling
+ * applied rather than a gap: the badge used to be decided by matching a task's
+ * TITLE against three string prefixes, which against a real task is a
+ * coincidence, and item 25's standing rule is that a claim to have read
+ * something must be true or absent. It comes back the day an engine stamps the
+ * column, which is the SoT §7 sentence already written on that field.
+ */
+export function toBoardRow(task: Task): WorkflowTask {
+  return {
+    id: task.id,
+    clientId: task.businessId,
+    clientName: task.businessName,
+    title: task.title,
+    assignee: task.assigneeName ?? '',
+    ...(task.assigneeUserId === null ? {} : { assigneeUserId: task.assigneeUserId }),
+    due: task.dueDate ?? '',
+    status: task.status,
+    aiPrefilled: task.aiPrefilledAt !== null,
+    ...(task.dependsOnTaskId === null ? {} : { dependsOn: task.dependsOnTaskId }),
+    ...(task.cadence === null ? {} : { cadence: task.cadence }),
+  };
 }

@@ -959,12 +959,54 @@ async function main() {
     ],
   });
 
+  // ⚠ Two corrections here landed with review item 54, when these rows got a
+  // surface that reads them:
+  //
+  // 1. **`not_applicable` → `not-applicable`.** The contract's `TaskStatus`
+  //    enum is hyphenated, and the underscore was a value nothing validated
+  //    because nothing read the table. The service maps an unrecognised status
+  //    to `open` rather than crashing, so the symptom would have been a closed
+  //    task quietly reappearing on the board.
+  // 2. **`aiPrefilledAt` is GONE from tsk_002.** Nothing in the product writes
+  //    that column, so a seeded timestamp would put an "AI-prefilled" badge on
+  //    a task no engine ever looked at — a claim to have read something nobody
+  //    read (review item 25). It comes back when a writer does.
   await prisma.task.createMany({
     data: [
       { id: 'tsk_001', businessId: 'biz_burger', title: 'Collect and code August documents', ownerUserId: 'usr_tom', dueAt: daysAhead(5), status: 'open', cadence: 'monthly' },
-      { id: 'tsk_002', businessId: 'biz_burger', title: 'Chase missing documents', ownerUserId: 'usr_tom', dueAt: daysAhead(2), status: 'complete', aiPrefilledAt: daysAgo(2) },
+      { id: 'tsk_002', businessId: 'biz_burger', title: 'Chase missing documents', ownerUserId: 'usr_tom', dueAt: daysAhead(2), status: 'complete' },
       { id: 'tsk_003', businessId: 'biz_cosmo', title: 'Reconfirm bank feed consent', ownerUserId: 'usr_priya', dueAt: daysAhead(8), status: 'open' },
-      { id: 'tsk_004', businessId: 'biz_dental', title: 'Review AI assumptions before publishing', ownerUserId: 'usr_priya', dueAt: daysAhead(6), status: 'not_applicable' },
+      { id: 'tsk_004', businessId: 'biz_dental', title: 'Review AI assumptions before publishing', ownerUserId: 'usr_priya', dueAt: daysAhead(6), status: 'not-applicable' },
+      // Blocked by tsk_005, which is the "Waiting on:" line both surfaces
+      // render — seeded so the dependency is visible without composing one.
+      { id: 'tsk_005', businessId: 'biz_burger', title: 'Reconcile the August bank statement', ownerUserId: 'usr_priya', dueAt: daysAhead(3), status: 'open', cadence: 'monthly' },
+      { id: 'tsk_006', businessId: 'biz_burger', title: 'File the Q3 VAT return', ownerUserId: 'usr_priya', dueAt: daysAhead(21), status: 'open', cadence: 'quarterly', dependsOnTaskId: 'tsk_005' },
+    ],
+  });
+
+  // Teams — the firm's org chart (review item 54). ⚠ These rows grant NOTHING:
+  // there is no access column, and the "All clients" / "Assigned clients only"
+  // label the screen shows is derived from these people's own `memberships`.
+  //
+  // Both seeded teams read as "All clients", and that is the derivation being
+  // right rather than lazy: every member here holds a practice-wide membership
+  // (`business_id` NULL). Tom's EXTRA `mem_tom_burger` row does not narrow him —
+  // a per-client membership adds permissions on that client, it does not take
+  // away the practice-wide reach he already has. A team reads as "Assigned
+  // clients only" when a member has ONLY per-client memberships, which is the
+  // colleague `nt-02-scoped-colleague` mints.
+  await prisma.team.createMany({
+    data: [
+      { id: 'tem_vat', practiceId: 'prac_ledgerline', name: 'VAT and compliance' },
+      { id: 'tem_onboarding', practiceId: 'prac_ledgerline', name: 'Client onboarding' },
+    ],
+  });
+
+  await prisma.teamMember.createMany({
+    data: [
+      { teamId: 'tem_vat', userId: 'usr_priya' },
+      { teamId: 'tem_vat', userId: 'usr_tom' },
+      { teamId: 'tem_onboarding', userId: 'usr_shakib_demo' },
     ],
   });
 

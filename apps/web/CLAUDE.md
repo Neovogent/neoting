@@ -2737,3 +2737,71 @@ Two web-side facts worth knowing:
 
 Evidence for the whole package, both sides walked live:
 `docs/reviews/assets/2026-09-06-access-control/`.
+
+## Tasks and Teams went live (review item 54, 7 Sep 2026)
+
+Both sub-tabs on `TeamView`, plus `ClientDetailView`'s Tasks tab, were React
+state with an amber banner saying so. They now read `/v1/tasks` and `/v1/teams`
+through `src/api/tasks.ts`. The S14 posture that produced the banner and the two
+disabled-with-a-tooltip buttons is retired, and its three message ids
+(`notAvailableLive`, `notAvailableLiveDetail`, `syntheticOnly`) are gone — a
+notice saying nothing is saved would itself be the dishonest string now.
+
+The `ClientsView`/M7 pattern throughout: **one board, two sources**. The
+synthetic cast stays for demo mode and renders through the same components; the
+row shape is `WorkflowTask`, which is the BOARD's shape and not the contract's
+`Task` (`assignee` and `due` are the strings a cell draws, which the server
+sends as an id and an ISO date). `toBoardRow` is the mapper, exported so a test
+can hold it.
+
+**⚠ `assignees` is `{ id, name }[]`, never names.** The synthetic cast has no
+user ids — its colleagues are people with names — and the server takes an id.
+Carrying both is what lets one `<select>` and one composer serve both modes: the
+value is the id live and the name on seed data, and the caller decides where the
+draft goes.
+
+**⚠ No live task ever wears the "AI-prefilled" badge.** It used to be decided by
+matching a task's TITLE against three `startsWith` prefixes, which against a
+real task is a coincidence rather than a derivation (item 25's rule). It now
+renders off the server's `aiPrefilledAt`, which nothing writes — so the badge is
+absent live and unchanged in demo mode. `ClientDetailView`'s Tasks intro lost
+its *"Steps marked AI-prefilled…"* sentence in the same change, because a
+promise of a badge that never appears is the same dishonesty as the badge.
+
+**⚠ The Team editor's access chips are gone LIVE.** `Team.accessLevel` is
+derived server-side from the members' own memberships; a control that appeared
+to set it would be a second answer to "what can this person reach". The editor
+shows the reading and points at Colleagues. Its subtitle changed too — it used
+to say *"Groups colleagues and scopes the clients they can reach"*, directly
+above the sentence saying it does not.
+
+Due dates use `UkDateField` (package D's one control) on both composers. `d/m/y`
+in, `YYYY-MM-DD` on the wire, long form in every cell — never `08/09/2026`,
+which is a valid date either way round.
+
+### ⚠ `useAssignees` duplicates six lines rather than importing `api/team.ts`
+
+`ClientDetailView`'s Add-task form needs the practice's members. Importing
+`usePracticeTeam` would pull the whole Colleagues surface — invite, update,
+remove, resend, revoke — onto that route, which is currently the only practice
+route `api/team.ts` is NOT on. So `api/tasks.ts` carries a six-line reader over
+the same operation and **the same query key**, so on a screen holding both React
+Query serves one request and both read one cache entry. `api/tasks.test.ts` pins
+the two keys equal, because the whole point of writing the key as a literal is
+that the constant cannot be imported.
+
+### Measured (paired A/B, `pnpm exec vite build --manifest`, closure walk)
+
+| route | before | after | vs 250,000 B |
+|---|---|---|---|
+| floor (entry closure) | 204,255 B | 204,274 B | +19 B |
+| `ClientDetailView` | 238,815 B | **243,730 B** | 6,270 B spare |
+| `TeamView` | 230,034 B | **234,630 B** | 15,370 B spare |
+| `InboxesView` | 246,019 B | 246,006 B | untouched (−13 B is gzip noise) |
+
+Both routes stay under. ⚠ The brief for this item quoted 954 B of headroom on
+`InboxesView` and 2,469 B on `ClientDetailView`; this paired measurement finds
+more on both. Re-measure rather than believing either figure — that is this
+file's own standing rule about a moving target, and it cuts both ways.
+
+Evidence, walked live: `docs/reviews/assets/2026-09-07-item-54/`.

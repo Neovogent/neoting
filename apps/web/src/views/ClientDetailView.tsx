@@ -74,6 +74,8 @@ import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { channelLabel } from '../lib/channels';
 import { receivedViaText } from '../lib/channelLabels';
 import { resendClientSetupLink } from '../api/setup-link';
+import { type Task, useAssignees, useTaskWrites, useTasks } from '../api/tasks';
+import { UkDateField, ukLongDate } from '../components/DynamicComponents/UkDateField';
 import { errorLabel } from '../api/slices';
 import type { BusinessMemberRole, Client, ClientDetailChange, Colleague, Document, Intent, MissingItem, SetupTask, WorkflowTask } from '../lib/types';
 
@@ -308,10 +310,15 @@ const m = defineMessages({
 
   // ── Tasks tab ───────────────────────────────────────────────────────────
   panelTasks: { id: 'clients.clientDetailView.panelTasks', defaultMessage: 'Document-workflow tasks' },
+  // ⚠ The old sentence ended *"Steps marked AI-prefilled can be answered from
+  // real pipeline state rather than from memory"* — and on a live client no
+  // step ever wears that badge, because nothing writes `tasks.ai_prefilled_at`
+  // (review item 54, applying item 25's rule). A promise of a badge that never
+  // appears is the same dishonesty as the badge itself. It goes back in the day
+  // an engine stamps the column.
   tasksIntro: {
     id: 'clients.clientDetailView.tasksIntro',
-    defaultMessage:
-      'The recurring checklist for {client}. Steps marked AI-prefilled can be answered from real pipeline state rather than from memory.',
+    defaultMessage: 'The checklist for {client}. Tick a step to close it; a blocked one waits on the step before it.',
   },
   addTask: { id: 'clients.clientDetailView.addTask', defaultMessage: 'Add task' },
   tasksEmpty: { id: 'clients.clientDetailView.tasksEmpty', defaultMessage: 'No tasks for this client.' },
@@ -319,6 +326,8 @@ const m = defineMessages({
   taskMarkComplete: { id: 'clients.clientDetailView.taskMarkComplete', defaultMessage: 'Mark complete' },
   taskReopen: { id: 'clients.clientDetailView.taskReopen', defaultMessage: 'Reopen' },
   taskMeta: { id: 'clients.clientDetailView.taskMeta', defaultMessage: '{assignee} · due {due}' },
+  taskUnassigned: { id: 'clients.clientDetailView.taskUnassigned', defaultMessage: 'Unassigned' },
+  taskNoDue: { id: 'clients.clientDetailView.taskNoDue', defaultMessage: 'no date' },
   taskMetaBlocked: {
     id: 'clients.clientDetailView.taskMetaBlocked',
     defaultMessage: '{assignee} · due {due} · waiting on "{title}"',
@@ -728,6 +737,18 @@ export function ClientDetailView() {
   const setPreview = (doc: Document | null) => setPreviewId(doc ? doc.id : null);
   const [inviting, setInviting] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
+  /**
+   * This client's checklist, from the server when there is one (review item
+   * 54). The Tasks tab was React state that evaporated on reload; both halves
+   * — practice-wide on `TeamView` and per-client here — now read the same
+   * `/v1/tasks` and use the same components.
+   */
+  const tasksLive = API_ENABLED && session.status === 'authenticated';
+  const liveTasks = useTasks({
+    enabled: tasksLive,
+    businessId: tasksLive ? serverClientIdFor(openClientId ?? '') : undefined,
+  });
+  const taskWrites = useTaskWrites();
   const [chasing, setChasing] = useState<string[] | null>(null);
   /** Documents tab: the register, or this client's Trash (review item 61). */
   const [docsSubTab, setDocsSubTab] = useState<'register' | 'trash'>('register');
@@ -856,7 +877,28 @@ export function ClientDetailView() {
   // in. Connection tasks are gone with D47 — nothing else is ever asked for.
   const pendingTasks: SetupTask[] = client.awaitingRegistration ? ['profile'] : [];
 
-  const clientTasks = tasks.filter((t) => t.clientId === client.id);
+  /**
+   * ⚠ `aiPrefilled` is `aiPrefilledAt !== null` on a live row, and nothing
+   * writes that column — so the "AI-prefilled" badge never appears on a real
+   * task (review item 54, applying item 25's rule). The synthetic cast keeps
+   * it, where the derivation is the seed and honest about it.
+   */
+  const clientTasks: WorkflowTask[] = tasksLive
+    ? liveTasks.tasks.map(
+        (t: Task): WorkflowTask => ({
+          id: t.id,
+          clientId: client.id,
+          clientName: t.businessName,
+          title: t.title,
+          assignee: t.assigneeName ?? '',
+          ...(t.assigneeUserId === null ? {} : { assigneeUserId: t.assigneeUserId }),
+          due: t.dueDate ?? '',
+          status: t.status,
+          aiPrefilled: t.aiPrefilledAt !== null,
+          ...(t.dependsOnTaskId === null ? {} : { dependsOn: t.dependsOnTaskId }),
+        }),
+      )
+    : tasks.filter((t) => t.clientId === client.id);
   const pendingChanges = clientDetailChanges.filter((c) => c.clientId === client.id && c.status === 'pending');
   const clientSideItems = clientSideApprovals(client.id);
   const approvalRequest = approvalRequests.find((r) => r.clientId === client.id);
@@ -1427,7 +1469,11 @@ export function ClientDetailView() {
                     return (
                       <div key={t.id} className="flex items-center gap-3 p-4 rounded-2xl bg-ground/60 border border-white/5">
                         <button
-                          onClick={() => setTaskStatus(t.id, open ? 'complete' : 'open')}
+                          onClick={() => {
+                            const next = open ? 'complete' : 'open';
+                            if (tasksLive) void taskWrites.setStatus(t.id, next);
+                            else setTaskStatus(t.id, next);
+                          }}
                           disabled={blocked && open}
                           title={
                             blocked && open
@@ -1446,9 +1492,15 @@ export function ClientDetailView() {
                             {t.title}
                           </div>
                           <div className="text-[12px] text-zinc-500">
-                            {blocked && open
-                              ? intl.formatMessage(m.taskMetaBlocked, { assignee: t.assignee, due: t.due, title: blocker?.title })
-                              : intl.formatMessage(m.taskMeta, { assignee: t.assignee, due: t.due })}
+                            {(() => {
+                              // Long form, never `08/09/2026` — it cannot be
+                              // misread in any locale (package D, item 28).
+                              const assignee = t.assignee === '' ? intl.formatMessage(m.taskUnassigned) : t.assignee;
+                              const due = t.due === '' ? intl.formatMessage(m.taskNoDue) : ukLongDate(intl, t.due);
+                              return blocked && open
+                                ? intl.formatMessage(m.taskMetaBlocked, { assignee, due, title: blocker?.title })
+                                : intl.formatMessage(m.taskMeta, { assignee, due });
+                            })()}
                           </div>
                         </div>
                         {t.aiPrefilled && open && <Pill tone="blue">{intl.formatMessage(m.pillAiPrefilled)}</Pill>}
@@ -2048,7 +2100,33 @@ export function ClientDetailView() {
             client={client}
             colleagues={colleagues}
             existing={clientTasks}
-            onAdd={(task) => { addTask(task); setAddingTask(false); }}
+            live={tasksLive}
+            onAdd={(draft) => {
+              if (tasksLive) {
+                void taskWrites.create({
+                  businessId: serverClientIdFor(client.id),
+                  title: draft.title,
+                  assigneeUserId: draft.assigneeId === '' ? null : draft.assigneeId,
+                  dueDate: draft.dueDate === '' ? null : draft.dueDate,
+                  dependsOnTaskId: draft.dependsOn === '' ? null : draft.dependsOn,
+                });
+              } else {
+                addTask({
+                  id: `task-${client.id}-${Date.now()}`,
+                  clientId: client.id,
+                  clientName: client.name,
+                  title: draft.title,
+                  assignee: colleagues.find((c) => c.id === draft.assigneeId)?.name ?? '',
+                  due: draft.dueDate,
+                  status: 'open',
+                  // Only the generated checklist steps can be answered from
+                  // pipeline state; a hand-written one is nobody's guess.
+                  aiPrefilled: false,
+                  ...(draft.dependsOn === '' ? {} : { dependsOn: draft.dependsOn }),
+                });
+              }
+              setAddingTask(false);
+            }}
             onClose={() => setAddingTask(false)}
           />
         )}
@@ -2610,7 +2688,6 @@ function ClientDetailsPanel({ client, email, pending, onPropose }: {
 }
 
 const addTaskMessages = defineMessages({
-  assigneeFallback: { id: 'clients.addTaskForm.assigneeFallback', defaultMessage: 'You' },
   problemTitle: { id: 'clients.addTaskForm.problemTitle', defaultMessage: 'Say what needs doing.' },
   problemAssignee: { id: 'clients.addTaskForm.problemAssignee', defaultMessage: 'Give it an owner.' },
   problemDue: {
@@ -2627,7 +2704,6 @@ const addTaskMessages = defineMessages({
     defaultMessage: 'No active colleagues to assign to — add one under Team first.',
   },
   dueLabel: { id: 'clients.addTaskForm.dueLabel', defaultMessage: 'Due' },
-  duePlaceholder: { id: 'clients.addTaskForm.duePlaceholder', defaultMessage: '12 Aug 2026' },
   blockedBy: { id: 'clients.addTaskForm.blockedBy', defaultMessage: 'Blocked by' },
   blockedByOptional: { id: 'clients.addTaskForm.blockedByOptional', defaultMessage: '(optional)' },
   blockedByNone: { id: 'clients.addTaskForm.blockedByNone', defaultMessage: 'Nothing — it can start now' },
@@ -2644,23 +2720,38 @@ const addTaskMessages = defineMessages({
  * due, and whether something has to happen first — a task with no owner is a
  * note, and a note does not get done.
  */
-function AddTaskForm({ client, colleagues, existing, onAdd, onClose }: {
+function AddTaskForm({ client, colleagues, existing, live, onAdd, onClose }: {
   client: Client;
   colleagues: Colleague[];
   existing: WorkflowTask[];
-  onAdd: (task: WorkflowTask) => void;
+  /** Live, the assignee list is the practice's real members; otherwise the cast. */
+  live: boolean;
+  onAdd: (draft: { title: string; assigneeId: string; dueDate: string; dependsOn: string }) => void;
   onClose: () => void;
 }) {
   const intl = useIntl();
-  const eligible = colleagues.filter((c) => c.active);
+  const members = useAssignees({ enabled: live });
+  // ⚠ `{ id, name }` in both modes. The server takes a user id and the
+  // synthetic cast has colleague ids in the same slot, so one control serves
+  // both and the caller decides where the draft goes.
+  const eligible = live
+    ? members.map((member) => ({ ...member, role: '' }))
+    : colleagues.filter((c) => c.active).map((c) => ({ id: c.id, name: c.name, role: c.role }));
   const [title, setTitle] = useState('');
-  const [assignee, setAssignee] = useState(eligible[0]?.name ?? intl.formatMessage(addTaskMessages.assigneeFallback));
-  const [due, setDue] = useState(client.deadline !== '—' ? client.deadline : '');
+  // ⚠ Not a `useState` initialiser: live, `eligible` is empty on the first
+  // render and fills when the members query answers, so an initialiser would
+  // pin '' forever and every task would open with nobody selected.
+  const [chosen, setChosen] = useState('');
+  const assigneeId = chosen !== '' ? chosen : (eligible[0]?.id ?? '');
+  // The client's own deadline is stored `d MMM yyyy`, which the ISO control
+  // cannot take — so it starts empty rather than showing a date it would then
+  // refuse. An empty due date is a real state on the wire.
+  const [due, setDue] = useState('');
   const [dependsOn, setDependsOn] = useState('');
 
   const problem = !title.trim()
     ? intl.formatMessage(addTaskMessages.problemTitle)
-    : !assignee
+    : !assigneeId
     ? intl.formatMessage(addTaskMessages.problemAssignee)
     : !due.trim()
     ? intl.formatMessage(addTaskMessages.problemDue)
@@ -2690,15 +2781,15 @@ function AddTaskForm({ client, colleagues, existing, onAdd, onClose }: {
               {eligible.map((c) => (
                 <button
                   key={c.id}
-                  onClick={() => setAssignee(c.name)}
+                  onClick={() => setChosen(c.id)}
                   className={`px-4 py-2.5 rounded-xl border text-[13px] font-bold transition-colors ${
-                    assignee === c.name
+                    assigneeId === c.id
                       ? 'bg-brand/10 border-brand/40 text-brand'
                       : 'bg-ground border-white/5 text-zinc-400 hover:text-white'
                   }`}
                 >
                   {c.name}
-                  <span className="block text-[10px] font-semibold text-zinc-600 mt-0.5">{c.role}</span>
+                  {c.role !== '' && <span className="block text-[10px] font-semibold text-zinc-600 mt-0.5">{c.role}</span>}
                 </button>
               ))}
             </div>
@@ -2709,12 +2800,15 @@ function AddTaskForm({ client, colleagues, existing, onAdd, onClose }: {
             )}
           </div>
 
-          <Field
-            label={intl.formatMessage(addTaskMessages.dueLabel)}
-            value={due}
-            onChange={setDue}
-            placeholder={intl.formatMessage(addTaskMessages.duePlaceholder)}
-          />
+          {/* Package D's ONE date control (item 46), not a free-text box and
+              not a second picker — d/m/y typing, the long form underneath, the
+              native calendar behind the button. */}
+          <div>
+            <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
+              {intl.formatMessage(addTaskMessages.dueLabel)}
+            </div>
+            <UkDateField id="client-task-due" value={due} onChange={setDue} />
+          </div>
 
           <div>
             <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
@@ -2744,21 +2838,7 @@ function AddTaskForm({ client, colleagues, existing, onAdd, onClose }: {
             {intl.formatMessage(commonActions.cancel)}
           </button>
           <button
-            onClick={() =>
-              onAdd({
-                id: `task-${client.id}-${Date.now()}`,
-                clientId: client.id,
-                clientName: client.name,
-                title: title.trim(),
-                assignee,
-                due: due.trim(),
-                status: 'open',
-                // Only the generated checklist steps can be answered from
-                // pipeline state; a hand-written one is nobody's guess.
-                aiPrefilled: false,
-                dependsOn: dependsOn || undefined,
-              })
-            }
+            onClick={() => onAdd({ title: title.trim(), assigneeId, dueDate: due, dependsOn })}
             disabled={!!problem}
             className="flex items-center gap-2 px-6 py-2.5 rounded-full text-[13px] font-bold text-white bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-glow-btn"
           >

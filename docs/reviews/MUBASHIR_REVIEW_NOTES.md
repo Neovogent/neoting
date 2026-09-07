@@ -92,7 +92,7 @@ Items keep their own entries (original words + images preserved); this map is th
 | **H. Workflows & rules** | 51 · 52 · 53 | One package: workflows contract/persistence first, then AI describe-parse, real branch composer, chat rule flow landing in the Workflows tab |
 | **I. Modal overflow** | **23 + 40 (merged)** | Fix the Modal frame, audit every dialog in a real browser, keep a reachability smoke |
 | **J. Coding intelligence** ✅ **RESOLVED (6 Sep 2026)** | 19 · 48 (+ 22/47's model halves) | The ladder, specified once and built: supplier memory shown at last, a model tier over the three escalations that meant *nothing was known*, and the model second opinion on manual corrections. Evidence in `assets/2026-09-06-coding-intelligence/`; §9.8 gate `pnpm test:eval:coding` |
-| **K. Feature builds (design-doc first)** | ~~18~~ · 50 · 54 | ✅ **18 RESOLVED (7 Sep 2026)** — `PortalDocumentList` on Home and Upload, status filter, paging, preview + download. ⚠ Its server half was NOT "already wired": the portal bearer's grant holds only the current sign-in's uploads, so every row of the client's own list 404'd, and Shakib ruled the read open to the client's whole business. Remaining: expense claims end-to-end; tasks/teams |
+| **K. Feature builds (design-doc first)** | ~~18~~ · 50 · ~~54~~ | ✅ **18 RESOLVED (7 Sep 2026)** — `PortalDocumentList` on Home and Upload, status filter, paging, preview + download. ⚠ Its server half was NOT "already wired": the portal bearer's grant holds only the current sign-in's uploads, so every row of the client's own list 404'd, and Shakib ruled the read open to the client's whole business. ✅ **54 RESOLVED (7 Sep 2026)** — tasks and teams both have servers: nine operations, no proposal kind (item 66 tier 3), recurrence without a scheduler, assignment notifications on item 12's bell. ⚠ Shakib took Teams IN against the plan's recommendation, and the second-access-model objection was designed out rather than overruled — no `access_level` column, and `tenancy-check.sql` §12 asserts no policy consults `team_members`. Remaining in this cluster: expense claims end-to-end |
 | **L. Retention & deletion policy** ✅ **RESOLVED (7 Sep 2026)** | 61 · 67 | `docs/Retention_and_Deletion_Policy.md` with Shakib's five rulings recorded inline — **30 days then auto-purge** (exported documents held indefinitely, D43), one window for documents and removed clients alike, three reversible offboard scopes, **erasure on request with no automatic date**, and `business.reactivate`. Plus the orphan fix (a removed client's documents leave the un-scoped boards; `clientNameFor` never renders a cuid) and one defect found on the way: an archived-then-deleted document was counted by the header and listed by nothing. Evidence in `assets/2026-09-07-retention-deletion/` |
 
 **Since these entries were written, another pass closed items 9 and 12** (see the section above): chat conversations are now **server-persisted** — and the notifications read surface + header bell now exists, which unblocks the cross-refs in items 54 (assignment notifications) and 60 (arrival signal).
@@ -1591,6 +1591,292 @@ Work shape (feature-sized, plan before PR):
 3. **Web:** the table, filters and per-client scoping already exist as the synthetic board — wiring is the ClientsView/M7 pattern (widen the real endpoint, one board, live rows through the same components; the synthetic cast stays for demo mode).
 4. **Recurring checklists** (the footer's own promise, and the sub-tab's stated job — "recurring per-client checklists scoped to this product's job"): monthly/quarterly per-client recurrence generating task instances — needs a worker tick; decide whether recurrence ships in v1 of this feature or the doc explicitly defers it.
 5. **Cross-refs:** the Teams sub-tab is the same mock family (its writers were disabled in the same sweep) — the plan should say whether Teams ships with Tasks or stays out; and "Ask AI about workload" stays real either way. Deliverable: a short design doc for Shakib (scope, contract delta, side-effect class), then build.
+
+**PLAN (7 Sep 2026) — confirmed first, then designed.**
+
+**The claim in the brief is exactly right, and narrower than it sounds.** `Task`
+has existed as a Prisma model since the init migration (`prisma/schema.prisma`
+— title, description, `ownerUserId`, `dueAt`, `status`, `cadence`,
+`dependsOnTaskId`, `aiPrefilledAt`), `tasks` is on rls.sql's `direct_tables`
+loop so `app_can_access_business` already bounds it, and **nothing has ever
+read or written a row**: `grep -i task packages/contracts/openapi.yaml` returns
+three unrelated comments and no operation, and no service under
+`apps/api/src/modules` touches `db.task`. Both surfaces — `TeamView`'s Tasks
+tab and `ClientDetailView`'s Tasks tab — run off `AppContext`'s `useState`,
+seeded by `buildTasks()` in `lib/seed2.ts`. The amber banner and the disabled
+"+ New task" in the screenshot are the S14 sweep telling the truth about that.
+
+So the schema is NOT the gap. **The gap is the contract, the service and the
+wiring**, and the plan is shaped by not needing a migration.
+
+### 1. What a task is, and whose it is
+
+A **task is practice-side coordination scoped to one client business.** Three
+consequences, all forced by the row that already exists rather than chosen:
+
+- **`businessId` is NOT NULL, so there is no practice-wide task.** Every task
+  names a client. That is also the only shape RLS can express — a row with no
+  `business_id` has no predicate to bound it, and inventing a practice-level
+  task would mean a second tenancy story beside the one every other table uses.
+  The Tasks tab's "All clients" filter stays a *filter*, never a scope.
+- **It belongs to a practice member, never to a client.** `ownerUserId` is a
+  colleague from the live `GET /v1/practice-members` read. **The client never
+  sees a task**: nothing in `LiveBusinessPortal` reads this table and nothing in
+  this package makes it. A task is how the firm organises itself about a
+  client's books, not something asked of the client — that is what a chase is,
+  and the product already has one.
+- **It can depend on exactly one other task** (`dependsOnTaskId`, the notion
+  both existing surfaces already render as *"Waiting on: {title}"*). Kept, with
+  two rules the server enforces because the UI cannot: the blocker must be on
+  the **same business**, and a dependency may not close a cycle. A blocked task
+  can still be *completed* — the dependency is advisory ordering for a human,
+  not a lock — and the surfaces keep disabling the tick while it is blocked,
+  which is where that belongs.
+
+### 2. Proposal, or ordinary mutation? — **tier 3, no proposal. Explicitly.**
+
+Applying item 66's ratified question rather than `RELEASE_KINDS`' old one:
+***whose signature does this carry?***
+
+**Nobody's.** Ticking "Chase missing receipts" off a checklist asserts nothing
+about a client's books, moves no money, changes no document's coding, reaches
+nothing outside the product, and is undone by clicking it again. It is not
+close to the line — it is the clearest tier-3 case in the product, clearer than
+`createApprovalWorkflow`, which at least composes a policy that will one day
+gate other people's work. **Create, edit, assign, complete, reopen and delete
+are all `x-nt-side-effect: ingest`**, and no `ProposalKind` is added.
+
+Saying it explicitly, as the brief asks, because the *default* pull is the
+other way — Governance §10 says "no state change outside the ActionProposal
+path" and a task write is a state change in the plain-English sense. §10 is
+about **the client's state**: the document, the coding, the chase, the release.
+A proposal on a checkbox would put a signature on something nobody is signing
+for, and item 66's own finding is that asking for a signature twice makes the
+second one mean less. The one thing that would move this to tier 2 is a task
+that *acts* — a checklist item that publishes, or codes, or texts — and there
+is none: `aiPrefilledAt` reads engine state, it never drives it.
+
+### 3. Contract delta — one resource, five operations (LAW: needs the ruling)
+
+`Task` + `TaskWriteRequest` + `TaskEditRequest` + `TaskStatusRequest` schemas,
+and:
+
+| Operation | Path | Side-effect |
+|---|---|---|
+| `listTasks` | `GET /v1/tasks` (`businessId`, `status`, `assigneeId` filters, cursor + limit) | `none` |
+| `createTask` | `POST /v1/tasks` | `ingest` |
+| `replaceTask` | `PUT /v1/tasks/{taskId}` | `ingest` |
+| `setTaskStatus` | `POST /v1/tasks/{taskId}/status` | `ingest` |
+| `deleteTask` | `POST /v1/tasks/{taskId}/deletion` → `204` | `ingest` |
+
+`approval-workflows` is the template throughout — same pagination, same
+`Idempotency-Key`, same server-minted ids, same `204`-whether-or-not-it-existed
+deletion. `status` is its own small operation rather than a `PUT` because the
+tick is the write that happens a hundred times a day and it must not require
+the caller to hold every other field in order to send it.
+
+**`Task.status` is the four values the surfaces already render** — `open`,
+`complete`, `complete-with-issues`, `not-applicable` — as an enum in the
+contract, so a fifth cannot arrive by typo. `assigneeName` is projected
+server-side (one `user.findMany` over ids that came out of RLS-bounded task
+rows) so neither surface has to hold the members list to render a row.
+
+**No Prisma migration.** Every field maps onto a column that exists.
+`Task.description` is carried because the column is there and the composer has
+somewhere to put it; nothing else is added.
+
+### 4. Recurrence — **shipped, and WITHOUT a worker tick**
+
+The footer promises "recurring per-client checklists" and `cadence` is an
+unwritten column. Both are honoured, by the cheapest mechanism that is actually
+correct: **completing a recurring task creates the next instance**, due date
+rolled forward by the cadence (`monthly` / `quarterly`), same title, same
+assignee, same client, status `open`. No cron, no worker, no scheduler, no new
+infrastructure.
+
+The behaviour this deliberately does *not* have: a monthly task nobody ever
+completes does not pile up twelve copies by December. That is the right answer
+for a checklist rather than a limitation of the shortcut — twelve identical
+open rows is how a board becomes noise nobody reads. If a *calendar* is wanted
+later (rows that appear on the 1st whether or not last month closed), that is
+the worker tick, and it is a different feature with a different failure mode.
+Recorded here so the reasoning does not have to be rebuilt.
+
+### 5. Assignment notification — one row, one copy branch
+
+On create-with-assignee and on reassignment, one `notifications` row:
+`event: 'task.assigned'`, `recipientUserId` = the assignee, `businessId` = the
+client. `NotificationsBell` gets one copy branch. **No notification when you
+assign to yourself** — the bell exists to tell you something you did not do.
+
+⚠ Two honest limits, stated rather than papered over: the bell's list query
+carries **no `recipientUserId` filter** by item 12's own decision (*"the bell is
+a practice-wide surface"*, `inbox.service.ts`), so a colleague's assignment is
+visible to the practice; and `NotificationItem` carries no task title, so the
+copy can only say *"A task was assigned for {business}"*. Widening the
+projection for one line of copy is a contract change that buys a noun; not
+taken. The email seam the brief mentions is **not** built — outbound sending is
+a stop-and-ask surface and an in-app row is what item 12 was for.
+
+### 6. "AI-prefilled" — **the badge does not ship on live tasks**
+
+Today the badge is decided by `t.aiPrefilled` on a synthetic row and explained
+by matching the task's **title against three string prefixes**
+(`TeamView.tsx:341` — `startsWith('Confirm bank feed')`, `'Chase missing'`,
+`'Approve'`). Against a real task called "Chase missing paperwork before the
+VAT return" that is a coincidence, not a derivation, and item 25's standing
+rule forbids it.
+
+`aiPrefilledAt` stays a column with **no writer in this package**, and the
+badge renders only when the server sends a timestamp — so on a live task it
+never appears. The synthetic cast keeps it, unchanged, in demo mode. The badge
+earns its way back when something actually reads engine state and stamps the
+column, which is the SoT §7 sentence already written on that field.
+
+### 7. Teams — **out, and this is the recorded reason**
+
+The Teams sub-tab is the same mock family, and unlike tasks it has **no table**:
+shipping it means a new model, a new RLS policy and a new access concept
+(`accessLevel: 'All clients' | 'Assigned clients only'`) that **duplicates what
+`Membership.businessId` already expresses** — a practice-wide membership is
+"all clients", per-client memberships are "assigned clients only", and
+`GET /v1/practice-members` already returns exactly that as `businessIds`. A
+second, parallel access model beside memberships is how a permission bug ships.
+Teams stays a labelled mock; if it is wanted, the shape to build is *named
+groups that write memberships*, not a second answer to "what can this person
+reach".
+
+### 8. Surfaces
+
+`TeamView`'s Tasks tab and `ClientDetailView`'s Tasks tab both move onto the
+live read, the `ClientsView`/M7 pattern: same components, same filters, rows
+from the server, the synthetic cast retained for demo mode. Due dates use
+**`UkDateField`** (package D's one control), not a second picker. The amber
+"no server behind them yet" banner narrows to Teams alone, and "+ New task"
+loses its disabled state and its tooltip.
+
+**✅ RESOLVED (7 Sep 2026, item-54 package).** Planned above, then built — with
+**one ruling reversed from the plan**: Shakib took Teams IN.
+
+**Shakib's three rulings, in session:**
+1. **Contract delta — approved as specified.** Five task operations, no Prisma
+   migration for `tasks`.
+2. **Recurrence — "complete rolls the next one forward".** No worker.
+3. **Teams — "Ships too."** The plan recommended leaving it out and gave the
+   reason; the owner took the other option, so Teams shipped with a new table.
+   ⚠ **The objection was not overruled, it was designed out** — see §7 below.
+
+### What landed
+
+**The claim was confirmed exactly.** `Task` was a table nothing had ever read or
+written: no operation named it, no service touched it, both Tasks tabs were
+React state. So **`tasks` needed no migration** — every field the feature wanted
+was already a column, and `tasks` was already on rls.sql's `direct_tables` loop.
+
+**Contract (LAW, ruled):** `listTasks` (`none`) · `createTask` · `replaceTask` ·
+`setTaskStatus` · `deleteTask` · `listTeams` (`none`) · `createTeam` ·
+`replaceTeam` · `deleteTeam`. `/approval-workflows` is the template. Six new
+error codes (`NT-TSK-001/002/003`, `NT-TEM-001/002/003`), each a refusal a
+person acts on at a form. `GET /teams` is paginated because `check-contract.mjs`
+refuses a list without `pageInfo` — and is right to.
+
+**Tier 3, and said out loud as the brief asked.** Applying item 66's ratified
+question — *whose signature does this carry* — a ticked checkbox carries
+nobody's. Every write is `x-nt-side-effect: ingest`, **no `ProposalKind` was
+added**, and `tasks.service.test.ts` asserts it structurally: the fake Prisma
+exposes no `actionProposal` delegate, so a future write path that minted one
+throws rather than passing.
+
+**Recurrence, without a scheduler.** Completing a task with a `cadence` writes
+the next occurrence in the same transaction, due date advanced by one period.
+Two details with tests behind them: the roll is from the **old due date**, not
+from `now` (rolling from today walks the series later every cycle), and
+month-end **clamps** — `Date.UTC(2026, 1, 31)` is 3 March, which would drift a
+31st permanently off month-end. Proven live: *File the Q3 VAT return* ticked at
+28 September produced a fresh Open row at **28 December 2026** (screenshot 03).
+
+**Assignment notification.** One `notifications` row, `event: 'task.assigned'`,
+plus one copy branch in `NotificationsBell`. Written after the task's
+transaction, so a failed notice cannot roll back the assignment it describes.
+**Nothing on self-assignment**, and reassignment notifies only when the assignee
+actually changes — otherwise the bell becomes the thing people mute. Two limits
+stated rather than papered over: the bell has no `recipientUserId` filter by
+item 12's own decision, and `NotificationItem` carries no title, so the copy
+says *"A task was assigned on {business}"* and no more (screenshot 03).
+
+**Surfaces.** Both Tasks tabs and the Teams tab moved onto the live reads, the
+`ClientsView`/M7 pattern — one board, two sources, synthetic cast retained for
+demo mode. Due dates use **`UkDateField`**, package D's one control, on both
+composers; every cell renders long form. The amber *"no server behind them yet"*
+banner and its two disabled-with-a-tooltip buttons are gone, and so are their
+three message ids — with real operations behind them, that notice would itself
+be the dishonest string.
+
+### ⚠ The AI-prefilled badge does NOT ship on live tasks
+
+It was decided by matching a task's **title** against three `startsWith`
+prefixes (`'Confirm bank feed'`, `'Chase missing'`, `'Approve'`). Against a real
+task called "Chase missing paperwork before the VAT return" that is a
+coincidence, not a derivation. The badge now renders off the server's
+`aiPrefilledAt`, which **nothing writes**, so it never appears live and is
+unchanged in demo mode. Three consequences taken with it:
+
+- The Tasks-tab intro lost its *"Steps marked AI-prefilled can be answered from
+  real pipeline state"* sentence — a promise of a badge that never appears is
+  the same dishonesty as the badge.
+- The seed's `aiPrefilledAt` on `tsk_002` was removed.
+- The seed's `status: 'not_applicable'` was corrected to `'not-applicable'`.
+  Nothing had ever validated it because nothing read the table; the service maps
+  an unknown status to `open`, so the symptom would have been a closed task
+  quietly reappearing on the board.
+
+### ⚠ §7 reversed: Teams ships, and the objection is designed out, not overruled
+
+The plan argued Teams should stay out because an `accessLevel` on a team is a
+**second answer** to *"what can this person reach"* beside `Membership.businessId`,
+and two answers to that question is how a permission bug ships. Shakib ruled it
+ships. Both are now true at once:
+
+- **There is no `access_level` column.** The label is DERIVED at read time —
+  `all-clients` when every member holds a practice-wide membership,
+  `assigned-clients` otherwise (and for an empty team, which reaches nothing
+  because it contains nobody; the vacuous-truth trap has its own test).
+- **No policy in the database consults `team_members`**, and
+  `tenancy-check.sql` §12 asserts that over `pg_policies` rather than trusting a
+  comment. If that assertion ever needs relaxing, the design has changed.
+- **The editor's access chips are gone live** and replaced by the reading, which
+  points at Colleagues — a control that appeared to set it would be the second
+  answer. Its subtitle changed too: it said *"Groups colleagues and scopes the
+  clients they can reach"*, directly above the sentence saying it does not.
+- Deleting a team takes nobody's access, because a team never granted any.
+
+`teams` carries a practice and no business, so its policy is the anchor-pair
+predicate with a NULL business — which carries the `app_session_scope() = 'user'`
+guard a delegated portal session fails. `pnpm db:tenancy-check` is green,
+including the new §12.
+
+### Verification
+
+`pnpm typecheck && pnpm lint && pnpm test && pnpm build` — all four green,
+web **935/935** and api **2701 passed / 2 files skipped**, with no red at all on
+the final run. (An earlier run hit the standing `auth.service.test.ts` A2
+lockout flake, which passed in isolation and did not recur.) `pnpm
+db:tenancy-check` green including the four new §12 sections.
+
+**Route budgets, paired A/B (`vite build --manifest`, closure walk):** floor
++19 B · `ClientDetailView` 238,815 → **243,730 B** (6,270 B spare) · `TeamView`
+230,034 → **234,630 B** (15,370 B spare) · `InboxesView` untouched. ⚠ The brief
+quoted 954 B on `InboxesView` and 2,469 B on `ClientDetailView`; this paired
+measurement finds more headroom on both — re-measure rather than believing
+either figure. `ClientDetailView`'s Add-task form reads the members through a
+six-line `useAssignees` in `api/tasks.ts` rather than importing `api/team.ts`,
+which would have dragged the whole Colleagues surface onto that route; a test
+pins the two query keys equal so React Query still serves one request.
+
+Walked live end to end: board, composer with the UK date field and recurrence
+chips, the generated next occurrence, the bell, the Teams cards, the editor's
+derived-access reading, and the per-client tab.
+Evidence: `assets/2026-09-07-item-54/01–07`.
 
 ## Item 55 — Export history missing two previous exports
 
