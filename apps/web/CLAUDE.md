@@ -372,6 +372,33 @@ Stage 14's hardening audit found the golden path broke against a **freshly reset
 
 The same sweep enforced the S12 rule everywhere: **a button whose write the next poll reverts is worse than absent.** Live (`documentsSource === 'api'`, or `slices.bankTransactions.source === 'api'` on the bank surface), the local writers are hidden or disabled-with-tooltip pointing at the real path: InboxesView publish / mark-reviewed / move / delete (the publish tooltips name the chat utterance), ClientInbox's `nextStep` and bulk bar (the client-side CSV export stays — it is real either way), BankView's cash-code, synthetic chase composer and Matches tab (live it says where matches actually live), DocumentsView's unarchive/move, and both duplicate-resolution footers (an informational note — the executor ships post-demo). ApprovalsView's fixture summary figures and inert client filter give way to a live count over the queue. BankView, ClientInbox and DocumentsView gained the loading/error banner + `DataSourceBadge` the other wired screens already had. `errorLabel` in `api/slices.ts` is the one failure-label maker now — it keeps the `NT-` code in front of the words (frontend ten, item 5), and `sliceStatus`, the degraded session state, `documentsError` and the outbox error all go through it. `DocumentPreview` lost the handler-less "Enter manually" button and no longer formats `To Review — {note}` with an undefined note, which was a react-intl `console.error` on every live To-Review detail and on the duplicate beat.
 
+### A tab that cannot read the server is absent live (7 Sep 2026, review item 50 A)
+
+`ClientDetailView` filters its own tab list: `visibleTabs(API_ENABLED)`, and the
+rule it encodes is one line — **absent live, present synthetic**. An honest empty
+state was right for the demo cast; a paying accountant opening a tab that tells
+them the tab does not work is a defect, not honesty.
+
+**One list, two consumers.** The filtered list feeds the tab strip AND the
+`fromSlug` address resolution, so live `/clients/{id}/expense-claims` is an
+unrecognised slug and falls to Overview. Do not filter only the strip — a nav
+that hides a tab while the router still resolves its address is a hidden surface
+you can still deep-link into. `AppContext.availableTabs` records the same rule
+for the sidebar, whose gate is the capability matrix rather than build mode.
+
+**The audit named exactly one subject, and `api/slices.ts` is the audit.** Of the
+seven slices in `SliceName`, `expenseClaims` is the only one nothing ever asks
+the API for, so it reports `'seed'` in every build — that is what makes it the
+one tab this removes. Every other client tab reads a slice that hydrates; the
+Chases tab picks its live or seed shape rather than hiding, which is right for a
+surface that *does* work. Before adding a subject to this filter, check that the
+surface genuinely has no live read — a slow or empty live slice is a loading and
+empty state, not a hidden tab.
+
+Cost: **+43 B** on `ClientDetailView`'s closure (paired A/B). Nothing moved onto
+the floor; `ClientExpenseClaims` was already `lazy()`, so live simply never
+fetches its chunk.
+
 ### The clients list and intake are live (launch M7)
 
 `ClientsView` **was** two lists behind one route — `LiveClientsView` rendered a reduced table (name, three counts, the subscription pill) whenever the businesses slice was live, because that was all `BusinessSummary` carried and every other column would have been invented. **That fork is gone as of 28 Aug 2026; there is ONE board and live gets the real one** — cards or table, the tabs, the column picker, health, every count column and the bulk bar.
@@ -993,6 +1020,28 @@ rather than over. That is a rounding error, not headroom — the route has been
 over the 250 kB budget since long before this package and stays ~55 kB over. The
 breach is not this change's and neither is its fix; the next thing added to that
 route should assume no cushion.
+
+### Bundle (7 Sep 2026, review item 50 A) — the cheapest change on the board
+
+Paired A/B, same method, run after package H landed:
+
+| Route | main | branch | Δ | headroom vs 250,000 |
+|---|---|---|---|---|
+| floor | 204,273 | 204,263 | −10 | — |
+| `ClientDetailView` | 243,741 | **243,784** | **+43** | 6,216 |
+| `InboxesView` | 246,072 | 246,041 | −31 | 3,959 |
+
++43 B for one `Array.filter` on a 13-element tuple. Nothing new reaches the
+floor and no chunk changed shape: `ClientExpenseClaims` was already `lazy()`, so
+hiding the tab does not remove a static import — it just means a live browser
+never fetches that chunk. The `InboxesView` and floor deltas are gzip jitter,
+not a reclaim.
+
+⚠ Both numbers here are ~1.5 kB LOWER than package H's table for the same
+routes, measured two hours apart on the same machine. Neither is wrong: the
+quantity is sensitive to what else is on `main` and to gzip's own boundaries. Do
+what both tables did — **measure your own paired A/B and quote the Δ**, never a
+remembered absolute.
 
 ### Workflows are server-backed now, and the tab is one lazy component
 

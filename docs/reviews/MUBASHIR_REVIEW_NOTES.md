@@ -1365,6 +1365,62 @@ Two rulings in one item:
    - Mileage and subsistence rules (HMRC flat rates) — probably out of ID scope, but the research should say so explicitly rather than the model discovering it later.
 5. **Fit to this app's spine:** claim approval is a state change → Review → Approve proposal(s); the claimant needs portal-side visibility of their claim's status; reimbursement matching joins the bank lane. Contract changes throughout — **G7, and big enough that the deliverable is a design document for Shakib's sign-off first**, not a PR.
 
+**✅ A RESOLVED · ⏸ B AWAITING YOUR SIGN-OFF (7 Sep 2026, PR TBD).**
+
+**A — the tab is gone live, and the rule is general.** `ClientDetailView` now
+filters its own tab list: **a tab that cannot read anything from the server is
+absent live and present synthetic.** One filtered list feeds both the tab strip
+and the `fromSlug` address resolution, so live `/clients/{id}/expense-claims` is
+an unrecognised slug that falls to Overview rather than a hidden surface you can
+still deep-link into — the pattern `AppContext.availableTabs` already
+established for item 39's capability matrix.
+
+**The audit you asked for found exactly one such surface.** `api/slices.ts` is
+what says so: of the seven slices in `SliceName`, `expenseClaims` is the only
+one nothing ever asks the API for, so it reports `'seed'` in every build. Every
+other client tab reads a slice that hydrates — the Chases tab picks its live or
+seed shape rather than hiding, which is right for a surface that *does* work.
+The main nav has no unwired member at all: `SIDEBAR_TABS` is gated by the
+capability matrix, not by build mode. The tour's `expense-claims` step needed no
+change; `TourProvider` is already synthetic-only. Walked live and synthetic
+(assets `2026-09-07-item-50/`): live 12 tabs, no Expense Claims, the old address
+lands on Overview; synthetic 13 tabs, unchanged, the address still opens the
+tab.
+
+**B — the design document is `docs/Expense_Claims_Design.md`. Nothing is built.**
+The research is done and cited; six rulings are waiting for you in its §10.
+Three findings worth reading before the rulings:
+
+1. **The VT shape needs no new emitter and no new format.** VT derives the double
+   entry from *which account Column A names*, and the same "Payments
+   list/purchase invoices list" format already serves both purchase invoices and
+   bank payments here. A claim is that row with the **claimant's creditor
+   account** in Column A and the supplier moved into Column B — Dr expense, Dr
+   input VAT, Cr claimant. The reimbursement is **already** what `buildBankRows`
+   emits, with its contra pointed at the same creditor: one statement line, one
+   row, clearing however many claims it covers. `vt-transaction-plus-emitter.ts`
+   is untouched; the change is one line in `document-to-canonical.ts`.
+2. **Mileage and subsistence are recommended OUT of ID, with reasons rather than
+   a scope call.** They have no document to photograph — so no D43 source link,
+   which is a violation by construction, not an omission — HMRC blocks input VAT
+   on any flat allowance however good the paperwork (VIT42500, Notice 700 §12),
+   and the rates are live data: the car rate had been 45p since 2011/12 and
+   changed to **55p for 2026/27**, during this project.
+3. **⚠ A pre-existing gap the feature must not be built on top of.**
+   `canSendDocuments` is stored and editable but **never checked on the upload
+   path** — it appears nowhere in `portal-upload.service.ts` or the portal
+   controller. A member with the box unticked can still upload. That is
+   Governance §11.2's exact prohibition, and "may submit expense claims" would be
+   the third capability on a mechanism whose second is presentation-only. The doc
+   recommends fixing that first, as its own change; it is a permission fix, so it
+   is your call (⚖C).
+
+The doc also argues **against** building what the synthetic UI mocks: no stored
+`ExpenseClaim` aggregate, no second approval ladder beside Review → Approve, and
+`claimantId` as a tier-1 field on the existing `document.update-coding` rather
+than a new proposal kind (item 66 ⚖5(a) makes it tier 1 automatically). The
+batched contract delta is §9, written down rather than applied.
+
 ## Item 51 — Rule-setting via chat: guided flow with confirmation, in-chat client picker, and landing in Approvals → Workflows
 
 **Original (verbatim):**

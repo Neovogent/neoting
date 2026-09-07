@@ -394,6 +394,29 @@ it no longer forces a split across two columns.
       path has no chart-of-accounts vocabulary yet. Open question for the owner:
       constrain corrections to the client's chart (the chat rule draft's stance) or
       accept the manual VT mapping.
+- [ ] **Expense claims need NO new emitter and no new VT format** — researched
+      7 Sep 2026 for review item 50, recorded in `docs/Expense_Claims_Design.md`
+      §2, **not built and awaiting Shakib's sign-off**. Worth knowing before
+      anyone reaches for a second emitter shape: VT derives the double entry from
+      *which account Column A names*, which is why the SAME "Payments
+      list/purchase invoices list" format already serves both purchase invoices
+      (Column A = supplier) and bank payments (Column A = bank account) in
+      `VT_DATA_FORMAT_BY_KIND`. A claim is that row with the **claimant's
+      creditor account** in Column A and the supplier moved into Column B — Dr
+      expense, Dr input VAT, Cr claimant, which is the UK treatment (the expense
+      is credited to the employee as creditor, not to the bank). The later
+      **reimbursement is already `buildBankRows`** with its contra pointed at the
+      same creditor: one statement line, one row, clearing however many claims it
+      covers. So the whole export-side change is `primaryAccount` in
+      `api/document-to-canonical.ts:143`; **this emitter is untouched**, which is
+      what keeps the publish review card and the file the same code. Two risks
+      named in the design doc: Column B grows by the supplier name (observed
+      whole at 104 chars, no published limit — append to `reference` rather than
+      adding a fifth part), and a claimant with no creditor account must REFUSE
+      the way `document-missing-category` does rather than guess a nominal.
+      Rejected: VT's generic Journal format (A account, B details, C debit, D
+      credit) — it expresses a claim exactly and buys nothing the above does not,
+      at the cost of a second file kind and a preview that no longer shares code.
 - [ ] **The £0.00 split line.** Try the designer’s "Repeated columns" range — several
       analysis triplets on one row would remove the artefact entirely.
 - [ ] **`ExportWarning`’s description in `openapi.yaml` is now wrong** — it cites
