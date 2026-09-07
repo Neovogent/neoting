@@ -1,6 +1,7 @@
 import type { ProposalKind } from '@neoting/contracts/model';
 
 import { DemoSmsSender, type SmsSender } from '../../chase/index.js';
+import { activatePolicyExecutor } from './activate-policy.js';
 import { archiveDocumentExecutor } from './archive-document.js';
 import { chaseSendExecutor } from './chase-send.js';
 import { confirmMatchExecutor } from './confirm-match.js';
@@ -139,6 +140,10 @@ export function buildExecutorRegistry(deps: ExecutorRegistryDeps): ExecutorRegis
     // additionally moves the copy to TRASH (reversible — restoration undoes
     // it), never a purge. "Attach to the original" is a named deferral.
     'document.resolve-duplicate': resolveDuplicateExecutor,
+    // policy.activate — an approval workflow is armed or disarmed (review
+    // package H). The workflow itself is written by ingest-class operations;
+    // what needs a signature is the GATE, in both directions.
+    'policy.activate': activatePolicyExecutor,
   };
 }
 

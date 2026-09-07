@@ -53,6 +53,28 @@ export interface RenderedSection {
  */
 export interface RenderContext {
   readonly correctionChecks?: readonly CorrectionCheck[];
+  /**
+   * The workflow a `policy.activate` proposal names, read by the SERVICE at
+   * first review and frozen into the stored render.
+   *
+   * It rides this seam for the reason the header above gives: `PolicyActivate   * Payload` is the contract's and `.strict()`, so it carries an id and a
+   * boolean and nothing else. A reviewer being asked to arm a policy has to
+   * see the policy — its stages, its thresholds, its branches — and a card
+   * that showed only `workflowId: cl9x…` would be a signature on a row nobody
+   * read. Frozen at review, like the correction advisory, so what was shown is
+   * what was approved.
+   */
+  readonly workflow?: RenderedWorkflow;
+}
+
+/** Exactly what the card needs to describe a workflow, and nothing more. */
+export interface RenderedWorkflow {
+  readonly name: string;
+  readonly appliesTo: string;
+  readonly isActive: boolean;
+  readonly selfApproval: boolean;
+  readonly stages: readonly { name: string; approver: string; thresholdAbovePence?: number; clientSide?: boolean }[];
+  readonly branches: readonly { label: string }[];
 }
 
 /**
@@ -91,6 +113,7 @@ export const KIND_LABEL: Readonly<Record<ProposalKind, string>> = {
   'business.reactivate': 'Restore a removed client',
   'document.purge': 'Delete documents permanently',
   'document.resolve-duplicate': 'Resolve a suspected duplicate',
+  'policy.activate': 'Turn an approval workflow on or off',
 };
 
 export function renderSummary(kind: ProposalKind, payload: Record<string, unknown>, context: RenderContext = {}): RenderedSummary {
@@ -461,6 +484,70 @@ export function renderSummary(kind: ProposalKind, payload: Record<string, unknow
           ],
         },
       ]);
+    }
+    case 'policy.activate': {
+      // The GATE is what is being approved, so the card leads with what changes
+      // and then shows the policy in full. `context.workflow` is absent only
+      // for a proposal whose workflow has since been deleted — which cannot
+      // happen while it is active, but can between a disarm proposal being
+      // created and reviewed. That case says so rather than rendering a blank
+      // policy the reviewer would read as "no stages".
+      const active = payload['active'] === true;
+      const workflow = context.workflow;
+      if (workflow === undefined) {
+        return summary(`${active ? 'Turn on' : 'Turn off'} approval workflow ${text(payload['workflowId'])}`, [
+          {
+            heading: 'What this does',
+            entries: [
+              { label: 'Workflow', value: text(payload['workflowId']) },
+              {
+                label: 'Its detail',
+                value: 'Could not be read — the workflow has been deleted or is no longer reachable. Approving will refuse.',
+              },
+            ],
+          },
+        ]);
+      }
+      const stageEntries = workflow.stages.map((stage, i) => ({
+        label: `Stage ${i + 1} — ${stage.name}`,
+        value:
+          `${stage.approver}${stage.clientSide === true ? ' (at the client, by emailed link)' : ''}` +
+          (stage.thresholdAbovePence === undefined
+            ? ', every item'
+            : `, items over ${penceToMoney(stage.thresholdAbovePence, 'GBP')}`),
+      }));
+      return summary(
+        active
+          ? `Turn ON "${workflow.name}" — items will start waiting for approval`
+          : `Turn OFF "${workflow.name}" — items will stop waiting for approval`,
+        [
+          {
+            heading: 'What changes',
+            entries: [
+              { label: 'Workflow', value: workflow.name },
+              { label: 'Now', value: workflow.isActive ? 'On' : 'Off' },
+              { label: 'After you approve', value: active ? 'On' : 'Off' },
+              {
+                label: 'Effect',
+                value: active
+                  ? 'Matching items stop at the stages below and wait for a named approver.'
+                  : 'Matching items stop pausing. Nothing else about this client changes, and no item already waiting is approved by this.',
+              },
+            ],
+          },
+          {
+            heading: 'The policy this arms',
+            entries: [
+              { label: 'Applies to', value: workflow.appliesTo === '' ? 'Nothing — this workflow has no scope' : workflow.appliesTo },
+              { label: 'Self-approval', value: workflow.selfApproval ? 'Allowed' : 'Not allowed' },
+              ...(stageEntries.length === 0
+                ? [{ label: 'Stages', value: 'None — this workflow has no approval step in it' }]
+                : stageEntries),
+              ...workflow.branches.map((branch, i) => ({ label: `Branch ${i + 1}`, value: branch.label })),
+            ],
+          },
+        ],
+      );
     }
     default:
       // Honest generic rendering for the kinds whose stages have not shaped a

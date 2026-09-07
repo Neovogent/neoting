@@ -1206,11 +1206,24 @@ model ApprovalWorkflow {
   businessId String @map("business_id")
 
   name        String
-  /// Stages including conditional branches (SoT Stage 9).
+  /// `ApprovalWorkflowStage[]` — name, approver, thresholdAbovePence, canEdit, clientSide.
   stages      Json
+  /// `ApprovalWorkflowBranch[]` — a condition that pulls an extra approver in.
+  /// Its own column rather than a key inside `stages`: a branch is not a step
+  /// in the chain, and the engine reads the two at different moments.
+  branches    Json?
+  /// The scope sentence — "All cost items", "Category: …". An unrecognised
+  /// scope claims NOTHING (see the contract): over-matching holds a client's
+  /// whole purchase ledger at a stage it was never meant to reach.
   appliesTo   Json?    @map("applies_to")
   specificity Int      @default(0)
-  isActive    Boolean  @default(true) @map("is_active")
+  /// Whether the person who proposed an item may approve it themselves.
+  selfApproval Boolean @default(false) @map("self_approval")
+  /// ⚠ Armed. Written ONLY by the `policy.activate` executor — no ingest-class
+  /// operation on this table accepts it. Defaults FALSE: a saved workflow is a
+  /// draft, and a policy that armed itself on save would gate a client's items
+  /// with nobody having approved the gate (Governance §10, D44).
+  isActive    Boolean  @default(false) @map("is_active")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 

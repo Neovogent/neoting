@@ -159,6 +159,14 @@ const IDENTITY: Readonly<Record<ProposalKind, (payload: StoredPayload) => string
   // nothing. A rule drafted twice is a human deciding twice, and the review
   // card renders the whole rule so they can see which.
   'rule.create': () => null,
+  // The WORKFLOW and the DIRECTION, the `document.archive` shape: arm and
+  // disarm are one kind carrying opposite acts, so a key over the workflow
+  // alone would refuse a disarm because an arm of the same policy happened to
+  // be pending — which is precisely the pair a person needs to see both of.
+  'policy.activate': (p) => {
+    const workflowId = str(p['workflowId']);
+    return workflowId === null ? null : `${workflowId}:${p['active'] === true ? 'on' : 'off'}`;
+  },
 };
 
 /**

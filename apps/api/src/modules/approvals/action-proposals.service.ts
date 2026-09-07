@@ -55,7 +55,8 @@ import { appendAuditEvent } from './audit-writer.js';
 import { canonicalHash } from './canonical-hash.js';
 import { proposalIdentity } from './proposal-identity.js';
 import { knownProposalKind, parseStoredProposalPayload } from './proposal-body.js';
-import { KIND_LABEL, renderSummary } from './render-summary.js';
+import { toWorkflow } from './approval-workflows.service.js';
+import { KIND_LABEL, renderSummary, type RenderedWorkflow } from './render-summary.js';
 import { toActionProposal } from './to-action-proposal.js';
 
 type ListProposalsQuery = z.infer<typeof listActionProposalsQueryParams>;
@@ -449,8 +450,17 @@ export class ActionProposalsService {
       // practice the SESSION fixes, and a proposal with no practice gets the
       // deterministic checks alone.
       const meteredPracticeId = ctx.practiceId ?? null;
+      // `policy.activate` rides the same seam for the same reason: its payload
+      // is an id and a boolean, and a reviewer arming a policy has to see the
+      // policy. Read under the caller's own scope; absent (deleted between
+      // proposal and review) renders as "could not be read" rather than as an
+      // empty one, and the executor refuses on approve.
+      const workflowContext =
+        row.kind === 'policy.activate' ? await readWorkflowForReview(db, payload as { workflowId?: unknown }) : undefined;
       const context =
-        row.kind === 'document.update-coding'
+        workflowContext !== undefined
+          ? { workflow: workflowContext }
+          : row.kind === 'document.update-coding'
           ? {
               correctionChecks: await computeCorrectionAdvisory(
                 db,
@@ -1198,4 +1208,33 @@ function notFound(): AppException {
 
 function conflict(code: ErrorCode, title: string, detail: string): AppException {
   return new AppException(code, HttpStatus.CONFLICT, title, detail);
+}
+
+/**
+ * The workflow a `policy.activate` review has to show, read under the caller's
+ * own scope at first review and frozen into the stored render.
+ *
+ * Reuses `toWorkflow` — the same mapper the read surface uses — rather than
+ * re-reading the `Json` columns here. The stage shape in that column has a
+ * history (the seed wrote a different one for a year), and two places that
+ * decode it are two places that can disagree about what a stored workflow
+ * means: the card would then describe a policy the tab does not show.
+ */
+async function readWorkflowForReview(
+  db: ScopedClient,
+  payload: { workflowId?: unknown },
+): Promise<RenderedWorkflow | undefined> {
+  const workflowId = payload.workflowId;
+  if (typeof workflowId !== 'string') return undefined;
+  const row = await db.approvalWorkflow.findUnique({ where: { id: workflowId } });
+  if (row === null) return undefined;
+  const workflow = toWorkflow(row);
+  return {
+    name: workflow.name,
+    appliesTo: workflow.appliesTo,
+    isActive: workflow.isActive,
+    selfApproval: workflow.selfApproval,
+    stages: workflow.stages,
+    branches: workflow.branches.map((branch: { label: string }) => ({ label: branch.label })),
+  };
 }

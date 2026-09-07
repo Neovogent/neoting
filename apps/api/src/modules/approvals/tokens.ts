@@ -10,3 +10,4 @@
  */
 export const PRISMA = Symbol('approvals:prisma');
 export const ACTION_PROPOSALS_SERVICE = Symbol('approvals:action-proposals-service');
+export const APPROVAL_WORKFLOWS_SERVICE = Symbol('approvals:approval-workflows-service');

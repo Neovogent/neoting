@@ -49,6 +49,7 @@ export const VALID_EXAMPLES: Record<ProposalKind, Record<string, unknown>> = {
   'business.reactivate': { businessId: 'biz_1', reason: 'The client came back' },
   'document.purge': { documentIds: ['doc_1'], reason: 'Duplicate scan, already in Trash' },
   'document.resolve-duplicate': { documentKeepId: 'doc_1', documentCopyId: 'doc_2', resolution: 'delete-copy' },
+  'policy.activate': { workflowId: 'wfl_1', active: true },
 };
 
 test('every kind parses its own valid example — the index ↔ kind pin', () => {

@@ -300,6 +300,19 @@ export const RELEASE_KINDS: Readonly<Record<ProposalKind, boolean>> = {
   // super admin's signature here and not there would be the same act priced
   // two ways.
   'document.resolve-duplicate': false,
+  // ⚠ **TIER 1, by `rule.create`'s argument and one more.** Governance §10.5
+  // lets a standing policy act without a per-item proposal on the sole ground
+  // that the policy itself was approved through this contract; if any member
+  // could arm one, that ground is gone. This kind is the wider of the two,
+  // because a workflow does not merely code documents — it decides whether
+  // anything stops for a signature at all.
+  //
+  // ⚠ And the DISARM direction is the reason it is one kind rather than a
+  // tier-1 arm and a tier-2 release. Turning a workflow off removes a control
+  // a client may be relying on, silently, with nothing on any screen changing
+  // except that items stop pausing. "Off" is not the safe direction here, and
+  // a table that priced it as one would be the way around the gate.
+  'policy.activate': true,
 };
 
 /** Does approving this kind need the super admin — i.e. is it tier 1? */
@@ -360,6 +373,8 @@ const TIER_1_REFUSAL: Partial<Record<ProposalKind, string>> = {
     "Only your practice's super admin can approve bringing a removed client back. The restore is queued for them; the client stays on the removed list until they approve it.",
   'rule.create':
     "Only your practice's super admin can approve a new coding rule. The rule is queued for them and codes nothing until they approve it.",
+  'policy.activate':
+    "Only your practice's super admin can approve turning an approval workflow on or off. The change is queued for them; the workflow is exactly as it was.",
 };
 
 /** D44's whole rule, in one expression: the release role AND the ownership flag. */

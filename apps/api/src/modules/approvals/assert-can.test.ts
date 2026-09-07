@@ -75,16 +75,18 @@ test('no role other than PRACTICE_ADMIN may release, owner flag or not', () => {
  * promotion nobody meant is the failure mode, and only the whole list catches
  * one.
  */
-test("the tier table is total over ProposalKind, and tier 1 is exactly the matrix's eight", () => {
+test("the tier table is total over ProposalKind, and tier 1 is exactly the matrix's nine", () => {
   for (const kind of Object.values(ProposalKind)) {
     expect(typeof RELEASE_KINDS[kind]).toBe('boolean');
   }
   const tier1 = Object.values(ProposalKind).filter((k) => requiresReleaseAuthority(k)).sort();
-  // ⚠ Seven until 7 Sep 2026. `business.reactivate` (review item 67) is the
-  // eighth, and it is tier 1 for the plainest reason in the table: the undo of a
-  // tier-1 act belongs to the same signature. A standard user who could restore
-  // a client the super admin removed would make that removal a suggestion with a
-  // delay on it.
+  // ⚠ Seven until 7 Sep 2026, then eight. `business.reactivate` (review item
+  // 67) was the eighth — the undo of a tier-1 act belongs to the same
+  // signature. `policy.activate` (review package H) is the NINTH, by
+  // `rule.create`'s argument taken one step wider: §10.5 lets an approved
+  // policy act with no per-item proposal, and a workflow does not merely code
+  // documents — it decides whether anything stops for a signature at all. Its
+  // DISARM direction is why it is one kind rather than two tiers.
   expect(tier1).toEqual([
     'bank.remove-statement',
     'business.offboard',
@@ -92,6 +94,7 @@ test("the tier table is total over ProposalKind, and tier 1 is exactly the matri
     'chase.send',
     'document.purge',
     'document.update-coding',
+    'policy.activate',
     'publish.batch',
     'rule.create',
   ]);

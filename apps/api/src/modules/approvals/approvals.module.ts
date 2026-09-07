@@ -21,7 +21,9 @@ import {
 } from '../validation-dedupe/index.js';
 import { ActionProposalsController } from './action-proposals.controller.js';
 import { ActionProposalsService } from './action-proposals.service.js';
-import { ACTION_PROPOSALS_SERVICE, PRISMA } from './tokens.js';
+import { ApprovalWorkflowsController, RulesController } from './approval-workflows.controller.js';
+import { ApprovalWorkflowsService } from './approval-workflows.service.js';
+import { ACTION_PROPOSALS_SERVICE, APPROVAL_WORKFLOWS_SERVICE, PRISMA } from './tokens.js';
 
 /**
  * The Review → Approve engine module (METH S3, issue #122).
@@ -53,7 +55,7 @@ import { ACTION_PROPOSALS_SERVICE, PRISMA } from './tokens.js';
  */
 @Module({
   imports: [PublishingModule, NotificationsModule],
-  controllers: [ActionProposalsController],
+  controllers: [ActionProposalsController, ApprovalWorkflowsController, RulesController],
   providers: [
     { provide: PRISMA, useFactory: () => getPrismaClient() },
     {
@@ -200,6 +202,18 @@ import { ACTION_PROPOSALS_SERVICE, PRISMA } from './tokens.js';
         );
       },
       inject: [PRISMA, ENV, LEDGER_ADAPTER, NOTIFICATIONS_SERVICE],
+    },
+    /**
+     * Workflows and the rules read (review package H). Its own provider and
+     * its own store: it shares nothing with the engine above except the Prisma
+     * client, because it shares no authority with it either — every operation
+     * behind it is `ingest`-class and none can arm a policy. Arming is
+     * `policy.activate`, which goes through the engine like everything else.
+     */
+    {
+      provide: APPROVAL_WORKFLOWS_SERVICE,
+      useFactory: (prisma: PrismaClient) => new ApprovalWorkflowsService(prisma, new InMemoryIdempotencyStore()),
+      inject: [PRISMA],
     },
   ],
 })

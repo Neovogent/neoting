@@ -8,6 +8,7 @@ import type {
   ChaseSendPayload,
   DocumentPurgePayload,
   DuplicateResolvePayload,
+  PolicyActivatePayload,
   MoveBusinessPayload,
   ProposalKind,
   PublishBatchPayload,
@@ -55,6 +56,7 @@ export interface ProposalPayloadMap {
   'business.reactivate': BusinessReactivatePayload;
   'document.purge': DocumentPurgePayload;
   'document.resolve-duplicate': DuplicateResolvePayload;
+  'policy.activate': PolicyActivatePayload;
 }
 
 export interface ExecutionInput<P> {
@@ -106,9 +108,10 @@ export type FollowUp =
 
 /** The row kinds an executor may report having changed. Grown for `chase.send`
  * (METH S8), which creates `chases` rather than touching `documents`, for
- * `rule.create` (METH S13), which creates `rules`, and for `business.offboard`,
- * which deactivates a `businesses` row. */
-export type ChangedEntity = 'document' | 'chase' | 'rule' | 'business';
+ * `rule.create` (METH S13), which creates `rules`, for `business.offboard`,
+ * which deactivates a `businesses` row, and for `policy.activate` (review
+ * package H), which arms or disarms an `approval_workflows` row. */
+export type ChangedEntity = 'document' | 'chase' | 'rule' | 'business' | 'approvalWorkflow';
 
 /** Serialised by the engine into `action_proposals.outcome` (Json?). */
 export interface ExecutionResult {
