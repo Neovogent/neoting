@@ -1,16 +1,20 @@
 import type { ApprovalBranch, ApprovalStage, ApprovalWorkflow } from './types';
 
 /**
- * Turns a description of an approval policy into a structured workflow, the
- * same way `ruleParser` turns a sentence into a coding rule.
+ * Turns a description of an approval policy into a structured workflow.
  *
- * Deliberately deterministic and local rather than a model call: it runs
- * offline, gives the same answer twice, and — because every field it fills
- * stays editable — a wrong guess costs a correction rather than a bad policy.
- * What it cannot find, it leaves for the person to fill in.
+ * ⚠ **SYNTHETIC MODE ONLY since review package H.** With the API on, "Describe
+ * it instead" goes to the pinned model through
+ * `POST /v1/approval-workflows/draft` — item 52's whole point, because this
+ * parser recognises the vocabulary it was written for and little else, and a
+ * near-miss on a policy is a policy that governs the wrong documents. It
+ * survives for the seed-data demo, which has no server to ask, and for that
+ * only: `WorkflowEditor` chooses between the two on `API_ENABLED`.
  *
- * Nothing here activates anything. The result is a draft in the editor, and
- * the workflow still has to be saved.
+ * What makes it safe to keep: every field it fills stays editable, so a wrong
+ * guess costs a correction rather than a bad policy, and nothing here activates
+ * anything — the result is a draft, and arming it is a `policy.activate`
+ * proposal a human approves.
  */
 
 /** Roles an accountant actually names, longest first so "Finance Director" wins over "Director". */
@@ -119,7 +123,9 @@ export function parseWorkflow(text: string, base: ApprovalWorkflow): ParsedWorkf
         // The first approver usually corrects coding; later ones sign off. A
         // client-side approver never edits — they see the coding, not a form.
         canEdit: i === 0 && !clientSide,
-        thresholdAbove: thresholds.get(approver),
+        // ⚠ PENCE. `findAmounts` reads pounds off the sentence (that is what
+        // people type), and the stored field is money.
+        ...(thresholds.get(approver) === undefined ? {} : { thresholdAbovePence: thresholds.get(approver)! * 100 }),
         ...(clientSide ? { clientSide: true } : {}),
       });
     });
@@ -139,8 +145,7 @@ export function parseWorkflow(text: string, base: ApprovalWorkflow): ParsedWorkf
 
   if (/\bnew supplier\b|\bfirst time\b|\bunknown supplier\b|\bnever (?:used|seen)\b/.test(lower)) {
     branches.push({
-      field: 'supplier-age',
-      operator: 'is',
+      field: 'supplierAge',
       value: 'new',
       addApprover: 'Compliance',
       label: 'A brand-new supplier adds Compliance',
@@ -161,8 +166,7 @@ export function parseWorkflow(text: string, base: ApprovalWorkflow): ParsedWorkf
     const who = titleCase(added[3].trim());
     branches.push({
       field: 'amount',
-      operator: '>',
-      value: String(amount),
+      thresholdAbovePence: amount * 100,
       addApprover: who,
       label: `Amount over ${money(amount)} adds ${who}`,
     });
@@ -171,11 +175,19 @@ export function parseWorkflow(text: string, base: ApprovalWorkflow): ParsedWorkf
 
   /* ── the two policy switches ────────────────────────────────────────────── */
   const selfApproval = /\bself[- ]approv/.test(lower) && !/\bno self[- ]approv|\bcannot self[- ]approv|\bnot self[- ]approv/.test(lower);
-  const autoPublish = /\bauto[- ]?publish|\bpublish (?:it |them )?(?:automatically|straight away|once approved)/.test(lower);
 
-  if (autoPublish) understood.push('Publishes automatically once fully approved');
   if (selfApproval) understood.push('Self-approval allowed');
-  if (!autoPublish) assumed.push('Auto-publish left off');
+  /**
+   * ⚠ **An auto-publish ask is ANSWERED, not silently dropped** (item 52 §3).
+   * This used to set `autoPublishOnApproval` and report *"Publishes
+   * automatically once fully approved"* — a sentence D42 makes false (there is
+   * no ledger in this release) and D44 forbids (only the super admin
+   * releases). Saying nothing would leave someone who typed it believing they
+   * had got it.
+   */
+  if (/\bauto[- ]?publish|\bpublish (?:it |them )?(?:automatically|straight away|once approved)/.test(lower)) {
+    assumed.push('Auto-publish is not available — releasing stays your super admin\u2019s explicit act');
+  }
 
   /* ── name ───────────────────────────────────────────────────────────────── */
   const quoted = text.match(/"([^"]{2,40})"|call it ([a-z0-9 &-]{2,40})/i);
@@ -203,8 +215,10 @@ export function parseWorkflow(text: string, base: ApprovalWorkflow): ParsedWorkf
       stages,
       branches,
       selfApproval,
-      autoPublishOnApproval: autoPublish,
-      active: true,
+      // A saved workflow is a DRAFT: arming it is an approved
+      // `policy.activate` proposal, so a parse that returned an active one
+      // would describe a state the server will not write.
+      isActive: false,
     },
     understood,
     assumed,
@@ -295,7 +309,7 @@ function titleCase(s: string) {
 
 /** Example prompts, so the field is never a blank box. */
 export const WORKFLOW_EXAMPLES = [
-  'Anything over £500 needs a manager, and over £2,000 the Finance Director too. Auto-publish once approved.',
+  'Anything over £500 needs a manager, and over £2,000 the Finance Director too.',
   'Computer Equipment and Kitchen Equipment go to the Finance Director, then the client signs off over £1,000.',
   'All sales items just need a manager review. Allow self-approval.',
   'A brand-new supplier always adds Compliance, whatever the amount.',

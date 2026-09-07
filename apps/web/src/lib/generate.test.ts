@@ -20,13 +20,12 @@ const WORKFLOW: ApprovalWorkflow = {
   id: 'wf-test',
   name: 'Test workflow',
   appliesTo: 'All cost items',
-  clientIds: ['1'],
+  businessId: '1',
   specificity: 1,
   stages: [{ name: 'Manager review', approver: 'Manager', canEdit: true }],
   branches: [],
   selfApproval: false,
-  autoPublishOnApproval: false,
-  active: true,
+  isActive: true,
 };
 
 const DOC: Document = {
@@ -122,8 +121,8 @@ describe('the other scopes still match exactly what they did', () => {
   });
 
   test('inactive workflows and other clients are still skipped', () => {
-    expect(workflowFor(doc(), [scoped('All cost items', { active: false })])).toBeUndefined();
-    expect(workflowFor(doc(), [scoped('All cost items', { clientIds: ['2'] })])).toBeUndefined();
+    expect(workflowFor(doc(), [scoped('All cost items', { isActive: false })])).toBeUndefined();
+    expect(workflowFor(doc(), [scoped('All cost items', { businessId: '2' })])).toBeUndefined();
   });
 });
 
@@ -141,9 +140,15 @@ describe('every scope the parser can mint is one the matcher recognises', () => 
    * The two files have to agree about the vocabulary, and this is the only
    * thing that makes them agree: a fifth scope added to `workflowParser` fails
    * here until `workflowFor` learns it, rather than quietly matching nothing.
-   * Each case brings the one document its own scope is supposed to claim —
-   * `parseWorkflow` returns the base workflow's id, clientIds and `active`
-   * unchanged, so the parsed result is directly matchable.
+   * Each case brings the one document its own scope is supposed to claim.
+   *
+   * ⚠ **The parsed workflow is ARMED here before it is matched**, and that is
+   * a real behavioural change rather than a test convenience (review package
+   * H): `parseWorkflow` now returns `isActive: false`, because a saved
+   * workflow is a DRAFT and arming one is an approved `policy.activate`
+   * proposal. `workflowFor` skips inactive workflows — correctly — so without
+   * this line every case would pass for the wrong reason, matching nothing
+   * because nothing was on rather than because the vocabulary agreed.
    */
   test.each([
     ['Anything over £500 needs a manager.', 'All cost items', doc()],
@@ -153,7 +158,9 @@ describe('every scope the parser can mint is one the matcher recognises', () => 
   ])('%s', (text, expected, probe) => {
     const { workflow } = parseWorkflow(text, WORKFLOW);
     expect(workflow.appliesTo).toBe(expected);
-    expect(workflowFor(probe, [workflow], expenseClaimDocumentIds([CLAIM]))?.id).toBe('wf-test');
+    expect(workflow.isActive).toBe(false);
+    const armed = { ...workflow, isActive: true };
+    expect(workflowFor(probe, [armed], expenseClaimDocumentIds([CLAIM]))?.id).toBe('wf-test');
   });
 });
 

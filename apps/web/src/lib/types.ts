@@ -693,41 +693,76 @@ export interface ItemMessage {
 export interface ApprovalStage {
   name: string;
   approver: string;
-  /** Always, or only when the amount clears a threshold. */
-  thresholdAbove?: number | undefined;
+  /**
+   * Always, or only when the amount clears a threshold.
+   *
+   * ⚠ **PENCE**, matching the contract (`x-nt-money`), where this was pounds
+   * before review package H. The synthetic generators still work in float
+   * pounds, so the two comparison sites in `lib/generate.ts` multiply — the
+   * conversion lives at the comparison rather than in the stored value,
+   * because a float in this field is R5.
+   */
+  thresholdAbovePence?: number | undefined;
   canEdit: boolean;
   /**
    * Approved by someone at the business rather than in the practice. These
-   * stages are delivered by SMS + OTP — the client never installs an app or
-   * holds a login, exactly as chasing works.
+   * stages are delivered by an emailed link — the client never installs an app
+   * or holds a login, exactly as chasing works.
    */
   clientSide?: boolean | undefined;
 }
 
-/** Conditional branching — the upmarket gap Dext's linear workflows can't cover. */
+/**
+ * Conditional branching — the upmarket gap Dext's linear workflows can't cover.
+ *
+ * ⚠ There is no `operator`. It is implied by `field` (`amount` is always
+ * "over", the other two are always "is") and NOTHING ever read it —
+ * `branchesFor` has always switched on `field` alone. A stored operator no
+ * evaluator consults is a field free to disagree with the behaviour.
+ */
 export interface ApprovalBranch {
-  field: 'amount' | 'supplier-age' | 'category';
-  operator: '>' | 'is';
-  value: string;
+  field: 'amount' | 'supplierAge' | 'category';
+  /** Required when `field` is `amount`; absent otherwise. Pence. */
+  thresholdAbovePence?: number | undefined;
+  /** `new` for `supplierAge`, a category code for `category`. Absent for amounts. */
+  value?: string | undefined;
   addApprover: string;
+  /** The sentence a person reads — composed from the fields above, never typed free. */
   label: string;
 }
 
+/**
+ * One client's approval policy, mirroring the contract's `ApprovalWorkflow`
+ * field for field so `api/workflows.ts` is a pass-through and not a mapper.
+ *
+ * ⚠ **There is no `autoPublishOnApproval`, and its absence is the point.**
+ * The editor carried an "Auto-publish once approved" toggle and the parser
+ * emitted "Publishes automatically once fully approved"; under D42 there is no
+ * auto-publish in this release and under D44 only the firm's super admin
+ * releases. A switch that could not change anything is the class of claim D42
+ * exists to stop. The final stage IS the release.
+ */
 export interface ApprovalWorkflow {
   id: string;
-  name: string;
-  appliesTo: string;
   /**
-   * Which clients this workflow governs.
+   * The ONE client this governs.
    *
-   * Approvals are opt-in and default off (wireframe screen 12, Dext parity):
-   * a client with no workflow has no approval step at all and its items go
-   * Ready → published without pausing. Without this field every workflow
-   * silently applied to every client, which is the opposite of opt-in — one
-   * practice-wide rule would have held up the invoices of a client who had
-   * never asked for approvals.
+   * It was `clientIds: string[]` until review package H, and prisma has said
+   * `businessId String` — required, one row, one client — since the init
+   * migration. Shakib took prisma's shape in session: RLS already scopes by
+   * business, and it fixes ClientDetailView having rendered every practice
+   * workflow on every client. The same policy across three clients is three
+   * workflows.
    */
-  clientIds: string[];
+  businessId: string;
+  name: string;
+  /**
+   * Which items it claims — `All cost items`, `All sales items`,
+   * `All expense claims`, or `Category: …`. An unrecognised scope claims
+   * NOTHING: under-matching is a workflow nobody notices, over-matching holds
+   * a client's whole purchase ledger at a stage it was never meant to reach.
+   */
+  appliesTo: string;
   /**
    * Higher wins when more than one workflow could apply. The wireframe orders
    * scope type → owners → suppliers → categories, so a category rule beats a
@@ -737,8 +772,12 @@ export interface ApprovalWorkflow {
   stages: ApprovalStage[];
   branches: ApprovalBranch[];
   selfApproval: boolean;
-  autoPublishOnApproval: boolean;
-  active: boolean;
+  /**
+   * Armed. ⚠ Written ONLY by an approved `policy.activate` proposal — no write
+   * operation on the resource accepts it, so the Activate button stages a
+   * proposal rather than saving a field.
+   */
+  isActive: boolean;
 }
 
 export type ApprovalState = 'pending' | 'approved' | 'rejected';

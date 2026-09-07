@@ -593,7 +593,7 @@ export function SettingsView() {
                         ? intl.formatMessage(m.workflowRowWithBranches, { name: w.name, stages: w.stages.length, branches: w.branches.length })
                         : intl.formatMessage(m.workflowRow, { name: w.name, stages: w.stages.length })
                     }
-                    value={w.active ? <Pill tone="green">{intl.formatMessage(m.workflowActive)}</Pill> : <Pill>{intl.formatMessage(m.workflowPaused)}</Pill>}
+                    value={w.isActive ? <Pill tone="green">{intl.formatMessage(m.workflowActive)}</Pill> : <Pill>{intl.formatMessage(m.workflowPaused)}</Pill>}
                   />
                 ))}
               </div>

@@ -29,9 +29,9 @@ import { currency } from '../../lib/resolver';
 import type { ApprovalWorkflow } from '../../lib/types';
 
 const mCard = defineMessages({
-  noClients: {
-    id: 'approvals.workflowCard.noClients',
-    defaultMessage: 'No client opted in — this stops nothing',
+  unknownClient: {
+    id: 'approvals.workflowCard.unknownClient',
+    defaultMessage: 'A client you cannot see',
   },
   statusActive: { id: 'approvals.workflowCard.statusActive', defaultMessage: 'Active' },
   statusPaused: { id: 'approvals.workflowCard.statusPaused', defaultMessage: 'Paused' },
@@ -56,7 +56,6 @@ const mCard = defineMessages({
     id: 'approvals.workflowCard.branchingHeading',
     defaultMessage: 'Conditional branching',
   },
-  autoPublish: { id: 'approvals.workflowCard.autoPublish', defaultMessage: 'Auto-publish once approved' },
   selfApprovalAllowed: {
     id: 'approvals.workflowCard.selfApprovalAllowed',
     defaultMessage: 'Self-approval allowed',
@@ -67,8 +66,17 @@ const mCard = defineMessages({
   },
   specificity: { id: 'approvals.workflowCard.specificity', defaultMessage: 'Specificity {level}' },
   editAction: { id: 'approvals.workflowCard.editAction', defaultMessage: 'Edit' },
-  pauseAction: { id: 'approvals.workflowCard.pauseAction', defaultMessage: 'Pause' },
-  activateAction: { id: 'approvals.workflowCard.activateAction', defaultMessage: 'Activate' },
+  pauseAction: { id: 'approvals.workflowCard.pauseAction', defaultMessage: 'Turn off' },
+  activateAction: { id: 'approvals.workflowCard.activateAction', defaultMessage: 'Turn on' },
+  // ⚠ The two buttons above STAGE A PROPOSAL; they do not flip a field. Arming
+  // a workflow decides what pauses for other people's approvals, so it travels
+  // the same Review → Approve path as every other state change (D44). The
+  // tooltip says so, because a button that queues rather than acts must say it.
+  toggleTitle: {
+    id: 'approvals.workflowCard.toggleTitle',
+    defaultMessage: 'Goes to your super admin for approval — nothing changes until they approve it',
+  },
+  statusDraft: { id: 'approvals.workflowCard.statusDraft', defaultMessage: 'Off — stops nothing' },
   usage: { id: 'approvals.workflowCard.usage', defaultMessage: '{count} in queue' },
 });
 export function WorkflowCard({ workflow, usage, onEdit, onToggle, onDelete }: {
@@ -82,22 +90,19 @@ export function WorkflowCard({ workflow, usage, onEdit, onToggle, onDelete }: {
         <div className="min-w-0">
           <h3 className="font-sans font-bold text-xl text-white tracking-tight truncate">{workflow.name}</h3>
           <p className="text-[12px] text-zinc-500 mt-1 font-semibold uppercase tracking-wider truncate">{workflow.appliesTo}</p>
-          {/* Who it governs. Approvals are opt-in per client, so a workflow
-              naming nobody stops nothing however active it looks. */}
+          {/* Who it governs — ONE client (review package H). It used to be a
+              list, and ClientDetailView rendered every practice workflow on
+              every client because nothing filtered on it. */}
           <p className="text-[12px] mt-1 font-semibold truncate">
-            {workflow.clientIds.length ? (
-              <span className="text-zinc-400">
-                {workflow.clientIds.map((id) => clients.find((c) => c.id === id)?.name ?? id).join(' · ')}
-              </span>
-            ) : (
-              <span className="text-amber-400">{intl.formatMessage(mCard.noClients)}</span>
-            )}
+            <span className="text-zinc-400">
+              {clients.find((c) => c.id === workflow.businessId)?.name ?? intl.formatMessage(mCard.unknownClient)}
+            </span>
           </p>
         </div>
-        {workflow.active ? (
+        {workflow.isActive ? (
           <Pill tone="green">{intl.formatMessage(mCard.statusActive)}</Pill>
         ) : (
-          <Pill>{intl.formatMessage(mCard.statusPaused)}</Pill>
+          <Pill tone="amber">{intl.formatMessage(mCard.statusDraft)}</Pill>
         )}
       </div>
 
@@ -122,7 +127,7 @@ export function WorkflowCard({ workflow, usage, onEdit, onToggle, onDelete }: {
                   </div>
                   <div className="text-[11px] text-zinc-500">
                     {intl.formatMessage(
-                      s.thresholdAbove
+                      s.thresholdAbovePence
                         ? s.canEdit
                           ? mCard.stageThresholdCanEdit
                           : mCard.stageThreshold
@@ -131,7 +136,9 @@ export function WorkflowCard({ workflow, usage, onEdit, onToggle, onDelete }: {
                         : mCard.stageAlways,
                       {
                         approver: s.approver,
-                        amount: s.thresholdAbove ? currency(s.thresholdAbove) : '',
+                        // Pence in, pounds on screen — the app's one money
+                        // boundary, at the render.
+                        amount: s.thresholdAbovePence ? currency(s.thresholdAbovePence / 100) : '',
                       },
                     )}
                   </div>
@@ -157,7 +164,6 @@ export function WorkflowCard({ workflow, usage, onEdit, onToggle, onDelete }: {
         )}
 
         <div className="flex flex-wrap gap-2">
-          {workflow.autoPublishOnApproval && <Pill tone="blue">{intl.formatMessage(mCard.autoPublish)}</Pill>}
           {workflow.selfApproval ? (
             <Pill>{intl.formatMessage(mCard.selfApprovalAllowed)}</Pill>
           ) : (
@@ -171,8 +177,12 @@ export function WorkflowCard({ workflow, usage, onEdit, onToggle, onDelete }: {
         <button onClick={onEdit} className="px-5 py-2.5 rounded-2xl text-sm font-bold text-white bg-brand hover:bg-brand-hover transition-colors">
           {intl.formatMessage(mCard.editAction)}
         </button>
-        <button onClick={onToggle} className="px-4 py-2.5 rounded-2xl text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 border border-white/5 transition-colors">
-          {intl.formatMessage(workflow.active ? mCard.pauseAction : mCard.activateAction)}
+        <button
+          onClick={onToggle}
+          title={intl.formatMessage(mCard.toggleTitle)}
+          className="px-4 py-2.5 rounded-2xl text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/5 border border-white/5 transition-colors"
+        >
+          {intl.formatMessage(workflow.isActive ? mCard.pauseAction : mCard.activateAction)}
         </button>
         <button onClick={onDelete} className="p-2.5 rounded-2xl text-zinc-500 hover:text-red-400 hover:bg-white/5 transition-colors">
           <Trash2 size={16} />
@@ -199,14 +209,17 @@ const mBlank = defineMessages({
  * and therefore renders exactly what shipped before. Make it required — and pass
  * `intl` at ClientDetailView's call site — once that lane lands.
  */
-export function blankWorkflow(intl?: IntlShape): ApprovalWorkflow {
+export function blankWorkflow(intl?: IntlShape, businessId = ''): ApprovalWorkflow {
   return {
+    // A placeholder id, and it never reaches the server: `POST
+    // /approval-workflows` mints the real one. It exists so React has a key
+    // and the editor has something to hold before the first save.
     id: `wf-${Date.now()}`,
     name: '',
     appliesTo: 'All cost items',
     // A new workflow governs nobody until a client is named — opt-in means
     // opt-in, so it cannot start by capturing the whole practice.
-    clientIds: [],
+    businessId,
     specificity: 1,
     // The approver starts empty: prefilling a person invents a colleague the
     // practice may not have — the editor makes the user pick one (launch M8).
@@ -219,7 +232,10 @@ export function blankWorkflow(intl?: IntlShape): ApprovalWorkflow {
     ],
     branches: [],
     selfApproval: false,
-    autoPublishOnApproval: false,
-    active: true,
+    // ⚠ **FALSE, where it used to be `active: true`.** A saved workflow is a
+    // draft: it is armed by an approved `policy.activate` proposal and by
+    // nothing else, so a template that started life active would describe a
+    // state the server will not write.
+    isActive: false,
   };
 }

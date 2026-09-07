@@ -2682,9 +2682,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const nextIndex = a.stageIndex + 1;
 
           if (nextIndex >= totalStages) {
-            if (workflow.autoPublishOnApproval && a.documentId) {
-              setDocuments((docs) => docs.map((d) => (d.id === a.documentId ? { ...d, status: 'published' } : d)));
-            }
+            // ⚠ **No auto-publish, and the deletion is the fix** (review
+            // package H). This branch used to flip the document to `published`
+            // when the workflow's `autoPublishOnApproval` was set — which D42
+            // forbids in this release (there is no ledger and *Published* means
+            // approved-and-released-for-export) and D44 reserves for the firm's
+            // super admin. Clearing the last approval stage now does exactly
+            // what it says: the item is approved. Releasing it is a separate,
+            // named act by a named person.
             return {
               ...a,
               state: 'approved',

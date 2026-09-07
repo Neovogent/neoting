@@ -55,6 +55,10 @@ export const KIND_LABEL: Record<ProposalKind, MessageDescriptor> = defineMessage
     id: 'proposals.kindLabel.documentResolveDuplicate',
     defaultMessage: 'Resolve a suspected duplicate',
   },
+  'policy.activate': {
+    id: 'proposals.kindLabel.policyActivate',
+    defaultMessage: 'Turn an approval workflow on or off',
+  },
 });
 
 /**
