@@ -7,6 +7,7 @@ import { useAppContext } from '../context/AppContext';
 import { DataSourceBadge } from '../components/DataSourceBadge';
 import { Pill } from '../components/DynamicComponents/DataTable';
 import { currency } from '../lib/resolver';
+import { DocumentTitle } from '../lib/documentTitle';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { useEscape } from '../lib/useEscape';
 import type { Client, Document, ExpenseClaim, ExpenseClaimItem, ExpenseClaimStatus } from '../lib/types';
@@ -321,7 +322,7 @@ export function ClientExpenseClaims({ client, onPreview }: {
                   >
                     <div className="min-w-0 flex-1">
                       <div className="text-[13px] font-bold text-white truncate">
-                        {doc.displayTitle ?? doc.supplier}
+                        <DocumentTitle doc={doc} />
                       </div>
                       <div className="text-[12px] text-zinc-500">
                         {intl.formatMessage(m.colClaimant)}: {doc.claimant?.name} · {doc.date}

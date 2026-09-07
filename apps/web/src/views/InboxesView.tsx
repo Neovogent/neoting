@@ -18,6 +18,7 @@ import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { Tooltip } from '../components/DynamicComponents/Tooltip';
 import { blockedReason, describeMissing, partitionByReadiness, readinessOf } from '../lib/readiness';
 import { channelLabels, receivedViaText } from '../lib/channelLabels';
+import { DocumentTitle } from '../lib/documentTitle';
 import { currency } from '../lib/resolver';
 import { missingMandatory, OPTIONAL_MANDATORY } from '../lib/selectors';
 import { DuplicateModal } from '../components/DynamicComponents/DuplicateModal';
@@ -1392,7 +1393,7 @@ export function InboxesView() {
                         <div className="min-w-0">
                           {/* The generated channel-based name for an unextracted
                               supplier, never the literal "Unknown" (item 43). */}
-                          <div className="font-bold text-white text-[15px] leading-tight break-words">{doc.displayTitle ?? doc.supplier}</div>
+                          <div className="text-[15px] leading-tight break-words"><DocumentTitle doc={doc} /></div>
                           {doc.splitFrom && <div className="text-[11px] font-medium text-zinc-400">{doc.splitFrom}</div>}
                           <div className="text-[12px] text-zinc-500 font-medium mt-0.5">{doc.clientName} · {doc.date}</div>
                         </div>
@@ -1486,7 +1487,7 @@ export function InboxesView() {
                         </td>
                         <td className="px-4 py-5 text-white font-bold">{doc.clientName}</td>
                         <td className="px-4 py-5 font-semibold text-zinc-300">
-                          {doc.displayTitle ?? doc.supplier}
+                          <DocumentTitle doc={doc} />
                           {doc.splitFrom && <span className="block text-[11px] font-medium text-zinc-400">{doc.splitFrom}</span>}
                         </td>
                         <td className="px-4 py-5 text-zinc-500 font-medium">{doc.date}</td>

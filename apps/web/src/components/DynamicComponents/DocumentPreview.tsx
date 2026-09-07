@@ -1,5 +1,5 @@
 import { Suspense, lazy, useState } from 'react';
-import { Check, ExternalLink, FileText, Lock, PencilLine, X } from 'lucide-react';
+import { AlertTriangle, Check, ExternalLink, FileText, Lock, PencilLine, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
 import { useAppContext } from '../../context/AppContext';
@@ -11,6 +11,7 @@ import { confirmDocumentBankMatch, useDocumentBankMatch } from '../../api/bank-m
 import type { CreateActionProposalRequest, UpdateCodingPayload } from '@neoting/contracts/model';
 import { currency } from '../../lib/resolver';
 import { receivedViaHeading } from '../../lib/channelLabels';
+import { billedToMismatch } from '../../lib/billedTo';
 import { correctionWarnings } from '../../lib/correctionChecks';
 import { BASE_MANDATORY } from '../../lib/selectors';
 import { Pill } from './DataTable';
@@ -61,6 +62,14 @@ const m = defineMessages({
   confirmedByYou: { id: 'documents.documentPreview.confirmedByYou', defaultMessage: 'Confirmed by you' },
   /** The D46 flag, following the document (item 47): the pipeline's own verdict. */
   notFinancialPill: { id: 'documents.documentPreview.notFinancialPill', defaultMessage: 'Not a financial document' },
+  /* ⚠ The bill-to flag (7 Sep 2026, found live). D46 — it says so and stops
+     nothing: a group trading under several names, or an invoice addressed to a
+     parent, are both ordinary and neither is ours to refuse. */
+  billedToMismatch: {
+    id: 'documents.documentPreview.billedToMismatch',
+    defaultMessage:
+      'This document is addressed to “{billedTo}”, not to {client}. Check it belongs in this client’s books before approving.',
+  },
   readyTypeGate: {
     id: 'documents.documentPreview.readyTypeGate',
     defaultMessage:
@@ -72,7 +81,13 @@ const m = defineMessages({
     defaultMessage: 'Line items — standard, not an add-on',
   },
   lineItemAmount: { id: 'documents.documentPreview.lineItemAmount', defaultMessage: '{quantity} × {unit}' },
-  uploadedBy: { id: 'documents.documentPreview.uploadedBy', defaultMessage: 'Uploaded by {uploader}' },
+  /* ⚠ NAMES THE FILE, NOT A PERSON (7 Sep 2026, found live). `doc.uploader`
+     is `DocumentSummary.originalFilename` in live mode, so the old
+     "Uploaded by {uploader}" rendered "Uploaded by 5b-blurred-restaurant.png"
+     — a filename standing where a person's name belongs, on the one line of
+     this panel that claims to say who sent it. WHO sent it is the header's
+     job and already correct there (`receivedViaHeading`, items 21/43/62). */
+  originalFile: { id: 'documents.documentPreview.originalFile', defaultMessage: 'Original file: {filename}' },
 
   /* ── the coding ladder's answer for an uncoded document (§24.4) ─────────
      ⚠ Every sentence a person READS about the decision itself is the
@@ -224,6 +239,8 @@ interface PendingCorrection {
   label: string;
   currentValue: string;
   nextValue: string;
+  /** Display words for `nextValue` when it is a code — see `CodingProposalCard`. */
+  nextValueLabel?: string | undefined;
   fields: UpdateCodingPayload['fields'];
   /**
    * The deterministic checks that fired on this correction
@@ -313,6 +330,12 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
   };
 
   const fields = live ? detail.fields : doc.fields;
+  /**
+   * Is this cost addressed to somebody other than the client it is filed under?
+   * Null whenever there is nothing to compare — see `lib/billedTo.ts` for why
+   * the comparison is deliberately blunt and why this flags rather than blocks.
+   */
+  const billedTo = billedToMismatch(doc, fields);
   const lineItems = live ? detail.lineItems : doc.lineItems;
   const metaText = intl.formatMessage(m.meta, { client: doc.clientName, date: doc.date, total: currency(doc.total, doc.currency) });
 
@@ -471,6 +494,12 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
       label: CATEGORY_LABEL,
       currentValue: fields.find((f) => f.label === CATEGORY_LABEL)?.value ?? '—',
       nextValue: parsed.display,
+      // The words the SUGGESTION card used, so the review a person approves
+      // from names the account the same way (7 Sep 2026, found live: the
+      // suggestion said "Expenses: Repairs and maintenance" and the review
+      // card said REPAIRS_AND_MAINTENANCE). Absent when the client's chart
+      // cannot prefix the code, and then the code stands — it is display only.
+      ...(suggestion.analysisAccount === null ? {} : { nextValueLabel: suggestion.analysisAccount }),
       fields: parsed.fields,
       // The same checks a typed correction gets — accepting a suggestion is
       // the ordinary path, and a suggestion onto a Type OTHER document is
@@ -725,6 +754,12 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                         </>
                       )}
                     </div>
+                    {f.label === 'Customer' && billedTo !== null && (
+                      <div className="mt-1.5 flex items-start gap-1.5 text-[11px] text-amber-400 font-semibold leading-snug">
+                        <AlertTriangle size={12} className="mt-px shrink-0" />
+                        <span>{intl.formatMessage(m.billedToMismatch, { billedTo, client: doc.clientName })}</span>
+                      </div>
+                    )}
                   </div>
 
                   {editing === f.label ? (
@@ -945,8 +980,19 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
                   </p>
                 )}
 
+                {/* ⚠ ON AN ESCALATION THIS NAMES THE REASON, NOT THE BASIS
+                    (7 Sep 2026, found live). `basis` is the coarse bucket, and
+                    on every escalation it is the same word — `NOTHING_MATCHED`
+                    — so a panel whose sentence read "the figures on this
+                    document do not reconcile" was captioned `RULE:
+                    NOTHING_MATCHED`, which names a different thing to the
+                    prose directly above it. `escalationReason` is the value the
+                    sentence was composed from and has been on the wire all
+                    along; a SUGGEST has none, and there `basis` IS the rule. */}
                 <p className="mt-2 text-[11px] text-zinc-600 font-semibold uppercase tracking-wider">
-                  {intl.formatMessage(m.codingBasis, { basis: suggestion.basis })}
+                  {intl.formatMessage(m.codingBasis, {
+                    basis: suggestion.escalationReason ?? suggestion.basis,
+                  })}
                 </p>
 
                 {suggestion.outcome === 'SUGGEST' && suggestion.categoryCode !== null && canEdit(CATEGORY_LABEL) && (
@@ -1099,7 +1145,7 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
       )}
 
       <div className="flex items-center gap-3 bg-raised/50 p-4 text-[12px] text-zinc-500 font-semibold">
-        {intl.formatMessage(m.uploadedBy, { uploader: doc.uploader })}
+        {intl.formatMessage(m.originalFile, { filename: doc.uploader })}
       </div>
 
       {/* The staged correction — a real proposal in live mode, through the same
@@ -1120,6 +1166,7 @@ export function DocumentPreview({ document: doc }: { document: Document }) {
               fieldLabel={pending.label}
               currentValue={pending.currentValue}
               nextValue={pending.nextValue}
+              nextValueLabel={pending.nextValueLabel}
               fields={pending.fields}
               warnings={pending.warnings}
               onEdit={() => reopenEdit(pending)}

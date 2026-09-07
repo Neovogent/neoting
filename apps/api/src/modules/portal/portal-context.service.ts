@@ -175,11 +175,21 @@ export class PortalContextService {
         where: { id: facts.businessId },
         // `plan` and `subscriptionCurrentPeriodEnd` join `subscriptionStatus`
         // for `PortalSummary.subscription` — see `toClientSubscription`.
+        // The profile columns ride along for `PortalContext.profile` — the
+        // onboarding details step shows what is already recorded rather than
+        // asking the client to retype what their accountant keyed (7 Sep 2026).
         select: {
           name: true,
           subscriptionStatus: true,
           plan: true,
           subscriptionCurrentPeriodEnd: true,
+          tradingName: true,
+          companyNumber: true,
+          legalStructure: true,
+          industry: true,
+          website: true,
+          vatRegistered: true,
+          vatNumber: true,
         },
       });
       if (business === null) throw contextUnavailable();
@@ -271,6 +281,17 @@ export class PortalContextService {
         businessId: facts.businessId,
         items,
         statementRequests,
+        // Straight off the row, no defaulting: a null here means "nobody has
+        // answered this", which is the thing the empty boxes could not say.
+        profile: {
+          tradingName: business.tradingName ?? null,
+          companyNumber: business.companyNumber ?? null,
+          legalStructure: business.legalStructure ?? null,
+          industry: business.industry ?? null,
+          website: business.website ?? null,
+          vatRegistered: business.vatRegistered ?? null,
+          vatNumber: business.vatNumber ?? null,
+        },
         summary: {
           documentsSent,
           awaitingYou,

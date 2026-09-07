@@ -185,7 +185,38 @@ it "Billing Portal Sessions").
 
 ## 6. The webhook
 
-**Registered in the sandbox on 28 Aug 2026: `we_1U9BfsGMdHp4NCWvglaIH4Ap`**, at
+**LIVE MODE, 7 Sep 2026: `we_1UD6OJGMdHp4NCWvfHo2CxBW`** — the only enabled
+endpoint, at `https://api.neoting.neovogent.com/v1/webhooks/stripe`, with the
+four events below. Its signing secret is in `/neoting/staging/stripe` under
+`webhook_secret`.
+
+⚠ **IT REPLACED A DUPLICATE PAIR, AND THAT PAIR IS WHY DELIVERIES WERE
+FAILING.** `we_1U9Qv2GMdHp4NCWv73n2Dfck` and `we_1U9QtWGMdHp4NCWvs9jYUMho` were
+both registered against the SAME URL on 28 Aug, 94 seconds apart — a double
+submit during setup. Stripe then delivered every event twice, once per endpoint,
+each signed with that endpoint's OWN secret; the app holds one secret, so **half
+of all deliveries failed signature verification with a 401** and Stripe sent
+"webhook delivery issues" mail from 4 Sep. Nothing about the endpoint, the URL,
+DNS, CloudFront or the WAF was ever wrong, and every one of those was checked
+first — a hand-signed probe returned 200 throughout. The tell is in the
+dashboard's endpoint LIST, not in any single endpoint's detail: **two rows with
+the same URL.**
+
+Both duplicates are now `disabled` rather than deleted, so the state is
+reversible and Stripe keeps their delivery history. Deleting them is safe once
+this has run clean for a week.
+
+⚠ **A separate, unrelated endpoint sits on this same Stripe account** —
+`we_1SqeWCGMdHp4NCWvvuqO8fer` → `https://pe6f3nsknj.eu-west-1.awsapprunner.com/api/v2/payment/stripe-webhook`,
+returning 404s and 503s. It belongs to a DIFFERENT application, not to Neoting.
+It is deliberately untouched here: disabling somebody else's integration is not
+this runbook's call. It is also the second "delivery issues" email and is not a
+Neoting fault.
+
+To register a replacement, **list the endpoints first and check no other row
+already carries the URL.**
+
+*Historic — the sandbox endpoint, 28 Aug 2026: `we_1U9BfsGMdHp4NCWvglaIH4Ap`*, at
 `https://api.neoting.neovogent.com/v1/webhooks/stripe`, with the four events
 below. Its signing secret is in Secrets Manager at `/neoting/staging/stripe`
 under `webhook_secret` and nowhere else — Stripe reveals it once, at creation.

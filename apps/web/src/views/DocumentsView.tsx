@@ -35,6 +35,7 @@ import { errorLabel, sliceStatus } from '../api/slices';
 import { useScrollActiveIntoView } from '../lib/useScrollActiveIntoView';
 import { channelLabels, receivedViaText } from '../lib/channelLabels';
 import { currency } from '../lib/resolver';
+import { DocumentTitle, documentTitle } from '../lib/documentTitle';
 import type { CreateActionProposalRequest } from '@neoting/contracts/model';
 import type { DocStatus, Document, VaultDocument } from '../lib/types';
 import { EXPORT_HINT } from '../lib/exportRules';
@@ -162,7 +163,7 @@ const m = defineMessages({
   addToVaultAudit: { id: 'documents.documentsView.addToVaultAudit', defaultMessage: 'Added vault document' },
 
   columnSource: { id: 'documents.documentsView.columnSource', defaultMessage: 'Source' },
-  columnUploader: { id: 'documents.documentsView.columnUploader', defaultMessage: 'Uploader' },
+  columnUploader: { id: 'documents.documentsView.columnUploader', defaultMessage: 'File' },
 
   unarchiveAction: { id: 'documents.documentsView.unarchiveAction', defaultMessage: 'Unarchive' },
   unarchiveTitle: {
@@ -814,7 +815,7 @@ export function DocumentsView() {
   const archiveColumns: Column<Document>[] = [
     // Title + channel: the generated name for an unextracted supplier (item 43)
     // and honest channel words, never the raw slug (item 21).
-    { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (d) => d.displayTitle ?? d.supplier, render: (d) => <span className="text-white font-semibold">{d.displayTitle ?? d.supplier}</span> },
+    { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (d) => documentTitle(d).text, render: (d) => <DocumentTitle doc={d} /> },
     ...(groupByClient ? [] : [{ key: 'clientName', label: intl.formatMessage(commonLabels.client), sortValue: (d: Document) => d.clientName }]),
     { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date },
     { key: 'category', label: intl.formatMessage(commonLabels.category), sortValue: (d) => d.category },
@@ -923,7 +924,7 @@ export function DocumentsView() {
    * exists for.
    */
   const allColumns: Column<Document>[] = [
-    { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (d) => d.displayTitle ?? d.supplier, render: (d) => <span className="text-white font-semibold">{d.displayTitle ?? d.supplier}</span> },
+    { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (d) => documentTitle(d).text, render: (d) => <DocumentTitle doc={d} /> },
     {
       key: 'clientName',
       label: intl.formatMessage(commonLabels.client),
@@ -1675,7 +1676,7 @@ const previewMessages = defineMessages({
       'Firm-owned files stay with the practice. A file owned by one accountant follows their engagement.',
   },
   rowOwner: { id: 'documents.vaultPreview.rowOwner', defaultMessage: 'Owner' },
-  rowUploader: { id: 'documents.vaultPreview.rowUploader', defaultMessage: 'Uploader' },
+  rowUploader: { id: 'documents.vaultPreview.rowUploader', defaultMessage: 'File' },
   rowSource: { id: 'documents.vaultPreview.rowSource', defaultMessage: 'Source' },
   rowUploaded: { id: 'documents.vaultPreview.rowUploaded', defaultMessage: 'Uploaded' },
   rowKeyDate: { id: 'documents.vaultPreview.rowKeyDate', defaultMessage: 'Key date' },

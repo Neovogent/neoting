@@ -14,6 +14,7 @@ import { SubTabs } from '../components/DynamicComponents/SubTabs';
 import { DuplicateModal } from '../components/DynamicComponents/DuplicateModal';
 import { navigate, path, useQueryParam, useSegment } from '../lib/router';
 import { failureOf, reasonText, retryMeaning } from '../lib/failures';
+import { DocumentTitle, documentTitle } from '../lib/documentTitle';
 import { AnalysisModal } from '../components/DynamicComponents/AnalysisModal';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
 import { TRASH_RETENTION_DAYS } from '@neoting/contracts';
@@ -622,7 +623,7 @@ export function ClientInbox({ client, kind, onPreview }: {
   const supplierCell: Column<Document> = {
     key: 'supplier',
     label: intl.formatMessage(kind === 'cost' ? commonLabels.supplier : m.columnCustomer),
-    sortValue: (d) => d.displayTitle ?? d.supplier,
+    sortValue: (d) => documentTitle(d).text,
     render: (d) => {
       const field = d.fields.find((f) => f.label === 'Supplier' || f.label === 'Customer');
       const low = field !== undefined && field.confidence < 0.75;
@@ -631,7 +632,7 @@ export function ClientInbox({ client, kind, onPreview }: {
           {/* An unextracted supplier shows the document's generated name — a
               capture reads "Capture — {member} · {business} · {date}" — never
               the literal "Unknown" (item 43). Data stays on `supplier`. */}
-          <span className="text-white font-semibold">{d.displayTitle ?? d.supplier}</span>
+          <DocumentTitle doc={d} />
           {/* Confidence is shown where it changes what you do, not everywhere. */}
           {low && <Pill tone="amber">{intl.formatMessage(m.percent, { percent: Math.round(field!.confidence * 100) })}</Pill>}
         </span>

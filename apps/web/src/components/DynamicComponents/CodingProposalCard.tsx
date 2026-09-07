@@ -97,6 +97,7 @@ export default function CodingProposalCard({
   fieldLabel,
   currentValue,
   nextValue,
+  nextValueLabel,
   fields,
   warnings = [],
   onEdit,
@@ -106,6 +107,17 @@ export default function CodingProposalCard({
   fieldLabel: string;
   currentValue: string;
   nextValue: string;
+  /**
+   * What to SHOW for the new value, when the value itself is a code.
+   *
+   * ⚠ 7 Sep 2026, found live: the suggestion card offered "Expenses: Repairs
+   * and maintenance" and the review card a person then reads before approving
+   * said `REPAIRS_AND_MAINTENANCE`. Same decision, two vocabularies, and the
+   * second one is the screen the approval is echoed from. The VALUE written
+   * and audited is unchanged — this is display only, and `auditScope` below
+   * deliberately keeps the raw code.
+   */
+  nextValueLabel?: string | undefined;
   fields: UpdateCodingPayload['fields'];
   /**
    * Checks the person already chose to IGNORE in the warning step
@@ -206,7 +218,7 @@ export default function CodingProposalCard({
             rows={[
               { label: intl.formatMessage(m.rowField), value: fieldLabel },
               { label: intl.formatMessage(m.rowCurrent), value: currentValue },
-              { label: intl.formatMessage(m.rowNew), value: nextValue },
+              { label: intl.formatMessage(m.rowNew), value: nextValueLabel ?? nextValue },
             ]}
           />
           <p className="mt-3 text-[12px] text-zinc-500 leading-relaxed">

@@ -97,6 +97,16 @@ function fakePrisma(fixture: Fixture, recorded: Recorded): PrismaClient {
           subscriptionStatus: business.subscriptionStatus ?? null,
           plan: business.plan ?? null,
           subscriptionCurrentPeriodEnd: business.subscriptionCurrentPeriodEnd ?? null,
+          // The profile columns behind `PortalContext.profile` — the onboarding
+          // details step prefills from these instead of asking the client to
+          // retype what their accountant already keyed (7 Sep 2026).
+          tradingName: business.tradingName ?? null,
+          companyNumber: business.companyNumber ?? null,
+          legalStructure: business.legalStructure ?? null,
+          industry: business.industry ?? null,
+          website: business.website ?? null,
+          vatRegistered: business.vatRegistered ?? null,
+          vatNumber: business.vatNumber ?? null,
         };
       },
     },

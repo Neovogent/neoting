@@ -9242,6 +9242,30 @@ components:
             being asked of you", which is exactly what a client who is up to
             date should be told.
           items: { $ref: '#/components/schemas/ChaseItem' }
+        profile:
+          type: object
+          description: |
+            What the business record ALREADY holds, so the onboarding details
+            step can show it instead of asking for it again.
+
+            ⚠ Added 7 Sep 2026 after a live walk: on the
+            register-on-their-behalf path the accountant keys trading name,
+            company number, industry and VAT, and the client was then shown the
+            same four questions as empty boxes. The `PUT` that follows omits
+            empty keys, so nothing was ever lost — but a client cannot tell a
+            field nobody has answered from one they are being asked to retype.
+            Present only for an ONBOARDING session (a chase session has no
+            business record to describe); every member is nullable because
+            every one of them is optional on the record.
+          required: [tradingName, companyNumber, legalStructure, industry, website, vatRegistered, vatNumber]
+          properties:
+            tradingName: { type: [string, 'null'] }
+            companyNumber: { type: [string, 'null'] }
+            legalStructure: { type: [string, 'null'] }
+            industry: { type: [string, 'null'] }
+            website: { type: [string, 'null'] }
+            vatRegistered: { type: [boolean, 'null'] }
+            vatNumber: { type: [string, 'null'] }
         statementRequests:
           type: array
           description: |

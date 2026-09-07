@@ -94,6 +94,7 @@ export default function CodingProposalModal({
   fieldLabel,
   currentValue,
   nextValue,
+  nextValueLabel,
   fields,
   warnings = [],
   onEdit,
@@ -103,6 +104,8 @@ export default function CodingProposalModal({
   fieldLabel: string;
   currentValue: string;
   nextValue: string;
+  /** Display-only words for `nextValue` — see `CodingProposalCard`. */
+  nextValueLabel?: string | undefined;
   fields: UpdateCodingPayload['fields'];
   /** The deterministic checks that fired on this correction — see the header. */
   warnings?: string[];
@@ -197,6 +200,7 @@ export default function CodingProposalModal({
           fieldLabel={fieldLabel}
           currentValue={currentValue}
           nextValue={nextValue}
+          nextValueLabel={nextValueLabel}
           fields={fields}
           warnings={warnings}
           onSettled={dismissAfterConfirmation}
