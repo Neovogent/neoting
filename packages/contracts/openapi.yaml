@@ -6758,6 +6758,25 @@ components:
             `uploaded-by-delegated-session` for BOTH portal kinds; consumers
             must read that legacy value as the client portal, the superset
             that is true of both.
+        claimant:
+          type: [object, 'null']
+          required: [id, name]
+          properties:
+            id: { type: string }
+            name: { type: string }
+          description: |
+            Who paid for this out of their own pocket, when it is an expense
+            claim (review item 50). **Null is the ordinary case and means "the
+            company paid" — it is not "unknown".**
+
+            ⚠ Distinct from `submitterLabel` above, which says who UPLOADED.
+            An office manager can photograph a receipt an engineer paid for,
+            and a surface that read one as the other would show the wrong
+            person as owed money. Both appear because both are true.
+
+            It sits on the SUMMARY, not only the detail, because the Expense
+            Claims list is a list: a claims board that had to fetch each
+            document to learn whose claim it is would be N+1 by construction.
         archivedAt: { type: [string, 'null'], format: date-time }
         # ---- Trash (document management, 2 Sep 2026) ----------------------
         deletedAt:
@@ -8222,6 +8241,21 @@ components:
             categoryCode: { type: string }
             description: { type: string }
             projectRef: { type: string }
+            claimantId:
+              type: [string, 'null']
+              description: |
+                Who paid for this out of their own pocket — a `contacts` id on
+                THIS document's business (review item 50). **Null clears the
+                claim**, which is how an accountant undoes a client's mistaken
+                mark, and null is also the ordinary state: the company paid.
+
+                ⚠ It rides `document.update-coding` rather than a proposal kind
+                of its own, so it inherits **tier 1** from item 66's ⚖5(a)
+                ruling automatically: every coding correction needs the super
+                admin, and deciding the company owes a named person money is
+                not the field on which to make the first exception. A new kind
+                would have needed its own tier argument for a strictly weaker
+                position.
         createRuleFromCorrection:
           type: boolean
           default: false
@@ -9429,7 +9463,7 @@ components:
         people, and `membershipId`/`userId`/`scope` would be null, meaningless or
         both: a portal person is a `contacts` row and usually has no `users` row
         at all.
-      required: [id, access, canSendDocuments, canSeeTotals, isYou, isActive, addedAt]
+      required: [id, access, canSendDocuments, canSeeTotals, canSubmitExpenseClaims, isYou, isActive, addedAt]
       properties:
         id:
           type: string
@@ -9458,6 +9492,18 @@ components:
           description: |
             May see amounts. Off for staff photographing receipts — *"staff
             photographing receipts should not see the company's figures"*.
+        canSubmitExpenseClaims:
+          type: boolean
+          description: |
+            May mark a document as an EXPENSE CLAIM — money this person spent
+            themselves, which the company then owes them back (review item 50).
+
+            ⚠ **Required in the response, but it defaults FALSE on invite** —
+            the opposite of its two neighbours above, deliberately. They
+            describe what every contact could already do, so they default true
+            and a migration cannot remove a permission. This grants a power
+            nobody has today: obliging the company to pay somebody. The
+            client's own owner turns it on per person.
         isYou:
           type: boolean
           description: |
@@ -9522,6 +9568,7 @@ components:
             reasoning `MemberInviteRequest` records.
         canSendDocuments: { type: boolean, default: true }
         canSeeTotals: { type: boolean, default: false }
+        canSubmitExpenseClaims: { type: boolean, default: false }
 
     PortalPersonUpdateRequest:
       type: object
@@ -9534,6 +9581,7 @@ components:
         access: { $ref: '#/components/schemas/WorkspaceRole' }
         canSendDocuments: { type: boolean }
         canSeeTotals: { type: boolean }
+        canSubmitExpenseClaims: { type: boolean }
 
     PortalUploadRequest:
       type: object
@@ -9565,6 +9613,25 @@ components:
             the client SAID. Untrusted content: data, never instructions, and
             never handed to a model outside the wrapper. Null and omitted both
             mean "none".
+        expenseClaim:
+          type: [boolean, 'null']
+          description: |
+            The client is claiming this back — they paid for it themselves and
+            the company owes them (review item 50). Null and omitted both mean
+            "no", which is the ordinary case: the company paid.
+
+            ⚠ **It is a CLAIM, not an instruction.** The server decides whether
+            to honour it: the mark is refused when the session names no roster
+            member (a chase link has no claimant to owe) or when that member's
+            `canSubmitExpenseClaims` is false. So this field cannot grant its
+            own permission — it can only exercise one the client's own owner
+            already granted. The claimant recorded is the SESSION's contact,
+            never a name supplied here, because a caller-chosen claimant is a
+            caller-chosen payee.
+
+            The person who UPLOADED is a separate fact (`submitterLabel`): an
+            office manager can photograph a receipt an engineer paid for, and
+            conflating the two would pay the wrong person.
 
     # ---- practices, clients and team (ID LAW batch) ------------------------
 

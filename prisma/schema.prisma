@@ -37,17 +37,17 @@ datasource db {
 // ===========================================================================
 
 model Practice {
-  id                String   @id @default(cuid())
+  id                String  @id @default(cuid())
   name              String
-  logoS3Key         String?  @map("logo_s3_key")
-  countryCode       String   @default("GB") @map("country_code")
-  baseCurrency      String   @default("GBP") @map("base_currency")
-  language          String   @default("en-GB")
-  registeredAddress Json?    @map("registered_address")
-  vatNumber         String?  @map("vat_number")
-  vatRegistered     Boolean  @default(false) @map("vat_registered")
-  yearEndMonth      Int?     @map("year_end_month")
-  yearEndDay        Int?     @map("year_end_day")
+  logoS3Key         String? @map("logo_s3_key")
+  countryCode       String  @default("GB") @map("country_code")
+  baseCurrency      String  @default("GBP") @map("base_currency")
+  language          String  @default("en-GB")
+  registeredAddress Json?   @map("registered_address")
+  vatNumber         String? @map("vat_number")
+  vatRegistered     Boolean @default(false) @map("vat_registered")
+  yearEndMonth      Int?    @map("year_end_month")
+  yearEndDay        Int?    @map("year_end_day")
 
   /// How long a `/d/{code}` capability URL stays resolvable, in days. NULL
   /// means the platform default. D43 makes expiry "configurable per practice",
@@ -65,18 +65,18 @@ model Practice {
   /// read without a DB round trip; the worker falls back to this column.
   whatsappPhoneNumberId String? @unique @map("whatsapp_phone_number_id")
 
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  businesses  Business[]
-  memberships Membership[]
-  invites     Invite[]
-  guidance    Guidance[]
-  documents   Document[]
-  proposals   ActionProposal[]
-  otpSessions OtpSession[]
+  businesses        Business[]
+  memberships       Membership[]
+  invites           Invite[]
+  guidance          Guidance[]
+  documents         Document[]
+  proposals         ActionProposal[]
+  otpSessions       OtpSession[]
   chatConversations ChatConversation[]
-  teams       Team[]
+  teams             Team[]
 
   @@map("practices")
 }
@@ -116,7 +116,7 @@ model Business {
   nextDeadline         DateTime? @map("next_deadline")
   practiceCode         String?   @map("practice_code")
 
-  isActive  Boolean  @default(true) @map("is_active")
+  isActive Boolean @default(true) @map("is_active")
 
   /// ---- Offboarding (review item 67, 7 Sep 2026) ---------------------------
   ///
@@ -350,12 +350,33 @@ model Contact {
   /// describing what is already true and new invitations choose explicitly.
   canSeeTotals Boolean @default(true) @map("can_see_totals")
 
+  /// May submit an EXPENSE CLAIM — money this person spent themselves and the
+  /// company owes them back (review item 50). ⚠ Default **false**, which is the
+  /// opposite of its two neighbours above and deliberately so: those describe
+  /// what every existing contact could already do, so defaulting true kept a
+  /// migration from removing a permission. This one grants a NEW power that
+  /// nobody has today — the power to oblige the company to pay somebody — and
+  /// a column that handed it to every contact in the database on deploy would
+  /// be the mirror-image mistake. The client's own owner grants it per person.
+  canSubmitExpenseClaims Boolean @default(false) @map("can_submit_expense_claims")
+
+  /// The creditor account this person's claims are posted against — a
+  /// director's loan account, or an employee-creditor nominal. Set by the
+  /// ACCOUNTANT, not by the client: it is a chart-of-accounts fact, and the
+  /// client's own staff have no way to know the practice's nominal codes.
+  /// Null until they set it, which is why the export refuses a claim that has
+  /// no account rather than inventing one (`document-missing-claimant-account`).
+  expenseCreditorAccount String? @map("expense_creditor_account")
+
   /// Revoked, not deleted. Removing a person must not orphan or rewrite the
   /// provenance of documents they already sent, so this is a soft flag that
   /// three readers honour: the sender map (D45), the portal sign-in lookup, and
   /// the session resolver — which re-reads it on every request, so a live bearer
   /// dies with the revocation rather than lasting out its hour.
   deactivatedAt DateTime? @map("deactivated_at")
+
+  /// Documents this person paid for out of their own pocket (review item 50).
+  claimedDocuments Document[] @relation("DocumentClaimant")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -606,8 +627,21 @@ model Document {
   channel         DocumentChannel
   submitterUserId String?         @map("submitter_user_id")
   submitterLabel  String?         @map("submitter_label")
-  receivedAt      DateTime        @default(now()) @map("received_at")
-  receivedLocal   String?         @map("received_local")
+
+  /// The person who PAID for this out of their own pocket, when it is an
+  /// expense claim (review item 50). ⚠ **Null is the ordinary case and means
+  /// "the company paid"** — it is not "unknown". That is why a claim is a
+  /// nullable column on `documents` rather than a stored `ExpenseClaim`
+  /// aggregate: a claim is not a different kind of thing from a cost, it is a
+  /// cost with one extra fact about who is owed for it, and every pipeline
+  /// stage that already handles a cost handles it unchanged.
+  ///
+  /// It is distinct from `submitter_label`, which says who UPLOADED the file.
+  /// An office manager can photograph a receipt an engineer paid for, and
+  /// conflating the two would pay the wrong person.
+  claimantContactId String?  @map("claimant_contact_id")
+  receivedAt        DateTime @default(now()) @map("received_at")
+  receivedLocal     String?  @map("received_local")
 
   /// Which rule or model routed this here, and how sure it was. Null when the
   /// sender identity matched exactly and no inference was needed.
@@ -662,12 +696,20 @@ model Document {
   /// its source).
   deletedAt DateTime? @map("deleted_at")
 
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   practice Practice?  @relation(fields: [practiceId], references: [id], onDelete: Restrict)
   business Business?  @relation(fields: [businessId], references: [id], onDelete: Restrict)
   owner    User?      @relation("DocumentOwner", fields: [submitterUserId], references: [id], onDelete: SetNull)
+  /// ⚠ `Restrict`, NOT `SetNull` like `owner` above — and the difference is
+  /// money. Nulling a submitter loses a provenance nicety; nulling a CLAIMANT
+  /// loses the fact that the company owes a named person for this receipt,
+  /// silently, at the moment somebody is removed. A portal person is only ever
+  /// SOFT-deleted today (`deactivatedAt`), so this restriction costs nothing
+  /// now and makes a future hard-delete path fail loudly instead of quietly
+  /// erasing a creditor — the `document.purge` posture, applied to a person.
+  claimant Contact?   @relation("DocumentClaimant", fields: [claimantContactId], references: [id], onDelete: Restrict)
   parent   Document?  @relation("DocumentSplit", fields: [parentDocumentId], references: [id], onDelete: SetNull)
   children Document[] @relation("DocumentSplit")
 
@@ -1207,27 +1249,27 @@ model ApprovalWorkflow {
   id         String @id @default(cuid())
   businessId String @map("business_id")
 
-  name        String
+  name         String
   /// `ApprovalWorkflowStage[]` — name, approver, thresholdAbovePence, canEdit, clientSide.
-  stages      Json
+  stages       Json
   /// `ApprovalWorkflowBranch[]` — a condition that pulls an extra approver in.
   /// Its own column rather than a key inside `stages`: a branch is not a step
   /// in the chain, and the engine reads the two at different moments.
-  branches    Json?
+  branches     Json?
   /// The scope sentence — "All cost items", "Category: …". An unrecognised
   /// scope claims NOTHING (see the contract): over-matching holds a client's
   /// whole purchase ledger at a stage it was never meant to reach.
-  appliesTo   Json?    @map("applies_to")
-  specificity Int      @default(0)
+  appliesTo    Json?    @map("applies_to")
+  specificity  Int      @default(0)
   /// Whether the person who proposed an item may approve it themselves.
-  selfApproval Boolean @default(false) @map("self_approval")
+  selfApproval Boolean  @default(false) @map("self_approval")
   /// ⚠ Armed. Written ONLY by the `policy.activate` executor — no ingest-class
   /// operation on this table accepts it. Defaults FALSE: a saved workflow is a
   /// draft, and a policy that armed itself on save would gate a client's items
   /// with nobody having approved the gate (Governance §10, D44).
-  isActive    Boolean  @default(false) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  isActive     Boolean  @default(false) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   business  Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
   approvals Approval[]
