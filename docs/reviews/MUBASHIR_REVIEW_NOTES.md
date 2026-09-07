@@ -1365,7 +1365,53 @@ Two rulings in one item:
    - Mileage and subsistence rules (HMRC flat rates) — probably out of ID scope, but the research should say so explicitly rather than the model discovering it later.
 5. **Fit to this app's spine:** claim approval is a state change → Review → Approve proposal(s); the claimant needs portal-side visibility of their claim's status; reimbursement matching joins the bank lane. Contract changes throughout — **G7, and big enough that the deliverable is a design document for Shakib's sign-off first**, not a PR.
 
-**✅ A RESOLVED · ⏸ B AWAITING YOUR SIGN-OFF (7 Sep 2026, PR TBD).**
+**✅ A RESOLVED · ◐ B LARGELY BUILT, ONE LINK OWED (7 Sep 2026 sign-off, built same day).**
+
+**B — signed off and built, end to end bar one surface.** The doc's own
+recommendations answered ⚖A–⚖F and were taken as given with the sign-off.
+
+**The loop that works today:** the client business's owner grants a person
+*"Can submit expense claims"* on their portal's Settings → People; that person
+ticks **"I paid for this myself"** per FILE on Upload (per file, not per tray —
+a client can send a company receipt and their own in one batch); the server
+records the claimant and the accountant sees it on the client's **Expense
+Claims** tab, which is un-hidden and reads real data. An accountant can set or
+CLEAR the claim through `document.update-coding` (tier 1 by item 66, no new
+kind — ⚖B).
+
+**⚖C was real and was fixed first.** `canSendDocuments` had been stored,
+editable and rendered as a tick for weeks while being consulted NOWHERE on the
+upload path — a member with the box cleared could upload exactly as before.
+Governance §11.2's literal prohibition. Fixed as its own commit before the
+third capability was built on the same mechanism.
+
+**Decisions worth knowing:** a claim is a DOCUMENT with a claimant (⚖E), not a
+stored aggregate — so no new slice, no lifecycle enum, and every pipeline stage
+handles one unchanged. **Null claimant means THE COMPANY PAID**, a positive
+statement rather than "unknown", which is why the projection's key is REQUIRED
+and a forgotten join is a compile error rather than a silent claim that nobody
+is owed. The claimant is decided at INTENT and rides the HMAC-signed upload
+claims, never a completion-time value: a caller-chosen claimant is a
+caller-chosen payee. An unpermitted mark is REFUSED, not ignored — a client who
+ticks the box, gets a success and is owed nothing is the S12 lie with money on
+it.
+
+**⚠ THE ONE LINK OWED, and it is a live dead end: the creditor account has no
+UI.** The export correctly REFUSES a claim whose claimant has no
+`expense_creditor_account` (`document-missing-claimant-account`) — the credit
+belongs to the person, not the bank, and defaulting a generic creditor posts
+one person's money against another's. The column exists and the refusal names
+the fix... but **there is no surface that sets it**, so a real claim cannot be
+exported yet. Closing it needs a slice of its own: there is no practice-side
+read of a client's CONTACTS at all (`GET /businesses/{id}/members` serves
+`BusinessMember`, which is USERS), so it wants a contract operation, a service
+and a small editor on the client's Users tab. Flagged loudly rather than
+softened to a warning — exporting a claim to the wrong nominal is a real ledger
+error, so the refusal is right and the missing remedy is the bug.
+
+**Also not built, per the doc:** mileage/subsistence flat rates (⚖A, out of ID
+scope) and set-valued reimbursement matching (⚖D/⚖F, explicitly the second
+build).
 
 **A — the tab is gone live, and the rule is general.** `ClientDetailView` now
 filters its own tab list: **a tab that cannot read anything from the server is
