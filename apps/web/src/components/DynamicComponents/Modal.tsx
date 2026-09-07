@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { defineMessages, useIntl } from 'react-intl';
@@ -64,6 +65,17 @@ const m = defineMessages({
  * reached is the worse of the two, and the close button is deliberately a
  * sibling of the scroll box so it neither scrolls away nor gets clipped.
  *
+ * ⚠ IT PORTALS TO `document.body`, and that is a correctness fix, not tidiness
+ * (7 Sep 2026, found live). `position: fixed` resolves against the nearest
+ * ancestor carrying a transform, and every dialog in this app is a `motion.div`
+ * animating `scale`/`y` — so a Modal rendered INSIDE another dialog (the coding
+ * proposal inside `DocumentPreview` is the one that bit) anchored its scrim to
+ * that card instead of the viewport. Open it with the host scrolled down and
+ * the dialog lands above the visible area: the button reads as dead, which is
+ * exactly how it was reported. A portal has no transformed ancestor, so
+ * `inset-0` means the viewport whoever the host is. Escape still nests
+ * correctly — `useEscape` is a JS stack, not a DOM one.
+ *
  * It ADDS a frame; it replaces none of the modals that already draw their own.
  */
 export function Modal({
@@ -81,7 +93,7 @@ export function Modal({
   const intl = useIntl();
   useEscape(onClose);
 
-  return (
+  return createPortal(
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -111,6 +123,7 @@ export function Modal({
           {children}
         </div>
       </motion.div>
-    </motion.div>
+    </motion.div>,
+    document.body,
   );
 }

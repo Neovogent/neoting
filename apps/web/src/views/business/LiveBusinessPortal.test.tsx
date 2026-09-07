@@ -60,6 +60,7 @@ const HOME: BusinessPortalHome = {
     },
   ],
   statementRequests: [],
+  profile: { tradingName: '', companyNumber: '', legalStructure: '', industry: '', website: '', vatRegistered: null, vatNumber: '' },
   plan: null,
   expiresAt: '2026-09-02T12:00:00.000Z',
 };

@@ -537,6 +537,22 @@ function CodeStep({ journey }: { journey: OnboardingJourney }) {
  */
 function DetailsStep({ journey }: { journey: OnboardingJourney }) {
   const intl = useIntl();
+  /**
+   * ⚠ PREFILLED FROM THE RECORD (7 Sep 2026, found on a live walk).
+   *
+   * On the register-on-their-behalf path the accountant has already keyed the
+   * trading name, company number, industry and VAT number, and this step then
+   * showed the client the same four questions as empty boxes. Nothing was ever
+   * lost — an empty field omits its key from the `PUT` — but a client cannot
+   * tell a question nobody has answered from one they are being asked to
+   * retype, and the honest fix is to show what is on file.
+   *
+   * The server's values arrive with `home`, which is fetched after the session
+   * opens, so they cannot be the `useState` initial value; the effect below
+   * seeds them ONCE and never again, so a keystroke is never overwritten by a
+   * later poll.
+   */
+  const profile = journey.home?.profile ?? null;
   const [tradingName, setTradingName] = useState('');
   const [companyNumber, setCompanyNumber] = useState('');
   const [legalStructure, setLegalStructure] = useState('');
@@ -546,6 +562,19 @@ function DetailsStep({ journey }: { journey: OnboardingJourney }) {
   // a `false` nobody asserted must not be filed as an answer.
   const [vatRegistered, setVatRegistered] = useState<boolean | null>(null);
   const [vatNumber, setVatNumber] = useState('');
+  const [seeded, setSeeded] = useState(false);
+
+  useEffect(() => {
+    if (seeded || profile === null) return;
+    setTradingName(profile.tradingName);
+    setCompanyNumber(profile.companyNumber);
+    setLegalStructure(profile.legalStructure);
+    setIndustry(profile.industry);
+    setWebsite(profile.website);
+    setVatRegistered(profile.vatRegistered);
+    setVatNumber(profile.vatNumber);
+    setSeeded(true);
+  }, [seeded, profile]);
 
   const draft = () => ({
     ...(tradingName.trim() === '' ? {} : { tradingName: tradingName.trim() }),

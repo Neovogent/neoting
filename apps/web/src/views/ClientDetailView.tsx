@@ -68,6 +68,7 @@ const OffboardClientDialog = lazy(() =>
 /** This client's Trash (review item 61). Its own chunk — see the file's header. */
 const ClientTrashPanel = lazy(() => import('./ClientTrashPanel'));
 import { currency } from '../lib/resolver';
+import { DocumentTitle, documentTitle } from '../lib/documentTitle';
 import { healthTone } from '../lib/selectors';
 import { fromSlug, navigate, path, slug, useQueryParam, useSegment } from '../lib/router';
 import { useConfirm } from '../components/DynamicComponents/ConfirmProvider';
@@ -996,7 +997,7 @@ export function ClientDetailView() {
     // Title: the generated channel-based name for an unextracted supplier —
     // never the literal "Unknown" (item 43). Channel: honest words, never the
     // raw slug (item 21).
-    { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (d) => d.displayTitle ?? d.supplier, render: (d) => <span className="text-white font-semibold">{d.displayTitle ?? d.supplier}</span> },
+    { key: 'supplier', label: intl.formatMessage(commonLabels.supplier), sortValue: (d) => documentTitle(d).text, render: (d) => <DocumentTitle doc={d} /> },
     { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date },
     { key: 'category', label: intl.formatMessage(commonLabels.category), sortValue: (d) => d.category },
     { key: 'source', label: intl.formatMessage(m.colChannel), sortValue: (d) => receivedViaText(intl, d), render: (d) => <Pill>{receivedViaText(intl, d)}</Pill> },

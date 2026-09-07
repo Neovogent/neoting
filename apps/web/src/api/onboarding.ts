@@ -327,6 +327,18 @@ export interface BusinessPortalPlan {
   readonly currentPeriodEnd: string | null;
 }
 
+/** What the business record already holds — the details step's prefill. */
+export interface BusinessPortalProfile {
+  readonly tradingName: string;
+  readonly companyNumber: string;
+  readonly legalStructure: string;
+  readonly industry: string;
+  readonly website: string;
+  /** Tri-state: `null` is "nobody has answered", which is not `false`. */
+  readonly vatRegistered: boolean | null;
+  readonly vatNumber: string;
+}
+
 export interface BusinessPortalHome {
   readonly businessName: string;
   readonly businessId: string | null;
@@ -353,6 +365,8 @@ export interface BusinessPortalHome {
   /** The itemised asks (Phase 5) — what "waiting for N documents" actually names. */
   readonly items: readonly BusinessPortalAsk[];
   readonly statementRequests: readonly { period: string; received: boolean }[];
+  /** The record's own values, empty-string for "not recorded". */
+  readonly profile: BusinessPortalProfile;
   /**
    * The plan behind `subscriptionActive`, when the server sends one.
    *
@@ -394,6 +408,21 @@ const portalHomeShape = z.object({
     )
     .nullish(),
   statementRequests: z.array(z.object({ period: z.string(), received: z.boolean() })).nullish(),
+  // What the record already holds, so the details step shows it instead of
+  // asking again (7 Sep 2026). `nullish` like everything else here: an older
+  // server sends nothing and the step falls back to empty boxes, which is
+  // exactly what it did before.
+  profile: z
+    .object({
+      tradingName: z.string().nullish(),
+      companyNumber: z.string().nullish(),
+      legalStructure: z.string().nullish(),
+      industry: z.string().nullish(),
+      website: z.string().nullish(),
+      vatRegistered: z.boolean().nullish(),
+      vatNumber: z.string().nullish(),
+    })
+    .nullish(),
   expiresAt: z.string().nullish(),
   summary: z
     .object({
@@ -469,6 +498,15 @@ export async function fetchBusinessPortalHome(sessionToken: string): Promise<Bus
       received: item.received,
     })),
     statementRequests: (body.statementRequests ?? []).map((r) => ({ period: r.period, received: r.received })),
+    profile: {
+      tradingName: body.profile?.tradingName ?? '',
+      companyNumber: body.profile?.companyNumber ?? '',
+      legalStructure: body.profile?.legalStructure ?? '',
+      industry: body.profile?.industry ?? '',
+      website: body.profile?.website ?? '',
+      vatRegistered: body.profile?.vatRegistered ?? null,
+      vatNumber: body.profile?.vatNumber ?? '',
+    },
     plan:
       body.summary.subscription === null || body.summary.subscription === undefined
         ? null

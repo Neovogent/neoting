@@ -39,6 +39,7 @@ const HOME = (canManageBilling: boolean): BusinessPortalHome => ({
   lastDocumentAt: '2026-09-04T09:00:00.000Z',
   items: [],
   statementRequests: [],
+  profile: { tradingName: '', companyNumber: '', legalStructure: '', industry: '', website: '', vatRegistered: null, vatNumber: '' },
   plan: null,
   expiresAt: null,
 });

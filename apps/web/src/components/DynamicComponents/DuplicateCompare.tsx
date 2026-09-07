@@ -64,7 +64,7 @@ const m = defineMessages({
 });
 
 const sideMessages = defineMessages({
-  rowUploader: { id: 'documents.docSide.rowUploader', defaultMessage: 'Uploader' },
+  rowUploader: { id: 'documents.docSide.rowUploader', defaultMessage: 'File' },
 });
 
 /**

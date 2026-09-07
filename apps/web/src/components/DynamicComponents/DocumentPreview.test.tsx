@@ -500,7 +500,14 @@ test('an ESCALATION renders the engine’s sentence where the blank Category was
   // now: the named reason, worded by the engine that took the decision.
   expect(screen.getByText('No category suggested — here is why')).toBeTruthy();
   expect(screen.getByText(ESCALATION.note)).toBeTruthy();
-  expect(screen.getByText(/NOTHING_MATCHED/)).toBeTruthy();
+
+  // ⚠ THE CAPTION NAMES THE REASON, NOT THE BUCKET (7 Sep 2026, found live).
+  // This fixture is the defect in miniature: the sentence above is about a
+  // licence term, `escalationReason` is SOFTWARE_TERM_UNKNOWN, and `basis` is
+  // NOTHING_MATCHED — the same word every escalation carries. Captioning the
+  // prose with the bucket put two different claims on one card.
+  expect(screen.getByText(/SOFTWARE_TERM_UNKNOWN/)).toBeTruthy();
+  expect(screen.queryByText(/NOTHING_MATCHED/)).toBeNull();
 
   // ⚠ An escalation offers no accept — there is nothing to accept.
   expect(screen.queryByRole('button', { name: /Accept this category/ })).toBeNull();

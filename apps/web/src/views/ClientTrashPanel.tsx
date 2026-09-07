@@ -9,6 +9,7 @@ import { DataTable, Pill, type Column } from '../components/DynamicComponents/Da
 import { useAppContext } from '../context/AppContext';
 import { commonLabels } from '../i18n/common';
 import { currency } from '../lib/resolver';
+import { DocumentTitle, documentTitle } from '../lib/documentTitle';
 import type { Document } from '../lib/types';
 
 /** Permanent delete's Review → Approve card — the same one the Documents screen uses. */
@@ -152,8 +153,8 @@ export function ClientTrashPanel({ client }: { client: { id: string; name: strin
     {
       key: 'supplier',
       label: intl.formatMessage(commonLabels.supplier),
-      sortValue: (d) => d.displayTitle ?? d.supplier,
-      render: (d) => <span className="text-white font-semibold">{d.displayTitle ?? d.supplier}</span>,
+      sortValue: (d) => documentTitle(d).text,
+      render: (d) => <DocumentTitle doc={d} />,
     },
     { key: 'date', label: intl.formatMessage(commonLabels.date), sortValue: (d) => d.date },
     { key: 'category', label: intl.formatMessage(commonLabels.category), sortValue: (d) => d.category },

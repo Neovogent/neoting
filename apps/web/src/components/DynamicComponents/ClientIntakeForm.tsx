@@ -78,14 +78,20 @@ const m = defineMessages({
     id: 'clients.modeChooser.inviteName',
     defaultMessage: 'Send the client a link',
   },
+  /* ⚠ BOTH PATHS EMAIL A SIGN-IN LINK, and both end with the client onboarding
+     themselves and setting up the subscription (D48). The only thing that
+     differs is whether YOU supply the trading context the coding reads. Said
+     any other way this card promises a path that does not exist — the words
+     below were checked against the live wizard on 7 Sep 2026, where they were
+     wrong on both the step count and who is asked for what. */
   modeChooserInviteDetail: {
     id: 'clients.modeChooser.inviteDetail',
     defaultMessage:
-      'They register the company themselves. You give three things now — company, who is responsible, and their mobile — and the link asks them for the rest.',
+      'You give the company and who is responsible; the emailed link asks them for the trading context the coding needs.',
   },
   modeChooserInviteBulletFields: {
     id: 'clients.modeChooser.inviteBulletFields',
-    defaultMessage: 'Three fields to send',
+    defaultMessage: 'Three steps',
   },
   modeChooserInviteBulletOwnRecord: {
     id: 'clients.modeChooser.inviteBulletOwnRecord',
@@ -102,11 +108,11 @@ const m = defineMessages({
   modeChooserPracticeDetail: {
     id: 'clients.modeChooser.practiceDetail',
     defaultMessage:
-      'You key the full record in now — identity, tax, contact, bookkeeping and trading context. Nothing is asked of the client except the two connections.',
+      'You key the record in now — identity, tax, contact and the trading context the AI codes from. Your client is still emailed a sign-in link to confirm their details and set up the subscription.',
   },
   modeChooserPracticeBulletSteps: {
     id: 'clients.modeChooser.practiceBulletSteps',
-    defaultMessage: 'Six steps',
+    defaultMessage: 'Four steps',
   },
   modeChooserPracticeBulletControl: {
     id: 'clients.modeChooser.practiceBulletControl',
@@ -1570,6 +1576,16 @@ const mLive = defineMessages({
     defaultMessage:
       'You add the basics here. Your client completes the rest themselves — company details, onboarding and the subscription — through a sign-in link we email them.',
   },
+  /* ⚠ The note above is the INVITE path's, and it was showing on both (7 Sep
+     2026, found live): on the register-on-their-behalf path it told the
+     accountant their client would supply the company details they had just
+     finished typing. Same for `contactIntro` below. The wizard already knows
+     its `mode`; these are the sentences that are true on the other branch. */
+  whoFillsNotePractice: {
+    id: 'clients.liveIntake.whoFillsNotePractice',
+    defaultMessage:
+      'You key the record in here, including the trading context the coding reads. Your client is emailed a sign-in link to confirm their details and set up the subscription — nothing below is asked of them again.',
+  },
 
   // Step 1 — company.
   legalNameLabel: { id: 'clients.liveIntake.legalNameLabel', defaultMessage: 'Legal name' },
@@ -1588,6 +1604,11 @@ const mLive = defineMessages({
     id: 'clients.liveIntake.contactIntro',
     defaultMessage:
       'The registration email goes to this person. They sign in with a six-digit code we email them, register the company details themselves, and complete their own onboarding — including the subscription.',
+  },
+  contactIntroPractice: {
+    id: 'clients.liveIntake.contactIntroPractice',
+    defaultMessage:
+      'The registration email goes to this person. They sign in with a six-digit code we email them, confirm the details you are entering, and set up the subscription.',
   },
   firstNameLabel: { id: 'clients.liveIntake.firstNameLabel', defaultMessage: 'First name' },
   lastNameLabel: { id: 'clients.liveIntake.lastNameLabel', defaultMessage: 'Last name' },
@@ -1900,7 +1921,9 @@ function LiveIntake({
         <motion.div key={step} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} className="flex flex-col gap-4">
           {step === 0 && (
             <>
-              <p className="text-[13px] text-zinc-500 leading-relaxed">{intl.formatMessage(mLive.whoFillsNote)}</p>
+              <p className="text-[13px] text-zinc-500 leading-relaxed">
+                {intl.formatMessage(mode === 'invite' ? mLive.whoFillsNote : mLive.whoFillsNotePractice)}
+              </p>
               <Field
                 label={intl.formatMessage(mLive.legalNameLabel)}
                 value={draft.name}
@@ -1946,7 +1969,9 @@ function LiveIntake({
 
           {step === 1 && (
             <>
-              <p className="text-[13px] text-zinc-500 leading-relaxed">{intl.formatMessage(mLive.contactIntro)}</p>
+              <p className="text-[13px] text-zinc-500 leading-relaxed">
+                {intl.formatMessage(mode === 'invite' ? mLive.contactIntro : mLive.contactIntroPractice)}
+              </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field
                   label={intl.formatMessage(mLive.firstNameLabel)}
