@@ -85,3 +85,31 @@ test('a document that cannot become a row is still a named refusal, chart or no 
   expect(preview.documents).toHaveLength(0);
   expect(preview.refusals?.[0]?.code).toBe('document-missing-category');
 });
+
+/**
+ * ⚠ The D43 warning is the preview's OWN artefact and must not reach the card.
+ *
+ * 7 Sep 2026, on a live release: every row of every publish carried *"This row
+ * has no source-document link… D43 requires one on every exported
+ * transaction"*, which tells the one person who can stop the release that they
+ * are about to break a scope-fence decision. They are not — the export mints
+ * the link before the file is written. A warning that is true of the preview
+ * and false of the file, on every row, every time, teaches a reviewer to skip
+ * the warnings that matter.
+ */
+test('a publish preview never warns about the source link it is not allowed to mint', () => {
+  const preview = previewExportEntries('VT_TRANSACTION_PLUS', [document()], CHART);
+
+  const codes = preview.documents.flatMap((d) => d.warnings.map((w) => w.code));
+  expect(codes).not.toContain('source-link-missing');
+});
+
+test('the preview still carries the warnings that ARE about the document', () => {
+  // No chart: the nominal genuinely cannot be prefixed, and the file will say
+  // so too. That one survives, so the filter is not a blanket mute.
+  const preview = previewExportEntries('VT_TRANSACTION_PLUS', [document()], null);
+
+  const codes = preview.documents.flatMap((d) => d.warnings.map((w) => w.code));
+  expect(codes).toContain('analysis-account-unprefixed');
+  expect(codes).not.toContain('source-link-missing');
+});
