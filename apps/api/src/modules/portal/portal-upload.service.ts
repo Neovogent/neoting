@@ -193,7 +193,7 @@ export class PrismaPortalUploadService implements PortalUploadService {
         : await scopedDb(this.prisma, systemScopeFor(facts), (db) =>
             db.contact.findFirst({
               where: { id: contactId, businessId: facts.businessId },
-              select: { firstName: true, lastName: true, email: true, canSendDocuments: true },
+              select: { firstName: true, lastName: true, email: true, canSendDocuments: true, canSubmitExpenseClaims: true },
             }),
           );
     const person: PortalUploadPerson | null =
@@ -228,6 +228,32 @@ export class PrismaPortalUploadService implements PortalUploadService {
         'You do not have permission to send documents for this business. Ask an owner at your business to enable it.',
       );
     }
+    // The expense-claim mark (review item 50). It is a CLAIM, and the server
+    // decides whether to honour it — but an unpermitted one is REFUSED, never
+    // silently dropped: a client who ticks the box, gets a success and is owed
+    // nothing is the exact S12 lie ("no button whose action cannot happen"),
+    // and here the thing silently not happening is somebody being paid back.
+    //
+    // The claimant is the SESSION's contact and nothing else. A chase link
+    // names nobody, so it cannot claim — there is no person to owe.
+    const wantsExpenseClaim = request.expenseClaim === true;
+    if (wantsExpenseClaim && contactRow === null) {
+      throw new AppException(
+        'NT-PRM-001',
+        HttpStatus.FORBIDDEN,
+        'Not permitted',
+        'An expense claim has to come from a named person signed in to the portal, so it cannot be made from a document-request link.',
+      );
+    }
+    if (wantsExpenseClaim && contactRow !== null && !contactRow.canSubmitExpenseClaims) {
+      throw new AppException(
+        'NT-PRM-001',
+        HttpStatus.FORBIDDEN,
+        'Not permitted',
+        'You do not have permission to submit expense claims for this business. Ask an owner at your business to enable it.',
+      );
+    }
+
     const capture = captureIndex(request.filename);
 
     const key = uploadIntentKey(facts.businessId, randomUUID());
@@ -268,6 +294,11 @@ export class PrismaPortalUploadService implements PortalUploadService {
       // SAID on the provenance event — carried, never trusted, like the
       // transaction declaration above it.
       ...(request.note === undefined || request.note === null ? {} : { portalNote: request.note }),
+      // Decided HERE, where the session's identity and the roster row are both
+      // in hand, and signed — so completion writes a claimant the server chose
+      // rather than one a caller named. Omitted entirely when this is not a
+      // claim, so the ordinary case carries nothing extra.
+      ...(wantsExpenseClaim && contactId !== null ? { claimantContactId: contactId } : {}),
       // Who sent this, in the words `documents.submitter_label` will carry
       // (review items 21/43): the chase-link slug, or the signed-in member by
       // name. Composed here — where the session facts live — and signed, so

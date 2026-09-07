@@ -9,7 +9,7 @@ import type { Document, DocumentUpload } from '@neoting/contracts/model';
 import type { createDocumentUploadBody } from '@neoting/contracts/zod';
 
 import type { PrismaClient } from '../../../common/db/prisma.js';
-import { toDocumentResponse } from '../../../common/documents/document-response.js';
+import { CLAIMANT_INCLUDE, toDocumentResponse, type WithClaimant } from '../../../common/documents/document-response.js';
 import type { ScopeContext } from '../../../common/db/scope-context.js';
 import { scopedDb } from '../../../common/db/scoped-db.js';
 import { AppException } from '../../../common/problem/problem.js';
@@ -442,13 +442,18 @@ export class WebUploadService {
     byteHash: string,
     delegated: DelegatedCompletion | null,
     submitterLabel: string | null,
-  ): Promise<{ row: DocumentRow; created: boolean }> {
+  ): Promise<{ row: WithClaimant<DocumentRow>; created: boolean }> {
     const id = documentIdFor(uploadId);
     const outcome = await scopedDb(this.prisma, ctx, async (db) => {
-      const existing = await db.document.findUnique({ where: { id } });
+      const existing = await db.document.findUnique({ where: { id }, include: { ...CLAIMANT_INCLUDE } });
       if (existing !== null) return { row: existing, created: false };
       try {
         const created = await db.document.create({
+          // The claimant join comes back on the created row so the completion
+          // response can state who is owed (review item 50) — the projection
+          // requires the key rather than defaulting it, because `null` there
+          // asserts the company paid.
+          include: { ...CLAIMANT_INCLUDE },
           data: {
             id,
             businessId: claims.businessId,
@@ -477,6 +482,16 @@ export class WebUploadService {
             // portal intent's signed label, or "Uploaded by {accountant}" for a
             // workspace session with a named human behind it.
             ...(submitterLabel === null ? {} : { submitterLabel }),
+            // The expense claimant, from the SIGNED claims (review item 50).
+            // The portal decided it at intent, where the session's identity and
+            // the roster's `can_submit_expense_claims` were both in hand; this
+            // copies rather than re-derives, so completion cannot be talked
+            // into paying somebody the intent never approved. Absent on every
+            // other lane and on an ordinary upload — null means the COMPANY
+            // paid, which is the normal case, not an unknown.
+            ...(claims.claimantContactId === undefined || claims.claimantContactId === null
+              ? {}
+              : { claimantContactId: claims.claimantContactId }),
           },
         });
         // A delegated context CANNOT write this: `document_events` reaches its
@@ -496,7 +511,9 @@ export class WebUploadService {
     });
     if (outcome !== null) return outcome;
     // Lost the primary-key race, so the winner created it and enqueued for it.
-    const row = await scopedDb(this.prisma, ctx, (db) => db.document.findUnique({ where: { id } }));
+    const row = await scopedDb(this.prisma, ctx, (db) =>
+      db.document.findUnique({ where: { id }, include: { ...CLAIMANT_INCLUDE } }),
+    );
     if (row === null) throw new Error(`document ${id} vanished after a unique-violation`);
     return { row, created: false };
   }

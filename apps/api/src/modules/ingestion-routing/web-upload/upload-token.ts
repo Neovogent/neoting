@@ -39,6 +39,21 @@ export interface UploadClaims {
    */
   readonly chaseTransactionId?: string | null;
   /**
+   * The contact who PAID for this out of their own pocket — an expense claim
+   * (review item 50). Absent on every lane but a permitted portal member's own
+   * upload, and absent there too unless they ticked the box.
+   *
+   * ⚠ **Decided at INTENT and carried in the signed claims, deliberately.**
+   * Unlike `chaseTransactionId` above — a client-declared hint nothing branches
+   * on — this one obliges the company to pay somebody, so it may never be a
+   * value the caller supplies at completion. At intent the server holds the
+   * session's own `contactId` and can check `canSubmitExpenseClaims` against
+   * the roster row; the claims are HMAC-signed, so what it decides there is
+   * what completion writes. A caller-chosen claimant would be a caller-chosen
+   * payee.
+   */
+  readonly claimantContactId?: string | null;
+  /**
    * The raw note the client typed on a portal upload (5 Sep 2026, review item
    * 11) — `PortalUploadRequest.note`, carried so completion can record on the
    * provenance event what the client SAID. The display consequence (the note

@@ -30,6 +30,10 @@ function row(over: Partial<PortalPersonRow> = {}): PortalPersonRow {
     email: 'tom@americanburger.test',
     role: 'Head Chef',
     portalRole: 'BUSINESS_STANDARD',
+    // Default false — the capability grants a NEW power (obliging the company
+    // to pay somebody), unlike its two neighbours which describe what every
+    // contact could already do.
+    canSubmitExpenseClaims: false,
     isPrimary: false,
     canSendDocuments: true,
     canSeeTotals: false,

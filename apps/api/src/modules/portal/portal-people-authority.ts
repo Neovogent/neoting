@@ -79,6 +79,7 @@ export interface PortalPersonRow {
   readonly isPrimary: boolean;
   readonly canSendDocuments: boolean;
   readonly canSeeTotals: boolean;
+  readonly canSubmitExpenseClaims: boolean;
   readonly deactivatedAt: Date | null;
   readonly createdAt: Date;
 }
@@ -213,6 +214,7 @@ export function toPortalPerson(row: PortalPersonRow, actingContactId: string | n
     access: effectivePortalRole(row),
     canSendDocuments: row.canSendDocuments,
     canSeeTotals: row.canSeeTotals,
+    canSubmitExpenseClaims: row.canSubmitExpenseClaims,
     isYou: actingContactId !== null && row.id === actingContactId,
     isActive: row.deactivatedAt === null,
     addedAt: row.createdAt.toISOString(),

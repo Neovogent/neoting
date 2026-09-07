@@ -5,7 +5,7 @@ import type { Document } from '@neoting/contracts/model';
 import type { PrismaClient } from '../../common/db/prisma.js';
 import type { ScopeContext } from '../../common/db/scope-context.js';
 import { scopedDb, type ScopedClient } from '../../common/db/scoped-db.js';
-import { toDocumentResponse, toExtraction } from '../../common/documents/document-response.js';
+import { CLAIMANT_INCLUDE, toDocumentResponse, toExtraction } from '../../common/documents/document-response.js';
 import { fingerprint, type IdempotencyStore } from '../../common/idempotency/idempotency-store.js';
 import { AppException } from '../../common/problem/problem.js';
 import { currentTraceId } from '../../common/trace/trace-context.js';
@@ -144,7 +144,7 @@ export class DocumentManagementService {
       // what the database now holds, including a concurrent writer's timestamp.
       const after = await db.document.findUnique({
         where: { id: documentId },
-        include: { extractions: { where: { isAccepted: true }, take: 1 } },
+        include: { extractions: { where: { isAccepted: true }, take: 1 }, ...CLAIMANT_INCLUDE },
       });
       if (after === null) throw notFound();
 
