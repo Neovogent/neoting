@@ -633,6 +633,33 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number];
 
+/**
+ * The one rule for a surface that is not wired live (review item 50 A): a tab
+ * that cannot read anything from the server is **absent live and present
+ * synthetic**. An honest empty state was right for the demo cast — it told the
+ * room what was and was not built — but a paying accountant opening a tab and
+ * being told the tab does not work is a defect, not honesty.
+ *
+ * Expense Claims is the only tab this removes, and the audit that says so is
+ * `api/slices.ts`: `expenseClaims` is the one name in `SliceName` that nothing
+ * ever asks the API for, so it reports `'seed'` in every build. Every other
+ * tab here reads a slice that hydrates (`Chases` picks its live/seed shape
+ * below rather than hiding) — and the main nav has no unwired tab at all, its
+ * gate being the capability matrix instead (`AppContext.availableTabs`).
+ *
+ * ⚠ Filtered, not deleted, and `fromSlug` resolves against THIS list — a nav
+ * that hides a tab while the router still resolves its address is a hidden
+ * surface you can deep-link into. Live, `/clients/1/expense-claims` is an
+ * unrecognised slug and falls to Overview, the same way `availableTabs` makes
+ * `/team` fall to the workspace for a scoped colleague. Synthetic keeps the
+ * tab byte-for-byte (METH_MODE §1); the tour's `expense-claims` step is gated
+ * to synthetic mode by `TourProvider` and so is unaffected.
+ */
+export const visibleTabs = (live: boolean): readonly Tab[] =>
+  live ? TABS.filter((t) => t !== 'Expense Claims') : TABS;
+
+const VISIBLE_TABS = visibleTabs(API_ENABLED);
+
 /** What each tab is called on screen. Descriptors, formatted at the call site. */
 const TAB_LABEL: Record<Tab, MessageDescriptor> = defineMessages({
   Overview: { id: 'clients.clientDetailView.tabOverview', defaultMessage: 'Overview' },
@@ -724,7 +751,7 @@ export function ClientDetailView() {
   // /clients/:id/:tab — the tab is in the address, so every one is linkable
   // and Back steps between them.
   const [tabSlug, setTabSlug] = useSegment(2);
-  const tab: Tab = fromSlug(tabSlug, TABS) ?? 'Overview';
+  const tab: Tab = fromSlug(tabSlug, VISIBLE_TABS) ?? 'Overview';
   // Thirteen tabs do not fit a phone: the strip scrolls, so the active one
   // has to be scrolled back into view when a deep link picks a later tab.
   const tabStripRef = useScrollActiveIntoView<HTMLDivElement>(tab);
@@ -1072,7 +1099,7 @@ export function ClientDetailView() {
       </header>
 
       <div ref={tabStripRef} data-tour="client-tabs" className="px-4 md:px-10 pb-5 flex items-center gap-2 shrink-0 scroll-x">
-        {TABS.map((t) => (
+        {VISIBLE_TABS.map((t) => (
           <button
             key={t}
             aria-current={tab === t ? 'page' : undefined}

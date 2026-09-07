@@ -1021,6 +1021,37 @@ are needed:
 
 Without the second, a revoked person requests a fresh code and gets a new hour.
 
+### 🚨 `canSendDocuments` is STORED but NEVER CHECKED on the upload path
+
+Found 7 Sep 2026 while designing review item 50's third capability, and recorded
+rather than fixed in passing — it is a permission change, which is a stop-and-ask
+per the repo `CLAUDE.md`.
+
+`canSendDocuments` appears in `portal-people.service.ts`,
+`portal-people-authority.ts` and `portal-business-profile.service.ts` — the
+roster's own read and write — and **nowhere in `portal-upload.service.ts` or
+either controller**. Grep it before believing otherwise. A member whose box the
+client's admin unticked can still `POST /portal/uploads`.
+
+The contract already promises otherwise: `PortalPerson.canSendDocuments` reads
+*"May upload and photograph paperwork for this business. False is a real state."*
+It is not a real state until the upload path asks. This is Governance §11.2's
+exact prohibition — *"a UI that merely hides the button is not an implementation
+of this"* — and `PortalPeople.canManagePeople`'s own description says the same
+thing about the roster's mutations, which ARE enforced.
+
+The fix is one guard in `portal-upload.service.ts`, where the service already
+loads the session's `contacts` row via `facts.contactId` (the `contactId === null`
+chase-session arm decides nothing about capability, so it needs its own answer —
+a forwardable chase link is a different grant, not this one). One place, because
+every portal upload routes through it.
+
+⚠ **Do not build a second capability on top of it while it is unenforced.**
+`docs/Expense_Claims_Design.md` §4.3 is the case in point: "may submit expense
+claims" would be the third boolean on a mechanism whose second is presentation
+only, and a permission to obligate the company to pay somebody is a worse one to
+leave to the browser.
+
 ### ⚠ Tenancy is an APPLICATION guarantee here, like `GET /portal/documents`
 
 `contacts` has no RLS branch meaning "this client's whole business", so the read

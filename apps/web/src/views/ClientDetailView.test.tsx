@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
-import { ClientDetailView } from './ClientDetailView';
+import { ClientDetailView, visibleTabs } from './ClientDetailView';
 import { AppIntlProvider } from '../i18n/AppIntlProvider';
 import { createProposal } from '../api/proposals';
 import type { ClientStats } from '../lib/selectors';
@@ -309,4 +309,23 @@ test('AI tab, live counts: chips carry the numbers, and each todo opens its surf
   expect(screen.getByText('Release 2 Ready documents for export')).toBeTruthy();
   fireEvent.click(screen.getByText('Decide 3 items in the Approvals queue'));
   expect(setActiveTab).toHaveBeenCalledWith('Approvals');
+});
+
+/**
+ * Review item 50 A — a tab that cannot read anything from the server is absent
+ * live and present synthetic. Pinned on the list itself rather than on two
+ * renders, because ONE list feeds both consumers: the tab strip below and the
+ * `fromSlug` address resolution above it. That is what makes the tab genuinely
+ * hidden instead of merely unlinked.
+ */
+test('live, Expense Claims is not a tab; synthetic keeps it', () => {
+  expect(visibleTabs(true)).not.toContain('Expense Claims');
+  expect(visibleTabs(false)).toContain('Expense Claims');
+  // Nothing else moved — the audit found exactly one unwired surface.
+  expect(visibleTabs(false).length - visibleTabs(true).length).toBe(1);
+});
+
+test('the tab strip renders the visible list, Expense Claims included on seed data', () => {
+  renderView();
+  expect(screen.getByRole('button', { name: 'Expense Claims' })).toBeTruthy();
 });
