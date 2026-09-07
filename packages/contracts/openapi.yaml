@@ -2839,6 +2839,29 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
+        '403':
+          description: |
+            This portal member may not send documents — `NT-PRM-001`.
+
+            Declared here on 7 Sep 2026, and like the `402` above it is a
+            contract catching up with a permission that already existed:
+            `contacts.can_send_documents` has been stored, editable on
+            Settings → People and rendered as a tick since the portal-people
+            work, and was **never consulted on the upload path**. A member with
+            the box cleared could upload exactly as before — Governance §11.2's
+            literal prohibition, *"a UI that merely hides the button is not an
+            implementation of this"*. Found while designing expense claims
+            (`docs/Expense_Claims_Design.md` §4.3): the claim capability would
+            have been the third tick on a mechanism whose second was
+            presentation-only.
+
+            ⚠ A **chase session is never refused this way**. A chase link names
+            no roster member (`contactId` is null) and was emailed to a
+            registered contact for the sole purpose of uploading; the
+            capability governs portal MEMBERS, whom the roster is about.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
         '409': { $ref: '#/components/responses/IdempotencyConflict' }
         '413':
           description: The declared size exceeds the 25 MB client-channel cap. Client-side compression should have prevented this for camera photos.

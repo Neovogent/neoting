@@ -182,15 +182,52 @@ export class PrismaPortalUploadService implements PortalUploadService {
     // this is the app's own camera capture. A chase session names nobody, so
     // the contact read is skipped rather than answered with a guess.
     const contactId = facts.contactId;
-    const person: PortalUploadPerson | null =
+    // The roster row, read once: its NAME half is provenance and its
+    // CAPABILITY half is the guard below. `PortalUploadPerson` stays the
+    // provenance shape alone — who sent this is a different question from what
+    // they were allowed to do, and folding a permission into that type would
+    // put it on every provenance consumer that has no business reading it.
+    const contactRow =
       contactId === null
         ? null
         : await scopedDb(this.prisma, systemScopeFor(facts), (db) =>
             db.contact.findFirst({
               where: { id: contactId, businessId: facts.businessId },
-              select: { firstName: true, lastName: true, email: true },
+              select: { firstName: true, lastName: true, email: true, canSendDocuments: true },
             }),
           );
+    const person: PortalUploadPerson | null =
+      contactRow === null
+        ? null
+        : { firstName: contactRow.firstName, lastName: contactRow.lastName, email: contactRow.email };
+
+    // ⚠ **`canSendDocuments` is ENFORCED HERE, and was not before 7 Sep 2026.**
+    // The column has been stored, editable on Settings → People, and shown as a
+    // tick since the portal-people work — and never once consulted on the path
+    // it names. A member with the box cleared could upload exactly as before,
+    // which is Governance §11.2's literal prohibition: *"a UI that merely hides
+    // the button is not an implementation of this"*. Found while designing
+    // expense claims (`docs/Expense_Claims_Design.md` §4.3), because a
+    // permission to obligate the company to pay somebody must not be the THIRD
+    // capability on a mechanism whose second one was presentation-only.
+    //
+    // The guard is here rather than in the controller because EVERY portal
+    // upload routes through this method — the browser one, the camera capture,
+    // and the completion path's re-read all begin with this intent.
+    //
+    // ⚠ A chase session is deliberately NOT refused. `contactId === null` is
+    // the chase-link door: the link was emailed to a registered contact and
+    // uploading is the entire point of it, so there is no roster tick to
+    // consult and refusing would break the product's main chase beat. The
+    // capability governs PORTAL MEMBERS, who are the people the roster is about.
+    if (contactRow !== null && !contactRow.canSendDocuments) {
+      throw new AppException(
+        'NT-PRM-001',
+        HttpStatus.FORBIDDEN,
+        'Not permitted',
+        'You do not have permission to send documents for this business. Ask an owner at your business to enable it.',
+      );
+    }
     const capture = captureIndex(request.filename);
 
     const key = uploadIntentKey(facts.businessId, randomUUID());
