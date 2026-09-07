@@ -318,11 +318,20 @@ test('AI tab, live counts: chips carry the numbers, and each todo opens its surf
  * `fromSlug` address resolution above it. That is what makes the tab genuinely
  * hidden instead of merely unlinked.
  */
-test('live, Expense Claims is not a tab; synthetic keeps it', () => {
-  expect(visibleTabs(true)).not.toContain('Expense Claims');
-  expect(visibleTabs(false)).toContain('Expense Claims');
-  // Nothing else moved — the audit found exactly one unwired surface.
-  expect(visibleTabs(false).length - visibleTabs(true).length).toBe(1);
+test('⚠ visibleTabs is now a NO-OP, and that is the assertion', () => {
+  // Item 50 A hid Expense Claims live because nothing could read a claim.
+  // Claims exist as of 7 Sep 2026 — a claim is a DOCUMENT with a claimant —
+  // so the tab reads the documents slice and is honest live. Its subject list
+  // is therefore empty.
+  //
+  // The helper is KEPT rather than deleted: it encodes the rule (a surface
+  // that cannot read anything is absent live, present synthetic), and deleting
+  // it would delete the rule with it, leaving the next unwired tab to
+  // rediscover the argument. This test is what says the current subject list
+  // is empty — if a future tab ships unwired, it belongs in that filter and
+  // this expectation is what should fail first.
+  expect(visibleTabs(true)).toEqual(visibleTabs(false));
+  expect(visibleTabs(true)).toContain('Expense Claims');
 });
 
 test('the tab strip renders the visible list, Expense Claims included on seed data', () => {

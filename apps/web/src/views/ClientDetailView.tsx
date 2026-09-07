@@ -634,29 +634,22 @@ const TABS = [
 type Tab = (typeof TABS)[number];
 
 /**
- * The one rule for a surface that is not wired live (review item 50 A): a tab
- * that cannot read anything from the server is **absent live and present
- * synthetic**. An honest empty state was right for the demo cast — it told the
- * room what was and was not built — but a paying accountant opening a tab and
- * being told the tab does not work is a defect, not honesty.
+ * ⚠ **Every tab here is wired live as of 7 Sep 2026, so this filter now removes
+ * NOTHING — and it is kept rather than deleted.**
  *
- * Expense Claims is the only tab this removes, and the audit that says so is
- * `api/slices.ts`: `expenseClaims` is the one name in `SliceName` that nothing
- * ever asks the API for, so it reports `'seed'` in every build. Every other
- * tab here reads a slice that hydrates (`Chases` picks its live/seed shape
- * below rather than hiding) — and the main nav has no unwired tab at all, its
- * gate being the capability matrix instead (`AppContext.availableTabs`).
+ * The rule it encodes is item 50 A's and still stands: a surface that cannot
+ * read anything from the server is **absent live and present synthetic**. An
+ * honest empty state was right for the demo cast; a paying accountant opening
+ * a tab and being told the tab does not work is a defect, not honesty.
  *
- * ⚠ Filtered, not deleted, and `fromSlug` resolves against THIS list — a nav
- * that hides a tab while the router still resolves its address is a hidden
- * surface you can deep-link into. Live, `/clients/1/expense-claims` is an
- * unrecognised slug and falls to Overview, the same way `availableTabs` makes
- * `/team` fall to the workspace for a scoped colleague. Synthetic keeps the
- * tab byte-for-byte (METH_MODE §1); the tour's `expense-claims` step is gated
- * to synthetic mode by `TourProvider` and so is unaffected.
+ * Expense Claims was its one subject and no longer qualifies: a claim is a
+ * DOCUMENT with a claimant (review item 50, design ⚖E), so the tab reads the
+ * documents slice every other surface reads and shows a client's real claims.
+ * Deleting the helper would delete the rule with it, and the next unwired tab
+ * would have to rediscover the argument — so it stays, with an empty subject
+ * list, and `visibleTabs.test.ts` pins that it is currently a no-op.
  */
-export const visibleTabs = (live: boolean): readonly Tab[] =>
-  live ? TABS.filter((t) => t !== 'Expense Claims') : TABS;
+export const visibleTabs = (_live: boolean): readonly Tab[] => TABS;
 
 const VISIBLE_TABS = visibleTabs(API_ENABLED);
 

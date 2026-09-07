@@ -71,6 +71,8 @@ const ingest = vi.fn();
 
 let documentsSource: 'api' | 'seed' = 'seed';
 let expenseClaims: ExpenseClaim[] = [];
+/** Live, a claim IS a document with a claimant — so the board reads these. */
+let liveDocuments: unknown[] = [];
 
 vi.mock('../context/AppContext', () => ({
   useAppContext: () => ({
@@ -79,15 +81,17 @@ vi.mock('../context/AppContext', () => ({
     setExpenseClaimStatus,
     deleteExpenseClaim,
     ingest,
-    documents: [RECEIPT],
+    documents: documentsSource === 'api' ? liveDocuments : [RECEIPT],
     documentsSource,
-    slices: { expenseClaims: SEED_SLICE },
+    isSameClient: (a: string, b: string) => a === b,
+    slices: { expenseClaims: SEED_SLICE, documents: SEED_SLICE },
   }),
 }));
 
 beforeEach(() => {
   documentsSource = 'seed';
   expenseClaims = [CLAIM];
+  liveDocuments = [];
 });
 
 afterEach(() => vi.clearAllMocks());
@@ -100,59 +104,64 @@ function renderTab() {
   );
 }
 
-// ── Live: the surface says it is not connected, and asserts nothing else ────
+// ── Live: real claims, read from the documents slice ───────────────────────
+//
+// ⚠ These four REPLACED the "not connected to the API" tests of 7 Sep 2026.
+// Those were correct while nothing could read a claim, and became wrong the
+// moment claims existed: they pinned a panel telling a paying accountant the
+// tab does not work. A claim is a DOCUMENT with a claimant (design ⚖E), so
+// there is no separate slice to wire — the board filters the one every other
+// surface reads.
 
-test('⚠ live, nothing on the tab claims to know what is or is not owed', () => {
+test('live, a claimed document is listed with WHO paid and what is owed', () => {
   documentsSource = 'api';
-  // What the live array actually is: `SYNTHETIC ? seedExpenseClaims : []`.
-  expenseClaims = [];
+  liveDocuments = [
+    { id: 'doc_1', clientId: CLIENT.id, supplier: 'Screwfix', displayTitle: 'Screwfix', total: 42.5, date: '10 Aug 2026', claimant: { id: 'con_1', name: 'Tom Whyte' } },
+  ];
   renderTab();
 
   const text = document.body.textContent ?? '';
-  for (const forbidden of [
-    /Nothing is currently owed/i,
-    /owed back/i,
-    /waiting on you/i,
-    /No claims for/i,
-  ]) {
-    expect(text).not.toMatch(forbidden);
-  }
-  // No money at all: a total, a claim line or a threshold would all be an
-  // assertion about a client's records made out of an empty array.
+  expect(text).toContain('Screwfix');
+  expect(text).toContain('Tom Whyte');
+  expect(text).toContain('£42.50');
+  // The old panel's sentence must be gone — it is no longer true.
+  expect(text).not.toContain('not connected to the API');
+});
+
+test('⚠ live, a document with NO claimant is not a claim and never appears', () => {
+  // The heart of the model: null claimant means THE COMPANY PAID. A board that
+  // listed company-paid documents would say the company owes its own staff.
+  documentsSource = 'api';
+  liveDocuments = [
+    { id: 'doc_company', clientId: CLIENT.id, supplier: 'British Gas', displayTitle: 'British Gas', total: 412.66, date: '30 Aug 2026' },
+  ];
+  renderTab();
+
+  expect(document.body.textContent).not.toContain('British Gas');
+  expect(document.body.textContent).not.toContain('£412.66');
+});
+
+test('live with no claims, the empty state teaches where a claim STARTS', () => {
+  documentsSource = 'api';
+  liveDocuments = [];
+  renderTab();
+
+  const text = document.body.textContent ?? '';
+  expect(text).toMatch(/has claimed anything back/i);
+  // It names the actual first step rather than stopping at "none".
+  expect(text).toMatch(/portal/i);
+  // And it still claims no figure it has not read.
   expect(text).not.toMatch(/£/);
 });
 
-test('live, the tab states that the surface is not connected to the API', () => {
+test('live, another client’s claim is not shown on this client’s tab', () => {
   documentsSource = 'api';
-  expenseClaims = [];
+  liveDocuments = [
+    { id: 'doc_other', clientId: 'biz_other', supplier: 'Nisbets', displayTitle: 'Nisbets', total: 99, date: '01 Sep 2026', claimant: { id: 'con_x', name: 'Someone Else' } },
+  ];
   renderTab();
 
-  const text = document.body.textContent ?? '';
-  expect(text).toContain('not connected to the API');
-  expect(text).toContain('American Burger Ltd');
-  expect(text).toMatch(/unavailable/i);
-});
-
-test('live, every writer is unreachable rather than appearing to work', () => {
-  documentsSource = 'api';
-  expenseClaims = [];
-  renderTab();
-
-  expect(screen.queryByRole('button')).toBeNull();
-  expect(screen.queryByRole('button', { name: /New claim/ })).toBeNull();
-  expect(saveExpenseClaim).not.toHaveBeenCalled();
-  expect(setExpenseClaimStatus).not.toHaveBeenCalled();
-  expect(deleteExpenseClaim).not.toHaveBeenCalled();
-});
-
-test('⚠ live, a seeded claim is never rendered even if one is somehow in the array', () => {
-  // Belt and braces on the M2 rule: nothing degrades to the synthetic rows.
-  documentsSource = 'api';
-  expenseClaims = [CLAIM];
-  renderTab();
-
-  expect(screen.queryByText('John Doe')).toBeNull();
-  expect(document.body.textContent).not.toContain('Replacement till rolls');
+  expect(document.body.textContent).not.toContain('Someone Else');
 });
 
 // ── Synthetic: the demo is exactly what it was ─────────────────────────────
