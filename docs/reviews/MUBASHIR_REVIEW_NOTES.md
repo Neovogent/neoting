@@ -2647,3 +2647,62 @@ all verified, but nothing was let leave), and the Stripe card form, which needs 
 real card.
 
 Report: <https://claude.ai/code/artifact/408d0c03-be35-46a2-a592-39ddeccb742a>
+
+### The second pass — the owner's four answers, and what they found (8 Sep 2026)
+
+Shakib answered the four open asks: **send the chase for real**, **item 16 =
+start-and-end-date**, ignore the third-party Stripe endpoint, skip the card
+test. Then: *"the main and only domain would be neoacc.neovogent.com and api is
+api.neoting.neovogent.com"*.
+
+⚠ **Permission to send one real chase found the worst defect of the whole
+review.** The accountant stages it, a super admin approves it, SES delivers it,
+the client taps the link — and gets raw S3 XML:
+
+    <Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>
+
+**Every chase link in production was dead.** The CloudFront Function decided
+"file or route" by asking whether the last path segment contains a dot; a chase
+token is `base64url(payload).base64url(signature)`, so it always does. The
+banner above that function claimed the rule "covers `/p/<token>` without listing
+them" — it was the one route it did not cover. Nothing caught it because
+everything anyone would think to check still worked: `/`, `/app`,
+`/clients/1/costs`, `/portal`. The failing case only appears when a real token
+reaches a real browser, which is why no amount of reading found it in three
+weeks and one click did.
+
+Fixed (#274) by allowlisting what the build actually emits — `/assets/` plus
+real extensions — instead of guessing from punctuation, with
+`spaRouter.test.ts` reading the function's source out of the Terraform heredoc
+so the test cannot drift from the deployed rule.
+
+**Then the loop ran end to end and every part of it held**: the email arrived,
+the link opened, the OTP came, the client picked the payment, the image was
+shrunk client-side (2.8 MB → 0.4 MB), the upload landed on the accountant's
+board tagged **Chase link**. The receipt sent was deliberately the WRONG one,
+and the portal said so rather than pretending: *"Your accountant has this
+document — nothing is lost. It has not been matched to one of the payments
+above yet."*
+
+⚠ **And the loop found one more.** The handwritten receipt was honestly refused
+by the extractor (`Total —`, 10% confident, Ready blocked) — and the board
+beside it printed **£0.00** (#277). `fromPence(null)` is 0 and `currency(0)`
+looks like a fact about the money. `BusinessHomeView` already got this right on
+the CLIENT's screen; the accountant's screens did not.
+
+**Item 16 is now closed for the range half** (#275). `statementPeriod` takes
+`YYYY-MM-DD..YYYY-MM-DD` beside `YYYY-MM`, inclusive at both ends. Shakib chose
+"start and end date" over three separate modes for the reason that makes it
+right: a range already IS a month, a quarter, a year or a single day. The month
+shape stays because every chase raised before today carries one and it is what a
+client says out loud. Only the client-side preview remains, and the entry above
+already records why it needs a compose-without-staging read.
+
+**`neoacc.neovogent.com` is the one public name** (#276). The API half was
+already right; `APP_ORIGIN` was not — and that value is the host printed inside
+every chase link, setup link and sign-in link a CLIENT receives. Both hosts
+resolved and both served the app, which is exactly why nothing surfaced it.
+`app.neoting.neovogent.com` stays an alias so links already sent keep working.
+
+Running total for the live pass: **14 defects found, 14 fixed and verified on
+the deployed product.**
