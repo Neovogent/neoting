@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
@@ -129,10 +130,17 @@ afterEach(() => {
 });
 
 function renderView() {
+  // The Tasks tab reads `/v1/tasks` through React Query (review item 54), so
+  // the view needs a client even in these tests — `enabled` is false on seed
+  // data and no request is made, but `useQuery` still has to find a provider.
+  // `retry: false` so a failure here surfaces at once rather than after three
+  // backoffs.
   return render(
-    <AppIntlProvider>
-      <ClientDetailView />
-    </AppIntlProvider>,
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <AppIntlProvider>
+        <ClientDetailView />
+      </AppIntlProvider>
+    </QueryClientProvider>,
   );
 }
 

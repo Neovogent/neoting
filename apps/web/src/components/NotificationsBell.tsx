@@ -29,6 +29,15 @@ const m = defineMessages({
     id: 'shell.notificationsBell.chaseClosed',
     defaultMessage: 'A chased document arrived for {business}',
   },
+  // ⚠ "was assigned", not "you were assigned". The bell's list query carries
+  // NO `recipientUserId` filter by item 12's own decision (*"the bell is a
+  // practice-wide surface"*, `inbox.service.ts`), so this line is read by
+  // colleagues too — and `NotificationItem` carries no task title, so the
+  // sentence says exactly what it can support and no more (review item 54).
+  taskAssigned: {
+    id: 'shell.notificationsBell.taskAssigned',
+    defaultMessage: 'A task was assigned on {business}',
+  },
   genericEvent: { id: 'shell.notificationsBell.genericEvent', defaultMessage: '{event} — {business}' },
   badgeOverflow: {
     id: 'shell.notificationsBell.badgeOverflow',
@@ -45,6 +54,8 @@ function lineFor(intl: ReturnType<typeof useIntl>, item: NotificationItem): stri
       return intl.formatMessage(m.documentReceived, { business: item.businessName });
     case 'chase.closed':
       return intl.formatMessage(m.chaseClosed, { business: item.businessName });
+    case 'task.assigned':
+      return intl.formatMessage(m.taskAssigned, { business: item.businessName });
     default:
       return intl.formatMessage(m.genericEvent, { event: item.event, business: item.businessName });
   }

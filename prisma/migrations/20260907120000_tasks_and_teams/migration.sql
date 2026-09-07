@@ -1,3 +1,59 @@
+-- teams / team_members — the firm's own org chart (review item 54, 7 Sep 2026:
+-- "Task assign option is not build yet, make sure to plan this out and setup
+-- the feature completely"). `tasks` needed NO schema change: the table has
+-- existed since the init migration and every field the feature wants is
+-- already a column. Teams had no table at all.
+--
+-- ADDITIVE ONLY: two new tables, no existing table touched, no data written.
+-- Reversible in two DROP TABLEs.
+--
+-- ⚠ **There is deliberately no `access_level` column.** The Teams tab's
+-- "All clients" / "Assigned clients only" label is DERIVED from the members'
+-- own `memberships` rows at read time. Storing it would create a second answer
+-- to "what can this person reach" beside the one every RLS policy already
+-- consults, and two answers to that question is how a permission bug ships.
+-- A team grants nothing, and `tenancy-check.sql` §12 asserts that no policy in
+-- the database consults `team_members` at all.
+--
+-- The RLS below is the whole of `prisma/sql/rls.sql` replayed, the house
+-- convention: policies are idempotent (DROP IF EXISTS + CREATE), and a
+-- hand-edited subset is how a policy drifts from the file that documents it.
+
+-- CreateTable
+CREATE TABLE "teams" (
+    "id" TEXT NOT NULL,
+    "practice_id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "teams_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "team_members" (
+    "team_id" TEXT NOT NULL,
+    "user_id" TEXT NOT NULL,
+
+    CONSTRAINT "team_members_pkey" PRIMARY KEY ("team_id","user_id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "teams_practice_id_name_key" ON "teams"("practice_id", "name");
+
+-- CreateIndex
+CREATE INDEX "team_members_user_id_idx" ON "team_members"("user_id");
+
+-- AddForeignKey
+ALTER TABLE "teams" ADD CONSTRAINT "teams_practice_id_fkey" FOREIGN KEY ("practice_id") REFERENCES "practices"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "team_members" ADD CONSTRAINT "team_members_team_id_fkey" FOREIGN KEY ("team_id") REFERENCES "teams"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "team_members" ADD CONSTRAINT "team_members_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+
 -- NEOTING — row-level security policies (Sprint-0 contract, LAW per G7/D15)
 --
 -- Governance §5.2. This file is the tenancy guarantee. Prisma cannot express

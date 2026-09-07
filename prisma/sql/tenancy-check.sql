@@ -35,6 +35,9 @@ ALTER TABLE audit_events DISABLE TRIGGER audit_events_no_update;
 DELETE FROM audit_events WHERE id LIKE 't\_%';
 ALTER TABLE audit_events ENABLE TRIGGER audit_events_no_update;
 
+DELETE FROM team_members     WHERE team_id LIKE 't\_%';
+DELETE FROM teams            WHERE id LIKE 't\_%';
+DELETE FROM tasks            WHERE id LIKE 't\_%';
 DELETE FROM action_proposals WHERE id LIKE 't\_%';
 DELETE FROM document_links   WHERE id LIKE 't\_%';
 DELETE FROM otp_sessions     WHERE id LIKE 't\_%';
@@ -493,11 +496,104 @@ BEGIN;
     'the resolver still returns exactly six columns, all of them ids or state');
 COMMIT;
 
+-- === 12. tasks and teams (review item 54) ==================================
+--
+-- Two shapes in one section, because item 54 shipped both and they are policed
+-- differently on purpose. `tasks` is business-anchored and rides the
+-- direct_tables loop; `teams` has a practice and no business, so it uses the
+-- anchor-pair predicate with a NULL business.
+--
+-- The LAST assertion is the one that matters most and it is not about reading
+-- rows at all: it pins that NO policy in the database mentions team_members.
+-- A team must never be able to grant access, and the way that guarantee dies
+-- is a future policy joining it "just to check the team".
+
+INSERT INTO teams (id, practice_id, name, updated_at) VALUES
+  ('t_team_a', 't_prac_a', 'Test Team A', now()),
+  ('t_team_b', 't_prac_b', 'Test Team B', now());
+
+INSERT INTO team_members (team_id, user_id) VALUES
+  ('t_team_a', 't_user_a'),
+  ('t_team_b', 't_user_b');
+
+INSERT INTO tasks (id, business_id, title, updated_at) VALUES
+  ('t_task_a1', 't_biz_a1', 'Test task on A1', now()),
+  ('t_task_b1', 't_biz_b1', 'Test task on B1', now());
+
+BEGIN;
+  SET LOCAL ROLE nt_app;
+  SET LOCAL app.actor_id = 't_user_a';
+  SET LOCAL app.practice_id = 't_prac_a';
+  SET LOCAL app.session_scope = 'user';
+
+  SELECT assert_eq(count(*), 1, 'practice A sees its own tasks and not practice B''s')
+    FROM tasks WHERE id LIKE 't\_task\_%';
+
+  SELECT assert_eq(count(*), 1, 'practice A sees its own team')
+    FROM teams WHERE id LIKE 't\_team\_%';
+
+  SELECT assert_eq(count(*), 1, 'practice A sees its own team''s members')
+    FROM team_members WHERE team_id LIKE 't\_team\_%';
+COMMIT;
+
+BEGIN;
+  SET LOCAL ROLE nt_app;
+  SET LOCAL app.actor_id = 't_user_b';
+  SET LOCAL app.practice_id = 't_prac_b';
+  SET LOCAL app.session_scope = 'user';
+
+  SELECT assert_eq(count(*), 1, 'practice B sees only its own task')
+    FROM tasks WHERE id LIKE 't\_task\_%';
+
+  SELECT assert_eq(count(*), 0, 'practice B cannot see practice A''s team')
+    FROM teams WHERE id = 't_team_a';
+
+  SELECT assert_eq(count(*), 0, 'practice B cannot see practice A''s team members')
+    FROM team_members WHERE team_id = 't_team_a';
+COMMIT;
+
+-- A delegated upload session holds a document grant and nothing else. It must
+-- not be able to read the firm's org chart or its internal checklist — both
+-- predicates carry the scope guard, and this is what proves it.
+BEGIN;
+  SET LOCAL ROLE nt_app;
+  SET LOCAL app.actor_id = 't_user_client';
+  SET LOCAL app.business_id = 't_biz_a1';
+  SET LOCAL app.session_scope = 'delegated_upload';
+  SET LOCAL app.granted_item_ids = 't_doc_a1_1';
+
+  SELECT assert_eq(count(*), 0, 'a delegated session sees no teams')
+    FROM teams WHERE id LIKE 't\_team\_%';
+
+  SELECT assert_eq(count(*), 0, 'a delegated session sees no tasks')
+    FROM tasks WHERE id LIKE 't\_task\_%';
+COMMIT;
+
+-- ⚠ THE STRUCTURAL ONE. `team_members` is data about the firm's org chart and
+-- must never be an INPUT to a tenancy decision. Any policy whose expression
+-- mentions it means access is being derived from team membership, which is the
+-- second access model this design exists to avoid. `teams` may appear exactly
+-- once — in `team_members_tenant`, which reaches its own parent for the
+-- practice id.
+SELECT assert_eq(
+  (SELECT count(*) FROM pg_policies
+    WHERE schemaname = 'public'
+      -- team_members' OWN policy is excluded: Postgres renders `team_id` as
+      -- `team_members.team_id` in its stored expression, so the row would match
+      -- its own name. Every OTHER table is the question being asked.
+      AND tablename <> 'team_members'
+      AND coalesce(qual, '') || coalesce(with_check, '') LIKE '%team_members%'),
+  0,
+  'no policy derives access from team membership');
+
 -- ------------------------------------------------------------- teardown ---
 ALTER TABLE audit_events DISABLE TRIGGER audit_events_no_update;
 DELETE FROM audit_events WHERE id LIKE 't\_%';
 ALTER TABLE audit_events ENABLE TRIGGER audit_events_no_update;
 
+DELETE FROM team_members     WHERE team_id LIKE 't\_%';
+DELETE FROM teams            WHERE id LIKE 't\_%';
+DELETE FROM tasks            WHERE id LIKE 't\_%';
 DELETE FROM action_proposals WHERE id LIKE 't\_%';
 DELETE FROM document_links   WHERE id LIKE 't\_%';
 DELETE FROM otp_sessions     WHERE id LIKE 't\_%';

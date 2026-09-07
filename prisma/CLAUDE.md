@@ -387,3 +387,38 @@ with `NT-PRP-001` — a landmine on the live approval queue, not history), and
 `prop_publish_burger` is `publish.batch`. Their hashes are real SHA-256 hex via
 the in-file `fixtureHash` helper, because the contract patterns every hash
 `^[a-f0-9]{64}$` and a `sha256:` prefix fails the generated parse of the queue.
+
+## `teams` / `team_members` — review item 54 (7 Sep 2026)
+
+`migrations/20260907120000_tasks_and_teams`, additive: two new tables, no
+existing table touched, no data written, reversible in two `DROP TABLE`s.
+**`Task` needed no migration** — it has existed since the init migration and
+every field the feature wanted was already a column; what it lacked was a
+contract and a service.
+
+⚠ **There is deliberately no `access_level` column on `teams`.** The Teams tab's
+"All clients" / "Assigned clients only" label is DERIVED at read time from the
+members' own `memberships` rows. Storing it would create a second answer to
+*"what can this person reach"* beside the one every policy in `rls.sql` already
+consults, and two answers to that question is how a permission bug ships.
+
+`teams` has a practice and no business, so it is **not** on `direct_tables`: its
+policy is `app_can_access_document(NULL::text, practice_id)` — preferred over
+the inline invites/guidance two-branch shape for the `otp_sessions` reason,
+because the anchor-pair function carries the `app_session_scope() = 'user'`
+guard a delegated portal session fails. `team_members` reaches its parent, the
+`chase_messages` shape.
+
+`tenancy-check.sql` **§12** covers both, and its last assertion is the one that
+matters most and is not about reading rows at all: **no policy in the database
+mentions `team_members`** (excluding that table's own, whose stored expression
+Postgres renders with the table name qualified). A team must never be able to
+grant access, and the way that guarantee dies is a future policy joining the
+table "just to check the team".
+
+Two seed corrections landed with it, both invisible until something read the
+table: `tasks.status` `'not_applicable'` → `'not-applicable'` (the contract enum
+is hyphenated; the service maps an unknown status to `open`, so the symptom
+would have been a closed task quietly reappearing on the board), and
+`aiPrefilledAt` removed from `tsk_002` — nothing writes that column, so a seeded
+timestamp would put an "AI-prefilled" badge on a task no engine ever looked at.

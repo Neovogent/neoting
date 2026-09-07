@@ -756,3 +756,46 @@ window is server-side and the copy that promises it is browser-side, and two
 constants that must be equal and cannot see each other are exactly the failure
 `common/documents/deleted-documents.ts` argues against one table over. The
 barrel's rule holds: no React, no MSW, shared by both sides.
+
+## `tasks` and `teams` — review item 54 (7 Sep 2026)
+
+Nine operations, under a new `tasks` tag and the existing `practices` one:
+`listTasks` (`none`) · `createTask` · `replaceTask` · `setTaskStatus` ·
+`deleteTask` · `listTeams` (`none`) · `createTeam` · `replaceTeam` ·
+`deleteTeam`. `/approval-workflows` is the template throughout — same
+pagination, same `Idempotency-Key`, same server-minted ids, same
+`204`-whether-or-not-it-existed deletion.
+
+⚠ **Every write is `x-nt-side-effect: ingest` and NO `ProposalKind` was added.**
+That is item 66's question applied — *whose signature does this carry* — and a
+ticked checkbox carries nobody's. Governance §10 is about the CLIENT's state;
+nothing here touches a document's coding, a figure, a chase or an export. The
+argument is written out at the paths block and again in
+`apps/api/src/modules/tasks/CLAUDE.md`. Do not re-derive it, and do not
+"correct" it into a proposal kind.
+
+Three shape decisions worth keeping:
+
+- **`setTaskStatus` is its own operation, not a `PUT` field.** The tick happens
+  a hundred times a day, and requiring the caller to hold every other field in
+  order to send it is how one person's tick silently reverts another's edit.
+- **`Task.dueDate` is `format: date`, not `date-time`.** A due date is a
+  calendar date; the column is a timestamp, so the convention is UTC midnight in
+  storage and `YYYY-MM-DD` at both ends. A `Date` put through `toISOString()`
+  moves the day west of Greenwich, which is the bug `UkDateField` documents.
+- **`TeamAccessLevel` is DERIVED and read-only.** There is no column behind it
+  and no field on `TeamWriteRequest` that sets it. A stored access level on a
+  team would be a second answer to "what can this person reach", beside the one
+  every RLS policy already consults.
+
+Six new `ErrorCode` members: `NT-TSK-001/002/003` and `NT-TEM-001/002/003`.
+Their own families rather than `NT-VAL-001`, because each is a refusal a
+**person** acts on at a form — "pick someone from the list", "that would make a
+loop", "that name is taken" — and a screen cannot say which fired unless the
+code distinguishes them.
+
+⚠ `GET /teams` is **paginated** even though a firm has teams in the low tens.
+`check-contract.mjs` requires `pageInfo` on any list, and it is right to: a list
+operation that answers a different shape from its neighbours is the one a caller
+gets wrong. The first draft here shipped `{ data }` alone and the checker caught
+it.

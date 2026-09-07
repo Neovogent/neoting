@@ -76,6 +76,7 @@ model Practice {
   proposals   ActionProposal[]
   otpSessions OtpSession[]
   chatConversations ChatConversation[]
+  teams       Team[]
 
   @@map("practices")
 }
@@ -241,6 +242,7 @@ model User {
   actionProposals   ActionProposal[] @relation("ProposalCreatedBy")
   approvedProposals ActionProposal[] @relation("ProposalApprovedBy")
   ownedDocuments    Document[]       @relation("DocumentOwner")
+  teamMemberships   TeamMember[]
 
   @@map("users")
 }
@@ -1502,6 +1504,48 @@ model Task {
 
   @@index([businessId, status])
   @@map("tasks")
+}
+
+/// A named group of colleagues (review item 54, 7 Sep 2026). Practice-scoped:
+/// a team is the firm's own org chart, not a client's.
+///
+/// ⚠ **A team grants NOTHING.** It carries no access column and no policy
+/// consults it. Who may reach which client is `Membership.businessId`, and
+/// that stays the only answer — the Teams tab's "All clients" / "Assigned
+/// clients only" label is DERIVED from the members' own memberships at read
+/// time, never stored here. A second access model beside memberships is how a
+/// permission bug ships, and the deleted `accessLevel` column is the one that
+/// would have been it.
+model Team {
+  id         String @id @default(cuid())
+  practiceId String @map("practice_id")
+
+  name String
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  practice Practice     @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+  members  TeamMember[]
+
+  /// Two teams called "VAT" in one firm are a naming accident, not a feature.
+  @@unique([practiceId, name])
+  @@map("teams")
+}
+
+/// Membership of a {@link Team}. Deliberately NOT named `Membership` — that
+/// model is the tenancy grant, and the whole point of this one is that it is
+/// not.
+model TeamMember {
+  teamId String @map("team_id")
+  userId String @map("user_id")
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([teamId, userId])
+  @@index([userId])
+  @@map("team_members")
 }
 
 model Notification {

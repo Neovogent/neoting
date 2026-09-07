@@ -896,18 +896,44 @@ export interface Team {
 
 export type TaskStatus = 'open' | 'complete' | 'complete-with-issues' | 'not-applicable';
 
-/** Recurring per-client checklists scoped to this product's job. */
+/** How often a checklist item comes round. Mirrors the contract's `TaskCadence`. */
+export type TaskCadence = 'monthly' | 'quarterly';
+
+/**
+ * Recurring per-client checklists scoped to this product's job.
+ *
+ * ⚠ **This is the BOARD's row shape, fed by two sources** (review item 54): the
+ * synthetic cast in demo mode, and `GET /v1/tasks` when there is a session. It
+ * is not the contract's `Task` — `assignee` and `due` are the strings a table
+ * cell renders, which the server sends as an id and an ISO date.
+ */
 export interface WorkflowTask {
   id: string;
   clientId: string;
   clientName: string;
   title: string;
+  /** The assignee's display NAME, or empty when nobody has picked it up. */
   assignee: string;
+  /**
+   * The assignee's user id — live rows only. The synthetic cast has no user
+   * ids at all (its colleagues are names), so this is absent there and the
+   * assign control falls back to matching on `assignee`.
+   */
+  assigneeUserId?: string | undefined;
   due: string;
   status: TaskStatus;
-  /** True when the engine can mark it done from real pipeline state. */
+  /**
+   * True when an engine has actually answered this task from pipeline state.
+   *
+   * ⚠ **Always false on a live row**, and deliberately: nothing writes
+   * `tasks.ai_prefilled_at` yet, so the badge would be a claim to have read
+   * something nobody read (item 25's standing rule). The synthetic cast keeps
+   * it — in demo mode the "engine" is `statsFor`, which is honest about the
+   * seed it is derived from.
+   */
   aiPrefilled: boolean;
   dependsOn?: string | undefined;
+  cadence?: TaskCadence | undefined;
 }
 
 export type Theme = 'dark' | 'light';
