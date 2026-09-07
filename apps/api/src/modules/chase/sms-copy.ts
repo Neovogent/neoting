@@ -130,7 +130,7 @@ function joinItems(parts: readonly string[]): string {
  */
 export function composeStatementRequestSms(input: {
   readonly businessName: string;
-  /** `YYYY-MM`. */
+  /** `YYYY-MM` or `YYYY-MM-DD..YYYY-MM-DD` — see `formatPeriod`. */
   readonly period: string;
   readonly portalLink: string;
 }): string {
@@ -147,11 +147,51 @@ export function composeSignInCodeSms(code: string, expiresInMinutes: number): st
   return `Your Neo Accounting sign-in code is ${code}. It expires in ${expiresInMinutes} minutes. Never share this code with anyone.`;
 }
 
-/** `2026-07` → "July 2026" — the month a client says out loud, never an ISO string. */
+/**
+ * The period as a client says it out loud, never an ISO string.
+ *
+ *   `2026-07`                    → "July 2026"
+ *   `2026-08-01..2026-08-15`     → "1 to 15 August 2026"
+ *   `2026-07-26..2026-08-03`     → "26 July to 3 August 2026"
+ *   `2025-12-30..2026-01-05`     → "30 December 2025 to 5 January 2026"
+ *
+ * ⚠ The range shapes collapse whatever the two ends SHARE (review item 16,
+ * 8 Sep 2026). "1 August 2026 to 15 August 2026" is what a template produces
+ * and not what anybody writes, and this string goes into a text message a
+ * client reads on a phone — every repeated word is one they have to read past
+ * to find the two numbers that differ.
+ */
 export function formatPeriod(period: string): string {
+  if (period.includes('..')) {
+    const [from, to] = period.split('..') as [string, string];
+    return formatRange(from, to);
+  }
   const month = Number.parseInt(period.slice(5, 7), 10);
   const name = Number.isFinite(month) ? (FULL_MONTHS[month - 1] ?? period) : period;
   return name === period ? period : `${name} ${period.slice(0, 4)}`;
+}
+
+/** `2026-08-01` → `{ day: 1, month: 'August', year: '2026' }`, or null if unparseable. */
+function partsOf(day: string): { day: number; month: string; year: string } | null {
+  const monthIndex = Number.parseInt(day.slice(5, 7), 10);
+  const name = FULL_MONTHS[monthIndex - 1];
+  const dayOfMonth = Number.parseInt(day.slice(8, 10), 10);
+  if (name === undefined || !Number.isFinite(dayOfMonth)) return null;
+  return { day: dayOfMonth, month: name, year: day.slice(0, 4) };
+}
+
+function formatRange(from: string, to: string): string {
+  const a = partsOf(from);
+  const b = partsOf(to);
+  // Unparseable is echoed rather than guessed at — the same stance the month
+  // branch takes. A client reading an ISO string knows something is wrong;
+  // a client reading a plausible WRONG date does not.
+  if (a === null || b === null) return `${from} to ${to}`;
+
+  if (a.year !== b.year) return `${a.day} ${a.month} ${a.year} to ${b.day} ${b.month} ${b.year}`;
+  if (a.month !== b.month) return `${a.day} ${a.month} to ${b.day} ${b.month} ${a.year}`;
+  if (a.day !== b.day) return `${a.day} to ${b.day} ${a.month} ${a.year}`;
+  return `${a.day} ${a.month} ${a.year}`;
 }
 
 const FULL_MONTHS = [
